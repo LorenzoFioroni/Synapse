@@ -103,7 +103,7 @@ def discover_tags(items: list[dict], min_topic_size: int = 5, progress=None) -> 
         "keys": keys
     }
 
-def reassign_tags(keys: list[str], embeddings: list[list[float]], curated_tags: list[str]) -> dict:
+def reassign_tags(keys: list[str], embeddings: list[list[float]], curated_tags: list[str], threshold: float = 0.5) -> dict:
     try:
         from sentence_transformers import SentenceTransformer
     except ImportError:
@@ -112,7 +112,7 @@ def reassign_tags(keys: list[str], embeddings: list[list[float]], curated_tags: 
     if not curated_tags:
         return {}
 
-    log.info(f"Reassigning tags based on {len(curated_tags)} curated tags...")
+    log.info(f"Reassigning tags based on {len(curated_tags)} curated tags with threshold {threshold}...")
     model = SentenceTransformer("all-MiniLM-L6-v2")
     tag_embeddings = model.encode(curated_tags, show_progress_bar=False)
     
@@ -123,7 +123,7 @@ def reassign_tags(keys: list[str], embeddings: list[list[float]], curated_tags: 
     for i, key in enumerate(keys):
         best_tag_idx = np.argmax(similarities[i])
         best_score = similarities[i][best_tag_idx]
-        if best_score >= 0.3: # threshold mentioned in the notes
+        if best_score >= threshold:
             tags_by_item[key] = curated_tags[best_tag_idx]
             
     return tags_by_item

@@ -222,11 +222,11 @@ class App:
         job.progress("Done")
         return result
 
-    def job_reassign_tags(self, job: Job, keys: list[str], embeddings: list[list[float]], curated_tags: list[str]):
+    def job_reassign_tags(self, job: Job, keys: list[str], embeddings: list[list[float]], curated_tags: list[str], threshold: float = 0.5):
         from .tags import reassign_tags
         import json
         job.progress("Reassigning tags...")
-        result = reassign_tags(keys, embeddings, curated_tags)
+        result = reassign_tags(keys, embeddings, curated_tags, threshold=threshold)
         
         from .store import fingerprint, jd
         with self.store.conn() as c:

@@ -836,7 +836,10 @@ async function viewTags(v) {
     </div>
     <div class="card" id="reassign-card" style="display:none; margin-top: 15px;">
       <h2>Review & Reassign</h2>
-      <p class="sub">Edit the discovered tags below. When you click Reassign, papers will be snapped to the closest tag in this list (Cosine Similarity &ge; 0.3).</p>
+      <p class="sub">Edit the discovered tags below. When you click Reassign, papers will be snapped to the closest tag in this list.</p>
+      <div class="row" style="margin-bottom: 10px;">
+        <label>Minimum Similarity (0.1 to 1.0): <input type="number" id="sim-threshold" value="0.5" step="0.05" style="width: 70px"></label>
+      </div>
       <textarea id="curated-tags" style="width: 100%; height: 150px; font-family: monospace;" oninput="TAG_STATE.curated_text = this.value"></textarea>
       <div class="row" style="margin-top: 10px;">
         <button class="primary" onclick="reassignTags()">Reassign Tags to Papers</button>
@@ -872,7 +875,8 @@ async function discoverTags() {
 async function reassignTags() {
   const text = document.getElementById("curated-tags").value;
   const tags = text.split("\n").map(x => x.trim()).filter(x => x);
-  startJob("reassign_tags", { keys: TAG_STATE.keys, embeddings: TAG_STATE.embeddings, curated_tags: tags });
+  const threshold = parseFloat(document.getElementById("sim-threshold").value) || 0.5;
+  startJob("reassign_tags", { keys: TAG_STATE.keys, embeddings: TAG_STATE.embeddings, curated_tags: tags, threshold: threshold });
 }
 
 async function createSmartFolders() {
