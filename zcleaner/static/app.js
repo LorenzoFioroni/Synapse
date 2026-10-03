@@ -834,6 +834,7 @@ bose-einstein condensate
 ..."></textarea>
       <div class="row" style="margin-top: 10px;">
         <button class="primary" onclick="reassignTags()">Match Papers to Tags</button>
+        <button onclick="suggestTags()">Auto-Suggest Tags from Library</button>
         <button onclick="createSmartFolders()">Create Smart Folders in Zotero</button>
       </div>
     </div>
@@ -843,10 +844,31 @@ bose-einstein condensate
   }
 }
 
+async function suggestTags() {
+  const btn = document.querySelector('button[onclick="suggestTags()"]');
+  const oldText = btn.innerText;
+  btn.innerText = "Extracting...";
+  btn.disabled = true;
+  try {
+    const res = await api("/api/tags/suggest", { method: "POST", body: { n: 20 } });
+    if (res.tags && res.tags.length > 0) {
+      const ta = $("#curated-tags");
+      const current = ta.value.trim();
+      ta.value = current ? current + "\n" + res.tags.join("\n") : res.tags.join("\n");
+      TAG_STATE.curated_text = ta.value;
+    }
+  } catch(e) {
+    alert("Error: " + e.message);
+  } finally {
+    btn.innerText = oldText;
+    btn.disabled = false;
+  }
+}
+
 async function reassignTags() {
   const text = document.getElementById("curated-tags").value;
   const tags = text.split("\n").map(x => x.trim()).filter(x => x);
-  const threshold = parseFloat(document.getElementById("sim-threshold").value) || 0.5;
+  const threshold = parseFloat(document.getElementById("sim-threshold").value) || 0.65;
   startJob("reassign_tags", { curated_tags: tags, threshold: threshold });
 }
 

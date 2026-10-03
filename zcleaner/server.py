@@ -343,6 +343,45 @@ def create_app(port: int = 5000) -> Flask:
                         "attachments": [dict(item_brief(k), linkMode=k["data"].get("linkMode"), contentType=k["data"].get("contentType"),
                                              pdf={kk: v for kk, v in (pdf.get(k["key"]) or {}).items() if kk != "first_text"}) for k in kids]})
 
+    @web.post("/api/tags/suggest")
+    def tags_suggest():
+        b = body()
+        n_tags = b.get("n", 15)
+        abstracts = []
+        with core.store.conn() as c:
+            for r in c.execute("SELECT data FROM items WHERE item_type != 'attachment'"):
+                d = r[0]
+                if isinstance(d, str): d = json.loads(d)
+                abstract = d.get("abstractNote", "").strip()
+                if abstract: abstracts.append(abstract)
+        if not abstracts:
+            return jsonify({"tags": []})
+        try:
+            from keybert import KeyBERT
+            from sentence_transformers import SentenceTransformer
+            import random
+            from collections import Counter
+            model = SentenceTransformer("all-MiniLM-L6-v2")
+            kw_model = KeyBERT(model=model)
+            sample = random.sample(abstracts, min(len(abstracts), 200))
+            all_keywords = []
+            for text in sample:
+                kw = kw_model.extract_keywords(text, keyphrase_ngram_range=(1, 2), stop_words='english', top_n=3)
+                all_keywords.extend([k[0] for k in kw])
+            top = [k for k, v in Counter(all_keywords).most_common(n_tags)]
+            return jsonify({"tags": top})
+        except ImportError:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            vectorizer = TfidfVectorizer(stop_words='english', ngram_range=(1, 2), max_df=0.9, min_df=2)
+            try:
+                X = vectorizer.fit_transform(abstracts)
+                indices = X.sum(axis=0).argsort()[0, ::-1].tolist()[0][:n_tags]
+                features = vectorizer.get_feature_names_out()
+                tags = [features[i] for i in indices]
+                return jsonify({"tags": tags})
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+
     # ------------------------------------------------------------------ issues
     def issue_filter(args):
         w, a = ["1=1"], []
