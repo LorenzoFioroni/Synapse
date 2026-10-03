@@ -6,11 +6,11 @@ log = logging.getLogger(__name__)
 
 def discover_tags(items: list[dict], min_topic_size: int = 5, progress=None) -> dict:
     try:
-        from bertopic import BERTopic
         from sentence_transformers import SentenceTransformer
         from sklearn.feature_extraction.text import CountVectorizer
+        from sklearn.cluster import AgglomerativeClustering
     except ImportError:
-        raise RuntimeError("Please install bertopic, sentence-transformers, and scikit-learn")
+        raise RuntimeError("Please install sentence-transformers and scikit-learn")
 
     abstracts = []
     keys = []
@@ -30,75 +30,75 @@ def discover_tags(items: list[dict], min_topic_size: int = 5, progress=None) -> 
     if not abstracts:
         return {"topics": {}, "tags": {}}
         
-    log.info(f"Embedding {len(abstracts)} abstracts...")
+    if progress:
+        progress("Extracting keyphrases...", len(abstracts), len(abstracts))
+    log.info(f"Extracting candidate keyphrases from {len(abstracts)} abstracts...")
+    
+    # Extract candidate bigrams and trigrams
+    # min_df ensures we only get recurring phrases, filtering noise.
+    vec = CountVectorizer(stop_words="english", ngram_range=(2, 3), min_df=max(2, min_topic_size - 2), max_df=0.4)
+    X = vec.fit_transform(abstracts)
+    phrases = vec.get_feature_names_out()
+    counts = np.array(X.sum(axis=0)).flatten()
+    
+    if len(phrases) == 0:
+        return {"topics": {}, "tags": {}, "embeddings": [], "keys": keys}
+    
+    if progress:
+        progress(f"Embedding {len(phrases)} candidate phrases...", len(phrases), len(phrases))
+        
     model = SentenceTransformer("all-MiniLM-L6-v2")
     
-    # Process embeddings in batches for progress reporting
+    # Embed the phrases
+    phrase_embeddings = model.encode(phrases, show_progress_bar=False)
+    
+    if progress:
+        progress("Clustering and merging synonyms...", len(phrases), len(phrases))
+        
+    # Merge synonyms (cosine distance < 0.15 means cosine similarity > 0.85)
+    clusterer = AgglomerativeClustering(
+        n_clusters=None,
+        distance_threshold=0.15,
+        metric="cosine",
+        linkage="average"
+    )
+    clusters = clusterer.fit_predict(phrase_embeddings)
+    
+    discovered_topics = {}
+    topic_id = 0
+    for cid in set(clusters):
+        cluster_indices = np.where(clusters == cid)[0]
+        # Pick the most frequent phrase as the canonical tag
+        best_idx = cluster_indices[np.argmax(counts[cluster_indices])]
+        canonical_name = phrases[best_idx]
+        total_count = int(np.sum(counts[cluster_indices]))
+        synonyms = [phrases[i] for i in cluster_indices if i != best_idx]
+        
+        discovered_topics[topic_id] = {
+            "name": canonical_name,
+            "words": synonyms[:5],
+            "count": total_count
+        }
+        topic_id += 1
+        
+    # We still need document embeddings for reassign_tags
+    if progress:
+        progress("Embedding abstracts for fast reassignment...", len(abstracts), len(abstracts))
+    
+    # Process document embeddings in batches
     batch_size = 64
     embeddings_list = []
     total = len(abstracts)
     for i in range(0, total, batch_size):
-        if progress:
-            progress(f"Embedding abstract {i+1} to {min(i+batch_size, total)} of {total}", i, total)
         batch = abstracts[i:i+batch_size]
         batch_emb = model.encode(batch, show_progress_bar=False)
         embeddings_list.extend(batch_emb)
         
     embeddings = np.array(embeddings_list)
     
-    if progress:
-        progress("Clustering with BERTopic...", total, total)
-    log.info("Clustering with BERTopic...")
-    
-    from bertopic.representation import KeyBERTInspired
-    representation_model = KeyBERTInspired()
-    
-    # Ignore words that appear in > 50% of the papers to drop overly generic terms like "quantum" or "paper"
-    vectorizer_model = CountVectorizer(stop_words="english", ngram_range=(1, 3), max_df=0.5)
-    
-    topic_model = BERTopic(
-        embedding_model=model,
-        min_topic_size=min_topic_size, 
-        vectorizer_model=vectorizer_model,
-        representation_model=representation_model
-    )
-    topics, probs = topic_model.fit_transform(abstracts, embeddings)
-    
-    topic_info = topic_model.get_topic_info()
-    
-    discovered_topics = {}
-    for i, row in topic_info.iterrows():
-        t_id = row["Topic"]
-        if t_id == -1:
-            continue
-        # Get canonical tag name from top words
-        words = topic_model.get_topic(t_id)
-        if not words:
-            continue
-            
-        # Try to find a good descriptive tag: prefer bigrams/trigrams among the top 5 words
-        valid_words = [w[0] for w in words]
-        tag_name = valid_words[0]
-        for w in valid_words[:5]:
-            if " " in w:  # It's a bigram or trigram
-                tag_name = w
-                break
-                
-        discovered_topics[int(t_id)] = {
-            "name": tag_name,
-            "words": valid_words[:5],
-            "count": int(row["Count"])
-        }
-    
-    # Assign tags
-    tags_by_item = {}
-    for i, t_id in enumerate(topics):
-        if t_id != -1 and t_id in discovered_topics:
-            tags_by_item[keys[i]] = discovered_topics[t_id]["name"]
-            
     return {
         "topics": discovered_topics,
-        "tags": tags_by_item,
+        "tags": {},  # tags will be applied via the curated Reassign step
         "embeddings": embeddings.tolist(),
         "keys": keys
     }
