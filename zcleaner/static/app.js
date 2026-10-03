@@ -113,6 +113,12 @@ function renderJob(j) {
   }
   if (S.lastJob && S.lastJob.status === "running" && j && j.id === S.lastJob.id && j.status !== "running") {
     if (j.status === "done" && (j.kind === "find_pdfs" || j.kind === "own_browser") && j.result) showFindResult(j.result, j.kind);
+    else if (j.status === "done" && j.kind === "discover_tags" && j.result) {
+      TAG_STATE = j.result;
+      toast("Tag discovery complete");
+    }
+    else if (j.status === "done" && j.kind === "reassign_tags") toast("Tags reassigned! Check 'Review changes' to apply them.");
+    else if (j.status === "done" && j.kind === "create_smart_folders") toast("Smart Folders created in Zotero!");
     else if (j.status === "done") toast(`${j.kind} finished`);
     else if (j.status === "failed") modal(`<h2 style="margin-top:0">${esc(j.kind)} failed</h2><div class="notice err">${esc(j.error)}</div><div class="row" style="margin-top:12px"><span class="spacer"></span><button onclick="closeModal()">Close</button></div>`);
     else toast(`${j.kind} ${j.status}`);
@@ -838,20 +844,8 @@ async function viewTags(v) {
       </div>
     </div>
   `;
-}
-
-async function discoverTags() {
-  const minSize = parseInt(document.getElementById("min-size").value, 10);
-  try {
-    const res = await api("/api/jobs/discover_tags", { method: "POST", body: JSON.stringify({ min_topic_size: minSize }) });
-    let j = res;
-    while (j && j.status === "running") {
-      await new Promise(r => setTimeout(r, 1000));
-      j = await api("/api/jobs/" + j.id);
-    }
-    if (j.error) throw new Error(j.error);
-    TAG_STATE = j.result;
-    
+  
+  if (TAG_STATE.topics && Object.keys(TAG_STATE.topics).length > 0) {
     let html = `<h3>Discovered ${Object.keys(TAG_STATE.topics).length} Topics</h3><ul>`;
     const tagNames = [];
     for (const [id, t] of Object.entries(TAG_STATE.topics)) {
@@ -859,52 +853,27 @@ async function discoverTags() {
       tagNames.push(t.name);
     }
     html += `</ul>`;
-    document.getElementById("tag-results").innerHTML = html;
-    
-    document.getElementById("reassign-card").style.display = "block";
-    document.getElementById("curated-tags").value = tagNames.join("\n");
-    toast("Tag discovery complete");
-  } catch(e) {
-    toast(e.message, true);
+    $("#tag-results").innerHTML = html;
+    $("#reassign-card").style.display = "block";
+    if (!$("#curated-tags").value) {
+      $("#curated-tags").value = tagNames.join("\n");
+    }
   }
+}
+
+async function discoverTags() {
+  const minSize = parseInt(document.getElementById("min-size").value, 10);
+  startJob("discover_tags", { min_topic_size: minSize });
 }
 
 async function reassignTags() {
   const text = document.getElementById("curated-tags").value;
   const tags = text.split("\n").map(x => x.trim()).filter(x => x);
-  try {
-    const res = await api("/api/jobs/reassign_tags", { 
-      method: "POST", 
-      body: JSON.stringify({ keys: TAG_STATE.keys, embeddings: TAG_STATE.embeddings, curated_tags: tags }) 
-    });
-    let j = res;
-    while (j && j.status === "running") {
-      await new Promise(r => setTimeout(r, 1000));
-      j = await api("/api/jobs/" + j.id);
-    }
-    if (j.error) throw new Error(j.error);
-    toast("Tags reassigned! Check 'Review changes' to apply them.");
-  } catch(e) {
-    toast(e.message, true);
-  }
+  startJob("reassign_tags", { keys: TAG_STATE.keys, embeddings: TAG_STATE.embeddings, curated_tags: tags });
 }
 
 async function createSmartFolders() {
   const text = document.getElementById("curated-tags").value;
   const tags = text.split("\n").map(x => x.trim()).filter(x => x);
-  try {
-    const res = await api("/api/jobs/create_smart_folders", { 
-      method: "POST", 
-      body: JSON.stringify({ tags: tags }) 
-    });
-    let j = res;
-    while (j && j.status === "running") {
-      await new Promise(r => setTimeout(r, 1000));
-      j = await api("/api/jobs/" + j.id);
-    }
-    if (j.error) throw new Error(j.error);
-    toast("Smart Folders created in Zotero!");
-  } catch(e) {
-    toast(e.message, true);
-  }
+  startJob("create_smart_folders", { tags: tags });
 }
