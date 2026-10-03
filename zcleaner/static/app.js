@@ -845,11 +845,9 @@ bose-einstein condensate
 
 async function reassignTags() {
   const text = document.getElementById("curated-tags").value;
-  const tags = text.split("
-").map(x => x.trim()).filter(x => x);
+  const tags = text.split("\n").map(x => x.trim()).filter(x => x);
   const threshold = parseFloat(document.getElementById("sim-threshold").value) || 0.5;
   startJob("reassign_tags", { curated_tags: tags, threshold: threshold });
-});
 }
 
 async function createSmartFolders() {
