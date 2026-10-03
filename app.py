@@ -15,7 +15,7 @@ from zcleaner.server import create_app
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--port", type=int, default=5000)
+    ap.add_argument("--port", type=int, default=5050)
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--debug", action="store_true", help="verbose logging")
     a = ap.parse_args()
