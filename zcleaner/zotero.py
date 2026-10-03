@@ -285,5 +285,19 @@ class Zotero:
         self.request("POST", f"{self.lib}/items/{key}/file", write=True, headers=h2,
                      data={"upload": j.get("uploadKey")})
 
+    def create_saved_search(self, name: str, tags: list[str]) -> requests.Response:
+        conditions = []
+        for tag in tags:
+            conditions.append({
+                "condition": "tag",
+                "operator": "is",
+                "value": tag
+            })
+        payload = [{
+            "name": name,
+            "conditions": conditions
+        }]
+        return self.request("POST", f"{self.lib}/searches", write=True, json=payload)
+
     def wait(self, secs: float):
         time.sleep(secs)

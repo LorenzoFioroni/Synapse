@@ -213,6 +213,44 @@ class App:
                 bases[(key, field)] = base
         return bases
 
+    # ------------------------------------------------------------------ tags
+    def job_discover_tags(self, job: Job, min_topic_size: int = 5):
+        from .tags import discover_tags
+        job.progress("Discovering tags...")
+        items = list(self.store.items())
+        result = discover_tags(items, min_topic_size=min_topic_size)
+        job.result = result
+        job.progress("Done")
+
+    def job_reassign_tags(self, job: Job, keys: list[str], embeddings: list[list[float]], curated_tags: list[str]):
+        from .tags import reassign_tags
+        import json
+        job.progress("Reassigning tags...")
+        result = reassign_tags(keys, embeddings, curated_tags)
+        
+        from .store import fingerprint, jd
+        with self.store.conn() as c:
+            for key, tag in result.items():
+                it = self.store.item(key)
+                if not it: continue
+                d = it.get("data", {})
+                if isinstance(d, str):
+                    d = json.loads(d)
+                old_tags = [t["tag"] for t in d.get("tags", [])]
+                if tag not in old_tags:
+                    new_tags = d.get("tags", []) + [{"tag": tag}]
+                    fp = fingerprint(key, "tags", "tags", new_tags)
+                    c.execute("INSERT OR REPLACE INTO proposals (item_key, kind, field, old, new, source, confidence, status, fingerprint, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                              (key, "tags", "tags", jd(old_tags), jd(new_tags), "BERTopic", 0.9, "pending", fp, now(), now()))
+        job.result = result
+        job.progress("Done")
+
+    def job_create_smart_folders(self, job: Job, tags: list[str]):
+        job.progress("Creating Smart Folders...")
+        for tag in tags:
+            self.zot.create_saved_search(f"Topic: {tag}", [tag])
+        job.progress("Done")
+
     # ------------------------------------------------------------------ scan
     def job_scan(self, job: Job, full: bool = False, analyse: bool = True):
         job.progress("Connecting to Zotero …")
