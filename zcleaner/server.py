@@ -189,7 +189,7 @@ def create_app(port: int = 5000) -> Flask:
     # ------------------------------------------------------------------ jobs
     @web.post("/api/jobs/<kind>")
     def job_start(kind):
-        if kind not in ("scan", "analyse", "pdfs", "lookups", "all", "commit", "rollback", "sleep", "find_pdfs", "own_browser", "discover_tags", "reassign_tags", "create_smart_folders"):
+        if kind not in ("scan", "analyse", "pdfs", "lookups", "all", "commit", "rollback", "sleep", "find_pdfs", "own_browser", "reassign_tags", "create_smart_folders"):
             abort(404)
         try:
             j = core.start(kind, body())

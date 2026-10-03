@@ -113,10 +113,6 @@ function renderJob(j) {
   }
   if (S.lastJob && S.lastJob.status === "running" && j && j.id === S.lastJob.id && j.status !== "running") {
     if (j.status === "done" && (j.kind === "find_pdfs" || j.kind === "own_browser") && j.result) showFindResult(j.result, j.kind);
-    else if (j.status === "done" && j.kind === "discover_tags" && j.result) {
-      TAG_STATE = j.result;
-      toast("Tag discovery complete");
-    }
     else if (j.status === "done" && j.kind === "reassign_tags") toast("Tags reassigned! Check 'Review changes' to apply them.");
     else if (j.status === "done" && j.kind === "create_smart_folders") toast("Smart Folders created in Zotero!");
     else if (j.status === "done") toast(`${j.kind} finished`);
@@ -825,58 +821,35 @@ poll();
 let TAG_STATE = { topics: {}, tags: {}, keys: [], embeddings: [] };
 
 async function viewTags(v) {
-  v.innerHTML = `<h1>Topic Tags (AI)</h1>
-    <p class="sub">Discover topics mathematically using local embeddings (BERTopic) and snap papers to your curated list.</p>
-    <div class="card">
-      <div class="row">
-        <label>Min Topic Size: <input type="number" id="min-size" value="5" style="width: 60px"></label>
-        <button class="primary" onclick="discoverTags()">Discover Tags</button>
-      </div>
-      <div id="tag-results" style="margin-top: 15px;"></div>
-    </div>
-    <div class="card" id="reassign-card" style="display:none; margin-top: 15px;">
-      <h2>Review & Reassign</h2>
-      <p class="sub">Edit the discovered tags below. When you click Reassign, papers will be snapped to the closest tag in this list.</p>
+  v.innerHTML = `<h1>Semantic Tagging</h1>
+    <p class="sub">Define your own semantic tags. Papers will be mathematically matched to your tags based on their abstracts. Multiple categories will be allowed for each paper.</p>
+    <div class="card" id="reassign-card" style="margin-top: 15px;">
+      <h2>Your Tags</h2>
+      <p class="sub">Enter your tags below, one per line.</p>
       <div class="row" style="margin-bottom: 10px;">
         <label>Minimum Similarity (0.1 to 1.0): <input type="number" id="sim-threshold" value="0.5" step="0.05" style="width: 70px"></label>
       </div>
-      <textarea id="curated-tags" style="width: 100%; height: 150px; font-family: monospace;" oninput="TAG_STATE.curated_text = this.value"></textarea>
+      <textarea id="curated-tags" style="width: 100%; height: 250px; font-family: monospace;" oninput="TAG_STATE.curated_text = this.value" placeholder="e.g. quantum annealing
+bose-einstein condensate
+..."></textarea>
       <div class="row" style="margin-top: 10px;">
-        <button class="primary" onclick="reassignTags()">Reassign Tags to Papers</button>
+        <button class="primary" onclick="reassignTags()">Match Papers to Tags</button>
         <button onclick="createSmartFolders()">Create Smart Folders in Zotero</button>
       </div>
     </div>
   `;
-  
-  if (TAG_STATE.topics && Object.keys(TAG_STATE.topics).length > 0) {
-    let html = `<h3>Discovered ${Object.keys(TAG_STATE.topics).length} Topics</h3><ul>`;
-    const tagNames = [];
-    for (const [id, t] of Object.entries(TAG_STATE.topics)) {
-      html += `<li><b>${esc(t.name)}</b> (${t.count} papers) - <i>${esc(t.words.join(", "))}</i></li>`;
-      tagNames.push(t.name);
-    }
-    html += `</ul>`;
-    $("#tag-results").innerHTML = html;
-    $("#reassign-card").style.display = "block";
-    if (TAG_STATE.curated_text !== undefined) {
-      $("#curated-tags").value = TAG_STATE.curated_text;
-    } else if (!$("#curated-tags").value) {
-      $("#curated-tags").value = tagNames.join("\n");
-      TAG_STATE.curated_text = tagNames.join("\n");
-    }
+  if (TAG_STATE.curated_text !== undefined) {
+    $("#curated-tags").value = TAG_STATE.curated_text;
   }
-}
-
-async function discoverTags() {
-  const minSize = parseInt(document.getElementById("min-size").value, 10);
-  startJob("discover_tags", { min_topic_size: minSize });
 }
 
 async function reassignTags() {
   const text = document.getElementById("curated-tags").value;
-  const tags = text.split("\n").map(x => x.trim()).filter(x => x);
+  const tags = text.split("
+").map(x => x.trim()).filter(x => x);
   const threshold = parseFloat(document.getElementById("sim-threshold").value) || 0.5;
-  startJob("reassign_tags", { keys: TAG_STATE.keys, embeddings: TAG_STATE.embeddings, curated_tags: tags, threshold: threshold });
+  startJob("reassign_tags", { curated_tags: tags, threshold: threshold });
+});
 }
 
 async function createSmartFolders() {
