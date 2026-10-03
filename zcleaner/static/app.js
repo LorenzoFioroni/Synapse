@@ -148,7 +148,7 @@ async function startJob(kind, params = {}) {
 
 /* ---------------------------------------------------------------- router */
 const VIEWS = {dashboard: viewDashboard, review: viewReview, issues: viewIssues, duplicates: viewDuplicates, pdfs: viewPdfs,
-  apply: viewApply, history: viewHistory, settings: viewSettings};
+  apply: viewApply, history: viewHistory, settings: viewSettings, tags: viewTags};
 function route() {
   const h = (location.hash || "#dashboard").slice(1).split("?");
   S.view = VIEWS[h[0]] ? h[0] : "dashboard";
@@ -815,3 +815,96 @@ async function viewSettings(v) {
 /* ---------------------------------------------------------------- boot */
 route();
 poll();
+
+let TAG_STATE = { topics: {}, tags: {}, keys: [], embeddings: [] };
+
+async function viewTags(v) {
+  v.innerHTML = `<h1>Topic Tags (AI)</h1>
+    <p class="sub">Discover topics mathematically using local embeddings (BERTopic) and snap papers to your curated list.</p>
+    <div class="card">
+      <div class="row">
+        <label>Min Topic Size: <input type="number" id="min-size" value="5" style="width: 60px"></label>
+        <button class="primary" onclick="discoverTags()">Discover Tags</button>
+      </div>
+      <div id="tag-results" style="margin-top: 15px;"></div>
+    </div>
+    <div class="card" id="reassign-card" style="display:none; margin-top: 15px;">
+      <h2>Review & Reassign</h2>
+      <p class="sub">Edit the discovered tags below. When you click Reassign, papers will be snapped to the closest tag in this list (Cosine Similarity &ge; 0.3).</p>
+      <textarea id="curated-tags" style="width: 100%; height: 150px; font-family: monospace;"></textarea>
+      <div class="row" style="margin-top: 10px;">
+        <button class="primary" onclick="reassignTags()">Reassign Tags to Papers</button>
+        <button onclick="createSmartFolders()">Create Smart Folders in Zotero</button>
+      </div>
+    </div>
+  `;
+}
+
+async function discoverTags() {
+  const minSize = parseInt(document.getElementById("min-size").value, 10);
+  try {
+    const res = await api("/api/jobs/discover_tags", { method: "POST", body: JSON.stringify({ min_topic_size: minSize }) });
+    let j = res;
+    while (j && j.status === "running") {
+      await new Promise(r => setTimeout(r, 1000));
+      j = await api("/api/jobs/" + j.id);
+    }
+    if (j.error) throw new Error(j.error);
+    TAG_STATE = j.result;
+    
+    let html = `<h3>Discovered ${Object.keys(TAG_STATE.topics).length} Topics</h3><ul>`;
+    const tagNames = [];
+    for (const [id, t] of Object.entries(TAG_STATE.topics)) {
+      html += `<li><b>${esc(t.name)}</b> (${t.count} papers) - <i>${esc(t.words.join(", "))}</i></li>`;
+      tagNames.push(t.name);
+    }
+    html += `</ul>`;
+    document.getElementById("tag-results").innerHTML = html;
+    
+    document.getElementById("reassign-card").style.display = "block";
+    document.getElementById("curated-tags").value = tagNames.join("\n");
+    toast("Tag discovery complete");
+  } catch(e) {
+    toast(e.message, true);
+  }
+}
+
+async function reassignTags() {
+  const text = document.getElementById("curated-tags").value;
+  const tags = text.split("\n").map(x => x.trim()).filter(x => x);
+  try {
+    const res = await api("/api/jobs/reassign_tags", { 
+      method: "POST", 
+      body: JSON.stringify({ keys: TAG_STATE.keys, embeddings: TAG_STATE.embeddings, curated_tags: tags }) 
+    });
+    let j = res;
+    while (j && j.status === "running") {
+      await new Promise(r => setTimeout(r, 1000));
+      j = await api("/api/jobs/" + j.id);
+    }
+    if (j.error) throw new Error(j.error);
+    toast("Tags reassigned! Check 'Review changes' to apply them.");
+  } catch(e) {
+    toast(e.message, true);
+  }
+}
+
+async function createSmartFolders() {
+  const text = document.getElementById("curated-tags").value;
+  const tags = text.split("\n").map(x => x.trim()).filter(x => x);
+  try {
+    const res = await api("/api/jobs/create_smart_folders", { 
+      method: "POST", 
+      body: JSON.stringify({ tags: tags }) 
+    });
+    let j = res;
+    while (j && j.status === "running") {
+      await new Promise(r => setTimeout(r, 1000));
+      j = await api("/api/jobs/" + j.id);
+    }
+    if (j.error) throw new Error(j.error);
+    toast("Smart Folders created in Zotero!");
+  } catch(e) {
+    toast(e.message, true);
+  }
+}
