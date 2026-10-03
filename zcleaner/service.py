@@ -245,7 +245,7 @@ class App:
                 if added:
                     fp = fingerprint(key, "tags", "tags", new_tags_list)
                     c.execute("INSERT INTO proposals (item_key, kind, field, old, new, source, confidence, status, fingerprint, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                              (key, "tags", "tags", jd(old_tags), jd(new_tags_list), "SemanticTagging", 0.9, "pending", fp, now(), now()))
+                              (key, "tags", "tags", jd(d.get("tags", [])), jd(new_tags_list), "SemanticTagging", 0.9, "pending", fp, now(), now()))
         job.progress("Done")
         return result
 
