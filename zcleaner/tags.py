@@ -1,14 +1,12 @@
 import logging
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 
 log = logging.getLogger(__name__)
 
 def reassign_tags(items: list[dict], curated_tags: list[str], threshold: float = 0.5, progress=None) -> dict:
     try:
-        from sentence_transformers import SentenceTransformer
+        from transformers import pipeline
     except ImportError:
-        raise RuntimeError("Please install sentence-transformers")
+        raise RuntimeError("Please install transformers (pip install transformers)")
 
     if not curated_tags:
         return {}
@@ -31,34 +29,26 @@ def reassign_tags(items: list[dict], curated_tags: list[str], threshold: float =
     if not abstracts:
         return {}
 
-    if progress: progress("Loading model...", 0, 100)
+    if progress: progress("Loading zero-shot local LLM...", 0, 100)
     log.info(f"Reassigning tags based on {len(curated_tags)} curated tags with threshold {threshold}...")
-    model = SentenceTransformer("all-MiniLM-L6-v2")
     
-    if progress: progress("Embedding tags...", 10, 100)
-    tag_embeddings = model.encode(curated_tags, show_progress_bar=False)
-    
-    batch_size = 64
-    embeddings_list = []
-    total = len(abstracts)
-    for i in range(0, total, batch_size):
-        if progress:
-            progress(f"Embedding abstract {i+1} to {min(i+batch_size, total)} of {total}", 10 + int(80 * i / total), 100)
-        batch = abstracts[i:i+batch_size]
-        batch_emb = model.encode(batch, show_progress_bar=False)
-        embeddings_list.extend(batch_emb)
-        
-    embeddings_arr = np.array(embeddings_list)
-    
-    if progress: progress("Computing similarities...", 90, 100)
-    similarities = cosine_similarity(embeddings_arr, tag_embeddings)
+    # Use a small NLI model for robust zero-shot text classification
+    clf = pipeline("zero-shot-classification", model="typeform/distilbert-base-uncased-mnli")
     
     tags_by_item = {}
-    for i, key in enumerate(keys):
+    total = len(abstracts)
+    
+    for i, (key, abstract) in enumerate(zip(keys, abstracts)):
+        if progress:
+            progress(f"Evaluating paper {i+1} of {total}...", 10 + int(90 * i / total), 100)
+            
+        res = clf(abstract, candidate_labels=curated_tags, multi_label=True)
+        
         item_tags = []
-        for j, tag in enumerate(curated_tags):
-            if similarities[i][j] >= threshold:
-                item_tags.append(tag)
+        for label, score in zip(res["labels"], res["scores"]):
+            if score >= threshold:
+                item_tags.append(label)
+                
         if item_tags:
             tags_by_item[key] = item_tags
             
