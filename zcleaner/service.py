@@ -218,9 +218,9 @@ class App:
         from .tags import discover_tags
         job.progress("Discovering tags...")
         items = list(self.store.items())
-        result = discover_tags(items, min_topic_size=min_topic_size)
-        job.result = result
+        result = discover_tags(items, min_topic_size=min_topic_size, progress=job.progress)
         job.progress("Done")
+        return result
 
     def job_reassign_tags(self, job: Job, keys: list[str], embeddings: list[list[float]], curated_tags: list[str]):
         from .tags import reassign_tags
@@ -242,14 +242,15 @@ class App:
                     fp = fingerprint(key, "tags", "tags", new_tags)
                     c.execute("INSERT OR REPLACE INTO proposals (item_key, kind, field, old, new, source, confidence, status, fingerprint, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                               (key, "tags", "tags", jd(old_tags), jd(new_tags), "BERTopic", 0.9, "pending", fp, now(), now()))
-        job.result = result
         job.progress("Done")
+        return result
 
     def job_create_smart_folders(self, job: Job, tags: list[str]):
         job.progress("Creating Smart Folders...")
         for tag in tags:
             self.zot.create_saved_search(f"Topic: {tag}", [tag])
         job.progress("Done")
+        return {"created": len(tags)}
 
     # ------------------------------------------------------------------ scan
     def job_scan(self, job: Job, full: bool = False, analyse: bool = True):

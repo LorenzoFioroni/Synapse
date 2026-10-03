@@ -4,7 +4,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 log = logging.getLogger(__name__)
 
-def discover_tags(items: list[dict], min_topic_size: int = 5) -> dict:
+def discover_tags(items: list[dict], min_topic_size: int = 5, progress=None) -> dict:
     try:
         from bertopic import BERTopic
         from sentence_transformers import SentenceTransformer
@@ -31,8 +31,22 @@ def discover_tags(items: list[dict], min_topic_size: int = 5) -> dict:
         
     log.info(f"Embedding {len(abstracts)} abstracts...")
     model = SentenceTransformer("all-MiniLM-L6-v2")
-    embeddings = model.encode(abstracts, show_progress_bar=False)
     
+    # Process embeddings in batches for progress reporting
+    batch_size = 64
+    embeddings_list = []
+    total = len(abstracts)
+    for i in range(0, total, batch_size):
+        if progress:
+            progress(f"Embedding abstract {i+1} to {min(i+batch_size, total)} of {total}", i, total)
+        batch = abstracts[i:i+batch_size]
+        batch_emb = model.encode(batch, show_progress_bar=False)
+        embeddings_list.extend(batch_emb)
+        
+    embeddings = np.array(embeddings_list)
+    
+    if progress:
+        progress("Clustering with BERTopic...", total, total)
     log.info("Clustering with BERTopic...")
     topic_model = BERTopic(min_topic_size=min_topic_size)
     topics, probs = topic_model.fit_transform(abstracts, embeddings)
