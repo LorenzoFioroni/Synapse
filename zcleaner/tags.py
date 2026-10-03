@@ -2,7 +2,7 @@ import logging
 
 log = logging.getLogger(__name__)
 
-def reassign_tags(items: list[dict], curated_tags: list[str], threshold: float = 0.5, progress=None) -> dict:
+def reassign_tags(items: list[dict], curated_tags: list[str], threshold: float = 0.85, progress=None) -> dict:
     try:
         from transformers import pipeline
     except ImportError:
@@ -49,8 +49,9 @@ def reassign_tags(items: list[dict], curated_tags: list[str], threshold: float =
             if score >= threshold:
                 item_tags.append(label)
                 
+        # Limit to the top 3 most relevant tags to prevent spurious associations
         if item_tags:
-            tags_by_item[key] = item_tags
+            tags_by_item[key] = item_tags[:3]
             
     if progress: progress("Done", 100, 100)
     return tags_by_item

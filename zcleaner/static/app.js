@@ -827,7 +827,7 @@ async function viewTags(v) {
       <h2>Your Tags</h2>
       <p class="sub">Enter your tags below, one per line.</p>
       <div class="row" style="margin-bottom: 10px;">
-        <label>Minimum Similarity (0.1 to 1.0): <input type="number" id="sim-threshold" value="0.65" step="0.05" style="width: 70px"></label>
+        <label>Minimum Similarity (0.1 to 1.0): <input type="number" id="sim-threshold" value="0.85" step="0.05" style="width: 70px"></label>
       </div>
       <textarea id="curated-tags" style="width: 100%; height: 250px; font-family: monospace;" oninput="TAG_STATE.curated_text = this.value" placeholder="e.g. quantum annealing
 bose-einstein condensate
@@ -868,7 +868,7 @@ async function suggestTags() {
 async function reassignTags() {
   const text = document.getElementById("curated-tags").value;
   const tags = text.split("\n").map(x => x.trim()).filter(x => x);
-  const threshold = parseFloat(document.getElementById("sim-threshold").value) || 0.65;
+  const threshold = parseFloat(document.getElementById("sim-threshold").value) || 0.85;
   startJob("reassign_tags", { curated_tags: tags, threshold: threshold });
 }
 
