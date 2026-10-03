@@ -837,7 +837,7 @@ async function viewTags(v) {
     <div class="card" id="reassign-card" style="display:none; margin-top: 15px;">
       <h2>Review & Reassign</h2>
       <p class="sub">Edit the discovered tags below. When you click Reassign, papers will be snapped to the closest tag in this list (Cosine Similarity &ge; 0.3).</p>
-      <textarea id="curated-tags" style="width: 100%; height: 150px; font-family: monospace;"></textarea>
+      <textarea id="curated-tags" style="width: 100%; height: 150px; font-family: monospace;" oninput="TAG_STATE.curated_text = this.value"></textarea>
       <div class="row" style="margin-top: 10px;">
         <button class="primary" onclick="reassignTags()">Reassign Tags to Papers</button>
         <button onclick="createSmartFolders()">Create Smart Folders in Zotero</button>
@@ -855,8 +855,11 @@ async function viewTags(v) {
     html += `</ul>`;
     $("#tag-results").innerHTML = html;
     $("#reassign-card").style.display = "block";
-    if (!$("#curated-tags").value) {
+    if (TAG_STATE.curated_text !== undefined) {
+      $("#curated-tags").value = TAG_STATE.curated_text;
+    } else if (!$("#curated-tags").value) {
       $("#curated-tags").value = tagNames.join("\n");
+      TAG_STATE.curated_text = tagNames.join("\n");
     }
   }
 }
