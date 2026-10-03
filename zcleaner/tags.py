@@ -8,8 +8,9 @@ def discover_tags(items: list[dict], min_topic_size: int = 5, progress=None) -> 
     try:
         from bertopic import BERTopic
         from sentence_transformers import SentenceTransformer
+        from sklearn.feature_extraction.text import CountVectorizer
     except ImportError:
-        raise RuntimeError("Please install bertopic and sentence-transformers")
+        raise RuntimeError("Please install bertopic, sentence-transformers, and scikit-learn")
 
     abstracts = []
     keys = []
@@ -48,7 +49,8 @@ def discover_tags(items: list[dict], min_topic_size: int = 5, progress=None) -> 
     if progress:
         progress("Clustering with BERTopic...", total, total)
     log.info("Clustering with BERTopic...")
-    topic_model = BERTopic(min_topic_size=min_topic_size)
+    vectorizer_model = CountVectorizer(stop_words="english", ngram_range=(1, 3))
+    topic_model = BERTopic(min_topic_size=min_topic_size, vectorizer_model=vectorizer_model)
     topics, probs = topic_model.fit_transform(abstracts, embeddings)
     
     topic_info = topic_model.get_topic_info()
