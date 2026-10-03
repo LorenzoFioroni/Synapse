@@ -49,8 +49,18 @@ def discover_tags(items: list[dict], min_topic_size: int = 5, progress=None) -> 
     if progress:
         progress("Clustering with BERTopic...", total, total)
     log.info("Clustering with BERTopic...")
-    vectorizer_model = CountVectorizer(stop_words="english", ngram_range=(1, 3))
-    topic_model = BERTopic(min_topic_size=min_topic_size, vectorizer_model=vectorizer_model)
+    
+    from bertopic.representation import KeyBERTInspired
+    representation_model = KeyBERTInspired()
+    
+    # Ignore words that appear in > 50% of the papers to drop overly generic terms like "quantum" or "paper"
+    vectorizer_model = CountVectorizer(stop_words="english", ngram_range=(1, 3), max_df=0.5)
+    
+    topic_model = BERTopic(
+        min_topic_size=min_topic_size, 
+        vectorizer_model=vectorizer_model,
+        representation_model=representation_model
+    )
     topics, probs = topic_model.fit_transform(abstracts, embeddings)
     
     topic_info = topic_model.get_topic_info()
@@ -64,10 +74,18 @@ def discover_tags(items: list[dict], min_topic_size: int = 5, progress=None) -> 
         words = topic_model.get_topic(t_id)
         if not words:
             continue
-        tag_name = words[0][0] # use top word as canonical tag
+            
+        # Try to find a good descriptive tag: prefer bigrams/trigrams among the top 5 words
+        valid_words = [w[0] for w in words]
+        tag_name = valid_words[0]
+        for w in valid_words[:5]:
+            if " " in w:  # It's a bigram or trigram
+                tag_name = w
+                break
+                
         discovered_topics[int(t_id)] = {
             "name": tag_name,
-            "words": [w[0] for w in words[:5]],
+            "words": valid_words[:5],
             "count": int(row["Count"])
         }
     
