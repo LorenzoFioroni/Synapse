@@ -232,12 +232,14 @@ class App:
                 if isinstance(d, str):
                     d = json.loads(d)
                 old_tags = [t["tag"] for t in d.get("tags", [])]
+                old_tags_lower = {t.lower() for t in old_tags}
                 
                 added = False
                 new_tags_list = list(d.get("tags", []))
                 for tag in matched_tags:
-                    if tag not in old_tags:
+                    if tag.lower() not in old_tags_lower:
                         new_tags_list.append({"tag": tag})
+                        old_tags_lower.add(tag.lower())
                         added = True
                         
                 if added:
