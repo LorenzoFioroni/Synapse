@@ -57,6 +57,7 @@ def discover_tags(items: list[dict], min_topic_size: int = 5, progress=None) -> 
     vectorizer_model = CountVectorizer(stop_words="english", ngram_range=(1, 3), max_df=0.5)
     
     topic_model = BERTopic(
+        embedding_model=model,
         min_topic_size=min_topic_size, 
         vectorizer_model=vectorizer_model,
         representation_model=representation_model
