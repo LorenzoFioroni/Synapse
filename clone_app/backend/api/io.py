@@ -7,6 +7,7 @@ from flask import Blueprint, Response, jsonify, request
 
 from .. import formats
 from ..fields import EDITABLE_KEYS
+from ..repository import DuplicateFinder
 from . import body, error, svc
 
 bp = Blueprint("io", __name__, url_prefix="/api")
@@ -38,9 +39,9 @@ def import_preview():
         fmt, entries = formats.parse(text, fmt, filename)
     except formats.FormatError as e:
         return error(str(e))
-    existing = s.papers.list()
+    finder = DuplicateFinder(s.papers.list())
     for e in entries:
-        e["duplicate_of"] = s.papers.find_duplicate(e, existing)
+        e["duplicate_of"] = finder.find(e)
     return jsonify(format=fmt, label=formats.FORMATS[fmt].label, entries=entries)
 
 
@@ -50,17 +51,17 @@ def import_commit():
     data = body()
     entries = data.get("entries") or []
     skip_dupes = data.get("skip_duplicates", s.settings.get("import_skip_duplicates"))
-    existing = s.papers.list()
-    created, skipped = [], 0
+    finder = DuplicateFinder(s.papers.list() if skip_dupes else [])
+    keep, skipped = [], 0
     for e in entries:
-        if skip_dupes and s.papers.find_duplicate(e, existing):
+        if skip_dupes and finder.find(e):
             skipped += 1
             continue
         clean = {k: v for k, v in e.items() if k in EDITABLE_KEYS}
-        # Imported keys are kept; missing ones follow the auto-generate setting.
-        item = s.papers.create(clean)
-        existing.append(item)
-        created.append(item["id"])
+        keep.append(clean)
+        finder.add(clean, "pending")  # also catch duplicates within the same file
+    # Imported keys are kept; missing ones follow the auto-generate setting.
+    created = s.papers.create_many(keep)
     return jsonify(created=created, skipped=skipped)
 
 

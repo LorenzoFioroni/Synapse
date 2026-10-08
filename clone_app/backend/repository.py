@@ -34,6 +34,38 @@ def _clean_value(key: str, value):
     return str(value).strip()
 
 
+class DuplicateFinder:
+    """Fast duplicate lookup by DOI, or by normalized title (+ year when both have one)."""
+
+    def __init__(self, papers: list[dict]):
+        self.by_doi: dict[str, str] = {}
+        self.by_title: dict[str, list[tuple[str, str]]] = {}
+        for p in papers:
+            self.add(p, p.get("id"))
+
+    @staticmethod
+    def _keys(entry: dict) -> tuple[str, str]:
+        from .search import normalize
+        return (entry.get("doi") or "").strip().lower(), normalize(entry.get("title") or "")
+
+    def add(self, entry: dict, item_id) -> None:
+        doi, title = self._keys(entry)
+        if doi:
+            self.by_doi.setdefault(doi, item_id)
+        if title:
+            self.by_title.setdefault(title, []).append((item_id, str(entry.get("year") or "")))
+
+    def find(self, entry: dict) -> str | None:
+        doi, title = self._keys(entry)
+        if doi and doi in self.by_doi:
+            return self.by_doi[doi]
+        year = str(entry.get("year") or "")
+        for item_id, y in self.by_title.get(title, []) if title else []:
+            if not year or not y or year == y:
+                return item_id
+        return None
+
+
 class PaperRepository:
     def __init__(self, db: Database, settings: SettingsStore, pdf_dir: Path):
         self.db = db
@@ -77,38 +109,35 @@ class PaperRepository:
 
     def find_duplicate(self, entry: dict, papers: list[dict] | None = None) -> str | None:
         """Return the id of an existing (non-trashed) item matching by DOI or title+year."""
-        from .search import normalize
-        papers = papers if papers is not None else self.list()
-        doi = (entry.get("doi") or "").strip().lower()
-        title = normalize(entry.get("title") or "")
-        for p in papers:
-            if doi and (p.get("doi") or "").strip().lower() == doi:
-                return p["id"]
-        if title:
-            for p in papers:
-                if normalize(p.get("title") or "") == title and (
-                        not entry.get("year") or not p.get("year") or str(entry["year"]) == str(p["year"])):
-                    return p["id"]
-        return None
+        return DuplicateFinder(papers if papers is not None else self.list()).find(entry)
 
     # ----------------------------------------------------------------- writes
     def create(self, data: dict | None = None, *, auto_citekey: bool | None = None) -> dict:
-        data = dict(data or {})
-        values = {k: _clean_value(k, data.get(k)) for k in EDITABLE_KEYS if k in data}
-        values.setdefault("item_type", DEFAULT_ITEM_TYPE)
-        values.setdefault("title", "")
+        return self.get(self.create_many([data or {}], auto_citekey=auto_citekey)[0])
+
+    def create_many(self, entries: list[dict], *, auto_citekey: bool | None = None) -> list[str]:
+        """Insert several items in one transaction (used by imports). Returns the new ids."""
         if auto_citekey is None:
             auto_citekey = self.settings.get("citekey_auto")
-        if auto_citekey and not values.get("citation_key") and (values.get("authors") or values.get("title")):
-            values["citation_key"] = citekeys.generate(
-                self.settings.get("citekey_pattern"), values, self.all_citation_keys())
-        new_id = uuid.uuid4().hex
+        pattern = self.settings.get("citekey_pattern")
+        taken = self.all_citation_keys() if auto_citekey else set()
         now = utcnow()
-        values.update(id=new_id, date_added=now, date_modified=now)
-        cols = ", ".join(values)
+        ids = []
         with self.db.session() as c:
-            c.execute(f"INSERT INTO papers ({cols}) VALUES ({', '.join('?' * len(values))})", list(values.values()))
-        return self.get(new_id)
+            for data in entries:
+                values = {k: _clean_value(k, data.get(k)) for k in EDITABLE_KEYS if k in data}
+                values.setdefault("item_type", DEFAULT_ITEM_TYPE)
+                values.setdefault("title", "")
+                if auto_citekey and not values.get("citation_key") and (values.get("authors") or values.get("title")):
+                    values["citation_key"] = citekeys.generate(pattern, values, taken)
+                if values.get("citation_key"):
+                    taken.add(values["citation_key"])
+                new_id = uuid.uuid4().hex
+                values.update(id=new_id, date_added=now, date_modified=now)
+                c.execute(f"INSERT INTO papers ({', '.join(values)}) VALUES ({', '.join('?' * len(values))})",
+                          list(values.values()))
+                ids.append(new_id)
+        return ids
 
     def update(self, paper_id: str, data: dict) -> dict:
         values = {k: _clean_value(k, v) for k, v in data.items() if k in EDITABLE_KEYS}

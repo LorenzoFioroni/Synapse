@@ -57,3 +57,6 @@
 .row.snippet .cell { white-space: normal; padding: 0 16px 6px 52px; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
 
 .list-empty { position: absolute; inset: 30px 0 0 0; }
+
+/* let the browser skip layout/paint of off-screen rows in big libraries */
+.items-body > .row { content-visibility: auto; contain-intrinsic-size: auto var(--row-h); }

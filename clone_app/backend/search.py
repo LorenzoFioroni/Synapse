@@ -39,7 +39,20 @@ def parse_query(q: str) -> list[tuple[str, bool]]:
     return out
 
 
+_hay_cache: dict[tuple, str] = {}
+
+
 def _haystack(paper: dict, mode: str) -> str:
+    key = (paper["id"], paper.get("date_modified"), mode, len(paper.get("attachments") or []))
+    hit = _hay_cache.get(key)
+    if hit is None:
+        if len(_hay_cache) > 50000:
+            _hay_cache.clear()
+        hit = _hay_cache[key] = _build_haystack(paper, mode)
+    return hit
+
+
+def _build_haystack(paper: dict, mode: str) -> str:
     keys = BASIC_SEARCH_KEYS if mode == "basic" else ALL_SEARCH_KEYS
     parts = [str(paper.get(k) or "") for k in keys]
     if mode != "basic":

@@ -200,6 +200,7 @@ function renderBody() {
   order = items.map((i) => i.id);
   pane.querySelector('.list-empty')?.remove();
   body.innerHTML = items.map(rowHtml).join('');
+  painted = new Set([...state.selection].filter((id) => order.includes(id)));
   if (!items.length) pane.appendChild(emptyState());
   emit('list-rendered', items.length);
 }
@@ -242,9 +243,14 @@ function emptyState() {
   return el;
 }
 
+let painted = new Set();
 function paintSelection() {
-  body.querySelectorAll('.row[data-id]').forEach((r) => r.classList.toggle('selected', state.selection.has(r.dataset.id)));
+  // only touch rows whose state changed (fast with thousands of rows)
+  for (const id of painted) if (!state.selection.has(id)) rowEl(id)?.classList.remove('selected');
+  for (const id of state.selection) if (!painted.has(id)) rowEl(id)?.classList.add('selected');
+  painted = new Set(state.selection);
 }
+const rowEl = (id) => body.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
 
 function scrollToRow(id) {
   const row = body.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
