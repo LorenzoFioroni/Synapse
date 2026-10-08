@@ -128,6 +128,8 @@ function bindHead() {
 
 function autoFit(id) {
   const col = state.columns.find((c) => c.id === id);
+  col.width = 30;            // shrink first so scrollWidth reports the content width
+  applyGrid();
   let w = 60;
   body.querySelectorAll(`.cell[data-col="${id}"]`).forEach((c) => { w = Math.max(w, c.scrollWidth + 4); });
   const hc = head.querySelector(`.head-cell[data-col="${id}"] .label`);
