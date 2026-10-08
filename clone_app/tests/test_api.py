@@ -1,3 +1,5 @@
+import io
+
 from tests.conftest import make_pdf
 
 
@@ -44,6 +46,27 @@ def test_settings_persist(app, tmp_path):
     c.put("/api/settings", json={"density": "compact"})
     app2 = create_app(Config.from_env(tmp_path / "data"), start_indexer=False)
     assert app2.test_client().get("/api/settings").get_json()["settings"]["density"] == "compact"
+
+
+def test_import_preview_commit_and_export(client):
+    bib = "@article{a1, title={First Paper}, author={Doe, Jane}, year={2020}, doi={10.1/x}}\n" \
+          "@article{a2, title={Second Paper}, author={Roe, Rick}, year={2021}}"
+    prev = client.post("/api/import/preview", data={"file": (io.BytesIO(bib.encode()), "refs.bib")},
+                       content_type="multipart/form-data").get_json()
+    assert prev["format"] == "bibtex" and len(prev["entries"]) == 2
+    res = client.post("/api/import/commit", json={"entries": prev["entries"]}).get_json()
+    assert len(res["created"]) == 2
+    # second import: duplicates detected and skipped
+    prev2 = client.post("/api/import/preview", json={"text": bib}).get_json()
+    assert all(e["duplicate_of"] for e in prev2["entries"])
+    res2 = client.post("/api/import/commit", json={"entries": prev2["entries"], "skip_duplicates": True}).get_json()
+    assert res2 == {"created": [], "skipped": 2}
+    for fmt in ("bibtex", "ris", "endnote", "endnote_xml", "csljson"):
+        r = client.get(f"/api/export?format={fmt}")
+        assert r.status_code == 200 and "First Paper" in r.get_data(as_text=True)
+        assert "attachment" in r.headers["Content-Disposition"]
+    one = client.get(f"/api/export?format=bibtex&ids={res['created'][0]}&download=0").get_json()
+    assert one["count"] == 1 and one["text"].startswith("@article{a1,")
 
 
 def test_attachments_and_fulltext_search(client, svc, tmp_path):
