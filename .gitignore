@@ -3,3 +3,14 @@ __pycache__/
 *.pyc
 .pytest_cache/
 virtual_env/
+.DS_Store
+.claude_sync/
+
+# clone_app user data (never commit the library itself)
+clone_app/papers.db
+clone_app/*.db
+clone_app/*.db-journal
+clone_app/data/
+clone_app/pdf_storage/
+clone_app/_legacy_scripts/
+clone_app/server.log

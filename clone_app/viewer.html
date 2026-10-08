@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Custom PDF Viewer</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf_viewer.min.css">
+      <style>
+      .selected-anno {
+          opacity: 0.5;
+          filter: drop-shadow(0px 0px 4px #0066cc);
+      }
+    body { background-color: #e8e8e8; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    
+    #toolbar { background-color: #f5f5f5; border-bottom: 1px solid #d1d1d1; padding: 6px 12px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; z-index: 10; color: #444; }
+    .toolbar-section { display: flex; align-items: center; gap: 4px; }
+    .toolbar-section.left { justify-content: flex-start; }
+    .toolbar-section.center { justify-content: center; }
+    .toolbar-section.right { justify-content: flex-end; }
+    
+    .divider { width: 1px; height: 16px; background: #d1d1d1; margin: 0 6px; }
+    
+    .icon-btn, .tool-btn { 
+        display: flex; align-items: center; justify-content: center;
+        background: transparent; color: #555; border: 1px solid transparent; 
+        border-radius: 4px; width: 28px; height: 28px; cursor: pointer; 
+        flex-shrink: 0;
+    }
+    .icon-btn:hover, .tool-btn:hover { background: #e0e0e0; }
+    .tool-btn.active { background: #dfdfdf; border-color: #c0c0c0; box-shadow: inset 0 1px 2px rgba(0,0,0,0.05); color: #000; }
+    
+    .color-picker-wrapper { display: flex; align-items: center; cursor: pointer; padding: 2px 4px; border-radius: 4px; border: 1px solid transparent; flex-shrink: 0; }
+    .color-picker-wrapper:hover { background: #e0e0e0; }
+    input[type="color"] { cursor: pointer; border: none; background: transparent; height: 16px; width: 16px; padding: 0; }
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch { border: 1px solid rgba(0,0,0,0.2); border-radius: 2px; }
+    
+    #tool-size { width: 40px; text-align: center; border-radius: 4px; border: 1px solid #ccc; font-size: 12px; height: 20px; background: #fff; color: #333; flex-shrink: 0; }
+    
+    #main-content { display: flex; flex: 1; overflow: hidden; background: #e8e8e8; }
+    #sidebar { display: none; width: 200px; background: #f0f0f0; border-right: 1px solid #d1d1d1; overflow-y: auto; padding: 15px 10px; flex-direction: column; gap: 15px; }
+    .thumb-wrapper { display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; padding: 5px; border-radius: 4px; }
+    .thumb-wrapper:hover { background: #e0e0e0; }
+    .thumb-wrapper canvas { width: 120px; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border-radius: 2px; }
+    .thumb-label { font-size: 11px; color: #666; font-weight: 500; }
+    
+    #pdf-container { flex: 1; overflow: auto; padding: 20px; }
+    .page-wrapper { position: relative; margin: 0 auto 20px auto; box-shadow: 0 2px 10px rgba(0,0,0,0.15); background: white; user-select: none; border-radius: 2px; }
+    canvas { display: block; user-select: none; border-radius: 2px; }
+    .textLayer { position: absolute; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; line-height: 1.0; user-select: text; }
+    .textLayer ::selection { background: rgba(0, 0, 255, 0.3); }
+    .textLayer span { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+    
+    .anno-layer { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 5; mix-blend-mode: multiply; }
+        .anno-layer.mode-draw { pointer-events: auto; }
+    .anno-layer > * { pointer-events: auto !important; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+</head>
+<body>
+  <div id="toolbar">
+    <div class="toolbar-section left">
+      <button class="icon-btn" id="sidebar-toggle" title="Toggle Sidebar">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v12H2V2zm2 2v8h3V4H4zm4 0v8h4V4H8z"/></svg>
+      </button>
+      <span class="divider"></span>
+      <button class="icon-btn" id="zoom-out" title="Zoom Out">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6.5 11.5a5 5 0 100-10 5 5 0 000 10zM14 14l-3.5-3.5M4.5 6.5h4" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+      <button class="icon-btn" id="zoom-in" title="Zoom In">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6.5 11.5a5 5 0 100-10 5 5 0 000 10zM14 14l-3.5-3.5M4.5 6.5h4M6.5 4.5v4" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+    </div>
+    
+    <div class="toolbar-section center">
+      <span id="page-num-text" style="font-size: 12px; font-weight: 500;">1 / 1</span>
+    </div>
+    
+    <div class="toolbar-section right" id="tools-section">
+      <button class="tool-btn active" data-tool="select" title="Select">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M5.5 2l7.5 7.5-3 1 2.5 3.5-1.5 1L8 11.5l-2.5 2z"/>
+        </svg>
+      </button>
+      <button class="tool-btn" data-tool="highlight" title="Highlight">
+        <svg width="16" height="16" viewBox="0 0 16 16">
+          <rect x="1" y="11" width="14" height="4" fill="#ffeb3b"/>
+          <path d="M8 1 L14 13 H11.5 L10 10 H6 L4.5 13 H2 Z M8 4.5 L6.8 8.5 H9.2 Z" fill="currentColor"/>
+        </svg>
+      </button>
+      <button class="tool-btn" data-tool="underline" title="Underline">
+        <svg width="16" height="16" viewBox="0 0 16 16">
+          <path d="M8 1 L14 13 H11.5 L10 10 H6 L4.5 13 H2 Z M8 4.5 L6.8 8.5 H9.2 Z" fill="currentColor"/>
+          <rect x="2" y="14.5" width="12" height="1.5" fill="currentColor"/>
+        </svg>
+      </button>
+      <button class="tool-btn" data-tool="text" title="Add Text">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3 4h10v1.5H8.75v7.5H7.25V5.5H3V4z"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="box" title="Draw Box">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="eraser" title="Eraser">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M14 6l-4-4L2 10l4 4h8v-2h-4.5z"/>
+        </svg>
+      </button>
+      <button class="tool-btn" data-tool="draw" title="Draw">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 10C5 6 7 12 9 8c2-4 4 2 4 2"/></svg>
+      </button>
+      
+      <span class="toolbar-sep" style="display:none; width: 1px; height: 16px; background: #ccc; margin: 0 4px;"></span>
+      
+      <label class="color-picker-wrapper" title="Color" id="color-wrapper" style="display:none;">
+        <input type="color" id="tool-color" value="#ffff00">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="margin-left:2px;"><path d="M2 3l3 4 3-4z"/></svg>
+      </label>
+      
+      <input type="number" id="tool-size" value="2" min="1" max="72" title="Size/Width" style="display:none;">
+    </div>
+  </div>
+  <div id="main-content">
+    <div id="sidebar"></div>
+    <div id="pdf-container"></div>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const pdfUrl = urlParams.get('file');
+    const paperId = urlParams.get('paper_id');
+const titleParam = urlParams.get('title');
+if (titleParam) { document.title = titleParam; }
+    let savedAnnotations = {};
+
+
+    if (!pdfUrl) {
+        document.getElementById('pdf-container').innerHTML = '<h2 style="color:white;">No PDF file specified.</h2>';
+    } else {
+        if (paperId) {
+            fetch(`/api/annotations?paper_id=${paperId}`).then(r => r.json()).then(data => {
+                savedAnnotations = data.annotations || {};
+                initPdf();
+            }).catch(e => {
+                console.error(e);
+                initPdf();
+            });
+        } else {
+            initPdf();
+        }
+        
+        function initPdf() {
+
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        
+        let pdfDoc = null,
+            scale = 1.5,
+            container = document.getElementById('pdf-container');
+            
+        const pageNumText = document.getElementById('page-num-text');
+
+        // Observer to update current page number
+        const pageObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting && pdfDoc) {
+                    const pageNum = entry.target.dataset.pageNumber;
+                    pageNumText.textContent = `${pageNum} / ${pdfDoc.numPages}`;
+                }
+            });
+        }, { threshold: 0.5 });
+
+        let renderTimeout = null;
+        function debouncedRenderAll() {
+            if (renderTimeout) clearTimeout(renderTimeout);
+            renderTimeout = setTimeout(() => {
+                renderAllPages();
+            }, 300);
+        }
+
+        function applyZoom(newScale, pointerX = container.clientWidth / 2, pointerY = container.clientHeight / 2) {
+            let oldScale = scale;
+            scale = Math.min(Math.max(0.2, newScale), 5.0);
+            if (scale === oldScale) return; // Don't do anything if hitting limits
+            let ratio = scale / oldScale;
+            
+            let absX = container.scrollLeft + pointerX;
+            let absY = container.scrollTop + pointerY;
+            
+            pageWrappers.forEach(w => {
+                let newW = parseFloat(w.dataset.baseWidth) * scale;
+                let newH = parseFloat(w.dataset.baseHeight) * scale;
+                w.style.width = newW + "px";
+                w.style.height = newH + "px";
+                
+                let canvas = w.querySelector('canvas');
+                if (canvas) {
+                    canvas.style.width = newW + "px";
+                    canvas.style.height = newH + "px";
+                }
+                
+                let tl = w.querySelector('.textLayer');
+                if (tl) {
+                    tl.style.width = newW + "px";
+                    tl.style.height = newH + "px";
+                }
+            });
+            
+            container.scrollLeft = (absX * ratio) - pointerX;
+            container.scrollTop = (absY * ratio) - pointerY;
+            
+            debouncedRenderAll();
+        }
+
+        document.getElementById('zoom-in').addEventListener('click', () => applyZoom(scale + 0.25));
+        document.getElementById('zoom-out').addEventListener('click', () => applyZoom(scale - 0.25));
+
+        // Sidebar logic
+        const sidebar = document.getElementById('sidebar');
+        document.getElementById('sidebar-toggle').addEventListener('click', () => {
+            if (sidebar.style.display === 'none' || sidebar.style.display === '') {
+                sidebar.style.display = 'flex';
+                if (!sidebar.dataset.loaded && pdfDoc) {
+                    renderThumbnails();
+                    sidebar.dataset.loaded = "true";
+                }
+            } else {
+                sidebar.style.display = 'none';
+            }
+        });
+
+        function renderThumbnails() {
+            sidebar.innerHTML = '';
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                let thumb = document.createElement('div');
+                thumb.className = 'thumb-wrapper';
+                
+                let canvas = document.createElement('canvas');
+                let label = document.createElement('span');
+                label.className = 'thumb-label';
+                label.textContent = i;
+                
+                thumb.appendChild(canvas);
+                thumb.appendChild(label);
+                sidebar.appendChild(thumb);
+                
+                thumb.addEventListener('click', () => {
+                    let targetWrapper = document.querySelector(`.page-wrapper[data-page-number="${i}"]`);
+                    if (targetWrapper) {
+                        targetWrapper.scrollIntoView({ behavior: 'smooth' });
+                    }
+                });
+                
+                pdfDoc.getPage(i).then(page => {
+                    let viewport = page.getViewport({ scale: 1.0 });
+                    let thumbScale = 120 / viewport.width;
+                    let scaledViewport = page.getViewport({ scale: thumbScale });
+                    canvas.width = scaledViewport.width;
+                    canvas.height = scaledViewport.height;
+                    page.render({
+                        canvasContext: canvas.getContext('2d'),
+                        viewport: scaledViewport
+                    });
+                });
+            }
+        }
+
+        let currentTool = 'select';
+        const toolColor = document.getElementById('tool-color');
+        const colorWrapper = document.getElementById('color-wrapper');
+        const toolSize = document.getElementById('tool-size');
+        const toolbarSep = document.querySelector('.toolbar-sep');
+        
+        function updateToolMode() {
+            document.querySelectorAll('.anno-layer').forEach(svg => {
+                svg.classList.remove('mode-draw', 'mode-select', 'mode-highlight');
+                if (currentTool === 'box' || currentTool === 'draw' || currentTool === 'text') {
+                    svg.classList.add('mode-draw');
+                } else if (currentTool === 'eraser' || currentTool === 'select') {
+                    svg.classList.add('mode-select');
+                } else if (currentTool === 'highlight' || currentTool === 'underline') {
+                    svg.classList.add('mode-highlight');
+                } else {
+                    svg.classList.add('mode-select');
+                }
+            });
+            document.querySelectorAll('.textLayer').forEach(tl => {
+                tl.style.pointerEvents = (currentTool === 'box' || currentTool === 'draw' || currentTool === 'text') ? 'none' : 'auto';
+            });
+        }
+
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tool = btn.dataset.tool;
+                if (currentTool === tool && tool !== 'select') {
+                    // Switch back to select if clicking the active tool again
+                    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelector('.tool-btn[data-tool="select"]').classList.add('active');
+                    currentTool = 'select';
+                    toolbarSep.style.display = 'none';
+                    colorWrapper.style.display = 'none';
+                    toolSize.style.display = 'none';
+                } else {
+                    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+                    currentTool = tool;
+                    btn.classList.add('active');
+                    toolbarSep.style.display = 'block';
+                    colorWrapper.style.display = 'flex';
+                    
+                    if (tool === 'highlight') {
+                        colorWrapper.style.display = 'flex';
+                        toolColor.value = '#ffff00';
+                        toolSize.style.display = 'none';
+                    } else if (tool === 'underline') {
+                        colorWrapper.style.display = 'flex';
+                        toolColor.value = '#ff0000';
+                        toolSize.value = 2;
+                        toolSize.style.display = 'block';
+                    } else if (tool === 'eraser') {
+                        colorWrapper.style.display = 'none';
+                        toolSize.style.display = 'none';
+                    } else if (tool === 'select') {
+                        colorWrapper.style.display = 'none';
+                        toolSize.style.display = 'none';
+                    } else if (tool === 'text') {
+                        colorWrapper.style.display = 'flex';
+                        toolColor.value = '#000000';
+                        toolSize.value = 16;
+                        toolSize.style.display = 'block';
+                    } else {
+                        colorWrapper.style.display = 'flex';
+                        toolColor.value = '#000000';
+                        toolSize.value = 2;
+                        toolSize.style.display = 'block';
+                    }
+                }
+                updateToolMode();
+            });
+        });
+
+        window.addEventListener('wheel', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                let zoomFactor = Math.exp(-e.deltaY * 0.01);
+                let rect = container.getBoundingClientRect();
+                applyZoom(scale * zoomFactor, e.clientX - rect.left, e.clientY - rect.top);
+            }
+        }, { passive: false });
+
+        let pageWrappers = [];
+        let selectedAnno = null;
+        let selectionBox = null;
+        
+        function clearSelection() {
+            if (selectedAnno) {
+                if (selectedAnno.classList) selectedAnno.classList.remove('selected-anno');
+                selectedAnno = null;
+            }
+            if (selectionBox) {
+                if (selectionBox.parentNode) selectionBox.parentNode.removeChild(selectionBox);
+                try { selectionBox.remove(); } catch(e) {}
+                selectionBox = null;
+            }
+        }
+        
+        function updateSelectionBox(anno, svg) {
+            if (selectionBox) selectionBox.remove();
+            let bbox = anno.getBBox();
+            selectionBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            selectionBox.setAttribute("class", "selection-box");
+            selectionBox.setAttribute("x", bbox.x - 4);
+            selectionBox.setAttribute("y", bbox.y - 4);
+            selectionBox.setAttribute("width", bbox.width + 8);
+            selectionBox.setAttribute("height", bbox.height + 8);
+            selectionBox.setAttribute("fill", "none");
+            selectionBox.setAttribute("stroke", "#0066cc");
+            selectionBox.setAttribute("stroke-width", "2");
+            selectionBox.setAttribute("stroke-dasharray", "4 2");
+            selectionBox.style.pointerEvents = "none";
+            svg.appendChild(selectionBox);
+        }
+        
+                document.addEventListener('mousedown', (e) => {
+            if (currentTool === 'select' && selectedAnno) {
+                if (!e.target.closest('.anno-layer')) {
+                    clearSelection();
+                }
+            }
+        });
+        
+        
+
+                        let undoStack = [];
+        let redoStack = [];
+
+        function getDomSnapshot() {
+            let annos = {};
+            pageWrappers.forEach(w => {
+                let num = w.dataset.pageNumber;
+                let svg = w.querySelector('.anno-layer');
+                if (svg) {
+                    let selBox = svg.querySelector('.selection-box');
+                    if (selBox) selBox.remove();
+                    annos[num] = svg.innerHTML;
+                    if (selBox && selectedAnno) svg.appendChild(selBox);
+                }
+            });
+            return annos;
+        }
+
+        
+        
+        document.addEventListener('mousedown', (e) => {
+            if (selectedAnno) {
+                if (!e.target.closest('.anno-layer') && !e.target.closest('.tool-btn')) {
+                    clearSelection();
+                }
+            }
+        });
+        
+        function clearSelection() {
+            if (selectedAnno) {
+                if (selectedAnno.classList) selectedAnno.classList.remove('selected-anno');
+                selectedAnno = null;
+            }
+            if (selectionBox) {
+                if (selectionBox.parentNode) selectionBox.parentNode.removeChild(selectionBox);
+                try { selectionBox.remove(); } catch(e) {}
+                selectionBox = null;
+            }
+        }
+        
+
+
+        
+
+let saveTimeout = null;
+        function saveAnnotations(action = 'push') {
+            if (!paperId) return;
+            
+            let newSnapshot = getDomSnapshot();
+            
+            if (action === 'push') {
+                let newStr = JSON.stringify(newSnapshot);
+                let oldStr = JSON.stringify(savedAnnotations);
+                if (newStr !== oldStr) {
+                    undoStack.push(JSON.parse(oldStr || '{}'));
+                    if (undoStack.length > 50) undoStack.shift();
+                    redoStack = [];
+                }
+            }
+            
+            savedAnnotations = JSON.parse(JSON.stringify(newSnapshot));
+            
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                fetch('/api/annotations', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ paper_id: paperId, annotations: newSnapshot })
+                }).catch(e => console.error('Error saving annotations', e));
+            }, 300);
+        }
+
+        window.addEventListener('keydown', (e) => {
+            let ctrl = e.ctrlKey || e.metaKey;
+            let key = e.key ? e.key.toLowerCase() : '';
+            let code = e.code || '';
+            
+            if (e.key === 'Backspace' || e.key === 'Delete') {
+                if (selectedAnno) {
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+                    e.preventDefault();
+                    selectedAnno.remove();
+                    clearSelection();
+                    saveAnnotations();
+                }
+            } else if (ctrl && (( (key === 'z' || code === 'KeyZ') && e.shiftKey) || key === 'y' || code === 'KeyY')) {
+                e.preventDefault();
+                if (redoStack.length > 0) {
+                    let snapshot = redoStack.pop();
+                    undoStack.push(JSON.parse(JSON.stringify(savedAnnotations)));
+                    savedAnnotations = snapshot;
+                    pageWrappers.forEach(w => {
+                        let num = w.dataset.pageNumber;
+                        let svg = w.querySelector('.anno-layer');
+                        if (svg) {
+                            svg.innerHTML = snapshot[num] || '';
+                            rebindSvgEvents(svg, w);
+                        }
+                    });
+                    clearSelection();
+                    saveAnnotations('none');
+                }
+            } else if (ctrl && (key === 'z' || code === 'KeyZ') && !e.shiftKey) {
+                e.preventDefault();
+                if (undoStack.length > 0) {
+                    let snapshot = undoStack.pop();
+                    redoStack.push(JSON.parse(JSON.stringify(savedAnnotations)));
+                    savedAnnotations = snapshot;
+                    pageWrappers.forEach(w => {
+                        let num = w.dataset.pageNumber;
+                        let svg = w.querySelector('.anno-layer');
+                        if (svg) {
+                            svg.innerHTML = snapshot[num] || '';
+                            rebindSvgEvents(svg, w);
+                        }
+                    });
+                    clearSelection();
+                    saveAnnotations('none');
+                }
+            }
+        });
+
+let isInitialSetup = true;
+
+        
+        function rebindSvgEvents(svg, wrapper) {
+            svg.querySelectorAll('foreignObject').forEach(fo => {
+                let container = fo.firstElementChild;
+                if (!container) return;
+                let input = container.firstElementChild;
+                let scaleHandle = container.lastElementChild;
+                if (!input || !scaleHandle) return;
+                
+                scaleHandle.addEventListener('mousedown', (ev) => {
+                    ev.stopPropagation(); 
+                    let startY = ev.clientY;
+                    let startSize = parseFloat(input.style.fontSize);
+                    
+                    let onMove = (mv) => {
+                        let diff = (mv.clientY - startY) / scale;
+                        let newSize = Math.max(8, startSize + diff);
+                        input.style.fontSize = newSize + "px";
+                    };
+                    let onUp = () => {
+                        window.removeEventListener('mousemove', onMove);
+                        window.removeEventListener('mouseup', onUp);
+                        saveAnnotations();
+                    };
+                    window.addEventListener('mousemove', onMove);
+                    window.addEventListener('mouseup', onUp);
+                });
+                
+                container.addEventListener('mouseenter', () => { 
+                    container.style.border = "1px dotted #aaa"; 
+                    scaleHandle.style.opacity = "1";
+                });
+                container.addEventListener('mouseleave', () => { 
+                    container.style.border = "1px dotted transparent"; 
+                    scaleHandle.style.opacity = "0";
+                });
+                
+                input.addEventListener('blur', () => {
+                    if (input.innerText.trim() === '') {
+                        fo.remove();
+                    }
+                    saveAnnotations();
+                });
+            });
+        }
+
+        // Setup mouse events for freehand drawing, boxes, and text
+        function setupSvgEvents(svg, wrapper) {
+            let isDrawing = false;
+            let currentShape = null;
+            let dragTarget = null;
+            let dragOffsetX = 0;
+            let dragOffsetY = 0;
+
+            svg.addEventListener('mousedown', (e) => {
+                if (currentTool === 'eraser') {
+                    if (e.target === svg) return;
+                    e.stopPropagation();
+                    let target = e.target.closest('g.anno-group') || e.target.closest('foreignObject') || e.target;
+                    target.remove();
+                    saveAnnotations();
+                    return;
+                }
+                
+                if (currentTool === 'select') {
+                    if (e.target === svg) {
+                        clearSelection();
+                    } else {
+                        clearSelection();
+                        selectedAnno = e.target.closest('g.anno-group') || e.target.closest('foreignObject') || e.target;
+                        if (selectedAnno !== svg) {
+                            updateSelectionBox(selectedAnno, svg);
+                        }
+                    }
+                }
+                
+                // Check if interacting with an existing text box
+                let fo = e.target.closest('foreignObject');
+                if (fo) {
+                    e.stopPropagation(); // Prevents creating a new textbox or drawing
+                    // If they clicked the boundary (not the text itself), initiate drag
+                    if (!e.target.isContentEditable) {
+                        dragTarget = fo;
+                        let rect = svg.getBoundingClientRect();
+                        let curX = parseFloat(fo.getAttribute("x"));
+                        let curY = parseFloat(fo.getAttribute("y"));
+                        let mx = (e.clientX - rect.left) / scale;
+                        let my = (e.clientY - rect.top) / scale;
+                        dragOffsetX = mx - curX;
+                        dragOffsetY = my - curY;
+                    }
+                    return;
+                }
+
+                if (!currentTool || currentTool === 'highlight' || currentTool === 'underline') return;
+                
+                let rect = svg.getBoundingClientRect();
+                let x = (e.clientX - rect.left) / scale;
+                let y = (e.clientY - rect.top) / scale;
+                
+                if (currentTool === 'text') {
+                    let fo = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
+                    fo.setAttribute("x", x);
+                    fo.setAttribute("y", y);
+                    fo.setAttribute("width", 1000);
+                    fo.setAttribute("height", 1000);
+                    fo.style.pointerEvents = "none";
+                    
+                    let container = document.createElement("div");
+                    container.style.display = "inline-block";
+                    container.style.position = "relative";
+                    container.style.pointerEvents = "auto";
+                    container.style.padding = "4px"; // Tighter padding
+                    container.style.cursor = "move";
+                    container.style.border = "1px dotted transparent"; // Lighter border style
+                    
+                    let input = document.createElement("div");
+                    input.contentEditable = true;
+                    input.style.cursor = "text";
+                    input.style.color = toolColor.value;
+                    input.style.fontSize = toolSize.value + "px";
+                    input.style.fontFamily = "sans-serif";
+                    input.style.outline = "none";
+                    input.style.minWidth = "1ch"; // Tightest possible width
+                    input.style.minHeight = "1em"; // Tightest possible height
+                    input.style.lineHeight = "1.2";
+                    input.style.whiteSpace = "nowrap";
+                    
+                    let scaleHandle = document.createElement("div");
+                    scaleHandle.style.position = "absolute";
+                    scaleHandle.style.right = "-4px";
+                    scaleHandle.style.bottom = "-4px";
+                    scaleHandle.style.width = "8px"; // Smaller handle
+                    scaleHandle.style.height = "8px"; // Smaller handle
+                    scaleHandle.style.background = "#aaa"; // Discrete grey color
+                    scaleHandle.style.cursor = "nwse-resize";
+                    scaleHandle.style.borderRadius = "50%";
+                    scaleHandle.style.opacity = "0";
+                    scaleHandle.style.transition = "opacity 0.2s";
+                    
+                    scaleHandle.addEventListener('mousedown', (ev) => {
+                        ev.stopPropagation(); // Prevents dragging the whole box
+                        let startY = ev.clientY;
+                        let startSize = parseFloat(input.style.fontSize);
+                        
+                        let onMove = (mv) => {
+                            let diff = (mv.clientY - startY) / scale;
+                            let newSize = Math.max(8, startSize + diff);
+                            input.style.fontSize = newSize + "px";
+                        };
+                        let onUp = () => {
+                            window.removeEventListener('mousemove', onMove);
+                            window.removeEventListener('mouseup', onUp);
+                        };
+                        window.addEventListener('mousemove', onMove);
+                        window.addEventListener('mouseup', onUp);
+                    });
+                    
+                    container.appendChild(input);
+                    container.appendChild(scaleHandle);
+                    fo.appendChild(container);
+                    svg.appendChild(fo);
+                    
+                    // Hover effects for the boundary and handle
+                    container.addEventListener('mouseenter', () => { 
+                        container.style.border = "1px dotted #aaa"; 
+                        scaleHandle.style.opacity = "1";
+                    });
+                    container.addEventListener('mouseleave', () => { 
+                        container.style.border = "1px dotted transparent"; 
+                        scaleHandle.style.opacity = "0";
+                    });
+                    
+                    // Delete if empty on blur
+                    input.addEventListener('blur', () => {
+                        if (input.innerText.trim() === '') {
+                            fo.remove();
+                        }
+                    });
+                    
+                    setTimeout(() => input.focus(), 10);
+                    return;
+                }
+
+                isDrawing = true;
+                if (currentTool === 'draw') {
+                    currentShape = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                    currentShape.setAttribute("d", `M ${x} ${y}`);
+                    currentShape.setAttribute("stroke", toolColor.value);
+                    currentShape.setAttribute("stroke-width", toolSize.value);
+                    currentShape.setAttribute("fill", "none");
+                    currentShape.setAttribute("stroke-linecap", "round");
+                    currentShape.setAttribute("stroke-linejoin", "round");
+                } else if (currentTool === 'box') {
+                    currentShape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    currentShape.setAttribute("x", x);
+                    currentShape.setAttribute("y", y);
+                    currentShape.setAttribute("width", 0);
+                    currentShape.setAttribute("height", 0);
+                    currentShape.setAttribute("stroke", toolColor.value);
+                    currentShape.setAttribute("stroke-width", toolSize.value);
+                    currentShape.setAttribute("fill", "none");
+                    currentShape.dataset.startX = x;
+                    currentShape.dataset.startY = y;
+                }
+                svg.appendChild(currentShape);
+            });
+
+            svg.addEventListener('mousemove', (e) => {
+                let rect = svg.getBoundingClientRect();
+                let x = (e.clientX - rect.left) / scale;
+                let y = (e.clientY - rect.top) / scale;
+
+                if (dragTarget) {
+                    dragTarget.setAttribute("x", x - dragOffsetX);
+                    dragTarget.setAttribute("y", y - dragOffsetY);
+                    return;
+                }
+
+                if (!isDrawing || !currentShape) return;
+
+                if (currentTool === 'draw') {
+                    let d = currentShape.getAttribute("d");
+                    currentShape.setAttribute("d", `${d} L ${x} ${y}`);
+                } else if (currentTool === 'box') {
+                    let startX = parseFloat(currentShape.dataset.startX);
+                    let startY = parseFloat(currentShape.dataset.startY);
+                    currentShape.setAttribute("x", Math.min(x, startX));
+                    currentShape.setAttribute("y", Math.min(y, startY));
+                    currentShape.setAttribute("width", Math.abs(x - startX));
+                    currentShape.setAttribute("height", Math.abs(y - startY));
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                if (isDrawing || currentShape || dragTarget) saveAnnotations();
+                isDrawing = false;
+                currentShape = null;
+                dragTarget = null;
+            });
+        }
+
+        // Setup global mouseup for Highlight and Underline
+        document.addEventListener('mouseup', () => {
+            if (currentTool !== 'highlight' && currentTool !== 'underline') return;
+            let sel = window.getSelection();
+            if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+
+            let range = sel.getRangeAt(0);
+            let rawRects = Array.from(range.getClientRects());
+            
+            // Keep only the smallest innermost text rects (discard large paragraph bounding boxes)
+            let rects = rawRects.filter((r1, i) => {
+                if (r1.width < 1 || r1.height < 1) return false;
+                return !rawRects.some((r2, j) => {
+                    if (i === j) return false;
+                    
+                    let isIdentical = Math.abs(r1.left - r2.left) < 1 && Math.abs(r1.right - r2.right) < 1 &&
+                                      Math.abs(r1.top - r2.top) < 1 && Math.abs(r1.bottom - r2.bottom) < 1;
+                    if (isIdentical) {
+                        return i > j; // Deduplicate identical rects
+                    }
+                    
+                    // Discard r1 if it completely CONTAINS r2 (meaning r1 is a big wrapper block)
+                    let r1ContainsR2 = r1.left <= r2.left + 1 && r1.right >= r2.right - 1 &&
+                                       r1.top <= r2.top + 1 && r1.bottom >= r2.bottom - 1;
+                    return r1ContainsR2;
+                });
+            });
+            
+            let wrapper = sel.anchorNode.parentElement.closest('.page-wrapper');
+            if (!wrapper) return;
+            
+            let svg = wrapper.querySelector('.anno-layer');
+            let wrapperRect = wrapper.getBoundingClientRect();
+
+            let group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            group.classList.add('anno-group');
+            for (let i = 0; i < rects.length; i++) {
+                let r = rects[i];
+                let x = (r.left - wrapperRect.left) / scale;
+                let y = (r.top - wrapperRect.top) / scale;
+                let w = r.width / scale;
+                let h = r.height / scale;
+
+                if (currentTool === 'highlight') {
+                    let rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    rect.setAttribute("x", x);
+                    rect.setAttribute("y", y);
+                    rect.setAttribute("width", w);
+                    rect.setAttribute("height", h);
+                    rect.setAttribute("fill", toolColor.value);
+                    rect.setAttribute("fill-opacity", 0.8);
+                    group.appendChild(rect);
+                } else if (currentTool === 'underline') {
+                    let line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                    line.setAttribute("x1", x);
+                    line.setAttribute("y1", y + h);
+                    line.setAttribute("x2", x + w);
+                    line.setAttribute("y2", y + h);
+                    line.setAttribute("stroke", toolColor.value);
+                    line.setAttribute("stroke-width", toolSize.value);
+                    group.appendChild(line);
+                    
+                    let hitbox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    hitbox.setAttribute("x", x);
+                    hitbox.setAttribute("y", y);
+                    hitbox.setAttribute("width", w);
+                    hitbox.setAttribute("height", h);
+                    hitbox.setAttribute("fill", "transparent");
+                    group.appendChild(hitbox);
+                }
+            }
+            svg.appendChild(group);
+            sel.removeAllRanges();
+            saveAnnotations();
+        });
+
+        function renderPage(num) {
+            return pdfDoc.getPage(num).then(function(page) {
+                let viewport = page.getViewport({scale: scale});
+                
+                let wrapper;
+                if (isInitialSetup || !pageWrappers[num - 1]) {
+                    wrapper = document.createElement('div');
+                    wrapper.className = 'page-wrapper';
+                    wrapper.dataset.baseWidth = viewport.width / scale;
+                    wrapper.dataset.baseHeight = viewport.height / scale;
+                    wrapper.dataset.pageNumber = num;
+                    wrapper.style.width = Math.floor(viewport.width) + "px";
+                    wrapper.style.height = Math.floor(viewport.height) + "px";
+                    container.appendChild(wrapper);
+                    pageWrappers[num - 1] = wrapper;
+                    pageObserver.observe(wrapper);
+                    
+                    // Create persistent SVG annotation layer
+                    let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                    svg.setAttribute("class", "anno-layer");
+                    svg.style.width = "100%";
+                    svg.style.height = "100%";
+                    svg.setAttribute("viewBox", `0 0 ${wrapper.dataset.baseWidth} ${wrapper.dataset.baseHeight}`);
+                    if (savedAnnotations[num]) {
+                        svg.innerHTML = savedAnnotations[num];
+                        rebindSvgEvents(svg, wrapper);
+                    }
+                    setupSvgEvents(svg, wrapper);
+                    wrapper.appendChild(svg);
+                } else {
+                    wrapper = pageWrappers[num - 1];
+                    let oldCanvas = wrapper.querySelector('canvas');
+                    let oldText = wrapper.querySelector('.textLayer');
+                    if (oldCanvas) oldCanvas.remove();
+                    if (oldText) oldText.remove();
+                }
+
+                let canvas = document.createElement('canvas');
+                let ctx = canvas.getContext('2d');
+                
+                let outputScale = window.devicePixelRatio || 1;
+                const MAX_DIMENSION = 8192;
+                if ((viewport.width * outputScale) > MAX_DIMENSION || (viewport.height * outputScale) > MAX_DIMENSION) {
+                    let squeezeRatio = Math.min(MAX_DIMENSION / (viewport.width * outputScale), MAX_DIMENSION / (viewport.height * outputScale));
+                    outputScale *= squeezeRatio;
+                }
+
+                canvas.width = Math.floor(viewport.width * outputScale);
+                canvas.height = Math.floor(viewport.height * outputScale);
+                canvas.style.width = Math.floor(viewport.width) + "px";
+                canvas.style.height = Math.floor(viewport.height) + "px";
+                
+                let transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+
+                let renderContext = {
+                    canvasContext: ctx,
+                    transform: transform,
+                    viewport: viewport
+                };
+                
+                // Insert canvas BEFORE the svg so svg stays on top
+                wrapper.insertBefore(canvas, wrapper.querySelector('.anno-layer'));
+                
+                return page.render(renderContext).promise.then(() => {
+                    return page.getTextContent();
+                }).then((textContent) => {
+                    let textLayerDiv = document.createElement("div");
+                    textLayerDiv.className = "textLayer";
+                    textLayerDiv.style.width = Math.floor(viewport.width) + "px";
+                    textLayerDiv.style.height = Math.floor(viewport.height) + "px";
+                    textLayerDiv.style.setProperty('--scale-factor', viewport.scale);
+                    
+                    textLayerDiv.style.position = 'absolute';
+                    textLayerDiv.style.left = '0';
+                    textLayerDiv.style.top = '0';
+                    textLayerDiv.style.opacity = '1';
+
+                    // Insert textLayer BEFORE svg so svg stays on top
+                    wrapper.insertBefore(textLayerDiv, wrapper.querySelector('.anno-layer'));
+
+                    pdfjsLib.renderTextLayer({
+                        textContentSource: textContent,
+                        container: textLayerDiv,
+                        viewport: viewport,
+                        textDivs: []
+                    });
+                });
+            });
+        }
+
+        let currentRenderTask = 0;
+        function renderAllPages() {
+            currentRenderTask++;
+            let taskId = currentRenderTask;
+            let promise = Promise.resolve();
+            
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                promise = promise.then(() => {
+                    if (taskId !== currentRenderTask) return Promise.resolve(); // cancel old renders if zooming fast
+                    return renderPage(i);
+                });
+            }
+            promise.then(() => { if (taskId === currentRenderTask) isInitialSetup = false; });
+        }
+
+        pdfjsLib.getDocument(pdfUrl).promise.then(function(pdfDoc_) {
+            pdfDoc = pdfDoc_;
+            renderAllPages();
+        }).catch(err => {
+            console.error(err);
+            document.getElementById('pdf-container').innerHTML = `<h2 style="color:white;">Error loading PDF: ${err.message}</h2>`;
+        });
+        }
+    }
+  </script>
+</body>
+</html>
