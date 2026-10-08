@@ -1,117 +1,36 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <link rel="icon" type="image/x-icon" href="/favicon.ico">
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zotero Clone</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Library — Zotero Clone</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <link rel="alternate icon" href="/favicon.ico">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/items.css">
+  <link rel="stylesheet" href="css/itempane.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <script>
+    // apply the cached theme before first paint to avoid a white flash
+    try {
+      const t = localStorage.getItem('zc.themeHint');
+      if (t) document.documentElement.dataset.theme = JSON.parse(t);
+    } catch (e) {}
+  </script>
 </head>
 <body>
-    <div id="top-toolbar">
-        <div class="toolbar-group">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M6 2v12"/></svg>
-            <span style="font-size:14px; font-weight:500;">My Library</span>
-                        <button id="btn-new-item" title="New Item" style="margin-left: 10px; background: transparent; border: 1px solid #ccc; border-radius: 4px; padding: 2px 4px; cursor: pointer; display: flex; align-items: center;">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7 7V2h2v5h5v2H9v5H7V9H2V7h5z"/></svg>
-            </button>
-            <button id="btn-magic-wand" title="Add item by Identifier (DOI, etc.)" style="margin-left: 4px; background: transparent; border: 1px solid #ccc; border-radius: 4px; padding: 2px 4px; cursor: pointer; display: flex; align-items: center;">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14l5-5M11.5 2.5a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM10.5 6.5l-2-2M13.5 3.5l-1-1"/></svg>
-            </button>
-        </div>
-        <div class="search-box">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#888" stroke-width="2"><circle cx="7" cy="7" r="5"/><path d="M11 11l4 4"/></svg>
-            <input type="text" id="search-input" placeholder="Title, Creator, Year">
-        </div>
-    </div>
-    
-        <div id="main-content">
-        <div id="middle-pane">
-            <div class="list-header" id="list-header-container" style="position: relative; user-select: none; cursor: default;">
-                <div class="list-header-col col-attachments" data-sort="attachments" style="cursor: default; text-align: center;"><svg width="12" height="12" viewBox="0 0 16 16" stroke="#999"><path stroke-width="1.5" fill="none" d="M3 2v12h10V6l-4-4H3z"/><path fill="none" d="M9 2v4h4"/></svg><span class="sort-indicator"></span></div>
-                <div class="list-header-col col-title" data-sort="title" style="cursor: default;">Title <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-creator" data-sort="authors" style="cursor: default;">Creator <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-type" data-sort="item_type" style="cursor: default;">Item Type <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-year" data-sort="year" style="cursor: default;">Year <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-journal" data-sort="journal" style="display:none; cursor: default;">Journal <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-added" data-sort="id" style="cursor: default;">Date Added <span class="sort-indicator"></span></div>
-                
-                <div class="list-header-col col-citation_key" data-sort="citation_key" style="display:none; cursor: default;">Citation Key <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-pmid" data-sort="pmid" style="display:none; cursor: default;">PMID <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-pmcid" data-sort="pmcid" style="display:none; cursor: default;">PMCID <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-issn" data-sort="issn" style="display:none; cursor: default;">ISSN <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-isbn" data-sort="isbn" style="display:none; cursor: default;">ISBN <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-doi" data-sort="doi" style="display:none; cursor: default;">DOI <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-url" data-sort="url" style="display:none; cursor: default;">URL <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-archive" data-sort="archive" style="display:none; cursor: default;">Archive <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-archive_id" data-sort="archive_id" style="display:none; cursor: default;">Archive ID <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-short_title" data-sort="short_title" style="display:none; cursor: default;">Short Title <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-language" data-sort="language" style="display:none; cursor: default;">Language <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-library_catalog" data-sort="library_catalog" style="display:none; cursor: default;">Library Catalog <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-call_number" data-sort="call_number" style="display:none; cursor: default;">Call Number <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-license" data-sort="license" style="display:none; cursor: default;">License <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-extra" data-sort="extra" style="display:none; cursor: default;">Extra <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-series" data-sort="series" style="display:none; cursor: default;">Series <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-edition" data-sort="edition" style="display:none; cursor: default;">Edition <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-place" data-sort="place" style="display:none; cursor: default;">Place <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-publisher" data-sort="publisher" style="display:none; cursor: default;">Publisher <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-volume" data-sort="volume" style="display:none; cursor: default;">Volume <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-issue" data-sort="issue" style="display:none; cursor: default;">Issue <span class="sort-indicator"></span></div>
-                <div class="list-header-col col-pages" data-sort="pages" style="display:none; cursor: default;">Pages <span class="sort-indicator"></span></div>
-            </div>
-            
-            <div id="column-picker-menu" style="display: none; position: absolute; background: white; border: 1px solid #ccc; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 1000; padding: 4px 0; font-size: 13px;">
-                <!-- Populated via JS -->
-            </div>
-            <div id="papers-list">
-                <!-- Papers populated via JS -->
-            </div>
-        </div>
-        
-        <div id="resizer-right" class="pane-resizer"></div>
-        <div id="right-pane">
-            <div class="details-header">
-                <div class="details-title" id="details-title-display">Select an item</div>
-                <div class="details-tabs">
-                    <span class="details-tab active">Info</span>
-                    
-                </div>
-            </div>
-            <div id="paper-details">
-                <div class="placeholder">Select an item to view its details.</div>
-            </div>
-        </div>
-    </div>
-    
-    <div id="context-menu">
-        <div id="cm-fetch-metadata">Fetch Metadata</div>
-        <div id="cm-find-pdf">Find PDF Online</div>
-        <hr style="margin: 4px 0; border: none; border-top: 1px solid #ccc;">
-        <div id="cm-add-attachment">Add Attachment (Local PDF)...</div>
-        <div id="cm-delete-paper" style="color:red;">Move Item to Trash</div>
-    </div>
-    <input type="file" id="hidden-file-input" accept="application/pdf" style="display:none;">
-    
-    <script src="app.js"></script>
-    <div id="context-menu-att" style="display: none; position: absolute; background: white; border: 1px solid #ccc; box-shadow: 0 4px 8px rgba(0,0,0,0.15); z-index: 1000; padding: 4px 0; border-radius: 4px; min-width: 150px;">
-        <div id="cm-rename-attachment" style="padding: 6px 15px; font-size: 13px; cursor: pointer;">Rename Attachment...</div>
-        <div id="cm-delete-attachment" style="padding: 6px 15px; font-size: 13px; cursor: pointer; color: red;">Delete Attachment</div>
-    </div>
-
-    <!-- Metadata Diff Modal -->
-    <div id="metadata-modal-overlay" class="modal-overlay">
-        <div class="modal-content">
-            <div class="modal-header">Review Metadata Updates</div>
-            <div class="modal-subtitle">Review the fetched data. You can manually edit the fields below before saving, or click "Revert" to keep your original value.</div>
-            <div class="modal-body" id="metadata-diff-body">
-                <!-- Populated by JS -->
-            </div>
-            <div class="modal-footer">
-                <button id="btn-modal-cancel" class="btn-modal" style="margin-right: 8px;">Cancel</button>
-                <button id="btn-modal-apply" class="btn-modal btn-primary">Apply Updates</button>
-            </div>
-        </div>
-    </div>
-
+  <header id="toolbar"></header>
+  <div id="app">
+    <nav id="sidebar" aria-label="Collections"></nav>
+    <main id="items-pane"></main>
+    <div id="resizer-right" class="pane-resizer" title="Drag to resize, double-click to hide"></div>
+    <aside id="item-pane" aria-label="Item details"></aside>
+  </div>
+  <footer id="statusbar"></footer>
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

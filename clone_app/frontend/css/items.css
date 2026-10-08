@@ -1,0 +1,59 @@
+.items-scroll { flex: 1; overflow: auto; position: relative; outline: none; }
+.items-table { width: 100%; }
+
+.items-head, .row { display: grid; grid-template-columns: var(--cols); min-width: 100%; }
+
+.items-head {
+  position: sticky; top: 0; z-index: 3; height: 30px; background: var(--bg); border-bottom: 1px solid var(--border);
+  font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); user-select: none;
+}
+.head-cell {
+  position: relative; display: flex; align-items: center; gap: 4px; padding: 0 10px; min-width: 0;
+  white-space: nowrap; overflow: hidden; cursor: default;
+}
+.head-cell:hover { background: var(--bg-hover); color: var(--text); }
+.head-cell .label { overflow: hidden; text-overflow: ellipsis; }
+.head-cell .sort { color: var(--accent); font-size: 9px; }
+.head-cell.sorted { color: var(--text); }
+.head-cell.drag-over { box-shadow: inset 2px 0 0 var(--accent); }
+.head-cell.dragging { opacity: .4; }
+.head-cell .grip { position: absolute; right: 0; top: 6px; bottom: 6px; width: 7px; cursor: col-resize; z-index: 2; }
+.head-cell .grip::after { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 1px; background: var(--border); }
+.head-cell .grip:hover::after { background: var(--accent); width: 2px; }
+.head-cell[data-col="attachments"] { justify-content: center; padding: 0; }
+
+.row {
+  height: var(--row-h); align-items: center; cursor: default; font-size: var(--fs);
+  border-bottom: 1px solid transparent; user-select: none;
+}
+.row:nth-of-type(even) { background: var(--bg-stripe); }
+.row:hover { background: var(--bg-hover); }
+.row.selected { background: var(--bg-active); }
+.items-scroll:focus .row.selected, .items-scroll:focus-within .row.selected { background: var(--accent); color: var(--accent-text); }
+.items-scroll:focus .row.selected .cell, .items-scroll:focus-within .row.selected .cell { color: inherit; }
+.items-scroll:focus .row.selected .pdf-dot, .items-scroll:focus .row.selected .type-icon, .items-scroll:focus-within .row.selected .pdf-dot, .items-scroll:focus-within .row.selected .type-icon { color: inherit; }
+.items-scroll:focus .row.selected .badge { background: rgba(255,255,255,.22); color: inherit; }
+.row.cut { opacity: .5; }
+
+.cell { padding: 0 10px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+.cell.c-title { color: var(--text); display: flex; align-items: center; gap: 6px; font-weight: 500; padding-left: 6px; }
+.cell.c-title .t { overflow: hidden; text-overflow: ellipsis; }
+.cell.c-creator { color: var(--text); }
+.cell.c-attachments { display: flex; justify-content: center; padding: 0; }
+.twisty { width: 14px; height: 14px; flex: none; display: grid; place-items: center; border-radius: 3px; color: var(--text-3); transition: transform .12s; }
+.twisty:hover { background: rgba(127,127,127,.18); }
+.twisty.open { transform: rotate(90deg); }
+.twisty.none { visibility: hidden; }
+.type-icon { color: var(--text-3); }
+.pdf-dot { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; color: var(--pdf); cursor: pointer; }
+.pdf-dot:hover { background: rgba(224, 64, 42, .12); }
+
+.row.child { grid-template-columns: 1fr; height: calc(var(--row-h) - 2px); font-size: var(--fs-sm); background: transparent; }
+.row.child .cell { color: var(--text-2); display: flex; align-items: center; gap: 7px; padding-left: 52px; cursor: pointer; }
+.row.child .cell:hover { color: var(--accent); }
+.row.child .cell .icon { color: var(--pdf); }
+.row.child .ft-badge { margin-left: 6px; }
+.row.snippet { grid-template-columns: 1fr; height: auto; background: transparent; }
+.row.snippet .cell { white-space: normal; padding: 0 16px 6px 52px; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
+
+.list-empty { position: absolute; inset: 30px 0 0 0; }

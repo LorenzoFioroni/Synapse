@@ -1,0 +1,109 @@
+/* Design tokens: colours, spacing, typography. Light is the default; dark
+   applies with the OS setting unless the user picked a theme in Settings. */
+:root {
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --fs: 13px;
+  --fs-sm: calc(var(--fs) - 1.5px);
+  --fs-xs: calc(var(--fs) - 2.5px);
+  --fs-lg: calc(var(--fs) + 2px);
+  --row-h: 28px;
+  --radius: 8px;
+  --radius-sm: 5px;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
+  --shadow-md: 0 4px 16px rgba(15, 23, 42, .10), 0 1px 3px rgba(15, 23, 42, .06);
+  --shadow-lg: 0 20px 50px rgba(15, 23, 42, .22), 0 2px 8px rgba(15, 23, 42, .08);
+  --ease: cubic-bezier(.2, .7, .2, 1);
+
+  --bg: #ffffff;
+  --bg-app: #f6f7f9;
+  --bg-sidebar: #f1f3f6;
+  --bg-elev: #ffffff;
+  --bg-hover: #eef1f5;
+  --bg-active: #e5e9f0;
+  --bg-input: #ffffff;
+  --bg-stripe: #fafbfc;
+  --border: #e2e5ea;
+  --border-strong: #cfd4dc;
+  --text: #1c2330;
+  --text-2: #5b6576;
+  --text-3: #8a93a3;
+  --accent: #2f6fed;
+  --accent-hover: #255fd6;
+  --accent-text: #ffffff;
+  --accent-soft: #e4ecfd;
+  --accent-soft-2: #d3e0fc;
+  --danger: #d93a3a;
+  --danger-soft: #fdecec;
+  --success: #1f9d55;
+  --success-soft: #e6f6ec;
+  --warning: #b7791f;
+  --mark: #fff1a8;
+  --pdf: #e0402a;
+  --focus-ring: 0 0 0 3px rgba(47, 111, 237, .25);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1b1e24;
+    --bg-app: #16181d;
+    --bg-sidebar: #1f232a;
+    --bg-elev: #242830;
+    --bg-hover: #2a2f38;
+    --bg-active: #323844;
+    --bg-input: #15171c;
+    --bg-stripe: #1e2128;
+    --border: #2e333d;
+    --border-strong: #3c4350;
+    --text: #e6e9ef;
+    --text-2: #a4acba;
+    --text-3: #747d8c;
+    --accent: #5b8cff;
+    --accent-hover: #7aa2ff;
+    --accent-text: #0d1220;
+    --accent-soft: #263451;
+    --accent-soft-2: #2e3f63;
+    --danger: #ff6b6b;
+    --danger-soft: #3a2224;
+    --success: #4ccb7f;
+    --success-soft: #1f3529;
+    --mark: #6b5a12;
+    --focus-ring: 0 0 0 3px rgba(91, 140, 255, .35);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, .35);
+    --shadow-lg: 0 20px 50px rgba(0, 0, 0, .55);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #1b1e24;
+  --bg-app: #16181d;
+  --bg-sidebar: #1f232a;
+  --bg-elev: #242830;
+  --bg-hover: #2a2f38;
+  --bg-active: #323844;
+  --bg-input: #15171c;
+  --bg-stripe: #1e2128;
+  --border: #2e333d;
+  --border-strong: #3c4350;
+  --text: #e6e9ef;
+  --text-2: #a4acba;
+  --text-3: #747d8c;
+  --accent: #5b8cff;
+  --accent-hover: #7aa2ff;
+  --accent-text: #0d1220;
+  --accent-soft: #263451;
+  --accent-soft-2: #2e3f63;
+  --danger: #ff6b6b;
+  --danger-soft: #3a2224;
+  --success: #4ccb7f;
+  --success-soft: #1f3529;
+  --mark: #6b5a12;
+  --focus-ring: 0 0 0 3px rgba(91, 140, 255, .35);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, .35);
+  --shadow-lg: 0 20px 50px rgba(0, 0, 0, .55);
+  color-scheme: dark;
+}
+
+:root[data-density="compact"] { --row-h: 23px; }

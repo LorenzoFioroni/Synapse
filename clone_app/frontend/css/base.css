@@ -1,0 +1,41 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs);
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--bg-app);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+[hidden] { display: none !important; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
+kbd {
+  font-family: var(--font); font-size: var(--fs-xs); color: var(--text-2);
+  border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 4px;
+  padding: 0 5px; background: var(--bg-elev);
+}
+::selection { background: var(--accent-soft-2); }
+
+/* thin, unobtrusive scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+.muted { color: var(--text-2); }
+.subtle { color: var(--text-3); }
+.mono { font-family: var(--font-mono); font-size: var(--fs-sm); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.icon { width: 16px; height: 16px; flex: none; display: inline-block; vertical-align: middle; }
+.icon-sm { width: 14px; height: 14px; }
+.spacer { flex: 1; }

@@ -1,0 +1,357 @@
+// Right-hand item pane: editable metadata, authors, abstract, attachments.
+import * as A from '../actions.js';
+import { openAttachment } from '../api.js';
+import { icon, typeIcon } from '../icons.js';
+import { byId, emit, itemTypeLabel, on, selectedItems, state } from '../store.js';
+import { openMenu } from '../ui/menu.js';
+import { toast } from '../ui/toast.js';
+import { copyText, debounce, escapeHtml, formatDate, plural, shortAuthors, storage, store } from '../util.js';
+import { openExport } from './exportDialog.js';
+import { copyKeys, deleteAttachment, pickFiles, renameAttachment } from './itemlist.js';
+import { openMetadataReview } from './metadataReview.js';
+
+let root, shownId = null;
+const collapsed = new Set(storage('zc.collapsedSections', []));
+let showAllFields = storage('zc.showAllFields', false);
+
+export function initItemPane() {
+  root = document.getElementById('item-pane');
+  root.addEventListener('click', handleClick);
+  root.addEventListener('dragover', (e) => { if (shownId && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+  root.addEventListener('drop', (e) => {
+    if (shownId && e.dataTransfer.files.length && !e.defaultPrevented) { e.preventDefault(); A.uploadAttachments(shownId, e.dataTransfer.files); }
+  });
+  on('selection', render);
+  on('items', render);
+  on('item-updated', (id) => { if (id === shownId) refreshHeader(); });
+  on('focus-field', ({ id, field }) => {
+    if (shownId !== id) render(true);
+    setTimeout(() => {
+      const el = root.querySelector(`[data-field="${field}"]`);
+      if (el) { el.focus(); selectAll(el); }
+    }, 30);
+  });
+  render();
+}
+
+function selectAll(el) {
+  if (el.isContentEditable) {
+    const r = document.createRange(); r.selectNodeContents(el);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  } else el.select?.();
+}
+
+function render(force = false) {
+  const items = selectedItems();
+  if (items.length === 1) {
+    const it = items[0];
+    // don't clobber a field the user is typing in
+    if (!force && it.id === shownId && root.contains(document.activeElement) && document.activeElement !== document.body) return;
+    renderItem(it);
+  } else if (items.length > 1) {
+    shownId = null;
+    renderMulti(items);
+  } else {
+    shownId = null;
+    renderEmpty();
+  }
+}
+
+function renderEmpty() {
+  const n = state.counts[state.view] || 0;
+  root.innerHTML = `<div class="empty-state">${icon(state.view === 'trash' ? 'trash' : 'doc')}
+    <h3>${state.view === 'trash' ? 'Trash' : 'No item selected'}</h3>
+    <p class="muted">${plural(n, 'item')} ${state.view === 'trash' ? 'in the Trash' : 'in your library'}.</p></div>`;
+}
+
+function renderMulti(items) {
+  const ids = items.map((i) => i.id);
+  const trash = state.view === 'trash';
+  root.innerHTML = `<div class="multi"><div class="count">${items.length}</div><div class="muted">items selected</div>
+    <div class="actions">
+      ${trash ? `<button class="btn" data-a="restore">${icon('restore')} Restore to Library</button>
+                 <button class="btn btn-danger" data-a="delete">${icon('trash')} Delete Permanently</button>`
+    : `<button class="btn" data-a="export">${icon('export')} Export…</button>
+       <button class="btn" data-a="keys">${icon('key')} Copy Citation Keys</button>
+       <button class="btn" data-a="regen">${icon('refresh')} Regenerate Keys</button>
+       <button class="btn btn-danger" data-a="trash">${icon('trash')} Move to Trash</button>`}
+    </div></div>`;
+  root.querySelector('.actions').addEventListener('click', (e) => {
+    const a = e.target.closest('[data-a]')?.dataset.a;
+    if (a === 'export') openExport(ids);
+    if (a === 'keys') copyKeys(items);
+    if (a === 'regen') A.regenerateCitekeys(ids);
+    if (a === 'trash') A.trashSelected();
+    if (a === 'restore') A.restoreSelected();
+    if (a === 'delete') A.deleteForever(ids);
+  });
+}
+
+/* ------------------------------------------------------------ one item */
+function fieldLabel(key, type) {
+  const s = state.schema;
+  if (key === 'journal') return s.containerLabels[type] || 'Publication';
+  return s.fieldLabelOverrides[type]?.[key] || s.fields.find((f) => f.key === key)?.label || key;
+}
+
+function infoFieldKeys(it) {
+  const s = state.schema;
+  const type = it.item_type || 'journalArticle';
+  const keys = [...(s.typeFields[type] || []), ...s.commonFields.filter((k) => k !== 'abstract')];
+  const seen = new Set(keys);
+  const rare = [];
+  for (const f of s.fields) {
+    if (!f.editable || seen.has(f.key) || ['title', 'authors', 'item_type', 'abstract'].includes(f.key)) continue;
+    rare.push(f.key);
+  }
+  const rareShown = rare.filter((k) => showAllFields || (it[k] !== null && it[k] !== undefined && it[k] !== ''));
+  return { keys: [...new Set(keys)], rareShown, rareHidden: rare.length - rareShown.length };
+}
+
+function fv(key, value, { multiline = false, placeholder = '' } = {}) {
+  const v = value === null || value === undefined ? '' : String(value);
+  return `<div class="fv" contenteditable="plaintext-only" spellcheck="${multiline ? 'true' : 'false'}" data-field="${key}"
+    data-multiline="${multiline}" data-empty="${v === ''}" data-placeholder="${escapeHtml(placeholder)}">${escapeHtml(v)}</div>`;
+}
+
+function section(id, title, bodyHtml, { count = '', act = '' } = {}) {
+  return `<div class="section ${collapsed.has(id) ? 'collapsed' : ''}" data-section="${id}">
+    <button class="section-head">${icon('chevronDown', 'icon-sm chev')}${title}${count !== '' ? ` <span class="count">${count}</span>` : ''}${act ? `<span class="act">${act}</span>` : ''}</button>
+    <div class="section-body">${bodyHtml}</div></div>`;
+}
+
+function renderItem(it) {
+  shownId = it.id;
+  const type = it.item_type || 'journalArticle';
+  const trash = state.view === 'trash';
+  const { keys, rareShown, rareHidden } = infoFieldKeys(it);
+  const typeOptions = state.schema.itemTypes.map((t) => `<option value="${t.key}" ${t.key === type ? 'selected' : ''}>${escapeHtml(t.label)}</option>`).join('');
+
+  const fieldRow = (key) => {
+    let tools = '';
+    if (key === 'doi' && it.doi) tools = `<button class="icon-btn" data-tool="open-doi" title="Open DOI">${icon('open', 'icon-sm')}</button>`;
+    if (key === 'url' && it.url) tools = `<button class="icon-btn" data-tool="open-url" title="Open URL">${icon('open', 'icon-sm')}</button>`;
+    if (key === 'citation_key') tools = `<button class="icon-btn" data-tool="copy-key" title="Copy">${icon('copy', 'icon-sm')}</button><button class="icon-btn" data-tool="regen-key" title="Regenerate from pattern">${icon('refresh', 'icon-sm')}</button>`;
+    const multiline = ['extra'].includes(key);
+    return `<div class="field-row"><label title="${escapeHtml(fieldLabel(key, type))}">${escapeHtml(fieldLabel(key, type))}</label>
+      <div style="display:flex;align-items:start;gap:2px;min-width:0">${fv(key, it[key], { multiline, placeholder: '' })}${tools ? `<span class="field-tools">${tools}</span>` : ''}</div></div>`;
+  };
+
+  const authors = (it.authors || '').split(';').map((a) => a.trim()).filter(Boolean);
+  const authorRows = (authors.length ? authors : ['']).map((a) => authorRow(a)).join('');
+
+  const info = `
+    <div class="field-row"><label>Item Type</label><select class="fv" data-field="item_type">${typeOptions}</select></div>
+    <div class="field-row"><label>Title</label>${fv('title', it.title, { multiline: true, placeholder: 'Untitled' })}</div>
+    <div class="field-row"><label>Authors</label><div class="authors">${authorRows}</div></div>
+    ${keys.map(fieldRow).join('')}
+    ${rareShown.map(fieldRow).join('')}
+    <button class="more-toggle" data-tool="more">${showAllFields ? 'Show fewer fields' : (rareHidden ? `Show ${rareHidden} more fields` : '')}</button>
+    <div class="field-row"><label>Date Added</label><div class="fv readonly">${escapeHtml(formatDate(it.date_added, true))}</div></div>
+    <div class="field-row"><label>Modified</label><div class="fv readonly">${escapeHtml(formatDate(it.date_modified, true))}</div></div>`;
+
+  const atts = it.attachments || [];
+  const attHtml = `<div class="att-list">${atts.map((a) => `
+      <div class="att" data-att="${a.id}" title="Open ${escapeHtml(a.name)}">${icon('pdf')}
+        <div style="flex:1;min-width:0"><div class="att-name">${escapeHtml(a.name || 'Attachment')}</div>
+        <div class="att-meta">PDF · added ${escapeHtml(formatDate(a.date_added))}</div></div>
+        <button class="icon-btn" data-att-menu="${a.id}" title="More">${icon('drag', 'icon-sm')}</button></div>`).join('')}</div>
+    ${trash ? '' : `<div class="att-drop" data-tool="add-pdf">${icon('paperclip', 'icon-sm')} Drop a PDF here or click to attach</div>`}`;
+
+  const snippet = state.hits[it.id]?.fulltext;
+  root.innerHTML = `
+    <div class="ip-header">
+      <div class="ip-type">${typeIcon(type, 'icon-sm')} <span data-h="type">${escapeHtml(itemTypeLabel(type))}</span>${trash ? ' <span class="badge warn">In Trash</span>' : ''}</div>
+      <h2 class="ip-title" data-h="title">${escapeHtml(it.title || 'Untitled')}</h2>
+      <div class="ip-sub" data-h="sub">${escapeHtml(subline(it))}</div>
+      <div class="ip-actions">
+        ${trash ? `<button class="btn btn-sm" data-tool="restore">${icon('restore', 'icon-sm')} Restore</button>`
+    : `${atts.length ? `<button class="btn btn-sm btn-primary" data-tool="open-pdf">${icon('pdf', 'icon-sm')} Open PDF</button>`
+    : `<button class="btn btn-sm" data-tool="find-pdf" title="Look for an open-access PDF online">${icon('find', 'icon-sm')} Find PDF</button>`}
+           <button class="btn btn-sm" data-tool="metadata" title="Fetch metadata from Crossref/arXiv and review changes">${icon('sparkle', 'icon-sm')} Retrieve Metadata</button>
+           <button class="icon-btn" data-tool="more-menu" title="More actions">${icon('drag', 'icon-sm')}</button>`}
+      </div>
+    </div>
+    <div class="ip-body">
+      ${snippet && state.query ? section('fulltext', 'Full-text match', `<div class="ft-snippet">${snippet}</div>`) : ''}
+      ${section('info', 'Info', info)}
+      ${section('abstract', 'Abstract', fv('abstract', it.abstract, { multiline: true, placeholder: 'Add an abstract…' }))}
+      ${section('attachments', 'Attachments', attHtml, { count: atts.length })}
+    </div>`;
+  bindItem(it);
+}
+
+function subline(it) {
+  return [shortAuthors(it.authors), it.year, it.journal].filter(Boolean).join(' · ');
+}
+
+function refreshHeader() {
+  const it = byId(shownId);
+  if (!it) return;
+  const t = root.querySelector('[data-h="title"]');
+  if (t) t.textContent = it.title || 'Untitled';
+  const s = root.querySelector('[data-h="sub"]');
+  if (s) s.textContent = subline(it);
+  // reflect server-side changes (e.g. an auto-generated citation key) in fields not being edited
+  root.querySelectorAll('.fv[contenteditable][data-field]').forEach((el) => {
+    if (el === document.activeElement) return;
+    const v = it[el.dataset.field] == null ? '' : String(it[el.dataset.field]);
+    if (el.textContent !== v) { el.textContent = v; el.dataset.empty = v === '' ? 'true' : 'false'; }
+  });
+}
+
+function authorRow(a) {
+  const [last, first] = a.includes(',') ? a.split(/,(.*)/s).map((x) => (x || '').trim()) : [a, ''];
+  return `<div class="author-row">
+    <input class="last" placeholder="Last" value="${escapeHtml(last)}" aria-label="Last name">
+    <input class="first" placeholder="First" value="${escapeHtml(first)}" aria-label="First name">
+    <button class="icon-btn" data-author="remove" title="Remove author" tabindex="-1">${icon('minus', 'icon-sm')}</button>
+    <button class="icon-btn" data-author="add" title="Add author below" tabindex="-1">${icon('plus', 'icon-sm')}</button></div>`;
+}
+
+function bindItem(it) {
+  const id = it.id;
+
+  // sections collapse
+  root.querySelectorAll('.section-head').forEach((b) => b.addEventListener('click', (e) => {
+    if (e.target.closest('.act')) return;
+    const sec = b.parentElement;
+    sec.classList.toggle('collapsed');
+    sec.classList.contains('collapsed') ? collapsed.add(sec.dataset.section) : collapsed.delete(sec.dataset.section);
+    store('zc.collapsedSections', [...collapsed]);
+  }));
+
+  // text fields
+  root.querySelectorAll('.fv[contenteditable]').forEach((el) => {
+    if (!('contentEditable' in el) || el.contentEditable !== 'plaintext-only') el.contentEditable = 'true'; // Firefox
+    let original = el.textContent;
+    el.addEventListener('focus', () => { original = el.textContent; });
+    el.addEventListener('input', () => { el.dataset.empty = el.textContent === '' ? 'true' : 'false'; });
+    el.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const text = (e.clipboardData.getData('text/plain') || '').replace(el.dataset.multiline === 'true' && el.dataset.field !== 'title' ? /\r/g : /\s*\n\s*/g, ' ');
+      document.execCommand('insertText', false, text);
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { el.textContent = original; el.blur(); e.stopPropagation(); }
+      if (e.key === 'Enter' && (el.dataset.multiline !== 'true' || el.dataset.field === 'title') && !e.shiftKey) { e.preventDefault(); el.blur(); }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); el.blur(); }
+    });
+    el.addEventListener('blur', async () => {
+      const value = el.dataset.field === 'title' ? el.textContent.replace(/\s*\n\s*/g, ' ').trim() : el.textContent.trim();
+      if (value === (original || '').trim()) return;
+      original = value;
+      try {
+        await A.updateField(id, el.dataset.field, value);
+        el.classList.remove('saved'); void el.offsetWidth; el.classList.add('saved');
+      } catch { el.textContent = original; }
+    });
+  });
+
+  root.querySelector('select[data-field="item_type"]')?.addEventListener('change', async (e) => {
+    await A.updateField(id, 'item_type', e.target.value);
+    render(true);
+  });
+
+  // authors
+  const box = root.querySelector('.authors');
+  const saveAuthors = debounce(async () => {
+    const value = [...box.querySelectorAll('.author-row')].map((r) => {
+      const l = r.querySelector('.last').value.trim(), f = r.querySelector('.first').value.trim();
+      return l || f ? (f ? `${l}, ${f}` : l) : '';
+    }).filter(Boolean).join('; ');
+    if (value === (byId(id)?.authors || '')) return;
+    await A.updateField(id, 'authors', value);
+  }, 700);
+  box.addEventListener('input', saveAuthors);
+  box.addEventListener('focusout', (e) => { if (!box.contains(e.relatedTarget)) saveAuthors.flush(); });
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-author]');
+    if (!b) return;
+    const row = b.closest('.author-row');
+    if (b.dataset.author === 'add') {
+      const n = document.createElement('div');
+      n.innerHTML = authorRow('');
+      row.after(n.firstElementChild);
+      row.nextElementSibling.querySelector('.last').focus();
+    } else {
+      if (box.children.length > 1) row.remove();
+      else row.querySelectorAll('input').forEach((i) => { i.value = ''; });
+      saveAuthors.flush();
+    }
+  });
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+      e.preventDefault();
+      const row = e.target.closest('.author-row');
+      if (e.shiftKey || e.target.classList.contains('first')) {
+        row.querySelector('[data-author="add"]').click();
+      } else row.querySelector('.first').focus();
+    }
+    if (e.key === 'Escape') e.target.blur();
+  });
+
+  // attachment drop zone
+  const dz = root.querySelector('.att-drop');
+  if (dz) {
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); dz.classList.add('over'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+    dz.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); dz.classList.remove('over'); A.uploadAttachments(id, e.dataTransfer.files); });
+  }
+}
+
+async function handleClick(e) {
+const id = shownId;
+if (!id) return;
+const it = byId(id);
+if (!it) return;
+  const t = e.target.closest('[data-tool]')?.dataset.tool;
+  const it2 = byId(id) || it;
+  if (!t) {
+    const att = e.target.closest('.att');
+    const menuBtn = e.target.closest('[data-att-menu]');
+    if (menuBtn) {
+      const a = it2.attachments.find((x) => String(x.id) === menuBtn.dataset.attMenu);
+      openMenu([
+        { label: 'Open', icon: 'open', run: () => openAttachment(it2, a) },
+        { label: 'Rename…', icon: 'edit', run: () => renameAttachment(a) },
+        'sep',
+        { label: 'Delete Attachment', icon: 'trash', danger: true, run: () => deleteAttachment(a) },
+      ], menuBtn);
+    } else if (att) {
+      const a = it2.attachments.find((x) => String(x.id) === att.dataset.att);
+      if (a) openAttachment(it2, a);
+    }
+    return;
+  }
+  if (t === 'open-pdf') A.openPdf(it2);
+  if (t === 'metadata') openMetadataReview(id);
+  if (t === 'find-pdf') A.findPdf(id);
+  if (t === 'restore') A.restoreSelected();
+  if (t === 'open-doi') window.open(`https://doi.org/${it2.doi}`, '_blank');
+  if (t === 'open-url') window.open(it2.url, '_blank');
+  if (t === 'copy-key') { if (it2.citation_key) { await copyText(it2.citation_key); toast(`Copied ${it2.citation_key}`, { type: 'success' }); } }
+  if (t === 'regen-key') { await A.regenerateCitekeys([id]); render(true); }
+  if (t === 'add-pdf') pickFiles((files) => A.uploadAttachments(id, files));
+  if (t === 'more') { showAllFields = !showAllFields; store('zc.showAllFields', showAllFields); render(true); }
+  if (t === 'more-menu') {
+    openMenu([
+      { label: 'Find Available PDF', icon: 'find', run: () => A.findPdf(id) },
+      { label: 'Add PDF Attachment…', icon: 'paperclip', run: () => pickFiles((files) => A.uploadAttachments(id, files)) },
+      it2.doi || it2.url ? { label: 'View Online', icon: 'globe', run: () => window.open(it2.url || `https://doi.org/${it2.doi}`, '_blank') } : null,
+      'sep',
+      { label: 'Copy Citation Key', icon: 'key', run: () => copyKeys([it2]) },
+      { label: 'Export Item…', icon: 'export', run: () => openExport([id]) },
+      'sep',
+      { label: 'Move to Trash', icon: 'trash', danger: true, run: A.trashSelected },
+    ], e.target.closest('[data-tool]'));
+  }
+}
+
+export function toggleItemPane(force) {
+  const hide = force !== undefined ? !force : !root.classList.contains('collapsed');
+  root.classList.toggle('collapsed', hide);
+  document.getElementById('resizer-right').hidden = hide;
+  store('zc.itemPaneHidden', hide);
+  emit('layout');
+}
