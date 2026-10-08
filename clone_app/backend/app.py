@@ -55,4 +55,6 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
             return jsonify(error=e.description or e.name), e.code
         return e
 
+    if start_indexer and services.settings.get("fulltext_auto_index"):
+        services.indexer.sync()
     return app

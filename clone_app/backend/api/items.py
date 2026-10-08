@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
+from .. import search as search_mod
 from ..fields import schema_payload
 from . import body, error, ids_from_body, svc
 
@@ -18,8 +19,13 @@ def schema():
 def list_items():
     s = svc()
     view = request.args.get("view", "library")
+    q = request.args.get("q", "").strip()
+    mode = request.args.get("mode") or s.settings.get("default_search_mode")
     items = s.papers.list(view)
-    return jsonify(items=items, hits={}, counts=s.papers.counts())
+    hits = {}
+    if q:
+        items, hits = search_mod.search(items, q, mode, s.fulltext)
+    return jsonify(items=items, hits=hits, counts=s.papers.counts(), mode=mode, query=q)
 
 
 @bp.post("/items")
@@ -57,7 +63,8 @@ def restore():
 def delete_permanently():
     s = svc()
     ids = ids_from_body()
-    s.papers.delete_permanently(ids)
+    removed = s.papers.delete_permanently(ids)
+    s.fulltext.remove(removed)
     return jsonify(ok=True, count=len(ids))
 
 
@@ -65,7 +72,8 @@ def delete_permanently():
 def empty_trash():
     s = svc()
     ids = s.papers.trashed_ids()
-    s.papers.delete_permanently(ids)
+    removed = s.papers.delete_permanently(ids)
+    s.fulltext.remove(removed)
     return jsonify(ok=True, count=len(ids))
 
 
@@ -75,3 +83,28 @@ def regenerate_citekeys():
     if not ids:
         return error("No items given")
     return jsonify(keys=svc().papers.regenerate_citekeys(ids))
+
+
+@bp.get("/stats")
+def stats():
+    s = svc()
+    atts = s.papers.all_attachments()
+    return jsonify(
+        counts=s.papers.counts(),
+        attachments=len(atts),
+        fulltext=s.fulltext.stats(),
+        indexer=s.indexer.status,
+        data_dir=str(s.config.data_dir),
+    )
+
+
+@bp.post("/fulltext/rebuild")
+def rebuild_fulltext():
+    svc().indexer.rebuild()
+    return jsonify(ok=True)
+
+
+@bp.post("/fulltext/sync")
+def sync_fulltext():
+    svc().indexer.sync()
+    return jsonify(ok=True)

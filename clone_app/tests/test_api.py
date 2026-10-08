@@ -1,3 +1,6 @@
+from tests.conftest import make_pdf
+
+
 def test_create_edit_trash_restore(client):
     r = client.post("/api/items", json={"title": "Quantum Stuff", "authors": "Doe, Jane", "year": "2021"})
     assert r.status_code == 201
@@ -41,6 +44,32 @@ def test_settings_persist(app, tmp_path):
     c.put("/api/settings", json={"density": "compact"})
     app2 = create_app(Config.from_env(tmp_path / "data"), start_indexer=False)
     assert app2.test_client().get("/api/settings").get_json()["settings"]["density"] == "compact"
+
+
+def test_attachments_and_fulltext_search(client, svc, tmp_path):
+    item = client.post("/api/items", json={"title": "Plain title", "authors": "Doe, Jane"}).get_json()
+    pdf = make_pdf(tmp_path / "paper.pdf", "The Lindblad master equation describes open systems")
+    r = client.post(f"/api/items/{item['id']}/attachments",
+                    data={"file": (open(pdf, "rb"), "paper.pdf")}, content_type="multipart/form-data")
+    assert r.status_code == 201
+    att = r.get_json()["attachments"][0]
+    svc.indexer.wait(30)
+    svc.indexer.sync(background=False)
+    assert client.get("/api/items?q=lindblad&mode=all").get_json()["items"] == []
+    res = client.get("/api/items?q=lindblad&mode=fulltext").get_json()
+    assert [i["id"] for i in res["items"]] == [item["id"]]
+    assert "<mark>" in res["hits"][item["id"]]["fulltext"]
+    # file is served, rename works, delete removes from the index
+    assert client.get(f"/pdfs/{att['url']}").status_code == 200
+    assert client.patch(f"/api/attachments/{att['id']}", json={"name": "Main"}).get_json()["name"] == "Main"
+    client.delete(f"/api/attachments/{att['id']}")
+    assert client.get("/api/items?q=lindblad&mode=fulltext").get_json()["items"] == []
+    assert svc.fulltext.stats()["documents"] == 0
+
+
+def test_fulltext_index_is_separate_file(svc):
+    assert svc.config.fulltext_db_path != svc.config.db_path
+    assert svc.config.fulltext_db_path.exists()
 
 
 def test_annotations_roundtrip(client):

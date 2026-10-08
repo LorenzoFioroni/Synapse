@@ -48,6 +48,7 @@ def rename(att_id):
 def delete(att_id):
     s = svc()
     s.papers.delete_attachment(att_id)
+    s.fulltext.remove([att_id])
     return jsonify(ok=True)
 
 

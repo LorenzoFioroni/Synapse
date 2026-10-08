@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from .config import Config
 from .db import Database
+from .fulltext import FulltextIndex, Indexer
 from .repository import PaperRepository
 from .settings import SettingsStore
 
@@ -15,6 +16,10 @@ class Services:
         self.db.migrate()
         self.settings = SettingsStore(config.settings_path)
         self.papers = PaperRepository(self.db, self.settings, config.pdf_dir)
+        self.fulltext = FulltextIndex(config.fulltext_db_path)
+        self.indexer = Indexer(self.papers, self.fulltext)
 
     def attachments_changed(self) -> None:
-        pass
+        """Call after adding/removing files so the full-text index catches up."""
+        if self.settings.get("fulltext_auto_index"):
+            self.indexer.sync()
