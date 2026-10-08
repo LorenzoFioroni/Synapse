@@ -74,6 +74,13 @@ class PaperRepository:
 
     # ------------------------------------------------------------------ reads
     def list(self, view: str = "library") -> list[dict]:
+        if view == "duplicates":
+            papers = self.list()
+            group_of = {pid: n for n, g in enumerate(self.duplicate_groups(papers)) for pid in g}
+            out = [p for p in papers if p["id"] in group_of]
+            for p in out:
+                p["dup_group"] = group_of[p["id"]]
+            return out
         where = "deleted_at IS NOT NULL" if view == "trash" else "deleted_at IS NULL"
         with self.db.session() as c:
             papers = [dict(r) for r in c.execute(f"SELECT * FROM papers WHERE {where}")]
@@ -96,11 +103,46 @@ class PaperRepository:
                 "SELECT * FROM attachments WHERE paper_id = ? ORDER BY id", (paper_id,))]
         return p
 
-    def counts(self) -> dict:
+    def counts(self, library: list[dict] | None = None) -> dict:
         with self.db.session() as c:
             lib = c.execute("SELECT COUNT(*) FROM papers WHERE deleted_at IS NULL").fetchone()[0]
             trash = c.execute("SELECT COUNT(*) FROM papers WHERE deleted_at IS NOT NULL").fetchone()[0]
-        return {"library": lib, "trash": trash}
+        dups = sum(len(g) for g in self.duplicate_groups(library))
+        return {"library": lib, "trash": trash, "duplicates": dups}
+
+    def duplicate_groups(self, papers: list[dict] | None = None) -> list[list[str]]:
+        """Groups of item ids that look like the same work (same DOI, or same title and year)."""
+        from .search import normalize
+        papers = papers if papers is not None else self.list()
+        parent = {p["id"]: p["id"] for p in papers}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(a, b):
+            parent[find(a)] = find(b)
+        by_doi, by_title = {}, {}
+        for p in papers:
+            doi = (p.get("doi") or "").strip().lower()
+            if doi:
+                if doi in by_doi:
+                    union(p["id"], by_doi[doi])
+                else:
+                    by_doi[doi] = p["id"]
+            title = normalize(p.get("title") or "")
+            if len(title) > 10:
+                for other_id, other_year in by_title.get(title, []):
+                    y = str(p.get("year") or "")
+                    if not y or not other_year or y == other_year:
+                        union(p["id"], other_id)
+                by_title.setdefault(title, []).append((p["id"], str(p.get("year") or "")))
+        groups: dict[str, list[str]] = {}
+        for p in papers:
+            groups.setdefault(find(p["id"]), []).append(p["id"])
+        return [g for g in groups.values() if len(g) > 1]
 
     def all_citation_keys(self, exclude_id: str | None = None) -> set[str]:
         with self.db.session() as c:

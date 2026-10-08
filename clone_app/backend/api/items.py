@@ -21,11 +21,12 @@ def list_items():
     view = request.args.get("view", "library")
     q = request.args.get("q", "").strip()
     mode = request.args.get("mode") or s.settings.get("default_search_mode")
-    items = s.papers.list(view)
+    library = s.papers.list()
+    items = library if view == "library" else s.papers.list(view)
     hits = {}
     if q:
         items, hits = search_mod.search(items, q, mode, s.fulltext)
-    return jsonify(items=items, hits=hits, counts=s.papers.counts(), mode=mode, query=q)
+    return jsonify(items=items, hits=hits, counts=s.papers.counts(library), mode=mode, query=q)
 
 
 @bp.post("/items")

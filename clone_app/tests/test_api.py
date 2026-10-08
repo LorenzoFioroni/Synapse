@@ -13,7 +13,7 @@ def test_create_edit_trash_restore(client):
     assert r.get_json()["journal"] == "Nature" and "bogus" not in r.get_json()
     client.post("/api/items/trash", json={"ids": [item["id"]]})
     lib = client.get("/api/items").get_json()
-    assert lib["items"] == [] and lib["counts"] == {"library": 0, "trash": 1}
+    assert lib["items"] == [] and lib["counts"] == {"library": 0, "trash": 1, "duplicates": 0}
     assert len(client.get("/api/items?view=trash").get_json()["items"]) == 1
     client.post("/api/items/restore", json={"ids": [item["id"]]})
     assert len(client.get("/api/items").get_json()["items"]) == 1
@@ -138,3 +138,42 @@ def test_empty_item_gets_citekey_once_it_has_metadata(client):
     # later edits don't silently change an existing key
     item = client.patch(f"/api/items/{item['id']}", json={"title": "Other"}).get_json()
     assert item["citation_key"] == "doeTensor2026"
+
+
+def test_items_from_pdf_without_network(client, tmp_path, monkeypatch):
+    from backend import metadata
+
+    def offline(*a, **k):
+        raise metadata.LookupError_("offline")
+    monkeypatch.setattr(metadata, "lookup", offline)
+    pdf = make_pdf(tmp_path / "Some_Paper_Title.pdf", "Published as doi:10.1103/PhysRevB.99.094435 in PRB")
+    r = client.post("/api/items/from_pdf", data={"file": (open(pdf, "rb"), "Some_Paper_Title.pdf")},
+                    content_type="multipart/form-data")
+    assert r.status_code == 201
+    c = r.get_json()["created"][0]
+    assert c["identifier"] == {"doi": "10.1103/PhysRevB.99.094435"}
+    assert c["item"]["title"] == "Some Paper Title" and c["item"]["doi"] == "10.1103/PhysRevB.99.094435"
+    assert len(c["item"]["attachments"]) == 1
+
+
+def test_items_from_pdf_with_metadata(client, tmp_path, monkeypatch):
+    from backend import metadata
+    monkeypatch.setattr(metadata, "lookup", lambda **k: {"title": "Asymmetry", "authors": "Doe, J", "year": "2019",
+                                                         "doi": k.get("doi")})
+    pdf = make_pdf(tmp_path / "x.pdf", "doi: 10.1103/PhysRevB.99.094435")
+    c = client.post("/api/items/from_pdf", data={"file": (open(pdf, "rb"), "x.pdf")},
+                    content_type="multipart/form-data").get_json()["created"][0]
+    assert c["item"]["title"] == "Asymmetry" and c["item"]["citation_key"] == "doeAsymmetry2019"
+
+
+def test_duplicates_view(client):
+    a = client.post("/api/items", json={"title": "Quantum transport in chains", "year": 2020, "doi": "10.1/A"}).get_json()
+    b = client.post("/api/items", json={"title": "Quantum Transport in Chains", "year": 2020}).get_json()
+    c = client.post("/api/items", json={"title": "Other", "doi": "10.1/a"}).get_json()
+    client.post("/api/items", json={"title": "Unrelated paper about things"})
+    res = client.get("/api/items?view=duplicates").get_json()
+    assert {i["id"] for i in res["items"]} == {a["id"], b["id"], c["id"]}
+    assert len({i["dup_group"] for i in res["items"]}) == 1
+    assert res["counts"]["duplicates"] == 3
+    client.post("/api/items/trash", json={"ids": [b["id"], c["id"]]})
+    assert client.get("/api/items?view=duplicates").get_json()["items"] == []

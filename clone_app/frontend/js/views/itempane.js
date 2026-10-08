@@ -59,9 +59,11 @@ function render(force = false) {
 
 function renderEmpty() {
   const n = state.counts[state.view] || 0;
+  const where = { trash: 'in the Trash', duplicates: 'look like duplicates' }[state.view] || 'in your library';
+  const tip = state.view === 'duplicates' && n ? '<p class="subtle">Select one item of a group and choose “Keep This One” to trash the others.</p>' : '';
   root.innerHTML = `<div class="empty-state">${icon(state.view === 'trash' ? 'trash' : 'doc')}
     <h3>${state.view === 'trash' ? 'Trash' : 'No item selected'}</h3>
-    <p class="muted">${plural(n, 'item')} ${state.view === 'trash' ? 'in the Trash' : 'in your library'}.</p></div>`;
+    <p class="muted">${plural(n, 'item')} ${where}.</p>${tip}</div>`;
 }
 
 function renderMulti(items) {
@@ -164,6 +166,7 @@ function renderItem(it) {
       <div class="ip-type">${typeIcon(type, 'icon-sm')} <span data-h="type">${escapeHtml(itemTypeLabel(type))}</span>${trash ? ' <span class="badge warn">In Trash</span>' : ''}</div>
       <h2 class="ip-title" data-h="title">${escapeHtml(it.title || 'Untitled')}</h2>
       <div class="ip-sub" data-h="sub">${escapeHtml(subline(it))}</div>
+      ${state.view === 'duplicates' ? `<div class="ip-actions"><button class="btn btn-sm btn-primary" data-tool="keep-only">${icon('check', 'icon-sm')} Keep This One, Trash the Others</button></div>` : ''}
       <div class="ip-actions">
         ${trash ? `<button class="btn btn-sm" data-tool="restore">${icon('restore', 'icon-sm')} Restore</button>`
     : `${atts.length ? `<button class="btn btn-sm btn-primary" data-tool="open-pdf">${icon('pdf', 'icon-sm')} Open PDF</button>`
@@ -325,6 +328,7 @@ if (!it) return;
     return;
   }
   if (t === 'open-pdf') A.openPdf(it2);
+  if (t === 'keep-only') A.keepOnly(id);
   if (t === 'metadata') openMetadataReview(id);
   if (t === 'find-pdf') A.findPdf(id);
   if (t === 'restore') A.restoreSelected();

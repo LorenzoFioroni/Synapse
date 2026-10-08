@@ -107,6 +107,22 @@ function nextSelectionAfterRemoval(items, ids) {
   return null;
 }
 
+/** Duplicates view: keep one item of a group and move the others to the Trash. */
+export async function keepOnly(id) {
+  const keep = byId(id);
+  if (!keep || keep.dup_group === undefined) return;
+  const others = state.items.filter((i) => i.dup_group === keep.dup_group && i.id !== id).map((i) => i.id);
+  if (!others.length) return;
+  try {
+    await api.trash(others);
+    await loadItems();
+    toast(`Kept “${(keep.title || 'item').slice(0, 50)}”, moved ${plural(others.length, 'duplicate')} to the Trash`, {
+      type: 'success',
+      action: { label: 'Undo', run: async () => { await api.restore(others); await loadItems(); } },
+    });
+  } catch (e) { toastError(e); }
+}
+
 export async function restoreSelected() {
   const ids = [...state.selection];
   if (!ids.length) return;

@@ -46,8 +46,8 @@
 .author-row input.last { flex: 1.35; font-weight: 500; }
 .author-row input:hover { background: var(--bg-hover); }
 .author-row input:focus { background: var(--bg-input); border-color: var(--accent); box-shadow: var(--focus-ring); }
-.author-row .icon-btn { width: 22px; height: 22px; opacity: 0; color: var(--text-3); }
-.author-row:hover .icon-btn, .author-row:focus-within .icon-btn { opacity: 1; }
+.author-row .icon-btn { width: 0; height: 22px; opacity: 0; overflow: hidden; color: var(--text-3); transition: width .12s, opacity .12s; }
+.author-row:hover .icon-btn, .author-row:focus-within .icon-btn { width: 22px; opacity: 1; }
 .author-row .drag { cursor: grab; }
 
 /* attachments */

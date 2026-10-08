@@ -61,7 +61,7 @@ export const state = {
   mode: 'basic',            // search scope
   items: [],                // already filtered by the server
   hits: {},                 // id -> { fulltext: snippetHtml }
-  counts: { library: 0, trash: 0 },
+  counts: { library: 0, trash: 0, duplicates: 0 },
   loading: false,
   selection: new Set(),
   anchor: null,             // for shift-click ranges
@@ -95,6 +95,10 @@ export function sortedItems() {
     const v = it[key];
     return v == null ? '' : String(v).toLowerCase();
   };
+  if (state.view === 'duplicates') {
+    // keep each group of duplicates together, oldest first
+    return [...state.items].sort((a, b) => (a.dup_group - b.dup_group) || String(a.date_added).localeCompare(String(b.date_added)));
+  }
   return [...state.items].sort((a, b) => {
     const va = val(a), vb = val(b);
     if (va === vb) return (a.title || '').localeCompare(b.title || '');

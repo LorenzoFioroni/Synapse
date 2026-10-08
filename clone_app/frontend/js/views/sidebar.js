@@ -11,6 +11,7 @@ export function initSidebar() {
   root.innerHTML = `
     <div class="side-section">Library</div>
     <button class="side-item" data-view="library">${icon('library')}<span>My Library</span><span class="count" data-count="library"></span></button>
+    <button class="side-item" data-view="duplicates" title="Items with the same DOI, or the same title and year">${icon('copy')}<span>Duplicate Items</span><span class="count" data-count="duplicates"></span></button>
     <button class="side-item" data-view="trash">${icon('trash')}<span>Trash</span><span class="count" data-count="trash"></span></button>
     <div class="side-footer"><div class="row" data-index-status></div></div>`;
   root.addEventListener('click', (e) => {
@@ -39,6 +40,7 @@ function paint() {
   root.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === state.view));
   root.querySelector('[data-count="library"]').textContent = state.counts.library || '';
   root.querySelector('[data-count="trash"]').textContent = state.counts.trash || '';
+  root.querySelector('[data-count="duplicates"]').textContent = state.counts.duplicates || '';
 }
 
 function paintIndexer() {

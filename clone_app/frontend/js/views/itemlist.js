@@ -223,6 +223,8 @@ function emptyState() {
       <p>Nothing matches “${escapeHtml(state.query)}” in <b>${escapeHtml(state.settingsMeta.searchModes?.[state.mode] || state.mode)}</b>.</p>
       <div class="actions">${state.mode !== 'fulltext' ? '<button class="btn" data-empty="fulltext">Search full text too</button>' : ''}
       <button class="btn btn-ghost" data-empty="clear">Clear search</button></div></div>`;
+  } else if (state.view === 'duplicates') {
+    el.innerHTML = `<div class="empty-state">${icon('check')}<h3>No duplicates</h3><p>No two items share a DOI, or the same title and year.</p></div>`;
   } else if (state.view === 'trash') {
     el.innerHTML = `<div class="empty-state">${icon('trash')}<h3>The Trash is empty</h3><p>Items you delete stay here until you empty the Trash.</p></div>`;
   } else {
@@ -338,6 +340,8 @@ export function itemMenu(at) {
   const hasPdf = one && (one.attachments || []).length > 0;
   const onlineUrl = one && (one.url || (one.doi ? `https://doi.org/${one.doi}` : ''));
   openMenu([
+    one && state.view === 'duplicates' && { label: 'Keep This One, Trash the Others', icon: 'check', run: () => A.keepOnly(one.id) },
+    one && state.view === 'duplicates' && 'sep',
     one && { label: hasPdf ? 'Open PDF' : 'Open PDF (none attached)', icon: 'pdf', disabled: !hasPdf, run: () => A.openPdf(one), shortcut: '↵' },
     one && { label: 'View Online', icon: 'globe', disabled: !onlineUrl, run: () => window.open(onlineUrl, '_blank') },
     one && 'sep',

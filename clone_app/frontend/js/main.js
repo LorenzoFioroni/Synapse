@@ -168,7 +168,8 @@ function initStatusBar() {
   const paint = () => {
     const total = state.counts[state.view] || 0;
     bar.querySelector('[data-s="count"]').textContent = state.query
-      ? `${plural(state.items.length, 'result')} of ${total}` : `${plural(total, 'item')}${state.view === 'trash' ? ' in Trash' : ''}`;
+      ? `${plural(state.items.length, 'result')} of ${total}`
+      : `${plural(total, 'item')}${{ trash: ' in Trash', duplicates: ' that look like duplicates' }[state.view] || ''}`;
     bar.querySelector('[data-s="sel"]').textContent = state.selection.size > 1 ? `${state.selection.size} selected` : '';
   };
   on('items', paint);
