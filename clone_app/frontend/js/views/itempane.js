@@ -73,13 +73,17 @@ function renderMulti(items) {
     <div class="actions">
       ${trash ? `<button class="btn" data-a="restore">${icon('restore')} Restore to Library</button>
                  <button class="btn btn-danger" data-a="delete">${icon('trash')} Delete Permanently</button>`
-    : `<button class="btn" data-a="export">${icon('export')} Export…</button>
+    : `<button class="btn" data-a="metadata">${icon('sparkle')} Retrieve Metadata…</button>
+       <button class="btn" data-a="find-pdfs">${icon('find')} Find PDFs${(() => { const n = items.filter((i) => !(i.attachments || []).length).length; return n && n < items.length ? ` (${n} missing)` : ''; })()}</button>
+       <button class="btn" data-a="export">${icon('export')} Export…</button>
        <button class="btn" data-a="keys">${icon('key')} Copy Citation Keys</button>
        <button class="btn" data-a="regen">${icon('refresh')} Regenerate Keys</button>
        <button class="btn btn-danger" data-a="trash">${icon('trash')} Move to Trash</button>`}
     </div></div>`;
   root.querySelector('.actions').addEventListener('click', (e) => {
     const a = e.target.closest('[data-a]')?.dataset.a;
+    if (a === 'metadata') openMetadataReview(ids);
+    if (a === 'find-pdfs') A.findPdfs(ids);
     if (a === 'export') openExport(ids);
     if (a === 'keys') copyKeys(items);
     if (a === 'regen') A.regenerateCitekeys(ids);

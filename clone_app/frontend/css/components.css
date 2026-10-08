@@ -141,3 +141,8 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .empty-state h3 { margin: 0; font-size: var(--fs-lg); color: var(--text); font-weight: 600; }
 .empty-state p { margin: 0; max-width: 340px; }
 .empty-state .actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }
+
+.progress-toast .msg { display: flex; flex-direction: column; gap: 6px; }
+.progress-toast .progress { background: rgba(255, 255, 255, .15); }
+.progress-toast .progress > div { background: #9db7ff; }
+.progress-toast .spinner { color: #9db7ff; }

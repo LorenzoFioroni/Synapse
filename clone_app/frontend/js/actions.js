@@ -3,7 +3,7 @@
 import { api, openAttachment } from './api.js';
 import { byId, emit, selectedItems, state } from './store.js';
 import { confirmDialog } from './ui/dialog.js';
-import { toast, toastError } from './ui/toast.js';
+import { progressToast, toast, toastError } from './ui/toast.js';
 import { plural } from './util.js';
 
 let loadSeq = 0;
@@ -173,6 +173,45 @@ export async function findPdf(id) {
       emit('items');
     } else toast(res.message || 'No PDF found', { type: 'error' });
   } catch (e) { close(); toastError(e); }
+}
+
+/**
+ * Find PDFs for several items, one after another (gentle on Unpaywall/arXiv).
+ * Items that already have an attachment are skipped. Cancellable.
+ */
+export async function findPdfs(ids) {
+  const items = ids.map(byId).filter(Boolean);
+  const todo = items.filter((i) => !(i.attachments || []).length);
+  const skipped = items.length - todo.length;
+  if (!todo.length) return toast(`All ${plural(items.length, 'selected item')} already have a PDF`);
+  let cancelled = false;
+  const pt = progressToast('Finding PDFs…', { onCancel: () => { cancelled = true; } });
+  const found = [], missing = [], failed = [];
+  for (let n = 0; n < todo.length && !cancelled; n++) {
+    const it = todo[n];
+    pt.set(`Finding PDFs ${n + 1}/${todo.length}: ${(it.title || 'Untitled').slice(0, 60)}`, n, todo.length);
+    try {
+      const res = await api.findPdf(it.id);
+      (res.status === 'success' ? found : missing).push(it.id);
+      if (res.status === 'success') { await loadItems(); }
+    } catch (e) {
+      failed.push(it.id);
+      if (e.status === 0) break;      // server gone: stop instead of failing every item
+    }
+    if (n < todo.length - 1) await new Promise((r) => setTimeout(r, 400));
+  }
+  pt.close();
+  await loadItems();
+  const notFound = [...missing, ...failed];
+  const parts = [`Found ${plural(found.length, 'PDF')}`];
+  if (notFound.length) parts.push(`${notFound.length} not found`);
+  if (skipped) parts.push(`${skipped} already had one`);
+  if (cancelled) parts.push('stopped early');
+  toast(parts.join(' · '), {
+    type: found.length ? 'success' : 'error',
+    timeout: 8000,
+    action: notFound.length ? { label: 'Select not found', run: () => select(notFound, { anchor: notFound[0] }) } : null,
+  });
 }
 
 export async function uploadAttachments(id, files) {

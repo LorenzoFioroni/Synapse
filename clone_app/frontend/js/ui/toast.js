@@ -23,9 +23,41 @@ export function toast(message, { type = 'info', action = null, timeout = 4200 } 
   el.querySelector('.toast-close').onclick = close;
   if (action) el.querySelector('.toast-action').onclick = () => { close(); action.run(); };
   root.appendChild(el);
-  while (root.children.length > 4) root.firstElementChild.remove();
+  const plain = () => root.querySelectorAll('.toast:not(.progress-toast)');
+  while (plain().length > 4) plain()[0].remove();
   if (timeout) setTimeout(close, type === 'error' ? timeout * 1.6 : timeout);
   return close;
 }
 
 export const toastError = (e) => toast(e?.message || String(e), { type: 'error' });
+
+/**
+ * A persistent notification for long-running jobs: progress bar, live text
+ * and an optional Cancel button. Returns {set(text, done, total), close()}.
+ */
+export function progressToast(text, { onCancel = null } = {}) {
+  root ||= document.getElementById('toasts');
+  const el = h(`<div class="toast progress-toast" role="status">
+      <span class="spinner"></span>
+      <div class="msg"><div class="pt-text">${escapeHtml(text)}</div><div class="progress"><div style="width:0"></div></div></div>
+      ${onCancel ? '<button class="toast-action">Cancel</button>' : ''}
+    </div>`);
+  if (onCancel) {
+    el.querySelector('.toast-action').onclick = (e) => {
+      e.currentTarget.disabled = true;
+      e.currentTarget.textContent = 'Stopping…';
+      onCancel();
+    };
+  }
+  root.appendChild(el);
+  return {
+    set(t, done = 0, total = 0) {
+      el.querySelector('.pt-text').textContent = t;
+      el.querySelector('.progress > div').style.width = total ? `${(done / total) * 100}%` : '0';
+    },
+    close() {
+      el.classList.add('leaving');
+      setTimeout(() => el.remove(), 180);
+    },
+  };
+}

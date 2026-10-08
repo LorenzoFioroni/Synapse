@@ -53,9 +53,13 @@ Back up the `data/` folder to keep everything. Libraries from the old layout
 
 - **Add items** by DOI, arXiv ID or ISBN (several at once), by dropping PDFs (the
   DOI/arXiv id on the first pages is used to fetch metadata), or manually.
-- **Retrieve Metadata** shows a word-level diff per field before anything changes.
-- **Find Available PDF** looks for open-access copies (Unpaywall, arXiv, Scholar)
-  and checks the file is really the right paper.
+- **Retrieve Metadata** works on one item or a whole selection: one review dialog
+  with a section per article, word-level diffs with a checkbox per field, and the
+  article's unchanged metadata below. Nothing is saved until you apply; replacing an
+  existing citation key is opt-in. Lookups run one by one and can be stopped.
+- **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
+  arXiv, Scholar) and checks the file is really the right paper. Batch runs skip items
+  that already have a PDF, show progress, and can select the ones that weren't found.
 - **Trash** with Undo, **Duplicate Items** view with "keep this one, trash the others".
 - Sortable, resizable, re-orderable columns; light/dark theme; compact density;
   keyboard navigation (see Settings → Library & Shortcuts).
