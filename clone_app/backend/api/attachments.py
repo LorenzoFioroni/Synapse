@@ -9,6 +9,7 @@ from flask import Blueprint, Response, jsonify, request, send_from_directory
 from werkzeug.utils import secure_filename
 
 from .. import pdf_finder
+from ..pdftext import clean_text, extract_text, find_identifier
 from . import body, error, svc
 
 bp = Blueprint("attachments", __name__)
@@ -34,6 +35,40 @@ def upload(item_id):
         created.append(s.papers.add_attachment(item_id, name, filename, "pdf"))
     s.attachments_changed()
     return jsonify(attachments=created), 201
+
+
+@bp.post("/api/items/from_pdf")
+def items_from_pdfs():
+    """Create one item per dropped PDF, pre-filled from a DOI/arXiv id found in the text."""
+    s = svc()
+    files = request.files.getlist("file")
+    if not files:
+        return error("No file uploaded")
+    from ..metadata import LookupError_, known_authors, lookup
+    known = known_authors(s.papers.list())
+    created = []
+    for f in files:
+        name, filename = _save_upload(f)
+        path = s.config.pdf_dir / filename
+        text, _ = extract_text(path, max_pages=2)
+        ident = find_identifier(clean_text(text))
+        meta, note = {}, None
+        try:
+            if ident.get("doi"):
+                meta = lookup(doi=ident["doi"], known=known, email=s.settings.get("contact_email"))
+            elif ident.get("arxiv"):
+                meta = lookup(identifier="arXiv:" + ident["arxiv"], known=known)
+        except LookupError_ as e:
+            note = str(e)
+        if not meta:
+            meta = {"title": os.path.splitext(name)[0].replace("_", " ")}
+            if ident.get("doi"):
+                meta["doi"] = ident["doi"]
+        item = s.papers.create(meta)
+        s.papers.add_attachment(item["id"], name, filename, "pdf")
+        created.append({"item": s.papers.get(item["id"]), "identifier": ident, "note": note})
+    s.attachments_changed()
+    return jsonify(created=created), 201
 
 
 @bp.patch("/api/attachments/<int:att_id>")
