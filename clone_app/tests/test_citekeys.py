@@ -26,3 +26,8 @@ def test_unique_suffixes():
     taken = {"cui2015", "cui2015a"}
     assert citekeys.make_unique("cui2015", taken) == "cui2015b"
     assert citekeys.make_unique("new", taken) == "new"
+
+
+def test_required_fields():
+    assert citekeys.required_fields("{auth}{Title}{year}") == {"authors", "title", "year"}
+    assert citekeys.required_fields("{AuthEtAl}_{yy}") == {"authors", "year"}

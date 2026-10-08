@@ -112,6 +112,16 @@ class PaperRepository:
 
     def update(self, paper_id: str, data: dict) -> dict:
         values = {k: _clean_value(k, v) for k, v in data.items() if k in EDITABLE_KEYS}
+        if values and "citation_key" not in values and self.settings.get("citekey_auto") \
+                and {"authors", "title", "year"} & values.keys():
+            # Items created empty get a key as soon as they have enough metadata.
+            current = self.get(paper_id)
+            if not current.get("citation_key"):
+                merged = {**current, **values}
+                pattern = self.settings.get("citekey_pattern")
+                if all(merged.get(f) for f in citekeys.required_fields(pattern) or {"authors", "title"}):
+                    values["citation_key"] = citekeys.generate(
+                        pattern, merged, self.all_citation_keys(exclude_id=paper_id))
         if values:
             values["date_modified"] = utcnow()
             sets = ", ".join(f"{k} = ?" for k in values)

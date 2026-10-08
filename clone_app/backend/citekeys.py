@@ -116,6 +116,22 @@ def render(pattern: str, paper: dict) -> str:
     return key or "item"
 
 
+def required_fields(pattern: str) -> set[str]:
+    """Item fields the pattern draws on (used to wait until a new item is complete)."""
+    need = set()
+    for tok in _TOKEN.findall(pattern or ""):
+        low = tok.lower()
+        if low.startswith("auth"):
+            need.add("authors")
+        elif low in ("title", "shorttitle"):
+            need.add("title")
+        elif low in ("year", "yy"):
+            need.add("year")
+        elif low in ("journal", "doi"):
+            need.add(low)
+    return need
+
+
 def make_unique(key: str, taken: set[str]) -> str:
     """Disambiguate with a, b, c … like Zotero/Better BibTeX."""
     if key not in taken:

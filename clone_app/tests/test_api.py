@@ -124,3 +124,17 @@ def test_legacy_layout_migration(tmp_path, monkeypatch):
     items = app.test_client().get("/api/items").get_json()["items"]
     assert items[0]["title"] == "Old" and items[0]["date_added"] and items[0]["item_type"] == "journalArticle"
     assert (root / "data" / "pdfs" / "x.pdf").exists() and not (root / "papers.db").exists()
+
+
+def test_empty_item_gets_citekey_once_it_has_metadata(client):
+    item = client.post("/api/items", json={}).get_json()
+    assert not item["citation_key"]
+    item = client.patch(f"/api/items/{item['id']}", json={"title": "Tensor Networks"}).get_json()
+    assert not item["citation_key"]  # no authors yet
+    item = client.patch(f"/api/items/{item['id']}", json={"authors": "Doe, Jane"}).get_json()
+    assert not item["citation_key"]  # the default pattern also needs the year
+    item = client.patch(f"/api/items/{item['id']}", json={"year": 2026}).get_json()
+    assert item["citation_key"] == "doeTensor2026"
+    # later edits don't silently change an existing key
+    item = client.patch(f"/api/items/{item['id']}", json={"title": "Other"}).get_json()
+    assert item["citation_key"] == "doeTensor2026"

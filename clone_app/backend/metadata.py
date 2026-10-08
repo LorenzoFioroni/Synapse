@@ -5,6 +5,7 @@ import logging
 import re
 import unicodedata
 import xml.etree.ElementTree as ET
+from urllib.parse import urlparse
 
 import requests
 
@@ -235,7 +236,8 @@ def lookup(*, identifier: str | None = None, doi: str | None = None, title: str 
         else:
             raise LookupError_("PubMed lookups are not supported yet.")
     except requests.RequestException as e:
-        raise LookupError_(f"Network error while contacting the metadata service: {e}") from e
+        host = urlparse(e.request.url).netloc if getattr(e, "request", None) is not None and e.request.url else "the metadata service"
+        raise LookupError_(f"Could not reach {host}. Check your internet connection and try again.") from e
 
     if item.get("doi") and kind in ("doi", "title"):
         oa = openalex_authors(item["doi"], email)
