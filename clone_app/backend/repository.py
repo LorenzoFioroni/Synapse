@@ -5,6 +5,7 @@ methods and never builds queries itself.
 """
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from pathlib import Path
@@ -13,6 +14,8 @@ from . import citekeys
 from .db import Database, utcnow
 from .fields import DEFAULT_ITEM_TYPE, EDITABLE_KEYS, ITEM_TYPE_LABELS
 from .settings import SettingsStore
+
+log = logging.getLogger(__name__)
 
 
 class NotFound(LookupError):
@@ -71,6 +74,7 @@ class PaperRepository:
         self.db = db
         self.settings = settings
         self.pdf_dir = Path(pdf_dir)
+        self._citekey_listeners: list = []
 
     # ------------------------------------------------------------------ reads
     def list(self, view: str = "library") -> list[dict]:
@@ -218,14 +222,37 @@ class PaperRepository:
                 if all(merged.get(f) for f in citekeys.required_fields(pattern) or {"authors", "title"}):
                     values["citation_key"] = citekeys.generate(
                         pattern, merged, self.all_citation_keys(exclude_id=paper_id))
+        changed_key = None
         if values:
             values["date_modified"] = utcnow()
             sets = ", ".join(f"{k} = ?" for k in values)
             with self.db.session() as c:
+                if "citation_key" in values:
+                    row = c.execute("SELECT citation_key FROM papers WHERE id = ?", (paper_id,)).fetchone()
+                    old = (row["citation_key"] if row else None) or ""
+                    if old and old != (values["citation_key"] or ""):
+                        changed_key = (old, values["citation_key"] or "")
                 cur = c.execute(f"UPDATE papers SET {sets} WHERE id = ?", [*values.values(), paper_id])
                 if cur.rowcount == 0:
                     raise NotFound(paper_id)
+        if changed_key:
+            self._notify_citekey_change(paper_id, *changed_key)
         return self.get(paper_id)
+
+    # Citation keys are stable: nothing in the app changes an existing key on its own
+    # (new keys are only generated for items that have none). A key changes only through an
+    # explicit user action, and every such change passes through update() and is reported
+    # here, so notes citing the old key can be rewritten.
+    def on_citekey_change(self, callback) -> None:
+        """Register ``callback(paper_id, old_key, new_key)``."""
+        self._citekey_listeners.append(callback)
+
+    def _notify_citekey_change(self, paper_id: str, old: str, new: str) -> None:
+        for cb in list(self._citekey_listeners):
+            try:
+                cb(paper_id, old, new)
+            except Exception:  # the key is already saved; a listener must not undo that
+                log.exception("citekey listener failed for %s -> %s", old, new)
 
     def regenerate_citekeys(self, ids: list[str]) -> dict[str, str]:
         pattern = self.settings.get("citekey_pattern")
