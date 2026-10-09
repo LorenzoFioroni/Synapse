@@ -124,10 +124,8 @@ class PaperRepository:
         with self.db.session() as c:
             lib = c.execute("SELECT COUNT(*) FROM papers WHERE deleted_at IS NULL").fetchone()[0]
             trash = c.execute("SELECT COUNT(*) FROM papers WHERE deleted_at IS NOT NULL").fetchone()[0]
-            unfiled = c.execute("SELECT COUNT(*) FROM papers WHERE deleted_at IS NULL "
-                                "AND id NOT IN (SELECT paper_id FROM paper_folders)").fetchone()[0]
         dups = sum(len(g) for g in self.duplicate_groups(library))
-        return {"library": lib, "trash": trash, "duplicates": dups, "unfiled": unfiled}
+        return {"library": lib, "trash": trash, "duplicates": dups}
 
     def duplicate_groups(self, papers: list[dict] | None = None) -> list[list[str]]:
         """Groups of item ids that look like the same work (same DOI, or same title and year)."""

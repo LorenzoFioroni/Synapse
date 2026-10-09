@@ -10,11 +10,16 @@ import { openExport } from './exportDialog.js';
 import { copyKeys, deleteAttachment, pickFiles, renameAttachment } from './itemlist.js';
 import { openMetadataReview } from './metadataReview.js';
 import { confirmKeyChange } from './notes/rekeyDialog.js';
-import { fillReferences } from './referencesSection.js';
+import { fetchReferencesBulk, fillReferences } from './referencesSection.js';
 import { addSelectionToFolder, editTagsDialog, tagInput } from './organizeDialogs.js';
 
 let root, shownId = null;
-const collapsed = new Set(storage('zc.collapsedSections', []));
+// Sections open/closed: the user's choice per section, else the default (Abstract and
+// References start collapsed; Notes, Info, Folder & Tags and Attachments open).
+const DEFAULT_COLLAPSED = new Set(['abstract', 'references']);
+const sectionState = storage('zc.sectionState', null)
+  || Object.fromEntries(storage('zc.collapsedSections', []).map((id) => [id, true]));   // older setting
+const isCollapsed = (id) => (id in sectionState ? sectionState[id] : DEFAULT_COLLAPSED.has(id));
 let showAllFields = storage('zc.showAllFields', false);
 
 export function initItemPane() {
@@ -80,6 +85,7 @@ function renderMulti(items) {
        <button class="btn" data-a="tags">${icon('tag')} Tags…</button>
        <button class="btn" data-a="metadata">${icon('sparkle')} Retrieve Metadata…</button>
        <button class="btn" data-a="find-pdfs">${icon('find')} Find PDFs${(() => { const n = items.filter((i) => !(i.attachments || []).length).length; return n && n < items.length ? ` (${n} missing)` : ''; })()}</button>
+       <button class="btn" data-a="references">${icon('link')} Fetch References</button>
        <button class="btn" data-a="export">${icon('export')} Export…</button>
        <button class="btn" data-a="keys">${icon('key')} Copy Citation Keys</button>
        <button class="btn" data-a="regen">${icon('refresh')} Regenerate Keys</button>
@@ -91,6 +97,7 @@ function renderMulti(items) {
     if (a === 'tags') editTagsDialog(ids);
     if (a === 'metadata') openMetadataReview(ids);
     if (a === 'find-pdfs') A.findPdfs(ids);
+    if (a === 'references') fetchReferencesBulk(ids);
     if (a === 'export') openExport(ids);
     if (a === 'keys') copyKeys(items);
     if (a === 'regen') A.regenerateCitekeys(ids);
@@ -107,18 +114,21 @@ function fieldLabel(key, type) {
   return s.fieldLabelOverrides[type]?.[key] || s.fields.find((f) => f.key === key)?.label || key;
 }
 
+// Info: the citation key first, then the fields that identify the work; everything else
+// (type-specific details, URL, Extra, rare identifiers…) is behind "Show more fields".
+const MAIN_FIELDS = ['year', 'journal', 'doi'];
+
 function infoFieldKeys(it) {
   const s = state.schema;
   const type = it.item_type || 'journalArticle';
-  const keys = [...(s.typeFields[type] || []), ...s.commonFields.filter((k) => k !== 'abstract')];
-  const seen = new Set(keys);
-  const rare = [];
-  for (const f of s.fields) {
-    if (!f.editable || seen.has(f.key) || ['title', 'authors', 'item_type', 'abstract'].includes(f.key)) continue;
-    rare.push(f.key);
+  const typeFields = s.typeFields[type] || [];
+  const main = MAIN_FIELDS.filter((k) => k !== 'journal' || typeFields.includes('journal'));
+  const shown = new Set(['citation_key', 'title', 'authors', 'item_type', 'abstract', ...main]);
+  const more = [];
+  for (const k of [...typeFields, ...s.commonFields, ...s.fields.filter((f) => f.editable).map((f) => f.key)]) {
+    if (!shown.has(k) && !more.includes(k)) more.push(k);
   }
-  const rareShown = rare.filter((k) => showAllFields || (it[k] !== null && it[k] !== undefined && it[k] !== ''));
-  return { keys: [...new Set(keys)], rareShown, rareHidden: rare.length - rareShown.length };
+  return { main, more };
 }
 
 function fv(key, value, { multiline = false, placeholder = '' } = {}) {
@@ -128,7 +138,7 @@ function fv(key, value, { multiline = false, placeholder = '' } = {}) {
 }
 
 function section(id, title, bodyHtml, { count = '', act = '' } = {}) {
-  return `<div class="section ${collapsed.has(id) ? 'collapsed' : ''}" data-section="${id}">
+  return `<div class="section ${isCollapsed(id) ? 'collapsed' : ''}" data-section="${id}">
     <button class="section-head">${icon('chevronDown', 'icon-sm chev')}${title}${count !== '' ? ` <span class="count">${count}</span>` : ''}${act ? `<span class="act">${act}</span>` : ''}</button>
     <div class="section-body">${bodyHtml}</div></div>`;
 }
@@ -137,7 +147,7 @@ function renderItem(it) {
   shownId = it.id;
   const type = it.item_type || 'journalArticle';
   const trash = state.view === 'trash';
-  const { keys, rareShown, rareHidden } = infoFieldKeys(it);
+  const { main, more } = infoFieldKeys(it);
   const typeOptions = state.schema.itemTypes.map((t) => `<option value="${t.key}" ${t.key === type ? 'selected' : ''}>${escapeHtml(t.label)}</option>`).join('');
 
   const fieldRow = (key) => {
@@ -154,14 +164,16 @@ function renderItem(it) {
   const authorRows = (authors.length ? authors : ['']).map((a) => authorRow(a)).join('');
 
   const info = `
-    <div class="field-row"><label>Item Type</label><select class="fv" data-field="item_type">${typeOptions}</select></div>
+    ${fieldRow('citation_key')}
     <div class="field-row"><label>Title</label>${fv('title', it.title, { multiline: true, placeholder: 'Untitled' })}</div>
     <div class="field-row"><label>Authors</label><div class="authors">${authorRows}</div></div>
-    ${keys.map(fieldRow).join('')}
-    ${rareShown.map(fieldRow).join('')}
-    <button class="more-toggle" data-tool="more">${showAllFields ? 'Show fewer fields' : (rareHidden ? `Show ${rareHidden} more fields` : '')}</button>
+    ${main.map(fieldRow).join('')}
+    ${showAllFields ? `
+    <div class="field-row"><label>Item Type</label><select class="fv" data-field="item_type">${typeOptions}</select></div>
+    ${more.map(fieldRow).join('')}
     <div class="field-row"><label>Date Added</label><div class="fv readonly">${escapeHtml(formatDate(it.date_added, true))}</div></div>
-    <div class="field-row"><label>Modified</label><div class="fv readonly">${escapeHtml(formatDate(it.date_modified, true))}</div></div>`;
+    <div class="field-row"><label>Modified</label><div class="fv readonly">${escapeHtml(formatDate(it.date_modified, true))}</div></div>` : ''}
+    <button class="more-toggle" data-tool="more">${showAllFields ? 'Show fewer fields' : `Show ${more.length + 1} more fields`}</button>`;
 
   const atts = it.attachments || [];
   const attHtml = `<div class="att-list">${atts.map((a) => `
@@ -188,6 +200,9 @@ function renderItem(it) {
     </div>
     <div class="ip-body">
       ${snippet && state.query ? section('fulltext', 'Full-text match', `<div class="ft-snippet">${snippet}</div>`) : ''}
+      ${section('info', 'Info', info)}
+      ${section('abstract', 'Abstract', fv('abstract', it.abstract, { multiline: true, placeholder: 'Add an abstract…' }))}
+      ${state.settings.notes_enabled !== false ? section('notes', 'Notes', '<div class="ip-notes" data-ip-notes><span class="muted">Loading…</span></div>') : ''}
       ${trash ? '' : section('organize', 'Folder &amp; Tags', `
         <div class="field-row"><label>${(it.folder_ids || []).length > 1 ? 'Folders' : 'Folder'}</label>
           <div class="folder-chips">${(it.folder_ids || []).filter((f) => folderById(f)).map((f) => `
@@ -196,10 +211,7 @@ function renderItem(it) {
             <button class="folder-add" data-tool="pick-folder" title="Add to a folder — an item can be in several">${icon('plus', 'icon-sm')} ${(it.folder_ids || []).length ? 'Add' : 'Add to folder'}</button>
           </div></div>
         <div class="field-row"><label>Tags</label><div class="ip-tags"></div></div>`, { count: (it.tags || []).length || '' })}
-      ${state.settings.notes_enabled !== false ? section('notes', 'Notes', '<div class="ip-notes" data-ip-notes><span class="muted">Loading…</span></div>') : ''}
       ${section('references', 'References', '<div class="ip-refs" data-ip-refs><span class="muted">Loading…</span></div>')}
-      ${section('info', 'Info', info)}
-      ${section('abstract', 'Abstract', fv('abstract', it.abstract, { multiline: true, placeholder: 'Add an abstract…' }))}
       ${section('attachments', 'Attachments', attHtml, { count: atts.length })}
     </div>`;
   bindItem(it);
@@ -283,9 +295,8 @@ function bindItem(it) {
   root.querySelectorAll('.section-head').forEach((b) => b.addEventListener('click', (e) => {
     if (e.target.closest('.act')) return;
     const sec = b.parentElement;
-    sec.classList.toggle('collapsed');
-    sec.classList.contains('collapsed') ? collapsed.add(sec.dataset.section) : collapsed.delete(sec.dataset.section);
-    store('zc.collapsedSections', [...collapsed]);
+    sectionState[sec.dataset.section] = sec.classList.toggle('collapsed');
+    store('zc.sectionState', sectionState);
   }));
 
   // text fields

@@ -65,8 +65,9 @@ never mix.
   Identifier, dropped PDFs, the browser button) the list of papers the item cites is fetched
   too, in the background (Semantic Scholar, then OpenAlex, then Crossref; optional API keys
   in Settings → Online Services). The item pane shows *References* — cited works that are
-  in your library link to them, the others can be added with one click — and *Cited by in
-  your library*. Fetch them for any selection from the item menu. The whole graph (library
+  in your library link to them (matched by DOI, arXiv ID, or else title and year), the others
+  can be added with one click — and *Cited by in your library*. Fetch them for any selection
+  from the item menu or the multi-selection pane, with progress and a summary. The whole graph (library
   items + every work they cite, with "cites" edges) is at `GET /api/graph/citations`.
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
   arXiv, Scholar) and checks the file is really the right paper. Batch runs skip items
@@ -74,9 +75,9 @@ never mix.
 - **Folders** (nested; an item can be in several folders but is stored once — a folder
   only holds a link to it), **tags** (many per item, optional colours) and **smart
   folders** (saved searches). Drag items onto a folder to add them (hold Shift to move
-  them out of the folder you're in), onto a tag to tag them, onto Unfiled to take them
-  out of every folder. Inside a folder, Delete removes items from that folder only;
-  Cmd/Ctrl+Delete moves them to the Trash.
+  them out of the folder you're in), onto a tag to tag them. Items don't have to be in a folder: everything
+  is in My Library (`folder:none` finds the ones in no folder). Inside a folder, Delete
+  removes items from that folder only; Cmd/Ctrl+Delete moves them to the Trash.
 - **Search filters** combine with text and can be negated with `-`:
   `tag:review`, `tag:"open systems"`, `folder:Physics`, `folder:"Physics/Transport"`,
   `folder:none`, `type:book`, `year:2020`, `year:2018-2022`, `year:>2015`, `has:pdf`,

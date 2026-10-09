@@ -179,7 +179,7 @@ function initToolbar() {
 }
 
 function openIdentifier() {
-  if (!['library', 'unfiled'].includes(state.view) && !state.view.startsWith('folder:')) A.setView('library');
+  if (state.view !== 'library' && !state.view.startsWith('folder:')) A.setView('library');
   openIdentifierDialog();
 }
 
@@ -256,7 +256,7 @@ function initStatusBar() {
   bar.innerHTML = '<span data-s="count"></span><span data-s="sel"></span><span class="spacer"></span><span class="status-index" data-s="index"></span>';
   const paint = () => {
     const filtered = state.query || state.tagFilter.size;
-    let where = { trash: ' in Trash', duplicates: ' that look like duplicates', unfiled: ' not in any folder' }[state.view] || '';
+    let where = { trash: ' in Trash', duplicates: ' that look like duplicates'}[state.view] || '';
     if (state.view.startsWith('folder:')) where = ` in ${folderById(state.view.slice(7))?.name || 'folder'}`;
     if (state.view.startsWith('smart:')) where = ` in ${state.sidebar.smart.find((s) => `smart:${s.id}` === state.view)?.name || 'smart folder'}`;
     const total = state.counts[state.view] ?? state.items.length;

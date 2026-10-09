@@ -2,8 +2,7 @@
 //
 // Drag & drop: drop items on a folder to add them to it (an item can be in several
 // folders; hold Shift while dropping to move them out of the folder being viewed),
-// on a tag to tag them, on Unfiled to take them out of every folder, on Trash to
-// delete them. Drag a folder onto another to nest it, or onto the
+// on a tag to tag them, on Trash to delete them. Drag a folder onto another to nest it, or onto the
 // "Folders" heading to move it to the top level. PDFs dropped on a folder are
 // added as new items in that folder.
 import * as A from '../actions.js';
@@ -29,7 +28,6 @@ export function initSidebar() {
     <div class="side-scroll">
       <div class="side-section">Library</div>
       <button class="side-item" data-view="library">${icon('library')}<span class="nm">My Library</span><span class="count" data-count="library"></span></button>
-      <button class="side-item" data-view="unfiled" data-drop="unfiled" title="Items that are not in any folder">${icon('unfiled')}<span class="nm">Unfiled Items</span><span class="count" data-count="unfiled"></span></button>
       <button class="side-item" data-view="duplicates" title="Items with the same DOI, or the same title and year">${icon('copy')}<span class="nm">Duplicate Items</span><span class="count" data-count="duplicates"></span></button>
       <button class="side-item" data-view="trash" data-drop="trash">${icon('trash')}<span class="nm">Trash</span><span class="count" data-count="trash"></span></button>
 
@@ -87,7 +85,7 @@ function paintNotes() {
 function paint() {
   root.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('active', !inNotes() && b.dataset.view === state.view));
   paintNotes();
-  for (const k of ['library', 'unfiled', 'trash', 'duplicates']) {
+  for (const k of ['library', 'trash', 'duplicates']) {
     root.querySelector(`[data-count="${k}"]`).textContent = state.counts[k] || '';
   }
   paintFolders();
@@ -302,7 +300,7 @@ function dragKind(e) {
 
 function accepts(target, kind) {
   const d = target.dataset.drop;
-  if (kind === 'items') return ['folder', 'tag', 'unfiled', 'trash'].includes(d);
+  if (kind === 'items') return ['folder', 'tag', 'trash'].includes(d);
   if (kind === 'folder') return ['folder', 'folder-root'].includes(d);
   if (kind === 'files') return d === 'folder';
   return false;
@@ -352,7 +350,6 @@ function bindDnD() {
         if (e.shiftKey && currentFolderId() && currentFolderId() !== to) A.moveBetweenFolders(ids, currentFolderId(), to);
         else A.addToFolder(ids, to);
       }
-      if (d === 'unfiled') A.removeFromAllFolders(ids);
       if (d === 'tag') { const t = tagById(target.dataset.tag); if (t) A.addTags(ids, [t.name]); }
       if (d === 'trash') { A.select(ids); A.trashSelected(); }
     } else if (kind === 'folder') {

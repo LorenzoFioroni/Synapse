@@ -97,6 +97,13 @@ async def main():
 
             # ---- item pane: references (citation graph)
             await page.click(f'.row[data-id="{a["id"]}"] .cell[data-col="title"]')
+            await page.wait_for_selector('.ip-body .section')
+            order = await page.eval_on_selector_all('.ip-body .section', "els => els.map((e) => e.dataset.section + (e.classList.contains('collapsed') ? '-' : '+'))")
+            check("item pane sections: Info, Abstract (closed), Notes, Folder & Tags, References (closed), Attachments",
+                  order == ["info+", "abstract-", "notes+", "organize+", "references-", "attachments+"], str(order))
+            first = await page.text_content('[data-section="info"] .field-row label')
+            check("Info starts with the citation key", first == "Citation Key", first)
+            await page.click('[data-section="references"] .section-head')   # open it (remembered)
             await wait_for(lambda: count_is(page, '.ip-ref', 2))
             status = await page.text_content('.ip-refs-status')
             check("item pane lists the references", "2 references" in status and "1 in your library" in status, " ".join(status.split()))

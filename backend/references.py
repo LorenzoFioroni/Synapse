@@ -2,7 +2,7 @@
 
 For each item we store the works it cites (in order), whether or not they are in the library.
 Together these give a graph — library item -> cited work — where a cited work that is also in
-the library is matched by DOI or arXiv id. It is meant as the base for later AI features
+the library is matched by DOI or arXiv id, or else by its title (and year, when both have one). It is meant as the base for later AI features
 ("what does this project rest on", "what is cited a lot that I have not read").
 
 Stored in its own database (``data/citations.db``) so the library database is never touched.
@@ -21,6 +21,7 @@ import re
 import sqlite3
 import threading
 import time
+import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -62,6 +63,11 @@ CREATE INDEX IF NOT EXISTS idx_refs_arxiv ON refs(arxiv_id);
 REF_FIELDS = ("doi", "arxiv_id", "openalex_id", "s2_id", "title", "authors", "year", "venue", "raw")
 
 
+class FetchFailed(LookupError_):
+    """The online services could not be reached / answered with errors (unlike an item
+    without identifiers, trying again later may work)."""
+
+
 # ------------------------------------------------------------------ identifiers
 def norm_doi(doi: str | None) -> str | None:
     if not doi:
@@ -85,6 +91,23 @@ def identifiers(item: dict) -> tuple[str | None, str | None]:
     if doi and _ARXIV_DOI.match(doi):
         arx = arx or norm_arxiv(_ARXIV_DOI.match(doi).group(1))
     return doi, arx
+
+
+def title_key(title: str | None) -> str | None:
+    """A title reduced for matching: no accents, case, punctuation, LaTeX or spacing differences.
+    Very short titles ("Introduction") are too ambiguous and give None."""
+    t = unicodedata.normalize("NFKD", str(title or ""))
+    t = "".join(ch for ch in t if not unicodedata.combining(ch)).casefold()
+    t = re.sub(r"<[^>]+>|\\[a-z]+", " ", t)          # markup tags, LaTeX commands
+    t = " ".join(re.sub(r"[\W_]+", " ", t).split())
+    return t if len(t) >= 15 else None
+
+
+def _year(v) -> int | None:
+    try:
+        return int(str(v)[:4]) if v else None
+    except ValueError:
+        return None
 
 
 def _clean_ref(r: dict) -> dict:
@@ -246,7 +269,7 @@ def fetch(item: dict, *, email: str = "", openalex_key: str = "", s2_key: str = 
         if refs:
             return name, refs
     if errors:   # an answer of "no references" only counts when every service answered
-        raise LookupError_("Could not get the references (" + "; ".join(errors) + ").")
+        raise FetchFailed("Could not get the references (" + "; ".join(errors) + ").")
     return "none", []
 
 
@@ -303,15 +326,6 @@ class CitationStore:
     def all_refs(self) -> list[dict]:
         with self._session() as c:
             return [dict(r) for r in c.execute("SELECT * FROM refs ORDER BY item_id, position")]
-
-    def citing(self, doi: str | None, arxiv_id: str | None) -> list[str]:
-        """Items whose reference list contains this DOI / arXiv id."""
-        if not doi and not arxiv_id:
-            return []
-        with self._session() as c:
-            rows = c.execute("SELECT DISTINCT item_id FROM refs WHERE (doi IS NOT NULL AND doi = ?) "
-                             "OR (arxiv_id IS NOT NULL AND arxiv_id = ?)", (doi or "", arxiv_id or ""))
-            return [r[0] for r in rows]
 
     def remove(self, item_ids) -> None:
         with self._session() as c:
@@ -401,7 +415,8 @@ class Citations:
 
     # -- reading
     def _library_index(self):
-        by_doi, by_arxiv, items = {}, {}, {}
+        """Lookup tables of the library: by DOI, by arXiv id, by title key -> [(id, year)]."""
+        by_doi, by_arxiv, by_title, items = {}, {}, {}, {}
         for p in self.papers.list():
             items[p["id"]] = p
             doi, arx = identifiers(p)
@@ -409,30 +424,45 @@ class Citations:
                 by_doi.setdefault(doi, p["id"])
             if arx:
                 by_arxiv.setdefault(arx, p["id"])
-        return by_doi, by_arxiv, items
+            t = title_key(p.get("title"))
+            if t:
+                by_title.setdefault(t, []).append((p["id"], _year(p.get("year"))))
+        return (by_doi, by_arxiv, by_title), items
 
     @staticmethod
-    def _match(ref: dict, by_doi: dict, by_arxiv: dict) -> str | None:
-        return (by_doi.get(ref.get("doi")) if ref.get("doi") else None) or \
-               (by_arxiv.get(ref.get("arxiv_id")) if ref.get("arxiv_id") else None)
+    def _match(ref: dict, index) -> str | None:
+        """The library item a cited work is, by DOI, arXiv id, or title (+ year within one,
+        as a preprint and its journal version are often a year apart)."""
+        by_doi, by_arxiv, by_title = index
+        hit = (by_doi.get(ref.get("doi")) if ref.get("doi") else None) or \
+              (by_arxiv.get(ref.get("arxiv_id")) if ref.get("arxiv_id") else None)
+        if hit:
+            return hit
+        t = title_key(ref.get("title"))
+        y = _year(ref.get("year"))
+        for pid, py in by_title.get(t, []) if t else []:
+            if not y or not py or abs(y - py) <= 1:
+                return pid
+        return None
 
     def item_view(self, item_id: str) -> dict:
         """References of an item (marked when they are in the library) and the library items citing it."""
         item = self.papers.get(item_id)
-        by_doi, by_arxiv, items = self._library_index()
+        index, items = self._library_index()
         refs = self.store.references(item_id)
         for r in refs:
-            m = self._match(r, by_doi, by_arxiv)
+            m = self._match(r, index)
             r["library_id"] = m if m != item_id else None   # the cited work is in the library
         doi, arx = identifiers(item)
+        citing = {r["item_id"] for r in self.store.all_refs() if r["item_id"] != item_id and self._match(r, index) == item_id}
         cited_by = [{"id": i, "title": items[i].get("title"), "authors": items[i].get("authors"), "year": items[i].get("year")}
-                    for i in self.store.citing(doi, arx) if i in items and i != item_id]
+                    for i in items if i in citing]
         return {"fetch": self.store.fetch_info(item_id), "references": refs, "cited_by": cited_by,
                 "can_fetch": bool(doi or arx), "queued": item_id in self._pending}
 
     def graph(self) -> dict:
         """The whole citation graph: library items and the works they cite, for analysis."""
-        by_doi, by_arxiv, items = self._library_index()
+        index, items = self._library_index()
         nodes: dict[str, dict] = {}
         for pid, p in items.items():
             doi, arx = identifiers(p)
@@ -443,7 +473,7 @@ class Citations:
         for r in self.store.all_refs():
             if r["item_id"] not in items:
                 continue   # item deleted since
-            target = self._match(r, by_doi, by_arxiv)
+            target = self._match(r, index)
             if target:
                 tid = f"item:{target}"
             else:

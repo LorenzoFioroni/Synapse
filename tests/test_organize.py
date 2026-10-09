@@ -34,17 +34,19 @@ def test_folders_tree_and_multiple_membership(client):
     client.patch(f"/api/items/{a['id']}", json={"folder_ids": [rg["id"]]})          # replace all memberships
     assert client.get(f"/api/items/{a['id']}").get_json()["folder_ids"] == [rg["id"]]
     assert client.post("/api/items/folders", json={"ids": [a["id"]], "add": [999]}).status_code == 404
-    assert ids("unfiled") == []
+    unfiled = lambda: sorted(i["id"] for i in client.get("/api/items?q=folder:none").get_json()["items"])
+    assert unfiled() == []
     # no cycles
     assert client.patch(f"/api/folders/{phys['id']}", json={"parent_id": tr["id"]}).status_code == 400
     r = client.patch(f"/api/folders/{tr['id']}", json={"name": "Transport theory", "parent_id": None}).get_json()
     assert r["name"] == "Transport theory" and r["parent_id"] is None
-    # deleting a folder keeps its items; only those in no other folder become unfiled
+    # deleting a folder keeps its items; only those in no other folder end up in none
     client.post("/api/items/folders", json={"ids": [b["id"]], "add": [rg["id"]]})
     res = client.delete(f"/api/folders/{tr['id']}").get_json()
-    assert res["unfiled"] == 0 and ids("unfiled") == []
+    assert res["unfiled"] == 0 and unfiled() == []
     res = client.delete(f"/api/folders/{rg['id']}").get_json()
-    assert res["unfiled"] == 2 and ids("unfiled") == sorted([a["id"], b["id"]])
+    assert res["unfiled"] == 2 and unfiled() == sorted([a["id"], b["id"]])
+    assert client.get("/api/items").get_json()["counts"].keys() == {"library", "trash", "duplicates"}
     assert client.get("/api/items").get_json()["counts"]["library"] == 2
 
 

@@ -13,7 +13,7 @@ def test_create_edit_trash_restore(client):
     assert r.get_json()["journal"] == "Nature" and "bogus" not in r.get_json()
     client.post("/api/items/trash", json={"ids": [item["id"]]})
     lib = client.get("/api/items").get_json()
-    assert lib["items"] == [] and lib["counts"] == {"library": 0, "trash": 1, "duplicates": 0, "unfiled": 0}
+    assert lib["items"] == [] and lib["counts"] == {"library": 0, "trash": 1, "duplicates": 0}
     assert len(client.get("/api/items?view=trash").get_json()["items"]) == 1
     client.post("/api/items/restore", json={"ids": [item["id"]]})
     assert len(client.get("/api/items").get_json()["items"]) == 1

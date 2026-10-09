@@ -83,7 +83,7 @@ export async function updateField(id, field, value) {
 
 export async function newItem(data = {}) {
   try {
-    if (!['library', 'unfiled'].includes(state.view) && !currentFolderId()) setView('library');
+    if (state.view !== 'library' && !currentFolderId()) setView('library');
     const item = await api.createItem({ item_type: state.settings.default_item_type || 'journalArticle', folder_id: currentFolderId(), ...data });
     await loadItems();
     select([item.id], { anchor: item.id });
@@ -310,7 +310,7 @@ export async function deleteFolder(id) {
   const subs = state.sidebar.folders.filter((x) => x.parent_id === id).length;
   if (!(await confirmDialog(`Delete the folder “${f.name}”${subs ? ' and its subfolders' : ''}?`, {
     title: 'Delete folder', confirm: 'Delete Folder', danger: true,
-    detail: 'The items inside are not deleted — they move to Unfiled Items.',
+    detail: 'The items inside are not deleted — they stay in My Library.',
   }))) return;
   try {
     // leave the view first if it shows this folder or one of its subfolders
@@ -323,7 +323,7 @@ export async function deleteFolder(id) {
     const res = await api.deleteFolder(id);
     if (gone.has(currentFolderId())) setView('library');
     await loadItems();
-    toast(`Deleted “${f.name}”${res.unfiled ? ` · ${plural(res.unfiled, 'item')} moved to Unfiled` : ''}`);
+    toast(`Deleted “${f.name}”`);
   } catch (e) { toastError(e); }
 }
 
@@ -386,19 +386,6 @@ export async function removeFolderMembership(id, folderId) {
     await loadItems();
     toast(`Removed from “${folderById(folderId)?.name || 'folder'}”`, {
       action: { label: 'Undo', run: async () => { await api.changeFolders([id], [folderId], []); await loadItems(); } },
-    });
-  } catch (e) { toastError(e); }
-}
-
-/** Take items out of every folder (drop on "Unfiled Items"). */
-export async function removeFromAllFolders(ids) {
-  const memberships = ids.map((id) => [id, [...(byId(id)?.folder_ids || [])]]).filter(([, f]) => f.length);
-  if (!memberships.length) return toast('These items are not in any folder');
-  try {
-    for (const [id, folders] of memberships) await api.changeFolders([id], [], folders);
-    await loadItems();
-    toast(`Removed ${plural(memberships.length, 'item')} from all folders`, {
-      action: { label: 'Undo', run: async () => { for (const [id, f] of memberships) await api.changeFolders([id], f, []); await loadItems(); } },
     });
   } catch (e) { toastError(e); }
 }
