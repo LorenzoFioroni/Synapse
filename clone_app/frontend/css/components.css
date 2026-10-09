@@ -137,7 +137,7 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .progress > div { height: 100%; background: var(--accent); transition: width .3s; }
 
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; color: var(--text-2); padding: 40px 20px; height: 100%; }
-.empty-state .icon { width: 42px; height: 42px; color: var(--text-3); }
+.empty-state > .icon { width: 42px; height: 42px; color: var(--text-3); }
 .empty-state h3 { margin: 0; font-size: var(--fs-lg); color: var(--text); font-weight: 600; }
 .empty-state p { margin: 0; max-width: 340px; }
 .empty-state .actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }

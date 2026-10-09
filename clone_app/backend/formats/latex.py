@@ -23,7 +23,27 @@ _ACCENT_RE = re.compile(r"""\\([`'^"~=.])\s*(?:\{\s*(\\?[A-Za-z])\s*\}|(\\?[A-Za
 # letter commands (\v, \c, ...) need braces or a space before the base letter
 _ACCENT_LETTER_RE = re.compile(r"""\\([uvHckrdb])(?:\s*\{\s*(\\?[A-Za-z])\s*\}|\s+(\\?[A-Za-z]))""")
 _SYMBOL_RE = re.compile(r"\\(" + "|".join(sorted(SYMBOLS, key=len, reverse=True)) + r")(?![A-Za-z])\s?(?:\{\})?")
-_TEXTCMD_RE = re.compile(r"\\(?:emph|textit|textbf|textsc|textrm|textsf|texttt|mbox|textup|textnormal|url|NoCaseChange)\s*\{([^{}]*)\}")
+_TEXTCMD_START = re.compile(r"\\(?:emph|textit|textbf|textsc|textrm|textsf|texttt|mbox|textup|textnormal|url|NoCaseChange)\s*\{")
+
+
+def _strip_textcmds(s: str) -> str:
+    """Unwrap \\textit{...} etc. (brace-balanced, so nested {{...}} works)."""
+    while True:
+        m = _TEXTCMD_START.search(s)
+        if not m:
+            return s
+        depth, i = 1, m.end()
+        while i < len(s) and depth:
+            if s[i] == "\\":
+                i += 1
+            elif s[i] == "{":
+                depth += 1
+            elif s[i] == "}":
+                depth -= 1
+            i += 1
+        end = i if depth == 0 else len(s)
+        inner = s[m.end():end - 1] if depth == 0 else s[m.end():]
+        s = s[:m.start()] + inner + s[end:]
 
 
 def _accent(m: re.Match) -> str:
@@ -34,8 +54,7 @@ def _accent(m: re.Match) -> str:
 
 
 def _convert_text(s: str) -> str:
-    for _ in range(3):  # nested commands
-        s = _TEXTCMD_RE.sub(r"\1", s)
+    s = _strip_textcmds(s)
     s = _ACCENT_RE.sub(_accent, s)
     s = _ACCENT_LETTER_RE.sub(_accent, s)
     s = _SYMBOL_RE.sub(lambda m: SYMBOLS[m.group(1)], s)

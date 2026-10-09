@@ -106,7 +106,7 @@ function paintFolders() {
   });
   tree.innerHTML = visible.map((f) => `
     <div class="side-item folder ${!inNotes() && state.view === `folder:${f.id}` ? 'active' : ''}" role="treeitem" tabindex="-1"
-         data-view="folder:${f.id}" data-folder="${f.id}" data-drop="folder" draggable="true" style="padding-left:${10 + f.depth * 14}px">
+         data-view="folder:${f.id}" data-folder="${f.id}" data-drop="folder" draggable="true" style="padding-left:${f.depth * 12}px">
       <span class="twisty ${f.hasChildren ? '' : 'none'} ${state.openFolders.has(f.id) ? 'open' : ''}" data-act="toggle">${icon('chevron', 'icon-sm')}</span>
       ${icon('folder')}<span class="nm">${escapeHtml(f.name)}</span><span class="count">${folderTotal(f.id) || ''}</span>
     </div>`).join('') || '<div class="side-empty">Drag items here after creating a folder with <b>+</b>.</div>';
