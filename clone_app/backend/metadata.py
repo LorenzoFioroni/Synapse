@@ -1,6 +1,7 @@
 """Online metadata lookup: Crossref (DOI / title), OpenAlex, arXiv and Open Library."""
 from __future__ import annotations
 
+import difflib
 import logging
 import re
 import unicodedata
@@ -143,17 +144,26 @@ def crossref_title(title: str, email: str = "") -> dict:
     if not items:
         raise LookupError_("No match found on Crossref for this title.")
     # Pick the closest title rather than blindly the first hit.
-    want = _plain(title)
-    def score(it):
-        got = _plain((it.get("title") or [""])[0])
-        if not got:
-            return 0
-        common = sum(1 for a, b in zip(want, got) if a == b)
-        return common / max(len(want), len(got))
-    best = max(items, key=score)
-    if score(best) < 0.6:
+    best = max(items, key=lambda it: title_similarity(title, (it.get("title") or [""])[0]))
+    if title_similarity(title, (best.get("title") or [""])[0]) < TITLE_MATCH:
         raise LookupError_("Crossref returned results, but none matched the title closely.")
     return _crossref_to_item(best)
+
+
+TITLE_MATCH = 0.8
+
+
+def title_similarity(a: str, b: str) -> float:
+    """0..1, ignoring case, accents, punctuation and spacing.
+
+    Uses difflib's matching blocks, so an extra or missing word ("The …", a subtitle) only
+    lowers the score a little. (The old character-by-position comparison dropped to ~0 as
+    soon as the two titles were shifted by one character.)
+    """
+    pa, pb = _plain(a), _plain(b)
+    if not pa or not pb:
+        return 0.0
+    return difflib.SequenceMatcher(None, pa, pb, autojunk=False).ratio()
 
 
 def openalex_authors(doi: str, email: str = "") -> list[tuple[str, str]]:
@@ -169,13 +179,53 @@ def openalex_authors(doi: str, email: str = "") -> list[tuple[str, str]]:
         return []
 
 
-def arxiv(arxiv_id: str) -> dict:
-    r = requests.get("http://export.arxiv.org/api/query", params={"id_list": arxiv_id}, timeout=TIMEOUT)
+ARXIV_API = "https://export.arxiv.org/api/query"
+_ARXIV_DOI = re.compile(r"^10\.48550/arxiv\.(.+)$", re.I)
+_ARXIV_NS = {"a": "http://www.w3.org/2005/Atom", "x": "http://arxiv.org/schemas/atom"}
+_ARXIV_ID = re.compile(r"(\d{4}\.\d{4,5}|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?", re.I)
+
+
+def arxiv_id_of(item: dict) -> str | None:
+    """The arXiv identifier of an existing item, if it records one anywhere."""
+    for field in ("archive_id", "doi", "url", "extra", "journal", "number"):
+        v = str(item.get(field) or "")
+        m = re.search(r"(?:arxiv[:./\s]*|arxiv\.org/(?:abs|pdf)/|10\.48550/arxiv\.)" + _ARXIV_ID.pattern, v, re.I)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _arxiv_entries(params: dict) -> list:
+    r = requests.get(ARXIV_API, params=params, timeout=TIMEOUT)
     r.raise_for_status()
-    ns = {"a": "http://www.w3.org/2005/Atom", "x": "http://arxiv.org/schemas/atom"}
-    entry = ET.fromstring(r.content).find("a:entry", ns)
-    if entry is None or entry.find("a:title", ns) is None:
+    return [e for e in ET.fromstring(r.content).findall("a:entry", _ARXIV_NS) if e.find("a:title", _ARXIV_NS) is not None
+            and (e.findtext("a:id", default="", namespaces=_ARXIV_NS) or "").find("api/errors") < 0]
+
+
+def arxiv_title(title: str) -> dict:
+    """Search arXiv by title (for preprints that Crossref does not know)."""
+    words = re.findall(r"[A-Za-z0-9]+", title or "")
+    if not words:
+        raise LookupError_("No title to search for.")
+    entries = _arxiv_entries({"search_query": "ti:(" + " AND ".join(words[:12]) + ")", "max_results": 5})
+    scored = [(title_similarity(title, e.findtext("a:title", default="", namespaces=_ARXIV_NS)), e) for e in entries]
+    scored = [x for x in scored if x[0] >= TITLE_MATCH]
+    if not scored:
+        raise LookupError_("No close match on Crossref or arXiv for this title.")
+    entry = max(scored, key=lambda x: x[0])[1]
+    m = _ARXIV_ID.search(entry.findtext("a:id", default="", namespaces=_ARXIV_NS).split("/abs/")[-1])
+    return _arxiv_item(entry, m.group(1) if m else "")
+
+
+def arxiv(arxiv_id: str) -> dict:
+    entries = _arxiv_entries({"id_list": arxiv_id})
+    if not entries:
         raise LookupError_(f"arXiv:{arxiv_id} was not found.")
+    return _arxiv_item(entries[0], arxiv_id)
+
+
+def _arxiv_item(entry, arxiv_id: str) -> dict:
+    ns = _ARXIV_NS
     t = lambda path: " ".join((entry.findtext(path, default="", namespaces=ns) or "").split())
     authors = [parse_display_name(a.findtext("a:name", default="", namespaces=ns)) for a in entry.findall("a:author", ns)]
     item = {
@@ -219,9 +269,26 @@ def openlibrary_isbn(isbn: str) -> dict:
 
 # ------------------------------------------------------------------ facade
 def lookup(*, identifier: str | None = None, doi: str | None = None, title: str | None = None,
-           known: list[tuple[str, str]] | None = None, email: str = "") -> dict:
-    """Return normalized metadata for an identifier, a DOI or a title."""
-    kind, value = ("doi", clean_doi(doi)) if doi else (classify_identifier(identifier) if identifier else ("title", title))
+           arxiv_id: str | None = None, known: list[tuple[str, str]] | None = None, email: str = "") -> dict:
+    """Return normalized metadata for an identifier, a DOI, an arXiv id or a title.
+
+    arXiv's own DOIs (10.48550/arXiv.…) are registered with DataCite, not Crossref, so they and
+    explicit arXiv ids go to the arXiv API. A title that Crossref cannot match closely is also
+    tried on arXiv (preprints are often only there).
+    """
+    doi = clean_doi(doi) if doi else None
+    if doi and (m := _ARXIV_DOI.match(doi)):
+        arxiv_id, doi = arxiv_id or m.group(1), None
+    if doi:
+        kind, value = "doi", doi
+    elif arxiv_id:
+        kind, value = "arxiv", arxiv_id
+    elif identifier:
+        kind, value = classify_identifier(identifier)
+        if kind == "doi" and (m := _ARXIV_DOI.match(value)):
+            kind, value = "arxiv", m.group(1)
+    else:
+        kind, value = "title", title
     if not value:
         raise LookupError_("Nothing to look up: the item needs a DOI or a title.")
     try:
@@ -232,7 +299,16 @@ def lookup(*, identifier: str | None = None, doi: str | None = None, title: str 
         elif kind == "isbn":
             item = openlibrary_isbn(value)
         elif kind == "title":
-            item = crossref_title(value, email)
+            try:
+                item = crossref_title(value, email)
+            except LookupError_ as crossref_error:
+                try:
+                    item = arxiv_title(value)
+                except LookupError_:
+                    raise LookupError_("No close match for this title on Crossref or arXiv. "
+                                       "Add the DOI or arXiv ID to the item and try again.") from None
+                except (requests.RequestException, ET.ParseError):
+                    raise crossref_error from None
         else:
             raise LookupError_("PubMed lookups are not supported yet.")
     except requests.RequestException as e:

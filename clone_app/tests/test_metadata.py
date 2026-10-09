@@ -65,3 +65,106 @@ def test_api_lookup_and_from_identifier(client, monkeypatch):
     client.patch(f"/api/items/{item['id']}", json={"title": "old title"})
     look = client.post(f"/api/items/{item['id']}/lookup").get_json()
     assert look["current"]["title"] == "old title" and look["fetched"]["title"] == "Superdiffusive Energy Transport"
+
+
+# ---------------------------------------------------------------- arXiv (bugs.md #1)
+def atom(entries):
+    body = "".join(f"""
+  <entry>
+    <id>http://arxiv.org/abs/{e['id']}</id>
+    <published>{e.get('published', '2022-05-06T17:59:59Z')}</published>
+    <title>{e['title']}</title>
+    <summary>  {e.get('summary', 'An abstract.')} </summary>
+    <author><name>Jian Cui</name></author><author><name>J. Ignacio Cirac</name></author>
+    {f"<arxiv:doi>{e['doi']}</arxiv:doi>" if e.get('doi') else ''}
+  </entry>""" for e in entries)
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title>ArXiv Query</title>{body}
+</feed>""".encode()
+
+
+class XmlResp(FakeResp):
+    def __init__(self, content, status=200):
+        super().__init__({}, status)
+        self.content = content
+
+
+PREPRINT = {"id": "2205.03415v2", "title": "Variational Matrix Product Operators for the Steady State\n  of Dissipative Quantum Systems"}
+CROSSREF_UNRELATED = {"message": {"items": [{"title": ["Steady states of something else entirely"], "DOI": "10.1/x", "type": "journal-article"}]}}
+
+
+def fake_net(calls, arxiv_feed=None, crossref=CROSSREF_UNRELATED):
+    def get(url, params=None, **kw):
+        calls.append((url, params))
+        if "arxiv.org" in url:
+            return XmlResp(atom(arxiv_feed if arxiv_feed is not None else [PREPRINT]))
+        if "crossref" in url:
+            return FakeResp(crossref)
+        return FakeResp({}, 404)
+    return get
+
+
+def test_title_similarity_tolerates_small_differences():
+    s = metadata.title_similarity
+    assert s("Superdiffusive energy transport", "The superdiffusive energy transport") > 0.85
+    assert s("Variational MPO for steady states", "Variational M.P.O. for steady-states") > 0.95
+    assert s("Variational MPO for steady states", "Quantum chemistry of proteins") < 0.6
+
+
+def test_arxiv_id_of_items():
+    assert metadata.arxiv_id_of({"archive_id": "arXiv:2205.03415"}) == "2205.03415"
+    assert metadata.arxiv_id_of({"url": "https://arxiv.org/abs/2205.03415v3"}) == "2205.03415"
+    assert metadata.arxiv_id_of({"doi": "10.48550/arXiv.2205.03415"}) == "2205.03415"
+    assert metadata.arxiv_id_of({"extra": "arXiv: cond-mat/0601001"}) == "cond-mat/0601001"
+    assert metadata.arxiv_id_of({"title": "nothing", "doi": "10.1103/x"}) is None
+
+
+def test_arxiv_item_is_looked_up_on_arxiv_not_crossref(monkeypatch):
+    calls = []
+    monkeypatch.setattr(metadata.requests, "get", fake_net(calls))
+    item = metadata.lookup(title="Variational MPO", arxiv_id="2205.03415")
+    assert item["title"].startswith("Variational Matrix Product Operators for the Steady State of Dissipative")
+    assert item["item_type"] == "preprint" and item["archive_id"] == "arXiv:2205.03415"
+    assert not any("crossref" in u for u, _ in calls)
+
+
+def test_arxiv_doi_goes_to_arxiv(monkeypatch):
+    calls = []
+    monkeypatch.setattr(metadata.requests, "get", fake_net(calls))
+    item = metadata.lookup(doi="https://doi.org/10.48550/arXiv.2205.03415")
+    assert item["archive_id"] == "arXiv:2205.03415"
+    assert calls[0][1] == {"id_list": "2205.03415"}
+    item = metadata.lookup(identifier="10.48550/arXiv.2205.03415")
+    assert item["archive_id"] == "arXiv:2205.03415"
+
+
+def test_title_falls_back_to_arxiv_search(monkeypatch):
+    calls = []
+    monkeypatch.setattr(metadata.requests, "get", fake_net(calls))
+    item = metadata.lookup(title="Variational matrix product operators for the steady state of dissipative quantum systems")
+    assert item["archive_id"] == "arXiv:2205.03415"
+    assert [u for u, _ in calls][:2] == ["https://api.crossref.org/works", metadata.ARXIV_API]
+    assert calls[1][1]["search_query"].startswith("ti:(Variational AND matrix")
+
+
+def test_no_match_anywhere_has_a_helpful_message(monkeypatch):
+    monkeypatch.setattr(metadata.requests, "get", fake_net([], arxiv_feed=[{"id": "9999.99999", "title": "Unrelated"}]))
+    with pytest.raises(metadata.LookupError_, match="Crossref or arXiv"):
+        metadata.lookup(title="Variational matrix product operators for the steady state")
+
+
+def test_published_doi_still_uses_crossref(monkeypatch):
+    calls = []
+    monkeypatch.setattr(metadata.requests, "get", fake_net(calls, crossref=CROSSREF))
+    item = metadata.lookup(doi="10.1103/PhysRevX.13.011033", arxiv_id="2205.03415")
+    assert item["title"] == "Superdiffusive Energy Transport"
+
+
+def test_api_lookup_for_arxiv_item(client, svc, monkeypatch):
+    calls = []
+    monkeypatch.setattr(metadata.requests, "get", fake_net(calls))
+    it = svc.papers.create({"title": "Variational MPO", "url": "https://arxiv.org/abs/2205.03415"})
+    r = client.post(f"/api/items/{it['id']}/lookup")
+    assert r.status_code == 200, r.json
+    assert r.json["fetched"]["archive_id"] == "arXiv:2205.03415"
