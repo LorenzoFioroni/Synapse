@@ -60,6 +60,17 @@ Back up the `data/` folder to keep everything. Libraries from the old layout
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
   arXiv, Scholar) and checks the file is really the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.
+- **Folders** (nested; each item lives in one folder), **tags** (many per item, optional
+  colours) and **smart folders** (saved searches). Drag items onto a folder to move
+  them or onto a tag to tag them; filter by clicking tags (several = AND).
+- **Search filters** combine with text and can be negated with `-`:
+  `tag:review`, `tag:"open systems"`, `folder:Physics`, `folder:"Physics/Transport"`,
+  `folder:none`, `type:book`, `year:2020`, `year:2018-2022`, `year:>2015`, `has:pdf`,
+  `author:cirac`, `title:…`, `journal:…`, `key:…`. Save any search as a smart folder.
+- **Cmd/Ctrl+C** copies the BibTeX of the selected items (Cmd+Shift+C: citation keys,
+  Cmd+T: edit tags).
+- **Browser button** (`browser_extension/`, see its README): saves the article you are
+  reading — DOI/arXiv pages, publisher pages, PDFs — with folder, tags and the PDF.
 - **Trash** with Undo, **Duplicate Items** view with "keep this one, trash the others".
 - Sortable, resizable, re-orderable columns; light/dark theme; compact density;
   keyboard navigation (see Settings → Library & Shortcuts).
@@ -77,6 +88,7 @@ clone_app/
 │   ├── db.py              SQLite connection + schema migrations
 │   ├── fields.py          item fields and types (single source of truth)
 │   ├── repository.py      all SQL for items/attachments, duplicate detection
+│   ├── organize.py        folders, tags, smart folders
 │   ├── search.py          search scopes and query parsing
 │   ├── fulltext.py        separate FTS5 index + background indexer
 │   ├── citekeys.py        citation-key patterns
@@ -85,12 +97,14 @@ clone_app/
 │   ├── pdf_finder.py      open-access PDF search + verification
 │   ├── pdftext.py         PDF text extraction
 │   ├── formats/           bibtex, ris, endnote (+XML), csljson
-│   └── api/               Flask blueprints: items, attachments, settings, io, metadata
+│   └── api/               Flask blueprints: items, attachments, settings, io, metadata,
+│                          organize (folders/tags/smart), connector (browser extension)
 ├── frontend/
 │   ├── index.html, viewer.html
 │   ├── css/               tokens (themes), base, components, layout, items, item pane, settings
 │   ├── js/                api, store, actions, ui/ (toast, dialog, menu), views/
 │   └── vendor/pdfjs/
+├── browser_extension/     Chrome extension (Manifest V3) – load unpacked
 ├── tests/                 pytest suite (python -m pytest tests)
 └── data/                  your library (git-ignored)
 ```

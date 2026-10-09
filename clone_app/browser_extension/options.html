@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Save to Library — Settings</title>
+  <link rel="stylesheet" href="popup.css">
+  <style>body { width: auto; min-width: 360px; padding: 16px; } .row { display: flex; gap: 8px; margin-top: 6px; } .row .btn { flex: none; padding: 0 14px; } #status { margin-top: 10px; min-height: 18px; }</style>
+</head>
+<body>
+  <label class="f" for="server" style="margin-top:0">Library address</label>
+  <div class="row"><input type="url" id="server" placeholder="http://127.0.0.1:8000" spellcheck="false"><button class="btn primary" id="save">Save</button></div>
+  <div class="hint" style="text-align:left">Where <code>python server.py</code> is running. The default port is 8000; use the one you pass with <code>--port</code>.</div>
+  <div id="status"></div>
+  <script src="options.js"></script>
+</body>
+</html>

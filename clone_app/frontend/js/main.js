@@ -45,6 +45,26 @@ async function boot() {
   await A.loadItems();
   focusList();
   pollStats();
+  openItemFromHash();
+  window.addEventListener('hashchange', openItemFromHash);
+}
+
+/** #item=<id> (used by the browser extension's "Open in Library") selects that item. */
+async function openItemFromHash() {
+  const id = new URLSearchParams(location.hash.slice(1)).get('item');
+  if (!id) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  if (settingsOpen()) closeSettings();
+  if (!state.items.some((i) => i.id === id)) {
+    if (state.query) clearSearch();
+    state.tagFilter.clear();
+    if (state.view !== 'library') A.setView('library');
+    await A.loadItems();
+  }
+  if (state.items.some((i) => i.id === id)) {
+    A.select([id], { anchor: id, cursor: id });
+    focusList();
+  }
 }
 
 /* ---------------------------------------------------------------- toolbar */

@@ -82,6 +82,7 @@ export function openSettings(sectionId = null) {
             <span class="mono" data-fs-label style="width:36px">${s.font_size}px</span></div></div>
           ${switchRow('open_pdf_on_double_click', 'Double-click opens the PDF', 'When off, double-clicking an item starts editing its title.')}
           ${switchRow('confirm_trash', 'Ask before moving to the Trash', 'Items in the Trash can always be restored, and an Undo button appears after deleting.')}
+          ${switchRow('show_subfolder_items', 'Show items from subfolders', 'A folder also lists the items of the folders inside it.')}
         </div></section>
 
       <section class="settings-section" id="set-citekeys"><h2>Citation Keys</h2>
@@ -115,6 +116,7 @@ export function openSettings(sectionId = null) {
           ${switchRow('bibtex_unicode', 'Keep Unicode in BibTeX', 'On: write “Bañuls” as is (biber/BibLaTeX). Off: escape as “Ba{\\~{n}}uls” for classic BibTeX.')}
           ${switchRow('export_abstract', 'Include abstracts when exporting', 'Turn off for smaller .bib files.')}
           ${switchRow('import_skip_duplicates', 'Untick duplicates when importing', 'Entries whose DOI or title+year already exist start unticked in the import preview.')}
+          ${switchRow('import_keywords_as_tags', 'Turn imported keywords into tags', 'Keywords in BibTeX/RIS/EndNote files become tags. Exports always write tags back as keywords.')}
           <div class="setting"><div class="s-text"><div class="s-title">Transfer</div><div class="s-desc">Bring references in or take your whole library elsewhere.</div></div>
             <div class="s-control"><button class="btn" data-import>${icon('import')} Import…</button><button class="btn" data-export>${icon('export')} Export Library…</button></div></div>
         </div></section>
@@ -128,6 +130,10 @@ export function openSettings(sectionId = null) {
 
       <section class="settings-section" id="set-library"><h2>Library &amp; Shortcuts</h2><p class="lead" data-data-dir></p>
         <div class="card"><div class="stat-grid" data-stats></div></div>
+        <h2 style="margin-top:22px;font-size:15px">Browser button</h2>
+        <div class="card"><div class="setting"><div class="s-text"><div class="s-title">Save to Library (Chrome)</div>
+          <div class="s-desc">Save the article you're reading with one click. In Chrome open <span class="mono">chrome://extensions</span>, turn on Developer mode,
+          choose “Load unpacked” and select the <span class="mono">clone_app/browser_extension</span> folder.</div></div></div></div>
         <h2 style="margin-top:22px;font-size:15px">Keyboard shortcuts</h2>
         <div class="card"><dl class="shortcuts">
           <dt><kbd>${modLabel}F</kbd></dt><dd>Search</dd>
@@ -140,7 +146,9 @@ export function openSettings(sectionId = null) {
           <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Collapse / expand attachments</dd>
           <dt><kbd>↵</kbd></dt><dd>Open PDF</dd>
           <dt><kbd>⌫</kbd></dt><dd>Move to Trash</dd>
+          <dt><kbd>${modLabel}C</kbd></dt><dd>Copy BibTeX of the selected items</dd>
           <dt><kbd>${modLabel}⇧C</kbd></dt><dd>Copy citation keys</dd>
+          <dt><kbd>${modLabel}T</kbd></dt><dd>Edit tags of the selected items</dd>
           <dt><kbd>${modLabel}A</kbd></dt><dd>Select all</dd>
           <dt><kbd>Esc</kbd></dt><dd>Clear search / close dialogs</dd>
         </dl></div></section>
