@@ -42,6 +42,32 @@ async def wait_for(fn, timeout=8):
     return False
 
 
+def make_pages_pdf(path: Path, texts: list[str]) -> Path:
+    """A PDF with one page per text (no external deps)."""
+    n = len(texts)
+    objs = [b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [" + b" ".join(f"{3 + 2 * i} 0 R".encode() for i in range(n)) + b"] /Count " + str(n).encode() + b" >>"]
+    font = 3 + 2 * n
+    for i, t in enumerate(texts):
+        stream = f"BT /F1 24 Tf 72 700 Td ({t}) Tj ET".encode("latin-1")
+        objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {4 + 2 * i} 0 R "
+                    f"/Resources << /Font << /F1 {font} 0 R >> >> >>".encode())
+        objs.append(b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream")
+    objs.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, o in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n".encode() + o + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    for off in offsets:
+        out += f"{off:010d} 00000 n \n".encode()
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    path.write_bytes(bytes(out))
+    return path
+
+
 def read(rel):
     p = NOTES / rel
     return p.read_text() if p.exists() else ""
@@ -187,6 +213,24 @@ async def main():
                 from struct import unpack
                 w, h = unpack(">II", imgs[0].read_bytes()[16:24])
                 check("snapshot has the selected size (≥ canvas resolution)", w >= 250 and h >= 150, (w, h))
+            # ---- bugs.md #2: a link to a page opens the PDF at that page
+            pdf3 = make_pages_pdf(Path(DATA) / "three.pdf", ["Page one", "Page two", "Page three"])
+            with open(pdf3, "rb") as fh:
+                att3 = requests.post(f"{BASE}/api/items/{cui['id']}/attachments", files={"file": ("three.pdf", fh, "application/pdf")}).json()["attachments"][0]
+            v3 = await ctx.new_page()
+            await v3.goto(f"{BASE}/viewer.html?file=/pdfs/{att3['url']}&paper_id={cui['id']}&title=x&page=3")
+            await v3.wait_for_selector('.page-wrapper[data-page-number="3"] canvas', timeout=15000)
+            await v3.wait_for_timeout(600)
+            top = await v3.evaluate("""() => {
+                const c = document.getElementById('pdf-container').getBoundingClientRect();
+                const w = document.querySelector('.page-wrapper[data-page-number="3"]').getBoundingClientRect();
+                return Math.abs(w.top - c.top); }""")
+            num = await v3.text_content('#page-num-text')
+            check("viewer opens at the requested page", top < 40 and num.strip().startswith("3"), (top, num))
+            await v3.goto(f"{BASE}/viewer.html?file=/pdfs/{att3['url']}&paper_id={cui['id']}&title=x")
+            await v3.wait_for_selector('.page-wrapper[data-page-number="3"] canvas', timeout=15000)
+            st = await v3.evaluate("document.getElementById('pdf-container').scrollTop")
+            check("without page= it stays at the top", st < 5, st)
             check("no console errors", not errors, errors[:5])
             await b.close()
     finally:

@@ -205,6 +205,32 @@ function crop(wrapper, sel) {
   return new Promise((resolve, reject) => out.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not copy the region'))), 'image/png'));
 }
 
+/* ------------------------------------------------------- open at ?page=N */
+// Links to a cited page (e.g. [@key, p. 7]) open the viewer with page=7. Pages are created one
+// after the other, so wait for that page to exist, then scroll to it — unless the reader has
+// already started scrolling.
+export function jumpToRequestedPage() {
+  const want = parseInt(params.get('page'), 10);
+  const container = document.getElementById('pdf-container');
+  if (!(want > 1) || !container) return;
+  let userMoved = false;
+  const stop = () => { userMoved = true; };
+  container.addEventListener('wheel', stop, { passive: true, once: true });
+  container.addEventListener('touchmove', stop, { passive: true, once: true });
+  window.addEventListener('keydown', stop, { once: true });
+  const tryJump = () => {
+    const w = container.querySelector(`.page-wrapper[data-page-number="${want}"]`);
+    if (!w) return false;
+    if (!userMoved) w.scrollIntoView({ block: 'start' });
+    return true;
+  };
+  if (tryJump()) return;
+  const obs = new MutationObserver(() => { if (tryJump() || userMoved) obs.disconnect(); });
+  obs.observe(container, { childList: true });
+  setTimeout(() => obs.disconnect(), 60000);
+}
+jumpToRequestedPage();
+
 /* --------------------------------------------------------------------- setup */
 async function init() {
   if (!paperId) return;
