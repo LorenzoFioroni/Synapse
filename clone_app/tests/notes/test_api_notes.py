@@ -137,3 +137,19 @@ def test_save_with_create_flag(client):
     r = client.put("/api/notes/note", json={"path": "gone.md", "text": "again", "create": True})
     assert r.status_code == 409 and r.json["exists"]
     assert client.put("/api/notes/note", json={"path": "gone.md", "text": "x"}).status_code == 400
+
+
+def test_cite_index(client, svc, tmp_path):
+    from tests.conftest import make_pdf
+    a = svc.papers.create({"authors": "Smith, Anna", "title": "Quantum things", "year": 2021, "journal": "PRL"})
+    b = svc.papers.create({"authors": "Doe, J", "title": "Gone", "year": 1999})
+    svc.papers.create({"title": ""}, auto_citekey=False)          # no key: not citable
+    pdf = make_pdf(svc.config.pdf_dir / "x.pdf", "hello")
+    svc.papers.add_attachment(a["id"], "paper.pdf", pdf.name, "pdf")
+    svc.papers.trash([b["id"]])
+    create(client, item_id=a["id"])
+    items = {i["key"]: i for i in client.get("/api/notes/cite_index").json["items"]}
+    assert set(items) == {a["citation_key"], b["citation_key"]}
+    ia = items[a["citation_key"]]
+    assert ia["journal"] == "PRL" and ia["pdf"]["url"] == "x.pdf" and ia["note"] == f"papers/{a['citation_key']}.md"
+    assert ia["trashed"] is False and items[b["citation_key"]]["trashed"] is True and items[b["citation_key"]]["pdf"] is None

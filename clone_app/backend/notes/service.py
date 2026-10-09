@@ -55,14 +55,22 @@ class NotesService:
     def _library_keys(self) -> dict[str, dict]:
         """citation_key -> compact item info, for resolving [@key] (includes trashed items)."""
         out = {}
+        notes = self.index.paper_note_map()
         for view in ("library", "trash"):
             for p in self.papers.list(view):
                 k = p.get("citation_key")
                 if k and k not in out:
+                    pdf = next((a for a in p.get("attachments") or [] if (a.get("type") or "") == "pdf"), None)
                     out[k] = {"id": p["id"], "title": p.get("title") or "", "authors": p.get("authors") or "",
-                              "year": p.get("year"), "trashed": view == "trash",
-                              "has_pdf": any((a.get("type") or "") == "pdf" for a in p.get("attachments") or [])}
+                              "year": p.get("year"), "journal": p.get("journal") or "", "trashed": view == "trash",
+                              "has_pdf": pdf is not None,
+                              "pdf": {"id": pdf["id"], "url": pdf["url"], "name": pdf.get("name") or ""} if pdf else None,
+                              "note": notes.get(k)}
         return out
+
+    def cite_index(self) -> list[dict]:
+        """Every item with a citation key (for autocomplete and citation cards), trashed ones flagged."""
+        return [{"key": k, **v} for k, v in sorted(self._library_keys().items())]
 
     def _unique_path(self, rel: str) -> str:
         rel = self.vault.clean_rel(rel)

@@ -145,3 +145,17 @@
 .folder-chip .x:hover { background: rgba(127,127,127,.25); color: var(--text); }
 .folder-add { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 1px dashed var(--border-strong); border-radius: 6px; background: none; color: var(--text-2); font-size: var(--fs-sm); }
 .folder-add:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Notes panel */
+.ip-notes { display: flex; flex-direction: column; gap: 4px; padding: 2px 0 4px; }
+.ip-note { display: flex; align-items: center; gap: 7px; border: none; background: none; text-align: left; padding: 5px 6px; border-radius: 6px; color: var(--text); width: 100%; }
+.ip-note:hover { background: var(--bg-hover); }
+.ip-note .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.ip-note .icon { color: var(--text-2); flex: none; }
+.ip-note.paper .icon { color: var(--accent); }
+.ip-cited-label { font-size: var(--fs-xs); color: var(--text-3); text-transform: uppercase; letter-spacing: .05em; font-weight: 650; margin: 8px 6px 0; }
+.ip-quote { display: block; border: none; background: none; text-align: left; width: 100%; padding: 2px 6px 4px 29px; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; border-radius: 6px;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ip-quote:hover { background: var(--bg-hover); color: var(--text); }
+.ip-none { padding: 2px 6px; font-size: var(--fs-sm); }
+.ip-notes > .btn { align-self: flex-start; }

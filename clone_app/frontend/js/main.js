@@ -45,6 +45,7 @@ async function boot() {
   on('clear-search', () => clearSearch());
   on('open-notes', () => openNotes());
   on('close-notes', () => closeNotes());
+  on('open-note', ({ path, line }) => openNotes(path, line));
 
   await A.loadItems();
   focusList();

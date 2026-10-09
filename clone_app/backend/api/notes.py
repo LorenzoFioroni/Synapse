@@ -116,6 +116,12 @@ def complete_cite():
     return jsonify(results=svc().note_service.complete_citations(request.args.get("q") or ""))
 
 
+@bp.get("/notes/cite_index")
+@guarded
+def cite_index():
+    return jsonify(items=svc().note_service.cite_index())
+
+
 @bp.get("/items/<item_id>/notes")
 @guarded
 def item_notes(item_id):

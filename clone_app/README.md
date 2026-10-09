@@ -135,6 +135,7 @@ Browser checklists for notes (need Playwright; each uses a throw-away data folde
 pip install playwright requests && playwright install chromium
 python tests/e2e/notes_checklist.py      # editor, saving, conflicts, files
 python tests/e2e/render_checklist.py     # live preview and read mode (tests/e2e/kitchen-sink.md)
+python tests/e2e/links_checklist.py      # autocomplete, citation cards, side panels, item pane
 ```
 
 The notes editor (CodeMirror 6) is vendored as a pre-built bundle in `frontend/vendor/cm6/`;

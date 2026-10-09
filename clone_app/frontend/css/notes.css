@@ -244,3 +244,37 @@ body[data-workspace="notes"] #item-pane { display: none !important; }
 .cm-lp-bullet { color: var(--text-3); display: inline-block; width: .7em; text-align: center; }
 .prose .tag { color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 0 .25em; }
 .cm-live .cm-lp-callout .cmt-quote { font-style: normal; color: inherit; }
+
+/* ===================================================== M5: cards, side panel lists, autocomplete */
+.cite-card {
+  position: fixed; z-index: 2000; width: 340px; max-height: 60vh; overflow: auto; background: var(--bg-elev); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 4px; font-size: var(--fs-sm);
+}
+.cite-card[hidden] { display: none; }
+.cc-item { padding: 10px 12px; border-radius: 7px; }
+.cc-item + .cc-item { border-top: 1px solid var(--border); border-radius: 0; }
+.cc-key { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
+.cc-title { font-weight: 600; margin: 3px 0 2px; line-height: 1.35; }
+.cc-sub { color: var(--text-2); font-size: var(--fs-xs); }
+.cc-item.missing .cc-title { color: var(--danger); }
+.cc-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.cc-actions .btn { height: 26px; font-size: var(--fs-xs); }
+
+.ns-title .count { font-weight: 500; color: var(--text-3); margin-left: 4px; text-transform: none; }
+.ns-list { display: flex; flex-direction: column; gap: 1px; }
+.ns-row { display: flex; flex-direction: column; align-items: stretch; gap: 1px; border: none; background: none; text-align: left; padding: 5px 6px; border-radius: 6px; color: var(--text); width: 100%; }
+.ns-row:hover { background: var(--bg-hover); }
+.ns-row .ns-main { font-size: var(--fs-sm); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ns-row .ns-sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ns-row .count { color: var(--text-3); font-weight: 400; }
+.ns-row.missing .ns-main, .ns-row.warn .ns-main { color: var(--danger); }
+
+/* autocomplete popup */
+.note-editor .cm-tooltip { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-md); color: var(--text); }
+.note-editor .cm-tooltip-autocomplete > ul { font-family: var(--font); font-size: var(--fs-sm); max-height: 18em; }
+.note-editor .cm-tooltip-autocomplete > ul > li { padding: 4px 10px !important; display: flex; gap: 10px; align-items: baseline; }
+.note-editor .cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--accent-soft); color: var(--text); }
+.note-editor .cm-completionLabel { font-family: var(--font-mono); font-size: .95em; }
+.note-editor .cm-completionDetail { color: var(--text-3); font-style: normal; margin-left: auto; white-space: nowrap; }
+.note-editor .cm-completionMatchedText { text-decoration: none; font-weight: 700; }
+.note-editor .cm-tooltip.cm-completionInfo { padding: 6px 10px; max-width: 320px; font-size: var(--fs-sm); }

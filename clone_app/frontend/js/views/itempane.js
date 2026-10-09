@@ -194,11 +194,43 @@ function renderItem(it) {
             <button class="folder-add" data-tool="pick-folder" title="Add to a folder — an item can be in several">${icon('plus', 'icon-sm')} ${(it.folder_ids || []).length ? 'Add' : 'Add to folder'}</button>
           </div></div>
         <div class="field-row"><label>Tags</label><div class="ip-tags"></div></div>`, { count: (it.tags || []).length || '' })}
+      ${state.settings.notes_enabled !== false ? section('notes', 'Notes', '<div class="ip-notes" data-ip-notes><span class="muted">Loading…</span></div>') : ''}
       ${section('info', 'Info', info)}
       ${section('abstract', 'Abstract', fv('abstract', it.abstract, { multiline: true, placeholder: 'Add an abstract…' }))}
       ${section('attachments', 'Attachments', attHtml, { count: atts.length })}
     </div>`;
   bindItem(it);
+  fillNotes(it);
+}
+
+/* ---------------------------------------------------------------- notes */
+async function fillNotes(it) {
+  const el = root.querySelector('[data-ip-notes]');
+  if (!el) return;
+  let res;
+  try { res = await api.itemNotes(it.id); } catch (e) { el.innerHTML = `<span class="muted">${escapeHtml(e.message)}</span>`; return; }
+  if (shownId !== it.id || !el.isConnected) return;
+  if (!res.key) { el.innerHTML = '<span class="muted">Give this item a citation key to write notes about it.</span>'; return; }
+  const trash = state.view === 'trash';
+  const paper = res.paper_notes[0];
+  const byNote = new Map();
+  for (const c of res.citing) {
+    if (paper && c.path === paper.path) continue;           // its own paper note is shown above
+    (byNote.get(c.path) || byNote.set(c.path, { title: c.source_title, path: c.path, refs: [] }).get(c.path)).refs.push(c);
+  }
+  const head = paper
+    ? `<button class="ip-note paper" data-open-note="${escapeHtml(paper.path)}">${icon('edit', 'icon-sm')}<span class="nm">${escapeHtml(paper.title || 'Paper note')}</span><span class="muted">paper note</span></button>`
+    : (trash ? '' : `<button class="btn btn-sm" data-tool="new-paper-note">${icon('plus', 'icon-sm')} Create paper note</button>`);
+  const list = [...byNote.values()].map((n) => `
+    <div class="ip-cited">
+      <button class="ip-note" data-open-note="${escapeHtml(n.path)}" data-open-line="${n.refs[0].line}">${icon('doc', 'icon-sm')}<span class="nm">${escapeHtml(n.title || n.path)}</span>
+        ${n.refs.length > 1 ? `<span class="muted">×${n.refs.length}</span>` : ''}</button>
+      ${n.refs.slice(0, 3).map((r) => `<button class="ip-quote" data-open-note="${escapeHtml(n.path)}" data-open-line="${r.line}">${escapeHtml(r.context)}</button>`).join('')}
+    </div>`).join('');
+  el.innerHTML = `${head}${list ? `<div class="ip-cited-label">Cited in</div>${list}` : (paper ? '' : '<div class="muted ip-none">No note cites this item yet.</div>')}`;
+  const count = root.querySelector('[data-section="notes"] .section-head');
+  const n = (paper ? 1 : 0) + byNote.size;
+  if (count && n && !count.querySelector('.count')) count.insertAdjacentHTML('beforeend', ` <span class="count">${n}</span>`);
 }
 
 function subline(it) {
@@ -340,8 +372,19 @@ async function handleClick(e) {
   if (rm) { e.stopPropagation(); A.removeFolderMembership(id, Number(rm.dataset.removeFolder)); return; }
   const open = e.target.closest('[data-open-folder]');
   if (open) { A.setView(`folder:${open.dataset.openFolder}`); return; }
+  const on = e.target.closest('[data-open-note]');
+  if (on) { emit('open-note', { path: on.dataset.openNote, line: Number(on.dataset.openLine) || null }); return; }
   const t = e.target.closest('[data-tool]')?.dataset.tool;
   const it2 = byId(id) || it;
+  if (t === 'new-paper-note') {
+    try {
+      const res = await api.createNote({ item_id: id });
+      emit('open-note', { path: res.path });
+    } catch (err) {
+      if (err.data?.path) emit('open-note', { path: err.data.path }); else toastError(err);
+    }
+    return;
+  }
   if (!t) {
     const att = e.target.closest('.att');
     const menuBtn = e.target.closest('[data-att-menu]');

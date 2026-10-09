@@ -1,5 +1,6 @@
 // CodeMirror 6 set-up for notes: live preview or source mode. The libraries are loaded on
 // first use. Colours come from the app's CSS variables, so light and dark themes just work.
+import { completions } from './completion.js';
 import { livePreview } from './livePreview.js';
 
 let CM = null;
@@ -77,8 +78,9 @@ export function highlightStyle(cm) {
  *                           onToggleRead()
  * @param {object} preview   deps for livePreview.js (renderer, resolveNote, citeInfo, openNote, mermaid)
  * @param {'live'|'source'} mode
+ * @param {{items(), notes()}} data      for autocomplete: cite index and notes overview
  */
-export async function createEditor(parent, handlers, preview, mode = 'live') {
+export async function createEditor(parent, handlers, preview, mode = 'live', data = { items: () => [], notes: () => [] }) {
   const cm = await loadCM();
   const lp = livePreview(cm, preview);
   const modeSlot = new cm.Compartment();
@@ -115,6 +117,7 @@ export async function createEditor(parent, handlers, preview, mode = 'live') {
     cm.search({ top: true }),
     cm.markdown({ base: cm.markdownLanguage, codeLanguages: cm.languages, extensions: [frontmatter(cm)] }),
     cm.syntaxHighlighting(highlightStyle(cm)),
+    completions(cm, data),
     modeSlot.of(modeExt(currentMode)),
     cm.EditorView.contentAttributes.of({ spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences' }),
     cm.keymap.of([...keys, ...cm.closeBracketsKeymap, ...cm.markdownKeymap, ...cm.defaultKeymap,

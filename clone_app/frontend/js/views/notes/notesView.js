@@ -14,6 +14,8 @@ import { compactDiff, lineDiff } from './diff.js';
 import { createEditor, loadMD } from './editor.js';
 import { splitFrontmatter } from './mdscan.js';
 import { NoteSession } from './noteSession.js';
+import { attachCiteCards, openCitation, showCard } from './citeCard.js';
+import { shortAuthors } from './library.js';
 import { createRenderer, slugHeading } from './render.js';
 import { highlightCodeBlocks, renderEmbeds, renderMermaid, renderMermaidBlocks } from './richRender.js';
 
@@ -33,6 +35,9 @@ let lib = null;                                        // markdown-it + KaTeX, o
 let renderer = null;                                   // for tables/math in the live preview
 // What the backend says this note links to (refreshed after each save).
 let linkData = { notes: new Map(), cites: new Map() };
+let linkResp = null;                                   // last /notes/links answer (for the side panel)
+// Citable library items (for autocomplete and citation cards), keyed by citation key.
+let library = { list: [], byKey: new Map() };
 
 const drafts = {
   get: (k) => storage(k, null),
@@ -87,7 +92,11 @@ export function initNotes() {
 
   root.addEventListener('click', onClick);
   root.addEventListener('dblclick', onDblClick);
+  window.zcNotes = { text: () => session?.text ?? null, path: () => session?.path ?? null };   // read-only, for tests
   root.querySelector('.note-read').addEventListener('click', onReadClick);
+  attachCiteCards(root, { itemInfo, openNote: (p) => openNote(p), refreshLibrary: async () => { await loadLibrary(); await refreshTree(); } });
+  let libTimer = null;
+  on('items', () => { if (notesOpen()) { clearTimeout(libTimer); libTimer = setTimeout(loadLibrary, 500); } });
   root.querySelector('.note-read').addEventListener('dblclick', onReadDblClick);
   root.addEventListener('contextmenu', onContextMenu);
   root.querySelector('.notes-filter input').addEventListener('input', (e) => { filter = e.target.value.trim().toLowerCase(); paintTree(); });
@@ -117,16 +126,26 @@ function flushOnUnload() {
 }
 
 /* ============================================================ open/close */
-export async function openNotes(path = null) {
+export async function openNotes(path = null, line = null) {
   if (!notesEnabled()) return;
   document.body.dataset.workspace = 'notes';
   root.hidden = false;
   store('zc.notes.open', true);
   emit('workspace');
-  await refreshTree();
+  await Promise.all([refreshTree(), loadLibrary()]);
   const target = path || session?.path || storage('zc.notes.active', null);
-  if (target && overview.notes.some((n) => n.path === target)) await openNote(target);
-  else if (!session) paintEmpty();
+  if (target && overview.notes.some((n) => n.path === target)) {
+    await openNote(target);
+    if (line) gotoLine(line);
+  } else if (!session) paintEmpty();
+}
+
+/** Show a 1-based line of the open note, in whichever mode is active. */
+function gotoLine(line) {
+  if (mode === 'read') {
+    const el = [...root.querySelectorAll('.note-read [data-line]')].find((x) => Number(x.dataset.line) + 1 >= line);
+    el?.scrollIntoView({ block: 'center' });
+  } else editor?.gotoLine(line);
 }
 
 export async function closeNotes() {
@@ -156,8 +175,12 @@ async function ensureEditor() {
     resolveNote,
     citeInfo,
     openNote: (target, heading) => followLink(target, heading),
+    openCite: (key, page) => { if (!openCitation(key, page)) toast(`@${key} is not in your library.`); },
     mermaid: renderMermaid,
-  }, mode === 'read' ? editMode : mode);
+  }, mode === 'read' ? editMode : mode, {
+    items: () => library.list,
+    notes: () => overview.notes,
+  });
   return editor;
 }
 
@@ -170,7 +193,18 @@ function resolveNote(target) {
   if (!t) return session?.path;
   return linkData.notes.has(t) ? linkData.notes.get(t) : undefined;
 }
-const citeInfo = (key) => linkData.cites.get(key) || null;
+/** Item info for a key: what the backend resolved for this note, else the library list. */
+const citeInfo = (key) => linkData.cites.get(key) || library.byKey.get(key) || null;
+/** Full info for cards (with PDF and paper note), from the library list. */
+const itemInfo = (key) => library.byKey.get(key) || linkData.cites.get(key) || null;
+
+async function loadLibrary() {
+  try {
+    const res = await api.citeIndex();
+    library = { list: res.items, byKey: new Map(res.items.map((i) => [i.key, i])) };
+    editor?.refresh();
+  } catch { /* autocomplete stays empty until the next try */ }
+}
 
 async function loadLinks() {
   if (!session) return;
@@ -184,7 +218,9 @@ async function loadLinks() {
       if (l.kind === 'cite' && l.item) cites.set(l.target, l.item);
     }
     linkData = { notes, cites };
+    linkResp = { ...res, path_for: path };
     editor?.refresh();
+    paintSide();
     if (mode === 'read') renderRead();
   } catch { /* shown as unknown until the next save */ }
 }
@@ -258,9 +294,7 @@ function onReadClick(e) {
   const cite = e.target.closest('.cite');
   if (cite) {
     e.preventDefault();
-    const item = citeInfo(cite.dataset.key);
-    if (item) location.hash = `item=${item.id}`;
-    else toast(`@${cite.dataset.key} is not in your library.`);
+    if (!openCitation(cite.dataset.key, cite.dataset.page ? Number(cite.dataset.page) : null)) showCard(cite);
     return;
   }
   const box = e.target.closest('.task-box[data-task-line]');
@@ -298,6 +332,7 @@ async function doOpen(path) {
   const ed = await ensureEditor();
   const start = NoteSession.open(path, res, drafts);
   linkData = { notes: new Map(), cites: new Map() };
+  linkResp = null;
   ed.load(start.text);
   info = res.info;
   session = new NoteSession({
@@ -435,7 +470,28 @@ function paintSide() {
   if (!info) { side.innerHTML = ''; return; }
   const heads = info.headings || [];
   const minLevel = Math.min(...heads.map((x) => x.level), 6);
+  const L = linkResp && linkResp.path_for === session?.path ? linkResp : null;
+  const cited = L?.cited || [];
+  const back = L?.backlinks || [];
+  const unresolved = (L?.unresolved || []).filter((u, i, a) => a.findIndex((x) => x.kind === u.kind && x.target === u.target) === i);
+  const citedHtml = cited.length ? `<div class="ns-list">${cited.map((c) => {
+    const it = itemInfo(c.key);
+    return `<button class="ns-row cite-row${it ? '' : ' missing'}" data-cite-keys="${escapeHtml(c.key)}" data-goto-line="${c.lines[0]}">
+      <span class="ns-main">${escapeHtml(it ? [shortAuthors(it.authors), it.year].filter(Boolean).join(' ') || c.key : `@${c.key}`)}${c.count > 1 ? ` <span class="count">×${c.count}</span>` : ''}</span>
+      <span class="ns-sub">${escapeHtml(it ? it.title : 'not in your library')}</span></button>`;
+  }).join('')}</div>` : '<div class="side-empty">Cite papers with [@key] — type [@ to search your library.</div>';
+  const backHtml = back.length ? `<div class="ns-list">${back.map((b) => `
+    <button class="ns-row" data-open-path="${escapeHtml(b.path)}" data-open-line="${b.line}">
+      <span class="ns-main">${escapeHtml(b.source_title || stemOf(b.path))}</span>
+      <span class="ns-sub">${escapeHtml(b.context)}</span></button>`).join('')}</div>` : '<div class="side-empty">No other note links here yet.</div>';
+  const unresolvedHtml = unresolved.length ? `<div class="ns-list">${unresolved.map((u) => `
+    <button class="ns-row warn" ${u.kind === 'cite' ? `data-cite-keys="${escapeHtml(u.target)}"` : `data-create-note="${escapeHtml(u.target)}"`} data-goto-line="${u.line}">
+      <span class="ns-main">${u.kind === 'cite' ? `@${escapeHtml(u.target)}` : `[[${escapeHtml(u.target)}]]`}</span>
+      <span class="ns-sub">${u.kind === 'cite' ? 'not in your library' : 'no such note — click to create'}</span></button>`).join('')}</div>` : '';
   side.innerHTML = `
+    <div class="ns-section"><div class="ns-title">Cited papers ${cited.length ? `<span class="count">${cited.length}</span>` : ''}</div>${citedHtml}</div>
+    <div class="ns-section"><div class="ns-title">Linked from ${back.length ? `<span class="count">${back.length}</span>` : ''}</div>${backHtml}</div>
+    ${unresolvedHtml ? `<div class="ns-section"><div class="ns-title">Unresolved <span class="count">${unresolved.length}</span></div>${unresolvedHtml}</div>` : ''}
     <div class="ns-section"><div class="ns-title">Outline</div>
       ${heads.length ? `<div class="outline">${heads.map((x) => `<button class="ol-item" data-outline-line="${x.line}" style="--l:${x.level - minLevel}">${escapeHtml(x.text)}</button>`).join('')}</div>`
         : '<div class="side-empty">Headings (# Title) appear here.</div>'}
@@ -612,6 +668,12 @@ function onClick(e) {
   }
   const mb = e.target.closest('[data-mode]');
   if (mb) return setMode(mb.dataset.mode);
+  const op = e.target.closest('[data-open-path]');
+  if (op) return openNotes(op.dataset.openPath, Number(op.dataset.openLine) || null);
+  const cn = e.target.closest('[data-create-note]');
+  if (cn) return followLink(cn.dataset.createNote, '');
+  const cr = e.target.closest('.ns-row[data-cite-keys]');
+  if (cr) { gotoLine(Number(cr.dataset.gotoLine)); showCard(cr); return; }
   const ol = e.target.closest('[data-outline-line]');
   if (ol) {
     const line = Number(ol.dataset.outlineLine);

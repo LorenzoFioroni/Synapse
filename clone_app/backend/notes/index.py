@@ -262,6 +262,12 @@ class NotesIndex:
             return [dict(r) for r in c.execute(
                 "SELECT path, title, type, author, updated FROM notes WHERE paper = ? ORDER BY path", (key,))]
 
+    def paper_note_map(self) -> dict[str, str]:
+        """citation key -> path of its paper note (the shortest path if there are several)."""
+        with self._session() as c:
+            rows = c.execute("SELECT paper, path FROM notes WHERE paper IS NOT NULL ORDER BY length(path) DESC, path DESC")
+            return {r["paper"]: r["path"] for r in rows}
+
     def cited_keys(self, path: str | None = None) -> list[str]:
         with self._session() as c:
             if path:
