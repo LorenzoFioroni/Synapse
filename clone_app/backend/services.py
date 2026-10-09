@@ -4,6 +4,7 @@ from __future__ import annotations
 from .config import Config
 from .db import Database
 from .fulltext import FulltextIndex, Indexer
+from .organize import FolderRepository, SmartFolderRepository, TagRepository
 from .repository import PaperRepository
 from .settings import SettingsStore
 
@@ -16,6 +17,9 @@ class Services:
         self.db.migrate()
         self.settings = SettingsStore(config.settings_path)
         self.papers = PaperRepository(self.db, self.settings, config.pdf_dir)
+        self.folders = FolderRepository(self.db)
+        self.tags = TagRepository(self.db)
+        self.smart = SmartFolderRepository(self.db)
         self.fulltext = FulltextIndex(config.fulltext_db_path)
         self.indexer = Indexer(self.papers, self.fulltext)
 

@@ -10,6 +10,17 @@ Three scopes, selectable per query:
 Queries are split into terms (``"quoted phrases"`` stay together); every term
 must match somewhere (AND). Matching ignores case and accents, so ``banuls``
 finds ``Bañuls``. A leading ``-`` excludes a term.
+
+Field filters narrow the results and combine with plain terms (all are ANDed,
+any can be negated with ``-``):
+
+    tag:quantum   tag:"open systems"   tag:none
+    folder:Transport   folder:"Physics/Transport"   folder:none
+    type:book   year:2020   year:2018-2022   year:>2015   year:<=2000
+    has:pdf   has:doi   has:abstract   (any field: has:<field>)
+    author:cirac   title:lindblad   journal:"physical review"   doi:10.1103   key:cui2015
+
+Unknown prefixes (``arXiv:2205.03415``) are searched as plain text.
 """
 from __future__ import annotations
 
@@ -27,23 +38,36 @@ def normalize(s) -> str:
     return " ".join(s.casefold().split())
 
 
-def parse_query(q: str) -> list[tuple[str, bool]]:
-    """Return [(term, negated)] with quoted phrases kept intact."""
+FILTER_KEYS = {"tag", "tags", "folder", "type", "year", "has", "author", "title", "journal", "doi", "key"}
+FIELD_ALIASES = {"author": "authors", "key": "citation_key", "journal": "journal", "title": "title", "doi": "doi"}
+
+_TOKEN = re.compile(r'(-?)(?:([A-Za-z_]+):)?(?:"([^"]*)"|(\S+))')
+
+
+def parse_query(q: str) -> list[tuple]:
+    """Return [(term, negated, field)]; ``field`` is None for plain text terms."""
     out = []
-    for m in re.finditer(r'(-?)"([^"]+)"|(-?)(\S+)', q or ""):
-        neg = bool(m.group(1) or m.group(3))
-        term = m.group(2) if m.group(2) is not None else m.group(4)
-        if term in ("-", ""):
+    for m in _TOKEN.finditer(q or ""):
+        neg, field, quoted, bare = bool(m.group(1)), m.group(2), m.group(3), m.group(4)
+        value = quoted if quoted is not None else bare
+        if field and field.lower() not in FILTER_KEYS:
+            value, field = f"{field}:{value}", None       # e.g. arXiv:2205.03415 is plain text
+        if value in (None, "", "-"):
             continue
-        out.append((term, neg))
+        out.append((value, neg, field.lower() if field else None))
     return out
+
+
+def has_filters(q: str) -> bool:
+    return any(f for _, _, f in parse_query(q))
 
 
 _hay_cache: dict[tuple, str] = {}
 
 
 def _haystack(paper: dict, mode: str) -> str:
-    key = (paper["id"], paper.get("date_modified"), mode, len(paper.get("attachments") or []))
+    key = (paper["id"], paper.get("date_modified"), mode, len(paper.get("attachments") or []),
+           tuple(paper.get("tags") or ()))
     hit = _hay_cache.get(key)
     if hit is None:
         if len(_hay_cache) > 50000:
@@ -57,14 +81,78 @@ def _build_haystack(paper: dict, mode: str) -> str:
     parts = [str(paper.get(k) or "") for k in keys]
     if mode != "basic":
         parts += [a.get("name") or "" for a in paper.get("attachments") or []]
+        parts += list(paper.get("tags") or [])
     return normalize(" \u0001 ".join(parts))
 
 
-def search(papers: list[dict], query: str, mode: str = "basic", fulltext=None) -> tuple[list[dict], dict]:
-    """Filter ``papers``. Returns (matches, hits) where hits[paper_id] = {"fulltext": snippet}."""
+def _year_matches(value, spec: str) -> bool:
+    m = re.search(r"\d{4}", str(value or ""))
+    if not m:
+        return False
+    y = int(m.group(0))
+    spec = spec.replace(" ", "")
+    if r := re.fullmatch(r"(\d{4})-(\d{4})", spec):
+        return int(r.group(1)) <= y <= int(r.group(2))
+    if r := re.fullmatch(r"(>=|<=|>|<)(\d{4})", spec):
+        op, v = r.group(1), int(r.group(2))
+        return {">": y > v, "<": y < v, ">=": y >= v, "<=": y <= v}[op]
+    return spec.isdigit() and y == int(spec)
+
+
+def _filter_matches(p: dict, field: str, value: str, ctx: dict) -> bool:
+    v = normalize(value)
+    if field in ("tag", "tags"):
+        tags = [normalize(t) for t in p.get("tags") or []]
+        return not tags if v == "none" else v in tags
+    if field == "folder":
+        fid = p.get("folder_id")
+        if v in ("none", "unfiled"):
+            return fid is None
+        path = [normalize(n) for n in ctx.get("folder_paths", {}).get(fid, [])]
+        if not path:
+            return False
+        if "/" in v:   # a path: must match from the root, e.g. "Physics/Transport"
+            want = [x.strip() for x in v.split("/") if x.strip()]
+            return path[:len(want)] == want
+        return v in path
+    if field == "type":
+        key = p.get("item_type") or ""
+        label = ctx.get("type_labels", {}).get(key, "")
+        return normalize(key).startswith(v) or normalize(label).startswith(v) or v in normalize(label)
+    if field == "year":
+        return _year_matches(p.get("year"), value)
+    if field == "has":
+        if v in ("pdf", "attachment", "file"):
+            return bool(p.get("attachments"))
+        if v in ("tag", "tags"):
+            return bool(p.get("tags"))
+        if v == "folder":
+            return p.get("folder_id") is not None
+        key = FIELD_ALIASES.get(v, v)
+        return str(p.get(key) or "").strip() != ""
+    key = FIELD_ALIASES.get(field, field)
+    return v in normalize(p.get(key) or "")
+
+
+def search(papers: list[dict], query: str, mode: str = "basic", fulltext=None,
+           ctx: dict | None = None) -> tuple[list[dict], dict]:
+    """Filter ``papers``. Returns (matches, hits) where hits[paper_id] = {"fulltext": snippet}.
+
+    ``ctx`` gives filters what they need: ``folder_paths`` {folder_id: [names]}
+    and ``type_labels`` {item_type: label}.
+    """
     if mode not in MODES:
         mode = "basic"
-    terms = parse_query(query)
+    ctx = ctx or {}
+    parsed = parse_query(query)
+    if not parsed:
+        return papers, {}
+    filters = [(v, neg, f) for v, neg, f in parsed if f]
+    terms = [(v, neg) for v, neg, f in parsed if not f]
+
+    if filters:
+        papers = [p for p in papers
+                  if all(_filter_matches(p, f, v, ctx) != neg for v, neg, f in filters)]
     if not terms:
         return papers, {}
 

@@ -1,0 +1,97 @@
+import io
+
+
+def mk(client, **data):
+    return client.post("/api/items", json={"title": "T", "authors": "Doe, J", "year": 2020, **data}).get_json()
+
+
+def test_folders_tree_and_single_membership(client):
+    phys = client.post("/api/folders", json={"name": "Physics"}).get_json()
+    tr = client.post("/api/folders", json={"name": "Transport", "parent_id": phys["id"]}).get_json()
+    assert client.post("/api/folders", json={"name": "physics"}).status_code == 400   # sibling names are unique
+    assert client.post("/api/folders", json={"name": "  "}).status_code == 400
+    a, b = mk(client, title="A"), mk(client, title="B", folder_id=tr["id"])
+    assert b["folder_id"] == tr["id"]
+    client.post("/api/items/move", json={"ids": [a["id"]], "folder_id": phys["id"]})
+    client.post("/api/items/move", json={"ids": [a["id"]], "folder_id": tr["id"]})   # moving replaces, never duplicates
+    assert client.get(f"/api/items/{a['id']}").get_json()["folder_id"] == tr["id"]
+    # parent folder shows subfolder items (default setting); the subfolder shows its own
+    ids = lambda v: sorted(i["id"] for i in client.get(f"/api/items?view={v}").get_json()["items"])
+    assert ids(f"folder:{phys['id']}") == sorted([a["id"], b["id"]])
+    client.put("/api/settings", json={"show_subfolder_items": False})
+    assert ids(f"folder:{phys['id']}") == []
+    assert ids("unfiled") == []
+    res = client.get("/api/items").get_json()
+    tree = {f["name"]: f for f in res["sidebar"]["folders"]}
+    assert tree["Transport"]["parent_id"] == phys["id"] and tree["Transport"]["count"] == 2
+    # no cycles
+    assert client.patch(f"/api/folders/{phys['id']}", json={"parent_id": tr["id"]}).status_code == 400
+    # rename + move to root
+    r = client.patch(f"/api/folders/{tr['id']}", json={"name": "Transport theory", "parent_id": None}).get_json()
+    assert r["name"] == "Transport theory" and r["parent_id"] is None
+    # deleting a folder keeps its items (they become unfiled)
+    client.delete(f"/api/folders/{tr['id']}")
+    assert ids("unfiled") == sorted([a["id"], b["id"]])
+    assert client.get("/api/items").get_json()["counts"]["library"] == 2
+
+
+def test_tags(client):
+    a, b = mk(client, title="A", tags=["Quantum"]), mk(client, title="B")
+    assert a["tags"] == ["Quantum"]
+    client.post("/api/items/tags", json={"ids": [a["id"], b["id"]], "add": ["transport", "QUANTUM"]})
+    assert client.get(f"/api/items/{b['id']}").get_json()["tags"] == ["Quantum", "transport"]  # existing casing wins
+    tags = {t["name"]: t for t in client.get("/api/tags").get_json()["tags"]}
+    assert tags["Quantum"]["count"] == 2
+    # filter by tags (AND)
+    res = client.get("/api/items?tags=Quantum,transport").get_json()["items"]
+    assert len(res) == 2
+    client.patch(f"/api/items/{a['id']}", json={"tags": ["Quantum"]})            # replace an item's tags
+    assert [i["id"] for i in client.get("/api/items?tags=transport").get_json()["items"]] == [b["id"]]
+    # colour + rename-merge
+    assert client.patch(f"/api/tags/{tags['transport']['id']}", json={"color": "red"}).status_code == 400
+    client.patch(f"/api/tags/{tags['transport']['id']}", json={"color": "#e5484d"})
+    merged = client.patch(f"/api/tags/{tags['transport']['id']}", json={"name": "quantum"}).get_json()
+    assert merged["name"] == "Quantum"
+    assert client.get(f"/api/items/{b['id']}").get_json()["tags"] == ["Quantum"]
+    # unused tags without a colour disappear
+    client.post("/api/items/tags", json={"ids": [a["id"], b["id"]], "remove": ["Quantum"]})
+    assert [t["name"] for t in client.get("/api/tags").get_json()["tags"]] == ["Quantum"]  # kept: it has a colour now
+    client.delete(f"/api/tags/{merged['id']}")
+    assert client.get("/api/tags").get_json()["tags"] == []
+
+
+def test_smart_folders(client):
+    phys = client.post("/api/folders", json={"name": "Physics"}).get_json()
+    a = mk(client, title="Spin transport", year=2021, tags=["transport"], folder_id=phys["id"])
+    mk(client, title="Spin glass", year=2010)
+    assert client.post("/api/smart", json={"name": "x", "query": ""}).status_code == 400
+    assert client.post("/api/smart", json={"name": "x", "query": "a", "mode": "nope"}).status_code == 400
+    sf = client.post("/api/smart", json={"name": "Recent transport", "query": "tag:transport year:>2020"}).get_json()
+    res = client.get(f"/api/items?view=smart:{sf['id']}").get_json()
+    assert [i["id"] for i in res["items"]] == [a["id"]]
+    assert res["sidebar"]["smart"][0]["name"] == "Recent transport"
+    assert client.get("/api/search/preview?q=spin&mode=basic").get_json()["count"] == 2
+    assert client.get("/api/search/preview?q=folder:physics").get_json()["count"] == 1
+    client.patch(f"/api/smart/{sf['id']}", json={"query": "spin"})
+    assert len(client.get(f"/api/items?view=smart:{sf['id']}").get_json()["items"]) == 2
+    client.delete(f"/api/smart/{sf['id']}")
+    assert client.get("/api/smart").get_json()["smart"] == []
+
+
+def test_import_keywords_become_tags_and_export_them(client):
+    phys = client.post("/api/folders", json={"name": "Physics"}).get_json()
+    bib = "@article{k1, title={Paper}, author={Doe, J}, year={2020}, keywords={spin chains, transport}}"
+    prev = client.post("/api/import/preview", json={"text": bib}).get_json()
+    res = client.post("/api/import/commit", json={"entries": prev["entries"], "folder_id": phys["id"]}).get_json()
+    item = client.get(f"/api/items/{res['created'][0]}").get_json()
+    assert item["tags"] == ["spin chains", "transport"] and not item["keywords"] and item["folder_id"] == phys["id"]
+    out = client.get(f"/api/export?format=bibtex&ids={item['id']}&download=0").get_json()["text"]
+    assert "keywords = {spin chains, transport}" in out
+
+
+def test_permanent_delete_cleans_tags(client):
+    a = mk(client, tags=["solo"])
+    client.post("/api/items/trash", json={"ids": [a["id"]]})
+    assert client.get("/api/tags").get_json()["tags"][0]["count"] == 0   # trashed items don't count
+    client.post("/api/trash/empty")
+    assert client.get("/api/tags").get_json()["tags"] == []

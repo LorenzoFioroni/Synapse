@@ -58,6 +58,39 @@ class Database:
             if "date_added" not in att_cols:
                 c.execute("ALTER TABLE attachments ADD COLUMN date_added TEXT")
 
+            # Organisation: folders (a tree; each item in at most one), tags (many per item),
+            # smart folders (saved searches).
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS folders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    parent_id INTEGER REFERENCES folders(id),
+                    position INTEGER DEFAULT 0,
+                    date_added TEXT
+                )""")
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS tags (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    color TEXT
+                )""")
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS paper_tags (
+                    paper_id TEXT NOT NULL,
+                    tag_id INTEGER NOT NULL,
+                    PRIMARY KEY (paper_id, tag_id)
+                )""")
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS smart_folders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    query TEXT NOT NULL,
+                    mode TEXT DEFAULT 'all',
+                    position INTEGER DEFAULT 0,
+                    date_added TEXT
+                )""")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_papers_folder ON papers(folder_id)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_paper_tags_tag ON paper_tags(tag_id)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_title ON papers(title)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_papers_deleted ON papers(deleted_at)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_papers_doi ON papers(doi)")
@@ -71,3 +104,6 @@ class Database:
             c.execute("UPDATE attachments SET date_added = ? WHERE date_added IS NULL", (now,))
             # Orphaned attachments from older versions that deleted papers without cascading.
             c.execute("DELETE FROM attachments WHERE paper_id NOT IN (SELECT id FROM papers)")
+            c.execute("DELETE FROM paper_tags WHERE paper_id NOT IN (SELECT id FROM papers)")
+            c.execute("UPDATE papers SET folder_id = NULL WHERE folder_id IS NOT NULL "
+                      "AND folder_id NOT IN (SELECT id FROM folders)")

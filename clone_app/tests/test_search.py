@@ -18,7 +18,7 @@ def ids(r):
 
 
 def test_parse_query():
-    assert parse_query('a "b c" -d') == [("a", False), ("b c", False), ("d", True)]
+    assert parse_query('a "b c" -d') == [("a", False, None), ("b c", False, None), ("d", True, None)]
 
 
 def test_basic_is_accent_insensitive():
@@ -40,3 +40,38 @@ def test_fulltext():
     r = search(PAPERS, "lindblad", "fulltext", FakeFT())
     assert ids(r) == ["2"] and "mark" in r[1]["2"]["fulltext"]
     assert ids(search(PAPERS, "lindblad", "all", FakeFT())) == []
+
+
+ORG = [
+    {"id": "a", "title": "Spin transport", "authors": "Doe, J", "year": 2019, "item_type": "journalArticle",
+     "tags": ["Transport", "open systems"], "folder_id": 2, "attachments": [{"name": "x.pdf"}], "doi": "10.1/a"},
+    {"id": "b", "title": "Open quantum systems", "authors": "Breuer, H", "year": 2002, "item_type": "book",
+     "tags": [], "folder_id": None, "attachments": []},
+    {"id": "c", "title": "Energy transport", "authors": "Roe, R", "year": 2023, "item_type": "journalArticle",
+     "tags": ["transport"], "folder_id": 1, "attachments": []},
+]
+CTX = {"folder_paths": {1: ["Physics"], 2: ["Physics", "Transport"]}, "type_labels": {"book": "Book", "journalArticle": "Journal Article"}}
+
+
+def f(q, mode="basic"):
+    return [p["id"] for p in search(ORG, q, mode, None, CTX)[0]]
+
+
+def test_filters():
+    assert f("tag:transport") == ["a", "c"]          # case-insensitive
+    assert f('tag:"open systems"') == ["a"]
+    assert f("tag:none") == ["b"]
+    assert f("-tag:transport") == ["b"]
+    assert f("folder:physics") == ["a", "c"]         # any folder on the path
+    assert f('folder:"Physics/Transport"') == ["a"]
+    assert f("folder:none") == ["b"]
+    assert f("type:book") == ["b"] and f("type:journal") == ["a", "c"]
+    assert f("year:2019") == ["a"] and f("year:2000-2020") == ["a", "b"] and f("year:>2010") == ["a", "c"]
+    assert f("has:pdf") == ["a"] and f("has:doi") == ["a"] and f("-has:pdf") == ["b", "c"]
+    assert f("author:roe") == ["c"]
+
+
+def test_filters_combine_with_text():
+    assert f("transport year:>2020") == ["c"]
+    assert f("tag:transport -energy") == ["a"]
+    assert f("arXiv:2205.03415") == []                # unknown prefix = plain text, no crash

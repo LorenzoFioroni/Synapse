@@ -64,7 +64,7 @@ def items_from_pdfs():
             meta = {"title": os.path.splitext(name)[0].replace("_", " ")}
             if ident.get("doi"):
                 meta["doi"] = ident["doi"]
-        item = s.papers.create(meta)
+        item = s.papers.create({**meta, "folder_id": request.form.get("folder_id") or None})
         s.papers.add_attachment(item["id"], name, filename, "pdf")
         created.append({"item": s.papers.get(item["id"]), "identifier": ident, "note": note})
     s.attachments_changed()

@@ -30,6 +30,9 @@ DEFAULTS: dict = {
     "bibtex_unicode": True,       # False -> escape non-ASCII as LaTeX commands
     "export_abstract": True,
     "import_skip_duplicates": True,
+    "import_keywords_as_tags": True,   # keywords in imported files become tags
+    # Folders
+    "show_subfolder_items": True,      # a folder also lists the items of its subfolders
     # Online lookups
     "contact_email": "",
 }

@@ -73,7 +73,13 @@ class PaperRepository:
         self.pdf_dir = Path(pdf_dir)
 
     # ------------------------------------------------------------------ reads
-    def list(self, view: str = "library") -> list[dict]:
+    def list(self, view: str = "library", folder_ids: set[int] | None = None) -> list[dict]:
+        """Items for a view: library, trash, duplicates, unfiled, or folder (with ``folder_ids``)."""
+        if view in ("unfiled", "folder"):
+            papers = self.list()
+            if view == "unfiled":
+                return [p for p in papers if p.get("folder_id") is None]
+            return [p for p in papers if p.get("folder_id") in (folder_ids or set())]
         if view == "duplicates":
             papers = self.list()
             group_of = {pid: n for n, g in enumerate(self.duplicate_groups(papers)) for pid in g}
@@ -87,9 +93,12 @@ class PaperRepository:
             atts: dict[str, list] = {}
             for r in c.execute("SELECT * FROM attachments ORDER BY id"):
                 atts.setdefault(r["paper_id"], []).append(dict(r))
+            from .organize import tags_by_paper
+            tags = tags_by_paper(c)
         for p in papers:
             p.pop("annotations", None)  # large and only needed by the viewer
             p["attachments"] = atts.get(p["id"], [])
+            p["tags"] = tags.get(p["id"], [])
         return papers
 
     def get(self, paper_id: str) -> dict:
@@ -101,14 +110,18 @@ class PaperRepository:
             p.pop("annotations", None)
             p["attachments"] = [dict(r) for r in c.execute(
                 "SELECT * FROM attachments WHERE paper_id = ? ORDER BY id", (paper_id,))]
+            p["tags"] = [r[0] for r in c.execute(
+                "SELECT t.name FROM paper_tags pt JOIN tags t ON t.id = pt.tag_id WHERE pt.paper_id = ? "
+                "ORDER BY t.name COLLATE NOCASE", (paper_id,))]
         return p
 
     def counts(self, library: list[dict] | None = None) -> dict:
         with self.db.session() as c:
             lib = c.execute("SELECT COUNT(*) FROM papers WHERE deleted_at IS NULL").fetchone()[0]
             trash = c.execute("SELECT COUNT(*) FROM papers WHERE deleted_at IS NOT NULL").fetchone()[0]
+            unfiled = c.execute("SELECT COUNT(*) FROM papers WHERE deleted_at IS NULL AND folder_id IS NULL").fetchone()[0]
         dups = sum(len(g) for g in self.duplicate_groups(library))
-        return {"library": lib, "trash": trash, "duplicates": dups}
+        return {"library": lib, "trash": trash, "duplicates": dups, "unfiled": unfiled}
 
     def duplicate_groups(self, papers: list[dict] | None = None) -> list[list[str]]:
         """Groups of item ids that look like the same work (same DOI, or same title and year)."""
@@ -158,7 +171,11 @@ class PaperRepository:
         return self.get(self.create_many([data or {}], auto_citekey=auto_citekey)[0])
 
     def create_many(self, entries: list[dict], *, auto_citekey: bool | None = None) -> list[str]:
-        """Insert several items in one transaction (used by imports). Returns the new ids."""
+        """Insert several items in one transaction (used by imports). Returns the new ids.
+
+        Besides metadata fields, an entry may carry ``folder_id`` and ``tags``.
+        """
+        from .organize import add_tags_conn
         if auto_citekey is None:
             auto_citekey = self.settings.get("citekey_auto")
         pattern = self.settings.get("citekey_pattern")
@@ -176,8 +193,13 @@ class PaperRepository:
                     taken.add(values["citation_key"])
                 new_id = uuid.uuid4().hex
                 values.update(id=new_id, date_added=now, date_modified=now)
+                folder = data.get("folder_id")
+                if folder not in (None, "") and c.execute("SELECT 1 FROM folders WHERE id = ?", (folder,)).fetchone():
+                    values["folder_id"] = int(folder)
                 c.execute(f"INSERT INTO papers ({', '.join(values)}) VALUES ({', '.join('?' * len(values))})",
                           list(values.values()))
+                if data.get("tags"):
+                    add_tags_conn(c, [new_id], data["tags"])
                 ids.append(new_id)
         return ids
 
@@ -232,7 +254,9 @@ class PaperRepository:
                     self._remove_file(r["url"])
                     removed.append(r["id"])
                 c.execute("DELETE FROM attachments WHERE paper_id = ?", (pid,))
+                c.execute("DELETE FROM paper_tags WHERE paper_id = ?", (pid,))
                 c.execute("DELETE FROM papers WHERE id = ?", (pid,))
+            c.execute("DELETE FROM tags WHERE color IS NULL AND id NOT IN (SELECT DISTINCT tag_id FROM paper_tags)")
         return removed
 
     def trashed_ids(self) -> list[str]:
