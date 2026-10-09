@@ -131,3 +131,12 @@
 .mr-pending { color: var(--text-3); font-size: var(--fs-sm); }
 .badge.ok { background: var(--success-soft); color: var(--success); }
 .badge.err { background: var(--danger-soft); color: var(--danger); }
+
+/* folder & tags section */
+.folder-btn { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 26px; padding: 3px 8px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--text); text-align: left; }
+.folder-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-btn .icon { color: var(--text-2); }
+.folder-btn:hover { background: var(--bg-hover); border-color: var(--border); }
+.ip-tags.tag-input { border-color: transparent; background: transparent; min-height: 30px; padding: 2px 4px; }
+.ip-tags.tag-input:hover { background: var(--bg-hover); }
+.ip-tags.tag-input:focus-within { background: var(--bg-input); border-color: var(--accent); }

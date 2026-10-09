@@ -1,6 +1,7 @@
 // "Add Item by Identifier": DOI, arXiv ID or ISBN (several at once, one per line).
 import * as A from '../actions.js';
 import { api } from '../api.js';
+import { currentFolderId, folderById } from '../store.js';
 import { openDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
 import { escapeHtml, plural } from '../util.js';
@@ -12,7 +13,8 @@ export function openIdentifierDialog() {
     render: (body) => {
       body.innerHTML = `<label class="field-label">DOI, arXiv ID or ISBN</label>
         <textarea class="input" rows="3" placeholder="10.1103/PhysRevLett.114.220601&#10;arXiv:2205.03415&#10;978-0-262-03384-8"></textarea>
-        <div class="field-hint">Paste several identifiers, one per line, to add them all. <kbd>Enter</kbd> adds, <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line.</div>
+        <div class="field-hint">Paste several identifiers, one per line, to add them all. <kbd>Enter</kbd> adds, <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line.
+          ${currentFolderId() ? `<br>New items go into the folder <b>${escapeHtml(folderById(currentFolderId())?.name || '')}</b>.` : ''}</div>
         <div class="id-status" style="margin-top:10px;display:flex;flex-direction:column;gap:4px"></div>`;
       ta = body.querySelector('textarea');
       status = body.querySelector('.id-status');
@@ -37,7 +39,7 @@ export function openIdentifierDialog() {
             line.innerHTML = `<span class="spinner"></span> ${escapeHtml(ident)}`;
             status.appendChild(line);
             try {
-              const item = await api.fromIdentifier(ident);
+              const item = await api.fromIdentifier(ident, false, currentFolderId());
               created.push(item.id);
               line.innerHTML = `✓ <b>${escapeHtml(item.title || ident)}</b>`;
             } catch (e) {
@@ -47,7 +49,7 @@ export function openIdentifierDialog() {
                 add.className = 'btn btn-ghost btn-sm';
                 add.textContent = 'Add anyway';
                 add.onclick = async () => {
-                  const item = await api.fromIdentifier(ident, true);
+                  const item = await api.fromIdentifier(ident, true, currentFolderId());
                   add.remove(); line.innerHTML = `✓ <b>${escapeHtml(item.title)}</b>`;
                   await A.loadItems(); A.select([item.id], { anchor: item.id });
                 };

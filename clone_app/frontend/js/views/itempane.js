@@ -1,14 +1,15 @@
 // Right-hand item pane: editable metadata, authors, abstract, attachments.
 import * as A from '../actions.js';
-import { openAttachment } from '../api.js';
+import { api, openAttachment } from '../api.js';
 import { icon, typeIcon } from '../icons.js';
-import { byId, emit, itemTypeLabel, on, selectedItems, state } from '../store.js';
+import { byId, emit, folderPath, itemTypeLabel, on, selectedItems, state } from '../store.js';
 import { openMenu } from '../ui/menu.js';
-import { toast } from '../ui/toast.js';
+import { toast, toastError } from '../ui/toast.js';
 import { copyText, debounce, escapeHtml, formatDate, plural, shortAuthors, storage, store } from '../util.js';
 import { openExport } from './exportDialog.js';
 import { copyKeys, deleteAttachment, pickFiles, renameAttachment } from './itemlist.js';
 import { openMetadataReview } from './metadataReview.js';
+import { editTagsDialog, moveSelectionToFolder, tagInput } from './organizeDialogs.js';
 
 let root, shownId = null;
 const collapsed = new Set(storage('zc.collapsedSections', []));
@@ -73,7 +74,9 @@ function renderMulti(items) {
     <div class="actions">
       ${trash ? `<button class="btn" data-a="restore">${icon('restore')} Restore to Library</button>
                  <button class="btn btn-danger" data-a="delete">${icon('trash')} Delete Permanently</button>`
-    : `<button class="btn" data-a="metadata">${icon('sparkle')} Retrieve Metadata…</button>
+    : `<button class="btn" data-a="move">${icon('folder')} Move to Folder…</button>
+       <button class="btn" data-a="tags">${icon('tag')} Tags…</button>
+       <button class="btn" data-a="metadata">${icon('sparkle')} Retrieve Metadata…</button>
        <button class="btn" data-a="find-pdfs">${icon('find')} Find PDFs${(() => { const n = items.filter((i) => !(i.attachments || []).length).length; return n && n < items.length ? ` (${n} missing)` : ''; })()}</button>
        <button class="btn" data-a="export">${icon('export')} Export…</button>
        <button class="btn" data-a="keys">${icon('key')} Copy Citation Keys</button>
@@ -82,6 +85,8 @@ function renderMulti(items) {
     </div></div>`;
   root.querySelector('.actions').addEventListener('click', (e) => {
     const a = e.target.closest('[data-a]')?.dataset.a;
+    if (a === 'move') moveSelectionToFolder(ids);
+    if (a === 'tags') editTagsDialog(ids);
     if (a === 'metadata') openMetadataReview(ids);
     if (a === 'find-pdfs') A.findPdfs(ids);
     if (a === 'export') openExport(ids);
@@ -181,6 +186,11 @@ function renderItem(it) {
     </div>
     <div class="ip-body">
       ${snippet && state.query ? section('fulltext', 'Full-text match', `<div class="ft-snippet">${snippet}</div>`) : ''}
+      ${trash ? '' : section('organize', 'Folder &amp; Tags', `
+        <div class="field-row"><label>Folder</label>
+          <button class="folder-btn" data-tool="pick-folder" title="Move to another folder">${icon(it.folder_id ? 'folder' : 'unfiled', 'icon-sm')}
+            <span>${it.folder_id ? escapeHtml(folderPath(it.folder_id).join(' / ')) : 'Unfiled'}</span>${icon('chevronDown', 'icon-sm')}</button></div>
+        <div class="field-row"><label>Tags</label><div class="ip-tags"></div></div>`, { count: (it.tags || []).length || '' })}
       ${section('info', 'Info', info)}
       ${section('abstract', 'Abstract', fv('abstract', it.abstract, { multiline: true, placeholder: 'Add an abstract…' }))}
       ${section('attachments', 'Attachments', attHtml, { count: atts.length })}
@@ -218,6 +228,17 @@ function authorRow(a) {
 
 function bindItem(it) {
   const id = it.id;
+
+  // tags: changes are saved immediately
+  const tagBox = root.querySelector('.ip-tags');
+  if (tagBox) {
+    tagInput(tagBox, {
+      tags: it.tags || [],
+      placeholder: (it.tags || []).length ? 'Add…' : 'Add a tag…',
+      onAdd: (name) => api.tagItems([id], [name], []).then(() => A.loadItems()).catch(toastError),
+      onRemove: (name) => api.tagItems([id], [], [name]).then(() => A.loadItems()).catch(toastError),
+    });
+  }
 
   // sections collapse
   root.querySelectorAll('.section-head').forEach((b) => b.addEventListener('click', (e) => {
@@ -332,6 +353,7 @@ if (!it) return;
     return;
   }
   if (t === 'open-pdf') A.openPdf(it2);
+  if (t === 'pick-folder') moveSelectionToFolder([id]);
   if (t === 'keep-only') A.keepOnly(id);
   if (t === 'metadata') openMetadataReview(id);
   if (t === 'find-pdf') A.findPdf(id);

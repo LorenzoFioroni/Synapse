@@ -3,11 +3,12 @@
 import * as A from './actions.js';
 import { api } from './api.js';
 import { icon } from './icons.js';
-import { emit, on, state } from './store.js';
+import { emit, folderById, on, state } from './store.js';
 import { closeMenu, openMenu } from './ui/menu.js';
 import { toastError } from './ui/toast.js';
 import { debounce, modKey, modLabel, plural, storage, store } from './util.js';
 import { openExport } from './views/exportDialog.js';
+import { smartFolderDialog } from './views/organizeDialogs.js';
 import { openIdentifierDialog } from './views/identifierDialog.js';
 import { openImport } from './views/importDialog.js';
 import { focusList, initItemList, openColumnPicker } from './views/itemlist.js';
@@ -62,6 +63,7 @@ function initToolbar() {
     <div class="search" role="search">
       ${icon('search')}
       <input type="search" id="search-input" placeholder="Search" aria-label="Search library" autocomplete="off" spellcheck="false">
+      <button class="search-clear" data-a="save-search" title="Save this search as a smart folder" hidden>${icon('smartFolder', 'icon-sm')}</button>
       <button class="search-clear" data-a="clear-search" title="Clear (Esc)" hidden>${icon('close', 'icon-sm')}</button>
       <button class="search-mode" data-a="mode" title="Choose what to search"></button>
     </div>
@@ -86,11 +88,13 @@ function initToolbar() {
     if (a === 'columns') openColumnPicker(b);
     if (a === 'mode') openModeMenu(b);
     if (a === 'clear-search') clearSearch();
+    if (a === 'save-search') smartFolderDialog(null, { query: searchInput.value.trim(), mode: state.mode });
   });
 
   const run = debounce(() => A.setSearch(searchInput.value.trim()), 220);
   searchInput.addEventListener('input', () => {
     tb.querySelector('[data-a="clear-search"]').hidden = !searchInput.value;
+    tb.querySelector('[data-a="save-search"]').hidden = !searchInput.value.trim();
     run();
   });
   searchInput.addEventListener('keydown', (e) => {
@@ -101,7 +105,7 @@ function initToolbar() {
 }
 
 function openIdentifier() {
-  if (state.view !== 'library') A.setView('library');
+  if (!['library', 'unfiled'].includes(state.view) && !state.view.startsWith('folder:')) A.setView('library');
   openIdentifierDialog();
 }
 
@@ -128,13 +132,24 @@ function openModeMenu(anchor) {
     { section: 'Search in' },
     ...Object.entries(modes).map(([k, label]) => ({ label, checked: state.mode === k, run: () => { setMode(k); searchInput.focus(); } })),
     'sep',
-    { label: 'Tip: "exact phrase", -exclude', disabled: true },
+    { section: 'Filters (combine with text)' },
+    ...[['tag:name', 'Tagged with…'], ['folder:name', 'In folder (or subfolder)…'], ['year:2018-2022', 'Year or range (also >2015)'],
+      ['type:book', 'Item type…'], ['has:pdf', 'Has a PDF'], ['author:name', 'Author…']].map(([f, label]) => ({
+      label: `${f}  —  ${label}`, run: () => {
+        const v = searchInput.value.trim();
+        searchInput.value = `${v ? `${v} ` : ''}${f.split(':')[0]}:`;
+        searchInput.focus();
+        searchInput.dispatchEvent(new Event('input'));
+      },
+    })),
+    { label: 'Tip: "exact phrase", -exclude, -tag:read', disabled: true },
   ], anchor);
 }
 
 function clearSearch() {
   searchInput.value = '';
   document.querySelector('[data-a="clear-search"]').hidden = true;
+  document.querySelector('[data-a="save-search"]').hidden = true;
   A.setSearch('');
 }
 
@@ -166,10 +181,14 @@ function initStatusBar() {
   const bar = document.getElementById('statusbar');
   bar.innerHTML = '<span data-s="count"></span><span data-s="sel"></span><span class="spacer"></span><span class="status-index" data-s="index"></span>';
   const paint = () => {
-    const total = state.counts[state.view] || 0;
-    bar.querySelector('[data-s="count"]').textContent = state.query
-      ? `${plural(state.items.length, 'result')} of ${total}`
-      : `${plural(total, 'item')}${{ trash: ' in Trash', duplicates: ' that look like duplicates' }[state.view] || ''}`;
+    const filtered = state.query || state.tagFilter.size;
+    let where = { trash: ' in Trash', duplicates: ' that look like duplicates', unfiled: ' not in any folder' }[state.view] || '';
+    if (state.view.startsWith('folder:')) where = ` in ${folderById(state.view.slice(7))?.name || 'folder'}`;
+    if (state.view.startsWith('smart:')) where = ` in ${state.sidebar.smart.find((s) => `smart:${s.id}` === state.view)?.name || 'smart folder'}`;
+    const total = state.counts[state.view] ?? state.items.length;
+    bar.querySelector('[data-s="count"]').textContent = filtered
+      ? `${plural(state.items.length, 'item')}${where} matching${state.query ? ` “${state.query}”` : ''}${state.tagFilter.size ? ` · tags: ${[...state.tagFilter].join(' + ')}` : ''}`
+      : `${plural(state.view in state.counts ? total : state.items.length, 'item')}${where}`;
     bar.querySelector('[data-s="sel"]').textContent = state.selection.size > 1 ? `${state.selection.size} selected` : '';
   };
   on('items', paint);

@@ -1,7 +1,7 @@
 // User-level operations. Views call these; these talk to the API, update the
 // store and emit events. Keeping them here keeps views free of API details.
 import { api, openAttachment } from './api.js';
-import { byId, emit, selectedItems, state } from './store.js';
+import { byId, currentFolderId, emit, folderById, selectedItems, state } from './store.js';
 import { confirmDialog } from './ui/dialog.js';
 import { progressToast, toast, toastError } from './ui/toast.js';
 import { plural } from './util.js';
@@ -13,11 +13,23 @@ export async function loadItems({ keepSelection = true } = {}) {
   state.loading = true;
   emit('loading', true);
   try {
-    const res = await api.listItems({ view: state.view, q: state.query, mode: state.mode });
+    let res;
+    try {
+      res = await api.listItems({ view: state.view, q: state.query, mode: state.mode, tags: [...state.tagFilter] });
+    } catch (e) {
+      // the folder / smart folder shown was deleted (e.g. in another tab): fall back to the library
+      if (e.status === 404 && state.view !== 'library') { state.view = 'library'; emit('view'); return loadItems({ keepSelection: false }); }
+      throw e;
+    }
     if (seq !== loadSeq) return;           // a newer request superseded this one
     state.items = res.items;
     state.hits = res.hits || {};
     state.counts = res.counts;
+    state.sidebar = res.sidebar || state.sidebar;
+    // drop tag filters whose tag no longer exists
+    const known = new Set(state.sidebar.tags.map((t) => t.name.toLowerCase()));
+    for (const t of [...state.tagFilter]) if (!known.has(t.toLowerCase())) state.tagFilter.delete(t);
+    emit('sidebar');
     if (keepSelection) {
       const ids = new Set(state.items.map((i) => i.id));
       state.selection = new Set([...state.selection].filter((id) => ids.has(id)));
@@ -35,6 +47,7 @@ export function setView(view) {
   if (state.view === view) return;
   state.view = view;
   state.selection.clear();
+  state.tagFilter.clear();
   emit('view');
   loadItems({ keepSelection: false });
 }
@@ -70,8 +83,8 @@ export async function updateField(id, field, value) {
 
 export async function newItem(data = {}) {
   try {
-    if (state.view !== 'library') setView('library');
-    const item = await api.createItem({ item_type: state.settings.default_item_type || 'journalArticle', ...data });
+    if (!['library', 'unfiled'].includes(state.view) && !currentFolderId()) setView('library');
+    const item = await api.createItem({ item_type: state.settings.default_item_type || 'journalArticle', folder_id: currentFolderId(), ...data });
     await loadItems();
     select([item.id], { anchor: item.id });
     emit('focus-field', { id: item.id, field: 'title' });
@@ -231,8 +244,9 @@ export async function addPdfsAsItems(files) {
   if (!pdfs.length) return;
   const close = toast(`Adding ${plural(pdfs.length, 'PDF')} and looking up metadata…`, { timeout: 0 });
   try {
-    if (state.view !== 'library') setView('library');
-    const res = await api.fromPdfs(pdfs);
+    const folder = currentFolderId();
+    if (!folder && state.view !== 'library') setView('library');
+    const res = await api.fromPdfs(pdfs, folder);
     close();
     await loadItems();
     const ids = res.created.map((c) => c.item.id);
@@ -249,5 +263,118 @@ export async function regenerateCitekeys(ids) {
     await loadItems();
     const keys = Object.values(res.keys);
     toast(keys.length === 1 ? `Citation key: ${keys[0]}` : `Regenerated ${plural(keys.length, 'citation key')}`, { type: 'success' });
+  } catch (e) { toastError(e); }
+}
+
+/* ============================================================ organisation */
+export function toggleTagFilter(name, only = false) {
+  const has = state.tagFilter.has(name);
+  if (only) state.tagFilter.clear();
+  if (has && !only) state.tagFilter.delete(name); else state.tagFilter.add(name);
+  emit('tag-filter');
+  loadItems();
+}
+export function clearTagFilter() {
+  if (!state.tagFilter.size) return;
+  state.tagFilter.clear();
+  emit('tag-filter');
+  loadItems();
+}
+
+export async function createFolder(name, parentId = null, { open = true } = {}) {
+  try {
+    const f = await api.createFolder(name, parentId);
+    if (parentId) { state.openFolders.add(parentId); }
+    await loadItems();
+    if (open) setView(`folder:${f.id}`);
+    return f;
+  } catch (e) { toastError(e); return null; }
+}
+
+export async function renameFolder(id, name) {
+  try { await api.updateFolder(id, { name }); await loadItems(); return true; } catch (e) { toastError(e); return false; }
+}
+
+export async function moveFolder(id, parentId) {
+  try {
+    await api.updateFolder(id, { parent_id: parentId });
+    if (parentId) state.openFolders.add(parentId);
+    await loadItems();
+  } catch (e) { toastError(e); }
+}
+
+export async function deleteFolder(id) {
+  const f = folderById(id);
+  if (!f) return;
+  const { confirmDialog } = await import('./ui/dialog.js');
+  const subs = state.sidebar.folders.filter((x) => x.parent_id === id).length;
+  if (!(await confirmDialog(`Delete the folder “${f.name}”${subs ? ' and its subfolders' : ''}?`, {
+    title: 'Delete folder', confirm: 'Delete Folder', danger: true,
+    detail: 'The items inside are not deleted — they move to Unfiled Items.',
+  }))) return;
+  try {
+    // leave the view first if it shows this folder or one of its subfolders
+    const gone = new Set([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const x of state.sidebar.folders) if (gone.has(x.parent_id) && !gone.has(x.id)) { gone.add(x.id); grew = true; }
+    }
+    const res = await api.deleteFolder(id);
+    if (gone.has(currentFolderId())) setView('library');
+    await loadItems();
+    toast(`Deleted “${f.name}”${res.unfiled ? ` · ${plural(res.unfiled, 'item')} moved to Unfiled` : ''}`);
+  } catch (e) { toastError(e); }
+}
+
+export async function moveToFolder(ids, folderId) {
+  if (!ids.length) return;
+  try {
+    await api.moveItems(ids, folderId);
+    await loadItems();
+    const name = folderId ? folderById(folderId)?.name : 'Unfiled Items';
+    toast(`Moved ${plural(ids.length, 'item')} to ${name}`, { type: 'success' });
+  } catch (e) { toastError(e); }
+}
+
+export async function addTags(ids, names) {
+  if (!ids.length || !names.length) return;
+  try {
+    await api.tagItems(ids, names, []);
+    await loadItems();
+    toast(`Tagged ${plural(ids.length, 'item')} with ${names.map((n) => `“${n}”`).join(', ')}`, { type: 'success' });
+  } catch (e) { toastError(e); }
+}
+
+export async function removeTags(ids, names) {
+  if (!ids.length || !names.length) return;
+  try { await api.tagItems(ids, [], names); await loadItems(); } catch (e) { toastError(e); }
+}
+
+export async function updateTag(tag, data) {
+  try {
+    const t = await api.updateTag(tag.id, data);
+    if (data.name && state.tagFilter.has(tag.name)) { state.tagFilter.delete(tag.name); state.tagFilter.add(t.name); }
+    await loadItems();
+    return t;
+  } catch (e) { toastError(e); return null; }
+}
+
+export async function deleteTag(tag) {
+  const { confirmDialog } = await import('./ui/dialog.js');
+  if (!(await confirmDialog(`Delete the tag “${tag.name}”?`, {
+    title: 'Delete tag', confirm: 'Delete Tag', danger: true,
+    detail: tag.count ? `It is removed from ${plural(tag.count, 'item')}; the items themselves stay.` : '',
+  }))) return;
+  try { await api.deleteTag(tag.id); state.tagFilter.delete(tag.name); await loadItems(); } catch (e) { toastError(e); }
+}
+
+export async function deleteSmart(sf) {
+  const { confirmDialog } = await import('./ui/dialog.js');
+  if (!(await confirmDialog(`Delete the smart folder “${sf.name}”?`, { title: 'Delete smart folder', confirm: 'Delete', danger: true, detail: 'Only the saved search is removed; no items are deleted.' }))) return;
+  try {
+    await api.deleteSmart(sf.id);
+    if (state.view === `smart:${sf.id}`) setView('library');
+    await loadItems();
   } catch (e) { toastError(e); }
 }

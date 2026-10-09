@@ -37,6 +37,8 @@ export const COLUMNS = [
   { id: 'pmid', label: 'PMID', width: 90, sortKey: 'pmid' },
   { id: 'pmcid', label: 'PMCID', width: 100, sortKey: 'pmcid' },
   { id: 'extra', label: 'Extra', width: 140, sortKey: 'extra' },
+  { id: 'tags', label: 'Tags', width: 160, sortKey: 'tags' },
+  { id: 'folder', label: 'Folder', width: 140, sortKey: 'folder' },
 ];
 const DEFAULT_VISIBLE = ['attachments', 'title', 'creator', 'year', 'journal', 'date_added'];
 
@@ -61,7 +63,10 @@ export const state = {
   mode: 'basic',            // search scope
   items: [],                // already filtered by the server
   hits: {},                 // id -> { fulltext: snippetHtml }
-  counts: { library: 0, trash: 0, duplicates: 0 },
+  counts: { library: 0, trash: 0, duplicates: 0, unfiled: 0 },
+  sidebar: { folders: [], tags: [], smart: [] },
+  tagFilter: new Set(),     // tag names; items must have all of them
+  openFolders: new Set(storage('zc.openFolders', [])),
   loading: false,
   selection: new Set(),
   anchor: null,             // for shift-click ranges
@@ -73,6 +78,47 @@ export const state = {
 };
 
 export function saveColumns() { persist('zc.columns', state.columns); }
+export function saveOpenFolders() { persist('zc.openFolders', [...state.openFolders]); }
+
+/** Folder id of the current view, or null. */
+export function currentFolderId() {
+  return state.view.startsWith('folder:') ? Number(state.view.slice(7)) : null;
+}
+export const folderById = (id) => state.sidebar.folders.find((f) => f.id === Number(id));
+export function folderPath(id) {
+  const names = [];
+  let f = folderById(id), guard = 0;
+  while (f && guard++ < 100) { names.unshift(f.name); f = folderById(f.parent_id); }
+  return names;
+}
+/** Folders in display order with their depth, for trees and pickers. */
+export function folderTree() {
+  const kids = {};
+  for (const f of state.sidebar.folders) (kids[f.parent_id ?? 'root'] ||= []).push(f);
+  const out = [];
+  const walk = (parent, depth) => {
+    for (const f of (kids[parent] || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))) {
+      const children = kids[f.id] || [];
+      out.push({ ...f, depth, hasChildren: children.length > 0 });
+      walk(f.id, depth + 1);
+    }
+  };
+  walk('root', 0);
+  return out;
+}
+/** Item count of a folder including all its subfolders. */
+export function folderTotal(id) {
+  let n = 0;
+  const walk = (fid) => {
+    const f = folderById(fid);
+    if (!f) return;
+    n += f.count;
+    state.sidebar.folders.filter((c) => c.parent_id === fid).forEach((c) => walk(c.id));
+  };
+  walk(Number(id));
+  return n;
+}
+export const tagColor = (name) => state.sidebar.tags.find((t) => t.name.toLowerCase() === String(name).toLowerCase())?.color || null;
 export function saveSort() { persist('zc.sort', state.sort); }
 
 export const byId = (id) => state.items.find((i) => i.id === id);
@@ -92,6 +138,8 @@ export function sortedItems() {
     if (key === 'attachments') return (it.attachments || []).length;
     if (key === 'year') return parseInt(it.year, 10) || 0;
     if (key === 'item_type') return itemTypeLabel(it.item_type).toLowerCase();
+    if (key === 'tags') return (it.tags || []).join(', ').toLowerCase();
+    if (key === 'folder') return it.folder_id ? folderPath(it.folder_id).join('/').toLowerCase() : '';
     const v = it[key];
     return v == null ? '' : String(v).toLowerCase();
   };

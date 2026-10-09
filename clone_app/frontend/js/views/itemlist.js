@@ -3,17 +3,21 @@
 import * as A from '../actions.js';
 import { api, openAttachment } from '../api.js';
 import { icon, typeIcon } from '../icons.js';
-import { byId, COLUMNS, emit, itemTypeLabel, on, saveColumns, saveSort, selectedItems, sortedItems, state } from '../store.js';
+import { byId, COLUMNS, currentFolderId, emit, folderById, folderPath, itemTypeLabel, on, saveColumns, saveSort, selectedItems, sortedItems, state, tagColor } from '../store.js';
 import { promptDialog } from '../ui/dialog.js';
 import { closeMenu, openMenu } from '../ui/menu.js';
 import { toast, toastError } from '../ui/toast.js';
-import { copyText, escapeHtml, formatDate, modKey, modLabel, plural, shortAuthors } from '../util.js';
+import { copyText, debounce, escapeHtml, formatDate, modKey, modLabel, plural, shortAuthors } from '../util.js';
 import { openExport } from './exportDialog.js';
 import { openMetadataReview } from './metadataReview.js';
+import { editTagsDialog, moveSelectionToFolder, smartFolderDialog } from './organizeDialogs.js';
+
+const ITEMS_MIME = 'application/x-zc-items';   // also read by the sidebar drop targets
 
 const COLDEF = Object.fromEntries(COLUMNS.map((c) => [c.id, c]));
 let pane, scroller, table, head, body;
 let order = [];              // ids in display order
+let pendingCollapse = null;  // multi-selection row pressed: collapse on click, keep on drag
 
 export function initItemList() {
   pane = document.getElementById('items-pane');
@@ -30,6 +34,7 @@ export function initItemList() {
   bindBody();
   bindKeyboard();
   bindDrops();
+  bindCopy();
 
   on('items', renderBody);
   on('selection', paintSelection);
@@ -172,8 +177,10 @@ function cellHtml(colId, it) {
       const open = state.expanded.has(it.id);
       const hit = state.hits[it.id]?.fulltext ? ' <span class="badge accent" title="Matched in the full text">full text</span>' : '';
       return `<span class="twisty ${n ? '' : 'none'} ${open ? 'open' : ''}" data-act="toggle">${icon('chevron', 'icon-sm')}</span>`
-        + `${typeIcon(it.item_type, 'icon-sm type-icon')}<span class="t">${escapeHtml(it.title || 'Untitled')}</span>${hit}`;
+        + `${typeIcon(it.item_type, 'icon-sm type-icon')}<span class="t">${escapeHtml(it.title || 'Untitled')}</span>${hit}${colourDots(it)}`;
     }
+    case 'tags': return escapeHtml((it.tags || []).join(', '));
+    case 'folder': return it.folder_id ? escapeHtml(folderPath(it.folder_id).join(' / ')) : '';
     case 'creator': return escapeHtml(shortAuthors(it.authors));
     case 'item_type': return escapeHtml(itemTypeLabel(it.item_type));
     case 'date_added': case 'date_modified': return escapeHtml(formatDate(it[colId]));
@@ -181,12 +188,19 @@ function cellHtml(colId, it) {
   }
 }
 
+/** Coloured tags show as dots after the title, like Zotero. */
+function colourDots(it) {
+  const dots = (it.tags || []).map((t) => [t, tagColor(t)]).filter(([, c]) => c);
+  if (!dots.length) return '';
+  return `<span class="row-dots">${dots.map(([t, c]) => `<span class="tag-dot" style="background:${c}" title="${escapeHtml(t)}"></span>`).join('')}</span>`;
+}
+
 function rowHtml(it) {
   const cells = visibleCols().map((c) => {
     const title = c.id === 'creator' ? ` title="${escapeHtml(it.authors || '')}"` : (c.id === 'title' ? ` title="${escapeHtml(it.title || '')}"` : '');
     return `<div class="cell c-${c.id}" data-col="${c.id}"${title}>${cellHtml(c.id, it)}</div>`;
   }).join('');
-  let html = `<div class="row ${state.selection.has(it.id) ? 'selected' : ''}" role="row" data-id="${it.id}">${cells}</div>`;
+  let html = `<div class="row ${state.selection.has(it.id) ? 'selected' : ''}" role="row" data-id="${it.id}" draggable="${state.view === 'trash' ? 'false' : 'true'}">${cells}</div>`;
   if (state.expanded.has(it.id)) {
     for (const a of it.attachments || []) {
       html += `<div class="row child" data-parent="${it.id}" data-att="${a.id}"><div class="cell">${icon('pdf', 'icon-sm')}<span>${escapeHtml(a.name || 'Attachment')}</span></div></div>`;
@@ -225,6 +239,20 @@ function emptyState() {
       <p>Nothing matches “${escapeHtml(state.query)}” in <b>${escapeHtml(state.settingsMeta.searchModes?.[state.mode] || state.mode)}</b>.</p>
       <div class="actions">${state.mode !== 'fulltext' ? '<button class="btn" data-empty="fulltext">Search full text too</button>' : ''}
       <button class="btn btn-ghost" data-empty="clear">Clear search</button></div></div>`;
+  } else if (state.tagFilter.size) {
+    el.innerHTML = `<div class="empty-state">${icon('tag')}<h3>No items with ${state.tagFilter.size > 1 ? 'all these tags' : 'this tag'} here</h3>
+      <p>${[...state.tagFilter].map((t) => `“${escapeHtml(t)}”`).join(' + ')}</p><div class="actions"><button class="btn" data-empty="clear-tags">Clear tag filter</button></div></div>`;
+  } else if (currentFolderId()) {
+    el.innerHTML = `<div class="empty-state">${icon('folder')}<h3>${escapeHtml(folderById(currentFolderId())?.name || 'Folder')} is empty</h3>
+      <p>Drag items onto the folder in the sidebar, use “Move to Folder…”, or add new items while this folder is open.</p>
+      <div class="actions"><button class="btn btn-primary" data-empty="identifier">${icon('wand')} Add by Identifier</button><button class="btn" data-empty="new">${icon('plus')} New Item</button></div></div>`;
+  } else if (state.view === 'unfiled') {
+    el.innerHTML = `<div class="empty-state">${icon('check')}<h3>Everything is filed</h3><p>Every item in your library is in a folder.</p></div>`;
+  } else if (state.view.startsWith('smart:')) {
+    const sf = state.sidebar.smart.find((s) => `smart:${s.id}` === state.view);
+    el.innerHTML = `<div class="empty-state">${icon('smartFolder')}<h3>Nothing matches yet</h3>
+      <p>This smart folder shows items matching <code class="mono">${escapeHtml(sf?.query || '')}</code>.</p>
+      <div class="actions"><button class="btn" data-empty="edit-smart">Edit Smart Folder…</button></div></div>`;
   } else if (state.view === 'duplicates') {
     el.innerHTML = `<div class="empty-state">${icon('check')}<h3>No duplicates</h3><p>No two items share a DOI, or the same title and year.</p></div>`;
   } else if (state.view === 'trash') {
@@ -243,6 +271,8 @@ function emptyState() {
     if (act === 'identifier') emit('open-identifier');
     if (act === 'import') emit('open-import');
     if (act === 'new') A.newItem();
+    if (act === 'clear-tags') A.clearTagFilter();
+    if (act === 'edit-smart') smartFolderDialog(state.sidebar.smart.find((s) => `smart:${s.id}` === state.view));
   });
   return el;
 }
@@ -274,6 +304,25 @@ function toggleExpand(id, force) {
 }
 
 function bindBody() {
+  // drag rows onto sidebar folders / tags / Unfiled / Trash
+  body.addEventListener('dragstart', (e) => {
+    const row = e.target.closest('.row[data-id]');
+    if (!row) return;
+    pendingCollapse = null;
+    const id = row.dataset.id;
+    if (!state.selection.has(id)) A.select([id], { anchor: id, cursor: id });
+    const ids = order.filter((x) => state.selection.has(x));
+    e.dataTransfer.setData(ITEMS_MIME, JSON.stringify(ids));
+    e.dataTransfer.setData('text/plain', ids.map((x) => byId(x)?.title || x).join('\n'));
+    e.dataTransfer.effectAllowed = 'copyMove';
+    const ghost = document.createElement('div');
+    ghost.className = 'drag-ghost';
+    ghost.textContent = ids.length === 1 ? (byId(ids[0])?.title || 'Item') : `${ids.length} items`;
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, 12, 12);
+    setTimeout(() => ghost.remove(), 0);
+  });
+
   body.addEventListener('mousedown', (e) => {
     const row = e.target.closest('.row');
     if (!row || e.button !== 0) return;
@@ -288,11 +337,18 @@ function bindBody() {
       const sel = new Set(state.selection);
       sel.has(id) ? sel.delete(id) : sel.add(id);
       A.select([...sel], { anchor: id, cursor: id });
-    } else if (!state.selection.has(id) || state.selection.size > 1) {
+    } else if (!state.selection.has(id)) {
       A.select([id], { anchor: id, cursor: id });
+    } else if (state.selection.size > 1) {
+      // keep the multi-selection so it can be dragged; collapse on a plain click instead
+      pendingCollapse = id;
     }
   });
   body.addEventListener('click', (e) => {
+    if (pendingCollapse && e.target.closest(`.row[data-id="${CSS.escape(pendingCollapse)}"]`)) {
+      A.select([pendingCollapse], { anchor: pendingCollapse, cursor: pendingCollapse });
+    }
+    pendingCollapse = null;
     const child = e.target.closest('.row.child');
     if (child) {
       const it = byId(child.dataset.parent);
@@ -351,8 +407,12 @@ export function itemMenu(at) {
     { label: one ? 'Find Available PDF' : `Find PDFs for ${items.length} Items`, icon: 'find', run: () => (one ? A.findPdf(one.id) : A.findPdfs(ids)) },
     one && { label: 'Add PDF Attachment…', icon: 'paperclip', run: () => pickFiles((files) => A.uploadAttachments(one.id, files)) },
     'sep',
+    { label: one ? 'Move to Folder…' : `Move ${items.length} Items to Folder…`, icon: 'folder', run: () => moveSelectionToFolder(ids) },
+    items.some((i) => i.folder_id) && { label: 'Remove from Folder', icon: 'unfiled', run: () => A.moveToFolder(ids, null) },
+    { label: one ? 'Edit Tags…' : `Tags for ${items.length} Items…`, icon: 'tag', run: () => editTagsDialog(ids), shortcut: `${modLabel}T` },
+    'sep',
     { label: one ? 'Copy Citation Key' : 'Copy Citation Keys', icon: 'key', run: () => copyKeys(items), shortcut: `${modLabel}⇧C` },
-    { label: 'Copy as BibTeX', icon: 'copy', run: () => copyBibtex(ids) },
+    { label: 'Copy as BibTeX', icon: 'copy', run: () => copyBibtex(ids), shortcut: `${modLabel}C` },
     { label: one ? 'Export Item…' : `Export ${items.length} Items…`, icon: 'export', run: () => openExport(ids) },
     { label: one ? 'Regenerate Citation Key' : 'Regenerate Citation Keys', icon: 'refresh', run: () => A.regenerateCitekeys(ids) },
     'sep',
@@ -435,7 +495,11 @@ function bindKeyboard() {
       case 'Enter': if (state.cursor) { e.preventDefault(); A.openPdf(state.cursor); } break;
       case 'Delete': case 'Backspace': if (state.selection.size) { e.preventDefault(); A.trashSelected(); } break;
       case 'a': case 'A': if (modKey(e)) { e.preventDefault(); A.select(order, { anchor: order[0], cursor: state.cursor }); } break;
-      case 'c': case 'C': if (modKey(e) && e.shiftKey && state.selection.size) { e.preventDefault(); copyKeys(selectedItems()); } break;
+      case 'c': case 'C':
+        // Cmd+Shift+C: citation keys. Plain Cmd+C is handled by the 'copy' event (BibTeX), see bindCopy().
+        if (modKey(e) && e.shiftKey && state.selection.size) { e.preventDefault(); copyKeys(selectedItems()); }
+        break;
+      case 't': case 'T': if (modKey(e) && state.selection.size && state.view !== 'trash') { e.preventDefault(); editTagsDialog(); } break;
       case 'ContextMenu': {
         e.preventDefault();
         const row = body.querySelector('.row.selected');
@@ -478,3 +542,41 @@ function bindDrops() {
 }
 
 export function focusList() { scroller?.focus(); closeMenu(); }
+
+/* ========================================================== copy BibTeX */
+// Cmd/Ctrl+C on selected items copies their BibTeX. The text is prefetched
+// whenever the selection changes so the 'copy' event can fill the clipboard
+// synchronously (the most reliable way); if it isn't ready yet we fall back
+// to the async clipboard API.
+let bibCache = { key: '', text: '' };
+const selectionKey = () => [...state.selection].sort().join(',');
+
+const prefetchBibtex = debounce(async () => {
+  const key = selectionKey();
+  if (!key || state.view === 'trash' || key === bibCache.key) return;
+  try {
+    const res = await api.exportText('bibtex', order.filter((x) => state.selection.has(x)));
+    if (key === selectionKey()) bibCache = { key, text: res.text };
+  } catch { /* copy will fetch on demand */ }
+}, 150);
+
+function bindCopy() {
+  on('selection', prefetchBibtex);
+  on('items', () => { bibCache = { key: '', text: '' }; prefetchBibtex(); });   // edits change the BibTeX
+  document.addEventListener('copy', (e) => {
+    // only when the list has focus and the user isn't copying selected text
+    if (!scroller.contains(document.activeElement) || !state.selection.size || state.view === 'trash') return;
+    const sel = getSelection();
+    if (sel && !sel.isCollapsed && String(sel).trim()) return;
+    e.preventDefault();
+    const n = state.selection.size;
+    const done = () => toast(`Copied BibTeX for ${plural(n, 'item')}`, { type: 'success', timeout: 2500 });
+    if (bibCache.key === selectionKey() && bibCache.text) {
+      e.clipboardData.setData('text/plain', bibCache.text);
+      done();
+    } else {
+      api.exportText('bibtex', order.filter((x) => state.selection.has(x)))
+        .then((res) => copyText(res.text)).then(done).catch(toastError);
+    }
+  });
+}

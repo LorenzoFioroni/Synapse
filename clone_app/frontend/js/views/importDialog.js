@@ -2,7 +2,7 @@
 import * as A from '../actions.js';
 import { api } from '../api.js';
 import { icon } from '../icons.js';
-import { state } from '../store.js';
+import { currentFolderId, folderPath, folderTree, state } from '../store.js';
 import { openDialog } from '../ui/dialog.js';
 import { toast, toastError } from '../ui/toast.js';
 import { escapeHtml, plural, shortAuthors } from '../util.js';
@@ -10,7 +10,7 @@ import { escapeHtml, plural, shortAuthors } from '../util.js';
 export async function openImport(initialFile = null) {
   let preview = null;
   let entriesState = [];
-  let importBtn;
+  let importBtn, folderSelect;
   await openDialog({
     title: 'Import References',
     subtitle: 'BibTeX (.bib), RIS (.ris), EndNote (.enw or XML) and CSL JSON are detected automatically.',
@@ -24,7 +24,12 @@ export async function openImport(initialFile = null) {
         <details style="margin-top:12px"><summary class="muted" style="cursor:pointer">…or paste text</summary>
           <textarea class="input no-enter" rows="6" placeholder="@article{key, title = {…}, …}" style="margin-top:8px;font-family:var(--font-mono);font-size:12px"></textarea>
           <button class="btn btn-sm" data-parse style="margin-top:6px">Preview pasted text</button></details>
-        <div class="import-result"></div>`;
+        <div class="import-result"></div>
+        <div class="import-folder"><label class="field-label" style="margin:14px 0 6px">Import into</label>
+          <select class="select" data-folder style="max-width:360px"><option value="">My Library (no folder)</option>
+          ${folderTree().map((f) => `<option value="${f.id}" ${f.id === currentFolderId() ? 'selected' : ''}>${'\u2003'.repeat(f.depth)}${escapeHtml(f.name)}</option>`).join('')}</select>
+          <div class="field-hint">Keywords in the file become tags (change in Settings → Import &amp; Export).</div></div>`;
+      folderSelect = body.querySelector('[data-folder]');
       const dz = body.querySelector('.drop-zone');
       const result = body.querySelector('.import-result');
       const load = async (src) => {
@@ -65,8 +70,9 @@ export async function openImport(initialFile = null) {
           if (!chosen.length) return false;
           btn.disabled = true; btn.textContent = 'Importing…';
           try {
-            const res = await api.importCommit(chosen, false);
-            if (state.view !== 'library') A.setView('library');
+            const folder = folderSelect.value ? Number(folderSelect.value) : null;
+            const res = await api.importCommit(chosen, false, folder);
+            A.setView(folder ? `folder:${folder}` : 'library');
             await A.loadItems();
             A.select(res.created, { anchor: res.created[0] });
             toast(`Imported ${plural(res.created.length, 'item')}`, { type: 'success' });

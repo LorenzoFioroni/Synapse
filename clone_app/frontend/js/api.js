@@ -34,7 +34,7 @@ export const api = {
   schema: () => request('GET', '/api/schema'),
   stats: () => request('GET', '/api/stats'),
 
-  listItems: ({ view, q, mode }) => request('GET', `/api/items?${qs({ view, q, mode })}`),
+  listItems: ({ view, q, mode, tags }) => request('GET', `/api/items?${qs({ view, q, mode, tags: tags && tags.join(',') })}`),
   getItem: (id) => request('GET', `/api/items/${id}`),
   createItem: (data = {}) => request('POST', '/api/items', data),
   updateItem: (id, data) => request('PATCH', `/api/items/${id}`, data),
@@ -45,9 +45,13 @@ export const api = {
   regenerateCitekeys: (ids) => request('POST', '/api/items/citekeys', { ids }),
 
   lookup: (id) => request('POST', `/api/items/${id}/lookup`),
-  fromIdentifier: (identifier, allowDuplicate = false) =>
-    request('POST', '/api/items/from_identifier', { identifier, allow_duplicate: allowDuplicate }),
-  fromPdfs: (files) => { const fd = new FormData(); [...files].forEach((f) => fd.append('file', f)); return request('POST', '/api/items/from_pdf', fd); },
+  fromIdentifier: (identifier, allowDuplicate = false, folderId = null) =>
+    request('POST', '/api/items/from_identifier', { identifier, allow_duplicate: allowDuplicate, folder_id: folderId }),
+  fromPdfs: (files, folderId = null) => {
+    const fd = new FormData(); [...files].forEach((f) => fd.append('file', f));
+    if (folderId) fd.append('folder_id', folderId);
+    return request('POST', '/api/items/from_pdf', fd);
+  },
   findPdf: (id) => request('POST', `/api/items/${id}/find_pdf`),
 
   uploadAttachments: (id, files) => { const fd = new FormData(); [...files].forEach((f) => fd.append('file', f)); return request('POST', `/api/items/${id}/attachments`, fd); },
@@ -65,11 +69,24 @@ export const api = {
     const fd = new FormData(); fd.append('file', fileOrText); if (format) fd.append('format', format);
     return request('POST', '/api/import/preview', fd);
   },
-  importCommit: (entries, skipDuplicates) => request('POST', '/api/import/commit', { entries, skip_duplicates: skipDuplicates }),
+  importCommit: (entries, skipDuplicates, folderId = null) => request('POST', '/api/import/commit', { entries, skip_duplicates: skipDuplicates, folder_id: folderId }),
   exportText: (format, ids) => request('GET', `/api/export?${qs({ format, ids: ids && ids.join(','), download: 0 })}`),
   exportUrl: (format, ids) => `/api/export?${qs({ format, ids: ids && ids.join(',') })}`,
 
   rebuildFulltext: () => request('POST', '/api/fulltext/rebuild'),
+
+  // folders · tags · smart folders
+  createFolder: (name, parentId = null) => request('POST', '/api/folders', { name, parent_id: parentId }),
+  updateFolder: (id, data) => request('PATCH', `/api/folders/${id}`, data),
+  deleteFolder: (id) => request('DELETE', `/api/folders/${id}`),
+  moveItems: (ids, folderId) => request('POST', '/api/items/move', { ids, folder_id: folderId }),
+  tagItems: (ids, add = [], remove = []) => request('POST', '/api/items/tags', { ids, add, remove }),
+  updateTag: (id, data) => request('PATCH', `/api/tags/${id}`, data),
+  deleteTag: (id) => request('DELETE', `/api/tags/${id}`),
+  createSmart: (name, query, mode) => request('POST', '/api/smart', { name, query, mode }),
+  updateSmart: (id, data) => request('PATCH', `/api/smart/${id}`, data),
+  deleteSmart: (id) => request('DELETE', `/api/smart/${id}`),
+  searchPreview: (q, mode) => request('GET', `/api/search/preview?${qs({ q, mode })}`),
 };
 
 export function fileUrl(att) {

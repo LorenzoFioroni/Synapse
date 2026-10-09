@@ -60,3 +60,7 @@
 
 /* let the browser skip layout/paint of off-screen rows in big libraries */
 .items-body > .row { content-visibility: auto; contain-intrinsic-size: auto var(--row-h); }
+
+.row-dots { display: inline-flex; gap: 3px; margin-left: 2px; flex: none; }
+.row-dots .tag-dot { width: 8px; height: 8px; box-shadow: 0 0 0 1.5px var(--bg); }
+.drag-ghost { position: fixed; top: -100px; left: -100px; max-width: 320px; padding: 6px 12px; border-radius: 8px; background: var(--accent); color: var(--accent-text); font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: var(--shadow-md); }

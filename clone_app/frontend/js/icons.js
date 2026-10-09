@@ -47,6 +47,11 @@ const P = {
   minus: '<path d="M3.5 8h9"/>',
   open: '<path d="M9 2.5h4.5V7M13.5 2.5L8 8"/><path d="M12 9.5V13H3V4h3.5"/>',
   arrowLeft: '<path d="M13 8H3M7 4L3 8l4 4"/>',
+  folder: '<path d="M1.8 4.2a1 1 0 0 1 1-1h3.4l1.5 1.6h5.5a1 1 0 0 1 1 1v6.9a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z"/>',
+  folderPlus: '<path d="M1.8 4.2a1 1 0 0 1 1-1h3.4l1.5 1.6h5.5a1 1 0 0 1 1 1v6.9a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z"/><path d="M8 7.3v4M6 9.3h4"/>',
+  smartFolder: '<path d="M1.8 4.2a1 1 0 0 1 1-1h3.4l1.5 1.6h5.5a1 1 0 0 1 1 1v6.9a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z"/><circle cx="7.6" cy="9" r="1.8"/><path d="M9 10.4l1.6 1.6"/>',
+  tag: '<path d="M2 2.5h5.3l6.5 6.5-5 5L2.3 7.5z"/><circle cx="5" cy="5.3" r="1"/>',
+  unfiled: '<path d="M1.8 4.2a1 1 0 0 1 1-1h3.4l1.5 1.6h5.5a1 1 0 0 1 1 1v6.9a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z" stroke-dasharray="2 1.6"/>',
   sparkle: '<path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z"/>',
 };
 
