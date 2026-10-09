@@ -55,9 +55,22 @@ export function popupPlacement(anchor, w, h, vw, vh, gap = 8) {
   return { left: Math.round(left), top: Math.round(top), below };
 }
 
-/** Top-left corner (page CSS px) of a preview window w×h showing (x, y) of a pageW×pageH page. */
-export function previewOrigin(x, y, w, h, pageW, pageH, margin = 16) {
+/**
+ * Top-left corner (page CSS px) of a preview window w×h showing (x, y) of a pageW×pageH page:
+ * the point near the top-left (align 'top'), or near the bottom ('bottom', for figures whose
+ * destination is the end of the caption, below the figure).
+ */
+export function previewOrigin(x, y, w, h, pageW, pageH, margin = 16, align = 'top') {
   const ox = x == null ? 0 : Math.max(0, Math.min(x - margin, pageW - w));
-  const oy = y == null ? 0 : Math.max(0, Math.min(y - margin, pageH - h));
+  const want = align === 'bottom' ? y - h + 2 * margin : y - margin;
+  const oy = y == null ? 0 : Math.max(0, Math.min(want, pageH - h));
   return { x: Math.round(ox), y: Math.round(oy) };
+}
+
+/**
+ * A named destination of a float (LaTeX hyperref: figure.3, table.2, subfigure.1.2, figure.caption.7,
+ * algocf.1, lstlisting.4…): its anchor is at the caption, usually below the figure itself.
+ */
+export function isFloatDest(dest) {
+  return typeof dest === 'string' && /^(sub)?(figure|table)\b|^(algocf|algorithm|lstlisting|listing)\b/i.test(dest);
 }

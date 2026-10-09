@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { destTarget, popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor } from '../../frontend/js/viewer/linkNav.js';
+import { destTarget, isFloatDest, popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor } from '../../frontend/js/viewer/linkNav.js';
 
 const ref = { num: 12, gen: 0 };
 
@@ -42,4 +42,12 @@ test('previewOrigin keeps the target near the top-left, inside the page', () => 
   assert.deepEqual(previewOrigin(300, 500, 460, 230, 826, 1069), { x: 284, y: 484 });
   assert.deepEqual(previewOrigin(700, 1050, 460, 230, 826, 1069), { x: 366, y: 839 });
   assert.deepEqual(previewOrigin(null, null, 460, 230, 826, 1069), { x: 0, y: 0 });
+});
+
+test('figures and tables put their destination at the bottom of the preview', () => {
+  // y = 600: the caption end; the window ends 32px below it, the figure above is in view
+  assert.deepEqual(previewOrigin(100, 600, 460, 360, 826, 1069, 16, 'bottom'), { x: 84, y: 272 });
+  assert.deepEqual(previewOrigin(100, 100, 460, 260, 826, 1069, 16, 'bottom'), { x: 84, y: 0 });
+  for (const d of ['figure.3', 'figure.caption.7', 'table.2', 'subfigure.1.2', 'algocf.1', 'lstlisting.4', 'Figure.1']) assert.ok(isFloatDest(d), d);
+  for (const d of ['section.2', 'cite.smith', 'equation.1.4', 'figures', null, [1, { name: 'XYZ' }]]) assert.ok(!isFloatDest(d), String(d));
 });

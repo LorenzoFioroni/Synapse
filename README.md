@@ -100,7 +100,8 @@ never mix.
 - Built-in PDF viewer with highlights, underlines, text boxes and drawings
   (pdf.js is bundled, so it works offline). Links in the PDF work: citations, figure and section
   references jump inside the document, web links open in a new tab, and hovering a link shows a
-  preview of where it goes. Back/Forward (toolbar arrows, Alt+← / Alt+→, Cmd+[ / Cmd+], mouse
+  preview of where it goes (scroll inside it to look around; for figures and tables, whose links
+  point at the end of the caption, the preview shows the figure above it). Back/Forward (toolbar arrows, Alt+← / Alt+→, Cmd+[ / Cmd+], mouse
   buttons) return to where you were before following a link, even after zooming.
 
 ## Project layout

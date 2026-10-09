@@ -6,15 +6,17 @@
 //
 // - Internal links (citations, figures, sections…) jump inside the PDF; external links open in a
 //   new tab. Links are only live with the Select tool, so highlighting over them still works.
-// - Hovering a link shows a popup: for internal links the region of the page it points to
-//   (rendered on demand, like Zotero), for external ones the address.
+// - Hovering a link shows a popup: for internal links the page it points to, scrolled to the
+//   destination (rendered on demand, like Zotero; scroll inside it to look around), for external
+//   ones the address. Figures and tables are anchored at the end of their caption by LaTeX, so for
+//   those the destination goes at the bottom of the popup, with the figure above it in view.
 // - Every jump is a browser history entry holding the reading position, so Back (toolbar arrow,
 //   Alt+←, Cmd+[, the mouse's back button) returns to where you were before following the link.
 
-import { destTarget, popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor } from './linkNav.js';
+import { destTarget, isFloatDest, popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor } from './linkNav.js';
 
 const HOVER_DELAY = 250;
-const PREVIEW_W = 460, PREVIEW_H = 230, PREVIEW_SCALE = 1.35;
+const PREVIEW_W = 460, PREVIEW_H = 260, PREVIEW_H_FLOAT = 360, PREVIEW_SCALE = 1.35;
 
 const css = document.createElement('style');
 css.textContent = `
@@ -28,6 +30,7 @@ css.textContent = `
     font: 12px -apple-system, system-ui, sans-serif; overflow: hidden; }
   .zc-link-pop.preview { cursor: pointer; }
   .zc-link-pop canvas { display: block; background: #fff; }
+  .zc-link-pop .zc-pop-page { overflow: auto; overscroll-behavior: contain; }
   .zc-link-pop .zc-pop-head { display: flex; justify-content: space-between; gap: 12px; padding: 4px 9px;
     color: var(--text-3, #888); border-bottom: 1px solid var(--border, #eee); font-size: 11px; }
   .zc-link-pop .zc-pop-url { padding: 6px 10px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -250,27 +253,37 @@ async function showPopup(link) {
   let page = t.page, vp = t.vp;
   if (!page) { page = await viewer().pdfDoc.getPage(t.pageNum); vp = page.getViewport({ scale: 1 }); }
   if (hoverLink !== link) return;
-  const w = Math.min(PREVIEW_W, Math.round(vp.width * PREVIEW_SCALE));
-  const h = PREVIEW_H;
+  const pageW = vp.width * PREVIEW_SCALE, pageH = vp.height * PREVIEW_SCALE;
+  const w = Math.min(PREVIEW_W, Math.round(pageW));
+  const float = isFloatDest(target.dest);
+  const h = Math.min(float ? PREVIEW_H_FLOAT : PREVIEW_H, Math.round(pageH));
   const o = previewOrigin(t.x == null ? null : t.x * PREVIEW_SCALE, t.y == null ? null : t.y * PREVIEW_SCALE,
-    w, h, vp.width * PREVIEW_SCALE, vp.height * PREVIEW_SCALE);
+    w, h, pageW, pageH, 16, float ? 'bottom' : 'top');
+  // The whole page, in a window that starts at the destination and can be scrolled.
   const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(w * dpr);
-  canvas.height = Math.round(h * dpr);
-  canvas.style.width = `${w}px`;
-  canvas.style.height = `${h}px`;
+  canvas.width = Math.round(pageW * dpr);
+  canvas.height = Math.round(pageH * dpr);
+  canvas.style.width = `${Math.round(pageW)}px`;
+  canvas.style.height = `${Math.round(pageH)}px`;
+  const scroller = document.createElement('div');
+  scroller.className = 'zc-pop-page';
+  scroller.style.width = `${w}px`;
+  scroller.style.height = `${h}px`;
+  scroller.appendChild(canvas);
   const head = document.createElement('div');
   head.className = 'zc-pop-head';
-  head.innerHTML = `<span>Page ${t.pageNum}</span><span>Click to go there</span>`;
+  head.innerHTML = `<span>Page ${t.pageNum}</span><span>Scroll to look around · click to go there</span>`;
   el.classList.add('preview');
-  el.append(head, canvas);
+  el.append(head, scroller);
   el.addEventListener('click', () => { hidePopup(); followInternal(target); });
   placePopup(el, link);
+  scroller.scrollLeft = o.x;
+  scroller.scrollTop = o.y;
   try {
     await page.render({
       canvasContext: canvas.getContext('2d'),
-      viewport: page.getViewport({ scale: PREVIEW_SCALE, offsetX: -o.x, offsetY: -o.y }),
+      viewport: page.getViewport({ scale: PREVIEW_SCALE }),
       transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null,
     }).promise;
   } catch (e) { console.warn('Link preview failed', e); }

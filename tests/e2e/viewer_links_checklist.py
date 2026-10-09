@@ -31,21 +31,22 @@ async def shot(page, name):
 
 def make_linked_pdf(path: Path) -> Path:
     """Five pages. Page 1 links to page 3 at y=400 (explicit XYZ), to the named destination
-    'refs' (page 4, top), and to https://example.org. Page 3 has text at y=400."""
+    'refs' (page 4, top), to https://example.org, and to 'figure.1' (LaTeX-style: the end of the
+    caption at y=400 on page 3, with the figure above it). Page 3 has text at y=400."""
     n = 5
     page_obj = lambda i: 3 + 2 * i            # noqa: E731
     font = 3 + 2 * n
-    a_xyz, a_named, a_uri, dests = font + 1, font + 2, font + 3, font + 4
-    texts = {0: [("Introduction: see Section 3 and [1] and the website", 72, 700)],
+    a_xyz, a_named, a_uri, dests, a_fig = font + 1, font + 2, font + 3, font + 4, font + 5
+    texts = {0: [("Introduction: see Section 3 and [1] and the website", 72, 700), ("Fig. 1", 520, 700)],
              1: [("Page two", 72, 700)],
-             2: [("Page three top", 72, 700), ("SECTION THREE TARGET", 72, 400)],
+             2: [("Page three top", 72, 700), ("FIGURE BODY", 72, 560), ("SECTION THREE TARGET", 72, 400)],
              3: [("References: [1] Somebody 2020", 72, 700)],
              4: [("Appendix", 72, 700)]}
     objs = {1: b"<< /Type /Catalog /Pages 2 0 R /Names << /Dests " + f"{dests} 0 R".encode() + b" >> >>",
             2: b"<< /Type /Pages /Kids [" + b" ".join(f"{page_obj(i)} 0 R".encode() for i in range(n)) + f"] /Count {n} >>".encode()}
     for i in range(n):
         stream = " ".join(f"BT /F1 16 Tf {x} {y} Td ({t}) Tj ET" for t, x, y in texts[i]).encode("latin-1")
-        annots = f" /Annots [{a_xyz} 0 R {a_named} 0 R {a_uri} 0 R]" if i == 0 else ""
+        annots = f" /Annots [{a_xyz} 0 R {a_named} 0 R {a_uri} 0 R {a_fig} 0 R]" if i == 0 else ""
         objs[page_obj(i)] = (f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {page_obj(i) + 1} 0 R "
                              f"/Resources << /Font << /F1 {font} 0 R >> >>{annots} >>").encode()
         objs[page_obj(i) + 1] = b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream"
@@ -53,7 +54,8 @@ def make_linked_pdf(path: Path) -> Path:
     objs[a_xyz] = f"<< /Type /Annot /Subtype /Link /Rect [180 690 260 715] /Border [0 0 0] /Dest [{page_obj(2)} 0 R /XYZ 72 420 0] >>".encode()
     objs[a_named] = b"<< /Type /Annot /Subtype /Link /Rect [290 690 315 715] /Border [0 0 0] /A << /S /GoTo /D (refs) >> >>"
     objs[a_uri] = b"<< /Type /Annot /Subtype /Link /Rect [400 690 500 715] /Border [0 0 0] /A << /S /URI /URI (https://example.org/) >> >>"
-    objs[dests] = f"<< /Names [(refs) [{page_obj(3)} 0 R /FitH 792]] >>".encode()
+    objs[a_fig] = b"<< /Type /Annot /Subtype /Link /Rect [515 690 570 715] /Border [0 0 0] /A << /S /GoTo /D (figure.1) >> >>"
+    objs[dests] = f"<< /Names [(figure.1) [{page_obj(2)} 0 R /XYZ 72 400 0] (refs) [{page_obj(3)} 0 R /FitH 792]] >>".encode()
     out = bytearray(b"%PDF-1.4\n")
     offsets = {}
     for k in sorted(objs):
@@ -99,7 +101,7 @@ async def main():
             await v.wait_for_selector('.page-wrapper[data-page-number="5"] canvas', timeout=15000)
             await v.wait_for_selector('.page-wrapper[data-page-number="1"] .zc-link', timeout=8000)
             n = await v.locator('.page-wrapper[data-page-number="1"] .zc-link').count()
-            check("page 1 has its three links", n == 3, n)
+            check("page 1 has its four links", n == 4, n)
             check("Back is disabled before any jump", await v.is_disabled('#zc-back'))
 
             # scroll a little so 'before' is not just the top
@@ -121,9 +123,35 @@ async def main():
                 return dark; }""")
             check("preview shows the target text", painted > 50, painted)
             await shot(v, "1-preview")
+            geo = await v.evaluate("""() => { const s = document.querySelector('.zc-link-pop .zc-pop-page');
+                return { st: s.scrollTop, sh: s.scrollHeight, ch: s.clientHeight }; }""")
+            # destination y=420pt → (792 - 420) * 1.35 = 502 css px, 16px margin above
+            check("preview is scrollable and starts at the destination", geo["sh"] > geo["ch"] * 2 and abs(geo["st"] - 486) < 3, geo)
+            box = await v.locator('.zc-link-pop .zc-pop-page').bounding_box()
+            await v.mouse.move(box["x"] + 100, box["y"] + 100)
+            await v.mouse.wheel(0, -200)
+            await v.wait_for_timeout(300)
+            st = await v.evaluate("document.querySelector('.zc-link-pop .zc-pop-page')?.scrollTop")
+            page_st = await v.evaluate("document.getElementById('pdf-container').scrollTop")
+            check("scrolling inside the preview scrolls the target page, not the document", st is not None and st < geo["st"] - 100
+                  and abs(page_st - 40) < 2, (st, page_st))
             await v.mouse.move(5, 5)
             await v.wait_for_timeout(500)
             check("preview closes when the pointer leaves", await v.locator('.zc-link-pop').count() == 0)
+
+            # ---- figure link: the end of the caption is near the bottom, the figure above is in view
+            await links.nth(3).hover()
+            await v.wait_for_selector('.zc-link-pop.preview canvas', timeout=5000)
+            await v.wait_for_timeout(400)
+            fig = await v.evaluate("""() => { const s = document.querySelector('.zc-link-pop .zc-pop-page');
+                return { st: s.scrollTop, ch: s.clientHeight }; }""")
+            dest_in_view = (792 - 400) * 1.35 - fig["st"]          # where the caption end is in the popup
+            body_in_view = (792 - 575) * 1.35 - fig["st"]          # top of the FIGURE BODY text
+            check("figure preview: taller, caption end near the bottom, figure above in view",
+                  fig["ch"] == 360 and fig["ch"] * 0.8 < dest_in_view < fig["ch"] and 0 <= body_in_view, (fig, dest_in_view, body_in_view))
+            await shot(v, "1b-figure-preview")
+            await v.mouse.move(5, 5)
+            await v.wait_for_timeout(500)
 
             # ---- internal link jumps to the destination
             await links.nth(0).click()
