@@ -87,3 +87,51 @@ def test_slugify():
     assert slugify('A: "title" / with?*') == "A title - with"
     assert slugify("  ") == "untitled"
     assert slugify("cui:2015var") == "cui2015var"
+
+
+def test_trash_batch_and_restore_together(vault):
+    for rel in ["a/one.md", "a/sub/two.md", "b/three.md", "four.md"]:
+        vault.write(rel, rel, expected_hash=None)
+    (vault.root / "a" / "sub" / "fig.txt").write_text("kept with the folder")
+    (vault.root / "empty").mkdir()
+    # a note inside a deleted folder is not deleted twice; a child folder is covered by its parent
+    tid, moved = vault.trash_batch(["four.md", "a/one.md"], ["a", "a/sub", "empty"])
+    assert moved == ["a/one.md", "a/sub/two.md", "four.md"]
+    assert not (vault.root / "a").exists() and not (vault.root / "empty").exists()
+    assert vault.exists("b/three.md")
+    vault.write("four.md", "a new four", expected_hash=None)   # the place is taken again
+    restored, skipped = vault.restore_batch(tid)
+    assert restored == ["a/one.md", "a/sub/two.md"] and skipped == ["four.md"]
+    assert (vault.root / "a" / "sub" / "fig.txt").read_text() == "kept with the folder"
+    assert (vault.root / "empty").is_dir()
+    assert vault.read("four.md")[0] == "a new four"              # never overwritten
+    assert [t["path"] for t in vault.trashed()] == ["four.md"]   # the skipped one stays in the trash
+
+
+def test_trash_batch_validates_everything_first(vault):
+    vault.write("x.md", "x", expected_hash=None)
+    with pytest.raises(NoteMissing):
+        vault.trash_batch(["x.md", "missing.md"], [])
+    assert vault.exists("x.md")                                  # nothing moved
+    for bad in (["attachments"], [".trash"], ["../x"]):
+        with pytest.raises((InvalidPath, NoteMissing)):
+            vault.trash_batch([], bad)
+    with pytest.raises(InvalidPath):
+        vault.trash_batch([], [])
+
+
+def test_move_folder(vault):
+    vault.write("proj/a.md", "a", expected_hash=None)
+    vault.write("proj/deep/b.md", "b", expected_hash=None)
+    vault.write("other/c.md", "c", expected_hash=None)
+    assert vault.move_folder("proj", "archive/proj2") == [("proj/a.md", "archive/proj2/a.md"),
+                                                         ("proj/deep/b.md", "archive/proj2/deep/b.md")]
+    assert vault.read("archive/proj2/deep/b.md")[0] == "b" and not (vault.root / "proj").exists()
+    with pytest.raises(NoteExists):
+        vault.move_folder("archive/proj2", "other")
+    with pytest.raises(InvalidPath):
+        vault.move_folder("archive", "archive/proj2/inside")
+    with pytest.raises(InvalidPath):
+        vault.move_folder("other", "attachments/x")
+    with pytest.raises(NoteMissing):
+        vault.move_folder("nope", "x")

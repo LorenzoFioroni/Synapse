@@ -78,6 +78,14 @@ never mix.
 - **Browser button** (`browser_extension/`, see its README): saves the article you are
   reading — DOI/arXiv pages, publisher pages, PDFs — with folder, tags and the PDF.
 - **Trash** with Undo, **Duplicate Items** view with "keep this one, trash the others".
+- **Notes**: Markdown notes with live preview, KaTeX, code, Mermaid and images; `[@key]`
+  citations and `[[links]]` between notes; a paper note per item. Switch with the
+  *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
+  Cmd+[ / Alt+←) go back to the note or library selection you came from. The pencil column
+  in the item list marks items with a paper note (blue) or cited in notes (grey).
+  In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
+  Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
+  drag to move; folders can be renamed, moved and deleted the same way.
 - Sortable, resizable, re-orderable columns; light/dark theme; compact density;
   keyboard navigation (see Settings → Library & Shortcuts).
 - Built-in PDF viewer with highlights, underlines, text boxes and drawings
@@ -141,6 +149,7 @@ python tests/e2e/notes_checklist.py      # editor, saving, conflicts, files
 python tests/e2e/render_checklist.py     # live preview and read mode (tests/e2e/kitchen-sink.md)
 python tests/e2e/links_checklist.py      # autocomplete, citation cards, side panels, item pane
 python tests/e2e/library_checklist.py    # key rename, notes in search, quote/snapshot from the PDF viewer
+python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders, Back/Forward, item-list markers
 ```
 
 The notes editor (CodeMirror 6) is vendored as a pre-built bundle in `frontend/vendor/cm6/`;

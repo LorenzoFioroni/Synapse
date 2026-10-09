@@ -6,7 +6,6 @@ first and the index is updated from the file afterwards.
 from __future__ import annotations
 
 import os
-import re
 import time
 from datetime import datetime
 
@@ -237,6 +236,39 @@ class NotesService:
         tid = self.vault.trash(path)
         self.index.remove(path)
         return {"trash_id": tid, "path": path}
+
+    def trash_many(self, paths: list[str], folders: list[str]) -> dict:
+        tid, moved = self.vault.trash_batch(paths or [], folders or [])
+        for p in moved:
+            self.index.remove(p)
+        return {"trash_id": tid, "paths": moved}
+
+    def restore_batch(self, trash_id: str) -> dict:
+        restored, skipped = self.vault.restore_batch(trash_id)
+        for p in restored:
+            self.index.update(p)
+        return {"paths": restored, "skipped": skipped}
+
+    def move_folder(self, path: str, to: str) -> dict:
+        src = self.vault.clean_rel(path, suffix=None)
+        before = {n: self.index.backlinks(n) for n in self.vault.notes_in(src)}
+        moved = self.vault.move_folder(src, to)
+        for old, new in moved:
+            self.index.remove(old)
+        for old, new in moved:
+            self.index.update(new)
+        new_of = dict(moved)
+        broken = []
+        for old, links in before.items():
+            for b in links:
+                src_now = new_of.get(b["path"], b["path"])
+                if (self.index.resolve(b["target"], from_path=src_now) or [None])[0] != new_of[old]:
+                    broken.append({**b, "path": src_now})
+        return {"path": self.vault.clean_rel(to, suffix=None), "moved": [{"from": o, "to": n} for o, n in moved],
+                "broken_links": broken}
+
+    def key_summary(self) -> dict:
+        return self.index.key_summary()
 
     def restore(self, trash_id: str, path: str) -> dict:
         path = self.vault.restore(trash_id, path)

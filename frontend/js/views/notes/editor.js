@@ -2,6 +2,7 @@
 // first use. Colours come from the app's CSS variables, so light and dark themes just work.
 import { completions } from './completion.js';
 import { livePreview } from './livePreview.js';
+import { splitFrontmatter } from './mdscan.js';
 
 let CM = null;
 let MD = null;
@@ -151,7 +152,9 @@ export async function createEditor(parent, handlers, preview, mode = 'live', dat
     view,
     /** Load a different note: fresh state, so undo history never crosses notes. */
     load(text) {
-      view.setState(cm.EditorState.create({ doc: text, extensions: extensions() }));
+      // start below the front matter, so it shows as properties rather than as source
+      const start = Math.min(splitFrontmatter(text).bodyStart, text.length);
+      view.setState(cm.EditorState.create({ doc: text, extensions: extensions(), selection: { anchor: start } }));
     },
     /** Replace the content of the current note (e.g. taken from another tab), keeping the cursor nearby. */
     replace(text) {

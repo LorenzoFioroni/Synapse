@@ -47,6 +47,10 @@
 .type-icon { color: var(--text-3); }
 .pdf-dot { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; color: var(--pdf); cursor: pointer; }
 .pdf-dot:hover { background: rgba(224, 64, 42, .12); }
+.note-dot { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; color: var(--text-3); cursor: pointer; }
+.note-dot.paper { color: var(--accent); }
+.note-dot:hover { background: var(--accent-soft); }
+.items-scroll:focus .row.selected .note-dot, .items-scroll:focus-within .row.selected .note-dot { color: inherit; }
 
 .row.child { grid-template-columns: 1fr; height: calc(var(--row-h) - 2px); font-size: var(--fs-sm); background: transparent; }
 .row.child .cell { color: var(--text-2); display: flex; align-items: center; gap: 7px; padding-left: 52px; cursor: pointer; }

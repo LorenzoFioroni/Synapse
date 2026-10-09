@@ -41,6 +41,14 @@ export function initItemList() {
   on('item-updated', (id) => updateRow(id));
   on('columns', () => { renderHead(); renderBody(); });
   on('focus-list', () => scroller.focus());
+  // Which items have notes (the pencil column); refreshed whenever the notes change.
+  const loadNoteKeys = debounce(async () => {
+    if (state.settings.notes_enabled === false) { state.noteKeys = {}; return; }
+    try { state.noteKeys = (await api.noteKeys()).keys; } catch { return; }
+    if (visibleCols().some((c) => c.id === 'notes')) renderBody();
+  }, 400);
+  on('notes-count', loadNoteKeys);
+  on('workspace', loadNoteKeys);
 }
 
 /* ================================================================ columns */
@@ -57,7 +65,8 @@ function renderHead() {
   head.innerHTML = visibleCols().map((c) => {
     const def = COLDEF[c.id];
     const sorted = col === c.id;
-    const label = c.id === 'attachments' ? icon('paperclip', 'icon-sm') : `<span class="label">${escapeHtml(def.label)}</span>`;
+    const label = c.id === 'attachments' ? icon('paperclip', 'icon-sm')
+      : c.id === 'notes' ? icon('edit', 'icon-sm') : `<span class="label">${escapeHtml(def.label)}</span>`;
     return `<div class="head-cell ${sorted ? 'sorted' : ''}" data-col="${c.id}" draggable="${def.fixed ? 'false' : 'true'}" title="${escapeHtml(def.label)}">
       ${label}${sorted ? `<span class="sort">${dir === 'asc' ? '▲' : '▼'}</span>` : ''}
       ${def.fixed ? '' : '<span class="grip" data-grip></span>'}</div>`;
@@ -171,6 +180,12 @@ function cellHtml(colId, it) {
     case 'attachments': {
       const n = (it.attachments || []).length;
       return n ? `<span class="pdf-dot" data-act="open" title="Open PDF${n > 1 ? ` (${n} attachments)` : ''}">${icon('pdf', 'icon-sm')}</span>` : '';
+    }
+    case 'notes': {
+      const n = state.noteKeys[it.citation_key];
+      if (!n) return '';
+      const what = [n.paper && 'Paper note', n.citing && `cited in ${plural(n.citing, 'note')}`].filter(Boolean).join(' · ');
+      return `<span class="note-dot ${n.paper ? 'paper' : ''}" data-act="note" title="${escapeHtml(what)} — click to open">${icon('edit', 'icon-sm')}</span>`;
     }
     case 'title': {
       const n = (it.attachments || []).length;
@@ -357,6 +372,7 @@ function bindBody() {
       return;
     }
     if (e.target.closest('[data-act="open"]')) A.openPdf(e.target.closest('.row').dataset.id);
+    if (e.target.closest('[data-act="note"]')) openItemNote(byId(e.target.closest('.row').dataset.id));
     const snip = e.target.closest('.row.snippet');
     if (snip) A.openPdf(snip.dataset.parent);
   });
@@ -382,6 +398,27 @@ function bindBody() {
   });
 }
 
+/** Open the item's paper note, or else the first note that cites it. */
+async function openItemNote(it) {
+  if (!it) return;
+  const n = state.noteKeys[it.citation_key];
+  if (n?.paper) { emit('open-note', { path: n.paper }); return; }
+  try {
+    const res = await api.itemNotes(it.id);
+    const first = res.paper_notes[0] || res.citing[0];
+    if (first) emit('open-note', { path: first.path, line: first.line || null });
+  } catch (e) { toastError(e); }
+}
+
+async function newPaperNote(it) {
+  try {
+    const res = await api.createNote({ item_id: it.id });
+    emit('open-note', { path: res.path });
+  } catch (e) {
+    if (e.data?.path) emit('open-note', { path: e.data.path }); else toastError(e);
+  }
+}
+
 export function itemMenu(at) {
   const items = selectedItems();
   if (!items.length) return;
@@ -397,11 +434,15 @@ export function itemMenu(at) {
   }
   const hasPdf = one && (one.attachments || []).length > 0;
   const onlineUrl = one && (one.url || (one.doi ? `https://doi.org/${one.doi}` : ''));
+  const notesOn = state.settings.notes_enabled !== false;
+  const noteInfo = one && state.noteKeys[one.citation_key];
   openMenu([
     one && state.view === 'duplicates' && { label: 'Keep This One, Trash the Others', icon: 'check', run: () => A.keepOnly(one.id) },
     one && state.view === 'duplicates' && 'sep',
     one && { label: hasPdf ? 'Open PDF' : 'Open PDF (none attached)', icon: 'pdf', disabled: !hasPdf, run: () => A.openPdf(one), shortcut: '↵' },
     one && { label: 'View Online', icon: 'globe', disabled: !onlineUrl, run: () => window.open(onlineUrl, '_blank') },
+    one && notesOn && (noteInfo ? { label: noteInfo.paper ? 'Open Paper Note' : 'Open Notes Citing This', icon: 'edit', run: () => openItemNote(one) }
+      : { label: 'New Paper Note', icon: 'edit', disabled: !one.citation_key, run: () => newPaperNote(one) }),
     one && 'sep',
     { label: one ? 'Retrieve Metadata…' : `Retrieve Metadata for ${items.length} Items…`, icon: 'sparkle', run: () => openMetadataReview(ids) },
     { label: one ? 'Find Available PDF' : `Find PDFs for ${items.length} Items`, icon: 'find', run: () => (one ? A.findPdf(one.id) : A.findPdfs(ids)) },

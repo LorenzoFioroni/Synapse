@@ -6,7 +6,7 @@
 //
 // What counts as math, a [[link]] or a [@citation] comes from mdscan.js (the port of the
 // backend parser); everything else from CodeMirror's own Markdown syntax tree.
-import { scan } from './mdscan.js';
+import { scan, splitFrontmatter } from './mdscan.js';
 import { citeLabel, imageSrc } from './render.js';
 
 const CALLOUT_TYPES = ['note', 'tip', 'warning', 'question', 'quote', 'info', 'important', 'caution', 'example', 'todo'];
@@ -23,6 +23,12 @@ const CALLOUT_TYPES = ['note', 'tip', 'warning', 'question', 'quote', 'info', 'i
 export function livePreview(cm, deps) {
   const { Decoration, WidgetType, StateField, StateEffect, EditorView, syntaxTree } = cm;
   const refresh = StateEffect.define();
+  // Lines show their source only while you are editing: with the editor unfocused, all is rendered.
+  const setFocus = StateEffect.define();
+  const focusField = StateField.define({
+    create: () => false,
+    update: (v, tr) => tr.effects.reduce((acc, e) => (e.is(setFocus) ? e.value : acc), v),
+  });
 
   /* ------------------------------------------------------------------ widgets */
   class HtmlWidget extends WidgetType {
@@ -66,6 +72,29 @@ export function livePreview(cm, deps) {
     for (const [k, v] of Object.entries(attrs)) if (v != null) el.dataset[k] = v;
   }, { cls: `cm-lp-chip ${cls}` });
 
+  // "key: value" lines (and "- item" lists) of the front matter, shown as a small table
+  const propsWidget = (header) => new HtmlWidget(`fm:${header}`, (el) => {
+    const rows = [];
+    for (const line of header.split('\n')) {
+      const m = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+      if (m) rows.push([m[1], m[2].replace(/^\[(.*)\]$/, '$1').replace(/^["']|["']$/g, '')]);
+      else if (/^\s+-\s+/.test(line) && rows.length) {
+        const last = rows[rows.length - 1];
+        last[1] = (last[1] ? `${last[1]}, ` : '') + line.replace(/^\s+-\s+/, '').replace(/^["']|["']$/g, '');
+      }
+    }
+    const shown = rows.filter(([k, v]) => k !== 'id' && v !== '');
+    el.title = 'Properties (front matter): click to edit';
+    const dl = document.createElement('dl');
+    for (const [k, v] of shown) {
+      const dt = document.createElement('dt'); dt.textContent = k;
+      const dd = document.createElement('dd'); dd.textContent = v;
+      dl.append(dt, dd);
+    }
+    if (!shown.length) { const dd = document.createElement('dd'); dd.textContent = 'Properties'; dl.append(dd); }
+    el.appendChild(dl);
+  }, { block: true, cls: 'cm-lp-props' });
+
   /* ------------------------------------------------------------------ build */
   let cache = { doc: null, scan: null };
   const scanOf = (state) => {
@@ -80,7 +109,7 @@ export function livePreview(cm, deps) {
     const add = (from, to, deco) => { if (from <= to) out.push(deco.range(from, to)); };
     const lineDeco = (pos, cls) => out.push(Decoration.line({ class: cls }).range(doc.lineAt(pos).from));
 
-    const active = state.selection.ranges.map((r) => [doc.lineAt(r.from).from, doc.lineAt(r.to).to]);
+    const active = state.field(focusField, false) ? state.selection.ranges.map((r) => [doc.lineAt(r.from).from, doc.lineAt(r.to).to]) : [];
     const isActive = (from, to) => active.some(([a, b]) => from <= b && to >= a);
     const lineActive = (pos) => { const l = doc.lineAt(pos); return isActive(l.from, l.to); };
     const blockActive = (from, to) => isActive(doc.lineAt(from).from, doc.lineAt(to).to);
@@ -89,6 +118,16 @@ export function livePreview(cm, deps) {
     // regions handled by the scanner win over CodeMirror's own nodes
     const taken = [];
     const overlapsTaken = (from, to) => taken.some(([a, b]) => from < b && to > a);
+
+    // front matter: a compact box of properties until the cursor goes into it
+    if (doc.sliceString(0, 4) === '---\n') {
+      const fm = splitFrontmatter(doc.sliceString(0, Math.min(doc.length, 50000)));
+      if (fm.header !== null) {
+        const to = doc.lineAt(Math.max(0, fm.bodyStart - 1)).to;
+        taken.push([0, to]);
+        if (!blockActive(0, to)) add(0, to, Decoration.replace({ widget: propsWidget(fm.header), block: true }));
+      }
+    }
 
     // math (from the scanner: same rules as the backend)
     for (const sp of s.spans) {
@@ -254,7 +293,7 @@ export function livePreview(cm, deps) {
   const field = StateField.define({
     create: (state) => build(state),
     update(deco, tr) {
-      if (tr.docChanged || tr.selection || tr.effects.some((e) => e.is(refresh))
+      if (tr.docChanged || tr.selection || tr.effects.some((e) => e.is(refresh) || e.is(setFocus))
           || syntaxTree(tr.startState) !== syntaxTree(tr.state)) return build(tr.state);
       return deco;
     },
@@ -287,5 +326,14 @@ export function livePreview(cm, deps) {
     },
   });
 
-  return { extension: [field, clicks], refresh };
+  const focusEvents = EditorView.domEventHandlers({
+    focus(e, view) { if (!view.state.field(focusField)) view.dispatch({ effects: setFocus.of(true) }); return false; },
+    blur(e, view) {
+      // a click on a widget blurs for a moment: only collapse when focus has really left
+      setTimeout(() => { if (!view.hasFocus && view.state.field(focusField)) view.dispatch({ effects: setFocus.of(false) }); }, 0);
+      return false;
+    },
+  });
+
+  return { extension: [focusField, field, clicks, focusEvents], refresh };
 }

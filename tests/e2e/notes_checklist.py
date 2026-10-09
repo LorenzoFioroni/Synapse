@@ -5,6 +5,7 @@
 
 Starts its own server on port 8765 with a throw-away data folder; your library is not touched.
 """
+from pathlib import Path
 import asyncio, os, shutil, subprocess, sys, tempfile, time
 from playwright.async_api import async_playwright
 
@@ -55,10 +56,14 @@ async def main():
         await A.reload(); await A.wait_for_timeout(1500)
         # 1. reload restores notes workspace + open note
         check("reload reopens the last note", await A.is_visible('#notes-view') and "First idea" in (await A.text_content('.note-crumbs')))
-        # 2. front-matter styled as meta, not as a heading
+        # 2. front matter: a properties box in live preview; metadata (not a heading) in source mode
+        props = await A.text_content('.cm-lp-props') if await A.locator('.cm-lp-props').count() else ""
+        check("live preview shows the front matter as properties", "title" in props and "First idea" in props and "01" not in props, props[:80])
+        await A.click('.note-modes [data-mode="source"]'); await A.wait_for_timeout(300)
         fm_meta = await A.locator('.cm-line .cmt-meta').count()
         first_lines_heading = await A.evaluate("[...document.querySelectorAll('.cm-line')].slice(0,7).some(l=>l.querySelector('.cmt-h'))")
         check("front-matter shown as metadata, not as a heading", fm_meta>0 and not first_lines_heading, f"meta spans={fm_meta}")
+        await A.click('.note-modes [data-mode="live"]'); await A.wait_for_timeout(300)
         
         # 3. two tabs, conflict -> keep mine
         B = await ctx.new_page(); watch(B,"B")
@@ -104,7 +109,7 @@ async def main():
         # 5. folder + move via context menu
         await A.click('#notes-view [data-act="new-folder"]'); await A.fill('.dialog input', 'Projects'); await A.keyboard.press('Enter'); await A.wait_for_timeout(500)
         await A.click('.nt-row.note[data-path="Renamed idea.md"]', button="right")
-        await A.click('.menu >> text=Move to folder…'); await A.fill('.dialog input', 'Projects'); await A.keyboard.press('Enter'); await A.wait_for_timeout(800)
+        await A.click('.menu >> text=Move to folder…'); await A.click('.menu .menu-item:has-text("Projects")'); await A.wait_for_timeout(800)
         check("move to folder", os.path.exists(f"{D}/Projects/Renamed idea.md") and "Projects" in await A.text_content('.note-crumbs'))
         # new note while inside a folder goes into that folder
         await A.keyboard.press('ControlOrMeta+n'); await A.fill('.dialog input', 'Second'); await A.keyboard.press('Enter'); await A.wait_for_timeout(800)
@@ -142,4 +147,7 @@ async def main():
     print(f"\n{sum(r for _,r in results)}/{len(results)} passed")
     sys.exit(0 if all(r for _, r in results) else 1)
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _guard import guard  # noqa: E402
+guard(PORT)
 asyncio.run(main())

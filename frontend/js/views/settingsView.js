@@ -152,6 +152,18 @@ export function openSettings(sectionId = null) {
           <dt><kbd>${modLabel}T</kbd></dt><dd>Edit tags of the selected items</dd>
           <dt><kbd>${modLabel}A</kbd></dt><dd>Select all</dd>
           <dt><kbd>Esc</kbd></dt><dd>Clear search / close dialogs</dd>
+          <dt><kbd>${modLabel}⇧L</kbd></dt><dd>Switch between Library and Notes</dd>
+          <dt>Back / Forward</dt><dd>Return to the previous note or library view (mouse buttons, <kbd>${modLabel}[</kbd> / <kbd>Alt←</kbd>)</dd>
+        </dl></div>
+        <h2 style="margin-top:22px;font-size:15px">In the notes list</h2>
+        <div class="card"><dl class="shortcuts">
+          <dt>${modLabel}-click, ⇧-click</dt><dd>Select several notes and folders (or <kbd>⇧↑</kbd> <kbd>⇧↓</kbd>)</dd>
+          <dt><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></dt><dd>Move; fold and unfold folders</dd>
+          <dt><kbd>↵</kbd></dt><dd>Open the note</dd>
+          <dt><kbd>F2</kbd></dt><dd>Rename the note or folder</dd>
+          <dt><kbd>⌫</kbd></dt><dd>Move the selection to the notes trash (with Undo)</dd>
+          <dt><kbd>${modLabel}N</kbd></dt><dd>New note</dd>
+          <dt><kbd>${modLabel}E</kbd></dt><dd>Read / edit the open note</dd>
         </dl></div></section>
       </div></div>
     </div>`;

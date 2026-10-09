@@ -21,6 +21,12 @@ body[data-workspace="notes"] #item-pane { display: none !important; }
 .nt-row:hover { background: var(--bg-hover); }
 .nt-row.active { background: var(--accent-soft); color: var(--accent); }
 .nt-row.active .icon { color: var(--accent); }
+/* selection (several rows with ⌘/Shift-click or Shift+arrows); the keyboard row gets a ring */
+.nt-row.selected { background: var(--bg-active); }
+.nt-row.selected.active, .notes-tree:focus .nt-row.selected { background: var(--accent-soft); color: var(--accent); }
+.notes-tree:focus .nt-row.selected .icon { color: var(--accent); }
+.notes-tree:focus { outline: none; }
+.notes-tree:focus-visible .nt-row.cursor, .notes-tree:focus .nt-row.cursor:not(.selected) { box-shadow: inset 0 0 0 1.5px var(--accent); }
 .nt-row .icon { color: var(--text-2); flex: none; }
 .nt-row .nm { overflow: hidden; text-overflow: ellipsis; }
 .nt-row.folder .nm { font-weight: 550; }
@@ -34,6 +40,8 @@ body[data-workspace="notes"] #item-pane { display: none !important; }
 .note-head { height: 44px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 18px; border-bottom: 1px solid var(--border); }
 .note-crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow: hidden; white-space: nowrap; color: var(--text-3); font-size: var(--fs-sm); }
 .note-crumbs .sep { color: var(--border-strong); }
+.note-paper { display: inline-flex; gap: 2px; margin-left: 10px; }
+.note-paper .btn { color: var(--text-2); }
 .note-crumbs .crumb.last { border: none; background: none; padding: 2px 6px; border-radius: 5px; font-weight: 600; color: var(--text); font-size: var(--fs); overflow: hidden; text-overflow: ellipsis; }
 .note-crumbs .crumb.last:hover { background: var(--bg-hover); }
 .note-status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
@@ -295,3 +303,9 @@ body[data-workspace="notes"] #item-pane { display: none !important; }
 .nt-hit .nm { font-weight: 550; font-size: var(--fs-sm); }
 .nt-hit .snip { font-size: var(--fs-xs); color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .nt-hit mark { background: var(--mark); color: inherit; border-radius: 2px; }
+
+/* front matter in live preview: a small properties table (click to edit the source) */
+.cm-lp-widget.cm-lp-props { margin: 2px 0 10px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-app); cursor: text; font-size: var(--fs-sm); }
+.cm-lp-props dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 0; }
+.cm-lp-props dt { color: var(--text-3); }
+.cm-lp-props dd { margin: 0; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

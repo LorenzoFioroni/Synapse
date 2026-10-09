@@ -284,6 +284,17 @@ class NotesIndex:
             rows = c.execute("SELECT paper, path FROM notes WHERE paper IS NOT NULL ORDER BY length(path) DESC, path DESC")
             return {r["paper"]: r["path"] for r in rows}
 
+    def key_summary(self) -> dict[str, dict]:
+        """citation key -> {"paper": path of its paper note or None, "citing": number of other
+        notes that cite it}. For the note markers in the item list."""
+        out: dict[str, dict] = {k: {"paper": v, "citing": 0} for k, v in self.paper_note_map().items()}
+        with self._session() as c:
+            for r in c.execute("SELECT l.target AS key, COUNT(DISTINCT l.path) AS n FROM links l "
+                               "JOIN notes n ON n.path = l.path WHERE l.kind = 'cite' "
+                               "AND (n.paper IS NULL OR n.paper != l.target) GROUP BY l.target"):
+                out.setdefault(r["key"], {"paper": None, "citing": 0})["citing"] = r["n"]
+        return out
+
     def cited_keys(self, path: str | None = None) -> list[str]:
         with self._session() as c:
             if path:

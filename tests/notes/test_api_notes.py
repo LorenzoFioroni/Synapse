@@ -169,3 +169,40 @@ def test_append_to_paper_note(client, svc):
     assert client.post("/api/notes/append", json={"item_id": item["id"], "markdown": "  "}).status_code == 400
     nokey = svc.papers.create({"title": ""}, auto_citekey=False)
     assert client.post("/api/notes/append", json={"item_id": nokey["id"], "markdown": "x"}).status_code == 400
+
+
+def test_delete_and_rename_folders(client):
+    create(client, title="Target", folder="proj")
+    create(client, title="Plan", folder="proj/sub")
+    src = create(client, title="Source", text="see [[proj/Target]] and [[Plan]]")
+    r = client.post("/api/notes/folder/move", json={"path": "proj", "to": "projects"})
+    assert r.status_code == 200 and r.json["path"] == "projects"
+    assert {m["to"] for m in r.json["moved"]} == {"projects/Target.md", "projects/sub/Plan.md"}
+    assert [(b["path"], b["target"]) for b in r.json["broken_links"]] == [(src["path"], "proj/Target")]
+    paths = {n["path"] for n in client.get("/api/notes").json["notes"]}
+    assert paths == {"projects/Target.md", "projects/sub/Plan.md", "Source.md"}
+
+    r = client.post("/api/notes/trash", json={"folders": ["projects"], "paths": ["Source.md"]})
+    assert r.status_code == 200
+    assert r.json["paths"] == ["Source.md", "projects/Target.md", "projects/sub/Plan.md"]
+    ov = client.get("/api/notes").json
+    assert ov["notes"] == [] and "projects" not in ov["folders"]
+
+    r = client.post("/api/notes/restore", json={"trash_id": r.json["trash_id"]})   # one undo for all
+    assert sorted(r.json["paths"]) == ["Source.md", "projects/Target.md", "projects/sub/Plan.md"]
+    assert len(client.get("/api/notes").json["notes"]) == 3
+    assert client.get("/api/notes/links", query_string={"path": "projects/sub/Plan.md"}).json["backlinks"]
+
+    assert client.post("/api/notes/folder/move", json={"path": "attachments", "to": "x"}).status_code == 400
+    assert client.post("/api/notes/folder/move", json={"path": "nope", "to": "x"}).status_code == 404
+
+
+def test_key_summary(client, svc):
+    item = svc.papers.create({"title": "Quantum things", "authors": "Smith, A", "year": 2021})
+    key = svc.papers.get(item["id"])["citation_key"]
+    pn = client.post("/api/notes/note", json={"item_id": item["id"]}).json      # cites itself: not counted
+    create(client, title="A", text=f"[@{key}] and again [@{key}]")
+    create(client, title="B", text=f"[@{key}; @other2020]")
+    keys = client.get("/api/notes/keys").json["keys"]
+    assert keys[key] == {"paper": pn["path"], "citing": 2}
+    assert keys["other2020"] == {"paper": None, "citing": 1}

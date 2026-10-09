@@ -2,6 +2,7 @@
 // Lists the cited item(s) with "Open in library", "Open PDF (p. N)" and the paper note.
 import { api, openAttachment } from '../../api.js';
 import { icon } from '../../icons.js';
+import { emit } from '../../store.js';
 import { toastError } from '../../ui/toast.js';
 import { escapeHtml } from '../../util.js';
 import { shortAuthors } from './library.js';
@@ -105,7 +106,7 @@ async function onCardClick(e) {
   if (!it) return;
   const act = b.dataset.cc;
   hide();
-  if (act === 'item') location.hash = `item=${it.id}`;
+  if (act === 'item') emit('show-item', it.id);
   if (act === 'pdf') openAttachment({ id: it.id, title: it.title }, it.pdf, b.dataset.page ? Number(b.dataset.page) : undefined);
   if (act === 'note') deps.openNote(it.note);
   if (act === 'new-note') {

@@ -7,6 +7,7 @@ import { emit, folderById, on, state } from './store.js';
 import { closeMenu, openMenu } from './ui/menu.js';
 import { toastError } from './ui/toast.js';
 import { debounce, modKey, modLabel, plural, storage, store } from './util.js';
+import { initNav, navUpdate } from './nav.js';
 import { openExport } from './views/exportDialog.js';
 import { smartFolderDialog } from './views/organizeDialogs.js';
 import { openIdentifierDialog } from './views/identifierDialog.js';
@@ -46,6 +47,13 @@ async function boot() {
   on('open-notes', () => openNotes());
   on('close-notes', () => closeNotes());
   on('open-note', ({ path, line }) => openNotes(path, line));
+  on('show-item', (id) => showItem(id));
+  on('workspace', paintWorkspace);
+  // Back/Forward move between notes and the library view you came from.
+  initNav({ ws: 'library', view: state.view, sel: [] }, navigate);
+  const remember = debounce(() => navUpdate('library', { view: state.view, sel: [...state.selection] }), 300);
+  on('selection', remember);
+  on('view', remember);
 
   await A.loadItems();
   focusList();
@@ -55,10 +63,15 @@ async function boot() {
 }
 
 /** #item=<id> (used by the browser extension's "Open in Library") selects that item. */
-async function openItemFromHash() {
+function openItemFromHash() {
   const id = new URLSearchParams(location.hash.slice(1)).get('item');
   if (!id) return;
-  history.replaceState(null, '', location.pathname + location.search);
+  history.replaceState(history.state, '', location.pathname + location.search);
+  return showItem(id);
+}
+
+/** Show one item in the library (leaving Notes or Settings), selected and scrolled to. */
+async function showItem(id) {
   if (settingsOpen()) closeSettings();
   if (notesOpen()) await closeNotes();
   if (!state.items.some((i) => i.id === id)) {
@@ -73,13 +86,42 @@ async function openItemFromHash() {
   }
 }
 
+/** Back/Forward: go to a note or to the library view and selection stored in the history entry. */
+async function navigate(entry) {
+  if (settingsOpen()) closeSettings();
+  if (entry.ws === 'notes') { await openNotes(entry.path || null); return; }
+  if (notesOpen()) await closeNotes();
+  if (entry.view && entry.view !== state.view) { A.setView(entry.view); await A.loadItems({ keepSelection: false }); }
+  const ids = (entry.sel || []).filter((id) => state.items.some((i) => i.id === id));
+  if (ids.length) A.select(ids, { anchor: ids[0], cursor: ids[ids.length - 1] });
+  focusList();
+}
+
+/** Library ⇄ Notes (the toolbar switch and ⌘⇧L). */
+function switchWorkspace(to = notesOpen() ? 'library' : 'notes') {
+  if (settingsOpen()) closeSettings();
+  if (to === 'notes') openNotes(); else closeNotes();
+}
+
+function paintWorkspace() {
+  const sw = document.querySelector('.ws-switch');
+  if (!sw) return;
+  sw.hidden = state.settings.notes_enabled === false;
+  const ws = notesOpen() ? 'notes' : 'library';
+  sw.querySelectorAll('[data-ws]').forEach((b) => b.classList.toggle('active', b.dataset.ws === ws));
+}
+
 /* ---------------------------------------------------------------- toolbar */
 let searchInput, modeBtn;
 
 function initToolbar() {
   const tb = document.getElementById('toolbar');
   tb.innerHTML = `
-    <div class="brand"><div class="brand-logo">Z</div><span>Library</span></div>
+    <div class="brand"><div class="brand-logo">Z</div>
+      <div class="segmented ws-switch" role="group" aria-label="Workspace">
+        <button data-ws="library" title="Library (${modLabel}⇧L switches)">Library</button>
+        <button data-ws="notes" title="Notes (${modLabel}⇧L switches)">Notes</button>
+      </div></div>
     <button class="icon-btn" data-a="new" title="New Item (${modLabel}N)">${icon('plus')}</button>
     <button class="icon-btn" data-a="identifier" title="Add by DOI, arXiv ID or ISBN (${modLabel}⇧N)">${icon('wand')}</button>
     <span class="toolbar-sep"></span>
@@ -101,7 +143,11 @@ function initToolbar() {
   modeBtn = tb.querySelector('[data-a="mode"]');
   paintMode();
 
+  paintWorkspace();
+  on('settings', paintWorkspace);
   tb.addEventListener('click', (e) => {
+    const ws = e.target.closest('[data-ws]');
+    if (ws) { switchWorkspace(ws.dataset.ws); return; }
     const b = e.target.closest('[data-a]');
     if (!b) return;
     const a = b.dataset.a;
@@ -251,6 +297,7 @@ function initShortcuts() {
     if (document.querySelector('.dialog-backdrop')) return;
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable;
     const k = e.key.toLowerCase();
+    if (modKey(e) && e.shiftKey && k === 'l' && state.settings.notes_enabled !== false) { e.preventDefault(); switchWorkspace(); return; }
     if (notesOpen() && !settingsOpen()) {
       // The note editor owns its keys (search, undo, …); only Settings stays global.
       if (modKey(e) && k === ',') { e.preventDefault(); openSettings(); return; }

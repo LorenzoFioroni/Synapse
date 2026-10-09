@@ -174,4 +174,7 @@ async def main():
     sys.exit(0 if all(results) else 1)
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _guard import guard  # noqa: E402
+guard(PORT)
 asyncio.run(main())

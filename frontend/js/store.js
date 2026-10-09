@@ -10,6 +10,7 @@ export function emit(event, payload) { (listeners[event] || []).forEach((fn) => 
 // Column definitions for the items list. `key` is the item field it shows.
 export const COLUMNS = [
   { id: 'attachments', label: 'Attachments', short: '', width: 34, fixed: true, sortKey: 'attachments' },
+  { id: 'notes', label: 'Notes', short: '', width: 34, fixed: true, sortKey: 'notes' },
   { id: 'title', label: 'Title', width: 280, min: 160, sortKey: 'title' },
   { id: 'creator', label: 'Creator', width: 150, sortKey: 'authors' },
   { id: 'year', label: 'Year', width: 64, sortKey: 'year' },
@@ -40,7 +41,7 @@ export const COLUMNS = [
   { id: 'tags', label: 'Tags', width: 160, sortKey: 'tags' },
   { id: 'folder', label: 'Folder', width: 140, sortKey: 'folder' },
 ];
-const DEFAULT_VISIBLE = ['attachments', 'title', 'creator', 'year', 'journal', 'date_added'];
+const DEFAULT_VISIBLE = ['attachments', 'notes', 'title', 'creator', 'year', 'journal', 'date_added'];
 
 function loadColumns() {
   const saved = storage('zc.columns', null);
@@ -49,7 +50,12 @@ function loadColumns() {
   if (Array.isArray(saved)) {
     for (const s of saved) if (byId[s.id]) cols.push({ id: s.id, width: s.width || byId[s.id].width, visible: !!s.visible });
   }
-  for (const c of COLUMNS) if (!cols.find((x) => x.id === c.id)) cols.push({ id: c.id, width: c.width, visible: DEFAULT_VISIBLE.includes(c.id) });
+  for (const c of COLUMNS) {
+    if (cols.find((x) => x.id === c.id)) continue;
+    const col = { id: c.id, width: c.width, visible: DEFAULT_VISIBLE.includes(c.id) };
+    const after = c.id === 'notes' ? cols.findIndex((x) => x.id === 'attachments') : -1;   // new marker column: next to the paperclip
+    if (after >= 0) cols.splice(after + 1, 0, col); else cols.push(col);
+  }
   if (!cols.some((c) => c.id === 'title' && c.visible)) cols.find((c) => c.id === 'title').visible = true;
   return cols;
 }
@@ -75,6 +81,7 @@ export const state = {
   columns: loadColumns(),
   expanded: new Set(),
   indexer: null,
+  noteKeys: {},             // citation key -> { paper: path of its paper note | null, citing: n notes }
 };
 
 export function saveColumns() { persist('zc.columns', state.columns); }
@@ -151,6 +158,7 @@ export function sortedItems() {
   const mul = dir === 'asc' ? 1 : -1;
   const val = (it) => {
     if (key === 'attachments') return (it.attachments || []).length;
+    if (key === 'notes') { const n = state.noteKeys[it.citation_key]; return n ? (n.paper ? 1000 : 0) + n.citing : -1; }
     if (key === 'year') return parseInt(it.year, 10) || 0;
     if (key === 'item_type') return itemTypeLabel(it.item_type).toLowerCase();
     if (key === 'tags') return (it.tags || []).join(', ').toLowerCase();

@@ -79,9 +79,19 @@ def make_folder():
     return jsonify(svc().note_service.make_folder(body().get("path") or "")), 201
 
 
+@bp.post("/notes/folder/move")
+@guarded
+def move_folder():
+    d = body()
+    return jsonify(svc().note_service.move_folder(d.get("path") or "", d.get("to") or ""))
+
+
 @bp.post("/notes/trash")
 @guarded
 def trash_note():
+    d = body()
+    if "paths" in d or "folders" in d:   # several notes and/or folders, restored together by one undo
+        return jsonify(svc().note_service.trash_many(list(d.get("paths") or []), list(d.get("folders") or [])))
     return jsonify(svc().note_service.trash(_path_arg()))
 
 
@@ -95,6 +105,8 @@ def trashed_notes():
 @guarded
 def restore_note():
     d = body()
+    if not d.get("path"):   # everything deleted together
+        return jsonify(svc().note_service.restore_batch(d.get("trash_id") or ""))
     return jsonify(svc().note_service.restore(d.get("trash_id") or "", d.get("path") or ""))
 
 
@@ -115,6 +127,13 @@ def note_links():
 def rename_plan():
     """What changing a citation key would change in the notes (nothing is written)."""
     return jsonify(svc().note_service.rename_plan(request.args.get("old") or "", request.args.get("new") or ""))
+
+
+@bp.get("/notes/keys")
+@guarded
+def key_summary():
+    """Which citation keys have a paper note / are cited in notes (for the item list)."""
+    return jsonify(keys=svc().note_service.key_summary())
 
 
 @bp.get("/notes/cite_index")

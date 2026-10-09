@@ -3,13 +3,14 @@
 //
 // Saving is handled by NoteSession (noteSession.js): autosave, conflict detection,
 // offline retries and local drafts. This module only wires it to the UI.
-import { api } from '../../api.js';
+import { api, openAttachment } from '../../api.js';
 import { icon } from '../../icons.js';
 import { emit, on, state } from '../../store.js';
 import { confirmDialog, openDialog, promptDialog } from '../../ui/dialog.js';
 import { openMenu } from '../../ui/menu.js';
 import { toast, toastError } from '../../ui/toast.js';
-import { escapeHtml, formatDate, h, modLabel, plural, storage, store } from '../../util.js';
+import { escapeHtml, formatDate, h, modKey, modLabel, plural, storage, store } from '../../util.js';
+import { navPush } from '../../nav.js';
 import { compactDiff, lineDiff } from './diff.js';
 import { createEditor, loadMD } from './editor.js';
 import { splitFrontmatter } from './mdscan.js';
@@ -68,7 +69,7 @@ export function initNotes() {
         <button class="icon-btn" data-act="tree-menu" title="More">${icon('drag', 'icon-sm')}</button>
       </div>
       <div class="notes-filter"><input class="input" placeholder="Filter notes" spellcheck="false" aria-label="Filter notes"></div>
-      <div class="notes-tree" role="tree" data-drop-folder=""></div>
+      <div class="notes-tree" role="tree" aria-multiselectable="true" tabindex="0" data-drop-folder=""></div>
     </section>
     <section class="notes-main">
       <div class="note-head">
@@ -108,6 +109,7 @@ export function initNotes() {
     hitTimer = setTimeout(paintHits, 250);
   });
   bindDnD();
+  root.querySelector('.notes-tree').addEventListener('keydown', onTreeKey);
 
   window.addEventListener('focus', () => { if (notesOpen()) { session?.checkRemote(); refreshTree(); } });
   document.addEventListener('visibilitychange', () => { if (document.hidden) session?.save(); });
@@ -171,6 +173,7 @@ export async function openNotes(path = null, line = null) {
     await openNote(target);
     if (line) gotoLine(line);
   } else if (!session) paintEmpty();
+  navPush({ ws: 'notes', path: session?.path || null });
 }
 
 /** Show a 1-based line of the open note, in whichever mode is active. */
@@ -189,6 +192,7 @@ export async function closeNotes() {
   store('zc.notes.open', false);
   emit('workspace');
   emit('focus-list');
+  navPush({ ws: 'library', view: state.view, sel: [...state.selection] });
 }
 
 async function ensureEditor() {
@@ -258,7 +262,7 @@ async function loadLinks() {
   } catch { /* shown as unknown until the next save */ }
 }
 
-function setMode(m) {
+function setMode(m, { focus = true } = {}) {
   if (!['live', 'source', 'read'].includes(m)) m = 'live';
   mode = m;
   if (m !== 'read') editMode = m;
@@ -267,9 +271,9 @@ function setMode(m) {
   const read = root.querySelector('.note-read');
   root.classList.toggle('reading', m === 'read');
   read.hidden = m !== 'read';
-  if (m === 'read') { renderRead(); read.focus(); return; }
+  if (m === 'read') { renderRead(); if (focus) read.focus(); return; }
   editor?.setMode(m);
-  editor?.focus();
+  if (focus) editor?.focus();
 }
 
 let readTimer = null;
@@ -355,7 +359,7 @@ export function openNote(path) {
 }
 
 async function doOpen(path) {
-  if (session && session.path === path) { editor?.focus(); return; }
+  if (session && session.path === path) { if (!treeEl().contains(document.activeElement)) editor?.focus(); return; }
   if (session) {
     await session.save();
     session.dispose();
@@ -378,12 +382,15 @@ async function doOpen(path) {
     onSaved: () => afterSave(),
   });
   store('zc.notes.active', path);
+  if (notesOpen()) navPush({ ws: 'notes', path });
+  selectOnly(nKey(path));
   root.classList.add('has-note');
   paintStatus(session.status);
   paintCrumbs();
   paintSide();
   paintTree();
-  setMode(mode);
+  // opened from the file list: the keyboard stays there (arrows, Delete) until you click the note
+  setMode(mode, { focus: !treeEl().contains(document.activeElement) });
   loadLinks();
   if (start.conflict) await session.startConflict();
   else if (start.restored) toast('Restored changes that had not been saved yet.', { type: 'success' });
@@ -432,12 +439,40 @@ export async function refreshTree() {
 
 const stemOf = (p) => p.split('/').pop().replace(/\.md$/i, '');
 const parentOf = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
+const nameOf = (p) => p.split('/').pop();
+const within = (p, folder) => p.startsWith(`${folder}/`);
+
+// Selection in the tree, as row keys: 'n:<path>' for notes, 'f:<path>' for folders.
+let sel = new Set();
+let anchor = null;      // where a shift-click / shift-arrow range starts
+let cursor = null;      // the row the keyboard is on
+const nKey = (p) => `n:${p}`;
+const fKey = (p) => `f:${p}`;
+const keyOf = (row) => (row.classList.contains('folder') ? fKey(row.dataset.folder) : nKey(row.dataset.path));
+const treeEl = () => root.querySelector('.notes-tree');
+const visibleKeys = () => [...treeEl().querySelectorAll('.nt-row')].map(keyOf);
+
+function selectOnly(key) { sel = new Set(key ? [key] : []); anchor = cursor = key; }
+function toggleSelected(key) { sel.has(key) ? sel.delete(key) : sel.add(key); anchor = cursor = key; }
+function selectRange(key) {
+  const keys = visibleKeys();
+  const b = keys.indexOf(key);
+  const a = keys.includes(anchor) ? keys.indexOf(anchor) : b;
+  sel = new Set(keys.slice(Math.min(a, b), Math.max(a, b) + 1));
+  cursor = key;
+}
+/** The selected notes and folders (a note inside a selected folder goes with the folder). */
+function selected() {
+  const folders = [...sel].filter((k) => k[0] === 'f').map((k) => k.slice(2));
+  const notes = [...sel].filter((k) => k[0] === 'n').map((k) => k.slice(2)).filter((p) => !folders.some((f) => within(p, f)));
+  return { notes, folders: folders.filter((f) => !folders.some((o) => within(f, o))) };
+}
 
 function buildTree() {
   const folders = new Map([['', { path: '', name: '', folders: [], notes: [] }]]);
   const ensure = (path) => {
     if (folders.has(path)) return folders.get(path);
-    const node = { path, name: path.split('/').pop(), folders: [], notes: [] };
+    const node = { path, name: nameOf(path), folders: [], notes: [] };
     folders.set(path, node);
     ensure(parentOf(path)).folders.push(node);
     return node;
@@ -453,9 +488,10 @@ function buildTree() {
 }
 
 function paintTree() {
-  const el = root.querySelector('.notes-tree');
+  const el = treeEl();
   const active = session?.path;
   const matches = (n) => !filter || stemOf(n.path).toLowerCase().includes(filter) || (n.title || '').toLowerCase().includes(filter);
+  const cls = (key) => `${sel.has(key) ? ' selected' : ''}${cursor === key ? ' cursor' : ''}`;
   const rows = [];
   const walk = (node, depth) => {
     for (const f of node.folders) {
@@ -465,25 +501,40 @@ function paintTree() {
       if (open) walk(f, depth + 1);
       const hasHits = rows.length > before + 1;
       if (filter && !hasHits) { rows.length = before; continue; }
-      rows[before] = `<div class="nt-row folder" role="treeitem" aria-expanded="${open}" data-folder="${escapeHtml(f.path)}" data-drop-folder="${escapeHtml(f.path)}" draggable="true" style="--d:${depth}">
+      const k = fKey(f.path);
+      rows[before] = `<div class="nt-row folder${cls(k)}" role="treeitem" aria-expanded="${!!open}" aria-selected="${sel.has(k)}" data-folder="${escapeHtml(f.path)}" data-drop-folder="${escapeHtml(f.path)}" draggable="true" style="--d:${depth}">
           <span class="twisty ${open ? 'open' : ''}">${icon('chevron', 'icon-sm')}</span>${icon('folder')}<span class="nm">${escapeHtml(f.name)}</span></div>`;
     }
     for (const n of node.notes) {
       if (!matches(n)) continue;
-      const kind = n.type === 'paper' ? 'paper' : '';
-      rows.push(`<div class="nt-row note ${n.path === active ? 'active' : ''} ${kind}" role="treeitem" data-path="${escapeHtml(n.path)}" draggable="true"
+      const k = nKey(n.path);
+      rows.push(`<div class="nt-row note${n.path === active ? ' active' : ''}${n.type === 'paper' ? ' paper' : ''}${cls(k)}" role="treeitem" aria-selected="${sel.has(k)}" data-path="${escapeHtml(n.path)}" draggable="true"
           title="${escapeHtml(n.title && n.title !== stemOf(n.path) ? `${n.title}\n${n.path}` : n.path)}" style="--d:${depth}">
           <span class="twisty none"></span>${icon(n.type === 'paper' ? 'book' : 'doc')}<span class="nm">${escapeHtml(stemOf(n.path))}</span></div>`);
     }
   };
   walk(buildTree(), 0);
   el.innerHTML = rows.join('') || (filter ? '' : '<div class="side-empty">No notes yet. Create one with <b>+</b>.</div>');
+  // Only what can be seen stays selected, so Delete never takes hidden notes with it.
+  const shown = new Set(visibleKeys());
+  sel = new Set([...sel].filter((k) => shown.has(k)));
+  if (cursor && !shown.has(cursor)) cursor = null;
   if (filter.length >= 2) { clearTimeout(hitTimer); hitTimer = setTimeout(paintHits, 150); }
+}
+
+/** Show a selection change on the rows already drawn (no redraw, so double-clicks still land). */
+function paintSelection() {
+  for (const row of treeEl().querySelectorAll('.nt-row')) {
+    const k = keyOf(row);
+    row.classList.toggle('selected', sel.has(k));
+    row.classList.toggle('cursor', cursor === k);
+    row.setAttribute('aria-selected', String(sel.has(k)));
+  }
 }
 
 /** Notes whose text contains the filter words (below the name matches in the tree). */
 async function paintHits() {
-  const el = root.querySelector('.notes-tree');
+  const el = treeEl();
   el.querySelector('.notes-hits')?.remove();
   const q = filter;
   if (q.length < 2) return;
@@ -512,9 +563,14 @@ function paintStatus(status) {
 function paintCrumbs() {
   const p = session?.path || '';
   const parts = p.split('/');
+  // A paper note links straight back to its item and PDF.
+  const it = info?.type === 'paper' && info.paper ? itemInfo(info.paper) : null;
+  const paper = it ? `<span class="note-paper">
+      <button class="btn btn-sm btn-ghost" data-act="paper-item" title="Show “${escapeHtml(it.title)}” in the library">${icon('library', 'icon-sm')} Show in library</button>
+      ${it.pdf ? `<button class="btn btn-sm btn-ghost" data-act="paper-pdf" title="Open the PDF">${icon('pdf', 'icon-sm')} PDF</button>` : ''}</span>` : '';
   root.querySelector('.note-crumbs').innerHTML = parts.map((x, i) => (i === parts.length - 1
-    ? `<button class="crumb last" data-act="rename" title="Rename (double-click in the list)">${escapeHtml(x.replace(/\.md$/i, ''))}</button>`
-    : `<span class="crumb">${escapeHtml(x)}</span><span class="sep">/</span>`)).join('');
+    ? `<button class="crumb last" data-act="rename" title="Rename (F2 in the list)">${escapeHtml(x.replace(/\.md$/i, ''))}</button>`
+    : `<span class="crumb">${escapeHtml(x)}</span><span class="sep">/</span>`)).join('') + paper;
 }
 
 function paintSide() {
@@ -561,7 +617,8 @@ function paintSide() {
 
 /* ============================================================== actions */
 function folderOfSelection() {
-  return session ? parentOf(session.path) : '';
+  const f = cursor?.startsWith('f:') ? cursor.slice(2) : null;
+  return f ?? (session ? parentOf(session.path) : '');
 }
 
 export async function newNote(folder = folderOfSelection()) {
@@ -580,14 +637,22 @@ async function newFolder(parent = '') {
   const name = await promptDialog('Folder name', { title: 'New folder', confirm: 'Create', hint: parent ? `Inside ${parent}/` : '' });
   if (!name) return;
   try {
-    await api.newNoteFolder(parent ? `${parent}/${name}` : name);
+    const res = await api.newNoteFolder(parent ? `${parent}/${name}` : name);
     if (parent) collapsed.delete(parent);
     saveCollapsed();
+    selectOnly(fKey(res.path));
     refreshTree();
   } catch (e) { toastError(e); }
 }
 
-async function moveNote(path, to) {
+function reportBroken(broken) {
+  if (!broken?.length) return;
+  const names = [...new Set(broken.map((b) => stemOf(b.path)))];
+  toast(`${plural(broken.length, 'link')} to the old name in ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''} no longer resolve${broken.length === 1 ? 's' : ''}.`,
+    { timeout: 9000 });
+}
+
+async function moveNote(path, to, { quiet = false } = {}) {
   if (!to || to === path) return;
   try {
     const isOpen = session?.path === path;
@@ -595,40 +660,143 @@ async function moveNote(path, to) {
     const res = await api.moveNote(path, to, isOpen ? session.saved.hash : undefined);
     if (isOpen) {
       // keep editing the same text under its new name
-      const old = session;
-      old.dispose();
+      session.dispose();
       session = null;
       await doOpen(res.path);
     }
-    await refreshTree();
-    if (res.broken_links?.length) {
-      const names = [...new Set(res.broken_links.map((b) => stemOf(b.path)))];
-      toast(`${plural(res.broken_links.length, 'link')} to the old name in ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''} no longer resolve${res.broken_links.length === 1 ? 's' : ''}.`,
-        { timeout: 9000 });
-    }
+    if (sel.delete(nKey(path))) sel.add(nKey(res.path));
+    if (cursor === nKey(path)) anchor = cursor = nKey(res.path);
+    if (!quiet) await refreshTree();
+    reportBroken(res.broken_links);
   } catch (e) { toastError(e); }
+}
+
+/** After a dialog, give the keyboard back to the file list if that is where it was. */
+function keepTreeFocus() {
+  const was = treeEl().contains(document.activeElement);
+  return () => { if (was) treeEl().focus({ preventScroll: true }); };
 }
 
 async function renameNote(path) {
   const stem = stemOf(path);
+  const back = keepTreeFocus();
   const name = await promptDialog('Name', { title: 'Rename note', value: stem, confirm: 'Rename' });
+  back();
   if (!name || name === stem) return;
   const folder = parentOf(path);
   const clean = name.replace(/\.md$/i, '').replace(/\//g, '-');
   return moveNote(path, `${folder ? `${folder}/` : ''}${clean}.md`);
 }
 
-async function trashNote(path) {
+/** Rename or move a folder with everything in it (the open note follows). */
+async function moveFolder(path, to, { quiet = false } = {}) {
+  if (!to || to === path) return;
   try {
-    if (session?.path === path) {
-      await session.save();
-      await closeCurrent();
+    const open = session?.path;
+    const inside = open && within(open, path);
+    if (inside) { await session.save(); if (session.dirty) throw new Error('Save the open note before moving its folder.'); }
+    const res = await api.moveNoteFolder(path, to);
+    const moved = (p) => (p === path || within(p, path) ? res.path + p.slice(path.length) : p);
+    collapsed = new Set([...collapsed].map(moved));
+    saveCollapsed();
+    const keep = { sel: [...sel], cursor };   // reopening the note would move the selection to it
+    if (inside) {
+      session.dispose();
+      session = null;
+      await doOpen(moved(open));
     }
-    const res = await api.trashNote(path);
+    sel = new Set(keep.sel.map((k) => k[0] + ':' + moved(k.slice(2))));
+    anchor = cursor = keep.cursor ? keep.cursor[0] + ':' + moved(keep.cursor.slice(2)) : null;
+    if (!quiet) await refreshTree();
+    reportBroken(res.broken_links);
+  } catch (e) { toastError(e); }
+}
+
+async function renameFolder(path) {
+  const name = nameOf(path);
+  const back = keepTreeFocus();
+  const nu = await promptDialog('Name', { title: 'Rename folder', value: name, confirm: 'Rename' });
+  back();
+  if (!nu || nu.trim() === name) return;
+  const parent = parentOf(path);
+  return moveFolder(path, `${parent ? `${parent}/` : ''}${nu.trim().replace(/\//g, '-')}`);
+}
+
+/** Move notes and folders into ``dest`` ('' = top level); things already there are skipped. */
+async function moveItems({ notes, folders }, dest) {
+  const into = (p) => `${dest ? `${dest}/` : ''}${nameOf(p)}`;
+  for (const f of folders) {
+    if (f === dest || within(dest, f) || parentOf(f) === dest) continue;
+    await moveFolder(f, into(f), { quiet: true });
+  }
+  for (const n of notes) {
+    if (parentOf(n) !== dest) await moveNote(n, into(n), { quiet: true });
+  }
+  if (dest) { collapsed.delete(dest); saveCollapsed(); }
+  await refreshTree();
+}
+
+/** A menu of folders to move things into. */
+function pickFolder(at, items) {
+  const bad = (f) => items.folders.some((x) => f === x || within(f, x));
+  const m = openMenu([
+    { section: 'Move to' },
+    { label: 'Top level', icon: 'folder', run: () => moveItems(items, '') },
+    ...overview.folders.filter((f) => !bad(f)).map((f) => ({ label: f, icon: 'folder', run: () => moveItems(items, f) })),
+  ], at);
+  m.style.maxHeight = '60vh';
+  m.style.overflow = 'auto';
+}
+
+function describe({ notes, folders }) {
+  const parts = [];
+  if (folders.length === 1) parts.push(`folder “${nameOf(folders[0])}”`);
+  else if (folders.length) parts.push(`${folders.length} folders`);
+  if (notes.length === 1) parts.push(`“${stemOf(notes[0])}”`);
+  else if (notes.length) parts.push(plural(notes.length, 'note'));
+  return parts.join(' and ');
+}
+
+function copyLinks(notes) {
+  const text = notes.map((p) => `[[${stemOf(p)}]]`).join('\n');
+  navigator.clipboard?.writeText(text);
+  toast(notes.length === 1 ? `Copied ${text}` : `Copied ${plural(notes.length, 'link')}`);
+}
+
+/** Move the selected notes and folders to the notes trash (one Undo brings them all back). */
+async function deleteSelection() {
+  const items = selected();
+  const { notes, folders } = items;
+  if (!notes.length && !folders.length) return;
+  const inFolders = overview.notes.filter((n) => folders.some((f) => within(n.path, f))).length;
+  const what = describe(items);
+  if ((state.settings.confirm_trash || inFolders) && !(await confirmDialog(
+    `Move ${what}${inFolders ? ` (with ${plural(inFolders, 'note')} inside)` : ''} to the notes trash?`,
+    { title: 'Delete', confirm: 'Move to Trash', danger: true, detail: 'You can undo this, or restore them later from “Deleted notes…”.' }))) return;
+  // the row to land on afterwards: the next one that stays
+  const gone = (k) => (k[0] === 'n' && notes.includes(k.slice(2))) || folders.some((f) => k.slice(2) === f || within(k.slice(2), f));
+  const keys = visibleKeys();
+  const last = Math.max(...keys.map((k, i) => (gone(k) ? i : -1)));
+  const next = keys.slice(last + 1).find((k) => !gone(k)) || keys.slice(0, last).reverse().find((k) => !gone(k)) || null;
+  try {
+    const open = session?.path;
+    const closing = open && (notes.includes(open) || folders.some((f) => within(open, f)));
+    if (closing) { await session.save(); await closeCurrent(); }
+    const res = await api.trashNotes(notes, folders);
+    selectOnly(next);
     await refreshTree();
-    toast(`Moved “${stemOf(path)}” to the notes trash.`, {
-      action: { label: 'Undo', run: async () => { try { await api.restoreNote(res.trash_id, res.path); await refreshTree(); openNote(res.path); } catch (e) { toastError(e); } } },
-      timeout: 8000,
+    treeEl().focus({ preventScroll: true });
+    toast(`Moved ${what} to the notes trash.`, {
+      timeout: 9000,
+      action: { label: 'Undo', run: async () => {
+        try {
+          const r = await api.restoreNoteBatch(res.trash_id);
+          sel = new Set([...r.paths.map(nKey), ...folders.map(fKey)]);
+          await refreshTree();
+          if (closing && r.paths.includes(open)) openNote(open);
+          if (r.skipped.length) toast(`${plural(r.skipped.length, 'file')} stayed in the trash: something new has the same name.`, { timeout: 9000 });
+        } catch (e) { toastError(e); }
+      } },
     });
   } catch (e) { toastError(e); }
 }
@@ -704,18 +872,27 @@ function conflictDialog(c) {
 /* ================================================================ events */
 function saveCollapsed() { store('zc.notes.collapsed', [...collapsed]); }
 
+function toggleFolder(path, open = collapsed.has(path)) {
+  open ? collapsed.delete(path) : collapsed.add(path);
+  saveCollapsed();
+  paintTree();
+}
+
 function onClick(e) {
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act === 'new-note') return newNote();
   if (act === 'new-folder') return newFolder(folderOfSelection());
   if (act === 'rename' && session) return renameNote(session.path);
   if (act === 'show-conflict' && session?.conflict) return conflictDialog(session.conflict);
+  if (act === 'paper-item' && info?.paper) { const it = itemInfo(info.paper); if (it) emit('show-item', it.id); return; }
+  if (act === 'paper-pdf' && info?.paper) { const it = itemInfo(info.paper); if (it?.pdf) openAttachment({ id: it.id, title: it.title }, it.pdf); return; }
   if (act === 'tree-menu') {
     return openMenu([
       { label: 'Rescan notes folder', icon: 'refresh', run: rescan },
       { label: 'Deleted notes…', icon: 'trash', run: showTrash },
       'sep',
       { label: 'Collapse all folders', icon: 'minus', run: () => { overview.folders.forEach((f) => collapsed.add(f)); saveCollapsed(); paintTree(); } },
+      { label: 'Expand all folders', icon: 'plus', run: () => { collapsed.clear(); saveCollapsed(); paintTree(); } },
     ], e.target.closest('[data-act]'));
   }
   const mb = e.target.closest('[data-mode]');
@@ -737,60 +914,131 @@ function onClick(e) {
     }
     return editor?.gotoLine(line);
   }
-  const folder = e.target.closest('.nt-row.folder');
-  if (folder) {
-    const p = folder.dataset.folder;
-    collapsed.has(p) ? collapsed.delete(p) : collapsed.add(p);
-    saveCollapsed();
-    return paintTree();
-  }
-  const note = e.target.closest('.nt-row.note, .nt-hit');
-  if (note) openNote(note.dataset.path);
+  const hit = e.target.closest('.nt-hit');
+  if (hit) return openNote(hit.dataset.path);
+  const row = e.target.closest('.nt-row');
+  if (!row) return;
+  // Clicking in the tree keeps the keyboard there (arrows, Delete, F2) until you click the note.
+  treeEl().focus({ preventScroll: true });
+  const key = keyOf(row);
+  if (e.shiftKey) { selectRange(key); return paintSelection(); }
+  if (modKey(e)) { toggleSelected(key); return paintSelection(); }
+  selectOnly(key);
+  if (row.classList.contains('folder')) return toggleFolder(row.dataset.folder);
+  paintSelection();
+  openNote(row.dataset.path);
 }
 
 function onDblClick(e) {
+  if (e.shiftKey || modKey(e)) return;
   const note = e.target.closest('.nt-row.note');
   if (note) renameNote(note.dataset.path);
 }
 
+/** Keys in the file tree: arrows move (Shift extends), Enter opens, F2 renames, Delete trashes. */
+function onTreeKey(e) {
+  const keys = visibleKeys();
+  if (!keys.length || e.altKey) return;
+  const mod = modKey(e);
+  const i = keys.indexOf(cursor);
+  const isFolder = cursor?.startsWith('f:');
+  const path = cursor?.slice(2);
+  const go = (j) => {
+    const k = keys[Math.max(0, Math.min(keys.length - 1, j))];
+    if (e.shiftKey) selectRange(k); else selectOnly(k);
+    paintSelection();
+    treeEl().querySelector('.nt-row.cursor')?.scrollIntoView({ block: 'nearest' });
+  };
+  let handled = true;
+  switch (e.key) {
+    case 'ArrowDown': go(i < 0 ? 0 : i + 1); break;
+    case 'ArrowUp': go(i < 0 ? keys.length - 1 : i - 1); break;
+    case 'Home': go(0); break;
+    case 'End': go(keys.length - 1); break;
+    case 'ArrowRight':
+      if (isFolder && collapsed.has(path) && !filter) toggleFolder(path, true);
+      else if (isFolder) go(i + 1);
+      break;
+    case 'ArrowLeft': {
+      if (isFolder && !collapsed.has(path) && !filter) { toggleFolder(path, false); break; }
+      const up = path ? keys.indexOf(fKey(parentOf(path))) : -1;
+      if (up >= 0) go(up);
+      break;
+    }
+    case 'Enter':
+      if (!cursor || mod) { handled = false; break; }
+      if (isFolder) toggleFolder(path);
+      else openNote(path).then(() => (mode === 'read' ? root.querySelector('.note-read').focus() : editor?.focus()));
+      break;
+    case 'F2':
+      if (cursor) (isFolder ? renameFolder : renameNote)(path);
+      break;
+    case 'Delete': case 'Backspace':
+      deleteSelection();
+      break;
+    case 'Escape':
+      if (sel.size > 1 || !session) selectOnly(session ? nKey(session.path) : null); else handled = false;
+      paintSelection();
+      break;
+    default:
+      if (mod && e.key.toLowerCase() === 'a') { sel = new Set(keys); paintSelection(); } else handled = false;
+  }
+  if (handled) { e.preventDefault(); e.stopPropagation(); }
+}
+
 function onContextMenu(e) {
-  const note = e.target.closest('.nt-row.note');
-  const folder = e.target.closest('.nt-row.folder');
-  const blank = !note && !folder && e.target.closest('.notes-tree');
-  if (!note && !folder && !blank) return;
+  const row = e.target.closest('.nt-row');
+  const blank = !row && e.target.closest('.notes-tree');
+  if (!row && !blank) return;
   e.preventDefault();
   const at = { x: e.clientX, y: e.clientY };
-  if (note) {
-    const p = note.dataset.path;
+  if (row && !sel.has(keyOf(row))) { selectOnly(keyOf(row)); paintSelection(); }
+  const items = row ? selected() : { notes: [], folders: [] };
+  const { notes, folders } = items;
+  const trash = { label: 'Move to Trash', icon: 'trash', danger: true, shortcut: '⌫', run: deleteSelection };
+  if (row && notes.length + folders.length > 1) {
     return openMenu([
-      { label: 'Open', icon: 'open', run: () => openNote(p) },
-      { label: 'Rename…', icon: 'edit', run: () => renameNote(p) },
-      { label: 'Move to folder…', icon: 'folder', run: async () => {
-        const to = await promptDialog('Folder (empty = top level)', { title: 'Move note', value: parentOf(p), confirm: 'Move' });
-        if (to !== null) moveNote(p, `${to.replace(/^\/+|\/+$/g, '')}${to.trim() ? '/' : ''}${p.split('/').pop()}`);
-      } },
-      { label: 'Copy link', icon: 'link', run: () => { navigator.clipboard?.writeText(`[[${stemOf(p)}]]`); toast(`Copied [[${stemOf(p)}]]`); } },
+      { section: describe(items) },
+      { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
+      notes.length && { label: notes.length > 1 ? 'Copy links' : 'Copy link', icon: 'link', run: () => copyLinks(notes) },
       'sep',
-      { label: 'Move to Trash', icon: 'trash', danger: true, run: async () => {
-        if (state.settings.confirm_trash && !(await confirmDialog(`Move “${stemOf(p)}” to the notes trash?`, { confirm: 'Move to Trash', danger: true }))) return;
-        trashNote(p);
-      } },
+      trash,
     ], at);
   }
-  const fp = folder ? folder.dataset.folder : '';
+  if (row && notes.length === 1) {
+    const p = notes[0];
+    return openMenu([
+      { label: 'Open', icon: 'open', run: () => openNote(p), shortcut: '↵' },
+      { label: 'Rename…', icon: 'edit', run: () => renameNote(p), shortcut: 'F2' },
+      { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
+      { label: 'Copy link', icon: 'link', run: () => copyLinks([p]) },
+      'sep',
+      trash,
+    ], at);
+  }
+  const fp = folders[0] || '';
   openMenu([
     { label: 'New note here', icon: 'plus', run: () => newNote(fp) },
     { label: 'New folder here', icon: 'folderPlus', run: () => newFolder(fp) },
+    fp && 'sep',
+    fp && { label: 'Rename…', icon: 'edit', run: () => renameFolder(fp), shortcut: 'F2' },
+    fp && { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
+    fp && 'sep',
+    fp && trash,
   ], at);
 }
 
 function bindDnD() {
-  const tree = root.querySelector('.notes-tree');
+  const tree = treeEl();
   tree.addEventListener('dragstart', (e) => {
-    const row = e.target.closest('.nt-row.note');
+    const row = e.target.closest('.nt-row');
     if (!row) { e.preventDefault(); return; }
-    e.dataTransfer.setData(NOTE_MIME, row.dataset.path);
-    e.dataTransfer.setData('text/plain', `[[${stemOf(row.dataset.path)}]]`);  // dropping into the editor links it
+    const key = keyOf(row);
+    // drag the whole selection when the row is part of it, otherwise just this row
+    const items = sel.has(key) ? selected()
+      : (key[0] === 'f' ? { notes: [], folders: [key.slice(2)] } : { notes: [key.slice(2)], folders: [] });
+    e.dataTransfer.setData(NOTE_MIME, JSON.stringify(items));
+    if (items.notes.length) e.dataTransfer.setData('text/plain', items.notes.map((p) => `[[${stemOf(p)}]]`).join('\n'));  // dropping into the editor links them
     e.dataTransfer.effectAllowed = 'copyMove';
   });
   const target = (e) => e.target.closest('[data-drop-folder]');
@@ -804,14 +1052,13 @@ function bindDnD() {
   });
   tree.addEventListener('dragleave', (e) => { if (e.target.classList?.contains('drop-target')) e.target.classList.remove('drop-target'); });
   tree.addEventListener('drop', (e) => {
-    const path = e.dataTransfer.getData(NOTE_MIME);
     tree.querySelectorAll('.drop-target').forEach((x) => x.classList.remove('drop-target'));
+    let items;
+    try { items = JSON.parse(e.dataTransfer.getData(NOTE_MIME) || 'null'); } catch { items = null; }
     const t = target(e);
-    if (!path || !t) return;
+    if (!items || !t) return;
     e.preventDefault();
-    const folder = t.dataset.dropFolder;
-    if (folder === parentOf(path)) return;
-    moveNote(path, `${folder ? `${folder}/` : ''}${path.split('/').pop()}`);
+    moveItems({ notes: items.notes || [], folders: items.folders || [] }, t.dataset.dropFolder);
   });
 }
 
