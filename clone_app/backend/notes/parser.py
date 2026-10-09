@@ -35,7 +35,7 @@ _KEY = r"[A-Za-z0-9_][A-Za-z0-9_:.+\-/]*"
 _CITE_PART = re.compile(
     r"^(?P<prefix>(?:.*?[\s(])?)(?P<supp>-?)@(?P<key>" + _KEY + r")"
     r"(?:\s*,\s*(?P<loc>.*?))?\s*$", re.S)
-_PAGE = re.compile(r"^(?:p|pp|page|pages|pg)\.?\s*(\d+)", re.I)
+_PAGE = re.compile(r"^(?:p|pp|page|pages|pg)\.?\s*([0-9]+)", re.I)
 # Any indentation: fences inside list items are common. (Indented code blocks are not
 # supported, by the parser and the renderer alike.)
 _FENCE = re.compile(r"^([ \t]*)(`{3,}|~{3,})(.*)$")
@@ -152,7 +152,7 @@ def _mask_inline(text: str, chars: list[str], start: int, end: int) -> None:
                         k += 2
                         continue
                     if text[k] == "$" and text[k - 1] not in " \t\n" \
-                            and not (k + 1 < len(text) and text[k + 1].isdigit()):
+                            and not (k + 1 < len(text) and text[k + 1] in "0123456789"):
                         break
                     k += 1
                 if k < line_end:

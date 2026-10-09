@@ -1,10 +1,16 @@
-// CodeMirror 6 set-up for notes (source mode). The library is loaded on first use.
-// Colours come from the app's CSS variables, so light and dark themes just work.
+// CodeMirror 6 set-up for notes: live preview or source mode. The libraries are loaded on
+// first use. Colours come from the app's CSS variables, so light and dark themes just work.
+import { livePreview } from './livePreview.js';
 
 let CM = null;
+let MD = null;
 export async function loadCM() {
   CM ||= await import('../../../vendor/cm6/cm6.js');
   return CM;
+}
+export async function loadMD() {
+  MD ||= await import('../../../vendor/md/md.js');
+  return MD;
 }
 
 /**
@@ -34,9 +40,12 @@ function frontmatter(cm) {
   };
 }
 
-function highlightStyle(cm) {
+let HL = null;
+/** The highlight style, shared with read mode so code looks the same in both. */
+export function highlightStyle(cm) {
+  if (HL) return HL;
   const t = cm.tags;
-  return cm.HighlightStyle.define([
+  HL = cm.HighlightStyle.define([
     { tag: t.heading1, class: 'cmt-h cmt-h1' },
     { tag: t.heading2, class: 'cmt-h cmt-h2' },
     { tag: t.heading3, class: 'cmt-h cmt-h3' },
@@ -59,15 +68,26 @@ function highlightStyle(cm) {
     { tag: [t.typeName, t.className, t.namespace], class: 'cmt-type' },
     { tag: [t.propertyName, t.attributeName], class: 'cmt-prop' },
   ]);
+  return HL;
 }
 
 /**
  * @param {HTMLElement} parent
- * @param {{onChange(text), onSave(), onBlur(), onImage(file): Promise<string|null>}} handlers
+ * @param {object} handlers  onChange(text), onSave(), onBlur(), onImage(file) → markdown|null,
+ *                           onToggleRead()
+ * @param {object} preview   deps for livePreview.js (renderer, resolveNote, citeInfo, openNote, mermaid)
+ * @param {'live'|'source'} mode
  */
-export async function createEditor(parent, handlers) {
+export async function createEditor(parent, handlers, preview, mode = 'live') {
   const cm = await loadCM();
-  const saveKey = { key: 'Mod-s', preventDefault: true, run: () => { handlers.onSave?.(); return true; } };
+  const lp = livePreview(cm, preview);
+  const modeSlot = new cm.Compartment();
+  const modeExt = (m) => (m === 'live' ? [lp.extension, cm.EditorView.editorAttributes.of({ class: 'cm-live' })] : []);
+  let currentMode = mode;
+  const keys = [
+    { key: 'Mod-s', preventDefault: true, run: () => { handlers.onSave?.(); return true; } },
+    { key: 'Mod-e', preventDefault: true, run: () => { handlers.onToggleRead?.(); return true; } },
+  ];
 
   const insertImages = async (view, files, pos) => {
     for (const f of files) {
@@ -95,8 +115,9 @@ export async function createEditor(parent, handlers) {
     cm.search({ top: true }),
     cm.markdown({ base: cm.markdownLanguage, codeLanguages: cm.languages, extensions: [frontmatter(cm)] }),
     cm.syntaxHighlighting(highlightStyle(cm)),
+    modeSlot.of(modeExt(currentMode)),
     cm.EditorView.contentAttributes.of({ spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences' }),
-    cm.keymap.of([saveKey, ...cm.closeBracketsKeymap, ...cm.markdownKeymap, ...cm.defaultKeymap,
+    cm.keymap.of([...keys, ...cm.closeBracketsKeymap, ...cm.markdownKeymap, ...cm.defaultKeymap,
       ...cm.searchKeymap, ...cm.historyKeymap, cm.indentWithTab]),
     cm.EditorView.updateListener.of((u) => {
       if (u.docChanged) handlers.onChange?.(u.state.doc.toString());
@@ -135,6 +156,21 @@ export async function createEditor(parent, handlers) {
       if (cur === text) return;
       const head = Math.min(view.state.selection.main.head, text.length);
       view.dispatch({ changes: { from: 0, to: cur.length, insert: text }, selection: { anchor: head } });
+    },
+    setMode(m) {
+      currentMode = m;
+      view.dispatch({ effects: modeSlot.reconfigure(modeExt(m)) });
+    },
+    /** Redraw the preview (after link or library data changed). */
+    refresh() { if (currentMode === 'live') view.dispatch({ effects: lp.refresh.of(null) }); },
+    /** Tick/untick the task on a 0-based line (used by read mode). */
+    toggleTask(line0) {
+      const line = view.state.doc.line(line0 + 1);
+      const m = /^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])\]/.exec(line.text);
+      if (!m) return false;
+      const at = line.from + m[1].length;
+      view.dispatch({ changes: { from: at, to: at + 1, insert: m[2] === ' ' ? 'x' : ' ' } });
+      return true;
     },
     text: () => view.state.doc.toString(),
     focus: () => view.focus(),

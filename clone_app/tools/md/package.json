@@ -1,0 +1,14 @@
+{
+  "name": "md-bundle",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "katex": "0.18.9",
+    "markdown-it": "14.3.2",
+    "markdown-it-footnote": "4.0.0",
+    "mermaid": "11.17.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

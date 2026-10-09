@@ -11,8 +11,11 @@ import { openMenu } from '../../ui/menu.js';
 import { toast, toastError } from '../../ui/toast.js';
 import { escapeHtml, formatDate, h, modLabel, plural, storage, store } from '../../util.js';
 import { compactDiff, lineDiff } from './diff.js';
-import { createEditor } from './editor.js';
+import { createEditor, loadMD } from './editor.js';
+import { splitFrontmatter } from './mdscan.js';
 import { NoteSession } from './noteSession.js';
+import { createRenderer, slugHeading } from './render.js';
+import { highlightCodeBlocks, renderEmbeds, renderMermaid, renderMermaidBlocks } from './richRender.js';
 
 const NOTE_MIME = 'application/x-zc-note';
 
@@ -24,6 +27,12 @@ let overview = { notes: [], folders: [] };
 let collapsed = new Set(storage('zc.notes.collapsed', []));
 let filter = '';
 let opening = Promise.resolve();
+let mode = storage('zc.notes.mode', 'live');           // 'live' | 'source' | 'read'
+let editMode = mode === 'read' ? 'live' : mode;        // what Cmd+E returns to
+let lib = null;                                        // markdown-it + KaTeX, once loaded
+let renderer = null;                                   // for tables/math in the live preview
+// What the backend says this note links to (refreshed after each save).
+let linkData = { notes: new Map(), cites: new Map() };
 
 const drafts = {
   get: (k) => storage(k, null),
@@ -59,9 +68,15 @@ export function initNotes() {
       <div class="note-head">
         <div class="note-crumbs"></div>
         <span class="note-status" aria-live="polite"></span>
+        <div class="segmented note-modes" role="group" aria-label="View">
+          <button data-mode="live" title="Live preview: lines show rendered until you edit them">Live</button>
+          <button data-mode="source" title="Plain Markdown">Source</button>
+          <button data-mode="read" title="Read (${modLabel}E)">Read</button>
+        </div>
       </div>
       <div class="note-body">
         <div class="note-editor"></div>
+        <div class="note-read" tabindex="0" hidden><article class="prose"></article></div>
         <div class="note-empty empty-state">${icon('doc')}<h3>No note open</h3>
           <p>Pick a note on the left, or create one with <b>+</b> (${modLabel}N).</p></div>
       </div>
@@ -72,6 +87,8 @@ export function initNotes() {
 
   root.addEventListener('click', onClick);
   root.addEventListener('dblclick', onDblClick);
+  root.querySelector('.note-read').addEventListener('click', onReadClick);
+  root.querySelector('.note-read').addEventListener('dblclick', onReadDblClick);
   root.addEventListener('contextmenu', onContextMenu);
   root.querySelector('.notes-filter input').addEventListener('input', (e) => { filter = e.target.value.trim().toLowerCase(); paintTree(); });
   bindDnD();
@@ -79,6 +96,9 @@ export function initNotes() {
   window.addEventListener('focus', () => { if (notesOpen()) { session?.checkRemote(); refreshTree(); } });
   document.addEventListener('visibilitychange', () => { if (document.hidden) session?.save(); });
   window.addEventListener('pagehide', flushOnUnload);
+  // Diagrams are drawn for one theme: redraw them when light/dark changes.
+  new MutationObserver(() => { if (!notesOpen() || !session) return; editor?.refresh(); if (mode === 'read') renderRead(); })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   on('search', () => { if (notesOpen()) closeNotes(); });   // typing in the library search shows the results
   on('settings', () => { if (!notesEnabled() && notesOpen()) closeNotes(); emit('notes-count', notesEnabled() ? overview.notes.length : null); });
 
@@ -121,15 +141,144 @@ export async function closeNotes() {
 
 async function ensureEditor() {
   if (editor) return editor;
+  lib = await loadMD();
+  renderer = createRenderer(lib, { citeInfo, resolveNote });
   editor = await createEditor(root.querySelector('.note-editor'), {
-    onChange: (text) => session?.update(text),
+    onChange: (text) => { session?.update(text); if (mode === 'read') scheduleRead(); },
     onSave: () => session?.save(),
     onBlur: () => session?.save(),
+    onToggleRead: () => setMode(mode === 'read' ? editMode : 'read'),
     onImage: async (file) => {
       try { return (await api.uploadNoteImage(file)).markdown; } catch (e) { toastError(e); return null; }
     },
-  });
+  }, {
+    renderer: () => renderer,
+    resolveNote,
+    citeInfo,
+    openNote: (target, heading) => followLink(target, heading),
+    mermaid: renderMermaid,
+  }, mode === 'read' ? editMode : mode);
   return editor;
+}
+
+/* ---------------------------------------------------- link data and modes */
+const normTarget = (t) => t.trim().replace(/\\/g, '/').toLowerCase().replace(/\.md$/, '');
+
+/** Path a [[target]] goes to: a path, null (no such note) or undefined (not known yet). */
+function resolveNote(target) {
+  const t = normTarget(target || '');
+  if (!t) return session?.path;
+  return linkData.notes.has(t) ? linkData.notes.get(t) : undefined;
+}
+const citeInfo = (key) => linkData.cites.get(key) || null;
+
+async function loadLinks() {
+  if (!session) return;
+  const path = session.path;
+  try {
+    const res = await api.noteLinks(path);
+    if (session?.path !== path) return;
+    const notes = new Map(), cites = new Map();
+    for (const l of res.outgoing) {
+      if (l.kind === 'note' || l.kind === 'embed') notes.set(normTarget(l.target), l.resolved || null);
+      if (l.kind === 'cite' && l.item) cites.set(l.target, l.item);
+    }
+    linkData = { notes, cites };
+    editor?.refresh();
+    if (mode === 'read') renderRead();
+  } catch { /* shown as unknown until the next save */ }
+}
+
+function setMode(m) {
+  if (!['live', 'source', 'read'].includes(m)) m = 'live';
+  mode = m;
+  if (m !== 'read') editMode = m;
+  store('zc.notes.mode', m);
+  root.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
+  const read = root.querySelector('.note-read');
+  root.classList.toggle('reading', m === 'read');
+  read.hidden = m !== 'read';
+  if (m === 'read') { renderRead(); read.focus(); return; }
+  editor?.setMode(m);
+  editor?.focus();
+}
+
+let readTimer = null;
+function scheduleRead() { clearTimeout(readTimer); readTimer = setTimeout(renderRead, 300); }
+
+/** Render the open note into the read view. */
+function renderRead() {
+  if (!session || !lib) return;
+  const art = root.querySelector('.note-read .prose');
+  const text = session.text.replace(/\r\n?/g, '\n');
+  const fm = splitFrontmatter(text);
+  const lineOffset = fm.bodyLine;
+  const r = createRenderer(lib, { citeInfo, resolveNote, lineOffset });
+  const props = fm.header === null ? '' : `<details class="properties"><summary>Properties</summary><dl>${fm.header.split('\n').filter((l) => l.trim())
+    .map((l) => { const i = l.indexOf(':'); return i > 0 ? `<dt>${escapeHtml(l.slice(0, i))}</dt><dd>${escapeHtml(l.slice(i + 1).trim())}</dd>` : `<dd class="raw">${escapeHtml(l)}</dd>`; }).join('')}</dl></details>`;
+  const scroll = art.parentElement.scrollTop;
+  art.innerHTML = props + r.render(text.slice(fm.bodyStart));
+  art.parentElement.scrollTop = scroll;
+  highlightCodeBlocks(art);
+  renderMermaidBlocks(art);
+  renderEmbeds(art, new Set([session.path]));
+}
+
+async function followLink(target, heading) {
+  const path = target ? resolveNote(target) : session?.path;
+  if (path) {
+    if (path !== session?.path) await openNote(path);
+    if (heading) gotoHeading(heading);
+    return;
+  }
+  if (!target) return;
+  if (await confirmDialog(`There is no note called “${target}” yet.`, { title: 'Create note?', confirm: 'Create' })) {
+    try {
+      const res = await api.createNote({ title: target, folder: session ? parentOf(session.path) : '' });
+      await refreshTree();
+      await openNote(res.path);
+    } catch (e) { toastError(e); }
+  }
+}
+
+function gotoHeading(heading) {
+  const want = slugHeading(heading);
+  const h = (info?.headings || []).find((x) => slugHeading(x.text) === want);
+  if (!h) return;
+  if (mode === 'read') root.querySelector(`.note-read #h-${CSS.escape(want)}`)?.scrollIntoView({ block: 'start' });
+  else editor?.gotoLine(h.line);
+}
+
+function onReadClick(e) {
+  const a = e.target.closest('a');
+  const wl = e.target.closest('.wikilink');
+  if (wl) { e.preventDefault(); followLink(wl.dataset.note, wl.dataset.heading); return; }
+  const et = e.target.closest('.note-embed .embed-title');
+  if (et) { const em = et.closest('.note-embed'); followLink(em.dataset.note, em.dataset.heading); return; }
+  const cite = e.target.closest('.cite');
+  if (cite) {
+    e.preventDefault();
+    const item = citeInfo(cite.dataset.key);
+    if (item) location.hash = `item=${item.id}`;
+    else toast(`@${cite.dataset.key} is not in your library.`);
+    return;
+  }
+  const box = e.target.closest('.task-box[data-task-line]');
+  if (box) { e.preventDefault(); if (editor?.toggleTask(Number(box.dataset.taskLine))) renderRead(); return; }
+  const copy = e.target.closest('.copy-code');
+  if (copy) {
+    const code = copy.parentElement.querySelector('code')?.textContent || '';
+    navigator.clipboard?.writeText(code).then(() => toast('Code copied.', { type: 'success' }), () => {});
+    return;
+  }
+  if (a && a.getAttribute('href') && !a.getAttribute('href').startsWith('#')) { e.preventDefault(); window.open(a.href, '_blank', 'noopener'); }
+}
+
+function onReadDblClick(e) {
+  if (e.target.closest('a, input, button')) return;
+  const block = e.target.closest('[data-line]');
+  setMode(editMode);
+  if (block) editor?.gotoLine(Number(block.dataset.line) + 1);
 }
 
 /** Open a note (saving the current one first). Calls are serialised. */
@@ -148,6 +297,7 @@ async function doOpen(path) {
   const res = await api.getNote(path);
   const ed = await ensureEditor();
   const start = NoteSession.open(path, res, drafts);
+  linkData = { notes: new Map(), cites: new Map() };
   ed.load(start.text);
   info = res.info;
   session = new NoteSession({
@@ -156,7 +306,7 @@ async function doOpen(path) {
     api: { save: api.saveNote, get: api.getNote, create: api.recreateNote },
     onStatus: paintStatus,
     onConflict: (c) => conflictDialog(c),
-    onRemoteText: (t) => { ed.replace(t); toast('Updated with changes made in another window.'); },
+    onRemoteText: (t) => { ed.replace(t); if (mode === 'read') renderRead(); toast('Updated with changes made in another window.'); },
     onSaved: () => afterSave(),
   });
   store('zc.notes.active', path);
@@ -165,9 +315,10 @@ async function doOpen(path) {
   paintCrumbs();
   paintSide();
   paintTree();
+  setMode(mode);
+  loadLinks();
   if (start.conflict) await session.startConflict();
   else if (start.restored) toast('Restored changes that had not been saved yet.', { type: 'success' });
-  ed.focus();
 }
 
 function paintEmpty() {
@@ -197,6 +348,7 @@ function afterSave() {
       const res = await api.getNote(session.path);
       if (session && res.path === session.path) { info = res.info; paintSide(); }
     } catch { /* next save will try again */ }
+    loadLinks();
     refreshTree();
   }, 400);
 }
@@ -285,7 +437,7 @@ function paintSide() {
   const minLevel = Math.min(...heads.map((x) => x.level), 6);
   side.innerHTML = `
     <div class="ns-section"><div class="ns-title">Outline</div>
-      ${heads.length ? `<div class="outline">${heads.map((x) => `<button class="ol-item" data-line="${x.line}" style="--l:${x.level - minLevel}">${escapeHtml(x.text)}</button>`).join('')}</div>`
+      ${heads.length ? `<div class="outline">${heads.map((x) => `<button class="ol-item" data-outline-line="${x.line}" style="--l:${x.level - minLevel}">${escapeHtml(x.text)}</button>`).join('')}</div>`
         : '<div class="side-empty">Headings (# Title) appear here.</div>'}
     </div>
     <div class="ns-section"><div class="ns-title">Note</div>
@@ -458,8 +610,19 @@ function onClick(e) {
       { label: 'Collapse all folders', icon: 'minus', run: () => { overview.folders.forEach((f) => collapsed.add(f)); saveCollapsed(); paintTree(); } },
     ], e.target.closest('[data-act]'));
   }
-  const ol = e.target.closest('[data-line]');
-  if (ol) return editor?.gotoLine(Number(ol.dataset.line));
+  const mb = e.target.closest('[data-mode]');
+  if (mb) return setMode(mb.dataset.mode);
+  const ol = e.target.closest('[data-outline-line]');
+  if (ol) {
+    const line = Number(ol.dataset.outlineLine);
+    if (mode === 'read') {
+      const els = [...root.querySelectorAll('.note-read [data-line]')];
+      const el = els.find((x) => Number(x.dataset.line) + 1 >= line);
+      el?.scrollIntoView({ block: 'start' });
+      return;
+    }
+    return editor?.gotoLine(line);
+  }
   const folder = e.target.closest('.nt-row.folder');
   if (folder) {
     const p = folder.dataset.folder;
@@ -540,6 +703,7 @@ function bindDnD() {
 
 /** Keyboard shortcuts while the notes workspace is open (called from main.js). */
 export function notesShortcut(e, k, mod) {
+  if (mod && k === 'e' && session && !e.target.closest?.('.cm-editor')) { e.preventDefault(); setMode(mode === 'read' ? editMode : 'read'); return true; }
   if (mod && k === 'n' && !e.shiftKey) { e.preventDefault(); newNote(); return true; }
   if (mod && k === 'f' && !e.target.closest?.('.cm-editor')) { e.preventDefault(); root.querySelector('.notes-filter input').focus(); return true; }
   return false;

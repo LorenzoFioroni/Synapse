@@ -129,12 +129,15 @@ pip install pytest
 python -m pytest tests          # backend + JavaScript unit tests (the JS part needs Node.js)
 ```
 
-Browser checklist for the notes editor (needs Playwright; uses a throw-away data folder):
+Browser checklists for notes (need Playwright; each uses a throw-away data folder):
 
 ```bash
-pip install playwright && playwright install chromium
-python tests/e2e/notes_checklist.py
+pip install playwright requests && playwright install chromium
+python tests/e2e/notes_checklist.py      # editor, saving, conflicts, files
+python tests/e2e/render_checklist.py     # live preview and read mode (tests/e2e/kitchen-sink.md)
 ```
 
 The notes editor (CodeMirror 6) is vendored as a pre-built bundle in `frontend/vendor/cm6/`;
-to rebuild it from the pinned versions: `cd tools/cm6 && npm ci && ./build.sh`.
+to rebuild it from the pinned versions: `cd tools/cm6 && npm ci && ./build.sh`. The renderer
+(markdown-it, KaTeX, Mermaid) likewise lives in `frontend/vendor/md/` and `frontend/vendor/mermaid/`
+(`tools/md`).

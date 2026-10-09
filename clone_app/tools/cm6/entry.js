@@ -10,4 +10,4 @@ export { markdown, markdownLanguage, markdownKeymap } from '@codemirror/lang-mar
 export { languages } from '@codemirror/language-data';
 export { search, searchKeymap, highlightSelectionMatches, openSearchPanel } from '@codemirror/search';
 export { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, startCompletion, acceptCompletion } from '@codemirror/autocomplete';
-export { tags, styleTags } from '@lezer/highlight';
+export { tags, styleTags, highlightCode } from '@lezer/highlight';
