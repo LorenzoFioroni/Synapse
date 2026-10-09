@@ -1,0 +1,5 @@
+{"title": "", "tags": [], "headings": [],
+ "links": [
+  {"kind": "cite", "target": "t1", "line": 3},
+  {"kind": "note", "target": "Some note", "alias": "alias", "line": 3}
+ ]}

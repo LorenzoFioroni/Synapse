@@ -41,6 +41,20 @@ class Config:
         return self.data_dir / "pdfs"
 
     @property
+    def notes_dir(self) -> Path:
+        # Markdown notes: the files are the source of truth.
+        return self.data_dir / "notes"
+
+    @property
+    def notes_index_path(self) -> Path:
+        # Derived from notes_dir; safe to delete (rebuilt on startup).
+        return self.data_dir / "notes_index.db"
+
+    @property
+    def backups_dir(self) -> Path:
+        return self.data_dir / "backups"
+
+    @property
     def settings_path(self) -> Path:
         return self.data_dir / "settings.json"
 

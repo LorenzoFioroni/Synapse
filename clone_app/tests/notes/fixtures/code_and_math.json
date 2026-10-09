@@ -1,0 +1,6 @@
+{"title": "", "tags": [], "headings": [],
+ "links": [
+  {"kind": "cite", "target": "real1", "line": 1},
+  {"kind": "cite", "target": "real2", "line": 24},
+  {"kind": "note", "target": "Real link", "line": 24}
+ ]}

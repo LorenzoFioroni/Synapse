@@ -1,0 +1,15 @@
+{"title": "Basic links",
+ "tags": ["inline-tag", "method", "to read"],
+ "headings": [[1, "Heading one", 5]],
+ "links": [
+  {"kind": "note", "target": "Other note", "line": 7},
+  {"kind": "note", "target": "Folder/Deep note", "alias": "the deep one", "line": 7},
+  {"kind": "note", "target": "Other note", "heading": "Results", "line": 7},
+  {"kind": "embed", "target": "Embedded", "line": 8},
+  {"kind": "cite", "target": "smith2021", "line": 9, "locator": "", "page": null},
+  {"kind": "cite", "target": "doe2020", "line": 9, "locator": "p. 4", "page": 4},
+  {"kind": "cite", "target": "a2019", "line": 9, "prefix": "see", "group": 3},
+  {"kind": "cite", "target": "b2018", "line": 9, "locator": "pp. 10-12", "page": 10, "group": 3},
+  {"kind": "cite", "target": "smith2021", "line": 10, "suppress_author": true},
+  {"kind": "image", "target": "attachments/plot.png", "alias": "a plot", "line": 11}
+ ]}

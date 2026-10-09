@@ -1,0 +1,7 @@
+{"title": "Title from H1", "tags": ["ok", "nested/tag"], "headings": [[1, "Title from H1", 1]],
+ "links": [
+  {"kind": "note", "target": "@weird", "line": 7},
+  {"kind": "cite", "target": "smith2021", "line": 8},
+  {"kind": "cite", "target": "cui:2015var", "line": 8},
+  {"kind": "cite", "target": "infoot", "line": 11}
+ ]}
