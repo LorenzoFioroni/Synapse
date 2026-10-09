@@ -69,7 +69,7 @@ export const state = {
   mode: 'basic',            // search scope
   items: [],                // already filtered by the server
   hits: {},                 // id -> { fulltext: snippetHtml }
-  counts: { library: 0, trash: 0, duplicates: 0, unfiled: 0 },
+  counts: { library: 0, trash: 0, duplicates: 0 },
   sidebar: { folders: [], tags: [], smart: [] },
   tagFilter: new Set(),     // tag names; items must have all of them
   openFolders: new Set(storage('zc.openFolders', [])),

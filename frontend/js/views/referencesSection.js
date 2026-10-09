@@ -4,8 +4,8 @@
 import * as A from '../actions.js';
 import { api } from '../api.js';
 import { icon } from '../icons.js';
-import { emit, state } from '../store.js';
-import { toast, toastError } from '../ui/toast.js';
+import { byId, emit, state } from '../store.js';
+import { progressToast, toast, toastError } from '../ui/toast.js';
 import { escapeHtml, formatDate, plural, shortAuthors } from '../util.js';
 
 const SOURCES = { semanticscholar: 'Semantic Scholar', openalex: 'OpenAlex', crossref: 'Crossref', none: 'no service' };
@@ -104,10 +104,44 @@ async function onClick(e, el, it, current) {
   }
 }
 
-/** Fetch the reference lists of several items in the background (item menu). */
-export async function queueReferences(ids) {
-  try {
-    const r = await api.queueReferences(ids);
-    toast(r.queued ? `Fetching references for ${plural(r.queued, 'item')} in the background.` : 'Already being fetched.');
-  } catch (e) { toastError(e); }
+/**
+ * Fetch the reference lists of several items (item menu, multi-selection pane), one by one
+ * with a progress toast that can be stopped. Items without a DOI / arXiv ID are skipped.
+ */
+export async function fetchReferencesBulk(ids) {
+  if (!ids.length) return;
+  let cancelled = false;
+  const pt = progressToast('Fetching references…', { onCancel: () => { cancelled = true; } });
+  const found = [], none = [], noId = [], failed = [];
+  let linked = 0;
+  for (let n = 0; n < ids.length && !cancelled; n++) {
+    const it = byId(ids[n]);
+    pt.set(`Fetching references ${n + 1}/${ids.length}: ${(it?.title || 'Untitled').slice(0, 60)}`, n, ids.length);
+    try {
+      const v = await api.fetchReferences(ids[n]);
+      (v.fetch?.count ? found : none).push(ids[n]);
+      linked += (v.references || []).filter((r) => r.library_id).length;
+    } catch (e) {
+      if (e.status === 404) noId.push(ids[n]);
+      else {
+        failed.push(ids[n]);
+        if (e.status === 0) break;    // server gone: stop instead of failing every item
+      }
+    }
+    if (n < ids.length - 1) await new Promise((r) => setTimeout(r, 400));   // be gentle with the free APIs
+  }
+  pt.close();
+  const missing = [...none, ...noId, ...failed];
+  const parts = [`References for ${plural(found.length, 'item')}`];
+  if (linked) parts.push(`${linked} cited works in your library`);
+  if (none.length) parts.push(`${none.length} with no list found`);
+  if (noId.length) parts.push(`${noId.length} without DOI/arXiv ID`);
+  if (failed.length) parts.push(`${failed.length} failed`);
+  if (cancelled) parts.push('stopped early');
+  toast(parts.join(' · '), {
+    type: found.length ? 'success' : 'error',
+    timeout: 8000,
+    action: missing.length && ids.length > 1 ? { label: 'Select the others', run: () => A.select(missing, { anchor: missing[0] }) } : null,
+  });
+  emit('items');   // repaint the item pane with the new lists
 }

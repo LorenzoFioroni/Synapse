@@ -32,8 +32,6 @@ def items_for_view(s, view: str, library: list[dict]) -> tuple[list[dict], str |
     if view.startswith("smart:"):
         sf = s.smart.get(int(view.split(":", 1)[1]))
         return library, sf["query"], sf["mode"]
-    if view == "unfiled":
-        return [p for p in library if not p.get("folder_ids")], None, None
     return s.papers.list(view), None, None
 
 

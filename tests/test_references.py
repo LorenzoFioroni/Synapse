@@ -104,7 +104,7 @@ def test_crossref_last(monkeypatch):
 def test_errors(monkeypatch):
     monkeypatch.setattr(R.time, "sleep", lambda s: None)
     monkeypatch.setattr(R.requests, "get", router([("", Resp({}, 503))]))
-    with pytest.raises(LookupError_, match="Could not get the references"):
+    with pytest.raises(R.FetchFailed, match="Could not get the references"):
         R.fetch({"doi": "10.1/x"})
     # every service answered "nothing": not an error
     monkeypatch.setattr(R.requests, "get", router([]))
@@ -145,6 +145,10 @@ def test_api_graph_and_cleanup(client, svc, monkeypatch):
     r = client.post(f"/api/items/{d['id']}/references")
     assert r.status_code == 404 and "DOI" in r.json["error"]
     assert client.post("/api/items/nope/references").status_code == 404
+    # every service failing is a 502 (try again later), not "no identifier"
+    monkeypatch.setattr(R.time, "sleep", lambda s: None)
+    monkeypatch.setattr(R.requests, "get", router([("", Resp({}, 503))]))
+    assert client.post(f"/api/items/{b['id']}/references").status_code == 502
 
     svc.papers.trash([a["id"]])
     client.post("/api/items/delete", json={"ids": [a["id"]]})
@@ -201,3 +205,31 @@ def test_retry_after_as_a_date(monkeypatch):
     answers = iter([Resp({}, 429, {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}), Resp(S2_PAGE2)])
     monkeypatch.setattr(R.requests, "get", router([("semanticscholar", lambda u, p: next(answers))]))
     assert R.fetch({"doi": "10.1/x"})[0] == "semanticscholar"
+
+
+def test_title_key():
+    assert R.title_key("Matrix-Product  States: <i>a</i> Review!") == R.title_key("matrix product states a review")
+    assert R.title_key("Bañuls et al.: $\\mathcal{O}(N)$ scaling") == R.title_key("Banuls et al O N scaling")
+    assert R.title_key("Introduction") is None   # too short to trust
+
+
+def test_references_matched_by_title_when_identifiers_differ(client, svc, monkeypatch):
+    """Library items found by title (+ year within one) when the reference has no identifier
+    or a different one (e.g. the arXiv version of a paper stored with its journal DOI)."""
+    a = svc.papers.create({"title": "Citing paper", "doi": "10.1/X", "year": 2020})
+    journal = svc.papers.create({"title": "Tensor networks for open systems", "doi": "10.1103/PhysRevB.1.2", "year": 2022})
+    noid = svc.papers.create({"title": "Matrix Product States.", "year": 2008})
+    svc.papers.create({"title": "Some book on physics", "year": 1950})   # same title as a reference, years too far apart
+    preprint = {"data": [
+        {"citedPaper": {"paperId": "s2a", "title": "Matrix product states", "year": 2008, "externalIds": {}}},
+        {"citedPaper": {"paperId": "s2b", "title": "Tensor Networks for Open Systems", "year": 2021,
+                        "externalIds": {"ArXiv": "2101.00001", "DOI": "10.48550/arXiv.2101.00001"}}}]}
+    monkeypatch.setattr(R.requests, "get", router([("semanticscholar", Resp(preprint))]))
+    v = client.post(f"/api/items/{a['id']}/references").json
+    assert [r["library_id"] for r in v["references"]] == [noid["id"], journal["id"]]
+    assert [x["id"] for x in client.get(f"/api/items/{journal['id']}/references").json["cited_by"]] == [a["id"]]
+    edges = {(e["source"], e["target"]) for e in client.get("/api/graph/citations").json["edges"]}
+    assert (f"item:{a['id']}", f"item:{journal['id']}") in edges
+
+    svc.citations.store.save(a["id"], "crossref", [{"title": "Some book on physics", "year": 1990}, {"raw": "Some book on physics, 1950"}])
+    assert [r["library_id"] for r in client.get(f"/api/items/{a['id']}/references").json["references"]] == [None, None]

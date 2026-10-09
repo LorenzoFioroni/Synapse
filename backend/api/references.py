@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify
 
 from ..metadata import LookupError_
+from ..references import FetchFailed
 from ..repository import NotFound
 from . import body, error, svc
 
@@ -23,6 +24,8 @@ def fetch_references(item_id):
         return jsonify(svc().citations.fetch_now(item_id))
     except NotFound:
         raise
+    except FetchFailed as e:   # the services failed: try again later
+        return error(str(e), 502)
     except LookupError_ as e:
         return error(str(e), 404)
     except Exception as e:   # network trouble

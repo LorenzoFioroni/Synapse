@@ -2,7 +2,7 @@
 
 * Folders form a tree. An item can be in any number of folders: ``paper_folders``
   stores only (paper id, folder id) links, so the item's data and PDFs exist once
-  no matter how many folders show it. Items in no folder are "Unfiled".
+  no matter how many folders show it; an item does not have to be in any folder.
 * Tags are many-to-many (``paper_tags``); names are unique ignoring case.
 * Smart folders are saved searches (query + scope), evaluated on demand.
 """

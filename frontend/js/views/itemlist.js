@@ -10,7 +10,7 @@ import { toast, toastError } from '../ui/toast.js';
 import { copyText, debounce, escapeHtml, formatDate, modKey, modLabel, plural, shortAuthors } from '../util.js';
 import { openExport } from './exportDialog.js';
 import { openMetadataReview } from './metadataReview.js';
-import { queueReferences } from './referencesSection.js';
+import { fetchReferencesBulk } from './referencesSection.js';
 import { addSelectionToFolder, editTagsDialog, moveSelectionToFolder, smartFolderDialog } from './organizeDialogs.js';
 
 const ITEMS_MIME = 'application/x-zc-items';   // also read by the sidebar drop targets
@@ -262,8 +262,6 @@ function emptyState() {
     el.innerHTML = `<div class="empty-state">${icon('folder')}<h3>${escapeHtml(folderById(currentFolderId())?.name || 'Folder')} is empty</h3>
       <p>Drag items onto the folder in the sidebar, use “Move to Folder…”, or add new items while this folder is open.</p>
       <div class="actions"><button class="btn btn-primary" data-empty="identifier">${icon('wand')} Add by Identifier</button><button class="btn" data-empty="new">${icon('plus')} New Item</button></div></div>`;
-  } else if (state.view === 'unfiled') {
-    el.innerHTML = `<div class="empty-state">${icon('check')}<h3>Everything is filed</h3><p>Every item in your library is in a folder.</p></div>`;
   } else if (state.view.startsWith('smart:')) {
     const sf = state.sidebar.smart.find((s) => `smart:${s.id}` === state.view);
     el.innerHTML = `<div class="empty-state">${icon('smartFolder')}<h3>Nothing matches yet</h3>
@@ -447,7 +445,7 @@ export function itemMenu(at) {
     one && 'sep',
     { label: one ? 'Retrieve Metadata…' : `Retrieve Metadata for ${items.length} Items…`, icon: 'sparkle', run: () => openMetadataReview(ids) },
     { label: one ? 'Find Available PDF' : `Find PDFs for ${items.length} Items`, icon: 'find', run: () => (one ? A.findPdf(one.id) : A.findPdfs(ids)) },
-    { label: one ? 'Fetch References' : `Fetch References for ${items.length} Items`, icon: 'link', run: () => queueReferences(ids) },
+    { label: one ? 'Fetch References' : `Fetch References for ${items.length} Items`, icon: 'link', run: () => fetchReferencesBulk(ids) },
     one && { label: 'Add PDF Attachment…', icon: 'paperclip', run: () => pickFiles((files) => A.uploadAttachments(one.id, files)) },
     'sep',
     { label: one ? 'Add to Folder…' : `Add ${items.length} Items to Folder…`, icon: 'folderPlus', run: () => addSelectionToFolder(ids) },
