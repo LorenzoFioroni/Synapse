@@ -13,6 +13,8 @@ from backend.config import Config  # noqa: E402
 def app(tmp_path):
     app = create_app(Config.from_env(tmp_path / "data"), start_indexer=False)
     app.config["TESTING"] = True
+    # no background reference fetching unless a test turns it on (it would outlive the test)
+    app.extensions["zclone"].settings.update({"references_auto": False})
     return app
 
 

@@ -122,11 +122,16 @@ export function openSettings(sectionId = null) {
             <div class="s-control"><button class="btn" data-import>${icon('import')} Import…</button><button class="btn" data-export>${icon('export')} Export Library…</button></div></div>
         </div></section>
 
-      <section class="settings-section" id="set-online"><h2>Online Services</h2><p class="lead">Used for Retrieve Metadata, Add by Identifier and Find Available PDF (Crossref, OpenAlex, arXiv, Open Library, Unpaywall).</p>
+      <section class="settings-section" id="set-online"><h2>Online Services</h2><p class="lead">Used for Retrieve Metadata, Add by Identifier, Find Available PDF and reference lists (Crossref, OpenAlex, arXiv, Open Library, Unpaywall, Semantic Scholar).</p>
         <div class="card">
           <div class="setting stack"><div class="s-text"><div class="s-title">Contact e-mail ${saved}</div>
             <div class="s-desc">Crossref and Unpaywall ask clients to identify themselves; with an e-mail you get faster, more reliable responses. It is only sent to those services.</div></div>
             <input class="input" type="email" data-email placeholder="you@university.edu" value="${escapeHtml(s.contact_email)}"></div>
+          ${switchRow('references_auto', 'Fetch reference lists with metadata', 'When metadata is fetched (Retrieve Metadata, Add by Identifier, dropped PDFs, the browser button), also fetch the list of papers the item cites, in the background. They appear in the item pane under References and build the citation graph. You can always fetch them from the item menu.')}
+          <div class="setting stack"><div class="s-text"><div class="s-title">API keys for reference lists (optional) ${saved}</div>
+            <div class="s-desc">Reference lists come from Semantic Scholar, then OpenAlex, then Crossref. Without a key, OpenAlex allows only a few lookups a day and Semantic Scholar shares a rate limit with everyone. Free keys: openalex.org/settings/api and semanticscholar.org/product/api. Each key is only sent to its own service.</div></div>
+            <input class="input" type="text" data-apikey="openalex_api_key" placeholder="OpenAlex API key" spellcheck="false" autocomplete="off" value="${escapeHtml(s.openalex_api_key || '')}">
+            <input class="input" type="text" data-apikey="semantic_scholar_api_key" placeholder="Semantic Scholar API key" spellcheck="false" autocomplete="off" value="${escapeHtml(s.semantic_scholar_api_key || '')}" style="margin-top:6px"></div>
         </div></section>
 
       <section class="settings-section" id="set-library"><h2>Library &amp; Shortcuts</h2><p class="lead" data-data-dir></p>
@@ -296,6 +301,7 @@ function bind() {
 
   const email = view.querySelector('[data-email]');
   email.addEventListener('change', () => save({ contact_email: email.value.trim() }, email));
+  view.querySelectorAll('[data-apikey]').forEach((inp) => inp.addEventListener('change', () => save({ [inp.dataset.apikey]: inp.value.trim() }, inp)));
 
   view.querySelector('[data-rebuild]').onclick = async () => {
     await api.rebuildFulltext();

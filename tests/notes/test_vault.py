@@ -135,3 +135,33 @@ def test_move_folder(vault):
         vault.move_folder("other", "attachments/x")
     with pytest.raises(NoteMissing):
         vault.move_folder("nope", "x")
+
+
+def test_symlinks_and_collisions_do_not_break_folder_operations(vault, tmp_path):
+    outside = tmp_path / "outside.md"
+    outside.write_text("not ours")
+    vault.write("A/n.md", "n", expected_hash=None)
+    (vault.root / "A" / "link.md").symlink_to(outside)
+    assert vault.notes_in("A") == ["A/n.md"]                       # like iter_notes: links are not notes
+    assert vault.move_folder("A", "B") == [("A/n.md", "B/n.md")]
+    tid, moved = vault.trash_batch([], ["B"])
+    assert moved == ["B/n.md"]
+    restored, skipped = vault.restore_batch(tid)
+    assert restored == ["B/n.md"] and skipped == [] and (vault.root / "B" / "link.md").is_symlink()
+    assert outside.read_text() == "not ours"
+
+    vault.write("C/D/y.md", "y", expected_hash=None)
+    tid, _ = vault.trash_batch([], ["C"])
+    (vault.root / "C").mkdir()
+    (vault.root / "C" / "D").write_text("a file where the folder was")
+    restored, skipped = vault.restore_batch(tid)                  # no crash: that part stays in the trash
+    assert restored == [] and skipped == ["C/D/y.md"]
+    assert [t["path"] for t in vault.trashed()] == ["C/D/y.md"]
+
+
+def test_reserved_folder_any_case(vault):
+    with pytest.raises(InvalidPath):
+        vault.make_folder("Attachments/x")
+    vault.write("x/a.md", "a", expected_hash=None)
+    with pytest.raises(InvalidPath):
+        vault.move_folder("x", "ATTACHMENTS")

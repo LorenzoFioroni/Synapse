@@ -47,6 +47,11 @@ class Config:
         return self.data_dir / "notes_index.db"
 
     @property
+    def citations_db_path(self) -> Path:
+        # Reference lists fetched online (the citation graph). Can be fetched again if lost.
+        return self.data_dir / "citations.db"
+
+    @property
     def backups_dir(self) -> Path:
         return self.data_dir / "backups"
 

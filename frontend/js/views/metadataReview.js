@@ -288,6 +288,9 @@ async function applyChanges(articles) {
     } catch (e) { errors.push(`${a.item?.title || a.id}: ${e.message}`); }
   }
   await A.loadItems();
+  // the reference lists come with the metadata (in the background; see Settings → Online Services)
+  const looked = articles.filter((a) => a.status === 'changes' || a.status === 'same').map((a) => a.id);
+  if (looked.length && state.settings.references_auto !== false) api.queueReferences(looked).catch(() => {});
   if (errors.length) {
     toastError(new Error(`${errors.length} could not be saved — ${errors[0]}`));
     return saved > 0;

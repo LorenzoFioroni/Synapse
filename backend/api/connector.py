@@ -149,6 +149,8 @@ def save():
     folder = page.get("folder_id")
     tags = page.get("tags") or []
     created = s.papers.create({**item, "folder_id": int(folder) if folder not in (None, "") else None, "tags": tags})
+    if source == "online":
+        s.citations.maybe_enqueue(created)
 
     pdf = "none"
     filename = None

@@ -172,7 +172,10 @@ export async function openNotes(path = null, line = null) {
   if (target && overview.notes.some((n) => n.path === target)) {
     await openNote(target);
     if (line) gotoLine(line);
-  } else if (!session) paintEmpty();
+  } else {
+    if (path) toast(`“${stemOf(path)}” no longer exists (moved or deleted).`);
+    if (!session) paintEmpty();
+  }
   navPush({ ws: 'notes', path: session?.path || null });
 }
 
@@ -383,7 +386,7 @@ async function doOpen(path) {
   });
   store('zc.notes.active', path);
   if (notesOpen()) navPush({ ws: 'notes', path });
-  selectOnly(nKey(path));
+  if (!sel.has(nKey(path))) selectOnly(nKey(path));   // opened from elsewhere: the list follows
   root.classList.add('has-note');
   paintStatus(session.status);
   paintCrumbs();
@@ -658,12 +661,7 @@ async function moveNote(path, to, { quiet = false } = {}) {
     const isOpen = session?.path === path;
     if (isOpen) { await session.save(); if (session.dirty) throw new Error('Save the note before moving it.'); }
     const res = await api.moveNote(path, to, isOpen ? session.saved.hash : undefined);
-    if (isOpen) {
-      // keep editing the same text under its new name
-      session.dispose();
-      session = null;
-      await doOpen(res.path);
-    }
+    if (isOpen) await reopenAs(res.path);
     if (sel.delete(nKey(path))) sel.add(nKey(res.path));
     if (cursor === nKey(path)) anchor = cursor = nKey(res.path);
     if (!quiet) await refreshTree();
@@ -675,6 +673,15 @@ async function moveNote(path, to, { quiet = false } = {}) {
 function keepTreeFocus() {
   const was = treeEl().contains(document.activeElement);
   return () => { if (was) treeEl().focus({ preventScroll: true }); };
+}
+
+/** The open note was moved: keep editing it under its new path, with anything typed meanwhile. */
+async function reopenAs(path) {
+  const typed = session.text;
+  session.dispose();
+  session = null;
+  await doOpen(path);
+  if (session && typed !== session.text) editor.replace(typed);   // saved by the new session
 }
 
 async function renameNote(path) {
@@ -700,11 +707,7 @@ async function moveFolder(path, to, { quiet = false } = {}) {
     collapsed = new Set([...collapsed].map(moved));
     saveCollapsed();
     const keep = { sel: [...sel], cursor };   // reopening the note would move the selection to it
-    if (inside) {
-      session.dispose();
-      session = null;
-      await doOpen(moved(open));
-    }
+    if (inside) await reopenAs(moved(open));
     sel = new Set(keep.sel.map((k) => k[0] + ':' + moved(k.slice(2))));
     anchor = cursor = keep.cursor ? keep.cursor[0] + ':' + moved(keep.cursor.slice(2)) : null;
     if (!quiet) await refreshTree();
@@ -791,7 +794,8 @@ async function deleteSelection() {
       action: { label: 'Undo', run: async () => {
         try {
           const r = await api.restoreNoteBatch(res.trash_id);
-          sel = new Set([...r.paths.map(nKey), ...folders.map(fKey)]);
+          sel = new Set([...r.paths.filter((x) => !folders.some((f) => within(x, f))).map(nKey), ...folders.map(fKey)]);
+          anchor = cursor = [...sel][0] || null;
           await refreshTree();
           if (closing && r.paths.includes(open)) openNote(open);
           if (r.skipped.length) toast(`${plural(r.skipped.length, 'file')} stayed in the trash: something new has the same name.`, { timeout: 9000 });
@@ -937,6 +941,7 @@ function onDblClick(e) {
 
 /** Keys in the file tree: arrows move (Shift extends), Enter opens, F2 renames, Delete trashes. */
 function onTreeKey(e) {
+  if (e.target.closest('.nt-hit')) return;   // a "Text matches" button handles its own keys
   const keys = visibleKeys();
   if (!keys.length || e.altKey) return;
   const mod = modKey(e);

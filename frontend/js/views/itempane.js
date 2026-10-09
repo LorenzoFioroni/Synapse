@@ -10,6 +10,7 @@ import { openExport } from './exportDialog.js';
 import { copyKeys, deleteAttachment, pickFiles, renameAttachment } from './itemlist.js';
 import { openMetadataReview } from './metadataReview.js';
 import { confirmKeyChange } from './notes/rekeyDialog.js';
+import { fillReferences } from './referencesSection.js';
 import { addSelectionToFolder, editTagsDialog, tagInput } from './organizeDialogs.js';
 
 let root, shownId = null;
@@ -196,12 +197,14 @@ function renderItem(it) {
           </div></div>
         <div class="field-row"><label>Tags</label><div class="ip-tags"></div></div>`, { count: (it.tags || []).length || '' })}
       ${state.settings.notes_enabled !== false ? section('notes', 'Notes', '<div class="ip-notes" data-ip-notes><span class="muted">Loading…</span></div>') : ''}
+      ${section('references', 'References', '<div class="ip-refs" data-ip-refs><span class="muted">Loading…</span></div>')}
       ${section('info', 'Info', info)}
       ${section('abstract', 'Abstract', fv('abstract', it.abstract, { multiline: true, placeholder: 'Add an abstract…' }))}
       ${section('attachments', 'Attachments', attHtml, { count: atts.length })}
     </div>`;
   bindItem(it);
   fillNotes(it);
+  fillReferences(root.querySelector('[data-ip-refs]'), it, () => shownId === it.id);
 }
 
 /* ---------------------------------------------------------------- notes */

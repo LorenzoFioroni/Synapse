@@ -204,9 +204,14 @@ class Vault:
             os.replace(ps, pd)
         return dst
 
+    @staticmethod
+    def _reserved(rel: str) -> bool:
+        """The images folder (compared without case: macOS disks ignore it)."""
+        return rel.split("/")[0].lower() == ATTACHMENTS
+
     def make_folder(self, rel: str) -> str:
         rel = self.clean_rel(rel, suffix=None)
-        if rel.split("/")[0] == ATTACHMENTS:
+        if self._reserved(rel):
             raise InvalidPath("The attachments folder is reserved for images")
         (self.root / rel).mkdir(parents=True, exist_ok=True)
         return rel
@@ -214,7 +219,7 @@ class Vault:
     def _folder(self, rel: str) -> str:
         """A user folder of notes (never the root, the images folder or a hidden folder)."""
         rel = self.clean_rel(rel, suffix=None)
-        if rel.split("/")[0] == ATTACHMENTS:
+        if self._reserved(rel):
             raise InvalidPath("The attachments folder holds the images of your notes")
         if not (self.root / rel).is_dir():
             raise NoteMissing(rel)
@@ -227,19 +232,20 @@ class Vault:
         for dirpath, dirnames, filenames in os.walk(base):
             dirnames[:] = [d for d in dirnames if not d.startswith(".")]
             for f in filenames:
-                if not f.startswith(".") and f.lower().endswith(NOTE_SUFFIX):
-                    out.append((Path(dirpath) / f).relative_to(self.root).as_posix())
+                p = Path(dirpath) / f
+                if not f.startswith(".") and f.lower().endswith(NOTE_SUFFIX) and not p.is_symlink():  # as iter_notes
+                    out.append(p.relative_to(self.root).as_posix())
         return sorted(out)
 
     def move_folder(self, src: str, dst: str) -> list[tuple[str, str]]:
         """Rename or move a folder with everything in it. Returns [(old note path, new note path)]."""
         src = self._folder(src)
         dst = self.clean_rel(dst, suffix=None)
-        if dst.split("/")[0] == ATTACHMENTS:
+        if self._reserved(dst):
             raise InvalidPath("The attachments folder is reserved for images")
         if dst == src:
             return []
-        if dst.startswith(src + "/"):
+        if dst.lower().startswith(src.lower() + "/"):
             raise InvalidPath("A folder cannot be moved into itself")
         with self._lock:
             ps, pd = self.root / src, self.root / dst
@@ -267,22 +273,30 @@ class Vault:
     def trash_batch(self, notes: list[str], folders: list[str]) -> tuple[str, list[str]]:
         """Move several notes and folders into one ``.trash/<timestamp>/`` (one undo restores
         them all). Returns the trash id and the note paths that went with them."""
+        under = lambda rel, f: rel.lower().startswith(f.lower() + "/")  # noqa: E731  (case-insensitive disks)
         folders = sorted({self._folder(f) for f in folders})
-        folders = [f for f in folders if not any(f.startswith(o + "/") for o in folders)]  # parents cover children
-        inside = lambda rel: any(rel.startswith(f + "/") for f in folders)  # noqa: E731
-        notes = sorted({n for n in (self.clean_rel(x) for x in notes) if not inside(n)})
+        folders = [f for f in folders if not any(under(f, o) for o in folders if o != f)]  # parents cover children
+        notes = sorted({n for n in (self.clean_rel(x) for x in notes) if not any(under(n, f) for f in folders)})
         if not notes and not folders:
             raise InvalidPath("Nothing to delete")
         with self._lock:
             for n in notes:
                 if not (self.root / n).is_file():
                     raise NoteMissing(n)
-            moved = [n for f in folders for n in self.notes_in(f)] + notes
+            contents = {f: self.notes_in(f) for f in folders}
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+            moved = []
             for rel in folders + notes:
                 dest = self.root / TRASH / stamp / rel
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(self.root / rel, dest)
+                try:
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(self.root / rel, dest)
+                except OSError:
+                    # report what did move (it can be restored with this trash id); stop here
+                    if not moved and rel == (folders + notes)[0]:
+                        raise
+                    break
+                moved += contents.get(rel, [rel] if rel in notes else [])
         return stamp, sorted(moved)
 
     def restore_batch(self, trash_id: str) -> tuple[list[str], list[str]]:
@@ -298,14 +312,25 @@ class Vault:
             for dirpath, dirnames, filenames in os.walk(base, topdown=True):
                 here = Path(dirpath)
                 rel_dir = here.relative_to(base)
-                (self.root / rel_dir).mkdir(parents=True, exist_ok=True)   # empty folders come back too
-                for f in filenames:
+                try:
+                    (self.root / rel_dir).mkdir(parents=True, exist_ok=True)   # empty folders come back too
+                except OSError:   # a file now has this folder's name: leave this part in the trash
+                    skipped += [(rel_dir / f).as_posix() for f in filenames + dirnames]
+                    dirnames[:] = []
+                    continue
+                links = [d for d in dirnames if (here / d).is_symlink()]   # os.walk does not enter these
+                dirnames[:] = [d for d in dirnames if d not in links]
+                for f in filenames + links:
                     rel = (rel_dir / f).as_posix()
-                    if (self.root / rel).exists():
+                    if os.path.lexists(self.root / rel):
                         skipped.append(rel)
                         continue
-                    os.replace(here / f, self.root / rel)
-                    if f.lower().endswith(NOTE_SUFFIX):
+                    try:
+                        os.replace(here / f, self.root / rel)
+                    except OSError:
+                        skipped.append(rel)
+                        continue
+                    if f.lower().endswith(NOTE_SUFFIX) and not (self.root / rel).is_symlink():
                         restored.append(rel)
             for dirpath, _, _ in sorted(os.walk(base), key=lambda t: -len(t[0])):   # tidy up emptied folders
                 try:

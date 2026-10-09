@@ -120,6 +120,7 @@ def delete_permanently():
     ids = ids_from_body()
     removed = s.papers.delete_permanently(ids)
     s.fulltext.remove(removed)
+    s.citations.store.remove(ids)
     return jsonify(ok=True, count=len(ids))
 
 
@@ -129,6 +130,7 @@ def empty_trash():
     ids = s.papers.trashed_ids()
     removed = s.papers.delete_permanently(ids)
     s.fulltext.remove(removed)
+    s.citations.store.remove(ids)
     return jsonify(ok=True, count=len(ids))
 
 

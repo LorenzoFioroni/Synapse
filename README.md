@@ -22,6 +22,7 @@ Your library lives in `data/` (or `--data-dir` / `ZCLONE_DATA_DIR`):
 | `pdfs/` | attached files |
 | `notes/` | your Markdown notes (the files are the source of truth) |
 | `notes_index.db` | links and search index of the notes; safe to delete, it is rebuilt |
+| `citations.db` | reference lists fetched online (the citation graph); if deleted they can be fetched again |
 | `backups/` | automatic note backups taken before a citation-key rename |
 | `settings.json` | preferences from the Settings page |
 
@@ -60,6 +61,13 @@ never mix.
   with a section per article, word-level diffs with a checkbox per field, and the
   article's unchanged metadata below. Nothing is saved until you apply; replacing an
   existing citation key is opt-in. Lookups run one by one and can be stopped.
+- **References / citation graph**: when metadata is fetched (Retrieve Metadata, Add by
+  Identifier, dropped PDFs, the browser button) the list of papers the item cites is fetched
+  too, in the background (Semantic Scholar, then OpenAlex, then Crossref; optional API keys
+  in Settings → Online Services). The item pane shows *References* — cited works that are
+  in your library link to them, the others can be added with one click — and *Cited by in
+  your library*. Fetch them for any selection from the item menu. The whole graph (library
+  items + every work they cite, with "cites" edges) is at `GET /api/graph/citations`.
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
   arXiv, Scholar) and checks the file is really the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.
@@ -108,6 +116,7 @@ never mix.
 │   ├── citekeys.py        citation-key patterns
 │   ├── settings.py        preferences store with validation
 │   ├── metadata.py        Crossref / OpenAlex / arXiv / Open Library lookups
+│   ├── references.py      reference lists (citation graph) in citations.db + background fetching
 │   ├── pdf_finder.py      open-access PDF search + verification
 │   ├── pdftext.py         PDF text extraction
 │   ├── formats/           bibtex, ris, endnote (+XML), csljson

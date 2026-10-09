@@ -59,8 +59,17 @@ def on_disk(rel):
 
 
 def setup():
-    a = requests.post(f"{BASE}/api/items", json={"authors": "Cui, Jian", "title": "Variational operators", "year": 2015}).json()
-    b = requests.post(f"{BASE}/api/items", json={"authors": "Verstraete, Frank", "title": "Matrix product states", "year": 2008}).json()
+    a = requests.post(f"{BASE}/api/items", json={"authors": "Cui, Jian", "title": "Variational operators", "year": 2015,
+                                                 "doi": "10.1103/PhysRevLett.114.220601"}).json()
+    b = requests.post(f"{BASE}/api/items", json={"authors": "Verstraete, Frank", "title": "Matrix product states", "year": 2008,
+                                                 "doi": "10.1080/14789940801912366"}).json()
+    # a reference list as if fetched online: a cites b (in the library) and a work that is not
+    sys.path.insert(0, str(APP))
+    from backend.references import CitationStore
+    CitationStore(Path(DATA) / "citations.db").save(a["id"], "semanticscholar", [
+        {"doi": "10.1080/14789940801912366", "title": "Matrix product states", "year": 2008},
+        {"doi": "10.1000/elsewhere", "title": "A paper you do not have", "authors": "Doe, Jane", "year": 1999}],
+        doi="10.1103/physrevlett.114.220601")
     requests.post(f"{BASE}/api/notes/note", json={"item_id": a["id"]})
     for title, folder in [("Ideas", "proj"), ("Plan", "proj/sub"), ("Reading list", ""), ("Scratch", ""), ("Todo", "")]:
         requests.post(f"{BASE}/api/notes/note", json={"title": title, "folder": folder,
@@ -85,6 +94,19 @@ async def main():
             await page.wait_for_timeout(900)
             row = lambda path: f'.nt-row.note[data-path="{path}"]'          # noqa: E731
             frow = lambda path: f'.nt-row.folder[data-folder="{path}"]'     # noqa: E731
+
+            # ---- item pane: references (citation graph)
+            await page.click(f'.row[data-id="{a["id"]}"] .cell[data-col="title"]')
+            await wait_for(lambda: count_is(page, '.ip-ref', 2))
+            status = await page.text_content('.ip-refs-status')
+            check("item pane lists the references", "2 references" in status and "1 in your library" in status, " ".join(status.split()))
+            check("a reference not in the library can be added", await page.locator('.ip-ref [data-add-ident="10.1000/elsewhere"]').count() == 1)
+            await page.click('.ip-ref.in-lib')
+            await wait_for(lambda: page.evaluate(f"!!document.querySelector('.row.selected[data-id=\"{b['id']}\"]')"))
+            check("clicking a reference in the library selects it", await page.locator(f'.row.selected[data-id="{b["id"]}"]').count() == 1)
+            await wait_for(lambda: count_is(page, '.ip-ref.in-lib', 1))
+            check("…whose pane shows who cites it", "Cited by in your library" in (await page.text_content('.ip-refs')))
+            await shot(page, "u0-references")
 
             # ---- item list: note markers
             await wait_for(lambda: page.locator(f'.row[data-id="{a["id"]}"] .note-dot.paper').count())
@@ -214,11 +236,13 @@ async def main():
 
             # ---- select all, then Escape
             await page.click(row("Reading list.md"))
+            await crumbs_have(page, "Reading list")
             await page.keyboard.press('ControlOrMeta+a')
             n_all = await page.locator('.nt-row.selected').count()
             check("⌘A selects every row", n_all == await page.locator('.nt-row').count() and n_all > 3, n_all)
             await page.keyboard.press('Escape')
-            check("Escape goes back to just the open note", await page.locator('.nt-row.selected').count() == 1)
+            n_sel = await page.locator('.nt-row.selected').count()
+            check("Escape goes back to just the open note", n_sel == 1, n_sel)
             await shot(page, "u3-notes")
 
             check("no console errors", not errors, errors[:3])

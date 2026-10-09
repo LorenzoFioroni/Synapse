@@ -35,6 +35,9 @@ DEFAULTS: dict = {
     "show_subfolder_items": True,      # a folder also lists the items of its subfolders
     # Online lookups
     "contact_email": "",
+    "references_auto": True,           # fetch the reference list when metadata is fetched
+    "openalex_api_key": "",            # optional: OpenAlex allows only ~5 reference lookups a day without one
+    "semantic_scholar_api_key": "",    # optional: avoids the shared rate limit
     # Notes (beta): shows the Notes entry in the sidebar
     "notes_enabled": True,
     "notes_autosave_ms": 1500,         # save after this long without typing (also on blur)

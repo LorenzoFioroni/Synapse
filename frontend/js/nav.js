@@ -6,7 +6,8 @@
 //   { ws: 'notes', path }                     a note (path null = Notes with nothing open)
 //   { ws: 'library', view, sel: [ids] }       the library (kept up to date while you work there)
 
-let restoring = false;
+let restoring = 0;        // >0 while going Back/Forward (those must not add entries)
+let snapshot = null;     // () => fresh data for the current entry, taken before leaving it
 
 const same = (a, b) => !!a && !!b && a.ws === b.ws && (a.ws === 'library' || a.path === b.path);
 
@@ -15,7 +16,9 @@ export const navCurrent = () => history.state?.zc || null;
 /** A new place: becomes a history entry (or updates the current one if it is the same place). */
 export function navPush(entry) {
   if (restoring) return;
-  const cur = navCurrent();
+  let cur = navCurrent();
+  const fresh = cur && snapshot?.(cur);
+  if (fresh) { cur = { ...cur, ...fresh }; history.replaceState({ ...history.state, zc: cur }, ''); }
   if (same(cur, entry)) history.replaceState({ ...history.state, zc: { ...cur, ...entry } }, '');
   else history.pushState({ zc: entry }, '');
 }
@@ -27,12 +30,15 @@ export function navUpdate(ws, patch) {
   if (cur?.ws === ws) history.replaceState({ ...history.state, zc: { ...cur, ...patch } }, '');
 }
 
+/** ``fn(entry)`` returns the up-to-date fields of the entry being left (e.g. the library selection). */
+export function navSnapshot(fn) { snapshot = fn; }
+
 export function initNav(initial, onNavigate) {
   history.replaceState({ ...history.state, zc: initial }, '');   // what is on screen now (also after a reload)
   window.addEventListener('popstate', async (e) => {
     const entry = e.state?.zc;
     if (!entry) return;
-    restoring = true;
-    try { await onNavigate(entry); } finally { restoring = false; }
+    restoring++;
+    try { await onNavigate(entry); } finally { restoring--; }
   });
 }

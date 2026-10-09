@@ -7,7 +7,7 @@ import { emit, folderById, on, state } from './store.js';
 import { closeMenu, openMenu } from './ui/menu.js';
 import { toastError } from './ui/toast.js';
 import { debounce, modKey, modLabel, plural, storage, store } from './util.js';
-import { initNav, navUpdate } from './nav.js';
+import { initNav, navSnapshot, navUpdate } from './nav.js';
 import { openExport } from './views/exportDialog.js';
 import { smartFolderDialog } from './views/organizeDialogs.js';
 import { openIdentifierDialog } from './views/identifierDialog.js';
@@ -51,6 +51,7 @@ async function boot() {
   on('workspace', paintWorkspace);
   // Back/Forward move between notes and the library view you came from.
   initNav({ ws: 'library', view: state.view, sel: [] }, navigate);
+  navSnapshot((cur) => (cur.ws === 'library' ? { view: state.view, sel: [...state.selection] } : null));
   const remember = debounce(() => navUpdate('library', { view: state.view, sel: [...state.selection] }), 300);
   on('selection', remember);
   on('view', remember);

@@ -1,0 +1,47 @@
+"""Reference lists (the citation graph)."""
+from __future__ import annotations
+
+from flask import Blueprint, jsonify
+
+from ..metadata import LookupError_
+from ..repository import NotFound
+from . import body, error, svc
+
+bp = Blueprint("references", __name__, url_prefix="/api")
+
+
+@bp.get("/items/<item_id>/references")
+def item_references(item_id):
+    """What the item cites (marked when in the library) and which library items cite it."""
+    return jsonify(svc().citations.item_view(item_id))
+
+
+@bp.post("/items/<item_id>/references")
+def fetch_references(item_id):
+    """Fetch the reference list now (replaces the stored one)."""
+    try:
+        return jsonify(svc().citations.fetch_now(item_id))
+    except NotFound:
+        raise
+    except LookupError_ as e:
+        return error(str(e), 404)
+    except Exception as e:   # network trouble
+        return error(f"Could not fetch references: {e}", 502)
+
+
+@bp.post("/references/queue")
+def queue_references():
+    """Fetch the reference lists of several items in the background."""
+    ids = [i for i in (body().get("ids") or []) if isinstance(i, str)]
+    return jsonify(queued=svc().citations.enqueue(ids), status=svc().citations.status())
+
+
+@bp.get("/references/status")
+def references_status():
+    return jsonify(svc().citations.status())
+
+
+@bp.get("/graph/citations")
+def citation_graph():
+    """Every library item and every work they cite, with "cites" edges (for analysis / AI)."""
+    return jsonify(svc().citations.graph())

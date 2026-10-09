@@ -8,6 +8,7 @@ from .db import Database
 from .fulltext import FulltextIndex, Indexer
 from .notes import NotesIndex, Vault
 from .notes.service import NotesService
+from .references import Citations, CitationStore
 from .organize import FolderRepository, SmartFolderRepository, TagRepository
 from .repository import PaperRepository
 from .settings import SettingsStore
@@ -26,6 +27,7 @@ class Services:
         self.smart = SmartFolderRepository(self.db)
         self.fulltext = FulltextIndex(config.fulltext_db_path)
         self.indexer = Indexer(self.papers, self.fulltext)
+        self.citations = Citations(CitationStore(config.citations_db_path), self.papers, self.settings)
         self.vault = Vault(config.notes_dir)
         self.vault.ensure()
         self.notes = NotesIndex(config.notes_index_path, self.vault)

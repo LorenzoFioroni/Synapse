@@ -65,6 +65,8 @@ def items_from_pdfs():
             if ident.get("doi"):
                 meta["doi"] = ident["doi"]
         item = s.papers.create({**meta, "folder_id": request.form.get("folder_id") or None})
+        if note is None and len(meta) > 2:   # metadata came from a lookup
+            s.citations.maybe_enqueue(item)
         s.papers.add_attachment(item["id"], name, filename, "pdf")
         created.append({"item": s.papers.get(item["id"]), "identifier": ident, "note": note})
     s.attachments_changed()

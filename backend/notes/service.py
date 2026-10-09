@@ -5,6 +5,7 @@ first and the index is updated from the file afterwards.
 """
 from __future__ import annotations
 
+import logging
 import os
 import time
 from datetime import datetime
@@ -14,6 +15,7 @@ from .index import NotesIndex
 from .rekey import Rekeyer
 from .vault import ATTACHMENTS, Conflict, NoteExists, Vault, slugify
 
+log = logging.getLogger(__name__)
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 IMAGE_TYPES = {  # extension -> magic-byte check. No SVG: it can carry scripts.
     "png": lambda b: b.startswith(b"\x89PNG\r\n\x1a\n"),
@@ -243,20 +245,26 @@ class NotesService:
             self.index.remove(p)
         return {"trash_id": tid, "paths": moved}
 
+    def _reindex(self, paths) -> None:
+        """Index notes that just appeared; one unreadable file must not stop the others."""
+        for p in paths:
+            try:
+                self.index.update(p)
+            except Exception:
+                log.exception("Could not index %s", p)
+
     def restore_batch(self, trash_id: str) -> dict:
         restored, skipped = self.vault.restore_batch(trash_id)
-        for p in restored:
-            self.index.update(p)
+        self._reindex(restored)
         return {"paths": restored, "skipped": skipped}
 
     def move_folder(self, path: str, to: str) -> dict:
         src = self.vault.clean_rel(path, suffix=None)
         before = {n: self.index.backlinks(n) for n in self.vault.notes_in(src)}
         moved = self.vault.move_folder(src, to)
-        for old, new in moved:
+        for old, _ in moved:
             self.index.remove(old)
-        for old, new in moved:
-            self.index.update(new)
+        self._reindex(new for _, new in moved)
         new_of = dict(moved)
         broken = []
         for old, links in before.items():
