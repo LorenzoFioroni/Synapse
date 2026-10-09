@@ -29,7 +29,9 @@ class Services:
         self.vault = Vault(config.notes_dir)
         self.vault.ensure()
         self.notes = NotesIndex(config.notes_index_path, self.vault)
-        self.note_service = NotesService(self.vault, self.notes, self.papers)
+        self.note_service = NotesService(self.vault, self.notes, self.papers, config.backups_dir)
+        # A changed citation key is rewritten in every note (with a backup first).
+        self.papers.on_citekey_change(lambda _id, old, new: self.note_service.rename_key(old, new) if new else None)
         try:
             self.notes.sync()
         except Exception:  # notes must never stop the library from starting

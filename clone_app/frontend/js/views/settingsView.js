@@ -276,7 +276,7 @@ function bind() {
   view.querySelector('[data-regen-all]').onclick = async () => {
     const n = state.counts.library;
     if (!(await confirmDialog(`Regenerate citation keys for all ${plural(n, 'item')}?`,
-      { title: 'Regenerate all keys', confirm: 'Regenerate', detail: `Existing keys are replaced using the pattern ${state.settings.citekey_pattern}. Documents that cite the old keys will need updating.` }))) return;
+      { title: 'Regenerate all keys', confirm: 'Regenerate', detail: `Existing keys are replaced using the pattern ${state.settings.citekey_pattern}. Your notes are updated to the new keys automatically (after a backup); LaTeX documents that cite the old keys will need updating.` }))) return;
     const all = await api.listItems({ view: 'library' });
     await A.regenerateCitekeys(all.items.map((i) => i.id));
     refreshPreview(pat.value);

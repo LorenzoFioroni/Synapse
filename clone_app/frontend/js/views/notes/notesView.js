@@ -28,6 +28,7 @@ let info = null;          // index info of the open note (title, headings, tags�
 let overview = { notes: [], folders: [] };
 let collapsed = new Set(storage('zc.notes.collapsed', []));
 let filter = '';
+let hitTimer = null;
 let opening = Promise.resolve();
 let mode = storage('zc.notes.mode', 'live');           // 'live' | 'source' | 'read'
 let editMode = mode === 'read' ? 'live' : mode;        // what Cmd+E returns to
@@ -93,13 +94,19 @@ export function initNotes() {
   root.addEventListener('click', onClick);
   root.addEventListener('dblclick', onDblClick);
   window.zcNotes = { text: () => session?.text ?? null, path: () => session?.path ?? null };   // read-only, for tests
+  listenForQuotes();
   root.querySelector('.note-read').addEventListener('click', onReadClick);
   attachCiteCards(root, { itemInfo, openNote: (p) => openNote(p), refreshLibrary: async () => { await loadLibrary(); await refreshTree(); } });
   let libTimer = null;
   on('items', () => { if (notesOpen()) { clearTimeout(libTimer); libTimer = setTimeout(loadLibrary, 500); } });
   root.querySelector('.note-read').addEventListener('dblclick', onReadDblClick);
   root.addEventListener('contextmenu', onContextMenu);
-  root.querySelector('.notes-filter input').addEventListener('input', (e) => { filter = e.target.value.trim().toLowerCase(); paintTree(); });
+  root.querySelector('.notes-filter input').addEventListener('input', (e) => {
+    filter = e.target.value.trim().toLowerCase();
+    paintTree();
+    clearTimeout(hitTimer);
+    hitTimer = setTimeout(paintHits, 250);
+  });
   bindDnD();
 
   window.addEventListener('focus', () => { if (notesOpen()) { session?.checkRemote(); refreshTree(); } });
@@ -108,10 +115,36 @@ export function initNotes() {
   // Diagrams are drawn for one theme: redraw them when light/dark changes.
   new MutationObserver(() => { if (!notesOpen() || !session) return; editor?.refresh(); if (mode === 'read') renderRead(); })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-  on('search', () => { if (notesOpen()) closeNotes(); });   // typing in the library search shows the results
+  on('search', () => { if (notesOpen() && state.query) closeNotes(); });   // a library search shows its results
   on('settings', () => { if (!notesEnabled() && notesOpen()) closeNotes(); emit('notes-count', notesEnabled() ? overview.notes.length : null); });
 
   if (notesEnabled()) refreshTree().then(() => { if (storage('zc.notes.open', false)) openNotes(); });
+}
+
+/**
+ * The PDF viewer (another tab) can send quotes and figures into the note open here.
+ * Messages on BroadcastChannel 'zc-notes':
+ *   viewer → {type:'who', req}                       every Notes tab with an open note answers
+ *   notes  → {type:'here', req, tab, path, title}
+ *   viewer → {type:'insert', req, tab, markdown}     only the addressed tab inserts
+ *   notes  → {type:'inserted', req, tab, path}
+ */
+const TAB_ID = Math.random().toString(36).slice(2);
+function listenForQuotes() {
+  if (!('BroadcastChannel' in window)) return;
+  const ch = new BroadcastChannel('zc-notes');
+  ch.onmessage = (e) => {
+    const m = e.data || {};
+    if (m.type === 'who' && notesOpen() && session && editor && session.status !== 'conflict') {
+      ch.postMessage({ type: 'here', req: m.req, tab: TAB_ID, path: session.path, title: info?.title || stemOf(session.path) });
+    }
+    if (m.type === 'insert' && m.tab === TAB_ID && session && editor) {
+      editor.insertBlock(String(m.markdown || ''));
+      if (mode === 'read') renderRead();
+      toast('Added from the PDF.', { type: 'success' });
+      ch.postMessage({ type: 'inserted', req: m.req, tab: TAB_ID, path: session.path });
+    }
+  };
 }
 
 /** Last chance when the tab closes: send unsaved text (the local draft stays as a safety net). */
@@ -444,7 +477,26 @@ function paintTree() {
     }
   };
   walk(buildTree(), 0);
-  el.innerHTML = rows.join('') || `<div class="side-empty">${filter ? 'No notes match.' : 'No notes yet. Create one with <b>+</b>.'}</div>`;
+  el.innerHTML = rows.join('') || (filter ? '' : '<div class="side-empty">No notes yet. Create one with <b>+</b>.</div>');
+  if (filter.length >= 2) { clearTimeout(hitTimer); hitTimer = setTimeout(paintHits, 150); }
+}
+
+/** Notes whose text contains the filter words (below the name matches in the tree). */
+async function paintHits() {
+  const el = root.querySelector('.notes-tree');
+  el.querySelector('.notes-hits')?.remove();
+  const q = filter;
+  if (q.length < 2) return;
+  let res;
+  try { res = (await api.searchNotes(q)).results; } catch { return; }
+  if (q !== filter) return;
+  const nameHits = new Set([...el.querySelectorAll('.nt-row.note')].map((r) => r.dataset.path));
+  const rows = res.filter((r) => !nameHits.has(r.path));
+  if (!rows.length) return;
+  el.querySelector('.notes-hits')?.remove();
+  el.insertAdjacentHTML('beforeend', `<div class="notes-hits"><div class="ns-title">Text matches</div>${rows.map((r) => `
+    <button class="nt-hit" data-path="${escapeHtml(r.path)}"><div class="nm">${escapeHtml(r.title || stemOf(r.path))}</div>
+      <div class="snip">${r.snippet}</div></button>`).join('')}</div>`);
 }
 
 /* ============================================================== painting */
@@ -476,7 +528,7 @@ function paintSide() {
   const unresolved = (L?.unresolved || []).filter((u, i, a) => a.findIndex((x) => x.kind === u.kind && x.target === u.target) === i);
   const citedHtml = cited.length ? `<div class="ns-list">${cited.map((c) => {
     const it = itemInfo(c.key);
-    return `<button class="ns-row cite-row${it ? '' : ' missing'}" data-cite-keys="${escapeHtml(c.key)}" data-goto-line="${c.lines[0]}">
+    return `<button class="ns-row cite-row${it ? '' : ' missing'}${it?.trashed ? ' trashed' : ''}" data-cite-keys="${escapeHtml(c.key)}" data-goto-line="${c.lines[0]}" title="${it?.trashed ? 'This item is in the Trash' : ''}">
       <span class="ns-main">${escapeHtml(it ? [shortAuthors(it.authors), it.year].filter(Boolean).join(' ') || c.key : `@${c.key}`)}${c.count > 1 ? ` <span class="count">×${c.count}</span>` : ''}</span>
       <span class="ns-sub">${escapeHtml(it ? it.title : 'not in your library')}</span></button>`;
   }).join('')}</div>` : '<div class="side-empty">Cite papers with [@key] — type [@ to search your library.</div>';
@@ -692,7 +744,7 @@ function onClick(e) {
     saveCollapsed();
     return paintTree();
   }
-  const note = e.target.closest('.nt-row.note');
+  const note = e.target.closest('.nt-row.note, .nt-hit');
   if (note) openNote(note.dataset.path);
 }
 

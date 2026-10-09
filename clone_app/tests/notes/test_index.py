@@ -102,3 +102,10 @@ def test_incremental_equals_rebuild(env, tmp_path):
     fresh.sync()
     assert fresh.snapshot() == incremental
     assert idx.rebuild() and idx.snapshot() == incremental
+
+
+def test_search_snippets_are_escaped(env):
+    v, idx = env
+    put(v, idx, "x.md", "danger <script>alert(1)</script> entanglement here")
+    snip = idx.search("entanglement")[0]["snippet"]
+    assert "<script>" not in snip and "&lt;script&gt;" in snip and "<mark>entanglement</mark>" in snip

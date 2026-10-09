@@ -9,6 +9,7 @@ import { copyText, debounce, escapeHtml, formatDate, plural, shortAuthors, stora
 import { openExport } from './exportDialog.js';
 import { copyKeys, deleteAttachment, pickFiles, renameAttachment } from './itemlist.js';
 import { openMetadataReview } from './metadataReview.js';
+import { confirmKeyChange } from './notes/rekeyDialog.js';
 import { addSelectionToFolder, editTagsDialog, tagInput } from './organizeDialogs.js';
 
 let root, shownId = null;
@@ -303,6 +304,12 @@ function bindItem(it) {
     el.addEventListener('blur', async () => {
       const value = el.dataset.field === 'title' ? el.textContent.replace(/\s*\n\s*/g, ' ').trim() : el.textContent.trim();
       if (value === (original || '').trim()) return;
+      if (el.dataset.field === 'citation_key' && state.settings.notes_enabled !== false
+          && !(await confirmKeyChange((original || '').trim(), value))) {
+        el.textContent = original;
+        el.dataset.empty = original ? 'false' : 'true';
+        return;
+      }
       original = value;
       try {
         await A.updateField(id, el.dataset.field, value);

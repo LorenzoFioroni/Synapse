@@ -349,3 +349,53 @@ def parse(text: str, *, fallback_title: str = "") -> ParsedNote:
         title = h1.text if h1 else fallback_title
     return ParsedNote(meta=meta, title=title, links=[l for _, l in found], headings=headings,
                       tags=tags, body=body)
+
+
+# --------------------------------------------------------------------------- rewriting
+def link_spans(text: str) -> list[dict]:
+    """Exact positions of citation keys and [[link]] targets in ``text`` (as stored, CRLF kept).
+
+    Each entry: {"kind": "cite"|"note"|"embed", "target": str, "start": int, "end": int} where
+    text[start:end] == target. Used to rewrite keys and links without touching anything else
+    (code, math, comments and front-matter are skipped exactly as in parse()).
+    """
+    header, body, _ = frontmatter.split(text)
+    base = len(text) - len(body)
+    masked = mask(body)
+    out = []
+    for m in _BRACKET.finditer(masked):
+        inner = body[m.start(1):m.end(1)]
+        if _parse_cite_group(inner) is None:
+            continue
+        off = m.start(1)
+        for part in inner.split(";"):
+            pm = _CITE_PART.match(part.strip())
+            lead = len(part) - len(part.lstrip())
+            key = pm.group("key").rstrip(".:/-")
+            start = base + off + lead + pm.start("key")
+            out.append({"kind": "cite", "target": key, "start": start, "end": start + len(key)})
+            off += len(part) + 1
+    for m in _WIKI.finditer(masked):
+        inner = body[m.start(2):m.end(2)]
+        bar = inner.find("|")
+        if bar > 0 and inner[bar - 1] == "\\":
+            bar -= 1
+        cut = len(inner) if bar < 0 else bar
+        h = inner.find("#", 0, cut)
+        if h >= 0:
+            cut = h
+        raw = inner[:cut]
+        target = raw.strip()
+        if not target:
+            continue
+        start = base + m.start(2) + (len(raw) - len(raw.lstrip()))
+        out.append({"kind": "embed" if m.group(1) else "note", "target": target, "start": start, "end": start + len(target)})
+    out.sort(key=lambda s: s["start"])
+    return out
+
+
+def replace_spans(text: str, edits: list[tuple[int, int, str]]) -> str:
+    """Apply non-overlapping (start, end, replacement) edits."""
+    for start, end, rep in sorted(edits, key=lambda e: e[0], reverse=True):
+        text = text[:start] + rep + text[end:]
+    return text

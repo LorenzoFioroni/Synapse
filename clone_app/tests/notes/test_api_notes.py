@@ -153,3 +153,19 @@ def test_cite_index(client, svc, tmp_path):
     ia = items[a["citation_key"]]
     assert ia["journal"] == "PRL" and ia["pdf"]["url"] == "x.pdf" and ia["note"] == f"papers/{a['citation_key']}.md"
     assert ia["trashed"] is False and items[b["citation_key"]]["trashed"] is True and items[b["citation_key"]]["pdf"] is None
+
+
+def test_append_to_paper_note(client, svc):
+    item = svc.papers.create({"authors": "Smith, Anna", "title": "Quantum things", "year": 2021})
+    key = item["citation_key"]
+    r = client.post("/api/notes/append", json={"item_id": item["id"], "markdown": f"> First quote [@{key}, p. 2]"})
+    assert r.status_code == 200 and r.json["created"] is True
+    path = r.json["path"]
+    r = client.post("/api/notes/append", json={"item_id": item["id"], "markdown": f"> Second [@{key}, p. 5]\n"})
+    assert r.json["created"] is False and r.json["path"] == path
+    text = svc.vault.read(path)[0]
+    assert text.endswith(f"\n\n> First quote [@{key}, p. 2]\n\n> Second [@{key}, p. 5]\n")
+    assert {c["page"] for c in svc.notes.citing(key)} >= {2, 5}
+    assert client.post("/api/notes/append", json={"item_id": item["id"], "markdown": "  "}).status_code == 400
+    nokey = svc.papers.create({"title": ""}, auto_citekey=False)
+    assert client.post("/api/notes/append", json={"item_id": nokey["id"], "markdown": "x"}).status_code == 400

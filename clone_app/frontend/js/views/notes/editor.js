@@ -175,6 +175,16 @@ export async function createEditor(parent, handlers, preview, mode = 'live', dat
       view.dispatch({ changes: { from: at, to: at + 1, insert: m[2] === ' ' ? 'x' : ' ' } });
       return true;
     },
+    /** Insert a Markdown block as its own paragraph after the cursor's line; cursor ends after it. */
+    insertBlock(md) {
+      const st = view.state;
+      const line = st.doc.lineAt(st.selection.main.head);
+      const before = line.text.trim() ? '\n\n' : (line.number > 1 && st.doc.line(line.number - 1).text.trim() ? '\n' : '');
+      const after = line.to < st.doc.length ? '\n' : '\n';
+      const insert = `${before}${md.replace(/\n+$/, '')}${after}`;
+      view.dispatch({ changes: { from: line.to, insert }, selection: { anchor: line.to + insert.length },
+        effects: cm.EditorView.scrollIntoView(line.to + insert.length, { y: 'center' }) });
+    },
     text: () => view.state.doc.toString(),
     focus: () => view.focus(),
     gotoLine(n) {

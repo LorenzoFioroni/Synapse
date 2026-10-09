@@ -67,6 +67,7 @@ class NotesIndex:
         self.db_path = str(db_path)
         self.vault = vault
         self._lock = threading.RLock()
+        self.revision = 0          # bumped on every change (lets callers cache derived data)
         self._init_schema()
 
     # ------------------------------------------------------------------ plumbing
@@ -143,12 +144,14 @@ class NotesIndex:
                     return False
                 self._delete_rows(c, path)
                 self._insert(c, path, text, h, st.st_mtime, st.st_size)
+            self.revision += 1
             return True
 
     def remove(self, path: str) -> bool:
         with self._lock, self._session() as c:
             existed = c.execute("SELECT 1 FROM notes WHERE path = ?", (path,)).fetchone() is not None
             self._delete_rows(c, path)
+            self.revision += 1
             return existed
 
     def sync(self) -> dict:
@@ -262,6 +265,19 @@ class NotesIndex:
             return [dict(r) for r in c.execute(
                 "SELECT path, title, type, author, updated FROM notes WHERE paper = ? ORDER BY path", (key,))]
 
+    def texts_by_key(self) -> dict[str, list[tuple[str, str]]]:
+        """citation key -> [(note title, text)]: the body of its paper notes, and every line
+        in which a note cites it (what you wrote about the paper, in your own words)."""
+        out: dict[str, list[tuple[str, str]]] = {}
+        with self._session() as c:
+            for r in c.execute("SELECT n.paper, n.title, f.body FROM notes n JOIN notes_fts f ON f.path = n.path "
+                               "WHERE n.paper IS NOT NULL"):
+                out.setdefault(r["paper"], []).append((r["title"] or "", r["body"] or ""))
+            for r in c.execute("SELECT l.target, n.title, l.context FROM links l JOIN notes n ON n.path = l.path "
+                               "WHERE l.kind = 'cite' AND (n.paper IS NULL OR n.paper != l.target)"):
+                out.setdefault(r["target"], []).append((r["title"] or "", r["context"] or ""))
+        return out
+
     def paper_note_map(self) -> dict[str, str]:
         """citation key -> path of its paper note (the shortest path if there are several)."""
         with self._session() as c:
@@ -281,13 +297,17 @@ class NotesIndex:
         q = _fts_query(query)
         if not q:
             return []
+        import html
         with self._session() as c:
             try:
-                return [dict(r) for r in c.execute(
-                    "SELECT path, title, snippet(notes_fts, 2, '<mark>', '</mark>', '…', 12) AS snippet "
+                rows = [dict(r) for r in c.execute(
+                    "SELECT path, title, snippet(notes_fts, 2, char(1), char(2), '…', 12) AS snippet "
                     "FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT ?", (q, limit))]
             except sqlite3.OperationalError:
                 return []
+        for r in rows:   # note text is escaped; only our own markers become <mark>
+            r["snippet"] = html.escape(r["snippet"] or "").replace("\x01", "<mark>").replace("\x02", "</mark>")
+        return rows
 
     def snapshot(self) -> dict:
         """Canonical dump of all derived data (used by tests: incremental == rebuild)."""

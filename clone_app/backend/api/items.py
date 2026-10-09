@@ -52,13 +52,14 @@ def list_items():
     items, smart_q, smart_mode = items_for_view(s, view, library)
     ctx = search_context(s)
     hits = {}
+    notes = s.note_service.text_matcher() if (q or smart_q) and s.settings.get("notes_enabled") else None
     if smart_q:
-        items, hits = search_mod.search(items, smart_q, smart_mode, s.fulltext, ctx)
+        items, hits = search_mod.search(items, smart_q, smart_mode, s.fulltext, ctx, notes=notes)
     if tag_filter:
         want = {search_mod.normalize(t) for t in tag_filter}
         items = [p for p in items if want <= {search_mod.normalize(t) for t in p.get("tags") or []}]
     if q:
-        items, more = search_mod.search(items, q, mode, s.fulltext, ctx)
+        items, more = search_mod.search(items, q, mode, s.fulltext, ctx, notes=notes)
         hits = {**{k: v for k, v in hits.items() if k in {p["id"] for p in items}}, **more}
     return jsonify(items=items, hits=hits, counts=s.papers.counts(library), mode=mode, query=q,
                    sidebar=sidebar(s))

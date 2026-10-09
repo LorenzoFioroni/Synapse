@@ -77,3 +77,23 @@ def test_filters_combine_with_text():
     assert f("transport year:>2020") == ["c"]
     assert f("tag:transport -energy") == ["a"]
     assert f("arXiv:2205.03415") == []                # unknown prefix = plain text, no crash
+
+
+def test_search_finds_items_through_notes(client, svc):
+    a = svc.papers.create({"authors": "Cui, Jian", "title": "Variational operators", "year": 2015})
+    b = svc.papers.create({"authors": "Doe, J", "title": "Unrelated", "year": 2001})
+    svc.papers.create({"authors": "Roe, K", "title": "Also unrelated", "year": 2002})
+    client.post("/api/notes/note", json={"item_id": a["id"], "text": "Uses Lindblad steady states."})
+    client.put("/api/notes/note", json={"path": "Idea.md", "create": True,
+                                        "text": f"Doe's trick [@{b['citation_key']}] avoids sign problems.\nOther line about steady states."})
+    ids = lambda r: {i["id"] for i in r.json["items"]}
+    r = client.get("/api/items", query_string={"q": "steady states", "mode": "all"})
+    assert ids(r) == {a["id"]}                          # paper note text; the other line does not cite b
+    assert "Note" in r.json["hits"][a["id"]]["fulltext"] and "<mark>steady</mark>" in r.json["hits"][a["id"]]["fulltext"]
+    r = client.get("/api/items", query_string={"q": "sign problems", "mode": "fulltext"})
+    assert ids(r) == {b["id"]}                          # the line that cites b
+    assert client.get("/api/items", query_string={"q": "sign problems", "mode": "basic"}).json["items"] == []
+    r = client.get("/api/items", query_string={"q": "-lindblad", "mode": "all"})
+    assert a["id"] not in ids(r) and b["id"] in ids(r)  # negation works through notes too
+    svc.settings.update({"notes_enabled": False})
+    assert client.get("/api/items", query_string={"q": "sign problems", "mode": "all"}).json["items"] == []

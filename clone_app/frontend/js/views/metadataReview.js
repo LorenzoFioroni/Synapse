@@ -231,7 +231,7 @@ function articleSection(a, onChange) {
 function changeBlock(c, onToggle) {
   const cur = display(c.key, c.current), nxt = display(c.key, c.fetched);
   const d = diffWords(cur, nxt);
-  const note = c.key === 'citation_key' && !c.isNew ? '<span class="subtle" style="font-weight:400;font-size:var(--fs-xs)">replacing a key breaks existing \\cite commands</span>' : '';
+  const note = c.key === 'citation_key' && !c.isNew ? '<span class="subtle" style="font-weight:400;font-size:var(--fs-xs)">notes are updated; LaTeX \\cite commands are not</span>' : '';
   const block = h(`<div class="diff-block ${c.checked ? '' : 'off'}">
       <div class="diff-head"><label class="checkbox"><input type="checkbox" ${c.checked ? 'checked' : ''}> <b>${escapeHtml(label(c.key))}</b>
         ${c.isNew ? '<span class="badge accent">new</span>' : ''} ${note}</label>

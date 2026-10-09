@@ -99,6 +99,7 @@ export const api = {
   trashNote: (path) => request('POST', '/api/notes/trash', { path }),
   noteTrash: () => request('GET', '/api/notes/trash'),
   citeIndex: () => request('GET', '/api/notes/cite_index'),
+  renamePlan: (old, nu) => request('GET', `/api/notes/rename_plan?${qs({ old, new: nu })}`),
   itemNotes: (id) => request('GET', `/api/items/${id}/notes`),
   restoreNote: (trashId, path) => request('POST', '/api/notes/restore', { trash_id: trashId, path }),
   noteLinks: (path) => request('GET', `/api/notes/links?${qs({ path })}`),

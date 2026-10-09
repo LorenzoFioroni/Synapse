@@ -12,7 +12,8 @@ from datetime import datetime
 
 from . import frontmatter
 from .index import NotesIndex
-from .vault import ATTACHMENTS, NoteExists, Vault, slugify
+from .rekey import Rekeyer
+from .vault import ATTACHMENTS, Conflict, NoteExists, Vault, slugify
 
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 IMAGE_TYPES = {  # extension -> magic-byte check. No SVG: it can carry scripts.
@@ -45,11 +46,68 @@ def sniff_image(data: bytes) -> str | None:
     return None
 
 
+class NoteTextMatcher:
+    """Lets the library search find items through what the notes say about them.
+
+    ``match(term)`` returns {item_id: snippet} like the full-text index does, so search.py can
+    treat it as one more text source.
+    """
+
+    def __init__(self, texts: dict[str, list[tuple[str, str]]], key_to_id: dict[str, str]):
+        from ..search import normalize
+        self._normalize = normalize
+        self._entries = []   # (item_id, title, original text, normalised text)
+        for key, items in texts.items():
+            pid = key_to_id.get(key)
+            if pid:
+                for title, text in items:
+                    self._entries.append((pid, title, text, normalize(text)))
+
+    def match(self, term: str) -> dict[str, str]:
+        import html
+        import re
+        t = self._normalize(term)
+        out: dict[str, str] = {}
+        if not t:
+            return out
+        for pid, title, text, norm in self._entries:
+            if pid in out or t not in norm:
+                continue
+            flat = " ".join(text.split())
+            m = re.search(re.escape(term.strip()), flat, re.I)
+            if m:   # the term as typed: show it highlighted in context
+                a = max(0, m.start() - 60)
+                piece = (html.escape(flat[a:m.start()]) + "<mark>" + html.escape(m.group(0)) + "</mark>"
+                         + html.escape(flat[m.end():m.end() + 80]))
+            else:   # matched only after removing accents/case: show the start of the text
+                a = 0
+                piece = html.escape(flat[:140])
+            out[pid] = f'<span class="hit-src">Note · {html.escape(title)}</span> {"…" if a else ""}{piece}…'
+        return out
+
+
 class NotesService:
-    def __init__(self, vault: Vault, index: NotesIndex, papers):
+    def __init__(self, vault: Vault, index: NotesIndex, papers, backups_dir=None):
         self.vault = vault
         self.index = index
         self.papers = papers
+        self.rekeyer = Rekeyer(vault, index, backups_dir or (vault.root.parent / "backups"))
+
+    # ------------------------------------------------------------------ citation keys
+    def text_matcher(self) -> NoteTextMatcher:
+        """For the library search (cached until the notes or the keys change)."""
+        keys = {p["citation_key"]: p["id"] for p in self.papers.list() if p.get("citation_key")}
+        sig = (self.index.revision, tuple(sorted(keys.items())))
+        if getattr(self, "_matcher_sig", None) != sig:
+            self._matcher = NoteTextMatcher(self.index.texts_by_key(), keys)
+            self._matcher_sig = sig
+        return self._matcher
+
+    def rename_plan(self, old: str, new: str) -> dict:
+        return self.rekeyer.plan(old, new)
+
+    def rename_key(self, old: str, new: str) -> dict:
+        return self.rekeyer.apply(old, new)
 
     # ------------------------------------------------------------------ helpers
     def _library_keys(self) -> dict[str, dict]:
@@ -208,6 +266,31 @@ class NotesService:
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         rel = self.vault.write_bytes(f"{ATTACHMENTS}/{stamp}-{stem}.{ext}", data)
         return {"path": rel, "markdown": f"![]({rel})"}
+
+    def append_to_paper_note(self, item_id: str, markdown: str) -> dict:
+        """Append a block (a quote, a figure) to the item's paper note, creating the note if needed."""
+        markdown = (markdown or "").strip("\n")
+        if not markdown.strip():
+            raise ValueError("Nothing to add.")
+        item = self.papers.get(item_id)
+        key = item.get("citation_key")
+        if not key:
+            raise ValueError("This item has no citation key yet.")
+        existing = self.index.paper_notes(key)
+        path = existing[0]["path"] if existing else self.create(item_id=item_id)["path"]
+        for _ in range(3):   # someone may be saving the same note right now: re-read and retry
+            text, h = self.vault.read(path)
+            nl = "\r\n" if "\r\n" in text else "\n"
+            new = text.rstrip("\r\n") + nl + nl + markdown.replace("\n", nl) + nl
+            try:
+                h2 = self.vault.write(path, new, expected_hash=h)
+                break
+            except Conflict:
+                continue
+        else:
+            raise Conflict(path, self.vault.current_hash(path))
+        self.index.update(path)
+        return {"path": path, "hash": h2, "created": not existing}
 
     def rescan(self) -> dict:
         return self.index.sync()

@@ -116,6 +116,13 @@ def complete_cite():
     return jsonify(results=svc().note_service.complete_citations(request.args.get("q") or ""))
 
 
+@bp.get("/notes/rename_plan")
+@guarded
+def rename_plan():
+    """What changing a citation key would change in the notes (nothing is written)."""
+    return jsonify(svc().note_service.rename_plan(request.args.get("old") or "", request.args.get("new") or ""))
+
+
 @bp.get("/notes/cite_index")
 @guarded
 def cite_index():
@@ -126,6 +133,13 @@ def cite_index():
 @guarded
 def item_notes(item_id):
     return jsonify(svc().note_service.item_notes(item_id))
+
+
+@bp.post("/notes/append")
+@guarded
+def append_to_paper_note():
+    d = body()
+    return jsonify(svc().note_service.append_to_paper_note(d.get("item_id") or "", d.get("markdown") or ""))
 
 
 @bp.post("/notes/attachments")

@@ -133,11 +133,12 @@ export function livePreview(cm, deps) {
       const to = ls[0].to;
       taken.push([from, to]);
       const missing = ls.some((l) => !deps.citeInfo(l.target));
+      const trashed = ls.some((l) => deps.citeInfo(l.target)?.trashed);
       const keys = ls.map((l) => l.target).join(';');
       const pages = ls.map((l) => l.page ?? '').join(';');
       if (isActive(from, to)) { add(from, to, Decoration.mark({ class: `cm-lp-citesrc${missing ? ' missing' : ''}`, attributes: { 'data-keys': keys, 'data-pages': pages } })); continue; }
       const label = `(${ls.map((l) => citeLabel({ key: l.target, prefix: l.prefix, suppress: l.suppress_author, locator: l.locator }, deps.citeInfo(l.target))).join('; ')})`;
-      add(from, to, Decoration.replace({ widget: chip(`c:${from}:${label}:${missing}`, `cite${missing ? ' missing' : ''}`, label, { keys, pages }) }));
+      add(from, to, Decoration.replace({ widget: chip(`c:${from}:${label}:${missing}:${trashed}`, `cite${missing ? ' missing' : ''}${trashed ? ' trashed' : ''}`, label, { keys, pages }) }));
     }
     for (const t of s.tags) add(t.from, t.to, Decoration.mark({ class: 'cm-lp-tag' }));
 

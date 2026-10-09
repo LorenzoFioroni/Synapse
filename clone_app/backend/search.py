@@ -7,6 +7,9 @@ Three scopes, selectable per query:
 * ``fulltext`` – everything above plus the text of attached PDFs (from the
                  separate full-text index)
 
+In ``all`` and ``fulltext``, an item also matches through your notes: its paper note and
+the lines of other notes that cite it (when a ``notes`` matcher is given).
+
 Queries are split into terms (``"quoted phrases"`` stay together); every term
 must match somewhere (AND). Matching ignores case and accents, so ``banuls``
 finds ``Bañuls``. A leading ``-`` excludes a term.
@@ -137,7 +140,7 @@ def _filter_matches(p: dict, field: str, value: str, ctx: dict) -> bool:
 
 
 def search(papers: list[dict], query: str, mode: str = "basic", fulltext=None,
-           ctx: dict | None = None) -> tuple[list[dict], dict]:
+           ctx: dict | None = None, notes=None) -> tuple[list[dict], dict]:
     """Filter ``papers``. Returns (matches, hits) where hits[paper_id] = {"fulltext": snippet}.
 
     ``ctx`` gives filters what they need: ``folder_paths`` {folder_id: [names]}
@@ -162,6 +165,10 @@ def search(papers: list[dict], query: str, mode: str = "basic", fulltext=None,
     if mode == "fulltext" and fulltext is not None:
         for term, neg in terms:
             ft_matches[term] = fulltext.match(term)
+    if mode in ("all", "fulltext") and notes is not None:
+        for term, neg in terms:
+            # PDF text first; a note match only adds items (and a snippet) the PDFs did not give
+            ft_matches[term] = {**notes.match(term), **ft_matches.get(term, {})}
 
     hay = {p["id"]: _haystack(p, mode) for p in papers}
     results, hits = [], {}
@@ -185,7 +192,7 @@ def search(papers: list[dict], query: str, mode: str = "basic", fulltext=None,
                 snippet = ft_matches[term][p["id"]]
         if ok:
             results.append(p)
-            if snippet is None and mode == "fulltext":
+            if snippet is None and mode in ("all", "fulltext"):
                 # Show context even when the metadata also matched.
                 for term, neg in terms:
                     if not neg and p["id"] in ft_matches.get(term, {}):
