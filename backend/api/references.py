@@ -48,3 +48,10 @@ def references_status():
 def citation_graph():
     """Every library item and every work they cite, with "cites" edges (for analysis / AI)."""
     return jsonify(svc().citations.graph())
+
+
+@bp.get("/graph")
+def knowledge_graph():
+    """Papers, the works they cite and notes, with their links (the Graph view)."""
+    from ..graph import build_graph
+    return jsonify(build_graph(svc()))

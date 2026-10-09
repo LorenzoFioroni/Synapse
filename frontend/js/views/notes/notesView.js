@@ -187,13 +187,15 @@ function gotoLine(line) {
   } else editor?.gotoLine(line);
 }
 
-export async function closeNotes() {
+/** Leave Notes for the library (``push: false`` when going to another workspace, which adds its own history entry). */
+export async function closeNotes({ push = true } = {}) {
   if (!notesOpen()) return;
   await session?.save();
-  delete document.body.dataset.workspace;
+  if (document.body.dataset.workspace === 'notes') delete document.body.dataset.workspace;
   root.hidden = true;
   store('zc.notes.open', false);
   emit('workspace');
+  if (!push) return;
   emit('focus-list');
   navPush({ ws: 'library', view: state.view, sel: [...state.selection] });
 }
@@ -1017,6 +1019,7 @@ function onContextMenu(e) {
       { label: 'Rename…', icon: 'edit', run: () => renameNote(p), shortcut: 'F2' },
       { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
       { label: 'Copy link', icon: 'link', run: () => copyLinks([p]) },
+      { label: 'Show in Graph', icon: 'find', run: () => emit('show-graph', `note:${p}`) },
       'sep',
       trash,
     ], at);

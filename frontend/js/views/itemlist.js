@@ -446,6 +446,7 @@ export function itemMenu(at) {
     { label: one ? 'Retrieve Metadata…' : `Retrieve Metadata for ${items.length} Items…`, icon: 'sparkle', run: () => openMetadataReview(ids) },
     { label: one ? 'Find Available PDF' : `Find PDFs for ${items.length} Items`, icon: 'find', run: () => (one ? A.findPdf(one.id) : A.findPdfs(ids)) },
     { label: one ? 'Fetch References' : `Fetch References for ${items.length} Items`, icon: 'link', run: () => fetchReferencesBulk(ids) },
+    one && { label: 'Show in Graph', icon: 'find', run: () => emit('show-graph', `item:${one.id}`) },
     one && { label: 'Add PDF Attachment…', icon: 'paperclip', run: () => pickFiles((files) => A.uploadAttachments(one.id, files)) },
     'sep',
     { label: one ? 'Add to Folder…' : `Add ${items.length} Items to Folder…`, icon: 'folderPlus', run: () => addSelectionToFolder(ids) },

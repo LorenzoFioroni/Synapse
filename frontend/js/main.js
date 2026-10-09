@@ -17,6 +17,7 @@ import { initItemPane, toggleItemPane } from './views/itempane.js';
 import { applyAppearance, closeSettings, openSettings, settingsOpen } from './views/settingsView.js';
 import { initSidebar } from './views/sidebar.js';
 import { closeNotes, initNotes, notesOpen, notesShortcut, openNotes } from './views/notes/notesView.js';
+import { closeGraph, graphOpen, initGraph, openGraph } from './views/graph/graphView.js';
 
 async function boot() {
   try {
@@ -35,6 +36,7 @@ async function boot() {
   initItemList();
   initItemPane();
   initNotes();
+  initGraph();
   initResizer();
   initStatusBar();
   initShortcuts();
@@ -46,7 +48,8 @@ async function boot() {
   on('clear-search', () => clearSearch());
   on('open-notes', () => openNotes());
   on('close-notes', () => closeNotes());
-  on('open-note', ({ path, line }) => openNotes(path, line));
+  on('open-note', ({ path, line }) => { closeGraph({ push: false }); openNotes(path, line); });
+  on('show-graph', (focus) => showGraph(focus));
   on('show-item', (id) => showItem(id));
   on('workspace', paintWorkspace);
   // Back/Forward move between notes and the library view you came from.
@@ -74,6 +77,7 @@ function openItemFromHash() {
 /** Show one item in the library (leaving Notes or Settings), selected and scrolled to. */
 async function showItem(id) {
   if (settingsOpen()) closeSettings();
+  if (graphOpen()) closeGraph();
   if (notesOpen()) await closeNotes();
   if (!state.items.some((i) => i.id === id)) {
     if (state.query) clearSearch();
@@ -90,6 +94,8 @@ async function showItem(id) {
 /** Back/Forward: go to a note or to the library view and selection stored in the history entry. */
 async function navigate(entry) {
   if (settingsOpen()) closeSettings();
+  if (entry.ws === 'graph') { if (notesOpen()) await closeNotes({ push: false }); await openGraph(entry.focus || null, { push: false }); return; }
+  if (graphOpen()) closeGraph({ push: false });
   if (entry.ws === 'notes') { await openNotes(entry.path || null); return; }
   if (notesOpen()) await closeNotes();
   if (entry.view && entry.view !== state.view) { A.setView(entry.view); await A.loadItems({ keepSelection: false }); }
@@ -98,17 +104,26 @@ async function navigate(entry) {
   focusList();
 }
 
-/** Library ⇄ Notes (the toolbar switch and ⌘⇧L). */
-function switchWorkspace(to = notesOpen() ? 'library' : 'notes') {
+/** Library ⇄ Notes ⇄ Graph (the toolbar switch, ⌘⇧L and ⌘⇧G). */
+async function switchWorkspace(to = notesOpen() ? 'library' : 'notes') {
   if (settingsOpen()) closeSettings();
+  if (to === 'graph') return showGraph(null);
+  if (graphOpen()) closeGraph({ push: to === 'library' });
   if (to === 'notes') openNotes(); else closeNotes();
+}
+
+/** The Graph workspace, optionally around one node ("item:<id>", "note:<path>"). */
+async function showGraph(focus) {
+  if (settingsOpen()) closeSettings();
+  if (notesOpen()) await closeNotes({ push: false });
+  await openGraph(focus);
 }
 
 function paintWorkspace() {
   const sw = document.querySelector('.ws-switch');
   if (!sw) return;
-  sw.hidden = state.settings.notes_enabled === false;
-  const ws = notesOpen() ? 'notes' : 'library';
+  sw.querySelector('[data-ws="notes"]').hidden = state.settings.notes_enabled === false;
+  const ws = graphOpen() ? 'graph' : notesOpen() ? 'notes' : 'library';
   sw.querySelectorAll('[data-ws]').forEach((b) => b.classList.toggle('active', b.dataset.ws === ws));
 }
 
@@ -122,6 +137,7 @@ function initToolbar() {
       <div class="segmented ws-switch" role="group" aria-label="Workspace">
         <button data-ws="library" title="Library (${modLabel}⇧L switches)">Library</button>
         <button data-ws="notes" title="Notes (${modLabel}⇧L switches)">Notes</button>
+        <button data-ws="graph" title="Graph of papers, citations and notes (${modLabel}⇧G)">Graph</button>
       </div></div>
     <button class="icon-btn" data-a="new" title="New Item (${modLabel}N)">${icon('plus')}</button>
     <button class="icon-btn" data-a="identifier" title="Add by DOI, arXiv ID or ISBN (${modLabel}⇧N)">${icon('wand')}</button>
@@ -153,6 +169,7 @@ function initToolbar() {
     if (!b) return;
     const a = b.dataset.a;
     if (notesOpen() && ['new', 'identifier', 'import', 'export', 'columns', 'pane'].includes(a)) closeNotes();   // library actions
+    if (graphOpen() && ['new', 'identifier', 'import', 'export'].includes(a)) closeGraph();
     if (a === 'new') A.newItem();
     if (a === 'identifier') openIdentifier();
     if (a === 'import') openImport();
@@ -299,6 +316,12 @@ function initShortcuts() {
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable;
     const k = e.key.toLowerCase();
     if (modKey(e) && e.shiftKey && k === 'l' && state.settings.notes_enabled !== false) { e.preventDefault(); switchWorkspace(); return; }
+    if (modKey(e) && e.shiftKey && k === 'g') { e.preventDefault(); if (graphOpen()) switchWorkspace('library'); else showGraph(null); return; }
+    if (graphOpen() && !settingsOpen()) {
+      // The graph has its own keys (graphView.js); only Settings stays global.
+      if (modKey(e) && k === ',') { e.preventDefault(); openSettings(); }
+      return;
+    }
     if (notesOpen() && !settingsOpen()) {
       // The note editor owns its keys (search, undo, …); only Settings stays global.
       if (modKey(e) && k === ',') { e.preventDefault(); openSettings(); return; }

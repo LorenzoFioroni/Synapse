@@ -69,6 +69,14 @@ never mix.
   can be added with one click — and *Cited by in your library*. Fetch them for any selection
   from the item menu or the multi-selection pane, with progress and a summary. The whole graph (library
   items + every work they cite, with "cites" edges) is at `GET /api/graph/citations`.
+- **Graph** (the *Library | Notes | Graph* switch, Cmd/Ctrl+Shift+G): your papers, the works they
+  cite and your notes as one network — paper → paper citations from the reference lists, `[@key]`
+  citations and `[[links]]` from notes, and paper notes joined to their paper. Choose what to show
+  (cited works only when at least *N* of your papers cite them — the ones you may be missing),
+  limit it to a folder, find nodes by title, author, key or path. Click a node to see everything
+  it connects to; double-click opens the paper in the library or the note. *Focus* (or **Show in
+  Graph** in the item and note menus) shows just one node's neighbourhood, 1–3 steps deep;
+  Back/Forward work as everywhere else. The data is at `GET /api/graph`.
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
   arXiv, Scholar) and checks the file is really the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.
@@ -118,6 +126,7 @@ never mix.
 │   ├── settings.py        preferences store with validation
 │   ├── metadata.py        Crossref / OpenAlex / arXiv / Open Library lookups
 │   ├── references.py      reference lists (citation graph) in citations.db + background fetching
+│   ├── graph.py           the Graph view's network: papers, cited works, notes and their links
 │   ├── pdf_finder.py      open-access PDF search + verification
 │   ├── pdftext.py         PDF text extraction
 │   ├── formats/           bibtex, ris, endnote (+XML), csljson
@@ -160,6 +169,7 @@ python tests/e2e/render_checklist.py     # live preview and read mode (tests/e2e
 python tests/e2e/links_checklist.py      # autocomplete, citation cards, side panels, item pane
 python tests/e2e/library_checklist.py    # key rename, notes in search, quote/snapshot from the PDF viewer
 python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders, Back/Forward, item-list markers
+python tests/e2e/graph_checklist.py      # Graph: options, search, focus, details, opening items/notes, Back/Forward
 ```
 
 The notes editor (CodeMirror 6) is vendored as a pre-built bundle in `frontend/vendor/cm6/`;
