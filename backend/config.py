@@ -6,13 +6,9 @@ folder can be backed up or moved as a whole.
 """
 from __future__ import annotations
 
-import logging
 import os
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
-
-log = logging.getLogger(__name__)
 
 APP_ROOT = Path(__file__).resolve().parent.parent
 
@@ -66,16 +62,3 @@ class Config:
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.pdf_dir.mkdir(parents=True, exist_ok=True)
-        self._migrate_legacy_layout()
-
-    def _migrate_legacy_layout(self) -> None:
-        """Move data from the pre-restructure layout (papers.db, pdf_storage/)."""
-        legacy_db = APP_ROOT / "papers.db"
-        if legacy_db.exists() and legacy_db.stat().st_size > 0 and not self.db_path.exists():
-            log.info("Migrating %s -> %s", legacy_db, self.db_path)
-            shutil.move(str(legacy_db), str(self.db_path))
-        legacy_pdfs = APP_ROOT / "pdf_storage"
-        if legacy_pdfs.is_dir():
-            for f in legacy_pdfs.iterdir():
-                if f.is_file() and f.name != ".DS_Store" and not (self.pdf_dir / f.name).exists():
-                    shutil.move(str(f), str(self.pdf_dir / f.name))

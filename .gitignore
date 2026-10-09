@@ -1,18 +1,20 @@
-workspace/
+# Your library: never committed
+data/
+
+# Local environments and caches
+.venv/
+virtual_env/
 __pycache__/
 *.pyc
 .pytest_cache/
-virtual_env/
 .DS_Store
+server.log
+
+# Build inputs for the vendored bundles (re-installed by tools/*/build.sh)
+tools/*/node_modules/
+
+# Local sync helper for Claude sessions
 .claude_sync/
 
-# clone_app user data (never commit the library itself)
-clone_app/papers.db
-clone_app/*.db
-clone_app/*.db-journal
-clone_app/data/
-clone_app/pdf_storage/
-clone_app/_legacy_scripts/
-clone_app/server.log
-clone_app/tools/cm6/node_modules/
-clone_app/tools/md/node_modules/
+# Personal scratch files
+Claude outputs/

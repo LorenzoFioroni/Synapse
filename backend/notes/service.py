@@ -184,19 +184,6 @@ class NotesService:
     def search(self, q: str) -> list[dict]:
         return self.index.search(q)
 
-    def complete_citations(self, q: str, limit: int = 20) -> list[dict]:
-        """Library items for the [@ autocomplete, matched on key, title, authors."""
-        words = [w.lower() for w in re.findall(r"\w+", q or "")]
-        res = []
-        for key, it in self._library_keys().items():
-            if it["trashed"]:
-                continue
-            hay = f"{key} {it['title']} {it['authors']} {it['year'] or ''}".lower()
-            if all(w in hay for w in words):
-                res.append({"key": key, **it})
-        res.sort(key=lambda r: (not r["key"].lower().startswith(words[0]) if words else False, r["key"]))
-        return res[:limit]
-
     # ------------------------------------------------------------------ writes
     def create(self, *, path: str | None = None, folder: str = "", title: str = "", item_id: str | None = None,
                text: str | None = None) -> dict:

@@ -78,11 +78,11 @@ def test_paper_note_links_and_backlinks(client, svc):
     links = client.get("/api/notes/links", query_string={"path": review["path"]}).json
     assert {c["key"]: c for c in links["cited"]}[key]["item"]["trashed"] is True
 
-    res = client.get("/api/notes/complete/cite", query_string={"q": "quantum"}).json["results"]
-    assert res == []  # trashed items are not offered for new citations
+    idx = {r["key"]: r for r in client.get("/api/notes/cite_index").json["items"]}
+    assert idx[key]["trashed"] is True   # autocomplete greys out trashed items
     svc.papers.restore([item["id"]])
-    res = client.get("/api/notes/complete/cite", query_string={"q": "smith quant"}).json["results"]
-    assert [r["key"] for r in res] == [key]
+    idx = {r["key"]: r for r in client.get("/api/notes/cite_index").json["items"]}
+    assert idx[key]["trashed"] is False
 
 
 def test_move_reports_broken_links(client):

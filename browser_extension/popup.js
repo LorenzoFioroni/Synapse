@@ -54,7 +54,7 @@ function showOffline() {
   view.innerHTML = `<div class="result">
       <div class="big err">!</div><h2>Library not running</h2>
       <p>Couldn't reach <code>${esc(server)}</code>.</p>
-      <p>Start it with <code>python server.py</code> in the <code>clone_app</code> folder, then retry.</p>
+      <p>Start it with <code>python server.py</code> in the app folder, then retry.</p>
       <div class="actions"><button class="btn" id="opts">Change address…</button><button class="btn primary" id="retry">Retry</button></div></div>`;
   document.getElementById('retry').onclick = () => { view.innerHTML = '<div class="center"><span class="spinner"></span> Connecting…</div>'; init(); };
   document.getElementById('opts').onclick = () => chrome.runtime.openOptionsPage();

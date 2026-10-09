@@ -106,24 +106,21 @@ def test_schema(client):
     assert any(f["key"] == "doi" for f in s["fields"]) and s["typeFields"]["journalArticle"]
 
 
-def test_legacy_layout_migration(tmp_path, monkeypatch):
+def test_old_schema_is_upgraded(tmp_path):
     import sqlite3
     from backend import config as cfg
-    root = tmp_path / "app"
-    (root / "pdf_storage").mkdir(parents=True)
-    (root / "pdf_storage" / "x.pdf").write_bytes(b"%PDF")
-    con = sqlite3.connect(root / "papers.db")
+    data = tmp_path / "data"
+    data.mkdir()
+    con = sqlite3.connect(data / "library.db")
     con.execute("CREATE TABLE papers (id TEXT PRIMARY KEY, title TEXT, authors TEXT, year INTEGER, journal TEXT, "
                 "abstract TEXT, pdfUrl TEXT)")
     con.execute("INSERT INTO papers (id, title) VALUES ('p1', 'Old')")
     con.commit()
     con.close()
-    monkeypatch.setattr(cfg, "APP_ROOT", root)
     from backend import create_app
-    app = create_app(cfg.Config(root / "data"), start_indexer=False)
+    app = create_app(cfg.Config(data), start_indexer=False)
     items = app.test_client().get("/api/items").get_json()["items"]
     assert items[0]["title"] == "Old" and items[0]["date_added"] and items[0]["item_type"] == "journalArticle"
-    assert (root / "data" / "pdfs" / "x.pdf").exists() and not (root / "papers.db").exists()
 
 
 def test_empty_item_gets_citekey_once_it_has_metadata(client):

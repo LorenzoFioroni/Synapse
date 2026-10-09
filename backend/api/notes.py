@@ -110,12 +110,6 @@ def note_links():
     return jsonify(svc().note_service.links(_path_arg()))
 
 
-@bp.get("/notes/complete/cite")
-@guarded
-def complete_cite():
-    return jsonify(results=svc().note_service.complete_citations(request.args.get("q") or ""))
-
-
 @bp.get("/notes/rename_plan")
 @guarded
 def rename_plan():

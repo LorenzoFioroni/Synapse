@@ -6,7 +6,7 @@ opened in the browser, or any web page.
 
 ## Install (once)
 
-1. Start the library: `python server.py` (in `clone_app/`).
+1. Start the library: `python server.py` (in the repository folder).
 2. Open `chrome://extensions`, switch on **Developer mode** (top right).
 3. Click **Load unpacked** and choose this `browser_extension` folder.
 4. Optional: pin the button (puzzle icon → pin), and check the shortcut at

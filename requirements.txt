@@ -1,11 +1,8 @@
 flask>=3.0
 requests>=2.31
-rapidfuzz>=3.0
 pypdf>=4.0
-# optional:
-# pymupdf>=1.24      faster and better PDF text extraction
-# playwright>=1.44    "real browser" mode for publisher PDFs (institutional access)
-bertopic
-sentence-transformers
-scikit-learn
-pandas
+# optional, recommended:
+rapidfuzz>=3.0      # better fuzzy title check when verifying downloaded PDFs
+# pymupdf>=1.24     # faster, more accurate PDF text extraction for the full-text index
+# for development:
+# pytest>=8

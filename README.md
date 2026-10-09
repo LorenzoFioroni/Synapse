@@ -1,156 +1,149 @@
-# Zotero Library Cleaner
+# Zotero Clone
 
-A local tool for cleaning up and normalising a large Zotero library. You review every change before anything is written to Zotero.
+A local, web-based reference manager: a Flask backend with SQLite storage and a
+dependency-free JavaScript frontend. Everything runs on your machine.
 
-* Suggests metadata fixes from local rules and from Crossref, DOI registries (DataCite, …) and arXiv.
-* Stores special characters as **LaTeX** (`Schr{\"o}dinger`, `$\alpha$`, `CO$_{2}$`, `\&`) without breaking LaTeX that is already in your fields.
-* Finds duplicates, and missing, broken or wrong PDFs. Proposes normalised PDF file names.
-* Nothing is written until you press **Apply**. A backup is made first, and every commit can be **rolled back**.
-
-## Requirements
-
-| | |
-|---|---|
-| Reading and analysing | Zotero 7 or later, with *Settings → Advanced → "Allow other applications on this computer to communicate with Zotero"* enabled |
-| Applying changes | **Zotero 10 or later**. The first time, Zotero shows a dialog: choose **Always Allow** (plain *Allow* is valid for a single write only) |
-| Python | 3.10+ |
-
-## Install and run
+## Run it
 
 ```bash
-cd zotero_organizer
-source virtual_env/bin/activate        # or create one: python3 -m venv virtual_env
-pip install -r requirements.txt        # optional: pip install pymupdf  (faster PDF text extraction)
-python app.py                          # opens http://127.0.0.1:5000
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python server.py                  # http://127.0.0.1:8000 opens in your browser
+python server.py --port 5050 --no-browser
+python server.py --data-dir ~/MyLibrary
 ```
 
-Keep Zotero open while you use the tool.
+Your library lives in `data/` (or `--data-dir` / `ZCLONE_DATA_DIR`):
 
-## Workflow
+| File | What |
+| --- | --- |
+| `library.db` | items, attachments, annotations |
+| `fulltext.db` | extracted PDF text (FTS5); safe to delete, it is rebuilt |
+| `pdfs/` | attached files |
+| `notes/` | your Markdown notes (the files are the source of truth) |
+| `notes_index.db` | links and search index of the notes; safe to delete, it is rebuilt |
+| `backups/` | automatic note backups taken before a citation-key rename |
+| `settings.json` | preferences from the Settings page |
 
-1. **Dashboard → Sync & analyse.** The first run reads the whole library. Later runs read only what changed. Local rules run, and duplicates are detected.
-2. **Check PDFs.** Flags missing PDFs, files missing on disk, HTML pages saved as `.pdf`, PDFs that belong to another paper (DOI or title on the first pages), scans without a text layer, identical files and standalone PDFs. Proposes file names from your template.
-3. **Online lookups** (optional). Compares items with Crossref, doi.org and arXiv, and searches for DOIs of items that have none. Results are cached, so you can re-run for free.
-4. **Review changes.** Each proposal shows the current and the new value as rendered text, with a word diff (tick *LaTeX source* to see the raw text). For each proposal you can:
-   * accept, reject or edit it (edits show a live preview of how the LaTeX renders);
-   * filter by rule, source, field or confidence;
-   * bulk-accept all proposals that match a filter (e.g. all *high-confidence DOI clean-ups*).
+Back up the `data/` folder to keep everything. It is git-ignored: code and data
+never mix.
 
-   Keyboard: `j`/`k` move, `a` accept, `r` reject, `e` edit, `u` undo, `A` accept the whole item.
-5. **Issues, Duplicates, PDFs.** These need your judgement.
-   * "Open in Zotero" links jump straight to the item.
-   * You can **tag** items in bulk, e.g. `_needs-pdf`. After applying, select them in Zotero and add the PDFs, or use *Find Available PDF*.
-   * Duplicates are tagged here and merged in Zotero's *Duplicate Items* pane, which keeps notes, tags, collections and attachments.
-6. **Apply to Zotero.** Authorise writes once, then *Back up & apply*.
-7. **History.** See exactly what changed (before/after) and **roll back** a commit.
+## Features
 
-## Safety model
+- **Search** in three scopes, picked from the search box (the default is a setting):
+  *Title, Abstract & Authors* · *All Fields* · *All Fields & Full Text*.
+  Terms are ANDed, `"exact phrase"` and `-exclude` work, and accents are ignored
+  (`banuls` finds *Bañuls*). Full-text hits show a highlighted snippet.
+- **Full-text index** of attached PDFs, kept in its own database so the library
+  stays small. New attachments are indexed in the background; progress is shown
+  in the sidebar and Settings, which can also rebuild it.
+- **Import / export**: BibTeX, RIS, EndNote (tagged `.enw` and XML) and CSL JSON.
+  Imports are previewed first with duplicates flagged. Export the whole library,
+  a selection, or copy BibTeX / citation keys from the context menu.
+- **Citation keys** from a configurable pattern (Settings → Citation Keys), with a
+  live preview and automatic `a, b, c…` suffixes:
 
-* **Runs converge:** each field has exactly one target value, and every rule and source agrees on it. Local rules are always computed from the field's *base*, which is its value before the tool's own automatic changes (stored with every change), never from their own earlier output. So after applying the proposals, a new run proposes nothing, while a genuine improvement of the rules is still picked up. The chain stops at anything that is not a pure re-formatting: a value you typed, data from Crossref or arXiv, or a change made in Zotero. Values you typed yourself are never argued with. Item types follow the same rule: an arXiv paper is a preprint unless a published version is known, whichever check looks at it. Only your explicit rejections are remembered as blocks. Changes that belong together (a type change and its fields, a switch to the published version, a search match) are accepted, rejected and applied as one unit.
-* **Review first:** every change is a proposal stored in `workspace/workspace.sqlite3`. Your decisions survive restarts and rescans. Rejected proposals are not suggested again.
-* **Backup before every commit and every roll-back** (in `workspace/backups/<timestamp>/`):
-  * `library.json.gz`: the complete library, exported through the API;
-  * `items_before.json`: the items about to change, as they were;
-  * `zotero.sqlite`: a copy of the Zotero database, verified with SQLite's integrity check.
-* **Three-way check:** each item is re-read right before writing. A change is applied only if the field still holds the value you reviewed. Otherwise it is reported as a *conflict* and left alone. Writes also carry the item version, so Zotero rejects them if the item changed in the meantime.
-* **No blind overwrites:**
-  * if a DOI resolves to a *different* paper, you get an issue, not an overwrite;
-  * dates never become less precise;
-  * richer author names (full first names, accents) are kept;
-  * fields that don't exist for an item type are never written;
-  * item-type changes move fields to their equivalents, and anything without a place goes into *Extra*.
-* **Roll-back** reverts through the API, so it also works with Zotero sync. Fields changed again after the commit are left alone and reported.
-* **Local only:** the tool listens on 127.0.0.1. It checks the `Host` header (against DNS rebinding) and requires a per-session token on every API call. The Zotero write key is stored in `workspace/secrets.json`, which only your user can read.
+  | Token | Example |
+  | --- | --- |
+  | `{auth}` `{Auth}` `{AUTH}` | cui · Cui · CUI |
+  | `{authEtAl}` `{AuthEtAl}` | cuiEtAl · CuiEtAl |
+  | `{authors2}` | cuiCirac |
+  | `{year}` `{yy}` | 2015 · 15 |
+  | `{title}` `{Title}` | variational · Variational |
+  | `{shorttitle}` `{ShortTitle}` | VariationalMatrixProduct |
+  | `{journal}` | prl |
+  | `{doi}` | physrevlett114220601 |
 
-To restore the database copy by hand: quit Zotero, keep your current `zotero.sqlite`, put the backup copy in its place and restart. If you use Zotero sync, prefer *Roll back*: restoring an old database with sync enabled causes conflicts.
+- **Add items** by DOI, arXiv ID or ISBN (several at once), by dropping PDFs (the
+  DOI/arXiv id on the first pages is used to fetch metadata), or manually.
+- **Retrieve Metadata** works on one item or a whole selection: one review dialog
+  with a section per article, word-level diffs with a checkbox per field, and the
+  article's unchanged metadata below. Nothing is saved until you apply; replacing an
+  existing citation key is opt-in. Lookups run one by one and can be stopped.
+- **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
+  arXiv, Scholar) and checks the file is really the right paper. Batch runs skip items
+  that already have a PDF, show progress, and can select the ones that weren't found.
+- **Folders** (nested; an item can be in several folders but is stored once — a folder
+  only holds a link to it), **tags** (many per item, optional colours) and **smart
+  folders** (saved searches). Drag items onto a folder to add them (hold Shift to move
+  them out of the folder you're in), onto a tag to tag them, onto Unfiled to take them
+  out of every folder. Inside a folder, Delete removes items from that folder only;
+  Cmd/Ctrl+Delete moves them to the Trash.
+- **Search filters** combine with text and can be negated with `-`:
+  `tag:review`, `tag:"open systems"`, `folder:Physics`, `folder:"Physics/Transport"`,
+  `folder:none`, `type:book`, `year:2020`, `year:2018-2022`, `year:>2015`, `has:pdf`,
+  `author:cirac`, `title:…`, `journal:…`, `key:…`. Save any search as a smart folder.
+- **Cmd/Ctrl+C** copies the BibTeX of the selected items (Cmd+Shift+C: citation keys,
+  Cmd+T: edit tags).
+- **Browser button** (`browser_extension/`, see its README): saves the article you are
+  reading — DOI/arXiv pages, publisher pages, PDFs — with folder, tags and the PDF.
+- **Trash** with Undo, **Duplicate Items** view with "keep this one, trash the others".
+- Sortable, resizable, re-orderable columns; light/dark theme; compact density;
+  keyboard navigation (see Settings → Library & Shortcuts).
+- Built-in PDF viewer with highlights, underlines, text boxes and drawings
+  (pdf.js is bundled, so it works offline).
 
-## LaTeX handling
+## Project layout
 
-All LaTeX fields are treated as LaTeX source (configurable in Settings; the abstract is off by default).
+```
+./
+├── server.py              CLI entry point
+├── backend/
+│   ├── app.py             Flask app factory (serves frontend/ and the API)
+│   ├── config.py          paths of the data folder
+│   ├── db.py              SQLite connection + schema migrations
+│   ├── fields.py          item fields and types (single source of truth)
+│   ├── repository.py      all SQL for items/attachments, duplicate detection
+│   ├── organize.py        folders, tags, smart folders
+│   ├── search.py          search scopes and query parsing
+│   ├── fulltext.py        separate FTS5 index + background indexer
+│   ├── citekeys.py        citation-key patterns
+│   ├── settings.py        preferences store with validation
+│   ├── metadata.py        Crossref / OpenAlex / arXiv / Open Library lookups
+│   ├── pdf_finder.py      open-access PDF search + verification
+│   ├── pdftext.py         PDF text extraction
+│   ├── formats/           bibtex, ris, endnote (+XML), csljson
+│   ├── notes/             Markdown notes: vault (files), frontmatter, parser (links and
+│   │                      citations), index (notes_index.db), service
+│   └── api/               Flask blueprints: items, attachments, settings, io, metadata,
+│                          organize (folders/tags/smart), connector (browser extension), notes
+├── frontend/
+│   ├── index.html, viewer.html
+│   ├── css/               tokens (themes), base, components, layout, items, item pane, settings
+│   ├── js/                api, store, actions, ui/ (toast, dialog, menu), views/
+│   └── vendor/pdfjs/
+├── browser_extension/     Chrome extension (Manifest V3) – load unpacked
+├── tools/                 build scripts for the vendored editor and Markdown bundles
+├── tests/                 pytest suite (python -m pytest tests), e2e/ browser checklists
+└── data/                  your library (git-ignored)
+```
 
-* Raw Unicode is converted to LaTeX:
-  * accents: `{\"o}`, `{\v c}`, `{\'\i}`
-  * special letters: `{\ss}`, `{\o}`, `{\L}`
-  * Greek and math symbols: `$\alpha$`, `$\leq$`, `CO$_{2}$`, `x$^{2}$`
-  * dashes and quotes: `--`, `---`, ``` ``…'' ```
-  * `&`, `%`, `#` and `_` are escaped
-* Existing commands, math and brace groups are left untouched, and the conversion is idempotent (running it twice changes nothing).
-* Whole words in Greek are left as Greek text; isolated letters become math.
-* HTML/JATS markup, from Crossref or from Zotero rich text, becomes LaTeX: `<i>` → `\textit{}`, `<sub>` → `$_{}$`, `<span class="nocase">` → `{…}`.
-* Comparisons (duplicates, lookups, "is this a real change?") use the rendered text, so `Schr{\"o}dinger` = `Schrödinger`.
-* Proposals that would produce broken LaTeX (unbalanced braces or `$`, unescaped `&`) are flagged.
+Notes are plain Markdown files in `data/notes/` (paper notes in `data/notes/papers/`,
+images in `data/notes/attachments/`, deleted notes in `data/notes/.trash/`). The files are
+the source of truth; `data/notes_index.db` is derived from them and can be deleted at any
+time — it is rebuilt on the next start.
 
-Note: Zotero itself does not render LaTeX. Citations produced *inside Zotero* (e.g. the Word plugin) will show the raw LaTeX. This setup suits BibTeX/Better BibTeX workflows.
-
-## Rules (each can be switched off in Settings)
-
-| Area | What the rules do |
-|---|---|
-| Text clean-up | whitespace · HTML/JATS → LaTeX · Unicode → LaTeX · escaping of `& % # _` |
-| Identifiers | DOI clean-up (resolver prefixes, DOIs moved out of URL/Extra) · ISSN/ISBN formatting |
-| Titles | ALL-CAPS titles → sentence case (acronyms, `{protected}` text, math and proper nouns learnt from your library are preserved) · optional sentence/Title Case policy · trailing periods |
-| Creators | `Last, First` in single-field names · ALL-CAPS names (`VAN DER BERG` → `van der Berg`) · initials (`J.R.` → `J. R.`) · empty and duplicate creators |
-| Other fields | page ranges (`pp. 12 - 19` → `12--19`) · unambiguous dates → ISO · URLs without tracking parameters or library-proxy host names · language → ISO code |
-| Library-wide | journal-name variants unified · missing journal abbreviations filled · tag variants merged |
-| Item type | e.g. arXiv papers stored as journal articles → preprint |
-
-## Finding missing PDFs
-
-*PDFs → Find missing PDFs online* (or *Find PDF online* on a single item) looks for **legal open-access copies** using every identifier the item has:
-
-| Identifier | Where it looks |
-|---|---|
-| **DOI** | Unpaywall (uses your e-mail address from Settings), OpenAlex (publishers, repositories, PubMed Central), Semantic Scholar (also finds the arXiv version of a published paper) |
-| **arXiv id** | arXiv |
-| **PMID / PMCID** (in Extra) | Europe PMC, which also supplies the DOI |
-| **ISBN** | OAPEN (open-access books), Open Library / Internet Archive (only books with public full access), and Crossref (to find a DOI for the book or chapter) |
-| **HAL link, or a URL ending in .pdf** | the link itself |
-| **none of these** | a title search on OpenAlex, accepted only when title, year and first author match |
-
-**Institutional access** (Settings → PDFs, off by default). With your university VPN or campus network active, the tool also fetches the publisher's own PDF, the way you would by hand:
-
-1. It opens the DOI and finds the PDF on the article page: the `citation_pdf_url` tag, the publisher's known PDF address (APS, Springer, Wiley, IOP, Nature, IEEE, ScienceDirect, ACS, T&F, World Scientific, JPSJ, Science, SIAM, ACM, PNAS, AIP, Optica…), or a "Download PDF" / "View PDF" link. PDF viewer pages are unwrapped.
-2. If a site only works in a real browser (JavaScript buttons, bot checks), it opens the page in Chrome and clicks "Download PDF" / "PDF". This needs `pip install playwright` and uses your installed Google Chrome; without Chrome, run `playwright install chromium`. The window is visible, so you can complete your university login or a check once. The browser profile keeps the cookies (in `workspace/browser_profile`).
-3. Optionally, with a free Elsevier API key from dev.elsevier.com, Elsevier articles are fetched through Elsevier's official full-text API, which honours your institution's subscription.
-
-**Captchas** (ScienceDirect often shows one) are recognised and never reported as "no PDF". The browser window comes to the front and the top bar of the app says *solve the check in the browser window*. The tool waits for you (3 minutes by default), then continues with the download. Checks that pass by themselves are simply waited for.
-
-Some sites (Elsevier's Cloudflare check, for example) detect that the browser is automated and ask for the check again after every solve. The tool notices this: when the check comes back after you solved it (or when you close that tab), it stops waiting, skips the automated browser for that publisher for the rest of the run, and marks the item *blocked by the publisher's captcha*. For those items, use **Get with my own browser**:
-
-1. *PDFs → Get PDFs with your own browser* (or the button in the search summary, or *Get with my browser* on a single item) opens the articles in your normal browser, up to 25 tabs at a time. There you are a regular visitor, so the check passes as usual.
-2. Click "Download PDF" in each tab. The top bar shows how many files have arrived.
-3. The tool watches your Downloads folder (configurable in Settings → PDFs), matches each new PDF to its item by DOI, arXiv id, ISBN or title, and proposes it in Review. Your downloaded files are left where they are; a copy is attached.
-
-*Pick up PDFs I already downloaded* checks the PDFs downloaded in the last 24 hours against every item with a missing PDF, without opening anything. Scanned PDFs without text cannot be matched, unless only one item is being waited for.
-
-Requests go one at a time, with pauses between them. Use this for your own copies, as your licence allows.
-
-Candidates are tried in order: published version, then accepted manuscript, then preprint. Every downloaded file is checked before it is proposed:
-
-* it must be a real PDF, not a login or cookie page;
-* it must be the right paper: the item's DOI, arXiv id or ISBN, or its title (and first author), must appear on the first pages (on the first six pages for books).
-
-The PDFs that pass the checks appear in Review as "PDF found online". Each one shows its source, version, licence and the evidence, and has a link to open the downloaded file. Preprint versions of published articles are clearly marked.
-
-Accepted PDFs are attached when you apply, named with your file-name template. Roll-back moves them to the trash. Items with no open-access copy keep their "Missing PDF" warning, with a note that nothing was found online. For those, use your library access (for example through the library proxy) or Zotero's *Find Available PDF*.
-
-For **books** (configurable in Settings → PDFs), a missing PDF is only reported as *info*.
-
-## PDF file names
-
-Template tokens: `{firstCreator} {authors} {year} {title} {shortTitle} {journal} {journalAbbrev} {citekey} {doi} {key} {itemType}`. If a token is empty, its separator is dropped too. The default is `{firstCreator} - {year} - {title}`, which gives e.g. `Smith et al. - 2020 - Title.pdf`.
-
-The name is recomputed from the *final* metadata when you apply, unless you edited it. PDFs that look wrong (e.g. they belong to another paper) are never renamed.
-
-* **Stored files**: the tool points the attachment to the new name through the API, moves the file in `storage/<key>/`, and then checks that Zotero finds the file under the new name. If any step fails, everything is undone.
-* **Linked files** are renamed on disk, and the link in Zotero is updated.
-
-Avoid Zotero's own *Rename File from Parent Metadata* and its automatic renaming (Settings → General → File Renaming): Zotero builds names from the raw fields, so LaTeX ends up in file names (`Schr{o}dinger`). The next PDF check proposes clean names for such files.
+The frontend never talks to external services directly; all lookups go through
+the backend, and all SQL lives in `repository.py`.
 
 ## Tests
 
 ```bash
-pip install pytest reportlab
-python -m pytest tests          # unit tests + end-to-end against a mock Zotero local API
-python tests/mock_zotero.py     # a messy demo library on port 23999 (set it as "Local API address" in Settings)
+pip install pytest
+python -m pytest tests          # backend + JavaScript unit tests (the JS part needs Node.js)
 ```
+
+Browser checklists for notes (need Playwright; each uses a throw-away data folder):
+
+```bash
+pip install playwright requests && playwright install chromium
+python tests/e2e/notes_checklist.py      # editor, saving, conflicts, files
+python tests/e2e/render_checklist.py     # live preview and read mode (tests/e2e/kitchen-sink.md)
+python tests/e2e/links_checklist.py      # autocomplete, citation cards, side panels, item pane
+python tests/e2e/library_checklist.py    # key rename, notes in search, quote/snapshot from the PDF viewer
+```
+
+The notes editor (CodeMirror 6) is vendored as a pre-built bundle in `frontend/vendor/cm6/`;
+to rebuild it from the pinned versions: `cd tools/cm6 && npm ci && ./build.sh`. The renderer
+(markdown-it, KaTeX, Mermaid) likewise lives in `frontend/vendor/md/` and `frontend/vendor/mermaid/`
+(`tools/md`).

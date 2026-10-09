@@ -134,7 +134,7 @@ export function openSettings(sectionId = null) {
         <h2 style="margin-top:22px;font-size:15px">Browser button</h2>
         <div class="card"><div class="setting"><div class="s-text"><div class="s-title">Save to Library (Chrome)</div>
           <div class="s-desc">Save the article you're reading with one click. In Chrome open <span class="mono">chrome://extensions</span>, turn on Developer mode,
-          choose “Load unpacked” and select the <span class="mono">clone_app/browser_extension</span> folder.</div></div></div></div>
+          choose “Load unpacked” and select the <span class="mono">browser_extension</span> folder.</div></div></div></div>
         <h2 style="margin-top:22px;font-size:15px">Keyboard shortcuts</h2>
         <div class="card"><dl class="shortcuts">
           <dt><kbd>${modLabel}F</kbd></dt><dd>Search</dd>

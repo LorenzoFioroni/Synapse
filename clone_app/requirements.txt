@@ -1,8 +1,0 @@
-flask>=3.0
-requests>=2.31
-pypdf>=4.0
-# optional, recommended:
-rapidfuzz>=3.0      # better fuzzy title check when verifying downloaded PDFs
-# pymupdf>=1.24     # faster, more accurate PDF text extraction for the full-text index
-# for development:
-# pytest>=8
