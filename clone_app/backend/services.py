@@ -7,6 +7,7 @@ from .config import Config
 from .db import Database
 from .fulltext import FulltextIndex, Indexer
 from .notes import NotesIndex, Vault
+from .notes.service import NotesService
 from .organize import FolderRepository, SmartFolderRepository, TagRepository
 from .repository import PaperRepository
 from .settings import SettingsStore
@@ -28,6 +29,7 @@ class Services:
         self.vault = Vault(config.notes_dir)
         self.vault.ensure()
         self.notes = NotesIndex(config.notes_index_path, self.vault)
+        self.note_service = NotesService(self.vault, self.notes, self.papers)
         try:
             self.notes.sync()
         except Exception:  # notes must never stop the library from starting

@@ -100,8 +100,10 @@ clone_app/
 │   ├── pdf_finder.py      open-access PDF search + verification
 │   ├── pdftext.py         PDF text extraction
 │   ├── formats/           bibtex, ris, endnote (+XML), csljson
+│   ├── notes/             Markdown notes: vault (files), frontmatter, parser (links and
+│   │                      citations), index (notes_index.db), service
 │   └── api/               Flask blueprints: items, attachments, settings, io, metadata,
-│                          organize (folders/tags/smart), connector (browser extension)
+│                          organize (folders/tags/smart), connector (browser extension), notes
 ├── frontend/
 │   ├── index.html, viewer.html
 │   ├── css/               tokens (themes), base, components, layout, items, item pane, settings
@@ -111,6 +113,11 @@ clone_app/
 ├── tests/                 pytest suite (python -m pytest tests)
 └── data/                  your library (git-ignored)
 ```
+
+Notes are plain Markdown files in `data/notes/` (paper notes in `data/notes/papers/`,
+images in `data/notes/attachments/`, deleted notes in `data/notes/.trash/`). The files are
+the source of truth; `data/notes_index.db` is derived from them and can be deleted at any
+time — it is rebuilt on the next start.
 
 The frontend never talks to external services directly; all lookups go through
 the backend, and all SQL lives in `repository.py`.

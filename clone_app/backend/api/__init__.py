@@ -27,7 +27,7 @@ def ids_from_body() -> list[str]:
 
 
 def register_blueprints(app: Flask) -> None:
-    from . import attachments, connector, io, items, metadata, organize, settings
+    from . import attachments, connector, io, items, metadata, notes, organize, settings
 
-    for module in (items, attachments, settings, io, metadata, organize, connector):
+    for module in (items, attachments, settings, io, metadata, organize, connector, notes):
         app.register_blueprint(module.bp)
