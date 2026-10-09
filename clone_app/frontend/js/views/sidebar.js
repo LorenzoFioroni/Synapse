@@ -8,7 +8,7 @@
 // added as new items in that folder.
 import * as A from '../actions.js';
 import { icon } from '../icons.js';
-import { currentFolderId, folderById, folderTotal, folderTree, on, saveOpenFolders, state } from '../store.js';
+import { currentFolderId, emit, folderById, folderTotal, folderTree, on, saveOpenFolders, state } from '../store.js';
 import { promptDialog } from '../ui/dialog.js';
 import { openMenu } from '../ui/menu.js';
 import { escapeHtml, plural, storage, store } from '../util.js';
@@ -32,6 +32,9 @@ export function initSidebar() {
       <button class="side-item" data-view="unfiled" data-drop="unfiled" title="Items that are not in any folder">${icon('unfiled')}<span class="nm">Unfiled Items</span><span class="count" data-count="unfiled"></span></button>
       <button class="side-item" data-view="duplicates" title="Items with the same DOI, or the same title and year">${icon('copy')}<span class="nm">Duplicate Items</span><span class="count" data-count="duplicates"></span></button>
       <button class="side-item" data-view="trash" data-drop="trash">${icon('trash')}<span class="nm">Trash</span><span class="count" data-count="trash"></span></button>
+
+      <div class="side-section" data-notes-only>Notes</div>
+      <button class="side-item" data-act="open-notes" data-notes-only title="Markdown notes for papers and ideas">${icon('edit')}<span class="nm">All Notes</span><span class="count" data-count="notes"></span></button>
 
       <div class="side-section with-action" data-drop="folder-root">Folders
         <button class="icon-btn side-add" data-act="new-folder" title="New folder">${icon('plus', 'icon-sm')}</button></div>
@@ -64,12 +67,26 @@ export function initSidebar() {
   on('view', paint);
   on('tag-filter', paintTags);
   on('indexer', paintIndexer);
+  on('workspace', paint);
+  on('settings', paint);
+  on('notes-count', (n) => { notesCount = n; paintNotes(); });
   paint();
+}
+
+let notesCount = null;
+const inNotes = () => document.body.dataset.workspace === 'notes';
+
+function paintNotes() {
+  const enabled = state.settings.notes_enabled !== false;
+  root.querySelectorAll('[data-notes-only]').forEach((el) => { el.hidden = !enabled; });
+  root.querySelector('[data-act="open-notes"]').classList.toggle('active', inNotes());
+  root.querySelector('[data-count="notes"]').textContent = notesCount || '';
 }
 
 /* ================================================================= paint */
 function paint() {
-  root.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === state.view));
+  root.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('active', !inNotes() && b.dataset.view === state.view));
+  paintNotes();
   for (const k of ['library', 'unfiled', 'trash', 'duplicates']) {
     root.querySelector(`[data-count="${k}"]`).textContent = state.counts[k] || '';
   }
@@ -88,7 +105,7 @@ function paintFolders() {
     return true;
   });
   tree.innerHTML = visible.map((f) => `
-    <div class="side-item folder ${state.view === `folder:${f.id}` ? 'active' : ''}" role="treeitem" tabindex="-1"
+    <div class="side-item folder ${!inNotes() && state.view === `folder:${f.id}` ? 'active' : ''}" role="treeitem" tabindex="-1"
          data-view="folder:${f.id}" data-folder="${f.id}" data-drop="folder" draggable="true" style="padding-left:${10 + f.depth * 14}px">
       <span class="twisty ${f.hasChildren ? '' : 'none'} ${state.openFolders.has(f.id) ? 'open' : ''}" data-act="toggle">${icon('chevron', 'icon-sm')}</span>
       ${icon('folder')}<span class="nm">${escapeHtml(f.name)}</span><span class="count">${folderTotal(f.id) || ''}</span>
@@ -97,7 +114,7 @@ function paintFolders() {
 
 function paintSmart() {
   smartList.innerHTML = state.sidebar.smart.map((s) => `
-    <div class="side-item ${state.view === `smart:${s.id}` ? 'active' : ''}" data-view="smart:${s.id}" data-smart="${s.id}" title="${escapeHtml(s.query)}">
+    <div class="side-item ${!inNotes() && state.view === `smart:${s.id}` ? 'active' : ''}" data-view="smart:${s.id}" data-smart="${s.id}" title="${escapeHtml(s.query)}">
       ${icon('smartFolder')}<span class="nm">${escapeHtml(s.name)}</span></div>`).join('')
     || '<div class="side-empty">Save a search as a smart folder with <b>+</b>.</div>';
 }
@@ -146,6 +163,7 @@ function onClick(e) {
     paintFolders();
     return;
   }
+  if (act === 'open-notes') return emit('open-notes');
   if (act === 'new-folder') return newFolder(null);
   if (act === 'new-smart') return smartFolderDialog(null, state.query ? { query: state.query, mode: state.mode } : {});
   if (act === 'clear-tags') return A.clearTagFilter();
@@ -162,7 +180,10 @@ function onClick(e) {
     return;
   }
   const v = e.target.closest('[data-view]');
-  if (v && !e.target.closest('input')) A.setView(v.dataset.view);
+  if (v && !e.target.closest('input')) {
+    if (inNotes()) emit('close-notes');
+    A.setView(v.dataset.view);
+  }
 }
 
 function onDblClick(e) {

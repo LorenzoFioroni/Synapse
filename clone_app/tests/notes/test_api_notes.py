@@ -128,3 +128,12 @@ def test_library_db_is_untouched(app, svc, client):
     create(client, title="x", text="[@a]")
     assert tables() == before
     assert not any("note" in t for t in before)
+
+
+def test_save_with_create_flag(client):
+    r = client.put("/api/notes/note", json={"path": "gone.md", "text": "exact text", "create": True})
+    assert r.status_code == 200
+    assert client.get("/api/notes/note", query_string={"path": "gone.md"}).json["text"] == "exact text"
+    r = client.put("/api/notes/note", json={"path": "gone.md", "text": "again", "create": True})
+    assert r.status_code == 409 and r.json["exists"]
+    assert client.put("/api/notes/note", json={"path": "gone.md", "text": "x"}).status_code == 400

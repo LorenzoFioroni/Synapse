@@ -1,0 +1,179 @@
+// Run with: node --test tests/js   (also run by tests/test_frontend_js.py)
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { NoteSession, draftStorageKey } from '../../frontend/js/views/notes/noteSession.js';
+import { compactDiff, lineDiff } from '../../frontend/js/views/notes/diff.js';
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const hashOf = (t) => `h:${t}`;
+
+/** A fake server with one file, plus a fake localStorage. */
+function setup(initial = 'v1', { delay = 20 } = {}) {
+  const server = { text: initial, hash: hashOf(initial), down: false, saves: 0, deleted: false };
+  const api = {
+    async save(path, text, hash) {
+      if (server.down) throw Object.assign(new Error('offline'), { status: 0 });
+      if (server.deleted) throw Object.assign(new Error('gone'), { status: 409 });
+      if (hash !== server.hash) throw Object.assign(new Error('conflict'), { status: 409 });
+      await sleep(5);
+      server.text = text; server.hash = hashOf(text); server.saves++;
+      return { hash: server.hash };
+    },
+    async create(path, text) { server.deleted = false; server.text = text; server.hash = hashOf(text); return { hash: server.hash }; },
+    async get() {
+      if (server.deleted) throw Object.assign(new Error('nf'), { status: 404 });
+      return { text: server.text, hash: server.hash };
+    },
+  };
+  const mem = new Map();
+  const drafts = { get: (k) => mem.get(k) ?? null, set: (k, v) => mem.set(k, v), remove: (k) => mem.delete(k) };
+  const events = { statuses: [], conflicts: [], remote: [] };
+  const s = new NoteSession({
+    path: 'a.md', text: server.text, hash: server.hash, api, drafts, delay,
+    onStatus: (st) => events.statuses.push(st), onConflict: (c) => events.conflicts.push(c),
+    onRemoteText: (t) => events.remote.push(t),
+  });
+  return { server, api, drafts, mem, events, s };
+}
+
+test('autosave after the delay, draft cleared afterwards', async () => {
+  const { server, mem, s } = setup();
+  s.update('v2');
+  assert.equal(s.status, 'dirty');
+  assert.equal(mem.get(draftStorageKey('a.md')).text, 'v2');
+  await sleep(60);
+  assert.equal(server.text, 'v2');
+  assert.equal(s.status, 'saved');
+  assert.equal(mem.size, 0);
+});
+
+test('typing during a save is saved too, and the status ends as saved', async () => {
+  const { server, s, events } = setup('v1', { delay: 5 });
+  s.update('a');
+  const p = s.save();
+  s.update('ab');            // while the first save is in flight
+  await p;
+  await sleep(60);
+  assert.equal(server.text, 'ab');
+  assert.equal(s.status, 'saved');
+  assert.equal(events.statuses.at(-1), 'saved');
+});
+
+test('undoing back to the saved text cancels the save', async () => {
+  const { server, s, mem } = setup();
+  s.update('v2');
+  s.update('v1');
+  await sleep(50);
+  assert.equal(server.saves, 0);
+  assert.equal(s.status, 'saved');
+  assert.equal(mem.size, 0);
+});
+
+test('a change made elsewhere causes a conflict, never an overwrite', async () => {
+  const { server, s, events, mem } = setup();
+  server.text = 'other tab'; server.hash = hashOf('other tab');
+  s.update('mine');
+  await s.save();
+  assert.equal(server.text, 'other tab');
+  assert.equal(s.status, 'conflict');
+  assert.deepEqual(events.conflicts[0], { mine: 'mine', theirs: 'other tab', theirsHash: hashOf('other tab'), deleted: false });
+  s.update('mine 2');        // keep typing: no save, but the draft follows
+  await sleep(50);
+  assert.equal(server.text, 'other tab');
+  assert.equal(mem.get(draftStorageKey('a.md')).text, 'mine 2');
+});
+
+test('resolve: keep mine overwrites, take theirs replaces the editor', async () => {
+  let { server, s } = setup();
+  server.text = 'theirs'; server.hash = hashOf('theirs');
+  s.update('mine');
+  await s.save();
+  await s.resolve('mine');
+  assert.equal(server.text, 'mine');
+  assert.equal(s.status, 'saved');
+
+  ({ server, s } = setup());
+  const ev = [];
+  s.onRemoteText = (t) => ev.push(t);
+  server.text = 'theirs'; server.hash = hashOf('theirs');
+  s.update('mine');
+  await s.save();
+  await s.resolve('theirs');
+  assert.deepEqual(ev, ['theirs']);
+  assert.equal(s.text, 'theirs');
+  assert.equal(s.status, 'saved');
+  s.update('theirs + more');
+  await s.save();
+  assert.equal(server.text, 'theirs + more');
+});
+
+test('identical edits on both sides are not a conflict', async () => {
+  const { server, s } = setup();
+  server.text = 'same'; server.hash = hashOf('same');
+  s.update('same');
+  await s.save();
+  assert.equal(s.status, 'saved');
+});
+
+test('note deleted elsewhere: keep mine writes it again', async () => {
+  const { server, s, events } = setup();
+  server.deleted = true;
+  s.update('mine');
+  await s.save();
+  assert.equal(events.conflicts[0].deleted, true);
+  await s.resolve('mine');
+  assert.equal(server.deleted, false);
+  assert.equal(server.text, 'mine');
+  assert.equal(s.status, 'saved');
+});
+
+test('server down: offline with retry, then saved; the draft survives meanwhile', async () => {
+  const { server, s, mem } = setup('v1', { delay: 5 });
+  server.down = true;
+  s.update('v2');
+  await sleep(20);
+  assert.equal(s.status, 'offline');
+  assert.equal(mem.get(draftStorageKey('a.md')).text, 'v2');
+  server.down = false;
+  await sleep(2300);          // first retry after 2 s
+  assert.equal(server.text, 'v2');
+  assert.equal(s.status, 'saved');
+  assert.equal(mem.size, 0);
+});
+
+test('opening with drafts: same text, restorable, or conflicting', () => {
+  const mem = new Map();
+  const drafts = { get: (k) => mem.get(k) ?? null, set: (k, v) => mem.set(k, v), remove: (k) => mem.delete(k) };
+  const key = draftStorageKey('a.md');
+  assert.deepEqual(NoteSession.open('a.md', { text: 't', hash: 'h1' }, drafts), { text: 't', restored: false, conflict: false });
+  mem.set(key, { text: 't', baseHash: 'h0' });
+  assert.equal(NoteSession.open('a.md', { text: 't', hash: 'h1' }, drafts).restored, false);
+  assert.equal(mem.size, 0);    // a draft equal to the file is just removed
+  mem.set(key, { text: 'unsaved', baseHash: 'h1' });
+  assert.deepEqual(NoteSession.open('a.md', { text: 't', hash: 'h1' }, drafts), { text: 'unsaved', restored: true, conflict: false });
+  mem.set(key, { text: 'unsaved', baseHash: 'old' });
+  assert.deepEqual(NoteSession.open('a.md', { text: 't', hash: 'h1' }, drafts), { text: 'unsaved', restored: true, conflict: true });
+});
+
+test('checkRemote picks up another tab\'s save only when we have no edits', async () => {
+  const { server, s, events } = setup();
+  server.text = 'remote'; server.hash = hashOf('remote');
+  await s.checkRemote();
+  assert.deepEqual(events.remote, ['remote']);
+  assert.equal(s.saved.hash, hashOf('remote'));
+  s.update('local');
+  server.text = 'remote2'; server.hash = hashOf('remote2');
+  await s.checkRemote();
+  assert.deepEqual(events.remote, ['remote']);   // unchanged: our edit will conflict on save instead
+  s.dispose();
+});
+
+test('lineDiff', () => {
+  const rows = lineDiff('a\nb\nc\nd', 'a\nB\nc\nd\ne');
+  assert.deepEqual(rows, [{ op: ' ', text: 'a' }, { op: '-', text: 'b' }, { op: '+', text: 'B' }, { op: ' ', text: 'c' },
+    { op: ' ', text: 'd' }, { op: '+', text: 'e' }]);
+  assert.deepEqual(lineDiff('x', 'x'), [{ op: ' ', text: 'x' }]);
+  const long = Array.from({ length: 50 }, (_, i) => `l${i}`).join('\n');
+  const c = compactDiff(lineDiff(long, long.replace('l25', 'changed')), 1);
+  assert.deepEqual(c.map((r) => r.op), ['…', ' ', '-', '+', ' ', '…']);
+});

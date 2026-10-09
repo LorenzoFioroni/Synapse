@@ -35,6 +35,9 @@ DEFAULTS: dict = {
     "show_subfolder_items": True,      # a folder also lists the items of its subfolders
     # Online lookups
     "contact_email": "",
+    # Notes (beta): shows the Notes entry in the sidebar
+    "notes_enabled": True,
+    "notes_autosave_ms": 1500,         # save after this long without typing (also on blur)
 }
 
 CHOICES = {
@@ -84,6 +87,8 @@ class SettingsStore:
                     raise SettingsError(f"{k} must be a number")
                 if k == "font_size" and not 11 <= v <= 18:
                     raise SettingsError("Font size must be between 11 and 18")
+                if k == "notes_autosave_ms" and not 300 <= v <= 60000:
+                    raise SettingsError("Autosave delay must be between 0.3 and 60 seconds")
             else:
                 v = "" if v is None else str(v).strip()
             if k in CHOICES and v not in CHOICES[k]:

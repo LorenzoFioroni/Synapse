@@ -126,5 +126,15 @@ the backend, and all SQL lives in `repository.py`.
 
 ```bash
 pip install pytest
-python -m pytest tests
+python -m pytest tests          # backend + JavaScript unit tests (the JS part needs Node.js)
 ```
+
+Browser checklist for the notes editor (needs Playwright; uses a throw-away data folder):
+
+```bash
+pip install playwright && playwright install chromium
+python tests/e2e/notes_checklist.py
+```
+
+The notes editor (CodeMirror 6) is vendored as a pre-built bundle in `frontend/vendor/cm6/`;
+to rebuild it from the pinned versions: `cd tools/cm6 && npm ci && ./build.sh`.

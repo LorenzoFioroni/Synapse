@@ -15,6 +15,7 @@ import { focusList, initItemList, openColumnPicker } from './views/itemlist.js';
 import { initItemPane, toggleItemPane } from './views/itempane.js';
 import { applyAppearance, closeSettings, openSettings, settingsOpen } from './views/settingsView.js';
 import { initSidebar } from './views/sidebar.js';
+import { closeNotes, initNotes, notesOpen, notesShortcut, openNotes } from './views/notes/notesView.js';
 
 async function boot() {
   try {
@@ -32,6 +33,7 @@ async function boot() {
   initSidebar();
   initItemList();
   initItemPane();
+  initNotes();
   initResizer();
   initStatusBar();
   initShortcuts();
@@ -41,6 +43,8 @@ async function boot() {
   on('open-identifier', () => openIdentifierDialog());
   on('set-search-mode', (m) => setMode(m));
   on('clear-search', () => clearSearch());
+  on('open-notes', () => openNotes());
+  on('close-notes', () => closeNotes());
 
   await A.loadItems();
   focusList();
@@ -55,6 +59,7 @@ async function openItemFromHash() {
   if (!id) return;
   history.replaceState(null, '', location.pathname + location.search);
   if (settingsOpen()) closeSettings();
+  if (notesOpen()) await closeNotes();
   if (!state.items.some((i) => i.id === id)) {
     if (state.query) clearSearch();
     state.tagFilter.clear();
@@ -99,6 +104,7 @@ function initToolbar() {
     const b = e.target.closest('[data-a]');
     if (!b) return;
     const a = b.dataset.a;
+    if (notesOpen() && ['new', 'identifier', 'import', 'export', 'columns', 'pane'].includes(a)) closeNotes();   // library actions
     if (a === 'new') A.newItem();
     if (a === 'identifier') openIdentifier();
     if (a === 'import') openImport();
@@ -244,6 +250,14 @@ function initShortcuts() {
     if (document.querySelector('.dialog-backdrop')) return;
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable;
     const k = e.key.toLowerCase();
+    if (notesOpen() && !settingsOpen()) {
+      // The note editor owns its keys (search, undo, …); only Settings stays global.
+      if (modKey(e) && k === ',') { e.preventDefault(); openSettings(); return; }
+      if (notesShortcut(e, k, modKey(e))) return;
+      if (e.target.closest?.('.cm-editor')) return;
+      if (modKey(e) && ['n', 'i', 'e'].includes(k)) { e.preventDefault(); return; }   // library actions: not here
+      if (e.key === '/' || e.key === 'Escape') return;
+    }
     if (modKey(e) && k === 'f') { e.preventDefault(); if (settingsOpen()) closeSettings(); searchInput.focus(); searchInput.select(); return; }
     if (modKey(e) && k === ',') { e.preventDefault(); settingsOpen() ? closeSettings() : openSettings(); return; }
     if (settingsOpen()) { if (e.key === 'Escape' && !typing) closeSettings(); return; }

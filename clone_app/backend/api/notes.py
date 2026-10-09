@@ -57,8 +57,12 @@ def create_note():
 @guarded
 def save_note():
     d = body()
-    if not isinstance(d.get("text"), str) or not d.get("hash"):
-        return error("text and hash are required")
+    if not isinstance(d.get("text"), str):
+        return error("text is required")
+    if d.get("create"):  # write exactly this text to a path that must not exist (e.g. deleted elsewhere)
+        return jsonify(svc().note_service.save(d.get("path") or "", d["text"], None))
+    if not d.get("hash"):
+        return error("hash is required")
     return jsonify(svc().note_service.save(d.get("path") or "", d["text"], d["hash"]))
 
 

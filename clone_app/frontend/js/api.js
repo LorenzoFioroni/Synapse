@@ -87,6 +87,22 @@ export const api = {
   updateSmart: (id, data) => request('PATCH', `/api/smart/${id}`, data),
   deleteSmart: (id) => request('DELETE', `/api/smart/${id}`),
   searchPreview: (q, mode) => request('GET', `/api/search/preview?${qs({ q, mode })}`),
+
+  // notes (addressed by their path inside the notes folder)
+  notes: () => request('GET', '/api/notes'),
+  getNote: (path) => request('GET', `/api/notes/note?${qs({ path })}`),
+  createNote: (data) => request('POST', '/api/notes/note', data),
+  saveNote: (path, text, hash) => request('PUT', '/api/notes/note', { path, text, hash }),
+  recreateNote: (path, text) => request('PUT', '/api/notes/note', { path, text, create: true }),
+  moveNote: (path, to, hash) => request('POST', '/api/notes/move', { path, to, hash }),
+  newNoteFolder: (path) => request('POST', '/api/notes/folder', { path }),
+  trashNote: (path) => request('POST', '/api/notes/trash', { path }),
+  noteTrash: () => request('GET', '/api/notes/trash'),
+  restoreNote: (trashId, path) => request('POST', '/api/notes/restore', { trash_id: trashId, path }),
+  noteLinks: (path) => request('GET', `/api/notes/links?${qs({ path })}`),
+  searchNotes: (q) => request('GET', `/api/notes/search?${qs({ q })}`),
+  rescanNotes: () => request('POST', '/api/notes/rescan'),
+  uploadNoteImage: (file) => { const fd = new FormData(); fd.append('file', file); return request('POST', '/api/notes/attachments', fd); },
 };
 
 export function fileUrl(att) {

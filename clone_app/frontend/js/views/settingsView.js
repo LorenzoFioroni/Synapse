@@ -81,6 +81,7 @@ export function openSettings(sectionId = null) {
             <div class="s-control">${saved}<input type="range" min="11" max="18" step="1" value="${s.font_size}" data-key="font_size" style="width:140px">
             <span class="mono" data-fs-label style="width:36px">${s.font_size}px</span></div></div>
           ${switchRow('open_pdf_on_double_click', 'Double-click opens the PDF', 'When off, double-clicking an item starts editing its title.')}
+          ${switchRow('notes_enabled', 'Notes (beta)', 'Show Notes in the sidebar: Markdown notes for papers and ideas, stored as files in your data folder.')}
           ${switchRow('confirm_trash', 'Ask before moving to the Trash', 'Items in the Trash can always be restored, and an Undo button appears after deleting.')}
           ${switchRow('show_subfolder_items', 'Show items from subfolders', 'A folder also lists the items of the folders inside it.')}
         </div></section>

@@ -14,3 +14,4 @@ clone_app/data/
 clone_app/pdf_storage/
 clone_app/_legacy_scripts/
 clone_app/server.log
+clone_app/tools/cm6/node_modules/

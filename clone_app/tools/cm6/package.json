@@ -1,0 +1,21 @@
+{
+  "name": "cm6-bundle",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.13",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/language-data": "6.5.2",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/autocomplete": "6.20.3",
+    "@lezer/highlight": "1.2.4",
+    "@lezer/markdown": "1.7.2",
+    "@lezer/common": "1.5.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

@@ -157,11 +157,12 @@ class NotesService:
         self.index.update(path)
         return {"path": path, "text": content, "hash": h}
 
-    def save(self, path: str, text: str, base_hash: str) -> dict:
+    def save(self, path: str, text: str, base_hash: str | None) -> dict:
+        """Save over the version with ``base_hash``; ``None`` creates (fails if the file exists)."""
         path = self.vault.clean_rel(path)
         h = self.vault.write(path, text, expected_hash=base_hash)
         self.index.update(path)
-        return {"path": path, "hash": h}
+        return {"path": path, "hash": h, "info": self.index.note(path)}
 
     def move(self, path: str, to: str, base_hash: str | None = None) -> dict:
         src = self.vault.clean_rel(path)
