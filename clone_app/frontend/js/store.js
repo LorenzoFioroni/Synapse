@@ -118,6 +118,21 @@ export function folderTotal(id) {
   walk(Number(id));
   return n;
 }
+/** A folder id plus all ids below it. */
+export function folderDescendants(id) {
+  const out = new Set([Number(id)]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const f of state.sidebar.folders) if (out.has(f.parent_id) && !out.has(f.id)) { out.add(f.id); grew = true; }
+  }
+  return [...out];
+}
+/** "Parent / Child" labels of every folder an item is in. */
+export function itemFolderPaths(it) {
+  return (it.folder_ids || []).filter((id) => folderById(id)).map((id) => folderPath(id).join(' / '))
+    .sort((a, b) => a.localeCompare(b));
+}
 export const tagColor = (name) => state.sidebar.tags.find((t) => t.name.toLowerCase() === String(name).toLowerCase())?.color || null;
 export function saveSort() { persist('zc.sort', state.sort); }
 
@@ -139,7 +154,7 @@ export function sortedItems() {
     if (key === 'year') return parseInt(it.year, 10) || 0;
     if (key === 'item_type') return itemTypeLabel(it.item_type).toLowerCase();
     if (key === 'tags') return (it.tags || []).join(', ').toLowerCase();
-    if (key === 'folder') return it.folder_id ? folderPath(it.folder_id).join('/').toLowerCase() : '';
+    if (key === 'folder') return itemFolderPaths(it).join(', ').toLowerCase();
     const v = it[key];
     return v == null ? '' : String(v).toLowerCase();
   };

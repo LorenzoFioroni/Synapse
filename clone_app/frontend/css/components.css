@@ -189,3 +189,5 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .sf-preview { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-app); padding: 10px 12px; min-height: 60px; font-size: var(--fs-sm); }
 .sf-preview .sp-count { margin-bottom: 6px; }
 .sf-preview .sp-row { padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fp-row .fp-in { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; font-size: var(--fs-xs); color: var(--success); }
+.fp-row.active .fp-in { color: inherit; }

@@ -201,10 +201,29 @@ function showSaved({ item, pdf, source }) {
 }
 
 function showDuplicate(d) {
-  showMessage('=', 'Already in your library', `<span class="t">${esc(d.title || '')}</span>${d.folder_id ? `in <b>${esc(folderName(d.folder_id) || '')}</b>` : ''}`, 'warn',
-    `<div class="actions"><button class="btn" id="anyway">Save Anyway</button><button class="btn primary" id="open">Open in Library</button></div>`);
+  const inFolders = (d.folder_ids || []).map(folderName).filter(Boolean);
+  const target = saveState.folder && !(d.folder_ids || []).map(String).includes(String(saveState.folder)) ? folderName(saveState.folder) : null;
+  showMessage('=', 'Already in your library', `<span class="t">${esc(d.title || '')}</span>${inFolders.length ? `in <b>${inFolders.map(esc).join('</b>, <b>')}</b>` : ''}`, 'warn',
+    `<div class="actions">${target
+      ? `<button class="btn primary" id="file">Add to “${esc(target)}”</button>`
+      : '<button class="btn" id="anyway">Save Anyway</button>'}
+      <button class="btn ${target ? '' : 'primary'}" id="open">Open in Library</button></div>
+     ${target ? '<div class="hint"><a href="#" id="anyway">Save a separate copy instead</a></div>' : ''}`);
   document.getElementById('open').onclick = () => openInLibrary(d.duplicate_of);
-  document.getElementById('anyway').onclick = () => { view.innerHTML = '<div class="center"><span class="spinner"></span> Saving…</div>'; doSave({ tags: saveState.tags, allowDuplicate: true }); };
+  document.getElementById('anyway').onclick = (e) => {
+    e.preventDefault();
+    view.innerHTML = '<div class="center"><span class="spinner"></span> Saving…</div>';
+    doSave({ tags: saveState.tags, allowDuplicate: true });
+  };
+  document.getElementById('file')?.addEventListener('click', async () => {
+    const res = await api('/api/connector/file', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: d.duplicate_of, folder_id: saveState.folder, tags: saveState.tags }) });
+    if (!res.ok) return showMessage('!', 'Could not update', esc(res.data?.error || `Error ${res.status}`), 'err');
+    showMessage('✓', 'Added to folder', `“${esc(res.data.item.title)}” is now also in <b>${esc(target)}</b> — it is still stored only once.`, 'ok',
+      '<div class="actions"><button class="btn" id="close">Close</button><button class="btn primary" id="open">Open in Library</button></div>');
+    document.getElementById('close').onclick = () => window.close();
+    document.getElementById('open').onclick = () => openInLibrary(d.duplicate_of);
+  });
 }
 
 async function openInLibrary(id) {

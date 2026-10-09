@@ -2,14 +2,14 @@
 import * as A from '../actions.js';
 import { api, openAttachment } from '../api.js';
 import { icon, typeIcon } from '../icons.js';
-import { byId, emit, folderPath, itemTypeLabel, on, selectedItems, state } from '../store.js';
+import { byId, emit, folderById, folderPath, itemTypeLabel, on, selectedItems, state } from '../store.js';
 import { openMenu } from '../ui/menu.js';
 import { toast, toastError } from '../ui/toast.js';
 import { copyText, debounce, escapeHtml, formatDate, plural, shortAuthors, storage, store } from '../util.js';
 import { openExport } from './exportDialog.js';
 import { copyKeys, deleteAttachment, pickFiles, renameAttachment } from './itemlist.js';
 import { openMetadataReview } from './metadataReview.js';
-import { editTagsDialog, moveSelectionToFolder, tagInput } from './organizeDialogs.js';
+import { addSelectionToFolder, editTagsDialog, tagInput } from './organizeDialogs.js';
 
 let root, shownId = null;
 const collapsed = new Set(storage('zc.collapsedSections', []));
@@ -74,7 +74,7 @@ function renderMulti(items) {
     <div class="actions">
       ${trash ? `<button class="btn" data-a="restore">${icon('restore')} Restore to Library</button>
                  <button class="btn btn-danger" data-a="delete">${icon('trash')} Delete Permanently</button>`
-    : `<button class="btn" data-a="move">${icon('folder')} Move to Folder…</button>
+    : `<button class="btn" data-a="move">${icon('folderPlus')} Add to Folder…</button>
        <button class="btn" data-a="tags">${icon('tag')} Tags…</button>
        <button class="btn" data-a="metadata">${icon('sparkle')} Retrieve Metadata…</button>
        <button class="btn" data-a="find-pdfs">${icon('find')} Find PDFs${(() => { const n = items.filter((i) => !(i.attachments || []).length).length; return n && n < items.length ? ` (${n} missing)` : ''; })()}</button>
@@ -85,7 +85,7 @@ function renderMulti(items) {
     </div></div>`;
   root.querySelector('.actions').addEventListener('click', (e) => {
     const a = e.target.closest('[data-a]')?.dataset.a;
-    if (a === 'move') moveSelectionToFolder(ids);
+    if (a === 'move') addSelectionToFolder(ids);
     if (a === 'tags') editTagsDialog(ids);
     if (a === 'metadata') openMetadataReview(ids);
     if (a === 'find-pdfs') A.findPdfs(ids);
@@ -187,9 +187,12 @@ function renderItem(it) {
     <div class="ip-body">
       ${snippet && state.query ? section('fulltext', 'Full-text match', `<div class="ft-snippet">${snippet}</div>`) : ''}
       ${trash ? '' : section('organize', 'Folder &amp; Tags', `
-        <div class="field-row"><label>Folder</label>
-          <button class="folder-btn" data-tool="pick-folder" title="Move to another folder">${icon(it.folder_id ? 'folder' : 'unfiled', 'icon-sm')}
-            <span>${it.folder_id ? escapeHtml(folderPath(it.folder_id).join(' / ')) : 'Unfiled'}</span>${icon('chevronDown', 'icon-sm')}</button></div>
+        <div class="field-row"><label>${(it.folder_ids || []).length > 1 ? 'Folders' : 'Folder'}</label>
+          <div class="folder-chips">${(it.folder_ids || []).filter((f) => folderById(f)).map((f) => `
+            <span class="folder-chip" data-open-folder="${f}" title="Open this folder">${icon('folder', 'icon-sm')}<span>${escapeHtml(folderPath(f).join(' / '))}</span>
+              <button class="x" data-remove-folder="${f}" title="Remove from this folder (the item stays in your library)">${icon('close', 'icon-sm')}</button></span>`).join('')}
+            <button class="folder-add" data-tool="pick-folder" title="Add to a folder — an item can be in several">${icon('plus', 'icon-sm')} ${(it.folder_ids || []).length ? 'Add' : 'Add to folder'}</button>
+          </div></div>
         <div class="field-row"><label>Tags</label><div class="ip-tags"></div></div>`, { count: (it.tags || []).length || '' })}
       ${section('info', 'Info', info)}
       ${section('abstract', 'Abstract', fv('abstract', it.abstract, { multiline: true, placeholder: 'Add an abstract…' }))}
@@ -329,10 +332,14 @@ function bindItem(it) {
 }
 
 async function handleClick(e) {
-const id = shownId;
-if (!id) return;
-const it = byId(id);
-if (!it) return;
+  const id = shownId;
+  if (!id) return;
+  const it = byId(id);
+  if (!it) return;
+  const rm = e.target.closest('[data-remove-folder]');
+  if (rm) { e.stopPropagation(); A.removeFolderMembership(id, Number(rm.dataset.removeFolder)); return; }
+  const open = e.target.closest('[data-open-folder]');
+  if (open) { A.setView(`folder:${open.dataset.openFolder}`); return; }
   const t = e.target.closest('[data-tool]')?.dataset.tool;
   const it2 = byId(id) || it;
   if (!t) {
@@ -353,7 +360,7 @@ if (!it) return;
     return;
   }
   if (t === 'open-pdf') A.openPdf(it2);
-  if (t === 'pick-folder') moveSelectionToFolder([id]);
+  if (t === 'pick-folder') addSelectionToFolder([id]);
   if (t === 'keep-only') A.keepOnly(id);
   if (t === 'metadata') openMetadataReview(id);
   if (t === 'find-pdf') A.findPdf(id);

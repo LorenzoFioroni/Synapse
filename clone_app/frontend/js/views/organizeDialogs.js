@@ -2,7 +2,7 @@
 import * as A from '../actions.js';
 import { api } from '../api.js';
 import { icon } from '../icons.js';
-import { folderById, folderPath, folderTree, selectedItems, state } from '../store.js';
+import { currentFolderId, folderById, folderPath, folderTree, selectedItems, state } from '../store.js';
 import { openDialog, promptDialog } from '../ui/dialog.js';
 import { toastError } from '../ui/toast.js';
 import { debounce, escapeHtml, h, plural, shortAuthors } from '../util.js';
@@ -108,22 +108,31 @@ export function tagChip(name, removable = false) {
 }
 
 /* --------------------------------------------------------- folder picker */
-/** Resolves to a folder id, null (= Unfiled) or undefined (cancelled). */
-export function pickFolder({ title = 'Move to Folder', confirm = 'Move', current = undefined, allowNone = true } = {}) {
-  let chosen = current === undefined ? null : current;
-  let list, filter;
+/**
+ * Pick one folder. ``contains`` maps folder id -> how many of the items are already
+ * in it (shown as a hint). Resolves to a folder id, or undefined when cancelled.
+ */
+export function pickFolder({ title = 'Add to Folder', confirm = 'Add', contains = {}, total = 1, exclude = null } = {}) {
+  let chosen = null;
+  let list, filter, okBtn;
   const render = () => {
     const q = filter.value.trim().toLowerCase();
-    const rows = folderTree().filter((f) => !q || folderPath(f.id).join('/').toLowerCase().includes(q));
-    list.innerHTML = (allowNone && !q ? `<div class="fp-row ${chosen === null ? 'active' : ''}" data-id="">${icon('library', 'icon-sm')}<span>Unfiled (no folder)</span></div>` : '')
-      + rows.map((f) => `<div class="fp-row ${chosen === f.id ? 'active' : ''}" data-id="${f.id}" style="padding-left:${10 + (q ? 0 : f.depth * 18)}px">
-          ${icon('folder', 'icon-sm')}<span>${escapeHtml(q ? folderPath(f.id).join(' / ') : f.name)}</span><span class="n">${f.count || ''}</span></div>`).join('')
+    const rows = folderTree().filter((f) => f.id !== exclude && (!q || folderPath(f.id).join('/').toLowerCase().includes(q)));
+    list.innerHTML = rows.map((f) => {
+      const n = contains[f.id] || 0;
+      const hint = n ? `<span class="fp-in">${icon('check', 'icon-sm')} ${n === total ? (total === 1 ? 'already here' : 'all here') : `${n} of ${total} here`}</span>` : '';
+      return `<div class="fp-row ${chosen === f.id ? 'active' : ''}" data-id="${f.id}" style="padding-left:${10 + (q ? 0 : f.depth * 18)}px">
+          ${icon('folder', 'icon-sm')}<span>${escapeHtml(q ? folderPath(f.id).join(' / ') : f.name)}</span>${hint}<span class="n">${f.count || ''}</span></div>`;
+    }).join('')
       + (!rows.length && q ? '<div class="fp-empty">No folder matches.</div>' : '')
       + (!state.sidebar.folders.length ? '<div class="fp-empty">No folders yet — create one below.</div>' : '');
+    if (okBtn) okBtn.disabled = chosen === null;
   };
   return openDialog({
     title,
-    render: (body, close) => {
+    subtitle: 'An item can be in several folders; it is stored only once.',
+    render: (body, close, buttons) => {
+      okBtn = buttons[buttons.length - 1];
       body.innerHTML = `<input class="input" placeholder="Filter folders…" spellcheck="false">
         <div class="fp-list"></div>
         <button class="btn btn-ghost btn-sm" data-new style="margin-top:8px">${icon('plus', 'icon-sm')} New Folder…</button>`;
@@ -134,10 +143,10 @@ export function pickFolder({ title = 'Move to Folder', confirm = 'Move', current
       list.addEventListener('click', (e) => {
         const r = e.target.closest('.fp-row');
         if (!r) return;
-        chosen = r.dataset.id ? Number(r.dataset.id) : null;
+        chosen = Number(r.dataset.id);
         render();
       });
-      list.addEventListener('dblclick', (e) => { if (e.target.closest('.fp-row')) body.closest('.dialog').querySelector('.btn-primary').click(); });
+      list.addEventListener('dblclick', (e) => { if (e.target.closest('.fp-row')) okBtn.click(); });
       body.querySelector('[data-new]').onclick = async () => {
         const parent = chosen ? folderById(chosen) : null;
         const name = await promptDialog(parent ? `New folder inside “${parent.name}”` : 'New folder', { title: 'New Folder', confirm: 'Create', placeholder: 'Folder name' });
@@ -150,13 +159,31 @@ export function pickFolder({ title = 'Move to Folder', confirm = 'Move', current
   }).then((v) => (v === confirm ? chosen : undefined));
 }
 
-export async function moveSelectionToFolder(ids = selectedItems().map((i) => i.id)) {
+function membershipCounts(items) {
+  const contains = {};
+  items.forEach((i) => (i.folder_ids || []).forEach((f) => { contains[f] = (contains[f] || 0) + 1; }));
+  return contains;
+}
+
+export async function addSelectionToFolder(ids = selectedItems().map((i) => i.id)) {
   if (!ids.length) return;
   const items = ids.map((id) => state.items.find((i) => i.id === id)).filter(Boolean);
-  const same = items.every((i) => i.folder_id === items[0].folder_id) ? items[0]?.folder_id ?? null : undefined;
-  const fid = await pickFolder({ title: ids.length === 1 ? 'Move to Folder' : `Move ${ids.length} Items to Folder`, current: same });
-  if (fid === undefined) return;
-  await A.moveToFolder(ids, fid);
+  const fid = await pickFolder({
+    title: ids.length === 1 ? 'Add to Folder' : `Add ${ids.length} Items to Folder`,
+    contains: membershipCounts(items), total: items.length,
+  });
+  if (fid !== undefined) await A.addToFolder(ids, fid);
+}
+
+/** In a folder view: take the items out of this folder and put them into another one. */
+export async function moveSelectionToFolder(ids = selectedItems().map((i) => i.id), fromId = currentFolderId()) {
+  if (!ids.length) return;
+  const items = ids.map((id) => state.items.find((i) => i.id === id)).filter(Boolean);
+  const fid = await pickFolder({
+    title: `Move ${ids.length === 1 ? 'Item' : `${ids.length} Items`} to Another Folder`, confirm: 'Move',
+    contains: membershipCounts(items), total: items.length, exclude: fromId,
+  });
+  if (fid !== undefined) await A.moveBetweenFolders(ids, fromId, fid);
 }
 
 /* -------------------------------------------------------- edit tags (N) */

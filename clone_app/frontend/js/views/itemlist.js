@@ -3,14 +3,14 @@
 import * as A from '../actions.js';
 import { api, openAttachment } from '../api.js';
 import { icon, typeIcon } from '../icons.js';
-import { byId, COLUMNS, currentFolderId, emit, folderById, folderPath, itemTypeLabel, on, saveColumns, saveSort, selectedItems, sortedItems, state, tagColor } from '../store.js';
+import { byId, COLUMNS, currentFolderId, emit, folderById, itemFolderPaths, itemTypeLabel, on, saveColumns, saveSort, selectedItems, sortedItems, state, tagColor } from '../store.js';
 import { promptDialog } from '../ui/dialog.js';
 import { closeMenu, openMenu } from '../ui/menu.js';
 import { toast, toastError } from '../ui/toast.js';
 import { copyText, debounce, escapeHtml, formatDate, modKey, modLabel, plural, shortAuthors } from '../util.js';
 import { openExport } from './exportDialog.js';
 import { openMetadataReview } from './metadataReview.js';
-import { editTagsDialog, moveSelectionToFolder, smartFolderDialog } from './organizeDialogs.js';
+import { addSelectionToFolder, editTagsDialog, moveSelectionToFolder, smartFolderDialog } from './organizeDialogs.js';
 
 const ITEMS_MIME = 'application/x-zc-items';   // also read by the sidebar drop targets
 
@@ -180,7 +180,7 @@ function cellHtml(colId, it) {
         + `${typeIcon(it.item_type, 'icon-sm type-icon')}<span class="t">${escapeHtml(it.title || 'Untitled')}</span>${hit}${colourDots(it)}`;
     }
     case 'tags': return escapeHtml((it.tags || []).join(', '));
-    case 'folder': return it.folder_id ? escapeHtml(folderPath(it.folder_id).join(' / ')) : '';
+    case 'folder': return escapeHtml(itemFolderPaths(it).join(', '));
     case 'creator': return escapeHtml(shortAuthors(it.authors));
     case 'item_type': return escapeHtml(itemTypeLabel(it.item_type));
     case 'date_added': case 'date_modified': return escapeHtml(formatDate(it[colId]));
@@ -407,8 +407,9 @@ export function itemMenu(at) {
     { label: one ? 'Find Available PDF' : `Find PDFs for ${items.length} Items`, icon: 'find', run: () => (one ? A.findPdf(one.id) : A.findPdfs(ids)) },
     one && { label: 'Add PDF Attachment…', icon: 'paperclip', run: () => pickFiles((files) => A.uploadAttachments(one.id, files)) },
     'sep',
-    { label: one ? 'Move to Folder…' : `Move ${items.length} Items to Folder…`, icon: 'folder', run: () => moveSelectionToFolder(ids) },
-    items.some((i) => i.folder_id) && { label: 'Remove from Folder', icon: 'unfiled', run: () => A.moveToFolder(ids, null) },
+    { label: one ? 'Add to Folder…' : `Add ${items.length} Items to Folder…`, icon: 'folderPlus', run: () => addSelectionToFolder(ids) },
+    currentFolderId() && { label: 'Move to Another Folder…', icon: 'folder', run: () => moveSelectionToFolder(ids) },
+    currentFolderId() && { label: `Remove from “${folderById(currentFolderId())?.name || 'Folder'}”`, icon: 'unfiled', run: () => A.removeFromFolder(ids, currentFolderId()), shortcut: '⌫' },
     { label: one ? 'Edit Tags…' : `Tags for ${items.length} Items…`, icon: 'tag', run: () => editTagsDialog(ids), shortcut: `${modLabel}T` },
     'sep',
     { label: one ? 'Copy Citation Key' : 'Copy Citation Keys', icon: 'key', run: () => copyKeys(items), shortcut: `${modLabel}⇧C` },
@@ -416,7 +417,7 @@ export function itemMenu(at) {
     { label: one ? 'Export Item…' : `Export ${items.length} Items…`, icon: 'export', run: () => openExport(ids) },
     { label: one ? 'Regenerate Citation Key' : 'Regenerate Citation Keys', icon: 'refresh', run: () => A.regenerateCitekeys(ids) },
     'sep',
-    { label: one ? 'Move Item to Trash' : `Move ${items.length} Items to Trash`, icon: 'trash', danger: true, run: A.trashSelected, shortcut: '⌫' },
+    { label: one ? 'Move Item to Trash' : `Move ${items.length} Items to Trash`, icon: 'trash', danger: true, run: A.trashSelected, shortcut: currentFolderId() ? `${modLabel}⌫` : '⌫' },
   ], at);
 }
 
@@ -493,7 +494,13 @@ function bindKeyboard() {
       case 'ArrowRight': if (state.cursor) { e.preventDefault(); toggleExpand(state.cursor, true); } break;
       case 'ArrowLeft': if (state.cursor) { e.preventDefault(); toggleExpand(state.cursor, false); } break;
       case 'Enter': if (state.cursor) { e.preventDefault(); A.openPdf(state.cursor); } break;
-      case 'Delete': case 'Backspace': if (state.selection.size) { e.preventDefault(); A.trashSelected(); } break;
+      case 'Delete': case 'Backspace':
+        if (!state.selection.size) break;
+        e.preventDefault();
+        // inside a folder, Delete takes items out of the folder; Cmd/Ctrl+Delete moves them to the Trash
+        if (currentFolderId() && !modKey(e)) A.removeFromFolder([...state.selection], currentFolderId());
+        else A.trashSelected();
+        break;
       case 'a': case 'A': if (modKey(e)) { e.preventDefault(); A.select(order, { anchor: order[0], cursor: state.cursor }); } break;
       case 'c': case 'C':
         // Cmd+Shift+C: citation keys. Plain Cmd+C is handled by the 'copy' event (BibTeX), see bindCopy().

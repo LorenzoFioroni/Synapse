@@ -60,9 +60,12 @@ Back up the `data/` folder to keep everything. Libraries from the old layout
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
   arXiv, Scholar) and checks the file is really the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.
-- **Folders** (nested; each item lives in one folder), **tags** (many per item, optional
-  colours) and **smart folders** (saved searches). Drag items onto a folder to move
-  them or onto a tag to tag them; filter by clicking tags (several = AND).
+- **Folders** (nested; an item can be in several folders but is stored once — a folder
+  only holds a link to it), **tags** (many per item, optional colours) and **smart
+  folders** (saved searches). Drag items onto a folder to add them (hold Shift to move
+  them out of the folder you're in), onto a tag to tag them, onto Unfiled to take them
+  out of every folder. Inside a folder, Delete removes items from that folder only;
+  Cmd/Ctrl+Delete moves them to the Trash.
 - **Search filters** combine with text and can be negated with `-`:
   `tag:review`, `tag:"open systems"`, `folder:Physics`, `folder:"Physics/Transport"`,
   `folder:none`, `type:book`, `year:2020`, `year:2018-2022`, `year:>2015`, `has:pdf`,

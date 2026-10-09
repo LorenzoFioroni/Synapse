@@ -145,7 +145,7 @@ export function openSettings(sectionId = null) {
           <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Move selection (with <kbd>⇧</kbd> to extend)</dd>
           <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Collapse / expand attachments</dd>
           <dt><kbd>↵</kbd></dt><dd>Open PDF</dd>
-          <dt><kbd>⌫</kbd></dt><dd>Move to Trash</dd>
+          <dt><kbd>⌫</kbd></dt><dd>Move to Trash — inside a folder: remove from that folder (<kbd>${modLabel}⌫</kbd> moves to Trash)</dd>
           <dt><kbd>${modLabel}C</kbd></dt><dd>Copy BibTeX of the selected items</dd>
           <dt><kbd>${modLabel}⇧C</kbd></dt><dd>Copy citation keys</dd>
           <dt><kbd>${modLabel}T</kbd></dt><dd>Edit tags of the selected items</dd>

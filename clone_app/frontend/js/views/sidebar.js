@@ -1,13 +1,14 @@
 // Left sidebar: library views, folder tree, smart folders and the tag pane.
 //
-// Drag & drop: drop items on a folder to move them there (an item lives in one
-// folder), on a tag to tag them, on Unfiled to take them out of their folder,
-// on Trash to delete them. Drag a folder onto another to nest it, or onto the
+// Drag & drop: drop items on a folder to add them to it (an item can be in several
+// folders; hold Shift while dropping to move them out of the folder being viewed),
+// on a tag to tag them, on Unfiled to take them out of every folder, on Trash to
+// delete them. Drag a folder onto another to nest it, or onto the
 // "Folders" heading to move it to the top level. PDFs dropped on a folder are
 // added as new items in that folder.
 import * as A from '../actions.js';
 import { icon } from '../icons.js';
-import { folderById, folderTotal, folderTree, on, saveOpenFolders, state } from '../store.js';
+import { currentFolderId, folderById, folderTotal, folderTree, on, saveOpenFolders, state } from '../store.js';
 import { promptDialog } from '../ui/dialog.js';
 import { openMenu } from '../ui/menu.js';
 import { escapeHtml, plural, storage, store } from '../util.js';
@@ -302,7 +303,8 @@ function bindDnD() {
     if (!kind || !target || !accepts(target, kind)) return;
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = kind === 'items' && target.dataset.drop === 'tag' ? 'copy' : 'move';
+    const moving = kind === 'items' && target.dataset.drop === 'folder' && e.shiftKey && currentFolderId();
+    e.dataTransfer.dropEffect = kind === 'items' && ['tag', 'folder'].includes(target.dataset.drop) && !moving ? 'copy' : 'move';
     target.classList.add('drop-target');
     // hovering a collapsed folder for a moment opens it
     if (target.dataset.folder && !state.openFolders.has(Number(target.dataset.folder))) {
@@ -324,8 +326,12 @@ function bindDnD() {
     const d = target.dataset.drop;
     if (kind === 'items') {
       const ids = JSON.parse(e.dataTransfer.getData(ITEMS_MIME) || '[]');
-      if (d === 'folder') A.moveToFolder(ids, Number(target.dataset.folder));
-      if (d === 'unfiled') A.moveToFolder(ids, null);
+      if (d === 'folder') {
+        const to = Number(target.dataset.folder);
+        if (e.shiftKey && currentFolderId() && currentFolderId() !== to) A.moveBetweenFolders(ids, currentFolderId(), to);
+        else A.addToFolder(ids, to);
+      }
+      if (d === 'unfiled') A.removeFromAllFolders(ids);
       if (d === 'tag') { const t = tagById(target.dataset.tag); if (t) A.addTags(ids, [t.name]); }
       if (d === 'trash') { A.select(ids); A.trashSelected(); }
     } else if (kind === 'folder') {

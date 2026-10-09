@@ -79,7 +79,7 @@ export const api = {
   createFolder: (name, parentId = null) => request('POST', '/api/folders', { name, parent_id: parentId }),
   updateFolder: (id, data) => request('PATCH', `/api/folders/${id}`, data),
   deleteFolder: (id) => request('DELETE', `/api/folders/${id}`),
-  moveItems: (ids, folderId) => request('POST', '/api/items/move', { ids, folder_id: folderId }),
+  changeFolders: (ids, add = [], remove = []) => request('POST', '/api/items/folders', { ids, add, remove }),
   tagItems: (ids, add = [], remove = []) => request('POST', '/api/items/tags', { ids, add, remove }),
   updateTag: (id, data) => request('PATCH', `/api/tags/${id}`, data),
   deleteTag: (id) => request('DELETE', `/api/tags/${id}`),
