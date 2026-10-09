@@ -48,13 +48,16 @@ def delete_folder(fid):
     return jsonify(ok=True, unfiled=svc().folders.delete(fid))
 
 
-@bp.post("/items/move")
-def move_items():
-    """Put items into a folder (folder_id null = unfiled). An item is in one folder at a time."""
+@bp.post("/items/folders")
+def change_item_folders():
+    """{ids, add: [folder ids], remove: [folder ids]}. An item can be in many folders;
+    "moving" is add + remove. Removing never deletes the item."""
     ids = ids_from_body()
+    d = body()
     if not ids:
         return error("No items given")
-    svc().folders.move_items(ids, _int_or_none(body().get("folder_id")))
+    as_list = lambda v: v if isinstance(v, list) else ([] if v in (None, "") else [v])
+    svc().folders.change_items(ids, add=as_list(d.get("add")), remove=as_list(d.get("remove")))
     return jsonify(ok=True, count=len(ids))
 
 

@@ -91,6 +91,20 @@ def _download_pdf(url: str, pdf_dir) -> str | None:
     return None
 
 
+@bp.post("/file")
+def file_existing():
+    """Add an item that is already in the library to a folder and/or tag it (from the
+    extension's "already in your library" screen)."""
+    s = svc()
+    d = request.get_json(silent=True) or {}
+    item = s.papers.get(str(d.get("id") or ""))
+    if d.get("folder_id") not in (None, ""):
+        s.folders.change_items([item["id"]], add=[d["folder_id"]])
+    if d.get("tags"):
+        s.tags.add([item["id"]], d["tags"])
+    return jsonify(item=s.papers.get(item["id"]))
+
+
 @bp.post("/save")
 def save():
     s = svc()
@@ -130,7 +144,7 @@ def save():
     dup = s.papers.find_duplicate(item)
     if dup and not page.get("allow_duplicate"):
         existing = s.papers.get(dup)
-        return jsonify(duplicate_of=dup, title=existing.get("title"), folder_id=existing.get("folder_id")), 409
+        return jsonify(duplicate_of=dup, title=existing.get("title"), folder_ids=existing.get("folder_ids") or []), 409
 
     folder = page.get("folder_id")
     tags = page.get("tags") or []

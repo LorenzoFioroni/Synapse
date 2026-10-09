@@ -1,7 +1,8 @@
 """Folders, tags and smart folders.
 
-* Folders form a tree. Every item lives in at most one folder (``papers.folder_id``;
-  NULL means "Unfiled").
+* Folders form a tree. An item can be in any number of folders: ``paper_folders``
+  stores only (paper id, folder id) links, so the item's data and PDFs exist once
+  no matter how many folders show it. Items in no folder are "Unfiled".
 * Tags are many-to-many (``paper_tags``); names are unique ignoring case.
 * Smart folders are saved searches (query + scope), evaluated on demand.
 """
@@ -69,6 +70,13 @@ def tags_by_paper(c: sqlite3.Connection) -> dict[str, list[str]]:
     return out
 
 
+def folders_by_paper(c: sqlite3.Connection) -> dict[str, list[int]]:
+    out: dict[str, list[int]] = {}
+    for r in c.execute("SELECT paper_id, folder_id FROM paper_folders ORDER BY folder_id"):
+        out.setdefault(r[0], []).append(r[1])
+    return out
+
+
 def _touch(c: sqlite3.Connection, paper_ids) -> None:
     now = utcnow()
     c.executemany("UPDATE papers SET date_modified = ? WHERE id = ?", [(now, p) for p in paper_ids])
@@ -83,8 +91,8 @@ class FolderRepository:
         """Flat list of folders with parent ids and direct item counts (non-trashed)."""
         with self.db.session() as c:
             counts = {r[0]: r[1] for r in c.execute(
-                "SELECT folder_id, COUNT(*) FROM papers WHERE deleted_at IS NULL AND folder_id IS NOT NULL "
-                "GROUP BY folder_id")}
+                "SELECT pf.folder_id, COUNT(*) FROM paper_folders pf JOIN papers p ON p.id = pf.paper_id "
+                "WHERE p.deleted_at IS NULL GROUP BY pf.folder_id")}
             rows = [dict(r) for r in c.execute(
                 "SELECT id, name, parent_id, position FROM folders ORDER BY position, name COLLATE NOCASE")]
         for r in rows:
@@ -160,20 +168,45 @@ class FolderRepository:
         return self.get(folder_id)
 
     def delete(self, folder_id: int) -> int:
-        """Delete a folder and its subfolders. Their items become unfiled (they are not deleted)."""
-        ids = self.descendants(folder_id)
+        """Delete a folder and its subfolders. Their items stay in the library (and in any
+        other folders); returns how many items ended up in no folder at all."""
+        ids = list(self.descendants(folder_id))
         marks = ",".join("?" * len(ids))
         with self.db.session() as c:
-            n = c.execute(f"UPDATE papers SET folder_id = NULL WHERE folder_id IN ({marks})", list(ids)).rowcount
-            c.execute(f"DELETE FROM folders WHERE id IN ({marks})", list(ids))
-        return n
+            members = {r[0] for r in c.execute(f"SELECT paper_id FROM paper_folders WHERE folder_id IN ({marks})", ids)}
+            c.execute(f"DELETE FROM paper_folders WHERE folder_id IN ({marks})", ids)
+            c.execute(f"DELETE FROM folders WHERE id IN ({marks})", ids)
+            still = {r[0] for r in c.execute("SELECT DISTINCT paper_id FROM paper_folders")}
+        return len(members - still)
 
-    def move_items(self, paper_ids: list[str], folder_id: int | None) -> None:
-        if folder_id is not None:
-            self.get(folder_id)
+    def _check_folders(self, folder_ids) -> list[int]:
+        out = []
+        for f in folder_ids or []:
+            if f in (None, ""):
+                continue
+            self.get(int(f))
+            out.append(int(f))
+        return out
+
+    def change_items(self, paper_ids: list[str], add=(), remove=()) -> None:
+        """Add items to folders and/or take them out of folders. Adding is idempotent."""
+        add, remove = self._check_folders(add), [int(f) for f in remove or [] if f not in (None, "")]
+        if not paper_ids or not (add or remove):
+            return
         with self.db.session() as c:
-            c.executemany("UPDATE papers SET folder_id = ?, date_modified = ? WHERE id = ?",
-                          [(folder_id, utcnow(), p) for p in paper_ids])
+            c.executemany("DELETE FROM paper_folders WHERE paper_id = ? AND folder_id = ?",
+                          [(p, f) for p in paper_ids for f in remove])
+            c.executemany("INSERT OR IGNORE INTO paper_folders (paper_id, folder_id) VALUES (?, ?)",
+                          [(p, f) for p in paper_ids for f in add])
+            _touch(c, paper_ids)
+
+    def set_item_folders(self, paper_id: str, folder_ids) -> None:
+        folder_ids = self._check_folders(folder_ids)
+        with self.db.session() as c:
+            c.execute("DELETE FROM paper_folders WHERE paper_id = ?", (paper_id,))
+            c.executemany("INSERT OR IGNORE INTO paper_folders (paper_id, folder_id) VALUES (?, ?)",
+                          [(paper_id, f) for f in folder_ids])
+            _touch(c, [paper_id])
 
 
 # ====================================================================== tags

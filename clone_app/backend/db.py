@@ -58,7 +58,8 @@ class Database:
             if "date_added" not in att_cols:
                 c.execute("ALTER TABLE attachments ADD COLUMN date_added TEXT")
 
-            # Organisation: folders (a tree; each item in at most one), tags (many per item),
+            # Organisation: folders (a tree), folder memberships (an item can be in any number
+            # of folders; only the link is stored, never a copy), tags (many per item) and
             # smart folders (saved searches).
             c.execute("""
                 CREATE TABLE IF NOT EXISTS folders (
@@ -89,7 +90,18 @@ class Database:
                     position INTEGER DEFAULT 0,
                     date_added TEXT
                 )""")
-            c.execute("CREATE INDEX IF NOT EXISTS idx_papers_folder ON papers(folder_id)")
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS paper_folders (
+                    paper_id TEXT NOT NULL,
+                    folder_id INTEGER NOT NULL,
+                    PRIMARY KEY (paper_id, folder_id)
+                )""")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_paper_folders_folder ON paper_folders(folder_id)")
+            # One-time migration from the single-folder column.
+            c.execute("INSERT OR IGNORE INTO paper_folders (paper_id, folder_id) "
+                      "SELECT id, folder_id FROM papers WHERE folder_id IS NOT NULL "
+                      "AND folder_id IN (SELECT id FROM folders)")
+            c.execute("UPDATE papers SET folder_id = NULL WHERE folder_id IS NOT NULL")
             c.execute("CREATE INDEX IF NOT EXISTS idx_paper_tags_tag ON paper_tags(tag_id)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_title ON papers(title)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_papers_deleted ON papers(deleted_at)")
@@ -105,5 +117,5 @@ class Database:
             # Orphaned attachments from older versions that deleted papers without cascading.
             c.execute("DELETE FROM attachments WHERE paper_id NOT IN (SELECT id FROM papers)")
             c.execute("DELETE FROM paper_tags WHERE paper_id NOT IN (SELECT id FROM papers)")
-            c.execute("UPDATE papers SET folder_id = NULL WHERE folder_id IS NOT NULL "
-                      "AND folder_id NOT IN (SELECT id FROM folders)")
+            c.execute("DELETE FROM paper_folders WHERE paper_id NOT IN (SELECT id FROM papers) "
+                      "OR folder_id NOT IN (SELECT id FROM folders)")

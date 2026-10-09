@@ -66,7 +66,7 @@ INTERNAL_COLUMNS = {
     "annotations": "TEXT",
     "pdfUrl": "TEXT",
     "deleted_at": "TEXT",
-    "folder_id": "INTEGER",   # an item lives in at most one folder (NULL = unfiled)
+    "folder_id": "INTEGER",   # legacy (single folder); superseded by the paper_folders table
 }
 
 ITEM_TYPES = [

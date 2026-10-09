@@ -28,12 +28,12 @@ def items_for_view(s, view: str, library: list[dict]) -> tuple[list[dict], str |
         fid = int(view.split(":", 1)[1])
         s.folders.get(fid)
         ids = s.folders.descendants(fid) if s.settings.get("show_subfolder_items") else {fid}
-        return [p for p in library if p.get("folder_id") in ids], None, None
+        return [p for p in library if ids & set(p.get("folder_ids") or [])], None, None
     if view.startswith("smart:"):
         sf = s.smart.get(int(view.split(":", 1)[1]))
         return library, sf["query"], sf["mode"]
     if view == "unfiled":
-        return [p for p in library if p.get("folder_id") is None], None, None
+        return [p for p in library if not p.get("folder_ids")], None, None
     return s.papers.list(view), None, None
 
 
@@ -94,9 +94,8 @@ def update_item(item_id):
     s.papers.get(item_id)
     if "tags" in data:
         s.tags.set_for_item(item_id, data.pop("tags") or [])
-    if "folder_id" in data:
-        fid = data.pop("folder_id")
-        s.folders.move_items([item_id], int(fid) if fid not in (None, "") else None)
+    if "folder_ids" in data:   # replaces the item's folder memberships
+        s.folders.set_item_folders(item_id, data.pop("folder_ids") or [])
     return jsonify(s.papers.update(item_id, data))
 
 

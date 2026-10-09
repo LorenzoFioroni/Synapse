@@ -25,7 +25,7 @@ def test_save_from_page_metadata_without_network(client, monkeypatch):
     assert r.status_code == 201
     it = r.get_json()["item"]
     assert it["authors"] == "Doe, Jane; Bañuls, Mari Carmen" and it["year"] == 2021
-    assert it["folder_id"] == f["id"] and it["tags"] == ["to read", "web"] and it["url"].startswith("https://journals")
+    assert it["folder_ids"] == [f["id"]] and it["tags"] == ["to read", "web"] and it["url"].startswith("https://journals")
     assert r.get_json()["source"] == "page"
     # second save is reported as a duplicate, unless forced
     r2 = client.post("/api/connector/save", json=page)
@@ -77,3 +77,11 @@ def test_cors_only_for_extension_origins(client):
     assert r.headers["Access-Control-Allow-Origin"] == "chrome-extension://abc"
     r = client.get("/api/connector/ping", headers={"Origin": "https://evil.example"})
     assert "Access-Control-Allow-Origin" not in r.headers
+
+
+def test_file_existing_item_into_another_folder(client):
+    a = client.post("/api/folders", json={"name": "A"}).get_json()
+    b = client.post("/api/folders", json={"name": "B"}).get_json()
+    item = client.post("/api/items", json={"title": "T", "folder_id": a["id"]}).get_json()
+    r = client.post("/api/connector/file", json={"id": item["id"], "folder_id": b["id"], "tags": ["x"]}).get_json()
+    assert r["item"]["folder_ids"] == [a["id"], b["id"]] and r["item"]["tags"] == ["x"]

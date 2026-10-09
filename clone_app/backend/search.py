@@ -105,16 +105,18 @@ def _filter_matches(p: dict, field: str, value: str, ctx: dict) -> bool:
         tags = [normalize(t) for t in p.get("tags") or []]
         return not tags if v == "none" else v in tags
     if field == "folder":
-        fid = p.get("folder_id")
+        fids = p.get("folder_ids") or []
         if v in ("none", "unfiled"):
-            return fid is None
-        path = [normalize(n) for n in ctx.get("folder_paths", {}).get(fid, [])]
-        if not path:
-            return False
-        if "/" in v:   # a path: must match from the root, e.g. "Physics/Transport"
-            want = [x.strip() for x in v.split("/") if x.strip()]
-            return path[:len(want)] == want
-        return v in path
+            return not fids
+        want = [x.strip() for x in v.split("/") if x.strip()]
+        for fid in fids:   # matches if ANY of the item's folders matches
+            path = [normalize(n) for n in ctx.get("folder_paths", {}).get(fid, [])]
+            if "/" in v:   # a path: must match from the root, e.g. "Physics/Transport"
+                if path[:len(want)] == want:
+                    return True
+            elif v in path:
+                return True
+        return False
     if field == "type":
         key = p.get("item_type") or ""
         label = ctx.get("type_labels", {}).get(key, "")
@@ -126,8 +128,8 @@ def _filter_matches(p: dict, field: str, value: str, ctx: dict) -> bool:
             return bool(p.get("attachments"))
         if v in ("tag", "tags"):
             return bool(p.get("tags"))
-        if v == "folder":
-            return p.get("folder_id") is not None
+        if v in ("folder", "folders"):
+            return bool(p.get("folder_ids"))
         key = FIELD_ALIASES.get(v, v)
         return str(p.get(key) or "").strip() != ""
     key = FIELD_ALIASES.get(field, field)

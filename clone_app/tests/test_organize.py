@@ -5,33 +5,46 @@ def mk(client, **data):
     return client.post("/api/items", json={"title": "T", "authors": "Doe, J", "year": 2020, **data}).get_json()
 
 
-def test_folders_tree_and_single_membership(client):
+def test_folders_tree_and_multiple_membership(client):
     phys = client.post("/api/folders", json={"name": "Physics"}).get_json()
     tr = client.post("/api/folders", json={"name": "Transport", "parent_id": phys["id"]}).get_json()
+    rg = client.post("/api/folders", json={"name": "Reading group"}).get_json()
     assert client.post("/api/folders", json={"name": "physics"}).status_code == 400   # sibling names are unique
     assert client.post("/api/folders", json={"name": "  "}).status_code == 400
     a, b = mk(client, title="A"), mk(client, title="B", folder_id=tr["id"])
-    assert b["folder_id"] == tr["id"]
-    client.post("/api/items/move", json={"ids": [a["id"]], "folder_id": phys["id"]})
-    client.post("/api/items/move", json={"ids": [a["id"]], "folder_id": tr["id"]})   # moving replaces, never duplicates
-    assert client.get(f"/api/items/{a['id']}").get_json()["folder_id"] == tr["id"]
-    # parent folder shows subfolder items (default setting); the subfolder shows its own
+    assert b["folder_ids"] == [tr["id"]]
+    # an item can be in several folders; adding twice is harmless
+    client.post("/api/items/folders", json={"ids": [a["id"]], "add": [tr["id"], rg["id"]]})
+    client.post("/api/items/folders", json={"ids": [a["id"]], "add": [rg["id"]]})
+    assert client.get(f"/api/items/{a['id']}").get_json()["folder_ids"] == [tr["id"], rg["id"]]
     ids = lambda v: sorted(i["id"] for i in client.get(f"/api/items?view={v}").get_json()["items"])
+    assert ids(f"folder:{rg['id']}") == [a["id"]] and ids(f"folder:{tr['id']}") == sorted([a["id"], b["id"]])
+    # the item is stored once: still one library row, no duplicated data
+    lib = client.get("/api/items").get_json()
+    assert lib["counts"]["library"] == 2 and len(lib["items"]) == 2
+    # parent folder shows subfolder items (default setting)
     assert ids(f"folder:{phys['id']}") == sorted([a["id"], b["id"]])
     client.put("/api/settings", json={"show_subfolder_items": False})
     assert ids(f"folder:{phys['id']}") == []
+    tree = {f["name"]: f for f in lib["sidebar"]["folders"]}
+    assert tree["Transport"]["count"] == 2 and tree["Reading group"]["count"] == 1
+    # "move" = remove from one folder + add to another; removing never deletes the item
+    client.post("/api/items/folders", json={"ids": [a["id"]], "remove": [tr["id"]], "add": [phys["id"]]})
+    assert client.get(f"/api/items/{a['id']}").get_json()["folder_ids"] == [phys["id"], rg["id"]]
+    client.patch(f"/api/items/{a['id']}", json={"folder_ids": [rg["id"]]})          # replace all memberships
+    assert client.get(f"/api/items/{a['id']}").get_json()["folder_ids"] == [rg["id"]]
+    assert client.post("/api/items/folders", json={"ids": [a["id"]], "add": [999]}).status_code == 404
     assert ids("unfiled") == []
-    res = client.get("/api/items").get_json()
-    tree = {f["name"]: f for f in res["sidebar"]["folders"]}
-    assert tree["Transport"]["parent_id"] == phys["id"] and tree["Transport"]["count"] == 2
     # no cycles
     assert client.patch(f"/api/folders/{phys['id']}", json={"parent_id": tr["id"]}).status_code == 400
-    # rename + move to root
     r = client.patch(f"/api/folders/{tr['id']}", json={"name": "Transport theory", "parent_id": None}).get_json()
     assert r["name"] == "Transport theory" and r["parent_id"] is None
-    # deleting a folder keeps its items (they become unfiled)
-    client.delete(f"/api/folders/{tr['id']}")
-    assert ids("unfiled") == sorted([a["id"], b["id"]])
+    # deleting a folder keeps its items; only those in no other folder become unfiled
+    client.post("/api/items/folders", json={"ids": [b["id"]], "add": [rg["id"]]})
+    res = client.delete(f"/api/folders/{tr['id']}").get_json()
+    assert res["unfiled"] == 0 and ids("unfiled") == []
+    res = client.delete(f"/api/folders/{rg['id']}").get_json()
+    assert res["unfiled"] == 2 and ids("unfiled") == sorted([a["id"], b["id"]])
     assert client.get("/api/items").get_json()["counts"]["library"] == 2
 
 
@@ -84,7 +97,7 @@ def test_import_keywords_become_tags_and_export_them(client):
     prev = client.post("/api/import/preview", json={"text": bib}).get_json()
     res = client.post("/api/import/commit", json={"entries": prev["entries"], "folder_id": phys["id"]}).get_json()
     item = client.get(f"/api/items/{res['created'][0]}").get_json()
-    assert item["tags"] == ["spin chains", "transport"] and not item["keywords"] and item["folder_id"] == phys["id"]
+    assert item["tags"] == ["spin chains", "transport"] and not item["keywords"] and item["folder_ids"] == [phys["id"]]
     out = client.get(f"/api/export?format=bibtex&ids={item['id']}&download=0").get_json()["text"]
     assert "keywords = {spin chains, transport}" in out
 
@@ -95,3 +108,22 @@ def test_permanent_delete_cleans_tags(client):
     assert client.get("/api/tags").get_json()["tags"][0]["count"] == 0   # trashed items don't count
     client.post("/api/trash/empty")
     assert client.get("/api/tags").get_json()["tags"] == []
+
+
+def test_migration_from_single_folder_column(tmp_path):
+    """Libraries created with the one-folder-per-item version keep their folders."""
+    import sqlite3
+    from backend import create_app
+    from backend.config import Config
+    data = tmp_path / "data"
+    app = create_app(Config.from_env(data), start_indexer=False)
+    c = app.test_client()
+    f = c.post("/api/folders", json={"name": "Old"}).get_json()
+    item = c.post("/api/items", json={"title": "X"}).get_json()
+    con = sqlite3.connect(data / "library.db")     # simulate the previous layout
+    con.execute("DELETE FROM paper_folders")
+    con.execute("UPDATE papers SET folder_id = ? WHERE id = ?", (f["id"], item["id"]))
+    con.commit()
+    con.close()
+    app2 = create_app(Config.from_env(data), start_indexer=False)
+    assert app2.test_client().get(f"/api/items/{item['id']}").get_json()["folder_ids"] == [f["id"]]

@@ -44,13 +44,13 @@ def test_fulltext():
 
 ORG = [
     {"id": "a", "title": "Spin transport", "authors": "Doe, J", "year": 2019, "item_type": "journalArticle",
-     "tags": ["Transport", "open systems"], "folder_id": 2, "attachments": [{"name": "x.pdf"}], "doi": "10.1/a"},
+     "tags": ["Transport", "open systems"], "folder_ids": [2, 3], "attachments": [{"name": "x.pdf"}], "doi": "10.1/a"},
     {"id": "b", "title": "Open quantum systems", "authors": "Breuer, H", "year": 2002, "item_type": "book",
-     "tags": [], "folder_id": None, "attachments": []},
+     "tags": [], "folder_ids": [], "attachments": []},
     {"id": "c", "title": "Energy transport", "authors": "Roe, R", "year": 2023, "item_type": "journalArticle",
-     "tags": ["transport"], "folder_id": 1, "attachments": []},
+     "tags": ["transport"], "folder_ids": [1], "attachments": []},
 ]
-CTX = {"folder_paths": {1: ["Physics"], 2: ["Physics", "Transport"]}, "type_labels": {"book": "Book", "journalArticle": "Journal Article"}}
+CTX = {"folder_paths": {1: ["Physics"], 2: ["Physics", "Transport"], 3: ["Reading group"]}, "type_labels": {"book": "Book", "journalArticle": "Journal Article"}}
 
 
 def f(q, mode="basic"):
@@ -65,6 +65,8 @@ def test_filters():
     assert f("folder:physics") == ["a", "c"]         # any folder on the path
     assert f('folder:"Physics/Transport"') == ["a"]
     assert f("folder:none") == ["b"]
+    assert f('folder:"reading group"') == ["a"]       # any of the item's folders
+    assert f("has:folder") == ["a", "c"]
     assert f("type:book") == ["b"] and f("type:journal") == ["a", "c"]
     assert f("year:2019") == ["a"] and f("year:2000-2020") == ["a", "b"] and f("year:>2010") == ["a", "c"]
     assert f("has:pdf") == ["a"] and f("has:doi") == ["a"] and f("-has:pdf") == ["b", "c"]
