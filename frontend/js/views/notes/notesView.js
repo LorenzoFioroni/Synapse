@@ -11,6 +11,7 @@ import { openMenu } from '../../ui/menu.js';
 import { toast, toastError } from '../../ui/toast.js';
 import { escapeHtml, formatDate, h, modKey, modLabel, plural, storage, store } from '../../util.js';
 import { navPush } from '../../nav.js';
+import { closeGlobal, globalOpen, graphChanged, initNotesGraph, localSection, openGlobal, showLocal } from '../graph/notesGraph.js';
 import { compactDiff, lineDiff } from './diff.js';
 import { createEditor, loadMD } from './editor.js';
 import { splitFrontmatter } from './mdscan.js';
@@ -66,6 +67,7 @@ export function initNotes() {
         <span class="title">Notes</span>
         <button class="icon-btn" data-act="new-note" title="New note (${modLabel}N)">${icon('plus')}</button>
         <button class="icon-btn" data-act="new-folder" title="New folder">${icon('folderPlus')}</button>
+        <button class="icon-btn" data-act="graph" title="Graph of notes and papers (${modLabel}⇧G)">${icon('link')}</button>
         <button class="icon-btn" data-act="tree-menu" title="More">${icon('drag', 'icon-sm')}</button>
       </div>
       <div class="notes-filter"><input class="input" placeholder="Filter notes" spellcheck="false" aria-label="Filter notes"></div>
@@ -88,9 +90,17 @@ export function initNotes() {
           <p>Pick a note on the left, or create one with <b>+</b> (${modLabel}N).</p></div>
       </div>
     </section>
-    <aside class="notes-side" aria-label="Note details"></aside>
+    <aside class="notes-side" aria-label="Note details"><div class="ns-details"></div></aside>
   </div>`);
   document.getElementById('app').appendChild(root);
+  root.querySelector('.notes-side').prepend(localSection());
+  initNotesGraph({
+    root,
+    openNote: (p) => openNote(p),
+    currentPath: () => session?.path || null,
+    openGraph: (focus) => openNotesGraph(focus),
+    onGlobalClosed: () => navPush({ ws: 'notes', path: session?.path || null }),
+  });
 
   root.addEventListener('click', onClick);
   root.addEventListener('dblclick', onDblClick);
@@ -161,7 +171,7 @@ function flushOnUnload() {
 }
 
 /* ============================================================ open/close */
-export async function openNotes(path = null, line = null) {
+export async function openNotes(path = null, line = null, { graph = false, focus = null } = {}) {
   if (!notesEnabled()) return;
   document.body.dataset.workspace = 'notes';
   root.hidden = false;
@@ -176,7 +186,21 @@ export async function openNotes(path = null, line = null) {
     if (path) toast(`“${stemOf(path)}” no longer exists (moved or deleted).`);
     if (!session) paintEmpty();
   }
-  navPush({ ws: 'notes', path: session?.path || null });
+  if (graph) await openGlobal(focus); else closeGlobal();
+  navPush(graph ? { ws: 'notes', path: session?.path || null, graph: true, focus } : { ws: 'notes', path: session?.path || null });
+}
+
+/** The full graph in Notes, optionally centred on a node ("note:<path>", "item:<id>"). */
+export async function openNotesGraph(focus = null) {
+  if (!notesEnabled()) return;
+  if (!notesOpen()) await openNotes();
+  await openGlobal(focus);
+  navPush({ ws: 'notes', path: session?.path || null, graph: true, focus });
+}
+
+/** ⌘⇧G: the graph, or back to the note. */
+export async function toggleNotesGraph() {
+  if (notesOpen() && globalOpen()) { closeGlobal({ push: true }); editor?.focus(); } else await openNotesGraph(session ? `note:${session.path}` : null);
 }
 
 /** Show a 1-based line of the open note, in whichever mode is active. */
@@ -357,6 +381,7 @@ function onReadDblClick(e) {
 
 /** Open a note (saving the current one first). Calls are serialised. */
 export function openNote(path) {
+  closeGlobal();
   opening = opening.then(() => doOpen(path)).catch(toastError);
   return opening;
 }
@@ -388,6 +413,7 @@ async function doOpen(path) {
   if (notesOpen()) navPush({ ws: 'notes', path });
   if (!sel.has(nKey(path))) selectOnly(nKey(path));   // opened from elsewhere: the list follows
   root.classList.add('has-note');
+  showLocal(path);
   paintStatus(session.status);
   paintCrumbs();
   paintSide();
@@ -401,9 +427,10 @@ async function doOpen(path) {
 
 function paintEmpty() {
   root.classList.remove('has-note');
+  showLocal(null);
   root.querySelector('.note-crumbs').innerHTML = '';
   root.querySelector('.note-status').textContent = '';
-  root.querySelector('.notes-side').innerHTML = '';
+  root.querySelector('.notes-side .ns-details').innerHTML = '';
 }
 
 async function closeCurrent() {
@@ -428,6 +455,7 @@ function afterSave() {
     } catch { /* next save will try again */ }
     loadLinks();
     refreshTree();
+    graphChanged();
   }, 400);
 }
 
@@ -577,7 +605,7 @@ function paintCrumbs() {
 }
 
 function paintSide() {
-  const side = root.querySelector('.notes-side');
+  const side = root.querySelector('.notes-side .ns-details');   // the local graph above it stays
   if (!info) { side.innerHTML = ''; return; }
   const heads = info.headings || [];
   const minLevel = Math.min(...heads.map((x) => x.level), 6);
@@ -886,6 +914,7 @@ function onClick(e) {
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act === 'new-note') return newNote();
   if (act === 'new-folder') return newFolder(folderOfSelection());
+  if (act === 'graph') return openNotesGraph(session ? `note:${session.path}` : null);
   if (act === 'rename' && session) return renameNote(session.path);
   if (act === 'show-conflict' && session?.conflict) return conflictDialog(session.conflict);
   if (act === 'paper-item' && info?.paper) { const it = itemInfo(info.paper); if (it) emit('show-item', it.id); return; }
@@ -1017,6 +1046,7 @@ function onContextMenu(e) {
       { label: 'Rename…', icon: 'edit', run: () => renameNote(p), shortcut: 'F2' },
       { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
       { label: 'Copy link', icon: 'link', run: () => copyLinks([p]) },
+      { label: 'Show in Graph', icon: 'link', run: () => openNotesGraph(`note:${p}`) },
       'sep',
       trash,
     ], at);

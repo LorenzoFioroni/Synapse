@@ -16,7 +16,7 @@ import { focusList, initItemList, openColumnPicker } from './views/itemlist.js';
 import { initItemPane, toggleItemPane } from './views/itempane.js';
 import { applyAppearance, closeSettings, openSettings, settingsOpen } from './views/settingsView.js';
 import { initSidebar } from './views/sidebar.js';
-import { closeNotes, initNotes, notesOpen, notesShortcut, openNotes } from './views/notes/notesView.js';
+import { closeNotes, initNotes, notesOpen, notesShortcut, openNotes, openNotesGraph, toggleNotesGraph } from './views/notes/notesView.js';
 
 async function boot() {
   try {
@@ -47,6 +47,7 @@ async function boot() {
   on('open-notes', () => openNotes());
   on('close-notes', () => closeNotes());
   on('open-note', ({ path, line }) => openNotes(path, line));
+  on('show-graph', (focus) => { if (settingsOpen()) closeSettings(); openNotesGraph(focus); });
   on('show-item', (id) => showItem(id));
   on('workspace', paintWorkspace);
   // Back/Forward move between notes and the library view you came from.
@@ -90,7 +91,7 @@ async function showItem(id) {
 /** Back/Forward: go to a note or to the library view and selection stored in the history entry. */
 async function navigate(entry) {
   if (settingsOpen()) closeSettings();
-  if (entry.ws === 'notes') { await openNotes(entry.path || null); return; }
+  if (entry.ws === 'notes') { await openNotes(entry.path || null, null, { graph: !!entry.graph, focus: entry.focus || null }); return; }
   if (notesOpen()) await closeNotes();
   if (entry.view && entry.view !== state.view) { A.setView(entry.view); await A.loadItems({ keepSelection: false }); }
   const ids = (entry.sel || []).filter((id) => state.items.some((i) => i.id === id));
@@ -299,6 +300,7 @@ function initShortcuts() {
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable;
     const k = e.key.toLowerCase();
     if (modKey(e) && e.shiftKey && k === 'l' && state.settings.notes_enabled !== false) { e.preventDefault(); switchWorkspace(); return; }
+    if (modKey(e) && e.shiftKey && k === 'g' && state.settings.notes_enabled !== false) { e.preventDefault(); if (settingsOpen()) closeSettings(); toggleNotesGraph(); return; }
     if (notesOpen() && !settingsOpen()) {
       // The note editor owns its keys (search, undo, …); only Settings stays global.
       if (modKey(e) && k === ',') { e.preventDefault(); openSettings(); return; }

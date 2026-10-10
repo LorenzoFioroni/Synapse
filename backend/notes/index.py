@@ -304,6 +304,38 @@ class NotesIndex:
                 rows = c.execute("SELECT DISTINCT target FROM links WHERE kind = 'cite' ORDER BY target")
             return [r["target"] for r in rows]
 
+    def link_graph(self) -> list[dict]:
+        """Every link between notes and every citation, in one pass (for the graph view):
+        [{"source": path, "kind": "note" | "cite", "target": resolved path or citation key}].
+        [[links]] resolve exactly like ``resolve``; unresolved ones are left out."""
+        with self._session() as c:
+            paths = [r["path"] for r in c.execute("SELECT path FROM notes")]
+            rows = [dict(r) for r in c.execute(
+                "SELECT DISTINCT path, kind, target FROM links WHERE kind IN ('note','embed','cite')")]
+        by_stem: dict[str, list[str]] = {}
+        for p in paths:
+            by_stem.setdefault(stem_of(p), []).append(p)
+        best = lambda ps: sorted(ps, key=lambda p: (p.count("/"), len(p), p))[0] if ps else None  # noqa: E731
+        out, seen = [], set()
+        for r in rows:
+            if r["kind"] == "cite":
+                edge = (r["path"], "cite", r["target"])
+            else:
+                t = norm_target(r["target"])
+                if not t:
+                    continue   # [[#heading]]: a link inside the note itself
+                if "/" in t:
+                    target = best([p for p in paths if p.lower() == t + ".md" or p.lower().endswith("/" + t + ".md")])
+                else:
+                    target = best(by_stem.get(t, []))
+                if not target or target == r["path"]:
+                    continue
+                edge = (r["path"], "note", target)
+            if edge not in seen:
+                seen.add(edge)
+                out.append({"source": edge[0], "kind": edge[1], "target": edge[2]})
+        return out
+
     def search(self, query: str, limit: int = 50) -> list[dict]:
         q = _fts_query(query)
         if not q:

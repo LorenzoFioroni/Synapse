@@ -1,0 +1,8 @@
+{
+  "name": "graph-bundle",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "force-graph": "1.51.4"
+  }
+}

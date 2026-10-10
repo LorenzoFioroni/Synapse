@@ -105,6 +105,7 @@ export const api = {
   fetchReferences: (id) => request('POST', `/api/items/${id}/references`),
   queueReferences: (ids) => request('POST', '/api/references/queue', { ids }),
   citationGraph: () => request('GET', '/api/graph/citations'),
+  graph: () => request('GET', '/api/graph'),
   noteTrash: () => request('GET', '/api/notes/trash'),
   citeIndex: () => request('GET', '/api/notes/cite_index'),
   renamePlan: (old, nu) => request('GET', `/api/notes/rename_plan?${qs({ old, new: nu })}`),
