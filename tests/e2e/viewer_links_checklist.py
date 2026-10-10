@@ -247,26 +247,62 @@ async def main():
             check("right-column section: window on the right column, title near the top",
                   right["sl"] + right["cw"] >= right["sw"] - 12 and 0 < right["y"] - right["st"] < 60 and right["x"] - right["sl"] > 40, right)
             await t.locator('.zc-link-pop').screenshot(path=f"{SHOTS}/2a-right-section.png") if SHOTS else None
-            # Fig. 1 is anchored at the END of its caption under a non-figure name (\phantomsection), like many PDFs
-            fig_end = names[8]                       # links in reading order: Sections I–VIII, then Fig. 1
-            f1 = await preview(fig_end)
-            check("figure anchored at its caption end: taller window, caption at its bottom, figure above",
-                  f1["ch"] == 360 and f1["ch"] - 70 < f1["y"] - f1["st"] < f1["ch"], f1)
+            # Figures and tables: the whole drawing and its caption fit in the popup, whatever their size.
+            async def shown():
+                return await t.evaluate("""() => { const p = document.querySelector('.zc-link-pop'); const s = p.querySelector('.zc-pop-page');
+                    const r = p.zcPreview.region, k = p.zcPreview.scale;
+                    return r && { scale: k, sl: s.scrollLeft, st: s.scrollTop, cw: s.clientWidth, ch: s.clientHeight,
+                                  x0: r.x * k, y0: r.y * k, x1: (r.x + r.w) * k, y1: (r.y + r.h) * k }; }""")
+
+            def whole(v):
+                return v and v["x0"] >= v["sl"] - 1 and v["y0"] >= v["st"] - 1 and v["x1"] <= v["sl"] + v["cw"] + 1 and v["y1"] <= v["st"] + v["ch"] + 1
+
+            # Fig. 1: anchored at the END of its caption under a non-figure name (\phantomsection), like many PDFs
+            await preview(names[8])                  # links in reading order: Sections I–VIII, then Fig. 1
+            f1 = await shown()
+            check("figure anchored at its caption end: the whole figure and caption are shown", whole(f1), f1)
             if SHOTS:
                 await t.locator('.zc-link-pop').screenshot(path=f"{SHOTS}/2b-figure-end.png")
-            # Fig. 2 (figure.2) is anchored at the START of its caption
-            f2 = await preview("figure.2")
-            check("figure anchored at its caption start: caption at the bottom too", f2["ch"] == 360 and f2["ch"] - 70 < f2["y"] - f2["st"] < f2["ch"], f2)
-            tb = await preview("table.1")
-            check("table: its caption and the table below it are in view", 0 < tb["y"] - tb["st"] < tb["ch"] - 40, tb)
-            # touchpad / wheel scroll inside the preview
+            await preview("figure.2")                # anchored at the START of its caption; a tall figure
+            f2 = await shown()
+            check("tall figure: shown whole (scaled down to fit)", whole(f2) and f2["y1"] - f2["y0"] > 400 and f2["scale"] < 1.35, f2)
+            if SHOTS:
+                await t.locator('.zc-link-pop').screenshot(path=f"{SHOTS}/2c-tall-figure.png")
+            await preview("figure.3")                # a vector figure (paths) with text labels
+            f3 = await shown()
+            check("vector figure with labels: shown whole", whole(f3) and f3["x1"] - f3["x0"] > 300, f3)
+            await preview("table.1")
+            tb = await shown()
+            check("table: the caption and the whole table below it", whole(tb) and tb["y1"] - tb["y0"] > 100, tb)
+
+            # zoom: the +/- buttons and pinch / Ctrl+wheel, around the pointer; scrolling still works
+            await preview("figure.2")
+            k0 = (await shown())["scale"]
+            await t.click('.zc-pop-zoom [data-z="1"]')
+            await t.wait_for_timeout(300)
+            k1 = (await shown())["scale"]
+            check("+ zooms in (and the popup stays open)", abs(k1 - k0 * 1.25) < 0.01 and await t.is_visible('.zc-link-pop'), (k0, k1))
             box = await t.locator('.zc-link-pop .zc-pop-page').bounding_box()
-            await t.mouse.move(box["x"] + 200, box["y"] + 150)
-            before_st = tb["st"]
-            await t.mouse.wheel(0, -300)
+            await t.mouse.move(box["x"] + 100, box["y"] + 200)
+            before = await t.evaluate("""() => { const s = document.querySelector('.zc-link-pop .zc-pop-page');
+                return { x: (s.scrollLeft + 100) / document.querySelector('.zc-link-pop').zcPreview.scale, y: (s.scrollTop + 200) / document.querySelector('.zc-link-pop').zcPreview.scale }; }""")
+            await t.keyboard.down("Control")
+            await t.mouse.wheel(0, -100)
+            await t.keyboard.up("Control")
+            await t.wait_for_timeout(400)
+            after = await t.evaluate("""() => { const s = document.querySelector('.zc-link-pop .zc-pop-page'); const k = document.querySelector('.zc-link-pop').zcPreview.scale;
+                return { k, x: (s.scrollLeft + 100) / k, y: (s.scrollTop + 200) / k }; }""")
+            doc_scale = await t.evaluate("window.zcViewer.scale")
+            check("pinch / Ctrl+wheel zooms the preview around the pointer, not the document",
+                  after["k"] > k1 * 1.5 and abs(after["x"] - before["x"]) < 3 and abs(after["y"] - before["y"]) < 3 and doc_scale == 1.5,
+                  (k1, after, before, doc_scale))
+            sharp = await t.evaluate("(() => { const c = document.querySelector('.zc-link-pop canvas'); return c.width / parseFloat(c.style.width); })()")
+            check("the zoomed preview is re-rendered sharp", sharp >= 0.99, sharp)
+            st0 = await t.evaluate("document.querySelector('.zc-link-pop .zc-pop-page').scrollTop")
+            await t.mouse.wheel(0, 250)
             await t.wait_for_timeout(300)
             st = await t.evaluate("document.querySelector('.zc-link-pop .zc-pop-page')?.scrollTop")
-            check("wheel/touchpad scrolls the preview", st is not None and st < before_st - 200, (before_st, st))
+            check("wheel/touchpad scrolls the preview", st is not None and st > st0 + 150, (st0, st))
             check("no console errors", not errors, errors[:5])
             await b.close()
     finally:

@@ -14,7 +14,7 @@
 // - Every jump is a browser history entry holding the reading position, so Back (toolbar arrow,
 //   Alt+←, Cmd+[, the mouse's back button) returns to where you were before following the link.
 
-import { destTarget, findCaption, isFloatDest, popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor } from './linkNav.js';
+import { destTarget, figureRegion, findCaption, fitRegion, graphicsBoxes, isFloatDest, popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor } from './linkNav.js';
 
 const HOVER_DELAY = 250;
 const PREVIEW_W = 460, PREVIEW_H = 260, PREVIEW_H_FLOAT = 360, PREVIEW_SCALE = 1.35;
@@ -34,7 +34,12 @@ css.textContent = `
   .zc-link-pop .zc-pop-page { overflow: scroll; overscroll-behavior: contain; scrollbar-width: thin; }
   .zc-link-pop .zc-pop-page::-webkit-scrollbar { width: 8px; height: 8px; }
   .zc-link-pop .zc-pop-page::-webkit-scrollbar-thumb { background: rgba(0,0,0,.25); border-radius: 4px; }
-  .zc-link-pop .zc-pop-head { display: flex; justify-content: space-between; gap: 12px; padding: 4px 9px;
+  .zc-pop-zoom { display: inline-flex; align-items: center; gap: 4px; }
+  .zc-pop-zoom button { border: 1px solid var(--border, #ddd); background: var(--bg, #fff); color: var(--text-2, #555); border-radius: 4px;
+    width: 18px; height: 16px; line-height: 12px; padding: 0; cursor: pointer; font: inherit; }
+  .zc-pop-zoom button:hover { background: var(--bg-hover, #eef); }
+  .zc-pop-pct { min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
+  .zc-link-pop .zc-pop-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 9px;
     color: var(--text-3, #888); border-bottom: 1px solid var(--border, #eee); font-size: 11px; }
   .zc-link-pop .zc-pop-url { padding: 6px 10px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #zc-nav { display: flex; gap: 2px; margin-right: 6px; }
@@ -256,69 +261,130 @@ async function showPopup(link) {
   let page = t.page, vp = t.vp;
   if (!page) { page = await viewer().pdfDoc.getPage(t.pageNum); vp = page.getViewport({ scale: 1 }); }
   if (hoverLink !== link) return;
-  const pageW = vp.width * PREVIEW_SCALE, pageH = vp.height * PREVIEW_SCALE;
-  const w = Math.min(PREVIEW_W, Math.round(pageW));
-  // A figure: end the window with its caption (the figure is above it). A table: start with its
-  // caption (the table is below it).
-  const caption = t.y == null ? null : await captionAt(page, vp, t);
+  // A figure or table: fit the whole of it, with its caption, in the popup. Anything else: the
+  // destination near the top-left of a fixed window, on its column.
+  const fig = t.y == null ? null : await figureAt(page, vp, t);
   if (hoverLink !== link) return;
-  const float = !!caption || isFloatDest(target.dest);
-  const h = Math.min(float ? PREVIEW_H_FLOAT : PREVIEW_H, Math.round(pageH));
-  const S = PREVIEW_SCALE;
-  const top = caption?.table ? caption.top * S : t.y == null ? null : t.y * S;
-  const bottom = caption?.table ? null : caption ? caption.bottom * S : float ? t.y * S + 16 : null;
-  const o = previewOrigin(t.x == null ? null : t.x * S, top, w, h, pageW, pageH, 16, bottom);
-  // The whole page, in a window that starts at the destination and can be scrolled.
-  const dpr = window.devicePixelRatio || 1;
+  let scale = PREVIEW_SCALE, w, h, ox, oy;
+  if (fig?.region) {
+    const r = fig.region;
+    const f = fitRegion(r, Math.min(640, window.innerWidth * 0.5), Math.min(620, window.innerHeight * 0.72));
+    scale = f.s; w = f.w; h = f.h;
+    ox = r.x * scale - (w - r.w * scale) / 2;
+    oy = r.y * scale - (h - r.h * scale) / 2;
+  } else {
+    const pageW = vp.width * scale, pageH = vp.height * scale;
+    const float = !!fig || isFloatDest(target.dest);
+    w = Math.min(PREVIEW_W, Math.round(pageW));
+    h = Math.min(float ? PREVIEW_H_FLOAT : PREVIEW_H, Math.round(pageH));
+    const top = fig?.table ? fig.top * scale : t.y * scale;
+    const bottom = fig?.table ? null : fig ? fig.bottom * scale : float ? t.y * scale + 16 : null;
+    ({ x: ox, y: oy } = previewOrigin(t.x == null ? null : t.x * scale, top, w, h, pageW, pageH, 16, bottom));
+  }
+  // The whole page, in a window onto it that can be scrolled and zoomed.
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(pageW * dpr);
-  canvas.height = Math.round(pageH * dpr);
-  canvas.style.width = `${Math.round(pageW)}px`;
-  canvas.style.height = `${Math.round(pageH)}px`;
   const scroller = document.createElement('div');
   scroller.className = 'zc-pop-page';
   scroller.style.width = `${w}px`;
   scroller.style.height = `${h}px`;
   scroller.appendChild(canvas);
-  // Wheel and touchpad scroll the page inside the popup (never the document behind it).
+  const head = document.createElement('div');
+  head.className = 'zc-pop-head';
+  head.innerHTML = `<span>Page ${t.pageNum}</span><span class="zc-pop-zoom"><button data-z="-1" title="Zoom out">−</button>
+    <span class="zc-pop-pct"></span><button data-z="1" title="Zoom in (or pinch, ${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+scroll)">+</button></span>
+    <span>Click to go there</span>`;
+  el.classList.add('preview');
+  el.append(head, scroller);
+  el.addEventListener('click', (e) => {
+    const z = e.target.closest('[data-z]');
+    if (z) { e.stopPropagation(); zoomTo(scale * (z.dataset.z === '1' ? 1.25 : 0.8)); return; }
+    if (e.target.closest('.zc-pop-head')) return;
+    hidePopup();
+    followInternal(target);
+  });
+  placePopup(el, link);
+
+  let renderTask = null, renderTimer = null;
+  const paint = () => {
+    const dpr = window.devicePixelRatio || 1;
+    const pw = vp.width * scale, ph = vp.height * scale;
+    canvas.style.width = `${Math.round(pw)}px`;
+    canvas.style.height = `${Math.round(ph)}px`;
+    head.querySelector('.zc-pop-pct').textContent = `${Math.round((scale / PREVIEW_SCALE) * 100)}%`;
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(async () => {   // the canvas is stretched until the new rendering is ready
+      renderTask?.cancel();
+      const fresh = document.createElement('canvas');
+      fresh.width = Math.round(pw * dpr);
+      fresh.height = Math.round(ph * dpr);
+      renderTask = page.render({ canvasContext: fresh.getContext('2d'), viewport: page.getViewport({ scale }),
+        transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null });
+      try {
+        await renderTask.promise;
+        canvas.width = fresh.width; canvas.height = fresh.height;
+        canvas.getContext('2d').drawImage(fresh, 0, 0);
+      } catch (e) { if (e?.name !== 'RenderingCancelledException') console.warn('Link preview failed', e); }
+    }, canvas.width ? 120 : 0);
+  };
+  // Zoom around a point of the window (its centre by default), keeping that point in place.
+  const zoomTo = (next, px = scroller.clientWidth / 2, py = scroller.clientHeight / 2) => {
+    next = Math.max(0.3, Math.min(4, next));
+    if (Math.abs(next - scale) < 1e-3) return;
+    const k = next / scale;
+    const sx = (scroller.scrollLeft + px) * k - px, sy = (scroller.scrollTop + py) * k - py;
+    scale = next;
+    paint();
+    scroller.scrollLeft = sx;
+    scroller.scrollTop = sy;
+  };
+  // Wheel / touchpad scroll the page inside the popup; pinch and Ctrl/Cmd+wheel zoom it
+  // (never the document behind it).
   scroller.addEventListener('wheel', (e) => {
-    if (e.ctrlKey || e.metaKey) return;   // pinch / Cmd+wheel: the viewer's zoom
     e.preventDefault();
     e.stopPropagation();
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? scroller.clientHeight : 1;
+    if (e.ctrlKey || e.metaKey) {
+      const r = scroller.getBoundingClientRect();
+      zoomTo(scale * Math.exp(-e.deltaY * unit * 0.01), e.clientX - r.left, e.clientY - r.top);
+      return;
+    }
     scroller.scrollBy({ left: (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * unit, top: (e.shiftKey && !e.deltaX ? 0 : e.deltaY) * unit });
   }, { passive: false });
-  const head = document.createElement('div');
-  head.className = 'zc-pop-head';
-  head.innerHTML = `<span>Page ${t.pageNum}</span><span>Scroll to look around · click to go there</span>`;
-  el.classList.add('preview');
-  el.append(head, scroller);
-  el.addEventListener('click', () => { hidePopup(); followInternal(target); });
-  placePopup(el, link);
-  scroller.scrollLeft = o.x;
-  scroller.scrollTop = o.y;
-  try {
-    await page.render({
-      canvasContext: canvas.getContext('2d'),
-      viewport: page.getViewport({ scale: PREVIEW_SCALE }),
-      transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null,
-    }).promise;
-  } catch (e) { console.warn('Link preview failed', e); }
+  paint();
+  scroller.scrollLeft = ox;
+  scroller.scrollTop = oy;
+  el.zcPreview = { get scale() { return scale; }, zoomTo, region: fig?.region || null };   // for tests
 }
 
-/** The caption at a destination, in page CSS px at scale 1 ({top, bottom}), or null. */
-const pageText = new Map();
-async function captionAt(page, vp, t) {
-  if (!pageText.has(page.pageNumber)) {
-    pageText.set(page.pageNumber, page.getTextContent().then((tc) => tc.items.filter((i) => i.str?.trim()).map((i) => (
-      { str: i.str, x: i.transform[4], y: i.transform[5], h: i.height || Math.hypot(i.transform[2], i.transform[3]) }))).catch(() => []));
+/**
+ * The figure or table at a destination (page CSS px at scale 1): {top, bottom, table} of its
+ * caption, and region {x, y, w, h}: the drawing above the caption (below it for a table) together
+ * with the caption — or null if the destination is not a caption.
+ */
+const pageText = new Map(), pageGraphics = new Map();
+async function figureAt(page, vp, t) {
+  const n = page.pageNumber;
+  if (!pageText.has(n)) {
+    pageText.set(n, page.getTextContent().then((tc) => tc.items.filter((i) => i.str?.trim()).map((i) => (
+      { str: i.str, x: i.transform[4], y: i.transform[5], w: i.width, h: i.height || Math.hypot(i.transform[2], i.transform[3]) }))).catch(() => []));
   }
-  const items = await pageText.get(page.pageNumber);
+  const items = await pageText.get(n);
   // back to PDF coordinates (the target is in page CSS px)
   const [px, py] = vp.convertToPdfPoint(t.x ?? 0, t.y);
-  const c = findCaption(items, t.x == null ? null : px, py, page.view[0] + page.view[2]);   // half of it: the middle of the page
+  const width = page.view[0] + page.view[2];   // half of it: the middle of the page
+  const c = findCaption(items, t.x == null ? null : px, py, width);
   if (!c) return null;
-  return { top: vp.convertToViewportPoint(0, c.top)[1], bottom: vp.convertToViewportPoint(0, c.bottom)[1], table: c.table };
+  const out = { top: vp.convertToViewportPoint(0, c.top)[1], bottom: vp.convertToViewportPoint(0, c.bottom)[1], table: c.table, region: null };
+  if (!pageGraphics.has(n)) {
+    pageGraphics.set(n, page.getOperatorList().then((ol) => graphicsBoxes(ol.fnArray, ol.argsArray, window.pdfjsLib.OPS)).catch(() => []));
+  }
+  const box = figureRegion(await pageGraphics.get(n), c, width, page.view[1] + page.view[3], items);
+  if (box) {
+    const r = vp.convertToViewportRectangle(box);
+    const x = Math.min(r[0], r[2]), y = Math.min(r[1], r[3]);
+    out.region = { x, y, w: Math.abs(r[2] - r[0]), h: Math.abs(r[3] - r[1]) };
+  }
+  return out;
 }
 
 container.addEventListener('mouseover', (e) => {

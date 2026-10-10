@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { destTarget, findCaption, isFloatDest, popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor } from '../../frontend/js/viewer/linkNav.js';
+import { destTarget, figureRegion, findCaption, fitRegion, graphicsBoxes, isFloatDest, popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor } from '../../frontend/js/viewer/linkNav.js';
 
 const ref = { num: 12, gen: 0 };
 
@@ -94,4 +94,52 @@ test('previewOrigin centres the window on the destination\'s column', () => {
   assert.equal(previewOrigin(505, 300, 460, 260, 826, 1069).x, 366);    // a right-column title
   assert.equal(previewOrigin(450, 300, 460, 260, 826, 1069).x, 366);
   assert.equal(previewOrigin(150, 300, 900, 260, 826, 1069).x, 0);      // window wider than the page
+});
+
+// pdf.js operator codes used by graphicsBoxes (pdfjsLib.OPS)
+const OPS = { save: 10, restore: 11, transform: 12, stroke: 20, closeStroke: 21, fill: 22, eoFill: 23, fillStroke: 24, eoFillStroke: 25,
+  closeFillStroke: 26, closeEOFillStroke: 27, endPath: 28, clip: 29, shadingFill: 62, paintFormXObjectBegin: 74, paintFormXObjectEnd: 75,
+  paintImageMaskXObject: 83, paintImageMaskXObjectGroup: 84, paintImageXObject: 85, paintInlineImageXObject: 86,
+  paintInlineImageXObjectGroup: 87, paintImageXObjectRepeat: 88, paintImageMaskXObjectRepeat: 89, paintSolidColorImageMask: 90, constructPath: 91 };
+
+test('graphicsBoxes: images under the current transform, painted paths, not clips', () => {
+  const fn = [], args = [];
+  const op = (f, a = null) => { fn.push(f); args.push(a); };
+  op(OPS.save); op(OPS.transform, [200, 0, 0, 100, 50, 400]); op(OPS.paintImageXObject, ['img1']); op(OPS.restore);
+  op(OPS.constructPath, [[], [], [0, 612, 0, 792]]); op(OPS.clip); op(OPS.endPath);                  // a clip: no box
+  op(OPS.paintFormXObjectBegin, [[1, 0, 0, 1, 300, 100], [0, 0, 100, 100]]);
+  op(OPS.constructPath, [[], [], [10, 60, 0, 80]]); op(OPS.fill);                                   // inside a form
+  op(OPS.paintFormXObjectEnd);
+  op(OPS.constructPath, [[], [], [0, 5, 0, 5]]); op(OPS.stroke);
+  assert.deepEqual(graphicsBoxes(fn, args, OPS), [[50, 400, 250, 500], [310, 100, 360, 180], [0, 0, 5, 5]]);
+});
+
+test('figureRegion: the drawing above a caption, grown upwards, in its column, with its labels', () => {
+  const boxes = [
+    [60, 520, 290, 700],            // the figure's image, ends just above the caption (top 512)
+    [60, 705, 290, 760],            // a second panel right above it
+    [60, 300, 290, 320],            // something far below: not part of it
+    [330, 520, 560, 700],           // the other column
+  ];
+  const caption = { top: 512, bottom: 488, x: 54, table: false };
+  const texts = [{ x: 54, y: 500, w: 250 }, { x: 40, y: 740, w: 12 }];   // a caption line, a y-axis label
+  assert.deepEqual(figureRegion(boxes, caption, 612, 792, texts), [40, 488, 304, 760]);
+  assert.equal(figureRegion([[330, 520, 560, 700]], caption, 612, 792), null);                 // nothing in this column
+  assert.equal(figureRegion([[0, 0, 612, 792]], caption, 612, 792), null);                       // a page background
+  // a table: the drawing (rules) below its caption
+  const tcap = { top: 300, bottom: 288, x: 330, table: true };
+  const rules = [[330, 280, 560, 281], [330, 262, 560, 263], [330, 150, 560, 151]];               // top, mid, bottom rule
+  const rows = [270, 250, 238, 226, 214, 202, 190, 178, 166, 154].map((y) => ({ x: 340, y, w: 200 }));
+  const body = [{ x: 330, y: 120, w: 230 }, { x: 330, y: 108, w: 230 }];                          // text after the table
+  assert.deepEqual(figureRegion(rules, tcap, 612, 792, [...rows, ...body]), [330, 150, 560, 300]);
+  assert.equal(figureRegion([[330, 150, 560, 151]], tcap, 612, 792, body), null);                // no rule under the caption
+});
+
+test('fitRegion: the whole region in the popup, scale within limits', () => {
+  const tall = fitRegion({ x: 0, y: 0, w: 150, h: 460 }, 640, 620);
+  assert.ok(tall.s * 460 + 28 <= 620 + 1 && tall.h <= 620, JSON.stringify(tall));
+  const small = fitRegion({ x: 0, y: 0, w: 100, h: 50 }, 640, 620);
+  assert.equal(small.s, 1.6);                   // not blown up beyond maxS
+  assert.ok(small.w >= 320);
+  assert.equal(fitRegion({ x: 0, y: 0, w: 5000, h: 5000 }, 640, 620).s, 0.45);
 });
