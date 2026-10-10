@@ -118,6 +118,12 @@ never mix.
   the figure from what the page draws around it, wherever the PDF anchors the link. Scroll inside
   the preview to look around; zoom it with pinch, Ctrl/Cmd+scroll or its − / + buttons. Back/Forward (toolbar arrows, Alt+← / Alt+→, Cmd+[ / Cmd+], mouse
   buttons) return to where you were before following a link, even after zooming.
+- **Quote / Snapshot to note** from the PDF viewer: select text (or drag a region with the camera
+  button) and add it to an open note or the paper note, with its citation. Clicking that citation
+  later — in read mode, with Cmd/Ctrl+click in the editor, or the PDF button of its card — opens the
+  PDF right at the quoted words or the snapshot's region and flashes it for a moment (it is not
+  saved as an annotation). Quotes are found by their words, so older quotes work too; a snapshot
+  remembers its page region inside the PNG, so the note has no extra markup.
 
 ## Project layout
 
@@ -179,6 +185,7 @@ python tests/e2e/notes_checklist.py      # editor, saving, conflicts, files
 python tests/e2e/render_checklist.py     # live preview and read mode (tests/e2e/kitchen-sink.md)
 python tests/e2e/links_checklist.py      # autocomplete, citation cards, side panels, item pane
 python tests/e2e/library_checklist.py    # key rename, notes in search, quote/snapshot from the PDF viewer
+python tests/e2e/citation_spot_checklist.py  # a quote's / snapshot's citation opens the PDF at that spot and flashes it
 python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders, Back/Forward, item-list markers
 python tests/e2e/viewer_links_checklist.py  # PDF links: jump, hover preview, Back/Forward in the viewer
 python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, filters, paper card, Show in Graph, Back/Forward

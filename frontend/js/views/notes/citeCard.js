@@ -1,17 +1,19 @@
 // Citation card: shown when hovering a citation (editor chips, read view, side panel).
 // Lists the cited item(s) with "Open in library", "Open PDF (p. N)" and the paper note.
-import { api, openAttachment } from '../../api.js';
+import { api, openAttachment, viewerUrl } from '../../api.js';
 import { icon } from '../../icons.js';
 import { emit } from '../../store.js';
 import { toastError } from '../../ui/toast.js';
 import { escapeHtml } from '../../util.js';
+import { citeTargetInDom, viewerTarget } from './citeTarget.js';
 import { shortAuthors } from './library.js';
+import { imageSrc } from './render.js';
 
 let card = null;
 let anchor = null;
 let showTimer = null;
 let hideTimer = null;
-let deps = null;      // { itemInfo(key), openNote(path), refreshLibrary() }
+let deps = null;      // { itemInfo(key), openNote(path), refreshLibrary(), targetOf?(el) }
 
 const HOVER = '.cm-lp-chip.cite, .cm-lp-citesrc[data-keys], .prose .cite, [data-cite-keys]';
 
@@ -105,9 +107,13 @@ async function onCardClick(e) {
   const it = key && deps.itemInfo(key);
   if (!it) return;
   const act = b.dataset.cc;
+  const from = anchor;
   hide();
   if (act === 'item') emit('show-item', it.id);
-  if (act === 'pdf') openAttachment({ id: it.id, title: it.title }, it.pdf, b.dataset.page ? Number(b.dataset.page) : undefined);
+  if (act === 'pdf') {
+    const page = b.dataset.page ? Number(b.dataset.page) : undefined;
+    openCitation(key, page ?? null, from && (deps.targetOf?.(from) ?? citeTargetInDom(from)), { pdfOnly: true });
+  }
   if (act === 'note') deps.openNote(it.note);
   if (act === 'new-note') {
     try {
@@ -130,6 +136,7 @@ export function attachCiteCards(container, d) {
     const el = e.target.closest?.(HOVER);
     if (!el || el === anchor) { if (el) clearTimeout(hideTimer); return; }
     clearTimeout(showTimer);
+    clearTimeout(hideTimer);   // moving straight to another citation: don't let the old card's hide cancel this one
     showTimer = setTimeout(() => { if (el.isConnected) showCard(el); }, 350);
   });
   container.addEventListener('mouseout', (e) => {
@@ -140,11 +147,22 @@ export function attachCiteCards(container, d) {
   });
 }
 
-/** Default action for a citation: the PDF at the cited page if there is one, else the item. */
-export function openCitation(key, page) {
+/**
+ * Default action for a citation: the PDF at the cited page if there is one — at the quoted words
+ * or the snapshot's region when `target` says so (citeTarget.js) — else the item.
+ */
+export function openCitation(key, page, target = null, { pdfOnly = false } = {}) {
   const it = deps?.itemInfo(key);
   if (!it) return false;
-  if (page && it.pdf) openAttachment({ id: it.id, title: it.title }, it.pdf, page);
-  else location.hash = `item=${it.id}`;
+  if ((page || pdfOnly) && it.pdf) {
+    // open the tab right away (popup blockers want it inside the click), then point it
+    const win = target?.quote || !target ? null : window.open('about:blank', '_blank');
+    viewerTarget(target, { imageUrl: imageSrc }).then((at) => {
+      const p = page || at.page || undefined;
+      if (!win) return openAttachment({ id: it.id, title: it.title }, it.pdf, p, at);
+      win.location.href = viewerUrl({ id: it.id, title: it.title }, it.pdf, p, at);
+    });
+  } else location.hash = `item=${it.id}`;
   return true;
 }
+
