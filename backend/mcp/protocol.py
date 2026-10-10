@@ -13,6 +13,7 @@ Only what a tools-only server needs is implemented: ``initialize``, ``ping``,
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import sys
@@ -57,17 +58,29 @@ class Tool:
 def text_content(result: Any) -> list[dict]:
     """Turn a tool's return value into MCP content blocks.
 
-    A string is sent as is; a dict/list as indented JSON; a list of ``("text", str)``
-    parts (see ``Parts``) as several text blocks."""
+    A string is sent as is; a dict/list as indented JSON; an ``Image`` as an image block;
+    ``Parts`` (a list of these) as several blocks."""
     if isinstance(result, Parts):
-        return [{"type": "text", "text": p if isinstance(p, str) else _json(p)} for p in result]
-    if isinstance(result, str):
-        return [{"type": "text", "text": result}]
-    return [{"type": "text", "text": _json(result)}]
+        return [_block(p) for p in result]
+    return [_block(result)]
+
+
+def _block(p: Any) -> dict:
+    if isinstance(p, Image):
+        return {"type": "image", "data": base64.b64encode(p.data).decode("ascii"), "mimeType": p.mime}
+    if isinstance(p, str):
+        return {"type": "text", "text": p}
+    return {"type": "text", "text": _json(p)}
 
 
 class Parts(list):
     """Several content blocks (e.g. a JSON summary followed by a note's Markdown)."""
+
+
+@dataclass
+class Image:
+    data: bytes
+    mime: str = "image/png"
 
 
 def _json(v: Any) -> str:

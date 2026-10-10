@@ -158,12 +158,19 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 | `get_paper` | metadata, abstract, PDFs and page counts, your paper note, notes citing it, reference-list summary |
 | `search_in_paper` | the pages of a PDF containing some words, with snippets |
 | `read_paper` | the text of some PDF pages (up to 10 per call), marked by page |
+| `view_page` | an image of a page with a 0–1 grid; figure and table captions with proposed regions |
+| `snapshot` | cuts a figure/table/region into `notes/attachments/` like the viewer's camera button, and returns the Markdown for it |
 | `get_references` | what a paper cites (library items marked, others with DOI/arXiv) and which library items cite it |
 | `get_citation_graph` | the neighbourhood of some papers, or a library-wide overview of the most cited works you do not have |
-| `write_note` | saves a new note in `notes/ai/` (`author: ai`), never overwriting anything |
+| `write_note` | saves a new note in `notes/ai/` (`author: ai`), never overwriting anything — after checking it |
 
 Page numbers are PDF pages counted from 1, so Claude can cite `[@key, p. N]` and the citation opens
-the right page in the app. Note text and PDF passages Claude reads are sent to Anthropic as part of
+the right page in the app. Claude is told the notes syntax (KaTeX math, quotes as `> words [@key, p. N]`,
+snapshots, callouts…), and `write_note` refuses a note — saving nothing — when a `[[link]]` or `#heading`
+does not resolve, a citation key or page does not exist, a quote's words are not on the cited page, an
+image is missing, or formulas are written in Unicode instead of `$…$`; Claude then corrects it. A link
+written with a note's title is fixed to its file name. `view_page` and `snapshot` need `pypdfium2`
+(in `requirements.txt`). Note text and PDF passages Claude reads are sent to Anthropic as part of
 the conversation, as if you had pasted them.
 
 ## Project layout

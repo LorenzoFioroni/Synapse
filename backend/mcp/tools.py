@@ -21,16 +21,35 @@ from ..fields import FIELDS, ITEM_TYPE_LABELS
 from ..notes import frontmatter, parser
 from ..notes.service import now_iso, ulid
 from ..notes.vault import InvalidPath, NoteExists, slugify
+from .. import pdfrender
 from ..pdftext import extract_pages
 from ..references import identifiers
 from ..repository import NotFound
-from .protocol import Parts, Server, Tool, ToolError
+from .notecheck import NoteChecker
+from .protocol import Image, Parts, Server, Tool, ToolError
 
 AI_FOLDER = "ai"
 MAX_PAGES_PER_READ = 10
 MAX_CHARS_PER_READ = 80_000
 MAX_NOTE_CHARS = 100_000
 MAX_PAPER_NOTE_CHARS = 20_000
+
+WRITING_RULES = """\
+Note syntax (the app's own Markdown; write_note checks it and refuses notes that would not work):
+- Cite library items as [@key] or [@key, p. N] (N = PDF page from 1, as the tools report). Several: [@a; @b].
+- Link notes with the `link` value the tools give for each note, e.g. [[smith2021]] or \
+[[stem|Shown text]]; links resolve by file name, not by title. [[stem#Heading]] links a heading.
+- Math is LaTeX rendered with KaTeX: inline $t \\lesssim N - 1.6$ (no space after the opening $ or before the \
+closing one, on one line; write \\$ for a dollar sign), display $$...$$. Never write formulas with Unicode \
+symbols (≈, ⟨ψ|, x₁) outside $...$.
+- Quotes point at the exact words in the PDF: a block quote ending with its citation, \
+"> exact words from the page [@key, p. N]", the words copied from read_paper (prose, not formulas). \
+Clicking the citation opens the PDF there and highlights them. A citation inside a block quote or callout \
+always means such a quote.
+- Figures: use snapshot (after view_page) and paste the Markdown it returns: the image line, then on the next \
+line *Figure: … [@key, p. N]* (you may write a caption before the citation). Clicking it flashes that region.
+- Also available: GFM tables, task lists, footnotes [^1], callouts "> [!note] Title" (types note, tip, \
+warning, question, quote, info, important, caution, example, todo), ```mermaid diagrams, #tags."""
 
 INSTRUCTIONS = """\
 Tools for the user's research library ("Synapse", a Zotero-like app): papers with metadata and PDFs, \
@@ -40,12 +59,13 @@ How to work:
 - Start from a note (get_note) or a search (search_library). Papers are named by citation key.
 - get_paper gives metadata, abstract, the user's paper note and where other notes cite the paper.
 - For PDF content, find the relevant pages with search_in_paper, then read_paper those pages. \
-Avoid reading whole papers page by page.
+Avoid reading whole papers page by page. view_page shows a page as an image (figures, equations, tables).
 - get_references / get_citation_graph follow the citation graph, also to works not in the library \
 (they come with DOI/arXiv ids you can look up elsewhere).
-- Cite sources in the user's syntax: [@key] or [@key, p. N] with N the PDF page number the tools report. \
-Notes are linked with [[Note title]].
-- write_note saves a new note (only in the ai/ folder); use it when the user asks to save an answer."""
+- Cite sources in the user's syntax: [@key] or [@key, p. N] with N the PDF page number the tools report.
+- write_note saves a new note (only in the ai/ folder); use it when the user asks to save an answer.
+
+""" + WRITING_RULES
 
 
 # ============================================================================ helpers
@@ -266,6 +286,18 @@ class LibraryTools:
         raise ToolError(f"No note '{ref}'." + (" Similar: " + "; ".join(hints) if hints else
                                               " Use search_library with scope 'notes' to find it."))
 
+    def _link_target(self, path: str) -> str:
+        """What to write inside [[…]] to reach ``path``: the file name when that is unambiguous."""
+        stem = PurePosixPath(path).stem
+        found = self.s.notes.resolve(stem)
+        return stem if found and found[0] == path else path[:-3]
+
+    def _note_link(self, path: str, title: str | None = None) -> str:
+        target = self._link_target(path)
+        if title is None:
+            title = (self.s.notes.note(path) or {}).get("title")
+        return f"[[{target}|{title}]]" if title and title.casefold() != target.casefold() else f"[[{target}]]"
+
     # =================================================================== the tools
     def search_library(self, query: str, scope: str = "all", fulltext: bool = True, limit: int = 20):
         out: dict = {"query": query}
@@ -289,6 +321,7 @@ class LibraryTools:
             rows = self.s.notes.search(words, limit=limit) if words else []
             info = {n["path"]: n for n in self.s.notes.list()}
             out["notes"] = [_clean({"path": r["path"], "title": r["title"],
+                                    "link": self._note_link(r["path"], r["title"]),
                                     "type": info.get(r["path"], {}).get("type"),
                                     "paper": info.get(r["path"], {}).get("paper"),
                                     "match": _snippet_text(r["snippet"])}) for r in rows]
@@ -334,15 +367,18 @@ class LibraryTools:
                      for l in links["outgoing"] if l["kind"] == "cite" and l["target"] == c["key"]]
             cited.append(_clean({"key": c["key"], "paper": self._brief(p) if p else None,
                                  "not_in_library": None if p else True, "citations": cites}))
-        notes_out = [_clean({"target": l["target"], "resolves_to": l.get("resolved"), "line": l["line"],
+        notes_out = [_clean({"target": l["target"], "resolves_to": l.get("resolved"),
+                             "broken": None if l.get("resolved") else True, "line": l["line"],
                              "embed": l["kind"] == "embed" or None})
                      for l in links["outgoing"] if l["kind"] in ("note", "embed")]
-        backlinks = [_clean({"path": b["path"], "title": b.get("source_title"), "line": b["line"],
+        backlinks = [_clean({"path": b["path"], "title": b.get("source_title"),
+                             "link": self._note_link(b["path"], b.get("source_title")), "line": b["line"],
                              "context": b.get("context")}) for b in links["backlinks"]]
         paper = keys.get(info.get("paper")) if info.get("paper") else None
         mtime = self.s.vault.abs(path).stat().st_mtime
         summary = _clean({
-            "path": path, "title": info.get("title"), "type": info.get("type"), "author": info.get("author"),
+            "path": path, "link": self._note_link(path, info.get("title")), "title": info.get("title"),
+            "type": info.get("type"), "author": info.get("author"),
             "tags": info.get("tags"), "created": info.get("created"),
             "modified": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime)),
             "about_paper": self._brief(paper) if paper else info.get("paper"),
@@ -377,12 +413,14 @@ class LibraryTools:
             if pnotes:
                 note_path = pnotes[0]["path"]
                 out["paper_note"] = note_path
+                out["paper_note_link"] = self._note_link(note_path, pnotes[0].get("title"))
                 try:
                     note_text = self.s.vault.read(note_path)[0]
                 except Exception:
                     note_text = None
             mine = {n["path"] for n in pnotes}
-            out["cited_in_notes"] = [_clean({"path": c["path"], "title": c.get("source_title"), "line": c["line"],
+            out["cited_in_notes"] = [_clean({"path": c["path"], "title": c.get("source_title"),
+                                             "link": self._note_link(c["path"], c.get("source_title")), "line": c["line"],
                                              "locator": c.get("locator"), "context": c.get("context")})
                                      for c in self.s.notes.citing(key) if c["path"] not in mine]
         try:
@@ -579,6 +617,78 @@ class LibraryTools:
             "seeds_without_reference_list": no_refs or None,
         })
 
+    def view_page(self, paper: str, page: int, attachment: int | None = None):
+        if not pdfrender.available():
+            raise ToolError(pdfrender.MISSING)
+        p = self._paper(paper)
+        att = self._pdf_for(p, attachment)
+        path = self.s.papers.attachment_path(att)
+        n = self._page_count(att) or pdfrender.page_count(path)
+        if not 1 <= page <= n:
+            raise ToolError(f"Page {page} does not exist: the PDF has {n} pages.")
+        try:
+            figures = pdfrender.figure_regions(path, page)
+        except Exception:
+            figures = []
+        boxed = [f for f in figures if f.get("rect")]
+        png = pdfrender.page_view(path, page, boxed)
+        info = {"paper": self._label(p), "page": page, "pages_total": n,
+                "grid": "Blue lines every 0.1 of the page width/height, labelled in the margins (0 = top/left). "
+                        "Regions are [x, y, w, h] in these fractions.",
+                "figures": [_clean({"box": boxed.index(f) + 1 if f in boxed else None, "label": f["label"],
+                                    "caption": f["caption"], "rect": f.get("rect")}) for f in figures],
+                "next": "snapshot(paper, page, figure=\"Figure N\") takes a proposed (red, numbered) region; "
+                        "or pass rect=[x, y, w, h] read off the grid."}
+        if not figures:
+            info["figures_note"] = "No figure or table captions were recognised on this page."
+        return Parts([Image(png), info])
+
+    def snapshot(self, paper: str, page: int, figure: str | None = None, rect: list | None = None,
+                 attachment: int | None = None):
+        if not pdfrender.available():
+            raise ToolError(pdfrender.MISSING)
+        if (figure is None) == (rect is None):
+            raise ToolError("Give either figure (e.g. \"Figure 2\", from view_page) or rect=[x, y, w, h].")
+        p = self._paper(paper)
+        key = p.get("citation_key")
+        if not key:
+            raise ToolError(f"'{self._label(p)}' has no citation key, so a snapshot could not be cited.")
+        att = self._pdf_for(p, attachment)
+        path = self.s.papers.attachment_path(att)
+        n = self._page_count(att) or pdfrender.page_count(path)
+        if not 1 <= page <= n:
+            raise ToolError(f"Page {page} does not exist: the PDF has {n} pages.")
+        if figure is not None:
+            m = re.search(r"(tab)?\D*?([A-Z]?\d+[a-z]?)\s*$", figure.strip(), re.I)
+            want = f"{'Table' if m and m.group(1) else 'Figure'} {m.group(2)}".casefold() if m else figure.casefold()
+            regions = pdfrender.figure_regions(path, page)
+            hit = next((r for r in regions if r["label"].casefold() == want), None)
+            if not hit:
+                labels = [r["label"] for r in regions]
+                raise ToolError(f"No '{figure}' caption on page {page}" + (f" (found: {', '.join(labels)})" if labels else "")
+                                + ". Use view_page and pass rect=[x, y, w, h].")
+            if not hit.get("rect"):
+                raise ToolError(f"{hit['label']} was found but not its region. Use view_page and pass rect=[x, y, w, h].")
+            rect = hit["rect"]
+        if len(rect) != 4 or not all(isinstance(v, (int, float)) for v in rect):
+            raise ToolError("rect must be four numbers [x, y, w, h], fractions of the page from the top left.")
+        x, y, w, h = (float(v) for v in rect)
+        x, y = min(max(x, 0.0), 1.0), min(max(y, 0.0), 1.0)
+        w, h = min(w, 1.0 - x), min(h, 1.0 - y)
+        if w < 0.01 or h < 0.01:
+            raise ToolError("The region is too small (or outside the page).")
+        png, pw, ph = pdfrender.render_region(path, page, [x, y, w, h])
+        saved = self.s.note_service.add_image(f"{key}-p{page}.png", png)
+        preview, _, _ = pdfrender.render_region(path, page, [x, y, w, h], scale=2.0, max_side=900)
+        markdown = f"![{key} p. {page}]({saved['path']})\n*Figure: [@{key}, p. {page}]*"
+        return Parts([Image(preview), {
+            "saved": saved["path"], "size": f"{pw}x{ph}", "region": {"page": page, "rect": [round(v, 4) for v in (x, y, w, h)]},
+            "markdown": markdown,
+            "how_to_use": "Paste the markdown into the note text given to write_note, as is. You may write a caption "
+                          "after 'Figure:' but keep the citation on the line right below the image. If the crop is "
+                          "wrong, call snapshot again with a corrected rect (unused images are cleaned up later).",
+        }])
+
     def write_note(self, title: str, text: str, folder: str = "", tags: list | None = None):
         title = " ".join(str(title).split())
         sub = "/".join(slugify(x) for x in re.split(r"[/\\]+", folder or "") if x.strip() and x.strip() not in (".", ".."))
@@ -597,19 +707,21 @@ class LibraryTools:
         if tags:
             meta["tags"] = [str(t) for t in tags]
         content = frontmatter.set_fields(body, meta)
+        checker = NoteChecker(self)
+        content, errors, warnings = checker.check(content, path)
+        if errors:
+            raise ToolError("Nothing was saved: the note has problems that would show as broken in the app. "
+                            "Fix them and call write_note again.\n- " + "\n- ".join(errors)
+                            + ("\nAlso: " + " ".join(warnings) if warnings else ""))
         try:
             self.s.note_service.save(path, content, None)
         except NoteExists:
             raise ToolError(f"A note already exists at {path}; try another title.")
         parsed = parser.parse(content, fallback_title=title)
-        keys = self._by_key(self._items())
-        unknown = sorted({l.target for l in parsed.links if l.kind == "cite" and l.target not in keys})
-        unresolved = sorted({l.target for l in parsed.links if l.kind in ("note", "embed")
-                             and not self.s.notes.resolve(l.target, from_path=path)})
-        return _clean({"saved": path, "link": f"[[{PurePosixPath(path).stem}]]",
+        return _clean({"saved": path, "link": self._note_link(path, title),
                        "citations": len([l for l in parsed.links if l.kind == "cite"]),
-                       "unknown_citation_keys": unknown or None,
-                       "unresolved_note_links": unresolved or None})
+                       "links_fixed": checker.fixes or None,
+                       "warnings": warnings or None})
 
 
 # ============================================================================ schemas
@@ -669,6 +781,30 @@ def build_server(services, version: str = "0.1.0") -> Server:
             "attachment": att_arg,
         }, "required": ["paper"]}, t.read_paper))
     server.add(Tool(
+        "view_page", "Look at a page",
+        "An image of one page of a paper's PDF (figures, tables, equations as they look), with a light 0–1 grid "
+        "for reading off positions. Figure and table captions found on the page are listed, and the region of "
+        "each figure/table is proposed (red numbered boxes) for snapshot.",
+        {"type": "object", "properties": {
+            "paper": paper_arg,
+            "page": {"type": "integer", "minimum": 1, "description": "PDF page number (from 1)."},
+            "attachment": att_arg,
+        }, "required": ["paper", "page"]}, t.view_page))
+    server.add(Tool(
+        "snapshot", "Snapshot a figure for a note",
+        "Cut a region of a PDF page (a figure, table or equation) into an image in the notes folder, recording "
+        "where it came from, and return the Markdown to put in write_note's text; in the app, clicking its "
+        "citation opens the PDF there and flashes the region. Give figure=\"Figure 2\" (a region view_page "
+        "proposed) or rect=[x, y, w, h] (fractions of the page from the top left, read off view_page's grid). "
+        "Returns a preview to check the crop.",
+        {"type": "object", "properties": {
+            "paper": paper_arg,
+            "page": {"type": "integer", "minimum": 1, "description": "PDF page number (from 1)."},
+            "figure": {"type": "string", "description": "A caption label view_page found, e.g. \"Figure 2\" or \"Table 1\"."},
+            "rect": {"type": "array", "items": {"type": "number"}, "description": "[x, y, w, h] as fractions of the page, origin top left."},
+            "attachment": att_arg,
+        }, "required": ["paper", "page"]}, t.snapshot, read_only=False))
+    server.add(Tool(
         "get_references", "Get a paper's references",
         "The works a paper cites (its fetched reference list; library items are marked and come with citation keys, "
         "others with DOI/arXiv ids) and/or the library items that cite it.",
@@ -692,9 +828,9 @@ def build_server(services, version: str = "0.1.0") -> Server:
     server.add(Tool(
         "write_note", "Save a new note",
         "Save a new Markdown note in the notes folder \"ai/\" (marked author: ai). Never overwrites: a free file "
-        "name is chosen. Cite papers as [@key] or [@key, p. N] and link notes as [[Title]]; they become clickable "
-        "in the app. Returns the path and any citation keys that are not in the library. Use only when the user "
-        "asks to save something.",
+        "name is chosen. The note is checked first and NOT saved if a link, citation, page, quote or image would "
+        "be broken, or if formulas are written in Unicode instead of LaTeX: fix what the error lists and call again. "
+        "Use only when the user asks to save something.\n\n" + WRITING_RULES,
         {"type": "object", "properties": {
             "title": {"type": "string", "description": "Title of the note (also its file name)."},
             "text": {"type": "string", "description": "Markdown body. A \"# Title\" heading is added if there is none."},
