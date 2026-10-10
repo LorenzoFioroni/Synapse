@@ -1,0 +1,35 @@
+% Fixture for tests/e2e/viewer_links_checklist.py: a two-column revtex paper with section, figure and
+% table links. Rebuild: pdflatex twocolumn.tex (twice; needs revtex4-2). The PNGs are plain colour blocks.
+\documentclass[aps,prb,twocolumn]{revtex4-2}
+\usepackage{graphicx}
+\usepackage[colorlinks]{hyperref}
+\begin{document}
+\title{A test paper}\author{A. Author}\maketitle
+Links: Section~\ref{sec:1} Section~\ref{sec:2} Section~\ref{sec:3} Section~\ref{sec:4} Section~\ref{sec:5} Section~\ref{sec:6} Section~\ref{sec:7} Section~\ref{sec:8}, Fig.~\ref{fig:wide}, Fig.~\ref{fig:tall}, Table~\ref{tab:t}, Fig.~\ref{fig:vector}, Fig.~\ref{fig:panels}, and \cite{ref1,ref2}.
+\section{Section number 1}\label{sec:1}
+Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. 
+\section{Section number 2}\label{sec:2}
+Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. 
+\begin{figure}[t]\includegraphics[width=\columnwidth]{wide.png}\caption{A wide blue figure with a caption that spans two lines of text in the column.}\phantomsection\label{fig:wide}\end{figure}
+\begin{figure}[t]\centering\setlength{\unitlength}{1pt}\begin{picture}(200,250)\put(0,232){\small (a)}\put(70,234){\small Energy vs time}\put(0,140){\rule{200pt}{0.6pt}}\put(0,140){\rule{0.6pt}{85pt}}\put(30,140){\rule{30pt}{60pt}}\put(110,140){\rule{30pt}{80pt}}\put(0,122){\small (b)}\put(0,0){\rule{200pt}{0.6pt}}\put(0,0){\rule{0.6pt}{85pt}}\put(30,0){\rule{30pt}{40pt}}\put(110,0){\rule{30pt}{70pt}}\end{picture}\caption{Two panels with a gap between them, a panel label and a title above the top panel.}\label{fig:panels}\end{figure}
+\section{Section number 3}\label{sec:3}
+Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. 
+\section{Section number 4}\label{sec:4}
+Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. 
+\begin{figure}[t]\includegraphics[width=0.6\columnwidth]{tall.png}\caption{A tall red figure.}\label{fig:tall}\end{figure}
+\section{Section number 5}\label{sec:5}
+Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. 
+\begin{table}[b]\caption{A table.}\label{tab:t}\begin{tabular}{ccc}\hline\hline x&y&z\\\hline 1&2&3\\4&5&6\\7&8&9\\10&11&12\\\hline\hline\end{tabular}\end{table}
+\section{Section number 6}\label{sec:6}
+Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. 
+\begin{figure}[b]\centering\setlength{\unitlength}{1pt}\begin{picture}(200,120)\put(0,0){\rule{200pt}{0.6pt}}\put(0,0){\rule{0.6pt}{120pt}}\put(20,0){\rule{20pt}{40pt}}\put(60,0){\rule{20pt}{90pt}}\put(100,0){\rule{20pt}{65pt}}\put(140,0){\rule{20pt}{110pt}}\put(-14,110){\small 1.0}\put(185,-10){\small $t$}\end{picture}\caption{A vector plot drawn with rules, with axis labels.}\label{fig:vector}\end{figure}
+\section{Section number 7}\label{sec:7}
+Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. 
+\section{Section number 8}\label{sec:8}
+Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. Tensor networks provide an efficient description of low-entangled quantum states. 
+
+\begin{thebibliography}{2}
+\bibitem{ref1} A. One, Phys. Rev. Lett. \textbf{1}, 1 (2000).
+\bibitem{ref2} B. Two, Phys. Rev. B \textbf{2}, 2 (2001).
+\end{thebibliography}
+\end{document}
