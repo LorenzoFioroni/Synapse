@@ -130,11 +130,55 @@ never mix.
   saved as an annotation). Quotes are found by their words, so older quotes work too; a snapshot
   remembers its page region inside the PNG, so the note has no extra markup.
 
+## AI access (MCP)
+
+`mcp_server.py` lets Claude Desktop and Claude Code read your library through MCP (Model Context
+Protocol): ask a question about a project note and Claude can read the note, the papers it cites,
+the relevant pages of their PDFs and their references. It reads the same `data/` folder as the app
+(which does not need to be running), works only on this computer, and never changes anything except
+adding new notes in `notes/ai/` when you ask it to save an answer.
+
+Set it up once, from the repository root with the virtual environment active:
+
+```bash
+python mcp_server.py --config     # prints the exact entries for your paths
+```
+
+- **Claude Desktop:** Settings → Developer → Edit Config, merge the printed `mcpServers` entry into
+  `claude_desktop_config.json`, and restart Claude. "synapse" then appears in the tools menu of a chat.
+- **Claude Code:** run the printed `claude mcp add …` line.
+
+Add `--data DIR` if your library is not in `./data`. Tools:
+
+| Tool | What it gives |
+| --- | --- |
+| `search_library` | items and notes matching a query (same syntax as the search box: `folder:`, `tag:`, `year:`…), with snippets |
+| `list_collections` | folders, tags, smart folders and notes folders with counts |
+| `get_note` | a note's text, the papers it cites (with line and page), its links and backlinks |
+| `get_paper` | metadata, abstract, PDFs and page counts, your paper note, notes citing it, reference-list summary |
+| `search_in_paper` | the pages of a PDF containing some words, with snippets |
+| `read_paper` | the text of some PDF pages (up to 10 per call), marked by page |
+| `view_page` | an image of a page with a 0–1 grid; figure and table captions with proposed regions |
+| `snapshot` | cuts a figure/table/region into `notes/attachments/` like the viewer's camera button, and returns the Markdown for it |
+| `get_references` | what a paper cites (library items marked, others with DOI/arXiv) and which library items cite it |
+| `get_citation_graph` | the neighbourhood of some papers, or a library-wide overview of the most cited works you do not have |
+| `write_note` | saves a new note in `notes/ai/` (`author: ai`), never overwriting anything — after checking it |
+
+Page numbers are PDF pages counted from 1, so Claude can cite `[@key, p. N]` and the citation opens
+the right page in the app. Claude is told the notes syntax (KaTeX math, quotes as `> words [@key, p. N]`,
+snapshots, callouts…), and `write_note` refuses a note — saving nothing — when a `[[link]]` or `#heading`
+does not resolve, a citation key or page does not exist, a quote's words are not on the cited page, an
+image is missing, or formulas are written in Unicode instead of `$…$`; Claude then corrects it. A link
+written with a note's title is fixed to its file name. `view_page` and `snapshot` need `pypdfium2`
+(in `requirements.txt`). Note text and PDF passages Claude reads are sent to Anthropic as part of
+the conversation, as if you had pasted them.
+
 ## Project layout
 
 ```
 ./
 ├── server.py              CLI entry point
+├── mcp_server.py          MCP server for Claude Desktop / Claude Code (stdio)
 ├── backend/
 │   ├── app.py             Flask app factory (serves frontend/ and the API)
 │   ├── config.py          paths of the data folder
@@ -152,6 +196,7 @@ never mix.
 │   ├── pdf_finder.py      open-access PDF search + verification
 │   ├── pdftext.py         PDF text extraction
 │   ├── formats/           bibtex, ris, endnote (+XML), csljson
+│   ├── mcp/               MCP protocol (protocol.py) and the library tools (tools.py)
 │   ├── notes/             Markdown notes: vault (files), frontmatter, parser (links and
 │   │                      citations), index (notes_index.db), service
 │   └── api/               Flask blueprints: items, attachments, settings, io, metadata,
