@@ -46,6 +46,8 @@ DEFAULTS: dict = {
     # Notes (beta): shows the Notes entry in the sidebar
     "notes_enabled": True,
     "notes_autosave_ms": 1500,         # save after this long without typing (also on blur)
+    # Deleted notes and attachments no note uses any more are deleted for good after this long
+    "notes_trash_retention": "1m",     # never | 1d | 1w | 2w | 1m | 6m
 }
 
 ASK_CHOICES = ("never", "always", "ask")
@@ -59,6 +61,7 @@ CHOICES = {
     "add_fetch_metadata": set(ASK_CHOICES),
     "add_find_pdf": set(ASK_CHOICES),
     "add_fetch_references": set(ASK_CHOICES),
+    "notes_trash_retention": {"never", "1d", "1w", "2w", "1m", "6m"},
 }
 
 

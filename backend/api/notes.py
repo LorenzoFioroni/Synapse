@@ -98,7 +98,9 @@ def trash_note():
 @bp.get("/notes/trash")
 @guarded
 def trashed_notes():
-    return jsonify(trash=svc().vault.trashed())
+    """Deleted notes, with when they will be deleted for good (Settings → notes trash)."""
+    return jsonify(trash=svc().attachments.with_deletion_dates(svc().vault.trashed()),
+                   retention=svc().settings.get("notes_trash_retention"))
 
 
 @bp.post("/notes/restore")
@@ -162,6 +164,55 @@ def upload_image():
     if not f:
         return error("No file uploaded")
     return jsonify(svc().note_service.add_image(f.filename or "", f.read())), 201
+
+
+@bp.get("/notes/attachments")
+@guarded
+def list_attachments():
+    """Every attachment with the notes that show it, and the attachment trash."""
+    return jsonify(svc().attachments.overview())
+
+
+@bp.post("/notes/attachments/restore")
+@guarded
+def restore_attachment():
+    d = body()
+    try:
+        return jsonify(path=svc().attachments.restore(d.get("trash_id") or "", d.get("name") or ""))
+    except FileNotFoundError:
+        return error("That attachment is no longer in the trash", 404)
+
+
+@bp.post("/notes/attachments/delete")
+@guarded
+def delete_attachment():
+    """Delete a trashed attachment for good."""
+    d = body()
+    try:
+        svc().attachments.delete(d.get("trash_id") or "", d.get("name") or "")
+    except FileNotFoundError:
+        return error("That attachment is no longer in the trash", 404)
+    return jsonify(ok=True)
+
+
+@bp.post("/notes/attachments/clean")
+@guarded
+def clean_attachments():
+    """Move unused attachments to their trash and empty old trash now (it also runs hourly)."""
+    a = svc().attachments
+    return jsonify(**a.sweep(), purged=a.purge())
+
+
+@bp.get("/notes/attachments/trash/<trash_id>/<path:name>")
+@guarded
+def get_trashed_attachment(trash_id, name):
+    try:
+        p = svc().attachments.trashed_path(trash_id, name)
+    except FileNotFoundError:
+        return error("Not found", 404)
+    resp = send_from_directory(p.parent, p.name)
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
 
 
 @bp.get("/notes/attachments/<path:name>")

@@ -309,3 +309,22 @@ body[data-workspace="notes"] #item-pane { display: none !important; }
 .cm-lp-props dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 0; }
 .cm-lp-props dt { color: var(--text-3); }
 .cm-lp-props dd { margin: 0; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ------------------------------------------------------------- attachments dialog */
+.att-tabs { margin-bottom: 12px; }
+.att-tabs .count { color: var(--text-3); font-weight: 400; margin-left: 2px; }
+.att-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; max-height: 58vh; overflow: auto; padding: 2px; }
+.att-empty { grid-column: 1 / -1; margin: 6px 0; }
+.att-card { display: flex; flex-direction: column; gap: 3px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); min-width: 0; }
+.att-card.trashed .att-thumb img { opacity: .6; }
+.att-thumb { height: 110px; display: grid; place-items: center; background: var(--bg-app); border-radius: var(--radius-sm); overflow: hidden; }
+.att-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.att-name { font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-meta, .att-notes { font-size: var(--fs-xs); color: var(--text-2); }
+.att-meta .warn { color: var(--warning); }
+.att-notes { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-actions { display: flex; gap: 4px; margin-top: 4px; }
+.att-actions .btn { display: inline-flex; align-items: center; gap: 4px; }
+.att-actions .danger { color: var(--danger); }
+.att-card .btn-link { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; }
+.att-card .btn-link:hover { text-decoration: underline; }
