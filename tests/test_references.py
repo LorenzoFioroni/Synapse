@@ -161,15 +161,25 @@ def test_fetched_automatically_after_add_by_identifier(client, svc, monkeypatch)
                                  "author": [{"family": "Cui", "given": "Jian"}], "published-print": {"date-parts": [[2015]]}}}
     monkeypatch.setattr(metadata.requests, "get", router([
         ("semanticscholar", lambda url, p: Resp(S2_PAGE2)), ("crossref", Resp(crossref_item))]))
-    svc.settings.update({"references_auto": True})
+    svc.settings.update({"add_fetch_references": "always"})
     item = client.post("/api/items/from_identifier", json={"identifier": "10.1234/X"}).json
     svc.citations.wait(10)
     assert [r["title"] for r in svc.citations.store.references(item["id"])] == ["A preprint"]
 
-    svc.settings.update({"references_auto": False})
-    other = client.post("/api/items/from_identifier", json={"identifier": "10.1234/X", "allow_duplicate": True}).json
+    svc.settings.update({"add_fetch_references": "never"})
+    other = client.post("/api/items/from_identifier", json={"identifier": "10.1234/X", "allow_duplicate": True,
+                                                            "fetch_references": True}).json
     svc.citations.wait(5)
-    assert svc.citations.store.fetch_info(other["id"]) is None
+    assert svc.citations.store.fetch_info(other["id"]) is None   # "never" wins over the request
+
+    # "ask": the answer sent with the request decides
+    svc.settings.update({"add_fetch_references": "ask"})
+    no = client.post("/api/items/from_identifier", json={"identifier": "10.1234/X", "allow_duplicate": True}).json
+    yes = client.post("/api/items/from_identifier", json={"identifier": "10.1234/X", "allow_duplicate": True,
+                                                          "fetch_references": True}).json
+    svc.citations.wait(10)
+    assert svc.citations.store.fetch_info(no["id"]) is None
+    assert svc.citations.store.fetch_info(yes["id"]) is not None
 
 
 def test_queue_endpoint(client, svc, monkeypatch):

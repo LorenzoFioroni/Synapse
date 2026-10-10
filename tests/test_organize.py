@@ -97,11 +97,46 @@ def test_import_keywords_become_tags_and_export_them(client):
     phys = client.post("/api/folders", json={"name": "Physics"}).get_json()
     bib = "@article{k1, title={Paper}, author={Doe, J}, year={2020}, keywords={spin chains, transport}}"
     prev = client.post("/api/import/preview", json={"text": bib}).get_json()
-    res = client.post("/api/import/commit", json={"entries": prev["entries"], "folder_id": phys["id"]}).get_json()
+    res = client.post("/api/import/commit", json={"entries": prev["entries"], "folder_id": phys["id"],
+                                                  "keywords_as_tags": True}).get_json()
     item = client.get(f"/api/items/{res['created'][0]}").get_json()
     assert item["tags"] == ["spin chains", "transport"] and not item["keywords"] and item["folder_ids"] == [phys["id"]]
     out = client.get(f"/api/export?format=bibtex&ids={item['id']}&download=0").get_json()["text"]
     assert "keywords = {spin chains, transport}" in out
+
+
+def test_import_tags_setting(client, svc):
+    bib = "@article{k1, title={Paper}, author={Doe, J}, year={2020}, keywords={spin chains, transport}}"
+    entries = client.post("/api/import/preview", json={"text": bib}).get_json()["entries"]
+
+    def imported(**extra):
+        res = client.post("/api/import/commit", json={"entries": entries, "skip_duplicates": False, **extra}).get_json()
+        return client.get(f"/api/items/{res['created'][0]}").get_json()
+
+    assert svc.settings.get("import_tags") == "ask"              # the default: the import dialog asks
+    no = imported()                                              # not ticked: keywords stay keywords
+    assert no["tags"] == [] and no["keywords"] == "spin chains; transport"
+    assert imported(keywords_as_tags=True)["tags"] == ["spin chains", "transport"]
+    svc.settings.update({"import_tags": "never"})
+    assert imported(keywords_as_tags=True)["tags"] == []
+    svc.settings.update({"import_tags": "always"})
+    assert imported()["tags"] == ["spin chains", "transport"]
+
+
+def test_old_settings_file_is_migrated(tmp_path):
+    import json
+    from backend.settings import SettingsStore
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"import_keywords_as_tags": False, "references_auto": False}))
+    s = SettingsStore(path)
+    assert s.get("import_tags") == "never" and s.get("add_fetch_references") == "never"
+    path.write_text(json.dumps({"import_keywords_as_tags": True, "references_auto": True}))
+    s = SettingsStore(path)   # the old defaults: the new defaults apply
+    assert s.get("import_tags") == "ask" and s.get("add_fetch_references") == "always"
+    import pytest
+    from backend.settings import SettingsError
+    with pytest.raises(SettingsError):
+        s.update({"add_find_pdf": "sometimes"})
 
 
 def test_permanent_delete_cleans_tags(client):

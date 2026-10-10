@@ -11,6 +11,7 @@ const SECTIONS = [
   ['general', 'General', 'palette'],
   ['citekeys', 'Citation Keys', 'key'],
   ['search', 'Search & Full Text', 'search'],
+  ['adding', 'Adding Items', 'plus'],
   ['io', 'Import & Export', 'export'],
   ['online', 'Online Services', 'globe'],
   ['library', 'Library & Shortcuts', 'database'],
@@ -41,6 +42,8 @@ async function save(changes, el) {
     return true;
   } catch (e) { toastError(e); return false; }
 }
+
+const ASK = [['never', 'Never'], ['ask', 'Ask'], ['always', 'Always']];
 
 const saved = '<span class="saved-pill">' + icon('check', 'icon-sm') + ' Saved</span>';
 
@@ -111,13 +114,22 @@ export function openSettings(sectionId = null) {
             <div class="progress" data-index-progress hidden><div style="width:0"></div></div></div>
         </div></section>
 
+      <section class="settings-section" id="set-adding"><h2>Adding Items</h2>
+        <p class="lead">What happens right after items are added — by identifier, by dropping PDFs, by importing a file or with the browser button.
+          <b>Ask</b> shows a checkbox, ticked, where you add the items, so you decide each time. You can always run these later from the item menu.</p>
+        <div class="card">
+          ${segmentedRow('add_fetch_metadata', 'Retrieve metadata for imported items', 'Look up imported entries online (Crossref, arXiv) in the background, then review the proposed changes. Items added by identifier, from PDFs or with the browser button are always looked up.', ASK)}
+          ${segmentedRow('add_find_pdf', 'Find an available PDF', 'Look for an open-access PDF of new items that have none, in the background.', ASK)}
+          ${segmentedRow('add_fetch_references', 'Fetch reference lists', 'Fetch the list of papers a new item cites, in the background. They appear in the item pane under References and build the citation graph. Needs a DOI or arXiv ID.', ASK)}
+          ${segmentedRow('import_tags', 'Turn imported keywords into tags', 'Keywords in BibTeX/RIS/EndNote files become tags. When not, they stay in the Keywords field. Exports always write tags back as keywords.', ASK)}
+        </div></section>
+
       <section class="settings-section" id="set-io"><h2>Import &amp; Export</h2><p class="lead">BibTeX, RIS, EndNote (tagged .enw and XML) and CSL JSON are supported in both directions.</p>
         <div class="card">
           ${selectRow('export_format', 'Default export format', 'Pre-selected in the Export dialog.', [['bibtex', 'BibTeX'], ['ris', 'RIS'], ['endnote', 'EndNote (.enw)'], ['endnote_xml', 'EndNote XML'], ['csljson', 'CSL JSON']])}
           ${switchRow('bibtex_unicode', 'Keep Unicode in BibTeX', 'On: write “Bañuls” as is (biber/BibLaTeX). Off: escape as “Ba{\\~{n}}uls” for classic BibTeX.')}
           ${switchRow('export_abstract', 'Include abstracts when exporting', 'Turn off for smaller .bib files.')}
           ${switchRow('import_skip_duplicates', 'Untick duplicates when importing', 'Entries whose DOI or title+year already exist start unticked in the import preview.')}
-          ${switchRow('import_keywords_as_tags', 'Turn imported keywords into tags', 'Keywords in BibTeX/RIS/EndNote files become tags. Exports always write tags back as keywords.')}
           <div class="setting"><div class="s-text"><div class="s-title">Transfer</div><div class="s-desc">Bring references in or take your whole library elsewhere.</div></div>
             <div class="s-control"><button class="btn" data-import>${icon('import')} Import…</button><button class="btn" data-export>${icon('export')} Export Library…</button></div></div>
         </div></section>
@@ -127,7 +139,7 @@ export function openSettings(sectionId = null) {
           <div class="setting stack"><div class="s-text"><div class="s-title">Contact e-mail ${saved}</div>
             <div class="s-desc">Crossref and Unpaywall ask clients to identify themselves; with an e-mail you get faster, more reliable responses. It is only sent to those services.</div></div>
             <input class="input" type="email" data-email placeholder="you@university.edu" value="${escapeHtml(s.contact_email)}"></div>
-          ${switchRow('references_auto', 'Fetch reference lists with metadata', 'When metadata is fetched (Retrieve Metadata, Add by Identifier, dropped PDFs, the browser button), also fetch the list of papers the item cites, in the background. They appear in the item pane under References and build the citation graph. You can always fetch them from the item menu.')}
+          ${switchRow('references_auto', 'Fetch reference lists with Retrieve Metadata', 'When metadata of existing items is retrieved, also fetch the list of papers they cite, in the background. For new items see Adding Items. You can always fetch them from the item menu.')}
           <div class="setting stack"><div class="s-text"><div class="s-title">API keys for reference lists (optional) ${saved}</div>
             <div class="s-desc">Reference lists come from Semantic Scholar, then OpenAlex, then Crossref. Without a key, OpenAlex allows only a few lookups a day and Semantic Scholar shares a rate limit with everyone. Free keys: openalex.org/settings/api and semanticscholar.org/product/api. Each key is only sent to its own service.</div></div>
             <input class="input" type="text" data-apikey="openalex_api_key" placeholder="OpenAlex API key" spellcheck="false" autocomplete="off" value="${escapeHtml(s.openalex_api_key || '')}">

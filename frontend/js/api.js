@@ -45,8 +45,8 @@ export const api = {
   regenerateCitekeys: (ids) => request('POST', '/api/items/citekeys', { ids }),
 
   lookup: (id) => request('POST', `/api/items/${id}/lookup`),
-  fromIdentifier: (identifier, allowDuplicate = false, folderId = null) =>
-    request('POST', '/api/items/from_identifier', { identifier, allow_duplicate: allowDuplicate, folder_id: folderId }),
+  fromIdentifier: (identifier, allowDuplicate = false, folderId = null, { fetchReferences } = {}) =>
+    request('POST', '/api/items/from_identifier', { identifier, allow_duplicate: allowDuplicate, folder_id: folderId, fetch_references: fetchReferences }),
   fromPdfs: (files, folderId = null) => {
     const fd = new FormData(); [...files].forEach((f) => fd.append('file', f));
     if (folderId) fd.append('folder_id', folderId);
@@ -69,7 +69,8 @@ export const api = {
     const fd = new FormData(); fd.append('file', fileOrText); if (format) fd.append('format', format);
     return request('POST', '/api/import/preview', fd);
   },
-  importCommit: (entries, skipDuplicates, folderId = null) => request('POST', '/api/import/commit', { entries, skip_duplicates: skipDuplicates, folder_id: folderId }),
+  importCommit: (entries, skipDuplicates, folderId = null, { keywordsAsTags } = {}) =>
+    request('POST', '/api/import/commit', { entries, skip_duplicates: skipDuplicates, folder_id: folderId, keywords_as_tags: keywordsAsTags }),
   exportText: (format, ids) => request('GET', `/api/export?${qs({ format, ids: ids && ids.join(','), download: 0 })}`),
   exportUrl: (format, ids) => `/api/export?${qs({ format, ids: ids && ids.join(',') })}`,
 

@@ -60,11 +60,17 @@ never mix.
 - **Retrieve Metadata** works on one item or a whole selection: one review dialog
   with a section per article, word-level diffs with a checkbox per field, and the
   article's unchanged metadata below. Nothing is saved until you apply; replacing an
-  existing citation key is opt-in. Lookups run one by one and can be stopped.
-- **References / citation graph**: when metadata is fetched (Retrieve Metadata, Add by
-  Identifier, dropped PDFs, the browser button) the list of papers the item cites is fetched
-  too, in the background (Semantic Scholar, then OpenAlex, then Crossref; optional API keys
-  in Settings → Online Services). The item pane shows *References* — cited works that are
+  existing citation key is opt-in. Several lookups run at once (arXiv requests are spaced out),
+  and they can be stopped, or continue in the background with a progress notification and a
+  *Review* button when done. Articles with updates are listed first, those not found next, and
+  the ones already up to date are folded away at the end.
+- **Adding items** (Settings → Adding Items): whether to retrieve metadata for imported items, find
+  an available PDF, fetch reference lists, and turn imported keywords into tags — each *Never*,
+  *Always* or *Ask* (a ticked checkbox where you add the items: the import dialog, Add by
+  Identifier, the browser button). They all run in the background.
+- **References / citation graph**: for new items (see Adding Items) and after Retrieve Metadata
+  the list of papers the item cites is fetched too, in the background (Semantic Scholar, then
+  OpenAlex, then Crossref; optional API keys in Settings → Online Services). The item pane shows *References* — cited works that are
   in your library link to them (matched by DOI, arXiv ID, or else title and year), the others
   can be added with one click — and *Cited by in your library*. Fetch them for any selection
   from the item menu or the multi-selection pane, with progress and a summary. The whole graph (library
@@ -176,6 +182,7 @@ python tests/e2e/library_checklist.py    # key rename, notes in search, quote/sn
 python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders, Back/Forward, item-list markers
 python tests/e2e/viewer_links_checklist.py  # PDF links: jump, hover preview, Back/Forward in the viewer
 python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, filters, paper card, Show in Graph, Back/Forward
+python tests/e2e/adding_checklist.py     # bulk Retrieve Metadata (parallel, grouped, background), Settings → Adding Items
 ```
 
 The notes editor (CodeMirror 6) is vendored as a pre-built bundle in `frontend/vendor/cm6/`;

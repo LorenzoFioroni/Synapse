@@ -78,6 +78,8 @@ function folderOptions(selected) {
 }
 
 async function renderForm() {
+  // the library's Settings → Adding Items ("never" / "always" / "ask"; older libraries send nothing)
+  const onAdd = lib.on_add || {};
   const prefs = await chrome.storage.local.get(['lastFolder']);
   const folderOk = lib.folders.some((f) => String(f.id) === String(prefs.lastFolder));
   const ident = page.doi ? `<span class="badge accent" title="${esc(page.doi)}">DOI ${esc(page.doi)}</span>`
@@ -96,6 +98,8 @@ async function renderForm() {
     <div class="checks">
       ${page.pdf_url ? '<label><input type="checkbox" id="attach" checked> Attach the PDF</label>' : ''}
       ${page.doi || page.arxiv ? '<label><input type="checkbox" id="lookup" checked> Complete metadata online (Crossref / arXiv)</label>' : ''}
+      ${onAdd.find_pdf === 'ask' && !page.is_pdf ? `<label><input type="checkbox" id="findPdf" checked> ${page.pdf_url ? 'If the PDF can’t be attached, look' : 'Look'} for an open-access PDF</label>` : ''}
+      ${onAdd.fetch_references === 'ask' && (page.doi || page.arxiv) ? '<label><input type="checkbox" id="refs" checked> Fetch the reference list</label>' : ''}
     </div>
     <div class="actions"><button class="btn primary" id="save">Save to Library</button></div>
     <div class="hint"><kbd>${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd>Enter</kbd> saves${page.has_citation_meta || page.doi || page.arxiv || page.is_pdf ? '' : ' · no citation data found, saving as a web page'}</div>`;
@@ -142,12 +146,16 @@ async function doSave({ tags, allowDuplicate = false }) {
   const folder = document.getElementById('folder')?.value ?? '';
   const attach = page.pdf_url && (document.getElementById('attach')?.checked ?? true);
   const lookup = document.getElementById('lookup')?.checked ?? true;
+  // only asked when the setting is "ask"; "Save Anyway" (no form on screen) keeps the earlier answer
+  const findPdf = document.getElementById('findPdf')?.checked ?? saveState.findPdf ?? false;
+  const fetchRefs = document.getElementById('refs')?.checked ?? saveState.fetchRefs ?? false;
   const title = document.getElementById('title')?.value.trim() || page.title;
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving…'; }
   await chrome.storage.local.set({ lastFolder: folder });
-  saveState = { tags, folder };
+  saveState = { tags, folder, findPdf, fetchRefs };
 
-  const meta = { ...page, title, folder_id: folder || null, tags, lookup, attach_pdf: attach, allow_duplicate: allowDuplicate };
+  const meta = { ...page, title, folder_id: folder || null, tags, lookup, attach_pdf: attach, allow_duplicate: allowDuplicate,
+    find_pdf: findPdf, fetch_references: fetchRefs };
   const fd = new FormData();
   // Fetch the PDF from inside the page so the user's own session (institutional access) is used.
   if (attach) {
@@ -191,7 +199,8 @@ function folderName(id) {
 function showSaved({ item, pdf, source }) {
   const where = item.folder_id ? `in <b>${esc(folderName(item.folder_id) || 'folder')}</b>` : 'in <b>My Library</b>';
   const pdfLine = { attached: 'PDF attached ✓', downloaded: 'PDF downloaded ✓', failed: 'The PDF could not be downloaded (try “Find PDF” in the app).',
-    'not-a-pdf': 'The PDF link returned a web page (login needed?) — not attached.', none: '' }[pdf] || '';
+    'not-a-pdf': 'The PDF link returned a web page (login needed?) — not attached.',
+    searching: 'Looking for an open-access PDF in the background…', none: '' }[pdf] || '';
   showMessage('✓', 'Saved', `${where}${source === 'online' ? ' · metadata completed online' : ''}`, 'ok',
     `<div class="t">${esc(item.title)}</div>${pdfLine ? `<p>${esc(pdfLine)}</p>` : ''}
      <div class="actions"><button class="btn" id="close">Close</button><button class="btn primary" id="open">Open in Library</button></div>`);

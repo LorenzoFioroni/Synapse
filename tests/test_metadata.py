@@ -168,3 +168,38 @@ def test_api_lookup_for_arxiv_item(client, svc, monkeypatch):
     r = client.post(f"/api/items/{it['id']}/lookup")
     assert r.status_code == 200, r.json
     assert r.json["fetched"]["archive_id"] == "arXiv:2205.03415"
+
+
+def test_doi_lookup_asks_crossref_and_openalex_side_by_side(monkeypatch):
+    import threading
+    import time as _t
+    inside = []
+    both = threading.Barrier(2, timeout=3)   # fails if the two requests are not in flight together
+
+    def fake_get(url, **k):
+        inside.append(url)
+        both.wait()
+        if "openalex" in url:
+            return type("R", (), {"ok": True, "json": lambda self: {"authorships": [
+                {"author": {"display_name": "Jian Cui"}}, {"author": {"display_name": "J. Ignacio Cirac"}}]}})()
+        return type("R", (), {"status_code": 200, "raise_for_status": lambda self: None,
+                              "json": lambda self: {"message": {"title": ["T"], "DOI": "10.1/x",
+                                                                "author": [{"family": "Cui", "given": "J"}]}}})()
+    monkeypatch.setattr(metadata.requests, "get", fake_get)
+    t0 = _t.monotonic()
+    item = metadata.lookup(doi="10.1/x")
+    assert item["authors"] == "Cui, Jian; Cirac, J. Ignacio" and _t.monotonic() - t0 < 2
+    assert len(inside) == 2
+
+
+def test_arxiv_requests_are_spaced(monkeypatch):
+    import time as _t
+    monkeypatch.setattr(metadata, "ARXIV_SPACING", 0.3)
+    stamps = []
+    monkeypatch.setattr(metadata.requests, "get", lambda *a, **k: stamps.append(_t.monotonic()) or
+                        type("R", (), {"raise_for_status": lambda self: None, "content": b"<feed xmlns='http://www.w3.org/2005/Atom'/>"})())
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(3) as ex:
+        list(ex.map(lambda _: metadata._arxiv_entries({"id_list": "1"}), range(3)))
+    stamps.sort()
+    assert all(b - a >= 0.28 for a, b in zip(stamps, stamps[1:]))

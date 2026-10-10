@@ -1,5 +1,6 @@
 // Import references: pick/drop/paste a file, preview entries, flag duplicates.
 import * as A from '../actions.js';
+import { afterAddChoices, afterAddHtml, runAfterAdd } from '../afterAdd.js';
 import { api } from '../api.js';
 import { icon } from '../icons.js';
 import { currentFolderId, folderPath, folderTree, state } from '../store.js';
@@ -10,7 +11,8 @@ import { escapeHtml, plural, shortAuthors } from '../util.js';
 export async function openImport(initialFile = null) {
   let preview = null;
   let entriesState = [];
-  let importBtn, folderSelect;
+  let importBtn, folderSelect, afterBox;
+  const AFTER = ['metadata', 'pdf', 'references'];
   await openDialog({
     title: 'Import References',
     subtitle: 'BibTeX (.bib), RIS (.ris), EndNote (.enw or XML) and CSL JSON are detected automatically.',
@@ -28,8 +30,9 @@ export async function openImport(initialFile = null) {
         <div class="import-folder"><label class="field-label" style="margin:14px 0 6px">Import into</label>
           <select class="select" data-folder style="max-width:360px"><option value="">My Library (no folder)</option>
           ${folderTree().map((f) => `<option value="${f.id}" ${f.id === currentFolderId() ? 'selected' : ''}>${'\u2003'.repeat(f.depth)}${escapeHtml(f.name)}</option>`).join('')}</select>
-          <div class="field-hint">Keywords in the file become tags (change in Settings → Import &amp; Export).</div></div>`;
+          <div class="import-after"></div></div>`;
       folderSelect = body.querySelector('[data-folder]');
+      afterBox = body.querySelector('.import-after');
       const dz = body.querySelector('.drop-zone');
       const result = body.querySelector('.import-result');
       const load = async (src) => {
@@ -71,11 +74,13 @@ export async function openImport(initialFile = null) {
           btn.disabled = true; btn.textContent = 'Importing…';
           try {
             const folder = folderSelect.value ? Number(folderSelect.value) : null;
-            const res = await api.importCommit(chosen, false, folder);
+            const what = afterAddChoices(afterBox, ['tags', ...AFTER]);
+            const res = await api.importCommit(chosen, false, folder, { keywordsAsTags: what.tags });
             A.setView(folder ? `folder:${folder}` : 'library');
             await A.loadItems();
             A.select(res.created, { anchor: res.created[0] });
             toast(`Imported ${plural(res.created.length, 'item')}`, { type: 'success' });
+            runAfterAdd(res.created, what);
           } catch (e) { toastError(e); btn.disabled = false; btn.textContent = 'Import'; return false; }
           return undefined;
         },
@@ -85,6 +90,15 @@ export async function openImport(initialFile = null) {
 
   function showPreview(result) {
     const dupes = entriesState.filter((x) => x.e.duplicate_of).length;
+    // "Turn keywords into tags" only matters when the file has keywords
+    const keywords = new Set(entriesState.flatMap((x) => (x.e.keywords || '').split(/[;,]/).map((k) => k.trim()).filter(Boolean)));
+    afterBox.innerHTML = afterAddHtml(keywords.size ? ['tags', ...AFTER] : AFTER, {
+      tags: `Turn the file's keywords into tags (${plural(keywords.size, 'keyword')})`,
+      metadata: 'Retrieve metadata online, then review the changes',
+      pdf: 'Find available PDFs',
+      references: 'Fetch reference lists',
+    });
+    if (afterBox.innerHTML) afterBox.insertAdjacentHTML('afterbegin', '<label class="field-label" style="margin:14px 0 6px">After importing</label>');
     result.innerHTML = `
       <div class="import-summary">
         <span class="badge accent">${escapeHtml(preview.label)}</span>

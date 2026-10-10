@@ -47,7 +47,11 @@ def ping():
     """Lets the extension check the library is running and fill its folder/tag pickers."""
     s = svc()
     return jsonify(app="zotero-clone", version=VERSION, folders=s.folders.tree(),
-                   tags=[t["name"] for t in s.tags.list()], counts=s.papers.counts())
+                   tags=[t["name"] for t in s.tags.list()], counts=s.papers.counts(),
+                   # Settings → "When an item is added": the popup shows a checkbox for each "ask"
+                   on_add={"fetch_metadata": s.settings.get("add_fetch_metadata"),
+                           "find_pdf": s.settings.get("add_find_pdf"),
+                           "fetch_references": s.settings.get("add_fetch_references")})
 
 
 def _payload() -> tuple[dict, object]:
@@ -150,7 +154,7 @@ def save():
     tags = page.get("tags") or []
     created = s.papers.create({**item, "folder_id": int(folder) if folder not in (None, "") else None, "tags": tags})
     if source == "online":
-        s.citations.maybe_enqueue(created)
+        s.citations.maybe_enqueue(created, page.get("fetch_references"))
 
     pdf = "none"
     filename = None
@@ -168,5 +172,8 @@ def save():
         name = (os.path.basename(page.get("pdf_name") or "") or "Full Text PDF")
         s.papers.add_attachment(created["id"], name, filename, "pdf")
         s.attachments_changed()
+    elif s.settings.wants("add_find_pdf", page.get("find_pdf")) and (item.get("doi") or item.get("title")):
+        s.find_pdf_later(created["id"])     # no PDF from the page: look for an open-access copy
+        pdf = "searching"
 
     return jsonify(item=s.papers.get(created["id"]), source=source, pdf=pdf), 201

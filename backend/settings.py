@@ -30,12 +30,17 @@ DEFAULTS: dict = {
     "bibtex_unicode": True,       # False -> escape non-ASCII as LaTeX commands
     "export_abstract": True,
     "import_skip_duplicates": True,
-    "import_keywords_as_tags": True,   # keywords in imported files become tags
+    "import_tags": "ask",              # keywords in imported files become tags: never | always | ask
     # Folders
     "show_subfolder_items": True,      # a folder also lists the items of its subfolders
     # Online lookups
     "contact_email": "",
-    "references_auto": True,           # fetch the reference list when metadata is fetched
+    "references_auto": True,           # Retrieve Metadata on existing items also fetches their reference lists
+    # What to do with items that were just added (by identifier, PDF, import or the browser
+    # button): never | always | ask. "Ask" shows a checkbox where the item is added.
+    "add_fetch_metadata": "ask",       # imported items: look up their metadata online (then review it)
+    "add_find_pdf": "ask",             # look for an open-access PDF when the new item has none
+    "add_fetch_references": "always",  # fetch the list of papers the new item cites
     "openalex_api_key": "",            # optional: OpenAlex allows only ~5 reference lookups a day without one
     "semantic_scholar_api_key": "",    # optional: avoids the shared rate limit
     # Notes (beta): shows the Notes entry in the sidebar
@@ -43,12 +48,30 @@ DEFAULTS: dict = {
     "notes_autosave_ms": 1500,         # save after this long without typing (also on blur)
 }
 
+ASK_CHOICES = ("never", "always", "ask")
+
 CHOICES = {
     "default_search_mode": set(SEARCH_MODES),
     "theme": {"system", "light", "dark"},
     "density": {"comfortable", "compact"},
     "export_format": {"bibtex", "ris", "endnote", "endnote_xml", "csljson"},
+    "import_tags": set(ASK_CHOICES),
+    "add_fetch_metadata": set(ASK_CHOICES),
+    "add_find_pdf": set(ASK_CHOICES),
+    "add_fetch_references": set(ASK_CHOICES),
 }
+
+
+def _migrate(stored: dict) -> dict:
+    """Settings files written by older versions."""
+    stored = dict(stored)
+    # Every key is written back on save, so an old True is just the old default: only a
+    # deliberate False is carried over.
+    if stored.get("import_keywords_as_tags") is False and "import_tags" not in stored:
+        stored["import_tags"] = "never"
+    if stored.get("references_auto") is False and "add_fetch_references" not in stored:
+        stored["add_fetch_references"] = "never"
+    return stored
 
 
 class SettingsError(ValueError):
@@ -62,7 +85,7 @@ class SettingsStore:
         self._data = dict(DEFAULTS)
         if self.path.exists():
             try:
-                stored = json.loads(self.path.read_text("utf-8"))
+                stored = _migrate(json.loads(self.path.read_text("utf-8")))
                 self._data.update({k: v for k, v in stored.items() if k in DEFAULTS})
             except (OSError, ValueError):
                 pass
@@ -105,6 +128,12 @@ class SettingsStore:
             tmp.write_text(json.dumps(self._data, indent=2, ensure_ascii=False), "utf-8")
             tmp.replace(self.path)
             return dict(self._data)
+
+    def wants(self, key: str, asked: bool | None = None) -> bool:
+        """Should an "on add" action run? `asked` is the user's answer where the setting is "ask"
+        (None when nobody could be asked: then only "always" runs)."""
+        v = self.get(key)
+        return v == "always" or (v == "ask" and bool(asked))
 
     def reset(self) -> dict:
         with self._lock:

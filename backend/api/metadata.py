@@ -41,5 +41,5 @@ def create_from_identifier():
     if dup and not body().get("allow_duplicate"):
         return jsonify(duplicate_of=dup, metadata=meta), 409
     item = s.papers.create({**meta, "folder_id": body().get("folder_id"), "tags": body().get("tags") or []})
-    s.citations.maybe_enqueue(item)
+    s.citations.maybe_enqueue(item, body().get("fetch_references"))
     return jsonify(item), 201

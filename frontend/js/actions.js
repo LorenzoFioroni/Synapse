@@ -192,11 +192,11 @@ export async function findPdf(id) {
  * Find PDFs for several items, one after another (gentle on Unpaywall/arXiv).
  * Items that already have an attachment are skipped. Cancellable.
  */
-export async function findPdfs(ids) {
+export async function findPdfs(ids, { auto = false } = {}) {
   const items = ids.map(byId).filter(Boolean);
   const todo = items.filter((i) => !(i.attachments || []).length);
   const skipped = items.length - todo.length;
-  if (!todo.length) return toast(`All ${plural(items.length, 'selected item')} already have a PDF`);
+  if (!todo.length) return auto ? undefined : toast(`All ${plural(items.length, 'selected item')} already have a PDF`);
   let cancelled = false;
   const pt = progressToast('Finding PDFs…', { onCancel: () => { cancelled = true; } });
   const found = [], missing = [], failed = [];
@@ -252,8 +252,16 @@ export async function addPdfsAsItems(files) {
     const ids = res.created.map((c) => c.item.id);
     select(ids, { anchor: ids[0] });
     const found = res.created.filter((c) => c.identifier && (c.identifier.doi || c.identifier.arxiv) && !c.note).length;
-    toast(found === pdfs.length ? `Added ${plural(pdfs.length, 'item')} with metadata`
-      : `Added ${plural(pdfs.length, 'item')} · metadata found for ${found}`, { type: 'success' });
+    const msg = found === pdfs.length ? `Added ${plural(pdfs.length, 'item')} with metadata`
+      : `Added ${plural(pdfs.length, 'item')} · metadata found for ${found}`;
+    // Settings → Adding Items → reference lists: "always" is done by the server, "ask" asks here
+    const withId = res.created.filter((c) => !c.note && (c.item.doi || c.item.archive_id)).map((c) => c.item.id);
+    const ask = state.settings.add_fetch_references === 'ask' && withId.length;
+    toast(msg, {
+      type: 'success',
+      timeout: ask ? 10000 : undefined,
+      action: ask ? { label: 'Fetch References', run: () => api.queueReferences(withId).then(() => toast(`Fetching ${plural(withId.length, 'reference list')} in the background`)) } : null,
+    });
   } catch (e) { close(); toastError(e); }
 }
 
