@@ -1,6 +1,6 @@
 // Citation card: shown when hovering a citation (editor chips, read view, side panel).
 // Lists the cited item(s) with "Open in library", "Open PDF (p. N)" and the paper note.
-import { api, openAttachment, viewerUrl } from '../../api.js';
+import { api, openAttachment, pdfTabFor, pointPdfTab } from '../../api.js';
 import { icon } from '../../icons.js';
 import { emit } from '../../store.js';
 import { toastError } from '../../ui/toast.js';
@@ -36,6 +36,7 @@ function ensureCard() {
   card.addEventListener('mouseleave', () => scheduleHide());
   card.addEventListener('mousedown', (e) => e.preventDefault());   // keep the editor's selection
   card.addEventListener('click', onCardClick);
+  card.addEventListener('auxclick', (e) => { if (e.button === 1) onCardClick(e); });   // middle click: new tab
   document.body.appendChild(card);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
   document.addEventListener('mousedown', (e) => { if (card && !card.hidden && !card.contains(e.target)) hide(); }, true);
@@ -112,7 +113,7 @@ async function onCardClick(e) {
   if (act === 'item') emit('show-item', it.id);
   if (act === 'pdf') {
     const page = b.dataset.page ? Number(b.dataset.page) : undefined;
-    openCitation(key, page ?? null, from && (deps.targetOf?.(from) ?? citeTargetInDom(from)), { pdfOnly: true });
+    openCitation(key, page ?? null, from && (deps.targetOf?.(from) ?? citeTargetInDom(from)), { pdfOnly: true, newTab: e.metaKey || e.ctrlKey || e.button === 1 });
   }
   if (act === 'note') deps.openNote(it.note);
   if (act === 'new-note') {
@@ -129,6 +130,8 @@ async function onCardClick(e) {
 /**
  * Hover cards inside `container`. Plain click on a read-mode citation opens the PDF at the
  * cited page (or the item); in the editor, Cmd/Ctrl+click does the same and a plain click edits.
+ * The PDF's tab is reused if it is open; Cmd/Ctrl+click in read mode (Cmd/Ctrl+Shift+click in
+ * the editor) or a middle click opens a new tab instead.
  */
 export function attachCiteCards(container, d) {
   deps = d;
@@ -151,16 +154,18 @@ export function attachCiteCards(container, d) {
  * Default action for a citation: the PDF at the cited page if there is one — at the quoted words
  * or the snapshot's region when `target` says so (citeTarget.js) — else the item.
  */
-export function openCitation(key, page, target = null, { pdfOnly = false } = {}) {
+export function openCitation(key, page, target = null, { pdfOnly = false, newTab = false } = {}) {
   const it = deps?.itemInfo(key);
   if (!it) return false;
   if ((page || pdfOnly) && it.pdf) {
-    // open the tab right away (popup blockers want it inside the click), then point it
-    const win = target?.quote || !target ? null : window.open('about:blank', '_blank');
+    // The PDF's tab is reused (scrolled to the spot and brought forward) unless `newTab`.
+    // A snapshot's region is read from its image first: take the tab right away (popup blockers
+    // want it inside the click), then point it.
+    const tab = target?.quote || !target ? null : pdfTabFor(it.pdf, { newTab });
     viewerTarget(target, { imageUrl: imageSrc }).then((at) => {
       const p = page || at.page || undefined;
-      if (!win) return openAttachment({ id: it.id, title: it.title }, it.pdf, p, at);
-      win.location.href = viewerUrl({ id: it.id, title: it.title }, it.pdf, p, at);
+      if (!tab) return openAttachment({ id: it.id, title: it.title }, it.pdf, p, at, { newTab });
+      pointPdfTab(tab, { id: it.id, title: it.title }, it.pdf, p, at);
     });
   } else location.hash = `item=${it.id}`;
   return true;

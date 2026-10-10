@@ -235,18 +235,50 @@ export function jumpToRequestedPage() {
   container.addEventListener('wheel', stop, { passive: true, once: true });
   container.addEventListener('touchmove', stop, { passive: true, once: true });
   window.addEventListener('keydown', stop, { once: true });
-  const tryJump = () => {
-    const w = container.querySelector(`.page-wrapper[data-page-number="${want}"]`);
-    if (!w) return false;
-    if (!userMoved) w.scrollIntoView({ block: 'start' });
-    if (q || rect) spotlight(w, container, { q, rect }, () => userMoved);
-    return true;
-  };
-  if (tryJump()) return;
-  const obs = new MutationObserver(() => { if (tryJump() || userMoved) obs.disconnect(); });
-  obs.observe(container, { childList: true });
-  setTimeout(() => obs.disconnect(), 60000);
+  jumpTo({ page: want, q, rect }, () => userMoved);
 }
+
+/** Wait for a page's wrapper (up to 60 s, or until the reader scrolls); null if it never comes. */
+function pageWrapper(container, num, userMoved) {
+  const find = () => container.querySelector(`.page-wrapper[data-page-number="${num}"]`);
+  if (find()) return Promise.resolve(find());
+  return new Promise((resolve) => {
+    const obs = new MutationObserver(() => {
+      if (find() || userMoved()) { obs.disconnect(); resolve(userMoved() ? null : find()); }
+    });
+    obs.observe(container, { childList: true });
+    setTimeout(() => { obs.disconnect(); resolve(null); }, 60000);
+  });
+}
+
+/** Scroll to the top of `page`, or to the quote / region on it and flash it. */
+async function jumpTo({ page, q, rect }, userMoved = () => false) {
+  const container = document.getElementById('pdf-container');
+  const w = container && await pageWrapper(container, page, userMoved);
+  if (!w) return false;
+  if (!userMoved()) w.scrollIntoView({ block: 'start' });
+  if (q || rect) await spotlight(w, container, { q, rect }, userMoved);
+  return true;
+}
+
+/**
+ * Another citation of this PDF, clicked in a note while this tab is already open (api.js reuses
+ * the tab instead of opening a new one): jump there as a new Back/Forward entry. No page = just
+ * show the tab where it is.
+ */
+function gotoSpot({ page, q, rect } = {}) {
+  page = parseInt(page, 10);
+  if (!(page >= 1)) return;
+  const url = new URL(location.href);
+  for (const [k, v] of Object.entries({ page, q, rect })) { if (v) url.searchParams.set(k, v); else url.searchParams.delete(k); }
+  const run = () => jumpTo({ page, q, rect });
+  if (window.zcLinks?.jumpRecorded) window.zcLinks.jumpRecorded(run, url.href);
+  else { history.replaceState(history.state, '', url.href); run(); }
+}
+window.zcViewerGoto = gotoSpot;
+// Name the tab after its file (unless the opener already did), so a citation clicked later can
+// find this tab even if it was opened with Cmd/Ctrl+click or from another view.
+if (!window.name && params.get('file')) window.name = `zc-pdf:${params.get('file')}`;
 
 /** The rectangles (page units at scale 1) of the cited spot on this page: a quote or a region. */
 export async function spotRects(wrapper, { q, rect }) {

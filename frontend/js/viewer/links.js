@@ -177,12 +177,18 @@ container.addEventListener('scroll', () => {
 async function followInternal(target) {
   const t = await resolveTarget(target);
   if (!t) return;
+  await jumpRecorded(() => scrollToTarget(t));
+}
+
+/** Run a jump (`scroll`, async) as a new history entry, so Back returns to where the reader was.
+ *  `url` (optional) becomes the entry's address, so a reload reopens at the new spot. */
+async function jumpRecorded(scroll, url) {
   clearTimeout(scrollTimer);
   recordPosition();                         // where to come back to
-  await scrollToTarget(t);
+  await scroll();
   navIdx += 1;
   navMax = navIdx;
-  history.pushState({ zcIdx: navIdx, zcPos: currentPosition() }, '');
+  history.pushState({ zcIdx: navIdx, zcPos: currentPosition() }, '', url);
   updateNavButtons();
 }
 
@@ -421,4 +427,4 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hidePopup(
 document.addEventListener('zc:pagecreated', (e) => addLinks(e.detail.wrapper, e.detail.page));
 for (const w of container.querySelectorAll('.page-wrapper')) if (w.zcPage) addLinks(w, w.zcPage);
 addNavButtons();
-window.zcLinks = { currentPosition, followInternal, ready: true };   // for tests
+window.zcLinks = { currentPosition, followInternal, jumpRecorded, ready: true };   // jumpRecorded: notesBridge.js; the rest for tests
