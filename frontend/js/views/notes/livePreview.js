@@ -7,6 +7,7 @@
 // What counts as math, a [[link]] or a [@citation] comes from mdscan.js (the port of the
 // backend parser); everything else from CodeMirror's own Markdown syntax tree.
 import { scan, splitFrontmatter } from './mdscan.js';
+import { citeTargetInText } from './citeTarget.js';
 import { citeLabel, imageSrc } from './render.js';
 
 const CALLOUT_TYPES = ['note', 'tip', 'warning', 'question', 'quote', 'info', 'important', 'caution', 'example', 'todo'];
@@ -301,7 +302,7 @@ export function livePreview(cm, deps) {
   });
 
   const clicks = EditorView.domEventHandlers({
-    mousedown(e) {
+    mousedown(e, view) {
       const c = e.target.closest?.('.cm-lp-chip.wikilink, .cm-lp-chip.embed');
       if (c && e.button === 0) {
         e.preventDefault();
@@ -313,7 +314,9 @@ export function livePreview(cm, deps) {
         const keys = (cite.dataset.keys || '').split(';');
         const pages = (cite.dataset.pages || '').split(';');
         e.preventDefault();
-        deps.openCite?.(keys[0], pages[0] ? Number(pages[0]) : null);
+        let target = null;   // the quote or snapshot the citation belongs to (citeTarget.js)
+        try { target = citeTargetInText(view.state.doc.toString(), view.posAtDOM(cite)); } catch { /* not in the document */ }
+        deps.openCite?.(keys[0], pages[0] ? Number(pages[0]) : null, target);
         return true;
       }
       const link = e.target.closest?.('.cm-lp-link');

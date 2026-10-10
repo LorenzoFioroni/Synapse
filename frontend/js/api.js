@@ -121,8 +121,16 @@ export function fileUrl(att) {
   return /^https?:/.test(att.url) ? `/api/proxy?url=${encodeURIComponent(att.url)}` : `/pdfs/${encodeURIComponent(att.url)}`;
 }
 
-export function openAttachment(item, att, page) {
+/** The viewer's URL for a PDF, optionally at a page and at a spot on it: `at` is {q} (words to
+ *  find on the page) or {rect: "x,y,w,h"} (a region, as fractions of the page) — see citeTarget.js. */
+export function viewerUrl(item, att, page, at = {}) {
   const p = new URLSearchParams({ file: fileUrl(att), paper_id: item.id, title: item.title || 'PDF' });
   if (page) p.set('page', page);
-  window.open(`/viewer.html?${p}`, '_blank');
+  if (at.q) p.set('q', at.q);
+  if (at.rect) p.set('rect', at.rect);
+  return `/viewer.html?${p}`;
+}
+
+export function openAttachment(item, att, page, at = {}) {
+  window.open(viewerUrl(item, att, page, at), '_blank');
 }

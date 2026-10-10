@@ -5,6 +5,9 @@
 // via BroadcastChannel 'zc-notes' — see notesView.js) or into the paper note of this PDF's item
 // (appended on the server, created if missing).
 
+import { writeRegion } from '../views/notes/citeTarget.js';
+import { findQuote, parseRect } from './locate.js';
+
 const params = new URLSearchParams(location.search);
 const paperId = params.get('paper_id');
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('zc-notes') : null;
@@ -28,6 +31,14 @@ css.textContent = `
   .zc-snap-layer { position: absolute; inset: 0; z-index: 50; }
   .zc-snap-rect { position: absolute; border: 2px solid #2f6fed; background: rgba(47,111,237,.12); pointer-events: none; }
   #zc-snap-btn.on { background: var(--accent-soft, #e4ecfd); color: var(--accent, #2f6fed); }
+  /* a cited spot, flashed for a moment when the viewer opens on it (not an annotation) */
+  .zc-flash { position: absolute; z-index: 40; pointer-events: none; border-radius: 3px;
+    background: rgba(255, 196, 0, .38); box-shadow: 0 0 0 2px rgba(255, 166, 0, .85), 0 0 18px 4px rgba(255, 180, 0, .45);
+    animation: zc-flash 2.8s ease-out forwards; }
+  @keyframes zc-flash { 0% { opacity: 0; } 8% { opacity: 1; } 22% { opacity: .35; } 36% { opacity: 1; } 50% { opacity: .35; }
+    64% { opacity: 1; } 100% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .zc-flash { animation: zc-fade 2.8s ease-out forwards; } }
+  @keyframes zc-fade { 0%, 60% { opacity: 1; } 100% { opacity: 0; } }
 `;
 document.head.appendChild(css);
 
@@ -176,8 +187,12 @@ function startSnap(e, wrapper, layer) {
     setSnap(false);
     if (sel.w < 8 || sel.h < 8) return;
     try {
-      const blob = await crop(wrapper, sel);
       const page = Number(wrapper.dataset.pageNumber) || 1;
+      // the PNG remembers where on the page it was cut from, so its citation can open right there
+      const W = wrapper.clientWidth, H = wrapper.clientHeight;
+      const region = { page, rect: [sel.x / W, sel.y / H, sel.w / W, sel.h / H].map((v) => +v.toFixed(4)) };
+      const png = writeRegion(new Uint8Array(await (await crop(wrapper, sel)).arrayBuffer()), region);
+      const blob = new Blob([png], { type: 'image/png' });
       const fd = new FormData();
       fd.append('file', blob, `${item.citation_key}-p${page}.png`);
       const res = await fetch('/api/notes/attachments', { method: 'POST', body: fd });
@@ -206,13 +221,15 @@ function crop(wrapper, sel) {
 }
 
 /* ------------------------------------------------------- open at ?page=N */
-// Links to a cited page (e.g. [@key, p. 7]) open the viewer with page=7. Pages are created one
-// after the other, so wait for that page to exist, then scroll to it — unless the reader has
-// already started scrolling.
+// Links to a cited page (e.g. [@key, p. 7]) open the viewer with page=7, and with q=… (the
+// words of a quote) or rect=x,y,w,h (a snapshot's region, as fractions of the page) when the
+// citation belongs to one. Pages are created one after the other: wait for that page, scroll to
+// the spot (or the top of the page) and flash it — unless the reader has already started scrolling.
 export function jumpToRequestedPage() {
   const want = parseInt(params.get('page'), 10);
+  const q = params.get('q'), rect = params.get('rect');
   const container = document.getElementById('pdf-container');
-  if (!(want > 1) || !container) return;
+  if (!(want >= 1) || !container || (want === 1 && !q && !rect)) return;
   let userMoved = false;
   const stop = () => { userMoved = true; };
   container.addEventListener('wheel', stop, { passive: true, once: true });
@@ -222,12 +239,52 @@ export function jumpToRequestedPage() {
     const w = container.querySelector(`.page-wrapper[data-page-number="${want}"]`);
     if (!w) return false;
     if (!userMoved) w.scrollIntoView({ block: 'start' });
+    if (q || rect) spotlight(w, container, { q, rect }, () => userMoved);
     return true;
   };
   if (tryJump()) return;
   const obs = new MutationObserver(() => { if (tryJump() || userMoved) obs.disconnect(); });
   obs.observe(container, { childList: true });
   setTimeout(() => obs.disconnect(), 60000);
+}
+
+/** The rectangles (page units at scale 1) of the cited spot on this page: a quote or a region. */
+export async function spotRects(wrapper, { q, rect }) {
+  const W = parseFloat(wrapper.dataset.baseWidth), H = parseFloat(wrapper.dataset.baseHeight);
+  if (rect) { const r = parseRect(rect, W, H); return r ? [r] : []; }
+  const page = wrapper.zcPage;
+  if (!page || !q || !window.pdfjsLib) return [];
+  const viewport = page.getViewport({ scale: 1 });
+  const content = await page.getTextContent();
+  const items = content.items.filter((it) => it.str).map((it) => {
+    const tx = window.pdfjsLib.Util.transform(viewport.transform, it.transform);
+    const h = Math.hypot(tx[2], tx[3]);
+    return { str: it.str, x: tx[0] >= 0 ? tx[4] : tx[4] - it.width, y: tx[5] - h, w: it.width * viewport.scale, h: h * 1.15 };
+  });
+  return findQuote(items, q);
+}
+
+/** Scroll the cited spot into view and flash it for a moment (the flash is not saved). */
+export async function spotlight(wrapper, container, target, userMoved = () => false) {
+  const rects = await spotRects(wrapper, target);
+  if (!rects.length) return false;
+  const W = parseFloat(wrapper.dataset.baseWidth), H = parseFloat(wrapper.dataset.baseHeight);
+  if (!userMoved()) {
+    const top = Math.min(...rects.map((r) => r.y)) / H * wrapper.clientHeight;
+    const cr = container.getBoundingClientRect(), wr = wrapper.getBoundingClientRect();
+    container.scrollTop += wr.top - cr.top + top - container.clientHeight / 3;
+  }
+  wrapper.querySelectorAll('.zc-flash').forEach((f) => f.remove());
+  for (const r of rects) {
+    const f = document.createElement('div');
+    f.className = 'zc-flash';
+    const pad = 2;   // page units around the words
+    Object.assign(f.style, { left: `${((r.x - pad) / W) * 100}%`, top: `${((r.y - pad) / H) * 100}%`,
+      width: `${((r.w + 2 * pad) / W) * 100}%`, height: `${((r.h + 2 * pad) / H) * 100}%` });
+    f.addEventListener('animationend', () => f.remove());
+    wrapper.appendChild(f);
+  }
+  return true;
 }
 jumpToRequestedPage();
 
@@ -255,7 +312,7 @@ async function init() {
     if (menu && !menu.contains(e.target)) closeMenu();
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setSnap(false); hidePill(); closeMenu(); } });
-  window.zcViewerBridge = { ready: true, item };   // for tests
+  window.zcViewerBridge = { ready: true, item, spotlight };   // for tests
 }
 
 init();

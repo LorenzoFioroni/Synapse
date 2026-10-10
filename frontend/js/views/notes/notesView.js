@@ -17,6 +17,7 @@ import { createEditor, loadMD } from './editor.js';
 import { splitFrontmatter } from './mdscan.js';
 import { NoteSession } from './noteSession.js';
 import { attachCiteCards, openCitation, showCard } from './citeCard.js';
+import { citeTargetInDom, citeTargetInText } from './citeTarget.js';
 import { shortAuthors } from './library.js';
 import { createRenderer, slugHeading } from './render.js';
 import { highlightCodeBlocks, renderEmbeds, renderMermaid, renderMermaidBlocks } from './richRender.js';
@@ -107,7 +108,7 @@ export function initNotes() {
   window.zcNotes = { text: () => session?.text ?? null, path: () => session?.path ?? null };   // read-only, for tests
   listenForQuotes();
   root.querySelector('.note-read').addEventListener('click', onReadClick);
-  attachCiteCards(root, { itemInfo, openNote: (p) => openNote(p), refreshLibrary: async () => { await loadLibrary(); await refreshTree(); } });
+  attachCiteCards(root, { itemInfo, openNote: (p) => openNote(p), refreshLibrary: async () => { await loadLibrary(); await refreshTree(); }, targetOf: citeTargetOf });
   let libTimer = null;
   on('items', () => { if (notesOpen()) { clearTimeout(libTimer); libTimer = setTimeout(loadLibrary, 500); } });
   root.querySelector('.note-read').addEventListener('dblclick', onReadDblClick);
@@ -239,7 +240,7 @@ async function ensureEditor() {
     resolveNote,
     citeInfo,
     openNote: (target, heading) => followLink(target, heading),
-    openCite: (key, page) => { if (!openCitation(key, page)) toast(`@${key} is not in your library.`); },
+    openCite: (key, page, target) => { if (!openCitation(key, page, target)) toast(`@${key} is not in your library.`); },
     mermaid: renderMermaid,
   }, mode === 'read' ? editMode : mode, {
     items: () => library.list,
@@ -349,6 +350,15 @@ function gotoHeading(heading) {
   else editor?.gotoLine(h.line);
 }
 
+/** Where a citation element points in the PDF (a quote, a snapshot), for the hover card. */
+function citeTargetOf(el) {
+  const view = editor?.view;
+  if (view && view.dom.contains(el)) {
+    try { return citeTargetInText(view.state.doc.toString(), view.posAtDOM(el)); } catch { return null; }
+  }
+  return citeTargetInDom(el);
+}
+
 function onReadClick(e) {
   const a = e.target.closest('a');
   const wl = e.target.closest('.wikilink');
@@ -358,7 +368,7 @@ function onReadClick(e) {
   const cite = e.target.closest('.cite');
   if (cite) {
     e.preventDefault();
-    if (!openCitation(cite.dataset.key, cite.dataset.page ? Number(cite.dataset.page) : null)) showCard(cite);
+    if (!openCitation(cite.dataset.key, cite.dataset.page ? Number(cite.dataset.page) : null, citeTargetInDom(cite))) showCard(cite);
     return;
   }
   const box = e.target.closest('.task-box[data-task-line]');
