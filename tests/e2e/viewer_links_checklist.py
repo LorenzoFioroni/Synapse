@@ -263,20 +263,25 @@ async def main():
             check("figure anchored at its caption end: the whole figure and caption are shown", whole(f1), f1)
             if SHOTS:
                 await t.locator('.zc-link-pop').screenshot(path=f"{SHOTS}/2b-figure-end.png")
-            await preview("figure.2")                # anchored at the START of its caption; a tall figure
+            await preview("figure.3")                # anchored at the START of its caption; a tall figure
             f2 = await shown()
             check("tall figure: shown whole (scaled down to fit)", whole(f2) and f2["y1"] - f2["y0"] > 400 and f2["scale"] < 1.35, f2)
             if SHOTS:
                 await t.locator('.zc-link-pop').screenshot(path=f"{SHOTS}/2c-tall-figure.png")
-            await preview("figure.3")                # a vector figure (paths) with text labels
+            await preview("figure.4")                # a vector figure (paths) with text labels
             f3 = await shown()
             check("vector figure with labels: shown whole", whole(f3) and f3["x1"] - f3["x0"] > 300, f3)
+            await preview("figure.2")                # two panels with a gap, "(a)" and a title above the top one
+            f4 = await shown()
+            check("two-panel figure: both panels and the labels above them", whole(f4) and (f4["y1"] - f4["y0"]) / f4["scale"] > 260, f4)
+            if SHOTS:
+                await t.locator('.zc-link-pop').screenshot(path=f"{SHOTS}/2d-panels.png")
             await preview("table.1")
             tb = await shown()
             check("table: the caption and the whole table below it", whole(tb) and tb["y1"] - tb["y0"] > 100, tb)
 
             # zoom: the +/- buttons and pinch / Ctrl+wheel, around the pointer; scrolling still works
-            await preview("figure.2")
+            await preview("figure.3")
             k0 = (await shown())["scale"]
             await t.click('.zc-pop-zoom [data-z="1"]')
             await t.wait_for_timeout(300)

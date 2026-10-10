@@ -130,9 +130,30 @@ test('figureRegion: the drawing above a caption, grown upwards, in its column, w
   const tcap = { top: 300, bottom: 288, x: 330, table: true };
   const rules = [[330, 280, 560, 281], [330, 262, 560, 263], [330, 150, 560, 151]];               // top, mid, bottom rule
   const rows = [270, 250, 238, 226, 214, 202, 190, 178, 166, 154].map((y) => ({ x: 340, y, w: 200 }));
-  const body = [{ x: 330, y: 120, w: 230 }, { x: 330, y: 108, w: 230 }];                          // text after the table
-  assert.deepEqual(figureRegion(rules, tcap, 612, 792, [...rows, ...body]), [330, 150, 560, 300]);
+  const body = [130, 118, 106, 94].map((y) => ({ str: 'Running text after the table, a full line of it.', x: 330, y, w: 230 }));
+  rules.push([330, 80, 560, 81]);                                                                  // another table's rule further down
+  assert.deepEqual(figureRegion(rules, tcap, 612, 792, [...rows.map((r) => ({ ...r, str: '1 2 3' })), ...body]), [330, 150, 560, 300]);
   assert.equal(figureRegion([[330, 150, 560, 151]], tcap, 612, 792, body), null);                // no rule under the caption
+});
+
+test('figureRegion: gaps inside a figure, labels above it, and where it must stop', () => {
+  const caption = { top: 400, bottom: 380, x: 54, table: false };
+  const prose = (y) => ({ str: 'This is a full line of running body text in the column.', x: 54, y, w: 240 });
+  // two panels 35pt apart (bigger than a line), a panel label "(a)" and a title above the top panel
+  const boxes = [[60, 410, 290, 520], [60, 555, 290, 650]];
+  const texts = [{ str: '(a)', x: 60, y: 652, w: 10, h: 8 }, { str: 'Energy vs time', x: 120, y: 660, w: 70, h: 8 }];
+  assert.deepEqual(figureRegion(boxes, caption, 612, 792, texts).slice(1, 4), [380, 290, 668]);
+  // the body text above the figure, and a figure above that text, are not part of it
+  const above = [...boxes, [60, 700, 290, 760]];
+  const r = figureRegion(above, caption, 612, 792, [...texts, prose(680), prose(668 + 10)]);
+  assert.ok(r[3] < 690, String(r));
+  // the short last line of the paragraph just above the figure is not a label
+  const tail = { str: 'with Fig. 9b.', x: 54, y: 662, w: 60, h: 8 };
+  assert.ok(figureRegion(boxes, caption, 612, 792, [...texts, tail, prose(674)])[3] < 669);
+  // a background rectangle behind the whole column (with body text in it) is ignored
+  const bg = [...boxes, [50, 100, 300, 780]];
+  assert.ok(figureRegion(bg, caption, 612, 792, [...texts, prose(300), prose(720)])[3] < 690);
+
 });
 
 test('fitRegion: the whole region in the popup, scale within limits', () => {

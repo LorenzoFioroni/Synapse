@@ -376,7 +376,7 @@ async function figureAt(page, vp, t) {
   if (!c) return null;
   const out = { top: vp.convertToViewportPoint(0, c.top)[1], bottom: vp.convertToViewportPoint(0, c.bottom)[1], table: c.table, region: null };
   if (!pageGraphics.has(n)) {
-    pageGraphics.set(n, page.getOperatorList().then((ol) => graphicsBoxes(ol.fnArray, ol.argsArray, window.pdfjsLib.OPS)).catch(() => []));
+    pageGraphics.set(n, page.getOperatorList().then((ol) => graphicsBoxes(ol.fnArray, ol.argsArray, window.pdfjsLib.OPS, page.view)).catch(() => []));
   }
   const box = figureRegion(await pageGraphics.get(n), c, width, page.view[1] + page.view[3], items);
   if (box) {

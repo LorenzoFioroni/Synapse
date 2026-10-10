@@ -144,34 +144,46 @@ function boxOf(m, x0, y0, x1, y1) {
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
+const meet = (a, b) => (a && b ? [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.min(a[2], b[2]), Math.min(a[3], b[3])] : a || b);
+
 /**
  * Where a page draws things: boxes [x0, y0, x1, y1] (PDF coordinates, y up) of its images and of
  * the paths it paints (fills and strokes, not clips), from pdf.js's operator list
  * (page.getOperatorList(): fnArray, argsArray) and its OPS table. Text is not included.
+ * Boxes are cut to the clipping in force (clip paths, form bounding boxes) and to `view` (the page).
  */
-export function graphicsBoxes(fnArray, argsArray, OPS) {
+export function graphicsBoxes(fnArray, argsArray, OPS, view = null) {
   const PAINT = new Set([OPS.stroke, OPS.closeStroke, OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke,
     OPS.closeFillStroke, OPS.closeEOFillStroke, OPS.shadingFill]);
   const IMAGE = new Set([OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject,
     OPS.paintImageXObjectRepeat, OPS.paintImageMaskXObjectRepeat, OPS.paintSolidColorImageMask, OPS.paintInlineImageXObjectGroup,
     OPS.paintImageMaskXObjectGroup]);
   let m = [1, 0, 0, 1, 0, 0];
+  let clip = view ? [...view] : null;
   const stack = [];
   const out = [];
-  let pending = null;   // the box of the last constructed path, until we know whether it is painted
+  const add = (b) => { const c = meet(b, clip); if (c && c[2] >= c[0] && c[3] >= c[1]) out.push(c); };
+  let pending = null;   // the box of the last constructed path, until we know whether it is painted or clips
   for (let i = 0; i < fnArray.length; i++) {
     const fn = fnArray[i], args = argsArray[i];
-    if (fn === OPS.save) stack.push(m);
-    else if (fn === OPS.restore) m = stack.pop() || m;
+    if (fn === OPS.save) stack.push([m, clip]);
+    else if (fn === OPS.restore) [m, clip] = stack.pop() || [m, clip];
     else if (fn === OPS.transform) m = mul(m, args);
-    else if (fn === OPS.paintFormXObjectBegin) { stack.push(m); if (Array.isArray(args?.[0]) && args[0].length === 6) m = mul(m, args[0]); }
-    else if (fn === OPS.paintFormXObjectEnd) m = stack.pop() || m;
+    else if (fn === OPS.paintFormXObjectBegin) {
+      stack.push([m, clip]);
+      if (Array.isArray(args?.[0]) && args[0].length === 6) m = mul(m, args[0]);
+      const bb = args?.[1];
+      if (bb && bb.length === 4) clip = meet(clip, boxOf(m, bb[0], bb[1], bb[2], bb[3]));
+    } else if (fn === OPS.paintFormXObjectEnd) [m, clip] = stack.pop() || [m, clip];
     else if (fn === OPS.constructPath) {
       const mm = args?.[2];
       pending = Array.isArray(mm) || ArrayBuffer.isView(mm) ? boxOf(m, mm[0], mm[2], mm[1], mm[3]) : null;
       continue;
-    } else if (PAINT.has(fn)) { if (pending) out.push(pending); }
-    else if (IMAGE.has(fn)) out.push(boxOf(m, 0, 0, 1, 1));
+    } else if (fn === OPS.clip || fn === OPS.eoClip) {
+      if (pending) clip = meet(clip, pending);
+      continue;                     // the path may still be painted (W n, or W f)
+    } else if (PAINT.has(fn)) { if (pending) add(pending); }
+    else if (IMAGE.has(fn)) add(boxOf(m, 0, 0, 1, 1));
     pending = null;
   }
   return out.filter((b) => Number.isFinite(b[0]) && b[2] - b[0] + (b[3] - b[1]) > 0.5);
@@ -190,37 +202,70 @@ export function figureRegion(boxes, caption, pageW, pageH, texts = []) {
   // in the caption's column: mostly on its side of the middle, or a full-width figure
   const inCol = (b) => b[2] - b[0] > half * 1.1 || (left ? (b[0] + b[2]) / 2 < half : (b[0] + b[2]) / 2 >= half);
   const big = (b) => b[2] - b[0] > pageW * 0.9 && b[3] - b[1] > pageH * 0.9;   // a page background
-  const cand = boxes.filter((b) => inCol(b) && !big(b));
-  const GAP = 24;
+  // Lines of running text (body text, other captions) are where a figure ends: growing never
+  // crosses one, and a box with one inside it is a background, not part of the figure.
+  // (the caption's own lines excepted: a figure's box often overlaps them with white margins)
+  const ownCaption = (l) => l.y <= caption.top + 1 && l.y >= caption.bottom - 2 && (l.x0 + l.x1) / 2 < half === left;
+  const prose = proseLines(texts, half).filter((l) => !ownCaption(l));
+  const proseIn = (y0, y1, x0, x1) => prose.some((l) => l.y > y0 + 1 && l.y < y1 - 1 && l.x1 > x0 && l.x0 < x1);
+  const cand = boxes.filter((b) => inCol(b) && !big(b) && !proseIn(b[1], b[3], b[0], b[2]));
+  const GAP = 40;
   let lo, hi;
   if (!caption.table) {
-    // start with what ends just above the caption, then keep adding what touches the region from above
-    let top = null;
-    const near = cand.filter((b) => b[1] >= caption.top - 6 - GAP / 2 && b[1] <= caption.top + GAP && b[3] > caption.top - 2);
+    // start with what ends just above the caption, then keep adding what is close above the region
+    // drawing above the caption; its box may reach into the caption (white margins), not below it
+    const above = (b) => b[1] >= caption.bottom - 2 && b[3] > caption.top + 4;
+    const ok = (b, from) => above(b) && b[1] <= from + GAP && !proseIn(Math.max(from, caption.top) - 2, b[1], b[0], b[2]);
+    const near = cand.filter((b) => ok(b, caption.top));
     if (!near.length) return null;
-    top = Math.max(...near.map((b) => b[3]));
+    let top = Math.max(...near.map((b) => b[3]));
+    // Grow upwards through drawing and through short text between its pieces (panel labels, axis
+    // titles); `reach` is how far up we got, `top` the highest drawing reached.
+    // (the short last line of a paragraph is not a label: running text sits right above it)
+    const paragraphTail = (it) => prose.some((l) => l.y > it.y + 1 && l.y <= it.y + 2.2 * (it.h || 8) && l.x1 > it.x && l.x0 < it.x + it.w);
+    const short = texts.filter((it) => Number.isFinite(it.w) && it.w <= half * 0.6 && inCol([it.x, 0, it.x + it.w, 0])
+      && !prose.some((l) => Math.abs(l.y - it.y) < 1 && l.x1 > it.x && l.x0 < it.x + it.w) && !paragraphTail(it));
+    let reach = top;
     let grew = true;
     while (grew) {
       grew = false;
-      for (const b of cand) {
-        if (b[3] > top && b[1] <= top + GAP && b[1] >= caption.top - 6) { top = b[3]; grew = true; }
+      for (const b of cand) if (b[3] > top && ok(b, reach)) { top = b[3]; reach = Math.max(reach, top); grew = true; }
+      for (const it of short) {
+        const y1 = it.y + (it.h || 8);
+        if (y1 > reach && it.y >= caption.top - 2 && it.y <= reach + GAP && !proseIn(reach - 2, it.y, it.x, it.x + it.w)) { reach = y1; grew = true; }
+      }
+    }
+    // short text just above the drawing belongs to it: panel labels, titles, legends
+    const xs = cand.filter((b) => above(b) && b[3] <= top + 1);
+    const gx0 = Math.min(...xs.map((b) => b[0])) - 12, gx1 = Math.max(...xs.map((b) => b[2])) + 12;
+    grew = true;
+    while (grew) {
+      grew = false;
+      for (const it of texts) {
+        const h = it.h || 8;
+        if (!Number.isFinite(it.w) || it.w > half * 0.6 || it.x > gx1 || it.x + it.w < gx0 || paragraphTail(it)) continue;
+        if (it.y + h > top + 0.5 && it.y <= top + 14 && !prose.some((l) => Math.abs(l.y - it.y) < 1 && l.x1 > gx0 && l.x0 < gx1)) {
+          top = it.y + h; grew = true;
+        }
       }
     }
     lo = caption.bottom; hi = top;
   } else {
     // a table: its rules below the caption, connected through its rows of text; it ends at the
     // last rule reached (the body text after it is not part of it)
-    const near = cand.filter((b) => b[3] <= caption.bottom + 6 + GAP / 2 && b[3] >= caption.bottom - GAP && b[1] < caption.bottom + 2);
+    const TGAP = 24;   // rows are close together; the text after the table is further away
+    const near = cand.filter((b) => b[3] <= caption.bottom + 6 + TGAP / 2 && b[3] >= caption.bottom - TGAP && b[1] < caption.bottom + 2);
     if (!near.length) return null;
-    const rows = texts.filter((it) => Number.isFinite(it.w) && (it.w > half * 1.1 || ((it.x + it.w / 2) < half) === left))
+    const rows = texts.filter((it) => Number.isFinite(it.w) && (it.w > half * 1.1 || ((it.x + it.w / 2) < half) === left)
+        && !prose.some((l) => Math.abs(l.y - it.y) < 1 && l.x1 > it.x && l.x0 < it.x + it.w))   // not the text after the table
       .map((it) => [it.x, it.y, it.x + it.w, it.y + 8]);
     let reach = Math.min(...near.map((b) => b[1]));
     let bottom = reach;
     let grew = true;
     while (grew) {
       grew = false;
-      for (const b of cand) if (b[1] < reach && b[3] >= reach - GAP && b[3] <= caption.bottom + 6) { reach = b[1]; bottom = Math.min(bottom, b[1]); grew = true; }
-      for (const b of rows) if (b[1] < reach && b[3] >= reach - GAP && b[1] < caption.bottom - 6) { reach = b[1]; grew = true; }
+      for (const b of cand) if (b[1] < bottom && b[3] >= reach - TGAP && b[3] <= caption.bottom + 6) { reach = Math.min(reach, b[1]); bottom = b[1]; grew = true; }
+      for (const b of rows) if (b[1] < reach && b[3] >= reach - TGAP && b[1] < caption.bottom - 6) { reach = b[1]; grew = true; }
     }
     lo = bottom; hi = caption.top;
   }
@@ -235,6 +280,19 @@ export function figureRegion(boxes, caption, pageW, pageH, texts = []) {
     x0 = Math.min(x0, it.x); x1 = Math.max(x1, it.x + it.w);
   }
   return [x0, lo, x1, hi];
+}
+
+/** Lines of running text: [{y, x0, x1}] — long enough (characters) and wide enough (in its column). */
+function proseLines(texts, half) {
+  const lines = new Map();
+  for (const it of texts) {
+    if (!Number.isFinite(it.w)) continue;
+    const key = `${Math.round(it.y)}:${it.x + it.w / 2 < half ? 'L' : 'R'}`;
+    const l = lines.get(key) || { y: it.y, x0: Infinity, x1: -Infinity, chars: 0 };
+    l.x0 = Math.min(l.x0, it.x); l.x1 = Math.max(l.x1, it.x + it.w); l.chars += (it.str || '').trim().length || it.w / 5;
+    lines.set(key, l);
+  }
+  return [...lines.values()].filter((l) => l.chars >= 35 && l.x1 - l.x0 >= half * 0.6);
 }
 
 /**
