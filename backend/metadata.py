@@ -4,7 +4,10 @@ from __future__ import annotations
 import difflib
 import logging
 import re
+import threading
+import time
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
 
@@ -195,8 +198,24 @@ def arxiv_id_of(item: dict) -> str | None:
     return None
 
 
+# Lookups of several items now run side by side; arXiv asks API users to space their requests.
+ARXIV_SPACING = 1.0
+_arxiv_lock = threading.Lock()
+_arxiv_last = 0.0
+
+
+def _arxiv_get(params: dict):
+    global _arxiv_last
+    with _arxiv_lock:
+        wait = _arxiv_last + ARXIV_SPACING - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _arxiv_last = time.monotonic()
+    return requests.get(ARXIV_API, params=params, timeout=TIMEOUT)
+
+
 def _arxiv_entries(params: dict) -> list:
-    r = requests.get(ARXIV_API, params=params, timeout=TIMEOUT)
+    r = _arxiv_get(params)
     r.raise_for_status()
     return [e for e in ET.fromstring(r.content).findall("a:entry", _ARXIV_NS) if e.find("a:title", _ARXIV_NS) is not None
             and (e.findtext("a:id", default="", namespaces=_ARXIV_NS) or "").find("api/errors") < 0]
@@ -268,6 +287,9 @@ def openlibrary_isbn(isbn: str) -> dict:
 
 
 # ------------------------------------------------------------------ facade
+_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="lookup")
+
+
 def lookup(*, identifier: str | None = None, doi: str | None = None, title: str | None = None,
            arxiv_id: str | None = None, known: list[tuple[str, str]] | None = None, email: str = "") -> dict:
     """Return normalized metadata for an identifier, a DOI, an arXiv id or a title.
@@ -291,6 +313,8 @@ def lookup(*, identifier: str | None = None, doi: str | None = None, title: str 
         kind, value = "title", title
     if not value:
         raise LookupError_("Nothing to look up: the item needs a DOI or a title.")
+    # With a DOI known up front, ask OpenAlex for the authors at the same time as Crossref.
+    oa_future = _POOL.submit(openalex_authors, value, email) if kind == "doi" else None
     try:
         if kind == "doi":
             item = crossref_doi(value, email)
@@ -316,7 +340,8 @@ def lookup(*, identifier: str | None = None, doi: str | None = None, title: str 
         raise LookupError_(f"Could not reach {host}. Check your internet connection and try again.") from e
 
     if item.get("doi") and kind in ("doi", "title"):
-        oa = openalex_authors(item["doi"], email)
+        same = oa_future is not None and clean_doi(item["doi"]).lower() == value.lower()
+        oa = oa_future.result() if same else openalex_authors(item["doi"], email)
         # Same rule as before the refactor: prefer OpenAlex when it is more complete.
         if oa and len(join_authors(oa)) > len(item.get("authors") or ""):
             item["authors"] = join_authors(oa)

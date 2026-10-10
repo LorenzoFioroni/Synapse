@@ -85,3 +85,45 @@ def test_file_existing_item_into_another_folder(client):
     item = client.post("/api/items", json={"title": "T", "folder_id": a["id"]}).get_json()
     r = client.post("/api/connector/file", json={"id": item["id"], "folder_id": b["id"], "tags": ["x"]}).get_json()
     assert r["item"]["folder_ids"] == [a["id"], b["id"]] and r["item"]["tags"] == ["x"]
+
+
+def test_on_add_settings_for_the_browser_button(client, svc, monkeypatch):
+    from backend.api import connector
+    from backend.metadata import LookupError_
+
+    def offline(**k):
+        raise LookupError_("offline")
+    monkeypatch.setattr(connector, "lookup", offline)
+    searched = []
+    monkeypatch.setattr(type(svc), "find_pdf_later", lambda self, item_id: searched.append(item_id))
+    svc.settings.update({"add_find_pdf": "ask"})
+    assert client.get("/api/connector/ping").get_json()["on_add"]["find_pdf"] == "ask"
+
+    page = {"title": "No PDF here", "doi": "10.1/nopdf", "allow_duplicate": True}
+    r = client.post("/api/connector/save", json=page).get_json()          # not ticked
+    assert r["pdf"] == "none" and searched == []
+    r = client.post("/api/connector/save", json={**page, "find_pdf": True}).get_json()
+    assert r["pdf"] == "searching" and searched == [r["item"]["id"]]
+    svc.settings.update({"add_find_pdf": "never"})
+    r = client.post("/api/connector/save", json={**page, "find_pdf": True}).get_json()
+    assert r["pdf"] == "none" and len(searched) == 1
+    svc.settings.update({"add_find_pdf": "always"})
+    r = client.post("/api/connector/save", json=page).get_json()
+    assert r["pdf"] == "searching" and len(searched) == 2
+
+
+def test_background_pdf_search_attaches_the_file(svc, monkeypatch, tmp_path):
+    from backend import pdf_finder
+    item = svc.papers.create({"title": "Some paper", "doi": "10.1/x"})
+
+    def fake(title, doi, pdf_dir, email):
+        make_pdf(pdf_dir / "found.pdf", "x")
+        return {"status": "success", "filename": "found.pdf", "source": "test"}
+    monkeypatch.setattr(pdf_finder, "find_and_download", fake)
+    svc.find_pdf_later(item["id"])
+    import time
+    for _ in range(50):
+        if svc.papers.get(item["id"])["attachments"]:
+            break
+        time.sleep(0.05)
+    assert svc.papers.get(item["id"])["attachments"][0]["name"] == "Full Text PDF"

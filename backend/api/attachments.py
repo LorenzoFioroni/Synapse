@@ -66,7 +66,7 @@ def items_from_pdfs():
                 meta["doi"] = ident["doi"]
         item = s.papers.create({**meta, "folder_id": request.form.get("folder_id") or None})
         if note is None and len(meta) > 2:   # metadata came from a lookup
-            s.citations.maybe_enqueue(item)
+            s.citations.maybe_enqueue(item, request.form.get("fetch_references") in ("1", "true"))
         s.papers.add_attachment(item["id"], name, filename, "pdf")
         created.append({"item": s.papers.get(item["id"]), "identifier": ident, "note": note})
     s.attachments_changed()
@@ -95,12 +95,9 @@ def find_pdf(item_id):
     item = s.papers.get(item_id)
     if not item.get("title") and not item.get("doi"):
         return error("The item needs a title or DOI to search for a PDF.")
-    result = pdf_finder.find_and_download(item.get("title"), item.get("doi"), s.config.pdf_dir,
-                                          s.settings.get("contact_email"))
+    result = s.find_pdf(item_id)
     if result["status"] == "success":
-        att = s.papers.add_attachment(item_id, "Full Text PDF", result["filename"], "pdf")
-        s.attachments_changed()
-        return jsonify(status="success", attachment=att, source=result.get("source"))
+        return jsonify(status="success", attachment=result["attachment"], source=result.get("source"))
     return jsonify(result)
 
 

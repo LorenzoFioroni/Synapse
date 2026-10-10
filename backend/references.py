@@ -376,9 +376,10 @@ class Citations:
                 self._thread.start()
         return n
 
-    def maybe_enqueue(self, item: dict | None) -> None:
-        """After metadata was fetched for an item (if the setting is on and it has an id)."""
-        if item and self.settings.get("references_auto") and any(identifiers(item)):
+    def maybe_enqueue(self, item: dict | None, asked: bool | None = None) -> None:
+        """For a newly added item, following Settings → "Fetch references" for new items
+        (`asked`: the user's answer where that setting is "ask"). Needs an identifier."""
+        if item and self.settings.wants("add_fetch_references", asked) and any(identifiers(item)):
             self.enqueue([item["id"]])
 
     def _loop(self) -> None:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 
 from .config import Config
 from .db import Database
@@ -38,6 +39,31 @@ class Services:
             self.notes.sync()
         except Exception:  # notes must never stop the library from starting
             logging.getLogger(__name__).exception("Notes index sync failed")
+
+    def find_pdf(self, item_id: str) -> dict:
+        """Look for an open-access PDF of an item and attach it. Returns the finder's result."""
+        from . import pdf_finder
+        item = self.papers.get(item_id)
+        if not item.get("title") and not item.get("doi"):
+            return {"status": "error", "message": "The item needs a title or DOI to search for a PDF."}
+        result = pdf_finder.find_and_download(item.get("title"), item.get("doi"), self.config.pdf_dir,
+                                              self.settings.get("contact_email"))
+        if result["status"] == "success":
+            result["attachment"] = self.papers.add_attachment(item_id, "Full Text PDF", result["filename"], "pdf")
+            self.attachments_changed()
+        return result
+
+    _pdf_lock = threading.Lock()   # one background search at a time (gentle on Unpaywall/arXiv)
+
+    def find_pdf_later(self, item_id: str) -> None:
+        """Search for a PDF in the background (items added from the browser button)."""
+        def run():
+            with self._pdf_lock:
+                try:
+                    self.find_pdf(item_id)
+                except Exception:
+                    logging.getLogger(__name__).exception("Background PDF search failed for %s", item_id)
+        threading.Thread(target=run, name="find-pdf", daemon=True).start()
 
     def attachments_changed(self) -> None:
         """Call after adding/removing files so the full-text index catches up."""

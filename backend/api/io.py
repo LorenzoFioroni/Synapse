@@ -54,7 +54,8 @@ def import_commit():
     skip_dupes = data.get("skip_duplicates", s.settings.get("import_skip_duplicates"))
     finder = DuplicateFinder(s.papers.list() if skip_dupes else [])
     folder_id = data.get("folder_id")
-    as_tags = s.settings.get("import_keywords_as_tags")
+    # Settings → Import: keywords become tags never / always / when the user ticked the box
+    as_tags = s.settings.wants("import_tags", data.get("keywords_as_tags"))
     keep, skipped = [], 0
     for e in entries:
         if skip_dupes and finder.find(e):
