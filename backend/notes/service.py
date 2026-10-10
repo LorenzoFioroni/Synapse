@@ -93,6 +93,7 @@ class NotesService:
         self.index = index
         self.papers = papers
         self.rekeyer = Rekeyer(vault, index, backups_dir or (vault.root.parent / "backups"))
+        self.on_change = None   # called after notes are saved, deleted or restored
 
     # ------------------------------------------------------------------ citation keys
     def text_matcher(self) -> NoteTextMatcher:
@@ -211,11 +212,17 @@ class NotesService:
         self.index.update(path)
         return {"path": path, "text": content, "hash": h}
 
+    def _changed(self) -> None:
+        """Notes were saved, deleted or restored: attachments may have become (un)used."""
+        if self.on_change:
+            self.on_change()
+
     def save(self, path: str, text: str, base_hash: str | None) -> dict:
         """Save over the version with ``base_hash``; ``None`` creates (fails if the file exists)."""
         path = self.vault.clean_rel(path)
         h = self.vault.write(path, text, expected_hash=base_hash)
         self.index.update(path)
+        self._changed()
         return {"path": path, "hash": h, "info": self.index.note(path)}
 
     def move(self, path: str, to: str, base_hash: str | None = None) -> dict:
@@ -237,12 +244,14 @@ class NotesService:
         path = self.vault.clean_rel(path)
         tid = self.vault.trash(path)
         self.index.remove(path)
+        self._changed()
         return {"trash_id": tid, "path": path}
 
     def trash_many(self, paths: list[str], folders: list[str]) -> dict:
         tid, moved = self.vault.trash_batch(paths or [], folders or [])
         for p in moved:
             self.index.remove(p)
+        self._changed()
         return {"trash_id": tid, "paths": moved}
 
     def _reindex(self, paths) -> None:
@@ -256,6 +265,7 @@ class NotesService:
     def restore_batch(self, trash_id: str) -> dict:
         restored, skipped = self.vault.restore_batch(trash_id)
         self._reindex(restored)
+        self._changed()
         return {"paths": restored, "skipped": skipped}
 
     def move_folder(self, path: str, to: str) -> dict:
@@ -281,6 +291,7 @@ class NotesService:
     def restore(self, trash_id: str, path: str) -> dict:
         path = self.vault.restore(trash_id, path)
         self.index.update(path)
+        self._changed()
         return {"path": path}
 
     def add_image(self, filename: str, data: bytes) -> dict:

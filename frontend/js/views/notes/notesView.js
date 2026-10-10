@@ -12,6 +12,7 @@ import { toast, toastError } from '../../ui/toast.js';
 import { escapeHtml, formatDate, h, modKey, modLabel, plural, storage, store } from '../../util.js';
 import { navPush } from '../../nav.js';
 import { closeGlobal, globalOpen, graphChanged, initNotesGraph, localSection, openGlobal, showLocal } from '../graph/notesGraph.js';
+import { RETENTION_LABELS, openAttachments } from './attachmentsDialog.js';
 import { compactDiff, lineDiff } from './diff.js';
 import { createEditor, loadMD } from './editor.js';
 import { splitFrontmatter } from './mdscan.js';
@@ -844,15 +845,16 @@ async function deleteSelection() {
 }
 
 async function showTrash() {
-  let list;
-  try { list = (await api.noteTrash()).trash; } catch (e) { toastError(e); return; }
+  let list, retention;
+  try { ({ trash: list, retention } = await api.noteTrash()); } catch (e) { toastError(e); return; }
   await openDialog({
     title: 'Deleted notes',
-    subtitle: 'Deleted notes are kept in the .trash folder inside your notes folder.',
+    subtitle: `Deleted notes are kept in the .trash folder inside your notes folder${retention && retention !== 'never'
+      ? ` and deleted for good ${RETENTION_LABELS[retention]} (Settings → General).` : '.'}`,
     wide: true,
     render: (b) => {
       b.innerHTML = list.length ? `<div class="trash-list">${list.map((t, i) => `<div class="trash-row"><span class="mono">${escapeHtml(t.path)}</span>
-          <span class="muted">${escapeHtml(t.trash_id.slice(0, 8).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))}</span>
+          <span class="muted" title="${t.deletes_at ? `Deleted for good on ${escapeHtml(formatDate(t.deletes_at))}` : ''}">${escapeHtml(formatDate(t.trashed_at || t.trash_id.slice(0, 8).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')))}</span>
           <button class="btn btn-sm" data-restore="${i}">${icon('restore', 'icon-sm')} Restore</button></div>`).join('')}</div>`
         : '<p class="muted" style="margin:0">The notes trash is empty.</p>';
       b.addEventListener('click', async (e) => {
@@ -933,6 +935,10 @@ function onClick(e) {
     return openMenu([
       { label: 'Rescan notes folder', icon: 'refresh', run: rescan },
       { label: 'Deleted notes…', icon: 'trash', run: showTrash },
+      { label: 'Attachments…', icon: 'paperclip', run: () => openAttachments({
+        insert: (md) => { if (!session || !editor || session.status === 'conflict') return false; editor.insertBlock(md); if (mode === 'read') renderRead(); return true; },
+        openNote: (p) => openNote(p),
+      }) },
       'sep',
       { label: 'Collapse all folders', icon: 'minus', run: () => { overview.folders.forEach((f) => collapsed.add(f)); saveCollapsed(); paintTree(); } },
       { label: 'Expand all folders', icon: 'plus', run: () => { collapsed.clear(); saveCollapsed(); paintTree(); } },

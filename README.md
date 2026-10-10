@@ -103,7 +103,12 @@ never mix.
 - **Notes**: Markdown notes with live preview, KaTeX, code, Mermaid and images; `[@key]`
   citations and `[[links]]` between notes; a paper note per item. Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
-  Cmd+[ / Alt+←) go back to the note or library selection you came from. The pencil column
+  Cmd+[ / Alt+←) go back to the note or library selection you came from.
+  Images pasted into notes are kept in the notes' attachments folder; one that no note uses any more
+  moves to an attachment trash by itself (and comes back if a note uses it again). **Attachments…**
+  in the notes list menu shows them all — which notes use each, insert one into the open note,
+  restore or delete trashed ones. Deleted notes and trashed attachments are deleted for good after
+  a while (Settings → General → *Empty the notes trash*: never, 1 day … 6 months; default 1 month). The pencil column
   in the item list marks items with a paper note (blue) or cited in notes (grey).
   In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
@@ -163,7 +168,8 @@ never mix.
 ```
 
 Notes are plain Markdown files in `data/notes/` (paper notes in `data/notes/papers/`,
-images in `data/notes/attachments/`, deleted notes in `data/notes/.trash/`). The files are
+images in `data/notes/attachments/`, deleted notes in `data/notes/.trash/`, images no note uses any
+more in `data/notes/.trash-attachments/`). The files are
 the source of truth; `data/notes_index.db` is derived from them and can be deleted at any
 time — it is rebuilt on the next start.
 
@@ -189,6 +195,7 @@ python tests/e2e/citation_spot_checklist.py  # a quote's / snapshot's citation o
 python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders, Back/Forward, item-list markers
 python tests/e2e/viewer_links_checklist.py  # PDF links: jump, hover preview, Back/Forward in the viewer
 python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, filters, paper card, Show in Graph, Back/Forward
+python tests/e2e/attachments_checklist.py  # note attachments: unused ones to the trash, Attachments dialog, retention
 python tests/e2e/adding_checklist.py     # bulk Retrieve Metadata (parallel, grouped, background), Settings → Adding Items
 ```
 

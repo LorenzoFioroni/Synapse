@@ -8,6 +8,7 @@ from .config import Config
 from .db import Database
 from .fulltext import FulltextIndex, Indexer
 from .notes import NotesIndex, Vault
+from .notes.attachments import Attachments
 from .notes.service import NotesService
 from .references import Citations, CitationStore
 from .organize import FolderRepository, SmartFolderRepository, TagRepository
@@ -33,6 +34,9 @@ class Services:
         self.vault.ensure()
         self.notes = NotesIndex(config.notes_index_path, self.vault)
         self.note_service = NotesService(self.vault, self.notes, self.papers, config.backups_dir)
+        # Attachments no note uses go to their own trash; both trashes are emptied after a while.
+        self.attachments = Attachments(self.vault, self.notes, self.settings)
+        self.note_service.on_change = self.attachments.poke
         # A changed citation key is rewritten in every note (with a backup first).
         self.papers.on_citekey_change(lambda _id, old, new: self.note_service.rename_key(old, new) if new else None)
         try:

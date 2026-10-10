@@ -57,4 +57,6 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
 
     if start_indexer and services.settings.get("fulltext_auto_index"):
         services.indexer.sync()
+    if start_indexer:   # background work (tests create the app without it)
+        services.attachments.start()
     return app

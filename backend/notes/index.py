@@ -336,6 +336,11 @@ class NotesIndex:
                 out.append({"source": edge[0], "kind": edge[1], "target": edge[2]})
         return out
 
+    def image_links(self) -> list[tuple[str, str]]:
+        """(note path, image target) for every image shown by a note."""
+        with self._session() as c:
+            return [(r["path"], r["target"]) for r in c.execute("SELECT DISTINCT path, target FROM links WHERE kind = 'image'")]
+
     def search(self, query: str, limit: int = 50) -> list[dict]:
         q = _fts_query(query)
         if not q:
