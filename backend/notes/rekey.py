@@ -33,12 +33,12 @@ class Rekeyer:
         self.vault = vault
         self.index = index
         self.backups_dir = Path(backups_dir)
-        self._last_backup = 0.0
+        self._last_backup = None   # not 0: time.monotonic() can itself be < 60 s just after boot
 
     # ------------------------------------------------------------------ backups
     def backup(self, force: bool = False) -> Path | None:
         """tar.gz of every note (attachments and trash excluded: renames never touch them)."""
-        if not force and time.monotonic() - self._last_backup < BACKUP_EVERY_S:
+        if not force and self._last_backup is not None and time.monotonic() - self._last_backup < BACKUP_EVERY_S:
             return None
         self.backups_dir.mkdir(parents=True, exist_ok=True)
         dest = self.backups_dir / f"notes-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.tar.gz"

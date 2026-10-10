@@ -91,3 +91,14 @@ def test_backups_are_throttled_and_pruned(lib):
     for _ in range(25):
         rk.backup(force=True)
     assert len(list(svc.config.backups_dir.glob("notes-*.tar.gz"))) == 20
+
+
+
+def test_first_rename_is_backed_up_even_just_after_boot(tmp_path, monkeypatch):
+    """time.monotonic() counts from boot, so right after it it is below the 60 s interval."""
+    from backend.notes import rekey
+    vault = type("V", (), {"iter_notes": lambda self: iter(()), "root": tmp_path})()
+    r = rekey.Rekeyer(vault, None, tmp_path / "backups")
+    monkeypatch.setattr(rekey.time, "monotonic", lambda: 5.0)
+    assert r.backup() is not None          # the first one is always made
+    assert r.backup() is None              # then one per burst of renames
