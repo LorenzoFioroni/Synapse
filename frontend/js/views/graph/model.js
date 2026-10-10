@@ -112,12 +112,6 @@ export function relations(data, id) {
   return out;
 }
 
-/** Node radius in graph units: grows with the number of shown connections. */
-export function radius(node, degree) {
-  const base = node.kind === 'work' ? 3 : node.kind === 'note' ? 3.5 : 4.5;
-  return base + 1.6 * Math.sqrt(degree || 0);
-}
-
 /** Short label: "Author Year" for papers and works, the title for notes. */
 export function label(node) {
   if (node.kind === 'note') return node.title || node.path;

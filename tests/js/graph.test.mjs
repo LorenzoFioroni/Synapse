@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ForceLayout, hash } from '../../frontend/js/views/graph/layout.js';
 import { buildView, label, matchNodes, neighbourhood, relations } from '../../frontend/js/views/graph/model.js';
 
 const P = (id, extra = {}) => ({ id: `item:${id}`, kind: 'paper', title: `Paper ${id}`, authors: 'Doe, Jane', year: 2020, folder_ids: [], ...extra });
@@ -57,30 +56,4 @@ test('search, relations and labels', () => {
   assert.deepEqual(relations(data, 'note:Review.md').linkedFrom.map((n) => n.id), ['note:Other.md']);
   assert.equal(label(P('x', { authors: 'Cui, Jian; Cirac, J. I.', year: 2015 })), 'Cui 2015');
   assert.equal(label(N('ideas/Plan.md', { title: 'Plan' })), 'Plan');
-});
-
-test('layout separates nodes, keeps edges short, and is deterministic', () => {
-  const nodes = Array.from({ length: 60 }, (_, i) => ({ id: `n${i}` }));
-  const edges = [];
-  for (let i = 1; i < 30; i++) edges.push({ source: 'n0', target: `n${i}` });      // a star
-  for (let i = 31; i < 60; i++) edges.push({ source: `n${i - 1}`, target: `n${i}` }); // a chain
-  const a = new ForceLayout(nodes, edges).run(600);
-  assert.ok(a.done);
-  const b = new ForceLayout(nodes, edges).run(600);
-  assert.deepEqual(a.position('n7'), b.position('n7'));
-  let minDist = Infinity;
-  for (let i = 0; i < 60; i++) for (let j = i + 1; j < 60; j++) {
-    const p = a.position(`n${i}`), q = a.position(`n${j}`);
-    minDist = Math.min(minDist, Math.hypot(p.x - q.x, p.y - q.y));
-  }
-  assert.ok(minDist > 2, `nodes overlap: ${minDist}`);
-  const len = edges.map((e) => { const p = a.position(e.source), q = a.position(e.target); return Math.hypot(p.x - q.x, p.y - q.y); });
-  assert.ok(Math.max(...len) < 200, `edge too long: ${Math.max(...len)}`);
-  // kept positions are respected
-  const c = new ForceLayout(nodes, edges, a.positions());
-  assert.ok(c.alpha < 1);
-  c.pin('n3', { x: 999, y: 5 });
-  c.run(50);
-  assert.deepEqual(c.position('n3'), { x: 999, y: 5 });
-  assert.ok(hash('abc') >= 0 && hash('abc') < 1 && hash('abc') === hash('abc'));
 });

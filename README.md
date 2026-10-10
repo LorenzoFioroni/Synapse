@@ -69,14 +69,13 @@ never mix.
   can be added with one click — and *Cited by in your library*. Fetch them for any selection
   from the item menu or the multi-selection pane, with progress and a summary. The whole graph (library
   items + every work they cite, with "cites" edges) is at `GET /api/graph/citations`.
-- **Graph** (the *Library | Notes | Graph* switch, Cmd/Ctrl+Shift+G): your papers, the works they
-  cite and your notes as one network — paper → paper citations from the reference lists, `[@key]`
-  citations and `[[links]]` from notes, and paper notes joined to their paper. Choose what to show
-  (cited works only when at least *N* of your papers cite them — the ones you may be missing),
-  limit it to a folder, find nodes by title, author, key or path. Click a node to see everything
-  it connects to; double-click opens the paper in the library or the note. *Focus* (or **Show in
-  Graph** in the item and note menus) shows just one node's neighbourhood, 1–3 steps deep;
-  Back/Forward work as everywhere else. The data is at `GET /api/graph`.
+- **Graph** (in Notes, Obsidian-style; Cmd/Ctrl+Shift+G): next to the note you are editing, a
+  local graph shows the notes it links to and from and the papers it cites (depth 2: what those
+  connect to, e.g. other notes citing the same papers); click a node to open it. The full graph
+  replaces the editor (link button in the notes list, the local graph's expand button, or **Show in
+  Graph** in the item and note menus): notes and the papers they cite, with filters for citations
+  between papers, cited works not in your library and orphans. Clicking a paper shows a card (paper
+  note, Show in Library, PDF, Add to Library). The data is at `GET /api/graph`.
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
   arXiv, Scholar) and checks the file is really the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.
@@ -169,10 +168,10 @@ python tests/e2e/render_checklist.py     # live preview and read mode (tests/e2e
 python tests/e2e/links_checklist.py      # autocomplete, citation cards, side panels, item pane
 python tests/e2e/library_checklist.py    # key rename, notes in search, quote/snapshot from the PDF viewer
 python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders, Back/Forward, item-list markers
-python tests/e2e/graph_checklist.py      # Graph: options, search, focus, details, opening items/notes, Back/Forward
+python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, filters, paper card, Show in Graph, Back/Forward
 ```
 
 The notes editor (CodeMirror 6) is vendored as a pre-built bundle in `frontend/vendor/cm6/`;
 to rebuild it from the pinned versions: `cd tools/cm6 && npm ci && ./build.sh`. The renderer
 (markdown-it, KaTeX, Mermaid) likewise lives in `frontend/vendor/md/` and `frontend/vendor/mermaid/`
-(`tools/md`).
+(`tools/md`), and the graph library (force-graph) in `frontend/vendor/force-graph/` (`tools/graph`).

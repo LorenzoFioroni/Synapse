@@ -1,5 +1,6 @@
-"""Browser checklist for the Graph workspace: papers, cited works and notes in one network;
-options, search, focus (local graph), details panel, opening items and notes, Back/Forward.
+"""Browser checklist for the graph in Notes: the local graph next to a note (depth, papers,
+collapse, click to open), the full graph (notes-first, options, search, paper card, Show in
+Library), Show in Graph from the item and note menus, Cmd/Ctrl+Shift+G and Back/Forward.
 
     python tests/e2e/graph_checklist.py                 (SHOTS=/some/dir to save screenshots)
 
@@ -19,6 +20,7 @@ PORT = 8771
 BASE = f"http://127.0.0.1:{PORT}"
 DATA = tempfile.mkdtemp(prefix="zc-graph-e2e-")
 SHOTS = os.environ.get("SHOTS")
+MOD = "Meta" if sys.platform == "darwin" else "Control"
 results = []
 
 
@@ -38,14 +40,12 @@ def seed():
                "White, Steven", "Orús, Román", "Haegeman, Jutho", "Pollmann, Frank", "Zaletel, Michael"]
     papers = []
     for i, a in enumerate(authors):
-        p = requests.post(f"{BASE}/api/items", json={"authors": a, "title": f"Tensor network paper {i}", "year": 2005 + i,
-                                                     "doi": f"10.1000/tn{i}", "citation_key": f"p{i}"}).json()
-        papers.append(p)
+        papers.append(requests.post(f"{BASE}/api/items", json={"authors": a, "title": f"Tensor network paper {i}", "year": 2005 + i,
+                                                               "doi": f"10.1000/tn{i}", "citation_key": f"p{i}"}).json())
     store = CitationStore(Path(DATA) / "citations.db")
     for i, p in enumerate(papers):
         refs = [{"doi": f"10.1000/tn{j}", "title": f"Tensor network paper {j}", "year": 2005 + j} for j in range(i) if (i + j) % 3 != 1]
-        refs += [{"doi": "10.9999/classic", "title": "A classic everyone cites", "authors": "Old, Oscar", "year": 1990},
-                 {"doi": f"10.9999/only{i}", "title": f"Cited once {i}", "year": 2000}]
+        refs += [{"doi": "10.9999/classic", "title": "A classic everyone cites", "authors": "Old, Oscar", "year": 1990}]
         store.save(p["id"], "test", refs, doi=f"10.1000/tn{i}")
     keys = [requests.get(f"{BASE}/api/items/{p['id']}").json()["citation_key"] for p in papers]
 
@@ -56,26 +56,37 @@ def seed():
         return n["path"]
 
     review = note(f"\nOverview of [@{keys[1]}] and [@{keys[4]}; @{keys[7]}].\n", title="Review", folder="topics")
-    pnote = note(f"\nBuilds on [@{keys[2]}]. See [[Review]].\n", item_id=papers[3]["id"])
-    note("\nJust a thought, linked to [[Review]].\n", title="Idea")
-    return papers, keys, review, pnote
+    pnote = note(f"\nBuilds on [@{keys[2]}] and [@{keys[4]}]. See [[Review]].\n", item_id=papers[3]["id"])
+    idea = note("\nJust a thought, linked to [[Review]].\n", title="Idea")
+    note("\nNothing linked here.\n", title="Lonely")
+    return papers, keys, review, pnote, idea
 
 
-async def node_count(page, kind=None):
-    return await page.evaluate(f"window.zcGraph.view.nodes.filter((n) => {('n.kind === ' + repr(kind)) if kind else 'true'}).length")
+async def ids(page, which):
+    return set(await page.evaluate(f"window.zcGraph.{which}()?.nodes().map((n) => n.id) || []"))
 
 
-async def click_node(page, node_id, double=False):
-    await page.evaluate("window.zcGraph.settle()")
-    pos = await page.evaluate(f"window.zcGraph.screenOf({node_id!r})")
-    box = await page.locator('.graph-canvas').bounding_box()
+async def settled(page, which, timeout=8):
+    """Wait until the nodes have positions (the simulation has started)."""
+    end = time.time() + timeout
+    while time.time() < end:
+        ok = await page.evaluate(f"(() => {{ const g = window.zcGraph.{which}(); const ns = g?.nodes() || [];"
+                                 f" return ns.length > 0 && ns.every((n) => Number.isFinite(n.x)); }})()")
+        if ok:
+            await page.wait_for_timeout(900)
+            return True
+        await asyncio.sleep(0.15)
+    return False
+
+
+async def click_node(page, which, host_sel, node_id):
+    pos = await page.evaluate(f"window.zcGraph.{which}().screenOf({node_id!r})")
+    box = await page.locator(host_sel).bounding_box()
     x, y = box["x"] + pos["x"], box["y"] + pos["y"]
-    await page.mouse.move(x, y)
-    if double:
-        await page.mouse.dblclick(x, y)
-    else:
-        await page.mouse.click(x, y)
+    await page.mouse.move(x, y, steps=4)
     await page.wait_for_timeout(200)
+    await page.mouse.click(x, y)
+    await page.wait_for_timeout(400)
 
 
 async def main():
@@ -84,9 +95,10 @@ async def main():
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.5)
     try:
-        papers, keys, review, pnote = seed()
+        papers, keys, review, pnote, idea = seed()
         g = requests.get(f"{BASE}/api/graph").json()
-        check("API: papers, works and notes", g["stats"]["papers"] == 10 and g["stats"]["notes"] == 3 and g["stats"]["works"] >= 11, g["stats"])
+        check("API: papers, works and notes", g["stats"]["papers"] == 10 and g["stats"]["notes"] == 4, g["stats"])
+        P = lambda i: f"item:{papers[i]['id']}"   # noqa: E731
         async with async_playwright() as p:
             b = await p.chromium.launch()
             ctx = await b.new_context(viewport={"width": 1440, "height": 900})
@@ -95,146 +107,159 @@ async def main():
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
             await page.goto(BASE)
-            await page.wait_for_selector('.ws-switch [data-ws="graph"]')
-            await page.evaluate("localStorage.removeItem('zc.graph.options')")
+            await page.wait_for_selector('.ws-switch [data-ws="notes"]')
+            await page.evaluate("['zc.graph.local','zc.graph.global','zc.graph.localOpen'].forEach((k) => localStorage.removeItem(k))")
 
-            # ---- open from the toolbar
-            await page.click('.ws-switch [data-ws="graph"]')
-            await page.wait_for_function("window.zcGraph && window.zcGraph.view.nodes.length > 0", timeout=8000)
-            check("Graph button is active", await page.locator('.ws-switch [data-ws="graph"].active').count() == 1)
-            check("library panes are hidden", not await page.is_visible('#items-pane') and not await page.is_visible('#sidebar'))
-            n_paper, n_work, n_note = await node_count(page, "paper"), await node_count(page, "work"), await node_count(page, "note")
-            check("all papers and notes are shown", n_paper == 10 and n_note == 3, (n_paper, n_note))
-            check("only works cited by ≥ 2 papers by default", n_work == 1, n_work)
-            await page.evaluate("window.zcGraph.settle()")
-            await shot(page, "1-graph")
+            # ---- toolbar: two workspaces, the logo keeps its size
+            check("toolbar has Library | Notes only", await page.locator('.ws-switch [data-ws]').count() == 2)
+            w = await page.evaluate("document.querySelector('.brand-logo').getBoundingClientRect().width")
+            check("logo is not squeezed", abs(w - 24) < 0.5, w)
 
-            # ---- options
-            await page.fill('[data-opt="minCited"]', "1")
-            await page.dispatch_event('[data-opt="minCited"]', "change")
-            check("lower threshold shows works cited once", await node_count(page, "work") == 11, await node_count(page, "work"))
-            await page.uncheck('[data-opt="notes"]')
-            check("notes can be hidden", await node_count(page, "note") == 0)
-            await page.check('[data-opt="notes"]')
-            await page.uncheck('[data-edge="cites"]')
-            n = await page.evaluate("window.zcGraph.view.edges.filter((e) => e.kind === 'cites').length")
-            check("paper→paper links can be hidden", n == 0, n)
-            await page.check('[data-edge="cites"]')
-            await page.fill('[data-opt="minCited"]', "2")
-            await page.dispatch_event('[data-opt="minCited"]', "change")
-            stored = await page.evaluate("JSON.parse(localStorage.getItem('zc.graph.options')).minCited")
-            check("options are remembered", stored == 2, stored)
-
-            # ---- search
-            await page.fill('.graph-search input', 'banuls')
-            await page.press('.graph-search input', 'Enter')
-            sel = await page.evaluate("window.zcGraph.selected")
-            check("search (accents ignored) selects the match", sel == f"item:{papers[2]['id']}", sel)
-            text = await page.text_content('.graph-details')
-            check("details panel shows the paper", "Tensor network paper 2" in text and "References" in text, text[:120])
-            check("details list notes citing it", "Cited in notes" in text)
-            await shot(page, "2-selected")
-            await page.fill('.graph-search input', '')
-
-            # ---- hover tooltip
-            await page.evaluate("window.zcGraph.settle()")
-            pos = await page.evaluate(f"window.zcGraph.screenOf({'note:' + review!r})")
-            box = await page.locator('.graph-canvas').bounding_box()
-            await page.mouse.move(box["x"] + pos["x"] + 1, box["y"] + pos["y"] + 1, steps=3)
-            await page.wait_for_timeout(150)
-            check("tooltip on hover", await page.is_visible('.graph-tip') and "Review" in await page.text_content('.graph-tip'))
-            await click_node(page, f"note:{review}")
-            check("clicking a note selects it", await page.evaluate("window.zcGraph.selected") == f"note:{review}")
-
-            # ---- focus (local graph) from the details panel, depth control, Back
-            await click_node(page, f"item:{papers[3]['id']}")
-            await page.click('.graph-details [data-act="focus"]')
-            await page.wait_for_timeout(300)
-            ids = await page.evaluate("window.zcGraph.view.nodes.map((n) => n.id)")
-            want = {f"item:{papers[3]['id']}", f"note:{pnote}", "doi:10.9999/only3", "doi:10.9999/classic"}
-            check("focus shows the neighbourhood (incl. works cited once)", want <= set(ids) and len(ids) < 13, len(ids))
-            check("focus bar is shown", "Around" in await page.text_content('.graph-focus'))
-            await page.click('.graph-focus [data-depth="2"]')
-            ids2 = await page.evaluate("window.zcGraph.view.nodes.map((n) => n.id)")
-            check("depth 2 shows more", len(ids2) > len(ids) and f"note:{review}" in ids2, (len(ids), len(ids2)))
-            await shot(page, "3-focus")
-            await page.go_back()
-            await page.wait_for_timeout(500)
-            check("Back leaves the focus", await page.evaluate("window.zcGraph.opts.focus") is None
-                  and await page.is_hidden('.graph-focus'))
-            await page.go_forward()
-            await page.wait_for_timeout(500)
-            check("Forward returns to it", await page.evaluate("window.zcGraph.opts.focus") == f"item:{papers[3]['id']}")
-            await page.click('.graph-focus [data-unfocus]')
-
-            # ---- double-click a paper: shows it in the library; Back returns to the graph
-            await click_node(page, f"item:{papers[5]['id']}", double=True)
-            await page.wait_for_timeout(500)
-            check("double-click shows the paper in the library", await page.is_visible('#items-pane')
-                  and await page.locator('.ws-switch [data-ws="library"].active').count() == 1)
-            sel = await page.evaluate("[...document.querySelectorAll('#items-pane .selected, #items-pane [aria-selected=true]')].length")
-            check("…selected", sel >= 1, sel)
-            await page.go_back()
-            await page.wait_for_timeout(600)
-            check("Back returns to the graph", await page.evaluate("document.body.dataset.workspace") == "graph")
-
-            # ---- open a note from the graph
-            await click_node(page, f"note:{review}", double=True)
-            await page.wait_for_timeout(800)
-            check("double-click a note opens it in Notes", await page.evaluate("document.body.dataset.workspace") == "notes"
-                  and "Review" in (await page.text_content('.note-crumbs') or ""))
-            await page.go_back()
-            await page.wait_for_timeout(600)
-            check("Back from the note returns to the graph", await page.evaluate("document.body.dataset.workspace") == "graph"
-                  and await page.is_hidden('#notes-view'))
-
-            # ---- Show in Graph from the item menu and from the notes tree
-            await page.click('.ws-switch [data-ws="library"]')
-            await page.wait_for_timeout(300)
-            row = page.locator('#items-pane [data-id="%s"]' % papers[7]["id"])
-            if not await row.count():
-                row = page.locator('#items-pane .item-row, #items-pane tr').filter(has_text="Tensor network paper 7").first
-            await row.click(button="right")
-            await page.click('.menu >> text=Show in Graph')
-            await page.wait_for_timeout(500)
-            check("Show in Graph (item) focuses the paper", await page.evaluate("window.zcGraph.opts.focus") == f"item:{papers[7]['id']}")
-            await page.keyboard.press("Escape")   # deselect
-            await page.keyboard.press("Escape")   # leave focus
-            check("Escape leaves the focus", await page.evaluate("window.zcGraph.opts.focus") is None)
-
+            # ---- local graph next to the note
             await page.click('.ws-switch [data-ws="notes"]')
             await page.wait_for_selector('#notes-view:not([hidden])')
-            await page.locator('.notes-tree [data-path="topics/Review.md"], .notes-tree :text("Review")').first.click(button="right")
+            await page.locator('.notes-tree').get_by_text("Review", exact=True).click()
+            await page.wait_for_function("window.zcGraph?.localPath() === 'topics/Review.md'")
+            await page.wait_for_selector('.ns-graph-canvas canvas', timeout=8000)
+            check("local graph shown by default", await page.is_visible('.ns-graph-canvas canvas'))
+            await settled(page, "local")
+            want1 = {f"note:{review}", P(1), P(4), P(7), f"note:{pnote}", f"note:{idea}"}
+            got = await ids(page, "local")
+            check("depth 1: the note, the papers it cites, notes linking to it", got == want1, sorted(got ^ want1))
+            await shot(page, "1-local")
+            await page.click('.ns-graph [data-lg-depth="2"]')
+            await page.wait_for_timeout(500)
+            got2 = await ids(page, "local")
+            check("depth 2 adds what those connect to", want1 < got2 and P(2) in got2 and P(3) in got2, sorted(got2 - want1))
+            await page.click('.ns-graph [data-lg="papers"]')
+            await page.wait_for_timeout(400)
+            got3 = await ids(page, "local")
+            check("papers can be hidden", not any(i.startswith("item:") for i in got3) and f"note:{idea}" in got3, sorted(got3))
+            await page.click('.ns-graph [data-lg="papers"]')
+            await page.click('.ns-graph [data-lg-depth="1"]')
+            await page.click('.ns-graph [data-lg="toggle"]')
+            check("local graph can be collapsed", await page.is_hidden('.ns-graph-canvas'))
+            stored = await page.evaluate("localStorage.getItem('zc.graph.localOpen')")
+            await page.click('.ns-graph [data-lg="toggle"]')
+            check("…and the choice is remembered", stored == "false" and await page.is_visible('.ns-graph-canvas'), stored)
+            await settled(page, "local")
+
+            # ---- clicking a note in the local graph opens it, and the graph follows
+            await click_node(page, "local", '.ns-graph-canvas', f"note:{idea}")
+            await page.wait_for_function(f"window.zcNotes.path() === {idea!r}", timeout=5000)
+            await page.wait_for_function(f"window.zcGraph.localPath() === {idea!r}")
+            await settled(page, "local")
+            check("click opens the note; the local graph follows", await ids(page, "local") == {f"note:{idea}", f"note:{review}"})
+
+            # ---- full graph (expand button)
+            await page.click('.ns-graph [data-lg="expand"]')
+            await page.wait_for_selector('.notes-graph:not([hidden]) .ng-canvas canvas')
+            check("full graph replaces the editor", await page.is_hidden('.note-body'))
+            fits = await page.evaluate("""() => { const bar = document.querySelector('.ng-bar').getBoundingClientRect();
+                return [...document.querySelectorAll('.ng-bar input, .ng-bar [data-ng]')].every((el) => {
+                  const r = el.getBoundingClientRect(); return r.width > 0 && r.right <= bar.right + 1 && r.left >= bar.left; }); }""")
+            check("every option in the bar is visible", fits)
+            await settled(page, "global")
+            gids = await ids(page, "global")
+            want = {f"note:{review}", f"note:{pnote}", f"note:{idea}", "note:Lonely.md", P(1), P(2), P(3), P(4), P(7)}
+            check("notes-first: notes and the papers they cite (no others)", gids == want, sorted(gids ^ want))
+            await shot(page, "2-global")
+            await page.click('.ng-bar [data-ng="opts"]')
+            check("Filters opens the options", await page.is_visible('.ng-opts'))
+            await page.check('[data-go="citations"]')
+            await page.wait_for_timeout(500)
+            gids2 = await ids(page, "global")
+            check("“Paper citations” adds every paper", sum(i.startswith("item:") for i in gids2) == 10, len(gids2))
+            await page.check('[data-go="works"]')
+            await page.wait_for_timeout(400)
+            check("…and cited works not in the library", "doi:10.9999/classic" in await ids(page, "global"))
+            await page.uncheck('[data-go="works"]')
+            await page.uncheck('[data-go="citations"]')
+            await page.uncheck('[data-go="orphans"]')
+            await page.wait_for_timeout(400)
+            check("orphans can be hidden", "note:Lonely.md" not in await ids(page, "global"))
+            await page.check('[data-go="orphans"]')
+            check("options are remembered",
+                  await page.evaluate("JSON.parse(localStorage.getItem('zc.graph.global')).orphans") is True)
+
+            # ---- search
+            await page.fill('.ng-search input', 'banuls')
+            await page.wait_for_timeout(200)
+            await page.press('.ng-search input', 'Enter')
+            await page.wait_for_timeout(700)
+            await shot(page, "3-search")
+            await page.fill('.ng-search input', '')
+            await page.dispatch_event('.ng-search input', 'input')
+
+            # ---- paper card → Show in Library, Back returns to the graph
+            await settled(page, "global")
+            await click_node(page, "global", '.ng-canvas', P(4))
+            check("clicking a paper shows its card", await page.is_visible('.graph-card')
+                  and "Tensor network paper 4" in await page.text_content('.graph-card'))
+            await shot(page, "4-card")
+            await page.click('.graph-card [data-gc="item"]')
+            await page.wait_for_timeout(600)
+            sel = await page.evaluate("[...document.querySelectorAll('#items-pane .row.selected')].map((r) => r.dataset.id)")
+            check("Show in Library selects the paper", await page.is_visible('#items-pane') and sel == [papers[4]["id"]], sel)
+            await page.go_back()
+            await page.wait_for_timeout(800)
+            check("Back returns to the graph", await page.is_visible('.notes-graph') and await page.is_hidden('.note-body'))
+
+            # ---- Close / Escape go back to the note
+            await page.click('.ng-bar [data-ng="close"]')
+            check("Close shows the note again", await page.is_hidden('.notes-graph') and await page.is_visible('.note-body'))
+            await page.go_back()
+            await page.wait_for_timeout(700)
+            check("Back reopens the graph", await page.is_visible('.notes-graph'))
+            await page.locator('.notes-graph').focus()
+            await page.keyboard.press("Escape")
+            check("Escape closes it", await page.is_hidden('.notes-graph'))
+
+            # ---- Cmd/Ctrl+Shift+G toggles
+            await page.keyboard.press(f"{MOD}+Shift+G")
+            await page.wait_for_timeout(500)
+            check(f"{MOD}+Shift+G opens the graph", await page.is_visible('.notes-graph'))
+            await page.keyboard.press(f"{MOD}+Shift+G")
+            await page.wait_for_timeout(300)
+            check(f"{MOD}+Shift+G closes it", await page.is_hidden('.notes-graph'))
+
+            # ---- Show in Graph from the item menu and the notes tree
+            await page.click('.ws-switch [data-ws="library"]')
+            await page.wait_for_timeout(300)
+            await page.locator(f'#items-pane .row[data-id="{papers[7]["id"]}"]').click(button="right")
+            await page.click('.menu >> text=Show in Graph')
+            await page.wait_for_selector('.notes-graph:not([hidden])')
+            check("Show in Graph (item) opens the graph on the paper", await page.evaluate("window.zcGraph.globalFocus()") == P(7))
+            await settled(page, "global")
+            px = await page.evaluate(f"""() => {{ const p = window.zcGraph.global().screenOf({P(1)!r});
+                const c = document.querySelector('.ng-canvas canvas'); const r = devicePixelRatio;
+                return [...c.getContext('2d').getImageData(Math.round(p.x * r), Math.round(p.y * r), 1, 1).data]; }}""")
+            check("focusing a paper does not fade the others", px[3] > 200, px)
+            await page.click('.ng-bar [data-ng="close"]')
+            await page.locator('.notes-tree').get_by_text("Review", exact=True).click(button="right")
             await page.click('.menu >> text=Show in Graph')
             await page.wait_for_timeout(500)
-            check("Show in Graph (note) focuses the note", await page.evaluate("window.zcGraph.opts.focus") == f"note:{review}"
-                  and await page.is_hidden('#notes-view'))
+            check("Show in Graph (note) opens the graph on the note", await page.evaluate("window.zcGraph.globalFocus()") == f"note:{review}")
 
-            # ---- keyboard: ⌘⇧G toggles
-            mod = "Meta" if sys.platform == "darwin" else "Control"
-            await page.keyboard.press(f"{mod}+Shift+G")
-            await page.wait_for_timeout(300)
-            check(f"{mod}+Shift+G leaves the graph", await page.evaluate("document.body.dataset.workspace") in (None, "library") and await page.is_visible('#items-pane'))
-            await page.keyboard.press(f"{mod}+Shift+G")
-            await page.wait_for_timeout(300)
-            check(f"{mod}+Shift+G opens it", await page.evaluate("document.body.dataset.workspace") == "graph")
+            # ---- clicking a note in the full graph opens it
+            await settled(page, "global")
+            await click_node(page, "global", '.ng-canvas', f"note:{pnote}")
+            await page.wait_for_function(f"window.zcNotes.path() === {pnote!r}", timeout=5000)
+            check("clicking a note in the full graph opens it", await page.is_hidden('.notes-graph'))
 
-            # ---- the selected node and its neighbours are drawn lit after a reload
-            lit = await page.evaluate("""() => { const v = window.zcGraph.view; const sel = window.zcGraph.selected;
-                const nb = v.edges.filter((e) => e.source === sel || e.target === sel).length; return [sel, nb]; }""")
-            await page.mouse.move(2, 2)
-            await page.click('.ws-switch [data-ws="library"]')
-            await page.locator('#items-pane .row[data-id="%s"]' % papers[7]["id"]).click(button="right")
-            await page.click('.menu >> text=Show in Graph')
-            await page.wait_for_timeout(400)
-            px = await page.evaluate("""() => { window.zcGraph.settle(); const p = window.zcGraph.screenOf(window.zcGraph.selected);
-                const c = document.querySelector('.graph-canvas'); const d = c.getContext('2d');
-                const r = devicePixelRatio; const a = d.getImageData(Math.round(p.x * r), Math.round(p.y * r), 1, 1).data; return [...a]; }""")
-            check("the focused node is drawn at full strength", px[3] == 255 and px[2] > 150, px)
+            # ---- the local graph updates after an edit
+            await page.locator('.cm-content').click()
+            await page.keyboard.press(f"{MOD}+End")
+            await page.keyboard.type("\nAlso [[Lonely]].\n")
+            await page.keyboard.press(f"{MOD}+s")
+            await page.wait_for_function("window.zcGraph.local().nodes().some((n) => n.id === 'note:Lonely.md')", timeout=8000)
+            check("local graph picks up a new link after saving", True)
 
-            # ---- dark theme renders
-            await page.evaluate("document.documentElement.dataset.theme = 'dark'; window.zcGraph.settle()")
-            await shot(page, "4-dark")
+            # ---- dark theme
+            await page.evaluate("document.documentElement.dataset.theme = 'dark'")
+            await page.keyboard.press(f"{MOD}+Shift+G")
+            await settled(page, "global")
+            await shot(page, "5-dark")
             check("no console errors", not errors, errors[:5])
             await b.close()
     finally:
