@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { citeTargetInText, quoteText, readRegion, viewerTarget, writeRegion } from '../../frontend/js/views/notes/citeTarget.js';
-import { findQuote, normalise, parseRect } from '../../frontend/js/viewer/locate.js';
+import { findQuote, normalise, parseRect, quoteBoxes } from '../../frontend/js/viewer/locate.js';
 
 const note = `# Reading
 
@@ -83,4 +83,12 @@ test('rect parameter', () => {
   assert.deepEqual(parseRect('0.1,0.2,0.5,0.25', 600, 800), { x: 60, y: 160, w: 300, h: 200 });
   assert.equal(parseRect('1,2,3', 600, 800), null);
   assert.equal(parseRect('0,0,0,0', 600, 800), null);
+});
+
+test('a quote is shown as one box, or one per column', () => {
+  const lines = [{ x: 120, y: 100, w: 230, h: 10 }, { x: 50, y: 114, w: 300, h: 10 }, { x: 50, y: 128, w: 120, h: 10 }];
+  assert.deepEqual(quoteBoxes(lines), [{ x: 50, y: 100, w: 300, h: 38 }]);
+  // runs from the bottom of the left column to the top of the right one
+  const cols = [{ x: 50, y: 700, w: 250, h: 10 }, { x: 320, y: 80, w: 250, h: 10 }, { x: 320, y: 94, w: 100, h: 10 }];
+  assert.deepEqual(quoteBoxes(cols), [{ x: 50, y: 700, w: 250, h: 10 }, { x: 320, y: 80, w: 250, h: 24 }]);
 });

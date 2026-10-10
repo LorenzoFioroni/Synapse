@@ -167,8 +167,8 @@ async def main():
             await vq.wait_for_selector('.zc-flash', timeout=15000)
             f = await vq.evaluate(FLASH)
             # the quote is on lines 35–36 of 41: about 74–77 % down the page
-            check("the quote is flashed where it is on the page (two lines)", len(f) == 2 and all(x["page"] == 2 for x in f)
-                  and 0.70 < f[0]["top"] < 0.78 and 0.72 < f[1]["top"] < 0.80, f)
+            check("the quote is flashed where it is on the page, as one box around both lines", len(f) == 1 and f[0]["page"] == 2
+                  and 0.70 < f[0]["top"] < 0.78 and 0.035 < f[0]["height"] < 0.06, f)
             check("…and scrolled into view (not the top of the page)", all(x["visible"] for x in f), f)
             await shot(vq, "s1-quote-flash")
             await vq.wait_for_timeout(3300)
@@ -197,7 +197,7 @@ async def main():
                 await page.locator('.cm-line:has-text("We find") .cm-lp-chip.cite').click(modifiers=[mod])
             ve = await pop.value
             await ve.wait_for_selector('.zc-flash', timeout=15000)
-            check("in the editor too", "q=We+find+that" in ve.url and await ve.locator('.zc-flash').count() == 2)
+            check("in the editor too", "q=We+find+that" in ve.url and await ve.locator('.zc-flash').count() == 1)
             await ve.close()
 
             # ---- hover card "PDF p. 2" button (on the editor's chip)

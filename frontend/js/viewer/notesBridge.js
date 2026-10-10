@@ -6,7 +6,7 @@
 // (appended on the server, created if missing).
 
 import { writeRegion } from '../views/notes/citeTarget.js';
-import { findQuote, parseRect } from './locate.js';
+import { findQuote, parseRect, quoteBoxes } from './locate.js';
 
 const params = new URLSearchParams(location.search);
 const paperId = params.get('paper_id');
@@ -261,7 +261,7 @@ export async function spotRects(wrapper, { q, rect }) {
     const h = Math.hypot(tx[2], tx[3]);
     return { str: it.str, x: tx[0] >= 0 ? tx[4] : tx[4] - it.width, y: tx[5] - h, w: it.width * viewport.scale, h: h * 1.15 };
   });
-  return findQuote(items, q);
+  return quoteBoxes(findQuote(items, q));
 }
 
 /** Scroll the cited spot into view and flash it for a moment (the flash is not saved). */

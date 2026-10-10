@@ -71,6 +71,24 @@ export function findQuote(items, quote) {
   return rects;
 }
 
+/**
+ * One box around the quote's lines, so it reads as a single highlight. A quote that goes on
+ * into the next column gets one box per column (a single box would cover the text between).
+ */
+export function quoteBoxes(rects) {
+  const boxes = [];
+  for (const r of rects) {
+    // same column: overlaps horizontally with a box and starts below its top
+    const b = boxes.find((x) => r.x < x.x + x.w && r.x + r.w > x.x && r.y >= x.y - r.h);
+    if (b) {
+      const right = Math.max(b.x + b.w, r.x + r.w), bottom = Math.max(b.y + b.h, r.y + r.h);
+      b.x = Math.min(b.x, r.x); b.y = Math.min(b.y, r.y);
+      b.w = right - b.x; b.h = bottom - b.y;
+    } else boxes.push({ ...r });
+  }
+  return boxes;
+}
+
 /** "x,y,w,h" (fractions of the page) → a rectangle in page units, or null. */
 export function parseRect(s, pageW, pageH) {
   const v = String(s || '').split(',').map(Number);
