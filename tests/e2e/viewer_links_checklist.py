@@ -216,6 +216,57 @@ async def main():
             await v.click('.tool-btn[data-tool="highlight"]')
             pe = await links.nth(0).evaluate("(e) => getComputedStyle(e).pointerEvents")
             check("links are inert while highlighting", pe == "none", pe)
+
+            # ---- a real two-column LaTeX paper (tests/e2e/fixtures/twocolumn.pdf)
+            with open(Path(__file__).parent / "fixtures" / "twocolumn.pdf", "rb") as fh:
+                att2 = requests.post(f"{BASE}/api/items/{item['id']}/attachments",
+                                     files={"file": ("twocolumn.pdf", fh, "application/pdf")}).json()["attachments"][-1]
+            t = await ctx.new_page()
+            t.on("pageerror", lambda e: errors.append(str(e)))
+            await t.goto(f"{BASE}/viewer.html?file=/pdfs/{att2['url']}&paper_id={item['id']}&title=x")
+            await t.wait_for_selector('.page-wrapper[data-page-number="2"] canvas', timeout=15000)
+            await t.wait_for_selector('.page-wrapper[data-page-number="1"] .zc-link', timeout=15000)
+            await t.wait_for_timeout(600)
+            names = await t.evaluate("[...document.querySelectorAll('.page-wrapper[data-page-number=\"1\"] .zc-link')].map((a) => a.zcTarget.dest)")
+
+            async def preview(dest_name):
+                await t.mouse.move(2, 2)
+                await t.wait_for_timeout(350)
+                await t.locator('.page-wrapper[data-page-number="1"] .zc-link').nth(names.index(dest_name)).hover()
+                await t.wait_for_selector('.zc-link-pop.preview canvas', timeout=5000)
+                await t.wait_for_timeout(500)
+                return await t.evaluate("""async (nm) => { const s = document.querySelector('.zc-link-pop .zc-pop-page');
+                    const ex = await window.zcViewer.pdfDoc.getDestination(nm);
+                    return { sl: s.scrollLeft, st: s.scrollTop, cw: s.clientWidth, ch: s.clientHeight, sw: s.scrollWidth,
+                             x: ex[2] * 1.35, y: (792 - ex[3]) * 1.35 }; }""", dest_name)
+
+            # sections: \ref targets are section*.N here (revtex); the first two are in the left column
+            left, right = await preview(names[0]), await preview(names[6])
+            check("left-column section: window on the left column, title near the top",
+                  left["sl"] == 0 and 0 < left["y"] - left["st"] < 60 and left["x"] - left["sl"] > 40, left)
+            check("right-column section: window on the right column, title near the top",
+                  right["sl"] + right["cw"] >= right["sw"] - 12 and 0 < right["y"] - right["st"] < 60 and right["x"] - right["sl"] > 40, right)
+            await t.locator('.zc-link-pop').screenshot(path=f"{SHOTS}/2a-right-section.png") if SHOTS else None
+            # Fig. 1 is anchored at the END of its caption under a non-figure name (\phantomsection), like many PDFs
+            fig_end = names[8]                       # links in reading order: Sections I–VIII, then Fig. 1
+            f1 = await preview(fig_end)
+            check("figure anchored at its caption end: taller window, caption at its bottom, figure above",
+                  f1["ch"] == 360 and f1["ch"] - 70 < f1["y"] - f1["st"] < f1["ch"], f1)
+            if SHOTS:
+                await t.locator('.zc-link-pop').screenshot(path=f"{SHOTS}/2b-figure-end.png")
+            # Fig. 2 (figure.2) is anchored at the START of its caption
+            f2 = await preview("figure.2")
+            check("figure anchored at its caption start: caption at the bottom too", f2["ch"] == 360 and f2["ch"] - 70 < f2["y"] - f2["st"] < f2["ch"], f2)
+            tb = await preview("table.1")
+            check("table: its caption and the table below it are in view", 0 < tb["y"] - tb["st"] < tb["ch"] - 40, tb)
+            # touchpad / wheel scroll inside the preview
+            box = await t.locator('.zc-link-pop .zc-pop-page').bounding_box()
+            await t.mouse.move(box["x"] + 200, box["y"] + 150)
+            before_st = tb["st"]
+            await t.mouse.wheel(0, -300)
+            await t.wait_for_timeout(300)
+            st = await t.evaluate("document.querySelector('.zc-link-pop .zc-pop-page')?.scrollTop")
+            check("wheel/touchpad scrolls the preview", st is not None and st < before_st - 200, (before_st, st))
             check("no console errors", not errors, errors[:5])
             await b.close()
     finally:

@@ -56,15 +56,74 @@ export function popupPlacement(anchor, w, h, vw, vh, gap = 8) {
 }
 
 /**
- * Top-left corner (page CSS px) of a preview window w×h showing (x, y) of a pageW×pageH page:
- * the point near the top-left (align 'top'), or near the bottom ('bottom', for figures whose
- * destination is the end of the caption, below the figure).
+ * Top-left corner (page CSS px) of a preview window w×h onto a pageW×pageH page, for a
+ * destination at (x, y) (either may be null).
+ * Horizontally the window is centred on the destination's column (the left or right half of the
+ * page, as in two-column papers, where section titles are centred in their column); vertically
+ * the destination sits near the top, or — with `bottom` (page CSS px) — that line sits near the
+ * bottom of the window (figures: the caption is at the bottom, the figure above it).
  */
-export function previewOrigin(x, y, w, h, pageW, pageH, margin = 16, align = 'top') {
-  const ox = x == null ? 0 : Math.max(0, Math.min(x - margin, pageW - w));
-  const want = align === 'bottom' ? y - h + 2 * margin : y - margin;
-  const oy = y == null ? 0 : Math.max(0, Math.min(want, pageH - h));
+export function previewOrigin(x, y, w, h, pageW, pageH, margin = 16, bottom = null) {
+  const clampX = (v) => Math.max(0, Math.min(v, pageW - w));
+  const clampY = (v) => Math.max(0, Math.min(v, pageH - h));
+  let ox = 0;
+  if (x != null && pageW > w) {
+    const half = pageW / 2;
+    const colCentre = x < half ? half / 2 : half + half / 2;
+    ox = clampX(colCentre - w / 2);
+    if (x < ox + margin || x > ox + w - margin) ox = clampX(x - margin);   // never hide the destination itself
+  }
+  let oy = 0;
+  if (bottom != null) oy = clampY(bottom - h + margin);
+  else if (y != null) oy = clampY(y - margin);
   return { x: Math.round(ox), y: Math.round(oy) };
+}
+
+// "FIG. 1.", "Figure 1:", "Figure 1 |", "TABLE II." (or the number alone in its run) — not prose
+// like "Fig. 1, Fig. 2 and…" or "Fig. 3 shows…".
+const CAPTION = /^\s*(fig(ure)?s?|tab(le)?|scheme|chart|algorithm|listing)\.?\s*(S?\d+|[IVXLC]+)\s*([.:|]|$)/i;
+
+/**
+ * The caption at a destination, from the page's text (PDF coordinates, y up):
+ * items [{str, x, y, h}] → {top, bottom, table} of the caption paragraph, or null. `pageW` is the
+ * page's width (the columns are its two halves). `table`: a table's caption, which sits above it.
+ * A caption begins its line with "FIG. 3.", "Figure 3:", "TABLE II"… in the destination's column.
+ * Link targets are placed about a line above the text they mark, so the destination is a caption
+ * when it sits at the caption's first line (anchored at its start) or at its last line (anchored
+ * at its end, as most LaTeX figures are).
+ */
+export function findCaption(items, destX, destY, pageW) {
+  if (destY == null) return null;
+  const half = pageW / 2;
+  const col = (x) => (pageW > 0 ? x < half : true);
+  const inCol = destX == null ? null : col(destX);
+  const lineOf = (it) => items.filter((o) => Math.abs(o.y - it.y) < Math.max(1, (it.h || 10) * 0.3) && col(o.x) === col(it.x));
+  let best = null;
+  for (const it of items) {
+    if (!CAPTION.test(it.str) || (inCol !== null && col(it.x) !== inCol)) continue;
+    if (lineOf(it).some((o) => o.x < it.x - 1 && o.str.trim())) continue;   // "Fig. 3" inside a sentence
+    const lineH = it.h || 10;
+    const last = paragraphEnd(items, it, col);
+    const atStart = Math.abs(it.y + lineH - destY) <= lineH * 1.6;
+    const atEnd = Math.abs(last + lineH - destY) <= lineH * 1.6;
+    if (!atStart && !atEnd) continue;
+    const d = Math.min(Math.abs(it.y + lineH - destY), Math.abs(last + lineH - destY));
+    if (!best || d < best.d) best = { d, top: it.y + lineH, bottom: last - lineH * 0.3, table: /^\s*tab/i.test(it.str) };
+  }
+  return best && { top: best.top, bottom: best.bottom, table: best.table };
+}
+
+/** Baseline of the last line of the paragraph starting at `start` (lines in its column, line-break gaps). */
+function paragraphEnd(items, start, col) {
+  const lineH = start.h || 10;
+  const below = items.filter((it) => it.str.trim() && col(it.x) === col(start.x) && it.y <= start.y + 0.5)
+    .sort((a, b) => b.y - a.y);
+  let last = start.y;
+  for (const it of below) {
+    if (last - it.y > lineH * 1.9) break;
+    last = Math.min(last, it.y);
+  }
+  return last;
 }
 
 /**

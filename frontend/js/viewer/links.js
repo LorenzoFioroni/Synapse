@@ -7,13 +7,14 @@
 // - Internal links (citations, figures, sections…) jump inside the PDF; external links open in a
 //   new tab. Links are only live with the Select tool, so highlighting over them still works.
 // - Hovering a link shows a popup: for internal links the page it points to, scrolled to the
-//   destination (rendered on demand, like Zotero; scroll inside it to look around), for external
-//   ones the address. Figures and tables are anchored at the end of their caption by LaTeX, so for
-//   those the destination goes at the bottom of the popup, with the figure above it in view.
+//   destination and centred on its column (rendered on demand, like Zotero; scroll inside it to
+//   look around), for external ones the address. Links to figures and tables point at their
+//   caption, so when the destination is a caption (found in the page text: "FIG. 3", "Table 2"…,
+//   or a LaTeX name like figure.3) the popup is taller and ends with the caption, the figure above it.
 // - Every jump is a browser history entry holding the reading position, so Back (toolbar arrow,
 //   Alt+←, Cmd+[, the mouse's back button) returns to where you were before following the link.
 
-import { destTarget, isFloatDest, popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor } from './linkNav.js';
+import { destTarget, findCaption, isFloatDest, popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor } from './linkNav.js';
 
 const HOVER_DELAY = 250;
 const PREVIEW_W = 460, PREVIEW_H = 260, PREVIEW_H_FLOAT = 360, PREVIEW_SCALE = 1.35;
@@ -30,7 +31,9 @@ css.textContent = `
     font: 12px -apple-system, system-ui, sans-serif; overflow: hidden; }
   .zc-link-pop.preview { cursor: pointer; }
   .zc-link-pop canvas { display: block; background: #fff; }
-  .zc-link-pop .zc-pop-page { overflow: auto; overscroll-behavior: contain; }
+  .zc-link-pop .zc-pop-page { overflow: scroll; overscroll-behavior: contain; scrollbar-width: thin; }
+  .zc-link-pop .zc-pop-page::-webkit-scrollbar { width: 8px; height: 8px; }
+  .zc-link-pop .zc-pop-page::-webkit-scrollbar-thumb { background: rgba(0,0,0,.25); border-radius: 4px; }
   .zc-link-pop .zc-pop-head { display: flex; justify-content: space-between; gap: 12px; padding: 4px 9px;
     color: var(--text-3, #888); border-bottom: 1px solid var(--border, #eee); font-size: 11px; }
   .zc-link-pop .zc-pop-url { padding: 6px 10px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -255,10 +258,16 @@ async function showPopup(link) {
   if (hoverLink !== link) return;
   const pageW = vp.width * PREVIEW_SCALE, pageH = vp.height * PREVIEW_SCALE;
   const w = Math.min(PREVIEW_W, Math.round(pageW));
-  const float = isFloatDest(target.dest);
+  // A figure: end the window with its caption (the figure is above it). A table: start with its
+  // caption (the table is below it).
+  const caption = t.y == null ? null : await captionAt(page, vp, t);
+  if (hoverLink !== link) return;
+  const float = !!caption || isFloatDest(target.dest);
   const h = Math.min(float ? PREVIEW_H_FLOAT : PREVIEW_H, Math.round(pageH));
-  const o = previewOrigin(t.x == null ? null : t.x * PREVIEW_SCALE, t.y == null ? null : t.y * PREVIEW_SCALE,
-    w, h, pageW, pageH, 16, float ? 'bottom' : 'top');
+  const S = PREVIEW_SCALE;
+  const top = caption?.table ? caption.top * S : t.y == null ? null : t.y * S;
+  const bottom = caption?.table ? null : caption ? caption.bottom * S : float ? t.y * S + 16 : null;
+  const o = previewOrigin(t.x == null ? null : t.x * S, top, w, h, pageW, pageH, 16, bottom);
   // The whole page, in a window that starts at the destination and can be scrolled.
   const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
@@ -271,6 +280,14 @@ async function showPopup(link) {
   scroller.style.width = `${w}px`;
   scroller.style.height = `${h}px`;
   scroller.appendChild(canvas);
+  // Wheel and touchpad scroll the page inside the popup (never the document behind it).
+  scroller.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.metaKey) return;   // pinch / Cmd+wheel: the viewer's zoom
+    e.preventDefault();
+    e.stopPropagation();
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? scroller.clientHeight : 1;
+    scroller.scrollBy({ left: (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * unit, top: (e.shiftKey && !e.deltaX ? 0 : e.deltaY) * unit });
+  }, { passive: false });
   const head = document.createElement('div');
   head.className = 'zc-pop-head';
   head.innerHTML = `<span>Page ${t.pageNum}</span><span>Scroll to look around · click to go there</span>`;
@@ -287,6 +304,21 @@ async function showPopup(link) {
       transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null,
     }).promise;
   } catch (e) { console.warn('Link preview failed', e); }
+}
+
+/** The caption at a destination, in page CSS px at scale 1 ({top, bottom}), or null. */
+const pageText = new Map();
+async function captionAt(page, vp, t) {
+  if (!pageText.has(page.pageNumber)) {
+    pageText.set(page.pageNumber, page.getTextContent().then((tc) => tc.items.filter((i) => i.str?.trim()).map((i) => (
+      { str: i.str, x: i.transform[4], y: i.transform[5], h: i.height || Math.hypot(i.transform[2], i.transform[3]) }))).catch(() => []));
+  }
+  const items = await pageText.get(page.pageNumber);
+  // back to PDF coordinates (the target is in page CSS px)
+  const [px, py] = vp.convertToPdfPoint(t.x ?? 0, t.y);
+  const c = findCaption(items, t.x == null ? null : px, py, page.view[0] + page.view[2]);   // half of it: the middle of the page
+  if (!c) return null;
+  return { top: vp.convertToViewportPoint(0, c.top)[1], bottom: vp.convertToViewportPoint(0, c.bottom)[1], table: c.table };
 }
 
 container.addEventListener('mouseover', (e) => {
