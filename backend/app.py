@@ -22,6 +22,9 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
     services = Services(config)
     app.extensions["zclone"] = services
 
+    from . import guard
+    guard.install(app, config.allowed_hosts)   # refuse requests from other websites (#17)
+
     from .api import register_blueprints
     register_blueprints(app)
 

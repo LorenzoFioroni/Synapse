@@ -22,6 +22,7 @@ export async function loadItems({ keepSelection = true } = {}) {
       throw e;
     }
     if (seq !== loadSeq) return;           // a newer request superseded this one
+    for (const it of res.items) it._lean = true;   // no abstract: the item pane fetches it
     state.items = res.items;
     state.hits = res.hits || {};
     state.counts = res.counts;
@@ -69,8 +70,58 @@ export function select(ids, { anchor, cursor } = {}) {
 /** Replace one item in the store after an edit (no full reload). */
 export function patchLocal(item) {
   const i = state.items.findIndex((x) => x.id === item.id);
-  if (i >= 0) state.items[i] = { ...state.items[i], ...item };
+  if (i >= 0) {
+    state.items[i] = { ...state.items[i], ...item };
+    if ('abstract' in item) delete state.items[i]._lean;   // the whole item came back
+  }
   emit('item-updated', item.id);
+}
+
+/** In this view, can changed items be patched in place, or might they leave or join the list? */
+function patchable() {
+  return state.view === 'library' && !state.query && !state.tagFilter.size;
+}
+
+function applyCounts(res) {
+  state.counts = res.counts;
+  state.sidebar = res.sidebar || state.sidebar;
+  emit('sidebar');
+}
+
+/**
+ * Some items changed (tags, folders, attachments, keys, metadata): show their new state without
+ * reloading the whole list — fetch just them. Where the change could make an item leave or join
+ * the list (a folder, a search, a tag filter, a smart folder), reload the list instead (issue #24).
+ * New items (`added`) are inserted when the list is the plain library.
+ */
+export async function refreshItems(ids, { added = false } = {}) {
+  ids = [...new Set(ids)].filter(Boolean);
+  if (!ids.length) return;
+  if (!patchable() || ids.length > 300) return loadItems();
+  try {
+    const res = await api.itemsByIds(ids);
+    for (const fresh of res.items) {
+      fresh._lean = true;
+      const i = state.items.findIndex((x) => x.id === fresh.id);
+      if (fresh.deleted_at) { if (i >= 0) state.items.splice(i, 1); continue; }
+      if (i >= 0) state.items[i] = fresh; else if (added) state.items.push(fresh);
+    }
+    const gone = new Set(res.missing || []);
+    if (gone.size) state.items = state.items.filter((x) => !gone.has(x.id));
+    applyCounts(res);
+    emit('items');
+    emit('selection');
+  } catch (e) { toastError(e); }
+}
+
+/** Items left this list (trashed, restored from the Trash, deleted): drop them here. */
+async function removeLocal(ids) {
+  const gone = new Set(ids);
+  state.items = state.items.filter((x) => !gone.has(x.id));
+  state.selection = new Set([...state.selection].filter((id) => !gone.has(id)));
+  emit('items');
+  emit('selection');
+  try { applyCounts(await api.itemsByIds([])); } catch { /* counts catch up on the next load */ }
 }
 
 export async function updateField(id, field, value) {
@@ -85,7 +136,7 @@ export async function newItem(data = {}) {
   try {
     if (state.view !== 'library' && !currentFolderId()) setView('library');
     const item = await api.createItem({ item_type: state.settings.default_item_type || 'journalArticle', folder_id: currentFolderId(), ...data });
-    await loadItems();
+    await refreshItems([item.id], { added: true });
     select([item.id], { anchor: item.id });
     emit('focus-field', { id: item.id, field: 'title' });
     return item;
@@ -102,17 +153,16 @@ export async function trashSelected() {
     const sorted = [...state.items];
     const next = nextSelectionAfterRemoval(sorted, ids);
     await api.trash(ids);
-    await loadItems();
+    await removeLocal(ids);
     if (next) select([next], { anchor: next });
     toast(`Moved ${plural(ids.length, 'item')} to the Trash`, {
-      action: { label: 'Undo', run: async () => { await api.restore(ids); await loadItems(); select(ids); } },
+      action: { label: 'Undo', run: async () => { await api.restore(ids); await refreshItems(ids, { added: true }); select(ids); } },
     });
   } catch (e) { toastError(e); }
 }
 
 function nextSelectionAfterRemoval(items, ids) {
-  const rows = document.querySelectorAll('.row[data-id]');
-  const order = [...rows].map((r) => r.dataset.id);
+  const order = state.order || items.map((i) => i.id);   // display order (rows off screen are not in the DOM)
   const set = new Set(ids);
   const last = Math.max(...ids.map((id) => order.indexOf(id)));
   for (let i = last + 1; i < order.length; i++) if (!set.has(order[i])) return order[i];
@@ -128,7 +178,7 @@ export async function keepOnly(id) {
   if (!others.length) return;
   try {
     await api.trash(others);
-    await loadItems();
+    await removeLocal(others);
     toast(`Kept “${(keep.title || 'item').slice(0, 50)}”, moved ${plural(others.length, 'duplicate')} to the Trash`, {
       type: 'success',
       action: { label: 'Undo', run: async () => { await api.restore(others); await loadItems(); } },
@@ -140,7 +190,7 @@ export async function restoreSelected() {
   const ids = [...state.selection];
   if (!ids.length) return;
   await api.restore(ids);
-  await loadItems();
+  await removeLocal(ids);   // they leave the Trash
   toast(`Restored ${plural(ids.length, 'item')} to My Library`, { type: 'success' });
 }
 
@@ -149,7 +199,7 @@ export async function deleteForever(ids) {
     { title: 'Delete permanently', confirm: 'Delete', danger: true, detail: 'Attached files are deleted too. This cannot be undone.' }))) return;
   try {
     await api.deleteForever(ids);
-    await loadItems();
+    await removeLocal(ids);
     toast(`Deleted ${plural(ids.length, 'item')}`);
   } catch (e) { toastError(e); }
 }
@@ -181,8 +231,8 @@ export async function findPdf(id) {
     close();
     if (res.status === 'success') {
       toast('PDF found and attached', { type: 'success' });
-      await loadItems();
       state.expanded.add(id);
+      await refreshItems([id]);
       emit('items');
     } else toast(res.message || 'No PDF found', { type: 'error' });
   } catch (e) { close(); toastError(e); }
@@ -206,7 +256,7 @@ export async function findPdfs(ids, { auto = false } = {}) {
     try {
       const res = await api.findPdf(it.id);
       (res.status === 'success' ? found : missing).push(it.id);
-      if (res.status === 'success') { await loadItems(); }
+      if (res.status === 'success') await refreshItems([it.id]);
     } catch (e) {
       failed.push(it.id);
       if (e.status === 0) break;      // server gone: stop instead of failing every item
@@ -214,7 +264,6 @@ export async function findPdfs(ids, { auto = false } = {}) {
     if (n < todo.length - 1) await new Promise((r) => setTimeout(r, 400));
   }
   pt.close();
-  await loadItems();
   const notFound = [...missing, ...failed];
   const parts = [`Found ${plural(found.length, 'PDF')}`];
   if (notFound.length) parts.push(`${notFound.length} not found`);
@@ -232,9 +281,8 @@ export async function uploadAttachments(id, files) {
   if (!pdfs.length) return toast('Only PDF files can be attached', { type: 'error' });
   try {
     await api.uploadAttachments(id, pdfs);
-    await loadItems();
     state.expanded.add(id);
-    emit('items');
+    await refreshItems([id]);
     toast(`Attached ${plural(pdfs.length, 'file')}`, { type: 'success' });
   } catch (e) { toastError(e); }
 }
@@ -268,7 +316,7 @@ export async function addPdfsAsItems(files) {
 export async function regenerateCitekeys(ids) {
   try {
     const res = await api.regenerateCitekeys(ids);
-    await loadItems();
+    await refreshItems(ids);
     const keys = Object.values(res.keys);
     toast(keys.length === 1 ? `Citation key: ${keys[0]}` : `Regenerated ${plural(keys.length, 'citation key')}`, { type: 'success' });
   } catch (e) { toastError(e); }
@@ -342,14 +390,14 @@ export async function addToFolder(ids, folderId, { quiet = false } = {}) {
   const before = new Set(ids.filter((id) => byId(id)?.folder_ids?.includes(folderId)));
   try {
     await api.changeFolders(ids, [folderId], []);
-    await loadItems();
+    await refreshItems(ids);
     if (quiet) return;
     const added = ids.filter((id) => !before.has(id));
     const name = folderById(folderId)?.name || 'folder';
     if (!added.length) return toast(`Already in “${name}”`);
     toast(`Added ${plural(added.length, 'item')} to “${name}”`, {
       type: 'success',
-      action: { label: 'Undo', run: async () => { await api.changeFolders(added, [], [folderId]); await loadItems(); } },
+      action: { label: 'Undo', run: async () => { await api.changeFolders(added, [], [folderId]); await refreshItems(added); } },
     });
   } catch (e) { toastError(e); }
 }
@@ -366,10 +414,10 @@ export async function removeFromFolder(ids, folderId) {
   try {
     const next = state.view === `folder:${folderId}` ? nextSelectionAfterRemoval(state.items, ids) : null;
     for (const [id, folders] of removed) await api.changeFolders([id], [], folders);
-    await loadItems();
+    await refreshItems(ids);
     if (next) select([next], { anchor: next });
     toast(`Removed ${plural(removed.length, 'item')} from “${folderById(folderId)?.name || 'folder'}” (still in your library)`, {
-      action: { label: 'Undo', run: async () => { for (const [id, f] of removed) await api.changeFolders([id], f, []); await loadItems(); select(ids); } },
+      action: { label: 'Undo', run: async () => { for (const [id, f] of removed) await api.changeFolders([id], f, []); await refreshItems(ids); select(ids); } },
     });
   } catch (e) { toastError(e); }
 }
@@ -379,10 +427,10 @@ export async function moveBetweenFolders(ids, fromId, toId) {
   if (!ids.length || !toId || fromId === toId) return;
   try {
     await api.changeFolders(ids, [toId], fromId ? [fromId] : []);
-    await loadItems();
+    await refreshItems(ids);
     toast(`Moved ${plural(ids.length, 'item')} to “${folderById(toId)?.name || 'folder'}”`, {
       type: 'success',
-      action: { label: 'Undo', run: async () => { await api.changeFolders(ids, fromId ? [fromId] : [], [toId]); await loadItems(); } },
+      action: { label: 'Undo', run: async () => { await api.changeFolders(ids, fromId ? [fromId] : [], [toId]); await refreshItems(ids); } },
     });
   } catch (e) { toastError(e); }
 }
@@ -391,9 +439,9 @@ export async function moveBetweenFolders(ids, fromId, toId) {
 export async function removeFolderMembership(id, folderId) {
   try {
     await api.changeFolders([id], [], [folderId]);
-    await loadItems();
+    await refreshItems([id]);
     toast(`Removed from “${folderById(folderId)?.name || 'folder'}”`, {
-      action: { label: 'Undo', run: async () => { await api.changeFolders([id], [folderId], []); await loadItems(); } },
+      action: { label: 'Undo', run: async () => { await api.changeFolders([id], [folderId], []); await refreshItems([id]); } },
     });
   } catch (e) { toastError(e); }
 }
@@ -402,14 +450,14 @@ export async function addTags(ids, names) {
   if (!ids.length || !names.length) return;
   try {
     await api.tagItems(ids, names, []);
-    await loadItems();
+    await refreshItems(ids);
     toast(`Tagged ${plural(ids.length, 'item')} with ${names.map((n) => `“${n}”`).join(', ')}`, { type: 'success' });
   } catch (e) { toastError(e); }
 }
 
 export async function removeTags(ids, names) {
   if (!ids.length || !names.length) return;
-  try { await api.tagItems(ids, [], names); await loadItems(); } catch (e) { toastError(e); }
+  try { await api.tagItems(ids, [], names); await refreshItems(ids); } catch (e) { toastError(e); }
 }
 
 export async function updateTag(tag, data) {

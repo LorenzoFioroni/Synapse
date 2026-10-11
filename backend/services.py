@@ -50,11 +50,13 @@ class Services:
     def find_pdf(self, item_id: str) -> dict:
         """Look for an open-access PDF of an item and attach it. Returns the finder's result."""
         from . import pdf_finder
+        from .references import identifiers
         item = self.papers.get(item_id)
-        if not item.get("title") and not item.get("doi"):
-            return {"status": "error", "message": "The item needs a title or DOI to search for a PDF."}
+        _, arxiv_id = identifiers(item)   # from archive_id, an arXiv DOI, the URL, Extra …
+        if not item.get("title") and not item.get("doi") and not arxiv_id:
+            return {"status": "error", "message": "The item needs a title, DOI or arXiv ID to search for a PDF."}
         result = pdf_finder.find_and_download(item.get("title"), item.get("doi"), self.config.pdf_dir,
-                                              self.settings.get("contact_email"))
+                                              self.settings.get("contact_email"), arxiv_id=arxiv_id)
         if result["status"] == "success":
             result["attachment"] = self.papers.add_attachment(item_id, "Full Text PDF", result["filename"], "pdf")
             self.attachments_changed()

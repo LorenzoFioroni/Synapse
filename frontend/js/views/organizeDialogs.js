@@ -221,7 +221,7 @@ export function editTagsDialog(ids = selectedItems().map((i) => i.id)) {
           if (!toAdd.length && !toRemove.size) return undefined;
           try {
             await api.tagItems(ids, toAdd, [...toRemove]);
-            await A.loadItems();
+            await A.refreshItems(ids);
           } catch (e) { toastError(e); return false; }
           return undefined;
         },

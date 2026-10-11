@@ -46,7 +46,7 @@ def allow_extension_origins(resp):
 def ping():
     """Lets the extension check the library is running and fill its folder/tag pickers."""
     s = svc()
-    return jsonify(app="zotero-clone", version=VERSION, folders=s.folders.tree(),
+    return jsonify(app="synapse", version=VERSION, folders=s.folders.tree(),
                    tags=[t["name"] for t in s.tags.list()], counts=s.papers.counts(),
                    # Settings → "When an item is added": the popup shows a checkbox for each "ask"
                    on_add={"fetch_metadata": s.settings.get("add_fetch_metadata"),
