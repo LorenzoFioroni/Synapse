@@ -356,6 +356,7 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
         const MAX_LIVE = 14;           // never more canvases than this, whatever happens
         const live = new Map();        // page number → { scale, canvas, text, task }
         const wanted = new Set();      // pages near the viewport
+        const inFar = new Set();       // pages within the far margin (the others must not keep a canvas)
         let pumping = false;
 
         const nearObserver = new IntersectionObserver((entries) => {
@@ -366,7 +367,10 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
             pump();
         }, { root: container, rootMargin: NEAR });
         const farObserver = new IntersectionObserver((entries) => {
-            for (const e of entries) if (!e.isIntersecting) release(Number(e.target.dataset.pageNumber));
+            for (const e of entries) {
+                const num = Number(e.target.dataset.pageNumber);
+                if (e.isIntersecting) inFar.add(num); else { inFar.delete(num); release(num); }
+            }
         }, { root: container, rootMargin: FAR });
 
         function drawingTool() { return ['box', 'draw', 'text'].includes(document.body.dataset.zcTool); }
@@ -400,6 +404,8 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
                     await renderPage(num);
                     trimLive();
                 }
+                // a page finished drawing just as the reader jumped away: give it back now
+                for (const num of [...live.keys()]) if (!inFar.has(num) && !wanted.has(num)) release(num);
             } finally { pumping = false; }
         }
 
@@ -451,6 +457,11 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
                 return;
             }
             const textContent = await page.getTextContent();
+            if (s !== scale || !wanted.has(num) || live.get(num)?.task !== task) {   // moved on while reading the text
+                canvas.width = canvas.height = 0;
+                if (live.get(num)?.task === task) { if (prev?.canvas) live.set(num, prev); else live.delete(num); }
+                return;
+            }
             const text = document.createElement('div');
             text.className = 'textLayer';
             Object.assign(text.style, { width: Math.floor(viewport.width) + 'px', height: Math.floor(viewport.height) + 'px',
