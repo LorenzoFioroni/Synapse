@@ -107,6 +107,11 @@ class Database:
             c.execute("CREATE INDEX IF NOT EXISTS idx_papers_deleted ON papers(deleted_at)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_papers_doi ON papers(doi)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_att_paper ON attachments(paper_id)")
+            # PDF annotations, one row each (see backend/annotations.py)
+            from .annotations import SCHEMA as ANNOTATIONS_SCHEMA
+            for stmt in ANNOTATIONS_SCHEMA.split(";"):
+                if stmt.strip():
+                    c.execute(stmt)
 
             # Backfill values older versions never stored.
             now = utcnow()

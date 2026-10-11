@@ -1,4 +1,4 @@
-"""Attachments, PDF files, annotations and the PDF proxy."""
+"""Attachments, PDF files and the PDF proxy. Annotations: api/annotations.py."""
 from __future__ import annotations
 
 import os
@@ -117,21 +117,3 @@ def proxy():
         return Response(r.content, status=r.status_code, mimetype="application/pdf")
     except requests.RequestException as e:
         return error(str(e), 502)
-
-
-# ------------------------------------------------------------ annotations
-@bp.get("/api/annotations")
-def get_annotations():
-    pid = request.args.get("paper_id")
-    if not pid:
-        return error("Missing paper_id")
-    return jsonify(annotations=svc().papers.get_annotations(pid))
-
-
-@bp.post("/api/annotations")
-def save_annotations():
-    data = body()
-    if not data.get("paper_id"):
-        return error("Missing paper_id")
-    svc().papers.save_annotations(data["paper_id"], data.get("annotations"))
-    return jsonify(status="success")

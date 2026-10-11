@@ -95,10 +95,11 @@ def test_fulltext_index_is_separate_file(svc):
     assert svc.config.fulltext_db_path.exists()
 
 
-def test_annotations_roundtrip(client):
+def test_old_annotation_blob_endpoints_are_gone(client):
+    """Annotations are records per attachment now (tests/test_annotations.py)."""
     item = client.post("/api/items", json={"title": "A"}).get_json()
-    client.post("/api/annotations", json={"paper_id": item["id"], "annotations": {"1": [{"t": "x"}]}})
-    assert client.get(f"/api/annotations?paper_id={item['id']}").get_json() == {"annotations": {"1": [{"t": "x"}]}}
+    r = client.post("/api/annotations", json={"paper_id": item["id"], "annotations": {"1": "<rect/>"}})
+    assert r.status_code in (404, 405)
 
 
 def test_schema(client):

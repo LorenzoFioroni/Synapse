@@ -292,19 +292,6 @@ class PaperRepository:
         with self.db.session() as c:
             return [r[0] for r in c.execute("SELECT id FROM papers WHERE deleted_at IS NOT NULL")]
 
-    # ------------------------------------------------------------ annotations
-    def get_annotations(self, paper_id: str):
-        import json
-        with self.db.session() as c:
-            row = c.execute("SELECT annotations FROM papers WHERE id = ?", (paper_id,)).fetchone()
-        return json.loads(row[0]) if row and row[0] else {}
-
-    def save_annotations(self, paper_id: str, annotations) -> None:
-        import json
-        with self.db.session() as c:
-            c.execute("UPDATE papers SET annotations = ? WHERE id = ?", (json.dumps(annotations), paper_id))
-
-    # ------------------------------------------------------------ attachments
     def add_attachment(self, paper_id: str, name: str, filename: str, type_: str = "pdf") -> dict:
         with self.db.session() as c:
             if not c.execute("SELECT 1 FROM papers WHERE id = ?", (paper_id,)).fetchone():

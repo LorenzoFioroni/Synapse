@@ -55,6 +55,13 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
             return jsonify(error=e.description or e.name), e.code
         return e
 
+    # Annotations saved by older versions as SVG markup become records (once, after a backup).
+    try:
+        from .annotations import migrate_legacy
+        migrate_legacy(services)
+    except Exception:
+        log.exception("Converting old annotations failed; the old data is kept")
+
     if start_indexer and services.settings.get("fulltext_auto_index"):
         services.indexer.sync()
     if start_indexer:   # background work (tests create the app without it)
