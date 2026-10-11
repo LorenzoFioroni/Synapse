@@ -1,4 +1,4 @@
-"""Attachments, PDF files and the PDF proxy. Annotations: api/annotations.py."""
+"""Attachments, PDF files and the PDF proxy. Annotations: api/pdf_annotations.py."""
 from __future__ import annotations
 
 import os
