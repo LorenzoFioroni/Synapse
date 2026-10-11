@@ -249,9 +249,19 @@ function renderItem(it) {
       ${section('attachments', 'Attachments', attHtml, { count: atts.length })}
     </div>`;
   bindItem(it);
-  fillNotes(it);
-  fillReferences(root.querySelector('[data-ip-refs]'), it, () => shownId === it.id);
+  // Notes and references take a request each: wait until the selection rests, so holding an
+  // arrow key through a big library does not queue hundreds of them (issue #24).
+  clearTimeout(fillTimer);
+  const fill = () => {
+    if (shownId !== it.id) return;
+    fillNotes(it);
+    fillReferences(root.querySelector('[data-ip-refs]'), it, () => shownId === it.id);
+  };
+  if (Date.now() - lastFill > FILL_SETTLE_MS) { lastFill = Date.now(); fill(); }
+  else fillTimer = setTimeout(() => { lastFill = Date.now(); fill(); }, FILL_SETTLE_MS);
 }
+const FILL_SETTLE_MS = 180;
+let fillTimer = null, lastFill = 0;
 
 /* ---------------------------------------------------------------- notes */
 async function fillNotes(it) {

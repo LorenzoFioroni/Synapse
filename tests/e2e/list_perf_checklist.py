@@ -135,8 +135,11 @@ async def main():
             await page.click('#item-pane [data-field="title"]')
             await page.keyboard.press(f"{mod}+a")
             await page.keyboard.type("Aaa renamed paper")
+            t0 = time.time()
             async with page.expect_response(lambda r: r.request.method == "PATCH", timeout=15000):
                 await page.keyboard.press("Enter")
+            saved_in = time.time() - t0
+            check("the save is answered at once, even after racing through the list", saved_in < 2, f"{saved_in:.2f} s")
             await page.wait_for_timeout(300)
             check("editing a field reloads no list", not lists, str(lists[:2]))
             saved = requests.get(f"{BASE}/api/items/{first['id']}").json()["title"]
