@@ -116,7 +116,7 @@ def test_background_pdf_search_attaches_the_file(svc, monkeypatch, tmp_path):
     from backend import pdf_finder
     item = svc.papers.create({"title": "Some paper", "doi": "10.1/x"})
 
-    def fake(title, doi, pdf_dir, email):
+    def fake(title, doi, pdf_dir, email, **kw):
         make_pdf(pdf_dir / "found.pdf", "x")
         return {"status": "success", "filename": "found.pdf", "source": "test"}
     monkeypatch.setattr(pdf_finder, "find_and_download", fake)

@@ -42,10 +42,13 @@ def _ratio(a: str, b: str) -> float:
         return best * 100
 
 
-def verify_pdf(path: str, title: str | None, doi: str | None) -> bool:
+def verify_pdf(path: str, title: str | None, doi: str | None, arxiv_id: str | None = None) -> bool:
     text, _ = extract_text(path, max_pages=2)
     low = text.lower()
     if doi and re.sub(r"[^a-z0-9]", "", doi.lower()) in re.sub(r"[^a-z0-9]", "", low):
+        return True
+    # arXiv stamps "arXiv:1412.6980v9 [cs.LG] …" in the margin of the first page
+    if arxiv_id and re.search(r"arxiv:\s*" + re.escape(arxiv_id.lower()) + r"(?:v\d+)?\b", low):
         return True
     if title:
         t = re.sub(r"\s+", "", title.lower())[:150]
@@ -53,10 +56,22 @@ def verify_pdf(path: str, title: str | None, doi: str | None) -> bool:
     return False
 
 
-def candidate_urls(title: str | None, doi: str | None, email: str) -> list[str]:
+def arxiv_pdf_url(arxiv_id: str) -> str:
+    """arxiv.org/pdf/<id> (latest version unless the id pins one); old ids like quant-ph/0001106 too."""
+    return f"https://arxiv.org/pdf/{arxiv_id}"
+
+
+def candidate_urls(title: str | None, doi: str | None, email: str, arxiv_id: str | None = None,
+                   title_search: bool = True) -> list[str]:
+    """Where to look, best first. With a known arXiv id its PDF comes first for a preprint; for a
+    published paper the publisher's open-access copy (Unpaywall) comes first and arXiv second.
+    ``title_search=False`` skips the searches by title (Unpaywall, Scholar, arXiv)."""
     out: list[str] = []
     email = email or FALLBACK_EMAIL
-    if doi:
+    preprint = bool(arxiv_id) and (not doi or doi.lower().startswith("10.48550/"))
+    if arxiv_id and preprint:
+        out.append(arxiv_pdf_url(arxiv_id))
+    if doi and not doi.lower().startswith("10.48550/"):
         try:
             r = requests.get(f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi)}?email={email}", timeout=10)
             if r.ok:
@@ -64,7 +79,9 @@ def candidate_urls(title: str | None, doi: str | None, email: str) -> list[str]:
                 out.append(loc.get("url_for_pdf"))
         except Exception as e:
             log.info("Unpaywall DOI lookup failed: %s", e)
-    if title:
+    if arxiv_id and not preprint:
+        out.append(arxiv_pdf_url(arxiv_id))
+    if title and title_search:
         try:
             r = requests.get(f"https://api.unpaywall.org/v2/search?query={urllib.parse.quote(title)}&email={email}",
                              timeout=10)
@@ -98,22 +115,47 @@ def candidate_urls(title: str | None, doi: str | None, email: str) -> list[str]:
                             out.append(link.attrib.get("href"))
         except Exception as e:
             log.info("arXiv lookup failed: %s", e)
+    return _unique(out)
+
+
+def _unique(urls: list) -> list[str]:
     seen, uniq = set(), []
-    for u in out:
+    for u in urls:
         if u and u not in seen:
             seen.add(u)
             uniq.append(u)
     return uniq
 
 
-def find_and_download(title: str | None, doi: str | None, pdf_dir: Path, email: str = "") -> dict:
+def find_and_download(title: str | None, doi: str | None, pdf_dir: Path, email: str = "",
+                      arxiv_id: str | None = None) -> dict:
     """Returns {"status": "success", "filename": ...} or {"status": "not_found", "message": ...}."""
     doi = clean_doi(doi)
-    urls = candidate_urls(title, doi, email)
-    if not urls:
+    if arxiv_id:
+        # The arXiv copy is known: try it (and Unpaywall first for a published paper); the
+        # searches by title only run if none of those is the paper.
+        first = candidate_urls(title, doi, email, arxiv_id, title_search=False)
+        later = lambda: [u for u in candidate_urls(title, None, email) if u not in first]  # noqa: E731
+    else:
+        first, later = candidate_urls(title, doi, email), list
+    found = _download_first(first, title, doi, arxiv_id, pdf_dir)
+    rest = [] if found else later()
+    found = found or _download_first(rest, title, doi, arxiv_id, pdf_dir)
+    if found:
+        return found
+    if not first and not rest:
         return {"status": "not_found", "message": "No open-access copy was found online."}
+    return {"status": "not_found",
+            "message": "Candidates were found, but none passed verification (wrong paper or a login page)."}
+
+
+def _download_first(urls: list[str], title, doi, arxiv_id, pdf_dir) -> dict | None:
+    """Download the candidates in order; the first that is the right paper is kept."""
+    from .metadata import arxiv_wait
     for url in urls:
         try:
+            if urllib.parse.urlparse(url).hostname in ("arxiv.org", "export.arxiv.org"):
+                arxiv_wait()   # batch Find PDF: keep arXiv requests apart
             r = requests.get(url, headers={"User-Agent": UA}, timeout=20)
             ctype = r.headers.get("Content-Type", "application/pdf")
             if not (r.ok and ("pdf" in ctype or r.content[:4] == b"%PDF")):
@@ -121,13 +163,12 @@ def find_and_download(title: str | None, doi: str | None, pdf_dir: Path, email: 
             fd, tmp = tempfile.mkstemp(suffix=".pdf")
             with os.fdopen(fd, "wb") as fh:
                 fh.write(r.content)
-            if verify_pdf(tmp, title, doi):
+            if verify_pdf(tmp, title, doi, arxiv_id):
                 filename = f"{uuid.uuid4().hex}_downloaded.pdf"
                 shutil.move(tmp, Path(pdf_dir) / filename)
                 return {"status": "success", "filename": filename, "source": url}
             os.remove(tmp)
         except Exception as e:
             log.info("Download failed for %s: %s", url, e)
-    return {"status": "not_found",
-            "message": "Candidates were found, but none passed verification (wrong paper or a login page)."}
+    return None
 
