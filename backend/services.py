@@ -37,6 +37,9 @@ class Services:
         # Attachments no note uses go to their own trash; both trashes are emptied after a while.
         self.attachments = Attachments(self.vault, self.notes, self.settings)
         self.note_service.on_change = self.attachments.poke
+        # Backups of library.db, settings and notes; the scheduler is started by create_app only.
+        from .backup import Backups
+        self.backups = Backups(self)
         # A changed citation key is rewritten in every note (with a backup first).
         self.papers.on_citekey_change(lambda _id, old, new: self.note_service.rename_key(old, new) if new else None)
         try:

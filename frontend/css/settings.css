@@ -32,6 +32,12 @@
 .stat .l { font-size: var(--fs-xs); color: var(--text-3); }
 .saved-pill { font-size: var(--fs-xs); color: var(--success); display: inline-flex; align-items: center; gap: 4px; opacity: 0; transition: opacity .2s; }
 .saved-pill.show { opacity: 1; }
+.backup-list { display: flex; flex-direction: column; max-height: 320px; overflow: auto; }
+.backup-list:empty { display: none; }
+.backup-row { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-top: 1px solid var(--border); }
+.backup-row .b-main { flex: 1; min-width: 0; }
+.backup-row .b-when { font-weight: 550; }
+.backup-row .b-what { color: var(--text-3); font-size: var(--fs-xs); }
 .shortcuts { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; padding: 16px 18px; font-size: var(--fs-sm); }
 .shortcuts dt { text-align: right; }
 .shortcuts dd { margin: 0; color: var(--text-2); }
