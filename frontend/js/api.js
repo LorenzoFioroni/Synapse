@@ -122,7 +122,7 @@ export const api = {
 };
 
 export function fileUrl(att) {
-  return /^https?:/.test(att.url) ? `/api/proxy?url=${encodeURIComponent(att.url)}` : `/pdfs/${encodeURIComponent(att.url)}`;
+  return /^https?:/.test(att.url) ? `/api/attachments/${att.id}/remote` : `/pdfs/${encodeURIComponent(att.url)}`;
 }
 
 /** The viewer's URL for a PDF, optionally at a page and at a spot on it: `at` is {q} (words to

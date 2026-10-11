@@ -1,14 +1,13 @@
-"""Attachments, PDF files, annotations and the PDF proxy."""
+"""Attachments, PDF files, annotations and PDFs of attachments stored as web links."""
 from __future__ import annotations
 
 import os
 import uuid
 
-import requests
 from flask import Blueprint, Response, jsonify, request, send_from_directory
 from werkzeug.utils import secure_filename
 
-from .. import pdf_finder
+from .. import pdf_finder, remote_pdf
 from ..pdftext import clean_text, extract_text, find_identifier
 from . import body, error, svc
 
@@ -107,16 +106,18 @@ def serve_pdf(filename):
     return send_from_directory(svc().config.pdf_dir, filename)
 
 
-@bp.get("/api/proxy")
-def proxy():
-    url = request.args.get("url", "")
-    if not url.startswith(("http://", "https://")):
-        return error("Only http(s) URLs can be proxied")
+@bp.get("/api/attachments/<int:att_id>/remote")
+def remote_attachment(att_id):
+    """The PDF of an attachment stored as a web link. Only the attachment's own URL is fetched,
+    never one sent by the browser, and never from the local network (#21)."""
+    att = svc().papers.get_attachment(att_id)
+    if not att or not str(att.get("url") or "").startswith(("http://", "https://")):
+        return error("This attachment is not a web link.", 404)
     try:
-        r = requests.get(url, timeout=30, headers={"User-Agent": pdf_finder.UA})
-        return Response(r.content, status=r.status_code, mimetype="application/pdf")
-    except requests.RequestException as e:
-        return error(str(e), 502)
+        data = remote_pdf.fetch_pdf(att["url"], pdf_finder.UA)
+    except remote_pdf.RemoteError as e:
+        return error(str(e), e.status)
+    return Response(data, mimetype="application/pdf")
 
 
 # ------------------------------------------------------------ annotations
