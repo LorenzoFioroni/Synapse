@@ -50,7 +50,7 @@
     #doc-title { font-size: 12.5px; font-weight: 600; color: var(--text); max-width: 32vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: 4px; }
     #page-num-text { font-variant-numeric: tabular-nums; color: var(--text-2); background: var(--bg-active); padding: 3px 10px; border-radius: 12px; }
     
-    #pdf-container { flex: 1; overflow: auto; padding: 20px; }
+    #pdf-container { flex: 1; overflow: auto; padding: 20px; overflow-anchor: none; }   /* zoom places the view itself */
     .page-wrapper { position: relative; margin: 0 auto 20px auto; box-shadow: 0 2px 10px rgba(0,0,0,0.15); background: white; user-select: none; border-radius: 2px; }
     canvas { display: block; user-select: none; border-radius: 2px; }
     .textLayer { position: absolute; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; line-height: 1.0; user-select: text; }
@@ -174,15 +174,50 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
             renderTimeout = setTimeout(() => pump(), 300);
         }
 
+        /** The page under a point of the viewer (or the nearest one, when the point is in a gap). */
+        function pageAt(clientY) {
+            let best = null, bestD = Infinity;
+            for (const w of pageWrappers) {
+                if (!w) continue;
+                const r = w.getBoundingClientRect();
+                const d = clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0;
+                if (d < bestD) { best = w; bestD = d; }
+                if (d === 0 || r.top > clientY + 2000) break;   // pages are in order: no need to look further
+            }
+            return best;
+        }
+
+        /* Zoom keeps the spot under the pointer (or the middle of the view, for the buttons) where it
+           is. The spot is remembered as a page and a fraction of that page, not as a scroll offset:
+           pages are centred and the gaps between them do not grow with the zoom, so scaling the
+           scroll offsets (as before) let the spot drift, more and more on later pages. */
+        let zoomGesture = null;   // {anchor page, fx, fy, pointer, t} of the zoom in progress
         function applyZoom(newScale, pointerX = container.clientWidth / 2, pointerY = container.clientHeight / 2) {
             let oldScale = scale;
             scale = Math.min(Math.max(0.2, newScale), 5.0);
             if (scale === oldScale) return; // Don't do anything if hitting limits
-            let ratio = scale / oldScale;
-            
-            let absX = container.scrollLeft + pointerX;
-            let absY = container.scrollTop + pointerY;
-            
+
+            const box = container.getBoundingClientRect();
+            const px = box.left + container.clientLeft + pointerX;
+            const py = box.top + container.clientTop + pointerY;
+            // One pinch (or several clicks on +/-) is one gesture: keep the spot it started on. While
+            // a page is narrower than the view it stays centred and cannot follow the pointer
+            // sideways; measuring again at every step would lose the spot by the time it can.
+            const now = performance.now();
+            let g = zoomGesture;
+            if (!g || now - g.t > 400 || Math.abs(g.px - px) > 4 || Math.abs(g.py - py) > 4 || !g.anchor.isConnected) {
+                const anchor = pageAt(py);
+                g = { px, py, anchor, fx: 0.5, fy: 0 };
+                if (anchor) {
+                    const r = anchor.getBoundingClientRect();
+                    g.fx = (px - r.left) / r.width;
+                    g.fy = (py - r.top) / r.height;
+                }
+            }
+            g.t = now;
+            zoomGesture = g;
+            const { anchor, fx, fy } = g;
+
             pageWrappers.forEach(w => {
                 let newW = parseFloat(w.dataset.baseWidth) * scale;
                 let newH = parseFloat(w.dataset.baseHeight) * scale;
@@ -201,10 +236,13 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
                     tl.style.height = newH + "px";
                 }
             });
-            
-            container.scrollLeft = (absX * ratio) - pointerX;
-            container.scrollTop = (absY * ratio) - pointerY;
-            
+
+            if (anchor) {   // scroll so the same spot of the same page is under the pointer again
+                const r = anchor.getBoundingClientRect();
+                container.scrollLeft += r.left + fx * r.width - px;
+                container.scrollTop += r.top + fy * r.height - py;
+            }
+
             debouncedRenderAll();
         }
 
