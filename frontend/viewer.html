@@ -169,11 +169,9 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
         }, { threshold: 0.5 });
 
         let renderTimeout = null;
-        function debouncedRenderAll() {
+        function debouncedRenderAll() {   // after zooming: only the pages near the viewport (pump)
             if (renderTimeout) clearTimeout(renderTimeout);
-            renderTimeout = setTimeout(() => {
-                renderAllPages();
-            }, 300);
+            renderTimeout = setTimeout(() => pump(), 300);
         }
 
         function applyZoom(newScale, pointerX = container.clientWidth / 2, pointerY = container.clientHeight / 2) {
@@ -229,37 +227,37 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
 
         function renderThumbnails() {
             sidebar.innerHTML = '';
+            const thumbObserver = new IntersectionObserver((entries) => {
+                for (const e of entries) {
+                    if (!e.isIntersecting || e.target.dataset.done) continue;
+                    e.target.dataset.done = '1';
+                    thumbObserver.unobserve(e.target);
+                    const canvas = e.target.querySelector('canvas');
+                    const page = pageWrappers[Number(e.target.dataset.page) - 1]?.zcPage;
+                    if (!page) continue;
+                    const vp = page.getViewport({ scale: 120 / page.getViewport({ scale: 1 }).width });
+                    canvas.width = vp.width;
+                    canvas.height = vp.height;
+                    page.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
+                }
+            }, { root: sidebar, rootMargin: '200px 0px' });
             for (let i = 1; i <= pdfDoc.numPages; i++) {
-                let thumb = document.createElement('div');
+                const thumb = document.createElement('div');
                 thumb.className = 'thumb-wrapper';
-                
-                let canvas = document.createElement('canvas');
-                let label = document.createElement('span');
+                thumb.dataset.page = i;
+                const canvas = document.createElement('canvas');
+                const w = pageWrappers[i - 1];
+                if (w) {   // the right shape before it is drawn
+                    canvas.width = 120;
+                    canvas.height = Math.round(120 * parseFloat(w.dataset.baseHeight) / parseFloat(w.dataset.baseWidth));
+                }
+                const label = document.createElement('span');
                 label.className = 'thumb-label';
                 label.textContent = i;
-                
-                thumb.appendChild(canvas);
-                thumb.appendChild(label);
+                thumb.append(canvas, label);
                 sidebar.appendChild(thumb);
-                
-                thumb.addEventListener('click', () => {
-                    let targetWrapper = document.querySelector(`.page-wrapper[data-page-number="${i}"]`);
-                    if (targetWrapper) {
-                        targetWrapper.scrollIntoView({ behavior: 'smooth' });
-                    }
-                });
-                
-                pdfDoc.getPage(i).then(page => {
-                    let viewport = page.getViewport({ scale: 1.0 });
-                    let thumbScale = 120 / viewport.width;
-                    let scaledViewport = page.getViewport({ scale: thumbScale });
-                    canvas.width = scaledViewport.width;
-                    canvas.height = scaledViewport.height;
-                    page.render({
-                        canvasContext: canvas.getContext('2d'),
-                        viewport: scaledViewport
-                    });
-                });
+                thumb.addEventListener('click', () => pageWrappers[i - 1]?.scrollIntoView({ behavior: 'smooth' }));
+                thumbObserver.observe(thumb);
             }
         }
 
@@ -348,107 +346,183 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
 
         let pageWrappers = [];
         // Annotations (drawing, highlighting, text boxes, undo) live in js/viewer/annotations.js.
-        let isInitialSetup = true;
 
-        function renderPage(num) {
-            return pdfDoc.getPage(num).then(function(page) {
-                let viewport = page.getViewport({scale: scale});
-                
-                let wrapper;
-                if (isInitialSetup || !pageWrappers[num - 1]) {
-                    wrapper = document.createElement('div');
-                    wrapper.className = 'page-wrapper';
-                    wrapper.dataset.baseWidth = viewport.width / scale;
-                    wrapper.dataset.baseHeight = viewport.height / scale;
-                    wrapper.dataset.pageNumber = num;
-                    wrapper.style.width = Math.floor(viewport.width) + "px";
-                    wrapper.style.height = Math.floor(viewport.height) + "px";
-                    container.appendChild(wrapper);
-                    pageWrappers[num - 1] = wrapper;
-                    pageObserver.observe(wrapper);
-                    wrapper.zcPage = page;
-                    
-                    // the annotation layer is added on this event (js/viewer/annotations.js)
-                    document.dispatchEvent(new CustomEvent('zc:pagecreated', { detail: { wrapper, page } }));
-                } else {
-                    wrapper = pageWrappers[num - 1];
-                    let oldCanvas = wrapper.querySelector('canvas');
-                    let oldText = wrapper.querySelector('.textLayer');
-                    if (oldCanvas) oldCanvas.remove();
-                    if (oldText) oldText.remove();
-                }
+        /* Pages are laid out at once (an empty wrapper of the right size per page, so scrolling,
+           ?page=N and the add-ons work everywhere), but only the pages within about a screen of the
+           viewport get a canvas and a text layer; pages farther away give theirs back. A 300-page
+           book used to render every page up front, and again on every zoom (issue #19). */
+        const NEAR = '100% 0px';       // render pages this close to the viewport
+        const FAR = '250% 0px';        // free pages farther than this
+        const MAX_LIVE = 14;           // never more canvases than this, whatever happens
+        const live = new Map();        // page number → { scale, canvas, text, task }
+        const wanted = new Set();      // pages near the viewport
+        const inFar = new Set();       // pages within the far margin (the others must not keep a canvas)
+        let pumping = false;
 
-                let canvas = document.createElement('canvas');
-                let ctx = canvas.getContext('2d');
-                
-                let outputScale = window.devicePixelRatio || 1;
-                const MAX_DIMENSION = 8192;
-                if ((viewport.width * outputScale) > MAX_DIMENSION || (viewport.height * outputScale) > MAX_DIMENSION) {
-                    let squeezeRatio = Math.min(MAX_DIMENSION / (viewport.width * outputScale), MAX_DIMENSION / (viewport.height * outputScale));
-                    outputScale *= squeezeRatio;
-                }
-
-                canvas.width = Math.floor(viewport.width * outputScale);
-                canvas.height = Math.floor(viewport.height * outputScale);
-                canvas.style.width = Math.floor(viewport.width) + "px";
-                canvas.style.height = Math.floor(viewport.height) + "px";
-                
-                let transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
-
-                let renderContext = {
-                    canvasContext: ctx,
-                    transform: transform,
-                    viewport: viewport
-                };
-                
-                // Insert canvas BEFORE the svg so svg stays on top
-                wrapper.insertBefore(canvas, wrapper.querySelector('.anno-layer'));
-                
-                return page.render(renderContext).promise.then(() => {
-                    return page.getTextContent();
-                }).then((textContent) => {
-                    let textLayerDiv = document.createElement("div");
-                    textLayerDiv.className = "textLayer";
-                    textLayerDiv.style.width = Math.floor(viewport.width) + "px";
-                    textLayerDiv.style.height = Math.floor(viewport.height) + "px";
-                    textLayerDiv.style.setProperty('--scale-factor', viewport.scale);
-                    
-                    textLayerDiv.style.position = 'absolute';
-                    textLayerDiv.style.left = '0';
-                    textLayerDiv.style.top = '0';
-                    textLayerDiv.style.opacity = '1';
-
-                    // Insert textLayer BEFORE svg so svg stays on top
-                    wrapper.insertBefore(textLayerDiv, wrapper.querySelector('.anno-layer'));
-
-                    pdfjsLib.renderTextLayer({
-                        textContentSource: textContent,
-                        container: textLayerDiv,
-                        viewport: viewport,
-                        textDivs: []
-                    });
-                });
-            });
-        }
-
-        let currentRenderTask = 0;
-        function renderAllPages() {
-            currentRenderTask++;
-            let taskId = currentRenderTask;
-            let promise = Promise.resolve();
-            
-            for (let i = 1; i <= pdfDoc.numPages; i++) {
-                promise = promise.then(() => {
-                    if (taskId !== currentRenderTask) return Promise.resolve(); // cancel old renders if zooming fast
-                    return renderPage(i);
-                });
+        const nearObserver = new IntersectionObserver((entries) => {
+            for (const e of entries) {
+                const num = Number(e.target.dataset.pageNumber);
+                if (e.isIntersecting) wanted.add(num); else wanted.delete(num);
             }
-            promise.then(() => { if (taskId === currentRenderTask) isInitialSetup = false; });
+            pump();
+        }, { root: container, rootMargin: NEAR });
+        const farObserver = new IntersectionObserver((entries) => {
+            for (const e of entries) {
+                const num = Number(e.target.dataset.pageNumber);
+                if (e.isIntersecting) inFar.add(num); else { inFar.delete(num); release(num); }
+            }
+        }, { root: container, rootMargin: FAR });
+
+        function drawingTool() { return ['box', 'draw', 'text'].includes(document.body.dataset.zcTool); }
+
+        function viewportCenterDistance(num) {
+            const w = pageWrappers[num - 1];
+            if (!w) return Infinity;
+            const mid = container.scrollTop + container.clientHeight / 2;
+            const top = w.offsetTop, bottom = top + w.offsetHeight;
+            return mid < top ? top - mid : mid > bottom ? mid - bottom : 0;
         }
 
-        pdfjsLib.getDocument(pdfUrl).promise.then(function(pdfDoc_) {
+        /** The nearest wanted page that is not rendered at the current zoom. */
+        function nextToRender() {
+            let best = null, bestD = Infinity;
+            for (const num of wanted) {
+                if (live.get(num)?.scale === scale) continue;
+                const d = viewportCenterDistance(num);
+                if (d < bestD) { best = num; bestD = d; }
+            }
+            return best;
+        }
+
+        async function pump() {
+            if (pumping || !pdfDoc) return;
+            pumping = true;
+            try {
+                // pages rendered at an old zoom and no longer near: free them rather than redo them
+                for (const [num, l] of live) if (l.scale !== scale && !wanted.has(num)) release(num);
+                for (let num = nextToRender(); num; num = nextToRender()) {
+                    await renderPage(num);
+                    trimLive();
+                }
+                // a page finished drawing just as the reader jumped away: give it back now
+                for (const num of [...live.keys()]) if (!inFar.has(num) && !wanted.has(num)) release(num);
+            } finally { pumping = false; }
+        }
+
+        function trimLive() {
+            if (live.size <= MAX_LIVE) return;
+            const order = [...live.keys()].sort((x, y) => viewportCenterDistance(y) - viewportCenterDistance(x));
+            for (const num of order.slice(0, live.size - MAX_LIVE)) release(num);
+        }
+
+        function release(num) {
+            const l = live.get(num);
+            if (!l) return;
+            try { l.task?.cancel(); } catch (e) {}
+            if (l.canvas) { l.canvas.width = 0; l.canvas.height = 0; l.canvas.remove(); }
+            l.text?.remove();
+            live.delete(num);
+        }
+
+        async function renderPage(num) {
+            const wrapper = pageWrappers[num - 1];
+            const page = wrapper.zcPage;
+            const s = scale;
+            const viewport = page.getViewport({ scale: s });
+
+            const canvas = document.createElement('canvas');
+            let outputScale = window.devicePixelRatio || 1;
+            const MAX_DIMENSION = 8192;
+            if ((viewport.width * outputScale) > MAX_DIMENSION || (viewport.height * outputScale) > MAX_DIMENSION) {
+                outputScale *= Math.min(MAX_DIMENSION / (viewport.width * outputScale), MAX_DIMENSION / (viewport.height * outputScale));
+            }
+            canvas.width = Math.floor(viewport.width * outputScale);
+            canvas.height = Math.floor(viewport.height * outputScale);
+            canvas.style.width = Math.floor(viewport.width) + "px";
+            canvas.style.height = Math.floor(viewport.height) + "px";
+            const task = page.render({ canvasContext: canvas.getContext('2d'), viewport,
+                                       transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null });
+            const prev = live.get(num);
+            live.set(num, { ...(prev || {}), task, pending: true });
+            try {
+                await task.promise;
+            } catch (e) {
+                canvas.width = canvas.height = 0;
+                if (live.get(num)?.task === task) { if (prev?.canvas) live.set(num, prev); else live.delete(num); }
+                return;   // cancelled (page freed) or failed
+            }
+            if (s !== scale || !wanted.has(num)) {   // zoomed or scrolled away meanwhile
+                canvas.width = canvas.height = 0;
+                if (live.get(num)?.task === task) { if (prev?.canvas) live.set(num, prev); else live.delete(num); }
+                return;
+            }
+            const textContent = await page.getTextContent();
+            if (s !== scale || !wanted.has(num) || live.get(num)?.task !== task) {   // moved on while reading the text
+                canvas.width = canvas.height = 0;
+                if (live.get(num)?.task === task) { if (prev?.canvas) live.set(num, prev); else live.delete(num); }
+                return;
+            }
+            const text = document.createElement('div');
+            text.className = 'textLayer';
+            Object.assign(text.style, { width: Math.floor(viewport.width) + 'px', height: Math.floor(viewport.height) + 'px',
+                                        position: 'absolute', left: '0', top: '0', opacity: '1',
+                                        pointerEvents: drawingTool() ? 'none' : 'auto' });
+            text.style.setProperty('--scale-factor', viewport.scale);
+            // swap in one go (no blank flash while zooming); canvas and text stay under the other layers
+            if (prev?.canvas) { prev.canvas.width = 0; prev.canvas.height = 0; prev.canvas.remove(); }
+            prev?.text?.remove();
+            wrapper.insertBefore(canvas, wrapper.firstChild);
+            canvas.after(text);
+            pdfjsLib.renderTextLayer({ textContentSource: textContent, container: text, viewport, textDivs: [] });
+            live.set(num, { scale: s, canvas, text, task: null });
+            wrapper.dataset.rendered = String(s);
+            document.dispatchEvent(new CustomEvent('zc:pagerendered', { detail: { wrapper, page, num } }));
+        }
+
+        /** Every page as an empty wrapper of the right size; the add-ons hear about each one.
+            The first page is laid out (and drawn) before the others are even read. */
+        function layoutPage(page) {
+            const num = page.pageNumber;
+            const base = page.getViewport({ scale: 1 });
+            const wrapper = document.createElement('div');
+            wrapper.className = 'page-wrapper';
+            wrapper.dataset.baseWidth = base.width;
+            wrapper.dataset.baseHeight = base.height;
+            wrapper.dataset.pageNumber = num;
+            wrapper.style.width = Math.floor(base.width * scale) + "px";
+            wrapper.style.height = Math.floor(base.height * scale) + "px";
+            wrapper.zcPage = page;
+            container.appendChild(wrapper);
+            pageWrappers[num - 1] = wrapper;
+            pageObserver.observe(wrapper);
+            nearObserver.observe(wrapper);
+            farObserver.observe(wrapper);
+            // the annotation and link layers are added on this event (js/viewer/*.js)
+            document.dispatchEvent(new CustomEvent('zc:pagecreated', { detail: { wrapper, page } }));
+        }
+
+        async function layoutPages() {
+            layoutPage(await pdfDoc.getPage(1));
+            pageNumText.textContent = `1 / ${pdfDoc.numPages}`;
+            // draw page 1 before asking the PDF worker about the other pages (it does one thing at a time)
+            if (!new URLSearchParams(location.search).get('page')) {
+                wanted.add(1);
+                await pump();
+            }
+            for (let first = 2; first <= pdfDoc.numPages; first += 50) {   // the rest, 50 at a time, in order
+                const last = Math.min(pdfDoc.numPages, first + 49);
+                const pages = await Promise.all(Array.from({ length: last - first + 1 }, (_, i) => pdfDoc.getPage(first + i)));
+                pages.forEach(layoutPage);
+            }
+        }
+
+        // for the add-ons and the browser checklists
+        Object.assign(window.zcViewer, { renderedPages: () => [...live.entries()].filter(([, l]) => l.canvas).map(([n]) => n).sort((a, b) => a - b) });
+
+        pdfjsLib.getDocument(pdfUrl).promise.then(async function(pdfDoc_) {
             pdfDoc = pdfDoc_;
-            renderAllPages();
+            await layoutPages();
+            pump();
         }).catch(err => {
             console.error(err);
             document.getElementById('pdf-container').innerHTML = `<h2 style="color:white;">Error loading PDF: ${err.message}</h2>`;
