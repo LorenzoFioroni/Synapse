@@ -243,3 +243,25 @@ def test_references_matched_by_title_when_identifiers_differ(client, svc, monkey
 
     svc.citations.store.save(a["id"], "crossref", [{"title": "Some book on physics", "year": 1990}, {"raw": "Some book on physics, 1950"}])
     assert [r["library_id"] for r in client.get(f"/api/items/{a['id']}/references").json["references"]] == [None, None]
+
+
+def test_library_index_is_reused_until_the_library_changes(svc, monkeypatch):
+    """The item pane asks for references on every selection; the library is read only when it changed (#24)."""
+    a = svc.papers.create({"title": "Cited work", "doi": "10.1/a"})
+    b = svc.papers.create({"title": "Citing work", "doi": "10.1/b"})
+    calls = []
+    real = svc.papers.list
+    monkeypatch.setattr(svc.papers, "list", lambda *x, **k: calls.append(1) or real(*x, **k))
+    svc.citations.item_view(a["id"])
+    svc.citations.item_view(b["id"])
+    assert len(calls) == 1
+    svc.papers.update(b["id"], {"title": "Citing work, revised"})
+    svc.citations.item_view(a["id"])
+    assert len(calls) == 2
+    svc.papers.trash([b["id"]])
+    svc.citations.item_view(a["id"])
+    assert len(calls) == 3
+    svc.citations.item_view(a["id"])
+    assert len(calls) == 3
+    index, items = svc.citations._library_index()
+    assert "abstract" not in next(iter(items.values()))

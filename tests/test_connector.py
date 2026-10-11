@@ -7,7 +7,7 @@ from tests.conftest import make_pdf
 def test_ping(client):
     client.post("/api/folders", json={"name": "Physics"})
     r = client.get("/api/connector/ping").get_json()
-    assert r["app"] == "zotero-clone" and r["folders"][0]["name"] == "Physics"
+    assert r["app"] == "synapse" and r["folders"][0]["name"] == "Physics"
 
 
 def test_save_from_page_metadata_without_network(client, monkeypatch):
@@ -116,7 +116,7 @@ def test_background_pdf_search_attaches_the_file(svc, monkeypatch, tmp_path):
     from backend import pdf_finder
     item = svc.papers.create({"title": "Some paper", "doi": "10.1/x"})
 
-    def fake(title, doi, pdf_dir, email):
+    def fake(title, doi, pdf_dir, email, **kw):
         make_pdf(pdf_dir / "found.pdf", "x")
         return {"status": "success", "filename": "found.pdf", "source": "test"}
     monkeypatch.setattr(pdf_finder, "find_and_download", fake)

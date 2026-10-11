@@ -16,6 +16,7 @@ def utcnow() -> str:
 class Database:
     def __init__(self, path: Path | str):
         self.path = str(path)
+        self.version = 0   # goes up with every write through this object (for caches)
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=15)
@@ -29,6 +30,8 @@ class Database:
         conn = self.connect()
         try:
             yield conn
+            if conn.total_changes:
+                self.version += 1
             conn.commit()
         except Exception:
             conn.rollback()

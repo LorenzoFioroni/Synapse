@@ -404,7 +404,7 @@ async function applyChanges(articles, withReferences = false) {
       fields += Object.keys(updates).length;
     } catch (e) { errors.push(`${a.item?.title || a.id}: ${e.message}`); }
   }
-  await A.loadItems();
+  await A.refreshItems(articles.map((a) => a.id));   // just the reviewed items (a full reload only where needed)
   // the reference lists come with the metadata (in the background; see Settings → Online Services)
   const looked = articles.filter((a) => a.status === 'changes' || a.status === 'same').map((a) => a.id);
   if (looked.length && (withReferences || state.settings.references_auto !== false)) api.queueReferences(looked).catch(() => {});

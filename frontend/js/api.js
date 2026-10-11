@@ -34,7 +34,9 @@ export const api = {
   schema: () => request('GET', '/api/schema'),
   stats: () => request('GET', '/api/stats'),
 
-  listItems: ({ view, q, mode, tags }) => request('GET', `/api/items?${qs({ view, q, mode, tags: tags && tags.join(',') })}`),
+  // lean: no abstracts or empty fields in the list (the item pane fetches the whole item)
+  listItems: ({ view, q, mode, tags }) => request('GET', `/api/items?${qs({ view, q, mode, tags: tags && tags.join(','), lean: 1 })}`),
+  itemsByIds: (ids) => request('GET', `/api/items?ids=${encodeURIComponent(ids.join(','))}`),   // [] → just counts and sidebar
   getItem: (id) => request('GET', `/api/items/${id}`),
   createItem: (data = {}) => request('POST', '/api/items', data),
   updateItem: (id, data) => request('PATCH', `/api/items/${id}`, data),
@@ -125,7 +127,7 @@ export const api = {
 };
 
 export function fileUrl(att) {
-  return /^https?:/.test(att.url) ? `/api/proxy?url=${encodeURIComponent(att.url)}` : `/pdfs/${encodeURIComponent(att.url)}`;
+  return /^https?:/.test(att.url) ? `/api/attachments/${att.id}/remote` : `/pdfs/${encodeURIComponent(att.url)}`;
 }
 
 /** The viewer's URL for a PDF, optionally at a page and at a spot on it: `at` is {q} (words to
