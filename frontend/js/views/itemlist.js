@@ -38,6 +38,14 @@ export function initItemList() {
   bindCopy();
 
   on('items', renderBody);
+  let ticking = false;
+  scroller.addEventListener('scroll', () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => { ticking = false; renderWindow(); });
+  }, { passive: true });
+  new ResizeObserver(() => renderWindow()).observe(scroller);
+  on('settings', () => { if (shown.length && Math.abs(heights[0] - estimate(shown[0])) > 0.5) renderBody(); });   // row density
   on('selection', paintSelection);
   on('item-updated', (id) => updateRow(id));
   on('columns', () => { renderHead(); renderBody(); });
@@ -211,12 +219,12 @@ function colourDots(it) {
   return `<span class="row-dots">${dots.map(([t, c]) => `<span class="tag-dot" style="background:${c}" title="${escapeHtml(t)}"></span>`).join('')}</span>`;
 }
 
-function rowHtml(it) {
+function rowHtml(it, index = 0) {
   const cells = visibleCols().map((c) => {
     const title = c.id === 'creator' ? ` title="${escapeHtml(it.authors || '')}"` : (c.id === 'title' ? ` title="${escapeHtml(it.title || '')}"` : '');
     return `<div class="cell c-${c.id}" data-col="${c.id}"${title}>${cellHtml(c.id, it)}</div>`;
   }).join('');
-  let html = `<div class="row ${state.selection.has(it.id) ? 'selected' : ''}" role="row" data-id="${it.id}" draggable="${state.view === 'trash' ? 'false' : 'true'}">${cells}</div>`;
+  let html = `<div class="row ${index % 2 ? 'alt' : ''} ${state.selection.has(it.id) ? 'selected' : ''}" role="row" data-id="${it.id}" data-index="${index}" draggable="${state.view === 'trash' ? 'false' : 'true'}">${cells}</div>`;
   if (state.expanded.has(it.id)) {
     for (const a of it.attachments || []) {
       html += `<div class="row child" data-parent="${it.id}" data-att="${a.id}"><div class="cell">${icon('pdf', 'icon-sm')}<span>${escapeHtml(a.name || 'Attachment')}</span></div></div>`;
@@ -227,24 +235,112 @@ function rowHtml(it) {
   return html;
 }
 
+/* The list is virtualised (issue #24): only the rows in and near the viewport are in the DOM,
+   between two spacers that stand for the rest. Each item is a "group" (its row, its attachment
+   rows when expanded, its full-text snippet), whose height is estimated and then measured. */
+const OVERSCAN = 600;            // px of rows kept above and below the viewport
+let shown = [];                  // the items in display order
+let heights = [];                // height of each group
+let offsets = [0];               // offsets[i] = top of group i; offsets[n] = total height
+let range = null;                // [first, last] group in the DOM
+let posIndex = new Map();        // id → index in `shown`
+
+function rowHeight() {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--row-h')) || 28;
+}
+
+function estimate(it) {
+  const h = rowHeight();
+  let total = h;
+  if (state.expanded.has(it.id)) total += (it.attachments || []).length * (h - 2);
+  if (state.hits[it.id]?.fulltext && state.query) total += 44;
+  return total;
+}
+
+function computeOffsets() {
+  offsets = new Array(heights.length + 1);
+  offsets[0] = 0;
+  for (let i = 0; i < heights.length; i++) offsets[i + 1] = offsets[i] + heights[i];
+}
+
+/** Index of the group at y (px from the top of the list). */
+function groupAt(y) {
+  let lo = 0, hi = heights.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (offsets[mid] <= y) lo = mid; else hi = mid - 1;
+  }
+  return Math.max(0, lo);
+}
+
+function wantedRange() {
+  const top = scroller.scrollTop - body.offsetTop;
+  return [groupAt(top - OVERSCAN), groupAt(top + scroller.clientHeight + OVERSCAN)];
+}
+
+function renderWindow(force = false) {
+  if (!shown.length) { body.innerHTML = ''; range = null; return; }
+  const [s, e] = wantedRange();
+  if (!force && range && s >= range[0] && e <= range[1]) return;   // still covered
+  const extra = Math.ceil(OVERSCAN / rowHeight());                  // a margin, so small scrolls re-render nothing
+  const first = Math.max(0, s - extra), last = Math.min(shown.length - 1, e + extra);
+  let html = `<div class="vspace" style="height:${offsets[first]}px"></div>`;
+  for (let i = first; i <= last; i++) html += rowHtml(shown[i], i);
+  html += `<div class="vspace" style="height:${offsets[shown.length] - offsets[last + 1]}px"></div>`;
+  body.innerHTML = html;
+  range = [first, last];
+  painted = new Set([...state.selection].filter((id) => posIndex.has(id)));
+  measure();
+}
+
+/** Replace estimated heights of the groups in the DOM by their real ones. */
+function measure() {
+  if (!range) return;
+  let changed = false;
+  const rows = body.children;
+  let i = -1, h = 0;
+  const flush = () => { if (i >= 0 && Math.abs(heights[i] - h) > 0.5) { heights[i] = h; changed = true; } };
+  for (const el of rows) {
+    if (el.classList.contains('vspace')) continue;
+    if (el.dataset.index !== undefined) { flush(); i = Number(el.dataset.index); h = 0; }
+    h += el.offsetHeight;
+  }
+  flush();
+  if (!changed) return;
+  computeOffsets();
+  const [top, bottom] = [body.firstElementChild, body.lastElementChild];
+  if (top?.classList.contains('vspace')) top.style.height = `${offsets[range[0]]}px`;
+  if (bottom?.classList.contains('vspace')) bottom.style.height = `${offsets[shown.length] - offsets[range[1] + 1]}px`;
+}
+
 function renderBody() {
-  const items = sortedItems();
-  order = items.map((i) => i.id);
+  shown = sortedItems();
+  order = shown.map((i) => i.id);
+  state.order = order;   // display order, for actions (the DOM only holds the rows on screen)
+  posIndex = new Map(order.map((id, i) => [id, i]));
+  heights = shown.map(estimate);
+  computeOffsets();
   pane.querySelector('.list-empty')?.remove();
-  body.innerHTML = items.map(rowHtml).join('');
-  painted = new Set([...state.selection].filter((id) => order.includes(id)));
-  if (!items.length) pane.appendChild(emptyState());
-  emit('list-rendered', items.length);
+  range = null;
+  renderWindow(true);
+  if (!shown.length) pane.appendChild(emptyState());
+  emit('list-rendered', shown.length);
 }
 
 function updateRow(id) {
-  const row = body.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
+  const i = posIndex.get(id);
   const it = byId(id);
-  if (!row || !it) return;
+  if (i === undefined || !it) return;
+  shown[i] = it;
+  heights[i] = estimate(it);
+  computeOffsets();
+  const row = body.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
+  if (!row) { renderWindow(true); return; }   // off screen: only the spacers change
   // remove old children/snippet, re-insert fresh html
   body.querySelectorAll(`[data-parent="${CSS.escape(id)}"]`).forEach((r) => r.remove());
-  row.insertAdjacentHTML('afterend', rowHtml(it));
+  row.insertAdjacentHTML('afterend', rowHtml(it, i));
   row.remove();
+  renderWindow(true);
 }
 
 function emptyState() {
@@ -301,12 +397,13 @@ function paintSelection() {
 const rowEl = (id) => body.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
 
 function scrollToRow(id) {
-  const row = body.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
-  if (!row) return;
-  const top = row.offsetTop, bottom = top + row.offsetHeight;
+  const i = posIndex.get(id);
+  if (i === undefined) return;
+  const top = body.offsetTop + offsets[i], bottom = top + rowHeight();
   const headH = head.offsetHeight;
   if (top - headH < scroller.scrollTop) scroller.scrollTop = top - headH;
   else if (bottom > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = bottom - scroller.clientHeight;
+  renderWindow();   // the row is in the DOM right away (keyboard menus look for it)
 }
 on('selection', () => { if (state.cursor) scrollToRow(state.cursor); });
 
@@ -479,13 +576,13 @@ function attachmentMenu(itemId, attId, at) {
 export async function renameAttachment(att) {
   const name = await promptDialog('Name', { title: 'Rename Attachment', value: att.name || '', confirm: 'Rename' });
   if (!name) return;
-  try { await api.renameAttachment(att.id, name); await A.loadItems(); } catch (e) { toastError(e); }
+  try { await api.renameAttachment(att.id, name); await A.refreshItems([att.paper_id]); } catch (e) { toastError(e); }
 }
 
 export async function deleteAttachment(att) {
   const { confirmDialog } = await import('../ui/dialog.js');
   if (!(await confirmDialog(`Delete “${att.name}”?`, { title: 'Delete attachment', confirm: 'Delete', danger: true, detail: 'The file is removed from disk.' }))) return;
-  try { await api.deleteAttachment(att.id); await A.loadItems(); toast('Attachment deleted'); } catch (e) { toastError(e); }
+  try { await api.deleteAttachment(att.id); await A.refreshItems([att.paper_id]); toast('Attachment deleted'); } catch (e) { toastError(e); }
 }
 
 export async function copyKeys(items) {

@@ -55,7 +55,15 @@ function render(force = false) {
     const it = items[0];
     // don't clobber a field the user is typing in
     if (!force && it.id === shownId && root.contains(document.activeElement) && document.activeElement !== document.body) return;
+    const cached = it._lean && whole.get(it.id);
+    if (cached && cached.date_modified === it.date_modified) {   // fetched before and unchanged since
+      const i = state.items.indexOf(it);
+      if (i >= 0) state.items[i] = { ...cached };
+      renderItem(state.items[i] || cached);
+      return;
+    }
     renderItem(it);
+    if (it._lean) loadWhole(it.id);
   } else if (items.length > 1) {
     shownId = null;
     renderMulti(items);
@@ -63,6 +71,30 @@ function render(force = false) {
     shownId = null;
     renderEmpty();
   }
+}
+
+/** The list holds lean items (no abstract, no empty fields): fetch the whole one for the pane. */
+const loading = new Set();
+const whole = new Map();   // id → last whole item fetched (the list reloads lean copies)
+async function loadWhole(id) {
+  if (loading.has(id)) return;
+  loading.add(id);
+  try {
+    const full = await api.getItem(id);
+    if (whole.size > 200) whole.clear();
+    whole.set(id, full);
+    const i = state.items.findIndex((x) => x.id === id);
+    if (i < 0 || !state.items[i]._lean) return;   // edited meanwhile: the store already has a newer whole item
+    // replace (not merge): fields the lean copy left out because they were empty stay empty
+    state.items[i] = { ...full };
+    if (shownId !== id) return;
+    const typing = root.contains(document.activeElement) && document.activeElement !== document.body;
+    if (!typing) renderItem(state.items[i]);
+    else {   // only fill in the abstract, leave the field being typed in alone
+      const slot = root.querySelector('[data-abstract-loading]');
+      if (slot) slot.outerHTML = fv('abstract', full.abstract, { multiline: true, placeholder: 'Add an abstract…' });
+    }
+  } catch { /* the pane keeps the lean copy */ } finally { loading.delete(id); }
 }
 
 function renderEmpty() {
@@ -201,7 +233,9 @@ function renderItem(it) {
     <div class="ip-body">
       ${snippet && state.query ? section('fulltext', 'Full-text match', `<div class="ft-snippet">${snippet}</div>`) : ''}
       ${section('info', 'Info', info)}
-      ${section('abstract', 'Abstract', fv('abstract', it.abstract, { multiline: true, placeholder: 'Add an abstract…' }))}
+      ${section('abstract', 'Abstract', it._lean   // the list has no abstracts: shown once the whole item is here (not editable before, so it is never overwritten)
+    ? '<div class="muted" data-abstract-loading>Loading…</div>'
+    : fv('abstract', it.abstract, { multiline: true, placeholder: 'Add an abstract…' }))}
       ${state.settings.notes_enabled !== false ? section('notes', 'Notes', '<div class="ip-notes" data-ip-notes><span class="muted">Loading…</span></div>') : ''}
       ${trash ? '' : section('organize', 'Folder &amp; Tags', `
         <div class="field-row"><label>${(it.folder_ids || []).length > 1 ? 'Folders' : 'Folder'}</label>
@@ -215,9 +249,19 @@ function renderItem(it) {
       ${section('attachments', 'Attachments', attHtml, { count: atts.length })}
     </div>`;
   bindItem(it);
-  fillNotes(it);
-  fillReferences(root.querySelector('[data-ip-refs]'), it, () => shownId === it.id);
+  // Notes and references take a request each: wait until the selection rests, so holding an
+  // arrow key through a big library does not queue hundreds of them (issue #24).
+  clearTimeout(fillTimer);
+  const fill = () => {
+    if (shownId !== it.id) return;
+    fillNotes(it);
+    fillReferences(root.querySelector('[data-ip-refs]'), it, () => shownId === it.id);
+  };
+  if (Date.now() - lastFill > FILL_SETTLE_MS) { lastFill = Date.now(); fill(); }
+  else fillTimer = setTimeout(() => { lastFill = Date.now(); fill(); }, FILL_SETTLE_MS);
 }
+const FILL_SETTLE_MS = 180;
+let fillTimer = null, lastFill = 0;
 
 /* ---------------------------------------------------------------- notes */
 async function fillNotes(it) {
@@ -286,8 +330,8 @@ function bindItem(it) {
     tagInput(tagBox, {
       tags: it.tags || [],
       placeholder: (it.tags || []).length ? 'Add…' : 'Add a tag…',
-      onAdd: (name) => api.tagItems([id], [name], []).then(() => A.loadItems()).catch(toastError),
-      onRemove: (name) => api.tagItems([id], [], [name]).then(() => A.loadItems()).catch(toastError),
+      onAdd: (name) => api.tagItems([id], [name], []).then(() => A.refreshItems([id])).catch(toastError),
+      onRemove: (name) => api.tagItems([id], [], [name]).then(() => A.refreshItems([id])).catch(toastError),
     });
   }
 

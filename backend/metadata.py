@@ -204,13 +204,18 @@ _arxiv_lock = threading.Lock()
 _arxiv_last = 0.0
 
 
-def _arxiv_get(params: dict):
+def arxiv_wait() -> None:
+    """Space requests to arXiv (API and PDF downloads alike) by ARXIV_SPACING seconds."""
     global _arxiv_last
     with _arxiv_lock:
         wait = _arxiv_last + ARXIV_SPACING - time.monotonic()
         if wait > 0:
             time.sleep(wait)
         _arxiv_last = time.monotonic()
+
+
+def _arxiv_get(params: dict):
+    arxiv_wait()
     return requests.get(ARXIV_API, params=params, timeout=TIMEOUT)
 
 

@@ -7,7 +7,7 @@ folder can be backed up or moved as a whole.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -16,6 +16,9 @@ APP_ROOT = Path(__file__).resolve().parent.parent
 @dataclass
 class Config:
     data_dir: Path
+    # Extra host names (besides 127.0.0.1 / localhost) the server answers to, e.g. a LAN address
+    # when it is started with --host 0.0.0.0. See backend/guard.py.
+    allowed_hosts: set[str] = field(default_factory=set)
 
     @classmethod
     def from_env(cls, data_dir: str | os.PathLike | None = None) -> "Config":

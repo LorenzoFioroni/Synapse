@@ -415,11 +415,30 @@ class Citations:
             return {"queued": len(self._pending), "running": self.running, "last_error": self.last_error}
 
     # -- reading
+    _index_cache = None   # (signature, index, items)
+
+    def _library_signature(self) -> tuple:
+        """Changes whenever an item is added, edited, trashed, restored or deleted."""
+        with self.papers.db.session() as c:
+            return (self.papers.db.version,) + tuple(c.execute(
+                "SELECT COUNT(*), MAX(date_modified), COUNT(deleted_at), MAX(rowid) FROM papers").fetchone())
+
     def _library_index(self):
-        """Lookup tables of the library: by DOI, by arXiv id, by title key -> [(id, year)]."""
+        """Lookup tables of the library: by DOI, by arXiv id, by title key -> [(id, year)].
+        Built once and reused until the library changes: the item pane asks for it every time
+        an item is selected, and building it reads the whole library (issue #24)."""
+        sig = self._library_signature()
+        cached = self._index_cache
+        if cached and cached[0] == sig:
+            return cached[1], cached[2]
+        index, items = self._build_library_index()
+        self._index_cache = (sig, index, items)
+        return index, items
+
+    def _build_library_index(self):
         by_doi, by_arxiv, by_title, items = {}, {}, {}, {}
         for p in self.papers.list():
-            items[p["id"]] = p
+            items[p["id"]] = {k: v for k, v in p.items() if k != "abstract"}   # kept in memory: no abstracts
             doi, arx = identifiers(p)
             if doi:
                 by_doi.setdefault(doi, p["id"])
