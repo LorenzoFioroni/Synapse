@@ -1,11 +1,11 @@
-"""Zotero Clone — a local, web-based reference manager.
+"""Synapse — a local, web-based reference manager.
 
 Run:   python server.py                 (http://127.0.0.1:8000, opens your browser)
        python server.py --port 5050 --no-browser
        python server.py --data-dir ~/MyLibrary
 
 Your library (database, PDFs, full-text index, settings) lives in ./data
-unless --data-dir or the ZCLONE_DATA_DIR environment variable say otherwise.
+unless --data-dir or the SYNAPSE_DATA_DIR environment variable say otherwise.
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def main() -> None:
     config = Config.from_env(a.data_dir)
     app = create_app(config)
     url = f"http://{a.host}:{a.port}/"
-    print(f"Zotero Clone running at {url}  (library: {config.data_dir})  — Ctrl+C to stop")
+    print(f"Synapse running at {url}  (library: {config.data_dir})  — Ctrl+C to stop")
     if not a.no_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     app.run(host=a.host, port=a.port, debug=a.debug, threaded=True, use_reloader=a.debug)

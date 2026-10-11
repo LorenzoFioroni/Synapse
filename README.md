@@ -1,4 +1,4 @@
-# Zotero Clone
+# Synapse
 
 A local, web-based reference manager: a Flask backend with SQLite storage and a
 dependency-free JavaScript frontend. Everything runs on your machine.
@@ -13,7 +13,7 @@ python server.py --port 5050 --no-browser
 python server.py --data-dir ~/MyLibrary
 ```
 
-Your library lives in `data/` (or `--data-dir` / `ZCLONE_DATA_DIR`):
+Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
 
 | File | What |
 | --- | --- |

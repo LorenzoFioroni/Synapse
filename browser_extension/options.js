@@ -13,7 +13,7 @@ document.getElementById('save').onclick = async () => {
   try {
     const r = await fetch(`${v}/api/connector/ping`);
     const d = await r.json();
-    status.innerHTML = d.app === 'zotero-clone' ? `<span style="color:var(--ok)">✓ Connected (${d.counts.library} items)</span>` : 'Saved, but that address is not the library.';
+    status.innerHTML = ['synapse', 'zotero-clone'].includes(d.app) ? `<span style="color:var(--ok)">✓ Connected (${d.counts.library} items)</span>` : 'Saved, but that address is not the library.';
   } catch {
     status.innerHTML = '<span style="color:var(--err)">Saved, but the library is not reachable there right now.</span>';
   }

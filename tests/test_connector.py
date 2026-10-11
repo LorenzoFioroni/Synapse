@@ -7,7 +7,7 @@ from tests.conftest import make_pdf
 def test_ping(client):
     client.post("/api/folders", json={"name": "Physics"})
     r = client.get("/api/connector/ping").get_json()
-    assert r["app"] == "zotero-clone" and r["folders"][0]["name"] == "Physics"
+    assert r["app"] == "synapse" and r["folders"][0]["name"] == "Physics"
 
 
 def test_save_from_page_metadata_without_network(client, monkeypatch):

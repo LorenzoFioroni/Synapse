@@ -31,7 +31,7 @@ async def type_end(page, text):
     await page.click('.cm-content'); await page.keyboard.press('ControlOrMeta+End'); await page.keyboard.type(text)
 
 def start_server():
-    env = dict(os.environ, ZCLONE_DATA_DIR=DATA)
+    env = dict(os.environ, SYNAPSE_DATA_DIR=DATA)
     return subprocess.Popen([sys.executable, "server.py", "--port", str(PORT), "--no-browser"], cwd=APP, env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

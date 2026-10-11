@@ -25,7 +25,7 @@ class LookupError_(Exception):
 
 
 def _headers(email: str) -> dict:
-    ua = "ZoteroClone/2.0 (https://github.com/; mailto:%s)" % (email or "zotero-clone@example.com")
+    ua = "Synapse/2.0 (https://github.com/LorenzoFioroni/Synapse; mailto:%s)" % (email or "synapse@example.com")
     return {"User-Agent": ua}
 
 

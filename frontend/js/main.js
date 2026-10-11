@@ -119,7 +119,7 @@ let searchInput, modeBtn;
 function initToolbar() {
   const tb = document.getElementById('toolbar');
   tb.innerHTML = `
-    <div class="brand"><div class="brand-logo">Z</div>
+    <div class="brand"><img class="brand-logo" src="/assets/favicon.svg?v=3" alt="Synapse" title="Synapse" width="24" height="24">
       <div class="segmented ws-switch" role="group" aria-label="Workspace">
         <button data-ws="library" title="Library (${modLabel}⇧L switches)">Library</button>
         <button data-ws="notes" title="Notes (${modLabel}⇧L switches)">Notes</button>
