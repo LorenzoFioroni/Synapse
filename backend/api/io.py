@@ -51,6 +51,8 @@ def import_commit():
     s = svc()
     data = body()
     entries = data.get("entries") or []
+    if entries:
+        s.backups.before("an import")
     skip_dupes = data.get("skip_duplicates", s.settings.get("import_skip_duplicates"))
     finder = DuplicateFinder(s.papers.list() if skip_dupes else [])
     folder_id = data.get("folder_id")

@@ -14,6 +14,7 @@ const SECTIONS = [
   ['adding', 'Adding Items', 'plus'],
   ['io', 'Import & Export', 'export'],
   ['online', 'Online Services', 'globe'],
+  ['backups', 'Backups', 'restore'],
   ['library', 'Library & Shortcuts', 'database'],
 ];
 
@@ -148,6 +149,22 @@ export function openSettings(sectionId = null) {
             <input class="input" type="text" data-apikey="semantic_scholar_api_key" placeholder="Semantic Scholar API key" spellcheck="false" autocomplete="off" value="${escapeHtml(s.semantic_scholar_api_key || '')}" style="margin-top:6px"></div>
         </div></section>
 
+      <section class="settings-section" id="set-backups"><h2>Backups</h2>
+        <p class="lead">A backup holds the library database (items, folders, tags, annotations), your settings and all notes with their images.
+          The PDFs of your items are not included — back up <span class="mono">data/pdfs</span> separately.</p>
+        <div class="card">
+          ${segmentedRow('backup_interval', 'Back up automatically', 'When the app is running. Also before emptying the Trash, deleting items for good, importing and regenerating citation keys.', [['off', 'Off'], ['daily', 'Daily'], ['weekly', 'Weekly']])}
+          ${selectRow('backup_keep', 'Keep', 'Older backups are deleted.', [[7, 'Last 7 backups'], [14, 'Last 14 backups'], [30, 'Last 30 backups'], [90, 'Last 90 backups']])}
+          <div class="setting stack"><div class="s-text"><div class="s-title">Backup folder ${saved}</div>
+            <div class="s-desc">Leave empty to use the backups folder inside your data folder. A folder synced by iCloud Drive or Dropbox keeps a copy off this computer.</div></div>
+            <input class="input mono" type="text" data-backup-dir spellcheck="false" autocomplete="off" placeholder="Default: data/backups" value="${escapeHtml(s.backup_dir || '')}">
+            <div class="form-error" data-backup-dir-error hidden></div></div>
+          <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Backups</div>
+            <div class="s-desc" data-backup-desc>Loading…</div></div>
+            <div class="s-control"><button class="btn" data-backup-now>${icon('download')} Back Up Now</button></div></div>
+            <div class="backup-list" data-backup-list></div></div>
+        </div></section>
+
       <section class="settings-section" id="set-library"><h2>Library &amp; Shortcuts</h2><p class="lead" data-data-dir></p>
         <div class="card"><div class="stat-grid" data-stats></div></div>
         <h2 style="margin-top:22px;font-size:15px">Browser button</h2>
@@ -190,6 +207,7 @@ export function openSettings(sectionId = null) {
   bind();
   refreshPreview(s.citekey_pattern);
   refreshStats();
+  refreshBackups();
   statsTimer = setInterval(refreshStats, 2000);
   const sel = view.querySelector('[data-key="_preset"]');
   sel.value = presetMatch ? presetMatch.pattern : 'custom';
@@ -219,6 +237,24 @@ const refreshPreview = debounce(async (pattern) => {
     box.innerHTML = res.examples.map((k, i) => `<div class="ex"><code>${escapeHtml(k)}</code><span>${escapeHtml(names[i] || '')}</span></div>`).join('');
   } catch (e) { box.textContent = e.message; }
 }, 200);
+
+async function refreshBackups() {
+  if (!view) return;
+  const desc = view.querySelector('[data-backup-desc]');
+  const list = view.querySelector('[data-backup-list]');
+  try {
+    const st = await api.backups();
+    if (!view) return;
+    const last = st.last ? `Last backup ${formatDate(st.last.created, true)}` : 'No backup yet';
+    desc.innerHTML = `${escapeHtml(last)} · in <span class="mono">${escapeHtml(st.dir)}</span>`
+      + (st.error ? `<div class="form-error">${escapeHtml(st.error)}</div>` : '');
+    list.innerHTML = st.backups.length ? st.backups.map((b) => `<div class="backup-row" data-backup="${escapeHtml(b.name)}">
+        <div class="b-main"><div class="b-when">${escapeHtml(formatDate(b.created, true))}${b.damaged ? ' · <span class="form-error">cannot be read</span>' : ''}</div>
+          <div class="b-what">${b.items != null ? `${plural(b.items, 'item')} · ${plural(b.notes ?? 0, 'note')} · ` : ''}${formatBytes(b.size)}${b.reason && b.reason !== 'manual' && b.reason !== 'scheduled' ? ` · ${escapeHtml(b.reason)}` : ''}</div></div>
+        <button class="btn btn-sm" data-restore ${b.damaged ? 'disabled' : ''}>${icon('restore')} Restore…</button></div>`).join('')
+      : '';
+  } catch (e) { desc.textContent = e.message; }
+}
 
 async function refreshStats() {
   if (!view) return;
@@ -316,6 +352,42 @@ function bind() {
   const email = view.querySelector('[data-email]');
   email.addEventListener('change', () => save({ contact_email: email.value.trim() }, email));
   view.querySelectorAll('[data-apikey]').forEach((inp) => inp.addEventListener('change', () => save({ [inp.dataset.apikey]: inp.value.trim() }, inp)));
+
+  const bdir = view.querySelector('[data-backup-dir]');
+  bdir.addEventListener('change', async () => {
+    const errEl = view.querySelector('[data-backup-dir-error]');
+    errEl.hidden = true;
+    try {
+      const res = await api.saveSettings({ backup_dir: bdir.value.trim() });
+      state.settings = res.settings;
+      const pill = bdir.closest('.setting').querySelector('.saved-pill');
+      pill.classList.add('show'); setTimeout(() => pill.classList.remove('show'), 1200);
+      refreshBackups();
+    } catch (e) { errEl.textContent = e.message; errEl.hidden = false; }
+  });
+  view.querySelector('[data-backup-now]').onclick = async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    try { await api.backupNow(); toast('Backup made', { type: 'success' }); } catch (err) { toastError(err); }
+    b.disabled = false;
+    refreshBackups();
+  };
+  view.querySelector('[data-backup-list]').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-restore]');
+    if (!btn) return;
+    const row = btn.closest('[data-backup]');
+    const when = row.querySelector('.b-when').textContent;
+    if (!(await confirmDialog(`Restore the backup of ${when}?`, {
+      title: 'Restore backup', confirm: 'Restore', danger: true,
+      detail: 'Your library, settings and notes go back to how they were then. The current state is backed up first, so this can be undone by restoring that backup. PDFs are not changed.',
+    }))) return;
+    btn.disabled = true;
+    try {
+      const res = await api.restoreBackup(row.dataset.backup);
+      toast(`Backup restored. The state before it is saved as ${res.safety_backup}.`, { type: 'success' });
+      setTimeout(() => location.reload(), 800);
+    } catch (err) { toastError(err); btn.disabled = false; }
+  });
 
   view.querySelector('[data-rebuild]').onclick = async () => {
     await api.rebuildFulltext();

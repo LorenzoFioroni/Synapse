@@ -63,6 +63,9 @@ export const api = {
   getSettings: () => request('GET', '/api/settings'),
   saveSettings: (changes) => request('PUT', '/api/settings', changes),
   resetSettings: () => request('POST', '/api/settings/reset'),
+  backups: () => request('GET', '/api/backups'),
+  backupNow: () => request('POST', '/api/backups'),
+  restoreBackup: (name) => request('POST', '/api/backups/restore', { name }),
   citekeyPreview: (pattern) => request('GET', `/api/settings/citekey_preview?${qs({ pattern })}`),
 
   formats: () => request('GET', '/api/formats'),

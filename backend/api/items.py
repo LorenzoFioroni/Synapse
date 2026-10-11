@@ -144,6 +144,8 @@ def restore():
 def delete_permanently():
     s = svc()
     ids = ids_from_body()
+    if ids:
+        s.backups.before("deleting items for good")
     removed = s.papers.delete_permanently(ids)
     s.fulltext.remove(removed)
     s.citations.store.remove(ids)
@@ -154,6 +156,8 @@ def delete_permanently():
 def empty_trash():
     s = svc()
     ids = s.papers.trashed_ids()
+    if ids:
+        s.backups.before("emptying the Trash")
     removed = s.papers.delete_permanently(ids)
     s.fulltext.remove(removed)
     s.citations.store.remove(ids)
@@ -165,6 +169,8 @@ def regenerate_citekeys():
     ids = ids_from_body()
     if not ids:
         return error("No items given")
+    if len(ids) > 10:
+        svc().backups.before("regenerating citation keys")
     return jsonify(keys=svc().papers.regenerate_citekeys(ids))
 
 

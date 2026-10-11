@@ -48,6 +48,10 @@ DEFAULTS: dict = {
     "notes_autosave_ms": 1500,         # save after this long without typing (also on blur)
     # Deleted notes and attachments no note uses any more are deleted for good after this long
     "notes_trash_retention": "1m",     # never | 1d | 1w | 2w | 1m | 6m
+    # Backups of library.db, settings and notes (not the PDFs): see backend/backup.py
+    "backup_interval": "daily",        # off | daily | weekly
+    "backup_keep": 14,                 # newest archives kept
+    "backup_dir": "",                  # empty: data/backups
 }
 
 ASK_CHOICES = ("never", "always", "ask")
@@ -62,6 +66,7 @@ CHOICES = {
     "add_find_pdf": set(ASK_CHOICES),
     "add_fetch_references": set(ASK_CHOICES),
     "notes_trash_retention": {"never", "1d", "1w", "2w", "1m", "6m"},
+    "backup_interval": {"off", "daily", "weekly"},
 }
 
 
@@ -93,6 +98,18 @@ class SettingsStore:
             except (OSError, ValueError):
                 pass
 
+    def reload(self) -> None:
+        """Read settings.json again (after a backup was restored)."""
+        data = dict(DEFAULTS)
+        if self.path.exists():
+            try:
+                stored = _migrate(json.loads(self.path.read_text("utf-8")))
+                data.update({k: v for k, v in stored.items() if k in DEFAULTS})
+            except (OSError, ValueError):
+                pass
+        with self._lock:
+            self._data = data
+
     def all(self) -> dict:
         with self._lock:
             return dict(self._data)
@@ -118,12 +135,25 @@ class SettingsStore:
                     raise SettingsError("Font size must be between 11 and 18")
                 if k == "notes_autosave_ms" and not 300 <= v <= 60000:
                     raise SettingsError("Autosave delay must be between 0.3 and 60 seconds")
+                if k == "backup_keep" and not 1 <= v <= 365:
+                    raise SettingsError("Keep between 1 and 365 backups")
             else:
                 v = "" if v is None else str(v).strip()
             if k in CHOICES and v not in CHOICES[k]:
                 raise SettingsError(f"Invalid value for {k}: {v}")
             if k == "citekey_pattern" and not v:
                 raise SettingsError("Citation key pattern cannot be empty")
+            if k == "backup_dir" and v:
+                d = Path(v).expanduser()
+                if not d.is_absolute():
+                    raise SettingsError("The backup folder must be a full path, e.g. /Users/you/Dropbox/Backups")
+                try:
+                    d.mkdir(parents=True, exist_ok=True)
+                    probe = d / ".write-test"
+                    probe.write_text("ok")
+                    probe.unlink()
+                except OSError as e:
+                    raise SettingsError(f"Cannot write to {d}: {e.strerror or e}")
             clean[k] = v
         with self._lock:
             self._data.update(clean)

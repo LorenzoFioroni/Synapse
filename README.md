@@ -27,7 +27,7 @@ Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
 | `notes/` | your Markdown notes (the files are the source of truth) |
 | `notes_index.db` | links and search index of the notes; safe to delete, it is rebuilt |
 | `citations.db` | reference lists fetched online (the citation graph); if deleted they can be fetched again |
-| `backups/` | automatic note backups taken before a citation-key rename |
+| `backups/` | automatic backups of the library, settings and notes (`library-*.tar.gz`, see below), and note backups taken before a citation-key rename (`notes-*.tar.gz`) |
 | `settings.json` | preferences from the Settings page |
 
 Back up the `data/` folder to keep everything. It is git-ignored: code and data
@@ -104,6 +104,12 @@ never mix.
 - **Browser button** (`browser_extension/`, see its README): saves the article you are
   reading — DOI/arXiv pages, publisher pages, PDFs — with folder, tags and the PDF.
 - **Trash** with Undo, **Duplicate Items** view with "keep this one, trash the others".
+- **Backups** (Settings → Backups): the library database, settings and all notes with their images,
+  daily or weekly while the app runs, and before emptying the Trash, deleting items for good,
+  importing and regenerating citation keys. The PDFs of the items are not included (back up
+  `data/pdfs` yourself). Keep the last 7–90; choose another folder (e.g. one synced by iCloud
+  Drive or Dropbox). **Restore** backs up the current state first, then puts the library,
+  settings and notes back and rebuilds the indexes.
 - **Notes**: Markdown notes with live preview, KaTeX, code, Mermaid and images; `[@key]`
   citations and `[[links]]` between notes; a paper note per item. Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,

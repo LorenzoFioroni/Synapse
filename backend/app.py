@@ -62,4 +62,5 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
         services.indexer.sync()
     if start_indexer:   # background work (tests create the app without it)
         services.attachments.start()
+        services.backups.start()
     return app
