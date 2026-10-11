@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 
 from .. import search as search_mod
 from ..fields import schema_payload
+from ..repository import NotFound
 from . import body, error, ids_from_body, svc
 
 bp = Blueprint("items", __name__, url_prefix="/api")
@@ -39,9 +40,20 @@ def sidebar(s) -> dict:
     return {"folders": s.folders.tree(), "tags": s.tags.list(), "smart": s.smart.list()}
 
 
+# The list in the browser needs neither the abstracts nor the empty fields: with ?lean=1 they are
+# left out (the item pane fetches the whole item). In a library with abstracts that is most of it.
+LEAN_DROP = {"abstract"}
+
+
+def lean(p: dict) -> dict:
+    return {k: v for k, v in p.items() if k not in LEAN_DROP and v is not None and v != ""}
+
+
 @bp.get("/items")
 def list_items():
     s = svc()
+    if request.args.get("ids") is not None:
+        return items_by_ids()
     view = request.args.get("view", "library")
     q = request.args.get("q", "").strip()
     mode = request.args.get("mode") or s.settings.get("default_search_mode")
@@ -59,8 +71,24 @@ def list_items():
     if q:
         items, more = search_mod.search(items, q, mode, s.fulltext, ctx, notes=notes)
         hits = {**{k: v for k, v in hits.items() if k in {p["id"] for p in items}}, **more}
+    if request.args.get("lean") in ("1", "true"):
+        items = [lean(p) for p in items]
     return jsonify(items=items, hits=hits, counts=s.papers.counts(library), mode=mode, query=q,
                    sidebar=sidebar(s))
+
+
+def items_by_ids():
+    """Just these items (lean), with counts and sidebar: what the browser needs after changing
+    a few items, instead of the whole list. Unknown ids come back in `missing`."""
+    s = svc()
+    ids = [i for i in request.args.get("ids", "").split(",") if i][:500]
+    items, missing = [], []
+    for i in ids:
+        try:
+            items.append(lean(s.papers.get(i)))
+        except NotFound:
+            missing.append(i)
+    return jsonify(items=items, missing=missing, counts=s.papers.counts(), sidebar=sidebar(s))
 
 
 @bp.get("/search/preview")

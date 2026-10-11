@@ -34,7 +34,9 @@ export const api = {
   schema: () => request('GET', '/api/schema'),
   stats: () => request('GET', '/api/stats'),
 
-  listItems: ({ view, q, mode, tags }) => request('GET', `/api/items?${qs({ view, q, mode, tags: tags && tags.join(',') })}`),
+  // lean: no abstracts or empty fields in the list (the item pane fetches the whole item)
+  listItems: ({ view, q, mode, tags }) => request('GET', `/api/items?${qs({ view, q, mode, tags: tags && tags.join(','), lean: 1 })}`),
+  itemsByIds: (ids) => request('GET', `/api/items?ids=${encodeURIComponent(ids.join(','))}`),   // [] → just counts and sidebar
   getItem: (id) => request('GET', `/api/items/${id}`),
   createItem: (data = {}) => request('POST', '/api/items', data),
   updateItem: (id, data) => request('PATCH', `/api/items/${id}`, data),
