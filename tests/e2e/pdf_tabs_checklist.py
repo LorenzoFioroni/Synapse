@@ -62,7 +62,7 @@ async def settle(ctx, ms=900):
 
 async def main():
     guard(PORT)
-    env = dict(os.environ, ZCLONE_DATA_DIR=DATA)
+    env = dict(os.environ, SYNAPSE_DATA_DIR=DATA)
     srv = subprocess.Popen([sys.executable, "server.py", "--port", str(PORT), "--no-browser"], cwd=APP, env=env,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.5)

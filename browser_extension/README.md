@@ -1,6 +1,6 @@
 # Save to Library — Chrome extension
 
-A toolbar button that saves the page you are reading to your local Zotero Clone
+A toolbar button that saves the page you are reading to your local Synapse
 library: journal article pages, arXiv, bioRxiv, publisher landing pages, PDFs
 opened in the browser, or any web page.
 

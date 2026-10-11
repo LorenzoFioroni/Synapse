@@ -18,7 +18,7 @@ from .pdftext import extract_text
 log = logging.getLogger(__name__)
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
-FALLBACK_EMAIL = "zotero-clone@example.com"
+FALLBACK_EMAIL = "synapse@example.com"
 
 
 def clean_doi(doi: str | None) -> str:

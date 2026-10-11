@@ -1,4 +1,4 @@
-# Zotero Clone
+# Synapse
 
 A local, web-based reference manager: a Flask backend with SQLite storage and a
 dependency-free JavaScript frontend. Everything runs on your machine.
@@ -17,7 +17,7 @@ The server only answers to `127.0.0.1` / `localhost`, and only the app's own pag
 browser button can change the library: other websites open in your browser cannot. To use it
 from another device on your network, start it with `--host 0.0.0.0 --allow-host <your LAN IP>`.
 
-Your library lives in `data/` (or `--data-dir` / `ZCLONE_DATA_DIR`):
+Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
 
 | File | What |
 | --- | --- |
