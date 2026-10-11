@@ -109,6 +109,7 @@ export function initNotes() {
   window.zcNotes = { text: () => session?.text ?? null, path: () => session?.path ?? null };   // read-only, for tests
   listenForQuotes();
   root.querySelector('.note-read').addEventListener('click', onReadClick);
+  root.querySelector('.note-read').addEventListener('auxclick', (e) => { if (e.button === 1 && e.target.closest('.cite')) onReadClick(e); });
   attachCiteCards(root, { itemInfo, openNote: (p) => openNote(p), refreshLibrary: async () => { await loadLibrary(); await refreshTree(); }, targetOf: citeTargetOf });
   let libTimer = null;
   on('items', () => { if (notesOpen()) { clearTimeout(libTimer); libTimer = setTimeout(loadLibrary, 500); } });
@@ -241,7 +242,7 @@ async function ensureEditor() {
     resolveNote,
     citeInfo,
     openNote: (target, heading) => followLink(target, heading),
-    openCite: (key, page, target) => { if (!openCitation(key, page, target)) toast(`@${key} is not in your library.`); },
+    openCite: (key, page, target, opts) => { if (!openCitation(key, page, target, opts)) toast(`@${key} is not in your library.`); },
     mermaid: renderMermaid,
   }, mode === 'read' ? editMode : mode, {
     items: () => library.list,
@@ -369,7 +370,9 @@ function onReadClick(e) {
   const cite = e.target.closest('.cite');
   if (cite) {
     e.preventDefault();
-    if (!openCitation(cite.dataset.key, cite.dataset.page ? Number(cite.dataset.page) : null, citeTargetInDom(cite))) showCard(cite);
+    // the PDF's tab is reused; Cmd/Ctrl+click (or a middle click) opens a new one
+    const newTab = e.metaKey || e.ctrlKey || e.button === 1;
+    if (!openCitation(cite.dataset.key, cite.dataset.page ? Number(cite.dataset.page) : null, citeTargetInDom(cite), { newTab })) showCard(cite);
     return;
   }
   const box = e.target.closest('.task-box[data-task-line]');

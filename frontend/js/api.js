@@ -135,6 +135,51 @@ export function viewerUrl(item, att, page, at = {}) {
   return `/viewer.html?${p}`;
 }
 
-export function openAttachment(item, att, page, at = {}) {
-  window.open(viewerUrl(item, att, page, at), '_blank');
+/* One viewer tab per PDF: opening a PDF that already has a tab (opened from this app tab) scrolls
+ * that tab to the new spot and brings it forward instead of opening another one. `newTab` (Cmd/
+ * Ctrl+click on a citation) always opens a fresh tab, which then becomes the one reused. */
+const pdfTabs = new Map();   // fileUrl → window
+
+const tabName = (att) => `zc-pdf:${fileUrl(att)}`;
+
+/** The live viewer tab already showing this PDF, if any. */
+function viewerTab(att) {
+  const w = pdfTabs.get(fileUrl(att));
+  try {
+    if (w && !w.closed && typeof w.zcViewerGoto === 'function'
+        && new URLSearchParams(w.location.search).get('file') === fileUrl(att)) return w;
+  } catch { /* navigated elsewhere */ }
+  pdfTabs.delete(fileUrl(att));
+  return null;
+}
+
+/** Point an existing viewer tab at a spot and show it. */
+function reuseTab(w, page, at) {
+  w.zcViewerGoto({ page, q: at.q, rect: at.rect });
+  w.focus();
+}
+
+/**
+ * A tab for this PDF, taken synchronously inside the click (popup blockers want that) for callers
+ * that only know where to go after an await; finish with `pointPdfTab`.
+ */
+export function pdfTabFor(att, { newTab = false } = {}) {
+  const w = !newTab && viewerTab(att);
+  if (w) return { win: w, reuse: true };
+  return { win: window.open('about:blank', newTab ? '_blank' : tabName(att)), reuse: false };
+}
+
+export function pointPdfTab(tab, item, att, page, at = {}) {
+  if (tab.reuse && viewerTab(att) === tab.win) return reuseTab(tab.win, page, at);
+  const url = viewerUrl(item, att, page, at);
+  if (!tab.win) { window.open(url, '_blank'); return; }
+  tab.win.location.href = url;
+  pdfTabs.set(fileUrl(att), tab.win);
+}
+
+export function openAttachment(item, att, page, at = {}, { newTab = false } = {}) {
+  const w = !newTab && viewerTab(att);
+  if (w) return reuseTab(w, page, at);
+  const win = window.open(viewerUrl(item, att, page, at), newTab ? '_blank' : tabName(att));
+  if (win) pdfTabs.set(fileUrl(att), win);
 }

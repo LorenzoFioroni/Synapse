@@ -316,7 +316,7 @@ export function livePreview(cm, deps) {
         e.preventDefault();
         let target = null;   // the quote or snapshot the citation belongs to (citeTarget.js)
         try { target = citeTargetInText(view.state.doc.toString(), view.posAtDOM(cite)); } catch { /* not in the document */ }
-        deps.openCite?.(keys[0], pages[0] ? Number(pages[0]) : null, target);
+        deps.openCite?.(keys[0], pages[0] ? Number(pages[0]) : null, target, { newTab: e.shiftKey });   // Cmd/Ctrl+Shift: new tab
         return true;
       }
       const link = e.target.closest?.('.cm-lp-link');
