@@ -38,7 +38,7 @@ async function init() {
     chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractCitation }),
     api('/api/connector/ping'),
   ]);
-  if (ping.status !== 'fulfilled' || !ping.value.ok || ping.value.data?.app !== 'zotero-clone') {
+  if (ping.status !== 'fulfilled' || !ping.value.ok || !['synapse', 'zotero-clone'].includes(ping.value.data?.app)) {
     conn.className = 'conn off';
     return showOffline();
   }

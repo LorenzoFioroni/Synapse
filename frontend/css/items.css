@@ -1,4 +1,4 @@
-.items-scroll { flex: 1; overflow: auto; position: relative; outline: none; }
+.items-scroll { flex: 1; overflow: auto; position: relative; outline: none; overflow-anchor: none; }
 .items-table { width: 100%; }
 
 .items-head, .row { display: grid; grid-template-columns: var(--cols); min-width: 100%; }
@@ -26,7 +26,7 @@
   height: var(--row-h); align-items: center; cursor: default; font-size: var(--fs);
   border-bottom: 1px solid transparent; user-select: none;
 }
-.row:nth-of-type(even) { background: var(--bg-stripe); }
+.row.alt { background: var(--bg-stripe); }   /* by item, not DOM position: the list is virtualised */
 .row:hover { background: var(--bg-hover); }
 .row.selected { background: var(--bg-active); }
 .items-scroll:focus .row.selected, .items-scroll:focus-within .row.selected { background: var(--accent); color: var(--accent-text); }
@@ -62,8 +62,8 @@
 
 .list-empty { position: absolute; inset: 30px 0 0 0; }
 
-/* let the browser skip layout/paint of off-screen rows in big libraries */
-.items-body > .row { content-visibility: auto; contain-intrinsic-size: auto var(--row-h); }
+/* only the rows near the viewport are in the DOM; these stand for the others (itemlist.js) */
+.items-body > .vspace { pointer-events: none; }
 
 .row-dots { display: inline-flex; gap: 3px; margin-left: 2px; flex: none; }
 .row-dots .tag-dot { width: 8px; height: 8px; box-shadow: 0 0 0 1.5px var(--bg); }

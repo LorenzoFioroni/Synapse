@@ -6,7 +6,7 @@ not run it by hand. It reads the same ``data/`` folder as the web app (which
 does not need to be running) and only ever writes new notes into ``notes/ai/``.
 
     python mcp_server.py --config     # print the setup for Claude Desktop and Claude Code
-    python mcp_server.py --data DIR   # use another data folder (default: ./data or $ZCLONE_DATA_DIR)
+    python mcp_server.py --data DIR   # use another data folder (default: ./data or $SYNAPSE_DATA_DIR)
 
 See the README section "AI access (MCP)".
 """
@@ -40,7 +40,7 @@ def _config(data_dir: Path, explicit: bool) -> str:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="MCP server for the library (stdio).")
-    ap.add_argument("--data", help="data folder (default: ./data or $ZCLONE_DATA_DIR)")
+    ap.add_argument("--data", help="data folder (default: ./data or $SYNAPSE_DATA_DIR)")
     ap.add_argument("--config", action="store_true", help="print the setup for Claude Desktop / Claude Code and exit")
     ap.add_argument("--verbose", action="store_true", help="log more to stderr")
     a = ap.parse_args(argv)
@@ -49,7 +49,7 @@ def main(argv=None) -> int:
     config = Config.from_env(a.data)
 
     if a.config:
-        print(_config(config.data_dir, bool(a.data or os.environ.get("ZCLONE_DATA_DIR"))))
+        print(_config(config.data_dir, bool(a.data or os.environ.get("SYNAPSE_DATA_DIR") or os.environ.get("ZCLONE_DATA_DIR"))))
         return 0
 
     # stdout carries the protocol: all logging goes to stderr (Claude shows it in its MCP logs).

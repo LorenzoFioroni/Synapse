@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Save to Zotero Clone",
+  "name": "Save to Synapse",
   "short_name": "Save to Library",
   "version": "1.0.0",
-  "description": "Save the paper you're reading (DOI, arXiv, journal pages, PDFs) to your local Zotero Clone library.",
+  "description": "Save the paper you're reading (DOI, arXiv, journal pages, PDFs) to your local Synapse library.",
   "action": {
     "default_title": "Save to Library",
     "default_popup": "popup.html",
