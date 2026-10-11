@@ -24,6 +24,8 @@ class Services:
         self.db.migrate()
         self.settings = SettingsStore(config.settings_path)
         self.papers = PaperRepository(self.db, self.settings, config.pdf_dir)
+        from .annotations import AnnotationStore
+        self.annotations = AnnotationStore(self.db)
         self.folders = FolderRepository(self.db)
         self.tags = TagRepository(self.db)
         self.smart = SmartFolderRepository(self.db)

@@ -173,7 +173,7 @@ async def main():
             await shot(vq, "s1-quote-flash")
             await vq.wait_for_timeout(3300)
             check("the flash goes away by itself", await vq.locator('.zc-flash').count() == 0)
-            check("nothing is saved as an annotation", requests.get(f"{BASE}/api/annotations?paper_id={item['id']}").json()["annotations"] in ({}, None, []))
+            check("nothing is saved as an annotation", requests.get(f"{BASE}/api/items/{item['id']}/annotations").json()["annotations"] == [])
             await vq.close()
 
             # ---- read mode: the snapshot's citation

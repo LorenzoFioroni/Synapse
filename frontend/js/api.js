@@ -134,6 +134,7 @@ export function fileUrl(att) {
  *  find on the page) or {rect: "x,y,w,h"} (a region, as fractions of the page) — see citeTarget.js. */
 export function viewerUrl(item, att, page, at = {}) {
   const p = new URLSearchParams({ file: fileUrl(att), paper_id: item.id, title: item.title || 'PDF' });
+  if (att.id) p.set('att', att.id);   // annotations belong to this attachment
   if (page) p.set('page', page);
   if (at.q) p.set('q', at.q);
   if (at.rect) p.set('rect', at.rect);

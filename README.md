@@ -126,7 +126,9 @@ never mix.
 - Sortable, resizable, re-orderable columns; light/dark theme; compact density;
   keyboard navigation (see Settings → Library & Shortcuts).
 - Built-in PDF viewer with highlights, underlines, text boxes and drawings
-  (pdf.js is bundled, so it works offline). Links in the PDF work: citations, figure and section
+  (pdf.js is bundled, so it works offline). Each annotation is saved on its own, for the PDF it was
+  made on (an item's second PDF keeps its own), with the highlighted words; two tabs on one PDF never
+  overwrite each other. Undo/redo with Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z. Links in the PDF work: citations, figure and section
   references jump inside the document, web links open in a new tab, and hovering a link shows a
   preview of where it goes, centred on the target's column. Links to figures and tables show the whole
   figure or table with its caption, scaled to fit — the caption is recognised in the page text and
