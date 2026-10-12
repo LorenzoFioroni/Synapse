@@ -19,6 +19,9 @@ class Config:
     # Extra host names (besides 127.0.0.1 / localhost) the server answers to, e.g. a LAN address
     # when it is started with --host 0.0.0.0. See backend/guard.py.
     allowed_hosts: set[str] = field(default_factory=set)
+    # True when the server listens on the network (``--lan`` or ``--host 0.0.0.0``): other devices can
+    # pair (Settings → Devices) and requests naming this computer by a LAN address are accepted.
+    lan: bool = False
 
     @classmethod
     def from_env(cls, data_dir: str | os.PathLike | None = None) -> "Config":
@@ -58,6 +61,11 @@ class Config:
     @property
     def backups_dir(self) -> Path:
         return self.data_dir / "backups"
+
+    @property
+    def auth_db_path(self) -> Path:
+        # Paired devices (hashed tokens). Not part of backups.
+        return self.data_dir / "auth.db"
 
     @property
     def settings_path(self) -> Path:

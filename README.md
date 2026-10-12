@@ -14,8 +14,25 @@ python server.py --data-dir ~/MyLibrary
 ```
 
 The server only answers to `127.0.0.1` / `localhost`, and only the app's own pages and the
-browser button can change the library: other websites open in your browser cannot. To use it
-from another device on your network, start it with `--host 0.0.0.0 --allow-host <your LAN IP>`.
+browser button can change the library: other websites open in your browser cannot.
+
+### From an iPad or phone
+
+```bash
+python server.py --lan            # also reachable on your network (paired devices only)
+```
+
+1. On the computer, open **Settings → Devices → Add a Device**. It shows a QR code.
+2. Scan it with the iPad's camera (or open the link it shows) and tap **Pair This Device**.
+
+The iPad stays paired until you remove it in Settings → Devices. Without pairing, another
+device sees only a "pair this device" page — the library, PDFs and notes stay closed. The
+computer running Synapse never needs pairing. Both devices must be on the same network, and the
+computer must be awake (System Settings → Energy, or `caffeinate -s python server.py --lan`).
+If the `.local` address in the QR code doesn't open, pick the IP address instead.
+
+The connection is plain HTTP, so use it on a network you trust (your home Wi-Fi). Paired
+devices are kept in `data/auth.db` (hashed), which backups leave out on purpose.
 
 Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
 
@@ -29,6 +46,7 @@ Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
 | `citations.db` | reference lists fetched online (the citation graph); if deleted they can be fetched again |
 | `backups/` | automatic backups of the library, settings and notes (`library-*.tar.gz`, see below), and note backups taken before a citation-key rename (`notes-*.tar.gz`) |
 | `settings.json` | preferences from the Settings page |
+| `auth.db` | devices paired with `--lan` (Settings → Devices); not in backups |
 
 Back up the `data/` folder to keep everything. It is git-ignored: code and data
 never mix.

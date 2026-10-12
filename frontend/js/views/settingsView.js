@@ -3,7 +3,7 @@ import * as A from '../actions.js';
 import { api } from '../api.js';
 import { icon } from '../icons.js';
 import { emit, state } from '../store.js';
-import { confirmDialog } from '../ui/dialog.js';
+import { confirmDialog, promptDialog } from '../ui/dialog.js';
 import { toast, toastError } from '../ui/toast.js';
 import { debounce, escapeHtml, formatBytes, formatDate, modLabel, plural, store } from '../util.js';
 
@@ -15,12 +15,13 @@ const SECTIONS = [
   ['io', 'Import & Export', 'export'],
   ['online', 'Online Services', 'globe'],
   ['backups', 'Backups', 'restore'],
+  ['devices', 'Devices', 'tablet'],
   ['library', 'Library & Shortcuts', 'database'],
 ];
 
 const TOKENS = ['{auth}', '{Auth}', '{AUTH}', '{authEtAl}', '{AuthEtAl}', '{authors2}', '{year}', '{yy}', '{title}', '{Title}', '{shorttitle}', '{ShortTitle}', '{journal}', '{doi}'];
 
-let view, statsTimer;
+let view, statsTimer, pairing = null;   // pairing: { links, expires, timer, known }
 
 export function applyAppearance(s = state.settings) {
   const root = document.documentElement;
@@ -165,6 +166,16 @@ export function openSettings(sectionId = null) {
             <div class="backup-list" data-backup-list></div></div>
         </div></section>
 
+      <section class="settings-section" id="set-devices"><h2>Devices</h2>
+        <p class="lead">Use the library from an iPad or a phone on the same network. Each device is paired once and stays paired until you remove it here.
+          This computer never needs pairing.</p>
+        <div class="card">
+          <div class="setting stack" data-device-add><div class="s-desc">Loading…</div></div>
+          <div class="setting stack"><div class="s-text"><div class="s-title">Paired devices</div>
+            <div class="s-desc" data-devices-desc></div></div>
+            <div class="backup-list" data-device-list></div></div>
+        </div></section>
+
       <section class="settings-section" id="set-library"><h2>Library &amp; Shortcuts</h2><p class="lead" data-data-dir></p>
         <div class="card"><div class="stat-grid" data-stats></div></div>
         <h2 style="margin-top:22px;font-size:15px">Browser button</h2>
@@ -208,6 +219,7 @@ export function openSettings(sectionId = null) {
   refreshPreview(s.citekey_pattern);
   refreshStats();
   refreshBackups();
+  refreshDevices();
   statsTimer = setInterval(refreshStats, 2000);
   const sel = view.querySelector('[data-key="_preset"]');
   sel.value = presetMatch ? presetMatch.pattern : 'custom';
@@ -217,6 +229,7 @@ export function openSettings(sectionId = null) {
 export function closeSettings() {
   if (!view) return;
   clearInterval(statsTimer);
+  stopPairing();
   view.remove();
   view = null;
   emit('focus-list');
@@ -254,6 +267,104 @@ async function refreshBackups() {
         <button class="btn btn-sm" data-restore ${b.damaged ? 'disabled' : ''}>${icon('restore')} Restore…</button></div>`).join('')
       : '';
   } catch (e) { desc.textContent = e.message; }
+}
+
+// -- Devices (issue #34) -------------------------------------------------------------------------
+function stopPairing() {
+  if (pairing) clearInterval(pairing.timer);
+  pairing = null;
+}
+
+function relTime(iso) {
+  if (!iso) return 'never';
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (s < 90) return 'just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return formatDate(iso, true);
+}
+
+function renderPairing(box) {
+  const now = Date.now() / 1000;
+  const left = Math.max(0, Math.round(pairing.expires - now));
+  if (left <= 0) {
+    stopPairing();
+    box.innerHTML = `<div class="s-desc">The pairing code expired.</div>
+      <div><button class="btn" data-pair-new>${icon('plus')} Add a Device</button></div>`;
+    return;
+  }
+  const link = pairing.links[pairing.index] || pairing.links[0];
+  const timeLeft = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  const choices = pairing.links.length > 1 ? `<div class="pair-addrs">Address: ${pairing.links.map((l, i) =>
+    `<button class="token${i === pairing.index ? ' active' : ''}" data-pair-addr="${i}">${escapeHtml(l.label)}</button>`).join(' ')}</div>` : '';
+  box.innerHTML = `<div class="pair-box">
+      <div class="pair-qr">${link.qr || ''}</div>
+      <div class="pair-text">
+        <div class="s-title">Scan with the other device's camera</div>
+        <div class="s-desc">Or open this link on it: <span class="mono pair-url">${escapeHtml(link.url.split('#')[0])}…</span>
+          <button class="btn btn-sm" data-pair-copy>${icon('copy')} Copy Link</button></div>
+        ${choices}
+        <div class="s-desc">If the other device can't open the page, try another address. Both devices must be on the same network.</div>
+        <div class="s-desc">The code works once and expires in <b data-pair-left>${timeLeft}</b>.</div>
+        <div><button class="btn btn-sm" data-pair-cancel>Cancel</button></div>
+      </div></div>`;
+}
+
+async function refreshDevices() {
+  if (!view) return;
+  const add = view.querySelector('[data-device-add]');
+  const list = view.querySelector('[data-device-list]');
+  const desc = view.querySelector('[data-devices-desc]');
+  let st;
+  try { st = await api.devices(); } catch (e) { desc.textContent = e.message; return; }
+  if (!view) return;
+  if (pairing) {
+    const fresh = st.devices.filter((d) => !pairing.known.has(d.id));
+    if (fresh.length) {
+      stopPairing();
+      toast(`${fresh.map((d) => d.name).join(', ')} paired`, { type: 'success' });
+    }
+  }
+  if (!pairing) {
+    if (!st.lan) {
+      add.innerHTML = `<div class="s-title">Not reachable from other devices</div>
+        <div class="s-desc">Synapse only answers this computer. To use it from an iPad or a phone, stop it and start it again with
+          <span class="mono">python server.py --lan</span>, then come back here.</div>`;
+    } else if (!st.this_computer) {
+      add.innerHTML = `<div class="s-desc">New devices are added on the computer running Synapse (Settings → Devices → Add a Device).</div>`;
+    } else {
+      const where = st.addresses.length ? ` Other devices reach it at <span class="mono">${escapeHtml(st.addresses[0].url)}</span>.` : '';
+      add.innerHTML = `<div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Add a device</div>
+          <div class="s-desc">Shows a QR code to scan with the iPad or phone.${where}</div></div>
+          <div class="s-control"><button class="btn" data-pair-new>${icon('plus')} Add a Device</button></div></div>`;
+    }
+  }
+  desc.textContent = st.devices.length ? '' : 'No devices yet.';
+  list.innerHTML = st.devices.map((d) => `<div class="backup-row" data-device="${escapeHtml(d.id)}">
+      <div class="b-main"><div class="b-when">${escapeHtml(d.name)}${d.id === st.current ? ' <span class="device-this">This device</span>' : ''}</div>
+        <div class="b-what">Paired ${escapeHtml(formatDate(d.created, true))} · last used ${escapeHtml(relTime(d.last_seen))}${d.last_addr ? ` from ${escapeHtml(d.last_addr)}` : ''}</div></div>
+      <button class="btn btn-sm" data-device-rename>${icon('edit')} Rename…</button>
+      <button class="btn btn-sm" data-device-remove>${d.id === st.current ? 'Sign Out' : 'Remove…'}</button></div>`).join('');
+  view.__devices = st;
+}
+
+async function startPairing() {
+  const box = view.querySelector('[data-device-add]');
+  try {
+    const res = await api.newPairing();
+    const known = new Set((view.__devices?.devices || []).map((d) => d.id));
+    stopPairing();
+    pairing = { links: res.links, expires: res.expires, index: 0, known, tick: 0 };
+    renderPairing(box);
+    pairing.timer = setInterval(() => {
+      if (!view || !pairing) return;
+      const left = Math.max(0, Math.round(pairing.expires - Date.now() / 1000));
+      const el = box.querySelector('[data-pair-left]');
+      if (left <= 0 || !el) { renderPairing(box); return; }
+      el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+      if (++pairing.tick % 3 === 0) refreshDevices();   // notice when the device has paired
+    }, 1000);
+  } catch (e) { toastError(e); }
 }
 
 async function refreshStats() {
@@ -352,6 +463,42 @@ function bind() {
   const email = view.querySelector('[data-email]');
   email.addEventListener('change', () => save({ contact_email: email.value.trim() }, email));
   view.querySelectorAll('[data-apikey]').forEach((inp) => inp.addEventListener('change', () => save({ [inp.dataset.apikey]: inp.value.trim() }, inp)));
+
+  const devAdd = view.querySelector('[data-device-add]');
+  devAdd.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-pair-new]')) startPairing();
+    else if (e.target.closest('[data-pair-cancel]')) { stopPairing(); refreshDevices(); }
+    else if (e.target.closest('[data-pair-addr]') && pairing) {
+      pairing.index = Number(e.target.closest('[data-pair-addr]').dataset.pairAddr);
+      renderPairing(devAdd);
+    } else if (e.target.closest('[data-pair-copy]') && pairing) {
+      const link = pairing.links[pairing.index] || pairing.links[0];
+      try { await navigator.clipboard.writeText(link.url); toast('Link copied — it works once', { type: 'success' }); } catch (err) { toastError(err); }
+    }
+  });
+  view.querySelector('[data-device-list]').addEventListener('click', async (e) => {
+    const row = e.target.closest('[data-device]');
+    if (!row) return;
+    const id = row.dataset.device;
+    const dev = (view.__devices?.devices || []).find((d) => d.id === id);
+    if (!dev) return;
+    const self = id === view.__devices.current;
+    if (e.target.closest('[data-device-rename]')) {
+      const name = await promptDialog('Name', { title: 'Rename device', value: dev.name, confirm: 'Rename' });
+      if (!name || !name.trim()) return;
+      try { await api.renameDevice(id, name.trim()); } catch (err) { toastError(err); }
+      refreshDevices();
+    } else if (e.target.closest('[data-device-remove]')) {
+      const ok = await confirmDialog(self ? 'Sign out this device?' : `Remove ${dev.name}?`, {
+        title: self ? 'Sign out' : 'Remove device', confirm: self ? 'Sign Out' : 'Remove', danger: true,
+        detail: self ? 'To use the library here again, pair this device again from the computer running Synapse.'
+          : 'It can no longer open the library until it is paired again.' });
+      if (!ok) return;
+      try { await api.removeDevice(id); } catch (err) { toastError(err); return; }
+      if (self) { location.reload(); return; }
+      refreshDevices();
+    }
+  });
 
   const bdir = view.querySelector('[data-backup-dir]');
   bdir.addEventListener('change', async () => {

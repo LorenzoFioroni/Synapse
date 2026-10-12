@@ -1,0 +1,240 @@
+"""Other devices on the network must be paired (issue #34). See backend/devices.py and backend/guard.py."""
+import sqlite3
+import tarfile
+
+import pytest
+
+from backend import create_app, devices as devmod
+from backend.config import Config
+
+IPAD = "192.0.2.10"          # TEST-NET: never one of this computer's own addresses
+LAN_HOST = "192.168.1.5:8000"
+REMOTE = {"REMOTE_ADDR": IPAD}
+APP = {"Host": LAN_HOST, "Origin": f"http://{LAN_HOST}"}
+
+
+@pytest.fixture
+def lan_app(tmp_path):
+    cfg = Config.from_env(tmp_path / "data")
+    cfg.lan = True
+    app = create_app(cfg, start_indexer=False)
+    app.config["TESTING"] = True
+    return app
+
+
+@pytest.fixture
+def mac(lan_app):
+    """The computer running Synapse (loopback)."""
+    return lan_app.test_client()
+
+
+@pytest.fixture
+def ipad(lan_app):
+    return lan_app.test_client()
+
+
+def remote(c, method, path, **kw):
+    headers = {**APP, **kw.pop("headers", {})}
+    return c.open(path, method=method, headers=headers, environ_base=REMOTE, **kw)
+
+
+def pair(mac, ipad, name="iPad"):
+    res = mac.post("/api/devices/pairing")
+    assert res.status_code == 201, res.get_json()
+    url = res.get_json()["links"][0]["url"]
+    code = url.split("#code=", 1)[1]
+    r = remote(ipad, "POST", "/api/devices/pair", json={"code": code, "name": name})
+    assert r.status_code == 201, r.get_json()
+    return code, r
+
+
+def test_unpaired_device_gets_nothing(ipad):
+    for path in ("/api/items", "/api/settings", "/api/notes/overview", "/api/devices", "/viewer.html",
+                 "/js/main.js", "/api/attachments/x/file"):
+        r = remote(ipad, "GET", path)
+        assert r.status_code == 401, path
+    r = remote(ipad, "GET", "/")
+    assert r.status_code == 401 and b"isn't paired" in r.data
+    assert remote(ipad, "GET", "/api/items").get_json()["paired"] is False
+    r = remote(ipad, "POST", "/api/items", json={"title": "Injected"})
+    assert r.status_code == 401
+
+
+def test_pairing_page_and_icon_are_open(ipad):
+    assert remote(ipad, "GET", "/pair").status_code == 200
+    assert remote(ipad, "GET", "/assets/favicon.svg").status_code == 200
+
+
+def test_this_computer_needs_no_pairing(mac):
+    assert mac.get("/api/items").status_code == 200
+    assert mac.post("/api/items", json={"title": "From the Mac"}).status_code in (200, 201)
+    # also through IPv4-mapped loopback
+    assert mac.get("/api/items", environ_base={"REMOTE_ADDR": "::ffff:127.0.0.1"}).status_code == 200
+
+
+def test_own_lan_address_counts_as_this_computer(mac, monkeypatch):
+    from backend import lan
+    monkeypatch.setattr(lan, "own_addresses", lambda: ["192.168.1.5"])
+    r = mac.get("/api/items", headers={"Host": LAN_HOST}, environ_base={"REMOTE_ADDR": "192.168.1.5"})
+    assert r.status_code == 200
+
+
+def test_pair_then_use(mac, ipad):
+    _, r = pair(mac, ipad)
+    cookie = r.headers.get("Set-Cookie")
+    assert devmod.COOKIE in cookie and "HttpOnly" in cookie and "SameSite=Lax" in cookie
+    assert remote(ipad, "GET", "/api/items").status_code == 200
+    assert remote(ipad, "GET", "/").status_code == 200
+    r = remote(ipad, "POST", "/api/items", json={"title": "From the iPad"})
+    assert r.status_code in (200, 201), r.get_json()
+    st = remote(ipad, "GET", "/api/devices").get_json()
+    assert st["current"] == st["devices"][0]["id"] and st["devices"][0]["name"] == "iPad"
+    assert st["this_computer"] is False
+    assert mac.get("/api/devices").get_json()["this_computer"] is True
+
+
+def test_code_is_single_use_and_expires(lan_app, mac, ipad):
+    code, _ = pair(mac, ipad)
+    other = lan_app.test_client()
+    r = remote(other, "POST", "/api/devices/pair", json={"code": code})
+    assert r.status_code == 401
+    # expiry
+    store = lan_app.extensions["zclone"].devices
+    t = [1000.0]
+    store.clock = lambda: t[0]
+    code2, _ = store.new_pairing_code()
+    t[0] += devmod.PAIRING_TTL + 1
+    assert remote(other, "POST", "/api/devices/pair", json={"code": code2}).status_code == 401
+    assert remote(other, "POST", "/api/devices/pair", json={"code": "guess"}).status_code == 401
+
+
+def test_failed_attempts_are_limited(lan_app, mac, ipad):
+    for _ in range(devmod.FAILED_LIMIT):
+        assert remote(ipad, "POST", "/api/devices/pair", json={"code": "wrong"}).status_code == 401
+    code = mac.post("/api/devices/pairing").get_json()["links"][0]["url"].split("#code=")[1]
+    r = remote(ipad, "POST", "/api/devices/pair", json={"code": code})
+    assert r.status_code == 429
+
+
+def test_only_this_computer_makes_pairing_codes(mac, ipad):
+    pair(mac, ipad)
+    assert remote(ipad, "POST", "/api/devices/pairing").status_code == 403
+
+
+def test_pairing_needs_lan_mode(client):
+    r = client.post("/api/devices/pairing")
+    assert r.status_code == 409 and "--lan" in r.get_json()["error"]
+    assert client.get("/api/devices").get_json()["lan"] is False
+
+
+def test_pairing_links_carry_code_in_fragment_and_qr(mac):
+    links = mac.post("/api/devices/pairing", headers={"Host": "127.0.0.1:8000"}).get_json()["links"]
+    for link in links:
+        assert "/pair#code=" in link["url"] and ":8000/" in link["url"]
+        assert link["qr"].startswith("<svg")
+
+
+def test_revoked_device_is_locked_out(mac, ipad):
+    pair(mac, ipad)
+    dev = mac.get("/api/devices").get_json()["devices"][0]
+    assert mac.delete(f"/api/devices/{dev['id']}").status_code == 200
+    assert remote(ipad, "GET", "/api/items").status_code == 401
+
+
+def test_sign_out_this_device(mac, ipad):
+    pair(mac, ipad)
+    dev = remote(ipad, "GET", "/api/devices").get_json()["current"]
+    r = remote(ipad, "DELETE", f"/api/devices/{dev}")
+    assert r.status_code == 200 and f"{devmod.COOKIE}=;" in r.headers.get("Set-Cookie")
+    assert remote(ipad, "GET", "/api/items").status_code == 401
+
+
+def test_rename(mac, ipad):
+    pair(mac, ipad, name="")
+    dev = mac.get("/api/devices").get_json()["devices"][0]
+    assert dev["name"] == "Device"   # the test client sends no user agent
+    r = mac.patch(f"/api/devices/{dev['id']}", json={"name": "Reading iPad"})
+    assert r.get_json()["device"]["name"] == "Reading iPad"
+    assert mac.patch(f"/api/devices/{dev['id']}", json={"name": "  "}).status_code == 400
+
+
+def test_paired_device_still_needs_the_apps_origin(mac, ipad):
+    pair(mac, ipad)
+    evil = {"Origin": "https://evil.example"}
+    assert remote(ipad, "POST", "/api/items", json={"title": "x"}, headers=evil).status_code == 403
+    # an extension on the iPad is not this computer's "Save to library" button
+    ext = {"Origin": "chrome-extension://abc"}
+    assert remote(ipad, "POST", "/api/connector/save", json={"title": "x"}, headers=ext).status_code == 403
+    # no Origin at all from another device: only a same-origin fetch
+    bare = ipad.open("/api/items", method="POST", json={"title": "x"}, headers={"Host": LAN_HOST}, environ_base=REMOTE)
+    assert bare.status_code == 403
+    same = ipad.open("/api/items", method="POST", json={"title": "x"}, environ_base=REMOTE,
+                     headers={"Host": LAN_HOST, "Sec-Fetch-Site": "same-origin"})
+    assert same.status_code in (200, 201)
+
+
+def test_lan_mode_hosts(mac, ipad, monkeypatch):
+    from backend import lan
+    monkeypatch.setattr(lan, "local_hostname", lambda: "lorenzos-mac.local")
+    for host in ("10.0.0.7:8000", "lorenzos-mac.local:8000", "[fe80::1]:8000"):
+        r = ipad.get("/api/settings", headers={"Host": host}, environ_base=REMOTE)
+        assert r.status_code == 401, host   # past the Host check; only the pairing is missing
+        assert mac.get("/api/settings", headers={"Host": host}).status_code == 200, host
+    # a DNS name that isn't this computer's is still refused (rebinding)
+    assert ipad.get("/api/settings", headers={"Host": "evil.example:8000"}, environ_base=REMOTE).status_code == 403
+    assert mac.get("/api/settings", headers={"Host": "evil.example:8000"}).status_code == 403
+
+
+def test_without_lan_mode_remote_needs_pairing_too(tmp_path):
+    """--host 0.0.0.0 --allow-host x used to let anyone on the network in; now pairing is required."""
+    cfg = Config.from_env(tmp_path / "d")
+    cfg.allowed_hosts = {"192.168.1.20"}
+    c = create_app(cfg, start_indexer=False).test_client()
+    r = c.get("/api/settings", headers={"Host": "192.168.1.20:8000"}, environ_base=REMOTE)
+    assert r.status_code == 401
+
+
+def test_tokens_are_stored_hashed(lan_app, mac, ipad):
+    _, r = pair(mac, ipad)
+    token = r.headers.get("Set-Cookie").split(";")[0].split("=", 1)[1]
+    store = lan_app.extensions["zclone"].devices
+    raw = store.path.read_bytes()
+    assert token.encode() not in raw
+    rows = sqlite3.connect(store.path).execute("SELECT token_hash FROM devices").fetchall()
+    assert rows and rows[0][0] != token
+
+
+def test_api_never_shows_token_hashes(mac, ipad):
+    pair(mac, ipad)
+    for dev in mac.get("/api/devices").get_json()["devices"]:
+        assert "token_hash" not in dev
+
+
+def test_backups_leave_devices_out(lan_app, mac, ipad):
+    pair(mac, ipad)
+    svc = lan_app.extensions["zclone"]
+    entry = svc.backups.create("manual")
+    path = svc.backups.dir / entry["name"]
+    with tarfile.open(path) as tar:
+        assert not any("auth" in n for n in tar.getnames())
+
+
+def test_cookie_refreshed_while_in_use(lan_app, mac, ipad):
+    pair(mac, ipad)
+    store = lan_app.extensions["zclone"].devices
+    t = [store.clock() + devmod.TOUCH_EVERY + 5]
+    store.clock = lambda: t[0]
+    r = remote(ipad, "GET", "/api/items")
+    assert r.status_code == 200 and devmod.COOKIE in (r.headers.get("Set-Cookie") or "")
+    r = remote(ipad, "GET", "/api/items")   # within a minute: no new cookie
+    assert devmod.COOKIE not in (r.headers.get("Set-Cookie") or "")
+
+
+@pytest.mark.parametrize("ua,name", [
+    ("Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)", "iPad"),
+    ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", "iPhone"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "Mac"),
+    ("", "Device"),
+])
+def test_guess_name(ua, name):
+    assert devmod.guess_name(ua) == name

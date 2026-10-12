@@ -2,6 +2,8 @@ flask>=3.0
 requests>=2.31
 pypdf>=4.0
 pypdfium2>=4.30   # renders PDF pages for the AI tools (view_page, snapshot)
+waitress>=3.0     # the server for --lan (other devices)
+segno>=1.6        # QR codes for pairing devices (Settings → Devices)
 # optional, recommended:
 rapidfuzz>=3.0      # better fuzzy title check when verifying downloaded PDFs
 # pymupdf>=1.24     # faster, more accurate PDF text extraction for the full-text index
