@@ -171,7 +171,7 @@ async def main():
             hl_box = await page.locator(f'[data-id="{hl["id"]}"]').bounding_box()
             await page.reload()
             await open_viewer(page, page.url)
-            n = await page.evaluate("document.querySelectorAll('.anno-layer g.anno').length")
+            n = await page.evaluate("document.querySelectorAll('.anno-layer .anno').length")
             check("after a reload all five are drawn again", n == 5, str(n))
             hl_box2 = await page.locator(f'[data-id="{hl["id"]}"]').bounding_box()
             check("in the same place", abs(hl_box["x"] - hl_box2["x"]) < 1.5 and abs(hl_box["width"] - hl_box2["width"]) < 1.5,
@@ -217,7 +217,7 @@ async def main():
             # ---- the other PDF of the same item
             p2 = await ctx.new_page()
             await open_viewer(p2, viewer(item, att2))
-            n2 = await p2.evaluate("document.querySelectorAll('.anno-layer g.anno').length")
+            n2 = await p2.evaluate("document.querySelectorAll('.anno-layer .anno').length")
             check("the item's second PDF shows none of them", n2 == 0, str(n2))
             w2 = await p2.locator('.page-wrapper[data-page-number="1"]').bounding_box()
             await tool(p2, "box")
@@ -241,7 +241,7 @@ async def main():
             ok = await until_count(att["id"], 7)
             check("two tabs on one PDF both keep their work", ok, str(len(anns(att["id"]))))
             await page.evaluate("window.zcAnnotations.refresh()")
-            n = await page.evaluate("document.querySelectorAll('.anno-layer g.anno').length")
+            n = await page.evaluate("document.querySelectorAll('.anno-layer .anno').length")
             check("coming back to a tab shows what the other tab added", n == 7, str(n))
             await tab_b.close()
 
@@ -249,14 +249,14 @@ async def main():
             await open_viewer(page, viewer(item, att, with_att=False))
             check("a link without the attachment id still finds it",
                   await page.evaluate("window.zcAnnotations.attachment()") == att["id"]
-                  and await page.evaluate("document.querySelectorAll('.anno-layer g.anno').length") == 7)
+                  and await page.evaluate("document.querySelectorAll('.anno-layer .anno').length") == 7)
 
             # ---- annotations saved by the old viewer
             legacy, (latt,) = made["Legacy paper"]
             await open_viewer(page, viewer(legacy, latt))
             kinds = sorted(a["type"] for a in await page.evaluate("window.zcAnnotations.list()"))
             check("old annotations were converted", kinds == ["box", "box", "highlight", "ink", "text", "underline"], str(kinds))
-            drawn = await page.evaluate("document.querySelectorAll('.anno-layer g.anno').length")
+            drawn = await page.evaluate("document.querySelectorAll('.anno-layer .anno').length")
             check("and are drawn", drawn == 6, str(drawn))
             text = await page.evaluate("document.querySelector('.anno-text-input')?.innerText")
             check("the old text box keeps both lines", text and "Check this" in text and "second line" in text, repr(text))

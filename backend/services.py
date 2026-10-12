@@ -40,6 +40,8 @@ class Services:
         self.attachments = Attachments(self.vault, self.notes, self.settings)
         self.note_service.on_change = self.attachments.poke
         # Backups of library.db, settings and notes; the scheduler is started by create_app only.
+        from .devices import Devices
+        self.devices = Devices(config.auth_db_path)   # paired iPads/phones (#34)
         from .backup import Backups
         self.backups = Backups(self)
         # A changed citation key is rewritten in every note (with a backup first).
