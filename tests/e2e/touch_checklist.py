@@ -174,10 +174,19 @@ async def main():
             inp = Input(await ctx0.new_cdp_session(page))
             meta = await page.evaluate("document.querySelector('meta[name=viewport]')?.content || ''")
             check("the viewer has a viewport meta tag", "width=device-width" in meta, meta)
+            check("… which keeps Safari from zooming the page when a field gets focus", "maximum-scale=1" in meta, meta)
             sizes = await page.eval_on_selector_all(".tool-btn, #anno-undo, #anno-redo", "bs => bs.map(b => b.getBoundingClientRect().height)")
             check("toolbar buttons are finger-sized (≥ 40 px)", sizes and min(sizes) >= 40, f"{min(sizes) if sizes else None}px")
             check("Undo and Redo buttons are in the toolbar", await page.locator("#anno-undo").count() == 1 and await page.locator("#anno-redo").count() == 1)
             await shot(page, "01-toolbar")
+            layout = []
+            for name in ("select", "highlight", "text", "eraser"):
+                await tool(page, name)
+                layout.append(await page.evaluate("""(() => { const r = s => document.querySelector(s).getBoundingClientRect();
+                    return [Math.round(r('#toolbar').height), Math.round(r('#page-num-text').left), Math.round(r('.tool-btn[data-tool="draw"]').left)]; })()"""))
+            check("choosing a tool does not move the toolbar around", all(x == layout[0] for x in layout), str(layout))
+            check("… which stays one row in portrait", layout[0][0] < 60, f"{layout[0][0]}px")
+            await tool(page, "select")
             box = await page_box(page)
             await tool(page, "draw")
             await inp.finger(line((box["x"] + 100, box["y"] + 120), (box["x"] + 300, box["y"] + 180)))
@@ -233,6 +242,22 @@ async def main():
             await page.evaluate("document.activeElement.blur()")
             ok = await wait_for(lambda: asyncio.to_thread(lambda: any(a["type"] == "text" and a.get("text") == "Written on the iPad" for a in anns(att["id"]))))
             check("… and its text is saved", ok)
+            txt = next(a for a in anns(att["id"]) if a["type"] == "text")
+            check("text boxes are plain HTML over the page (Safari misplaces HTML inside SVG)",
+                  await page.evaluate(f"!!document.querySelector('.anno-text-layer [data-id=\"{txt['id']}\"]') && !document.querySelector('foreignObject')"))
+            where = lambda: page.evaluate(f"""(() => {{ const t = document.querySelector('[data-id="{txt['id']}"] .anno-text-input').getBoundingClientRect();
+                const w = document.querySelector('.page-wrapper[data-page-number="1"]').getBoundingClientRect();
+                return [(t.left - w.left) / w.width, (t.top - w.top) / w.height, t.height / w.height]; }})()""")
+            w0 = await where()
+            await page.tap("#zoom-in")
+            await page.tap("#zoom-in")
+            await page.wait_for_timeout(500)
+            w1 = await where()
+            check("… and stay on their spot of the page, at the same size, when zooming",
+                  all(abs(a - b) < 0.004 for a, b in zip(w0, w1)), f"{w0} → {w1}")
+            await page.tap("#zoom-out")
+            await page.tap("#zoom-out")
+            await page.wait_for_timeout(500)
 
             # highlight: drag the pen along a line of text
             spans = await page.evaluate("""(() => [...document.querySelectorAll('.page-wrapper[data-page-number="1"] .textLayer span')]
@@ -259,6 +284,8 @@ async def main():
             await page.evaluate("""([x, y]) => {           // … and the long press selected this line
                 const s = document.elementFromPoint(x, y); const r = document.createRange();
                 r.selectNodeContents(s); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }""", [l + w / 2, t + h / 2])
+            ok = await wait_for(lambda: page.evaluate("document.querySelectorAll('.zc-sel-preview rect').length > 0"), timeout=0.2)
+            check("a finger selection is shown in the highlight colour at once (before the finger is lifted)", ok)
             ok = await wait_for(lambda: page.evaluate("!!document.querySelector('.zc-mark-pill button')"), timeout=3)
             check("a finger selection offers a Highlight button", ok)
             n_hl = len([a for a in anns(att["id"]) if a["type"] == "highlight"])
@@ -358,11 +385,25 @@ async def main():
                 await page4.evaluate("window.zcViewer.container.scrollTop += 1500")
                 await page4.wait_for_timeout(400)
             await page4.wait_for_timeout(1500)
-            info = await page4.evaluate("""(() => { const cs = [...document.querySelectorAll('.page-wrapper canvas')];
+            info = await page4.evaluate("""(() => { const cs = [...document.querySelectorAll('.page-wrapper canvas:not(.zc-detail)')];
                 return [cs.length, Math.max(...cs.map(c => c.width * c.height))]; })()""")
             check("a tablet keeps at most 8 pages drawn", info[0] <= 8, f"{info[0]} canvases")
             check("… each at most 8 million pixels (Safari's limit is 16.7)", info[1] <= 8e6 + 1, f"{info[1] / 1e6:.1f} Mpx")
             await shot(page4, "04-zoomed")
+            for _ in range(30):
+                await page4.tap("#zoom-in")
+            await page4.wait_for_timeout(3000)
+            deep = await page4.evaluate("""(() => { const d = [...document.querySelectorAll('.page-wrapper canvas.zc-detail')];
+                const view = window.zcViewer.container.getBoundingClientRect();
+                return [window.zcViewer.scale, d.length, Math.max(0, ...d.map(c => c.width * c.height)),
+                        Math.max(0, ...d.map(c => c.width / c.getBoundingClientRect().width)),
+                        d.some(c => { const r = c.getBoundingClientRect(); return r.left <= view.left + 1 && r.right >= view.right - 1
+                                                                            && r.top <= view.top + 1 && r.bottom >= view.bottom - 1; })]; })()""")
+            check("zoom goes up to 10×", deep[0] >= 9.99, str(deep[0]))
+            check("… and the visible part of the page is drawn sharp (a canvas at the screen's resolution)",
+                  deep[1] >= 1 and deep[3] >= 1.99 and deep[4], str(deep))
+            check("… within the canvas limit", deep[2] <= 8e6 + 1, f"{deep[2] / 1e6:.1f} Mpx")
+            await shot(page4, "05-deep-zoom")
             await ctx4.close()
 
             check("no JavaScript errors", not errors, errors[:3])

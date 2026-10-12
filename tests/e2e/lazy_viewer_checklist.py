@@ -106,7 +106,7 @@ async def main():
             check("jumping to page 250 draws it quickly", jump < 2, f"{jump:.2f} s")
             await page.wait_for_timeout(600)
             check("page 1 has given its canvas back", 1 not in await page.evaluate("window.zcViewer.renderedPages()"))
-            boxes = await page.evaluate("document.querySelectorAll('.page-wrapper[data-page-number=\"250\"] .anno-layer g.anno').length")
+            boxes = await page.evaluate("document.querySelectorAll('.page-wrapper[data-page-number=\"250\"] .anno-layer .anno').length")
             check("the annotation on page 250 is there", boxes == 1, str(boxes))
             has_text = await page.evaluate("document.querySelectorAll('.page-wrapper[data-page-number=\"250\"] .textLayer span').length")
             check("page 250 has its text layer (selection, highlights, quotes)", has_text > 20, str(has_text))

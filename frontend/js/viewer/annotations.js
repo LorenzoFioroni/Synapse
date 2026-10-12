@@ -4,7 +4,8 @@
 //
 // Positions are fractions of the page as displayed (0–1, origin top left), sizes are PDF points at
 // 100 % zoom; see backend/annotations.py. Each page gets an SVG layer whose viewBox is the page in
-// points, so drawings scale with the zoom by themselves.
+// points, so drawings scale with the zoom by themselves. Text boxes are HTML in a layer of their own
+// above it (Safari misplaces HTML inside an SVG foreignObject), sized through --zc-scale.
 //
 // The viewer (viewer.html) owns the toolbar: the current tool is document.body.dataset.zcTool,
 // the colour #tool-color and the size #tool-size. It fires 'zc:pagecreated' for each page.
@@ -16,6 +17,7 @@ const file = params.get('file');
 
 const byId = new Map();          // id → record
 const layers = new Map();        // page number → svg layer
+const textLayers = new Map();    // page number → HTML layer of the text boxes
 let attId = params.get('att') ? Number(params.get('att')) : null;
 let undoStack = [];
 let redoStack = [];
@@ -68,11 +70,22 @@ function modeClass(t = tool()) {
   return 'mode-select';
 }
 
+/** What shows an annotation (an SVG group, or a text box's element). */
+const nodeOf = (id) => document.querySelector(`.anno-layer [data-id="${id}"]`);
+
 function draw(rec) {
   const svg = layers.get(rec.page);
-  svg?.querySelector(`[data-id="${rec.id}"]`)?.remove();
+  nodeOf(rec.id)?.remove();
   if (!svg) return;
   const [W, H] = pageSize(svg.parentElement);
+  if (rec.type === 'text') {
+    const [x, y] = rec.rects[0];
+    const node = textBox(rec, x * W, y * H, W, H);
+    node.dataset.id = rec.id;
+    textLayers.get(rec.page).appendChild(node);
+    if (selectedId === rec.id) showSelection(node);
+    return;
+  }
   const g = el('g', { class: `anno anno-${rec.type}`, 'data-id': rec.id });
   const box = ([x, y, w, h]) => ({ x: x * W, y: y * H, w: w * W, h: h * H });
   if (rec.type === 'highlight') {
@@ -89,36 +102,35 @@ function draw(rec) {
   } else if (rec.type === 'ink') {
     const d = rec.path.map(([x, y], i) => `${i ? 'L' : 'M'} ${x * W} ${y * H}`).join(' ');
     g.appendChild(el('path', { d, stroke: rec.color || '#000000', 'stroke-width': rec.size || 2, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
-  } else if (rec.type === 'text') {
-    const b = box(rec.rects[0]);
-    g.appendChild(textBox(rec, b.x, b.y));
   }
   svg.appendChild(g);
   if (selectedId === rec.id) showSelection(g);
 }
 
-/** A text box: a contenteditable div in a foreignObject, with a handle to change the font size. */
-function textBox(rec, x, y) {
-  const fo = el('foreignObject', { x, y, width: 1000, height: 1000 });
-  fo.style.pointerEvents = 'none';
+/** A text box: a contenteditable div with a handle to change the font size, placed at (x, y) points. */
+function textBox(rec, x, y, W, H) {
+  const node = document.createElement('div');
+  node.className = 'anno anno-text';
+  placeText(node, x, y, W, H);
   const frame = document.createElement('div');
   frame.className = 'anno-text-frame';
-  Object.assign(frame.style, { display: 'inline-block', position: 'relative', pointerEvents: 'auto', padding: '4px', cursor: 'move' });
+  Object.assign(frame.style, { display: 'inline-block', position: 'relative', pointerEvents: 'auto', padding: 'calc(var(--zc-scale, 1.5) * 4px)', cursor: 'move' });
   const input = document.createElement('div');
   input.className = 'anno-text-input';
   input.contentEditable = 'true';
-  Object.assign(input.style, { cursor: 'text', color: rec.color || '#000000', fontSize: `${rec.size || 16}px`, fontFamily: 'sans-serif', outline: 'none',
+  Object.assign(input.style, { cursor: 'text', color: rec.color || '#000000', fontFamily: 'sans-serif', outline: 'none',
     minWidth: '1ch', minHeight: '1em', lineHeight: '1.2', whiteSpace: 'pre' });
+  setFontSize(input, rec.size || 16);
   input.textContent = rec.text || '';
   const handle = document.createElement('div');
   handle.className = 'anno-text-handle';
   // looks: .anno-text-frame / .anno-text-handle in viewer.html (bigger on touch screens)
   frame.append(input, handle);
-  fo.appendChild(frame);
+  node.appendChild(frame);
   frame.addEventListener('mouseenter', () => frame.classList.add('hover'));
   frame.addEventListener('mouseleave', () => frame.classList.remove('hover'));
 
-  input.addEventListener('blur', () => finishText(rec.id, fo, input));
+  input.addEventListener('blur', () => finishText(rec.id, node, input));
   // The size handle: dragged with a mouse, the Pencil or a finger (shown while the box is being edited
   // on touch screens, which have no hover).
   handle.addEventListener('pointerdown', (ev) => {
@@ -126,52 +138,69 @@ function textBox(rec, x, y) {
     ev.preventDefault();
     handle.setPointerCapture?.(ev.pointerId);
     const startY = ev.clientY;
-    const start = parseFloat(input.style.fontSize);
-    const move = (m) => { input.style.fontSize = `${Math.max(6, start + (m.clientY - startY) / scale())}px`; };
+    const start = Number(input.dataset.size);
+    const move = (m) => setFontSize(input, Math.max(6, start + (m.clientY - startY) / scale()));
     const up = () => {
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', up);
       handle.removeEventListener('pointercancel', up);
       const rec2 = byId.get(rec.id);
-      if (rec2) change(rec2, { size: Math.round(parseFloat(input.style.fontSize) * 10) / 10, rects: [measure(fo, rec2)] });
+      if (rec2) change(rec2, { size: Math.round(Number(input.dataset.size) * 10) / 10, rects: [measure(node)] });
     };
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', up);
     handle.addEventListener('pointercancel', up);
   });
-  return fo;
+  return node;
+}
+
+/** The font size in points at 100 % zoom; drawn at the current zoom. */
+function setFontSize(input, pt) {
+  input.dataset.size = pt;
+  input.style.fontSize = `calc(var(--zc-scale, 1.5) * ${pt}px)`;
+}
+
+/** Puts a text box at (x, y) points of a page W × H points (as percentages, so it follows the zoom). */
+function placeText(node, x, y, W, H) {
+  node.zcX = x;
+  node.zcY = y;
+  node.style.left = `${(x / W) * 100}%`;
+  node.style.top = `${(y / H) * 100}%`;
 }
 
 /** [x, y, w, h] of a text box as drawn, as page fractions. */
-function measure(fo, rec) {
-  const svg = fo.ownerSVGElement;
-  const [W, H] = pageSize(svg.parentElement);
-  const r = fo.firstElementChild.getBoundingClientRect();
-  return [parseFloat(fo.getAttribute('x')) / W, parseFloat(fo.getAttribute('y')) / H, r.width / scale() / W, r.height / scale() / H]
+function measure(node) {
+  const [W, H] = pageSize(node.closest('.page-wrapper'));
+  const r = node.firstElementChild.getBoundingClientRect();
+  return [node.zcX / W, node.zcY / H, r.width / scale() / W, r.height / scale() / H]
     .map((v) => Math.round(v * 1e6) / 1e6);
 }
 
-function finishText(id, fo, input) {
+function finishText(id, node, input) {
   const text = input.innerText.replace(/\n$/, '');
   const rec = byId.get(id);
   if (!rec) {                                   // a new box: saved once it has text
-    if (!text.trim()) { fo.closest('g')?.remove(); return; }
-    const draft = fo.closest('g')?.zcDraft;
-    if (!draft) return;
-    const rects = [measure(fo, draft)];   // while it is still on the page
-    fo.closest('g').remove();
+    const draft = node.zcDraft;
+    if (!text.trim() || !draft) { node.remove(); return; }
+    const rects = [measure(node)];   // while it is still on the page
+    node.remove();
     create({ ...draft, text, rects });
     return;
   }
   if (!text.trim()) { remove(rec); return; }
-  if (text !== rec.text) change(rec, { text, rects: [measure(fo, rec)] });
+  if (text !== rec.text) change(rec, { text, rects: [measure(node)] });
 }
 
-function showSelection(g) {
+function showSelection(node) {
   document.querySelectorAll('.anno-selection').forEach((n) => n.remove());
-  const svg = g.ownerSVGElement;
+  const svg = layers.get(Number(node.closest('.page-wrapper')?.dataset.pageNumber));
   if (!svg) return;
-  const b = g.getBBox();
+  let b;
+  if (node.getBBox) b = node.getBBox();
+  else {   // a text box: its place on the page, in points
+    const r = node.getBoundingClientRect(), sr = svg.getBoundingClientRect(), s = scale();
+    b = { x: (r.left - sr.left) / s, y: (r.top - sr.top) / s, width: r.width / s, height: r.height / s };
+  }
   const pad = 3;
   svg.appendChild(el('rect', { class: 'anno-selection', x: b.x - pad, y: b.y - pad, width: b.width + 2 * pad, height: b.height + 2 * pad,
     fill: 'none', stroke: '#0066cc', 'stroke-width': 1.5, 'stroke-dasharray': '4 2', 'pointer-events': 'none' }));
@@ -181,8 +210,8 @@ function select(id) {
   selectedId = id;
   document.querySelectorAll('.anno-selection').forEach((n) => n.remove());
   if (!id) { showSelPill(); return; }
-  const g = document.querySelector(`.anno-layer [data-id="${id}"]`);
-  if (g) showSelection(g);
+  const node = nodeOf(id);
+  if (node) showSelection(node);
   showSelPill();
 }
 
@@ -197,7 +226,7 @@ async function create(rec, { record = true } = {}) {
     byId.set(rec.id, res.annotation);
   } catch (e) {
     byId.delete(rec.id);
-    document.querySelector(`.anno-layer [data-id="${rec.id}"]`)?.remove();
+    nodeOf(rec.id)?.remove();
     notify(`The annotation was not saved: ${e.message}`);
   }
   return rec;
@@ -205,7 +234,7 @@ async function create(rec, { record = true } = {}) {
 
 async function remove(rec, { record = true } = {}) {
   byId.delete(rec.id);
-  document.querySelector(`.anno-layer [data-id="${rec.id}"]`)?.remove();
+  nodeOf(rec.id)?.remove();
   if (selectedId === rec.id) select(null);
   if (record) { undoStack.push({ op: 'delete', rec: clone(rec) }); redoStack = []; }
   try { await api('DELETE', `/api/annotations/${rec.id}`); } catch (e) { if (e.status !== 404) notify(`Not deleted: ${e.message}`); }
@@ -277,25 +306,26 @@ function pointIn(svg, e) {
   return { x: (e.clientX - r.left) / scale(), y: (e.clientY - r.top) / scale(), W, H };
 }
 
-function newTextBox(svg, page, p) {
+function newTextBox(html, page, p) {
   const draft = { type: 'text', page, rects: [[p.x / p.W, p.y / p.H, 0, 0]], text: '', color: color(), size: size() };
-  const g2 = el('g', { class: 'anno anno-text anno-draft' });
-  g2.zcDraft = draft;
-  const box = textBox({ ...draft, id: `draft-${uid()}` }, p.x, p.y);
-  g2.appendChild(box);
-  svg.appendChild(g2);
+  const box = textBox({ ...draft, id: `draft-${uid()}` }, p.x, p.y, p.W, p.H);
+  box.classList.add('anno-draft');
+  box.zcDraft = draft;
+  html.appendChild(box);
   // focus right away, inside the tap: iPadOS only opens the keyboard (or Scribble) for a focus
   // that happens during the user's gesture
   box.querySelector('.anno-text-input').focus();
 }
 
-function setupLayer(svg, page) {
+/** Pointer input on a page: the SVG layer and the text boxes' layer above it share these handlers
+    (positions are always taken from the SVG layer, which covers the page as the other one does). */
+function setupLayer(svg, html, page) {
   let shape = null;      // box or ink being drawn: {rec, start, points}
   let drag = null;       // text box being moved
   let tap = null;        // text tool: where the pointer went down (a box is made when it comes up)
 
-  svg.addEventListener('pointerdown', (e) => {
-    const g = e.target.closest?.('g.anno');
+  const down = (e) => {
+    const g = e.target.closest?.('.anno');
     const rec = g && byId.get(g.dataset.id);
     const t = tool();
     if (t === 'eraser') {
@@ -304,14 +334,14 @@ function setupLayer(svg, page) {
     }
     if (t === 'select') select(rec ? rec.id : null);
     // a text box: move it by its frame (typing goes to the text itself)
-    const fo = e.target.closest?.('foreignObject');
-    if (fo) {
+    const textNode = e.target.closest?.('.anno-text');
+    if (textNode) {
       e.stopPropagation();
       if (!e.target.isContentEditable && rec && draws(e)) {
         e.preventDefault();
-        svg.setPointerCapture?.(e.pointerId);
+        e.currentTarget.setPointerCapture?.(e.pointerId);
         const p = pointIn(svg, e);
-        drag = { rec, fo, dx: p.x - parseFloat(fo.getAttribute('x')), dy: p.y - parseFloat(fo.getAttribute('y')), moved: false, id: e.pointerId };
+        drag = { rec, node: textNode, dx: p.x - textNode.zcX, dy: p.y - textNode.zcY, moved: false, id: e.pointerId };
       }
       return;
     }
@@ -325,7 +355,7 @@ function setupLayer(svg, page) {
     }
     if (!draws(e)) return;          // a finger while the Pencil draws: it scrolls
     e.preventDefault();
-    svg.setPointerCapture?.(e.pointerId);
+    e.currentTarget.setPointerCapture?.(e.pointerId);
     const g2 = el('g', { class: 'anno anno-draft' });
     const node = t === 'draw'
       ? el('path', { d: `M ${p.x} ${p.y}`, stroke: color(), 'stroke-width': size(), fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
@@ -333,13 +363,12 @@ function setupLayer(svg, page) {
     g2.appendChild(node);
     svg.appendChild(g2);
     shape = { kind: t, g: g2, node, start: p, points: [[p.x / p.W, p.y / p.H]], W: p.W, H: p.H, id: e.pointerId };
-  });
+  };
 
-  svg.addEventListener('pointermove', (e) => {
+  const move = (e) => {
     if (drag && e.pointerId === drag.id) {
       const p = pointIn(svg, e);
-      drag.fo.setAttribute('x', p.x - drag.dx);
-      drag.fo.setAttribute('y', p.y - drag.dy);
+      placeText(drag.node, p.x - drag.dx, p.y - drag.dy, p.W, p.H);
       drag.moved = true;
       return;
     }
@@ -359,18 +388,18 @@ function setupLayer(svg, page) {
         shape.node.setAttribute('height', Math.abs(p.y - s.y));
       }
     }
-  });
+  };
 
   const finish = (e) => {
     if (tap && e.pointerId === tap.id) {
       const t0 = tap;
       tap = null;
-      if (e.type === 'pointerup' && Math.hypot(e.clientX - t0.x, e.clientY - t0.y) < 10 && tool() === 'text') newTextBox(svg, page, t0.p);
+      if (e.type === 'pointerup' && Math.hypot(e.clientX - t0.x, e.clientY - t0.y) < 10 && tool() === 'text') newTextBox(html, page, t0.p);
     }
     if (drag && e.pointerId === drag.id) {
-      const { rec, fo, moved } = drag;
+      const { rec, node, moved } = drag;
       drag = null;
-      if (moved) change(rec, { rects: [measure(fo, rec)] });
+      if (moved) change(rec, { rects: [measure(node)] });
     }
     if (!shape || e.pointerId !== shape.id) return;
     const s = shape;
@@ -387,8 +416,12 @@ function setupLayer(svg, page) {
       create({ type: 'box', page, rects: [[r6(x / s.W), r6(y / s.H), r6(w / s.W), r6(h / s.H)]], color: s.node.getAttribute('stroke'), size: Number(s.node.getAttribute('stroke-width')) });
     }
   };
-  svg.addEventListener('pointerup', finish);
-  svg.addEventListener('pointercancel', finish);
+  for (const layer of [svg, html]) {
+    layer.addEventListener('pointerdown', down);
+    layer.addEventListener('pointermove', move);
+    layer.addEventListener('pointerup', finish);
+    layer.addEventListener('pointercancel', finish);
+  }
 }
 
 /* -------- eraser: drag over annotations to remove them (mouse, Pencil; a finger taps) */
@@ -403,20 +436,19 @@ document.addEventListener('pointerup', (e) => { if (erasing === e.pointerId) era
 document.addEventListener('pointercancel', (e) => { if (erasing === e.pointerId) erasing = null; });
 function eraseAt(e) {
   for (const n of document.elementsFromPoint(e.clientX, e.clientY)) {
-    const g = n.closest?.('.anno-layer g.anno:not(.anno-draft)');
+    const g = n.closest?.('.anno-layer .anno:not(.anno-draft)');
     const rec = g && byId.get(g.dataset.id);
     if (rec) { remove(rec); return; }
   }
 }
 
 /* -------- highlight / underline */
-/** The selected text becomes one annotation of type t, one rect per line. Returns true when made. */
-function highlightSelection(t) {
-  const sel = window.getSelection();
-  if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
+/** The page of the selected text and its lines, as [x, y, w, h] page fractions; or null. */
+function selectionRects(sel) {
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
   const anchor = sel.anchorNode?.nodeType === 1 ? sel.anchorNode : sel.anchorNode?.parentElement;
   const wrapper = anchor?.closest('.page-wrapper');
-  if (!wrapper || !attId) return false;
+  if (!wrapper) return null;
   const raw = [...sel.getRangeAt(0).getClientRects()];
   // keep the innermost text boxes (drop paragraph-sized wrappers and duplicates)
   const rects = raw.filter((a, i) => a.width >= 1 && a.height >= 1 && !raw.some((b, j) => {
@@ -425,17 +457,26 @@ function highlightSelection(t) {
     if (same) return i > j;
     return a.left <= b.left + 1 && a.right >= b.right - 1 && a.top <= b.top + 1 && a.bottom >= b.bottom - 1;
   }));
-  if (!rects.length) return false;
+  if (!rects.length) return null;
   const wr = wrapper.getBoundingClientRect();
   const [W, H] = pageSize(wrapper);
   const s = scale();
   const r6 = (v) => Math.round(v * 1e6) / 1e6;
-  const fr = rects.map((r) => [r6((r.left - wr.left) / s / W), r6((r.top - wr.top) / s / H), r6(r.width / s / W), r6(r.height / s / H)]);
+  return { wrapper, rects: rects.map((r) => [r6((r.left - wr.left) / s / W), r6((r.top - wr.top) / s / H), r6(r.width / s / W), r6(r.height / s / H)]) };
+}
+
+/** The selected text becomes one annotation of type t, one rect per line. Returns true when made. */
+function highlightSelection(t) {
+  const sel = window.getSelection();
+  const got = attId && selectionRects(sel);
+  if (!got) return false;
+  const { wrapper, rects: fr } = got;
   const text = sel.toString().replace(/-\n(?=\w)/g, '').replace(/\s+/g, ' ').trim();
   const rec = { type: t, page: Number(wrapper.dataset.pageNumber), rects: fr, text, color: color() };
   if (t === 'underline') rec.size = size();
   sel.removeAllRanges();
   hideMarkPill();
+  hidePreview();
   create(rec);
   return true;
 }
@@ -487,6 +528,26 @@ const endPenSel = (e) => {
 };
 document.addEventListener('pointerup', endPenSel);
 document.addEventListener('pointercancel', endPenSel);
+
+/* While a finger (or the Pencil) is still selecting, the would-be highlight is drawn in the tool's
+   colour: iPadOS may not show the selection itself until the finger is lifted (issue #36). */
+function hidePreview() { document.querySelectorAll('.zc-sel-preview').forEach((n) => n.remove()); }
+document.addEventListener('selectionchange', () => {
+  hidePreview();
+  const t = tool();
+  if ((t !== 'highlight' && t !== 'underline') || lastPointer === 'mouse') return;
+  const got = selectionRects(window.getSelection());
+  const svg = got && layers.get(Number(got.wrapper.dataset.pageNumber));
+  if (!svg) return;
+  const [W, H] = pageSize(got.wrapper);
+  const g = el('g', { class: 'zc-sel-preview', 'pointer-events': 'none' });
+  for (const [x, y, w, h] of got.rects) {
+    g.appendChild(t === 'highlight'
+      ? el('rect', { x: x * W, y: y * H, width: w * W, height: h * H, fill: color(), 'fill-opacity': 0.5 })
+      : el('line', { x1: x * W, y1: (y + h) * H, x2: (x + w) * W, y2: (y + h) * H, stroke: color(), 'stroke-width': size(), 'stroke-opacity': 0.7 }));
+  }
+  svg.appendChild(g);
+});
 
 // A finger selects with a long press (and the handles); a button then makes the highlight.
 let markPill = null;
@@ -568,9 +629,12 @@ function addLayer(wrapper) {
   const svg = el('svg', { class: `anno-layer ${modeClass()}`, viewBox: `0 0 ${W} ${H}` });
   svg.style.width = '100%';
   svg.style.height = '100%';
-  wrapper.appendChild(svg);
+  const html = document.createElement('div');
+  html.className = `anno-layer anno-text-layer ${modeClass()}`;
+  wrapper.append(svg, html);
   layers.set(page, svg);
-  setupLayer(svg, page);
+  textLayers.set(page, html);
+  setupLayer(svg, html, page);
   for (const rec of byId.values()) if (rec.page === page) draw(rec);
 }
 
@@ -582,8 +646,12 @@ async function load() {
     for (const a of res.annotations) byId.set(a.id, a);
   } catch (e) { notify(`Annotations could not be loaded: ${e.message}`); }
   loaded = true;
-  for (const svg of layers.values()) svg.querySelectorAll('g.anno:not(.anno-draft)').forEach((g) => g.remove());
+  clearDrawn();
   for (const rec of byId.values()) draw(rec);
+}
+
+function clearDrawn() {
+  document.querySelectorAll('.anno-layer .anno:not(.anno-draft)').forEach((n) => n.remove());
 }
 
 /** Back in this tab: pick up what another tab changed on the same PDF. */
@@ -595,7 +663,7 @@ async function refresh() {
     if (sig(res.annotations) === sig([...byId.values()])) return;
     byId.clear();
     for (const a of res.annotations) byId.set(a.id, a);
-    for (const svg of layers.values()) svg.querySelectorAll('g.anno:not(.anno-draft)').forEach((g) => g.remove());
+    clearDrawn();
     for (const rec of byId.values()) draw(rec);
   } catch { /* offline: keep what is shown */ }
 }
