@@ -48,6 +48,9 @@ DEFAULTS: dict = {
     "notes_autosave_ms": 1500,         # save after this long without typing (also on blur)
     # Deleted notes and attachments no note uses any more are deleted for good after this long
     "notes_trash_retention": "1m",     # never | 1d | 1w | 2w | 1m | 6m
+    "notes_width": "readable",         # readable (a column of ~760 px) | full (the whole pane)
+    # Display equations: "latex" numbers equation/align… environments (and \tag); "all" numbers every one
+    "notes_equation_numbers": "latex",
     # Backups of library.db, settings and notes (not the PDFs): see backend/backup.py
     "backup_interval": "daily",        # off | daily | weekly
     "backup_keep": 14,                 # newest archives kept
@@ -66,6 +69,8 @@ CHOICES = {
     "add_find_pdf": set(ASK_CHOICES),
     "add_fetch_references": set(ASK_CHOICES),
     "notes_trash_retention": {"never", "1d", "1w", "2w", "1m", "6m"},
+    "notes_width": {"readable", "full"},
+    "notes_equation_numbers": {"latex", "all"},
     "backup_interval": {"off", "daily", "weekly"},
 }
 

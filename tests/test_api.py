@@ -26,6 +26,13 @@ def test_create_edit_trash_restore(client):
 def test_settings_validation_and_citekey_style(client):
     assert client.put("/api/settings", json={"theme": "neon"}).status_code == 400
     assert client.put("/api/settings", json={"nope": 1}).status_code == 400
+    # notes: text width and equation numbering (issue #43)
+    s = client.get("/api/settings").get_json()["settings"]
+    assert s["notes_width"] == "readable" and s["notes_equation_numbers"] == "latex"
+    assert client.put("/api/settings", json={"notes_width": "huge"}).status_code == 400
+    assert client.put("/api/settings", json={"notes_equation_numbers": "some"}).status_code == 400
+    r = client.put("/api/settings", json={"notes_width": "full", "notes_equation_numbers": "all"}).get_json()["settings"]
+    assert r["notes_width"] == "full" and r["notes_equation_numbers"] == "all"
     r = client.put("/api/settings", json={"citekey_pattern": "{Auth}{year}", "default_search_mode": "all"})
     assert r.status_code == 200
     item = client.post("/api/items", json={"title": "T", "authors": "Doe, J", "year": 2020}).get_json()

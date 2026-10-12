@@ -6,7 +6,10 @@
 //    app must never run a script that came from a note;
 //  * indented code blocks are off; fenced code only;
 //  * $…$ closes on the same line (Pandoc rules), $$…$$ inline or as a block;
-//  * [[Note|alias]], ![[Note]], [@key, p. 4], [see @a; @b], > [!note] callouts, - [ ] tasks.
+//  * [[Note|alias]], ![[Note]], [@key, p. 4], [see @a; @b], > [!note] callouts, - [ ] tasks;
+//  * display equations are numbered through the note and \eqref{label} resolved (equations.js).
+
+import { labelId, layoutTag, numberEquations, refText, resolveRefs } from './equations.js';
 
 const CALLOUTS = {
   note: 'Note', tip: 'Tip', warning: 'Warning', question: 'Question', quote: 'Quote',
@@ -223,12 +226,42 @@ function lineAttrs(state) {
   }
 }
 
+/** \eqref{label} / \ref{label} written in the text (outside math): numbered in the core rule below. */
+function eqRefRule(state, silent) {
+  const src = state.src, pos = state.pos;
+  if (src.charCodeAt(pos) !== 0x5C /* \ */) return false;
+  const m = /^\\(eqref|ref)\{([^{}\n]*)\}/.exec(src.slice(pos, pos + 200));
+  if (!m) return false;
+  if (!silent) { const t = state.push('eq_ref', '', 0); t.meta = { kind: m[1], name: m[2].trim() }; }
+  state.pos = pos + m[0].length;
+  return true;
+}
+
+/** Number the note's display equations and resolve \eqref / \ref (equations.js), in document order. */
+function equationsRule(mode) {
+  return (state) => {
+    const display = [], all = [];
+    for (const t of state.tokens) {
+      if (t.type === 'math_block') { display.push(t); all.push(t); }
+      for (const c of t.children || []) {
+        if (c.type === 'math_inline') { all.push(c); if (c.meta?.display) display.push(c); }
+      }
+    }
+    const m = typeof mode === 'function' ? mode() : mode;
+    const res = numberEquations(display.map((t) => t.content), { mode: m || 'latex' });
+    display.forEach((t, i) => { t.content = res.formulas[i]; t.meta = { ...(t.meta || {}), labels: res.names[i] }; });
+    for (const t of all) t.content = resolveRefs(t.content, res.labels);
+    state.env.eqLabels = res.labels;
+  };
+}
+
 /**
  * @param {{MarkdownIt, footnote, katex}} lib       from vendor/md/md.js
  * @param {object} [o]
  * @param {(key) => object|null} [o.citeInfo]        library info for a key (or null if unknown)
  * @param {(target) => string|null} [o.resolveNote]  path a [[target]] resolves to, or null
  * @param {number} [o.lineOffset=0]                  added to data-line (front-matter lines)
+ * @param {string|(() => string)} [o.equations]      equation numbering: 'latex' (default) or 'all'
  */
 export function createRenderer(lib, o = {}) {
   const md = new lib.MarkdownIt({ html: false, linkify: true, typographer: false });
@@ -240,20 +273,30 @@ export function createRenderer(lib, o = {}) {
   md.inline.ruler.before('image', 'wiki_embed', wikiRule);
   md.inline.ruler.before('link', 'cite', citeRule);
   md.inline.ruler.push('tag', tagRule);
+  md.inline.ruler.before('escape', 'eq_ref', eqRefRule);
+  md.core.ruler.after('inline', 'equations', equationsRule(o.equations));
   md.core.ruler.after('block', 'callout', calloutRule);
   md.core.ruler.after('inline', 'task', taskRule);
   md.core.ruler.push('line_attrs', lineAttrs);
 
   const katex = (tex, display) => {
     try {
-      return lib.katex.renderToString(tex, { displayMode: display, throwOnError: false, strict: 'ignore', trust: false, output: 'htmlAndMathml' });
+      const html = lib.katex.renderToString(tex, { displayMode: display, throwOnError: false, strict: 'ignore', trust: false, output: 'htmlAndMathml' });
+      return display ? layoutTag(html) : html;
     } catch (e) {
       return `<span class="math-error" title="${esc(e.message)}">${esc(tex)}</span>`;
     }
   };
   const R = md.renderer.rules;
-  R.math_inline = (t, i) => (t[i].meta.display ? `<span class="math display">${katex(t[i].content, true)}</span>` : `<span class="math">${katex(t[i].content, false)}</span>`);
-  R.math_block = (t, i) => `<div class="math-block" data-line="${(t[i].map?.[0] ?? 0) + (o.lineOffset || 0)}">${katex(t[i].content, true)}</div>\n`;
+  const anchors = (names) => (names || []).map((n) => `<span class="eq-anchor" id="${esc(labelId(n))}"></span>`).join('');
+  R.math_inline = (t, i) => (t[i].meta.display ? `<span class="math display">${anchors(t[i].meta.labels)}${katex(t[i].content, true)}</span>` : `<span class="math">${katex(t[i].content, false)}</span>`);
+  R.math_block = (t, i) => `<div class="math-block" data-line="${(t[i].map?.[0] ?? 0) + (o.lineOffset || 0)}">${anchors(t[i].meta?.labels)}${katex(t[i].content, true)}</div>\n`;
+  R.eq_ref = (t, i, opts, env) => {
+    const { kind, name } = t[i].meta;
+    const text = refText(kind, name, env.eqLabels || new Map());
+    return text == null ? `<span class="eqref missing" title="${esc(`No numbered equation has \\label{${name}}`)}">(??)</span>`
+      : `<a class="eqref" href="#${esc(labelId(name))}" data-label="${esc(name)}">${esc(text)}</a>`;
+  };
   R.note_link = (t, i) => {
     const w = t[i].meta;
     const path = o.resolveNote ? o.resolveNote(w.target) : undefined;   // undefined = unknown, null = does not exist

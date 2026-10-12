@@ -3,7 +3,14 @@ body[data-workspace="notes"] #items-pane,
 body[data-workspace="notes"] #resizer-right,
 body[data-workspace="notes"] #item-pane { display: none !important; }
 
-#notes-view { flex: 1; min-width: 0; display: flex; background: var(--bg); }
+#notes-view { flex: 1; min-width: 0; display: flex; background: var(--bg); --note-col: 760px; --note-pad: 32px; }
+#notes-view.wide-text { --note-col: 100%; }
+/* focus mode (⌘\): only the note, without the library sidebar, the notes list and the details panel */
+body.notes-focus[data-workspace="notes"] #sidebar,
+body.notes-focus[data-workspace="notes"] .notes-tree-pane,
+body.notes-focus[data-workspace="notes"] .notes-side { display: none !important; }
+.note-head .icon-btn[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+@media (max-width: 900px) { #notes-view { --note-pad: 18px; } }
 #notes-view[hidden] { display: none; }
 
 /* ------------------------------------------------------------- tree pane */
@@ -72,7 +79,8 @@ body[data-workspace="notes"] #item-pane { display: none !important; }
 .note-editor .cm-editor { height: 100%; background: var(--bg); color: var(--text); font-size: calc(var(--fs) + 2px); }
 .note-editor .cm-editor.cm-focused { outline: none; }
 .note-editor .cm-scroller { font-family: var(--font); line-height: 1.65; padding: 28px 0 40vh; }
-.note-editor .cm-content { max-width: 760px; margin: 0 auto; padding: 0 32px; caret-color: var(--accent); }
+.note-editor .cm-scroller { container-type: inline-size; }
+.note-editor .cm-content { max-width: var(--note-col); margin: 0 auto; padding: 0 var(--note-pad); caret-color: var(--accent); }
 .note-editor .cm-line { padding: 0; }
 .note-editor .cm-cursor { border-left-color: var(--accent); border-left-width: 2px; }
 .note-editor .cm-selectionBackground, .note-editor .cm-editor ::selection { background: var(--accent-soft-2) !important; }
@@ -157,7 +165,7 @@ body[data-workspace="notes"] #item-pane { display: none !important; }
 
 /* ===================================================== M4: modes, preview, read view */
 .note-modes button { padding: 3px 10px; font-size: var(--fs-xs); }
-.note-read { position: absolute; inset: 0; overflow: auto; outline: none; background: var(--bg); }
+.note-read { position: absolute; inset: 0; overflow: auto; outline: none; background: var(--bg); container-type: inline-size; }
 .note-read[hidden] { display: none; }
 #notes-view.reading .note-editor { display: none !important; }
 
@@ -189,6 +197,27 @@ body[data-workspace="notes"] #item-pane { display: none !important; }
 .prose .footnotes-sep { margin-top: 2em; }
 .prose .math-block { overflow-x: auto; overflow-y: hidden; text-align: center; }
 .prose .math.display { display: block; text-align: center; overflow-x: auto; }
+.note-read .prose { max-width: var(--note-col); padding-left: var(--note-pad); padding-right: var(--note-pad); }
+
+/* ===================================================== equations (issue #43) */
+/* Display equations may use the whole width of the pane, beyond the text column (centred on it). */
+.note-read .prose > .math-block, .note-read .prose > p > .math.display:only-child, .note-editor .cm-lp-widget.cm-lp-mathblock {
+  --eqw: max(100%, min(100cqw - 2 * var(--note-pad), 1400px));
+  width: var(--eqw); margin-left: calc((100% - var(--eqw)) / 2); box-sizing: border-box;
+}
+/* An equation number sits in its own column: the formula is centred between it and an invisible
+   copy of it, and when the line is full the copy gives way, then the line scrolls (equations.js). */
+.katex-display > .katex > .katex-html.eq-tagged { display: flex; align-items: baseline; }
+.katex-html.eq-tagged > .eq-main { flex: none; margin: 0 auto; }
+.katex-display > .katex > .katex-html.eq-tagged > .katex-tag { position: static; flex: none; padding: 0 2px 0 1.2em; }   /* 2px: KaTeX pulls a multi-row number 2px to the right */
+.katex-display > .katex > .katex-html.eq-tagged > .eq-ghost { visibility: hidden; flex: 0 1000 auto; min-width: 0; overflow: hidden; padding: 0; }
+/* wider than the room: a little smaller first (mathFit.js), then a scroll bar */
+.katex-display > .katex { font-size: calc(1.21em * var(--eq-scale, 1)); }
+.eq-anchor { display: block; height: 0; }
+.prose .eqref, .cm-lp-chip.eqref { color: var(--accent); text-decoration: none; cursor: pointer; }
+.prose .eqref.missing, .cm-lp-chip.eqref.missing { color: var(--danger); cursor: help; }
+.prose .flash { animation: eq-flash 1.2s ease-out; border-radius: 6px; }
+@keyframes eq-flash { from { background: var(--accent-soft-2); } to { background: transparent; } }
 .math-error { color: var(--danger); font-family: var(--font-mono); font-size: .9em; }
 .properties { margin-bottom: 1.4em; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: var(--fs-sm); background: var(--bg-app); }
 .properties summary { cursor: pointer; color: var(--text-3); font-weight: 600; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .05em; }
@@ -249,8 +278,16 @@ body[data-workspace="notes"] #item-pane { display: none !important; }
 .cm-live .cm-lp-linksrc, .cm-live .cm-lp-citesrc { color: var(--accent); }
 .cm-live .cm-lp-citesrc.missing { color: var(--danger); }
 .cm-lp-widget.cm-lp-math .katex { font-size: 1.05em; }
-.cm-lp-widget.cm-lp-math.display { display: inline-block; width: 100%; text-align: center; }
-.cm-lp-widget.cm-lp-mathblock { text-align: center; padding: .4em 0; overflow-x: auto; cursor: text; }
+.cm-lp-widget.cm-lp-math.display .katex-display > .katex { font-size: calc(1.05em * var(--eq-scale, 1)); }
+.cm-lp-widget.cm-lp-math.display { display: inline-block; width: 100%; text-align: center; overflow-x: auto; overflow-y: hidden; vertical-align: top; }
+.cm-lp-widget.cm-lp-mathblock { text-align: center; padding: .4em 0; overflow-x: auto; overflow-y: hidden; cursor: text; }
+.cm-lp-widget.cm-lp-mathblock .katex-display { margin: .3em 0; }
+.cm-lp-widget.cm-lp-math, .cm-lp-widget.cm-lp-mathblock { cursor: text; }
+/* a $$ block being edited: its source in a light frame, the formula right below it */
+.cm-live .cm-line.cm-lp-mathsrc-block { background: var(--bg-app); padding-left: 12px; padding-right: 12px; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+.cm-live .cm-line.cm-lp-mathsrc-block.first { border-top: 1px solid var(--border); border-top-left-radius: 8px; border-top-right-radius: 8px; padding-top: 3px; }
+.cm-live .cm-line.cm-lp-mathsrc-block.last { border-bottom: 1px solid var(--border); border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; padding-bottom: 3px; }
+.cm-lp-widget.cm-lp-mathblock.cm-lp-mathpreview { opacity: .8; padding-top: .2em; }
 .cm-lp-widget.cm-lp-table { padding: .3em 0; cursor: text; }
 .cm-lp-widget.cm-lp-table table { border-collapse: collapse; font-size: .95em; }
 .cm-lp-widget.cm-lp-table th, .cm-lp-widget.cm-lp-table td { border: 1px solid var(--border); padding: 4px 10px; text-align: left; }

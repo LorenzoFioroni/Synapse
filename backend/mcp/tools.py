@@ -42,7 +42,8 @@ Note syntax (the app's own Markdown; write_note checks it and refuses notes that
 [[stem|Shown text]]; links resolve by file name, not by title. [[stem#Heading]] links a heading.
 - Math is LaTeX rendered with KaTeX: inline $t \\lesssim N - 1.6$ (no space after the opening $ or before the \
 closing one, on one line; write \\$ for a dollar sign), display $$...$$. Never write formulas with Unicode \
-symbols (≈, ⟨ψ|, x₁) outside $...$.
+symbols (≈, ⟨ψ|, x₁) outside $...$. Equations are numbered as in LaTeX: \\tag{3}, or \\begin{equation}/align \
+(numbered through the note); \\label{eq:name} in an equation and \\eqref{eq:name} in the text refer to it.
 - Quotes point at the exact words in the PDF: a block quote ending with its citation, \
 "> exact words from the page [@key, p. N]", the words copied from read_paper (prose, not formulas). \
 Clicking the citation opens the PDF there and highlights them. A citation inside a block quote or callout \

@@ -4,6 +4,7 @@ import { completions } from './completion.js';
 import { livePreview } from './livePreview.js';
 import { changedSpan } from './diff.js';
 import { splitFrontmatter } from './mdscan.js';
+import { refitOnResize } from './mathFit.js';
 
 let CM = null;
 let MD = null;
@@ -148,6 +149,8 @@ export async function createEditor(parent, handlers, preview, mode = 'live', dat
   ];
 
   const view = new cm.EditorView({ parent, state: cm.EditorState.create({ doc: '', extensions: extensions() }) });
+  // wide equations shrink a little to fit when the pane changes width (mathFit.js)
+  refitOnResize(view.scrollDOM, () => view.requestMeasure());
 
   return {
     view,

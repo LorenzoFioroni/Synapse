@@ -89,6 +89,9 @@ export function openSettings(sectionId = null) {
           ${switchRow('notes_enabled', 'Notes', 'Markdown notes for papers and ideas, stored as files in your data folder. Turn off to hide Notes in the sidebar and the item pane.')}
           ${selectRow('notes_trash_retention', 'Empty the notes trash', 'Deleted notes, and images no note uses any more, are deleted for good after this long.',
     [['never', 'Never'], ['1d', 'After 1 day'], ['1w', 'After 1 week'], ['2w', 'After 2 weeks'], ['1m', 'After 1 month'], ['6m', 'After 6 months']])}
+          ${segmentedRow('notes_width', 'Note width', 'A readable column, or the whole width of the note pane (also the column button above a note).', [['readable', 'Readable'], ['full', 'Full']])}
+          ${selectRow('notes_equation_numbers', 'Equation numbers', 'As in LaTeX, equation and align environments are numbered through the note and \\tag{…} sets a number; or number every display equation ($$…$$). \\label{name} and \\eqref{name} refer to them; \\notag leaves one out.',
+    [['latex', 'Like LaTeX'], ['all', 'Every display equation']])}
           ${switchRow('confirm_trash', 'Ask before moving to the Trash', 'Items in the Trash can always be restored, and an Undo button appears after deleting.')}
           ${switchRow('show_subfolder_items', 'Show items from subfolders', 'A folder also lists the items of the folders inside it.')}
         </div></section>
