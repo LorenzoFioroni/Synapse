@@ -62,6 +62,6 @@ export function openMenu(entries, at) {
   return el;
 }
 
-document.addEventListener('mousedown', (e) => { if (current && !current.contains(e.target)) closeMenu(); });
+document.addEventListener('pointerdown', (e) => { if (current && !current.contains(e.target)) closeMenu(); });
 window.addEventListener('blur', closeMenu);
 window.addEventListener('resize', closeMenu);

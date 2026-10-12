@@ -55,7 +55,7 @@ body { display: flex; flex-direction: column; }
   border-radius: 12px; background: color-mix(in srgb, var(--accent-soft) 70%, transparent); display: grid; place-items: center;
   color: var(--accent); font-weight: 600; font-size: 15px; z-index: 50; pointer-events: none;
 }
-.pane-resizer { width: 5px; margin: 0 -2px; flex: none; cursor: col-resize; position: relative; z-index: 5; }
+.pane-resizer { width: 5px; margin: 0 -2px; flex: none; cursor: col-resize; position: relative; z-index: 5; touch-action: none; }
 .pane-resizer::after { content: ""; position: absolute; left: 2px; top: 0; bottom: 0; width: 1px; background: var(--border); transition: background .15s, width .15s; }
 .pane-resizer:hover::after, .pane-resizer.dragging::after { background: var(--accent); width: 2px; left: 1.5px; }
 
@@ -104,3 +104,30 @@ body { display: flex; flex-direction: column; }
 .tag-pill.on .n { color: inherit; opacity: .8; }
 .tag-clear { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; border: none; background: none; color: var(--accent); font-size: var(--fs-xs); padding: 0; }
 .tag-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; display: inline-block; }
+
+/* ------------------------------------------- tablets and narrow windows (issue #34) */
+.side-toggle { display: none; }
+@media (max-width: 1100px) {
+  .side-toggle { display: inline-flex; flex: none; }
+  .brand { width: auto; }
+  #sidebar {
+    position: fixed; top: 50px; bottom: 0; left: 0; z-index: 900; width: min(300px, 82vw);
+    transform: translateX(-102%); transition: transform .2s ease; box-shadow: none;
+  }
+  body.sidebar-open #sidebar { transform: none; box-shadow: var(--shadow-lg); }
+  body.sidebar-open::after { content: ""; position: fixed; inset: 50px 0 0 0; z-index: 899; background: rgba(15, 23, 42, .25); }
+  #item-pane { max-width: 48vw; }
+  .search { width: min(420px, 34vw); }
+}
+@media (max-width: 760px) {
+  .brand .ws-switch, .toolbar-sep { display: none; }
+}
+/* Touch screens: bigger targets, no long-press callouts on the app's own controls */
+@media (pointer: coarse) {
+  #toolbar .icon-btn { width: 38px; height: 38px; }
+  .side-item { height: 38px; }
+  .menu-item { padding: 11px 12px; min-height: 44px; }
+  .pane-resizer { width: 16px; margin: 0 -8px; }
+  .pane-resizer::after { left: 8px; }
+  #toolbar, #sidebar, .items-head, .row, .nt-row, .menu { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+}

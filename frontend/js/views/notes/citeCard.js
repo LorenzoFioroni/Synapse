@@ -34,12 +34,12 @@ function ensureCard() {
   card.hidden = true;
   card.addEventListener('mouseenter', () => clearTimeout(hideTimer));
   card.addEventListener('mouseleave', () => scheduleHide());
-  card.addEventListener('mousedown', (e) => e.preventDefault());   // keep the editor's selection
+  card.addEventListener('pointerdown', (e) => e.preventDefault());   // keep the editor's selection
   card.addEventListener('click', onCardClick);
   card.addEventListener('auxclick', (e) => { if (e.button === 1) onCardClick(e); });   // middle click: new tab
   document.body.appendChild(card);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
-  document.addEventListener('mousedown', (e) => { if (card && !card.hidden && !card.contains(e.target)) hide(); }, true);
+  document.addEventListener('pointerdown', (e) => { if (card && !card.hidden && !card.contains(e.target)) hide(); }, true);
   return card;
 }
 
@@ -141,6 +141,15 @@ export function attachCiteCards(container, d) {
     clearTimeout(showTimer);
     clearTimeout(hideTimer);   // moving straight to another citation: don't let the old card's hide cancel this one
     showTimer = setTimeout(() => { if (el.isConnected) showCard(el); }, 350);
+  });
+  // touch screens: a long press opens the card (ui/longpress.js); a tap does what a click does
+  container.addEventListener('zc:longpress', (e) => {
+    const el = e.target.closest?.(HOVER);
+    if (!el) return;
+    e.preventDefault();
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    showCard(el);
   });
   container.addEventListener('mouseout', (e) => {
     const el = e.target.closest?.(HOVER);
