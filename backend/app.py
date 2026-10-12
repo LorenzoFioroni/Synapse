@@ -23,7 +23,7 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
     app.extensions["zclone"] = services
 
     from . import guard
-    guard.install(app, config.allowed_hosts)   # refuse requests from other websites (#17)
+    guard.install(app, config.allowed_hosts, config.lan)   # other websites never, other devices once paired (#17, #34)
 
     from .api import register_blueprints
     register_blueprints(app)
@@ -52,6 +52,12 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
     @app.get("/")
     def index():
         resp = send_from_directory(frontend, "index.html")
+        resp.headers["Cache-Control"] = NO_CACHE
+        return resp
+
+    @app.get("/pair")
+    def pair_page():   # opened from the pairing QR code on another device (#34)
+        resp = send_from_directory(frontend, "pair.html")
         resp.headers["Cache-Control"] = NO_CACHE
         return resp
 

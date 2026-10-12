@@ -5,6 +5,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=3">
   <link rel="shortcut icon" href="/favicon.ico?v=3">
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <title>PDF Viewer</title>
   <link rel="stylesheet" href="css/tokens.css">
   <script>try { const t = localStorage.getItem("zc.themeHint"); if (t) document.documentElement.dataset.theme = JSON.parse(t); } catch (e) {}</script>
@@ -51,15 +52,58 @@
     #page-num-text { font-variant-numeric: tabular-nums; color: var(--text-2); background: var(--bg-active); padding: 3px 10px; border-radius: 12px; }
     
     #pdf-container { flex: 1; overflow: auto; padding: 20px; overflow-anchor: none; }   /* zoom places the view itself */
-    .page-wrapper { position: relative; margin: 0 auto 20px auto; box-shadow: 0 2px 10px rgba(0,0,0,0.15); background: white; user-select: none; border-radius: 2px; }
+    .page-wrapper { position: relative; margin: 0 auto 20px auto; box-shadow: 0 2px 10px rgba(0,0,0,0.15); background: white; -webkit-user-select: none; user-select: none; border-radius: 2px; }
+    .page-wrapper canvas.zc-detail { position: absolute; pointer-events: none; border-radius: 0; }   /* the sharp part of a deeply zoomed page */
     canvas { display: block; user-select: none; border-radius: 2px; }
-    .textLayer { position: absolute; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; line-height: 1.0; user-select: text; }
+    .textLayer { position: absolute; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; line-height: 1.0; -webkit-user-select: text; user-select: text; }
     .textLayer ::selection { background: rgba(0, 0, 255, 0.3); }
     .textLayer span { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
     
     .anno-layer { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 5; mix-blend-mode: multiply; }
         .anno-layer.mode-draw { pointer-events: auto; }
     .anno-layer > * { pointer-events: auto !important; }
+
+    /* Touch screens (issue #34). The page zooms itself (pinch → applyZoom), never the browser;
+       fingers scroll. Before any Pencil has been used, fingers draw in the drawing tools. */
+    html, body { touch-action: manipulation; }   /* no double-tap zoom of the browser page */
+    #pdf-container { touch-action: pan-x pan-y; -webkit-touch-callout: none; }
+    /* the browser page got zoomed anyway (an older viewer, an accessibility zoom): let it be pinched back */
+    .zc-page-zoomed #pdf-container { touch-action: auto; }
+    body:not(.zc-pen) .anno-layer.mode-draw { touch-action: none; }
+    /* Text boxes are HTML over the page, not in the SVG: Safari draws HTML inside an SVG
+       foreignObject in the wrong place (it ignores the SVG's scaling), so boxes were invisible
+       or drifted when zooming (issue #36). Sizes follow the zoom through --zc-scale. */
+    .anno-text-layer { width: 100%; height: 100%; }
+    .anno-text { position: absolute; }
+    .anno-text-frame { border: 1px dotted transparent; }
+    .anno-text-frame.hover, .anno-text-frame:focus-within { border-color: #aaa; }
+    .anno-text-handle { position: absolute; right: -4px; bottom: -4px; width: 8px; height: 8px; background: #aaa;
+        cursor: nwse-resize; border-radius: 50%; opacity: 0; transition: opacity .2s; touch-action: none; }
+    .anno-text-frame.hover .anno-text-handle, .anno-text-frame:focus-within .anno-text-handle { opacity: 1; }
+    .zc-pill { position: fixed; z-index: 3000; display: flex; gap: 4px; padding: 3px; border-radius: 8px; background: var(--bg-elev, #fff);
+        border: 1px solid var(--border, #ddd); box-shadow: 0 6px 20px rgba(0,0,0,.18); font: 12px -apple-system, system-ui, sans-serif; }
+    .zc-pill button { border: none; background: none; padding: 5px 9px; border-radius: 6px; color: var(--text, #222); cursor: pointer; font: inherit; white-space: nowrap; }
+    .zc-sel-pill button[data-del] { color: var(--danger, #c33); }
+    @media (pointer: coarse) {
+        /* one row whatever the tool: the title gives way first; the colour and size keep their
+           place while hidden (visibility), so choosing a tool never moves the toolbar around */
+        #toolbar { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 6px 8px; }
+        #toolbar .toolbar-section { gap: 2px; }
+        #toolbar .toolbar-section.left { flex: 1 1 0; }
+        #toolbar .toolbar-section.center { flex: none; }
+        #toolbar .toolbar-section.right { flex: none; margin-left: auto; }
+        #toolbar .divider { margin: 0 2px; }
+        .icon-btn, .tool-btn { width: 38px; height: 40px; border-radius: 9px; }
+        .icon-btn svg, .tool-btn svg { width: 19px; height: 19px; }
+        input[type="color"] { width: 26px; height: 26px; }
+        .color-picker-wrapper { padding: 4px; }
+        #tool-size { width: 44px; height: 34px; font-size: 16px; }   /* < 16 px: Safari zooms the page on focus */
+        #doc-title { flex: 1 1 0; width: 0; max-width: none; }   /* takes what is left, never wraps the row */
+        .zc-pill { font-size: 15px; }
+        .zc-pill button { padding: 10px 14px; min-height: 44px; }
+        .anno-text-handle { width: 22px; height: 22px; right: -11px; bottom: -11px; }
+        .thumb-wrapper canvas { width: 100px; }
+    }
   </style>
   <script src="vendor/pdfjs/pdf.min.js"></script>
 </head>
@@ -191,10 +235,11 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
            is. The spot is remembered as a page and a fraction of that page, not as a scroll offset:
            pages are centred and the gaps between them do not grow with the zoom, so scaling the
            scroll offsets (as before) let the spot drift, more and more on later pages. */
+        const MAX_ZOOM = 10;   // deep zoom stays sharp: the visible part gets its own canvas (renderDetails)
         let zoomGesture = null;   // {anchor page, fx, fy, pointer, t} of the zoom in progress
         function applyZoom(newScale, pointerX = container.clientWidth / 2, pointerY = container.clientHeight / 2) {
             let oldScale = scale;
-            scale = Math.min(Math.max(0.2, newScale), 5.0);
+            scale = Math.min(Math.max(0.2, newScale), MAX_ZOOM);
             if (scale === oldScale) return; // Don't do anything if hitting limits
 
             const box = container.getBoundingClientRect();
@@ -230,7 +275,7 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
                     canvas.style.height = newH + "px";
                 }
                 
-                let tl = w.querySelector('.textLayer');
+                let tl = w.querySelector('.textLayer');   // (text boxes and detail canvases follow by themselves)
                 if (tl) {
                     tl.style.width = newW + "px";
                     tl.style.height = newH + "px";
@@ -243,8 +288,10 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
                 container.scrollTop += r.top + fy * r.height - py;
             }
 
+            container.style.setProperty('--zc-scale', scale);
             debouncedRenderAll();
         }
+        container.style.setProperty('--zc-scale', scale);
 
         document.getElementById('zoom-in').addEventListener('click', () => applyZoom(scale + 0.25));
         document.getElementById('zoom-out').addEventListener('click', () => applyZoom(scale - 0.25));
@@ -304,6 +351,14 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
         const colorWrapper = document.getElementById('color-wrapper');
         const toolSize = document.getElementById('tool-size');
         const toolbarSep = document.querySelector('.toolbar-sep');
+        // On touch screens the colour and size are hidden but keep their place (see the CSS)
+        const KEEP_PLACE = matchMedia('(pointer: coarse)').matches;
+        function showOpt(n, on) {
+            const d = n === colorWrapper ? 'flex' : 'block';
+            if (KEEP_PLACE) { n.style.display = d; n.style.visibility = on ? 'visible' : 'hidden'; }
+            else n.style.display = on ? d : 'none';
+        }
+        for (const n of [toolbarSep, colorWrapper, toolSize]) showOpt(n, false);
         
         function updateToolMode() {
             document.body.dataset.zcTool = currentTool;
@@ -332,41 +387,41 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
                     document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
                     document.querySelector('.tool-btn[data-tool="select"]').classList.add('active');
                     currentTool = 'select';
-                    toolbarSep.style.display = 'none';
-                    colorWrapper.style.display = 'none';
-                    toolSize.style.display = 'none';
+                    showOpt(toolbarSep, false);
+                    showOpt(colorWrapper, false);
+                    showOpt(toolSize, false);
                 } else {
                     document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
                     currentTool = tool;
                     btn.classList.add('active');
-                    toolbarSep.style.display = 'block';
-                    colorWrapper.style.display = 'flex';
+                    showOpt(toolbarSep, true);
+                    showOpt(colorWrapper, true);
                     
                     if (tool === 'highlight') {
-                        colorWrapper.style.display = 'flex';
+                        showOpt(colorWrapper, true);
                         toolColor.value = '#ffff00';
-                        toolSize.style.display = 'none';
+                        showOpt(toolSize, false);
                     } else if (tool === 'underline') {
-                        colorWrapper.style.display = 'flex';
+                        showOpt(colorWrapper, true);
                         toolColor.value = '#ff0000';
                         toolSize.value = 2;
-                        toolSize.style.display = 'block';
+                        showOpt(toolSize, true);
                     } else if (tool === 'eraser') {
-                        colorWrapper.style.display = 'none';
-                        toolSize.style.display = 'none';
+                        showOpt(colorWrapper, false);
+                        showOpt(toolSize, false);
                     } else if (tool === 'select') {
-                        colorWrapper.style.display = 'none';
-                        toolSize.style.display = 'none';
+                        showOpt(colorWrapper, false);
+                        showOpt(toolSize, false);
                     } else if (tool === 'text') {
-                        colorWrapper.style.display = 'flex';
+                        showOpt(colorWrapper, true);
                         toolColor.value = '#000000';
                         toolSize.value = 16;
-                        toolSize.style.display = 'block';
+                        showOpt(toolSize, true);
                     } else {
-                        colorWrapper.style.display = 'flex';
+                        showOpt(colorWrapper, true);
                         toolColor.value = '#000000';
                         toolSize.value = 2;
-                        toolSize.style.display = 'block';
+                        showOpt(toolSize, true);
                     }
                 }
                 updateToolMode();
@@ -382,6 +437,70 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
             }
         }, { passive: false });
 
+        /* Pinch to zoom on a touch screen (issue #34): the pages are zoomed (and drawn sharp again),
+           never the browser page, and the spot between the fingers stays where it is (applyZoom).
+           Safari reports a pinch as gesture events; other touch browsers through two pointers. */
+        let pinch = null;   // { start scale, x, y (container coordinates of the first centre), target scale }
+        // The browser page itself is zoomed (it should not be, but iPadOS can still do it, e.g. on
+        // focusing a small text field in an older version): pinching must be able to undo it.
+        const pageZoomed = () => (window.visualViewport?.scale || 1) > 1.01;
+        window.visualViewport?.addEventListener('resize', () => document.documentElement.classList.toggle('zc-page-zoomed', pageZoomed()));
+        function pinchAt(clientX, clientY, start) {
+            const r = container.getBoundingClientRect();
+            zoomGesture = null;
+            pinch = { start, x: clientX - r.left - container.clientLeft, y: clientY - r.top - container.clientTop, target: start };
+        }
+        /* While the fingers move, the pages are only scaled on screen (a transform around the pinch
+           centre: nothing is laid out or drawn again); the zoom itself is applied once, when the pinch
+           ends, and keeps the same spot under the fingers. Laying the pages out again at every step
+           made Safari show the drawings in stripes from several zoom levels at once (issue #36). */
+        function pinchTo(s) {
+            pinch.target = Math.min(Math.max(0.2, s), MAX_ZOOM);
+            container.style.transformOrigin = `${pinch.x + container.clientLeft}px ${pinch.y + container.clientTop}px`;
+            container.style.transform = `scale(${pinch.target / scale})`;
+        }
+        function pinchEnd() {
+            if (!pinch) return;
+            const { target, x, y } = pinch;
+            pinch = null;
+            container.style.transform = '';
+            applyZoom(target, x, y);
+        }
+        if ('ongesturechange' in window) {
+            window.addEventListener('gesturestart', (e) => {
+                if (pageZoomed()) return;   // let this pinch zoom the browser page back out
+                e.preventDefault();
+                pinchAt(e.clientX, e.clientY, scale);
+            }, { passive: false });
+            window.addEventListener('gesturechange', (e) => {
+                if (!pinch) return;
+                e.preventDefault();
+                pinchTo(pinch.start * e.scale);
+            }, { passive: false });
+            window.addEventListener('gestureend', (e) => { if (pinch) { e.preventDefault(); pinchEnd(); } }, { passive: false });
+        } else {
+            const touches = new Map();   // pointerId → {x, y}
+            let startDist = 0;
+            const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+            container.addEventListener('pointerdown', (e) => {
+                if (e.pointerType !== 'touch') return;
+                touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                if (touches.size === 2) {
+                    const [a, b] = [...touches.values()];
+                    startDist = spread();
+                    pinchAt((a.x + b.x) / 2, (a.y + b.y) / 2, scale);
+                }
+            }, true);   // capturing: a pinch may start on an annotation, which keeps its events to itself
+            container.addEventListener('pointermove', (e) => {
+                if (!touches.has(e.pointerId)) return;
+                touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                if (touches.size === 2 && pinch && startDist > 0) pinchTo(pinch.start * spread() / startDist);
+            }, true);
+            const lift = (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinchEnd(); };
+            container.addEventListener('pointerup', lift, true);
+            container.addEventListener('pointercancel', lift, true);
+        }
+
         let pageWrappers = [];
         // Annotations (drawing, highlighting, text boxes, undo) live in js/viewer/annotations.js.
 
@@ -391,7 +510,11 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
            book used to render every page up front, and again on every zoom (issue #19). */
         const NEAR = '100% 0px';       // render pages this close to the viewport
         const FAR = '250% 0px';        // free pages farther than this
-        const MAX_LIVE = 14;           // never more canvases than this, whatever happens
+        // Tablets have far less memory for canvases than a computer (Safari on iPad also refuses
+        // any canvas above 16.7 million pixels): fewer pages are kept drawn there, at most this big.
+        const COARSE = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1;
+        const MAX_LIVE = COARSE ? 8 : 14;   // never more canvases than this, whatever happens
+        const MAX_AREA = COARSE ? 8e6 : Infinity;   // pixels per canvas
         const live = new Map();        // page number → { scale, canvas, text, task }
         const wanted = new Set();      // pages near the viewport
         const inFar = new Set();       // pages within the far margin (the others must not keep a canvas)
@@ -445,6 +568,77 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
                 // a page finished drawing just as the reader jumped away: give it back now
                 for (const num of [...live.keys()]) if (!inFar.has(num) && !wanted.has(num)) release(num);
             } finally { pumping = false; }
+            scheduleDetails(50);
+        }
+
+        /* Deep zoom stays sharp (issue #36). A page's canvas is capped (MAX_AREA, MAX_DIMENSION), so
+           beyond some zoom it is drawn at less than the screen's resolution and the text is blurry.
+           The part of such a page that is on screen (and a margin) then gets a second, sharp canvas
+           on top, placed in fractions of the page so that zooming carries it along until it is redone. */
+        const DETAIL_AREA = Math.min(MAX_AREA, 16e6);
+        const details = new Map();     // page number → { canvas, scale, box: [x0, y0, x1, y1] in CSS px at that scale }
+        let detailTimer = null, detailing = false, detailAgain = false;
+        function scheduleDetails(delay = 150) { clearTimeout(detailTimer); detailTimer = setTimeout(renderDetails, delay); }
+        container.addEventListener('scroll', () => scheduleDetails(), { passive: true });
+
+        function dropDetail(num) {
+            const d = details.get(num);
+            if (!d) return;
+            try { d.task?.cancel(); } catch (e) {}
+            if (d.canvas) { d.canvas.width = 0; d.canvas.height = 0; d.canvas.remove(); }
+            details.delete(num);
+        }
+
+        async function renderDetails() {
+            if (pumping) return;   // the pump calls again when it is done
+            if (detailing) { detailAgain = true; return; }
+            detailing = true;
+            try {
+                const dpr = window.devicePixelRatio || 1;
+                const view = container.getBoundingClientRect();
+                for (const num of [...details.keys()]) if (!live.get(num)?.canvas) dropDetail(num);
+                for (const [num, l] of [...live]) {
+                    if (!l.canvas || l.scale !== scale) continue;   // not drawn at this zoom yet: the pump comes first
+                    if (l.outputScale >= dpr * 0.99) { dropDetail(num); continue; }   // the page canvas is sharp
+                    const w = pageWrappers[num - 1];
+                    const r = w.getBoundingClientRect();
+                    const x0 = Math.max(view.left, r.left) - r.left, x1 = Math.min(view.right, r.right) - r.left;
+                    const y0 = Math.max(view.top, r.top) - r.top, y1 = Math.min(view.bottom, r.bottom) - r.top;
+                    if (x1 <= x0 || y1 <= y0) { dropDetail(num); continue; }   // off screen
+                    const d = details.get(num);
+                    if (d && d.scale === scale && d.box[0] <= x0 + 1 && d.box[1] <= y0 + 1 && d.box[2] >= x1 - 1 && d.box[3] >= y1 - 1) continue;
+                    // a margin around the visible part, as far as the pixel budget allows
+                    let box = [x0, y0, x1, y1];
+                    for (const m of [0.5, 0.25]) {
+                        const mx = (x1 - x0) * m, my = (y1 - y0) * m;
+                        const b = [Math.max(0, x0 - mx), Math.max(0, y0 - my), Math.min(r.width, x1 + mx), Math.min(r.height, y1 + my)];
+                        if ((b[2] - b[0]) * (b[3] - b[1]) * dpr * dpr <= DETAIL_AREA) { box = b; break; }
+                    }
+                    const [bx, by] = [Math.floor(box[0]), Math.floor(box[1])];
+                    const [bw, bh] = [Math.ceil(box[2]) - bx, Math.ceil(box[3]) - by];
+                    let os = dpr;
+                    if (bw * bh * os * os > DETAIL_AREA) os = Math.sqrt(DETAIL_AREA / (bw * bh));
+                    if (os <= l.outputScale * 1.05) continue;   // would be no sharper
+                    const canvas = document.createElement('canvas');
+                    canvas.className = 'zc-detail';
+                    canvas.width = Math.ceil(bw * os);
+                    canvas.height = Math.ceil(bh * os);
+                    const pct = (v, of) => `${(v / of) * 100}%`;
+                    Object.assign(canvas.style, { left: pct(bx, r.width), top: pct(by, r.height), width: pct(bw, r.width), height: pct(bh, r.height) });
+                    const s = scale;
+                    const task = w.zcPage.render({ canvasContext: canvas.getContext('2d'), viewport: w.zcPage.getViewport({ scale: s }),
+                                                   transform: [os, 0, 0, os, -bx * os, -by * os] });
+                    try { await task.promise; } catch (e) { canvas.width = canvas.height = 0; continue; }
+                    const now = live.get(num);
+                    if (s !== scale || !now?.canvas) { canvas.width = canvas.height = 0; continue; }   // zoomed or freed meanwhile
+                    dropDetail(num);
+                    now.canvas.after(canvas);   // above the page's canvas, under its text and annotations
+                    details.set(num, { canvas, scale: s, box: [bx, by, bx + bw, by + bh] });
+                }
+            } finally {
+                detailing = false;
+                if (detailAgain) { detailAgain = false; scheduleDetails(50); }
+            }
         }
 
         function trimLive() {
@@ -454,6 +648,7 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
         }
 
         function release(num) {
+            dropDetail(num);
             const l = live.get(num);
             if (!l) return;
             try { l.task?.cancel(); } catch (e) {}
@@ -474,6 +669,8 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
             if ((viewport.width * outputScale) > MAX_DIMENSION || (viewport.height * outputScale) > MAX_DIMENSION) {
                 outputScale *= Math.min(MAX_DIMENSION / (viewport.width * outputScale), MAX_DIMENSION / (viewport.height * outputScale));
             }
+            const area = viewport.width * viewport.height * outputScale * outputScale;
+            if (area > MAX_AREA) outputScale *= Math.sqrt(MAX_AREA / area);
             canvas.width = Math.floor(viewport.width * outputScale);
             canvas.height = Math.floor(viewport.height * outputScale);
             canvas.style.width = Math.floor(viewport.width) + "px";
@@ -512,7 +709,7 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
             wrapper.insertBefore(canvas, wrapper.firstChild);
             canvas.after(text);
             pdfjsLib.renderTextLayer({ textContentSource: textContent, container: text, viewport, textDivs: [] });
-            live.set(num, { scale: s, canvas, text, task: null });
+            live.set(num, { scale: s, canvas, text, task: null, outputScale });
             wrapper.dataset.rendered = String(s);
             document.dispatchEvent(new CustomEvent('zc:pagerendered', { detail: { wrapper, page, num } }));
         }

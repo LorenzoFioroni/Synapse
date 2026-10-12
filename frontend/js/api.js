@@ -27,6 +27,10 @@ async function request(method, url, body, { raw = false } = {}) {
   }
   let data = null;
   try { data = await res.json(); } catch { /* empty body */ }
+  if (res.status === 401 && data && data.paired === false) {
+    // This device was signed out (Settings → Devices): the page itself now explains how to pair again.
+    setTimeout(() => location.reload(), 1500);
+  }
   if (!res.ok) throw new ApiError((data && data.error) || `Request failed (${res.status})`, res.status, data);
   return data;
 }
@@ -67,6 +71,10 @@ export const api = {
   saveSettings: (changes) => request('PUT', '/api/settings', changes),
   resetSettings: () => request('POST', '/api/settings/reset'),
   changes: (since, epoch) => request('GET', `/api/changes?${qs({ since, epoch })}`),
+  devices: () => request('GET', '/api/devices'),
+  newPairing: () => request('POST', '/api/devices/pairing'),
+  renameDevice: (id, name) => request('PATCH', `/api/devices/${encodeURIComponent(id)}`, { name }),
+  removeDevice: (id) => request('DELETE', `/api/devices/${encodeURIComponent(id)}`),
   backups: () => request('GET', '/api/backups'),
   backupNow: () => request('POST', '/api/backups'),
   restoreBackup: (name) => request('POST', '/api/backups/restore', { name }),

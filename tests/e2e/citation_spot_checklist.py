@@ -182,7 +182,7 @@ async def main():
             vs = await pop.value
             await vs.wait_for_selector('.zc-flash', timeout=15000)
             rect = parse_qs(urlparse(vs.url).query).get("rect", [""])[0]
-            check("a snapshot's citation opens at its region", rect.startswith("0.09") and rect.count(",") == 3, rect)
+            check("a snapshot's citation opens at its region", rect.count(",") == 3 and abs(float(rect.split(",")[0]) - 0.1) < 0.02, rect)
             f = await vs.evaluate(FLASH)
             check("…and flashes that region", len(f) == 1 and f[0]["page"] == 2 and abs(f[0]["top"] - 0.55) < 0.02
                   and abs(f[0]["height"] - 0.15) < 0.02 and f[0]["visible"], f)

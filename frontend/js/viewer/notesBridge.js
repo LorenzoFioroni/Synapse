@@ -28,7 +28,7 @@ css.textContent = `
   .zc-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 3001; background: #1c2330; color: #fff;
     padding: 8px 14px; border-radius: 8px; font: 13px -apple-system, system-ui, sans-serif; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
   .zc-snap-on .page-wrapper { cursor: crosshair; }
-  .zc-snap-layer { position: absolute; inset: 0; z-index: 50; }
+  .zc-snap-layer { position: absolute; inset: 0; z-index: 50; touch-action: none; }
   .zc-snap-rect { position: absolute; border: 2px solid #2f6fed; background: rgba(47,111,237,.12); pointer-events: none; }
   #zc-snap-btn.on { background: var(--accent-soft, #e4ecfd); color: var(--accent, #2f6fed); }
   /* a cited spot, flashed for a moment when the viewer opens on it (not an annotation) */
@@ -108,7 +108,7 @@ async function deliver(markdown, at) {
     <button data-i="-1">Paper note of @${esc(item.citation_key)}</button>`;
   menu.style.left = `${Math.min(at.x, innerWidth - 260)}px`;
   menu.style.top = `${Math.min(at.y, innerHeight - 160)}px`;
-  menu.addEventListener('mousedown', (e) => e.preventDefault());
+  menu.addEventListener('pointerdown', (e) => e.preventDefault());
   menu.addEventListener('click', (e) => {
     const b = e.target.closest('[data-i]');
     if (b) go(Number(b.dataset.i) >= 0 ? open[Number(b.dataset.i)] : null);
@@ -118,6 +118,8 @@ async function deliver(markdown, at) {
 
 /* ------------------------------------------------------------------- quotes */
 let pill = null;
+let lastPointer = 'mouse';
+document.addEventListener('pointerdown', (e) => { lastPointer = e.pointerType || 'mouse'; }, true);
 function hidePill() { pill?.remove(); pill = null; }
 
 /** Text as one paragraph: line breaks become spaces, words hyphenated across lines are joined. */
@@ -142,7 +144,7 @@ function onSelectionEnd() {
     : '<button disabled title="Give the item a citation key first">No citation key</button>';
   pill.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - 160))}px`;
   pill.style.top = `${rect.bottom + 8 > innerHeight - 40 ? rect.top - 40 : rect.bottom + 8}px`;
-  pill.addEventListener('mousedown', (e) => e.preventDefault());   // keep the selection
+  pill.addEventListener('pointerdown', (e) => e.preventDefault());   // keep the selection
   pill.querySelector('[data-q]')?.addEventListener('click', () => {
     const md = `> ${cleanQuote(text)} [@${item.citation_key}, p. ${page}]`;
     const at = { x: parseFloat(pill.style.left), y: parseFloat(pill.style.top) };
@@ -163,7 +165,7 @@ function setSnap(on) {
   for (const w of document.querySelectorAll('.page-wrapper')) {
     const layer = document.createElement('div');
     layer.className = 'zc-snap-layer';
-    layer.addEventListener('mousedown', (e) => startSnap(e, w, layer));
+    layer.addEventListener('pointerdown', (e) => { if (e.button <= 0) startSnap(e, w, layer); });
     w.appendChild(layer);
   }
   toast('Drag a rectangle over the part of the page to copy (Esc to cancel).');
@@ -171,18 +173,24 @@ function setSnap(on) {
 
 function startSnap(e, wrapper, layer) {
   e.preventDefault();
+  layer.setPointerCapture?.(e.pointerId);   // mouse, Pencil or finger (issue #34)
+  const id = e.pointerId;
   const box = layer.getBoundingClientRect();
   const x0 = e.clientX - box.left, y0 = e.clientY - box.top;
   const r = document.createElement('div');
   r.className = 'zc-snap-rect';
   layer.appendChild(r);
   const move = (ev) => {
+    if (ev.pointerId !== id) return;
     const x1 = Math.max(0, Math.min(ev.clientX - box.left, box.width)), y1 = Math.max(0, Math.min(ev.clientY - box.top, box.height));
     Object.assign(r.style, { left: `${Math.min(x0, x1)}px`, top: `${Math.min(y0, y1)}px`, width: `${Math.abs(x1 - x0)}px`, height: `${Math.abs(y1 - y0)}px` });
   };
   const up = async (ev) => {
-    document.removeEventListener('mousemove', move);
-    document.removeEventListener('mouseup', up);
+    if (ev.pointerId !== id) return;
+    layer.removeEventListener('pointermove', move);
+    layer.removeEventListener('pointerup', up);
+    layer.removeEventListener('pointercancel', up);
+    if (ev.type === 'pointercancel') { setSnap(false); return; }
     const sel = { x: parseFloat(r.style.left) || 0, y: parseFloat(r.style.top) || 0, w: parseFloat(r.style.width) || 0, h: parseFloat(r.style.height) || 0 };
     setSnap(false);
     if (sel.w < 8 || sel.h < 8) return;
@@ -202,8 +210,9 @@ function startSnap(e, wrapper, layer) {
       deliver(md, { x: ev.clientX, y: ev.clientY });
     } catch (err) { toast(err.message); }
   };
-  document.addEventListener('mousemove', move);
-  document.addEventListener('mouseup', up);
+  layer.addEventListener('pointermove', move);
+  layer.addEventListener('pointerup', up);
+  layer.addEventListener('pointercancel', up);
   move(e);
 }
 
@@ -338,8 +347,16 @@ async function init() {
     b.addEventListener('click', () => setSnap(!snapping));
     tools.prepend(b);
   }
-  document.getElementById('pdf-container')?.addEventListener('mouseup', () => setTimeout(onSelectionEnd, 0));
-  document.addEventListener('mousedown', (e) => {
+  document.getElementById('pdf-container')?.addEventListener('mouseup', () => { if (lastPointer === 'mouse') setTimeout(onSelectionEnd, 0); });
+  // On a touch screen text is selected with a long press and the handles: offer the quote once the
+  // selection has settled (issue #34).
+  let selTimer = null;
+  document.addEventListener('selectionchange', () => {
+    if (lastPointer === 'mouse') return;
+    clearTimeout(selTimer);
+    selTimer = setTimeout(onSelectionEnd, 350);
+  });
+  document.addEventListener('pointerdown', (e) => {
     if (pill && !pill.contains(e.target)) hidePill();
     if (menu && !menu.contains(e.target)) closeMenu();
   });
