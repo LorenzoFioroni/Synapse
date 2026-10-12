@@ -440,7 +440,7 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
         /* Pinch to zoom on a touch screen (issue #34): the pages are zoomed (and drawn sharp again),
            never the browser page, and the spot between the fingers stays where it is (applyZoom).
            Safari reports a pinch as gesture events; other touch browsers through two pointers. */
-        let pinch = null;   // { start scale, x, y (container coordinates of the first centre) }
+        let pinch = null;   // { start scale, x, y (container coordinates of the first centre), target scale }
         // The browser page itself is zoomed (it should not be, but iPadOS can still do it, e.g. on
         // focusing a small text field in an older version): pinching must be able to undo it.
         const pageZoomed = () => (window.visualViewport?.scale || 1) > 1.01;
@@ -448,7 +448,23 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
         function pinchAt(clientX, clientY, start) {
             const r = container.getBoundingClientRect();
             zoomGesture = null;
-            pinch = { start, x: clientX - r.left - container.clientLeft, y: clientY - r.top - container.clientTop };
+            pinch = { start, x: clientX - r.left - container.clientLeft, y: clientY - r.top - container.clientTop, target: start };
+        }
+        /* While the fingers move, the pages are only scaled on screen (a transform around the pinch
+           centre: nothing is laid out or drawn again); the zoom itself is applied once, when the pinch
+           ends, and keeps the same spot under the fingers. Laying the pages out again at every step
+           made Safari show the drawings in stripes from several zoom levels at once (issue #36). */
+        function pinchTo(s) {
+            pinch.target = Math.min(Math.max(0.2, s), MAX_ZOOM);
+            container.style.transformOrigin = `${pinch.x + container.clientLeft}px ${pinch.y + container.clientTop}px`;
+            container.style.transform = `scale(${pinch.target / scale})`;
+        }
+        function pinchEnd() {
+            if (!pinch) return;
+            const { target, x, y } = pinch;
+            pinch = null;
+            container.style.transform = '';
+            applyZoom(target, x, y);
         }
         if ('ongesturechange' in window) {
             window.addEventListener('gesturestart', (e) => {
@@ -459,9 +475,9 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
             window.addEventListener('gesturechange', (e) => {
                 if (!pinch) return;
                 e.preventDefault();
-                applyZoom(pinch.start * e.scale, pinch.x, pinch.y);
+                pinchTo(pinch.start * e.scale);
             }, { passive: false });
-            window.addEventListener('gestureend', (e) => { if (pinch) { e.preventDefault(); pinch = null; } }, { passive: false });
+            window.addEventListener('gestureend', (e) => { if (pinch) { e.preventDefault(); pinchEnd(); } }, { passive: false });
         } else {
             const touches = new Map();   // pointerId → {x, y}
             let startDist = 0;
@@ -478,9 +494,9 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
             container.addEventListener('pointermove', (e) => {
                 if (!touches.has(e.pointerId)) return;
                 touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-                if (touches.size === 2 && pinch && startDist > 0) applyZoom(pinch.start * spread() / startDist, pinch.x, pinch.y);
+                if (touches.size === 2 && pinch && startDist > 0) pinchTo(pinch.start * spread() / startDist);
             }, true);
-            const lift = (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; };
+            const lift = (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinchEnd(); };
             container.addEventListener('pointerup', lift, true);
             container.addEventListener('pointercancel', lift, true);
         }

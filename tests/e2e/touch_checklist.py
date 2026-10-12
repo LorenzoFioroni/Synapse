@@ -349,7 +349,12 @@ async def main():
                     window.dispatchEvent(e); return e.defaultPrevented; };
                 window.__prevented = fire('gesturestart', 1);
                 for (let k = 1; k <= 10; k++) fire('gesturechange', 1 + k * 0.1);
+                window.__during = [window.zcViewer.scale, window.zcViewer.container.style.transform];
                 fire('gestureend', 2); }""", [px, py])
+            during = await page2.evaluate("window.__during")
+            check("while the fingers move, the pages are only scaled on screen (not laid out and drawn again)",
+                  during[0] == s0 and "scale(2" in during[1], str(during))
+            check("… and the transform is gone once the pinch ends", await page2.evaluate("window.zcViewer.container.style.transform") == "")
             s1 = await page2.evaluate("window.zcViewer.scale")
             after = await spot(page2, px, py)
             check("a pinch zooms the pages (Safari gesture events)", abs(s1 / s0 - 2) < 0.01, f"{s0} → {s1}")
