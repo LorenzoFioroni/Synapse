@@ -15,22 +15,29 @@ let busy = false;
 let pending = new Set();
 let lastLibrary = 0;
 
-/** The person is typing or a dialog is open: a refresh now would get in the way. */
+let lastTyped = 0;
+document.addEventListener('keydown', () => { lastTyped = Date.now(); }, true);
+document.addEventListener('input', () => { lastTyped = Date.now(); }, true);
+
+/** A refresh now would get in the way: a dialog or an autocomplete list is open, a field is being
+    edited (fields save when left, so a refresh would lose what is typed), or the note editor was
+    typed in during the last few seconds (it saves itself, hash-checked). It waits for the next poll. */
 function editing() {
+  if (document.querySelector('.dialog-backdrop, .cm-tooltip-autocomplete')) return true;
   const a = document.activeElement;
-  if (document.querySelector('.dialog-backdrop')) return true;
-  if (!a || a === document.body) return false;
-  if (a.id === 'search-input') return false;
-  return !!a.closest?.('#item-pane, #items-pane') && (a.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(a.tagName));
+  if (!a || a === document.body || a.id === 'search-input') return false;
+  if (a.closest?.('.cm-editor')) return Date.now() - lastTyped < 4000;
+  return a.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(a.tagName);
 }
 
 async function apply() {
+  if (editing()) return;   // tried again at the next poll
   if (pending.has('notes')) {
     pending.delete('notes');
     notesChanged();
   }
   if (pending.has('library')) {
-    if (editing() || Date.now() - lastLibrary < MIN_GAP) return;   // tried again at the next poll
+    if (Date.now() - lastLibrary < MIN_GAP) return;   // tried again at the next poll
     pending.delete('library');
     lastLibrary = Date.now();
     await A.loadItems();
