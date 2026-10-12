@@ -32,6 +32,7 @@ const P = {
   download: '<path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/>',
   refresh: '<path d="M13 8a5 5 0 1 1-1.5-3.5"/><path d="M13 2.5V5h-2.5"/>',
   key: '<circle cx="5.5" cy="10.5" r="3"/><path d="M7.6 8.4L13.5 2.5M11.5 4.5l1.5 1.5M10 6l1.2 1.2"/>',
+  tablet: '<rect x="3" y="1.8" width="10" height="12.4" rx="1.6"/><path d="M7 12h2"/>',
   globe: '<circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/>',
   columns: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M6 3v10M10 3v10"/>',
   sidebar: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M10 3v10"/>',
