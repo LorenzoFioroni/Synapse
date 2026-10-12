@@ -9,6 +9,7 @@ can cite pages the app opens directly.
 from __future__ import annotations
 
 import html
+import json
 import re
 import sqlite3
 import time
@@ -20,7 +21,7 @@ from .. import search as search_mod
 from ..fields import FIELDS, ITEM_TYPE_LABELS
 from ..notes import frontmatter, parser
 from ..notes.service import now_iso, ulid
-from ..notes.vault import InvalidPath, NoteExists, slugify
+from ..notes.vault import Conflict, InvalidPath, NoteExists, slugify
 from .. import pdfrender
 from ..pdftext import extract_pages
 from ..references import identifiers
@@ -46,8 +47,9 @@ symbols (≈, ⟨ψ|, x₁) outside $...$.
 "> exact words from the page [@key, p. N]", the words copied from read_paper (prose, not formulas). \
 Clicking the citation opens the PDF there and highlights them. A citation inside a block quote or callout \
 always means such a quote.
-- Figures: use snapshot (after view_page) and paste the Markdown it returns: the image line, then on the next \
-line *Figure: … [@key, p. N]* (you may write a caption before the citation). Clicking it flashes that region.
+- Figures, tables and equations: use snapshot (figure="Figure 2", equation="3", or a rect read off view_page) and \
+paste the Markdown it returns: the image line, then on the next line *Figure 2: … [@key, p. N]* (you may write a \
+caption before the citation). Clicking it flashes that region.
 - Also available: GFM tables, task lists, footnotes [^1], callouts "> [!note] Title" (types note, tip, \
 warning, question, quote, info, important, caution, example, todo), ```mermaid diagrams, #tags."""
 
@@ -64,6 +66,8 @@ Avoid reading whole papers page by page. view_page shows a page as an image (fig
 (they come with DOI/arXiv ids you can look up elsewhere).
 - Cite sources in the user's syntax: [@key] or [@key, p. N] with N the PDF page number the tools report.
 - write_note saves a new note (only in the ai/ folder); use it when the user asks to save an answer.
+- edit_note changes an existing note (after get_note), when the user asks for it; the user can see and undo \
+every change in the app.
 
 """ + WRITING_RULES
 
@@ -630,46 +634,96 @@ class LibraryTools:
             figures = pdfrender.figure_regions(path, page)
         except Exception:
             figures = []
-        boxed = [f for f in figures if f.get("rect")]
+        try:
+            equations = pdfrender.equation_regions(path, page)
+        except Exception:
+            equations = []
+        boxed = [f for f in figures if f.get("rect")] + equations
         png = pdfrender.page_view(path, page, boxed)
         info = {"paper": self._label(p), "page": page, "pages_total": n,
                 "grid": "Blue lines every 0.1 of the page width/height, labelled in the margins (0 = top/left). "
                         "Regions are [x, y, w, h] in these fractions.",
                 "figures": [_clean({"box": boxed.index(f) + 1 if f in boxed else None, "label": f["label"],
                                     "caption": f["caption"], "rect": f.get("rect")}) for f in figures],
-                "next": "snapshot(paper, page, figure=\"Figure N\") takes a proposed (red, numbered) region; "
-                        "or pass rect=[x, y, w, h] read off the grid."}
+                "equations": [{"box": boxed.index(e) + 1, "label": e["label"], "rect": e["rect"]} for e in equations],
+                "next": "snapshot(paper, figure=\"Figure N\") or snapshot(paper, equation=\"N\") takes a proposed "
+                        "(red, numbered) region; or pass page and rect=[x, y, w, h] read off the grid."}
         if not figures:
             info["figures_note"] = "No figure or table captions were recognised on this page."
+        if not equations:
+            del info["equations"]
         return Parts([Image(png), info])
 
-    def snapshot(self, paper: str, page: int, figure: str | None = None, rect: list | None = None,
-                 attachment: int | None = None):
+    def _find_region(self, att: dict, path, kind: str, number: str, page: int | None) -> tuple[int, dict]:
+        """(page, region) of a figure, table or numbered equation; on the given page, or else the
+        first page that has it (pages whose text mentions it are tried first)."""
+        fold = lambda x: x.casefold().replace("–", "-")
+        if kind == "equation":
+            want = fold(number)
+            find = lambda pg: next((r for r in pdfrender.equation_regions(path, pg) if fold(r["number"]) == want), None)
+            name = f"Equation ({number})"
+            mention = re.compile(r"\(\s*" + re.escape(number) + r"\s*\)", re.I)
+        else:
+            want = f"{'Table' if kind == 'table' else 'Figure'} {number}"
+            find = lambda pg: next((r for r in pdfrender.figure_regions(path, pg) if fold(r["label"]) == fold(want)), None)
+            name = want
+            mention = re.compile(r"(?:fig(?:ure)?|tab(?:le)?)\.?\s*" + re.escape(number) + r"\b", re.I)
+        n = self._page_count(att) or pdfrender.page_count(path)
+        if page is not None:
+            if not 1 <= page <= n:
+                raise ToolError(f"Page {page} does not exist: the PDF has {n} pages.")
+            hit = find(page)
+            if hit:
+                return page, hit
+            labels = [r["label"] for r in pdfrender.page_regions(path, page)]
+            raise ToolError(f"No {name} on page {page}" + (f" (found: {', '.join(labels)})" if labels else "")
+                            + ". Leave out page to search the whole PDF, or use view_page and pass rect=[x, y, w, h].")
+        try:
+            texts = self._pages(att)
+        except Exception:
+            texts = []
+        likely = [i for i, t in enumerate(texts, 1) if mention.search(t)]
+        for pg in likely + [i for i in range(1, min(n, 300) + 1) if i not in likely]:
+            hit = find(pg)
+            if hit:
+                return pg, hit
+        raise ToolError(f"{name} was not found in the PDF. Equations are found by a number in parentheses at "
+                        f"the end of their line; figures and tables by their caption. Use view_page on the "
+                        f"page and pass rect=[x, y, w, h].")
+
+    def snapshot(self, paper: str, page: int | None = None, figure: str | None = None, equation: str | None = None,
+                 rect: list | None = None, attachment: int | None = None):
         if not pdfrender.available():
             raise ToolError(pdfrender.MISSING)
-        if (figure is None) == (rect is None):
-            raise ToolError("Give either figure (e.g. \"Figure 2\", from view_page) or rect=[x, y, w, h].")
+        if sum(x is not None for x in (figure, equation, rect)) != 1:
+            raise ToolError("Give either figure (e.g. \"Figure 2\", \"Table 1\"), equation (e.g. \"3\" for (3)) "
+                            "or page and rect=[x, y, w, h].")
         p = self._paper(paper)
         key = p.get("citation_key")
         if not key:
             raise ToolError(f"'{self._label(p)}' has no citation key, so a snapshot could not be cited.")
         att = self._pdf_for(p, attachment)
         path = self.s.papers.attachment_path(att)
-        n = self._page_count(att) or pdfrender.page_count(path)
-        if not 1 <= page <= n:
-            raise ToolError(f"Page {page} does not exist: the PDF has {n} pages.")
-        if figure is not None:
-            m = re.search(r"(tab)?\D*?([A-Z]?\d+[a-z]?)\s*$", figure.strip(), re.I)
-            want = f"{'Table' if m and m.group(1) else 'Figure'} {m.group(2)}".casefold() if m else figure.casefold()
-            regions = pdfrender.figure_regions(path, page)
-            hit = next((r for r in regions if r["label"].casefold() == want), None)
-            if not hit:
-                labels = [r["label"] for r in regions]
-                raise ToolError(f"No '{figure}' caption on page {page}" + (f" (found: {', '.join(labels)})" if labels else "")
-                                + ". Use view_page and pass rect=[x, y, w, h].")
+        label = None
+        if rect is None:
+            if equation is not None:
+                parsed = pdfrender.parse_label(equation if re.match(r"\s*(eq|\()", str(equation), re.I) else f"({str(equation).strip()})")
+            else:
+                parsed = pdfrender.parse_label(figure)
+            if not parsed:
+                raise ToolError(f"Could not read '{equation if equation is not None else figure}': write e.g. "
+                                f"figure=\"Figure 2\", figure=\"Table 1\" or equation=\"3\".")
+            page, hit = self._find_region(att, path, parsed[0], parsed[1], page)
             if not hit.get("rect"):
-                raise ToolError(f"{hit['label']} was found but not its region. Use view_page and pass rect=[x, y, w, h].")
-            rect = hit["rect"]
+                raise ToolError(f"{hit['label']} was found on page {page} but not its region. "
+                                f"Use view_page and pass rect=[x, y, w, h].")
+            rect, label = hit["rect"], hit["label"]
+        else:
+            if page is None:
+                raise ToolError("rect needs the page it is on.")
+            n = self._page_count(att) or pdfrender.page_count(path)
+            if not 1 <= page <= n:
+                raise ToolError(f"Page {page} does not exist: the PDF has {n} pages.")
         if len(rect) != 4 or not all(isinstance(v, (int, float)) for v in rect):
             raise ToolError("rect must be four numbers [x, y, w, h], fractions of the page from the top left.")
         x, y, w, h = (float(v) for v in rect)
@@ -680,14 +734,17 @@ class LibraryTools:
         png, pw, ph = pdfrender.render_region(path, page, [x, y, w, h])
         saved = self.s.note_service.add_image(f"{key}-p{page}.png", png)
         preview, _, _ = pdfrender.render_region(path, page, [x, y, w, h], scale=2.0, max_side=900)
-        markdown = f"![{key} p. {page}]({saved['path']})\n*Figure: [@{key}, p. {page}]*"
-        return Parts([Image(preview), {
-            "saved": saved["path"], "size": f"{pw}x{ph}", "region": {"page": page, "rect": [round(v, 4) for v in (x, y, w, h)]},
+        caption = label or "Figure"
+        markdown = f"![{key} p. {page}]({saved['path']})\n*{caption}: [@{key}, p. {page}]*"
+        return Parts([Image(preview), _clean({
+            "saved": saved["path"], "label": label, "size": f"{pw}x{ph}",
+            "region": {"page": page, "rect": [round(v, 4) for v in (x, y, w, h)]},
             "markdown": markdown,
-            "how_to_use": "Paste the markdown into the note text given to write_note, as is. You may write a caption "
-                          "after 'Figure:' but keep the citation on the line right below the image. If the crop is "
-                          "wrong, call snapshot again with a corrected rect (unused images are cleaned up later).",
-        }])
+            "how_to_use": "Paste the markdown into the note text (write_note or edit_note), as is. You may write a "
+                          f"caption after '{caption}:' but keep the citation on the line right below the image. If "
+                          "the crop is wrong, call snapshot again with page and a corrected rect (unused images are "
+                          "cleaned up later).",
+        })])
 
     def write_note(self, title: str, text: str, folder: str = "", tags: list | None = None):
         title = " ".join(str(title).split())
@@ -722,6 +779,119 @@ class LibraryTools:
                        "citations": len([l for l in parsed.links if l.kind == "cite"]),
                        "links_fixed": checker.fixes or None,
                        "warnings": warnings or None})
+
+
+    # ------------------------------------------------------------------ editing notes
+    def _check_change(self, old: str, new: str, path: str) -> tuple[str, list[str], list[str], list[str]]:
+        """Check an edited note. Only problems the edit adds count: an existing note may have
+        broken links or quotes the user left there. Returns (text, errors, warnings, fixes)."""
+        strip = lambda e: re.sub(r"^lines? [\d, …]+:\s*", "", e)
+        before_checker = NoteChecker(self)
+        _, before, _ = before_checker.check(old, path)
+        checker = NoteChecker(self)
+        text, errors, warnings = checker.check(new, path)
+        left = {}
+        for e in before:
+            left[strip(e)] = left.get(strip(e), 0) + 1
+        added = []
+        for e in errors:
+            k = strip(e)
+            if left.get(k):
+                left[k] -= 1
+            else:
+                added.append(e)
+        return text, added, warnings, checker.fixes
+
+    @staticmethod
+    def _diff(old: str, new: str, limit: int = 4000) -> str:
+        import difflib
+        lines = list(difflib.unified_diff(old.split("\n"), new.split("\n"), "before", "after", n=1, lineterm=""))[2:]
+        out = "\n".join(lines)
+        return out if len(out) <= limit else out[:limit] + "\n[… diff cut]"
+
+    def edit_note(self, note: str, edits: list | None = None, append: str | None = None, text: str | None = None,
+                  summary: str | None = None):
+        path = self._note_path(note)
+        if text is not None and (edits or append):
+            raise ToolError("Give either text (the whole new note) or edits and/or append, not both.")
+        if text is None and not edits and not append:
+            raise ToolError("Nothing to change: give edits=[{old, new}], append or text.")
+        flat = []
+        for e in edits or []:   # some clients send the list (or its items) as JSON text
+            if isinstance(e, str):
+                try:
+                    e = json.loads(e)
+                except ValueError:
+                    raise ToolError("edits must be a list of {\"old\": …, \"new\": …} objects.")
+            flat.extend(e if isinstance(e, list) else [e])
+        edits = flat
+        for _ in range(3):   # the user may be saving this note right now: re-read and apply again
+            old, h = self.s.vault.read(path)
+            new = old
+            if text is not None:
+                body = text if text.endswith("\n") else text + "\n"
+                header, old_body, _ = frontmatter.split(old)
+                new_header, _, _ = frontmatter.split(body)
+                if header is not None and new_header is None:   # keep the note's front matter
+                    body = old[:len(old) - len(old_body)] + body
+                new = body
+            for k, e in enumerate(edits or [], 1):
+                if not isinstance(e, dict) or not isinstance(e.get("old"), str) or not isinstance(e.get("new"), str):
+                    raise ToolError(f"Edit {k}: give {{\"old\": exact text now in the note, \"new\": its replacement}}.")
+                if not e["old"]:
+                    raise ToolError(f"Edit {k}: old is empty. To add at the end use append; to add elsewhere, "
+                                    "include a neighbouring line in old and new.")
+                count = new.count(e["old"])
+                if count != 1:
+                    raise ToolError(f"Edit {k}: the old text occurs {count} times in {path}"
+                                    + (" (it must be copied exactly from get_note, with its line breaks)." if not count
+                                       else "; include more of the surrounding text so it occurs once.")
+                                    + " Nothing was saved.")
+                new = new.replace(e["old"], e["new"], 1)
+            if append:
+                nl = "\r\n" if "\r\n" in new else "\n"
+                new = new.rstrip("\r\n") + nl + nl + append.strip("\n").replace("\n", nl) + nl
+            if new == old:
+                raise ToolError("The edit changes nothing; the note was left as it is.")
+            if len(new) > 4 * MAX_NOTE_CHARS:
+                raise ToolError("The note would become too long.")
+            new, errors, warnings, fixes = self._check_change(old, new, path)
+            if errors:
+                raise ToolError("Nothing was saved: the change adds problems that would show as broken in the app. "
+                                "Fix them and call edit_note again.\n- " + "\n- ".join(errors)
+                                + ("\nAlso: " + " ".join(warnings) if warnings else ""))
+            summary_text = " ".join(str(summary or "").split()) or "Edited by Claude"
+            try:
+                res = self.s.note_service.edit(path, new, h, by="ai", summary=summary_text)
+                break
+            except Conflict:
+                continue
+        else:
+            raise ToolError(f"{path} kept changing while saving (the user is probably typing in it). Try again shortly.")
+        return _clean({
+            "saved": path, "link": self._note_link(path), "version": res["version"],
+            "changes": self._diff(old, new), "links_fixed": fixes or None, "warnings": warnings or None,
+            "undo": "The user sees the change in the app and can undo it there (Cmd+Z in the open note, or the "
+                    "note's Claude edits list); undo_note_edit reverts it if the user asks you to.",
+        })
+
+    def undo_note_edit(self, note: str):
+        path = self._note_path(note)
+        e = next((x for x in self.s.note_service.history.list(path) if x.get("by") == "ai"), None)
+        if not e:
+            raise ToolError(f"Claude has not edited {path} (or its earlier versions were cleaned up).")
+        full = self.s.note_service.history.get(e["id"])
+        cur, h = self.s.vault.read(path)
+        if h != e["after_hash"]:
+            raise ToolError(f"{path} was changed after Claude's last edit ({e['summary']}), so undoing it would also "
+                            "remove those changes. Nothing was undone. The user can restore any earlier version in "
+                            "the app (the note's Claude edits list), or read the note with get_note and edit_note it.")
+        try:
+            res = self.s.note_service.edit(path, full["before"], h, by="ai", summary=f"Undid: {e['summary']}")
+        except Conflict:
+            raise ToolError(f"{path} changed just now; nothing was undone.")
+        return {"restored": path, "undid": e["summary"], "version": res["version"],
+                "changes": self._diff(cur, full["before"])}
 
 
 # ============================================================================ schemas
@@ -791,19 +961,22 @@ def build_server(services, version: str = "0.1.0") -> Server:
             "attachment": att_arg,
         }, "required": ["paper", "page"]}, t.view_page))
     server.add(Tool(
-        "snapshot", "Snapshot a figure for a note",
-        "Cut a region of a PDF page (a figure, table or equation) into an image in the notes folder, recording "
-        "where it came from, and return the Markdown to put in write_note's text; in the app, clicking its "
-        "citation opens the PDF there and flashes the region. Give figure=\"Figure 2\" (a region view_page "
-        "proposed) or rect=[x, y, w, h] (fractions of the page from the top left, read off view_page's grid). "
-        "Returns a preview to check the crop.",
+        "snapshot", "Snapshot a figure, table or equation for a note",
+        "Cut a figure, table or numbered equation of a PDF into an image in the notes folder, recording where it "
+        "came from, and return the Markdown to put in a note; in the app, clicking its citation opens the PDF "
+        "there and flashes the region. Prefer naming it: figure=\"Figure 2\" / \"Table 1\" (found by its caption) "
+        "or equation=\"3\" for the equation numbered (3) (its lines and number, never cut in the middle); the "
+        "page is found if you leave it out. Otherwise give page and rect=[x, y, w, h] (fractions of the page from "
+        "the top left, read off view_page's grid). Returns a preview to check the crop.",
         {"type": "object", "properties": {
             "paper": paper_arg,
-            "page": {"type": "integer", "minimum": 1, "description": "PDF page number (from 1)."},
-            "figure": {"type": "string", "description": "A caption label view_page found, e.g. \"Figure 2\" or \"Table 1\"."},
+            "page": {"type": "integer", "minimum": 1, "description": "PDF page number (from 1). Needed with rect; "
+                     "optional with figure or equation (default: search the PDF)."},
+            "figure": {"type": "string", "description": "A figure or table by its caption label, e.g. \"Figure 2\", \"Fig. 3b\" or \"Table I\"."},
+            "equation": {"type": "string", "description": "A numbered equation by its number as printed: \"3\", \"(2.5)\", \"A1\"."},
             "rect": {"type": "array", "items": {"type": "number"}, "description": "[x, y, w, h] as fractions of the page, origin top left."},
             "attachment": att_arg,
-        }, "required": ["paper", "page"]}, t.snapshot, read_only=False))
+        }, "required": ["paper"]}, t.snapshot, read_only=False))
     server.add(Tool(
         "get_references", "Get a paper's references",
         "The works a paper cites (its fetched reference list; library items are marked and come with citation keys, "
@@ -837,4 +1010,30 @@ def build_server(services, version: str = "0.1.0") -> Server:
             "folder": {"type": "string", "description": "Optional subfolder inside ai/ (e.g. \"crispr\")."},
             "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional tags."},
         }, "required": ["title", "text"]}, t.write_note, read_only=False))
+    server.add(Tool(
+        "edit_note", "Change an existing note",
+        "Change a note the user already has (any folder): replace exact passages (edits), add text at the end "
+        "(append), or give the whole new text. Read it with get_note first and copy each old passage exactly. "
+        "The change is checked like write_note (links, citations, pages, quotes, images, math) and refused if it "
+        "adds a problem; problems already in the note do not block it. The version before the change is kept: the "
+        "user sees what Claude changed in the app and can undo it (Cmd+Z in the open note, or from the note's list "
+        "of Claude edits). Use only when the user asks to change the note.\n\n" + WRITING_RULES,
+        {"type": "object", "properties": {
+            "note": {"type": "string", "description": "Path in the notes folder, file name, or title."},
+            "edits": {"type": "array", "items": {"type": "object", "properties": {
+                "old": {"type": "string", "description": "Exact text now in the note, occurring once (add neighbouring words if needed)."},
+                "new": {"type": "string", "description": "What replaces it (empty to delete it)."}},
+                "required": ["old", "new"]},
+                "description": "Replacements, applied in order."},
+            "append": {"type": "string", "description": "Markdown to add at the end of the note."},
+            "text": {"type": "string", "description": "The whole new note (instead of edits/append). Its front matter is kept if you leave it out."},
+            "summary": {"type": "string", "description": "A few words on what changed, shown to the user with the change (e.g. \"Added Figure 2 and its discussion\")."},
+        }, "required": ["note"]}, t.edit_note, read_only=False))
+    server.add(Tool(
+        "undo_note_edit", "Undo Claude's last edit of a note",
+        "Put a note back as it was before Claude's last edit_note, if it was not changed since. Use when the user "
+        "asks to revert it.",
+        {"type": "object", "properties": {
+            "note": {"type": "string", "description": "Path in the notes folder, file name, or title."},
+        }, "required": ["note"]}, t.undo_note_edit, read_only=False))
     return server

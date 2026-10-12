@@ -11,6 +11,7 @@ import time
 from datetime import datetime
 
 from . import frontmatter
+from .history import NoteHistory
 from .index import NotesIndex
 from .rekey import Rekeyer
 from .vault import ATTACHMENTS, Conflict, NoteExists, Vault, slugify
@@ -94,6 +95,7 @@ class NotesService:
         self.papers = papers
         self.rekeyer = Rekeyer(vault, index, backups_dir or (vault.root.parent / "backups"))
         self.on_change = None   # called after notes are saved, deleted or restored
+        self.history = NoteHistory(vault.root)   # earlier versions of notes Claude changed
 
     # ------------------------------------------------------------------ citation keys
     def text_matcher(self) -> NoteTextMatcher:
@@ -109,7 +111,9 @@ class NotesService:
         return self.rekeyer.plan(old, new)
 
     def rename_key(self, old: str, new: str) -> dict:
-        return self.rekeyer.apply(old, new)
+        res = self.rekeyer.apply(old, new)
+        self.history.moved([(m["from"], m["to"]) for m in res.get("moves") or []])
+        return res
 
     # ------------------------------------------------------------------ helpers
     def _library_keys(self) -> dict[str, dict]:
@@ -225,6 +229,35 @@ class NotesService:
         self._changed()
         return {"path": path, "hash": h, "info": self.index.note(path)}
 
+    def edit(self, path: str, text: str, base_hash: str, *, by: str = "ai", summary: str = "") -> dict:
+        """Save a change made for someone else than the editor (Claude), keeping the version it
+        replaces in the history so the app can show the change and undo it."""
+        path = self.vault.clean_rel(path)
+        before, h = self.vault.read(path)
+        if h != base_hash:
+            raise Conflict(path, h)
+        h2 = self.vault.write(path, text, expected_hash=base_hash)
+        entry = self.history.record(path, before=before, before_hash=h, after_hash=h2, by=by, summary=summary)
+        self.index.update(path)
+        self._changed()
+        return {"path": path, "hash": h2, "version": entry["id"]}
+
+    def history_of(self, path: str) -> dict:
+        """The changes Claude made to a note, newest first; ``current`` marks the one the note is
+        still exactly the result of."""
+        path = self.vault.clean_rel(path)
+        h = self.vault.current_hash(path)
+        entries = self.history.list(path)
+        for e in entries:
+            e["current"] = e["after_hash"] == h
+        return {"path": path, "hash": h, "entries": entries}
+
+    def history_version(self, entry_id: str) -> dict:
+        e = self.history.get(entry_id)
+        if not e:
+            raise KeyError(entry_id)
+        return e
+
     def move(self, path: str, to: str, base_hash: str | None = None) -> dict:
         src = self.vault.clean_rel(path)
         dst = self.vault.clean_rel(to)
@@ -232,6 +265,7 @@ class NotesService:
         self.vault.move(src, dst, expected_hash=base_hash)
         self.index.remove(src)
         self.index.update(dst)
+        self.history.moved([(src, dst)])
         # Links by name keep working if only the folder changed; report the ones that broke.
         broken = [b for b in linked_before if b["path"] != dst and
                   (self.index.resolve(b["target"], from_path=b["path"]) or [None])[0] != dst]
@@ -272,6 +306,7 @@ class NotesService:
         src = self.vault.clean_rel(path, suffix=None)
         before = {n: self.index.backlinks(n) for n in self.vault.notes_in(src)}
         moved = self.vault.move_folder(src, to)
+        self.history.moved(moved)
         for old, _ in moved:
             self.index.remove(old)
         self._reindex(new for _, new in moved)

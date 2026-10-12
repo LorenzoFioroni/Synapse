@@ -112,6 +112,23 @@ def restore_note():
     return jsonify(svc().note_service.restore(d.get("trash_id") or "", d.get("path") or ""))
 
 
+@bp.get("/notes/history")
+@guarded
+def note_history():
+    """Changes Claude made to a note (newest first, without their text)."""
+    return jsonify(svc().note_service.history_of(_path_arg()))
+
+
+@bp.get("/notes/history/version")
+@guarded
+def note_history_version():
+    """One change, with the note's text from before it."""
+    try:
+        return jsonify(svc().note_service.history_version(request.args.get("id") or ""))
+    except KeyError:
+        return error("No such version", 404)
+
+
 @bp.get("/notes/search")
 @guarded
 def search_notes():
