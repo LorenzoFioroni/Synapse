@@ -131,7 +131,19 @@ def test_pairing_links_carry_code_in_fragment_and_qr(mac):
     links = mac.post("/api/devices/pairing", headers={"Host": "127.0.0.1:8000"}).get_json()["links"]
     for link in links:
         assert "/pair#code=" in link["url"] and ":8000/" in link["url"]
-        assert link["qr"].startswith("<svg")
+        assert link["qr"].startswith("<svg") and "viewBox=" in link["qr"]   # viewBox: scales with the CSS size
+
+
+def test_pairing_without_segno_still_gives_links(mac, monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+    def no_segno(name, *a, **k):
+        if name == "segno":
+            raise ImportError(name)
+        return real_import(name, *a, **k)
+    monkeypatch.setattr(builtins, "__import__", no_segno)
+    res = mac.post("/api/devices/pairing", headers={"Host": "127.0.0.1:8000"}).get_json()
+    assert res["links"] and all(l["qr"] is None and "#code=" in l["url"] for l in res["links"])
 
 
 def test_revoked_device_is_locked_out(mac, ipad):

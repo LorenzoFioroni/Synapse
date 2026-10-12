@@ -40,7 +40,7 @@ def _qr_svg(text: str) -> str:
     import segno
     buf = io.BytesIO()
     segno.make(text, error="m").save(buf, kind="svg", scale=5, border=2, dark="#000000", light="#ffffff",
-                                    xmldecl=False, svgns=True, nl=False)
+                                    xmldecl=False, svgns=True, nl=False, omitsize=True)   # viewBox: scales to its box
     return buf.getvalue().decode("utf-8")
 
 
@@ -68,7 +68,7 @@ def new_pairing():
         except ImportError:
             qr = None
         links.append({"label": a["label"], "url": url, "qr": qr})
-    return jsonify(expires=expires, links=links), 201
+    return jsonify(expires=expires, links=links), 201   # qr is None without segno: the page says so
 
 
 @bp.post("/pair")

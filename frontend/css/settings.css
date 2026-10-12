@@ -63,7 +63,8 @@
 /* Devices (issue #34) */
 .pair-box { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
 .pair-qr { flex: none; background: #fff; border-radius: 8px; padding: 6px; line-height: 0; }
-.pair-qr svg { width: 200px; height: 200px; }
+.pair-qr svg { display: block; width: 200px; height: 200px; }
+.pair-qr-missing { width: 200px; box-sizing: border-box; padding: 12px; line-height: 1.4; font-size: var(--fs-sm); color: #333; border: 1px dashed #bbb; }
 .pair-text { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 8px; }
 .pair-url { word-break: break-all; }
 .pair-addrs { font-size: var(--fs-sm); color: var(--text-2); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }

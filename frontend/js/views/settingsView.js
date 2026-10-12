@@ -298,7 +298,9 @@ function renderPairing(box) {
   const choices = pairing.links.length > 1 ? `<div class="pair-addrs">Address: ${pairing.links.map((l, i) =>
     `<button class="token${i === pairing.index ? ' active' : ''}" data-pair-addr="${i}">${escapeHtml(l.label)}</button>`).join(' ')}</div>` : '';
   box.innerHTML = `<div class="pair-box">
-      <div class="pair-qr">${link.qr || ''}</div>
+      ${link.qr ? `<div class="pair-qr">${link.qr}</div>`
+        : `<div class="pair-qr pair-qr-missing">No QR code: the <span class="mono">segno</span> package is missing.
+          Run <span class="mono">pip install segno</span> and restart Synapse — or use the link.</div>`}
       <div class="pair-text">
         <div class="s-title">Scan with the other device's camera</div>
         <div class="s-desc">Or open this link on it: <span class="mono pair-url">${escapeHtml(link.url.split('#')[0])}…</span>

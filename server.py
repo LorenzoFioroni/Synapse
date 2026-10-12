@@ -57,6 +57,10 @@ def main() -> None:
         if names:
             print("On the network:  " + "  ".join(f"http://{n}:{a.port}/" for n in names))
         print("Other devices must be paired first: Settings → Devices → Add a Device (on this computer).")
+        try:
+            import segno  # noqa: F401
+        except ImportError:
+            print("Tip: pip install segno  (shows the pairing QR code; without it only the link works)")
     if not a.no_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     if config.lan and not a.debug:
