@@ -153,10 +153,11 @@ def test_initialize_and_list(lib):
     tools = server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})["result"]["tools"]
     names = [t["name"] for t in tools]
     assert names == ["search_library", "list_collections", "get_note", "get_paper", "search_in_paper",
-                     "read_paper", "view_page", "snapshot", "get_references", "get_citation_graph", "write_note"]
+                     "read_paper", "view_page", "snapshot", "get_references", "get_citation_graph", "write_note",
+                     "edit_note", "undo_note_edit"]
     for t in tools:
         assert t["inputSchema"]["type"] == "object" and t["description"]
-        assert t["annotations"]["readOnlyHint"] == (t["name"] not in ("write_note", "snapshot"))
+        assert t["annotations"]["readOnlyHint"] == (t["name"] not in ("write_note", "snapshot", "edit_note", "undo_note_edit"))
     assert "KaTeX" in res["instructions"] and "by file name" in res["instructions"]
 
 
@@ -377,6 +378,90 @@ def test_write_note_fixes_title_links(lib, svc):
     assert svc.notes.outgoing(r["saved"])[0]["resolved"] == "projects/crispr.md"
 
 
+def test_edit_note(lib, svc):
+    server = lib["server"]
+    path = "projects/crispr.md"
+    before, h0 = svc.vault.read(path)
+    r = call_json(server, "edit_note", note="Crispr project", summary="Pointed to Lee",
+                  edits=[{"old": "earlier work [@doe2019]", "new": "earlier work [@doe2019; @lee2020]"}])
+    assert r["saved"] == path and r["version"]
+    assert "-The dynamics follow" in r["changes"] and "+The dynamics follow" in r["changes"]
+    after, h1 = svc.vault.read(path)
+    assert after == before.replace("[@doe2019]", "[@doe2019; @lee2020]")
+    assert "lee2020" in [l["target"] for l in svc.notes.outgoing(path)]   # index updated
+    # the version before is kept, for the app's undo
+    hist = svc.note_service.history_of(path)
+    assert hist["hash"] == h1 and len(hist["entries"]) == 1
+    e = hist["entries"][0]
+    assert e["current"] and e["by"] == "ai" and e["summary"] == "Pointed to Lee" and "before" not in e
+    assert e["before_hash"] == h0 and e["after_hash"] == h1
+    assert svc.note_service.history_version(e["id"])["before"] == before
+    # append, and several edits in one call; the old [@missing2000] in the note does not block them
+    r = call_json(server, "edit_note", note=path, append="## Next\n\nRead [@smith2021, p. 3].",
+                  edits=[{"old": "See also [[other]].", "new": "See also [[other]] and [[crispr]]."}])
+    text = svc.vault.read(path)[0]
+    assert text.endswith("\n\n## Next\n\nRead [@smith2021, p. 3].\n") and "[[other]] and [[crispr]]" in text
+    assert len(svc.note_service.history_of(path)["entries"]) == 2
+    # whole text: front matter kept when left out
+    r = call_json(server, "edit_note", note=path, text="# Crispr project\n\nShort now.\n")
+    text = svc.vault.read(path)[0]
+    assert text.startswith("---\n") and "id: " in text and text.endswith("# Crispr project\n\nShort now.\n")
+    # refusals: nothing saved
+    unchanged = svc.vault.read(path)
+    for args, msg in [
+        (dict(edits=[{"old": "not in the note", "new": "x"}]), "occurs 0 times"),
+        (dict(edits=[{"old": "", "new": "x"}]), "old is empty"),
+        (dict(edits=[{"old": "Short now.", "new": "Short now."}]), "changes nothing"),
+        (dict(append="Broken [@ghost1999]."), "Nothing was saved"),
+        (dict(append="t ≈ 1.6 outside math"), "KaTeX"),
+        (dict(), "Nothing to change"),
+        (dict(text="x", append="y"), "not both"),
+    ]:
+        err, texts = call(server, "edit_note", note=path, **args)
+        assert err and msg in texts[0], (args, texts)
+    assert svc.vault.read(path) == unchanged
+    err, texts = call(server, "edit_note", note="crispr", edits=[{"old": "o", "new": "x"}])
+    assert err and "occurs" in texts[0] and "times" in texts[0]
+    # edits sent as JSON text by some clients
+    r = call_json(server, "edit_note", note=path, edits=json.dumps([{"old": "Short now.", "new": "Short."}]))
+    assert svc.vault.read(path)[0].endswith("Short.\n")
+
+
+def test_undo_note_edit_and_history_follows_moves(lib, svc):
+    server = lib["server"]
+    path = "other.md"
+    original = svc.vault.read(path)[0]
+    call_json(server, "edit_note", note=path, append="Added by Claude.", summary="Added a line")
+    r = call_json(server, "undo_note_edit", note="other")
+    assert r["undid"] == "Added a line" and svc.vault.read(path)[0] == original
+    entries = svc.note_service.history_of(path)["entries"]
+    assert [e["summary"] for e in entries] == ["Undid: Added a line", "Added a line"]
+    # changed by the user since: refused
+    call_json(server, "edit_note", note=path, append="Second line.")
+    text, h = svc.vault.read(path)
+    svc.note_service.save(path, text + "Typed by the user.\n", h)
+    err, texts = call(server, "undo_note_edit", note=path)
+    assert err and "changed after" in texts[0] and "Typed by the user" in svc.vault.read(path)[0]
+    err, texts = call(server, "undo_note_edit", note="crispr")
+    assert err and "has not edited" in texts[0]
+    # renaming or moving keeps the history with the note
+    svc.note_service.move(path, "moved/other2.md")
+    assert len(svc.note_service.history_of("moved/other2.md")["entries"]) == 3
+    svc.note_service.move_folder("moved", "elsewhere")
+    assert len(svc.note_service.history_of("elsewhere/other2.md")["entries"]) == 3
+    assert not any(p.suffix == ".md" for p in (svc.vault.root / ".history").iterdir())   # hidden, not notes
+
+
+def test_history_api(lib, svc, client):
+    call_json(lib["server"], "edit_note", note="other.md", append="More.", summary="More")
+    r = client.get("/api/notes/history?path=other.md").get_json()
+    assert r["path"] == "other.md" and r["entries"][0]["current"] and r["entries"][0]["summary"] == "More"
+    v = client.get(f"/api/notes/history/version?id={r['entries'][0]['id']}").get_json()
+    assert v["before"].endswith("Back to [[crispr]].\n")
+    assert client.get("/api/notes/history/version?id=../../x").status_code == 404
+    assert client.get("/api/notes/history?path=../x.md").status_code == 400
+
+
 def test_write_note_checks_quotes(lib, svc):
     server = lib["server"]
     ok = call_json(server, "write_note", title="Quoted",
@@ -464,9 +549,9 @@ def test_snapshot_and_use_in_note(lib, svc):
     assert info["saved"].startswith("attachments/") and saved.is_file()
     region = pdfrender.read_region(saved.read_bytes())
     assert region["page"] == 2 and region["rect"] == info["region"]["rect"]
-    assert info["markdown"] == f"![fig2024 p. 2]({info['saved']})\n*Figure: [@fig2024, p. 2]*"
+    assert info["markdown"] == f"![fig2024 p. 2]({info['saved']})\n*Figure 2: [@fig2024, p. 2]*"
     note = call_json(server, "write_note", title="With figure", text="The chart:\n\n" + info["markdown"].replace(
-        "*Figure: ", "*Figure 2: phase diagram "))
+        "*Figure 2: ", "*Figure 2: phase diagram "))
     assert note["saved"]
     err, texts = call(server, "snapshot", paper="fig2024", page=2, rect=[0.1, 0.6, 0.7, 0.15])
     assert not err and pdfrender.read_region((svc.vault.root / json.loads(texts[1])["saved"]).read_bytes())["rect"] == [0.1, 0.6, 0.7, 0.15]
@@ -476,6 +561,77 @@ def test_snapshot_and_use_in_note(lib, svc):
     assert err and "either figure" in texts[0]
     err, texts = call(server, "snapshot", paper="doe2019", page=1, rect=[0, 0, 1, 1])
     assert err and "no PDF" in texts[0]
+
+
+EQ_PDF = ROOT / "tests" / "fixtures" / "equations.pdf"   # pdflatex of equations.tex next to it
+
+
+def _overlap(a, b) -> float:
+    return max(0.0, min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]))
+
+
+@needs_pdfium
+def test_equation_regions():
+    one = {e["number"]: e["rect"] for e in pdfrender.equation_regions(EQ_PDF, 1)}
+    # two columns; "Eq. (1)", "see (1)." and "Equation (5) closes…" in the text are not equations
+    assert sorted(one) == ["1", "2", "3", "4", "5", "6"]
+    for n in "12345":
+        x, y, w, h = one[n]
+        assert x > 0.08 and x + w < 0.52, n   # left column only
+    x, y, w, h = one["6"]
+    assert x > 0.55 and x + w < 0.93 and h > 0.03   # right column, both lines of the split equation
+    assert one["1"][3] > 0.035   # the fraction dρ/dt: both lines of it
+    assert _overlap(one["2"], one["3"]) < 0.005   # align: two numbered lines, each its own region
+    two = {e["number"]: e["rect"] for e in pdfrender.equation_regions(EQ_PDF, 2)}
+    assert sorted(two) == ["2.1", "2.2", "2.3a", "2.3b", "2.4", "2.5", "A1"]
+    assert two["2.2"][0] < 0.25 and two["2.2"][0] + two["2.2"][2] > 0.9   # wide: from "Z =" to the number
+    assert two["2.5"][3] > 0.045   # the whole 3×3 matrix
+    assert _overlap(two["2.4"], two["2.5"]) < 0.005
+    for rect in list(one.values()) + list(two.values()):
+        assert rect[2] > 0.03 and rect[3] < 0.1
+
+
+def test_parse_label():
+    p = pdfrender.parse_label
+    assert p("Eq. (3)") == p("equation 3") == p("(3)") == p("eq3") == ("equation", "3")
+    assert p("Eqs. (2.5)") == ("equation", "2.5") and p("(A1)") == ("equation", "A1")
+    assert p("Fig. 2") == p("Figure 2") == ("figure", "2") and p("Table I") == ("table", "I")
+    assert p("FIG. 3b") == ("figure", "3b") and p("3") is None and p("the model") is None
+
+
+@needs_pdfium
+def test_snapshot_equation_and_figure_by_number(lib, svc):
+    import shutil
+    shutil.copy(EQ_PDF, svc.config.pdf_dir / "eq.pdf")
+    eq = svc.papers.create({"title": "Equations paper", "authors": "Eq, Al", "year": 2025, "citation_key": "eq2025"})
+    svc.papers.add_attachment(eq["id"], "Full Text PDF", "eq.pdf")
+    server = build_server(svc)
+    reply = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                           "params": {"name": "snapshot", "arguments": {"paper": "eq2025", "equation": "A1"}}})
+    info = json.loads(reply["result"]["content"][1]["text"])
+    assert info["region"]["page"] == 2 and info["label"] == "Equation (A1)"   # page found without being told
+    assert info["region"]["rect"] == next(e["rect"] for e in pdfrender.equation_regions(EQ_PDF, 2) if e["number"] == "A1")
+    assert info["markdown"].endswith("\n*Equation (A1): [@eq2025, p. 2]*")
+    region = pdfrender.read_region((svc.vault.root / info["saved"]).read_bytes())
+    assert region["page"] == 2
+    for spelled in ("(3)", "Eq. 3", "3"):
+        r = json.loads(call(server, "snapshot", paper="eq2025", equation=spelled)[1][1])
+        assert r["label"] == "Equation (3)" and r["region"]["page"] == 1
+    r = json.loads(call(server, "snapshot", paper="eq2025", figure="eq. (2.4)")[1][1])
+    assert r["label"] == "Equation (2.4)"
+    r = json.loads(call(server, "snapshot", paper="eq2025", figure="Fig. 1")[1][1])
+    assert r["region"]["page"] == 1 and r["markdown"].endswith("*Figure 1: [@eq2025, p. 1]*")
+    err, texts = call(server, "snapshot", paper="eq2025", page=2, equation="3")
+    assert err and "No Equation (3) on page 2" in texts[0] and "Equation (2.1)" in texts[0]
+    err, texts = call(server, "snapshot", paper="eq2025", equation="99")
+    assert err and "not found" in texts[0]
+    err, texts = call(server, "snapshot", paper="eq2025", rect=[0.1, 0.1, 0.2, 0.2])
+    assert err and "page" in texts[0]
+    reply = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                           "params": {"name": "view_page", "arguments": {"paper": "eq2025", "page": 1}}})
+    v = json.loads(reply["result"]["content"][1]["text"])
+    assert [e["label"] for e in v["equations"]][:2] == ["Equation (1)", "Equation (6)"]
+    assert v["figures"][0]["box"] == 1 and v["equations"][0]["box"] == 2
 
 
 def test_page_tools_without_pdfium(lib, monkeypatch):
@@ -499,7 +655,7 @@ def test_stdio_server_end_to_end(lib, svc):
     assert p.returncode == 0, p.stderr
     replies = [json.loads(l) for l in p.stdout.splitlines()]
     assert [r["id"] for r in replies] == [1, 2, 3]
-    assert len(replies[1]["result"]["tools"]) == 11
+    assert len(replies[1]["result"]["tools"]) == 13
     assert "tensor networks" in replies[2]["result"]["content"][0]["text"]
 
 

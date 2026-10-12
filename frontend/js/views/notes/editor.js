@@ -2,6 +2,7 @@
 // first use. Colours come from the app's CSS variables, so light and dark themes just work.
 import { completions } from './completion.js';
 import { livePreview } from './livePreview.js';
+import { changedSpan } from './diff.js';
 import { splitFrontmatter } from './mdscan.js';
 
 let CM = null;
@@ -156,12 +157,16 @@ export async function createEditor(parent, handlers, preview, mode = 'live', dat
       const start = Math.min(splitFrontmatter(text).bodyStart, text.length);
       view.setState(cm.EditorState.create({ doc: text, extensions: extensions(), selection: { anchor: start } }));
     },
-    /** Replace the content of the current note (e.g. taken from another tab), keeping the cursor nearby. */
-    replace(text) {
+    /**
+     * Replace the content of the current note (a version saved elsewhere, e.g. by Claude or another
+     * tab). Only the part that differs is replaced, so the cursor and scroll position stay, and it
+     * is its own step in the undo history: Cmd+Z takes the note back to what it was.
+     */
+    replace(text, { userEvent = 'remote' } = {}) {
       const cur = view.state.doc.toString();
-      if (cur === text) return;
-      const head = Math.min(view.state.selection.main.head, text.length);
-      view.dispatch({ changes: { from: 0, to: cur.length, insert: text }, selection: { anchor: head } });
+      const ch = changedSpan(cur, text);
+      if (!ch) return;
+      view.dispatch({ changes: ch, annotations: cm.Transaction.userEvent.of(userEvent) });
     },
     setMode(m) {
       currentMode = m;

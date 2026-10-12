@@ -48,3 +48,17 @@ export function compactDiff(rows, context = 2) {
   if (gap) out.push({ op: '…', count: gap });
   return out;
 }
+
+/** The one change {from, to, insert} turning `a` into `b` (common start and end kept), or null if equal. */
+export function changedSpan(a, b) {
+  if (a === b) return null;
+  let start = 0;
+  const max = Math.min(a.length, b.length);
+  while (start < max && a.charCodeAt(start) === b.charCodeAt(start)) start++;
+  let endA = a.length, endB = b.length;
+  while (endA > start && endB > start && a.charCodeAt(endA - 1) === b.charCodeAt(endB - 1)) { endA--; endB--; }
+  // never split a surrogate pair
+  if (start > 0 && start < a.length && /[\udc00-\udfff]/.test(a[start])) start--;
+  if (endA < a.length && /[\udc00-\udfff]/.test(a[endA]) && endA > start) { endA++; endB++; }
+  return { from: start, to: endA, insert: b.slice(start, endB) };
+}

@@ -13,7 +13,7 @@ import { escapeHtml, formatDate, h, modKey, modLabel, plural, storage, store } f
 import { navPush } from '../../nav.js';
 import { closeGlobal, globalOpen, graphChanged, initNotesGraph, localSection, openGlobal, showLocal } from '../graph/notesGraph.js';
 import { RETENTION_LABELS, openAttachments } from './attachmentsDialog.js';
-import { compactDiff, lineDiff } from './diff.js';
+import { barHtml, diffHtml, editsDialog, editsOf, markSeen, pendingEdit, showEdit } from './aiEdits.js';
 import { createEditor, loadMD } from './editor.js';
 import { splitFrontmatter } from './mdscan.js';
 import { NoteSession } from './noteSession.js';
@@ -85,6 +85,7 @@ export function initNotes() {
           <button data-mode="read" title="Read (${modLabel}E)">Read</button>
         </div>
       </div>
+      <div class="note-ai-bar" role="status" hidden></div>
       <div class="note-body">
         <div class="note-editor"></div>
         <div class="note-read" tabindex="0" hidden><article class="prose"></article></div>
@@ -125,6 +126,8 @@ export function initNotes() {
   root.querySelector('.notes-tree').addEventListener('keydown', onTreeKey);
 
   window.addEventListener('focus', () => { if (notesOpen()) { session?.checkRemote(); refreshTree(); } });
+  // Claude (the MCP server) saves from another process: look for such changes while the note is visible
+  setInterval(() => { if (notesOpen() && !document.hidden && session?.status === 'saved') session.checkRemote(); }, 5000);
   document.addEventListener('visibilitychange', () => { if (document.hidden) session?.save(); });
   window.addEventListener('pagehide', flushOnUnload);
   // Diagrams are drawn for one theme: redraw them when light/dark changes.
@@ -420,7 +423,7 @@ async function doOpen(path) {
     api: { save: api.saveNote, get: api.getNote, create: api.recreateNote },
     onStatus: paintStatus,
     onConflict: (c) => conflictDialog(c),
-    onRemoteText: (t) => { ed.replace(t); if (mode === 'read') renderRead(); toast('Updated with changes made in another window.'); },
+    onRemoteText: (t) => { ed.replace(t); if (mode === 'read') renderRead(); remoteArrived(path); },
     onSaved: () => afterSave(),
   });
   store('zc.notes.active', path);
@@ -435,6 +438,7 @@ async function doOpen(path) {
   // opened from the file list: the keyboard stays there (arrows, Delete) until you click the note
   setMode(mode, { focus: !treeEl().contains(document.activeElement) });
   loadLinks();
+  loadAiEdits();
   if (start.conflict) await session.startConflict();
   else if (start.restored) toast('Restored changes that had not been saved yet.', { type: 'success' });
 }
@@ -445,6 +449,8 @@ function paintEmpty() {
   root.querySelector('.note-crumbs').innerHTML = '';
   root.querySelector('.note-status').textContent = '';
   root.querySelector('.notes-side .ns-details').innerHTML = '';
+  aiHist = null;
+  paintAiBar();
 }
 
 async function closeCurrent() {
@@ -459,6 +465,7 @@ async function closeCurrent() {
 
 let afterSaveTimer = null;
 function afterSave() {
+  paintAiBar();
   // titles, folders and outline may have changed: refresh lazily
   clearTimeout(afterSaveTimer);
   afterSaveTimer = setTimeout(async () => {
@@ -595,6 +602,68 @@ async function paintHits() {
       <div class="snip">${r.snippet}</div></button>`).join('')}</div>`);
 }
 
+/* ====================================================== Claude's edits */
+let aiHist = null;   // GET /api/notes/history of the open note
+
+async function loadAiEdits() {
+  const path = session?.path;
+  if (!path) return null;
+  const hist = await editsOf(path);
+  if (session?.path !== path) return null;
+  aiHist = hist;
+  paintAiBar();
+  paintSide();
+  return hist;
+}
+
+function paintAiBar() {
+  const bar = root.querySelector('.note-ai-bar');
+  const e = session && aiHist?.path === session.path && !session.dirty ? pendingEdit(aiHist, session.saved.hash) : null;
+  bar.hidden = !e;
+  bar.innerHTML = e ? barHtml(e) : '';
+}
+
+/** A version saved elsewhere was just loaded into the open note. */
+async function remoteArrived(path) {
+  const hist = await loadAiEdits();
+  const e = hist && session?.path === path ? pendingEdit(hist, session.saved.hash) : null;
+  if (e) toast(`Claude edited this note. ${modLabel}Z in the note undoes it.`, { timeout: 6000 });
+  else toast('Updated with changes made in another window.');
+}
+
+/** Put an earlier version in the editor, as one undoable step, and save it. */
+async function putBack(text) {
+  if (!session || !editor || session.status === 'conflict') return;
+  editor.replace(text, { userEvent: 'restore' });
+  if (mode === 'read') renderRead();
+  await session.save();
+  paintAiBar();
+  toast(`Restored the version before Claude’s change. ${modLabel}Z in the note brings the change back.`, { type: 'success' });
+}
+
+async function onAiAction(act, id) {
+  if (!session) return;
+  const ctx = () => ({ savedHash: session.saved.hash, currentText: session.text });
+  try {
+    if (act === 'ai-edits') {
+      const hist = await loadAiEdits();
+      if (!hist?.entries.length) return;
+      const text = await editsDialog(hist, ctx());
+      if (text !== null) await putBack(text);
+      return;
+    }
+    const e = aiHist?.entries.find((x) => x.id === id);
+    if (!e) return;
+    if (act === 'ai-dismiss') { markSeen(id); paintAiBar(); return; }
+    if (act === 'ai-show') {
+      const text = await showEdit(e, ctx());
+      if (text !== null) await putBack(text);
+      return;
+    }
+    if (act === 'ai-undo') await putBack((await api.noteVersion(id)).before);
+  } catch (err) { toastError(err); }
+}
+
 /* ============================================================== painting */
 function paintStatus(status) {
   const el = root.querySelector('.note-status');
@@ -655,6 +724,7 @@ function paintSide() {
         ${(info.tags || []).length ? `<dt>Tags</dt><dd>${info.tags.map((t) => `<span class="tag-pill sm">${escapeHtml(t)}</span>`).join(' ')}</dd>` : ''}
         ${info.created ? `<dt>Created</dt><dd>${escapeHtml(formatDate(info.created, true))}</dd>` : ''}
         ${info.mtime ? `<dt>Modified</dt><dd>${escapeHtml(formatDate(new Date(info.mtime * 1000).toISOString(), true))}</dd>` : ''}
+        ${aiHist?.path === session?.path && aiHist.entries.length ? `<dt>Claude</dt><dd><button class="btn btn-sm btn-ghost ai-edits-btn" data-act="ai-edits">${icon('sparkle', 'icon-sm')} ${plural(aiHist.entries.length, 'edit')}…</button></dd>` : ''}
         <dt>File</dt><dd class="mono path">${escapeHtml(info.path)}</dd>
       </dl>
     </div>`;
@@ -898,19 +968,14 @@ function conflictDialog(c) {
       if (v === 'mine') { await session.resolve('mine'); refreshTree(); } else { await closeCurrent(); refreshTree(); }
     });
   }
-  const rows = lineDiff(c.theirs, c.mine);
-  const diffHtml = rows === null
-    ? '<p class="muted">The notes are too long to compare here.</p>'
-    : `<div class="diff">${compactDiff(rows).map((r) => (r.op === '…'
-      ? `<div class="d-gap">… ${plural(r.count, 'unchanged line')} …</div>`
-      : `<div class="d-${r.op === '+' ? 'add' : r.op === '-' ? 'del' : 'same'}"><span class="d-op">${r.op === ' ' ? '' : r.op}</span>${escapeHtml(r.text) || ' '}</div>`)).join('')}</div>`;
+  const diffHtmlStr = diffHtml(c.theirs, c.mine);
   return openDialog({
     title: 'This note was changed elsewhere',
     subtitle: 'Another window (or another app) saved this note while you were editing it. Nothing has been overwritten.',
     wide: true,
     dismissable: false,
     render: (b) => {
-      b.innerHTML = `<div class="diff-legend"><span class="d-del">− only in the saved file</span><span class="d-add">+ only in your version</span></div>${diffHtml}`;
+      b.innerHTML = `<div class="diff-legend"><span class="d-del">− only in the saved file</span><span class="d-add">+ only in your version</span></div>${diffHtmlStr}`;
     },
     buttons: [{ label: 'Use the saved file', value: 'theirs' }, { label: 'Keep my version', kind: 'primary', value: 'mine' }],
   }).then((v) => session?.resolve(v === 'theirs' ? 'theirs' : 'mine'));
@@ -932,6 +997,7 @@ function onClick(e) {
   if (act === 'graph') return openNotesGraph(session ? `note:${session.path}` : null);
   if (act === 'rename' && session) return renameNote(session.path);
   if (act === 'show-conflict' && session?.conflict) return conflictDialog(session.conflict);
+  if (act?.startsWith('ai-')) return onAiAction(act, e.target.closest('[data-ai-id]')?.dataset.aiId);
   if (act === 'paper-item' && info?.paper) { const it = itemInfo(info.paper); if (it) emit('show-item', it.id); return; }
   if (act === 'paper-pdf' && info?.paper) { const it = itemInfo(info.paper); if (it?.pdf) openAttachment({ id: it.id, title: it.title }, it.pdf); return; }
   if (act === 'tree-menu') {

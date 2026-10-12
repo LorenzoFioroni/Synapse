@@ -188,18 +188,26 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 | `get_paper` | metadata, abstract, PDFs and page counts, your paper note, notes citing it, reference-list summary |
 | `search_in_paper` | the pages of a PDF containing some words, with snippets |
 | `read_paper` | the text of some PDF pages (up to 10 per call), marked by page |
-| `view_page` | an image of a page with a 0–1 grid; figure and table captions with proposed regions |
-| `snapshot` | cuts a figure/table/region into `notes/attachments/` like the viewer's camera button, and returns the Markdown for it |
+| `view_page` | an image of a page with a 0–1 grid; figures, tables and numbered equations with proposed regions |
+| `snapshot` | cuts a figure, table or equation — named by its number (`figure="Figure 2"`, `equation="3"`, page found by itself) or as a region — into `notes/attachments/` like the viewer's camera button, and returns the Markdown for it |
 | `get_references` | what a paper cites (library items marked, others with DOI/arXiv) and which library items cite it |
 | `get_citation_graph` | the neighbourhood of some papers, or a library-wide overview of the most cited works you do not have |
 | `write_note` | saves a new note in `notes/ai/` (`author: ai`), never overwriting anything — after checking it |
+| `edit_note` | changes an existing note (replace passages, append, or new text) — checked the same way; the version before is kept |
+| `undo_note_edit` | puts a note back as it was before Claude's last edit (if you did not change it since) |
 
 Page numbers are PDF pages counted from 1, so Claude can cite `[@key, p. N]` and the citation opens
 the right page in the app. Claude is told the notes syntax (KaTeX math, quotes as `> words [@key, p. N]`,
 snapshots, callouts…), and `write_note` refuses a note — saving nothing — when a `[[link]]` or `#heading`
 does not resolve, a citation key or page does not exist, a quote's words are not on the cited page, an
 image is missing, or formulas are written in Unicode instead of `$…$`; Claude then corrects it. A link
-written with a note's title is fixed to its file name. `view_page` and `snapshot` need `pypdfium2`
+written with a note's title is fixed to its file name. `edit_note` is checked the same way, but only
+problems the change adds block it. Every change Claude makes to a note keeps the version it replaced
+(`notes/.history/`, in backups): an open note takes the change as one step, so ⌘Z (Ctrl+Z) undoes it;
+a bar over the note says what Claude changed, with Show changes and Undo; and the note's details list
+all of Claude's edits, each with its diff and a way back. Equations are found by the number in
+parentheses at the end of their line, and the snapshot covers all their lines (never half an
+equation). `view_page` and `snapshot` need `pypdfium2`
 (in `requirements.txt`). Note text and PDF passages Claude reads are sent to Anthropic as part of
 the conversation, as if you had pasted them.
 
@@ -272,6 +280,7 @@ python tests/e2e/viewer_links_checklist.py  # PDF links: jump, hover preview, Ba
 python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, filters, paper card, Show in Graph, Back/Forward
 python tests/e2e/attachments_checklist.py  # note attachments: unused ones to the trash, Attachments dialog, retention
 python tests/e2e/adding_checklist.py     # bulk Retrieve Metadata (parallel, grouped, background), Settings → Adding Items
+python tests/e2e/claude_edits_checklist.py  # Claude's note edits: appear live, ⌘Z / bar Undo / Show changes, edit list
 ```
 
 The notes editor (CodeMirror 6) is vendored as a pre-built bundle in `frontend/vendor/cm6/`;

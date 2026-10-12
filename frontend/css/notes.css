@@ -44,6 +44,19 @@ body[data-workspace="notes"] #item-pane { display: none !important; }
 .note-paper .btn { color: var(--text-2); }
 .note-crumbs .crumb.last { border: none; background: none; padding: 2px 6px; border-radius: 5px; font-weight: 600; color: var(--text); font-size: var(--fs); overflow: hidden; text-overflow: ellipsis; }
 .note-crumbs .crumb.last:hover { background: var(--bg-hover); }
+/* Claude's edits (issue #40): bar over the open note, list in a dialog */
+.note-ai-bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 18px; border-bottom: 1px solid var(--border);
+  background: var(--accent-soft); color: var(--text); font-size: var(--fs-sm); }
+.note-ai-bar[hidden] { display: none; }
+.note-ai-bar > .icon { color: var(--accent); flex: none; }
+.note-ai-bar .ai-msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-edits-btn { padding-left: 4px; padding-right: 6px; }
+.ai-list { display: flex; flex-direction: column; }
+.ai-row { display: grid; grid-template-columns: 11em 1fr auto; gap: 12px; align-items: center; padding: 8px 2px; border-bottom: 1px solid var(--border); }
+.ai-row:last-child { border-bottom: none; }
+.ai-when { color: var(--text-3); font-size: var(--fs-sm); }
+.ai-when .badge { margin-left: 4px; }
+@media (max-width: 600px) { .ai-row { grid-template-columns: 1fr auto; } .ai-when { grid-column: 1 / -1; } }
 .note-status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
 .note-status.ok .icon { color: var(--success); }
 .note-status.warn { color: var(--warning); }
