@@ -103,7 +103,7 @@ function textBox(rec, x, y) {
   fo.style.pointerEvents = 'none';
   const frame = document.createElement('div');
   frame.className = 'anno-text-frame';
-  Object.assign(frame.style, { display: 'inline-block', position: 'relative', pointerEvents: 'auto', padding: '4px', cursor: 'move', border: '1px dotted transparent' });
+  Object.assign(frame.style, { display: 'inline-block', position: 'relative', pointerEvents: 'auto', padding: '4px', cursor: 'move' });
   const input = document.createElement('div');
   input.className = 'anno-text-input';
   input.contentEditable = 'true';
@@ -112,28 +112,32 @@ function textBox(rec, x, y) {
   input.textContent = rec.text || '';
   const handle = document.createElement('div');
   handle.className = 'anno-text-handle';
-  Object.assign(handle.style, { position: 'absolute', right: '-4px', bottom: '-4px', width: '8px', height: '8px', background: '#aaa',
-    cursor: 'nwse-resize', borderRadius: '50%', opacity: '0', transition: 'opacity .2s' });
+  // looks: .anno-text-frame / .anno-text-handle in viewer.html (bigger on touch screens)
   frame.append(input, handle);
   fo.appendChild(frame);
-  frame.addEventListener('mouseenter', () => { frame.style.border = '1px dotted #aaa'; handle.style.opacity = '1'; });
-  frame.addEventListener('mouseleave', () => { frame.style.border = '1px dotted transparent'; handle.style.opacity = '0'; });
+  frame.addEventListener('mouseenter', () => frame.classList.add('hover'));
+  frame.addEventListener('mouseleave', () => frame.classList.remove('hover'));
 
   input.addEventListener('blur', () => finishText(rec.id, fo, input));
-  handle.addEventListener('mousedown', (ev) => {
+  // The size handle: dragged with a mouse, the Pencil or a finger (shown while the box is being edited
+  // on touch screens, which have no hover).
+  handle.addEventListener('pointerdown', (ev) => {
     ev.stopPropagation();
     ev.preventDefault();
+    handle.setPointerCapture?.(ev.pointerId);
     const startY = ev.clientY;
     const start = parseFloat(input.style.fontSize);
     const move = (m) => { input.style.fontSize = `${Math.max(6, start + (m.clientY - startY) / scale())}px`; };
     const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
       const rec2 = byId.get(rec.id);
       if (rec2) change(rec2, { size: Math.round(parseFloat(input.style.fontSize) * 10) / 10, rects: [measure(fo, rec2)] });
     };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
   });
   return fo;
 }
@@ -176,9 +180,10 @@ function showSelection(g) {
 function select(id) {
   selectedId = id;
   document.querySelectorAll('.anno-selection').forEach((n) => n.remove());
-  if (!id) return;
+  if (!id) { showSelPill(); return; }
   const g = document.querySelector(`.anno-layer [data-id="${id}"]`);
   if (g) showSelection(g);
+  showSelPill();
 }
 
 /* ------------------------------------------------------------------ changes (each saved on its own) */
@@ -234,17 +239,62 @@ async function undo(fromStack, toStack) {
 }
 
 /* ------------------------------------------------------------------ input */
+/* Mouse, Apple Pencil and fingers all arrive as pointer events (issue #34).
+   - Once a pen has been used (remembered), fingers scroll and pinch while the pen draws, highlights
+     and erases; before that (a phone, an iPad without a Pencil) fingers draw too.
+   - Safari scrolls the page under the Pencil unless its touches are cancelled; touchstart/touchmove
+     of a stylus are cancelled while an annotation tool is chosen (see stopPenScroll).
+   - Highlight / underline: a mouse selects text as usual; the Pencil drags over the text (the
+     selection follows it); a finger selects with a long press and then taps "Highlight". */
+let penSeen = false;
+try { penSeen = localStorage.getItem('zc.penSeen') === '1'; } catch { /* private mode */ }
+document.body.classList.toggle('zc-pen', penSeen);
+function notePen(e) {
+  if (e.pointerType !== 'pen' || penSeen) return;
+  penSeen = true;
+  document.body.classList.add('zc-pen');
+  try { localStorage.setItem('zc.penSeen', '1'); } catch { /* private mode */ }
+}
+/** May this pointer draw? Mouse and pen always; a finger only while no pen has been seen. */
+const draws = (e) => e.pointerType !== 'touch' || !penSeen;
+let lastPointer = 'mouse';
+document.addEventListener('pointerdown', (e) => { lastPointer = e.pointerType || 'mouse'; notePen(e); }, true);
+
+function stopPenScroll(e) {
+  if (tool() === 'select') return;
+  if (![...e.changedTouches].some((t) => t.touchType === 'stylus')) return;
+  if (!e.target.closest?.('.page-wrapper')) return;
+  // a tap with the text tool must stay a tap (it opens the keyboard); everything else is drawn
+  if (tool() === 'text' && e.type === 'touchstart') return;
+  e.preventDefault();
+}
+document.addEventListener('touchstart', stopPenScroll, { passive: false });
+document.addEventListener('touchmove', stopPenScroll, { passive: false });
+
 function pointIn(svg, e) {
   const r = svg.getBoundingClientRect();
   const [W, H] = pageSize(svg.parentElement);
   return { x: (e.clientX - r.left) / scale(), y: (e.clientY - r.top) / scale(), W, H };
 }
 
+function newTextBox(svg, page, p) {
+  const draft = { type: 'text', page, rects: [[p.x / p.W, p.y / p.H, 0, 0]], text: '', color: color(), size: size() };
+  const g2 = el('g', { class: 'anno anno-text anno-draft' });
+  g2.zcDraft = draft;
+  const box = textBox({ ...draft, id: `draft-${uid()}` }, p.x, p.y);
+  g2.appendChild(box);
+  svg.appendChild(g2);
+  // focus right away, inside the tap: iPadOS only opens the keyboard (or Scribble) for a focus
+  // that happens during the user's gesture
+  box.querySelector('.anno-text-input').focus();
+}
+
 function setupLayer(svg, page) {
   let shape = null;      // box or ink being drawn: {rec, start, points}
   let drag = null;       // text box being moved
+  let tap = null;        // text tool: where the pointer went down (a box is made when it comes up)
 
-  svg.addEventListener('mousedown', (e) => {
+  svg.addEventListener('pointerdown', (e) => {
     const g = e.target.closest?.('g.anno');
     const rec = g && byId.get(g.dataset.id);
     const t = tool();
@@ -257,65 +307,76 @@ function setupLayer(svg, page) {
     const fo = e.target.closest?.('foreignObject');
     if (fo) {
       e.stopPropagation();
-      if (!e.target.isContentEditable && rec) {
+      if (!e.target.isContentEditable && rec && draws(e)) {
+        e.preventDefault();
+        svg.setPointerCapture?.(e.pointerId);
         const p = pointIn(svg, e);
-        drag = { rec, fo, dx: p.x - parseFloat(fo.getAttribute('x')), dy: p.y - parseFloat(fo.getAttribute('y')), moved: false };
+        drag = { rec, fo, dx: p.x - parseFloat(fo.getAttribute('x')), dy: p.y - parseFloat(fo.getAttribute('y')), moved: false, id: e.pointerId };
       }
       return;
     }
     if (!['box', 'draw', 'text'].includes(t)) return;
+    if (e.button > 0) return;
     const p = pointIn(svg, e);
     if (t === 'text') {
       e.preventDefault();
-      const draft = { type: 'text', page, rects: [[p.x / p.W, p.y / p.H, 0, 0]], text: '', color: color(), size: size() };
-      const g2 = el('g', { class: 'anno anno-text anno-draft' });
-      g2.zcDraft = draft;
-      const box = textBox({ ...draft, id: `draft-${uid()}` }, p.x, p.y);
-      g2.appendChild(box);
-      svg.appendChild(g2);
-      setTimeout(() => box.querySelector('.anno-text-input').focus(), 10);
+      tap = { x: e.clientX, y: e.clientY, p, id: e.pointerId };
       return;
     }
+    if (!draws(e)) return;          // a finger while the Pencil draws: it scrolls
+    e.preventDefault();
+    svg.setPointerCapture?.(e.pointerId);
     const g2 = el('g', { class: 'anno anno-draft' });
     const node = t === 'draw'
       ? el('path', { d: `M ${p.x} ${p.y}`, stroke: color(), 'stroke-width': size(), fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
       : el('rect', { x: p.x, y: p.y, width: 0, height: 0, stroke: color(), 'stroke-width': size(), fill: 'none' });
     g2.appendChild(node);
     svg.appendChild(g2);
-    shape = { kind: t, g: g2, node, start: p, points: [[p.x / p.W, p.y / p.H]], W: p.W, H: p.H };
+    shape = { kind: t, g: g2, node, start: p, points: [[p.x / p.W, p.y / p.H]], W: p.W, H: p.H, id: e.pointerId };
   });
 
-  svg.addEventListener('mousemove', (e) => {
-    const p = pointIn(svg, e);
-    if (drag) {
+  svg.addEventListener('pointermove', (e) => {
+    if (drag && e.pointerId === drag.id) {
+      const p = pointIn(svg, e);
       drag.fo.setAttribute('x', p.x - drag.dx);
       drag.fo.setAttribute('y', p.y - drag.dy);
       drag.moved = true;
       return;
     }
-    if (!shape) return;
-    if (shape.kind === 'draw') {
-      shape.points.push([p.x / p.W, p.y / p.H]);
-      shape.node.setAttribute('d', `${shape.node.getAttribute('d')} L ${p.x} ${p.y}`);
-    } else {
-      const s = shape.start;
-      shape.node.setAttribute('x', Math.min(s.x, p.x));
-      shape.node.setAttribute('y', Math.min(s.y, p.y));
-      shape.node.setAttribute('width', Math.abs(p.x - s.x));
-      shape.node.setAttribute('height', Math.abs(p.y - s.y));
+    if (!shape || e.pointerId !== shape.id) return;
+    // a Pencil reports more points than frames: use them all for a smooth line
+    const events = shape.kind === 'draw' && e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    for (const ev of events.length ? events : [e]) {
+      const p = pointIn(svg, ev);
+      if (shape.kind === 'draw') {
+        shape.points.push([p.x / p.W, p.y / p.H]);
+        shape.node.setAttribute('d', `${shape.node.getAttribute('d')} L ${p.x} ${p.y}`);
+      } else {
+        const s = shape.start;
+        shape.node.setAttribute('x', Math.min(s.x, p.x));
+        shape.node.setAttribute('y', Math.min(s.y, p.y));
+        shape.node.setAttribute('width', Math.abs(p.x - s.x));
+        shape.node.setAttribute('height', Math.abs(p.y - s.y));
+      }
     }
   });
 
-  const finish = () => {
-    if (drag) {
+  const finish = (e) => {
+    if (tap && e.pointerId === tap.id) {
+      const t0 = tap;
+      tap = null;
+      if (e.type === 'pointerup' && Math.hypot(e.clientX - t0.x, e.clientY - t0.y) < 10 && tool() === 'text') newTextBox(svg, page, t0.p);
+    }
+    if (drag && e.pointerId === drag.id) {
       const { rec, fo, moved } = drag;
       drag = null;
       if (moved) change(rec, { rects: [measure(fo, rec)] });
     }
-    if (!shape) return;
+    if (!shape || e.pointerId !== shape.id) return;
     const s = shape;
     shape = null;
     s.g.remove();
+    if (e.type === 'pointercancel') return;   // the browser took the gesture over (a scroll)
     const r6 = (v) => Math.round(v * 1e6) / 1e6;
     if (s.kind === 'draw') {
       if (s.points.length < 2) return;
@@ -326,18 +387,36 @@ function setupLayer(svg, page) {
       create({ type: 'box', page, rects: [[r6(x / s.W), r6(y / s.H), r6(w / s.W), r6(h / s.H)]], color: s.node.getAttribute('stroke'), size: Number(s.node.getAttribute('stroke-width')) });
     }
   };
-  window.addEventListener('mouseup', finish);
+  svg.addEventListener('pointerup', finish);
+  svg.addEventListener('pointercancel', finish);
 }
 
-/** Highlight / underline: the selected text becomes one annotation, one rect per line. */
-document.addEventListener('mouseup', () => {
-  const t = tool();
-  if (t !== 'highlight' && t !== 'underline') return;
+/* -------- eraser: drag over annotations to remove them (mouse, Pencil; a finger taps) */
+let erasing = null;
+document.addEventListener('pointerdown', (e) => {
+  if (tool() !== 'eraser' || !draws(e) || e.button > 0 || !e.target.closest?.('.page-wrapper')) return;
+  erasing = e.pointerId;
+  eraseAt(e);
+});
+document.addEventListener('pointermove', (e) => { if (erasing === e.pointerId) eraseAt(e); });
+document.addEventListener('pointerup', (e) => { if (erasing === e.pointerId) erasing = null; });
+document.addEventListener('pointercancel', (e) => { if (erasing === e.pointerId) erasing = null; });
+function eraseAt(e) {
+  for (const n of document.elementsFromPoint(e.clientX, e.clientY)) {
+    const g = n.closest?.('.anno-layer g.anno:not(.anno-draft)');
+    const rec = g && byId.get(g.dataset.id);
+    if (rec) { remove(rec); return; }
+  }
+}
+
+/* -------- highlight / underline */
+/** The selected text becomes one annotation of type t, one rect per line. Returns true when made. */
+function highlightSelection(t) {
   const sel = window.getSelection();
-  if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
   const anchor = sel.anchorNode?.nodeType === 1 ? sel.anchorNode : sel.anchorNode?.parentElement;
   const wrapper = anchor?.closest('.page-wrapper');
-  if (!wrapper || !attId) return;
+  if (!wrapper || !attId) return false;
   const raw = [...sel.getRangeAt(0).getClientRects()];
   // keep the innermost text boxes (drop paragraph-sized wrappers and duplicates)
   const rects = raw.filter((a, i) => a.width >= 1 && a.height >= 1 && !raw.some((b, j) => {
@@ -346,7 +425,7 @@ document.addEventListener('mouseup', () => {
     if (same) return i > j;
     return a.left <= b.left + 1 && a.right >= b.right - 1 && a.top <= b.top + 1 && a.bottom >= b.bottom - 1;
   }));
-  if (!rects.length) return;
+  if (!rects.length) return false;
   const wr = wrapper.getBoundingClientRect();
   const [W, H] = pageSize(wrapper);
   const s = scale();
@@ -356,8 +435,108 @@ document.addEventListener('mouseup', () => {
   const rec = { type: t, page: Number(wrapper.dataset.pageNumber), rects: fr, text, color: color() };
   if (t === 'underline') rec.size = size();
   sel.removeAllRanges();
+  hideMarkPill();
   create(rec);
+  return true;
+}
+
+document.addEventListener('mouseup', () => {
+  const t = tool();
+  if ((t === 'highlight' || t === 'underline') && lastPointer === 'mouse') highlightSelection(t);
 });
+
+/** Where in the text a point is (a collapsed range), or null. */
+function caretAt(x, y) {
+  if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
+  const pos = document.caretPositionFromPoint?.(x, y);
+  if (!pos) return null;
+  const r = document.createRange();
+  r.setStart(pos.offsetNode, pos.offset);
+  return r;
+}
+const inText = (r) => !!r && !!(r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement)?.closest?.('.textLayer');
+
+// The Pencil drags over the text: the selection follows it, and lifting the pen highlights.
+let penSel = null;   // { id, start: Range }
+document.addEventListener('pointerdown', (e) => {
+  const t = tool();
+  if ((t !== 'highlight' && t !== 'underline') || e.pointerType !== 'pen' || !e.target.closest?.('.page-wrapper')) return;
+  const start = caretAt(e.clientX, e.clientY);
+  if (!inText(start)) return;
+  e.preventDefault();
+  penSel = { id: e.pointerId, start };
+  window.getSelection().removeAllRanges();
+});
+document.addEventListener('pointermove', (e) => {
+  if (!penSel || e.pointerId !== penSel.id) return;
+  const here = caretAt(e.clientX, e.clientY);
+  if (!inText(here)) return;              // between lines: keep the last good selection
+  const r = document.createRange();
+  const forward = penSel.start.compareBoundaryPoints(Range.START_TO_START, here) <= 0;
+  const [a, b] = forward ? [penSel.start, here] : [here, penSel.start];
+  r.setStart(a.startContainer, a.startOffset);
+  r.setEnd(b.startContainer, b.startOffset);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+});
+const endPenSel = (e) => {
+  if (!penSel || e.pointerId !== penSel.id) return;
+  penSel = null;
+  if (e.type === 'pointerup') highlightSelection(tool());
+};
+document.addEventListener('pointerup', endPenSel);
+document.addEventListener('pointercancel', endPenSel);
+
+// A finger selects with a long press (and the handles); a button then makes the highlight.
+let markPill = null;
+function hideMarkPill() { markPill?.remove(); markPill = null; }
+let selTimer = null;
+document.addEventListener('selectionchange', () => {
+  clearTimeout(selTimer);
+  selTimer = setTimeout(() => {
+    const t = tool();
+    if ((t !== 'highlight' && t !== 'underline') || lastPointer !== 'touch' || penSel) { hideMarkPill(); return; }
+    const sel = window.getSelection();
+    const node = sel?.anchorNode?.nodeType === 1 ? sel.anchorNode : sel?.anchorNode?.parentElement;
+    if (!sel || sel.isCollapsed || !node?.closest?.('.textLayer')) { hideMarkPill(); return; }
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    if (!markPill) {
+      markPill = document.createElement('div');
+      markPill.className = 'zc-pill zc-mark-pill';
+      markPill.addEventListener('pointerdown', (ev) => ev.preventDefault());
+      markPill.addEventListener('click', () => {
+        // a tap elsewhere may have cleared the selection by now: put back the one the button was made for
+        const sel2 = window.getSelection();
+        if (markPill?.zcRange) { sel2.removeAllRanges(); sel2.addRange(markPill.zcRange); }
+        highlightSelection(tool());
+      });
+      document.body.appendChild(markPill);
+    }
+    markPill.zcRange = sel.getRangeAt(0).cloneRange();
+    markPill.innerHTML = `<button data-mark>${t === 'underline' ? 'Underline' : 'Highlight'}</button>`;
+    markPill.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - 140))}px`;
+    markPill.style.top = `${rect.top - 52 < 50 ? rect.bottom + 52 : rect.top - 52}px`;
+  }, 250);
+});
+
+/* -------- a selected annotation: a Delete button (there may be no keyboard) */
+let selPill = null;
+function showSelPill() {
+  selPill?.remove(); selPill = null;
+  const g = selectedId && document.querySelector(`.anno-layer [data-id="${selectedId}"]`);
+  if (!g) return;
+  const r = g.getBoundingClientRect();
+  selPill = document.createElement('div');
+  selPill.className = 'zc-pill zc-sel-pill';
+  selPill.innerHTML = '<button data-del>Delete</button>';
+  selPill.addEventListener('pointerdown', (ev) => { ev.preventDefault(); ev.stopPropagation(); });
+  selPill.addEventListener('click', () => { const rec = byId.get(selectedId); if (rec) remove(rec); });
+  selPill.style.left = `${Math.max(8, Math.min(r.right - 70, innerWidth - 90))}px`;
+  selPill.style.top = `${r.top - 46 < 50 ? r.bottom + 8 : r.top - 46}px`;
+  document.body.appendChild(selPill);
+}
+document.getElementById('pdf-container')?.addEventListener('scroll', () => { selPill?.remove(); selPill = null; hideMarkPill(); }, { passive: true });
 
 window.addEventListener('keydown', (e) => {
   const typing = e.target.isContentEditable || ['INPUT', 'TEXTAREA'].includes(e.target.tagName);
@@ -376,8 +555,9 @@ window.addEventListener('keydown', (e) => {
   } else if (e.key === 'Escape' && selectedId) select(null);
 });
 
-document.addEventListener('mousedown', (e) => {
-  if (selectedId && !e.target.closest?.('.anno-layer') && !e.target.closest?.('.tool-btn')) select(null);
+document.addEventListener('pointerdown', (e) => {
+  if (selectedId && !e.target.closest?.('.anno-layer') && !e.target.closest?.('.tool-btn') && !e.target.closest?.('.zc-sel-pill')) select(null);
+  if (markPill && !markPill.contains(e.target)) hideMarkPill();
 });
 
 /* ------------------------------------------------------------------ pages and loading */
@@ -420,6 +600,26 @@ async function refresh() {
   } catch { /* offline: keep what is shown */ }
 }
 window.addEventListener('focus', refresh);
+
+/** Undo / Redo buttons: the keyboard shortcuts are not there on a tablet. */
+function addUndoButtons() {
+  const tools = document.getElementById('tools-section');
+  if (!tools || document.getElementById('anno-undo')) return;
+  const mk = (id, title, d, fn) => {
+    const b = document.createElement('button');
+    b.id = id; b.className = 'icon-btn'; b.title = title;
+    b.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+    b.addEventListener('click', fn);
+    return b;
+  };
+  const sep = document.createElement('span');
+  sep.className = 'divider';
+  tools.prepend(
+    mk('anno-undo', 'Undo (⌘Z)', '<path d="M4 6h6.5a3.5 3.5 0 010 7H7"/><path d="M6.5 3.5L4 6l2.5 2.5"/>', () => undo(undoStack, redoStack)),
+    mk('anno-redo', 'Redo (⇧⌘Z)', '<path d="M12 6H5.5a3.5 3.5 0 000 7H9"/><path d="M9.5 3.5L12 6 9.5 8.5"/>', () => undo(redoStack, undoStack)),
+    sep);
+}
+addUndoButtons();
 
 document.addEventListener('zc:pagecreated', (e) => addLayer(e.detail.wrapper));
 for (const w of document.querySelectorAll('.page-wrapper')) addLayer(w);   // pages laid out before this module ran

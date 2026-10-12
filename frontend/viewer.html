@@ -5,6 +5,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=3">
   <link rel="shortcut icon" href="/favicon.ico?v=3">
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>PDF Viewer</title>
   <link rel="stylesheet" href="css/tokens.css">
   <script>try { const t = localStorage.getItem("zc.themeHint"); if (t) document.documentElement.dataset.theme = JSON.parse(t); } catch (e) {}</script>
@@ -60,6 +61,36 @@
     .anno-layer { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 5; mix-blend-mode: multiply; }
         .anno-layer.mode-draw { pointer-events: auto; }
     .anno-layer > * { pointer-events: auto !important; }
+
+    /* Touch screens (issue #34). The page zooms itself (pinch → applyZoom), never the browser;
+       fingers scroll. Before any Pencil has been used, fingers draw in the drawing tools. */
+    #pdf-container { touch-action: pan-x pan-y; -webkit-touch-callout: none; }
+    body:not(.zc-pen) .anno-layer.mode-draw { touch-action: none; }
+    .anno-text-frame { border: 1px dotted transparent; }
+    .anno-text-frame.hover, .anno-text-frame:focus-within { border-color: #aaa; }
+    .anno-text-handle { position: absolute; right: -4px; bottom: -4px; width: 8px; height: 8px; background: #aaa;
+        cursor: nwse-resize; border-radius: 50%; opacity: 0; transition: opacity .2s; touch-action: none; }
+    .anno-text-frame.hover .anno-text-handle, .anno-text-frame:focus-within .anno-text-handle { opacity: 1; }
+    .zc-pill { position: fixed; z-index: 3000; display: flex; gap: 4px; padding: 3px; border-radius: 8px; background: var(--bg-elev, #fff);
+        border: 1px solid var(--border, #ddd); box-shadow: 0 6px 20px rgba(0,0,0,.18); font: 12px -apple-system, system-ui, sans-serif; }
+    .zc-pill button { border: none; background: none; padding: 5px 9px; border-radius: 6px; color: var(--text, #222); cursor: pointer; font: inherit; white-space: nowrap; }
+    .zc-sel-pill button[data-del] { color: var(--danger, #c33); }
+    @media (pointer: coarse) {
+        #toolbar { display: flex; flex-wrap: wrap; gap: 4px 8px; padding: 6px 10px; }
+        #toolbar .toolbar-section.left { flex: 1 1 auto; min-width: 0; }
+        #toolbar .toolbar-section.center { order: 0; }
+        #toolbar .toolbar-section.right { flex: 1 1 auto; flex-wrap: wrap; }
+        .icon-btn, .tool-btn { width: 40px; height: 40px; border-radius: 9px; }
+        .icon-btn svg, .tool-btn svg { width: 19px; height: 19px; }
+        input[type="color"] { width: 26px; height: 26px; }
+        .color-picker-wrapper { padding: 6px; }
+        #tool-size { width: 48px; height: 34px; font-size: 15px; }
+        #doc-title { max-width: 30vw; }
+        .zc-pill { font-size: 15px; }
+        .zc-pill button { padding: 10px 14px; min-height: 44px; }
+        .anno-text-handle { width: 22px; height: 22px; right: -11px; bottom: -11px; }
+        .thumb-wrapper canvas { width: 100px; }
+    }
   </style>
   <script src="vendor/pdfjs/pdf.min.js"></script>
 </head>
@@ -382,6 +413,45 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
             }
         }, { passive: false });
 
+        /* Pinch to zoom on a touch screen (issue #34): the pages are zoomed (and drawn sharp again),
+           never the browser page, and the spot between the fingers stays where it is (applyZoom).
+           Safari reports a pinch as gesture events; other touch browsers through two pointers. */
+        let pinch = null;   // { start scale, x, y (container coordinates of the first centre) }
+        function pinchAt(clientX, clientY, start) {
+            const r = container.getBoundingClientRect();
+            zoomGesture = null;
+            pinch = { start, x: clientX - r.left - container.clientLeft, y: clientY - r.top - container.clientTop };
+        }
+        if ('ongesturechange' in window) {
+            window.addEventListener('gesturestart', (e) => { e.preventDefault(); pinchAt(e.clientX, e.clientY, scale); }, { passive: false });
+            window.addEventListener('gesturechange', (e) => {
+                e.preventDefault();
+                if (pinch) applyZoom(pinch.start * e.scale, pinch.x, pinch.y);
+            }, { passive: false });
+            window.addEventListener('gestureend', (e) => { e.preventDefault(); pinch = null; }, { passive: false });
+        } else {
+            const touches = new Map();   // pointerId → {x, y}
+            let startDist = 0;
+            const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+            container.addEventListener('pointerdown', (e) => {
+                if (e.pointerType !== 'touch') return;
+                touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                if (touches.size === 2) {
+                    const [a, b] = [...touches.values()];
+                    startDist = spread();
+                    pinchAt((a.x + b.x) / 2, (a.y + b.y) / 2, scale);
+                }
+            });
+            container.addEventListener('pointermove', (e) => {
+                if (!touches.has(e.pointerId)) return;
+                touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                if (touches.size === 2 && pinch && startDist > 0) applyZoom(pinch.start * spread() / startDist, pinch.x, pinch.y);
+            });
+            const lift = (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; };
+            container.addEventListener('pointerup', lift);
+            container.addEventListener('pointercancel', lift);
+        }
+
         let pageWrappers = [];
         // Annotations (drawing, highlighting, text boxes, undo) live in js/viewer/annotations.js.
 
@@ -391,7 +461,11 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
            book used to render every page up front, and again on every zoom (issue #19). */
         const NEAR = '100% 0px';       // render pages this close to the viewport
         const FAR = '250% 0px';        // free pages farther than this
-        const MAX_LIVE = 14;           // never more canvases than this, whatever happens
+        // Tablets have far less memory for canvases than a computer (Safari on iPad also refuses
+        // any canvas above 16.7 million pixels): fewer pages are kept drawn there, at most this big.
+        const COARSE = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1;
+        const MAX_LIVE = COARSE ? 8 : 14;   // never more canvases than this, whatever happens
+        const MAX_AREA = COARSE ? 8e6 : Infinity;   // pixels per canvas
         const live = new Map();        // page number → { scale, canvas, text, task }
         const wanted = new Set();      // pages near the viewport
         const inFar = new Set();       // pages within the far margin (the others must not keep a canvas)
@@ -474,6 +548,8 @@ if (titleParam) { document.title = titleParam; document.getElementById('doc-titl
             if ((viewport.width * outputScale) > MAX_DIMENSION || (viewport.height * outputScale) > MAX_DIMENSION) {
                 outputScale *= Math.min(MAX_DIMENSION / (viewport.width * outputScale), MAX_DIMENSION / (viewport.height * outputScale));
             }
+            const area = viewport.width * viewport.height * outputScale * outputScale;
+            if (area > MAX_AREA) outputScale *= Math.sqrt(MAX_AREA / area);
             canvas.width = Math.floor(viewport.width * outputScale);
             canvas.height = Math.floor(viewport.height * outputScale);
             canvas.style.width = Math.floor(viewport.width) + "px";
