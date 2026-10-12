@@ -30,6 +30,25 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
 
     frontend = config.frontend_dir
 
+    # -- what changed, for the other windows and devices (#34; backend/changes.py) --------------
+    from flask import request
+    from .changes import CLIENT_HEADER
+
+    @app.get("/api/changes")
+    def changes():
+        try:
+            since = int(request.args["since"]) if request.args.get("since") not in (None, "") else None
+        except ValueError:
+            since = None
+        return jsonify(services.changes.since(since, request.args.get("epoch") or None, request.headers.get(CLIENT_HEADER)))
+
+    @app.after_request
+    def _notes_changed(resp):
+        if (request.method in ("POST", "PUT", "PATCH", "DELETE") and resp.status_code < 400
+                and request.path.startswith("/api/notes")):
+            services.changes.record({"notes"}, request.headers.get(CLIENT_HEADER))
+        return resp
+
     @app.get("/")
     def index():
         resp = send_from_directory(frontend, "index.html")
