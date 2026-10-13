@@ -49,6 +49,13 @@ async def doc(page):
     return await page.evaluate("window.zcNotes.text()")
 
 
+async def completion_open(page):
+    # CodeMirror ignores Enter for a moment after the list opens or changes (interactionDelay,
+    # 75 ms): pressing it at once made this checklist fail now and then
+    await page.wait_for_selector('.cm-tooltip-autocomplete')
+    await page.wait_for_timeout(250)
+
+
 async def type_at_end(page, s):
     await page.click('.cm-content')
     await page.keyboard.press('ControlOrMeta+End')
@@ -96,7 +103,7 @@ async def main():
 
             # ---- autocomplete: [@ inside brackets
             await type_at_end(page, "\nAlso [@smi")
-            await page.wait_for_selector('.cm-tooltip-autocomplete')
+            await completion_open(page)
             labels = await page.locator('.cm-tooltip-autocomplete li .cm-completionLabel').all_text_contents()
             check("[@ offers matching keys", labels and labels[0] == sk, labels)
             await page.keyboard.press('Enter')
@@ -106,14 +113,14 @@ async def main():
 
             # ---- bare @ becomes a bracketed citation
             await type_at_end(page, " and @cui")
-            await page.wait_for_selector('.cm-tooltip-autocomplete')
+            await completion_open(page)
             await page.keyboard.press('Enter')
             d = await doc(page)
             check("bare @cui becomes [@cuiVariational2015]", f"and [@{ck}]" in d, d.splitlines()[-1])
 
             # ---- [[ notes
             await type_at_end(page, " and [[Oth")
-            await page.wait_for_selector('.cm-tooltip-autocomplete')
+            await completion_open(page)
             await page.keyboard.press('Enter')
             d = await doc(page)
             check("[[Oth completes to [[Other]]", d.rstrip().endswith("and [[Other]]") and "[[Other]]]]" not in d, d.splitlines()[-1])
@@ -171,7 +178,8 @@ async def main():
             await page.click('[data-view="library"]')
             await page.wait_for_timeout(500)
             await page.click(f'.row[data-id="{cui["id"]}"]')
-            await page.wait_for_selector('[data-ip-notes] .ip-note')
+            # the pane fills in after a short delay (it may still show the previous item, or "Loading…")
+            await wait_for(lambda: page.evaluate("(document.querySelector('[data-ip-notes]')?.textContent || '').includes('p. 3]')"))
             notes_txt = await page.text_content('[data-ip-notes]')
             check("item pane lists the paper note and citing notes", "paper note" in notes_txt and "Review" in notes_txt and "p. 3]" in notes_txt, notes_txt[:160])
             await shot(page, "3-itempane")
@@ -183,7 +191,7 @@ async def main():
             await page.click('[data-view="library"]')
             await page.wait_for_timeout(300)
             await page.click(f'.row[data-id="{smith["id"]}"]')
-            await page.wait_for_selector('[data-ip-notes] [data-tool="new-paper-note"], [data-ip-notes] .ip-note')
+            await wait_for(lambda: page.locator('[data-ip-notes] [data-tool="new-paper-note"]').count())
             check("item pane shows Create paper note / cited in", await page.locator('[data-ip-notes] [data-tool="new-paper-note"]').count() == 1)
 
             # ---- read mode: clicking a citation with a page opens the PDF there

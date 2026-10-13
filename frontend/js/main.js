@@ -16,7 +16,7 @@ import { focusList, initItemList, openColumnPicker } from './views/itemlist.js';
 import { initItemPane, toggleItemPane } from './views/itempane.js';
 import { applyAppearance, closeSettings, openSettings, settingsOpen } from './views/settingsView.js';
 import { initSidebar } from './views/sidebar.js';
-import { closeNotes, initNotes, notesOpen, notesShortcut, openNotes, openNotesGraph, toggleNotesGraph } from './views/notes/notesView.js';
+import { closeNotes, initNotes, notesOpen, notesPanelButton, notesShortcut, openNotes, openNotesGraph, toggleNotesGraph } from './views/notes/notesView.js';
 
 async function boot() {
   try {
@@ -153,7 +153,8 @@ function initToolbar() {
     const b = e.target.closest('[data-a]');
     if (!b) return;
     const a = b.dataset.a;
-    if (notesOpen() && ['new', 'identifier', 'import', 'export', 'columns', 'pane'].includes(a)) closeNotes();   // library actions
+    if (notesOpen() && (a === 'columns' || a === 'pane')) { notesPanelButton(a); return; }   // the notes' own panels
+    if (notesOpen() && ['new', 'identifier', 'import', 'export'].includes(a)) closeNotes();   // library actions
     if (a === 'new') A.newItem();
     if (a === 'identifier') openIdentifier();
     if (a === 'import') openImport();

@@ -6,6 +6,10 @@ import { emit, state } from '../store.js';
 import { confirmDialog, promptDialog } from '../ui/dialog.js';
 import { toast, toastError } from '../ui/toast.js';
 import { debounce, escapeHtml, formatBytes, formatDate, modLabel, plural, store } from '../util.js';
+import { baseMacros } from './notes/macros.js';
+
+const PHYSICS_SHOWN = ['\\vb', '\\dv', '\\pdv', '\\qty', '\\abs', '\\norm', '\\expval', '\\mel', '\\comm', '\\dd', '\\grad', '\\mqty']
+  .map((c) => `<span class="mono">${c}</span>`).join(', ');
 
 const SECTIONS = [
   ['general', 'General', 'palette'],
@@ -89,6 +93,14 @@ export function openSettings(sectionId = null) {
           ${switchRow('notes_enabled', 'Notes', 'Markdown notes for papers and ideas, stored as files in your data folder. Turn off to hide Notes in the sidebar and the item pane.')}
           ${selectRow('notes_trash_retention', 'Empty the notes trash', 'Deleted notes, and images no note uses any more, are deleted for good after this long.',
     [['never', 'Never'], ['1d', 'After 1 day'], ['1w', 'After 1 week'], ['2w', 'After 2 weeks'], ['1m', 'After 1 month'], ['6m', 'After 6 months']])}
+          ${segmentedRow('notes_width', 'Note width', 'A readable column, or the whole width of the note pane (more room when the notes list is hidden).', [['readable', 'Readable'], ['full', 'Full']])}
+          ${selectRow('notes_equation_numbers', 'Equation numbers', 'A $$ equation gets a number when it has a \\label{name} (refer to it with \\eqref{name}); equation and align environments are numbered as in LaTeX, and \\tag{…} sets a number. Or number every display equation.',
+    [['labelled', 'Labelled equations'], ['all', 'Every display equation']])}
+          ${switchRow('notes_math_physics', 'Physics package commands', `In formulas: ${PHYSICS_SHOWN}… as in the LaTeX physics package.`)}
+          <div class="setting stack"><div class="s-text"><div class="s-title">Math macros ${saved}</div>
+            <div class="s-desc">Your own commands for every note, one per line, e.g. <span class="mono">\\newcommand{\\R}{\\mathbb{R}}</span> or <span class="mono">\\DeclareMathOperator{\\Var}{Var}</span>. A \\newcommand written in a note's formula works in all formulas of that note.</div></div>
+            <textarea class="input mono" data-key="notes_math_macros" rows="4" spellcheck="false" placeholder="\\newcommand{\\R}{\\mathbb{R}}">${escapeHtml(s.notes_math_macros || '')}</textarea>
+            <div class="s-desc" data-macro-check></div></div>
           ${switchRow('confirm_trash', 'Ask before moving to the Trash', 'Items in the Trash can always be restored, and an Undo button appears after deleting.')}
           ${switchRow('show_subfolder_items', 'Show items from subfolders', 'A folder also lists the items of the folders inside it.')}
         </div></section>
@@ -419,6 +431,16 @@ function bind() {
     if (key === 'default_search_mode') emit('set-search-mode', value);
     if (key === 'fulltext_auto_index' && value) api.stats();
   });
+  // Math macros: say what the definitions define, and which lines are not definitions
+  const mt = view.querySelector('[data-key="notes_math_macros"]');
+  const mcheck = () => {
+    const r = baseMacros({ physics: false, text: mt.value });
+    const out = view.querySelector('[data-macro-check]');
+    out.innerHTML = (r.names.length ? `Defines ${r.names.map((n) => `<span class="mono">${escapeHtml(n)}</span>`).join(', ')}.` : '')
+      + (r.problems.length ? ` <span class="warn">Not a definition: <span class="mono">${escapeHtml(r.problems[0].slice(0, 60))}</span>${r.problems.length > 1 ? ` (and ${r.problems.length - 1} more)` : ''}</span>` : '');
+  };
+  mt.addEventListener('input', mcheck);
+  mcheck();
   const fs = view.querySelector('[data-key="font_size"]');
   fs.addEventListener('input', () => {
     view.querySelector('[data-fs-label]').textContent = `${fs.value}px`;

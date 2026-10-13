@@ -138,6 +138,18 @@ never mix.
   restore or delete trashed ones. Deleted notes and trashed attachments are deleted for good after
   a while (Settings → General → *Empty the notes trash*: never, 1 day … 6 months; default 1 month). The pencil column
   in the item list marks items with a paper note (blue) or cited in notes (grey).
+  In live preview a formula, link or citation shows its source only while the cursor is in it, and
+  clicking a symbol of a rendered formula puts the cursor on it; a `$$` block being edited shows
+  the formula below its source. While Notes is open, the toolbar's two panel buttons hide and show
+  the notes list (also Cmd/Ctrl+\) and the note details; a hidden list slides in when the pointer
+  reaches the window's left edge (or with a tap there). Settings → General → *Note width* lets
+  the text use the whole pane. A `$$` equation gets a number when it has a `\label{name}`
+  (`equation`/`align` environments are numbered as in LaTeX, `\tag{3}` sets one; Settings can
+  number every one), and `\eqref{name}` refers to it; the number never overlaps the formula, and
+  an equation too wide for the pane is shrunk a little (then scrolls). Formulas know the physics
+  package's commands (`\vb`, `\dv`, `\pdv`, `\qty`, `\abs`, `\expval`, `\mel`, `\comm`, …), your own
+  macros (Settings → General → *Math macros*), and a `\newcommand` written in any formula of the
+  note (it applies to the whole note).
   In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
   drag to move; folders can be renamed, moved and deleted the same way.
@@ -282,6 +294,7 @@ python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, filte
 python tests/e2e/attachments_checklist.py  # note attachments: unused ones to the trash, Attachments dialog, retention
 python tests/e2e/adding_checklist.py     # bulk Retrieve Metadata (parallel, grouped, background), Settings → Adding Items
 python tests/e2e/claude_edits_checklist.py  # Claude's note edits: appear live, ⌘Z / bar Undo / Show changes, edit list
+python tests/e2e/equations_checklist.py  # equation numbers, \eqref, macros, clicks into formulas, panels and width
 ```
 
 The notes editor (CodeMirror 6) is vendored as a pre-built bundle in `frontend/vendor/cm6/`;

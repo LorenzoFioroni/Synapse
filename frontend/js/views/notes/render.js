@@ -6,7 +6,16 @@
 //    app must never run a script that came from a note;
 //  * indented code blocks are off; fenced code only;
 //  * $…$ closes on the same line (Pandoc rules), $$…$$ inline or as a block;
-//  * [[Note|alias]], ![[Note]], [@key, p. 4], [see @a; @b], > [!note] callouts, - [ ] tasks.
+//  * [[Note|alias]], ![[Note]], [@key, p. 4], [see @a; @b], > [!note] callouts, - [ ] tasks;
+//  * display equations are numbered through the note and \eqref{label} resolved (equations.js);
+//  * math macros: the physics package, Settings, and \newcommand in the note (macros.js).
+
+import { labelId, layoutTag, numberEquations, refText, resolveRefs } from './equations.js';
+import { HAS_DEFINITIONS, baseMacros, parseDefinitions, withDefinitions } from './macros.js';
+
+/** What renderers use when not told otherwise (set by the notes view from Settings), so note
+ *  embeds and other renderers number equations and know the macros the same way. */
+export const renderDefaults = { equations: () => 'labelled', macros: () => baseMacros().macros };
 
 const CALLOUTS = {
   note: 'Note', tip: 'Tip', warning: 'Warning', question: 'Question', quote: 'Quote',
@@ -223,12 +232,55 @@ function lineAttrs(state) {
   }
 }
 
+/** \eqref{label} / \ref{label} written in the text (outside math): numbered in the core rule below. */
+function eqRefRule(state, silent) {
+  const src = state.src, pos = state.pos;
+  if (src.charCodeAt(pos) !== 0x5C /* \ */) return false;
+  const m = /^\\(eqref|ref)\{([^{}\n]*)\}/.exec(src.slice(pos, pos + 200));
+  if (!m) return false;
+  if (!silent) { const t = state.push('eq_ref', '', 0); t.meta = { kind: m[1], name: m[2].trim() }; }
+  state.pos = pos + m[0].length;
+  return true;
+}
+
+/** Collect the note's macro definitions (macros.js), number its display equations and resolve
+ *  \eqref / \ref (equations.js), in document order. */
+function equationsRule(mode, macros) {
+  return (state) => {
+    const display = [], all = [];
+    for (const t of state.tokens) {
+      if (t.type === 'math_block') { display.push(t); all.push(t); }
+      for (const c of t.children || []) {
+        if (c.type === 'math_inline') { all.push(c); if (c.meta?.display) display.push(c); }
+      }
+    }
+    // \newcommand & co. anywhere in the note's math apply to all of its formulas
+    const defs = [];
+    for (const t of all) {
+      if (!HAS_DEFINITIONS.test(t.content)) continue;
+      const p = parseDefinitions(t.content);
+      if (!p.defs.length) continue;
+      defs.push(...p.defs);
+      t.content = p.rest;
+      t.meta = { ...(t.meta || {}), defines: p.defs.map((d) => d.name) };
+    }
+    state.env.macros = withDefinitions((typeof macros === 'function' ? macros() : macros) || {}, defs);
+    const m = typeof mode === 'function' ? mode() : mode;
+    const res = numberEquations(display.map((t) => t.content), { mode: m || 'labelled' });
+    display.forEach((t, i) => { t.content = res.formulas[i]; t.meta = { ...(t.meta || {}), labels: res.names[i] }; });
+    for (const t of all) t.content = resolveRefs(t.content, res.labels);
+    state.env.eqLabels = res.labels;
+  };
+}
+
 /**
  * @param {{MarkdownIt, footnote, katex}} lib       from vendor/md/md.js
  * @param {object} [o]
  * @param {(key) => object|null} [o.citeInfo]        library info for a key (or null if unknown)
  * @param {(target) => string|null} [o.resolveNote]  path a [[target]] resolves to, or null
  * @param {number} [o.lineOffset=0]                  added to data-line (front-matter lines)
+ * @param {string|(() => string)} [o.equations]      equation numbering: 'labelled' (default) or 'all'
+ * @param {object|(() => object)} [o.macros]         KaTeX macros every note starts from (macros.js)
  */
 export function createRenderer(lib, o = {}) {
   const md = new lib.MarkdownIt({ html: false, linkify: true, typographer: false });
@@ -240,20 +292,36 @@ export function createRenderer(lib, o = {}) {
   md.inline.ruler.before('image', 'wiki_embed', wikiRule);
   md.inline.ruler.before('link', 'cite', citeRule);
   md.inline.ruler.push('tag', tagRule);
+  md.inline.ruler.before('escape', 'eq_ref', eqRefRule);
+  md.core.ruler.after('inline', 'equations', equationsRule(o.equations ?? renderDefaults.equations, o.macros ?? renderDefaults.macros));
   md.core.ruler.after('block', 'callout', calloutRule);
   md.core.ruler.after('inline', 'task', taskRule);
   md.core.ruler.push('line_attrs', lineAttrs);
 
-  const katex = (tex, display) => {
+  const katex = (tex, display, macros) => {
     try {
-      return lib.katex.renderToString(tex, { displayMode: display, throwOnError: false, strict: 'ignore', trust: false, output: 'htmlAndMathml' });
+      const html = lib.katex.renderToString(tex, { displayMode: display, throwOnError: false, strict: 'ignore', trust: false, output: 'htmlAndMathml',
+        macros: { ...(macros || {}) }, maxExpand: 1000 });   // a copy: a \gdef must not leak into other formulas
+      return display ? layoutTag(html) : html;
     } catch (e) {
       return `<span class="math-error" title="${esc(e.message)}">${esc(tex)}</span>`;
     }
   };
   const R = md.renderer.rules;
-  R.math_inline = (t, i) => (t[i].meta.display ? `<span class="math display">${katex(t[i].content, true)}</span>` : `<span class="math">${katex(t[i].content, false)}</span>`);
-  R.math_block = (t, i) => `<div class="math-block" data-line="${(t[i].map?.[0] ?? 0) + (o.lineOffset || 0)}">${katex(t[i].content, true)}</div>\n`;
+  const anchors = (names) => (names || []).map((n) => `<span class="eq-anchor" id="${esc(labelId(n))}"></span>`).join('');
+  // a formula that only defines macros shows nothing (like a LaTeX preamble)
+  const onlyDefines = (t) => t.meta?.defines && !t.content.trim();
+  R.math_inline = (t, i, opts, env) => (onlyDefines(t[i]) ? ''
+    : t[i].meta.display ? `<span class="math display">${anchors(t[i].meta.labels)}${katex(t[i].content, true, env.macros)}</span>`
+      : `<span class="math">${katex(t[i].content, false, env.macros)}</span>`);
+  R.math_block = (t, i, opts, env) => (onlyDefines(t[i]) ? ''
+    : `<div class="math-block" data-line="${(t[i].map?.[0] ?? 0) + (o.lineOffset || 0)}">${anchors(t[i].meta?.labels)}${katex(t[i].content, true, env.macros)}</div>\n`);
+  R.eq_ref = (t, i, opts, env) => {
+    const { kind, name } = t[i].meta;
+    const text = refText(kind, name, env.eqLabels || new Map());
+    return text == null ? `<span class="eqref missing" title="${esc(`No numbered equation has \\label{${name}}`)}">(??)</span>`
+      : `<a class="eqref" href="#${esc(labelId(name))}" data-label="${esc(name)}">${esc(text)}</a>`;
+  };
   R.note_link = (t, i) => {
     const w = t[i].meta;
     const path = o.resolveNote ? o.resolveNote(w.target) : undefined;   // undefined = unknown, null = does not exist

@@ -583,6 +583,9 @@ def test_view_image(lib, svc):
     assert [i["path"] for i in summary["images"]] == [pasted, snap["saved"], "https://example.org/x.png"]
     assert summary["images"][0]["alt"] == "my sketch" and summary["images"][1]["caption"] == "Figure 2: [@fig2024, p. 2]"
     assert "view_image" in summary["images_hint"]
+    assert "math_macros" not in summary
+    svc.settings.update({"notes_math_macros": "\\newcommand{\\R}{\\mathbb{R}}"})
+    assert call_json(server, "get_note", note="pics")["math_macros"] == "\\newcommand{\\R}{\\mathbb{R}}"
 
     # one image by path, as written in the note (and as a client may mangle it)
     for given in (pasted, "./" + pasted, "/Users/someone/Synapse/data/notes/" + pasted, pasted.split("/", 1)[1]):

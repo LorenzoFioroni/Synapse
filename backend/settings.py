@@ -48,6 +48,12 @@ DEFAULTS: dict = {
     "notes_autosave_ms": 1500,         # save after this long without typing (also on blur)
     # Deleted notes and attachments no note uses any more are deleted for good after this long
     "notes_trash_retention": "1m",     # never | 1d | 1w | 2w | 1m | 6m
+    "notes_width": "readable",         # readable (a column of ~760 px) | full (the whole pane)
+    # Display equations: "labelled" numbers those with a \label (and equation/align… as in LaTeX);
+    # "all" numbers every one
+    "notes_equation_numbers": "labelled",
+    "notes_math_physics": True,        # the physics package's commands (\vb, \dv, \qty…) in formulas
+    "notes_math_macros": "",           # \newcommand definitions used by every note
     # Backups of library.db, settings and notes (not the PDFs): see backend/backup.py
     "backup_interval": "daily",        # off | daily | weekly
     "backup_keep": 14,                 # newest archives kept
@@ -66,6 +72,8 @@ CHOICES = {
     "add_find_pdf": set(ASK_CHOICES),
     "add_fetch_references": set(ASK_CHOICES),
     "notes_trash_retention": {"never", "1d", "1w", "2w", "1m", "6m"},
+    "notes_width": {"readable", "full"},
+    "notes_equation_numbers": {"labelled", "all"},
     "backup_interval": {"off", "daily", "weekly"},
 }
 
@@ -79,6 +87,8 @@ def _migrate(stored: dict) -> dict:
         stored["import_tags"] = "never"
     if stored.get("references_auto") is False and "add_fetch_references" not in stored:
         stored["add_fetch_references"] = "never"
+    if stored.get("notes_equation_numbers") == "latex":   # the first version of PR #46
+        stored["notes_equation_numbers"] = "labelled"
     return stored
 
 
@@ -141,6 +151,8 @@ class SettingsStore:
                 v = "" if v is None else str(v).strip()
             if k in CHOICES and v not in CHOICES[k]:
                 raise SettingsError(f"Invalid value for {k}: {v}")
+            if k == "notes_math_macros" and len(v) > 20000:
+                raise SettingsError("Math macros: at most 20,000 characters")
             if k == "citekey_pattern" and not v:
                 raise SettingsError("Citation key pattern cannot be empty")
             if k == "backup_dir" and v:

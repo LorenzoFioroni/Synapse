@@ -20,8 +20,12 @@ import { NoteSession } from './noteSession.js';
 import { attachCiteCards, openCitation, showCard } from './citeCard.js';
 import { citeTargetInDom, citeTargetInText } from './citeTarget.js';
 import { shortAuthors } from './library.js';
-import { createRenderer, slugHeading } from './render.js';
+import { createRenderer, renderDefaults, slugHeading } from './render.js';
 import { highlightCodeBlocks, renderEmbeds, renderMermaid, renderMermaidBlocks } from './richRender.js';
+import { labelId } from './equations.js';
+import { fitEquations, fitSoon, refitOnResize } from './mathFit.js';
+import { baseMacros } from './macros.js';
+import { initPanels, listHidden, panelButton, peek, toggleList } from './panels.js';
 
 const NOTE_MIME = 'application/x-zc-note';
 
@@ -107,9 +111,15 @@ export function initNotes() {
 
   root.addEventListener('click', onClick);
   root.addEventListener('dblclick', onDblClick);
-  window.zcNotes = { text: () => session?.text ?? null, path: () => session?.path ?? null };   // read-only, for tests
+  window.zcNotes = { text: () => session?.text ?? null, path: () => session?.path ?? null,
+    cursor: () => editor?.view.state.selection.main.head ?? null, focused: () => !!editor?.view.hasFocus };   // read-only, for tests
   listenForQuotes();
   root.querySelector('.note-read').addEventListener('click', onReadClick);
+  refitOnResize(root.querySelector('.note-read'));
+  renderDefaults.equations = equationMode;
+  renderDefaults.macros = noteMacros;
+  applyLayout();
+  initPanels(root);
   root.querySelector('.note-read').addEventListener('auxclick', (e) => { if (e.button === 1 && e.target.closest('.cite')) onReadClick(e); });
   attachCiteCards(root, { itemInfo, openNote: (p) => openNote(p), refreshLibrary: async () => { await loadLibrary(); await refreshTree(); }, targetOf: citeTargetOf });
   let libTimer = null;
@@ -134,7 +144,13 @@ export function initNotes() {
   new MutationObserver(() => { if (!notesOpen() || !session) return; editor?.refresh(); if (mode === 'read') renderRead(); })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   on('search', () => { if (notesOpen() && state.query) closeNotes(); });   // a library search shows its results
-  on('settings', () => { if (!notesEnabled() && notesOpen()) closeNotes(); emit('notes-count', notesEnabled() ? overview.notes.length : null); });
+  on('settings', () => {
+    if (!notesEnabled() && notesOpen()) closeNotes();
+    emit('notes-count', notesEnabled() ? overview.notes.length : null);
+    applyLayout();
+    const key = `${equationMode()}|${state.settings.notes_math_physics}|${state.settings.notes_math_macros}`;
+    if (key !== lastMathKey) { lastMathKey = key; editor?.refresh(); if (mode === 'read') renderRead(); }
+  });
 
   if (notesEnabled()) refreshTree().then(() => { if (storage('zc.notes.open', false)) openNotes(); });
 }
@@ -228,10 +244,24 @@ export async function closeNotes() {
   navPush({ ws: 'library', view: state.view, sel: [...state.selection] });
 }
 
+/* ---------------------------------------------------- width, equations and macros (issue #43) */
+const equationMode = () => (state.settings.notes_equation_numbers === 'all' ? 'all' : 'labelled');
+/** KaTeX macros every note starts from: the physics commands and your own (Settings). */
+const noteMacros = () => baseMacros({ physics: state.settings.notes_math_physics !== false, text: state.settings.notes_math_macros || '' }).macros;
+let lastMathKey = null;
+
+/** Text width (Settings: a readable column or the whole pane). The panels: panels.js. */
+function applyLayout() {
+  root.classList.toggle('wide-text', state.settings.notes_width === 'full');
+}
+
+/** The toolbar's panel buttons while Notes is open (main.js). */
+export function notesPanelButton(a) { panelButton(a); }
+
 async function ensureEditor() {
   if (editor) return editor;
   lib = await loadMD();
-  renderer = createRenderer(lib, { citeInfo, resolveNote });
+  renderer = createRenderer(lib, { citeInfo, resolveNote, equations: equationMode, macros: noteMacros });
   editor = await createEditor(root.querySelector('.note-editor'), {
     onChange: (text) => { session?.update(text); if (mode === 'read') scheduleRead(); },
     onSave: () => session?.save(),
@@ -247,6 +277,8 @@ async function ensureEditor() {
     openNote: (target, heading) => followLink(target, heading),
     openCite: (key, page, target, opts) => { if (!openCitation(key, page, target, opts)) toast(`@${key} is not in your library.`); },
     mermaid: renderMermaid,
+    equations: equationMode,
+    macros: noteMacros,
   }, mode === 'read' ? editMode : mode, {
     items: () => library.list,
     notes: () => overview.notes,
@@ -319,11 +351,13 @@ function renderRead() {
   const text = session.text.replace(/\r\n?/g, '\n');
   const fm = splitFrontmatter(text);
   const lineOffset = fm.bodyLine;
-  const r = createRenderer(lib, { citeInfo, resolveNote, lineOffset });
+  const r = createRenderer(lib, { citeInfo, resolveNote, lineOffset, equations: equationMode, macros: noteMacros });
   const props = fm.header === null ? '' : `<details class="properties"><summary>Properties</summary><dl>${fm.header.split('\n').filter((l) => l.trim())
     .map((l) => { const i = l.indexOf(':'); return i > 0 ? `<dt>${escapeHtml(l.slice(0, i))}</dt><dd>${escapeHtml(l.slice(i + 1).trim())}</dd>` : `<dd class="raw">${escapeHtml(l)}</dd>`; }).join('')}</dl></details>`;
   const scroll = art.parentElement.scrollTop;
   art.innerHTML = props + r.render(text.slice(fm.bodyStart));
+  fitEquations(art);
+  fitSoon(art);
   art.parentElement.scrollTop = scroll;
   highlightCodeBlocks(art);
   renderMermaidBlocks(art);
@@ -370,6 +404,18 @@ function onReadClick(e) {
   if (wl) { e.preventDefault(); followLink(wl.dataset.note, wl.dataset.heading); return; }
   const et = e.target.closest('.note-embed .embed-title');
   if (et) { const em = et.closest('.note-embed'); followLink(em.dataset.note, em.dataset.heading); return; }
+  const ref = e.target.closest('.eqref[data-label]');
+  if (ref) {
+    e.preventDefault();
+    const target = root.querySelector(`.note-read #${CSS.escape(labelId(ref.dataset.label))}`)?.parentElement;
+    if (target) {
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      target.classList.remove('flash');
+      void target.offsetWidth;
+      target.classList.add('flash');
+    }
+    return;
+  }
   const cite = e.target.closest('.cite');
   if (cite) {
     e.preventDefault();
@@ -1184,8 +1230,9 @@ function bindDnD() {
 
 /** Keyboard shortcuts while the notes workspace is open (called from main.js). */
 export function notesShortcut(e, k, mod) {
+  if (mod && e.key === '\\' && !e.shiftKey && !e.altKey) { e.preventDefault(); toggleList(); return true; }
   if (mod && k === 'e' && session && !e.target.closest?.('.cm-editor')) { e.preventDefault(); setMode(mode === 'read' ? editMode : 'read'); return true; }
   if (mod && k === 'n' && !e.shiftKey) { e.preventDefault(); newNote(); return true; }
-  if (mod && k === 'f' && !e.target.closest?.('.cm-editor')) { e.preventDefault(); root.querySelector('.notes-filter input').focus(); return true; }
+  if (mod && k === 'f' && !e.target.closest?.('.cm-editor')) { e.preventDefault(); if (listHidden()) peek(true); root.querySelector('.notes-filter input').focus(); return true; }
   return false;
 }

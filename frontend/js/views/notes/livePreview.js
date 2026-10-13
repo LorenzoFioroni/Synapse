@@ -1,14 +1,21 @@
 // Live preview for the notes editor (CodeMirror decorations).
 //
-// Rule: a line shows its raw Markdown while the cursor (or selection) is on it, and is shown
-// rendered otherwise. Multi-line constructs (tables, $$ blocks, Mermaid diagrams) count as
-// one unit: touching any of their lines reveals all of them.
+// Rule: what the cursor (or selection) touches shows its raw Markdown, the rest is rendered.
+// Inline things (math, links, citations, emphasis, code) open only when the cursor is in them or
+// next to them, so typing in a long paragraph does not unfold all of its formulas (issue #43);
+// line marks (headings, lists, quotes) open for the cursor's line; multi-line constructs (tables,
+// $$ blocks, Mermaid diagrams) count as one unit: touching any of their lines reveals all of them,
+// and a $$ block being edited shows its rendering below the source.
 //
 // What counts as math, a [[link]] or a [@citation] comes from mdscan.js (the port of the
 // backend parser); everything else from CodeMirror's own Markdown syntax tree.
 import { scan, splitFrontmatter } from './mdscan.js';
 import { citeTargetInText } from './citeTarget.js';
 import { citeLabel, imageSrc } from './render.js';
+import { numberEquations, refText, resolveRefs, textRefs } from './equations.js';
+import { clickOffset } from './mathClick.js';
+import { HAS_DEFINITIONS, parseDefinitions, withDefinitions } from './macros.js';
+import { fitSoon } from './mathFit.js';
 
 const CALLOUT_TYPES = ['note', 'tip', 'warning', 'question', 'quote', 'info', 'important', 'caution', 'example', 'todo'];
 
@@ -20,6 +27,8 @@ const CALLOUT_TYPES = ['note', 'tip', 'warning', 'question', 'quote', 'info', 'i
  *   citeInfo(key)           → library info or null
  *   openNote(target, heading)
  *   mermaid(el, code)       render a diagram into el
+ *   equations()             equation numbering: 'labelled' | 'all'
+ *   macros()                KaTeX macros every note starts from (macros.js)
  */
 export function livePreview(cm, deps) {
   const { Decoration, WidgetType, StateField, StateEffect, EditorView, syntaxTree } = cm;
@@ -63,10 +72,29 @@ export function livePreview(cm, deps) {
 
   const bullet = new HtmlWidget('bullet', (el) => { el.textContent = '•'; }, { cls: 'cm-lp-bullet' });
 
-  const katexWidget = (tex, display, block = false) => new HtmlWidget(`m:${display}:${block}:${tex}`, (el) => {
-    const r = deps.renderer();
-    el.innerHTML = r ? r.katex(tex, display) : tex;
-  }, { block, cls: block ? 'cm-lp-mathblock' : display ? 'cm-lp-math display' : 'cm-lp-math' });
+  // a formula; ``src`` is where its TeX starts in the document (for clicks into it)
+  // ``eq`` (equationsOf) brings the note's macros; their signature is part of the key, so a
+  // changed \newcommand redraws the formulas that may use it
+  class MathWidget extends HtmlWidget {
+    constructor(tex, display, block, preview, eq) {
+      super(`m:${display}:${block}:${preview}:${eq.sig}:${tex}`, (el) => {
+        const r = deps.renderer();
+        el.innerHTML = r ? r.katex(tex, display, eq.macros) : tex;
+      }, { block, cls: (block ? 'cm-lp-mathblock' : display ? 'cm-lp-math display' : 'cm-lp-math') + (preview ? ' cm-lp-mathpreview' : '') });
+      this.display = display;
+    }
+    toDOM(view) {
+      const el = super.toDOM(view);
+      if (this.display) fitSoon(el, () => view.requestMeasure());
+      return el;
+    }
+  }
+  const katexWidget = (eq, tex, display, block = false, preview = false) => new MathWidget(tex, display, block, preview, eq);
+  // a formula that only defines macros: a small label (click it to edit the definitions)
+  const defsWidget = (names, block) => new HtmlWidget(`defs:${block}:${names.join(' ')}`, (el) => {
+    el.textContent = `Macros: ${names.join('  ')}`;
+    el.title = 'Macro definitions, used by every formula of this note: click to edit';
+  }, { block, cls: 'cm-lp-mathdefs' });
 
   const chip = (key, cls, label, attrs) => new HtmlWidget(key, (el) => {
     el.textContent = label;
@@ -97,10 +125,43 @@ export function livePreview(cm, deps) {
   }, { block: true, cls: 'cm-lp-props' });
 
   /* ------------------------------------------------------------------ build */
-  let cache = { doc: null, scan: null };
+  let cache = { doc: null, scan: null, eq: null };
+  let lastBase = null, baseVersion = 0;
   const scanOf = (state) => {
-    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()) };
+    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), eq: null, mode: null, base: null };
     return cache.scan;
+  };
+  // the whole note's formulas: macro definitions taken out (they apply to every formula), display
+  // equations numbered; formula start → TeX for KaTeX; labels for \eqref
+  const mathSrc = (doc, sp) => (sp.kind === 'mathblock'
+    ? doc.sliceString(doc.lineAt(sp.from).from, doc.lineAt(sp.to).to).trim().replace(/^\$\$/, '').replace(/\$\$$/, '').trim()
+    : doc.sliceString(sp.from + (sp.display ? 2 : 1), sp.to - (sp.display ? 2 : 1)));
+  const equationsOf = (state) => {
+    const s = scanOf(state);
+    const mode = deps.equations?.() || 'labelled';
+    const base = deps.macros?.() || {};
+    if (base !== lastBase) { lastBase = base; baseVersion++; }
+    if (cache.eq && cache.mode === mode && cache.base === base) return cache.eq;
+    const doc = state.doc;
+    const maths = s.spans.filter((sp) => (sp.kind === 'mathblock' && !sp.open) || sp.kind === 'math').sort((a, b) => a.from - b.from);
+    const src = new Map(), defines = new Map(), defs = [];
+    for (const sp of maths) {
+      let t = mathSrc(doc, sp);
+      if (HAS_DEFINITIONS.test(t)) {
+        const p = parseDefinitions(t);
+        if (p.defs.length) { defs.push(...p.defs); defines.set(sp.from, p.defs.map((d) => d.name)); t = p.rest; }
+      }
+      src.set(sp.from, t);
+    }
+    const display = maths.filter((sp) => sp.kind === 'mathblock' || sp.display);
+    const res = numberEquations(display.map((sp) => src.get(sp.from)), { mode });
+    const tex = new Map(display.map((sp, i) => [sp.from, resolveRefs(res.formulas[i], res.labels)]));
+    for (const sp of maths) if (!tex.has(sp.from)) tex.set(sp.from, resolveRefs(src.get(sp.from), res.labels));
+    const sig = `${baseVersion}|${defs.map((d) => `${d.name}[${d.nargs}][${d.opt ?? ''}]{${d.body}}`).join('|')}`;
+    cache.eq = { tex, labels: res.labels, macros: withDefinitions(base, defs), sig, defines };
+    cache.mode = mode;
+    cache.base = base;
+    return cache.eq;
   };
 
   function build(state) {
@@ -110,10 +171,14 @@ export function livePreview(cm, deps) {
     const add = (from, to, deco) => { if (from <= to) out.push(deco.range(from, to)); };
     const lineDeco = (pos, cls) => out.push(Decoration.line({ class: cls }).range(doc.lineAt(pos).from));
 
-    const active = state.field(focusField, false) ? state.selection.ranges.map((r) => [doc.lineAt(r.from).from, doc.lineAt(r.to).to]) : [];
+    const focused = state.field(focusField, false);
+    const active = focused ? state.selection.ranges.map((r) => [doc.lineAt(r.from).from, doc.lineAt(r.to).to]) : [];
     const isActive = (from, to) => active.some(([a, b]) => from <= b && to >= a);
     const lineActive = (pos) => { const l = doc.lineAt(pos); return isActive(l.from, l.to); };
     const blockActive = (from, to) => isActive(doc.lineAt(from).from, doc.lineAt(to).to);
+    // inline things open only when the selection is in them or right next to them
+    const touches = (from, to) => focused && state.selection.ranges.some((r) => r.from <= to && r.to >= from);
+    const eq = equationsOf(state);
     const hide = Decoration.replace({});
 
     // regions handled by the scanner win over CodeMirror's own nodes
@@ -135,15 +200,36 @@ export function livePreview(cm, deps) {
       if (sp.kind === 'mathblock' && !sp.open) {
         const from = doc.lineAt(sp.from).from, to = doc.lineAt(sp.to).to;
         taken.push([from, to]);
-        if (blockActive(from, to)) { for (let p = from; p <= to; p = doc.lineAt(p).to + 1) lineDeco(p, 'cm-lp-mathsrc'); continue; }
-        const src = doc.sliceString(from, to).trim().replace(/^\$\$/, '').replace(/\$\$$/, '');
-        add(from, to, Decoration.replace({ widget: katexWidget(src.trim(), true, true), block: true }));
+        const tex = eq.tex.get(sp.from) ?? mathSrc(doc, sp);
+        const onlyDefines = eq.defines.has(sp.from) && !tex.trim();
+        if (blockActive(from, to)) {
+          for (let p = from; p <= to; p = doc.lineAt(p).to + 1) {
+            const l = doc.lineAt(p);
+            lineDeco(p, `cm-lp-mathsrc cm-lp-mathsrc-block${l.from === from ? ' first' : ''}${l.to === to ? ' last' : ''}`);
+          }
+          // the formula being edited stays visible below its source
+          if (!onlyDefines) out.push(Decoration.widget({ widget: katexWidget(eq, tex, true, true, true), block: true, side: 1 }).range(to));
+          continue;
+        }
+        add(from, to, Decoration.replace({ widget: onlyDefines ? defsWidget(eq.defines.get(sp.from), true) : katexWidget(eq, tex, true, true), block: true }));
       } else if (sp.kind === 'math') {
         taken.push([sp.from, sp.to]);
-        if (isActive(sp.from, sp.to)) { add(sp.from, sp.to, Decoration.mark({ class: 'cm-lp-mathsrc' })); continue; }
-        const d = sp.display ? 2 : 1;
-        add(sp.from, sp.to, Decoration.replace({ widget: katexWidget(doc.sliceString(sp.from + d, sp.to - d), sp.display) }));
+        if (touches(sp.from, sp.to)) { add(sp.from, sp.to, Decoration.mark({ class: 'cm-lp-mathsrc' })); continue; }
+        const tex = eq.tex.get(sp.from) ?? mathSrc(doc, sp);
+        const onlyDefines = eq.defines.has(sp.from) && !tex.trim();
+        add(sp.from, sp.to, Decoration.replace({ widget: onlyDefines ? defsWidget(eq.defines.get(sp.from), false) : katexWidget(eq, tex, sp.display) }));
       }
+    }
+
+    // \eqref{label} / \ref{label} in the text: the equation's number
+    const inCode = (from, to) => s.spans.some((sp) => from < sp.to && to > sp.from);
+    for (const r of textRefs(doc.sliceString(s.bodyStart))) {
+      const from = r.from + s.bodyStart, to = r.to + s.bodyStart;
+      if (inCode(from, to)) continue;
+      taken.push([from, to]);
+      if (touches(from, to)) { add(from, to, Decoration.mark({ class: 'cm-lp-linksrc eqref' })); continue; }
+      const text = refText(r.kind, r.name, eq.labels);
+      add(from, to, Decoration.replace({ widget: chip(`e:${from}:${text}`, `eqref${text == null ? ' missing' : ''}`, text ?? '(??)', { label: r.name }) }));
     }
 
     // [[links]], ![[embeds]], [@citations], images
@@ -152,7 +238,7 @@ export function livePreview(cm, deps) {
       if (l.kind === 'cite') { (groups.get(l.from) || groups.set(l.from, []).get(l.from)).push(l); continue; }
       taken.push([l.from, l.to]);
       if (l.kind === 'image') {
-        if (lineActive(l.from)) continue;
+        if (touches(l.from, l.to)) continue;
         const src = imageSrc(l.target);
         add(l.from, l.to, Decoration.replace({ widget: new HtmlWidget(`img:${src}:${l.width}`, (el) => {
           const img = document.createElement('img');
@@ -165,7 +251,7 @@ export function livePreview(cm, deps) {
       }
       const path = deps.resolveNote(l.target);
       const cls = `${l.kind === 'embed' ? 'embed' : 'wikilink'}${path === null && l.target ? ' unresolved' : ''}`;
-      if (isActive(l.from, l.to)) { add(l.from, l.to, Decoration.mark({ class: `cm-lp-linksrc ${cls}` })); continue; }
+      if (touches(l.from, l.to)) { add(l.from, l.to, Decoration.mark({ class: `cm-lp-linksrc ${cls}` })); continue; }
       const label = (l.kind === 'embed' ? '↪ ' : '') + (l.alias || (l.target ? l.target + (l.heading ? ` › ${l.heading}` : '') : `› ${l.heading}`));
       add(l.from, l.to, Decoration.replace({ widget: chip(`n:${l.from}:${label}:${cls}`, cls, label, { note: l.target, heading: l.heading, path }) }));
     }
@@ -176,7 +262,7 @@ export function livePreview(cm, deps) {
       const trashed = ls.some((l) => deps.citeInfo(l.target)?.trashed);
       const keys = ls.map((l) => l.target).join(';');
       const pages = ls.map((l) => l.page ?? '').join(';');
-      if (isActive(from, to)) { add(from, to, Decoration.mark({ class: `cm-lp-citesrc${missing ? ' missing' : ''}`, attributes: { 'data-keys': keys, 'data-pages': pages } })); continue; }
+      if (touches(from, to)) { add(from, to, Decoration.mark({ class: `cm-lp-citesrc${missing ? ' missing' : ''}`, attributes: { 'data-keys': keys, 'data-pages': pages } })); continue; }
       const label = `(${ls.map((l) => citeLabel({ key: l.target, prefix: l.prefix, suppress: l.suppress_author, locator: l.locator }, deps.citeInfo(l.target))).join('; ')})`;
       add(from, to, Decoration.replace({ widget: chip(`c:${from}:${label}:${missing}:${trashed}`, `cite${missing ? ' missing' : ''}${trashed ? ' trashed' : ''}`, label, { keys, pages }) }));
     }
@@ -197,7 +283,7 @@ export function livePreview(cm, deps) {
           return;
         }
         if (name === 'Emphasis' || name === 'StrongEmphasis' || name === 'Strikethrough' || name === 'InlineCode') {
-          if (overlapsTaken(node.from, node.to) || lineActive(node.from)) return name === 'InlineCode' ? false : undefined;
+          if (overlapsTaken(node.from, node.to) || touches(node.from, node.to)) return name === 'InlineCode' ? false : undefined;
           const markName = name === 'Strikethrough' ? 'StrikethroughMark' : name === 'InlineCode' ? 'CodeMark' : 'EmphasisMark';
           for (const m of node.node.getChildren(markName)) add(m.from, m.to, hide);
           return name === 'InlineCode' ? false : undefined;
@@ -207,7 +293,7 @@ export function livePreview(cm, deps) {
           const url = node.node.getChild('URL');
           if (!url) return false;   // [text] without a destination: leave as typed
           add(node.from, node.to, Decoration.mark({ class: 'cm-lp-link', attributes: { 'data-href': doc.sliceString(url.from, url.to) } }));
-          if (lineActive(node.from)) return false;
+          if (touches(node.from, node.to)) return false;
           const marks = node.node.getChildren('LinkMark');
           // hide "[" and "](url "title")"
           if (marks[0]) add(marks[0].from, marks[0].to, hide);
@@ -216,7 +302,7 @@ export function livePreview(cm, deps) {
         }
         if (name === 'Image') return false;
         if (name === 'Escape') {
-          if (!lineActive(node.from) && !overlapsTaken(node.from, node.to)) add(node.from, node.from + 1, hide);
+          if (!touches(node.from, node.to) && !overlapsTaken(node.from, node.to)) add(node.from, node.from + 1, hide);
           return false;
         }
         if (name === 'ListMark') {
@@ -301,8 +387,75 @@ export function livePreview(cm, deps) {
     provide: (f) => EditorView.decorations.from(f),
   });
 
+  /** Put the cursor where a rendered formula was clicked (mathClick.js), instead of at its edge. */
+  function clickIntoMath(e, view, w) {
+    const html = w.querySelector('.katex-html');
+    if (!html) return false;
+    let start;
+    try { start = view.posAtDOM(w); } catch { return false; }
+    if (w.classList.contains('cm-lp-mathpreview')) start = null;
+    const s = scanOf(view.state);
+    const sp = s.spans.find((x) => (x.kind === 'math' && start != null && x.from === start)
+      || (x.kind === 'mathblock' && !x.open && (start != null ? view.state.doc.lineAt(x.from).from === start
+        : view.state.selection.main.head >= x.from && view.state.selection.main.head <= x.to)));
+    if (!sp) return false;
+    const doc = view.state.doc;
+    let texFrom, tex;
+    if (sp.kind === 'math') {
+      const d = sp.display ? 2 : 1;
+      texFrom = sp.from + d; tex = doc.sliceString(texFrom, sp.to - d);
+    } else {
+      const from = doc.lineAt(sp.from).from, to = doc.lineAt(sp.to).to;
+      const raw = doc.sliceString(from, to);
+      const a = raw.indexOf('$$') + 2, b = raw.lastIndexOf('$$');
+      texFrom = from + a; tex = raw.slice(a, b > a ? b : raw.length);
+    }
+    // the characters KaTeX drew (not the number column), and which one was clicked
+    const nodes = [];
+    const walk = document.createTreeWalker(html, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => (n.parentElement.closest('.katex-tag, .eq-ghost') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    });
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) nodes.push(n);
+    const drawn = [], owner = [];
+    nodes.forEach((n, k) => { for (const ch of n.data) { if (/\S/.test(ch) && ch !== '\u200b') { drawn.push(ch); owner.push(k); } } });
+    let pos = null;
+    const caret = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+    const at = caret && nodes.indexOf(caret.startContainer);
+    if (at != null && at >= 0) {
+      const before = drawn.filter((_, i) => owner[i] < at).length;
+      const inNode = nodes[at].data.slice(0, caret.startOffset).replace(/\s|\u200b/g, '').length;
+      const idx = Math.min(drawn.length - 1, before + Math.max(0, inNode - 1));
+      const after = inNode > 0 && caret.startOffset >= nodes[at].data.length;
+      pos = texFrom + clickOffset(tex, drawn, idx, after || inNode > 1);
+    } else if (e.target.closest?.('.katex-tag')) {
+      const t = tex.search(/\\tag\b/);
+      pos = texFrom + (t >= 0 ? t : tex.length);
+    } else {
+      // between symbols: the nearest one by position
+      const r = html.getBoundingClientRect();
+      const frac = r.width ? Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) : 0;
+      pos = texFrom + (drawn.length ? clickOffset(tex, drawn, Math.round(frac * (drawn.length - 1)), frac > 0.5) : 0);
+    }
+    e.preventDefault();
+    view.dispatch({ selection: { anchor: pos }, effects: setFocus.of(true), scrollIntoView: true, userEvent: 'select.pointer' });
+    view.focus();
+    return true;
+  }
+
   const clicks = EditorView.domEventHandlers({
     mousedown(e, view) {
+      const mw = e.button === 0 && !e.shiftKey && !e.metaKey && !e.ctrlKey && e.target.closest?.('.cm-lp-math, .cm-lp-mathblock');
+      if (mw && clickIntoMath(e, view, mw)) return true;
+      const ref = e.target.closest?.('.cm-lp-chip.eqref');
+      if (ref && e.button === 0 && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        const label = ref.dataset.label;
+        const s = scanOf(view.state);
+        const sp = s.spans.find((x) => (x.kind === 'mathblock' || (x.kind === 'math' && x.display))
+          && new RegExp(`\\\\label\\s*\\{\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\}`).test(view.state.doc.sliceString(x.from, x.to)));
+        if (sp) view.dispatch({ effects: EditorView.scrollIntoView(sp.from, { y: 'center' }) });
+        return true;
+      }
       const c = e.target.closest?.('.cm-lp-chip.wikilink, .cm-lp-chip.embed');
       if (c && e.button === 0) {
         e.preventDefault();

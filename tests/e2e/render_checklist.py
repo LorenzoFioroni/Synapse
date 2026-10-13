@@ -96,10 +96,16 @@ async def main():
             check("live: heading marks hidden", await page.evaluate("!document.querySelector('.cm-lp-h1').textContent.startsWith('#')"))
             await shot(page, "live-light")
 
-            # ---- reveal: put the cursor on the math line
-            await page.locator('.cm-line', has_text='Inline math').click(position={"x": 5, "y": 8})
+            # ---- reveal: the cursor's line keeps its formulas rendered; clicking one opens only that one (#43)
+            line = page.locator('.cm-line', has_text='Inline math')
+            await line.click(position={"x": 5, "y": 8})
             await page.wait_for_timeout(200)
-            check("live: clicking math shows its source", await count(page, '.cm-lp-mathsrc') >= 1)
+            check("live: the cursor's line keeps its formulas rendered", await line.locator('.cm-lp-math').count() >= 3 and await count(page, '.cm-lp-mathsrc') == 0)
+            bb = await line.locator('.cm-lp-math .katex-html').nth(1).bounding_box()
+            await page.mouse.click(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2)
+            await page.wait_for_timeout(200)
+            src = await page.locator('.cm-lp-mathsrc').all_text_contents()
+            check("live: clicking a formula shows only its source", src == ['$\\alpha_i \\leq \\beta$'] and await line.locator('.cm-lp-math').count() >= 2, src)
 
             # ---- tick a task in the live preview
             await page.locator('.cm-lp-task').first.dispatch_event('mousedown')
