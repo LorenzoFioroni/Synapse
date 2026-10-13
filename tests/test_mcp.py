@@ -152,7 +152,7 @@ def test_initialize_and_list(lib):
     assert server.handle({"jsonrpc": "2.0", "id": 2, "method": "ping"})["result"] == {}
     tools = server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})["result"]["tools"]
     names = [t["name"] for t in tools]
-    assert names == ["search_library", "list_collections", "get_note", "get_paper", "search_in_paper",
+    assert names == ["search_library", "list_collections", "get_note", "view_image", "get_paper", "search_in_paper",
                      "read_paper", "view_page", "snapshot", "get_references", "get_citation_graph", "write_note",
                      "edit_note", "undo_note_edit"]
     for t in tools:
@@ -563,6 +563,77 @@ def test_snapshot_and_use_in_note(lib, svc):
     assert err and "no PDF" in texts[0]
 
 
+def _blocks(server, **args):
+    reply = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                           "params": {"name": "view_image", "arguments": args}})
+    return reply["result"]["isError"], reply["result"]["content"]
+
+
+def test_view_image(lib, svc):
+    server = lib["server"]
+    small = pdfrender.png_encode(bytes([200, 30, 30]) * (40 * 20), 40, 20)
+    pasted = svc.note_service.add_image("pasted.png", small)["path"]
+    snap = json.loads(call(server, "snapshot", paper="fig2024", page=2, figure="Figure 2")[1][1])
+    text = (f"# Pictures\n\nA pasted one:\n\n![my sketch]({pasted})\n\nFrom the paper:\n\n{snap['markdown']}\n\n"
+            "![web](https://example.org/x.png)\n")
+    svc.note_service.create(path="pics.md", title="Pictures", text=text)
+
+    # get_note lists the images and points at view_image
+    summary = call_json(server, "get_note", note="pics")
+    assert [i["path"] for i in summary["images"]] == [pasted, snap["saved"], "https://example.org/x.png"]
+    assert summary["images"][0]["alt"] == "my sketch" and summary["images"][1]["caption"] == "Figure 2: [@fig2024, p. 2]"
+    assert "view_image" in summary["images_hint"]
+
+    # one image by path, as written in the note (and as a client may mangle it)
+    for given in (pasted, "./" + pasted, "/Users/someone/Synapse/data/notes/" + pasted, pasted.split("/", 1)[1]):
+        err, content = _blocks(server, path=given)
+        assert not err, content
+        meta = json.loads(content[0]["text"])
+        assert meta["path"] == pasted and meta["size"] == "40x20"
+        assert content[1]["type"] == "image" and base64.b64decode(content[1]["data"]) == small
+
+    # all images of a note; the snapshot says where it came from; the web image is skipped
+    err, content = _blocks(server, note="Pictures")
+    assert not err
+    assert [c["type"] for c in content] == ["text", "image", "text", "image", "text"]
+    second = json.loads(content[2]["text"])
+    assert second["caption"].startswith("Figure 2") and second["snapshot_of"]["page"] == 2
+    assert "on the web" in content[4]["text"]
+    err, content = _blocks(server, note="Pictures", path=snap["saved"])
+    assert not err and len(content) == 2 and json.loads(content[0]["text"])["line"] == summary["images"][1]["line"]
+
+    # refusals
+    for args, words in (({"path": "attachments/nope.png"}, "No image"), ({"path": "https://x.org/a.png"}, "on the web"),
+                        ({"path": "../../etc/passwd"}, "No image"), ({}, "Give path"),
+                        ({"note": "other"}, "shows no images")):
+        err, content = _blocks(server, **args)
+        assert err and words in content[0]["text"], (args, content)
+    (svc.vault.root / "attachments" / "fake.png").write_bytes(b"not an image")
+    err, content = _blocks(server, path="attachments/fake.png")
+    assert err and "not a PNG" in content[0]["text"]
+
+
+def test_view_image_scales_big_images(lib, svc, monkeypatch):
+    PIL = pytest.importorskip("PIL.Image")
+    import io
+    buf = io.BytesIO()
+    PIL.new("RGB", (4000, 1000), (10, 120, 200)).save(buf, "PNG")
+    path = svc.note_service.add_image("big.png", buf.getvalue())["path"]
+    err, content = _blocks(lib["server"], path=path)
+    meta = json.loads(content[0]["text"])
+    assert not err and meta["size"] == "4000x1000" and meta["sent_as"].startswith("1568x392")
+    assert PIL.open(io.BytesIO(base64.b64decode(content[1]["data"]))).size == (1568, 392)
+
+    # without Pillow: small images are sent as they are, huge ones refused with a hint
+    monkeypatch.setitem(sys.modules, "PIL", None)
+    err, content = _blocks(lib["server"], path=path)
+    assert not err and json.loads(content[0]["text"])["size"] == "4000x1000"
+    import backend.mcp.tools as tools_mod
+    monkeypatch.setattr(tools_mod, "IMAGE_MAX_BYTES", 100)
+    err, content = _blocks(lib["server"], path=path)
+    assert err and "pip install pillow" in content[0]["text"]
+
+
 EQ_PDF = ROOT / "tests" / "fixtures" / "equations.pdf"   # pdflatex of equations.tex next to it
 
 
@@ -655,7 +726,7 @@ def test_stdio_server_end_to_end(lib, svc):
     assert p.returncode == 0, p.stderr
     replies = [json.loads(l) for l in p.stdout.splitlines()]
     assert [r["id"] for r in replies] == [1, 2, 3]
-    assert len(replies[1]["result"]["tools"]) == 13
+    assert len(replies[1]["result"]["tools"]) == 14
     assert "tensor networks" in replies[2]["result"]["content"][0]["text"]
 
 
