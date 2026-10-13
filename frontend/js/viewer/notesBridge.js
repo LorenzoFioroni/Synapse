@@ -13,6 +13,13 @@ const paperId = params.get('paper_id');
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('zc-notes') : null;
 let item = null;   // {id, citation_key, title}
 
+// With several PDFs on the item, the citation names this one (`att:<id>`, see backend/notes/parser.py);
+// with one PDF it stays as short as before.
+function attQualifier() {
+  const id = Number(params.get('att'));
+  return id && item?.attachments?.length > 1 ? `, att:${id}` : '';
+}
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /* -------------------------------------------------------------------- styles */
@@ -146,7 +153,7 @@ function onSelectionEnd() {
   pill.style.top = `${rect.bottom + 8 > innerHeight - 40 ? rect.top - 40 : rect.bottom + 8}px`;
   pill.addEventListener('pointerdown', (e) => e.preventDefault());   // keep the selection
   pill.querySelector('[data-q]')?.addEventListener('click', () => {
-    const md = `> ${cleanQuote(text)} [@${item.citation_key}, p. ${page}]`;
+    const md = `> ${cleanQuote(text)} [@${item.citation_key}, p. ${page}${attQualifier()}]`;
     const at = { x: parseFloat(pill.style.left), y: parseFloat(pill.style.top) };
     hidePill();
     deliver(md, at);
@@ -206,7 +213,7 @@ function startSnap(e, wrapper, layer) {
       const res = await fetch('/api/notes/attachments', { method: 'POST', body: fd });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Upload failed');
-      const md = `![${item.citation_key} p. ${page}](${d.path})\n*Figure: [@${item.citation_key}, p. ${page}]*`;
+      const md = `![${item.citation_key} p. ${page}](${d.path})\n*Figure: [@${item.citation_key}, p. ${page}${attQualifier()}]*`;
       deliver(md, { x: ev.clientX, y: ev.clientY });
     } catch (err) { toast(err.message); }
   };

@@ -124,11 +124,13 @@ class NotesService:
             for p in self.papers.list(view):
                 k = p.get("citation_key")
                 if k and k not in out:
-                    pdf = next((a for a in p.get("attachments") or [] if (a.get("type") or "") == "pdf"), None)
+                    pdfs = [a for a in p.get("attachments") or [] if (a.get("type") or "") == "pdf"]
+                    pdf = pdfs[0] if pdfs else None   # the default PDF of a citation without att:<id>
                     out[k] = {"id": p["id"], "title": p.get("title") or "", "authors": p.get("authors") or "",
                               "year": p.get("year"), "journal": p.get("journal") or "", "trashed": view == "trash",
                               "has_pdf": pdf is not None,
                               "pdf": {"id": pdf["id"], "url": pdf["url"], "name": pdf.get("name") or ""} if pdf else None,
+                              "pdfs": [{"id": a["id"], "url": a["url"], "name": a.get("name") or ""} for a in pdfs],
                               "note": notes.get(k)}
         return out
 

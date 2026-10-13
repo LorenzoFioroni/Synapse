@@ -206,3 +206,17 @@ def test_key_summary(client, svc):
     keys = client.get("/api/notes/keys").json["keys"]
     assert keys[key] == {"paper": pn["path"], "citing": 2}
     assert keys["other2020"] == {"paper": None, "citing": 1}
+
+
+def test_cite_index_lists_every_pdf(client, svc):
+    """An item with several PDFs: `pdfs` lists all of them in order; `pdf` stays the default (the first)."""
+    from tests.conftest import make_pdf
+    a = svc.papers.create({"authors": "Smith, Anna", "title": "Two files", "year": 2021})
+    for name in ("main.pdf", "supplement.pdf"):
+        pdf = make_pdf(svc.config.pdf_dir / name, name)
+        svc.papers.add_attachment(a["id"], name, pdf.name, "pdf")
+    items = {i["key"]: i for i in client.get("/api/notes/cite_index").json["items"]}
+    info = items[a["citation_key"]]
+    assert [p["name"] for p in info["pdfs"]] == ["main.pdf", "supplement.pdf"]
+    assert info["pdf"]["name"] == "main.pdf"
+    assert [p["id"] for p in info["pdfs"]][0] == info["pdf"]["id"]

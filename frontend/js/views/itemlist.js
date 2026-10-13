@@ -535,7 +535,9 @@ export function itemMenu(at) {
   openMenu([
     one && state.view === 'duplicates' && { label: 'Keep This One, Trash the Others', icon: 'check', run: () => A.keepOnly(one.id) },
     one && state.view === 'duplicates' && 'sep',
-    one && { label: hasPdf ? 'Open PDF' : 'Open PDF (none attached)', icon: 'pdf', disabled: !hasPdf, run: () => A.openPdf(one), shortcut: '↵' },
+    ...(one && one.attachments?.length > 1
+      ? one.attachments.map((a) => ({ label: `Open “${a.name || 'PDF'}”`, icon: 'pdf', run: () => openAttachment(one, a) }))
+      : [one && { label: hasPdf ? 'Open PDF' : 'Open PDF (none attached)', icon: 'pdf', disabled: !hasPdf, run: () => A.openPdf(one), shortcut: '↵' }]),
     one && { label: 'View Online', icon: 'globe', disabled: !onlineUrl, run: () => window.open(onlineUrl, '_blank') },
     one && notesOn && (noteInfo ? { label: noteInfo.paper ? 'Open Paper Note' : 'Open Notes Citing This', icon: 'edit', run: () => openItemNote(one) }
       : { label: 'New Paper Note', icon: 'edit', disabled: !one.citation_key, run: () => newPaperNote(one) }),

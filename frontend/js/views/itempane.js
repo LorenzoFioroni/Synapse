@@ -467,7 +467,11 @@ async function handleClick(e) {
     }
     return;
   }
-  if (t === 'open-pdf') A.openPdf(it2);
+  if (t === 'open-pdf') {
+    const atts = it2.attachments || [];
+    if (atts.length > 1) openMenu(atts.map((a) => ({ label: `Open “${a.name || 'PDF'}”`, icon: 'pdf', run: () => openAttachment(it2, a) })), e.target.closest('[data-tool]'));
+    else A.openPdf(it2);
+  }
   if (t === 'pick-folder') addSelectionToFolder([id]);
   if (t === 'keep-only') A.keepOnly(id);
   if (t === 'metadata') openMetadataReview(id);
