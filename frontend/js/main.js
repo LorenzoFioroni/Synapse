@@ -9,6 +9,7 @@ import { closeMenu, openMenu } from './ui/menu.js';
 import { toastError } from './ui/toast.js';
 import { debounce, modKey, modLabel, plural, storage, store } from './util.js';
 import { initNav, navSnapshot, navUpdate } from './nav.js';
+import { initChanges } from './changes.js';
 import { openExport } from './views/exportDialog.js';
 import { smartFolderDialog } from './views/organizeDialogs.js';
 import { openIdentifierDialog } from './views/identifierDialog.js';
@@ -61,6 +62,7 @@ async function boot() {
   on('view', remember);
 
   await A.loadItems();
+  initChanges();   // show what other windows and devices change (#34)
   focusList();
   pollStats();
   openItemFromHash();

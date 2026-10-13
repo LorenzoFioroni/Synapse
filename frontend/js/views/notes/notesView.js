@@ -193,6 +193,13 @@ function flushOnUnload() {
 }
 
 /* ============================================================ open/close */
+/** Notes changed elsewhere (another window or device, #34): pick it up like coming back to the tab. */
+export function notesChanged() {
+  if (!notesEnabled()) return;
+  if (notesOpen()) session?.checkRemote();
+  refreshTree();   // also the notes count in the sidebar and the pencil column
+}
+
 export async function openNotes(path = null, line = null, { graph = false, focus = null } = {}) {
   if (!notesEnabled()) return;
   document.body.dataset.workspace = 'notes';

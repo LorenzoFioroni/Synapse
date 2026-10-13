@@ -44,8 +44,13 @@ function notify(msg) {
   setTimeout(() => t.remove(), 3500);
 }
 
+// This page's id for the change feed (#34): its own edits are not reported back to it.
+const CLIENT = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+
 async function api(method, path, body) {
-  const r = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const headers = { 'X-Synapse-Client': CLIENT };
+  if (body) headers['Content-Type'] = 'application/json';
+  const r = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) { const e = new Error(data.error || `Request failed (${r.status})`); e.status = r.status; throw e; }
   return data;
@@ -669,6 +674,21 @@ async function refresh() {
 }
 window.addEventListener('focus', refresh);
 
+/* Annotations made on another device (or in another tab) appear without a reload (#34). */
+let feed = { seq: undefined, epoch: undefined };
+async function pollChanges() {
+  if (document.hidden || !attId) return;
+  try {
+    const q = new URLSearchParams(feed.seq === undefined ? {} : { since: feed.seq, epoch: feed.epoch });
+    const res = await api('GET', `/api/changes?${q}`);
+    const first = feed.seq === undefined;
+    feed = { seq: res.seq, epoch: res.epoch };
+    if (!first && (res.changes || []).includes('annotations')) refresh();
+  } catch { /* try again next time */ }
+}
+setInterval(pollChanges, 4000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pollChanges(); });
+
 /** Undo / Redo buttons: the keyboard shortcuts are not there on a tablet. */
 function addUndoButtons() {
   const tools = document.getElementById('tools-section');
@@ -692,6 +712,7 @@ addUndoButtons();
 document.addEventListener('zc:pagecreated', (e) => addLayer(e.detail.wrapper));
 for (const w of document.querySelectorAll('.page-wrapper')) addLayer(w);   // pages laid out before this module ran
 const ready = load();
+ready.then(pollChanges);   // start the change feed from here
 
 // read-only view for the browser checklists
 window.zcAnnotations = { ready, list: () => [...byId.values()].map(clone), attachment: () => attId, refresh };

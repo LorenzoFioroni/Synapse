@@ -5,8 +5,11 @@ export class ApiError extends Error {
   constructor(message, status, data) { super(message); this.status = status; this.data = data; }
 }
 
+// Which open page this is, so the change feed does not report a page's own edits back to it (#34).
+export const CLIENT_ID = (globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`).replace(/-/g, '');
+
 async function request(method, url, body, { raw = false } = {}) {
-  const opts = { method, headers: {} };
+  const opts = { method, headers: { 'X-Synapse-Client': CLIENT_ID } };
   if (body instanceof FormData) opts.body = body;
   else if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json';
@@ -67,6 +70,7 @@ export const api = {
   getSettings: () => request('GET', '/api/settings'),
   saveSettings: (changes) => request('PUT', '/api/settings', changes),
   resetSettings: () => request('POST', '/api/settings/reset'),
+  changes: (since, epoch) => request('GET', `/api/changes?${qs({ since, epoch })}`),
   devices: () => request('GET', '/api/devices'),
   newPairing: () => request('POST', '/api/devices/pairing'),
   renameDevice: (id, name) => request('PATCH', `/api/devices/${encodeURIComponent(id)}`, { name }),

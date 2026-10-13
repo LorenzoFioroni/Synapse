@@ -23,6 +23,9 @@ class Services:
         self.db = Database(config.db_path)
         self.db.migrate()
         self.settings = SettingsStore(config.settings_path)
+        from .changes import ChangeFeed
+        self.changes = ChangeFeed(config.db_path, config.notes_index_path)   # for the other windows (#34)
+        self.db.on_write = self._library_written
         self.papers = PaperRepository(self.db, self.settings, config.pdf_dir)
         from .annotations import AnnotationStore
         self.annotations = AnnotationStore(self.db)
@@ -82,3 +85,11 @@ class Services:
         """Call after adding/removing files so the full-text index catches up."""
         if self.settings.get("fulltext_auto_index"):
             self.indexer.sync()
+
+    def _library_written(self) -> None:
+        from flask import has_request_context, request
+        from .changes import CLIENT_HEADER, kind_of
+        if has_request_context():
+            self.changes.record({kind_of(request.path)}, request.headers.get(CLIENT_HEADER))
+        else:
+            self.changes.record({"library"})   # background work: everyone refreshes
