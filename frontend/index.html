@@ -5,7 +5,14 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=3">
   <link rel="shortcut icon" href="/favicon.ico?v=3">
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <!-- Add to Home Screen on an iPad / phone (issue #34). It opens Synapse in Safari rather than as a
+       stand-alone web app: PDFs open in tabs of their own, and a stand-alone app would not share
+       Safari's cookie that keeps the device paired. -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-title" content="Synapse">
+  <meta name="theme-color" content="#cc2936">
   <title>Library — Synapse</title>
 
   <link rel="stylesheet" href="css/tokens.css">

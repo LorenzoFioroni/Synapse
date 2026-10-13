@@ -35,6 +35,7 @@ const P = {
   tablet: '<rect x="3" y="1.8" width="10" height="12.4" rx="1.6"/><path d="M7 12h2"/>',
   globe: '<circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/>',
   columns: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M6 3v10M10 3v10"/>',
+  menu: '<path d="M2.5 4h11M2.5 8h11M2.5 12h11"/>',
   sidebar: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M10 3v10"/>',
   sidebarLeft: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M6 3v10"/>',
   sun: '<circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/>',

@@ -4,6 +4,7 @@ import * as A from './actions.js';
 import { api } from './api.js';
 import { icon } from './icons.js';
 import { emit, folderById, on, state } from './store.js';
+import { installLongPress } from './ui/longpress.js';
 import { closeMenu, openMenu } from './ui/menu.js';
 import { toastError } from './ui/toast.js';
 import { debounce, modKey, modLabel, plural, storage, store } from './util.js';
@@ -30,8 +31,10 @@ async function boot() {
     return;
   }
   applyAppearance();
+  installLongPress();   // touch screens: long press = right-click / hover (issue #34)
   initToolbar();
   initSidebar();
+  initDrawer();
   initItemList();
   initItemPane();
   initNotes();
@@ -119,6 +122,7 @@ let searchInput, modeBtn;
 function initToolbar() {
   const tb = document.getElementById('toolbar');
   tb.innerHTML = `
+    <button class="icon-btn side-toggle" data-a="sidebar" title="Collections" aria-label="Show collections">${icon('menu')}</button>
     <div class="brand"><img class="brand-logo" src="/assets/favicon.svg?v=3" alt="Synapse" title="Synapse" width="24" height="24">
       <div class="segmented ws-switch" role="group" aria-label="Workspace">
         <button data-ws="library" title="Library (${modLabel}⇧L switches)">Library</button>
@@ -161,6 +165,7 @@ function initToolbar() {
     if (a === 'export') exportSelectionOrAll();
     if (a === 'settings') openSettings();
     if (a === 'pane') toggleItemPane();
+    if (a === 'sidebar') document.body.classList.toggle('sidebar-open');
     if (a === 'columns') openColumnPicker(b);
     if (a === 'mode') openModeMenu(b);
     if (a === 'clear-search') clearSearch();
@@ -235,21 +240,39 @@ function initResizer() {
   const pane = document.getElementById('item-pane');
   const w = storage('zc.itemPaneWidth', 360);
   pane.style.width = `${w}px`;
-  handle.addEventListener('mousedown', (e) => {
+  handle.addEventListener('pointerdown', (e) => {   // mouse, finger or Pencil
+    if (e.button > 0) return;
     e.preventDefault();
+    handle.setPointerCapture?.(e.pointerId);
     const startX = e.clientX, startW = pane.offsetWidth;
     handle.classList.add('dragging');
     document.body.style.cursor = 'col-resize';
     const move = (ev) => { pane.style.width = `${Math.min(innerWidth * 0.6, Math.max(260, startW - (ev.clientX - startX)))}px`; };
     const up = () => {
-      document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+      handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); handle.removeEventListener('pointercancel', up);
       handle.classList.remove('dragging'); document.body.style.cursor = '';
       store('zc.itemPaneWidth', pane.offsetWidth);
     };
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', up);
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
   });
   handle.addEventListener('dblclick', () => toggleItemPane());
+}
+
+/* ------------------------------------------------- sidebar as a drawer */
+// On narrow screens (an iPad in portrait, a small window) the collections slide in over the list
+// from the toolbar button and close again once one is chosen (issue #34).
+const narrow = matchMedia('(max-width: 1100px)');
+function initDrawer() {
+  const close = () => document.body.classList.remove('sidebar-open');
+  document.getElementById('sidebar').addEventListener('click', (e) => {
+    if (narrow.matches && e.target.closest('.side-item, [data-view], [data-folder], [data-smart]') && !e.target.closest('.side-add, .twisty, input')) setTimeout(close, 120);
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (document.body.classList.contains('sidebar-open') && !e.target.closest('#sidebar, [data-a="sidebar"], .menu, .dialog-backdrop')) close();
+  }, true);
+  narrow.addEventListener?.('change', close);
 }
 
 /* ------------------------------------------------------------ status bar */

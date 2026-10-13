@@ -15,6 +15,7 @@
 //   Alt+←, Cmd+[, the mouse's back button) returns to where you were before following the link.
 
 import { destTarget, figureRegion, findCaption, fitRegion, graphicsBoxes, isFloatDest, popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor } from './linkNav.js';
+import { installLongPress } from '../ui/longpress.js';
 
 const HOVER_DELAY = 250;
 const PREVIEW_W = 460, PREVIEW_H = 260, PREVIEW_H_FLOAT = 360, PREVIEW_SCALE = 1.35;
@@ -421,6 +422,21 @@ container.addEventListener('click', (e) => {
 });
 
 container.addEventListener('scroll', () => { if (popup && !popup.matches(':hover')) hidePopup(); }, { passive: true });
+// Touch screens (issue #34): a long press on a link shows its preview (a tap follows it); a tap
+// outside closes the preview.
+installLongPress();
+container.addEventListener('zc:longpress', (e) => {
+  const link = e.target.closest?.('.zc-link');
+  if (!link) return;
+  e.preventDefault();
+  clearTimeout(hoverTimer);
+  clearTimeout(hideTimer);
+  hoverLink = link;
+  showPopup(link);
+});
+document.addEventListener('pointerdown', (e) => {
+  if (popup && e.pointerType !== 'mouse' && !popup.contains(e.target)) hidePopup();
+}, true);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hidePopup(); });
 
 /* ---------------------------------------------------------------------- setup */

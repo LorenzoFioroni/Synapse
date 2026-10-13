@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 
 from flask import Flask, jsonify, send_from_directory
 from werkzeug.exceptions import HTTPException
@@ -11,6 +12,7 @@ from .repository import NotFound
 from .services import Services
 
 log = logging.getLogger(__name__)
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 NO_CACHE = "no-store, no-cache, must-revalidate, max-age=0"
 

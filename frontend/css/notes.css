@@ -398,3 +398,5 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .att-actions .danger { color: var(--danger); }
 .att-card .btn-link { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; }
 .att-card .btn-link:hover { text-decoration: underline; }
+
+@media (hover: none) { .prose .code-block .copy-code { opacity: 1; } }   /* touch screens (issue #34) */
