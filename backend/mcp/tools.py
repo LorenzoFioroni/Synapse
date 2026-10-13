@@ -47,8 +47,11 @@ Note syntax (the app's own Markdown; write_note checks it and refuses notes that
 [[stem|Shown text]]; links resolve by file name, not by title. [[stem#Heading]] links a heading.
 - Math is LaTeX rendered with KaTeX: inline $t \\lesssim N - 1.6$ (no space after the opening $ or before the \
 closing one, on one line; write \\$ for a dollar sign), display $$...$$. Never write formulas with Unicode \
-symbols (≈, ⟨ψ|, x₁) outside $...$. Equations are numbered as in LaTeX: \\tag{3}, or \\begin{equation}/align \
-(numbered through the note); \\label{eq:name} in an equation and \\eqref{eq:name} in the text refer to it.
+symbols (≈, ⟨ψ|, x₁) outside $...$. A display equation gets a number when it has a \\label{eq:name} \
+(numbered through the note; equation/align environments as in LaTeX; \\tag{3} sets one); \\eqref{eq:name} in the \
+text or in math refers to it. The physics package's commands work (\\vb, \\dv, \\pdv, \\qty, \\abs, \\expval, \
+\\mel, \\comm, \\dd…), as do the user's own macros (get_note lists them) and a \\newcommand written in any formula \
+of the note (it applies to the whole note).
 - Quotes point at the exact words in the PDF: a block quote ending with its citation, \
 "> exact words from the page [@key, p. N]", the words copied from read_paper (prose, not formulas). \
 Clicking the citation opens the PDF there and highlights them. A citation inside a block quote or callout \
@@ -397,6 +400,7 @@ class LibraryTools:
             "outline": [("#" * h["level"]) + " " + h["text"] for h in info.get("headings") or []],
             "cited_papers": cited, "links_to_notes": notes_out, "linked_from": backlinks,
             "images": self._note_images(got["text"]) or None,
+            "math_macros": self._math_macros() or None,
         })
         if summary.get("images"):
             summary["images_hint"] = "view_image(note=…) shows these images (paths are inside the notes folder)."
@@ -404,6 +408,10 @@ class LibraryTools:
         if len(text) > MAX_NOTE_CHARS:
             text = text[:MAX_NOTE_CHARS] + f"\n\n[… note cut at {MAX_NOTE_CHARS} characters of {len(got['text'])}]"
         return Parts([summary, f"Text of {path}:\n\n{text}"])
+
+    def _math_macros(self) -> str:
+        """The user's own math commands (Settings → Math macros), which every note may use."""
+        return str(self.s.settings.get("notes_math_macros") or "").strip()
 
     # ------------------------------------------------------------------ note images
     def _note_images(self, text: str) -> list[dict]:

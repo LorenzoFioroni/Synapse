@@ -36,6 +36,7 @@ const P = {
   globe: '<circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/>',
   columns: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M6 3v10M10 3v10"/>',
   sidebar: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M10 3v10"/>',
+  sidebarLeft: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M6 3v10"/>',
   sun: '<circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/>',
   moon: '<path d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5z"/>',
   text: '<path d="M3 4h10M3 7h10M3 10h7M3 13h5"/>',

@@ -5,11 +5,24 @@ body[data-workspace="notes"] #item-pane { display: none !important; }
 
 #notes-view { flex: 1; min-width: 0; display: flex; background: var(--bg); --note-col: 760px; --note-pad: 32px; }
 #notes-view.wide-text { --note-col: 100%; }
-/* focus mode (⌘\): only the note, without the library sidebar, the notes list and the details panel */
-body.notes-focus[data-workspace="notes"] #sidebar,
-body.notes-focus[data-workspace="notes"] .notes-tree-pane,
-body.notes-focus[data-workspace="notes"] .notes-side { display: none !important; }
-.note-head .icon-btn[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+/* The notes list hidden (toolbar button or ⌘\, panels.js): the library sidebar goes too, and the
+   list slides in over the note from the window's left edge. */
+body[data-workspace="notes"].notes-list-hidden #sidebar,
+body[data-workspace="notes"].notes-list-hidden .notes-tree-pane { display: none; }
+.notes-edge { display: none; }
+body[data-workspace="notes"].notes-list-hidden .notes-edge {
+  display: block; position: fixed; left: 0; top: var(--app-top, 50px); bottom: var(--app-bottom, 0px); width: 10px; z-index: 940; cursor: e-resize;
+}
+.notes-edge::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: transparent; transition: background .15s; }
+.notes-edge:hover::after { background: var(--accent); }
+body[data-workspace="notes"].notes-list-hidden.notes-peek .notes-tree-pane {
+  display: flex; position: fixed; left: 0; top: var(--app-top, 50px); bottom: var(--app-bottom, 0px); width: 280px; z-index: 950;
+  box-shadow: var(--shadow-lg); animation: notes-peek-in .14s ease-out;
+}
+body.notes-peek .notes-edge { pointer-events: none; }
+@keyframes notes-peek-in { from { transform: translateX(-24px); opacity: 0; } to { transform: none; opacity: 1; } }
+/* the toolbar's panel buttons while Notes is open: shown pressed while their panel is shown */
+body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: var(--accent); }
 @media (max-width: 900px) { #notes-view { --note-pad: 18px; } }
 #notes-view[hidden] { display: none; }
 
@@ -162,6 +175,9 @@ body.notes-focus[data-workspace="notes"] .notes-side { display: none !important;
 .trash-row.done .mono { color: var(--text-3); }
 
 @media (max-width: 1100px) { .notes-side { display: none; } }
+/* hidden or shown with the toolbar's panel button, whatever the window's width (panels.js) */
+#notes-view.details-hidden .notes-side { display: none; }
+#notes-view.details-shown.has-note .notes-side { display: block; }
 
 /* ===================================================== M4: modes, preview, read view */
 .note-modes button { padding: 3px 10px; font-size: var(--fs-xs); }
@@ -288,6 +304,9 @@ body.notes-focus[data-workspace="notes"] .notes-side { display: none !important;
 .cm-live .cm-line.cm-lp-mathsrc-block.first { border-top: 1px solid var(--border); border-top-left-radius: 8px; border-top-right-radius: 8px; padding-top: 3px; }
 .cm-live .cm-line.cm-lp-mathsrc-block.last { border-bottom: 1px solid var(--border); border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; padding-bottom: 3px; }
 .cm-lp-widget.cm-lp-mathblock.cm-lp-mathpreview { opacity: .8; padding-top: .2em; }
+/* a formula that only defines macros (macros.js): a small label in the live preview */
+.cm-lp-widget.cm-lp-mathdefs { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); cursor: text; }
+.cm-lp-widget.cm-lp-mathdefs:is(div) { padding: 2px 0; }
 .cm-lp-widget.cm-lp-table { padding: .3em 0; cursor: text; }
 .cm-lp-widget.cm-lp-table table { border-collapse: collapse; font-size: .95em; }
 .cm-lp-widget.cm-lp-table th, .cm-lp-widget.cm-lp-table td { border: 1px solid var(--border); padding: 4px 10px; text-align: left; }

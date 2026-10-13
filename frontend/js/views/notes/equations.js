@@ -4,9 +4,10 @@
 // environment restarts at (1) in every block, and \label / \eqref are unknown to it. This module
 // looks at all display equations of a note in order and rewrites their TeX before KaTeX sees it:
 //
-//  - numbered environments (equation, align, gather, alignat, flalign) get consecutive
-//    numbers, row by row for the multi-row ones, as in LaTeX; starred ones get none;
-//  - with mode "all", every other display equation is numbered too ($$ … $$);
+//  - a $$ … $$ equation is anonymous, unless it has a \label{name}: then it gets the next number
+//    (mode "all" numbers every display equation);
+//  - numbered environments (equation, align, gather, alignat, flalign) are numbered as in LaTeX,
+//    row by row for the multi-row ones; starred ones only where a row has a \label;
 //  - \tag{x} shows x and does not count; \notag / \nonumber leave a row unnumbered;
 //  - \label{name} is removed and remembered; \eqref{name} / \ref{name} anywhere in the note
 //    (in math or in the text) become the number.
@@ -16,7 +17,7 @@
 
 const NUMBERED = new Set(['equation', 'align', 'gather', 'alignat', 'flalign']);   // (KaTeX has no multline)
 const MULTIROW = new Set(['align', 'gather', 'alignat', 'flalign']);
-export const MODES = ['latex', 'all'];
+export const MODES = ['labelled', 'all'];   // 'latex' (older setting) counts as 'labelled'
 
 const LABEL = /\\label\s*\{([^{}]*)\}/g;
 const NOTAG = /\\(?:notag|nonumber)(?![A-Za-z])/;
@@ -70,13 +71,13 @@ const stripLabels = (s, found) => s.replace(LABEL, (_, name) => { found.push(nam
 /**
  * Number the display equations of a note.
  * @param {string[]} formulas  TeX of each display equation, in document order (without $$)
- * @param {{mode?: 'latex'|'all'}} [o]
+ * @param {{mode?: 'labelled'|'all'}} [o]
  * @returns {{formulas: string[], labels: Map<string, string|null>, numbers: string[][], names: string[][]}}
  *   formulas: the TeX to give KaTeX (labels removed, numbers as \tag, references not yet resolved);
  *   labels: label → shown number (e.g. "3" or "A.1"; null if that equation has none);
  *   numbers: the numbers each formula shows;  names: the labels each formula defines.
  */
-export function numberEquations(formulas, { mode = 'latex' } = {}) {
+export function numberEquations(formulas, { mode = 'labelled' } = {}) {
   const labels = new Map();
   const numbers = [], names = [];
   let counter = 0;
@@ -86,7 +87,7 @@ export function numberEquations(formulas, { mode = 'latex' } = {}) {
     const doRow = (row, auto) => {
       const found = [];
       let text = stripLabels(row, found);
-      const kind = rowKind(text, auto);
+      const kind = rowKind(text, auto || found.length > 0);   // a \label asks for a number
       let num = null;
       if (kind.tag != null) num = kind.tag;
       else if (kind.auto) {
@@ -112,7 +113,9 @@ export function numberEquations(formulas, { mode = 'latex' } = {}) {
       numbers.push(shown);
       return tex.replace(env.body, () => body);
     }
-    // anything else is one equation: numbered with mode "all" (or by its own \tag)
+    // anything else is one equation: numbered when labelled, with mode "all", or by its own \tag;
+    // a formula that only defines macros (macros.js) shows nothing and gets no number
+    if (!tex.trim()) { numbers.push(shown); return tex; }
     const res = doRow(tex, mode === 'all' && !(env && env.starred));
     numbers.push(shown);
     // KaTeX knows \notag only inside environments: drop it elsewhere

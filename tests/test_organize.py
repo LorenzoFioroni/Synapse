@@ -137,6 +137,8 @@ def test_old_settings_file_is_migrated(tmp_path):
     from backend.settings import SettingsError
     with pytest.raises(SettingsError):
         s.update({"add_find_pdf": "sometimes"})
+    path.write_text(json.dumps({"notes_equation_numbers": "latex"}))   # the first version of PR #46
+    assert SettingsStore(path).get("notes_equation_numbers") == "labelled"
 
 
 def test_permanent_delete_cleans_tags(client):

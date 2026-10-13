@@ -53,6 +53,16 @@ f &= g
 $$
 
 The end, with $x$ and \eqref{eq:a1}.
+
+$$
+F = m a \label{eq:newton}
+$$
+
+Newton: \eqref{eq:newton}, with $\avg{\vb r} \in \R$ and $\dv{f}{x}$.
+
+$$
+\newcommand{\avg}[1]{\left\langle #1 \right\rangle}
+$$
 """
 
 
@@ -110,6 +120,8 @@ async def main():
     time.sleep(1.5)
     try:
         requests.post(f"{BASE}/api/notes/note", json={"path": "Eq.md", "title": "Eq", "text": NOTE}).raise_for_status()
+        requests.post(f"{BASE}/api/notes/note", json={"path": "Other.md", "title": "Other", "text": "# Other\n\nAnother note.\n"}).raise_for_status()
+        requests.put(f"{BASE}/api/settings", json={"notes_math_macros": "\\newcommand{\\R}{\\mathbb{R}}"}).raise_for_status()
         async with async_playwright() as p:
             b = await p.chromium.launch()
             ctx = await b.new_context(viewport={"width": 1440, "height": 1500})
@@ -126,12 +138,16 @@ async def main():
 
             # ---- numbers (live preview)
             tags = await page.evaluate("[...document.querySelectorAll('.cm-lp-mathblock .katex-html > .katex-tag:not(.eq-ghost)')].map(t => t.textContent.replace(/\\s|\\u200b/g, ''))")
-            check("live: \\tag numbers and align rows numbered like LaTeX", tags == ["(1)", "(9)", "(1)(2)"], tags)
+            check("live: \\tag, align rows and labelled $$ numbered; unlabelled $$ anonymous", tags == ["(1)", "(9)", "(1)(2)", "(3)"], tags)
             check("live: numbers never overlap their formula", await page.evaluate(TAGS_CLEAR.replace("SEL", "'.cm-lp-mathblock .katex-display'")))
             fit = await page.evaluate("(() => { const b = [...document.querySelectorAll('.cm-lp-mathblock')][2]; return [b.scrollWidth <= b.clientWidth + 1, b.querySelector('.katex-display').style.getPropertyValue('--eq-scale')]; })()")
             check("live: a too-wide equation is scaled down to fit", fit[0] and fit[1] and 0.75 <= float(fit[1]) < 1, fit)
             refs = await page.locator('.cm-lp-chip.eqref').all_text_contents()
-            check("live: \\eqref in the text shows the numbers", refs == ["(1)", "(9)", "(??)", "(1)"], refs)
+            check("live: \\eqref in the text shows the numbers", refs == ["(1)", "(9)", "(??)", "(1)", "(3)"], refs)
+            check("live: physics commands, the note's \\newcommand (defined below its use) and Settings macros render",
+                  await page.evaluate("document.querySelectorAll('.cm-lp-math .katex').length >= 6 && !document.querySelector('.cm-content .katex-error, .cm-content .katex [style*=\"cc0000\"]')"))
+            defs = await page.locator('.cm-lp-mathdefs').all_text_contents()
+            check("live: a formula that only defines macros shows a small label", defs == ["Macros: \\avg"], defs)
             check("live: a missing label is marked", await page.locator('.cm-lp-chip.eqref.missing').count() == 1)
             await shot(page, "1-live")
 
@@ -172,40 +188,84 @@ async def main():
             await page.wait_for_selector('.note-read:not([hidden]) .math-block')
             await page.wait_for_timeout(400)
             tags = await page.evaluate("[...document.querySelectorAll('.note-read .katex-html > .katex-tag:not(.eq-ghost)')].map(t => t.textContent.replace(/\\s|\\u200b/g, ''))")
-            check("read: the same numbers", tags == ["(1)", "(9)", "(1)(2)"], tags)
+            check("read: the same numbers", tags == ["(1)", "(9)", "(1)(2)", "(3)"], tags)
             check("read: numbers never overlap their formula", await page.evaluate(TAGS_CLEAR.replace("SEL", "'.note-read .katex-display'")))
             links = await page.locator('.note-read a.eqref').all_text_contents()
-            check("read: \\eqref links", links == ["(1)", "(9)", "(1)"] and await page.locator('.note-read .eqref.missing').count() == 1, links)
+            check("read: \\eqref links", links == ["(1)", "(9)", "(1)", "(3)"] and await page.locator('.note-read .eqref.missing').count() == 1, links)
+            check("read: macros render, the definitions themselves show nothing", await page.evaluate(
+                "!document.querySelector('.note-read .katex-error, .note-read .katex [style*=\"cc0000\"]') && !document.querySelector('.note-read .prose').textContent.includes('newcommand')"))
             await page.locator('.note-read a.eqref').nth(1).click()
             await page.wait_for_timeout(700)
             check("read: clicking \\eqref goes to the equation", await page.evaluate(
                 "(() => { const e = document.getElementById('eq-eq-thr').parentElement; const r = e.getBoundingClientRect(); return e.classList.contains('flash') && r.top >= 0 && r.bottom <= innerHeight; })()"))
             await page.click('[data-mode="live"]')
 
-            # ---- width and focus mode
-            col = lambda: page.evaluate("document.querySelector('.cm-content').getBoundingClientRect().width")
-            w0 = await col()
-            await page.click('[data-act="note-focus"]')
-            await page.wait_for_timeout(400)
-            hidden = await page.evaluate("['#sidebar', '.notes-tree-pane', '.notes-side'].every(s => getComputedStyle(document.querySelector(s)).display === 'none')")
-            check("focus mode hides the sidebar, the notes list and the details", hidden)
-            wide = await page.evaluate("(() => { const m = document.querySelector('.cm-lp-mathblock'); return [m.getBoundingClientRect().width, document.querySelector('.cm-content').getBoundingClientRect().width]; })()")
-            check("focus mode: equations use more than the text column", wide[0] > wide[1] + 100, wide)
-            await page.click('[data-act="note-width"]')
-            await wait_for(lambda: page.evaluate("document.getElementById('notes-view').classList.contains('wide-text')"))
+            # ---- panels: the toolbar's panel buttons act on the notes; the hidden list peeks in from the left edge
+            check("no panel buttons in the note header any more", await page.locator('.note-head .icon-btn').count() == 0)
+            cols = page.locator('#toolbar [data-a="columns"]')
+            check("toolbar: the columns button is the notes list's while Notes is open", "notes list" in (await cols.get_attribute("title")))
+            w0 = await page.evaluate("document.querySelector('.cm-lp-mathblock').getBoundingClientRect().width")
+            await cols.click()
             await page.wait_for_timeout(300)
-            w2 = await col()
-            check("the width button lets the text use the whole pane", w2 > w0 + 400 and requests.get(f"{BASE}/api/settings").json()["settings"]["notes_width"] == "full", (w0, w2))
-            await shot(page, "3-focus-full")
+            hidden = await page.evaluate("['#sidebar', '.notes-tree-pane'].every(s => getComputedStyle(document.querySelector(s)).display === 'none')")
+            check("hiding the list hides the library sidebar and the notes list", hidden)
+            w1 = await page.evaluate("document.querySelector('.cm-lp-mathblock').getBoundingClientRect().width")
+            check("…and the note gets their room", w1 > w0 + 400, (w0, w1))
+            tree_shown = "getComputedStyle(document.querySelector('.notes-tree-pane')).display !== 'none'"
+            await page.mouse.move(700, 600)
+            await page.mouse.move(2, 600, steps=4)
+            await page.wait_for_timeout(450)
+            check("the pointer at the left edge slides the list in", await page.evaluate(tree_shown) and await page.evaluate("document.body.classList.contains('notes-peek')"))
+            await shot(page, "3-peek")
+            await page.mouse.move(900, 600, steps=4)
+            await page.wait_for_timeout(700)
+            check("…and out again when it leaves", not await page.evaluate(tree_shown))
+            await page.mouse.move(2, 600, steps=4)
+            await page.wait_for_timeout(450)
+            await page.click('.notes-tree-pane .nt-row.note[data-path="Other.md"]')
+            await page.wait_for_timeout(700)
+            check("choosing a note in the slid-in list opens it and the list goes away",
+                  await page.evaluate("zcNotes.path()") == "Other.md" and not await page.evaluate(tree_shown))
+            await page.mouse.move(2, 600, steps=4)
+            await page.wait_for_timeout(450)
+            await page.click('.notes-tree-pane .nt-row.note[data-path="Eq.md"]')
+            await page.wait_for_selector('.cm-lp-mathblock')
             await page.reload()
             await page.wait_for_selector('.cm-lp-mathblock')
-            check("focus mode and width are kept after a reload", await page.evaluate("document.body.classList.contains('notes-focus') && document.getElementById('notes-view').classList.contains('wide-text')"))
+            check("the list stays hidden after a reload", not await page.evaluate(tree_shown))
             await page.click('.cm-content')
             await page.keyboard.press("ControlOrMeta+Backslash")
             await page.wait_for_timeout(300)
-            check("Cmd/Ctrl+\\ brings the side panels back", await page.evaluate("getComputedStyle(document.querySelector('.notes-tree-pane')).display !== 'none'"))
-            await page.click('[data-act="note-width"]')
+            check("Cmd/Ctrl+\\ brings it back", await page.evaluate(tree_shown) and await page.evaluate("getComputedStyle(document.querySelector('#sidebar')).display !== 'none'"))
+            side = "getComputedStyle(document.querySelector('.notes-side')).display !== 'none'"
+            pane_btn = page.locator('#toolbar [data-a="pane"]')
+            was = await page.evaluate(side)
+            await pane_btn.click()
+            await page.wait_for_timeout(200)
+            now = await page.evaluate(side)
+            await pane_btn.click()
+            await page.wait_for_timeout(200)
+            check("toolbar: the item pane button hides and shows the note details", was and not now and await page.evaluate(side))
+            await page.click('.ws-switch [data-ws="library"]')
+            await page.wait_for_timeout(400)
+            check("in the Library the two buttons are the item list's again",
+                  await cols.get_attribute("title") == "Choose columns" and await pane_btn.get_attribute("title") == "Toggle item pane")
+            await page.click('.ws-switch [data-ws="notes"]')
+            await page.wait_for_selector('.cm-lp-mathblock')
+
+            # ---- text width (Settings)
+            col = lambda: page.evaluate("document.querySelector('.cm-content').getBoundingClientRect().width")
+            await cols.click()   # list hidden: room for a wide text
             await page.wait_for_timeout(300)
+            c0 = await col()
+            requests.put(f"{BASE}/api/settings", json={"notes_width": "full"}).raise_for_status()
+            await page.reload()
+            await page.wait_for_selector('.cm-lp-mathblock')
+            await page.wait_for_timeout(300)
+            c1 = await col()
+            check("Settings → Note width: Full lets the text use the whole pane", c1 > c0 + 400, (c0, c1))
+            requests.put(f"{BASE}/api/settings", json={"notes_width": "readable"}).raise_for_status()
+            await cols.click()
 
             # ---- number every display equation (Settings)
             requests.put(f"{BASE}/api/settings", json={"notes_equation_numbers": "all"}).raise_for_status()
@@ -213,9 +273,9 @@ async def main():
             await page.wait_for_selector('.cm-lp-mathblock')
             await page.wait_for_timeout(500)
             tags = await page.evaluate("[...document.querySelectorAll('.cm-lp-mathblock .katex-html > .katex-tag:not(.eq-ghost)')].map(t => t.textContent.replace(/\\s|\\u200b/g, ''))")
-            check("setting 'every display equation' numbers the untagged one too", tags == ["(1)", "(1)", "(9)", "(2)(3)"], tags)
+            check("setting 'every display equation' numbers the unlabelled one too", tags == ["(1)", "(1)", "(9)", "(2)(3)", "(4)"], tags)
             refs = await page.locator('.cm-lp-chip.eqref').all_text_contents()
-            check("…and \\eqref follows", refs[-1] == "(2)", refs)
+            check("…and \\eqref follows", refs[-2:] == ["(2)", "(4)"], refs)
 
             check("no JavaScript errors", not errors, errors[:3])
             await b.close()

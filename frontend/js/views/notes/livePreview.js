@@ -14,6 +14,7 @@ import { citeTargetInText } from './citeTarget.js';
 import { citeLabel, imageSrc } from './render.js';
 import { numberEquations, refText, resolveRefs, textRefs } from './equations.js';
 import { clickOffset } from './mathClick.js';
+import { HAS_DEFINITIONS, parseDefinitions, withDefinitions } from './macros.js';
 import { fitSoon } from './mathFit.js';
 
 const CALLOUT_TYPES = ['note', 'tip', 'warning', 'question', 'quote', 'info', 'important', 'caution', 'example', 'todo'];
@@ -26,7 +27,8 @@ const CALLOUT_TYPES = ['note', 'tip', 'warning', 'question', 'quote', 'info', 'i
  *   citeInfo(key)           → library info or null
  *   openNote(target, heading)
  *   mermaid(el, code)       render a diagram into el
- *   equations()             equation numbering: 'latex' | 'all'
+ *   equations()             equation numbering: 'labelled' | 'all'
+ *   macros()                KaTeX macros every note starts from (macros.js)
  */
 export function livePreview(cm, deps) {
   const { Decoration, WidgetType, StateField, StateEffect, EditorView, syntaxTree } = cm;
@@ -71,11 +73,13 @@ export function livePreview(cm, deps) {
   const bullet = new HtmlWidget('bullet', (el) => { el.textContent = '•'; }, { cls: 'cm-lp-bullet' });
 
   // a formula; ``src`` is where its TeX starts in the document (for clicks into it)
+  // ``eq`` (equationsOf) brings the note's macros; their signature is part of the key, so a
+  // changed \newcommand redraws the formulas that may use it
   class MathWidget extends HtmlWidget {
-    constructor(tex, display, block, preview = false) {
-      super(`m:${display}:${block}:${preview}:${tex}`, (el) => {
+    constructor(tex, display, block, preview, eq) {
+      super(`m:${display}:${block}:${preview}:${eq.sig}:${tex}`, (el) => {
         const r = deps.renderer();
-        el.innerHTML = r ? r.katex(tex, display) : tex;
+        el.innerHTML = r ? r.katex(tex, display, eq.macros) : tex;
       }, { block, cls: (block ? 'cm-lp-mathblock' : display ? 'cm-lp-math display' : 'cm-lp-math') + (preview ? ' cm-lp-mathpreview' : '') });
       this.display = display;
     }
@@ -85,7 +89,12 @@ export function livePreview(cm, deps) {
       return el;
     }
   }
-  const katexWidget = (tex, display, block = false, preview = false) => new MathWidget(tex, display, block, preview);
+  const katexWidget = (eq, tex, display, block = false, preview = false) => new MathWidget(tex, display, block, preview, eq);
+  // a formula that only defines macros: a small label (click it to edit the definitions)
+  const defsWidget = (names, block) => new HtmlWidget(`defs:${block}:${names.join(' ')}`, (el) => {
+    el.textContent = `Macros: ${names.join('  ')}`;
+    el.title = 'Macro definitions, used by every formula of this note: click to edit';
+  }, { block, cls: 'cm-lp-mathdefs' });
 
   const chip = (key, cls, label, attrs) => new HtmlWidget(key, (el) => {
     el.textContent = label;
@@ -117,24 +126,41 @@ export function livePreview(cm, deps) {
 
   /* ------------------------------------------------------------------ build */
   let cache = { doc: null, scan: null, eq: null };
+  let lastBase = null, baseVersion = 0;
   const scanOf = (state) => {
-    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), eq: null, mode: null };
+    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), eq: null, mode: null, base: null };
     return cache.scan;
   };
-  // equation numbers of the whole note: display formula start → TeX for KaTeX; labels for \eqref
+  // the whole note's formulas: macro definitions taken out (they apply to every formula), display
+  // equations numbered; formula start → TeX for KaTeX; labels for \eqref
   const mathSrc = (doc, sp) => (sp.kind === 'mathblock'
     ? doc.sliceString(doc.lineAt(sp.from).from, doc.lineAt(sp.to).to).trim().replace(/^\$\$/, '').replace(/\$\$$/, '').trim()
     : doc.sliceString(sp.from + (sp.display ? 2 : 1), sp.to - (sp.display ? 2 : 1)));
   const equationsOf = (state) => {
     const s = scanOf(state);
-    const mode = deps.equations?.() || 'latex';
-    if (cache.eq && cache.mode === mode) return cache.eq;
+    const mode = deps.equations?.() || 'labelled';
+    const base = deps.macros?.() || {};
+    if (base !== lastBase) { lastBase = base; baseVersion++; }
+    if (cache.eq && cache.mode === mode && cache.base === base) return cache.eq;
     const doc = state.doc;
-    const display = s.spans.filter((sp) => (sp.kind === 'mathblock' && !sp.open) || (sp.kind === 'math' && sp.display)).sort((a, b) => a.from - b.from);
-    const res = numberEquations(display.map((sp) => mathSrc(doc, sp)), { mode });
+    const maths = s.spans.filter((sp) => (sp.kind === 'mathblock' && !sp.open) || sp.kind === 'math').sort((a, b) => a.from - b.from);
+    const src = new Map(), defines = new Map(), defs = [];
+    for (const sp of maths) {
+      let t = mathSrc(doc, sp);
+      if (HAS_DEFINITIONS.test(t)) {
+        const p = parseDefinitions(t);
+        if (p.defs.length) { defs.push(...p.defs); defines.set(sp.from, p.defs.map((d) => d.name)); t = p.rest; }
+      }
+      src.set(sp.from, t);
+    }
+    const display = maths.filter((sp) => sp.kind === 'mathblock' || sp.display);
+    const res = numberEquations(display.map((sp) => src.get(sp.from)), { mode });
     const tex = new Map(display.map((sp, i) => [sp.from, resolveRefs(res.formulas[i], res.labels)]));
-    cache.eq = { tex, labels: res.labels };
+    for (const sp of maths) if (!tex.has(sp.from)) tex.set(sp.from, resolveRefs(src.get(sp.from), res.labels));
+    const sig = `${baseVersion}|${defs.map((d) => `${d.name}[${d.nargs}][${d.opt ?? ''}]{${d.body}}`).join('|')}`;
+    cache.eq = { tex, labels: res.labels, macros: withDefinitions(base, defs), sig, defines };
     cache.mode = mode;
+    cache.base = base;
     return cache.eq;
   };
 
@@ -175,21 +201,23 @@ export function livePreview(cm, deps) {
         const from = doc.lineAt(sp.from).from, to = doc.lineAt(sp.to).to;
         taken.push([from, to]);
         const tex = eq.tex.get(sp.from) ?? mathSrc(doc, sp);
+        const onlyDefines = eq.defines.has(sp.from) && !tex.trim();
         if (blockActive(from, to)) {
           for (let p = from; p <= to; p = doc.lineAt(p).to + 1) {
             const l = doc.lineAt(p);
             lineDeco(p, `cm-lp-mathsrc cm-lp-mathsrc-block${l.from === from ? ' first' : ''}${l.to === to ? ' last' : ''}`);
           }
           // the formula being edited stays visible below its source
-          out.push(Decoration.widget({ widget: katexWidget(tex, true, true, true), block: true, side: 1 }).range(to));
+          if (!onlyDefines) out.push(Decoration.widget({ widget: katexWidget(eq, tex, true, true, true), block: true, side: 1 }).range(to));
           continue;
         }
-        add(from, to, Decoration.replace({ widget: katexWidget(tex, true, true), block: true }));
+        add(from, to, Decoration.replace({ widget: onlyDefines ? defsWidget(eq.defines.get(sp.from), true) : katexWidget(eq, tex, true, true), block: true }));
       } else if (sp.kind === 'math') {
         taken.push([sp.from, sp.to]);
         if (touches(sp.from, sp.to)) { add(sp.from, sp.to, Decoration.mark({ class: 'cm-lp-mathsrc' })); continue; }
-        const tex = sp.display ? (eq.tex.get(sp.from) ?? mathSrc(doc, sp)) : resolveRefs(mathSrc(doc, sp), eq.labels);
-        add(sp.from, sp.to, Decoration.replace({ widget: katexWidget(tex, sp.display) }));
+        const tex = eq.tex.get(sp.from) ?? mathSrc(doc, sp);
+        const onlyDefines = eq.defines.has(sp.from) && !tex.trim();
+        add(sp.from, sp.to, Decoration.replace({ widget: onlyDefines ? defsWidget(eq.defines.get(sp.from), false) : katexWidget(eq, tex, sp.display) }));
       }
     }
 
