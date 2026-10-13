@@ -7,7 +7,7 @@ body[data-workspace="notes"] #item-pane { display: none !important; }
 #notes-view.wide-text { --note-col: 100%; }
 /* The notes list hidden (toolbar button or ⌘\, panels.js): the library sidebar goes too, and the
    list slides in over the note from the window's left edge. */
-body[data-workspace="notes"].notes-list-hidden #sidebar,
+body[data-workspace="notes"].notes-list-hidden:not(.sidebar-open) #sidebar,
 body[data-workspace="notes"].notes-list-hidden .notes-tree-pane { display: none; }
 .notes-edge { display: none; }
 body[data-workspace="notes"].notes-list-hidden .notes-edge {
@@ -20,6 +20,7 @@ body[data-workspace="notes"].notes-list-hidden.notes-peek .notes-tree-pane {
   box-shadow: var(--shadow-lg); animation: notes-peek-in .14s ease-out;
 }
 body.notes-peek .notes-edge { pointer-events: none; }
+@media (pointer: coarse) { body[data-workspace="notes"].notes-list-hidden .notes-edge { width: 20px; } }   /* a finger's width */
 @keyframes notes-peek-in { from { transform: translateX(-24px); opacity: 0; } to { transform: none; opacity: 1; } }
 /* the toolbar's panel buttons while Notes is open: shown pressed while their panel is shown */
 body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: var(--accent); }
