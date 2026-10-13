@@ -129,7 +129,9 @@ never mix.
   Drive or Dropbox). **Restore** backs up the current state first, then puts the library,
   settings and notes back and rebuilds the indexes.
 - **Notes**: Markdown notes with live preview, KaTeX, code, Mermaid and images; `[@key]`
-  citations and `[[links]]` between notes; a paper note per item. Switch with the
+  citations and `[[links]]` between notes; a paper note per item. An item with several PDFs gets
+  one button per PDF in citation cards and in its menus; `[@key, p. 4, att:12]` names the PDF with
+  attachment id 12 (a citation without `att:` means the first PDF). Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
   Cmd+[ / Alt+←) go back to the note or library selection you came from.
   Images pasted into notes are kept in the notes' attachments folder; one that no note uses any more

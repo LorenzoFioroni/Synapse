@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as lib from '../../frontend/vendor/md/md.js';
-import { citeLabel, createRenderer, imageSrc, parseCites } from '../../frontend/js/views/notes/render.js';
+import { attachmentOf, citeLabel, createRenderer, imageSrc, parseCites } from '../../frontend/js/views/notes/render.js';
 
 const r = createRenderer(lib, {
   citeInfo: (k) => (k === 'smith2021' ? { authors: 'Smith, Anna; Doe, J; Roe, K', year: 2021, title: 'Quantum' } : null),
@@ -69,4 +69,20 @@ test('helpers', () => {
     { key: 'a', prefix: 'see', suppress: false, locator: 'p. 3', page: 3 },
     { key: 'b', prefix: '', suppress: false, locator: '', page: null }]);
   assert.equal(citeLabel({ key: 'k', prefix: '', suppress: false, locator: '' }, null), '@k');
+});
+
+test('att:<id> names the PDF of a citation; the reader never sees it', () => {
+  assert.equal(attachmentOf('p. 4, att:12'), 12);
+  assert.equal(attachmentOf('att:7'), 7);
+  assert.equal(attachmentOf('p. 4'), null);
+  assert.equal(attachmentOf('p. 4, attx:3'), null);
+  assert.equal(attachmentOf(''), null);
+  const [c] = parseCites('@smith2021, p. 4, att:12');
+  assert.equal(c.page, 4);
+  assert.equal(citeLabel(c, { authors: 'Smith, Anna', year: 2021 }), 'Smith 2021, p. 4');
+  assert.equal(citeLabel({ key: 'smith2021', locator: 'att:12' }, null), '@smith2021');
+  const out = html('See [@smith2021, p. 4, att:12] and [@smith2021, p. 9].');
+  assert.match(out, /data-key="smith2021" data-page="4" data-att="12"/);
+  assert.match(out, /data-key="smith2021" data-page="9"[^>]*>/);
+  assert.doesNotMatch(out, /data-page="9" data-att/);
 });

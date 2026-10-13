@@ -36,6 +36,9 @@ _CITE_PART = re.compile(
     r"^(?P<prefix>(?:.*?[\s(])?)(?P<supp>-?)@(?P<key>" + _KEY + r")"
     r"(?:\s*,\s*(?P<loc>.*?))?\s*$", re.S)
 _PAGE = re.compile(r"^(?:p|pp|page|pages|pg)\.?\s*([0-9]+)", re.I)
+# A citation can name which PDF of the item it means: [@key, p. 4, att:12] (12 = attachment id).
+# Without it, the citation means the item's first PDF.
+_ATT = re.compile(r"(?:^|[\s,])att:([0-9]+)(?=$|[\s,])", re.I)
 # Any indentation: fences inside list items are common. (Indented code blocks are not
 # supported, by the parser and the renderer alike.)
 _FENCE = re.compile(r"^([ \t]*)(`{3,}|~{3,})(.*)$")
@@ -235,6 +238,12 @@ def _context(lines: list[str], idx: int, col: int) -> str:
     a = max(0, c - CONTEXT_CHARS // 2)
     s = line[a:a + CONTEXT_CHARS]
     return ("…" if a > 0 else "") + s + ("…" if a + CONTEXT_CHARS < len(line) else "")
+
+
+def attachment_of(locator: str | None) -> int | None:
+    """The attachment id a citation names with ``att:<id>`` in its locator, or None."""
+    m = _ATT.search(locator or "")
+    return int(m.group(1)) if m else None
 
 
 def _parse_cite_group(inner: str) -> list[dict] | None:

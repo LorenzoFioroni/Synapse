@@ -17,7 +17,7 @@ import { barHtml, diffHtml, editsDialog, editsOf, markSeen, pendingEdit, showEdi
 import { createEditor, loadMD } from './editor.js';
 import { splitFrontmatter } from './mdscan.js';
 import { NoteSession } from './noteSession.js';
-import { attachCiteCards, openCitation, showCard } from './citeCard.js';
+import { attachCiteCards, openCitation, pdfsOf, showCard } from './citeCard.js';
 import { citeTargetInDom, citeTargetInText } from './citeTarget.js';
 import { shortAuthors } from './library.js';
 import { createRenderer, renderDefaults, slugHeading } from './render.js';
@@ -428,7 +428,8 @@ function onReadClick(e) {
     e.preventDefault();
     // the PDF's tab is reused; Cmd/Ctrl+click (or a middle click) opens a new one
     const newTab = e.metaKey || e.ctrlKey || e.button === 1;
-    if (!openCitation(cite.dataset.key, cite.dataset.page ? Number(cite.dataset.page) : null, citeTargetInDom(cite), { newTab })) showCard(cite);
+    const att = cite.dataset.att ? Number(cite.dataset.att) : null;
+    if (!openCitation(cite.dataset.key, cite.dataset.page ? Number(cite.dataset.page) : null, citeTargetInDom(cite), { newTab, att })) showCard(cite);
     return;
   }
   const box = e.target.closest('.task-box[data-task-line]');
@@ -1052,7 +1053,13 @@ function onClick(e) {
   if (act === 'show-conflict' && session?.conflict) return conflictDialog(session.conflict);
   if (act?.startsWith('ai-')) return onAiAction(act, e.target.closest('[data-ai-id]')?.dataset.aiId);
   if (act === 'paper-item' && info?.paper) { const it = itemInfo(info.paper); if (it) emit('show-item', it.id); return; }
-  if (act === 'paper-pdf' && info?.paper) { const it = itemInfo(info.paper); if (it?.pdf) openAttachment({ id: it.id, title: it.title }, it.pdf); return; }
+  if (act === 'paper-pdf' && info?.paper) {
+    const it = itemInfo(info.paper);
+    const pdfs = pdfsOf(it);
+    if (pdfs.length > 1) openMenu(pdfs.map((p) => ({ label: `Open “${p.name || 'PDF'}”`, icon: 'pdf', run: () => openAttachment({ id: it.id, title: it.title }, p) })), e.target.closest('[data-act]'));
+    else if (pdfs.length) openAttachment({ id: it.id, title: it.title }, pdfs[0]);
+    return;
+  }
   if (act === 'tree-menu') {
     return openMenu([
       { label: 'Rescan notes folder', icon: 'refresh', run: rescan },

@@ -11,7 +11,7 @@
 // backend parser); everything else from CodeMirror's own Markdown syntax tree.
 import { scan, splitFrontmatter } from './mdscan.js';
 import { citeTargetInText } from './citeTarget.js';
-import { citeLabel, imageSrc } from './render.js';
+import { attachmentOf, citeLabel, imageSrc } from './render.js';
 import { numberEquations, refText, resolveRefs, textRefs } from './equations.js';
 import { clickOffset } from './mathClick.js';
 import { HAS_DEFINITIONS, parseDefinitions, withDefinitions } from './macros.js';
@@ -262,9 +262,10 @@ export function livePreview(cm, deps) {
       const trashed = ls.some((l) => deps.citeInfo(l.target)?.trashed);
       const keys = ls.map((l) => l.target).join(';');
       const pages = ls.map((l) => l.page ?? '').join(';');
-      if (touches(from, to)) { add(from, to, Decoration.mark({ class: `cm-lp-citesrc${missing ? ' missing' : ''}`, attributes: { 'data-keys': keys, 'data-pages': pages } })); continue; }
+      const atts = ls.map((l) => attachmentOf(l.locator) ?? '').join(';');
+      if (touches(from, to)) { add(from, to, Decoration.mark({ class: `cm-lp-citesrc${missing ? ' missing' : ''}`, attributes: { 'data-keys': keys, 'data-pages': pages, 'data-atts': atts } })); continue; }
       const label = `(${ls.map((l) => citeLabel({ key: l.target, prefix: l.prefix, suppress: l.suppress_author, locator: l.locator }, deps.citeInfo(l.target))).join('; ')})`;
-      add(from, to, Decoration.replace({ widget: chip(`c:${from}:${label}:${missing}:${trashed}`, `cite${missing ? ' missing' : ''}${trashed ? ' trashed' : ''}`, label, { keys, pages }) }));
+      add(from, to, Decoration.replace({ widget: chip(`c:${from}:${label}:${missing}:${trashed}`, `cite${missing ? ' missing' : ''}${trashed ? ' trashed' : ''}`, label, { keys, pages, atts }) }));
     }
     for (const t of s.tags) add(t.from, t.to, Decoration.mark({ class: 'cm-lp-tag' }));
 
@@ -466,10 +467,11 @@ export function livePreview(cm, deps) {
       if (cite && (e.metaKey || e.ctrlKey) && e.button === 0) {
         const keys = (cite.dataset.keys || '').split(';');
         const pages = (cite.dataset.pages || '').split(';');
+        const atts = (cite.dataset.atts || '').split(';');
         e.preventDefault();
         let target = null;   // the quote or snapshot the citation belongs to (citeTarget.js)
         try { target = citeTargetInText(view.state.doc.toString(), view.posAtDOM(cite)); } catch { /* not in the document */ }
-        deps.openCite?.(keys[0], pages[0] ? Number(pages[0]) : null, target, { newTab: e.shiftKey });   // Cmd/Ctrl+Shift: new tab
+        deps.openCite?.(keys[0], pages[0] ? Number(pages[0]) : null, target, { newTab: e.shiftKey, att: atts[0] ? Number(atts[0]) : null });   // Cmd/Ctrl+Shift: new tab
         return true;
       }
       const link = e.target.closest?.('.cm-lp-link');

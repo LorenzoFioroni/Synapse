@@ -43,6 +43,8 @@ IMAGE_MAX_BYTES = 3_500_000    # ~4.7 MB as base64, under the usual 5 MB per ima
 WRITING_RULES = """\
 Note syntax (the app's own Markdown; write_note checks it and refuses notes that would not work):
 - Cite library items as [@key] or [@key, p. N] (N = PDF page from 1, as the tools report). Several: [@a; @b].
+  If the item has several PDFs (get_paper lists them with their attachment ids), name the one you mean with
+  [@key, p. N, att:ID]; without att: the citation means the first PDF.
 - Link notes with the `link` value the tools give for each note, e.g. [[smith2021]] or \
 [[stem|Shown text]]; links resolve by file name, not by title. [[stem#Heading]] links a heading.
 - Math is LaTeX rendered with KaTeX: inline $t \\lesssim N - 1.6$ (no space after the opening $ or before the \

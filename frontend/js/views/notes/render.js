@@ -24,6 +24,9 @@ const CALLOUTS = {
 const KEY = '[A-Za-z0-9_][A-Za-z0-9_:.+\\-/]*';
 const CITE_PART = new RegExp(`^((?:[\\s\\S]*?[\\s(])?)(-?)@(${KEY})(?:\\s*,\\s*([\\s\\S]*?))?\\s*$`, 'u');
 const PAGE = /^(?:p|pp|page|pages|pg)\.?\s*(\d+)/i;
+// [@key, p. 4, att:12]: the PDF (attachment id) the citation means; see backend/notes/parser.py.
+const ATT = /(?:^|[\s,])att:(\d+)(?=$|[\s,])/i;
+export const attachmentOf = (locator) => { const m = ATT.exec(locator || ''); return m ? Number(m[1]) : null; };
 const strip = (s) => s.replace(/^\s+|\s+$/gu, '');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -73,7 +76,8 @@ export function citeLabel(c, info) {
     base = c.suppress ? String(info.year || '') : [who, info.year].filter(Boolean).join(' ');
     base ||= `@${c.key}`;
   }
-  return [c.prefix, base].filter(Boolean).join(' ') + (c.locator ? `, ${c.locator}` : '');
+  const loc = (c.locator || '').replace(/(?:^|[\s,])att:\d+(?=$|[\s,])/gi, '').replace(/^[\s,]+|[\s,]+$/g, '');   // att: is for the app, not the reader
+  return [c.prefix, base].filter(Boolean).join(' ') + (loc ? `, ${loc}` : '');
 }
 
 /* ---------------------------------------------------------------- markdown-it rules */
@@ -337,7 +341,8 @@ export function createRenderer(lib, o = {}) {
     const parts = t[i].meta.map((c) => {
       const info = o.citeInfo ? o.citeInfo(c.key) : null;
       const cls = ['cite', info ? '' : 'missing', info?.trashed ? 'trashed' : ''].filter(Boolean).join(' ');
-      return `<a class="${cls}" href="#" data-key="${esc(c.key)}"${c.page ? ` data-page="${c.page}"` : ''} title="${esc(info ? `${info.title || ''}` : `@${c.key} is not in your library`)}">${esc(citeLabel(c, info))}</a>`;
+      const att = attachmentOf(c.locator);
+      return `<a class="${cls}" href="#" data-key="${esc(c.key)}"${c.page ? ` data-page="${c.page}"` : ''}${att ? ` data-att="${att}"` : ''} title="${esc(info ? `${info.title || ''}` : `@${c.key} is not in your library`)}">${esc(citeLabel(c, info))}</a>`;
     });
     return `<span class="cite-group">(${parts.join('; ')})</span>`;
   };

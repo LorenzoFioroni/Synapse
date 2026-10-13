@@ -71,3 +71,16 @@ def test_fuzz_never_crashes_and_mask_is_aligned():
         p = parser.parse(s)
         for l in p.links:
             assert l.line >= 1 and l.target is not None
+
+
+def test_attachment_qualifier_names_the_pdf():
+    # [@key, p. 4, att:12]: the page and the attachment id are both read; without att: there is none.
+    assert parser.attachment_of("p. 4, att:12") == 12
+    assert parser.attachment_of("att:7") == 7
+    assert parser.attachment_of("ATT:9, p. 2") == 9
+    assert parser.attachment_of("p. 4") is None
+    assert parser.attachment_of("p. 4, attx:3") is None   # not a qualifier
+    assert parser.attachment_of("") is None and parser.attachment_of(None) is None
+    cites = parser._parse_cite_group("@smith2021, p. 4, att:12")
+    assert cites[0]["key"] == "smith2021" and cites[0]["page"] == 4
+    assert parser.attachment_of(cites[0]["locator"]) == 12
