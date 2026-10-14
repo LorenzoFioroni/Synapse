@@ -4,7 +4,6 @@ import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import type { PageWrapper } from './viewer/viewer.js';
 import type { Item } from './types.js';
 
-/** The part of Mermaid we call. */
 /** What the PDF viewer (viewer.ts) offers its add-ons. */
 export interface ZcViewer {
   readonly pdfDoc: PDFDocumentProxy | null;
@@ -14,6 +13,7 @@ export interface ZcViewer {
   renderedPages?(): number[];
 }
 
+/** The part of Mermaid we call. */
 export interface Mermaid {
   initialize(options: { startOnLoad: boolean; securityLevel: string; theme: string }): void;
   render(id: string, code: string): Promise<{ svg: string }>;
@@ -31,7 +31,6 @@ declare global {
   }
 
   interface Window {
-    /** The change feed's poll and state (changes.ts), for the browser tests. */
     /** Mermaid (vendor/mermaid/mermaid.min.js), loaded when a note has a diagram (richRender.ts). */
     mermaid?: Mermaid;
     /** pdf.js (vendor/pdfjs/pdf.min.js, a classic script in viewer.html). */
@@ -46,7 +45,10 @@ declare global {
     ForceGraph?: typeof ForceGraph;
     /** The notes graphs (notesGraph.ts), for the browser tests. */
     zcGraph?: unknown;
+    /** The change feed's poll and state (changes.ts), for the browser tests. */
     zcChanges?: { poll(): Promise<void>; state(): { seq: number | null; epoch: string | null; pending: string[] } };
+    /** The open PDF's annotations (viewer/annotations.ts), read-only, for the browser tests. */
+    zcAnnotations?: { ready: Promise<void>; list(): unknown[]; attachment(): number | null; refresh(): Promise<void> };
   }
 }
 
