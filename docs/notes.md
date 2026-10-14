@@ -106,7 +106,8 @@ Errors are `VaultError` subclasses with an HTTP `status`: `InvalidPath` (400), `
 ### The index (`backend/notes/index.py`)
 
 `NotesIndex` keeps `data/notes_index.db`. It is derived data: when `SCHEMA_VERSION` changes the
-old tables are dropped and rebuilt instead of migrated.
+old tables are dropped and rebuilt instead of migrated. The version is also bumped when the parser
+changes what it finds, so notes indexed by the old rules are read again.
 
 | Table | Rows |
 |---|---|
@@ -151,7 +152,9 @@ The parser is the only code that decides what a note links to or cites. `parse()
 | `#tag`, `#nested/tag` | tag (starts with a letter; not after a word character, `/`, `&`, `#`, brackets or parentheses) |
 
 Citations follow Pandoc. The brackets must contain `@` and must not be a Markdown link or
-reference (`_BRACKET`). Each `;`-separated part has an optional prefix, an optional `-` that
+reference (`_BRACKET`). A colon right after the brackets makes them a link reference definition
+only at the start of a line (at most three spaces in, `_reference_definition`); elsewhere, as in
+"the convention of [@key]:", it is punctuation and the citation counts. Each `;`-separated part has an optional prefix, an optional `-` that
 suppresses the author, the key and an optional locator after a comma. If one part is not a
 citation, the whole bracket is not one. Keys use `[A-Za-z0-9_][A-Za-z0-9_:.+\-/]*`, and a
 trailing `.`, `:`, `/` or `-` is punctuation. A bare `@key` is not a citation. The locator gives
@@ -347,7 +350,7 @@ Each open note has one `NoteSession`. It keeps `saved` (the text and hash the se
 
 | To change… | Edit |
 |---|---|
-| What counts as a link, citation, tag or heading | `backend/notes/parser.py` and `frontend/src/views/notes/mdscan.ts` together, plus a fixture in `tests/notes/fixtures/`. The renderer (`render.ts`) uses `parseCites`, `splitWiki` and `attachmentOf` from `mdscan.ts`, so it follows. |
+| What counts as a link, citation, tag or heading | `backend/notes/parser.py` and `frontend/src/views/notes/mdscan.ts` together, plus a fixture in `tests/notes/fixtures/` and a bump of `SCHEMA_VERSION` in `backend/notes/index.py`. The renderer (`render.ts`) uses `parseCites`, `splitWiki` and `attachmentOf` from `mdscan.ts`, so it follows. |
 | Front-matter reading or writing | `backend/notes/frontmatter.py` (and `splitFrontmatter` in `mdscan.ts` for the delimiters). |
 | A new query over notes | A method on `NotesIndex`, called from `NotesService`, exposed in `backend/api/notes.py`. |
 | The index layout | `SCHEMA` and `SCHEMA_VERSION` in `backend/notes/index.py`. Bumping the version rebuilds it. |

@@ -41,6 +41,9 @@ test('wiki links, embeds and citations', () => {
   assert.match(c, />see 2021<\/a>/);
   assert.ok(!html('[link](http://x.org) and [@user](http://x.org)').includes('class="cite'));
   assert.ok(!html('mail [me@x.org]').includes('class="cite'));
+  // a colon after a citation is punctuation; at the start of a line it defines a link reference
+  assert.match(html('in the convention of [@smith2021, p. 1]:\n\nmore'), /data-key="smith2021"/);
+  assert.ok(!html('[@smith2021]: not a cite').includes('class="cite'));
 });
 
 test('callouts, tasks, images, fences', () => {

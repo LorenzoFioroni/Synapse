@@ -15,7 +15,7 @@ import type { RendererRule as MdRenderRule, StateBlock, StateCore, StateInline, 
 
 export type MdLib = typeof import('../../../vendor/md/md.js');
 import { labelId, layoutTag, numberEquations, refText, resolveRefs } from './equations.js';
-import { type Cite, attachmentOf, parseCites, splitWiki } from './mdscan.js';
+import { type Cite, attachmentOf, parseCites, referenceDefinition, splitWiki } from './mdscan.js';
 import { type Definition, HAS_DEFINITIONS, type Macros, baseMacros, parseDefinitions, withDefinitions } from './macros.js';
 
 /** What a renderer may know about a cited key (any CiteEntry fits). */
@@ -157,7 +157,7 @@ function citeRule(state: StateInline, silent: boolean): boolean {
   const inner = src.slice(pos + 1, end);
   if (!inner.includes('@')) return false;
   const next = src[end + 1];
-  if (next && '([]:'.includes(next)) return false;
+  if ((next && '([]'.includes(next)) || referenceDefinition(src, pos, end + 1)) return false;
   const cites = parseCites(inner);
   if (!cites) return false;
   if (!silent) {
