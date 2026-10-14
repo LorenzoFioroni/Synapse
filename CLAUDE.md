@@ -29,7 +29,8 @@ and says where new code goes.
 
 ```bash
 pip install -r requirements-dev.txt
-ruff check .
+ruff check .                 # lint (ruff check --fix . fixes most findings)
+ruff format .                # format; CI runs ruff format --check .
 python -m pytest -q          # includes the JavaScript unit tests when Node is installed
 ```
 

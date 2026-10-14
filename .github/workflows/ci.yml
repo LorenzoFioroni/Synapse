@@ -23,4 +23,5 @@ jobs:
           node-version: 22
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
+      - run: ruff format --check .
       - run: python -m pytest -q

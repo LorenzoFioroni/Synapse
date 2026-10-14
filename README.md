@@ -258,6 +258,7 @@ the backend.
 ```bash
 pip install -r requirements-dev.txt
 ruff check .                    # lint
+ruff format .                   # format
 python -m pytest                # backend + JavaScript unit tests (the JS part needs Node.js)
 ```
 
