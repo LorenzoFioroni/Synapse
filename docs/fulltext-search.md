@@ -147,7 +147,8 @@ matched as substrings of the normalised text.
 4. Each item's metadata is joined into a normalised haystack (`_build_haystack`), and each term
    must be in the haystack or in that term's text matches. Fields are joined with a `\u0001`
    separator, so a phrase cannot match across two fields. Haystacks are cached in `_hay_cache`,
-   keyed by id, `date_modified`, mode, number of attachments and tags.
+   keyed by id, `date_modified`, mode, the attachments' names and the tags. `date_modified`
+   counts whole seconds, so the key names what the haystack holds rather than trusting it alone.
 
 Each term is matched on its own, so in one query one word can match the title and another the
 PDF.

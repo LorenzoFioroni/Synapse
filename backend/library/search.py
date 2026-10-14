@@ -75,7 +75,7 @@ def _haystack(paper: dict, mode: str) -> str:
         paper["id"],
         paper.get("date_modified"),
         mode,
-        len(paper.get("attachments") or []),
+        tuple(a.get("name") or "" for a in paper.get("attachments") or []),
         tuple(paper.get("tags") or ()),
     )
     hit = _hay_cache.get(key)

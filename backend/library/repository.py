@@ -346,6 +346,11 @@ class PaperRepository:
     def rename_attachment(self, att_id: int, name: str) -> dict:
         with self.db.session() as c:
             c.execute("UPDATE attachments SET name = ? WHERE id = ?", (name, att_id))
+            # the name is part of the item (searched in "all" mode), so the item changed
+            c.execute(
+                "UPDATE papers SET date_modified = ? WHERE id = (SELECT paper_id FROM attachments WHERE id = ?)",
+                (utcnow(), att_id),
+            )
         return self.get_attachment(att_id)
 
     def delete_attachment(self, att_id: int) -> None:

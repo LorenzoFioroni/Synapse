@@ -183,3 +183,25 @@ def test_notes_search_sees_edits_made_by_another_process(client, svc):
 
     assert found("kraus") == {a["id"]}
     assert found("lindblad") == set()
+
+
+def test_renamed_attachment_is_searched_by_its_new_name(client, svc, monkeypatch):
+    from backend.library import repository
+
+    item = svc.papers.create({"title": "Plain title"})
+    att = svc.papers.add_attachment(item["id"], "Supplement", "s.pdf")
+    found = lambda q: [i["id"] for i in client.get("/api/items", query_string={"q": q, "mode": "all"}).json["items"]]
+    assert found("supplement") == [item["id"]]
+    monkeypatch.setattr(repository, "utcnow", lambda: "2099-01-01T00:00:00Z")
+    client.patch(f"/api/attachments/{att['id']}", json={"name": "Appendix"})
+    assert svc.papers.get(item["id"])["date_modified"] == "2099-01-01T00:00:00Z"  # the item changed
+    assert found("supplement") == []
+    assert found("appendix") == [item["id"]]
+
+
+def test_haystack_follows_attachment_names_even_within_one_second():
+    paper = {"id": "x", "title": "t", "date_modified": "2024-01-01T00:00:00Z", "attachments": [{"name": "Old"}]}
+    assert ids(search([paper], "old", "all")) == ["x"]
+    paper = {**paper, "attachments": [{"name": "New"}]}  # same date_modified (it has one-second steps)
+    assert ids(search([paper], "old", "all")) == []
+    assert ids(search([paper], "new", "all")) == ["x"]
