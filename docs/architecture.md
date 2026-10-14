@@ -132,7 +132,8 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   they call back into `notesView.ts`). `tree.ts` draws the notes list and `treeInput.ts` handles
   its mouse, keyboard and drag and drop; `fileOps.ts` creates, renames, moves and trashes notes;
   `readView.ts` is read mode and link following; `sidePanel.ts` the status, breadcrumbs and
-  details panel; `aiBar.ts` Claude's edits; `conflict.ts` the dialog for a note changed elsewhere. `settingsView.ts` is the Settings page; its markup
+  details panel; `aiBar.ts` Claude's edits; `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
+  exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`). `settingsView.ts` is the Settings page; its markup
   is in `views/settings/page.ts`, and Backups and Devices have their own modules there.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
   header is `views/itemlist/columns.ts`, its virtualised rows `rows.ts` (only the rows near the

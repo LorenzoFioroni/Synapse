@@ -1,0 +1,31 @@
+/* An exported note (views/notes/exportNote.ts): the read view's look (tokens.css and notes.css
+   come first in the same file) as a page of its own, and on paper. Not loaded by the app. */
+html { background: var(--bg); color-scheme: light; }
+body { margin: 0; font-family: var(--font); color: var(--text); background: var(--bg); -webkit-text-size-adjust: 100%; }
+.prose { padding: 48px 32px 64px; font-size: 15.5px; }
+
+/* citations and links are text here: nothing to click */
+.prose .cite, .prose .cite.missing { background: none; color: inherit; padding: 0; font-size: inherit; cursor: auto; }
+.prose .cite-group { color: inherit; }
+.prose .wikilink, .prose .wikilink.unresolved { color: inherit; text-decoration: none; cursor: auto; }
+.prose .note-embed .embed-title { cursor: auto; }
+.prose .task-box { cursor: auto; }
+.prose .tag { color: var(--accent); }
+
+.prose .references { margin-top: 2.4em; border-top: 1px solid var(--border); padding-top: .6em; }
+.prose .references h2 { margin-top: .4em; }
+.prose .references ol { padding-left: 1.8em; font-size: .94em; }
+.prose .references li { margin: .35em 0; }
+
+@page { margin: 18mm 16mm; }
+@media print {
+  html, body { background: none; }
+  .prose { max-width: none; padding: 0; font-size: 11pt; }
+  .prose pre { white-space: pre-wrap; overflow: visible; }
+  .prose table { display: table; overflow: visible; }
+  .prose .math-block, .prose .math.display, .mermaid-block { overflow: visible; }
+  .prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 { break-after: avoid; }
+  .prose .code-block, .prose .math-block, .prose figure, .prose img, .prose .callout, .mermaid-block, .prose tr { break-inside: avoid; }
+  .prose a { color: inherit; }
+  .prose .callout, .prose .task-box:checked, .prose th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
