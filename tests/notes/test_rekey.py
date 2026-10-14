@@ -41,7 +41,7 @@ def test_rename_rewrites_exactly_the_references(lib, client):
     assert review == expected                               # code, math, comment, plain text, other key untouched; CRLF kept
     assert not svc.vault.exists(f"papers/{key}.md")
     paper = svc.vault.read("papers/smith2021.md")[0]
-    assert "paper: smith2021" in paper and f"[@smith2021]" in paper
+    assert "paper: smith2021" in paper and "[@smith2021]" in paper
     # the index follows
     assert {c["path"] for c in svc.notes.citing("smith2021")} == {"Review.md", "papers/smith2021.md"}
     assert svc.notes.citing(key) == []

@@ -1,4 +1,3 @@
-import io
 
 
 def mk(client, **data):

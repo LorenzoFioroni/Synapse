@@ -24,3 +24,6 @@ ignore = [
     "B904",   # `raise ... from` inside except: to be adopted module by module during the restructure
     "B905",   # zip(strict=...): same
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/test_formats.py" = ["W291"]   # RIS fixtures end records with "ER  - " (trailing space is part of the format)

@@ -120,7 +120,6 @@ async def main():
             titles = await page.eval_on_selector_all("[data-id] .cell-title, [data-id]", "els => els.map((e) => e.textContent)")
             joined = " ".join(titles)
             check("after Restore the later item is gone", "Original paper" in joined and "Added after the backup" not in joined)
-            names = [b["name"] for b in requests.get(BASE + "/api/backups").json()["backups"]]
             reasons = [b["reason"] for b in requests.get(BASE + "/api/backups").json()["backups"]]
             check("the state before the restore was kept as a backup", any(r and r.startswith("before restoring") for r in reasons), str(reasons))
             check("no JavaScript errors", not errors, "; ".join(errors[:3]))

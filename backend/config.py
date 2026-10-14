@@ -24,7 +24,7 @@ class Config:
     lan: bool = False
 
     @classmethod
-    def from_env(cls, data_dir: str | os.PathLike | None = None) -> "Config":
+    def from_env(cls, data_dir: str | os.PathLike | None = None) -> Config:
         # SYNAPSE_DATA_DIR; ZCLONE_DATA_DIR is the old name, still accepted
         d = data_dir or os.environ.get("SYNAPSE_DATA_DIR") or os.environ.get("ZCLONE_DATA_DIR") or (APP_ROOT / "data")
         return cls(Path(d).expanduser().resolve())

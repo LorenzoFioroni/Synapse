@@ -7,7 +7,7 @@ refreshing itself.
 
 Starts its own server on port 8784 with a throw-away data folder; your library is not touched.
 """
-import asyncio, os, shutil, sqlite3, subprocess, sys, tempfile, time
+import asyncio, os, sqlite3, subprocess, sys, tempfile, time
 from pathlib import Path
 from urllib.parse import urlencode
 import requests

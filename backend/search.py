@@ -163,10 +163,10 @@ def search(papers: list[dict], query: str, mode: str = "basic", fulltext=None,
 
     ft_matches: dict[str, dict[str, str]] = {}
     if mode == "fulltext" and fulltext is not None:
-        for term, neg in terms:
+        for term, _neg in terms:
             ft_matches[term] = fulltext.match(term)
     if mode in ("all", "fulltext") and notes is not None:
-        for term, neg in terms:
+        for term, _neg in terms:
             # PDF text first; a note match only adds items (and a snippet) the PDFs did not give
             ft_matches[term] = {**notes.match(term), **ft_matches.get(term, {})}
 

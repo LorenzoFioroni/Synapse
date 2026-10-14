@@ -386,7 +386,7 @@ async def main():
             for _ in range(16):
                 await page4.tap("#zoom-in")
             await page4.wait_for_timeout(2500)
-            for k in range(6):
+            for _k in range(6):
                 await page4.evaluate("window.zcViewer.container.scrollTop += 1500")
                 await page4.wait_for_timeout(400)
             await page4.wait_for_timeout(1500)

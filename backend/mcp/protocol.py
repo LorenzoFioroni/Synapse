@@ -19,7 +19,8 @@ import logging
 import sys
 import traceback
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 log = logging.getLogger(__name__)
 

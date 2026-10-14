@@ -122,8 +122,8 @@ class FulltextIndex:
                 q = _fts_quote(term) + ("*" if len(words) == 1 else "")
                 try:
                     rows = c.execute(
-                        f"SELECT paper_id, snippet(content, 0, ?, ?, '…', 14) AS snip FROM content "
-                        f"WHERE content MATCH ? ORDER BY rank LIMIT ?",
+                        "SELECT paper_id, snippet(content, 0, ?, ?, '…', 14) AS snip FROM content "
+                        "WHERE content MATCH ? ORDER BY rank LIMIT ?",
                         (MARK_OPEN, MARK_CLOSE, q, limit)).fetchall()
                 except sqlite3.OperationalError as e:
                     log.info("FTS query failed for %r: %s", term, e)

@@ -7,7 +7,7 @@ annotations on far pages are neither lost nor missing when you get there.
 Starts its own server on port 8778 with a throw-away data folder and a 300-page PDF made from
 tests/e2e/fixtures/twocolumn.pdf; your library is not touched.
 """
-import asyncio, os, subprocess, sys, tempfile, time
+import asyncio, subprocess, sys, tempfile, time
 from pathlib import Path
 from urllib.parse import urlencode
 import requests
@@ -88,7 +88,7 @@ async def main():
 
             # scroll through a long stretch: the number of canvases stays bounded
             most = 0
-            for k in range(40):
+            for _k in range(40):
                 await page.evaluate("document.getElementById('pdf-container').scrollBy(0, 1400)")
                 await page.wait_for_timeout(60)
                 most = max(most, await canvases(page))

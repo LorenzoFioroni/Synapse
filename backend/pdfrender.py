@@ -434,7 +434,7 @@ def _page_equations(page) -> list[dict]:
             if a[1] >= b[0]:   # they meet: cut at the widest gap between the two numbers
                 cut = max(range(a[2], b[2]), key=gap)
                 a[1], b[0] = cut, cut + 1
-        for lo, hi, s, n in spans:
+        for lo, hi, _s, n in spans:
             box = _union(boxes[lo:hi + 1])
             for g in graphics:   # fraction bars, root signs and rules drawn as paths
                 if g[0] >= col_l - 1 and g[2] <= col_r + 1 and g[1] >= box[1] - 2 and g[3] <= box[3] + 2:

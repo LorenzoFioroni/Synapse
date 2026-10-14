@@ -82,7 +82,7 @@ def test_writes_from_outside_the_server_are_noticed(client, svc):
 
 def test_note_index_changed_outside(client, svc):
     seq, ep = start(client, MAC)
-    svc.notes  # the index exists
+    assert svc.notes is not None   # the index exists
     with sqlite3.connect(svc.config.notes_index_path) as c:
         c.execute("CREATE TABLE IF NOT EXISTS outside (x)")
     assert "notes" in poll(client, MAC, seq, ep)["changes"]

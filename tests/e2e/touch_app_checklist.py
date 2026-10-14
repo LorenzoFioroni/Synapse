@@ -8,7 +8,7 @@ resized with a finger, and the page can be added to the Home Screen.
 Starts its own server on port 8783 with a throw-away data folder; your library is not touched.
 Runs Chromium with the "iPad Pro 11" profiles (portrait and landscape; touch, no hover).
 """
-import asyncio, os, shutil, subprocess, sys, tempfile, time
+import asyncio, os, subprocess, sys, tempfile, time
 from pathlib import Path
 from urllib.parse import urlencode
 import requests

@@ -64,7 +64,7 @@ async def main():
         first_lines_heading = await A.evaluate("[...document.querySelectorAll('.cm-line')].slice(0,7).some(l=>l.querySelector('.cmt-h'))")
         check("front-matter shown as metadata, not as a heading", fm_meta>0 and not first_lines_heading, f"meta spans={fm_meta}")
         await A.click('.note-modes [data-mode="live"]'); await A.wait_for_timeout(300)
-        
+
         # 3. two tabs, conflict -> keep mine
         B = await ctx.new_page(); watch(B,"B")
         await B.goto(BASE); await B.wait_for_timeout(1200)

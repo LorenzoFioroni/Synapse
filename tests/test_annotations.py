@@ -2,7 +2,6 @@
 import json
 import re
 import shutil
-import tarfile
 from pathlib import Path
 
 import pytest
