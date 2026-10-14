@@ -137,7 +137,7 @@ def install(app: Flask, allowed_hosts: set[str] | None = None, lan_mode: bool = 
             return jsonify(error=why), 403
         if local:
             return None
-        devices = current_app.extensions["zclone"].devices
+        devices = current_app.extensions["synapse"].devices
         device = devices.check(request.cookies.get(COOKIE), request.remote_addr)
         if device is None:
             if request.path in PAIRING_PATHS:

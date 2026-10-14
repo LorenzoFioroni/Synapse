@@ -97,7 +97,7 @@ def setup_library():
     """Items with PDFs, and one whose annotations were saved by the old viewer."""
     from backend import create_app
     from backend.config import Config
-    s = create_app(Config.from_env(DATA), start_indexer=False).extensions["zclone"]
+    s = create_app(Config.from_env(DATA), start_indexer=False).extensions["synapse"]
     made = {}
     for title, n_pdfs in (("Annotated paper", 2), ("Legacy paper", 1)):
         item = s.papers.create({"title": title})

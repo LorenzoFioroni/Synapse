@@ -40,7 +40,7 @@ class R:
 remote_pdf.socket.getaddrinfo = gai
 remote_pdf.requests.get = lambda url, **k: R(PDF)
 app = create_app(Config.from_env({DATA!r}), start_indexer=False)
-s = app.extensions['zclone']
+s = app.extensions['synapse']
 for title, url in [('Remote paper', 'https://journal.example/paper.pdf'), ('Router page', 'http://router.example/')]:
     it = s.papers.create({{'title': title}})
     s.papers.add_attachment(it['id'], 'Linked PDF', url, 'pdf')

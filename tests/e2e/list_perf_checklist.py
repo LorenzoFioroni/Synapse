@@ -34,7 +34,7 @@ def build_library():
     from backend.config import Config
     random.seed(7)
     words = ["".join(random.choices(string.ascii_lowercase, k=random.randint(3, 10))) for _ in range(3000)]
-    s = create_app(Config.from_env(DATA), start_indexer=False).extensions["zclone"]
+    s = create_app(Config.from_env(DATA), start_indexer=False).extensions["synapse"]
     s.settings.update({"backup_interval": "off"} if "backup_interval" in s.settings.all() else {})
     s.papers.create_many([{
         "title": " ".join(random.choices(words, k=8)).title(), "year": random.randint(1980, 2026),

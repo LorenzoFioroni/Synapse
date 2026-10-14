@@ -45,8 +45,9 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
 Two objects tie the backend together:
 
 - **`app.py`** has `create_app(config)`, the Flask factory. It installs the guard, registers the
-  blueprints, serves the frontend, and starts the background work (the full-text indexer, the
-  backup scheduler and the cleanup of the attachment trash).
+  API blueprints and `frontend.py` (which serves the pages and static files), and starts the
+  background work (the full-text indexer, the backup scheduler and the cleanup of the attachment
+  trash). `Services` is stored as `app.extensions["synapse"]`.
 - **`services.py`** has `Services`, the one object that owns every component (repositories,
   indexes, the notes vault and service, backups, devices, the change feed) and wires their
   callbacks together. The API reaches it through `api.svc()`.

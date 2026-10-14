@@ -5,10 +5,19 @@ from functools import wraps
 
 from flask import Blueprint, jsonify, request, send_from_directory
 
+from ..changes import CLIENT_HEADER
 from ..notes.vault import ATTACHMENTS, Conflict, NoteExists, VaultError
 from . import body, error, svc
 
 bp = Blueprint("notes", __name__, url_prefix="/api")
+
+
+@bp.after_request
+def _record_change(resp):
+    """Tell the other windows and devices that notes changed (see backend/changes.py)."""
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and resp.status_code < 400:
+        svc().changes.record({"notes"}, request.headers.get(CLIENT_HEADER))
+    return resp
 
 
 def guarded(fn):

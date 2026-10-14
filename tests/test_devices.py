@@ -100,7 +100,7 @@ def test_code_is_single_use_and_expires(lan_app, mac, ipad):
     r = remote(other, "POST", "/api/devices/pair", json={"code": code})
     assert r.status_code == 401
     # expiry
-    store = lan_app.extensions["zclone"].devices
+    store = lan_app.extensions["synapse"].devices
     t = [1000.0]
     store.clock = lambda: t[0]
     code2, _ = store.new_pairing_code()
@@ -210,7 +210,7 @@ def test_without_lan_mode_remote_needs_pairing_too(tmp_path):
 def test_tokens_are_stored_hashed(lan_app, mac, ipad):
     _, r = pair(mac, ipad)
     token = r.headers.get("Set-Cookie").split(";")[0].split("=", 1)[1]
-    store = lan_app.extensions["zclone"].devices
+    store = lan_app.extensions["synapse"].devices
     raw = store.path.read_bytes()
     assert token.encode() not in raw
     rows = sqlite3.connect(store.path).execute("SELECT token_hash FROM devices").fetchall()
@@ -225,7 +225,7 @@ def test_api_never_shows_token_hashes(mac, ipad):
 
 def test_backups_leave_devices_out(lan_app, mac, ipad):
     pair(mac, ipad)
-    svc = lan_app.extensions["zclone"]
+    svc = lan_app.extensions["synapse"]
     entry = svc.backups.create("manual")
     path = svc.backups.dir / entry["name"]
     with tarfile.open(path) as tar:
@@ -234,7 +234,7 @@ def test_backups_leave_devices_out(lan_app, mac, ipad):
 
 def test_cookie_refreshed_while_in_use(lan_app, mac, ipad):
     pair(mac, ipad)
-    store = lan_app.extensions["zclone"].devices
+    store = lan_app.extensions["synapse"].devices
     t = [store.clock() + devmod.TOUCH_EVERY + 5]
     store.clock = lambda: t[0]
     r = remote(ipad, "GET", "/api/items")

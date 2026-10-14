@@ -203,7 +203,7 @@ def legacy_library(tmp_path, blobs: dict, pdf=True):
     """A data folder written by an older version: items with SVG blobs in papers.annotations."""
     data = tmp_path / "data"
     app = create_app(Config.from_env(data), start_indexer=False)
-    s = app.extensions["zclone"]
+    s = app.extensions["synapse"]
     ids = {}
     for title, blob in blobs.items():
         item = s.papers.create({"title": title})
@@ -221,7 +221,7 @@ def legacy_library(tmp_path, blobs: dict, pdf=True):
 def test_migration_converts_real_blobs_once_after_a_backup(tmp_path):
     data, ids = legacy_library(tmp_path, {"Legacy": LEGACY})
     app = create_app(Config.from_env(data), start_indexer=False)   # the app starts: conversion runs
-    s = app.extensions["zclone"]
+    s = app.extensions["synapse"]
     anns = s.annotations.for_item(ids["Legacy"])
     assert sorted((a["page"], a["type"]) for a in anns) == [
         (1, "box"), (1, "highlight"), (1, "ink"), (1, "text"), (1, "underline"), (2, "box")]
@@ -237,8 +237,8 @@ def test_migration_converts_real_blobs_once_after_a_backup(tmp_path):
     assert report[0]["converted"] == 6 and report[0]["skipped"] == []
     # starting again converts nothing twice
     app2 = create_app(Config.from_env(data), start_indexer=False)
-    assert len(app2.extensions["zclone"].annotations.for_item(ids["Legacy"])) == 6
-    assert len(app2.extensions["zclone"].backups.list()) == 1
+    assert len(app2.extensions["synapse"].annotations.for_item(ids["Legacy"])) == 6
+    assert len(app2.extensions["synapse"].backups.list()) == 1
 
 
 def test_migration_reports_what_it_cannot_convert(tmp_path):
@@ -246,7 +246,7 @@ def test_migration_reports_what_it_cannot_convert(tmp_path):
         "Odd": {"1": '<circle r="3"></circle><rect x="1" y="1" width="5" height="5" stroke="#000000" stroke-width="2" fill="none"></rect>',
                 "9": '<rect x="1" y="1" width="5" height="5"></rect>', "2": ""},
     })
-    s = create_app(Config.from_env(data), start_indexer=False).extensions["zclone"]
+    s = create_app(Config.from_env(data), start_indexer=False).extensions["synapse"]
     assert [a["type"] for a in s.annotations.for_item(ids["Odd"])] == ["box"]
     [rep] = s.annotations.migration_report()
     assert rep["converted"] == 1 and rep["title"] == "Odd"
@@ -257,7 +257,7 @@ def test_migration_reports_what_it_cannot_convert(tmp_path):
 
 def test_migration_without_a_pdf_keeps_the_blob(tmp_path):
     data, ids = legacy_library(tmp_path, {"No PDF": LEGACY}, pdf=False)
-    s = create_app(Config.from_env(data), start_indexer=False).extensions["zclone"]
+    s = create_app(Config.from_env(data), start_indexer=False).extensions["synapse"]
     [rep] = s.annotations.migration_report()
     assert rep["converted"] == 0 and "no PDF" in rep["skipped"][0]
     with s.db.session() as c:
@@ -266,7 +266,7 @@ def test_migration_without_a_pdf_keeps_the_blob(tmp_path):
 
 def test_empty_blobs_need_no_backup(tmp_path):
     data, _ = legacy_library(tmp_path, {"Empty": {"1": "", "2": ""}})
-    s = create_app(Config.from_env(data), start_indexer=False).extensions["zclone"]
+    s = create_app(Config.from_env(data), start_indexer=False).extensions["synapse"]
     assert s.backups.list() == [] and s.annotations.for_item(next(iter(_.values()))) == []
 
 
@@ -280,8 +280,8 @@ def test_without_pypdfium2_the_conversion_waits(tmp_path, monkeypatch):
             raise ImportError(name)
         return real(name, *a, **k)
     monkeypatch.setattr(builtins, "__import__", no_pdfium)
-    s = create_app(Config.from_env(data), start_indexer=False).extensions["zclone"]
+    s = create_app(Config.from_env(data), start_indexer=False).extensions["synapse"]
     assert s.annotations.migration_report() == [] and s.annotations.for_item(ids["Legacy"]) == []
     monkeypatch.setattr(builtins, "__import__", real)
-    s = create_app(Config.from_env(data), start_indexer=False).extensions["zclone"]
+    s = create_app(Config.from_env(data), start_indexer=False).extensions["synapse"]
     assert len(s.annotations.for_item(ids["Legacy"])) == 6

@@ -50,7 +50,7 @@ async def main():
     # one item before the server starts, so the start-up backup contains it
     from backend import create_app
     from backend.config import Config
-    create_app(Config.from_env(DATA), start_indexer=False).extensions["zclone"].papers.create({"title": "Original paper"})
+    create_app(Config.from_env(DATA), start_indexer=False).extensions["synapse"].papers.create({"title": "Original paper"})
     srv = subprocess.Popen([sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
                            cwd=APP, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:

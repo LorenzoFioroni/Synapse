@@ -56,7 +56,7 @@ def setup_library():
     from pypdf import PdfReader, PdfWriter
     from backend import create_app
     from backend.config import Config
-    s = create_app(Config.from_env(DATA), start_indexer=False).extensions["zclone"]
+    s = create_app(Config.from_env(DATA), start_indexer=False).extensions["synapse"]
     item = s.papers.create({"title": "Touch paper", "authors": "Cui, Jian", "year": 2015})
     if not item.get("citation_key"):
         item = s.papers.update(item["id"], {"citation_key": "cui2015touch"})
