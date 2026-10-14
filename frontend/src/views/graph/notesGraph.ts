@@ -5,7 +5,9 @@
 //   those connect to — e.g. the other notes citing the same papers. It follows the open note.
 // - Global graph: replaces the editor (button in the notes list header, the local graph's expand
 //   button, Cmd/Ctrl+Shift+G, "Show in Graph" in the item and note menus). Notes, and the papers
-//   they cite; citations between papers and cited works not in the library can be added.
+//   they cite; citations between papers and cited works not in the library can be added. It is
+//   centred on the node it was opened for and shows only what is up to 1, 2 or 3 links away from
+//   it (or All): the whole library at once is a tangle nobody can read.
 //
 // Clicking a note opens it. Clicking a paper shows a small card (paper note, library, PDF).
 // Data: /api/graph (backend/references/graph.py), filtered with model.ts, drawn with forceGraph.ts.
@@ -19,7 +21,7 @@ import { escapeHtml as esc, h, shortAuthors, storage, store } from '../../util.j
 import type { ApiError } from '../../api.js';
 import type { GraphData } from '../../types.js';
 import { type GNode, type GraphCanvas, createGraph } from './forceGraph.js';
-import { buildView, matchNodes, relations } from './model.js';
+import { buildView, label, matchNodes, relations } from './model.js';
 
 /** What the graphs need from the notes view. */
 export interface NotesGraphContext {
@@ -31,7 +33,7 @@ export interface NotesGraphContext {
 }
 
 type LocalOptions = { depth: number; papers: boolean };
-type GlobalOptions = { papers: boolean; citations: boolean; works: boolean; orphans: boolean };
+type GlobalOptions = { papers: boolean; citations: boolean; works: boolean; orphans: boolean; depth: number };   // depth 0: all
 
 let data: GraphData | null = null, dataAt = 0, fetching: Promise<GraphData> | null = null;
 let ctx: NotesGraphContext;
@@ -40,7 +42,7 @@ let global: GraphCanvas | null = null, globalEl: HTMLElement | null = null, glob
 let card: HTMLElement | null = null;
 let changedTimer: ReturnType<typeof setTimeout> | undefined;
 const localOpts: LocalOptions = { depth: 1, papers: true, ...storage<Partial<LocalOptions>>('zc.graph.local', {}) };
-const globalOpts: GlobalOptions = { papers: true, citations: false, works: false, orphans: true, ...storage<Partial<GlobalOptions>>('zc.graph.global', {}) };
+const globalOpts: GlobalOptions = { papers: true, citations: false, works: false, orphans: true, depth: 2, ...storage<Partial<GlobalOptions>>('zc.graph.global', {}) };
 
 /** Graph data, fetched again when it may have changed (after a save) or is older than a minute. */
 async function getData(fresh = false): Promise<GraphData> {
@@ -152,6 +154,9 @@ export async function openGlobal(focus: string | null = null): Promise<void> {
       <div class="ng-bar">
         <span class="ng-title">${icon('link', 'icon-sm')} Graph</span>
         <div class="ng-search">${icon('search', 'icon-sm')}<input class="input" type="search" placeholder="Find" spellcheck="false" aria-label="Find in graph"></div>
+        <span class="segmented ng-depth" title="Show only what is this many links away from the centre">
+          <button data-ng-depth="1">1</button><button data-ng-depth="2">2</button><button data-ng-depth="3">3</button><button data-ng-depth="0">All</button></span>
+        <span class="ng-centre" hidden></span>
         <span class="spacer"></span>
         <button class="btn btn-sm btn-ghost" data-ng="opts" title="What to show">${icon('gear', 'icon-sm')} Filters</button>
         <button class="icon-btn" data-ng="fit" title="Fit (F)">${icon('columns', 'icon-sm')}</button>
@@ -170,7 +175,7 @@ export async function openGlobal(focus: string | null = null): Promise<void> {
     main.appendChild(el);
     el.querySelector('.ng-opts')!.addEventListener('change', (e) => {
       const box = e.target as HTMLInputElement;
-      const k = box.dataset.go as keyof GlobalOptions | undefined;
+      const k = box.dataset.go as Exclude<keyof GlobalOptions, 'depth'> | undefined;
       if (!k) return;
       globalOpts[k] = box.checked;
       store('zc.graph.global', globalOpts);
@@ -178,6 +183,8 @@ export async function openGlobal(focus: string | null = null): Promise<void> {
       paintGlobal();
     });
     el.querySelector('.ng-bar')!.addEventListener('click', (e) => {
+      const depth = (e.target as Element).closest<HTMLElement>('[data-ng-depth]');
+      if (depth) { setDepth(Number(depth.dataset.ngDepth)); return; }
       const b = (e.target as Element).closest<HTMLElement>('[data-ng]');
       if (b?.dataset.ng === 'close') closeGlobal({ push: true });
       if (b?.dataset.ng === 'fit') global?.fit();
@@ -216,9 +223,26 @@ export function closeGlobal({ push = false } = {}): void {
   if (push) ctx.onGlobalClosed?.();
 }
 
+function setDepth(depth: number): void {
+  globalOpts.depth = depth;
+  store('zc.graph.global', globalOpts);
+  paintGlobalControls();
+  paintGlobal({ refit: true });
+}
+
+/** Centre the full graph on a node, keeping the depth (or the default one when showing all). */
+function centreOn(id: string): void {
+  globalFocus = id;
+  if (!globalOpts.depth) globalOpts.depth = 2;
+  store('zc.graph.global', globalOpts);
+  paintGlobalControls();
+  paintGlobal({ refit: true });
+}
+
 function paintGlobalControls(): void {
   for (const el of globalEl!.querySelectorAll<HTMLInputElement>('[data-go]')) el.checked = !!globalOpts[el.dataset.go as keyof GlobalOptions];
   globalEl!.querySelector<HTMLInputElement>('[data-go="works"]')!.disabled = !globalOpts.citations;
+  globalEl!.querySelectorAll<HTMLElement>('[data-ng-depth]').forEach((b) => b.classList.toggle('active', Number(b.dataset.ngDepth) === globalOpts.depth));
 }
 
 async function paintGlobal({ refit = false } = {}): Promise<void> {
@@ -227,15 +251,24 @@ async function paintGlobal({ refit = false } = {}): Promise<void> {
   let d: GraphData;
   try { d = await getData(); } catch (e) { toastError(e); return; }
   const host = root.querySelector<HTMLElement>('.ng-canvas')!;
+  const centreNode = globalFocus ? d.nodes.find((n) => n.id === globalFocus) : undefined;
+  const levels = !!centreNode && globalOpts.depth > 0;
   const view = buildView(d, {
     papers: globalOpts.papers, notes: true, works: globalOpts.papers && globalOpts.citations && globalOpts.works, minCited: 2,
     hideIsolated: !globalOpts.orphans,
     edges: { cites: globalOpts.citations, cite: true, about: true, link: true },
+    focus: levels ? globalFocus : null, depth: globalOpts.depth,
   });
   // Without "Citations between papers", only papers a note cites belong in a notes graph.
   if (!globalOpts.citations) {
     const touched = new Set(view.edges.flatMap((e) => [e.source, e.target]));
     view.nodes = view.nodes.filter((n) => n.kind !== 'paper' || touched.has(n.id) || n.id === globalFocus);
+  }
+  const centreEl = root.querySelector<HTMLElement>('.ng-centre')!;
+  centreEl.hidden = !levels;
+  if (centreNode) {
+    centreEl.innerHTML = `Around <b>${esc(label(centreNode))}</b>`;
+    centreEl.title = `${centreNode.title || label(centreNode)} — Shift-click a node to centre on it`;
   }
   if (!global) {
     global = await createGraph(host, { onNodeClick: (n, e) => onNodeClick(n, e, host), onBackgroundClick: closeCard });
@@ -251,7 +284,10 @@ async function paintGlobal({ refit = false } = {}): Promise<void> {
   empty.innerHTML = `${icon('link')}<h3>No notes yet</h3><p>Link notes with [[Note name]] and cite papers with [@key]; they will show up here.</p>`;
   if (refit) {
     const focus = globalFocus;
-    if (focus && view.nodes.some((n) => n.id === focus)) {
+    if (levels) {   // a neighbourhood: show all of it, the centre ringed
+      g.setMarked(focus);
+      setTimeout(() => g.fit(500), 700);
+    } else if (focus && view.nodes.some((n) => n.id === focus)) {
       g.setMarked(focus);
       setTimeout(() => g.focus(focus, 500), 700);
     } else setTimeout(() => g.fit(500), 700);
@@ -261,6 +297,7 @@ async function paintGlobal({ refit = false } = {}): Promise<void> {
 /* ================================================================ clicks */
 function onNodeClick(n: GNode, e: MouseEvent | undefined, host: HTMLElement): void {
   closeCard();
+  if (e?.shiftKey && host === globalEl?.querySelector('.ng-canvas')) { centreOn(n.id); return; }
   if (n.kind === 'note') { closeGlobal({ push: false }); ctx.openNote(n.path!); return; }
   showCard(n, e, host);
 }
@@ -269,6 +306,7 @@ function showCard(n: GNode, e: MouseEvent | undefined, host: HTMLElement): void 
   const r = data ? relations(data, n.id) : { notes: [], citedInNotes: [] };
   const paperNote = r.notes[0];
   const ident = n.doi || n.arxiv_id;
+  const inGlobal = host === globalEl?.querySelector('.ng-canvas');
   const card_ = h(`<div class="graph-card">
     <div class="gc-kind">${n.kind === 'paper' ? 'In your library' : 'Cited work · not in your library'}</div>
     <div class="gc-title">${esc(n.title || '')}</div>
@@ -279,6 +317,7 @@ function showCard(n: GNode, e: MouseEvent | undefined, host: HTMLElement): void 
       ${n.kind === 'paper' ? `<button class="btn btn-sm" data-gc="item">${icon('library', 'icon-sm')} Show in Library</button>` : ''}
       ${n.kind === 'paper' && n.has_pdf ? `<button class="btn btn-sm" data-gc="pdf">${icon('pdf', 'icon-sm')} PDF</button>` : ''}
       ${n.kind === 'work' && ident ? `<button class="btn btn-sm" data-gc="add">${icon('plus', 'icon-sm')} Add to Library</button>` : ''}
+      ${inGlobal && n.id !== globalFocus ? `<button class="btn btn-sm" data-gc="centre">${icon('link', 'icon-sm')} Centre graph here</button>` : ''}
     </div></div>`);
   card = card_;
   document.body.appendChild(card_);
@@ -294,6 +333,7 @@ function showCard(n: GNode, e: MouseEvent | undefined, host: HTMLElement): void 
     if (a === 'note') { closeCard(); closeGlobal({ push: false }); ctx.openNote(paperNote.path!); }
     else if (a === 'item' && n.item_id) { closeCard(); emit('show-item', n.item_id); }
     else if (a === 'pdf') { closeCard(); A.openPdf(n.item_id); }
+    else if (a === 'centre') { closeCard(); centreOn(n.id); }
     else if (a === 'add') {
       b.disabled = true;
       try {

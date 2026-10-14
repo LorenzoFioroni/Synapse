@@ -112,8 +112,11 @@ never mix.
   connect to, e.g. other notes citing the same papers); click a node to open it. The full graph
   replaces the editor (link button in the notes list, the local graph's expand button, or **Show in
   Graph** in the item and note menus): notes and the papers they cite, with filters for citations
-  between papers, cited works not in your library and orphans. Clicking a paper shows a card (paper
-  note, Show in Library, PDF, Add to Library). The data is at `GET /api/graph`.
+  between papers, cited works not in your library and orphans. It is centred on the note or paper
+  you opened it from and shows only what is 1, 2 (the default) or 3 links away, or **All** of it;
+  Shift-click a node, or **Centre graph here** on a paper's card, to move the centre. Clicking a
+  paper shows a card (paper note, Show in Library, PDF, Add to Library). The data is at
+  `GET /api/graph`.
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
   arXiv, Scholar) and checks the file is really the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.
@@ -298,7 +301,7 @@ python tests/e2e/library_checklist.py    # key rename, notes in search, quote/sn
 python tests/e2e/citation_spot_checklist.py  # a quote's / snapshot's citation opens the PDF at that spot and flashes it
 python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders, Back/Forward, item-list markers
 python tests/e2e/viewer_links_checklist.py  # PDF links: jump, hover preview, Back/Forward in the viewer
-python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, filters, paper card, Show in Graph, Back/Forward
+python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, levels, filters, paper card, Show in Graph, Back/Forward
 python tests/e2e/attachments_checklist.py  # note attachments: unused ones to the trash, Attachments dialog, retention
 python tests/e2e/adding_checklist.py     # bulk Retrieve Metadata (parallel, grouped, background), Settings → Adding Items
 python tests/e2e/claude_edits_checklist.py  # Claude's note edits: appear live, ⌘Z / bar Undo / Show changes, edit list

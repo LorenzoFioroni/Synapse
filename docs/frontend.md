@@ -277,7 +277,10 @@ math; `tree.ts`, `treeInput.ts` and `fileOps.ts` are the notes list; `readView.t
 
 **`views/graph/`: the graph in Notes.** `model.ts` turns `/api/graph` into what is shown (no
 DOM, unit-tested); `forceGraph.ts` draws it with force-graph; `notesGraph.ts` is the local graph
-beside a note and the global graph in place of the editor.
+beside a note and the global graph in place of the editor. Both show a neighbourhood through
+`buildView`'s `focus` and `depth`: the local graph around the open note (depth 1 or 2), the global
+graph around the node it was opened for (`globalFocus`, depth 1, 2, 3 or 0 for everything, kept
+with the other options in `localStorage` under `zc.graph.global`).
 
 **`ui/`: generic widgets.** `dialog.ts` (`openDialog`, `confirmDialog`, `promptDialog`),
 `menu.ts` (`openMenu`, `closeMenu`, with keyboard navigation), `toast.ts` (`toast`,

@@ -46,6 +46,14 @@ test('focus shows the neighbourhood, with every reference of the focused paper',
   assert.deepEqual([...neighbourhood('x', [], 3)], ['x']);
 });
 
+test('levels around a note: each step adds what the previous one connects to', () => {
+  const opts = (depth) => ({ focus: 'note:Other.md', depth, edges: { cites: false } });
+  assert.deepEqual(ids(buildView(data, opts(1))), ['note:Other.md', 'note:Review.md']);
+  assert.deepEqual(ids(buildView(data, opts(2))), ['item:c', 'note:Other.md', 'note:Review.md', 'note:papers/a.md']);
+  assert.deepEqual(ids(buildView(data, opts(3))), ['item:a', 'item:c', 'note:Other.md', 'note:Review.md', 'note:papers/a.md']);
+  assert.equal(buildView(data, opts(3)).edges.length, 4);
+});
+
 test('search, relations and labels', () => {
   assert.deepEqual(matchNodes(data.nodes, 'banuls').map((n) => n.id), ['item:c']);
   assert.deepEqual(matchNodes(data.nodes, 'review').map((n) => n.id), ['note:Review.md']);

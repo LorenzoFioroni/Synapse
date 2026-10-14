@@ -1,6 +1,6 @@
 """Browser checklist for the graph in Notes: the local graph next to a note (depth, papers,
-collapse, click to open), the full graph (notes-first, options, search, paper card, Show in
-Library), Show in Graph from the item and note menus, Cmd/Ctrl+Shift+G and Back/Forward.
+collapse, click to open), the full graph (levels around the centre, notes-first, options, search,
+paper card, Show in Library), Show in Graph from the item and note menus, Cmd/Ctrl+Shift+G and Back/Forward.
 
     python tests/e2e/graph_checklist.py                 (SHOTS=/some/dir to save screenshots)
 
@@ -115,13 +115,17 @@ async def settled(page, which, timeout=8):
     return False
 
 
-async def click_node(page, which, host_sel, node_id):
+async def click_node(page, which, host_sel, node_id, shift=False):
     pos = await page.evaluate(f"window.zcGraph.{which}().screenOf({node_id!r})")
     box = await page.locator(host_sel).bounding_box()
     x, y = box["x"] + pos["x"], box["y"] + pos["y"]
     await page.mouse.move(x, y, steps=4)
     await page.wait_for_timeout(200)
+    if shift:
+        await page.keyboard.down("Shift")
     await page.mouse.click(x, y)
+    if shift:
+        await page.keyboard.up("Shift")
     await page.wait_for_timeout(400)
 
 
@@ -215,6 +219,30 @@ async def main():
                 return [...document.querySelectorAll('.ng-bar input, .ng-bar [data-ng]')].every((el) => {
                   const r = el.getBoundingClientRect(); return r.width > 0 && r.right <= bar.right + 1 && r.left >= bar.left; }); }""")
             check("every option in the bar is visible", fits)
+            await settled(page, "global")
+            lv = await ids(page, "global")
+            want2 = {f"note:{idea}", f"note:{review}", f"note:{pnote}", P(1), P(4), P(7)}
+            check("opens two levels around the note", lv == want2, sorted(lv ^ want2))
+            check("…and says around what", "Idea" in (await page.text_content(".ng-centre") or ""))
+            await page.click('.ng-bar [data-ng-depth="1"]')
+            await page.wait_for_timeout(500)
+            lv1 = await ids(page, "global")
+            check("level 1: only its direct links", lv1 == {f"note:{idea}", f"note:{review}"}, sorted(lv1))
+            await page.click('.ng-bar [data-ng-depth="3"]')
+            await page.wait_for_timeout(500)
+            check("level 3 reaches the papers cited by the paper note", P(2) in await ids(page, "global"))
+            await settled(page, "global")
+            await click_node(page, "global", ".ng-canvas", P(4), shift=True)
+            centred = await page.evaluate("window.zcGraph.globalFocus()")
+            check(
+                "Shift-click centres the graph on a node",
+                centred == P(4) and await page.is_hidden(".graph-card"),
+                centred,
+            )
+            await shot(page, "2-levels")
+            await page.click('.ng-bar [data-ng-depth="0"]')
+            await page.wait_for_timeout(500)
+            check("All shows the whole graph", await page.is_hidden(".ng-centre"))
             await settled(page, "global")
             gids = await ids(page, "global")
             want = {f"note:{review}", f"note:{pnote}", f"note:{idea}", "note:Lonely.md", P(1), P(2), P(3), P(4), P(7)}
