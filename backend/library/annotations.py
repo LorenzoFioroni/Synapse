@@ -9,15 +9,17 @@ displayed (0–1, origin top left, rotation applied) — the same convention as 
 =========  ===================================================================  =============
 type       geometry                                                             ``size``
 =========  ===================================================================  =============
-highlight  ``rects``: one ``[x, y, w, h]`` per line of text, or one for an area     —
+highlight  ``rects``: one ``[x, y, w, h]`` per line of text                       —
 underline  ``rects``: the text lines; the line is drawn along each bottom edge    stroke width
-box        ``rects``: ``[[x, y, w, h]]``                                         stroke width
+box        ``rects``: ``[[x, y, w, h]]``                                         border width
 ink        ``path``: ``[[x, y], …]``                                             stroke width
 text       ``rects``: ``[[x, y, w, h]]`` (top left; w, h as last drawn)           font size
 =========  ===================================================================  =============
 
-Sizes are in PDF points at 100 % zoom. ``text`` is the highlighted or underlined words (for an
-area highlight, the words inside it), or the content of a text box; ``comment`` is free text.
+Sizes are in PDF points at 100 % zoom. ``color`` is the colour of the mark, the line or the text;
+a box also has ``fill``, the colour it is filled with (none when null), and a border width of 0
+for no border. ``text`` is the highlighted or underlined words, the words inside a box, or the
+content of a text box; ``comment`` is free text.
 
 Older versions stored the raw SVG markup of each page in one blob per item
 (``papers.annotations``). ``annotations_legacy.migrate_legacy`` converts those blobs once, after a backup,
@@ -34,7 +36,7 @@ from .db import utcnow
 
 TYPES = ("highlight", "underline", "box", "ink", "text")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
-FIELDS = ("page", "type", "rects", "path", "text", "color", "size", "comment")
+FIELDS = ("page", "type", "rects", "path", "text", "color", "fill", "size", "comment")
 MAX_TEXT = 100_000
 
 
@@ -52,6 +54,7 @@ CREATE TABLE IF NOT EXISTS annotations (
     path TEXT,
     text TEXT,
     color TEXT,
+    fill TEXT,
     size REAL,
     comment TEXT,
     created TEXT,
@@ -66,6 +69,13 @@ CREATE TABLE IF NOT EXISTS annotation_migration (
     at TEXT
 );
 """
+
+
+def upgrade(c) -> None:
+    """Columns added to ``annotations`` after it was first created (run by ``Database.migrate``)."""
+    cols = {r["name"] for r in c.execute("PRAGMA table_info(annotations)")}
+    if "fill" not in cols:
+        c.execute("ALTER TABLE annotations ADD COLUMN fill TEXT")
 
 
 # ============================================================================ validation
@@ -129,16 +139,17 @@ def clean(data: dict, partial: bool = False) -> dict:
             if len(v) > MAX_TEXT:
                 raise AnnotationError(f"{key} is too long.")
             out[key] = v
-    if "color" in data:
-        if data["color"] is not None and not COLOR_RE.match(str(data["color"])):
-            raise AnnotationError("color must look like #ffcc00.")
-        out["color"] = data["color"]
+    for key in ("color", "fill"):
+        if key in data:
+            if data[key] is not None and not COLOR_RE.match(str(data[key])):
+                raise AnnotationError(f"{key} must look like #ffcc00.")
+            out[key] = data[key]
     if "size" in data:
         try:
             size = float(data["size"]) if data["size"] is not None else None
         except (TypeError, ValueError) as e:
             raise AnnotationError("size must be a number.") from e
-        if size is not None and not 0 < size <= 400:
+        if size is not None and not 0 <= size <= 400:  # 0: a box without a border
             raise AnnotationError("size must be between 0 and 400.")
         out["size"] = size
     kind = out.get("type")
@@ -165,6 +176,7 @@ class AnnotationStore:
     def ensure_schema(self) -> None:
         with self.db.session() as c:
             c.executescript(SCHEMA)
+            upgrade(c)
 
     def for_attachment(self, attachment_id: int) -> list[dict]:
         with self.db.session() as c:

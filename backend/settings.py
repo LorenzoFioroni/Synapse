@@ -61,7 +61,8 @@ DEFAULTS: dict = {
     "annotation_color_highlight": "#ffff00",  # also the area highlight
     "annotation_color_underline": "#ff0000",
     "annotation_color_text": "#000000",
-    "annotation_color_box": "#000000",
+    "annotation_color_box": "#000000",  # the border
+    "annotation_fill_box": "#ffff00",  # when a box is filled
     "annotation_color_draw": "#000000",
     "annotation_snap_words": True,  # highlights and underlines take whole words
     # Backups of library.db, settings and notes (not the PDFs): see backend/backup.py
@@ -162,7 +163,7 @@ class SettingsStore:
                 v = "" if v is None else str(v).strip()
             if k in CHOICES and v not in CHOICES[k]:
                 raise SettingsError(f"Invalid value for {k}: {v}")
-            if k.startswith("annotation_color_"):
+            if k.startswith(("annotation_color_", "annotation_fill_")):
                 v = v.lower()
                 if not COLOR_RE.match(v):
                     raise SettingsError("A colour looks like #ffcc00")

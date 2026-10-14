@@ -11,7 +11,8 @@ export interface Annotation {
   path?: number[][];       // [x, y] each (ink)
   text?: string;
   color?: string;
-  size?: number;
+  fill?: string | null;    // box: the colour inside (none when null)
+  size?: number;           // box: 0 for no border
   comment?: string;
   modified?: string;
 }
@@ -44,6 +45,11 @@ export let selectedId: string | null = null;
 export const tool = () => document.body.dataset.zcTool || 'select';
 export const color = () => (document.getElementById('tool-color') as HTMLInputElement | null)?.value || '#ffff00';
 export const size = () => Math.max(1, Number((document.getElementById('tool-size') as HTMLInputElement | null)?.value) || 2);
+/** The box tool: is the border drawn, and the fill colour (null: not filled). The toolbar marks a
+    part left out with data-none on its colour (see prefs.ts). */
+export const border = () => !document.getElementById('color-wrapper')?.hasAttribute('data-none');
+export const fill = () => (document.getElementById('fill-wrapper')?.hasAttribute('data-none') ? null
+  : (document.getElementById('tool-fill') as HTMLInputElement | null)?.value || null);
 export const scale = () => window.zcViewer?.scale || 1.5;
 export const uid = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : Math.random().toString(36).slice(2) + Date.now().toString(36));
 /** An SVG element with these attributes. */
@@ -95,7 +101,7 @@ export async function resolveAttachment(): Promise<number | null> {
 
 /* ------------------------------------------------------------------ drawing */
 export function modeClass(t = tool()): string {
-  if (t === 'box' || t === 'area' || t === 'draw' || t === 'text') return 'mode-draw';
+  if (t === 'box' || t === 'draw' || t === 'text') return 'mode-draw';
   if (t === 'highlight' || t === 'underline') return 'mode-highlight';
   return 'mode-select';
 }
@@ -128,13 +134,21 @@ export function draw(rec: Annotation): void {
     }
   } else if (rec.type === 'box') {
     const b = box(rec.rects![0]);
-    g.appendChild(el('rect', { x: b.x, y: b.y, width: b.w, height: b.h, stroke: rec.color || '#000000', 'stroke-width': rec.size || 2, fill: 'none' }));
+    g.appendChild(boxRect(b.x, b.y, b.w, b.h, rec));
   } else if (rec.type === 'ink') {
     const d = rec.path!.map(([x, y], i) => `${i ? 'L' : 'M'} ${x * W} ${y * H}`).join(' ');
     g.appendChild(el('path', { d, stroke: rec.color || '#000000', 'stroke-width': rec.size || 2, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
   }
   svg.appendChild(g);
   if (selectedId === rec.id) showSelection(g);
+}
+
+/** A box's rectangle at (x, y) points, w × h points: its border and its fill, which looks like a
+    highlight (the same opacity, and the layer multiplies it with the page). */
+export function boxRect(x: number, y: number, w: number, h: number, rec: Pick<Annotation, 'color' | 'fill' | 'size'>): SVGRectElement {
+  const lined = rec.size !== 0;
+  return el('rect', { x, y, width: w, height: h, stroke: lined ? rec.color || '#000000' : 'none', 'stroke-width': lined ? rec.size || 2 : 0,
+    fill: rec.fill || 'none', 'fill-opacity': 0.8 });
 }
 
 /** A text box: a contenteditable div with a handle to change the font size, placed at (x, y) points. */

@@ -1,22 +1,24 @@
-// PDF annotations: every highlight (of text or of an area), underline, box, drawing and text box
-// is its own record, saved on its own through /api/attachments/<id>/annotations — so two tabs on
-// one PDF never overwrite each other, and the app (and Claude) can read what was highlighted.
+// PDF annotations: every highlight, underline, box (with a border, a fill or both), drawing and
+// text box is its own record, saved on its own through /api/attachments/<id>/annotations — so two
+// tabs on one PDF never overwrite each other, and the app (and Claude) can read what was
+// highlighted.
 //
 // Positions are fractions of the page as displayed (0–1, origin top left), sizes are PDF points at
-// 100 % zoom; see backend/library/annotations.py. Each page gets an SVG layer whose viewBox is the page in
-// points, so drawings scale with the zoom by themselves. Text boxes are HTML in a layer of their own
-// above it (Safari misplaces HTML inside an SVG foreignObject), sized through --zc-scale.
+// 100 % zoom; see backend/library/annotations.py. Each page gets an SVG layer whose viewBox is the
+// page in points, so drawings scale with the zoom by themselves. Text boxes are HTML in a layer of
+// their own above it (Safari misplaces HTML inside an SVG foreignObject), sized through --zc-scale.
 //
-// The viewer (viewer.html) owns the toolbar: the current tool is document.body.dataset.zcTool,
-// the colour #tool-color and the size #tool-size. It fires 'zc:pagecreated' for each page and
-// 'zc:toolchange' when a tool is chosen.
+// The viewer (viewer.html) owns the toolbar: the current tool is document.body.dataset.zcTool, the
+// colour #tool-color, a box's fill #tool-fill and the size #tool-size. It fires 'zc:pagecreated'
+// for each page and 'zc:toolchange' when a tool is chosen.
 //
 // The code is in parts: annotations/model.ts (the records, drawing them, saving each change,
 // undo), annotations/input.ts (the tools: pointer, Pencil and touch input, and the controls of a
-// selected annotation), annotations/textMarks.ts (highlighting and underlining text, snapped to
-// words, one rect per line, with the geometry in annotations/lines.ts), annotations/pointer.ts
-// (mouse, Pencil or finger), annotations/prefs.ts (each tool's colour and size, and the Settings)
-// and this module (the layers on each page, loading, and picking up changes made elsewhere).
+// selected annotation), annotations/colorMenu.ts (choosing a colour), annotations/textMarks.ts
+// (highlighting and underlining text, snapped to words, one rect per line, with the geometry in
+// annotations/lines.ts), annotations/pointer.ts (mouse, Pencil or finger), annotations/prefs.ts
+// (each tool's colours and size, and the Settings) and this module (the layers on each page,
+// loading, and picking up changes made elsewhere).
 import { setupLayer } from './annotations/input.js';
 import {
   type Annotation, api, attId, byId, clone, draw, el, layers, modeClass, notify, pageSize, redoStack, resolveAttachment,

@@ -143,6 +143,7 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   through the `zc:pagecreated` and `zc:pagerendered` events. The annotations are split into
   `annotations/model.ts` (the records, drawing them, saving each change, undo and redo),
   `annotations/input.ts` (the drawing tools and the controls of a selected annotation),
+  `annotations/colorMenu.ts` (choosing a colour),
   `annotations/textMarks.ts` (highlighting and underlining text) with its geometry in
   `annotations/lines.ts`, `annotations/pointer.ts` (mouse, Pencil or finger),
   `annotations/prefs.ts` (each tool's colour and size) and the entry `annotations.ts` (a layer

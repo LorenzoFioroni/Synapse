@@ -169,14 +169,14 @@ never mix.
   drag to move; folders can be renamed, moved and deleted the same way.
 - Sortable, resizable, re-orderable columns; light/dark theme; compact density;
   keyboard navigation (see Settings → Library & Shortcuts).
-- Built-in PDF viewer with highlights (of text or of an area of the page), underlines, boxes, text
-  boxes and drawings (pdf.js is bundled, so it works offline). Each annotation is saved on its own, for the PDF it was
+- Built-in PDF viewer with highlights, underlines, boxes (with a border, a fill or both: a filled
+  box without a border highlights an area of the page), text boxes and drawings (pdf.js is bundled, so it works offline). Each annotation is saved on its own, for the PDF it was
   made on (an item's second PDF keeps its own), with the highlighted words; two tabs on one PDF never
   overwrite each other. Undo/redo with Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z.
   Highlights and underlines take whole words (hold Alt/⌥ while selecting for exact characters, or
   turn it off in Settings → PDF Viewer) and stay one straight line across inline math. Each tool
   remembers the colour you last used with it; the colours it starts with are set in Settings → PDF
-  Viewer. Select an annotation to change its colour or delete it. Links in the PDF work: citations, figure and section
+  Viewer. Select an annotation to change its colours or delete it. Links in the PDF work: citations, figure and section
   references jump inside the document, web links open in a new tab, and hovering a link shows a
   preview of where it goes, centred on the target's column. Links to figures and tables show the whole
   figure or table with its caption, scaled to fit — the caption is recognised in the page text and

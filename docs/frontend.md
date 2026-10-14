@@ -289,10 +289,12 @@ zooms. `links.ts` makes links clickable with hover previews and Back/Forward, us
 helpers in `linkNav.ts`. `notesBridge.ts` is Quote to note and Snapshot to note, and finds a
 quote on the page with `locate.ts`. `annotations.ts` adds a layer per page, loads the records and
 picks up changes made elsewhere; `annotations/model.ts` holds the records, draws them, saves each
-change and keeps undo and redo; `annotations/input.ts` is the drawing tools (boxes, area
-highlights, ink, text boxes, the eraser) and the controls of a selected annotation (its colour,
-Delete); `annotations/textMarks.ts` highlights and underlines selected text; `annotations/pointer.ts`
-tells mouse, Pencil and finger apart; `annotations/prefs.ts` keeps each tool's colour and size.
+change and keeps undo and redo; `annotations/input.ts` is the drawing tools (boxes, ink, text
+boxes, the eraser) and the controls of a selected annotation (its colours, Delete);
+`annotations/colorMenu.ts` is choosing a colour (swatches, None, any other colour), in the toolbar
+and for a selected annotation; `annotations/textMarks.ts` highlights and underlines selected text;
+`annotations/pointer.ts` tells mouse, Pencil and finger apart; `annotations/prefs.ts` keeps each
+tool's colours and size.
 
 How the annotation tools behave:
 
@@ -300,8 +302,8 @@ How the annotation tools behave:
   (`localStorage`, key `zc.toolStyle`), or else with its colour from Settings → PDF Viewer
   (`annotation_color_…`, read from `GET /api/settings` when the viewer opens and when its tab
   gets the focus again). A remembered colour is stored with the default it was chosen over, so
-  a new default in Settings replaces it on every device. The area highlight uses the
-  highlight's colour.
+  a new default in Settings replaces it on every device. The toolbar's colours open
+  `openColorMenu`; the inputs `#tool-color` and `#tool-fill` only hold the values.
 - **Whole words.** A highlight or underline of text is widened to whole words
   (`snapToWords`, with `wordStart` / `wordEnd` from `annotations/lines.ts`) unless
   `annotation_snap_words` is off or Alt is held when the mouse button or the Pencil is lifted.
@@ -313,11 +315,17 @@ How the annotation tools behave:
   into one per line at the height most of the line's text has, so an underline does not break at
   every formula. Boxes level with each other but more than a line height apart (two columns)
   stay apart.
-- **Area highlights.** The Highlight Area tool draws a filled rectangle; it is saved as a
-  `highlight` with one rect, and its `text` is the words of the text layer inside it.
+- **Boxes.** A box has a border colour (`color`, with `size` its width) and a fill colour
+  (`fill`), and either may be left out, not both: no border is `size: 0`, no fill is
+  `fill: null`. The fill is drawn like a highlight (`boxRect` in `annotations/model.ts`), so a
+  filled box without a border highlights an area of the page. In the toolbar a part left out is
+  marked with `data-none` on its colour (`#color-wrapper`, `#fill-wrapper`), which `border()` and
+  `fill()` in `model.ts` read; `prefs.ts` remembers both, with the colour of each. A box's `text`
+  is the words of the text layer inside it (`textIn`).
 - **Changing an annotation.** Selecting an annotation (Select tool) shows a pill with colour
-  swatches, a custom colour and Delete. A new colour is one `change` (one undo step); the custom
-  picker shows the colour while it is open and saves when it closes.
+  swatches, a custom colour and Delete; a box has a row for its border and one for its fill,
+  each with None. A new colour is one `change` (one undo step); the custom picker shows the
+  colour while it is open and saves when it closes.
 
 ### Patterns for splitting a module
 

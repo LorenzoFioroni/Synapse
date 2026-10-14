@@ -118,10 +118,11 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
         <p class="lead">The colour each annotation tool starts with. A tool keeps the colour you last used it with on a device, until you change its colour here.
           To change the colour of an annotation, select it in the viewer.</p>
         <div class="card">
-          ${colorRow('annotation_color_highlight', 'Highlight', 'Highlighting text, and highlighting an area of the page.')}
+          ${colorRow('annotation_color_highlight', 'Highlight', 'Highlighting text.')}
           ${colorRow('annotation_color_underline', 'Underline', 'Underlining text.')}
           ${colorRow('annotation_color_text', 'Text', 'Text boxes.')}
-          ${colorRow('annotation_color_box', 'Box', 'Rectangles drawn around part of the page.')}
+          ${colorRow('annotation_color_box', 'Box border', 'Rectangles drawn on the page.')}
+          ${colorRow('annotation_fill_box', 'Box fill', 'The colour a box is filled with: a filled box without a border highlights an area of the page. Whether a box has a border, a fill or both is chosen in the viewer.')}
           ${colorRow('annotation_color_draw', 'Drawing', 'Freehand drawings with the pen, the Pencil or a finger.')}
           ${switchRow('annotation_snap_words', 'Highlight whole words', 'Highlights and underlines take the whole of the first and last word you select. Hold Alt (⌥) while selecting to take exactly the characters you select.')}
         </div></section>

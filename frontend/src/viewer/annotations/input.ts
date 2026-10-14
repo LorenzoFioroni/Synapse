@@ -1,9 +1,11 @@
-// Pointer, Pencil and touch input for the annotation tools: drawing boxes, area highlights and
-// ink, text boxes, the eraser, and the controls (colour, Delete) and keyboard shortcuts for a
-// selected annotation. Highlighting text is in textMarks.ts. See annotations.ts for the overview.
+// Pointer, Pencil and touch input for the annotation tools: drawing boxes (with a border, a fill
+// or both) and ink, text boxes, the eraser, and the controls (colours, Delete) and keyboard
+// shortcuts for a selected annotation. Highlighting text is in textMarks.ts. See annotations.ts
+// for the overview.
+import { holdPointer, type SwatchRow, swatchRow } from './colorMenu.js';
 import {
-  type Annotation, type TextBoxNode, byId, change, color, create, draw, el, hooks, measure, pageSize, placeText,
-  redoStack, remove, scale, select, selectedId, size, textBox, tool, uid, undo, undoStack,
+  type Annotation, type TextBoxNode, border, boxRect, byId, change, color, create, draw, el, fill, hooks, measure, pageSize,
+  placeText, redoStack, remove, scale, select, selectedId, size, textBox, tool, uid, undo, undoStack,
 } from './model.js';
 import { draws } from './pointer.js';
 import { textIn } from './textMarks.js';
@@ -33,8 +35,8 @@ function newTextBox(html: HTMLElement, page: number, p: Point): void {
 /** Pointer input on a page: the SVG layer and the text boxes' layer above it share these handlers
     (positions are always taken from the SVG layer, which covers the page as the other one does). */
 export function setupLayer(svg: SVGSVGElement, html: HTMLElement, page: number): void {
-  // box, area highlight or ink being drawn
-  let shape: { kind: 'box' | 'area' | 'draw'; g: SVGGElement; node: SVGPathElement | SVGRectElement; start: Point;
+  // box or ink being drawn (a box keeps the colours it was started with)
+  let shape: { kind: 'box' | 'draw'; style?: Pick<Annotation, 'color' | 'fill' | 'size'>; g: SVGGElement; node: SVGPathElement | SVGRectElement; start: Point;
     points: number[][]; W: number; H: number; id: number } | null = null;
   // text box being moved
   let drag: { rec: Annotation; node: TextBoxNode; dx: number; dy: number; moved: boolean; id: number } | null = null;
@@ -63,7 +65,7 @@ export function setupLayer(svg: SVGSVGElement, html: HTMLElement, page: number):
       }
       return;
     }
-    if (!['box', 'area', 'draw', 'text'].includes(t)) return;
+    if (!['box', 'draw', 'text'].includes(t)) return;
     if (e.button > 0) return;
     const p = pointIn(svg, e);
     if (t === 'text') {
@@ -75,14 +77,13 @@ export function setupLayer(svg: SVGSVGElement, html: HTMLElement, page: number):
     e.preventDefault();
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
     const g2 = el('g', { class: 'anno anno-draft' });
-    const node = t === 'draw'
-      ? el('path', { d: `M ${p.x} ${p.y}`, stroke: color(), 'stroke-width': size(), fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
-      : t === 'area'
-        ? el('rect', { x: p.x, y: p.y, width: 0, height: 0, fill: color(), 'fill-opacity': 0.8 })
-        : el('rect', { x: p.x, y: p.y, width: 0, height: 0, stroke: color(), 'stroke-width': size(), fill: 'none' });
+    const style = t === 'box' ? { color: color(), fill: fill(), size: border() ? size() : 0 } : undefined;
+    const node = style
+      ? boxRect(p.x, p.y, 0, 0, style)
+      : el('path', { d: `M ${p.x} ${p.y}`, stroke: color(), 'stroke-width': size(), fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
     g2.appendChild(node);
     svg.appendChild(g2);
-    shape = { kind: t as 'box' | 'area' | 'draw', g: g2, node, start: p, points: [[p.x / p.W, p.y / p.H]], W: p.W, H: p.H, id: e.pointerId };
+    shape = { kind: t as 'box' | 'draw', style, g: g2, node, start: p, points: [[p.x / p.W, p.y / p.H]], W: p.W, H: p.H, id: e.pointerId };
   };
 
   const move = (e: PointerEvent) => {
@@ -133,11 +134,7 @@ export function setupLayer(svg: SVGSVGElement, html: HTMLElement, page: number):
       const [x, y, w, h] = ['x', 'y', 'width', 'height'].map((k) => parseFloat(s.node.getAttribute(k)!));
       if (w < 2 && h < 2) return;   // a click, not a box
       const rect = [r6(x / s.W), r6(y / s.H), r6(w / s.W), r6(h / s.H)];
-      if (s.kind === 'area') {   // a highlight like one made on text, with the words inside it
-        create({ type: 'highlight', page, rects: [rect], color: s.node.getAttribute('fill')!, text: textIn(svg.parentElement!, rect) });
-      } else {
-        create({ type: 'box', page, rects: [rect], color: s.node.getAttribute('stroke')!, size: Number(s.node.getAttribute('stroke-width')) });
-      }
+      create({ type: 'box', page, rects: [rect], ...s.style, text: textIn(svg.parentElement!, rect) });
     }
   };
   for (const layer of [svg, html] as GlobalEventHandlers[]) {
@@ -167,21 +164,26 @@ function eraseAt(e: PointerEvent): void {
 }
 
 /* -------- a selected annotation: its colour and a Delete button (there may be no keyboard) */
-const SWATCHES = ['#ffd400', '#ff6666', '#5fb236', '#2ea8e5', '#a28ae5', '#000000'];
 let selPill: HTMLDivElement | null = null;
 function hideSelPill(): void { selPill?.remove(); selPill = null; }
-/** Marks the swatch of the selected annotation's colour. */
-function markSwatch(c: string): void {
-  selPill?.querySelectorAll<HTMLElement>('[data-color]').forEach((b) => b.classList.toggle('active', b.dataset.color === c));
-  const custom = selPill?.querySelector<HTMLInputElement>('input[type="color"]');
-  if (custom) custom.value = c;
+
+/** The colours of a selected annotation that can be changed: a box's border and fill (either may
+    be left out, not both), or the one colour of the others. */
+function colorRows(rec: Annotation): SwatchRow[] {
+  const preview = (part: Partial<Annotation>) => draw({ ...(byId.get(rec.id) || rec), ...part });
+  if (rec.type !== 'box') {
+    return [{ value: rec.color || null, onPick: (c) => c && change(rec, { color: c }), onPreview: (c) => preview({ color: c }) }];
+  }
+  const lined = rec.size !== 0;
+  return [
+    { label: 'Border', value: lined ? rec.color || '#000000' : null, none: rec.fill ? true : 'disabled',
+      onPick: (c) => change(rec, c ? { color: c, size: rec.size || 2 } : { size: 0 }),
+      onPreview: (c) => preview({ color: c, size: rec.size || 2 }) },
+    { label: 'Fill', value: rec.fill || null, none: lined ? true : 'disabled',
+      onPick: (c) => change(rec, { fill: c }), onPreview: (c) => preview({ fill: c }) },
+  ];
 }
-function recolor(c: string): void {
-  const rec = selectedId ? byId.get(selectedId) : undefined;
-  if (!rec || rec.color === c) return;
-  change(rec, { color: c });
-  markSwatch(c);
-}
+
 function showSelPill(): void {
   hideSelPill();
   const g = selectedId && document.querySelector(`.anno-layer [data-id="${selectedId}"]`);
@@ -190,26 +192,24 @@ function showSelPill(): void {
   const r = g.getBoundingClientRect();
   selPill = document.createElement('div');
   selPill.className = 'zc-pill zc-sel-pill';
-  selPill.innerHTML = SWATCHES.map((c) => `<button class="zc-swatch" data-color="${c}" title="${c}" style="--swatch:${c}"></button>`).join('')
-    + '<label class="zc-swatch zc-swatch-custom" title="Other colour"><input type="color"></label>'
-    + '<span class="zc-pill-sep"></span><button data-del>Delete</button>';
-  selPill.addEventListener('pointerdown', (ev) => {
-    ev.stopPropagation();
-    if (!(ev.target as Element).closest('label')) ev.preventDefault();   // the colour picker opens on its own click
-  });
-  selPill.addEventListener('click', (ev) => {
-    const b = (ev.target as Element).closest<HTMLElement>('button');
-    if (b?.dataset.color) recolor(b.dataset.color);
-    else if (b?.hasAttribute('data-del')) { const cur = selectedId && byId.get(selectedId); if (cur) remove(cur); }
-  });
-  const custom = selPill.querySelector<HTMLInputElement>('input[type="color"]')!;
-  // shown while the picker is open; saved (one undo step) when it closes
-  custom.addEventListener('input', () => { const cur = selectedId && byId.get(selectedId); if (cur) draw({ ...cur, color: custom.value }); });
-  custom.addEventListener('change', () => recolor(custom.value));
-  markSwatch((rec.color || '').toLowerCase());
-  selPill.style.left = `${Math.max(8, Math.min(r.right - 260, innerWidth - 280))}px`;
-  selPill.style.top = `${r.top - 46 < 50 ? r.bottom + 8 : r.top - 46}px`;
+  const rows = document.createElement('div');
+  rows.className = 'zc-swatch-rows';
+  for (const row of colorRows(rec)) {
+    // after a change, the controls are made again for the annotation as it is now
+    rows.appendChild(swatchRow({ ...row, onPick: async (c) => { if (c === row.value) return; await row.onPick(c); showSelPill(); } }));
+  }
+  const sep = document.createElement('span');
+  sep.className = 'zc-pill-sep';
+  const del = document.createElement('button');
+  del.dataset.del = '';
+  del.textContent = 'Delete';
+  del.addEventListener('click', () => { const cur = selectedId && byId.get(selectedId); if (cur) remove(cur); });
+  selPill.append(rows, sep, del);
+  holdPointer(selPill);
   document.body.appendChild(selPill);
+  const w = selPill.getBoundingClientRect();
+  selPill.style.left = `${Math.max(8, Math.min(r.right - w.width, innerWidth - w.width - 8))}px`;
+  selPill.style.top = `${r.top - w.height - 8 < 50 ? r.bottom + 8 : r.top - w.height - 8}px`;
 }
 document.getElementById('pdf-container')?.addEventListener('scroll', hideSelPill, { passive: true });
 

@@ -126,10 +126,12 @@ class Database:
             c.execute("CREATE INDEX IF NOT EXISTS idx_att_paper ON attachments(paper_id)")
             # PDF annotations, one row each (see backend/library/annotations.py)
             from .annotations import SCHEMA as ANNOTATIONS_SCHEMA
+            from .annotations import upgrade as upgrade_annotations
 
             for stmt in ANNOTATIONS_SCHEMA.split(";"):
                 if stmt.strip():
                     c.execute(stmt)
+            upgrade_annotations(c)
 
             # Backfill values older versions never stored.
             now = utcnow()

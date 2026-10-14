@@ -1,6 +1,6 @@
 // Highlighting and underlining selected text: with a mouse, the Pencil or a finger, snapped to
-// whole words, one rect per line. Also the words under an area highlight. See annotations.ts for
-// the overview.
+// whole words, one rect per line. Also the words inside a box. See annotations.ts for the
+// overview.
 import { mergeLines, wordEnd, wordStart } from './lines.js';
 import { type Annotation, attId, color, create, el, layers, pageSize, scale, size, tool } from './model.js';
 import { lastPointer } from './pointer.js';

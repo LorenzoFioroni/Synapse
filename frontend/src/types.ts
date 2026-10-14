@@ -169,6 +169,7 @@ export interface Settings {
   annotation_color_underline: string;
   annotation_color_text: string;
   annotation_color_box: string;
+  annotation_fill_box: string;
   annotation_color_draw: string;
   annotation_snap_words: boolean;
   backup_interval: 'off' | 'daily' | 'weekly';

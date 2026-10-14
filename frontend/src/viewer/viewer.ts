@@ -196,18 +196,19 @@ function initPdf(pdfUrl: string): void {
 
   let currentTool = 'select';
   const colorWrapper = document.getElementById('color-wrapper')!;
+  const fillWrapper = document.getElementById('fill-wrapper')!;
   const toolSize = document.getElementById('tool-size') as HTMLInputElement;
   const toolbarSep = document.querySelector<HTMLElement>('.toolbar-sep')!;
   // On touch screens the colour and size are hidden but keep their place (see the CSS)
   const KEEP_PLACE = matchMedia('(pointer: coarse)').matches;
   function showOpt(n: HTMLElement, on: boolean): void {
-    const d = n === colorWrapper ? 'flex' : 'block';
+    const d = n === colorWrapper || n === fillWrapper ? 'flex' : 'block';
     if (KEEP_PLACE) { n.style.display = d; n.style.visibility = on ? 'visible' : 'hidden'; }
     else n.style.display = on ? d : 'none';
   }
-  for (const n of [toolbarSep, colorWrapper, toolSize]) showOpt(n, false);
+  for (const n of [toolbarSep, colorWrapper, fillWrapper, toolSize]) showOpt(n, false);
 
-  const DRAWING = ['box', 'area', 'draw', 'text'];   // tools that draw on the page rather than select text
+  const DRAWING = ['box', 'draw', 'text'];   // tools that draw on the page rather than select text
   function updateToolMode() {
     document.body.dataset.zcTool = currentTool;
     document.querySelectorAll('.anno-layer').forEach(svg => {
@@ -221,8 +222,8 @@ function initPdf(pdfUrl: string): void {
     });
   }
 
-  // Which tools have a colour and a size; the annotations add-on sets their values (zc:toolchange).
-  const HAS_COLOR = ['highlight', 'area', 'underline', 'text', 'box', 'draw'];
+  // Which tools have a colour, a fill and a size; the annotations add-on sets their values (zc:toolchange).
+  const HAS_COLOR = ['highlight', 'underline', 'text', 'box', 'draw'];
   const HAS_SIZE = ['underline', 'text', 'box', 'draw'];
   document.querySelectorAll<HTMLElement>('.tool-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -232,6 +233,7 @@ function initPdf(pdfUrl: string): void {
       document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', (b as HTMLElement).dataset.tool === currentTool));
       showOpt(toolbarSep, currentTool !== 'select');
       showOpt(colorWrapper, HAS_COLOR.includes(currentTool));
+      showOpt(fillWrapper, currentTool === 'box');
       showOpt(toolSize, HAS_SIZE.includes(currentTool));
       updateToolMode();
       document.dispatchEvent(new CustomEvent('zc:toolchange', { detail: { tool: currentTool } }));
