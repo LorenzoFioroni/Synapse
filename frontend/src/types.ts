@@ -165,6 +165,13 @@ export interface Settings {
   notes_equation_numbers: 'labelled' | 'all';
   notes_math_physics: boolean;
   notes_math_macros: string;
+  annotation_color_highlight: string;
+  annotation_color_underline: string;
+  annotation_color_text: string;
+  annotation_color_box: string;
+  annotation_fill_box: string;
+  annotation_color_draw: string;
+  annotation_snap_words: boolean;
   backup_interval: 'off' | 'daily' | 'weekly';
   backup_keep: number;
   backup_dir: string;

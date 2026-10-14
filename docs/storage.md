@@ -117,7 +117,8 @@ Details worth knowing:
   (`delete_permanently`, `FolderRepository.delete`, `TagRepository.delete`), and `migrate()`
   deletes orphans on every start.
 - **`annotations.attachment_id`** cascades from `attachments`, so deleting an attachment row
-  deletes its annotations. `rects` and `path` are JSON text.
+  deletes its annotations. `rects` and `path` are JSON text. `fill` (a box's fill colour) was
+  added later; `annotations.upgrade`, run by `migrate()`, adds the column to older files.
 - **Unused tags** are deleted when no item has them, unless the user gave them a colour
   (`TagRepository._prune`, and the same statement in `delete_permanently`).
 - **Indexes:** `idx_title`, `idx_papers_deleted`, `idx_papers_doi`, `idx_att_paper`,
@@ -183,7 +184,9 @@ starts this maintenance (`Attachments.start`, hourly). See [notes](notes.md).
 `SettingsStore` (`backend/settings.py`) keeps the preferences in `settings.json`. `DEFAULTS`
 lists every key with its default value, and its type decides how `update()` coerces a value.
 `CHOICES` lists the allowed values of the enumerated keys; a few keys have range or format checks
-in `update()` (for example `backup_dir` must be an absolute folder that can be written to).
+in `update()` (for example `backup_dir` must be an absolute folder that can be written to, and
+the `annotation_color_…` and `annotation_fill_…` keys must be colours like `#ffcc00`, stored in
+lower case).
 
 - Reading: the file is merged over `DEFAULTS`; unknown keys are ignored, and a file that cannot
   be read or parsed gives the defaults.

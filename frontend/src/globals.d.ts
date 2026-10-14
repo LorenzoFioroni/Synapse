@@ -23,6 +23,8 @@ declare global {
   interface DocumentEventMap {
     'zc:pagecreated': CustomEvent<{ wrapper: PageWrapper; page: PDFPageProxy }>;
     'zc:pagerendered': CustomEvent<{ wrapper: PageWrapper; page: PDFPageProxy; num: number }>;
+    /** An annotation tool was chosen; the annotations add-on sets its colour and size. */
+    'zc:toolchange': CustomEvent<{ tool: string }>;
   }
   /** A long press on a touch screen (ui/longpress.ts). */
   interface HTMLElementEventMap {

@@ -39,6 +39,12 @@
     input[type="color"] { cursor: pointer; border: none; background: transparent; height: 16px; width: 16px; padding: 0; }
     input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
     input[type="color"]::-webkit-color-swatch { border: 1px solid rgba(0,0,0,0.2); border-radius: 2px; }
+    .color-picker-wrapper input[type="color"] { pointer-events: none; }
+    /* a box's border or fill left out: the colour crossed out */
+    .color-picker-wrapper { position: relative; }
+    .color-picker-wrapper[data-none] input[type="color"] { opacity: .2; }
+    .color-picker-wrapper[data-none]::after { content: ""; position: absolute; left: 3px; top: 50%; width: 22px; height: 1.5px;
+        background: var(--danger, #c33); transform: rotate(-45deg); pointer-events: none; }
     
     #tool-size { width: 40px; text-align: center; border-radius: 4px; border: 1px solid var(--border-strong); font-size: 12px; height: 22px; background: var(--bg-input); color: var(--text); flex-shrink: 0; }
     
@@ -84,6 +90,21 @@
         border: 1px solid var(--border, #ddd); box-shadow: 0 6px 20px rgba(0,0,0,.18); font: 12px -apple-system, system-ui, sans-serif; }
     .zc-pill button { border: none; background: none; padding: 5px 9px; border-radius: 6px; color: var(--text, #222); cursor: pointer; font: inherit; white-space: nowrap; }
     .zc-sel-pill button[data-del] { color: var(--danger, #c33); }
+    .zc-sel-pill { align-items: center; }
+    .zc-pill .zc-swatch { width: 20px; height: 20px; padding: 0; margin: 0 1px; border-radius: 50%; background: var(--swatch);
+        border: 1px solid rgba(0,0,0,.2); box-sizing: border-box; cursor: pointer; flex: none; }
+    .zc-pill .zc-swatch:hover { background: var(--swatch); filter: brightness(.92); }   /* over the pill's button hover */
+    .zc-pill .zc-swatch.active { box-shadow: 0 0 0 2px var(--bg-elev, #fff), 0 0 0 3.5px var(--accent, #0066cc); }
+    .zc-pill .zc-swatch-custom { position: relative; overflow: hidden;
+        --swatch: conic-gradient(#f44, #fd4, #4d4, #4df, #44f, #f4f, #f44); }
+    .zc-swatch-custom input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; }
+    .zc-pill .zc-swatch-none { --swatch: linear-gradient(135deg, #fff 45%, var(--danger, #c33) 45% 55%, #fff 55%); }
+    .zc-pill .zc-swatch:disabled { opacity: .35; cursor: default; }
+    .zc-pill-sep { width: 1px; align-self: stretch; margin: 2px 3px; background: var(--border, #ddd); }
+    .zc-swatch-row { display: flex; align-items: center; gap: 4px; }
+    .zc-swatch-label { width: 44px; color: var(--text-2, #666); font-size: 11px; }
+    .zc-sel-pill .zc-swatch-rows { display: flex; flex-direction: column; gap: 4px; }
+    .zc-color-menu { flex-direction: column; padding: 6px; }
     @media (pointer: coarse) {
         /* one row whatever the tool: the title gives way first; the colour and size keep their
            place while hidden (visibility), so choosing a tool never moves the toolbar around */
@@ -93,14 +114,16 @@
         #toolbar .toolbar-section.center { flex: none; }
         #toolbar .toolbar-section.right { flex: none; margin-left: auto; }
         #toolbar .divider { margin: 0 2px; }
-        .icon-btn, .tool-btn { width: 38px; height: 40px; border-radius: 9px; }
+        .icon-btn, .tool-btn { width: 36px; height: 40px; border-radius: 9px; }
         .icon-btn svg, .tool-btn svg { width: 19px; height: 19px; }
         input[type="color"] { width: 26px; height: 26px; }
         .color-picker-wrapper { padding: 4px; }
+        .color-picker-wrapper svg { display: none; }   /* room for every tool in one row in portrait */
         #tool-size { width: 44px; height: 34px; font-size: 16px; }   /* < 16 px: Safari zooms the page on focus */
         #doc-title { flex: 1 1 0; width: 0; max-width: none; }   /* takes what is left, never wraps the row */
         .zc-pill { font-size: 15px; }
         .zc-pill button { padding: 10px 14px; min-height: 44px; }
+        .zc-pill .zc-swatch { width: 30px; height: 30px; min-height: 0; margin: 0 3px; }
         .anno-text-handle { width: 22px; height: 22px; right: -11px; bottom: -11px; }
         .thumb-wrapper canvas { width: 100px; }
     }
@@ -149,8 +172,8 @@
       <button class="tool-btn" data-tool="text" title="Add Text">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3 4h10v1.5H8.75v7.5H7.25V5.5H3V4z"/></svg>
       </button>
-      <button class="tool-btn" data-tool="box" title="Draw Box">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
+      <button class="tool-btn" data-tool="box" title="Box (border and fill)">
+        <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1" fill="#ffeb3b" fill-opacity=".6" stroke="currentColor" stroke-width="1.2"/></svg>
       </button>
       <button class="tool-btn" data-tool="eraser" title="Eraser">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -163,10 +186,15 @@
       
       <span class="toolbar-sep" style="display:none; width: 1px; height: 16px; background: #ccc; margin: 0 4px;"></span>
       
-      <label class="color-picker-wrapper" title="Color" id="color-wrapper" style="display:none;">
-        <input type="color" id="tool-color" value="#ffff00">
+      <!-- the colours open a menu of swatches (annotations/prefs.ts); the inputs hold the values -->
+      <div class="color-picker-wrapper" title="Colour" id="color-wrapper" role="button" style="display:none;">
+        <input type="color" id="tool-color" value="#ffff00" tabindex="-1">
         <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="margin-left:2px;"><path d="M2 3l3 4 3-4z"/></svg>
-      </label>
+      </div>
+      <div class="color-picker-wrapper" title="Fill" id="fill-wrapper" role="button" style="display:none;">
+        <input type="color" id="tool-fill" value="#ffff00" tabindex="-1">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="margin-left:2px;"><path d="M2 3l3 4 3-4z"/></svg>
+      </div>
       
       <input type="number" id="tool-size" value="2" min="1" max="72" title="Size/Width" style="display:none;">
     </div>

@@ -61,6 +61,8 @@ def test_create_list_update_delete(client, att):
     [
         {"type": "underline", "page": 2, "rects": [[0.1, 0.5, 0.4, 0.014]], "color": "#ff0000", "size": 2, "text": "w"},
         {"type": "box", "page": 1, "rects": [[0.1, 0.4, 0.2, 0.1]], "color": "#000000", "size": 2},
+        # filled, without a border, with the words inside it
+        {"type": "box", "page": 1, "rects": [[0.1, 0.4, 0.2, 0.1]], "fill": "#ffff00", "size": 0, "text": "words"},
         {"type": "ink", "page": 3, "path": [[0.1, 0.1], [0.2, 0.15], [0.3, 0.1]], "color": "#0000ff", "size": 3},
         {
             "type": "text",
@@ -100,6 +102,7 @@ def test_client_chosen_id_for_undo(client, att):
         ({"type": "box", "page": 1, "rects": [[0, 0, -0.1, 1]]}, "negative"),
         ({"type": "box", "page": 1, "rects": [[0, 0, 900, 1]]}, "fractions"),
         ({"type": "box", "page": 1, "rects": [[0, 0, 1, 1]], "color": "red;x"}, "color"),
+        ({"type": "box", "page": 1, "rects": [[0, 0, 1, 1]], "fill": "yellow"}, "fill"),
         ({"type": "box", "page": 1, "rects": [[0, 0, 1, 1]], "size": 9999}, "size"),
         ({"type": "box", "page": 1, "rects": [[0, 0, 1, 1]], "id": "../../x"}, "id"),
     ],
@@ -332,3 +335,24 @@ def test_without_pypdfium2_the_conversion_waits(tmp_path, monkeypatch):
     monkeypatch.setattr(builtins, "__import__", real)
     s = create_app(Config.from_env(data), start_indexer=False).extensions["synapse"]
     assert len(s.annotations.for_item(ids["Legacy"])) == 6
+
+
+def test_old_annotations_table_gets_the_fill_column(tmp_path):
+    import sqlite3
+
+    from backend import config as cfg
+    from backend import create_app
+
+    data = tmp_path / "data"
+    data.mkdir()
+    con = sqlite3.connect(data / "library.db")
+    con.executescript(
+        "CREATE TABLE annotations (id TEXT PRIMARY KEY, attachment_id INTEGER NOT NULL, page INTEGER NOT NULL,"
+        " type TEXT NOT NULL, rects TEXT, path TEXT, text TEXT, color TEXT, size REAL, comment TEXT,"
+        " created TEXT, modified TEXT);"
+    )
+    con.commit()
+    con.close()
+    app = create_app(cfg.Config(data), start_indexer=False)
+    with app.extensions["synapse"].db.session() as c:
+        assert "fill" in {r["name"] for r in c.execute("PRAGMA table_info(annotations)")}

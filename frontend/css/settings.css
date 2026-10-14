@@ -71,3 +71,4 @@
 .pair-addrs .token.active { border-color: var(--accent); color: var(--accent); }
 .device-this { font-size: var(--fs-xs); font-weight: 500; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 5px; margin-left: 6px; }
 [data-macro-check] .warn { color: var(--warning); }
+.setting .color-input { width: 44px; height: 28px; padding: 2px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg-input); cursor: pointer; }

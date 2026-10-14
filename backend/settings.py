@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from pathlib import Path
 
@@ -55,6 +56,15 @@ DEFAULTS: dict = {
     "notes_equation_numbers": "labelled",
     "notes_math_physics": True,  # the physics package's commands (\vb, \dv, \qty…) in formulas
     "notes_math_macros": "",  # \newcommand definitions used by every note
+    # PDF viewer: the colour each annotation tool starts with. A tool keeps the colour it was last
+    # used with on a device until its default here changes (frontend/src/viewer/annotations/prefs.ts).
+    "annotation_color_highlight": "#ffff00",  # also the area highlight
+    "annotation_color_underline": "#ff0000",
+    "annotation_color_text": "#000000",
+    "annotation_color_box": "#000000",  # the border
+    "annotation_fill_box": "#ffff00",  # when a box is filled
+    "annotation_color_draw": "#000000",
+    "annotation_snap_words": True,  # highlights and underlines take whole words
     # Backups of library.db, settings and notes (not the PDFs): see backend/backup.py
     "backup_interval": "daily",  # off | daily | weekly
     "backup_keep": 14,  # newest archives kept
@@ -62,6 +72,7 @@ DEFAULTS: dict = {
 }
 
 ASK_CHOICES = ("never", "always", "ask")
+COLOR_RE = re.compile(r"^#[0-9a-f]{6}$")
 
 CHOICES = {
     "default_search_mode": set(SEARCH_MODES),
@@ -152,6 +163,10 @@ class SettingsStore:
                 v = "" if v is None else str(v).strip()
             if k in CHOICES and v not in CHOICES[k]:
                 raise SettingsError(f"Invalid value for {k}: {v}")
+            if k.startswith(("annotation_color_", "annotation_fill_")):
+                v = v.lower()
+                if not COLOR_RE.match(v):
+                    raise SettingsError("A colour looks like #ffcc00")
             if k == "notes_math_macros" and len(v) > 20000:
                 raise SettingsError("Math macros: at most 20,000 characters")
             if k == "citekey_pattern" and not v:

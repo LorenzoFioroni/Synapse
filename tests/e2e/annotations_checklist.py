@@ -1,7 +1,10 @@
 """Browser checklist for annotations as records: each kind is created, saved on its
 own, drawn again after a reload and at another zoom; eraser, Delete, undo/redo and moving a text
-box work; two PDFs of one item and two tabs on one PDF keep their own work; annotations saved by
-the old viewer are converted and shown.
+box work; two PDFs of one item and two tabs on one PDF keep their own work; each tool starts with
+its colour from Settings and then the one last used with it; highlights snap to whole words (not
+with Alt); a box can have a border, a fill or both (a filled box without a border highlights an
+area); a selected annotation's colours can be changed; annotations saved by the old viewer are
+converted and shown.
 
     python tests/e2e/annotations_checklist.py              (SHOTS=/some/dir to save screenshots)
 
@@ -90,6 +93,28 @@ async def tool(page, name):
         if (!b.classList.contains('active')) b.click(); }})()""")
 
 
+# A run of the text layer of at least three words, and the screen points of a word's second
+# letter: dragging between two of those starts and ends a selection inside words.
+WORD_POINTS = """(skip) => {
+  const spans = [...document.querySelectorAll('.page-wrapper[data-page-number="1"] .textLayer span')];
+  const fit = spans.filter((s) => s.firstChild && /^\\S{3,}\\s+\\S+\\s+\\S{3,}/.test(s.textContent));
+  const span = fit[skip];
+  const text = span.firstChild.textContent;
+  const words = [...text.matchAll(/\\S+/g)];
+  const at = (i) => {
+    const r = document.createRange();
+    r.setStart(span.firstChild, i); r.setEnd(span.firstChild, i + 1);
+    const b = r.getBoundingClientRect();
+    return [b.left + b.width / 2, b.top + b.height / 2];
+  };
+  return { text, words: words.map((m) => m[0]), a: at(words[0].index + 1), b: at(words[2].index + 1) };
+}"""
+
+
+async def color_of(page):
+    return await page.input_value("#tool-color")
+
+
 async def text_lines(page, n=12):
     spans = page.locator('.page-wrapper[data-page-number="1"] .textLayer span')
     out = []
@@ -109,7 +134,7 @@ def setup_library():
 
     s = create_app(Config.from_env(DATA), start_indexer=False).extensions["synapse"]
     made = {}
-    for title, n_pdfs in (("Annotated paper", 2), ("Legacy paper", 1)):
+    for title, n_pdfs in (("Annotated paper", 2), ("Legacy paper", 1), ("Tools paper", 1)):
         item = s.papers.create({"title": title})
         atts = []
         for k in range(n_pdfs):
@@ -285,6 +310,120 @@ async def main():
                 await page.evaluate("window.zcAnnotations.attachment()") == att["id"]
                 and await page.evaluate("document.querySelectorAll('.anno-layer .anno').length") == 7,
             )
+
+            # ---- each tool's colour: from Settings, then the one last used with it
+            titem, (tatt,) = made["Tools paper"]
+            requests.put(f"{BASE}/api/settings", json={"annotation_color_underline": "#00aa00"})
+            await open_viewer(page, viewer(titem, tatt))
+            await tool(page, "underline")
+            check(
+                "a tool starts with its colour from Settings", await color_of(page) == "#00aa00", await color_of(page)
+            )
+            await page.evaluate(
+                "(() => { const c = document.getElementById('tool-color'); c.value = '#123456';"
+                " c.dispatchEvent(new Event('input')); })()"
+            )
+            await tool(page, "highlight")
+            hl_color = await color_of(page)
+            await tool(page, "underline")
+            check("and keeps the colour last used with it", await color_of(page) == "#123456" and hl_color == "#ffff00")
+            await page.reload()
+            await open_viewer(page, page.url)
+            await tool(page, "underline")
+            check("also after a reload", await color_of(page) == "#123456", await color_of(page))
+            requests.put(f"{BASE}/api/settings", json={"annotation_color_underline": "#0000ff"})
+            await page.evaluate("window.dispatchEvent(new Event('focus'))")
+            await page.wait_for_timeout(400)
+            await tool(page, "select")
+            await tool(page, "underline")
+            check("a new default in Settings replaces it", await color_of(page) == "#0000ff", await color_of(page))
+
+            # ---- highlights snap to whole words, unless Alt is held
+            def word(w):
+                return w.strip(".,;:()[]")
+
+            await tool(page, "highlight")
+            pts = await page.evaluate(WORD_POINTS, 0)
+            await drag(page, pts["a"], pts["b"])
+            ok = await until_count(tatt["id"], 1)
+            snapped = anns(tatt["id"])[0]["text"] if ok else ""
+            want = " ".join(pts["words"][:3])
+            check(
+                "a highlight starting and ending inside words takes them whole",
+                snapped.startswith(pts["words"][0]) and snapped.endswith(word(pts["words"][2])) and snapped in want,
+                f"{snapped!r} in {want!r}",
+            )
+            pts2 = await page.evaluate(WORD_POINTS, 1)
+            await page.keyboard.down("Alt")
+            await drag(page, pts2["a"], pts2["b"])
+            await page.keyboard.up("Alt")
+            ok = await until_count(tatt["id"], 2)
+            exact = next((a["text"] for a in anns(tatt["id"]) if a["text"] != snapped), "") if ok else ""
+            check(
+                "with Alt it takes exactly the characters selected",
+                exact and not exact.startswith(pts2["words"][0]) and exact.startswith(pts2["words"][0][1:]),
+                repr(exact),
+            )
+
+            # ---- a box: a border, a fill or both
+            def ann(ann_id):
+                return next(a for a in anns(tatt["id"]) if a["id"] == ann_id)
+
+            tw = await page.locator('.page-wrapper[data-page-number="1"]').bounding_box()
+            await tool(page, "box")
+            await page.click("#color-wrapper")
+            check(
+                "an unfilled box cannot leave its border out too",
+                await page.locator(".zc-color-menu [data-none]").is_disabled(),
+            )
+            await page.keyboard.press("Escape")
+            await page.click("#fill-wrapper")
+            await page.click('.zc-color-menu [data-color="#ffd400"]')
+            await page.click("#color-wrapper")
+            await page.click(".zc-color-menu [data-none]")
+            await drag(page, (tw["x"] + 60, tw["y"] + 300), (tw["x"] + 400, tw["y"] + 380))
+            ok = await until_count(tatt["id"], 3)
+            area = next((a for a in anns(tatt["id"]) if a["type"] == "box"), {})
+            check(
+                "a filled box without a border, with the words inside it",
+                ok and area.get("fill") == "#ffd400" and area.get("size") == 0 and len(area.get("text") or "") > 10,
+                str(area)[:200],
+            )
+            stroke = await page.locator(f'[data-id="{area["id"]}"] rect').first.get_attribute("stroke")
+            check("and it is drawn without a border", stroke == "none", str(stroke))
+            await tool(page, "draw")
+            await tool(page, "box")
+            check(
+                "the box tool keeps its fill and no border",
+                await page.evaluate(
+                    "!!document.querySelector('#color-wrapper[data-none]') && !document.querySelector('#fill-wrapper[data-none]')"
+                ),
+            )
+
+            # ---- changing the colours of a selected annotation
+            await tool(page, "select")
+            ab = await page.locator(f'[data-id="{area["id"]}"] rect').first.bounding_box()
+            await page.mouse.click(ab["x"] + 20, ab["y"] + 20)
+            fill_row = ".zc-sel-pill .zc-swatch-row:nth-child(2)"
+            await page.click(f'{fill_row} [data-color="#5fb236"]')
+            recolored = await wait_for(lambda: asyncio.to_thread(lambda: ann(area["id"])["fill"] == "#5fb236"))
+            fill = await page.locator(f'[data-id="{area["id"]}"] rect').first.get_attribute("fill")
+            check("a swatch in the selection's controls changes the fill", recolored and fill == "#5fb236", str(fill))
+            await shot(page, "n3-tools")
+            await page.keyboard.press(f"{mod}+z")
+            back = await wait_for(lambda: asyncio.to_thread(lambda: ann(area["id"])["fill"] == "#ffd400"))
+            check("and undo gives it its fill back", back)
+            await page.mouse.click(ab["x"] + 20, ab["y"] + 20)
+            await page.click('.zc-sel-pill .zc-swatch-row:nth-child(1) [data-color="#2ea8e5"]')
+            lined = await wait_for(
+                lambda: asyncio.to_thread(
+                    lambda: ann(area["id"])["color"] == "#2ea8e5" and ann(area["id"])["size"] == 2
+                )
+            )
+            check("choosing a border colour gives it a border", lined)
+            await page.click(f"{fill_row} [data-none]")
+            unfilled = await wait_for(lambda: asyncio.to_thread(lambda: ann(area["id"])["fill"] is None))
+            check("and the fill can then be left out", unfilled)
 
             # ---- annotations saved by the old viewer
             legacy, (latt,) = made["Legacy paper"]
