@@ -6,7 +6,7 @@ import type { MarkdownConfig } from '@lezer/markdown';
 import type { CiteEntry, NoteInfo } from '../../types.js';
 import { completions } from './completion.js';
 import { changedSpan } from './diff.js';
-import { livePreview } from './livePreview.js';
+import { type PreviewDeps, livePreview } from './livePreview.js';
 import { refitOnResize } from './mathFit.js';
 import { splitFrontmatter } from './mdscan.js';
 
@@ -115,7 +115,7 @@ export function highlightStyle(cm: CM): HighlightStyle {
 export async function createEditor(
   parent: HTMLElement,
   handlers: EditorHandlers,
-  preview: Parameters<typeof livePreview>[1],
+  preview: PreviewDeps,
   mode: 'live' | 'source' = 'live',
   data: { items(): CiteEntry[]; notes(): NoteInfo[] } = { items: () => [], notes: () => [] },
 ): Promise<NoteEditor> {
