@@ -1,5 +1,5 @@
 """The knowledge graph (/api/graph): papers, cited works, notes and their links."""
-from backend.references import service as R
+from backend.references import sources as R
 
 from .test_references import S2_PAGE1, S2_PAGE2, Resp, router
 

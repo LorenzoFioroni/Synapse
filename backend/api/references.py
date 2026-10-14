@@ -4,7 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify
 
 from ..online.http import LookupFailed
-from ..references.service import FetchFailed
+from ..references.sources import FetchFailed
 from ..library.repository import NotFound
 from . import body, error, svc
 

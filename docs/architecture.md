@@ -60,7 +60,7 @@ Two objects tie the backend together:
 | `mcp/` | The MCP server: the JSON-RPC layer and the library tools. | none (it uses the other packages) |
 | `pdf/` | PDF files on disk: text extraction (`text.py`), page rendering for the MCP tools (`render.py`) and the full-text index (`fulltext.py`). | `fulltext.db` |
 | `online/` | Lookups on the web: item metadata (`metadata.py`), open-access PDFs (`pdf_finder.py`) and PDFs behind an attachment's web link (`remote_pdf.py`). `http.py` has what they share: timeout, User-Agent, the error type and the arXiv request spacing. | none |
-| `references/` | The citation graph: reference lists fetched online (`service.py`) and the Graph view's network (`graph.py`). | `citations.db` |
+| `references/` | The citation graph: reference lists fetched from Semantic Scholar, OpenAlex or Crossref (`sources.py`), stored (`store.py`), fetched in the background and matched to library items (`service.py`), and the Graph view's network (`graph.py`). | `citations.db` |
 | `access/` | Who may use the server: other websites never (`guard.py`), other devices only once paired (`devices.py`); `lan.py` finds this computer's network addresses. | `auth.db` |
 | `config.py`, `settings.py` | Paths of the data folder, and the user's preferences. | `settings.json` |
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |

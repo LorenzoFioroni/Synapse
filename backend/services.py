@@ -10,7 +10,8 @@ from .pdf.fulltext import FulltextIndex, Indexer
 from .notes import NotesIndex, Vault
 from .notes.attachments import Attachments
 from .notes.service import NotesService
-from .references.service import Citations, CitationStore
+from .references.service import Citations
+from .references.store import CitationStore
 from .library.organize import FolderRepository, SmartFolderRepository, TagRepository
 from .library.repository import PaperRepository
 from .settings import SettingsStore
