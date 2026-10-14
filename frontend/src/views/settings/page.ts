@@ -112,7 +112,7 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
         <p class="lead">What happens right after items are added — by identifier, by dropping PDFs, by importing a file or with the browser button.
           <b>Ask</b> shows a checkbox, ticked, where you add the items, so you decide each time. You can always run these later from the item menu.</p>
         <div class="card">
-          ${segmentedRow('add_fetch_metadata', 'Retrieve metadata for imported items', 'Look up imported entries online (Crossref, arXiv) in the background, then review the proposed changes. Items added by identifier, from PDFs or with the browser button are always looked up.', ASK)}
+          ${segmentedRow('add_fetch_metadata', 'Retrieve metadata for imported items', 'Look up imported entries online (Crossref, arXiv) in the background, then review the proposed changes. Items added by identifier or from PDFs are always looked up. The browser button asks with its own “Complete metadata online” checkbox, unticked when this is Never.', ASK)}
           ${segmentedRow('add_find_pdf', 'Find an available PDF', 'Look for an open-access PDF of new items that have none, in the background.', ASK)}
           ${segmentedRow('add_fetch_references', 'Fetch reference lists', 'Fetch the list of papers a new item cites, in the background. They appear in the item pane under References and build the citation graph. Needs a DOI or arXiv ID.', ASK)}
           ${segmentedRow('import_tags', 'Turn imported keywords into tags', 'Keywords in BibTeX/RIS/EndNote files become tags. When not, they stay in the Keywords field. Exports always write tags back as keywords.', ASK)}

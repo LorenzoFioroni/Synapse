@@ -21,7 +21,10 @@ extension's options (right-click the button → Options).
   publishers and preprint servers), Dublin Core/PRISM tags, JSON-LD, DOIs and
   arXiv ids in the URL.
 - With a DOI or arXiv id, the library completes the metadata online (Crossref,
-  OpenAlex, arXiv); the page's own data fills any gaps.
+  OpenAlex, arXiv); the page's own data fills any gaps. Untick "Complete metadata
+  online" to keep the page's data; it starts unticked when Settings → Adding Items
+  → Retrieve metadata is *Never*. The reference list and an open-access PDF follow
+  the other Adding Items settings (with *Ask*, the popup shows a checkbox).
 - Lets you pick the folder and add tags before saving (the last folder is remembered).
 - Attaches the PDF. It is downloaded *inside the page*, so your own login and
   institutional access apply; if that is not possible the library tries to
