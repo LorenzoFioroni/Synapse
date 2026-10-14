@@ -5,7 +5,7 @@
 import { icon, typeIcon } from '../../icons.js';
 import { byId, itemFolderPaths, itemTypeLabel, on, sortedItems, state, tagColor } from '../../store.js';
 import type { Item } from '../../types.js';
-import { escapeHtml, formatDate, plural, shortAuthors } from '../../util.js';
+import { escapeHtml, formatDate, hitBadge, plural, shortAuthors } from '../../util.js';
 import { visibleCols } from './columns.js';
 import { emptyState } from './empty.js';
 
@@ -53,7 +53,7 @@ function cellHtml(colId: string, it: Item): string {
     case 'title': {
       const n = (it.attachments || []).length;
       const open = state.expanded.has(it.id);
-      const hit = state.hits[it.id]?.fulltext ? ' <span class="badge accent" title="Matched in the full text">full text</span>' : '';
+      const hit = hitBadge(state.hits[it.id]?.fulltext);
       return `<span class="twisty ${n ? '' : 'none'} ${open ? 'open' : ''}" data-act="toggle">${icon('chevron', 'icon-sm')}</span>`
         + `${typeIcon(it.item_type || '', 'icon-sm type-icon')}<span class="t">${escapeHtml(it.title || 'Untitled')}</span>${hit}${colourDots(it)}`;
     }

@@ -182,7 +182,9 @@ that matched only in the PDF or notes text; if every term also matched the metad
 shows the first text match in `all` and `fulltext` modes, for context. A snippet from a note
 starts with `<span class="hit-src">Note · <title></span>`. Despite the key name `fulltext`,
 `hits` holds note snippets too. The browser shows the snippet in the items table
-(`frontend/src/views/itemlist/rows.ts`) and the item pane.
+(`frontend/src/views/itemlist/rows.ts`) and the item pane. The badge after the title says
+"full text" for a PDF snippet and "note" for a note snippet (`hitBadge`, which looks for that
+label).
 
 ### Matching through notes
 

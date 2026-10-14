@@ -97,7 +97,7 @@ These check rules of the code base rather than behaviour:
 | `lookupJob.test.mjs` | `LookupJob` in `views/metadataReview.js` |
 | `noteSession.test.mjs` | `views/notes/noteSession.js`: saving, conflicts, drafts |
 | `render.test.mjs` | `views/notes/render.js` |
-| `store.test.mjs` | `sortedItems` in `store.js` |
+| `store.test.mjs` | `sortedItems` in `store.js`, `hitBadge` in `util.js` |
 
 `equations.test.mjs` and `render.test.mjs` load the real markdown-it and KaTeX from
 `frontend/vendor/md/md.js`.
