@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +19,9 @@ class Database:
     def __init__(self, path: Path | str):
         self.path = str(path)
         self.version = 0  # goes up with every write through this object (for caches)
-        self.on_write = None  # called after each commit that changed something (the change feed)
+        self.on_write: Callable[[], None] | None = (
+            None  # called after each commit that changed something (the change feed)
+        )
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=15)

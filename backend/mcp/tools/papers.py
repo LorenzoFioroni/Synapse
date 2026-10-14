@@ -15,6 +15,7 @@ from .common import (
     MAX_CHARS_PER_READ,
     MAX_PAGES_PER_READ,
     MAX_PAPER_NOTE_CHARS,
+    ToolsBase,
     drop_empty,
     fold_text,
     page_ranges,
@@ -22,7 +23,7 @@ from .common import (
 )
 
 
-class PaperToolsMixin:
+class PaperToolsMixin(ToolsBase):
     """get_paper, search_in_paper, read_paper, view_page, snapshot."""
 
     def get_paper(self, paper: str):
@@ -124,7 +125,8 @@ class PaperToolsMixin:
         results = []
         for score, n, matched, phrase_hits, hits, text, idx in scored[:max_results]:
             starts = phrase_hits[:1] + [hits[t][0] for t in matched]
-            snippets, used = [], []
+            snippets: list[str] = []
+            used: list[int] = []
             for st in starts:
                 pos = idx[min(st, len(idx) - 1)]
                 if any(abs(pos - u) < 200 for u in used):
@@ -154,7 +156,8 @@ class PaperToolsMixin:
         if not texts:
             raise ToolError(f"No text could be extracted from the PDF of '{self._label(p)}'.")
         want = parse_pages(pages, len(texts))
-        given, chars = [], 0
+        given: list[int] = []
+        chars = 0
         parts = [
             f"{self._label(p)} — {p.get('title') or ''} (PDF, {len(texts)} pages). "
             f"Cite as [@{p.get('citation_key') or '?'}, p. N] with N the page number below."
@@ -295,7 +298,7 @@ class PaperToolsMixin:
                     equation if re.match(r"\s*(eq|\()", str(equation), re.I) else f"({str(equation).strip()})"
                 )
             else:
-                parsed = pdfregions.parse_label(figure)
+                parsed = pdfregions.parse_label(figure or "")
             if not parsed:
                 raise ToolError(
                     f"Could not read '{equation if equation is not None else figure}': write e.g. "

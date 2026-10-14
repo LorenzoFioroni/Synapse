@@ -14,6 +14,7 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from ..library.db import utcnow
 from .text import clean_text, extract_text
@@ -171,7 +172,14 @@ class Indexer:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._again = False
-        self.status = {"running": False, "total": 0, "done": 0, "current": "", "last_run": None, "errors": 0}
+        self.status: dict[str, Any] = {
+            "running": False,
+            "total": 0,
+            "done": 0,
+            "current": "",
+            "last_run": None,
+            "errors": 0,
+        }
 
     def sync(self, background: bool = True) -> None:
         with self._lock:

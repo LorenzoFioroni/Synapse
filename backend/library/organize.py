@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import builtins
 import re
 import sqlite3
 
@@ -91,7 +92,7 @@ class FolderRepository:
     def __init__(self, db: Database):
         self.db = db
 
-    def tree(self) -> list[dict]:
+    def tree(self) -> builtins.list[dict]:
         """Flat list of folders with parent ids and direct item counts (non-trashed)."""
         with self.db.session() as c:
             counts = {
@@ -194,7 +195,7 @@ class FolderRepository:
             still = {r[0] for r in c.execute("SELECT DISTINCT paper_id FROM paper_folders")}
         return len(members - still)
 
-    def _check_folders(self, folder_ids) -> list[int]:
+    def _check_folders(self, folder_ids) -> builtins.list[int]:
         out = []
         for f in folder_ids or []:
             if f in (None, ""):
@@ -203,7 +204,7 @@ class FolderRepository:
             out.append(int(f))
         return out
 
-    def change_items(self, paper_ids: list[str], add=(), remove=()) -> None:
+    def change_items(self, paper_ids: builtins.list[str], add=(), remove=()) -> None:
         """Add items to folders and/or take them out of folders. Adding is idempotent."""
         add, remove = self._check_folders(add), [int(f) for f in remove or [] if f not in (None, "")]
         if not paper_ids or not (add or remove):
@@ -235,7 +236,7 @@ class TagRepository:
     def __init__(self, db: Database):
         self.db = db
 
-    def list(self) -> list[dict]:
+    def list(self) -> builtins.list[dict]:
         with self.db.session() as c:
             return [
                 dict(r)
@@ -254,7 +255,7 @@ class TagRepository:
             raise NotFound(f"tag {tag_id}")
         return dict(row)
 
-    def add(self, paper_ids: list[str], names) -> None:
+    def add(self, paper_ids: builtins.list[str], names) -> None:
         names = clean_tag_names(names)
         if not names or not paper_ids:
             return
@@ -262,7 +263,7 @@ class TagRepository:
             add_tags_conn(c, paper_ids, names)
             _touch(c, paper_ids)
 
-    def remove(self, paper_ids: list[str], names) -> None:
+    def remove(self, paper_ids: builtins.list[str], names) -> None:
         names = clean_tag_names(names)
         if not names or not paper_ids:
             return
@@ -328,7 +329,7 @@ class SmartFolderRepository:
     def __init__(self, db: Database):
         self.db = db
 
-    def list(self) -> list[dict]:
+    def list(self) -> builtins.list[dict]:
         with self.db.session() as c:
             return [
                 dict(r)

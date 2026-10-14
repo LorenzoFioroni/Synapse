@@ -289,7 +289,7 @@ class Vault:
                     raise NoteMissing(n)
             contents = {f: self.notes_in(f) for f in folders}
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-            moved = []
+            moved: list[str] = []
             for rel in folders + notes:
                 dest = self.root / TRASH / stamp / rel
                 try:

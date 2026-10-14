@@ -34,7 +34,7 @@ class Rekeyer:
         self.vault = vault
         self.index = index
         self.backups_dir = Path(backups_dir)
-        self._last_backup = None  # not 0: time.monotonic() can itself be < 60 s just after boot
+        self._last_backup: float | None = None  # not 0: time.monotonic() can itself be < 60 s just after boot
 
     # ------------------------------------------------------------------ backups
     def backup(self, force: bool = False) -> Path | None:

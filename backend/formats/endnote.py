@@ -58,7 +58,9 @@ XML_REF_NUMBERS = {
 
 # --------------------------------------------------------------- tagged (.enw)
 def parse(text: str) -> list[dict]:
-    records, cur, last = [], {}, None
+    records: list[dict] = []
+    cur: dict = {}
+    last = None
     for raw in text.replace("\r\n", "\n").replace("\r", "\n").lstrip("﻿").split("\n"):
         m = re.match(r"^%(\S)\s?(.*)$", raw)
         if m:

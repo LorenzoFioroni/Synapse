@@ -11,13 +11,13 @@ from ...notes.service import sniff_image
 from ...notes.vault import ATTACHMENTS, InvalidPath
 from ...pdf import png as pdfpng
 from ..protocol import Image, Parts, ToolError
-from .common import MAX_IMAGES_PER_VIEW, drop_empty
+from .common import MAX_IMAGES_PER_VIEW, ToolsBase, drop_empty
 
 IMAGE_MAX_SIDE = 1568  # larger images are scaled down (clients shrink them anyway)
 IMAGE_MAX_BYTES = 3_500_000  # ~4.7 MB as base64, under the usual 5 MB per image
 
 
-class ImageToolsMixin:
+class ImageToolsMixin(ToolsBase):
     """view_image (images of the notes folder)."""
 
     def _note_images(self, text: str) -> list[dict]:

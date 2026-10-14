@@ -28,7 +28,7 @@ CLIENT_HEADER = "X-Synapse-Client"
 
 
 def _mtime(*paths: Path) -> tuple:
-    out = []
+    out: list[tuple[int, int] | None] = []
     for p in paths:
         try:
             st = os.stat(p)

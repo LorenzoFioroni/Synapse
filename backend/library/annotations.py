@@ -113,8 +113,8 @@ def clean(data: dict, partial: bool = False) -> dict:
         out["type"] = data["type"]
     if "page" in data or not partial:
         try:
-            page = int(data.get("page"))
-        except (TypeError, ValueError) as e:
+            page = int(data["page"])
+        except (KeyError, TypeError, ValueError) as e:
             raise AnnotationError("page must be a page number (1, 2, …).") from e
         if page < 1:
             raise AnnotationError("page must be a page number (1, 2, …).")
@@ -211,7 +211,14 @@ class AnnotationStore:
             if c.execute("SELECT 1 FROM annotations WHERE id = ?", (ann_id,)).fetchone():
                 raise AnnotationError("An annotation with this id already exists.")
             c.execute(sql, tuple(row.values()))
-        return self.get(ann_id)
+        return self._get_existing(ann_id)
+
+    def _get_existing(self, ann_id: str) -> dict:
+        """An annotation just written (so it exists)."""
+        got = self.get(ann_id)
+        if got is None:
+            raise KeyError(ann_id)
+        return got
 
     def update(self, ann_id: str, data: dict) -> dict:
         fields = clean(data, partial=True)
@@ -226,7 +233,7 @@ class AnnotationStore:
             )
             if not cur.rowcount:
                 raise KeyError(ann_id)
-        return self.get(ann_id)
+        return self._get_existing(ann_id)
 
     def delete(self, ann_id: str) -> bool:
         with self.db.session() as c:

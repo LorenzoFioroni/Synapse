@@ -6,6 +6,7 @@ methods and never builds queries itself.
 
 from __future__ import annotations
 
+import builtins
 import logging
 import os
 import uuid
@@ -41,7 +42,7 @@ def _clean_value(key: str, value):
 class DuplicateFinder:
     """Fast duplicate lookup by DOI, or by normalized title (+ year when both have one)."""
 
-    def __init__(self, papers: list[dict]):
+    def __init__(self, papers: builtins.list[dict]):
         self.by_doi: dict[str, str] = {}
         self.by_title: dict[str, list[tuple[str, str]]] = {}
         for p in papers:
@@ -79,7 +80,7 @@ class PaperRepository:
         self._citekey_listeners: list = []
 
     # ------------------------------------------------------------------ reads
-    def list(self, view: str = "library") -> list[dict]:
+    def list(self, view: str = "library") -> builtins.list[dict]:
         """Items for a view: library, trash or duplicates (folder views are filtered in the API)."""
         if view == "duplicates":
             papers = self.list()
@@ -133,14 +134,14 @@ class PaperRepository:
             p.pop("folder_id", None)
         return p
 
-    def counts(self, library: list[dict] | None = None) -> dict:
+    def counts(self, library: builtins.list[dict] | None = None) -> dict:
         with self.db.session() as c:
             lib = c.execute("SELECT COUNT(*) FROM papers WHERE deleted_at IS NULL").fetchone()[0]
             trash = c.execute("SELECT COUNT(*) FROM papers WHERE deleted_at IS NOT NULL").fetchone()[0]
         dups = sum(len(g) for g in self.duplicate_groups(library))
         return {"library": lib, "trash": trash, "duplicates": dups}
 
-    def duplicate_groups(self, papers: list[dict] | None = None) -> list[list[str]]:
+    def duplicate_groups(self, papers: builtins.list[dict] | None = None) -> builtins.list[builtins.list[str]]:
         """Groups of item ids that look like the same work (same DOI, or same title and year)."""
         from .search import normalize
 
@@ -156,7 +157,8 @@ class PaperRepository:
         def union(a, b):
             parent[find(a)] = find(b)
 
-        by_doi, by_title = {}, {}
+        by_doi: dict[str, str] = {}  # DOI -> first item with it
+        by_title: dict[str, builtins.list[tuple[str, str]]] = {}  # title -> (item id, year)
         for p in papers:
             doi = (p.get("doi") or "").strip().lower()
             if doi:
@@ -183,7 +185,7 @@ class PaperRepository:
             )
             return {r["citation_key"] for r in rows if r["id"] != exclude_id}
 
-    def find_duplicate(self, entry: dict, papers: list[dict] | None = None) -> str | None:
+    def find_duplicate(self, entry: dict, papers: builtins.list[dict] | None = None) -> str | None:
         """Return the id of an existing (non-trashed) item matching by DOI or title+year."""
         return DuplicateFinder(papers if papers is not None else self.list()).find(entry)
 
@@ -191,7 +193,7 @@ class PaperRepository:
     def create(self, data: dict | None = None, *, auto_citekey: bool | None = None) -> dict:
         return self.get(self.create_many([data or {}], auto_citekey=auto_citekey)[0])
 
-    def create_many(self, entries: list[dict], *, auto_citekey: bool | None = None) -> list[str]:
+    def create_many(self, entries: builtins.list[dict], *, auto_citekey: bool | None = None) -> builtins.list[str]:
         """Insert several items in one transaction (used by imports). Returns the new ids.
 
         Besides metadata fields, an entry may carry ``folder_id`` / ``folder_ids`` and ``tags``.
@@ -279,7 +281,7 @@ class PaperRepository:
             except Exception:  # the key is already saved; a listener must not undo that
                 log.exception("citekey listener failed for %s -> %s", old, new)
 
-    def regenerate_citekeys(self, ids: list[str]) -> dict[str, str]:
+    def regenerate_citekeys(self, ids: builtins.list[str]) -> dict[str, str]:
         pattern = self.settings.get("citekey_pattern")
         taken = self.all_citation_keys()
         out = {}
@@ -292,15 +294,15 @@ class PaperRepository:
             out[pid] = key
         return out
 
-    def trash(self, ids: list[str]) -> None:
+    def trash(self, ids: builtins.list[str]) -> None:
         with self.db.session() as c:
             c.executemany("UPDATE papers SET deleted_at = ? WHERE id = ?", [(utcnow(), i) for i in ids])
 
-    def restore(self, ids: list[str]) -> None:
+    def restore(self, ids: builtins.list[str]) -> None:
         with self.db.session() as c:
             c.executemany("UPDATE papers SET deleted_at = NULL WHERE id = ?", [(i,) for i in ids])
 
-    def delete_permanently(self, ids: list[str]) -> list[int]:
+    def delete_permanently(self, ids: builtins.list[str]) -> builtins.list[int]:
         """Delete items, their attachment rows and files. Returns removed attachment ids."""
         removed = []
         with self.db.session() as c:
@@ -315,7 +317,7 @@ class PaperRepository:
             c.execute("DELETE FROM tags WHERE color IS NULL AND id NOT IN (SELECT DISTINCT tag_id FROM paper_tags)")
         return removed
 
-    def trashed_ids(self) -> list[str]:
+    def trashed_ids(self) -> builtins.list[str]:
         with self.db.session() as c:
             return [r[0] for r in c.execute("SELECT id FROM papers WHERE deleted_at IS NOT NULL")]
 
@@ -337,7 +339,7 @@ class PaperRepository:
             raise NotFound(att_id)
         return dict(row)
 
-    def all_attachments(self) -> list[dict]:
+    def all_attachments(self) -> builtins.list[dict]:
         with self.db.session() as c:
             return [dict(r) for r in c.execute("SELECT * FROM attachments")]
 

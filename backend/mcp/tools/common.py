@@ -125,7 +125,7 @@ class ToolsBase:
         return out
 
     def _by_key(self, items: dict[str, dict]) -> dict[str, dict]:
-        out = {}
+        out: dict[str, dict] = {}
         for p in items.values():  # library items win over trashed ones with the same key
             k = p.get("citation_key")
             if k and (k not in out or out[k]["_trashed"]):

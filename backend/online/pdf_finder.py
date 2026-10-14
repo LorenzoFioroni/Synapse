@@ -65,7 +65,7 @@ def candidate_urls(
     """Where to look, best first. With a known arXiv id its PDF comes first for a preprint; for a
     published paper the publisher's open-access copy (Unpaywall) comes first and arXiv second.
     ``title_search=False`` skips the searches by title (Unpaywall, Scholar, arXiv)."""
-    out: list[str] = []
+    out: list[str | None] = []  # _unique drops the empty ones
     email = email or FALLBACK_EMAIL
     preprint = bool(arxiv_id) and (not doi or doi.lower().startswith("10.48550/"))
     if arxiv_id and preprint:

@@ -12,6 +12,7 @@ not in backups, so restoring a backup never brings back a device that was signed
 
 from __future__ import annotations
 
+import builtins
 import hashlib
 import secrets
 import sqlite3
@@ -137,7 +138,9 @@ class Devices:
             )
             db.commit()
             self._touched[dev_id] = self.clock()
-            return self._get(dev_id), token
+            device = self._get(dev_id)
+            assert device is not None  # just inserted
+            return device, token
 
     # -- checking ------------------------------------------------------------
     def check(self, token: str | None, addr: str | None = None) -> dict | None:
@@ -165,7 +168,7 @@ class Devices:
         row = self._conn().execute("SELECT * FROM devices WHERE id = ?", (dev_id,)).fetchone()
         return public(dict(row)) if row else None
 
-    def list(self) -> list[dict]:
+    def list(self) -> builtins.list[dict]:
         with self._lock:
             rows = self._conn().execute("SELECT * FROM devices ORDER BY created").fetchall()
             return [public(dict(r)) for r in rows]

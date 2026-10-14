@@ -191,7 +191,7 @@ Python 3.10 and 3.13 and Node.js 22:
 
 1. `npm ci`, `npm run check` (type check) and `npm run build` in `frontend/`;
 2. `pip install -r requirements-dev.txt`;
-3. `ruff check .` and `ruff format --check .`;
+3. `ruff check .`, `ruff format --check .` and `mypy`;
 4. `python -m pytest -q --cov`, which includes the JavaScript tests and prints the coverage
    report in the log (nothing is uploaded).
 
@@ -214,9 +214,20 @@ Ruff is configured in `pyproject.toml`: line length 120, target Python 3.10, and
 trailing spaces (`W291`) because RIS records end with `"ER  - "`. `ruff check --fix .` fixes most
 findings and `ruff format .` formats.
 
-`.pre-commit-config.yaml` runs `ruff check --fix`, `ruff format` and the frontend type check on
-each commit, once installed with `pre-commit install`. It uses the tools already installed, so
-committing needs no network.
+## Type checking
+
+The frontend and the browser extension are type-checked with `tsc` (`npm run check`; see
+[frontend](frontend.md)). The Python code is type-checked with **mypy**, configured in
+`pyproject.toml` (`[tool.mypy]`): it checks `backend/`, `server.py` and `mcp_server.py`. Code
+without annotations is not checked inside, so annotations can be added one module at a time, but
+everything that is annotated must type-check. Two things it asks for that are easy to forget: an
+empty container that will be filled needs its type (`out: list[str] = []`), and a value that may
+be `None` (a regex match, `dict.get`) must be checked before use. A class with a method named
+`list` must write the built-in type as `builtins.list[...]` in its annotations.
+
+`.pre-commit-config.yaml` runs `ruff check --fix`, `ruff format`, mypy and the frontend type
+check on each commit, once installed with `pre-commit install`. It uses the tools already
+installed, so committing needs no network.
 
 ## Before committing
 
@@ -227,6 +238,7 @@ pip install -r requirements-dev.txt
 (cd frontend && npm ci && npm run check)   # the frontend and the browser extension
 ruff check .
 ruff format .
+mypy
 python -m pytest -q
 ```
 

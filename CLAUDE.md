@@ -33,10 +33,11 @@ pip install -r requirements-dev.txt
 (cd frontend && npm ci && npm run check)   # type-check the frontend and the browser extension
 ruff check .                 # lint (ruff check --fix . fixes most findings)
 ruff format .                # format; CI runs ruff format --check .
+mypy                         # type-check the Python code (pyproject.toml)
 python -m pytest -q          # includes the JavaScript unit tests when Node is installed
 ```
 
-`pre-commit install` runs ruff and the type check on every commit (`.pre-commit-config.yaml`).
+`pre-commit install` runs ruff, mypy and the type check on every commit (`.pre-commit-config.yaml`).
 
 The browser checklists in `tests/e2e/` are run by hand and need `pip install playwright`:
 `python tests/e2e/run.py <name> …` runs the named ones (`--list` shows them; no name runs all).

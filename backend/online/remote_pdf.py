@@ -32,9 +32,10 @@ def _public(host: str) -> bool:
     except (socket.gaierror, UnicodeError) as e:
         raise RemoteError(f"Cannot resolve {host}.", 502) from e
     for info in infos:
-        ip = ipaddress.ip_address(info[4][0].split("%")[0])
-        if getattr(ip, "ipv4_mapped", None):
-            ip = ip.ipv4_mapped
+        ip = ipaddress.ip_address(str(info[4][0]).split("%")[0])
+        mapped = getattr(ip, "ipv4_mapped", None)  # an IPv6 address that stands for an IPv4 one
+        if mapped:
+            ip = mapped
         if not ip.is_global or ip.is_multicast:
             return False
     return bool(infos)

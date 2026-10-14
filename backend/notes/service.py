@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import Callable
 from datetime import datetime
 
 from . import frontmatter
@@ -102,7 +103,7 @@ class NotesService:
         self.index = index
         self.papers = papers
         self.rekeyer = Rekeyer(vault, index, backups_dir or (vault.root.parent / "backups"))
-        self.on_change = None  # called after notes are saved, deleted or restored
+        self.on_change: Callable[[], None] | None = None  # called after notes are saved, deleted or restored
         self.history = NoteHistory(vault.root)  # earlier versions of notes Claude changed
 
     # ------------------------------------------------------------------ citation keys
@@ -300,7 +301,7 @@ class NotesService:
         broken = [
             b
             for b in linked_before
-            if b["path"] != dst and (self.index.resolve(b["target"], from_path=b["path"]) or [None])[0] != dst
+            if b["path"] != dst and next(iter(self.index.resolve(b["target"], from_path=b["path"])), None) != dst
         ]
         return {"path": dst, "broken_links": broken}
 
@@ -348,7 +349,7 @@ class NotesService:
         for old, links in before.items():
             for b in links:
                 src_now = new_of.get(b["path"], b["path"])
-                if (self.index.resolve(b["target"], from_path=src_now) or [None])[0] != new_of[old]:
+                if next(iter(self.index.resolve(b["target"], from_path=src_now)), None) != new_of[old]:
                     broken.append({**b, "path": src_now})
         return {
             "path": self.vault.clean_rel(to, suffix=None),

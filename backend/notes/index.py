@@ -8,6 +8,7 @@ Notes are identified by their path relative to the vault (``papers/smith2021.md`
 
 from __future__ import annotations
 
+import builtins
 import logging
 import re
 import sqlite3
@@ -230,7 +231,7 @@ class NotesIndex:
             ]
             return d
 
-    def list(self) -> list[dict]:
+    def list(self) -> builtins.list[dict]:
         with self._session() as c:
             rows = [
                 dict(r)
@@ -245,7 +246,7 @@ class NotesIndex:
             r["tags"] = tags.get(r["path"], [])
         return rows
 
-    def resolve(self, target: str, *, from_path: str = "") -> list[str]:
+    def resolve(self, target: str, *, from_path: str = "") -> builtins.list[str]:
         """Paths a [[target]] may refer to (best first). Empty target = the note itself."""
         t = norm_target(target)
         if not t:
@@ -262,7 +263,7 @@ class NotesIndex:
         # Prefer the shortest path, then alphabetical: deterministic and predictable.
         return sorted(paths, key=lambda p: (p.count("/"), len(p), p))
 
-    def outgoing(self, path: str) -> list[dict]:
+    def outgoing(self, path: str) -> builtins.list[dict]:
         with self._session() as c:
             rows = [dict(r) for r in c.execute("SELECT * FROM links WHERE path = ? ORDER BY line, rowid", (path,))]
         for r in rows:
@@ -273,7 +274,7 @@ class NotesIndex:
                 r["ambiguous"] = len(matches) > 1
         return rows
 
-    def backlinks(self, path: str) -> list[dict]:
+    def backlinks(self, path: str) -> builtins.list[dict]:
         """Links from other notes to ``path`` (by stem or by folder/stem)."""
         stem = stem_of(path)
         noext = norm_target(path)
@@ -294,9 +295,9 @@ class NotesIndex:
                 )
             ]
         # Keep only links that actually resolve here (a same-named note elsewhere may win).
-        return [r for r in rows if (self.resolve(r["target"], from_path=r["path"]) or [None])[0] == path]
+        return [r for r in rows if next(iter(self.resolve(r["target"], from_path=r["path"])), None) == path]
 
-    def citing(self, key: str) -> list[dict]:
+    def citing(self, key: str) -> builtins.list[dict]:
         """Every citation of ``key`` with its note and context."""
         with self._session() as c:
             return [
@@ -309,7 +310,7 @@ class NotesIndex:
                 )
             ]
 
-    def paper_notes(self, key: str) -> list[dict]:
+    def paper_notes(self, key: str) -> builtins.list[dict]:
         with self._session() as c:
             return [
                 dict(r)
@@ -318,7 +319,7 @@ class NotesIndex:
                 )
             ]
 
-    def texts_by_key(self) -> dict[str, list[tuple[str, str]]]:
+    def texts_by_key(self) -> dict[str, builtins.list[tuple[str, str]]]:
         """citation key -> [(note title, text)]: the body of its paper notes, and every line
         in which a note cites it (what you wrote about the paper, in your own words)."""
         out: dict[str, list[tuple[str, str]]] = {}
@@ -356,7 +357,7 @@ class NotesIndex:
                 out.setdefault(r["key"], {"paper": None, "citing": 0})["citing"] = r["n"]
         return out
 
-    def cited_keys(self, path: str | None = None) -> list[str]:
+    def cited_keys(self, path: str | None = None) -> builtins.list[str]:
         with self._session() as c:
             if path:
                 rows = c.execute(
@@ -366,7 +367,7 @@ class NotesIndex:
                 rows = c.execute("SELECT DISTINCT target FROM links WHERE kind = 'cite' ORDER BY target")
             return [r["target"] for r in rows]
 
-    def link_graph(self) -> list[dict]:
+    def link_graph(self) -> builtins.list[dict]:
         """Every link between notes and every citation, in one pass (for the graph view):
         [{"source": path, "kind": "note" | "cite", "target": resolved path or citation key}].
         [[links]] resolve exactly like ``resolve``; unresolved ones are left out."""
@@ -402,7 +403,7 @@ class NotesIndex:
                 out.append({"source": edge[0], "kind": edge[1], "target": edge[2]})
         return out
 
-    def image_links(self) -> list[tuple[str, str]]:
+    def image_links(self) -> builtins.list[tuple[str, str]]:
         """(note path, image target) for every image shown by a note."""
         with self._session() as c:
             return [
@@ -410,7 +411,7 @@ class NotesIndex:
                 for r in c.execute("SELECT DISTINCT path, target FROM links WHERE kind = 'image'")
             ]
 
-    def search(self, query: str, limit: int = 50) -> list[dict]:
+    def search(self, query: str, limit: int = 50) -> builtins.list[dict]:
         q = _fts_query(query)
         if not q:
             return []

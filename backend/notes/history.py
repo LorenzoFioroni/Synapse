@@ -13,6 +13,7 @@ change is its own file with a unique name, so neither can overwrite the other's 
 
 from __future__ import annotations
 
+import builtins
 import json
 import logging
 import os
@@ -58,7 +59,7 @@ class NoteHistory:
         self.prune()
         return entry
 
-    def moved(self, pairs: list[tuple[str, str]]) -> None:
+    def moved(self, pairs: builtins.list[tuple[str, str]]) -> None:
         """Notes were renamed or moved: their history follows them."""
         new_of = dict(pairs)
         if not new_of:
@@ -94,7 +95,7 @@ class NoteHistory:
             except (OSError, ValueError):
                 continue
 
-    def list(self, path: str | None = None, limit: int = 50) -> list[dict]:
+    def list(self, path: str | None = None, limit: int = 50) -> builtins.list[dict]:
         """Newest first, without the stored text."""
         out = [
             {k: v for k, v in e.items() if k != "before"}

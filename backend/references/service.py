@@ -238,7 +238,7 @@ class Citations:
                     }
             if tid != f"item:{r['item_id']}":
                 edges.append({"source": f"item:{r['item_id']}", "target": tid})
-        cited = {}
+        cited: dict[str, int] = {}
         for e in edges:
             cited[e["target"]] = cited.get(e["target"], 0) + 1
         for n in nodes.values():

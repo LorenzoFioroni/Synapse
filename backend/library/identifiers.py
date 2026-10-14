@@ -53,8 +53,8 @@ def identifiers(item: dict) -> tuple[str | None, str | None]:
     """(doi, arXiv id) of a library item, normalised; an arXiv DOI counts as its arXiv id."""
     doi = norm_doi(item.get("doi"))
     arx = norm_arxiv(arxiv_id_of(item))
-    if doi and ARXIV_DOI.match(doi):
-        arx = arx or norm_arxiv(ARXIV_DOI.match(doi).group(1))
+    if doi and (m := ARXIV_DOI.match(doi)):
+        arx = arx or norm_arxiv(m.group(1))
     return doi, arx
 
 

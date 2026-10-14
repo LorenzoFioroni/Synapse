@@ -12,9 +12,10 @@ from ...notes.vault import Conflict, NoteExists, slugify
 from ..notecheck import NoteChecker
 from ..protocol import Parts, ToolError
 from .common import AI_FOLDER, MAX_NOTE_CHARS, drop_empty
+from .images import ImageToolsMixin
 
 
-class NoteToolsMixin:
+class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
     """get_note, write_note, edit_note, undo_note_edit."""
 
     def get_note(self, note: str):
@@ -69,7 +70,8 @@ class NoteToolsMixin:
             )
             for b in links["backlinks"]
         ]
-        paper = keys.get(info.get("paper")) if info.get("paper") else None
+        paper_key = info.get("paper")
+        paper = keys.get(paper_key) if paper_key else None
         mtime = self.s.vault.abs(path).stat().st_mtime
         summary = drop_empty(
             {
@@ -117,7 +119,7 @@ class NoteToolsMixin:
         _, fm_body, _ = frontmatter.split(body)
         if not re.search(r"^\s*#\s", fm_body):
             body = f"# {title}\n\n" + body
-        meta = {"id": ulid(), "title": title, "type": "note", "author": "ai", "created": now_iso()}
+        meta: dict[str, object] = {"id": ulid(), "title": title, "type": "note", "author": "ai", "created": now_iso()}
         if tags:
             meta["tags"] = [str(t) for t in tags]
         content = frontmatter.set_fields(body, meta)
@@ -154,7 +156,7 @@ class NoteToolsMixin:
         _, before, _ = before_checker.check(old, path)
         checker = NoteChecker(self)
         text, errors, warnings = checker.check(new, path)
-        left = {}
+        left: dict[str, int] = {}
         for e in before:
             left[strip(e)] = left.get(strip(e), 0) + 1
         added = []

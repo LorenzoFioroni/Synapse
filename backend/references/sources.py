@@ -36,8 +36,8 @@ def _clean_ref(r: dict) -> dict:
     out = {k: r.get(k) for k in REF_FIELDS}
     out["doi"] = norm_doi(out["doi"])
     out["arxiv_id"] = norm_arxiv(out["arxiv_id"])
-    if out["doi"] and not out["arxiv_id"] and ARXIV_DOI.match(out["doi"]):
-        out["arxiv_id"] = norm_arxiv(ARXIV_DOI.match(out["doi"]).group(1))
+    if out["doi"] and not out["arxiv_id"] and (m := ARXIV_DOI.match(out["doi"])):
+        out["arxiv_id"] = norm_arxiv(m.group(1))
     try:
         out["year"] = int(out["year"]) if out["year"] else None
     except (TypeError, ValueError):

@@ -24,6 +24,7 @@ indexes. Nothing in the live data is touched until the archive has been checked.
 
 from __future__ import annotations
 
+import builtins
 import io
 import json
 import logging
@@ -82,8 +83,8 @@ class Backups:
         return p
 
     # ------------------------------------------------------------------ list
-    def list(self) -> list[dict]:
-        out = []
+    def list(self) -> builtins.list[dict]:
+        out: builtins.list[dict] = []
         if not self.dir.is_dir():
             return out
         for p in sorted(
@@ -112,7 +113,10 @@ class Backups:
             member = tar.next()  # written first, so this does not read the whole archive
             if not member or member.name != "manifest.json":
                 raise BackupError("No manifest")
-            return json.loads(tar.extractfile(member).read().decode("utf-8"))
+            f = tar.extractfile(member)
+            if f is None:
+                raise BackupError("No manifest")
+            return json.loads(f.read().decode("utf-8"))
 
     def newest(self) -> dict | None:
         backups = [b for b in self.list() if not b.get("damaged")]
@@ -209,7 +213,7 @@ class Backups:
         except sqlite3.Error:
             return None
 
-    def prune(self) -> list[str]:
+    def prune(self) -> builtins.list[str]:
         keep = max(1, int(self.s.settings.get("backup_keep") or 1))
         archives = sorted((p for p in self.dir.glob("library-*.tar.gz") if NAME_RE.match(p.name)), key=_order)
         removed = []

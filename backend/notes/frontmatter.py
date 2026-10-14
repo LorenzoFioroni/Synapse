@@ -99,7 +99,9 @@ def _entries(header: str) -> list[tuple[str | None, list[str]]]:
 
 
 def _value(lines: list[str]):
-    first = _KEY.match(lines[0].rstrip("\r\n")).group(2)
+    m = _KEY.match(lines[0].rstrip("\r\n"))
+    assert m is not None  # a field's first line is "key: value" (see _fields)
+    first = m.group(2)
     rest = [l.rstrip("\r\n") for l in lines[1:]]
     v = _strip_comment(first.strip())
     if not rest:

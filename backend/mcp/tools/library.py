@@ -6,10 +6,10 @@ from pathlib import PurePosixPath
 
 from ...library import search as search_mod
 from ...library.fields import ITEM_TYPE_LABELS
-from .common import drop_empty, snippet_text
+from .common import ToolsBase, drop_empty, snippet_text
 
 
-class LibraryToolsMixin:
+class LibraryToolsMixin(ToolsBase):
     """search_library, list_collections."""
 
     def search_library(self, query: str, scope: str = "all", fulltext: bool = True, limit: int = 20):

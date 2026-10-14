@@ -162,7 +162,7 @@ class Server:
 
     def _m_tools_call(self, params: dict) -> dict:
         name = params.get("name")
-        tool = self.tools.get(name)
+        tool = self.tools.get(name) if isinstance(name, str) else None
         if tool is None:
             raise _ProtocolError(INVALID_PARAMS, f"Unknown tool: {name}")
         args = params.get("arguments") or {}

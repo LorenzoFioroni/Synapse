@@ -269,8 +269,9 @@ pip install -r requirements-dev.txt
 (cd frontend && npm ci && npm run check)   # type-check the frontend and the browser extension
 ruff check .                    # lint
 ruff format .                   # format
+mypy                            # type-check the Python code
 python -m pytest                # backend + JavaScript unit tests (the JS part needs Node.js)
-pre-commit install              # optional: ruff and the type check on every commit
+pre-commit install              # optional: ruff, mypy and the type check on every commit
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of these on every pull request.

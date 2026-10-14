@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from .common import drop_empty, short_authors
+from .common import ToolsBase, drop_empty, short_authors
 
 
-class CitationToolsMixin:
+class CitationToolsMixin(ToolsBase):
     """get_references, get_citation_graph."""
 
     def get_references(self, paper: str, direction: str = "cites", in_library_only: bool = False, limit: int = 200):

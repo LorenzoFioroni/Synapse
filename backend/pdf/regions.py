@@ -338,7 +338,7 @@ def _page_equations(page) -> list[dict]:
         bands = _bands([c for c in chars if c[1] >= col_l - 1 and c[3] <= col_r + 1])
         boxes = [_box(b) for b in bands]
         where = {id(c): i for i, b in enumerate(bands) for c in b}
-        starts = {}
+        starts: dict[int, dict] = {}
         for n in group:
             starts.setdefault(where[id(n["chars"][0])], n)
         numbered = set(starts)
@@ -352,7 +352,7 @@ def _page_equations(page) -> list[dict]:
             bl, _, br, _ = boxes[i]
             return (bl - col_l >= 1.5 * em and col_r - br >= 1.5 * em) or _mathiness(bands[i]) >= 0.35
 
-        spans = []
+        spans: list[list] = []
         for s, n in sorted(starts.items()):
             em, lo, hi = n["em"], s, s
             while lo > 0 and gap(lo - 1) <= max(14.0, 1.4 * em) and display(lo - 1, em):

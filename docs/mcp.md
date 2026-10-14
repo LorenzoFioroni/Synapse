@@ -189,7 +189,8 @@ feed.
 
 1. **Write the method** on the mixin of its family in `backend/mcp/tools/` (`library.py`,
    `notes.py`, `images.py`, `papers.py`, `citations.py`). A new family gets a new module with a
-   mixin class, added to the bases of `LibraryTools` in `backend/mcp/tools/__init__.py`. Keep it
+   mixin class that subclasses `ToolsBase` (so the type checker knows its helpers), added to the
+   bases of `LibraryTools` in `backend/mcp/tools/__init__.py`. Keep it
    a thin layer over the backend: use the components on `self.s` and the `ToolsBase` helpers
    (`_paper`, `_pdf_for`, `_pages`, `_note_path`, `_brief`). Logic that the web app could use too
    belongs in its own package, not here.

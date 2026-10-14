@@ -427,6 +427,7 @@ def link_spans(text: str) -> list[dict]:
         off = m.start(1)
         for part in inner.split(";"):
             pm = _CITE_PART.match(part.strip())
+            assert pm is not None  # _parse_cite_group accepted every part
             lead = len(part) - len(part.lstrip())
             key = pm.group("key").rstrip(".:/-")
             start = base + off + lead + pm.start("key")

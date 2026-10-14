@@ -42,8 +42,8 @@ def import_preview():
     except formats.FormatError as e:
         return error(str(e))
     finder = DuplicateFinder(s.papers.list())
-    for e in entries:
-        e["duplicate_of"] = finder.find(e)
+    for entry in entries:
+        entry["duplicate_of"] = finder.find(entry)
     return jsonify(format=fmt, label=formats.FORMATS[fmt].label, entries=entries)
 
 

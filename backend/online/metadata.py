@@ -20,6 +20,12 @@ log = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------ identifiers
+def _four_digits(s: str | None) -> str:
+    """The first run of four digits in ``s`` (Open Library's dates are free text), or ''."""
+    m = re.search(r"\d{4}", s or "")
+    return m.group(0) if m else ""
+
+
 def classify_identifier(s: str) -> tuple[str, str]:
     s = (s or "").strip()
     m = re.search(r"(10\.\d{4,9}/\S+)", s)
@@ -146,7 +152,7 @@ def crossref_doi(doi: str, email: str = "") -> dict:
 def crossref_title(title: str, email: str = "") -> dict:
     r = requests.get(
         "https://api.crossref.org/works",
-        params={"query.bibliographic": title, "rows": 3},
+        params={"query.bibliographic": title, "rows": "3"},
         headers=api_headers(email),
         timeout=TIMEOUT,
     )
@@ -278,9 +284,7 @@ def openlibrary_isbn(isbn: str) -> dict:
             "item_type": "book",
             "title": d.get("title", "") + (f": {d['subtitle']}" if d.get("subtitle") else ""),
             "authors": join_authors(parse_display_name(a.get("name", "")) for a in d.get("authors") or []),
-            "year": re.search(r"\d{4}", d.get("publish_date", "") or "").group(0)
-            if re.search(r"\d{4}", d.get("publish_date", "") or "")
-            else "",
+            "year": _four_digits(d.get("publish_date")),
             "publisher": ", ".join(p.get("name", "") for p in d.get("publishers") or []),
             "place": ", ".join(p.get("name", "") for p in d.get("publish_places") or []),
             "isbn": isbn,
@@ -313,6 +317,8 @@ def lookup(
     doi = clean_doi(doi) if doi else None
     if doi and (m := ARXIV_DOI.match(doi)):
         arxiv_id, doi = arxiv_id or m.group(1), None
+    kind: str
+    value: str | None
     if doi:
         kind, value = "doi", doi
     elif arxiv_id:
@@ -350,17 +356,16 @@ def lookup(
         else:
             raise LookupFailed("PubMed lookups are not supported yet.")
     except requests.RequestException as e:
-        host = (
-            urlparse(e.request.url).netloc
-            if getattr(e, "request", None) is not None and e.request.url
-            else "the metadata service"
-        )
+        url = getattr(getattr(e, "request", None), "url", None)
+        host = urlparse(str(url)).netloc if url else "the metadata service"
         raise LookupFailed(f"Could not reach {host}. Check your internet connection and try again.") from e
 
     if item.get("doi") and kind in ("doi", "title"):
-        same = oa_future is not None and clean_doi(item["doi"]).lower() == value.lower()
-        oa = oa_future.result() if same else openalex_authors(item["doi"], email)
-        # Same rule as before the refactor: prefer OpenAlex when it is more complete.
+        if oa_future is not None and clean_doi(item["doi"]).lower() == value.lower():
+            oa = oa_future.result()
+        else:
+            oa = openalex_authors(item["doi"], email)
+        # OpenAlex's author list wins when it is more complete than Crossref's.
         if oa and len(join_authors(oa)) > len(item.get("authors") or ""):
             item["authors"] = join_authors(oa)
     if known and item.get("authors"):

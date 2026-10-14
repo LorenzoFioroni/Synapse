@@ -84,10 +84,10 @@ def build_graph(s) -> dict:
             if (src, tgt) not in about:  # a paper note citing its own paper adds nothing
                 edges.append({"source": src, "target": tgt, "kind": "cite"})
 
-    kinds = {}
+    kinds: dict[str, int] = {}
     for n in nodes:
         kinds[n["kind"]] = kinds.get(n["kind"], 0) + 1
-    ekinds = {}
+    ekinds: dict[str, int] = {}
     for e in edges:
         ekinds[e["kind"]] = ekinds.get(e["kind"], 0) + 1
     fetched = sorted(s.citations.store.fetched_ids() & set(items))

@@ -56,7 +56,7 @@ def _addresses() -> list[str]:
         found.append(primary)
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None):
-            found.append(info[4][0])
+            found.append(str(info[4][0]))
     except OSError:
         pass
     out = []
