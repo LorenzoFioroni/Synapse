@@ -1,4 +1,4 @@
-"""Download the PDF of an attachment that points to a web address (issue #21).
+"""Download the PDF of an attachment that points to a web address.
 
 Only the URL stored on an attachment is ever fetched, never one supplied by the browser, and
 only from public addresses: a link to the local network (a router page, ``169.254.169.254``,

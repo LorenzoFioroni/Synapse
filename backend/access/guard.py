@@ -1,4 +1,4 @@
-"""Who may use the server: other websites never, other devices only once paired (#17, #34).
+"""Who may use the server: other websites never, other devices only once paired.
 
 The server has no accounts. Three checks decide whether a request goes ahead:
 

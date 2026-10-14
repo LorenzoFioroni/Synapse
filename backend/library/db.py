@@ -17,7 +17,7 @@ class Database:
     def __init__(self, path: Path | str):
         self.path = str(path)
         self.version = 0   # goes up with every write through this object (for caches)
-        self.on_write = None   # called after each commit that changed something (the change feed, #34)
+        self.on_write = None   # called after each commit that changed something (the change feed)
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=15)

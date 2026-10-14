@@ -1,4 +1,4 @@
-"""PDF annotations as records (issue #20).
+"""PDF annotations as records.
 
 Each highlight, underline, box, drawing or text box is one row of the ``annotations`` table in
 ``library.db``, tied to the **attachment** it was made on (not to the item, so two PDFs of one

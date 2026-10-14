@@ -1,4 +1,4 @@
-"""Automatic backups of the library and the notes (issue #18).
+"""Automatic backups of the library and the notes.
 
 One archive per backup, ``library-YYYYMMDD-HHMMSS.tar.gz``, holding:
 

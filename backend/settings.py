@@ -87,7 +87,7 @@ def _migrate(stored: dict) -> dict:
         stored["import_tags"] = "never"
     if stored.get("references_auto") is False and "add_fetch_references" not in stored:
         stored["add_fetch_references"] = "never"
-    if stored.get("notes_equation_numbers") == "latex":   # the first version of PR #46
+    if stored.get("notes_equation_numbers") == "latex":   # value used by an early version of equation numbering
         stored["notes_equation_numbers"] = "labelled"
     return stored
 

@@ -1,4 +1,4 @@
-"""Other devices (an iPad, a phone) allowed to use the library over the network (issue #34).
+"""Other devices (an iPad, a phone) allowed to use the library over the network.
 
 There is one user, so there are no accounts: a device is added by **pairing**. On this computer,
 Settings → Devices makes a one-time code (valid for a few minutes) and shows it as a QR code;

@@ -1,4 +1,4 @@
-"""What changed, for the other open windows and devices (issue #34).
+"""What changed, for the other open windows and devices.
 
 With an iPad and the computer open at the same time, each needs to notice what the other changed.
 Every page polls ``GET /api/changes?since=N`` every few seconds and refreshes what the answer

@@ -1,4 +1,4 @@
-"""Paired devices (Settings → Devices) and the pairing itself (issue #34). See backend/devices.py."""
+"""Paired devices (Settings → Devices) and the pairing itself. See backend/access/devices.py."""
 from __future__ import annotations
 
 import io

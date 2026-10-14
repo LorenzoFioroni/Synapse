@@ -111,7 +111,7 @@ def serve_pdf(filename):
 @bp.get("/api/attachments/<int:att_id>/remote")
 def remote_attachment(att_id):
     """The PDF of an attachment stored as a web link. Only the attachment's own URL is fetched,
-    never one sent by the browser, and never from the local network (#21)."""
+    never one sent by the browser, and never from the local network."""
     att = svc().papers.get_attachment(att_id)
     if not att or not str(att.get("url") or "").startswith(("http://", "https://")):
         return error("This attachment is not a web link.", 404)

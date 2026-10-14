@@ -121,7 +121,7 @@ class Citations:
     def _library_index(self):
         """Lookup tables of the library: by DOI, by arXiv id, by title key -> [(id, year)].
         Built once and reused until the library changes: the item pane asks for it every time
-        an item is selected, and building it reads the whole library (issue #24)."""
+        an item is selected, and building it reads the whole library."""
         sig = self._library_signature()
         cached = self._index_cache
         if cached and cached[0] == sig:

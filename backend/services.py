@@ -25,7 +25,7 @@ class Services:
         self.db.migrate()
         self.settings = SettingsStore(config.settings_path)
         from .changes import ChangeFeed
-        self.changes = ChangeFeed(config.db_path, config.notes_index_path)   # for the other windows (#34)
+        self.changes = ChangeFeed(config.db_path, config.notes_index_path)   # tells other windows and devices what changed
         self.db.on_write = self._library_written
         self.papers = PaperRepository(self.db, self.settings, config.pdf_dir)
         from .library.annotations import AnnotationStore
@@ -45,7 +45,7 @@ class Services:
         self.note_service.on_change = self.attachments.poke
         # Backups of library.db, settings and notes; the scheduler is started by create_app only.
         from .access.devices import Devices
-        self.devices = Devices(config.auth_db_path)   # paired iPads/phones (#34)
+        self.devices = Devices(config.auth_db_path)   # paired iPads/phones (--lan)
         from .backup import Backups
         self.backups = Backups(self)
         # A changed citation key is rewritten in every note (with a backup first).

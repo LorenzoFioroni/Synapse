@@ -1,4 +1,4 @@
-"""This computer's addresses on the local network (issue #34).
+"""This computer's addresses on the local network.
 
 Used for the addresses shown when pairing a device and to recognise requests that come from this
 computer itself through one of its own LAN addresses (they need no device login, like 127.0.0.1).
