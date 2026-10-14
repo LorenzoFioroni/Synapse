@@ -183,13 +183,18 @@ function withAllArgs(body: string, n: number, from = 1): string {
 export function toMacro(d: Pick<Definition, 'nargs' | 'opt' | 'body'>): Macro {
   if (d.opt == null) return withAllArgs(d.body, d.nargs);
   const n = d.nargs;
-  return (ctx: MacroContext) => {
+  const fn = (ctx: MacroContext) => {
     const o = optional(ctx) ?? d.opt!;
     // #1 is the optional argument; #2… become #1… for KaTeX to read
     const body = d.body.replace(/#(\d)/g, (m, k: string) => (k === '1' ? o : `#${Number(k) - 1}`));
     return withAllArgs(body, n - 1);
   };
+  macroSource.set(fn, `[${n}][${d.opt}]{${d.body}}`);
+  return fn;
 }
+
+/** What a function macro made by toMacro does, as text: two with the same text do the same. */
+export const macroSource = new WeakMap<object, string>();
 
 /* ------------------------------------------------------------------ the physics package */
 

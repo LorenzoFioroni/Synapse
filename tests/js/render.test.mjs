@@ -54,6 +54,7 @@ test('callouts, tasks, images, fences', () => {
   const tk = html('- [ ] todo\n- [x] done');
   assert.equal((tk.match(/type="checkbox"/g) || []).length, 2);
   assert.match(tk, /checked data-task-line="1"/);
+  assert.match(tk, /<li class="task done"[^>]*><input/);   // a done task is styled as done
   assert.ok(!tk.includes('[ ]'));
   assert.match(html('![plot|300](attachments/a-b.png)'), /src="\/api\/notes\/attachments\/a-b.png" alt="plot"[^>]* width="300"/);
   assert.match(html('```mermaid\ngraph TD\nA-->B\n```'), /class="mermaid-block"/);

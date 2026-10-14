@@ -280,7 +280,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `noteSession.ts` | Saving one note: autosave, drafts, retries, conflicts. No DOM. |
 | `tree.ts`, `treeInput.ts` | The notes list and filter; mouse, keyboard, context menu, drag and drop. |
 | `fileOps.ts` | New, rename, move, trash with Undo, the trash dialog, rescan. |
-| `editor.ts`, `livePreview.ts` | CodeMirror 6 (`vendor/cm6/`) and the live preview decorations, built on `mdscan.ts`. |
+| `editor.ts`, `livePreview.ts`, `previewWidgets.ts` | CodeMirror 6 (`vendor/cm6/`), the live preview decorations (built on `mdscan.ts`) and the widgets they draw. |
 | `completion.ts`, `library.ts` | `[@` and `[[` autocomplete and its ranking. |
 | `render.ts` | Markdown to HTML with markdown-it and KaTeX (`vendor/md/`): math, links, citations, callouts, tasks. Raw HTML is never rendered. No DOM. |
 | `richRender.ts` | Mermaid (loaded on demand from `vendor/mermaid/`), code highlighting, filling embedded notes into the page. |
@@ -293,6 +293,35 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `aiBar.ts`, `aiEdits.ts`, `diff.ts` | Claude's edits: the bar, the history dialog, line diffs. |
 | `conflict.ts` | The dialog for a note changed or deleted elsewhere. |
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
+
+### The editor and read mode
+
+A note shows in one of three modes: **Live** (Markdown rendered except where the cursor is),
+**Source** (the plain Markdown, in a monospaced font with one text size, so it reads as code) and
+**Read** (`readView.ts`). Switching keeps the line at the top of the view at the top:
+`NoteEditor.topLine` and `readTopLine` give it as a line number with a fraction (read mode uses
+the `data-line` of its blocks), `scrollToLine` and `scrollReadTo` go back to it. A note that was
+just opened starts at its top.
+
+The work done per keystroke is kept small, so long notes stay quick to edit:
+
+- **Live preview** (`livePreview.ts`). The block-level decorations (front matter, `$$` blocks,
+  tables, Mermaid diagrams) come from a state field, because CodeMirror needs them for the whole
+  note; it walks only the block structure of the syntax tree. Everything inline (formulas on one
+  line, links, citations, emphasis, headings, lists, quotes, tasks) comes from a view plugin that
+  works only on the part of the note on screen. `mdscan.scan` runs once per version of the text.
+  Widgets (`previewWidgets.ts`) keep their DOM while their key stays the same, so a formula,
+  table or diagram is drawn again only when its own source changed. A table is drawn by the
+  renderer, so math, citations and links in its cells are rendered as in read mode.
+- **Read mode.** `renderRead` keeps every top-level block whose HTML did not change, and changes
+  the DOM in place: ticking a task redraws only its list, and formulas, diagrams and embedded
+  notes elsewhere are not drawn or loaded again. Opening read mode, the theme and the math
+  settings redraw everything (`fresh`), so embedded notes are reloaded then.
+- **KaTeX** output is remembered by formula and set of macros (`katexMemo` in `render.ts`),
+  shared by every renderer.
+
+Task boxes are drawn the same way in both modes (a rounded square, ticked and filled when done),
+and a done task is greyed and struck through.
 
 ### Embedded notes
 

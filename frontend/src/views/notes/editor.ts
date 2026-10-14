@@ -34,6 +34,8 @@ export interface NoteEditor {
   text(): string;
   focus(): void;
   gotoLine(n: number): void;
+  topLine(): number;
+  scrollToLine(at: number): void;
   destroy(): void;
 }
 
@@ -237,6 +239,28 @@ export async function createEditor(
       const line = view.state.doc.line(Math.max(1, Math.min(n, view.state.doc.lines)));
       view.dispatch({ selection: { anchor: line.from }, effects: cm.EditorView.scrollIntoView(line.from, { y: 'start', yMargin: 40 }) });
       view.focus();
+    },
+    /**
+     * The line at the top of the view, as a 1-based line number with a fraction for how far down
+     * it the view starts (2.5: halfway through line 2). Lines a widget draws together (a $$ block,
+     * a table) share its height. Switching modes keeps this line at the top (notesView.ts).
+     */
+    topLine() {
+      const doc = view.state.doc;
+      const h = Math.max(0, view.scrollDOM.getBoundingClientRect().top - view.documentTop);
+      const b = view.lineBlockAtHeight(h);
+      const first = doc.lineAt(b.from).number, last = doc.lineAt(b.to).number;
+      const f = b.height > 0 ? Math.min(1, Math.max(0, (h - b.top) / b.height)) : 0;
+      return first + f * (last - first + 1);
+    },
+    /** Scroll so that ``at`` (as topLine gives it) is at the top. */
+    scrollToLine(at) {
+      const doc = view.state.doc;
+      const n = Math.max(1, Math.min(doc.lines, Math.floor(at)));
+      const line = doc.line(n);
+      // a fraction of a long line: the wrapped row that holds that share of its text
+      const pos = line.from + Math.round(Math.min(1, Math.max(0, at - n)) * line.length);
+      view.dispatch({ effects: cm.EditorView.scrollIntoView(pos, { y: 'start', yMargin: 0 }) });
     },
     destroy: () => view.destroy(),
   };

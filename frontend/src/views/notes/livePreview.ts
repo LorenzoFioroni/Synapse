@@ -9,16 +9,25 @@
 //
 // What counts as math, a [[link]] or a [@citation] comes from mdscan.js (the port of the
 // backend parser); everything else from CodeMirror's own Markdown syntax tree.
+//
+// The work is split so that a keystroke or a cursor move costs little in a long note:
+//  * `blocks` (a state field) holds what changes the height of whole lines: the front matter,
+//    $$ blocks, tables and Mermaid diagrams. CodeMirror needs these for the whole document. It
+//    walks only the block structure of the syntax tree, never the inside of paragraphs.
+//  * `inline` (a view plugin) does everything else, and only for the part of the note on screen
+//    (CodeMirror's viewport, with a margin), which it redoes as you scroll.
+// Widgets keep their DOM while their key stays the same (previewWidgets.ts), so a formula, table
+// or diagram is drawn again only when its own source changed.
 import type { EditorState, Range as CMRange, Text } from '@codemirror/state';
-import type { Decoration as DecorationT, DecorationSet, EditorView as EditorViewT } from '@codemirror/view';
+import type { Decoration as DecorationT, DecorationSet, EditorView as EditorViewT, ViewUpdate } from '@codemirror/view';
 import type { CM } from './editor.js';
-import { type Scan, type ScanLink, type Span, attachmentOf, scan, splitFrontmatter } from './mdscan.js';
+import { type Scan, type Span, attachmentOf, scan, splitFrontmatter } from './mdscan.js';
 import { type CiteTarget, citeTargetInText } from './citeTarget.js';
 import { type CiteInfo, type Renderer, citeLabel, imageSrc } from './render.js';
-import { numberEquations, refText, resolveRefs, textRefs } from './equations.js';
+import { type TextRef, numberEquations, refText, resolveRefs, textRefs } from './equations.js';
 import { clickOffset } from './mathClick.js';
 import { type Definition, HAS_DEFINITIONS, type Macros, parseDefinitions, withDefinitions } from './macros.js';
-import { fitSoon } from './mathFit.js';
+import { type Equations, previewWidgets } from './previewWidgets.js';
 
 /** A DOM text node (``Text`` is CodeMirror's document here). */
 type Text_ = globalThis.Text;
@@ -42,17 +51,12 @@ export interface PreviewDeps {
   macros?(): Macros;
 }
 
-/** The note's formulas, prepared once per version of the document (see equationsOf). */
-interface Equations {
-  tex: Map<number, string>;
-  labels: Map<string, string | null>;
-  macros: Macros;
-  sig: string;
-  defines: Map<number, string[]>;
-}
+/** The block-level decorations, and the ranges they draw (nothing inline is added inside those). */
+interface Blocks { deco: DecorationSet; taken: [number, number][]; version: number }
 
 export function livePreview(cm: CM, deps: PreviewDeps) {
-  const { Decoration, WidgetType, StateField, StateEffect, EditorView, syntaxTree } = cm;
+  const { Decoration, StateField, StateEffect, EditorView, ViewPlugin, syntaxTree } = cm;
+  const W = previewWidgets(cm, deps);
   const refresh = StateEffect.define<null>();
   // Lines show their source only while you are editing: with the editor unfocused, all is rendered.
   const setFocus = StateEffect.define<boolean>();
@@ -61,105 +65,23 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     update: (v, tr) => tr.effects.reduce((acc, e) => (e.is(setFocus) ? e.value : acc), v),
   });
 
-  /* ------------------------------------------------------------------ widgets */
-  class HtmlWidget extends WidgetType {
-    key: string;
-    make: (el: HTMLElement) => void;
-    block: boolean;
-    cls: string;
-    constructor(key: string, make: (el: HTMLElement) => void, { block = false, cls = '' } = {}) {
-      super(); this.key = key; this.make = make; this.block = block; this.cls = cls;
-    }
-    eq(o: HtmlWidget) { return o.key === this.key; }
-    toDOM(_view?: EditorViewT): HTMLElement {
-      const el = document.createElement(this.block ? 'div' : 'span');
-      el.className = `cm-lp-widget ${this.cls}`;
-      this.make(el);
-      return el;
-    }
-    ignoreEvent(e: Event) { return e.type !== 'mousedown'; }   // a click places the cursor (and reveals the source)
-  }
-
-  class CheckboxWidget extends WidgetType {
-    checked: boolean;
-    pos: number;
-    constructor(checked: boolean, pos: number) { super(); this.checked = checked; this.pos = pos; }
-    eq(o: CheckboxWidget) { return o.checked === this.checked && o.pos === this.pos; }
-    toDOM(view: EditorViewT) {
-      const box = document.createElement('input');
-      box.type = 'checkbox';
-      box.className = 'cm-lp-task';
-      box.checked = this.checked;
-      box.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        view.dispatch({ changes: { from: this.pos + 1, to: this.pos + 2, insert: this.checked ? ' ' : 'x' } });
-      });
-      return box;
-    }
-    ignoreEvent() { return true; }
-  }
-
-  const bullet = new HtmlWidget('bullet', (el) => { el.textContent = '•'; }, { cls: 'cm-lp-bullet' });
-
-  // a formula; ``src`` is where its TeX starts in the document (for clicks into it)
-  // ``eq`` (equationsOf) brings the note's macros; their signature is part of the key, so a
-  // changed \newcommand redraws the formulas that may use it
-  class MathWidget extends HtmlWidget {
-    display: boolean;
-    constructor(tex: string, display: boolean, block: boolean, preview: boolean, eq: Equations) {
-      super(`m:${display}:${block}:${preview}:${eq.sig}:${tex}`, (el) => {
-        const r = deps.renderer();
-        el.innerHTML = r ? r.katex(tex, display, eq.macros) : tex;
-      }, { block, cls: (block ? 'cm-lp-mathblock' : display ? 'cm-lp-math display' : 'cm-lp-math') + (preview ? ' cm-lp-mathpreview' : '') });
-      this.display = display;
-    }
-    toDOM(view: EditorViewT) {
-      const el = super.toDOM(view);
-      if (this.display) fitSoon(el, () => view.requestMeasure());
-      return el;
-    }
-  }
-  const katexWidget = (eq: Equations, tex: string, display: boolean, block = false, preview = false) => new MathWidget(tex, display, block, preview, eq);
-  // a formula that only defines macros: a small label (click it to edit the definitions)
-  const defsWidget = (names: string[], block: boolean) => new HtmlWidget(`defs:${block}:${names.join(' ')}`, (el) => {
-    el.textContent = `Macros: ${names.join('  ')}`;
-    el.title = 'Macro definitions, used by every formula of this note: click to edit';
-  }, { block, cls: 'cm-lp-mathdefs' });
-
-  const chip = (key: string, cls: string, label: string, attrs: Record<string, string | number | null | undefined>) => new HtmlWidget(key, (el) => {
-    el.textContent = label;
-    for (const [k, v] of Object.entries(attrs)) if (v != null) el.dataset[k] = String(v);
-  }, { cls: `cm-lp-chip ${cls}` });
-
-  // "key: value" lines (and "- item" lists) of the front matter, shown as a small table
-  const propsWidget = (header: string) => new HtmlWidget(`fm:${header}`, (el) => {
-    const rows: [string, string][] = [];
-    for (const line of header.split('\n')) {
-      const m = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-      if (m) rows.push([m[1], m[2].replace(/^\[(.*)\]$/, '$1').replace(/^["']|["']$/g, '')]);
-      else if (/^\s+-\s+/.test(line) && rows.length) {
-        const last = rows[rows.length - 1];
-        last[1] = (last[1] ? `${last[1]}, ` : '') + line.replace(/^\s+-\s+/, '').replace(/^["']|["']$/g, '');
-      }
-    }
-    const shown = rows.filter(([k, v]) => k !== 'id' && v !== '');
-    el.title = 'Properties (front matter): click to edit';
-    const dl = document.createElement('dl');
-    for (const [k, v] of shown) {
-      const dt = document.createElement('dt'); dt.textContent = k;
-      const dd = document.createElement('dd'); dd.textContent = v;
-      dl.append(dt, dd);
-    }
-    if (!shown.length) { const dd = document.createElement('dd'); dd.textContent = 'Properties'; dl.append(dd); }
-    el.appendChild(dl);
-  }, { block: true, cls: 'cm-lp-props' });
-
-  /* ------------------------------------------------------------------ build */
-  let cache: { doc: Text | null; scan: Scan | null; eq: Equations | null; mode: string | null; base: Macros | null } = { doc: null, scan: null, eq: null, mode: null, base: null };
+  /* ------------------------------------------------------- per-document data */
+  let cache: { doc: Text | null; scan: Scan | null; refs: TextRef[] | null; eq: Equations | null; mode: string | null; base: Macros | null } = { doc: null, scan: null, refs: null, eq: null, mode: null, base: null };
   let lastBase: Macros | null = null, baseVersion = 0;
   const scanOf = (state: EditorState): Scan => {
-    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), eq: null, mode: null, base: null };
+    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), refs: null, eq: null, mode: null, base: null };
     return cache.scan!;
+  };
+  // \eqref{label} / \ref{label} in the text (not in code or math), as document offsets
+  const refsOf = (state: EditorState): TextRef[] => {
+    const s = scanOf(state);
+    if (!cache.refs) {
+      const inCode = (from: number, to: number) => s.spans.some((sp) => from < sp.to && to > sp.from);
+      cache.refs = textRefs(state.doc.sliceString(s.bodyStart))
+        .map((r) => ({ ...r, from: r.from + s.bodyStart, to: r.to + s.bodyStart }))
+        .filter((r) => !inCode(r.from, r.to));
+    }
+    return cache.refs;
   };
   // the whole note's formulas: macro definitions taken out (they apply to every formula), display
   // equations numbered; formula start → TeX for KaTeX; labels for \eqref
@@ -194,25 +116,42 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     return cache.eq;
   };
 
-  function build(state: EditorState): DecorationSet {
+  /** Where the selection is, and the tests built on it. */
+  function selectionOf(state: EditorState) {
     const doc = state.doc;
-    const s = scanOf(state);
-    const out: CMRange<DecorationT>[] = [];
-    const add = (from: number, to: number, deco: DecorationT) => { if (from <= to) out.push(deco.range(from, to)); };
-    const lineDeco = (pos: number, cls: string) => out.push(Decoration.line({ class: cls }).range(doc.lineAt(pos).from));
-
     const focused = state.field(focusField, false);
     const active: [number, number][] = focused ? state.selection.ranges.map((r) => [doc.lineAt(r.from).from, doc.lineAt(r.to).to]) : [];
     const isActive = (from: number, to: number) => active.some(([a, b]) => from <= b && to >= a);
-    const lineActive = (pos: number) => { const l = doc.lineAt(pos); return isActive(l.from, l.to); };
-    const blockActive = (from: number, to: number) => isActive(doc.lineAt(from).from, doc.lineAt(to).to);
-    // inline things open only when the selection is in them or right next to them
-    const touches = (from: number, to: number) => focused && state.selection.ranges.some((r) => r.from <= to && r.to >= from);
-    const eq = equationsOf(state);
-    const hide = Decoration.replace({});
+    return {
+      lineActive: (pos: number) => { const l = doc.lineAt(pos); return isActive(l.from, l.to); },
+      blockActive: (from: number, to: number) => isActive(doc.lineAt(from).from, doc.lineAt(to).to),
+      // inline things open only when the selection is in them or right next to them
+      touches: (from: number, to: number) => !!focused && state.selection.ranges.some((r) => r.from <= to && r.to >= from),
+    };
+  }
 
-    // regions handled by the scanner win over CodeMirror's own nodes
+  const multiLine = (doc: Text, from: number, to: number) => doc.lineAt(from).to < to;
+  const mathWidget = (doc: Text, eq: Equations, sp: Span, block: boolean) => {
+    const tex = eq.tex.get(sp.from) ?? mathSrc(doc, sp);
+    return eq.defines.has(sp.from) && !tex.trim() ? W.defs(eq.defines.get(sp.from)!, block) : W.katex(eq, tex, block || !!sp.display, block);
+  };
+
+  /* ------------------------------------------------------------ block level */
+  function buildBlocks(state: EditorState, version: number): Blocks {
+    const doc = state.doc;
+    const s = scanOf(state);
+    const eq = equationsOf(state);
+    const { blockActive, touches } = selectionOf(state);
+    const out: CMRange<DecorationT>[] = [];
     const taken: [number, number][] = [];
+    const lineDeco = (pos: number, cls: string) => out.push(Decoration.line({ class: cls }).range(doc.lineAt(pos).from));
+    const lineDecos = (from: number, to: number, cls: (first: boolean, last: boolean) => string) => {
+      for (let p = from; p <= to; p = doc.lineAt(p).to + 1) {
+        const l = doc.lineAt(p);
+        lineDeco(p, cls(l.from === from, l.to >= to));
+        if (l.to >= to) break;
+      }
+    };
     const overlapsTaken = (from: number, to: number) => taken.some(([a, b]) => from < b && to > a);
 
     // front matter: a compact box of properties until the cursor goes into it
@@ -220,103 +159,170 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
       const fm = splitFrontmatter(doc.sliceString(0, Math.min(doc.length, 50000)));
       if (fm.header !== null) {
         const to = doc.lineAt(Math.max(0, fm.bodyStart - 1)).to;
-        taken.push([0, to]);
-        if (!blockActive(0, to)) add(0, to, Decoration.replace({ widget: propsWidget(fm.header), block: true }));
+        if (!blockActive(0, to)) { taken.push([0, to]); out.push(Decoration.replace({ widget: W.props(fm.header), block: true }).range(0, to)); }
       }
     }
 
-    // math (from the scanner: same rules as the backend)
+    // $$ blocks, and the rare formula that runs over several lines (a replacement that hides a
+    // line break has to come from here)
     for (const sp of s.spans) {
       if (sp.kind === 'mathblock' && !sp.open) {
         const from = doc.lineAt(sp.from).from, to = doc.lineAt(sp.to).to;
-        taken.push([from, to]);
-        const tex = eq.tex.get(sp.from) ?? mathSrc(doc, sp);
-        const onlyDefines = eq.defines.has(sp.from) && !tex.trim();
         if (blockActive(from, to)) {
-          for (let p = from; p <= to; p = doc.lineAt(p).to + 1) {
-            const l = doc.lineAt(p);
-            lineDeco(p, `cm-lp-mathsrc cm-lp-mathsrc-block${l.from === from ? ' first' : ''}${l.to === to ? ' last' : ''}`);
-          }
+          lineDecos(from, to, (first, last) => `cm-lp-mathsrc cm-lp-mathsrc-block${first ? ' first' : ''}${last ? ' last' : ''}`);
           // the formula being edited stays visible below its source
-          if (!onlyDefines) out.push(Decoration.widget({ widget: katexWidget(eq, tex, true, true, true), block: true, side: 1 }).range(to));
+          const tex = eq.tex.get(sp.from) ?? mathSrc(doc, sp);
+          if (!(eq.defines.has(sp.from) && !tex.trim())) out.push(Decoration.widget({ widget: W.katex(eq, tex, true, true, true), block: true, side: 1 }).range(to));
           continue;
         }
-        add(from, to, Decoration.replace({ widget: onlyDefines ? defsWidget(eq.defines.get(sp.from)!, true) : katexWidget(eq, tex, true, true), block: true }));
-      } else if (sp.kind === 'math') {
+        taken.push([from, to]);
+        out.push(Decoration.replace({ widget: mathWidget(doc, eq, sp, true), block: true }).range(from, to));
+      } else if (sp.kind === 'math' && multiLine(doc, sp.from, sp.to)) {
         taken.push([sp.from, sp.to]);
-        if (touches(sp.from, sp.to)) { add(sp.from, sp.to, Decoration.mark({ class: 'cm-lp-mathsrc' })); continue; }
-        const tex = eq.tex.get(sp.from) ?? mathSrc(doc, sp);
-        const onlyDefines = eq.defines.has(sp.from) && !tex.trim();
-        add(sp.from, sp.to, Decoration.replace({ widget: onlyDefines ? defsWidget(eq.defines.get(sp.from)!, false) : katexWidget(eq, tex, !!sp.display) }));
+        out.push((touches(sp.from, sp.to) ? Decoration.mark({ class: 'cm-lp-mathsrc' }) : Decoration.replace({ widget: mathWidget(doc, eq, sp, false) })).range(sp.from, sp.to));
       }
+    }
+
+    // tables and fenced code, from the block structure of the syntax tree
+    syntaxTree(state).iterate({
+      from: s.bodyStart,
+      enter: (node) => {
+        const name = node.name;
+        if (name === 'Table') {
+          const from = doc.lineAt(node.from).from, to = doc.lineAt(node.to).to;
+          if (blockActive(from, to) || overlapsTaken(from, to)) lineDecos(from, to, () => 'cm-lp-tablesrc');
+          else {
+            // drawn by the renderer, so math, citations and links in its cells are rendered too
+            taken.push([from, to]);
+            out.push(Decoration.replace({ widget: W.table(doc.sliceString(from, to), `${version}:${eq.sig}`), block: true }).range(from, to));
+          }
+          return false;
+        }
+        if (name === 'FencedCode') {
+          const from = doc.lineAt(node.from).from, to = doc.lineAt(node.to).to;
+          const info = node.node.getChild('CodeInfo');
+          const lang = info ? doc.sliceString(info.from, info.to).trim().toLowerCase() : '';
+          if (lang === 'mermaid' && !blockActive(from, to)) {
+            const textNode = node.node.getChild('CodeText');
+            taken.push([from, to]);
+            out.push(Decoration.replace({ widget: W.mermaid(textNode ? doc.sliceString(textNode.from, textNode.to) : ''), block: true }).range(from, to));
+          } else lineDecos(from, to, (first, last) => `cm-lp-code${first ? ' cm-lp-code-first' : ''}${last ? ' cm-lp-code-last' : ''}`);
+          return false;
+        }
+        // lists and quotes may hold tables and code; paragraphs and headings hold only inline content
+        return name === 'Document' || name.endsWith('List') || name === 'ListItem' || name === 'Blockquote' ? undefined : false;
+      },
+    });
+    return { deco: Decoration.set(out, true), taken, version };
+  }
+
+  const blocks = StateField.define<Blocks>({
+    create: (state) => buildBlocks(state, 0),
+    update(v, tr) {
+      const refreshed = tr.effects.some((e) => e.is(refresh));
+      if (refreshed || tr.docChanged || tr.selection || tr.effects.some((e) => e.is(setFocus))
+          || syntaxTree(tr.startState) !== syntaxTree(tr.state)) return buildBlocks(tr.state, v.version + (refreshed ? 1 : 0));
+      return v;
+    },
+    provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
+  });
+
+  /* ------------------------------------------------------------------ inline */
+  function buildInline(view: EditorViewT): DecorationSet {
+    const state = view.state;
+    const doc = state.doc;
+    const s = scanOf(state);
+    const eq = equationsOf(state);
+    const { lineActive, touches } = selectionOf(state);
+    const { from: vFrom, to: vTo } = view.viewport;
+    const blockTaken = state.field(blocks).taken;
+    const out: CMRange<DecorationT>[] = [];
+    const add = (from: number, to: number, deco: DecorationT) => { if (from <= to) out.push(deco.range(from, to)); };
+    // a plugin may not hide line breaks: such a replacement is left out (the source shows)
+    const replace = (from: number, to: number, deco: DecorationT) => { if (from <= to && !multiLine(doc, from, to)) out.push(deco.range(from, to)); };
+    const lineDeco = (pos: number, cls: string) => out.push(Decoration.line({ class: cls }).range(doc.lineAt(pos).from));
+    const shown = (from: number, to: number) => to >= vFrom && from <= vTo && !blockTaken.some(([a, b]) => from < b && to > a);
+    const hide = Decoration.replace({});
+
+    // regions handled by the scanner win over CodeMirror's own nodes
+    const taken: [number, number][] = [];
+    const overlapsTaken = (from: number, to: number) => taken.some(([a, b]) => from < b && to > a);
+
+    // math on one line (from the scanner: same rules as the backend)
+    for (const sp of s.spans) {
+      if (sp.kind !== 'math' || !shown(sp.from, sp.to) || multiLine(doc, sp.from, sp.to)) continue;
+      taken.push([sp.from, sp.to]);
+      if (touches(sp.from, sp.to)) add(sp.from, sp.to, Decoration.mark({ class: 'cm-lp-mathsrc' }));
+      else replace(sp.from, sp.to, Decoration.replace({ widget: mathWidget(doc, eq, sp, false) }));
     }
 
     // \eqref{label} / \ref{label} in the text: the equation's number
-    const inCode = (from: number, to: number) => s.spans.some((sp) => from < sp.to && to > sp.from);
-    for (const r of textRefs(doc.sliceString(s.bodyStart))) {
-      const from = r.from + s.bodyStart, to = r.to + s.bodyStart;
-      if (inCode(from, to)) continue;
-      taken.push([from, to]);
-      if (touches(from, to)) { add(from, to, Decoration.mark({ class: 'cm-lp-linksrc eqref' })); continue; }
+    for (const r of refsOf(state)) {
+      if (!shown(r.from, r.to)) continue;
+      taken.push([r.from, r.to]);
+      if (touches(r.from, r.to)) { add(r.from, r.to, Decoration.mark({ class: 'cm-lp-linksrc eqref' })); continue; }
       const text = refText(r.kind, r.name, eq.labels);
-      add(from, to, Decoration.replace({ widget: chip(`e:${from}:${text}`, `eqref${text == null ? ' missing' : ''}`, text ?? '(??)', { label: r.name }) }));
+      replace(r.from, r.to, Decoration.replace({ widget: W.chip(`e:${r.from}:${text}`, `eqref${text == null ? ' missing' : ''}`, text ?? '(??)', { label: r.name }) }));
     }
 
-    // [[links]], ![[embeds]], [@citations], images
-    const groups = new Map<number, ScanLink[]>();
-    for (const l of s.links) {
-      if (l.kind === 'cite') { (groups.get(l.from) || groups.set(l.from, []).get(l.from)!).push(l); continue; }
-      taken.push([l.from, l.to]);
-      if (l.kind === 'image') {
-        if (touches(l.from, l.to)) continue;
-        const src = imageSrc(l.target);
-        add(l.from, l.to, Decoration.replace({ widget: new HtmlWidget(`img:${src}:${l.width}`, (el) => {
-          const img = document.createElement('img');
-          img.src = src; img.alt = l.alias; img.loading = 'lazy';
-          if (l.width) img.width = l.width;
-          img.onerror = () => { el.classList.add('broken'); el.textContent = `Image not found: ${l.target}`; };
-          el.appendChild(img);
-        }, { cls: 'cm-lp-image' }) }));
-        continue;
-      }
-      const path = deps.resolveNote(l.target);
-      const cls = `${l.kind === 'embed' ? 'embed' : 'wikilink'}${path === null && l.target ? ' unresolved' : ''}`;
-      if (touches(l.from, l.to)) { add(l.from, l.to, Decoration.mark({ class: `cm-lp-linksrc ${cls}` })); continue; }
-      const label = (l.kind === 'embed' ? '↪ ' : '') + (l.alias || (l.target ? l.target + (l.heading ? ` › ${l.heading}` : '') : `› ${l.heading}`));
-      add(l.from, l.to, Decoration.replace({ widget: chip(`n:${l.from}:${label}:${cls}`, cls, label, { note: l.target, heading: l.heading, path }) }));
-    }
-    for (const [from, ls] of groups) {
-      const to = ls[0].to;
+    // [[links]], ![[embeds]], [@citations] (one chip per group), images
+    let cites: typeof s.links = [];
+    const flushCites = () => {
+      if (!cites.length) return;
+      const ls = cites;
+      cites = [];
+      const from = ls[0].from, to = ls[0].to;
       taken.push([from, to]);
       const missing = ls.some((l) => !deps.citeInfo(l.target));
       const trashed = ls.some((l) => deps.citeInfo(l.target)?.trashed);
       const keys = ls.map((l) => l.target).join(';');
       const pages = ls.map((l) => l.page ?? '').join(';');
       const atts = ls.map((l) => attachmentOf(l.locator) ?? '').join(';');
-      if (touches(from, to)) { add(from, to, Decoration.mark({ class: `cm-lp-citesrc${missing ? ' missing' : ''}`, attributes: { 'data-keys': keys, 'data-pages': pages, 'data-atts': atts } })); continue; }
+      if (touches(from, to)) { add(from, to, Decoration.mark({ class: `cm-lp-citesrc${missing ? ' missing' : ''}`, attributes: { 'data-keys': keys, 'data-pages': pages, 'data-atts': atts } })); return; }
       const label = `(${ls.map((l) => citeLabel({ key: l.target, prefix: l.prefix, suppress: l.suppress_author, locator: l.locator }, deps.citeInfo(l.target))).join('; ')})`;
-      add(from, to, Decoration.replace({ widget: chip(`c:${from}:${label}:${missing}:${trashed}`, `cite${missing ? ' missing' : ''}${trashed ? ' trashed' : ''}`, label, { keys, pages, atts }) }));
+      replace(from, to, Decoration.replace({ widget: W.chip(`c:${from}:${label}:${missing}:${trashed}`, `cite${missing ? ' missing' : ''}${trashed ? ' trashed' : ''}`, label, { keys, pages, atts }) }));
+    };
+    for (const l of s.links) {
+      if (!shown(l.from, l.to)) continue;
+      if (l.kind === 'cite') {
+        if (cites.length && cites[0].from !== l.from) flushCites();
+        cites.push(l);
+        continue;
+      }
+      taken.push([l.from, l.to]);
+      if (l.kind === 'image') {
+        if (!touches(l.from, l.to)) replace(l.from, l.to, Decoration.replace({ widget: W.image(imageSrc(l.target), l.alias, l.width, l.target) }));
+        continue;
+      }
+      const path = deps.resolveNote(l.target);
+      const cls = `${l.kind === 'embed' ? 'embed' : 'wikilink'}${path === null && l.target ? ' unresolved' : ''}`;
+      if (touches(l.from, l.to)) { add(l.from, l.to, Decoration.mark({ class: `cm-lp-linksrc ${cls}` })); continue; }
+      const label = (l.kind === 'embed' ? '↪ ' : '') + (l.alias || (l.target ? l.target + (l.heading ? ` › ${l.heading}` : '') : `› ${l.heading}`));
+      replace(l.from, l.to, Decoration.replace({ widget: W.chip(`n:${l.from}:${label}:${cls}`, cls, label, { note: l.target, heading: l.heading, path }) }));
     }
-    for (const t of s.tags) add(t.from, t.to, Decoration.mark({ class: 'cm-lp-tag' }));
+    flushCites();
+    for (const t of s.tags) if (shown(t.from, t.to)) add(t.from, t.to, Decoration.mark({ class: 'cm-lp-tag' }));
 
-    // CodeMirror syntax tree: headings, emphasis, quotes, callouts, tasks, rules, tables, code
-    const tree = syntaxTree(state);
-    tree.iterate({
-      from: s.bodyStart,
+    // CodeMirror syntax tree: headings, emphasis, quotes, callouts, tasks, rules, links
+    syntaxTree(state).iterate({
+      from: Math.max(s.bodyStart, vFrom),
+      to: vTo,
       enter: (node) => {
         const name = node.name;
+        // tables and code are the field's; nothing is added inside what a block widget draws
+        if (name === 'Table' || name === 'FencedCode' || blockTaken.some(([a, b]) => node.from >= a && node.to <= b)) return false;
         if (/^ATXHeading[1-6]$/.test(name)) {
           lineDeco(node.from, `cm-lp-h cm-lp-h${name.slice(-1)}`);
           if (!lineActive(node.from)) {
             const mark = node.node.getChild('HeaderMark');
-            if (mark && mark.from === node.from) add(mark.from, Math.min(mark.to + 1, node.to), hide);
+            if (mark && mark.from === node.from) replace(mark.from, Math.min(mark.to + 1, node.to), hide);
           }
           return;
         }
         if (name === 'Emphasis' || name === 'StrongEmphasis' || name === 'Strikethrough' || name === 'InlineCode') {
           if (overlapsTaken(node.from, node.to) || touches(node.from, node.to)) return name === 'InlineCode' ? false : undefined;
           const markName = name === 'Strikethrough' ? 'StrikethroughMark' : name === 'InlineCode' ? 'CodeMark' : 'EmphasisMark';
-          for (const m of node.node.getChildren(markName)) add(m.from, m.to, hide);
+          for (const m of node.node.getChildren(markName)) replace(m.from, m.to, hide);
           return name === 'InlineCode' ? false : undefined;
         }
         if (name === 'Link') {
@@ -327,24 +333,24 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
           if (touches(node.from, node.to)) return false;
           const marks = node.node.getChildren('LinkMark');
           // hide "[" and "](url "title")"
-          if (marks[0]) add(marks[0].from, marks[0].to, hide);
-          if (marks[1]) add(marks[1].from, node.to, hide);
+          if (marks[0]) replace(marks[0].from, marks[0].to, hide);
+          if (marks[1]) replace(marks[1].from, node.to, hide);
           return false;
         }
         if (name === 'Image') return false;
         if (name === 'Escape') {
-          if (!touches(node.from, node.to) && !overlapsTaken(node.from, node.to)) add(node.from, node.from + 1, hide);
+          if (!touches(node.from, node.to) && !overlapsTaken(node.from, node.to)) replace(node.from, node.from + 1, hide);
           return false;
         }
         if (name === 'ListMark') {
           const item = node.node.parent;
           if (!item || item.parent?.name !== 'BulletList' || lineActive(node.from)) return false;
-          if (item.getChild('Task')) add(node.from, Math.min(node.to + 1, doc.lineAt(node.from).to), hide);   // the checkbox is enough
-          else add(node.from, node.to, Decoration.replace({ widget: bullet }));
+          if (item.getChild('Task')) replace(node.from, Math.min(node.to + 1, doc.lineAt(node.from).to), hide);   // the checkbox is enough
+          else replace(node.from, node.to, Decoration.replace({ widget: W.bullet }));
           return false;
         }
         if (name === 'HorizontalRule') {
-          if (!lineActive(node.from)) add(node.from, node.to, Decoration.replace({ widget: new HtmlWidget('hr', () => {}, { cls: 'cm-lp-hr' }) }));
+          if (!lineActive(node.from)) replace(node.from, node.to, Decoration.replace({ widget: W.hr }));
           return false;
         }
         if (name === 'Blockquote') {
@@ -356,7 +362,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
             lineDeco(p, type ? `cm-lp-callout cm-lp-callout-${type}${line.from === first.from ? ' cm-lp-callout-head' : ''}` : 'cm-lp-quote');
             if (!lineActive(p)) {
               const qm = /^(\s*>[ \t]?)/.exec(line.text);
-              if (qm) add(line.from, line.from + qm[1].length, hide);
+              if (qm) replace(line.from, line.from + qm[1].length, hide);
             }
             if (line.to >= node.to) break;
           }
@@ -364,42 +370,14 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
             const start = first.from + first.text.indexOf('[!');
             const end = start + m[1].length + 3 + m[2].length;
             const title = m[3] ? '' : m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
-            add(start, Math.min(end + (m[3] ? 1 : 0), first.to), Decoration.replace({ widget: new HtmlWidget(`co:${type}:${title}`, (el) => { el.textContent = title; }, { cls: `cm-lp-callout-icon ${type}` }) }));
+            replace(start, Math.min(end + (m[3] ? 1 : 0), first.to), Decoration.replace({ widget: W.calloutTitle(type!, title) }));
           }
           return undefined;
         }
         if (name === 'TaskMarker') {
-          if (!lineActive(node.from)) {
-            const checked = /x/i.test(doc.sliceString(node.from, node.to));
-            add(node.from, node.to, Decoration.replace({ widget: new CheckboxWidget(checked, node.from) }));
-          }
-          return false;
-        }
-        if (name === 'Table') {
-          const from = doc.lineAt(node.from).from, to = doc.lineAt(node.to).to;
-          if (blockActive(from, to) || overlapsTaken(from, to)) { for (let p = from; p <= to; p = doc.lineAt(p).to + 1) lineDeco(p, 'cm-lp-tablesrc'); return false; }
-          const src = doc.sliceString(from, to);
-          add(from, to, Decoration.replace({ widget: new HtmlWidget(`t:${src}`, (el) => {
-            const r = deps.renderer();
-            el.innerHTML = r ? r.render(src) : '';
-          }, { block: true, cls: 'cm-lp-table' }), block: true }));
-          return false;
-        }
-        if (name === 'FencedCode') {
-          const from = doc.lineAt(node.from).from, to = doc.lineAt(node.to).to;
-          const info = node.node.getChild('CodeInfo');
-          const lang = info ? doc.sliceString(info.from, info.to).trim().toLowerCase() : '';
-          if (lang === 'mermaid' && !blockActive(from, to)) {
-            const textNode = node.node.getChild('CodeText');
-            const code = textNode ? doc.sliceString(textNode.from, textNode.to) : '';
-            add(from, to, Decoration.replace({ widget: new HtmlWidget(`mm:${code}:${document.documentElement.dataset.theme}`, (el) => deps.mermaid(el, code), { block: true, cls: 'cm-lp-mermaid' }), block: true }));
-            return false;
-          }
-          for (let p = from; p <= to; p = doc.lineAt(p).to + 1) {
-            const l = doc.lineAt(p);
-            lineDeco(p, `cm-lp-code${l.from === from ? ' cm-lp-code-first' : ''}${l.to === to ? ' cm-lp-code-last' : ''}`);
-            if (l.to >= to) break;
-          }
+          const checked = /x/i.test(doc.sliceString(node.from, node.to));
+          if (checked) lineDeco(node.from, 'cm-lp-task-done');
+          if (!lineActive(node.from)) replace(node.from, node.to, Decoration.replace({ widget: W.checkbox(checked, node.from) }));
           return false;
         }
         return undefined;
@@ -408,15 +386,16 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     return Decoration.set(out, true);
   }
 
-  const field = StateField.define<DecorationSet>({
-    create: (state) => build(state),
-    update(deco, tr) {
-      if (tr.docChanged || tr.selection || tr.effects.some((e) => e.is(refresh) || e.is(setFocus))
-          || syntaxTree(tr.startState) !== syntaxTree(tr.state)) return build(tr.state);
-      return deco;
-    },
-    provide: (f) => EditorView.decorations.from(f),
-  });
+  const inline = ViewPlugin.fromClass(class {
+    decorations: DecorationSet;
+    constructor(view: EditorViewT) { this.decorations = buildInline(view); }
+    update(u: ViewUpdate) {
+      if (u.docChanged || u.selectionSet || u.viewportChanged
+          || u.startState.field(blocks) !== u.state.field(blocks)
+          || u.transactions.some((tr) => tr.effects.some((e) => e.is(refresh) || e.is(setFocus)))
+          || syntaxTree(u.startState) !== syntaxTree(u.state)) this.decorations = buildInline(u.view);
+    }
+  }, { decorations: (p) => p.decorations });
 
   /** Put the cursor where a rendered formula was clicked (mathClick.js), instead of at its edge. */
   function clickIntoMath(e: MouseEvent, view: EditorViewT, w: HTMLElement): boolean {
@@ -524,5 +503,5 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     },
   });
 
-  return { extension: [focusField, field, clicks, focusEvents], refresh };
+  return { extension: [focusField, blocks, inline, clicks, focusEvents], refresh };
 }

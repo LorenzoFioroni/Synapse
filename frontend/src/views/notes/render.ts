@@ -16,7 +16,7 @@ import type { RendererRule as MdRenderRule, StateBlock, StateCore, StateInline, 
 export type MdLib = typeof import('../../../vendor/md/md.js');
 import { labelId, layoutTag, numberEquations, refText, resolveRefs } from './equations.js';
 import { type Cite, attachmentOf, parseCites, referenceDefinition, splitWiki } from './mdscan.js';
-import { type Definition, HAS_DEFINITIONS, type Macros, baseMacros, parseDefinitions, withDefinitions } from './macros.js';
+import { type Definition, HAS_DEFINITIONS, type Macro, type Macros, baseMacros, macroSource, parseDefinitions, withDefinitions } from './macros.js';
 
 /** What a renderer may know about a cited key (any CiteEntry fits). */
 export interface CiteInfo { title?: string; authors?: string; year?: number | string | null; trashed?: boolean }
@@ -218,7 +218,7 @@ function taskRule(state: StateCore): void {
     const box = new state.Token('task_box', '', 0);
     box.meta = { checked: m[1] !== ' ', line: toks[i - 2].map?.[0] ?? null };
     inl.children!.unshift(box);
-    toks[i - 2].attrJoin('class', 'task');
+    toks[i - 2].attrJoin('class', m[1] === ' ' ? 'task' : 'task done');
   }
 }
 
@@ -270,6 +270,35 @@ function equationsRule(mode: RendererOptions['equations'], macros: RendererOptio
   };
 }
 
+/*
+ * KaTeX output, remembered by formula. Rendering every formula again is most of the cost of
+ * drawing a note, and read mode draws it after each change. The HTML depends only on the TeX,
+ * display or inline, and the macros, so there is one memo per set of macros, compared by what
+ * they define (renderers build a new macros object for every render). Shared by all renderers.
+ */
+const KATEX_MEMO_SIZE = 5000;
+const katexMemos = new Map<string, Map<string, string>>();
+const macroSigs = new WeakMap<Macros, string>();
+const functionIds = new WeakMap<object, string>();
+let lastFunctionId = 0;
+const macroSig = (v: Macro) => (typeof v === 'string' ? v : macroSource.get(v)
+  ?? functionIds.get(v) ?? (functionIds.set(v, `#${++lastFunctionId}`), `#${lastFunctionId}`));
+function katexMemo(macros: Macros | undefined): Map<string, string> {
+  let sig = macros ? macroSigs.get(macros) : '';
+  if (sig === undefined) {
+    sig = Object.entries(macros!).map(([k, v]) => `${k}\u0001${macroSig(v)}`).join('\u0002');
+    macroSigs.set(macros!, sig);
+  }
+  let memo = katexMemos.get(sig);
+  if (memo) { katexMemos.delete(sig); katexMemos.set(sig, memo); }   // most recently used last
+  else {
+    memo = new Map();
+    katexMemos.set(sig, memo);
+    if (katexMemos.size > 4) katexMemos.delete(katexMemos.keys().next().value!);
+  }
+  return memo;
+}
+
 /** A Markdown renderer for notes; ``lib`` is vendor/md/md.js. */
 export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
   const md = new lib.MarkdownIt({ html: false, linkify: true, typographer: false });
@@ -288,13 +317,21 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
   md.core.ruler.push('line_attrs', lineAttrs);
 
   const katex = (tex: string, display: boolean, macros?: Macros) => {
+    const memo = katexMemo(macros);
+    const key = `${display ? 'D' : 'i'}${tex}`;
+    const hit = memo.get(key);
+    if (hit !== undefined) return hit;
+    let out: string;
     try {
       const html = lib.katex.renderToString(tex, { displayMode: display, throwOnError: false, strict: 'ignore', trust: false, output: 'htmlAndMathml',
         macros: { ...(macros || {}) }, maxExpand: 1000 });   // a copy: a \gdef must not leak into other formulas
-      return display ? layoutTag(html) : html;
+      out = display ? layoutTag(html) : html;
     } catch (e) {
-      return `<span class="math-error" title="${esc((e as Error).message)}">${esc(tex)}</span>`;
+      out = `<span class="math-error" title="${esc((e as Error).message)}">${esc(tex)}</span>`;
     }
+    if (memo.size >= KATEX_MEMO_SIZE) memo.clear();
+    memo.set(key, out);
+    return out;
   };
   const R = md.renderer.rules;
   const anchors = (names: string[] | undefined) => (names || []).map((n) => `<span class="eq-anchor" id="${esc(labelId(n))}"></span>`).join('');
