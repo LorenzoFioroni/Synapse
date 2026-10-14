@@ -192,6 +192,29 @@ export interface NoteInfo {
   tags: string[];
 }
 
+/** A change to a note recorded by the server (backend/notes/history.py): Claude's edits through MCP. */
+export interface HistoryEntry {
+  id: string;
+  path: string;
+  at: string;
+  by: string;              // 'ai'
+  summary: string;
+  before_hash: string;
+  after_hash: string;
+}
+
+export interface NoteHistory { path: string; hash: string | null; entries: HistoryEntry[] }
+
+/** GET /api/notes/attachments: images in the notes folder, and the attachment trash. */
+export interface NoteAttachments {
+  attachments: { name: string; path: string; size: number; modified: string; used_by: string[] }[];
+  trash: { trash_id: string; name: string; trashed_at: string; size: number; deletes_at?: string }[];
+  retention: Settings['notes_trash_retention'];
+}
+
+/** GET /api/notes/note: a note's text, its hash (for hash-checked saves) and its index entry. */
+export interface NoteFile { path: string; text: string; hash: string; info: NoteInfo | null }
+
 export interface NotesListing {
   notes: NoteInfo[];
   folders: string[];
@@ -244,6 +267,14 @@ export type EdgeKind = 'cites' | 'cite' | 'link' | 'about';
 export interface GraphEdge { source: string; target: string; kind: EdgeKind }
 
 export interface GraphData { nodes: GraphNode[]; edges: GraphEdge[] }
+
+/* ------------------------------------------------------------------ import / export */
+
+/** An import/export format (backend/formats). */
+export interface Format { key: string; label: string; extension: string }
+
+/** The body of a 409 from POST /api/items/from_identifier: the item is already in the library. */
+export interface DuplicateFound { error: string; duplicate_of: string; metadata: Partial<Item> }
 
 /* ------------------------------------------------------------------ misc */
 

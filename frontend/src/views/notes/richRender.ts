@@ -1,21 +1,21 @@
-// @ts-nocheck
 // DOM helpers for rendered notes: Mermaid diagrams, code highlighting, embedded notes.
 import { api } from '../../api.js';
+import type { Mermaid } from '../../globals.js';
 import { escapeHtml } from '../../util.js';
 import { highlightStyle, loadCM, loadMD } from './editor.js';
 import { splitFrontmatter } from './mdscan.js';
 import { createRenderer, slugHeading } from './render.js';
 
 /* --------------------------------------------------------------- Mermaid */
-let mermaidLoading = null;
-let mermaidTheme = null;
+let mermaidLoading: Promise<Mermaid> | null = null;
+let mermaidTheme: string | null = null;
 let mermaidSeq = 0;
 
-function loadMermaid() {
-  mermaidLoading ||= new Promise((resolve, reject) => {
+function loadMermaid(): Promise<Mermaid> {
+  mermaidLoading ||= new Promise<Mermaid>((resolve, reject) => {
     const s = document.createElement('script');
     s.src = 'vendor/mermaid/mermaid.min.js';
-    s.onload = () => resolve(window.mermaid);
+    s.onload = () => resolve(window.mermaid!);
     s.onerror = () => { mermaidLoading = null; reject(new Error('Could not load Mermaid')); };
     document.head.appendChild(s);
   });
@@ -23,7 +23,7 @@ function loadMermaid() {
 }
 
 /** Render a Mermaid diagram into `el` (shows the error and the source if it is invalid). */
-export async function renderMermaid(el, code) {
+export async function renderMermaid(el: HTMLElement, code: string): Promise<void> {
   el.classList.add('loading');
   el.textContent = 'Rendering diagram…';
   try {
@@ -37,7 +37,7 @@ export async function renderMermaid(el, code) {
     const { svg } = await mm.render(`zc-mermaid-${++mermaidSeq}`, code);
     el.innerHTML = svg;
   } catch (e) {
-    el.innerHTML = `<div class="mermaid-error">Diagram error: ${escapeHtml(String(e?.message || e).split('\n')[0])}</div><pre>${escapeHtml(code)}</pre>`;
+    el.innerHTML = `<div class="mermaid-error">Diagram error: ${escapeHtml(String((e as Error | null)?.message || e).split('\n')[0])}</div><pre>${escapeHtml(code)}</pre>`;
     document.getElementById(`dzc-mermaid-${mermaidSeq}`)?.remove();   // mermaid leaves an error svg behind
   } finally {
     el.classList.remove('loading');
@@ -45,21 +45,21 @@ export async function renderMermaid(el, code) {
 }
 
 /* ------------------------------------------------------- code highlighting */
-export async function highlightCodeBlocks(root) {
-  const blocks = [...root.querySelectorAll('.code-block[data-lang]:not(.hl)')];
+export async function highlightCodeBlocks(root: ParentNode): Promise<void> {
+  const blocks = [...root.querySelectorAll<HTMLElement>('.code-block[data-lang]:not(.hl)')];
   if (!blocks.length) return;
   const cm = await loadCM();
   for (const block of blocks) {
     block.classList.add('hl');
     const code = block.querySelector('code');
-    const desc = cm.LanguageDescription.matchLanguageName(cm.languages, block.dataset.lang, true);
+    const desc = cm.LanguageDescription.matchLanguageName(cm.languages, block.dataset.lang!, true);
     if (!code || !desc) continue;
     try {
       const support = await desc.load();
-      const text = code.textContent;
+      const text = code.textContent || '';
       const tree = support.language.parser.parse(text);
       const frag = document.createDocumentFragment();
-      cm.highlightCode(text, tree, highlightStyle(cm), (t, cls) => {
+      cm.highlightCode(text, tree, highlightStyle(cm), (t: string, cls: string) => {
         if (!cls) { frag.appendChild(document.createTextNode(t)); return; }
         const s = document.createElement('span');
         s.className = cls;
@@ -71,7 +71,7 @@ export async function highlightCodeBlocks(root) {
   }
 }
 
-export function renderMermaidBlocks(root) {
+export function renderMermaidBlocks(root: ParentNode): void {
   for (const b of root.querySelectorAll('.mermaid-block:not(.done)')) {
     b.classList.add('done');
     const code = b.querySelector('.mermaid-src')?.textContent || '';
@@ -85,7 +85,7 @@ export function renderMermaidBlocks(root) {
 const MAX_EMBED_DEPTH = 3;
 
 /** Text of one section (from a heading to the next heading of the same or higher level). */
-function section(body, heading) {
+function section(body: string, heading: string | undefined): string {
   if (!heading) return body;
   const lines = body.split('\n');
   const want = slugHeading(heading);
@@ -100,12 +100,12 @@ function section(body, heading) {
 }
 
 /** Fill every ![[embed]] under `root` (recursively, at most 3 levels, never in a cycle). */
-export async function renderEmbeds(root, seen = new Set(), depth = 1) {
+export async function renderEmbeds(root: HTMLElement, seen = new Set<string>(), depth = 1): Promise<void> {
   const lib = await loadMD();
-  for (const el of root.querySelectorAll(':scope .note-embed[data-path]:not(.filled)')) {
+  for (const el of root.querySelectorAll<HTMLElement>(':scope .note-embed[data-path]:not(.filled)')) {
     el.classList.add('filled');
-    const path = el.dataset.path;
-    const body = el.querySelector('.embed-body');
+    const path = el.dataset.path!;
+    const body = el.querySelector<HTMLElement>('.embed-body')!;
     if (seen.has(path) || depth > MAX_EMBED_DEPTH) {
       body.innerHTML = `<p class="muted">${seen.has(path) ? 'Not shown again (the note embeds itself).' : 'Embedded too deeply.'}</p>`;
       continue;
@@ -120,7 +120,7 @@ export async function renderEmbeds(root, seen = new Set(), depth = 1) {
       highlightCodeBlocks(body);
       renderMermaidBlocks(body);
     } catch (e) {
-      body.innerHTML = `<p class="muted">${escapeHtml(e.message)}</p>`;
+      body.innerHTML = `<p class="muted">${escapeHtml((e as Error).message)}</p>`;
     }
   }
 }

@@ -1,6 +1,9 @@
 // Thin client for the JSON API. Every call throws an Error with a readable
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
-import type { Attachment, ChangeFeed, Item, ItemList, ItemsByIds, RenamePlan, Schema, Settings, SettingsResponse } from './types.js';
+import type {
+  Attachment, ChangeFeed, CiteEntry, Format, HistoryEntry, Item, ItemList, ItemsByIds, NoteAttachments, NoteFile, NoteHistory, NotesListing,
+  RenamePlan, Schema, Settings, SettingsResponse,
+} from './types.js';
 
 export class ApiError extends Error {
   status: number;
@@ -60,7 +63,7 @@ export const api = {
 
   lookup: (id: string) => request('POST', `/api/items/${id}/lookup`),
   fromIdentifier: (identifier: string, allowDuplicate = false, folderId: number | null = null, { fetchReferences }: { fetchReferences?: boolean } = {}) =>
-    request('POST', '/api/items/from_identifier', { identifier, allow_duplicate: allowDuplicate, folder_id: folderId, fetch_references: fetchReferences }),
+    request<Item>('POST', '/api/items/from_identifier', { identifier, allow_duplicate: allowDuplicate, folder_id: folderId, fetch_references: fetchReferences }),
   fromPdfs: (files: Iterable<File>, folderId: number | null = null) => {
     const fd = new FormData(); [...files].forEach((f) => fd.append('file', f));
     if (folderId) fd.append('folder_id', String(folderId));
@@ -85,7 +88,7 @@ export const api = {
   restoreBackup: (name: string) => request('POST', '/api/backups/restore', { name }),
   citekeyPreview: (pattern: string) => request('GET', `/api/settings/citekey_preview?${qs({ pattern })}`),
 
-  formats: () => request('GET', '/api/formats'),
+  formats: () => request<{ formats: Format[] }>('GET', '/api/formats'),
   importPreview: (fileOrText: string | File, format?: string) => {
     if (typeof fileOrText === 'string') return request('POST', '/api/import/preview', { text: fileOrText, format });
     const fd = new FormData(); fd.append('file', fileOrText); if (format) fd.append('format', format);
@@ -93,7 +96,7 @@ export const api = {
   },
   importCommit: (entries: unknown[], skipDuplicates: boolean, folderId: number | null = null, { keywordsAsTags }: { keywordsAsTags?: boolean } = {}) =>
     request('POST', '/api/import/commit', { entries, skip_duplicates: skipDuplicates, folder_id: folderId, keywords_as_tags: keywordsAsTags }),
-  exportText: (format: string, ids?: string[] | null) => request('GET', `/api/export?${qs({ format, ids: ids && ids.join(','), download: 0 })}`),
+  exportText: (format: string, ids?: string[] | null) => request<{ text: string }>('GET', `/api/export?${qs({ format, ids: ids && ids.join(','), download: 0 })}`),
   exportUrl: (format: string, ids?: string[] | null) => `/api/export?${qs({ format, ids: ids && ids.join(',') })}`,
 
   rebuildFulltext: () => request('POST', '/api/fulltext/rebuild'),
@@ -112,11 +115,11 @@ export const api = {
   searchPreview: (q: string, mode: string) => request('GET', `/api/search/preview?${qs({ q, mode })}`),
 
   // notes (addressed by their path inside the notes folder)
-  notes: () => request('GET', '/api/notes'),
-  getNote: (path: string) => request('GET', `/api/notes/note?${qs({ path })}`),
+  notes: () => request<NotesListing>('GET', '/api/notes'),
+  getNote: (path: string) => request<NoteFile>('GET', `/api/notes/note?${qs({ path })}`),
   createNote: (data: Record<string, unknown>) => request('POST', '/api/notes/note', data),
-  noteHistory: (path: string) => request('GET', `/api/notes/history?${qs({ path })}`),
-  noteVersion: (id: string) => request('GET', `/api/notes/history/version?${qs({ id })}`),
+  noteHistory: (path: string) => request<NoteHistory>('GET', `/api/notes/history?${qs({ path })}`),
+  noteVersion: (id: string) => request<HistoryEntry & { before: string }>('GET', `/api/notes/history/version?${qs({ id })}`),
   saveNote: (path: string, text: string, hash: string | null) => request('PUT', '/api/notes/note', { path, text, hash }),
   recreateNote: (path: string, text: string) => request('PUT', '/api/notes/note', { path, text, create: true }),
   moveNote: (path: string, to: string, hash?: string | null) => request('POST', '/api/notes/move', { path, to, hash }),
@@ -132,10 +135,10 @@ export const api = {
   citationGraph: () => request('GET', '/api/graph/citations'),
   graph: () => request('GET', '/api/graph'),
   noteTrash: () => request('GET', '/api/notes/trash'),
-  noteAttachments: () => request('GET', '/api/notes/attachments'),
+  noteAttachments: () => request<NoteAttachments>('GET', '/api/notes/attachments'),
   restoreNoteAttachment: (trashId: string, name: string) => request('POST', '/api/notes/attachments/restore', { trash_id: trashId, name }),
   deleteNoteAttachment: (trashId: string, name: string) => request('POST', '/api/notes/attachments/delete', { trash_id: trashId, name }),
-  citeIndex: () => request('GET', '/api/notes/cite_index'),
+  citeIndex: () => request<CiteEntry[]>('GET', '/api/notes/cite_index'),
   renamePlan: (old: string, nu: string) => request<RenamePlan>('GET', `/api/notes/rename_plan?${qs({ old, new: nu })}`),
   itemNotes: (id: string) => request('GET', `/api/items/${id}/notes`),
   restoreNote: (trashId: string, path: string) => request('POST', '/api/notes/restore', { trash_id: trashId, path }),
