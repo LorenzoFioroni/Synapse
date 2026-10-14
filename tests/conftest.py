@@ -60,3 +60,20 @@ def make_pdf(path: Path, text: str) -> Path:
     out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
     path.write_bytes(bytes(out))
     return path
+
+
+@pytest.fixture(scope="session")
+def built_frontend():
+    """frontend/js, built from frontend/src if needed (the JavaScript tests run the built code)."""
+    import shutil
+
+    from backend.frontend import BuildError, ensure_built
+
+    if not shutil.which("node"):
+        pytest.skip("Node.js not installed")
+    frontend = Path(__file__).resolve().parent.parent / "frontend"
+    try:
+        ensure_built(frontend)
+    except BuildError as e:
+        pytest.skip(f"frontend not built: {e}")
+    return frontend / "js"

@@ -92,18 +92,43 @@ gives `NotesService` the paper repository, and `backup.Backups` receives the ser
 
 ## Frontend
 
-*TODO (step 3): update after the TypeScript migration and the module splits.*
+*In progress (step 3): the code is TypeScript now. Files are being typed one by one: a file that
+still starts with `// @ts-nocheck` is not type-checked yet.*
 
-- `js/main.js` is the entry point. It loads the schema and settings, builds the views and wires
-  the toolbar.
-- `js/store.js` holds the application state, with a small pub/sub that views subscribe to.
-- `js/actions.js` has the user-level operations. Views call these, and these call `js/api.js`
-  (the thin JSON client) and update the store.
-- `js/changes.js` polls `/api/changes` and refreshes whatever another window, device or
-  background job changed.
-- `js/views/*` holds the screens and dialogs, and `js/views/notes/*` the notes workspace (a
-  CodeMirror 6 editor, live preview and Markdown rendering).
-- `js/ui/*` holds the generic widgets (dialogs, menus, toasts, long press).
+### Build
+
+The sources are TypeScript in `frontend/src/`. `frontend/build.mjs` compiles them with esbuild
+to `frontend/js/`, one output file per source file. That means the browser loads the same module
+graph as the sources (including lazy `import()`s), relative paths into `vendor/` stay valid, and
+source maps let the browser's debugger show the TypeScript. The pages load `js/main.js` and
+`js/viewer/*.js`.
+
+`frontend/js/` is generated and not committed. `server.py` rebuilds it when it is older than
+the sources (`backend/frontend.py`, `ensure_built`), so running the app only needs Node.js and,
+once, `npm ci` in `frontend/`.
+
+| Command (in `frontend/`) | What it does |
+|---|---|
+| `npm ci` | Installs the build tools (esbuild, TypeScript), pinned in `package-lock.json`. |
+| `npm run build` | Compiles `src/` to `js/`. |
+| `npm run watch` | Rebuilds on every change. Reload the page to see it. |
+| `npm run check` | Type-checks with `tsc` (`tsconfig.json`, strict mode). CI runs it. |
+
+The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest builds it first.
+
+### Modules
+
+- `main.ts` is the entry point. It loads the schema and settings, builds the views and wires the
+  toolbar.
+- `store.ts` holds the application state, with a small pub/sub that views subscribe to.
+- `actions.ts` has the user-level operations. Views call these, and these call `api.ts` (the thin
+  JSON client) and update the store.
+- `changes.ts` polls `/api/changes` and refreshes whatever another window, device or background
+  job changed.
+- `views/*` holds the screens and dialogs, and `views/notes/*` the notes workspace (a CodeMirror 6
+  editor, live preview and Markdown rendering).
+- `ui/*` holds the generic widgets (dialogs, menus, toasts, long press).
+- `viewer/*` holds the parts of the PDF viewer (`viewer.html`).
 - `vendor/` holds third-party libraries, committed as built files and loaded from disk. See
   [`frontend/vendor/README.md`](../frontend/vendor/README.md).
 

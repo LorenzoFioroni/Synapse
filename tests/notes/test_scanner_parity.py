@@ -1,4 +1,4 @@
-"""The display scanner (frontend/js/views/notes/mdscan.js) must agree with the backend parser.
+"""The display scanner (frontend/src/views/notes/mdscan.ts) must agree with the backend parser.
 
 The backend decides what a note links to; the frontend only uses its port to draw the preview.
 This test runs both on every fixture and on random documents and requires identical results.
@@ -18,7 +18,10 @@ ROOT = Path(__file__).resolve().parents[2]
 FIX = Path(__file__).parent / "fixtures"
 FIELDS = ("kind", "target", "line", "heading", "alias", "locator", "page", "prefix", "suppress_author", "group")
 
-pytestmark = pytest.mark.skipif(not shutil.which("node"), reason="Node.js not installed")
+pytestmark = [
+    pytest.mark.skipif(not shutil.which("node"), reason="Node.js not installed"),
+    pytest.mark.usefixtures("built_frontend"),  # scan_dump.mjs runs the built frontend/js
+]
 
 
 def js_scan(texts):

@@ -10,7 +10,7 @@ import json
 import struct
 import zlib
 
-REGION_KEYWORD = "zc:pdf-region"  # same as frontend/js/views/notes/citeTarget.js
+REGION_KEYWORD = "zc:pdf-region"  # same as frontend/src/views/notes/citeTarget.ts
 
 
 def _chunk(kind: bytes, data: bytes) -> bytes:

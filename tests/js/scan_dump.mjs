@@ -1,5 +1,5 @@
 // Helper for tests/notes/test_scanner_parity.py: reads a JSON list of texts on stdin and
-// prints what frontend/js/views/notes/mdscan.js finds in each.
+// prints what frontend/js/views/notes/mdscan.js (built from frontend/src) finds in each.
 import { mask, scan, splitFrontmatter } from '../../frontend/js/views/notes/mdscan.js';
 
 let input = '';

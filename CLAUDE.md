@@ -1,8 +1,9 @@
 # Working on Synapse
 
-Synapse is a local reference manager: a Flask + SQLite backend (`backend/`) and a browser frontend
-(`frontend/`). Start with [`docs/architecture.md`](docs/architecture.md). It is the map of the code
-and says where new code goes.
+Synapse is a local reference manager: a Flask + SQLite backend (`backend/`) and a TypeScript
+browser frontend (`frontend/src`, compiled to `frontend/js`, which is not committed). Start with
+[`docs/architecture.md`](docs/architecture.md). It is the map of the code and says where new code
+goes.
 
 ## Rules
 
@@ -29,6 +30,7 @@ and says where new code goes.
 
 ```bash
 pip install -r requirements-dev.txt
+(cd frontend && npm ci && npm run check)   # type-check the frontend (TypeScript in frontend/src)
 ruff check .                 # lint (ruff check --fix . fixes most findings)
 ruff format .                # format; CI runs ruff format --check .
 python -m pytest -q          # includes the JavaScript unit tests when Node is installed

@@ -1,17 +1,24 @@
 # Synapse
 
 A local, web-based reference manager: a Flask backend with SQLite storage and a
-dependency-free JavaScript frontend. Everything runs on your machine.
+TypeScript frontend. Everything runs on your machine.
 
 ## Run it
+
+You need Python 3.10+ and [Node.js](https://nodejs.org) 20+ (Node only builds the web app's
+scripts; the app itself runs offline).
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+(cd frontend && npm ci)           # once, and again when frontend/package-lock.json changes
 python server.py                  # http://127.0.0.1:8000 opens in your browser
 python server.py --port 5050 --no-browser
 python server.py --data-dir ~/MyLibrary
 ```
+
+`server.py` compiles the web app's scripts (`frontend/src` → `frontend/js`) whenever they changed,
+for example after a `git pull`.
 
 The server only answers to `127.0.0.1` / `localhost`, and only the app's own pages and the
 browser button can change the library: other websites open in your browser cannot.
@@ -236,7 +243,7 @@ For how the code fits together and where new code goes, see
 ├── server.py              starts the web app
 ├── mcp_server.py          MCP server for Claude Desktop / Claude Code (stdio)
 ├── backend/               Flask + SQLite backend (packages described in docs/architecture.md)
-├── frontend/              the web app (index.html, viewer.html, js/, css/, vendor/ = third-party libraries)
+├── frontend/              the web app: index.html, viewer.html, src/ (TypeScript; built to js/), css/, vendor/ (third-party libraries)
 ├── browser_extension/     Chrome extension (Manifest V3) – load unpacked
 ├── tools/                 build scripts for the vendored libraries
 ├── tests/                 pytest suite, js/ unit tests, e2e/ browser checklists
@@ -257,6 +264,7 @@ the backend.
 
 ```bash
 pip install -r requirements-dev.txt
+(cd frontend && npm ci && npm run check)   # type-check the frontend
 ruff check .                    # lint
 ruff format .                   # format
 python -m pytest                # backend + JavaScript unit tests (the JS part needs Node.js)

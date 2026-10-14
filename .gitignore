@@ -18,3 +18,7 @@ tools/*/node_modules/
 
 # Personal scratch files
 Claude outputs/
+
+# Frontend build output and tools (cd frontend && npm ci && npm run build)
+frontend/js/
+frontend/node_modules/

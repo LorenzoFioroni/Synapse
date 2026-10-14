@@ -24,7 +24,7 @@ from ..notes import frontmatter, parser
 
 CITES = re.compile(r"\[[^\[\]]*@[^\[\]]*\]")
 QUOTE_LINE = re.compile(r"^\s{0,3}>")
-HEAD = 40  # as frontend/js/viewer/locate.js
+HEAD = 40  # as frontend/src/viewer/locate.ts
 LETTERS = {"æ": "ae", "œ": "oe", "ß": "ss", "ø": "o", "ł": "l", "đ": "d", "ı": "i"}
 MATHY = re.compile(r"[≈≲≳∼≃≅≡≠≤≥≪≫∑∏∫∮√∞∝⟨⟩⊗⊕†∂∇∈∉⊂⊆∀∃±∓×ℏ₀₁₂₃₄₅₆₇₈₉⁰¹²³⁴⁵⁶⁷⁸⁹ⁿ̄̂̃]")
 

@@ -18,6 +18,7 @@ import webbrowser
 
 from backend import create_app
 from backend.config import Config
+from backend.frontend import BuildError, ensure_built
 
 
 def main() -> None:
@@ -58,6 +59,10 @@ def main() -> None:
     config.lan = not loopback_only
     if not wildcard and not loopback_only:
         config.allowed_hosts.add(a.host)  # started on a specific address: accept requests for it
+    try:
+        ensure_built(config.frontend_dir)
+    except BuildError as e:
+        raise SystemExit(str(e)) from e
     app = create_app(config)
     url = f"http://{'127.0.0.1' if wildcard else a.host}:{a.port}/"
     print(f"Synapse running at {url}  (library: {config.data_dir})  — Ctrl+C to stop")

@@ -25,11 +25,14 @@ LOADS = {
         rf"\.src\s*=\s*{REMOTE}",
     ],
 }
+LOADS[".ts"] = LOADS[".js"]
+# not ours, or generated from what is checked here (frontend/js is built from frontend/src)
+SKIP = {"vendor", "node_modules", "js"}
 
 
 def own_files():
     for path in sorted(FRONTEND.rglob("*")):
-        if path.suffix in LOADS and "vendor" not in path.relative_to(FRONTEND).parts:
+        if path.suffix in LOADS and not SKIP & set(path.relative_to(FRONTEND).parts):
             yield path
     # vendored pages and stylesheets still must not reach out (their scripts are checked when vendoring)
     for path in sorted((FRONTEND / "vendor").rglob("*")):
