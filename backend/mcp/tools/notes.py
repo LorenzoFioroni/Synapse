@@ -88,8 +88,8 @@ class NoteToolsMixin:
                             + ("\nAlso: " + " ".join(warnings) if warnings else ""))
         try:
             self.s.note_service.save(path, content, None)
-        except NoteExists:
-            raise ToolError(f"A note already exists at {path}; try another title.")
+        except NoteExists as e:
+            raise ToolError(f"A note already exists at {path}; try another title.") from e
         parsed = parser.parse(content, fallback_title=title)
         return drop_empty({"saved": path, "link": self._note_link(path, title),
                        "citations": len([l for l in parsed.links if l.kind == "cite"]),
@@ -137,8 +137,8 @@ class NoteToolsMixin:
             if isinstance(e, str):
                 try:
                     e = json.loads(e)
-                except ValueError:
-                    raise ToolError("edits must be a list of {\"old\": …, \"new\": …} objects.")
+                except ValueError as err:
+                    raise ToolError("edits must be a list of {\"old\": …, \"new\": …} objects.") from err
             flat.extend(e if isinstance(e, list) else [e])
         edits = flat
         for _ in range(3):   # the user may be saving this note right now: re-read and apply again
@@ -204,7 +204,7 @@ class NoteToolsMixin:
                             "the app (the note's Claude edits list), or read the note with get_note and edit_note it.")
         try:
             res = self.s.note_service.edit(path, full["before"], h, by="ai", summary=f"Undid: {e['summary']}")
-        except Conflict:
-            raise ToolError(f"{path} changed just now; nothing was undone.")
+        except Conflict as err:
+            raise ToolError(f"{path} changed just now; nothing was undone.") from err
         return {"restored": path, "undid": e["summary"], "version": res["version"],
                 "changes": self._diff(cur, full["before"])}

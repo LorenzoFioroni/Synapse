@@ -22,7 +22,6 @@ select = [
 ]
 ignore = [
     "B023",   # closures defined in a loop and used in the same iteration are fine (and common here)
-    "B904",   # `raise ... from` inside except: to be adopted module by module during the restructure
     "B905",   # zip(strict=...): same
 ]
 

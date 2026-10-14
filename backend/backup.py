@@ -290,7 +290,7 @@ class Backups:
                 else:   # Python without extraction filters: entries were checked above
                     tar.extractall(dest, members=members)
         except (tarfile.TarError, OSError, EOFError) as e:
-            raise BackupError(f"The backup cannot be read: {e}")
+            raise BackupError(f"The backup cannot be read: {e}") from e
 
     @staticmethod
     def _check_db(db: Path) -> None:
@@ -304,7 +304,7 @@ class Backups:
             finally:
                 c.close()
         except sqlite3.Error as e:
-            raise BackupError(f"The library database in the backup is damaged: {e}")
+            raise BackupError(f"The library database in the backup is damaged: {e}") from e
         if ok != "ok":
             raise BackupError(f"The library database in the backup is damaged: {ok}")
 

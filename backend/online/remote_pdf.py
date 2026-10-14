@@ -28,8 +28,8 @@ def _public(host: str) -> bool:
     """True when every address the host resolves to is a public one."""
     try:
         infos = socket.getaddrinfo(host, None)
-    except (socket.gaierror, UnicodeError):
-        raise RemoteError(f"Cannot resolve {host}.", 502)
+    except (socket.gaierror, UnicodeError) as e:
+        raise RemoteError(f"Cannot resolve {host}.", 502) from e
     for info in infos:
         ip = ipaddress.ip_address(info[4][0].split("%")[0])
         if getattr(ip, "ipv4_mapped", None):
@@ -55,8 +55,8 @@ def fetch_pdf(url: str, user_agent: str, max_bytes: int | None = None) -> bytes:
         try:
             r = requests.get(url, timeout=TIMEOUT, stream=True, allow_redirects=False,
                              headers={"User-Agent": user_agent})
-        except requests.RequestException:
-            raise RemoteError("The PDF could not be downloaded.", 502)
+        except requests.RequestException as e:
+            raise RemoteError("The PDF could not be downloaded.", 502) from e
         with r:
             if r.is_redirect:
                 url = urljoin(url, r.headers.get("Location", ""))

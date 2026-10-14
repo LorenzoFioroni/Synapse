@@ -71,8 +71,8 @@ CREATE TABLE IF NOT EXISTS annotation_migration (
 def _num(v, lo=-0.5, hi=1.5) -> float:
     try:
         f = float(v)
-    except (TypeError, ValueError):
-        raise AnnotationError("Coordinates must be numbers.")
+    except (TypeError, ValueError) as e:
+        raise AnnotationError("Coordinates must be numbers.") from e
     if not (lo <= f <= hi) or f != f:
         raise AnnotationError("Coordinates are fractions of the page (0 to 1).")
     return round(f, 6)
@@ -113,8 +113,8 @@ def clean(data: dict, partial: bool = False) -> dict:
     if "page" in data or not partial:
         try:
             page = int(data.get("page"))
-        except (TypeError, ValueError):
-            raise AnnotationError("page must be a page number (1, 2, …).")
+        except (TypeError, ValueError) as e:
+            raise AnnotationError("page must be a page number (1, 2, …).") from e
         if page < 1:
             raise AnnotationError("page must be a page number (1, 2, …).")
         out["page"] = page
@@ -135,8 +135,8 @@ def clean(data: dict, partial: bool = False) -> dict:
     if "size" in data:
         try:
             size = float(data["size"]) if data["size"] is not None else None
-        except (TypeError, ValueError):
-            raise AnnotationError("size must be a number.")
+        except (TypeError, ValueError) as e:
+            raise AnnotationError("size must be a number.") from e
         if size is not None and not 0 < size <= 400:
             raise AnnotationError("size must be between 0 and 400.")
         out["size"] = size

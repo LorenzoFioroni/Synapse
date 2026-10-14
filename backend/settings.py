@@ -139,8 +139,8 @@ class SettingsStore:
             elif isinstance(default, int):
                 try:
                     v = int(v)
-                except (TypeError, ValueError):
-                    raise SettingsError(f"{k} must be a number")
+                except (TypeError, ValueError) as e:
+                    raise SettingsError(f"{k} must be a number") from e
                 if k == "font_size" and not 11 <= v <= 18:
                     raise SettingsError("Font size must be between 11 and 18")
                 if k == "notes_autosave_ms" and not 300 <= v <= 60000:
@@ -165,7 +165,7 @@ class SettingsStore:
                     probe.write_text("ok")
                     probe.unlink()
                 except OSError as e:
-                    raise SettingsError(f"Cannot write to {d}: {e.strerror or e}")
+                    raise SettingsError(f"Cannot write to {d}: {e.strerror or e}") from e
             clean[k] = v
         with self._lock:
             self._data.update(clean)
