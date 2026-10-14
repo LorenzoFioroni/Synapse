@@ -11,7 +11,7 @@ def test_ping(client):
 
 
 def test_save_from_page_metadata_without_network(client, monkeypatch):
-    from backend.api import connector
+    from backend import connector
     from backend.online.http import LookupFailed
 
     def offline(**k):
@@ -45,7 +45,7 @@ def test_save_from_page_metadata_without_network(client, monkeypatch):
 
 
 def test_save_prefers_online_metadata_and_attaches_uploaded_pdf(client, monkeypatch, tmp_path):
-    from backend.api import connector
+    from backend import connector
 
     monkeypatch.setattr(
         connector,
@@ -86,7 +86,7 @@ def test_save_needs_something(client):
 
 
 def test_pdf_tab_uses_doi_inside_the_pdf(client, monkeypatch, tmp_path):
-    from backend.api import connector
+    from backend import connector
 
     seen = {}
 
@@ -122,7 +122,7 @@ def test_file_existing_item_into_another_folder(client):
 
 
 def test_on_add_settings_for_the_browser_button(client, svc, monkeypatch):
-    from backend.api import connector
+    from backend import connector
     from backend.online.http import LookupFailed
 
     def offline(**k):
@@ -165,3 +165,49 @@ def test_background_pdf_search_attaches_the_file(svc, monkeypatch, tmp_path):
             break
         time.sleep(0.05)
     assert svc.papers.get(item["id"])["attachments"][0]["name"] == "Full Text PDF"
+
+
+def test_page_pdf_link_is_downloaded_only_from_public_addresses(client, monkeypatch):
+    """The PDF link comes from the browser, so the server fetches it the way it fetches an
+    attachment's web link: public addresses only, PDFs only (online/remote_pdf.py)."""
+    import socket
+
+    from backend import connector
+    from backend.online import remote_pdf
+    from backend.online.http import LookupFailed
+
+    def offline(**k):
+        raise LookupFailed("offline")
+
+    class Resp:
+        status_code, ok, is_redirect, headers = 200, True, False, {}
+
+        def iter_content(self, n):
+            yield b"%PDF-1.4 fake"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    fetched = []
+    ips = {"journal.example": "93.184.216.34"}
+    monkeypatch.setattr(connector, "lookup", offline)
+    monkeypatch.setattr(
+        remote_pdf.socket,
+        "getaddrinfo",
+        lambda host, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ips.get(host, host), 0))],
+    )
+    monkeypatch.setattr(remote_pdf.requests, "get", lambda url, **k: fetched.append(url) or Resp())
+
+    local = client.post(
+        "/api/connector/save", json={"title": "Router page", "pdf_url": "http://127.0.0.1:631/x.pdf"}
+    ).get_json()
+    assert local["pdf"] == "failed" and fetched == []  # refused before any request
+
+    public = client.post(
+        "/api/connector/save", json={"title": "Journal page", "pdf_url": "https://journal.example/paper.pdf"}
+    ).get_json()
+    assert public["pdf"] == "downloaded" and fetched == ["https://journal.example/paper.pdf"]
+    assert public["item"]["attachments"][0]["name"] == "Full Text PDF"

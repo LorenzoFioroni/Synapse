@@ -26,6 +26,7 @@ ALLOWED = {
     "access": BASE,
     # the composition layer: wires and exposes everything
     "services": None,
+    "connector": None,
     "api": None,
     "frontend": None,
     "app": None,

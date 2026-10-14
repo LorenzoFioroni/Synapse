@@ -46,6 +46,9 @@ Two objects tie the backend together:
 - **`services.py`** has `Services`, the one object that owns every component (repositories,
   indexes, the notes vault and service, backups, devices, the change feed) and wires their
   callbacks together. The API reaches it through `api.svc()`.
+- **`connector.py`** saves what the browser extension sends (see
+  [browser extension](browser-extension.md)). Like `services.py` it combines several packages
+  (the library, online lookups, PDF text, the citation queue), so it sits in the composition layer.
 
 | Package / module | Responsibility | Storage |
 |---|---|---|
@@ -70,7 +73,8 @@ Packages depend on each other in one direction only. A package may import from t
 never from those above:
 
 ```
-  app · frontend · api · services        composition: wires and exposes everything
+  app · frontend · api                   composition: wires and exposes everything
+  services · connector
   mcp                                    (library, notes, pdf, references)
   references                             (library, formats, online)
   online                                 (library, formats, pdf)

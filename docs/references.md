@@ -44,7 +44,7 @@ features fail with a message and the rest of the app works as before.
 **Contact e-mail and API keys.** They live in the settings (Settings → Online Services):
 `contact_email`, `openalex_api_key` and `semantic_scholar_api_key`. `http.py` does not read
 settings. The callers read them and pass them in: the endpoints in `backend/api/metadata.py`,
-`backend/api/attachments.py` and `backend/api/connector.py`, `Services.find_pdf` in
+`backend/api/attachments.py`, `backend/connector.py`, `Services.find_pdf` in
 `backend/services.py`, and `Citations.fetch_now` in `backend/references/service.py`. The e-mail
 goes into the User-Agent above, into Unpaywall's `email` parameter, and into OpenAlex's `mailto`
 parameter when there is no OpenAlex key. The OpenAlex key is sent as the `api_key` parameter, the
@@ -167,10 +167,10 @@ background thread; `_pdf_lock` lets only one such search run at a time.
 
 An attachment can be a web address instead of a file. The frontend opens it through
 `GET /api/attachments/<id>/remote` (`fileUrl` in `frontend/src/api.ts`), and
-`backend/online/remote_pdf.py` downloads it. Because this makes the server fetch a URL, it is
-careful not to become a way into the local network:
+`backend/online/remote_pdf.py` downloads it. The browser button's PDF link (when the extension
+could not fetch the PDF itself) is downloaded the same way (`backend/connector.py`). Because this
+makes the server fetch a URL, it is careful not to become a way into the local network:
 
-- Only the URL stored on the attachment is fetched, never one sent by the browser.
 - Only `http` and `https`. Every address the host resolves to must be public
   (`ipaddress.is_global`, not multicast; IPv4-mapped IPv6 is unwrapped first).
 - Redirects are followed by hand, at most `MAX_REDIRECTS` (5), and each target is checked again.
@@ -254,7 +254,7 @@ ticked checkbox (`afterAddHtml` in `frontend/src/afterAdd.ts`). On the server,
 | Setting (default) | Where it acts | What runs |
 |---|---|---|
 | `add_fetch_metadata` (`ask`) | Import dialog only (`importDialog.ts` → `runAfterAdd`) | `retrieveInBackground`, then the review. Items added by identifier or from PDFs are always looked up; the browser button has its own checkbox. |
-| `add_find_pdf` (`ask`) | Import dialog and Add by Identifier (`runAfterAdd` → `A.findPdfs`); the browser button on the server (`api/connector.py`, when the page gave no PDF) | `POST /api/items/<id>/find_pdf` per item; `Services.find_pdf_later` for the browser button. |
+| `add_find_pdf` (`ask`) | Import dialog and Add by Identifier (`runAfterAdd` → `A.findPdfs`); the browser button on the server (`backend/connector.py`, when the page gave no PDF) | `POST /api/items/<id>/find_pdf` per item; `Services.find_pdf_later` for the browser button. |
 | `add_fetch_references` (`always`) | Server: `from_identifier`, `from_pdf` (when the lookup found metadata) and the connector's `save` (when metadata came from online), via `Citations.maybe_enqueue`. Import dialog: `runAfterAdd` → `POST /api/references/queue`. | The background queue. Only items with a DOI or arXiv id. For dropped PDFs, `ask` is a Fetch References button in the toast (`addPdfsAsItems` in `actions.ts`). |
 
 `GET /api/connector/ping` sends the three values to the browser extension, which shows its own
@@ -275,7 +275,7 @@ checkboxes; see [browser extension](browser-extension.md).
 | `GET /api/references/status` | `api/references.py` | `{queued, running, last_error}`. |
 | `GET /api/graph/citations` | `api/references.py` | The whole citation graph (`Citations.graph()`). |
 | `GET /api/graph` | `api/references.py` | The Graph view's network (`build_graph()`). |
-| `POST /api/connector/save` | `api/connector.py` | The browser button; looks up metadata when the page has a DOI or arXiv id. |
+| `POST /api/connector/save` | `api/connector.py`, `backend/connector.py` | The browser button; looks up metadata when the page has a DOI or arXiv id. |
 
 ## How tests fake the network
 

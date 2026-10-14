@@ -2,7 +2,7 @@
 
 The "Save to Library" button is a Chrome extension in `browser_extension/`. It reads the citation
 data of the page you are on and posts it to the library's connector API
-(`backend/api/connector.py`). This page describes how both halves work and what must stay
+(`backend/api/connector.py`, which hands it to `backend/connector.py`). This page describes how both halves work and what must stay
 compatible. To install the extension, see
 [`browser_extension/README.md`](../browser_extension/README.md). Where it fits in the whole app is
 in [`architecture.md`](architecture.md).
@@ -169,12 +169,13 @@ The body is JSON, or multipart with a `meta` field (JSON) and an optional `file`
 
 Other fields the extension sends (`site`, `is_pdf`, `has_citation_meta`) are ignored.
 
-What `save` does:
+What saving does (`save` in `backend/connector.py`; the endpoint only reads the request and
+shapes the answer):
 
 1. Refuses a request with no title, DOI, arXiv id or file (400).
 2. If a PDF was uploaded and there is no DOI or arXiv id, extracts the text of its first two
    pages and looks for an identifier (`find_identifier` in `backend/pdf/text.py`).
-3. Normalises the page data into item fields (`_page_item`): authors through
+3. Normalises the page data into item fields (`page_item`): authors through
    `parse_display_name`, the year through `year_from`, `item_type` `webpage` by default.
 4. With `lookup` and an identifier, fetches the metadata online (`online.metadata.lookup`; see
    [`references.md`](references.md)). Online values win and the page fills the gaps. If the lookup
@@ -182,7 +183,9 @@ What `save` does:
 5. Checks for a duplicate (`find_duplicate`: same DOI, or same title and year, not in the Trash).
 6. Creates the item. If the metadata came from online, queues its reference list when Settings
    (or `fetch_references` for "ask") says so.
-7. Attaches the PDF: the uploaded file, else a download of `pdf_url`. PDFs are saved as
+7. Attaches the PDF: the uploaded file, else a download of `pdf_url` through
+   `online/remote_pdf.py`, which fetches only from public addresses (also after redirects), only
+   PDFs, and at most 100 MB, because the link comes from the browser. PDFs are saved as
    `<uuid>_connector.pdf` in `data/pdfs/`, and the full-text index catches up when automatic
    indexing is on (see [`fulltext-search.md`](fulltext-search.md)). With no PDF, and
    `add_find_pdf` set to "always" (or "ask" with `find_pdf`), an open-access search starts in the
@@ -237,7 +240,8 @@ this side: keep them in step with `connector.py`.
 
 - `tests/test_connector.py`: the ping, saving from page metadata without the network, online
   metadata winning, an uploaded PDF, a DOI read from a PDF, duplicates and `allow_duplicate`,
-  `/file`, the `on_add` settings, the background PDF search, and CORS for extension origins only.
+  `/file`, the `on_add` settings, the background PDF search, the page's PDF link fetched only from
+  public addresses, and CORS for extension origins only.
 - `tests/test_guard.py`: `test_browser_extension_can_save`.
 - `tests/test_branding.py`: the ping names (above).
 - `tests/e2e/extension_checklist.py`, run by hand: loads the extension into Chromium, saves the
@@ -250,8 +254,8 @@ See [`testing.md`](testing.md) for how the suites run.
 
 | To change | Edit |
 |---|---|
-| What is read from pages | `extractCitation` in `extract.js` (self-contained), the `Citation` typedef, and `PAGE_FIELDS` or `_page_item` in `connector.py` if the server must read a new field |
+| What is read from pages | `extractCitation` in `extract.js` (self-contained), the `Citation` typedef, and `PAGE_FIELDS` or `page_item` in `backend/connector.py` if the server must read a new field |
 | How the PDF is fetched | `fetchPdfInPage` in `extract.js`, `doSave` in `popup.js` |
 | The form and its checkboxes | `renderForm` in `popup.js` |
-| What saving does | `save` in `backend/api/connector.py` (keep it to parsing and shaping; logic goes in the library or `Services`) |
+| What saving does | `save` in `backend/connector.py`; the request and answer shapes in `backend/api/connector.py` |
 | Permissions | `manifest.json`, and the Permissions section of `browser_extension/README.md` |

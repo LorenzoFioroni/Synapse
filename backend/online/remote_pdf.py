@@ -1,9 +1,10 @@
-"""Download the PDF of an attachment that points to a web address.
+"""Download a PDF from a web address: an attachment stored as a link, or the PDF link of a page
+saved with the browser button (``backend/connector.py``).
 
-Only the URL stored on an attachment is ever fetched, never one supplied by the browser, and
-only from public addresses: a link to the local network (a router page, ``169.254.169.254``,
-another service on this machine) is refused, also when a redirect leads there. The response
-must be a PDF and is capped in size.
+The server fetches these URLs on someone's behalf, so it must not become a way into the local
+network: only public addresses are fetched, and a link to the local network (a router page,
+``169.254.169.254``, another service on this machine) is refused, also when a redirect leads
+there. The response must be a PDF and is capped in size.
 """
 
 from __future__ import annotations
