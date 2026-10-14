@@ -34,7 +34,7 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
 | `server.py` | Starts the web app: parses the flags, builds a `Config`, calls `backend.create_app`, and serves with Flask (local) or waitress (`--lan`). |
 | `mcp_server.py` | The MCP server that Claude Desktop and Claude Code start themselves. It reads the same `data/` folder and writes notes only into `notes/ai/`. |
 | `frontend/index.html` | The single-page app. It loads `js/main.js` as an ES module. |
-| `frontend/viewer.html` | The PDF viewer, opened in its own tab. It uses pdf.js plus `js/viewer/*`. |
+| `frontend/viewer.html` | The PDF viewer, opened in its own tab. It loads pdf.js and `js/viewer/viewer.js` (the viewer), then its add-ons `annotations`, `links` and `notesBridge`. |
 | `frontend/pair.html` | The page that unpaired devices see under `--lan`. |
 | `browser_extension/` | The Chrome extension that saves the page you are on to the library. |
 
@@ -128,7 +128,9 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
 - `views/*` holds the screens and dialogs, and `views/notes/*` the notes workspace (a CodeMirror 6
   editor, live preview and Markdown rendering).
 - `ui/*` holds the generic widgets (dialogs, menus, toasts, long press).
-- `viewer/*` holds the parts of the PDF viewer (`viewer.html`).
+- `viewer/*` holds the PDF viewer (`viewer.html`): `viewer.ts` lays out, draws and zooms the pages
+  and publishes `window.zcViewer`; `annotations.ts`, `links.ts` and `notesBridge.ts` add to it
+  through the `zc:pagecreated` and `zc:pagerendered` events.
 - `vendor/` holds third-party libraries, committed as built files and loaded from disk. See
   [`frontend/vendor/README.md`](../frontend/vendor/README.md).
 

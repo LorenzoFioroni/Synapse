@@ -24,6 +24,7 @@
     "esbuild": "0.28.2",
     "force-graph": "1.51.4",
     "katex": "0.18.9",
+    "pdfjs-dist": "3.4.120",
     "typescript": "5.9.3"
   }
 }
