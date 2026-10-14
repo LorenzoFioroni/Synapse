@@ -51,6 +51,11 @@ def test_bad_paths_are_400(client):
         assert client.post("/api/notes/note", json={"path": p}).status_code == 400
     assert client.get("/api/notes/attachments/../library.db").status_code in (400, 404)
     assert client.get("/api/notes/attachments/%2E%2E/library.db").status_code in (400, 404)
+    # the images folder holds no notes
+    assert client.post("/api/notes/note", json={"title": "x", "folder": "attachments"}).status_code == 400
+    r = client.put("/api/notes/note", json={"path": "attachments/x.md", "create": True, "text": "x"})
+    assert r.status_code == 400
+    assert client.get("/api/notes").json["notes"] == []
 
 
 def test_paper_note_links_and_backlinks(client, svc):

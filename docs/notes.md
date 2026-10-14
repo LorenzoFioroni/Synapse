@@ -94,7 +94,9 @@ MCP server builds the same objects in its own process over the same folder.
   both sides also re-read and retry on `Conflict`.
 - **Moves and folders.** `move` (optionally hash-checked) allows case-only renames on
   case-insensitive disks. `make_folder`, `move_folder` and `notes_in` refuse the `attachments`
-  folder (`_reserved`, compared without case for macOS).
+  folder (`_reserved`, compared without case for macOS), and so do `write` and the destination
+  of `move`: the index never lists notes there, so a note written there would disappear at the
+  next sync.
 - **Trash.** `trash`, `trash_batch`, `trashed`, `restore` and `restore_batch`. Restoring skips
   files whose place is taken again and leaves them in the trash.
 
