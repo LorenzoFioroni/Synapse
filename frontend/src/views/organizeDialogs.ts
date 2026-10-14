@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Dialogs and widgets for folders, tags and smart folders.
 import * as A from '../actions.js';
 import { api } from '../api.js';
@@ -6,19 +5,24 @@ import { icon } from '../icons.js';
 import { currentFolderId, folderById, folderPath, folderTree, selectedItems, state } from '../store.js';
 import { openDialog, promptDialog } from '../ui/dialog.js';
 import { toastError } from '../ui/toast.js';
-import { debounce, escapeHtml, h, plural, shortAuthors } from '../util.js';
+import type { Item, SearchMode, SmartFolder } from '../types.js';
+import { debounce, escapeHtml, plural, shortAuthors } from '../util.js';
 
 /* ------------------------------------------------------------ tag input */
-/**
- * Chip input with autocomplete. Calls onAdd(name) / onRemove(name).
- * Returns { set(tags), focus() }.
- */
-export function tagInput(container, { tags = [], onAdd, onRemove, placeholder = 'Add tag…', autofocus = false }) {
+export interface TagInput { set(tags: string[]): void; focus(): void; value(): string[] }
+
+/** Chip input with autocomplete. Calls onAdd(name) / onRemove(name). */
+export function tagInput(
+  container: HTMLElement,
+  { tags = [], onAdd, onRemove, placeholder = 'Add tag…', autofocus = false }: {
+    tags?: string[]; onAdd?: (name: string) => void; onRemove?: (name: string) => void; placeholder?: string; autofocus?: boolean;
+  },
+): TagInput {
   container.classList.add('tag-input', 'no-enter');   // Enter adds a tag instead of submitting the dialog
   container.innerHTML = '<div class="chips"></div><input type="text" spellcheck="false" autocomplete="off"><div class="tag-suggest" hidden></div>';
-  const chips = container.querySelector('.chips');
-  const input = container.querySelector('input');
-  const box = container.querySelector('.tag-suggest');
+  const chips = container.querySelector<HTMLElement>('.chips')!;
+  const input = container.querySelector('input')!;
+  const box = container.querySelector<HTMLElement>('.tag-suggest')!;
   input.placeholder = placeholder;
   let current = [...tags];
   let active = -1;
@@ -31,20 +35,20 @@ export function tagInput(container, { tags = [], onAdd, onRemove, placeholder = 
     const have = new Set(current.map((t) => t.toLowerCase()));
     return state.sidebar.tags
       .filter((t) => !have.has(t.name.toLowerCase()) && (!q || t.name.toLowerCase().includes(q)))
-      .sort((a, b) => (b.name.toLowerCase().startsWith(q) - a.name.toLowerCase().startsWith(q)) || b.count - a.count)
+      .sort((a, b) => (Number(b.name.toLowerCase().startsWith(q)) - Number(a.name.toLowerCase().startsWith(q))) || b.count - a.count)
       .slice(0, 8);
   };
   const showSuggest = () => {
     const list = suggestions();
     const q = input.value.trim();
     const exact = state.sidebar.tags.some((t) => t.name.toLowerCase() === q.toLowerCase());
-    const rows = list.map((t) => ({ name: t.name, label: `${tagDot(t.name)}<span>${escapeHtml(t.name)}</span><span class="n">${t.count}</span>` }));
+    const rows: { name: string; label: string }[] = list.map((t) => ({ name: t.name, label: `${tagDot(t.name)}<span>${escapeHtml(t.name)}</span><span class="n">${t.count}</span>` }));
     if (q && !exact && !current.some((t) => t.toLowerCase() === q.toLowerCase())) rows.push({ name: q, label: `${icon('plus', 'icon-sm')}<span>Create “${escapeHtml(q)}”</span>` });
     active = rows.length ? 0 : -1;
     box.innerHTML = rows.map((r, i) => `<div class="opt ${i === active ? 'active' : ''}" data-name="${escapeHtml(r.name)}">${r.label}</div>`).join('');
     box.hidden = !rows.length || document.activeElement !== input;
   };
-  const add = (name) => {
+  const add = (name: string) => {
     name = name.trim().replace(/\s+/g, ' ');
     if (!name || current.some((t) => t.toLowerCase() === name.toLowerCase())) { input.value = ''; box.hidden = true; return; }
     const existing = state.sidebar.tags.find((t) => t.name.toLowerCase() === name.toLowerCase());
@@ -59,7 +63,7 @@ export function tagInput(container, { tags = [], onAdd, onRemove, placeholder = 
   input.addEventListener('focus', showSuggest);
   input.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 150));
   input.addEventListener('keydown', (e) => {
-    const opts = [...box.querySelectorAll('.opt')];
+    const opts = [...box.querySelectorAll<HTMLElement>('.opt')];
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       if (!opts.length) return;
       e.preventDefault();
@@ -69,10 +73,10 @@ export function tagInput(container, { tags = [], onAdd, onRemove, placeholder = 
       if (e.key === 'Tab' && !input.value) return;
       e.preventDefault();
       e.stopPropagation();
-      if (!box.hidden && opts[active] && (e.key !== ',' || !input.value.trim())) add(opts[active].dataset.name);
+      if (!box.hidden && opts[active] && (e.key !== ',' || !input.value.trim())) add(opts[active].dataset.name!);
       else add(input.value);
     } else if (e.key === 'Backspace' && !input.value && current.length) {
-      const last = current.pop();
+      const last = current.pop()!;
       paint();
       onRemove?.(last);
     } else if (e.key === 'Escape' && !box.hidden) {
@@ -81,13 +85,13 @@ export function tagInput(container, { tags = [], onAdd, onRemove, placeholder = 
     }
   });
   box.addEventListener('mousedown', (e) => {
-    const o = e.target.closest('.opt');
-    if (o) { e.preventDefault(); add(o.dataset.name); }
+    const o = (e.target as Element).closest<HTMLElement>('.opt');
+    if (o) { e.preventDefault(); add(o.dataset.name!); }
   });
   chips.addEventListener('click', (e) => {
-    const x = e.target.closest('[data-remove]');
+    const x = (e.target as Element).closest<HTMLElement>('[data-remove]');
     if (!x) { input.focus(); return; }
-    const name = x.dataset.remove;
+    const name = x.dataset.remove!;
     current = current.filter((t) => t !== name);
     paint();
     onRemove?.(name);
@@ -98,12 +102,12 @@ export function tagInput(container, { tags = [], onAdd, onRemove, placeholder = 
   return { set(t) { current = [...t]; paint(); }, focus: () => input.focus(), value: () => current };
 }
 
-export function tagDot(name) {
+export function tagDot(name: string): string {
   const c = state.sidebar.tags.find((t) => t.name.toLowerCase() === String(name).toLowerCase())?.color;
   return `<span class="tag-dot" style="${c ? `background:${c}` : ''}"></span>`;
 }
 
-export function tagChip(name, removable = false) {
+export function tagChip(name: string, removable = false): string {
   return `<span class="tag-chip">${tagDot(name)}<span>${escapeHtml(name)}</span>${removable
     ? `<button class="x" data-remove="${escapeHtml(name)}" title="Remove tag" tabindex="-1">${icon('close', 'icon-sm')}</button>` : ''}</span>`;
 }
@@ -113,9 +117,11 @@ export function tagChip(name, removable = false) {
  * Pick one folder. ``contains`` maps folder id -> how many of the items are already
  * in it (shown as a hint). Resolves to a folder id, or undefined when cancelled.
  */
-export function pickFolder({ title = 'Add to Folder', confirm = 'Add', contains = {}, total = 1, exclude = null } = {}) {
-  let chosen = null;
-  let list, filter, okBtn;
+export function pickFolder({ title = 'Add to Folder', confirm = 'Add', contains = {}, total = 1, exclude = null }: {
+  title?: string; confirm?: string; contains?: Record<number, number>; total?: number; exclude?: number | null;
+} = {}): Promise<number | undefined> {
+  let chosen: number | null = null;
+  let list: HTMLElement, filter: HTMLInputElement, okBtn: HTMLButtonElement | undefined;
   const render = () => {
     const q = filter.value.trim().toLowerCase();
     const rows = folderTree().filter((f) => f.id !== exclude && (!q || folderPath(f.id).join('/').toLowerCase().includes(q)));
@@ -137,18 +143,18 @@ export function pickFolder({ title = 'Add to Folder', confirm = 'Add', contains 
       body.innerHTML = `<input class="input" placeholder="Filter folders…" spellcheck="false">
         <div class="fp-list"></div>
         <button class="btn btn-ghost btn-sm" data-new style="margin-top:8px">${icon('plus', 'icon-sm')} New Folder…</button>`;
-      filter = body.querySelector('input');
-      list = body.querySelector('.fp-list');
+      filter = body.querySelector('input')!;
+      list = body.querySelector<HTMLElement>('.fp-list')!;
       render();
       filter.addEventListener('input', render);
       list.addEventListener('click', (e) => {
-        const r = e.target.closest('.fp-row');
+        const r = (e.target as Element).closest<HTMLElement>('.fp-row');
         if (!r) return;
         chosen = Number(r.dataset.id);
         render();
       });
-      list.addEventListener('dblclick', (e) => { if (e.target.closest('.fp-row')) okBtn.click(); });
-      body.querySelector('[data-new]').onclick = async () => {
+      list.addEventListener('dblclick', (e) => { if ((e.target as Element).closest('.fp-row')) okBtn!.click(); });
+      body.querySelector<HTMLElement>('[data-new]')!.onclick = async () => {
         const parent = chosen ? folderById(chosen) : null;
         const name = await promptDialog(parent ? `New folder inside “${parent.name}”` : 'New folder', { title: 'New Folder', confirm: 'Create', placeholder: 'Folder name' });
         if (!name) return;
@@ -157,18 +163,21 @@ export function pickFolder({ title = 'Add to Folder', confirm = 'Add', contains 
       };
     },
     buttons: [{ label: 'Cancel', value: undefined }, { label: confirm, kind: 'primary', onClick: () => {} }],
-  }).then((v) => (v === confirm ? chosen : undefined));
+  }).then((v) => (v === confirm ? chosen ?? undefined : undefined));
 }
 
-function membershipCounts(items) {
-  const contains = {};
+function membershipCounts(items: Item[]): Record<number, number> {
+  const contains: Record<number, number> = {};
   items.forEach((i) => (i.folder_ids || []).forEach((f) => { contains[f] = (contains[f] || 0) + 1; }));
   return contains;
 }
 
-export async function addSelectionToFolder(ids = selectedItems().map((i) => i.id)) {
+/** The items of ``ids`` that are in the list. */
+const itemsOf = (ids: string[]) => ids.map((id) => state.items.find((i) => i.id === id)).filter((i): i is Item => !!i);
+
+export async function addSelectionToFolder(ids = selectedItems().map((i) => i.id)): Promise<void> {
   if (!ids.length) return;
-  const items = ids.map((id) => state.items.find((i) => i.id === id)).filter(Boolean);
+  const items = itemsOf(ids);
   const fid = await pickFolder({
     title: ids.length === 1 ? 'Add to Folder' : `Add ${ids.length} Items to Folder`,
     contains: membershipCounts(items), total: items.length,
@@ -177,9 +186,9 @@ export async function addSelectionToFolder(ids = selectedItems().map((i) => i.id
 }
 
 /** In a folder view: take the items out of this folder and put them into another one. */
-export async function moveSelectionToFolder(ids = selectedItems().map((i) => i.id), fromId = currentFolderId()) {
+export async function moveSelectionToFolder(ids = selectedItems().map((i) => i.id), fromId = currentFolderId()): Promise<void> {
   if (!ids.length) return;
-  const items = ids.map((id) => state.items.find((i) => i.id === id)).filter(Boolean);
+  const items = itemsOf(ids);
   const fid = await pickFolder({
     title: `Move ${ids.length === 1 ? 'Item' : `${ids.length} Items`} to Another Folder`, confirm: 'Move',
     contains: membershipCounts(items), total: items.length, exclude: fromId,
@@ -188,11 +197,11 @@ export async function moveSelectionToFolder(ids = selectedItems().map((i) => i.i
 }
 
 /* -------------------------------------------------------- edit tags (N) */
-export function editTagsDialog(ids = selectedItems().map((i) => i.id)) {
-  const items = ids.map((id) => state.items.find((i) => i.id === id)).filter(Boolean);
-  const counts = {};
+export function editTagsDialog(ids = selectedItems().map((i) => i.id)): Promise<unknown> {
+  const items = itemsOf(ids);
+  const counts: Record<string, number> = {};
   items.forEach((i) => (i.tags || []).forEach((t) => { counts[t] = (counts[t] || 0) + 1; }));
-  const toAdd = [], toRemove = new Set();
+  const toAdd: string[] = [], toRemove = new Set<string>();
   return openDialog({
     title: items.length === 1 ? 'Edit Tags' : `Tags for ${items.length} Items`,
     render: (body) => {
@@ -203,13 +212,13 @@ export function editTagsDialog(ids = selectedItems().map((i) => i.id)) {
           <label class="ct-row"><input type="checkbox" checked data-tag="${escapeHtml(t)}">${tagChip(t)}
           <span class="subtle">${items.length > 1 ? `${n} of ${items.length}` : ''}</span></label>`).join('')}</div>
         <div class="field-hint">Untick a tag to remove it from ${items.length > 1 ? 'all selected items' : 'this item'}.</div>` : ''}`;
-      tagInput(body.querySelector('.ti'), {
+      tagInput(body.querySelector<HTMLElement>('.ti')!, {
         autofocus: true,
         onAdd: (n) => { if (!toAdd.includes(n)) toAdd.push(n); },
         onRemove: (n) => { const i = toAdd.indexOf(n); if (i >= 0) toAdd.splice(i, 1); },
       });
-      body.querySelectorAll('[data-tag]').forEach((cb) => cb.addEventListener('change', () => {
-        cb.checked ? toRemove.delete(cb.dataset.tag) : toRemove.add(cb.dataset.tag);
+      body.querySelectorAll<HTMLInputElement>('[data-tag]').forEach((cb) => cb.addEventListener('change', () => {
+        if (cb.checked) toRemove.delete(cb.dataset.tag!); else toRemove.add(cb.dataset.tag!);
       }));
     },
     buttons: [
@@ -217,7 +226,7 @@ export function editTagsDialog(ids = selectedItems().map((i) => i.id)) {
       {
         label: 'Save', kind: 'primary',
         onClick: async () => {
-          const pending = document.querySelector('.dialog .tag-input input')?.value.trim();
+          const pending = document.querySelector<HTMLInputElement>('.dialog .tag-input input')?.value.trim();
           if (pending) toAdd.push(pending);
           if (!toAdd.length && !toRemove.size) return undefined;
           try {
@@ -241,8 +250,8 @@ const EXAMPLES = [
   ['tag:none folder:none', 'items not organised yet'],
 ];
 
-export function smartFolderDialog(existing = null, preset = {}) {
-  let name, query, mode, preview;
+export function smartFolderDialog(existing: SmartFolder | null = null, preset: { name?: string; query?: string; mode?: SearchMode } = {}): Promise<unknown> {
+  let name: HTMLInputElement, query: HTMLInputElement, mode: HTMLSelectElement, preview: HTMLElement;
   const refresh = debounce(async () => {
     const q = query.value.trim();
     if (!q) { preview.innerHTML = '<span class="subtle">Type a query to see what matches.</span>'; return; }
@@ -251,7 +260,7 @@ export function smartFolderDialog(existing = null, preset = {}) {
       preview.innerHTML = `<div class="sp-count"><b>${plural(res.count, 'item')}</b> match right now</div>`
         + res.sample.map((s) => `<div class="sp-row">${escapeHtml(s.title || 'Untitled')}<span class="subtle"> · ${escapeHtml([shortAuthors(s.authors), s.year].filter(Boolean).join(' · '))}</span></div>`).join('')
         + (res.count > res.sample.length ? `<div class="subtle sp-row">…and ${res.count - res.sample.length} more</div>` : '');
-    } catch (e) { preview.innerHTML = `<span class="form-error">${escapeHtml(e.message)}</span>`; }
+    } catch (e) { preview.innerHTML = `<span class="form-error">${escapeHtml((e as Error).message)}</span>`; }
   }, 250);
   return openDialog({
     title: existing ? 'Edit Smart Folder' : 'New Smart Folder',
@@ -270,19 +279,19 @@ export function smartFolderDialog(existing = null, preset = {}) {
           <div class="sf-examples">${EXAMPLES.map(([q, d]) => `<button class="sf-ex" data-q="${escapeHtml(q)}"><code>${escapeHtml(q)}</code><span>${escapeHtml(d)}</span></button>`).join('')}</div></div>
         <label class="field-label" style="margin-top:14px">Preview</label>
         <div class="sf-preview"></div>`;
-      name = body.querySelector('[data-name]');
-      query = body.querySelector('[data-query]');
-      mode = body.querySelector('[data-mode]');
-      preview = body.querySelector('.sf-preview');
+      name = body.querySelector<HTMLInputElement>('[data-name]')!;
+      query = body.querySelector<HTMLInputElement>('[data-query]')!;
+      mode = body.querySelector<HTMLSelectElement>('[data-mode]')!;
+      preview = body.querySelector<HTMLElement>('.sf-preview')!;
       name.value = existing?.name || preset.name || '';
       query.value = existing?.query || preset.query || '';
       mode.value = existing?.mode || preset.mode || 'all';
       query.addEventListener('input', refresh);
       mode.addEventListener('change', refresh);
-      body.querySelector('.sf-examples').addEventListener('click', (e) => {
-        const b = e.target.closest('[data-q]');
+      body.querySelector('.sf-examples')!.addEventListener('click', (e) => {
+        const b = (e.target as Element).closest<HTMLElement>('[data-q]');
         if (!b) return;
-        query.value = b.dataset.q;
+        query.value = b.dataset.q!;
         query.focus();
         refresh();
       });

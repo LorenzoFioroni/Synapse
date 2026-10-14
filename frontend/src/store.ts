@@ -1,6 +1,6 @@
 // Application state with a tiny pub/sub. Views subscribe to the slices they
 // render; actions (in actions.ts) mutate state and emit events.
-import type { Counts, Folder, Hits, Item, Schema, SearchMode, Settings, Sidebar } from './types.js';
+import type { Counts, Folder, Hits, Item, Schema, SearchMode, Settings, SettingsResponse, Sidebar, Stats } from './types.js';
 import { storage, store as persist } from './util.js';
 
 type Listener = (payload: any) => void;
@@ -82,7 +82,7 @@ export type NoteKeys = Record<string, { paper: string | null; citing: number }>;
 export interface AppState {
   schema: Schema | null;
   settings: Settings;
-  settingsMeta: Record<string, unknown>;
+  settingsMeta: Partial<SettingsResponse>;
   view: string;            // 'library' | 'trash' | 'duplicates' | 'unfiled' | 'folder:<id>' | 'smart:<id>' | 'notes' | 'graph' …
   query: string;
   mode: SearchMode;
@@ -99,7 +99,7 @@ export interface AppState {
   sort: { col: string; dir: 'asc' | 'desc' };
   columns: Column[];
   expanded: Set<string>;
-  indexer: unknown;
+  indexer: Stats | null;     // last /api/stats answer (main.ts polls it)
   noteKeys: NoteKeys;
   order?: string[];        // the list's display order, set by itemlist.ts (the DOM holds only the rows on screen)
 }

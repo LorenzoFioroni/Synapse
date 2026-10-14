@@ -327,6 +327,15 @@ export interface PdfImport { item: Item; identifier: { doi?: string; arxiv?: str
 
 /* ------------------------------------------------------------------ misc */
 
+/** GET /api/stats: library totals and the full-text indexer's progress. */
+export interface Stats {
+  counts: Counts;
+  attachments: number;
+  fulltext: { documents: number; chars: number; pages: number; bytes: number; fts5: boolean };
+  indexer: { running: boolean; total: number; done: number; current: string; last_run: string | null; errors: number };
+  data_dir: string;
+}
+
 /** GET /api/changes: what changed since ``seq`` (backend/changes.py). */
 export interface ChangeFeed {
   epoch: string;

@@ -2,7 +2,7 @@
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
   Attachment, ChangeFeed, CiteEntry, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item, ItemList, ItemReferences, ItemsByIds, NoteAttachments, NoteFile, NoteHistory, NotesListing,
-  PdfImport, RenamePlan, Schema, Settings, SettingsResponse, Tag,
+  PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag,
 } from './types.js';
 
 export class ApiError extends Error {
@@ -47,7 +47,7 @@ const qs = (params: Record<string, unknown>) => new URLSearchParams(
 
 export const api = {
   schema: () => request<Schema>('GET', '/api/schema'),
-  stats: () => request('GET', '/api/stats'),
+  stats: () => request<Stats>('GET', '/api/stats'),
 
   // lean: no abstracts or empty fields in the list (the item pane fetches the whole item)
   listItems: ({ view, q, mode, tags }: { view: string; q?: string; mode?: string; tags?: string[] }) => request<ItemList>('GET', `/api/items?${qs({ view, q, mode, tags: tags && tags.join(','), lean: 1 })}`),
@@ -109,10 +109,10 @@ export const api = {
   tagItems: (ids: string[], add: string[] = [], remove: string[] = []) => request('POST', '/api/items/tags', { ids, add, remove }),
   updateTag: (id: number, data: { name?: string; color?: string | null }) => request<Tag>('PATCH', `/api/tags/${id}`, data),
   deleteTag: (id: number) => request('DELETE', `/api/tags/${id}`),
-  createSmart: (name: string, query: string, mode: string) => request('POST', '/api/smart', { name, query, mode }),
-  updateSmart: (id: number, data: { name?: string; query?: string; mode?: string; position?: number }) => request('PATCH', `/api/smart/${id}`, data),
+  createSmart: (name: string, query: string, mode: string) => request<SmartFolder>('POST', '/api/smart', { name, query, mode }),
+  updateSmart: (id: number, data: { name?: string; query?: string; mode?: string; position?: number }) => request<SmartFolder>('PATCH', `/api/smart/${id}`, data),
   deleteSmart: (id: number) => request('DELETE', `/api/smart/${id}`),
-  searchPreview: (q: string, mode: string) => request('GET', `/api/search/preview?${qs({ q, mode })}`),
+  searchPreview: (q: string, mode: string) => request<{ count: number; sample: Pick<Item, 'id' | 'title' | 'year' | 'authors'>[] }>('GET', `/api/search/preview?${qs({ q, mode })}`),
 
   // notes (addressed by their path inside the notes folder)
   notes: () => request<NotesListing>('GET', '/api/notes'),
