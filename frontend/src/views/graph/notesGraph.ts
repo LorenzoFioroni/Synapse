@@ -292,7 +292,7 @@ function showCard(n: GNode, e: MouseEvent | undefined, host: HTMLElement): void 
     if (!b) return;
     const a = b.dataset.gc;
     if (a === 'note') { closeCard(); closeGlobal({ push: false }); ctx.openNote(paperNote.path!); }
-    else if (a === 'item') { closeCard(); emit('show-item', n.item_id); }
+    else if (a === 'item' && n.item_id) { closeCard(); emit('show-item', n.item_id); }
     else if (a === 'pdf') { closeCard(); A.openPdf(n.item_id); }
     else if (a === 'add') {
       b.disabled = true;

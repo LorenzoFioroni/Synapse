@@ -3,11 +3,50 @@
 import type { Counts, Folder, Hits, Item, NoteKeys, Schema, SearchMode, Settings, SettingsResponse, Sidebar, Stats } from './types.js';
 import { storage, store as persist } from './util.js';
 
-type Listener = (payload: any) => void;
-const listeners: Record<string, Listener[]> = {};
+/**
+ * Every event the views and actions exchange, with its payload (`void`: none). docs/frontend.md
+ * lists who emits and who listens. An event is how a view tells others that something changed,
+ * or reaches code it must not import (main.ts handles those).
+ */
+export interface AppEvents {
+  items: void;                      // the item list was (re)loaded or changed
+  selection: void;
+  'item-updated': string;           // one item changed in place (its id)
+  sidebar: void;                    // folders, tags or smart folders
+  view: void;
+  search: void;
+  loading: boolean;                 // a list request started or ended
+  'tag-filter': void;
+  'focus-field': { id: string; field: string };   // put the cursor in a field of the item pane
+  columns: void;
+  settings: void;
+  indexer: void;                    // new full-text indexer status in state.indexer
+  workspace: void;                  // Notes opened or closed
+  'notes-count': number | null;     // null: notes are turned off
+  'focus-list': void;
+  'open-note': { path: string; line?: number | null };
+  'open-notes': void;
+  'close-notes': void;
+  'show-item': string;              // an item id
+  'show-graph': string;             // the node to centre on, e.g. "item:<id>"
+  'open-import': File | undefined;  // optionally a file to import
+  'open-identifier': void;
+  'clear-search': void;
+  'set-search-mode': SearchMode;
+}
+export type AppEvent = keyof AppEvents;
+/** The arguments after the event name: none for a `void` event, else the payload. */
+type Payload<K extends AppEvent> = AppEvents[K] extends void ? [] : undefined extends AppEvents[K] ? [AppEvents[K]?] : [AppEvents[K]];
 
-export function on(event: string, fn: Listener): void { (listeners[event] ||= []).push(fn); }
-export function emit(event: string, payload?: unknown): void { (listeners[event] || []).forEach((fn) => fn(payload)); }
+const listeners: { [K in AppEvent]?: ((payload: AppEvents[K]) => void)[] } = {};
+
+/** Subscribe for the life of the page (views subscribe once, in their init… function). */
+export function on<K extends AppEvent>(event: K, fn: (payload: AppEvents[K]) => void): void {
+  ((listeners[event] ||= []) as ((payload: AppEvents[K]) => void)[]).push(fn);
+}
+export function emit<K extends AppEvent>(event: K, ...payload: Payload<K>): void {
+  for (const fn of (listeners[event] || []) as ((payload: AppEvents[K]) => void)[]) fn(payload[0] as AppEvents[K]);
+}
 
 /** A column of the items list: ``sortKey`` is the item field (or derived value) it sorts by. */
 export interface ColumnDef {

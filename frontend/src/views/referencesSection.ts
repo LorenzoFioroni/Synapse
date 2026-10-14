@@ -78,7 +78,7 @@ function paint(el: HTMLElement, it: Item, v: ItemReferences): void {
 async function onClick(e: MouseEvent, el: HTMLElement, it: Item, current: () => boolean): Promise<void> {
   const target = e.target as Element;
   const show = target.closest<HTMLElement>('[data-show-item]');
-  if (show) { emit('show-item', show.dataset.showItem); return; }
+  if (show) { emit('show-item', show.dataset.showItem!); return; }
   const act = target.closest<HTMLElement>('[data-ref]')?.dataset.ref;
   if (act === 'more') { if (expanded.has(it.id)) expanded.delete(it.id); else expanded.add(it.id); fillReferences(el, it, current); return; }
   if (act === 'fetch') {

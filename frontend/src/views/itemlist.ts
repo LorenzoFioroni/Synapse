@@ -112,7 +112,7 @@ function bindBody(): void {
     const row = at(e, '.row[data-id]');
     if (!row || at(e, '[data-act]')) return;
     if (state.settings.open_pdf_on_double_click !== false) A.openPdf(row.dataset.id!);
-    else emit('focus-field', { id: row.dataset.id, field: 'title' });
+    else emit('focus-field', { id: row.dataset.id!, field: 'title' });
   });
   body.addEventListener('contextmenu', (e) => {
     e.preventDefault();

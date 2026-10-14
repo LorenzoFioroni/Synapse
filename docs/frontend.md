@@ -149,8 +149,11 @@ belong to one view, which writes them itself: `settings` (`settingsView.ts`), `s
 ### Events
 
 `on(event, fn)` subscribes and `emit(event, payload)` calls every listener in order. There is no
-unsubscribe: views subscribe once, in their `init…` function, for the life of the page. Event
-names are plain strings, so search for `emit('name'` and `on('name'` when you change one.
+unsubscribe: views subscribe once, in their `init…` function, for the life of the page.
+
+The events are typed: `AppEvents` in `store.ts` lists every event name with its payload type
+(`void` for none). `tsc` rejects an unknown name, a missing or wrong payload, and a listener that
+expects something else. To add an event, add it to `AppEvents` and to the table below.
 
 | Event | Payload | Emitted by | Heard by |
 |---|---|---|---|
@@ -176,8 +179,6 @@ names are plain strings, so search for `emit('name'` and `on('name'` when you ch
 | `open-import` | optional `File` | `itemlist/empty.ts`, `itemlist.ts`, `settingsView.ts` | `main.ts` |
 | `open-identifier`, `clear-search` | none | `itemlist/empty.ts` | `main.ts` |
 | `set-search-mode` | `SearchMode` | `itemlist/empty.ts`, `settingsView.ts` | `main.ts` |
-| `layout` | none | `itempane.toggleItemPane` | nobody at present |
-| `list-rendered` | row count | `itemlist/rows.ts` | nobody at present |
 
 The events `main.ts` hears are how a view reaches code it must not import (opening Notes from the
 item pane, for example), which keeps the views free of import cycles.

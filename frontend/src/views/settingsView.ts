@@ -5,7 +5,7 @@ import { api } from '../api.js';
 import { emit, state } from '../store.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast, toastError } from '../ui/toast.js';
-import type { Settings } from '../types.js';
+import type { SearchMode, Settings } from '../types.js';
 import { debounce, escapeHtml, formatBytes, formatDate, plural, store } from '../util.js';
 import { baseMacros } from './notes/macros.js';
 import { bindBackups, refreshBackups } from './settings/backups.js';
@@ -135,7 +135,7 @@ function bind(view: HTMLElement): void {
     }
     const value = el.type === 'checkbox' ? (el as HTMLInputElement).checked : (el.type === 'range' ? Number(el.value) : el.value);
     await save({ [key]: value }, el);
-    if (key === 'default_search_mode') emit('set-search-mode', value);
+    if (key === 'default_search_mode') emit('set-search-mode', value as SearchMode);
     if (key === 'fulltext_auto_index' && value) api.stats();
   });
   // Math macros: say what the definitions define, and which lines are not definitions

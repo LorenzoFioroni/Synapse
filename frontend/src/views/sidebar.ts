@@ -71,7 +71,7 @@ export function initSidebar(): void {
   on('indexer', paintIndexer);
   on('workspace', paint);
   on('settings', paint);
-  on('notes-count', (n: number) => { notesCount = n; paintNotes(); });
+  on('notes-count', (n) => { notesCount = n; paintNotes(); });
   paint();
 }
 

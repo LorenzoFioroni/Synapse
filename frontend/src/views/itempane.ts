@@ -510,5 +510,4 @@ export function toggleItemPane(force?: boolean): void {
   root.classList.toggle('collapsed', hide);
   document.getElementById('resizer-right')!.hidden = hide;
   store('zc.itemPaneHidden', hide);
-  emit('layout');
 }

@@ -3,7 +3,7 @@
 // attachment rows when expanded, its full-text snippet), whose height is estimated and then
 // measured.
 import { icon, typeIcon } from '../../icons.js';
-import { byId, emit, itemFolderPaths, itemTypeLabel, on, sortedItems, state, tagColor } from '../../store.js';
+import { byId, itemFolderPaths, itemTypeLabel, on, sortedItems, state, tagColor } from '../../store.js';
 import type { Item } from '../../types.js';
 import { escapeHtml, formatDate, plural, shortAuthors } from '../../util.js';
 import { visibleCols } from './columns.js';
@@ -168,7 +168,6 @@ export function renderBody(): void {
   range = null;
   renderWindow(true);
   if (!shown.length) pane.appendChild(emptyState());
-  emit('list-rendered', shown.length);
 }
 
 function updateRow(id: string): void {

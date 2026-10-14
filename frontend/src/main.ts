@@ -51,7 +51,7 @@ async function boot() {
   on('clear-search', () => clearSearch());
   on('open-notes', () => openNotes());
   on('close-notes', () => closeNotes());
-  on('open-note', ({ path, line }: { path: string; line?: number }) => openNotes(path, line));
+  on('open-note', ({ path, line }) => openNotes(path, line ?? null));
   on('show-graph', (focus) => { if (settingsOpen()) closeSettings(); openNotesGraph(focus); });
   on('show-item', (id) => showItem(id));
   on('workspace', paintWorkspace);

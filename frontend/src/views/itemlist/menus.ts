@@ -23,7 +23,8 @@ export async function openItemNote(it: Item | undefined): Promise<void> {
   try {
     const res = await api.itemNotes(it.id);
     const first = res.paper_notes[0] || res.citing[0];
-    if (first) emit('open-note', { path: first.path, line: ('line' in first && first.line) || null });
+    // a paper note opens at the top; a citing note at the line that cites the item
+    if (first) emit('open-note', { path: first.path, line: (res.paper_notes[0] ? null : res.citing[0]?.line) || null });
   } catch (e) { toastError(e); }
 }
 
