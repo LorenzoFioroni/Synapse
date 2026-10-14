@@ -6,6 +6,16 @@ V=../../frontend/vendor
 rm -rf "$V/md" "$V/mermaid" && mkdir -p "$V/md/katex" "$V/mermaid"
 npx esbuild entry.js --bundle --format=esm --minify --target=es2020 --outfile="$V/md/md.js" --legal-comments=none
 cp node_modules/katex/dist/katex.min.css "$V/md/katex/"
+# types for TypeScript (frontend/src); frontend/package.json pins the same versions
+cat > "$V/md/md.d.ts" <<'EOF'
+// Types of md.js (tools/md/entry.js; written by tools/md/build.sh). The types come from katex and
+// @types/markdown-it, installed in frontend/ for type checking at the same versions.
+import type { PluginSimple } from 'markdown-it';
+
+export { default as MarkdownIt } from 'markdown-it';
+export { default as katex } from 'katex';
+export declare const footnote: PluginSimple;
+EOF
 cp -r node_modules/katex/dist/fonts "$V/md/katex/fonts"
 rm -f "$V/md/katex/fonts/"*.ttf "$V/md/katex/fonts/"*.woff        # woff2 is enough for current browsers
 cp node_modules/mermaid/dist/mermaid.min.js "$V/mermaid/"

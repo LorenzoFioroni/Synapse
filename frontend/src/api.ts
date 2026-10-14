@@ -1,6 +1,6 @@
 // Thin client for the JSON API. Every call throws an Error with a readable
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
-import type { Attachment, Item, ItemList, ItemsByIds, Schema, Settings, SettingsResponse } from './types.js';
+import type { Attachment, ChangeFeed, Item, ItemList, ItemsByIds, RenamePlan, Schema, Settings, SettingsResponse } from './types.js';
 
 export class ApiError extends Error {
   status: number;
@@ -75,7 +75,7 @@ export const api = {
   getSettings: () => request<SettingsResponse>('GET', '/api/settings'),
   saveSettings: (changes: Partial<Settings>) => request<{ settings: Settings }>('PUT', '/api/settings', changes),
   resetSettings: () => request<{ settings: Settings }>('POST', '/api/settings/reset'),
-  changes: (since: number | null, epoch: string | null) => request('GET', `/api/changes?${qs({ since, epoch })}`),
+  changes: (since?: number | null, epoch?: string | null) => request<ChangeFeed>('GET', `/api/changes?${qs({ since, epoch })}`),
   devices: () => request('GET', '/api/devices'),
   newPairing: () => request('POST', '/api/devices/pairing'),
   renameDevice: (id: string, name: string) => request('PATCH', `/api/devices/${encodeURIComponent(id)}`, { name }),
@@ -136,7 +136,7 @@ export const api = {
   restoreNoteAttachment: (trashId: string, name: string) => request('POST', '/api/notes/attachments/restore', { trash_id: trashId, name }),
   deleteNoteAttachment: (trashId: string, name: string) => request('POST', '/api/notes/attachments/delete', { trash_id: trashId, name }),
   citeIndex: () => request('GET', '/api/notes/cite_index'),
-  renamePlan: (old: string, nu: string) => request('GET', `/api/notes/rename_plan?${qs({ old, new: nu })}`),
+  renamePlan: (old: string, nu: string) => request<RenamePlan>('GET', `/api/notes/rename_plan?${qs({ old, new: nu })}`),
   itemNotes: (id: string) => request('GET', `/api/items/${id}/notes`),
   restoreNote: (trashId: string, path: string) => request('POST', '/api/notes/restore', { trash_id: trashId, path }),
   noteLinks: (path: string) => request('GET', `/api/notes/links?${qs({ path })}`),

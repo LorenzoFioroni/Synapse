@@ -244,3 +244,22 @@ export type EdgeKind = 'cites' | 'cite' | 'link' | 'about';
 export interface GraphEdge { source: string; target: string; kind: EdgeKind }
 
 export interface GraphData { nodes: GraphNode[]; edges: GraphEdge[] }
+
+/* ------------------------------------------------------------------ misc */
+
+/** GET /api/changes: what changed since ``seq`` (backend/changes.py). */
+export interface ChangeFeed {
+  epoch: string;
+  seq: number;
+  changes: ('library' | 'annotations' | 'notes')[];
+  reset: boolean;          // the server restarted: everything counts as changed
+}
+
+/** GET /api/notes/rename_plan: what renaming a citation key would change in the notes. */
+export interface RenamePlan {
+  old: string;
+  new: string;
+  notes: { path: string; title: string; changes: { line: number; before: string; after: string }[] }[];
+  count: number;
+  moves: { from: string; to: string }[];
+}

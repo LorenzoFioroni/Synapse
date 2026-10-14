@@ -12,3 +12,9 @@ Everything the frontend needs is served from this folder; nothing is loaded from
 
 `cm6/cm6.js` is the entry point. The files in `cm6/chunks/` are loaded on demand (for example the
 syntax highlighter for a code block's language), so the folder must be copied as a whole.
+
+`cm6/cm6.d.ts` and `md/md.d.ts` give the bundles their TypeScript types: they repeat the re-exports of
+`tools/cm6/entry.js` and `tools/md/entry.js` (the build scripts write them), and the types come from
+the packages that `frontend/package.json` installs for type checking (`@codemirror/*`, `katex`,
+`@types/markdown-it`). `force-graph` is typed the same way. When a library is updated, update both
+`package.json` files to the same version.

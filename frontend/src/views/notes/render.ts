@@ -10,7 +10,10 @@
 //  * display equations are numbered through the note and \eqref{label} resolved (equations.ts);
 //  * math macros: the physics package, Settings, and \newcommand in the note (macros.ts).
 
-import type { MdBlockState, MdCoreState, MdInlineState, MdLib, MdRenderRule, MdToken } from '../../vendorTypes.js';
+import type MarkdownIt from 'markdown-it';
+import type { RendererRule as MdRenderRule, StateBlock, StateCore, StateInline, Token as MdToken } from 'markdown-it';
+
+type MdLib = typeof import('../../../vendor/md/md.js');
 import { labelId, layoutTag, numberEquations, refText, resolveRefs } from './equations.js';
 import { type Definition, HAS_DEFINITIONS, type Macros, baseMacros, parseDefinitions, withDefinitions } from './macros.js';
 
@@ -29,7 +32,7 @@ export interface RendererOptions {
 }
 
 export interface Renderer {
-  md: import('../../vendorTypes.js').MarkdownIt;
+  md: MarkdownIt;
   render(src: string): string;
   renderInline(src: string): string;
   katex(tex: string, display: boolean, macros?: Macros): string;
@@ -105,7 +108,7 @@ export function citeLabel(c: Pick<Cite, 'key' | 'prefix' | 'suppress' | 'locator
 
 /* ---------------------------------------------------------------- markdown-it rules */
 function mathInline() {
-  return (state: MdInlineState, silent: boolean) => {
+  return (state: StateInline, silent: boolean) => {
     const src = state.src, pos = state.pos, max = state.posMax;
     if (src[pos] !== '$') return false;
     if (src.startsWith('$$', pos)) {
@@ -131,7 +134,7 @@ function mathInline() {
   };
 }
 
-function mathBlock(state: MdBlockState, startLine: number, endLine: number, silent: boolean): boolean {
+function mathBlock(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
   const start = state.bMarks[startLine] + state.tShift[startLine];
   const max = state.eMarks[startLine];
   const first = state.src.slice(start, max).trim();
@@ -157,7 +160,7 @@ function mathBlock(state: MdBlockState, startLine: number, endLine: number, sile
   return true;
 }
 
-function wikiRule(state: MdInlineState, silent: boolean): boolean {
+function wikiRule(state: StateInline, silent: boolean): boolean {
   const src = state.src;
   let pos = state.pos;
   const embed = src[pos] === '!';
@@ -178,7 +181,7 @@ function wikiRule(state: MdInlineState, silent: boolean): boolean {
   return true;
 }
 
-function citeRule(state: MdInlineState, silent: boolean): boolean {
+function citeRule(state: StateInline, silent: boolean): boolean {
   const src = state.src, pos = state.pos;
   if (src[pos] !== '[' || src[pos + 1] === '[') return false;
   if (pos > 0 && '![]\\'.includes(src[pos - 1])) return false;
@@ -205,7 +208,7 @@ const TAG_BODY = /^[\p{L}\p{N}_\-/]*/u;
 const NOT_BEFORE_TAG = /[\p{L}\p{N}_/&#\])([]/u;
 
 /** #tag (same rule as the backend: not after a word character, a slash, a bracket…). */
-function tagRule(state: MdInlineState, silent: boolean): boolean {
+function tagRule(state: StateInline, silent: boolean): boolean {
   const src = state.src, pos = state.pos;
   if (src[pos] !== '#' || !TAG_START.test(src[pos + 1] || '')) return false;
   if (pos > 0 && NOT_BEFORE_TAG.test(src[pos - 1])) return false;
@@ -217,7 +220,7 @@ function tagRule(state: MdInlineState, silent: boolean): boolean {
 }
 
 /** > [!type] Title  →  a callout. Runs after block parsing. */
-function calloutRule(state: MdCoreState): void {
+function calloutRule(state: StateCore): void {
   const toks = state.tokens;
   for (let i = 0; i < toks.length; i++) {
     if (toks[i].type !== 'blockquote_open') continue;
@@ -236,7 +239,7 @@ function calloutRule(state: MdCoreState): void {
 }
 
 /** - [ ] / - [x] at the start of a list item → checkbox. */
-function taskRule(state: MdCoreState): void {
+function taskRule(state: StateCore): void {
   const toks = state.tokens;
   for (let i = 2; i < toks.length; i++) {
     const inl = toks[i];
@@ -254,14 +257,14 @@ function taskRule(state: MdCoreState): void {
 }
 
 /** data-line on block tokens, so a click in read mode can find the source line. */
-function lineAttrs(state: MdCoreState): void {
+function lineAttrs(state: StateCore): void {
   for (const t of state.tokens) {
     if (t.map && t.nesting >= 0 && t.block && t.type !== 'inline') t.attrSet('data-line', String(t.map[0]));
   }
 }
 
 /** \eqref{label} / \ref{label} written in the text (outside math): numbered in the core rule below. */
-function eqRefRule(state: MdInlineState, silent: boolean): boolean {
+function eqRefRule(state: StateInline, silent: boolean): boolean {
   const src = state.src, pos = state.pos;
   if (src.charCodeAt(pos) !== 0x5C /* \ */) return false;
   const m = /^\\(eqref|ref)\{([^{}\n]*)\}/.exec(src.slice(pos, pos + 200));
@@ -274,7 +277,7 @@ function eqRefRule(state: MdInlineState, silent: boolean): boolean {
 /** Collect the note's macro definitions (macros.ts), number its display equations and resolve
  *  \eqref / \ref (equations.ts), in document order. */
 function equationsRule(mode: RendererOptions['equations'], macros: RendererOptions['macros']) {
-  return (state: MdCoreState) => {
+  return (state: StateCore) => {
     const display: MdToken[] = [], all: MdToken[] = [];
     for (const t of state.tokens) {
       if (t.type === 'math_block') { display.push(t); all.push(t); }

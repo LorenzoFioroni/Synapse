@@ -1,13 +1,13 @@
-// @ts-nocheck
 // Preview shown before a citation key is changed by hand: which notes will be updated.
 import { api } from '../../api.js';
 import { openDialog } from '../../ui/dialog.js';
+import type { RenamePlan } from '../../types.js';
 import { escapeHtml, plural } from '../../util.js';
 
 /** Resolves true to go ahead (also when no note is affected), false to cancel. */
-export async function confirmKeyChange(oldKey, newKey) {
+export async function confirmKeyChange(oldKey: string | null | undefined, newKey: string | null | undefined): Promise<boolean> {
   if (!oldKey || !newKey || oldKey === newKey) return true;
-  let plan;
+  let plan: RenamePlan;
   try { plan = await api.renamePlan(oldKey, newKey); } catch { return true; }   // notes off or unreachable
   if (!plan.notes.length && !plan.moves.length) return true;
   const v = await openDialog({
