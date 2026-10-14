@@ -220,7 +220,7 @@ class Indexer:
             path = self.repo.attachment_path(a)
             if path and path.suffix.lower() == ".pdf" and self.index.needs_indexing(a["id"], path):
                 todo.append((a, path))
-        self.status.update(running=bool(todo), total=len(todo), done=0, current="")
+        self.status.update(running=bool(todo), total=len(todo), done=0, current="", errors=0)  # this run's
         for a, path in todo:
             self.status["current"] = a.get("name") or path.name
             try:

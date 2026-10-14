@@ -70,7 +70,9 @@ Writes take `_write_lock`, because the indexer thread and request threads can bo
 2. Collects the attachments whose file is on disk, ends in `.pdf`, and `needs_indexing`.
    Web-link attachments have no file and are skipped.
 3. Indexes them one by one. An exception on one file is logged and counted in
-   `status["errors"]`; the run goes on.
+   `status["errors"]`; the run goes on. The count starts from zero at each run, so it is the
+   number of files that failed in the last run (a failed file has no `documents` row and is
+   tried again every run).
 
 `sync()` starts a run. If a run is already going, it sets `_again` instead, and the thread does
 one more run when it finishes. Many calls in a row therefore cost at most one extra run.
