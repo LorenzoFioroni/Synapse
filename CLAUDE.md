@@ -42,7 +42,3 @@ python -m pytest -q          # includes the JavaScript unit tests when Node is i
 The browser checklists in `tests/e2e/` are run by hand and need `pip install playwright`:
 `python tests/e2e/run.py <name> …` runs the named ones (`--list` shows them; no name runs all).
 Run the ones that cover UI you changed.
-
-## Work in progress
-
-The maintainability restructure (#51) follows [`docs/maintainability-plan.md`](docs/maintainability-plan.md).
