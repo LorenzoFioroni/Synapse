@@ -1,10 +1,12 @@
-// @ts-nocheck
 // Line diff for the conflict dialog (LCS after trimming the common start and end).
 
 const MAX_CELLS = 4_000_000;
 
+export interface DiffRow { op: ' ' | '-' | '+'; text: string }
+export type CompactRow = DiffRow | { op: '…'; count: number };
+
 /** Returns [{op: ' ' | '-' | '+', text}] turning `a` into `b`; null when too large to diff. */
-export function lineDiff(a, b) {
+export function lineDiff(a: string, b: string): DiffRow[] | null {
   const A = a.split('\n');
   const B = b.split('\n');
   let start = 0;
@@ -22,7 +24,7 @@ export function lineDiff(a, b) {
       L[i * w + j] = a2[i] === b2[j] ? L[(i + 1) * w + j + 1] + 1 : Math.max(L[(i + 1) * w + j], L[i * w + j + 1]);
     }
   }
-  const out = A.slice(0, start).map((text) => ({ op: ' ', text }));
+  const out: DiffRow[] = A.slice(0, start).map((text) => ({ op: ' ', text }));
   let i = 0, j = 0;
   while (i < n && j < m) {
     if (a2[i] === b2[j]) { out.push({ op: ' ', text: a2[i] }); i++; j++; }
@@ -36,12 +38,12 @@ export function lineDiff(a, b) {
 }
 
 /** Keep only changed lines plus `context` lines around them; gaps become {op: '…', count}. */
-export function compactDiff(rows, context = 2) {
+export function compactDiff(rows: DiffRow[], context = 2): CompactRow[] {
   const keep = new Array(rows.length).fill(false);
   rows.forEach((r, k) => {
     if (r.op !== ' ') for (let x = Math.max(0, k - context); x <= Math.min(rows.length - 1, k + context); x++) keep[x] = true;
   });
-  const out = [];
+  const out: CompactRow[] = [];
   let gap = 0;
   rows.forEach((r, k) => {
     if (keep[k]) { if (gap) out.push({ op: '…', count: gap }); gap = 0; out.push(r); } else gap++;
@@ -51,7 +53,7 @@ export function compactDiff(rows, context = 2) {
 }
 
 /** The one change {from, to, insert} turning `a` into `b` (common start and end kept), or null if equal. */
-export function changedSpan(a, b) {
+export function changedSpan(a: string, b: string): { from: number; to: number; insert: string } | null {
   if (a === b) return null;
   let start = 0;
   const max = Math.min(a.length, b.length);

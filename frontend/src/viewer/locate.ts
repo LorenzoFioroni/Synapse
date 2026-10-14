@@ -1,5 +1,4 @@
-// @ts-nocheck
-// Finding a quote on a PDF page (issue #8): the words of a "Quote to note" are looked up in the
+// Finding a quote on a PDF page: the words of a "Quote to note" are looked up in the
 // page's text, so a citation opens the viewer right where the quote is and flashes it.
 //
 // Matching ignores case, accents, spacing, punctuation and line-break hyphens, so the text as
@@ -7,12 +6,18 @@
 // unit-tested with Node (tests/js/citeTarget.test.mjs).
 
 const HEAD = 40;   // characters (normalised) used to find a quote that is not found whole
-const LETTERS = { æ: 'ae', œ: 'oe', ß: 'ss', ø: 'o', ł: 'l', đ: 'd', ı: 'i' };   // no Unicode decomposition
+const LETTERS: Record<string, string> = { æ: 'ae', œ: 'oe', ß: 'ss', ø: 'o', ł: 'l', đ: 'd', ı: 'i' };   // no Unicode decomposition
+
+/** A rectangle in page units: x, y the top-left corner. */
+export interface Rect { x: number; y: number; w: number; h: number }
+
+/** A run of text on a PDF page, with its rectangle. */
+export interface TextItem extends Rect { str: string }
 
 /** Lower-case letters and digits only, plus where each one came from in the original. */
-export function normalise(str) {
+export function normalise(str: string): { text: string; at: number[] } {
   let out = '';
-  const at = [];
+  const at: number[] = [];
   for (let i = 0; i < str.length; i++) {
     const lower = str[i].normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     const plain = LETTERS[lower] || lower;
@@ -27,12 +32,12 @@ export function normalise(str) {
  * Where `quote` is among the page's text `items` ([{str, x, y, w, h}] — x, y the top-left
  * corner, in page units). Returns the rectangles covering it, one per line, or [] if not found.
  */
-export function findQuote(items, quote) {
+export function findQuote(items: TextItem[], quote: string): Rect[] {
   const q = normalise(quote).text;
   if (q.length < 4) return [];
   // the page as one normalised string, remembering item and character of each letter
   let text = '';
-  const from = [];
+  const from: [number, number][] = [];
   items.forEach((it, n) => {
     const { text: t, at } = normalise(it.str || '');
     text += t;
@@ -50,13 +55,13 @@ export function findQuote(items, quote) {
     else return [];
   }
   // character ranges per item → rectangles (a proportional share of each item's width)
-  const spans = new Map();
+  const spans = new Map<number, [number, number]>();
   for (let k = start; k < end; k++) {
     const [n, i] = from[k];
     const s = spans.get(n);
     if (s) s[1] = i + 1; else spans.set(n, [i, i + 1]);
   }
-  const rects = [];
+  const rects: Rect[] = [];
   for (const [n, [a, b]] of [...spans].sort((x, y) => x[0] - y[0])) {
     const it = items[n];
     const len = Math.max(1, it.str.length);
@@ -76,8 +81,8 @@ export function findQuote(items, quote) {
  * One box around the quote's lines, so it reads as a single highlight. A quote that goes on
  * into the next column gets one box per column (a single box would cover the text between).
  */
-export function quoteBoxes(rects) {
-  const boxes = [];
+export function quoteBoxes(rects: Rect[]): Rect[] {
+  const boxes: Rect[] = [];
   for (const r of rects) {
     // same column: overlaps horizontally with a box and starts below its top
     const b = boxes.find((x) => r.x < x.x + x.w && r.x + r.w > x.x && r.y >= x.y - r.h);
@@ -91,9 +96,9 @@ export function quoteBoxes(rects) {
 }
 
 /** "x,y,w,h" (fractions of the page) → a rectangle in page units, or null. */
-export function parseRect(s, pageW, pageH) {
+export function parseRect(s: string | null | undefined, pageW: number, pageH: number): Rect | null {
   const v = String(s || '').split(',').map(Number);
   if (v.length !== 4 || v.some((n) => !Number.isFinite(n)) || v[2] <= 0 || v[3] <= 0) return null;
-  const c = (n) => Math.min(1, Math.max(0, n));
+  const c = (n: number) => Math.min(1, Math.max(0, n));
   return { x: c(v[0]) * pageW, y: c(v[1]) * pageH, w: c(v[2]) * pageW, h: c(v[3]) * pageH };
 }

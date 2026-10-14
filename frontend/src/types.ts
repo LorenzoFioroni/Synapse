@@ -175,3 +175,72 @@ export interface SettingsResponse {
   searchModes: Record<SearchMode, string>;
   citekeyPresets: { label: string; pattern: string }[];
 }
+
+/* ------------------------------------------------------------------ notes */
+
+/** A note in the notes index (backend/notes/index.py). ``path`` is relative to data/notes. */
+export interface NoteInfo {
+  path: string;
+  id: string | null;
+  title: string | null;
+  type: string | null;     // front-matter type: 'paper' for a paper note
+  paper: string | null;    // the citation key a paper note is about
+  author: string | null;
+  created: string | null;
+  updated: string | null;
+  mtime: number;
+  tags: string[];
+}
+
+export interface NotesListing {
+  notes: NoteInfo[];
+  folders: string[];
+  stats: { notes: number; links: number };
+}
+
+/** A PDF of an item, as citations name it ([@key, p. N, att:ID]). */
+export interface CitePdf { id: number; url: string; name: string }
+
+/** An item that notes can cite, by citation key (GET /api/notes/cite_index; includes trashed items). */
+export interface CiteEntry {
+  key: string;
+  id: string;
+  title: string;
+  authors: string;
+  year: number | string | null;
+  journal: string;
+  trashed: boolean;
+  has_pdf: boolean;
+  pdf: CitePdf | null;     // the first PDF: what a citation without att: opens
+  pdfs: CitePdf[];
+  note: string | null;     // path of its paper note
+}
+
+/* ------------------------------------------------------------------ graph */
+
+/** A node of GET /api/graph (backend/references/graph.py). */
+export interface GraphNode {
+  id: string;
+  kind: 'paper' | 'work' | 'note';
+  title: string;
+  authors?: string;
+  year?: number | string | null;
+  doi?: string | null;
+  arxiv_id?: string | null;
+  item_id?: string;        // papers
+  citation_key?: string;   // papers
+  item_type?: string;
+  folder_ids?: number[];
+  tags?: string[];
+  has_pdf?: boolean;
+  path?: string;           // notes
+  note_type?: string | null;
+  paper?: string | null;
+}
+
+/** cites: paper → paper/work (reference lists); cite: note → paper; link: note → note; about: paper note → paper. */
+export type EdgeKind = 'cites' | 'cite' | 'link' | 'about';
+
+export interface GraphEdge { source: string; target: string; kind: EdgeKind }
+
+export interface GraphData { nodes: GraphNode[]; edges: GraphEdge[] }

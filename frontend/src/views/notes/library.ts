@@ -1,10 +1,17 @@
-// @ts-nocheck
 // Library data for notes: citable items (for [@ autocomplete and citation cards) and note
 // names (for [[ autocomplete). No DOM here; ranking is unit-tested (tests/js/library.test.mjs).
+import type { CiteEntry, NoteInfo } from '../../types.js';
 
-const fold = (s) => String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
+/** A note offered for [[ : ``insert`` is what the link will say. */
+export interface NoteChoice { insert: string; stem: string; path: string; title: string; folder: string }
 
-export function shortAuthors(authors) {
+export type CompletionContext =
+  | { kind: 'note'; query: string; from: number }
+  | { kind: 'cite'; query: string; from: number; bracket: boolean };
+
+const fold = (s: unknown) => String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+export function shortAuthors(authors: string | null | undefined): string {
   const fams = String(authors || '').split(';').map((a) => a.split(',')[0].trim()).filter(Boolean);
   if (!fams.length) return '';
   if (fams.length === 1) return fams[0];
@@ -13,9 +20,9 @@ export function shortAuthors(authors) {
 }
 
 /** Rank items for a [@ query. Every word must appear in key, authors, title or year. */
-export function searchItems(items, query, limit = 30) {
+export function searchItems(items: CiteEntry[], query: string, limit = 30): CiteEntry[] {
   const words = fold(query).split(/[^\p{L}\p{N}_:.+\-/]+/u).filter(Boolean);
-  const out = [];
+  const out: [number, number, string, CiteEntry][] = [];
   for (const it of items) {
     if (it.trashed) continue;
     const key = fold(it.key);
@@ -29,7 +36,7 @@ export function searchItems(items, query, limit = 30) {
     else if (authors.split(';').some((a) => a.trim().startsWith(w))) score = 1;
     else if (key.includes(w)) score = 2;
     else if (fold(it.title).split(/\s+/).some((t) => t.startsWith(w))) score = 3;
-    out.push([score, -(parseInt(it.year, 10) || 0), it.key, it]);
+    out.push([score, -(parseInt(String(it.year), 10) || 0), it.key, it]);
   }
   out.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2].localeCompare(b[2]));
   return out.slice(0, limit).map((x) => x[3]);
@@ -39,20 +46,20 @@ export function searchItems(items, query, limit = 30) {
  * Names to offer for [[ : the file name, or folder/name when two notes share a name
  * (that is how the backend resolves them, see index.resolve).
  */
-export function noteChoices(notes) {
-  const stemOf = (p) => p.split('/').pop().replace(/\.md$/i, '');
-  const count = new Map();
+export function noteChoices(notes: Pick<NoteInfo, 'path' | 'title'>[]): NoteChoice[] {
+  const stemOf = (p: string) => p.split('/').pop()!.replace(/\.md$/i, '');
+  const count = new Map<string, number>();
   for (const n of notes) { const s = stemOf(n.path).toLowerCase(); count.set(s, (count.get(s) || 0) + 1); }
   return notes.map((n) => {
     const stem = stemOf(n.path);
-    const insert = count.get(stem.toLowerCase()) > 1 ? n.path.replace(/\.md$/i, '') : stem;
+    const insert = count.get(stem.toLowerCase())! > 1 ? n.path.replace(/\.md$/i, '') : stem;
     return { insert, stem, path: n.path, title: n.title || stem, folder: n.path.includes('/') ? n.path.slice(0, n.path.lastIndexOf('/')) : '' };
   });
 }
 
-export function searchNotes(choices, query, limit = 30) {
+export function searchNotes(choices: NoteChoice[], query: string, limit = 30): NoteChoice[] {
   const q = fold(query).trim();
-  const out = [];
+  const out: [number, number, number, string, NoteChoice][] = [];
   for (const c of choices) {
     const stem = fold(c.stem), title = fold(c.title), path = fold(c.path);
     let score;
@@ -74,7 +81,7 @@ export function searchNotes(choices, query, limit = 30) {
  *   {kind: 'note', query, from}            "[[Rev" or "![[Rev"
  * `from` is the offset (within `before`) where the query starts.
  */
-export function completionContext(before) {
+export function completionContext(before: string): CompletionContext | null {
   let m = /(!?)\[\[([^[\]\n|#]*)$/.exec(before);
   if (m) return { kind: 'note', query: m[2], from: before.length - m[2].length };
   m = /(^|[\s(;[])-?@([\p{L}\p{N}_:.+\-/]*)$/u.exec(before);

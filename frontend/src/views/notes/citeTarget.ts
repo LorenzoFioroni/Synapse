@@ -1,5 +1,4 @@
-// @ts-nocheck
-// Where exactly a citation points inside the PDF (issue #8).
+// Where exactly a citation points inside the PDF.
 //
 // A quote made with "Quote to note" ends with its citation:  > the quoted words [@key, p. 7]
 // so the quoted words themselves say where on the page to look. A snapshot made with
@@ -14,7 +13,13 @@ const QUOTE_MAX = 400;
 const CITES = /\[[^\[\]]*@[^\[\]]*\]/g;
 const IMAGE = /!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/;
 
-const lineBounds = (text, pos) => {
+/** What a citation points at: quoted words, or an image (by its path in the note, or its URL). */
+export type CiteTarget = { quote: string } | { image: string } | { imageSrc: string | null };
+
+/** A region of a PDF page, as stored in a snapshot PNG: rect is [x, y, w, h] in fractions of the page. */
+export interface PdfRegion { page?: number; rect: [number, number, number, number] }
+
+const lineBounds = (text: string, pos: number): [number, number] => {
   const from = text.lastIndexOf('\n', pos - 1) + 1;
   let to = text.indexOf('\n', pos);
   if (to < 0) to = text.length;
@@ -22,7 +27,7 @@ const lineBounds = (text, pos) => {
 };
 
 /** Plain text of quoted words: no citations, no markdown emphasis, one line. */
-export function quoteText(s) {
+export function quoteText(s: string): string {
   return s.replace(CITES, ' ').replace(/\(\s*\)/g, ' ')    // "()" left where a rendered citation was
     .replace(/[*_`]+/g, '').replace(/\s+/g, ' ').trim().slice(0, QUOTE_MAX);
 }
@@ -31,13 +36,13 @@ export function quoteText(s) {
  * The target of the citation at `pos` in a note's text: {quote} when it is inside a block
  * quote, {image} (the image path) when it is the caption of an image, else null.
  */
-export function citeTargetInText(text, pos) {
+export function citeTargetInText(text: string, pos: number): CiteTarget | null {
   const [from, to] = lineBounds(text, pos);
   const line = text.slice(from, to);
   if (/^\s{0,3}>/.test(line)) {
     // the whole block quote: neighbouring lines that also start with ">"
     const lines = text.split('\n');
-    let n = text.slice(0, from).split('\n').length - 1;
+    const n = text.slice(0, from).split('\n').length - 1;
     let a = n, b = n;
     while (a > 0 && /^\s{0,3}>/.test(lines[a - 1])) a--;
     while (b < lines.length - 1 && /^\s{0,3}>/.test(lines[b + 1])) b++;
@@ -59,10 +64,10 @@ export function citeTargetInText(text, pos) {
 }
 
 /** The same, for a citation shown in read mode (rendered HTML). */
-export function citeTargetInDom(el) {
+export function citeTargetInDom(el: Element): CiteTarget | null {
   const bq = el.closest?.('blockquote');
   if (bq) {
-    const copy = bq.cloneNode(true);
+    const copy = bq.cloneNode(true) as Element;
     copy.querySelectorAll('.cite, .callout-title, .callout-title-inner').forEach((c) => c.remove());
     const quote = quoteText(copy.textContent || '');
     return quote ? { quote } : null;
@@ -83,18 +88,18 @@ const CRC = (() => {
   }
   return t;
 })();
-function crc32(bytes) {
+function crc32(bytes: Uint8Array): number {
   let c = 0xffffffff;
   for (const b of bytes) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
-const isPng = (b) => b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
+const isPng = (b: Uint8Array) => b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
 
 /**
  * A copy of the PNG `bytes` (Uint8Array) carrying `region` ({page, rect: [x, y, w, h]} as
  * fractions of the page) in a tEXt chunk, just before IEND.
  */
-export function writeRegion(bytes, region) {
+export function writeRegion(bytes: Uint8Array, region: PdfRegion): Uint8Array {
   if (!isPng(bytes)) return bytes;
   const enc = new TextEncoder();
   const data = enc.encode(`${REGION_KEYWORD}\0${JSON.stringify(region)}`);
@@ -114,7 +119,7 @@ export function writeRegion(bytes, region) {
 }
 
 /** The region stored by writeRegion, or null. */
-export function readRegion(bytes) {
+export function readRegion(bytes: Uint8Array): PdfRegion | null {
   if (!isPng(bytes)) return null;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const dec = new TextDecoder();
@@ -127,7 +132,7 @@ export function readRegion(bytes) {
       if (z > 0 && dec.decode(data.subarray(0, z)) === REGION_KEYWORD) {
         try {
           const r = JSON.parse(dec.decode(data.subarray(z + 1)));
-          if (Array.isArray(r.rect) && r.rect.length === 4 && r.rect.every((v) => typeof v === 'number')) return r;
+          if (Array.isArray(r.rect) && r.rect.length === 4 && r.rect.every((v: unknown) => typeof v === 'number')) return r;
         } catch { /* not ours */ }
       }
     }
@@ -142,10 +147,13 @@ export function readRegion(bytes) {
  * Turn a target into what the viewer understands: {q} (words to find on the page) or
  * {rect: "x,y,w,h"} (a region of the page). `fetchBytes(src)` is injectable for tests.
  */
-export async function viewerTarget(target, { imageUrl = (p) => p, fetchBytes = defaultFetch } = {}) {
+export async function viewerTarget(
+  target: CiteTarget | null | undefined,
+  { imageUrl = (p: string) => p, fetchBytes = defaultFetch }: { imageUrl?: (path: string) => string; fetchBytes?: (src: string) => Promise<Uint8Array> } = {},
+): Promise<{ q?: string; rect?: string; page?: number }> {
   if (!target) return {};
-  if (target.quote) return { q: target.quote };
-  const src = target.imageSrc || (target.image && imageUrl(target.image));
+  if ('quote' in target && target.quote) return { q: target.quote };
+  const src = ('imageSrc' in target && target.imageSrc) || ('image' in target && target.image && imageUrl(target.image));
   if (!src) return {};
   try {
     const region = readRegion(await fetchBytes(src));
@@ -154,7 +162,7 @@ export async function viewerTarget(target, { imageUrl = (p) => p, fetchBytes = d
   return {};
 }
 
-async function defaultFetch(src) {
+async function defaultFetch(src: string): Promise<Uint8Array> {
   const r = await fetch(src);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return new Uint8Array(await r.arrayBuffer());

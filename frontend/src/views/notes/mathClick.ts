@@ -1,5 +1,4 @@
-// @ts-nocheck
-// Where in a formula's TeX a click on its rendering landed (issue #43).
+// Where in a formula's TeX a click on its rendering landed.
 //
 // KaTeX keeps no link from the drawn symbols back to the source, so a click on a rendered
 // equation used to put the cursor at the start or end of the whole formula. Here the source is
@@ -8,9 +7,9 @@
 // source tokens that draw the same character, preferring the one at about the same place in
 // the order. KaTeX draws a fraction's denominator before its numerator and a subscript before
 // a superscript, so order alone is not enough; the characters themselves settle most cases.
-// DOM-free (tested with Node); livePreview.js collects the drawn characters.
+// DOM-free (tested with Node); livePreview.ts collects the drawn characters.
 
-const SYMBOLS = {
+const SYMBOLS: Record<string, string> = {
   alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ϵ', varepsilon: 'ε', zeta: 'ζ', eta: 'η', theta: 'θ',
   vartheta: 'ϑ', iota: 'ι', kappa: 'κ', lambda: 'λ', mu: 'μ', nu: 'ν', xi: 'ξ', pi: 'π', varpi: 'ϖ', rho: 'ρ',
   varrho: 'ϱ', sigma: 'σ', varsigma: 'ς', tau: 'τ', upsilon: 'υ', phi: 'ϕ', varphi: 'φ', chi: 'χ', psi: 'ψ',
@@ -29,7 +28,7 @@ const SYMBOLS = {
 const NAMED = new Set(['sin', 'cos', 'tan', 'cot', 'sec', 'csc', 'sinh', 'cosh', 'tanh', 'log', 'ln', 'exp', 'lim',
   'max', 'min', 'sup', 'inf', 'det', 'dim', 'ker', 'arg', 'deg', 'gcd', 'Pr', 'Re', 'Im', 'tr', 'Tr']);
 // characters KaTeX draws differently from how they are typed
-const DRAWN = { '-': '−', '*': '∗', "'": '′', '<': '<', '>': '>' };
+const DRAWN: Record<string, string> = { '-': '−', '*': '∗', "'": '′', '<': '<', '>': '>' };
 // arguments that are names, not formula: nothing in them is drawn as typed (or at all)
 const SKIP_ARG = new Set(['begin', 'end', 'label', 'tag', 'eqref', 'ref', 'color', 'textcolor', 'colorbox',
   'operatorname', 'hspace', 'vspace', 'rule']);
@@ -38,8 +37,10 @@ const SKIP_ARG = new Set(['begin', 'end', 'label', 'tag', 'eqref', 'ref', 'color
  * The tokens of a TeX string that draw something: {from, to, ch} with ch the character drawn
  * (or null when unknown: still counts in the order).
  */
-export function texTokens(tex) {
-  const out = [];
+export interface TexToken { from: number; to: number; ch: string | null }
+
+export function texTokens(tex: string): TexToken[] {
+  const out: TexToken[] = [];
   let i = 0;
   while (i < tex.length) {
     const c = tex[i];
@@ -78,7 +79,7 @@ export function texTokens(tex) {
  * Offset in ``tex`` for a click on the ``index``-th of the ``drawn`` characters (in DOM order),
  * ``after`` when the click was on its right half.
  */
-export function clickOffset(tex, drawn, index, after = false) {
+export function clickOffset(tex: string, drawn: string[], index: number, after = false): number {
   const toks = texTokens(tex);
   if (!toks.length) return after ? tex.length : 0;
   const ch = drawn[index];

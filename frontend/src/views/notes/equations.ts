@@ -1,5 +1,4 @@
-// @ts-nocheck
-// Equation numbers of a note (issue #43), shared by the read view and the live preview.
+// Equation numbers of a note, shared by the read view and the live preview.
 //
 // KaTeX renders each formula on its own, so it cannot number equations through a note: a numbered
 // environment restarts at (1) in every block, and \label / \eqref are unknown to it. This module
@@ -26,8 +25,8 @@ const TAG = /\\tag(\*?)\s*\{((?:[^{}]|\{[^{}]*\})*)\}/;
 const REF = /\\(eqref|ref)\s*\{([^{}]*)\}/g;
 
 /** The rows of an environment body: split at top-level \\ (not inside braces or nested environments). */
-export function splitRows(body) {
-  const rows = [];
+export function splitRows(body: string): string[] {
+  const rows: string[] = [];
   let depth = 0, start = 0;
   for (let i = 0; i < body.length; i++) {
     const c = body[i];
@@ -46,7 +45,7 @@ export function splitRows(body) {
 }
 
 /** The single top-level environment a formula consists of, or null. */
-function outerEnv(tex) {
+function outerEnv(tex: string): { name: string; starred: boolean; body: string } | null {
   const m = /^\s*\\begin\s*\{([A-Za-z]+)(\*?)\}([\s\S]*)\\end\s*\{\1\2\}\s*$/.exec(tex);
   if (!m) return null;
   // a formula like "\begin{a}…\end{a} + \begin{a}…\end{a}" is not one environment
@@ -60,41 +59,48 @@ function outerEnv(tex) {
 }
 
 /** What a row (or a whole formula) shows: an explicit tag, nothing, or an automatic number. */
-function rowKind(text, auto) {
+type RowKind = { tag: string; star: boolean } | { none: true } | { auto: true };
+
+function rowKind(text: string, auto: boolean): RowKind {
   const t = TAG.exec(text);
   if (t) return { tag: t[2], star: t[1] === '*' };
   if (NOTAG.test(text)) return { none: true };
   return auto ? { auto: true } : { none: true };
 }
 
-const stripLabels = (s, found) => s.replace(LABEL, (_, name) => { found.push(name.trim()); return ''; });
+const stripLabels = (s: string, found: string[]) => s.replace(LABEL, (_, name: string) => { found.push(name.trim()); return ''; });
 
 /**
- * Number the display equations of a note.
- * @param {string[]} formulas  TeX of each display equation, in document order (without $$)
- * @param {{mode?: 'labelled'|'all'}} [o]
- * @returns {{formulas: string[], labels: Map<string, string|null>, numbers: string[][], names: string[][]}}
+ * Number the display equations of a note. ``formulas`` is the TeX of each display equation, in
+ * document order (without $$). Returns
  *   formulas: the TeX to give KaTeX (labels removed, numbers as \tag, references not yet resolved);
  *   labels: label → shown number (e.g. "3" or "A.1"; null if that equation has none);
  *   numbers: the numbers each formula shows;  names: the labels each formula defines.
  */
-export function numberEquations(formulas, { mode = 'labelled' } = {}) {
-  const labels = new Map();
-  const numbers = [], names = [];
+export interface Numbering {
+  formulas: string[];
+  labels: Map<string, string | null>;
+  numbers: string[][];
+  names: string[][];
+}
+
+export function numberEquations(formulas: string[], { mode = 'labelled' }: { mode?: string } = {}): Numbering {
+  const labels = new Map<string, string | null>();
+  const numbers: string[][] = [], names: string[][] = [];
   let counter = 0;
   const out = formulas.map((tex) => {
-    const shown = [], mine = [];
+    const shown: string[] = [], mine: string[] = [];
     names.push(mine);
-    const doRow = (row, auto) => {
-      const found = [];
+    const doRow = (row: string, auto: boolean) => {
+      const found: string[] = [];
       let text = stripLabels(row, found);
       const kind = rowKind(text, auto || found.length > 0);   // a \label asks for a number
-      let num = null;
-      if (kind.tag != null) num = kind.tag;
-      else if (kind.auto) {
+      let num: string | null = null;
+      if ('tag' in kind && kind.tag != null) num = kind.tag;
+      else if ('auto' in kind) {
         num = String(++counter);
         // the number goes at the end of the row, before trailing white space
-        const m = /\s*$/.exec(text);
+        const m = /\s*$/.exec(text)!;
         text = `${text.slice(0, m.index)} \\tag{${num}}${text.slice(m.index)}`;
       }
       if (num != null) shown.push(num);
@@ -115,7 +121,7 @@ export function numberEquations(formulas, { mode = 'labelled' } = {}) {
       return tex.replace(env.body, () => body);
     }
     // anything else is one equation: numbered when labelled, with mode "all", or by its own \tag;
-    // a formula that only defines macros (macros.js) shows nothing and gets no number
+    // a formula that only defines macros (macros.ts) shows nothing and gets no number
     if (!tex.trim()) { numbers.push(shown); return tex; }
     const res = doRow(tex, mode === 'all' && !(env && env.starred));
     numbers.push(shown);
@@ -126,37 +132,39 @@ export function numberEquations(formulas, { mode = 'labelled' } = {}) {
 }
 
 /** The text \eqref{name} / \ref{name} stand for: "(3)" / "3", or null for an unknown label. */
-export function refText(kind, name, labels) {
+export function refText(kind: string, name: string, labels: Map<string, string | null>): string | null {
   const n = labels.get(String(name).trim());
   if (n == null) return null;
   return kind === 'eqref' ? `(${n})` : n;
 }
 
 /** TeX with \eqref / \ref replaced by the numbers (unknown labels in red as (??)). */
-export function resolveRefs(tex, labels) {
+export function resolveRefs(tex: string, labels: Map<string, string | null>): string {
   if (!tex.includes('ref')) return tex;
-  return tex.replace(REF, (_, kind, name) => {
+  return tex.replace(REF, (_, kind: string, name: string) => {
     const t = refText(kind, name, labels);
     return t == null ? '\\textcolor{#cc0000}{\\text{(??)}}' : `\\text{${t.replace(/[{}\\]/g, '')}}`;
   });
 }
 
 /** \eqref{…} / \ref{…} written in the text (outside math): {from, to, kind, name}. */
-export function textRefs(text) {
-  const out = [];
-  for (const m of text.matchAll(/\\(eqref|ref)\{([^{}\n]*)\}/g)) out.push({ from: m.index, to: m.index + m[0].length, kind: m[1], name: m[2].trim() });
+export interface TextRef { from: number; to: number; kind: string; name: string }
+
+export function textRefs(text: string): TextRef[] {
+  const out: TextRef[] = [];
+  for (const m of text.matchAll(/\\(eqref|ref)\{([^{}\n]*)\}/g)) out.push({ from: m.index!, to: m.index! + m[0].length, kind: m[1], name: m[2].trim() });
   return out;
 }
 
 /** An id for the anchor of a label (read view). */
-export const labelId = (name) => `eq-${String(name).trim().replace(/[^\p{L}\p{N}_-]+/gu, '-')}`;
+export const labelId = (name: string): string => `eq-${String(name).trim().replace(/[^\p{L}\p{N}_-]+/gu, '-')}`;
 
 /**
  * Lay out KaTeX's display HTML so the number never overlaps the formula: the formula is centred
  * between the number and an invisible copy of it; when space runs out the copy shrinks first and
  * then the line scrolls, the number staying after the formula (as LaTeX moves it).
  */
-export function layoutTag(html) {
+export function layoutTag(html: string): string {
   const open = '<span class="katex-html" aria-hidden="true">';
   const i = html.indexOf(open);
   const t = html.lastIndexOf('<span class="katex-tag">');

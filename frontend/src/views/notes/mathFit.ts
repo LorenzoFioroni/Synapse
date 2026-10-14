@@ -1,20 +1,19 @@
-// @ts-nocheck
 // Display equations wider than the note: shrink them a little (down to MIN_SCALE) before
-// falling back to a horizontal scroll bar (issue #43).
+// falling back to a horizontal scroll bar.
 export const MIN_SCALE = 0.75;
 
 /** Fit every display equation under ``root``. Returns true when a size changed. */
-export function fitEquations(root) {
+export function fitEquations(root: HTMLElement): boolean {
   let changed = false;
-  const list = root.matches?.('.katex-display') ? [root] : root.querySelectorAll('.katex-display');
+  const list = root.matches?.('.katex-display') ? [root] : root.querySelectorAll<HTMLElement>('.katex-display');
   for (const d of list) {
-    const box = d.closest('.math-block, .math.display, .cm-lp-mathblock, .cm-lp-math') || d.parentElement;
+    const box = d.closest<HTMLElement>('.math-block, .math.display, .cm-lp-mathblock, .cm-lp-math') || d.parentElement;
     const html = d.querySelector('.katex-html');
     if (!box || !html) continue;
     const old = d.style.getPropertyValue('--eq-scale');
     d.style.removeProperty('--eq-scale');
     const main = html.querySelector(':scope > .eq-main');
-    const tag = html.querySelector(':scope > .katex-tag:not(.eq-ghost)');
+    const tag = html.querySelector<HTMLElement>(':scope > .katex-tag:not(.eq-ghost)');
     const need = main ? main.scrollWidth + (tag ? tag.offsetWidth : 0) : html.scrollWidth;
     const room = box.clientWidth - 2;
     let scale = '';
@@ -26,8 +25,8 @@ export function fitEquations(root) {
 }
 
 /** Refit when ``el`` changes width (a pane opens or closes, the window is resized). */
-export function refitOnResize(el, after) {
-  let last = el.clientWidth, timer = null;
+export function refitOnResize(el: HTMLElement, after?: () => void): ResizeObserver {
+  let last = el.clientWidth, timer: ReturnType<typeof setTimeout> | undefined;
   const ro = new ResizeObserver(() => {
     if (el.clientWidth === last) return;
     last = el.clientWidth;
@@ -39,7 +38,7 @@ export function refitOnResize(el, after) {
 }
 
 /** Fit once the element is on screen, and again when KaTeX's fonts have loaded (they change widths). */
-export function fitSoon(el, after) {
+export function fitSoon(el: HTMLElement, after?: () => void): void {
   const run = () => { if (el.isConnected && fitEquations(el)) after?.(); };
   requestAnimationFrame(run);
   if (document.fonts && document.fonts.status !== 'loaded') document.fonts.ready.then(run);
