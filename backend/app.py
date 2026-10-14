@@ -87,7 +87,7 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
 
     # Annotations saved by older versions as SVG markup become records (once, after a backup).
     try:
-        from .library.annotations import migrate_legacy
+        from .library.annotations_legacy import migrate_legacy
         migrate_legacy(services)
     except Exception:
         log.exception("Converting old annotations failed; the old data is kept")

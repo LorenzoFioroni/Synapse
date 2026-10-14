@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.library import annotations as A
+from backend.library import annotations_legacy as A
 from backend import create_app
 from backend.config import Config
 
