@@ -293,6 +293,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `aiBar.ts`, `aiEdits.ts`, `diff.ts` | Claude's edits: the bar, the history dialog, line diffs. |
 | `conflict.ts` | The dialog for a note changed or deleted elsewhere. |
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
+| `exportNote.ts`, `portable.ts` | Exporting a note as PDF, HTML or Markdown; the Markdown conversion and reference entries (no DOM). |
 
 ### The editor and read mode
 
@@ -375,6 +376,53 @@ Each open note has one `NoteSession`. It keeps `saved` (the text and hash the se
 4. If the user has unsaved edits, their next save gets a 409 and the conflict dialog appears.
    On the MCP side, `edit_note` re-reads and retries up to three times when the user saved first.
 
+### Exporting a note
+
+**Export** in the note head (and **Export…** in a note's menu in the notes list) opens
+`exportMenu` (`exportNote.ts`). Everything happens in the browser, from files the app serves, so
+it works offline. The open note is exported as it is in the editor, saved or not; another note is
+loaded with `GET /api/notes/note`. Its `/api/notes/links` gives the library items it cites, with
+the library list as the fallback (as in read mode).
+
+- **HTML page.** `embedHtml` renders the note as read mode does. It is drawn off screen so that
+  `renderEmbeds` (which now waits for its code and diagrams), `highlightCodeBlocks` and
+  `renderMermaidBlocks` can fill it, with Mermaid in its light theme. Then what only works inside
+  the app is removed: `[[links]]` become text, task boxes are disabled, and the copy buttons,
+  `data-line` and the properties block are dropped. Images served by the app become `data:` URLs.
+  The cited keys (embeds included) give a References list, in order of first citation. Each
+  citation of a listed key links to its entry (`#ref-<key>`, `referenceId`); a key not in the
+  library stays text. The styles are `css/tokens.css`, `css/notes.css` and
+  `css/export.css` (page and print rules), with `<html data-theme="light">`. When there is math,
+  KaTeX's CSS is added with its woff2 fonts as `data:` URLs. The result is one file that needs
+  neither the app nor the network.
+- **PDF.** The same page goes into a hidden `<iframe srcdoc>`, which waits for its fonts and then
+  calls `print()`. The browser's print dialog saves the PDF, and `export.css` sets the margins and
+  page breaks. No PDF library is needed. The browser keeps the links in the PDF: citations jump to
+  their entry, and DOIs open the paper.
+- **Markdown.** `portableMarkdown` (`portable.ts`, tested in `tests/js/portable.test.mjs`) works
+  on the `mdscan.scan` links, so code and math are left alone. It drops the front matter, adds the
+  title as `# Title` unless the note starts with one, writes citation groups with `citeLabel` as
+  in read mode, writes `[[links]]` as their alias or target, and drops the `|width` of images.
+  `![[embeds]]` are replaced by the embedded note (or section), itself converted, up to three
+  levels and never in a cycle; `exportNote.ts` loads them first. It ends with
+  `## References` (`referenceMarkdown`). Image paths are kept as they are in the notes folder.
+
+**References.** `exportNote.ts` loads the full library items of the cited keys with one
+`GET /api/items?ids=…` (`fullItems`), since the citation index has only authors, year, title and
+journal. If that request fails, the entries are made from the index. `referenceParts`
+(`portable.ts`) writes an author–year entry by item type:
+
+| Item type | Entry |
+|---|---|
+| journal article, preprint, web page, other | Authors (Year). Title. *Journal*, *volume*(issue), pages. A preprint adds its archive id (`arXiv:…`). |
+| book | Authors (Year). *Title* (2nd ed., Vol. 3). Series. Publisher, Place. |
+| book section, conference paper | Authors (Year). Title. In *Book or proceedings* (pp. 1–20). Publisher. |
+| thesis, report, data set | Authors (Year). *Title* (series) [Thesis]. University or institution. |
+
+`referenceLink` adds the DOI as `https://doi.org/…`, else the arXiv page of an `arXiv:` archive id,
+else the item's URL. `referenceHtml` makes it a link, and `referenceMarkdown` writes it as
+`<…>`.
+
 ## Where to change things
 
 | To change… | Edit |
@@ -389,9 +437,10 @@ Each open note has one `NoteSession`. It keeps `saved` (the text and hash the se
 | Saving behaviour | `noteSession.ts`, with a test in `tests/js/noteSession.test.mjs`. |
 | How notes look when rendered | `render.ts` (tested in `tests/js/render.test.mjs`), `equations.ts`, `macros.ts`, `livePreview.ts`. |
 | Claude's note tools | `backend/mcp/tools/notes.py`; see [mcp.md](mcp.md). |
+| What an exported note looks like | `exportNote.ts` (HTML, PDF), `portable.ts` (Markdown, reference entries), `frontend/css/export.css`. |
 
 The notes format, the `data/notes/` layout and these endpoints are contracts used by the MCP
 server and older data. Change them only deliberately. Tests live in `tests/notes/` and
 `tests/js/`; the browser checklists `notes_checklist.py`, `links_checklist.py`,
-`claude_edits_checklist.py`, `render_checklist.py`, `equations_checklist.py` and
-`attachments_checklist.py` in `tests/e2e/` cover the workspace (see [testing.md](testing.md)).
+`claude_edits_checklist.py`, `render_checklist.py`, `equations_checklist.py`,
+`attachments_checklist.py` and `export_checklist.py` in `tests/e2e/` cover the workspace (see [testing.md](testing.md)).

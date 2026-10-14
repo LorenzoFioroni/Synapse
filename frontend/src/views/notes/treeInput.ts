@@ -6,6 +6,7 @@ import { modKey } from '../../util.js';
 import {
   copyLinks, deleteSelection, describe, moveItems, newFolder, newNote, pickFolder, renameFolder, renameNote, type Selection,
 } from './fileOps.js';
+import { exportMenu } from './exportNote.js';
 import {
   fKey, keyOf, nKey, paintSelection, selectOnly, selectRange, selected, toggleFolder, toggleSelected, tree, treeEl, visibleKeys,
 } from './tree.js';
@@ -115,6 +116,7 @@ function onContextMenu(e: MouseEvent): void {
       { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
       { label: 'Copy link', icon: 'link', run: () => copyLinks([p]) },
       { label: 'Show in Graph', icon: 'link', run: () => hooks.openNotesGraph(`note:${p}`) },
+      { label: 'Export…', icon: 'export', run: () => exportMenu(p, at) },
       'sep',
       trash,
     ], at);

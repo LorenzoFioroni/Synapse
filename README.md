@@ -141,7 +141,14 @@ never mix.
 - **Notes**: Markdown notes with live preview, KaTeX, code, Mermaid and images; `[@key]`
   citations and `[[links]]` between notes; a paper note per item. An item with several PDFs gets
   one button per PDF in citation cards and in its menus; `[@key, p. 4, att:12]` names the PDF with
-  attachment id 12 (a citation without `att:` means the first PDF). Switch with the
+  attachment id 12 (a citation without `att:` means the first PDF). **Export** (the button next
+  to Live | Source | Read, or **Export…** in a note's menu in the notes list) saves a note as a
+  **PDF** (print dialog, "Save as PDF"), a self-contained **HTML page**, or **Markdown** that any
+  viewer shows. Citations are written out as "(Smith et al. 2021, p. 4)" and, in PDF and HTML,
+  link to their entry in a References list at the end. Each entry has what is needed to find the
+  work (journal, volume, issue and pages; publisher and edition for books; the arXiv id of a
+  preprint) and its DOI as a link (else its arXiv page or URL). `[[links]]` become their text, embedded notes are included, and formulas, diagrams, code and
+  images are kept. Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
   Cmd+[ / Alt+←) go back to the note or library selection you came from.
   Images pasted into notes are kept in the notes' attachments folder; one that no note uses any more
@@ -298,6 +305,7 @@ python tests/e2e/library_checklist.py    # key rename, notes in search, quote/sn
 python tests/e2e/citation_spot_checklist.py  # a quote's / snapshot's citation opens the PDF at that spot and flashes it
 python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders, Back/Forward, item-list markers
 python tests/e2e/viewer_links_checklist.py  # PDF links: jump, hover preview, Back/Forward in the viewer
+python tests/e2e/export_checklist.py     # Export: HTML (self-contained, offline), Markdown, PDF via the print dialog
 python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, filters, paper card, Show in Graph, Back/Forward
 python tests/e2e/attachments_checklist.py  # note attachments: unused ones to the trash, Attachments dialog, retention
 python tests/e2e/adding_checklist.py     # bulk Retrieve Metadata (parallel, grouped, background), Settings → Adding Items
