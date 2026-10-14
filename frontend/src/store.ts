@@ -1,6 +1,6 @@
 // Application state with a tiny pub/sub. Views subscribe to the slices they
 // render; actions (in actions.ts) mutate state and emit events.
-import type { Counts, Folder, Hits, Item, Schema, SearchMode, Settings, SettingsResponse, Sidebar, Stats } from './types.js';
+import type { Counts, Folder, Hits, Item, NoteKeys, Schema, SearchMode, Settings, SettingsResponse, Sidebar, Stats } from './types.js';
 import { storage, store as persist } from './util.js';
 
 type Listener = (payload: any) => void;
@@ -77,8 +77,6 @@ function loadColumns(): Column[] {
 }
 
 /** The citation keys notes use: whether the item has a paper note, and how many notes cite it. */
-export type NoteKeys = Record<string, { paper: string | null; citing: number }>;
-
 export interface AppState {
   schema: Schema | null;
   settings: Settings;

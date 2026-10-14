@@ -225,6 +225,9 @@ export interface ItemNotes {
   suggested_path?: string;
 }
 
+/** GET /api/notes/keys: per citation key, its paper note (path) and how many notes cite it. */
+export type NoteKeys = Record<string, { paper: string | null; citing: number }>;
+
 export interface NotesListing {
   notes: NoteInfo[];
   folders: string[];

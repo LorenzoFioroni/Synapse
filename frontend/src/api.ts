@@ -2,7 +2,7 @@
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
   Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
-  ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NotesListing, Pairing,
+  ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NotesListing, Pairing,
   PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag,
 } from './types.js';
 
@@ -97,7 +97,7 @@ export const api = {
   },
   importCommit: (entries: ImportEntry[], skipDuplicates: boolean, folderId: number | null = null, { keywordsAsTags }: { keywordsAsTags?: boolean } = {}) =>
     request<{ created: string[]; skipped: number }>('POST', '/api/import/commit', { entries, skip_duplicates: skipDuplicates, folder_id: folderId, keywords_as_tags: keywordsAsTags }),
-  exportText: (format: string, ids?: string[] | null) => request<{ text: string }>('GET', `/api/export?${qs({ format, ids: ids && ids.join(','), download: 0 })}`),
+  exportText: (format: string, ids?: string[] | null) => request<{ text: string; format: string; count: number }>('GET', `/api/export?${qs({ format, ids: ids && ids.join(','), download: 0 })}`),
   exportUrl: (format: string, ids?: string[] | null) => `/api/export?${qs({ format, ids: ids && ids.join(',') })}`,
 
   rebuildFulltext: () => request('POST', '/api/fulltext/rebuild'),
@@ -128,7 +128,7 @@ export const api = {
   trashNotes: (paths: string[], folders: string[] = []) => request('POST', '/api/notes/trash', { paths, folders }),
   moveNoteFolder: (path: string, to: string) => request('POST', '/api/notes/folder/move', { path, to }),
   restoreNoteBatch: (trashId: string) => request('POST', '/api/notes/restore', { trash_id: trashId }),
-  noteKeys: () => request('GET', '/api/notes/keys'),
+  noteKeys: () => request<{ keys: NoteKeys }>('GET', '/api/notes/keys'),
   // reference lists (citation graph)
   itemReferences: (id: string) => request<ItemReferences>('GET', `/api/items/${id}/references`),
   fetchReferences: (id: string) => request<ItemReferences>('POST', `/api/items/${id}/references`),

@@ -1,54 +1,41 @@
-// @ts-nocheck
-// The items table: columns (sort, resize, reorder, show/hide), rows,
-// selection, keyboard navigation, context menus and file drops.
+// The items table: selection, keyboard navigation, dragging items out, file drops and copying
+// BibTeX. The header is in itemlist/columns.ts, the (virtualised) rows in itemlist/rows.ts and
+// the context menus in itemlist/menus.ts.
 import * as A from '../actions.js';
 import { api, openAttachment } from '../api.js';
-import { icon, typeIcon } from '../icons.js';
-import { byId, COLUMNS, currentFolderId, emit, folderById, itemFolderPaths, itemTypeLabel, on, saveColumns, saveSort, selectedItems, sortedItems, state, tagColor } from '../store.js';
-import { promptDialog } from '../ui/dialog.js';
-import { closeMenu, openMenu } from '../ui/menu.js';
+import { byId, currentFolderId, emit, on, selectedItems, state } from '../store.js';
+import { closeMenu } from '../ui/menu.js';
 import { toast, toastError } from '../ui/toast.js';
-import { copyText, debounce, escapeHtml, formatDate, modKey, modLabel, plural, shortAuthors } from '../util.js';
-import { openExport } from './exportDialog.js';
-import { openMetadataReview } from './metadataReview.js';
-import { fetchReferencesBulk } from './referencesSection.js';
-import { addSelectionToFolder, editTagsDialog, moveSelectionToFolder, smartFolderDialog } from './organizeDialogs.js';
+import { copyText, debounce, modKey, plural } from '../util.js';
+import { initColumns, renderHead, visibleCols } from './itemlist/columns.js';
+import { attachmentMenu, copyKeys, itemMenu, openItemNote } from './itemlist/menus.js';
+import { initRows, order, renderBody, toggleExpand } from './itemlist/rows.js';
+import { editTagsDialog } from './organizeDialogs.js';
+
+export { openColumnPicker } from './itemlist/columns.js';
 
 const ITEMS_MIME = 'application/x-zc-items';   // also read by the sidebar drop targets
 
-const COLDEF = Object.fromEntries(COLUMNS.map((c) => [c.id, c]));
-let pane, scroller, table, head, body;
-let order = [];              // ids in display order
-let pendingCollapse = null;  // multi-selection row pressed: collapse on click, keep on drag
+let pane: HTMLElement, scroller: HTMLElement, body: HTMLElement;
+let pendingCollapse: string | null = null;  // multi-selection row pressed: collapse on click, keep on drag
 
-export function initItemList() {
-  pane = document.getElementById('items-pane');
+export function initItemList(): void {
+  pane = document.getElementById('items-pane')!;
   pane.innerHTML = `<div class="items-scroll" tabindex="0" aria-label="Items">
       <div class="items-table"><div class="items-head" role="row"></div><div class="items-body" role="rowgroup"></div></div>
     </div>`;
-  scroller = pane.querySelector('.items-scroll');
-  table = pane.querySelector('.items-table');
-  head = pane.querySelector('.items-head');
-  body = pane.querySelector('.items-body');
+  scroller = pane.querySelector<HTMLElement>('.items-scroll')!;
+  const table = pane.querySelector<HTMLElement>('.items-table')!;
+  const head = pane.querySelector<HTMLElement>('.items-head')!;
+  body = pane.querySelector<HTMLElement>('.items-body')!;
 
-  renderHead();
-  bindHead();
+  initColumns({ table, head, body }, renderBody);
+  initRows({ pane, scroller, head, body });
   bindBody();
   bindKeyboard();
   bindDrops();
   bindCopy();
 
-  on('items', renderBody);
-  let ticking = false;
-  scroller.addEventListener('scroll', () => {
-    if (ticking) return;
-    ticking = true;
-    requestAnimationFrame(() => { ticking = false; renderWindow(); });
-  }, { passive: true });
-  new ResizeObserver(() => renderWindow()).observe(scroller);
-  on('settings', () => { if (shown.length && Math.abs(heights[0] - estimate(shown[0])) > 0.5) renderBody(); });   // row density
-  on('selection', paintSelection);
-  on('item-updated', (id) => updateRow(id));
   on('columns', () => { renderHead(); renderBody(); });
   on('focus-list', () => scroller.focus());
   // Which items have notes (the pencil column); refreshed whenever the notes change.
@@ -57,371 +44,19 @@ export function initItemList() {
     try { state.noteKeys = (await api.noteKeys()).keys; } catch { return; }
     if (visibleCols().some((c) => c.id === 'notes')) renderBody();
   }, 400);
-  on('notes-count', loadNoteKeys);
-  on('workspace', loadNoteKeys);
+  on('notes-count', () => loadNoteKeys());
+  on('workspace', () => loadNoteKeys());
 }
-
-/* ================================================================ columns */
-function visibleCols() { return state.columns.filter((c) => c.visible); }
-
-function applyGrid() {
-  const tpl = visibleCols().map((c) => (c.id === 'title' ? `minmax(${c.width}px, 1fr)` : `${c.width}px`)).join(' ');
-  table.style.setProperty('--cols', tpl);
-  table.style.minWidth = `${visibleCols().reduce((n, c) => n + c.width, 0)}px`;
-}
-
-function renderHead() {
-  const { col, dir } = state.sort;
-  head.innerHTML = visibleCols().map((c) => {
-    const def = COLDEF[c.id];
-    const sorted = col === c.id;
-    const label = c.id === 'attachments' ? icon('paperclip', 'icon-sm')
-      : c.id === 'notes' ? icon('edit', 'icon-sm') : `<span class="label">${escapeHtml(def.label)}</span>`;
-    return `<div class="head-cell ${sorted ? 'sorted' : ''}" data-col="${c.id}" draggable="${def.fixed ? 'false' : 'true'}" title="${escapeHtml(def.label)}">
-      ${label}${sorted ? `<span class="sort">${dir === 'asc' ? '▲' : '▼'}</span>` : ''}
-      ${def.fixed ? '' : '<span class="grip" data-grip></span>'}</div>`;
-  }).join('');
-  applyGrid();
-}
-
-function bindHead() {
-  let dragId = null;
-  head.addEventListener('click', (e) => {
-    if (e.target.closest('[data-grip]')) return;
-    const cell = e.target.closest('.head-cell');
-    if (!cell) return;
-    const id = cell.dataset.col;
-    if (state.sort.col === id) state.sort.dir = state.sort.dir === 'asc' ? 'desc' : 'asc';
-    else state.sort = { col: id, dir: ['date_added', 'date_modified', 'year'].includes(id) ? 'desc' : 'asc' };
-    saveSort();
-    renderHead();
-    renderBody();
-  });
-  head.addEventListener('contextmenu', (e) => { e.preventDefault(); openColumnPicker({ x: e.clientX, y: e.clientY }); });
-
-  // resize
-  head.addEventListener('mousedown', (e) => {
-    const grip = e.target.closest('[data-grip]');
-    if (!grip) return;
-    e.preventDefault(); e.stopPropagation();
-    const id = grip.parentElement.dataset.col;
-    const col = state.columns.find((c) => c.id === id);
-    const startX = e.clientX, startW = col.width, min = COLDEF[id].min || 40;
-    document.body.style.cursor = 'col-resize';
-    const move = (ev) => { col.width = Math.max(min, Math.round(startW + ev.clientX - startX)); applyGrid(); };
-    const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); document.body.style.cursor = ''; saveColumns(); };
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', up);
-  });
-  head.addEventListener('dblclick', (e) => {
-    const grip = e.target.closest('[data-grip]');
-    if (!grip) return;
-    autoFit(grip.parentElement.dataset.col);
-  });
-
-  // reorder
-  head.addEventListener('dragstart', (e) => {
-    const cell = e.target.closest('.head-cell');
-    if (!cell || e.target.closest('[data-grip]')) { e.preventDefault(); return; }
-    dragId = cell.dataset.col;
-    cell.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/x-zc-column', dragId);
-  });
-  head.addEventListener('dragover', (e) => {
-    if (!dragId) return;
-    e.preventDefault();
-    head.querySelectorAll('.drag-over').forEach((c) => c.classList.remove('drag-over'));
-    e.target.closest('.head-cell')?.classList.add('drag-over');
-  });
-  head.addEventListener('drop', (e) => {
-    if (!dragId) return;
-    e.preventDefault();
-    const target = e.target.closest('.head-cell')?.dataset.col;
-    if (target && target !== dragId) {
-      const from = state.columns.findIndex((c) => c.id === dragId);
-      const [moved] = state.columns.splice(from, 1);
-      const to = state.columns.findIndex((c) => c.id === target);
-      state.columns.splice(to, 0, moved);
-      saveColumns();
-      emit('columns');
-    }
-  });
-  head.addEventListener('dragend', () => { dragId = null; renderHead(); });
-}
-
-function autoFit(id) {
-  const col = state.columns.find((c) => c.id === id);
-  col.width = 30;            // shrink first so scrollWidth reports the content width
-  applyGrid();
-  let w = 60;
-  body.querySelectorAll(`.cell[data-col="${id}"]`).forEach((c) => { w = Math.max(w, c.scrollWidth + 4); });
-  const hc = head.querySelector(`.head-cell[data-col="${id}"] .label`);
-  if (hc) w = Math.max(w, hc.scrollWidth + 36);
-  col.width = Math.min(w, 900);
-  applyGrid();
-  saveColumns();
-}
-
-export function openColumnPicker(at) {
-  const entries = [{ section: 'Columns' }];
-  for (const c of state.columns) {
-    if (c.id === 'title') continue;
-    entries.push({
-      label: COLDEF[c.id].label, checked: c.visible, keepOpen: true,
-      run: () => { c.visible = !c.visible; saveColumns(); emit('columns'); },
-    });
-  }
-  entries.push('sep', {
-    label: 'Reset Columns', icon: 'refresh', run: () => {
-      localStorage.removeItem('zc.columns');
-      const fresh = COLUMNS.map((c) => ({ id: c.id, width: c.width, visible: ['attachments', 'title', 'creator', 'year', 'journal', 'date_added'].includes(c.id) }));
-      state.columns.splice(0, state.columns.length, ...fresh);
-      saveColumns(); emit('columns');
-    },
-  });
-  const m = openMenu(entries, at);
-  m.style.maxHeight = '70vh'; m.style.overflow = 'auto';
-}
-
-/* =================================================================== rows */
-function cellHtml(colId, it) {
-  switch (colId) {
-    case 'attachments': {
-      const n = (it.attachments || []).length;
-      return n ? `<span class="pdf-dot" data-act="open" title="Open PDF${n > 1 ? ` (${n} attachments)` : ''}">${icon('pdf', 'icon-sm')}</span>` : '';
-    }
-    case 'notes': {
-      const n = state.noteKeys[it.citation_key];
-      if (!n) return '';
-      const what = [n.paper && 'Paper note', n.citing && `cited in ${plural(n.citing, 'note')}`].filter(Boolean).join(' · ');
-      return `<span class="note-dot ${n.paper ? 'paper' : ''}" data-act="note" title="${escapeHtml(what)} — click to open">${icon('edit', 'icon-sm')}</span>`;
-    }
-    case 'title': {
-      const n = (it.attachments || []).length;
-      const open = state.expanded.has(it.id);
-      const hit = state.hits[it.id]?.fulltext ? ' <span class="badge accent" title="Matched in the full text">full text</span>' : '';
-      return `<span class="twisty ${n ? '' : 'none'} ${open ? 'open' : ''}" data-act="toggle">${icon('chevron', 'icon-sm')}</span>`
-        + `${typeIcon(it.item_type, 'icon-sm type-icon')}<span class="t">${escapeHtml(it.title || 'Untitled')}</span>${hit}${colourDots(it)}`;
-    }
-    case 'tags': return escapeHtml((it.tags || []).join(', '));
-    case 'folder': return escapeHtml(itemFolderPaths(it).join(', '));
-    case 'creator': return escapeHtml(shortAuthors(it.authors));
-    case 'item_type': return escapeHtml(itemTypeLabel(it.item_type));
-    case 'date_added': case 'date_modified': return escapeHtml(formatDate(it[colId]));
-    default: return escapeHtml(it[colId] ?? '');
-  }
-}
-
-/** Coloured tags show as dots after the title, like Zotero. */
-function colourDots(it) {
-  const dots = (it.tags || []).map((t) => [t, tagColor(t)]).filter(([, c]) => c);
-  if (!dots.length) return '';
-  return `<span class="row-dots">${dots.map(([t, c]) => `<span class="tag-dot" style="background:${c}" title="${escapeHtml(t)}"></span>`).join('')}</span>`;
-}
-
-function rowHtml(it, index = 0) {
-  const cells = visibleCols().map((c) => {
-    const title = c.id === 'creator' ? ` title="${escapeHtml(it.authors || '')}"` : (c.id === 'title' ? ` title="${escapeHtml(it.title || '')}"` : '');
-    return `<div class="cell c-${c.id}" data-col="${c.id}"${title}>${cellHtml(c.id, it)}</div>`;
-  }).join('');
-  let html = `<div class="row ${index % 2 ? 'alt' : ''} ${state.selection.has(it.id) ? 'selected' : ''}" role="row" data-id="${it.id}" data-index="${index}" draggable="${state.view === 'trash' ? 'false' : 'true'}">${cells}</div>`;
-  if (state.expanded.has(it.id)) {
-    for (const a of it.attachments || []) {
-      html += `<div class="row child" data-parent="${it.id}" data-att="${a.id}"><div class="cell">${icon('pdf', 'icon-sm')}<span>${escapeHtml(a.name || 'Attachment')}</span></div></div>`;
-    }
-  }
-  const snip = state.hits[it.id]?.fulltext;
-  if (snip && state.query) html += `<div class="row snippet" data-parent="${it.id}"><div class="cell">${snip}</div></div>`;
-  return html;
-}
-
-/* The list is virtualised (issue #24): only the rows in and near the viewport are in the DOM,
-   between two spacers that stand for the rest. Each item is a "group" (its row, its attachment
-   rows when expanded, its full-text snippet), whose height is estimated and then measured. */
-const OVERSCAN = 600;            // px of rows kept above and below the viewport
-let shown = [];                  // the items in display order
-let heights = [];                // height of each group
-let offsets = [0];               // offsets[i] = top of group i; offsets[n] = total height
-let range = null;                // [first, last] group in the DOM
-let posIndex = new Map();        // id → index in `shown`
-
-function rowHeight() {
-  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--row-h')) || 28;
-}
-
-function estimate(it) {
-  const h = rowHeight();
-  let total = h;
-  if (state.expanded.has(it.id)) total += (it.attachments || []).length * (h - 2);
-  if (state.hits[it.id]?.fulltext && state.query) total += 44;
-  return total;
-}
-
-function computeOffsets() {
-  offsets = new Array(heights.length + 1);
-  offsets[0] = 0;
-  for (let i = 0; i < heights.length; i++) offsets[i + 1] = offsets[i] + heights[i];
-}
-
-/** Index of the group at y (px from the top of the list). */
-function groupAt(y) {
-  let lo = 0, hi = heights.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (offsets[mid] <= y) lo = mid; else hi = mid - 1;
-  }
-  return Math.max(0, lo);
-}
-
-function wantedRange() {
-  const top = scroller.scrollTop - body.offsetTop;
-  return [groupAt(top - OVERSCAN), groupAt(top + scroller.clientHeight + OVERSCAN)];
-}
-
-function renderWindow(force = false) {
-  if (!shown.length) { body.innerHTML = ''; range = null; return; }
-  const [s, e] = wantedRange();
-  if (!force && range && s >= range[0] && e <= range[1]) return;   // still covered
-  const extra = Math.ceil(OVERSCAN / rowHeight());                  // a margin, so small scrolls re-render nothing
-  const first = Math.max(0, s - extra), last = Math.min(shown.length - 1, e + extra);
-  let html = `<div class="vspace" style="height:${offsets[first]}px"></div>`;
-  for (let i = first; i <= last; i++) html += rowHtml(shown[i], i);
-  html += `<div class="vspace" style="height:${offsets[shown.length] - offsets[last + 1]}px"></div>`;
-  body.innerHTML = html;
-  range = [first, last];
-  painted = new Set([...state.selection].filter((id) => posIndex.has(id)));
-  measure();
-}
-
-/** Replace estimated heights of the groups in the DOM by their real ones. */
-function measure() {
-  if (!range) return;
-  let changed = false;
-  const rows = body.children;
-  let i = -1, h = 0;
-  const flush = () => { if (i >= 0 && Math.abs(heights[i] - h) > 0.5) { heights[i] = h; changed = true; } };
-  for (const el of rows) {
-    if (el.classList.contains('vspace')) continue;
-    if (el.dataset.index !== undefined) { flush(); i = Number(el.dataset.index); h = 0; }
-    h += el.offsetHeight;
-  }
-  flush();
-  if (!changed) return;
-  computeOffsets();
-  const [top, bottom] = [body.firstElementChild, body.lastElementChild];
-  if (top?.classList.contains('vspace')) top.style.height = `${offsets[range[0]]}px`;
-  if (bottom?.classList.contains('vspace')) bottom.style.height = `${offsets[shown.length] - offsets[range[1] + 1]}px`;
-}
-
-function renderBody() {
-  shown = sortedItems();
-  order = shown.map((i) => i.id);
-  state.order = order;   // display order, for actions (the DOM only holds the rows on screen)
-  posIndex = new Map(order.map((id, i) => [id, i]));
-  heights = shown.map(estimate);
-  computeOffsets();
-  pane.querySelector('.list-empty')?.remove();
-  range = null;
-  renderWindow(true);
-  if (!shown.length) pane.appendChild(emptyState());
-  emit('list-rendered', shown.length);
-}
-
-function updateRow(id) {
-  const i = posIndex.get(id);
-  const it = byId(id);
-  if (i === undefined || !it) return;
-  shown[i] = it;
-  heights[i] = estimate(it);
-  computeOffsets();
-  const row = body.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
-  if (!row) { renderWindow(true); return; }   // off screen: only the spacers change
-  // remove old children/snippet, re-insert fresh html
-  body.querySelectorAll(`[data-parent="${CSS.escape(id)}"]`).forEach((r) => r.remove());
-  row.insertAdjacentHTML('afterend', rowHtml(it, i));
-  row.remove();
-  renderWindow(true);
-}
-
-function emptyState() {
-  const el = document.createElement('div');
-  el.className = 'list-empty';
-  if (state.query) {
-    el.innerHTML = `<div class="empty-state">${icon('search')}<h3>No results</h3>
-      <p>Nothing matches “${escapeHtml(state.query)}” in <b>${escapeHtml(state.settingsMeta.searchModes?.[state.mode] || state.mode)}</b>.</p>
-      <div class="actions">${state.mode !== 'fulltext' ? '<button class="btn" data-empty="fulltext">Search full text too</button>' : ''}
-      <button class="btn btn-ghost" data-empty="clear">Clear search</button></div></div>`;
-  } else if (state.tagFilter.size) {
-    el.innerHTML = `<div class="empty-state">${icon('tag')}<h3>No items with ${state.tagFilter.size > 1 ? 'all these tags' : 'this tag'} here</h3>
-      <p>${[...state.tagFilter].map((t) => `“${escapeHtml(t)}”`).join(' + ')}</p><div class="actions"><button class="btn" data-empty="clear-tags">Clear tag filter</button></div></div>`;
-  } else if (currentFolderId()) {
-    el.innerHTML = `<div class="empty-state">${icon('folder')}<h3>${escapeHtml(folderById(currentFolderId())?.name || 'Folder')} is empty</h3>
-      <p>Drag items onto the folder in the sidebar, use “Move to Folder…”, or add new items while this folder is open.</p>
-      <div class="actions"><button class="btn btn-primary" data-empty="identifier">${icon('wand')} Add by Identifier</button><button class="btn" data-empty="new">${icon('plus')} New Item</button></div></div>`;
-  } else if (state.view.startsWith('smart:')) {
-    const sf = state.sidebar.smart.find((s) => `smart:${s.id}` === state.view);
-    el.innerHTML = `<div class="empty-state">${icon('smartFolder')}<h3>Nothing matches yet</h3>
-      <p>This smart folder shows items matching <code class="mono">${escapeHtml(sf?.query || '')}</code>.</p>
-      <div class="actions"><button class="btn" data-empty="edit-smart">Edit Smart Folder…</button></div></div>`;
-  } else if (state.view === 'duplicates') {
-    el.innerHTML = `<div class="empty-state">${icon('check')}<h3>No duplicates</h3><p>No two items share a DOI, or the same title and year.</p></div>`;
-  } else if (state.view === 'trash') {
-    el.innerHTML = `<div class="empty-state">${icon('trash')}<h3>The Trash is empty</h3><p>Items you delete stay here until you empty the Trash.</p></div>`;
-  } else {
-    el.innerHTML = `<div class="empty-state">${icon('library')}<h3>Your library is empty</h3>
-      <p>Add a paper by DOI, arXiv ID or ISBN, import a BibTeX/RIS/EndNote file, or drop PDFs here.</p>
-      <div class="actions"><button class="btn btn-primary" data-empty="identifier">${icon('wand')} Add by Identifier</button>
-      <button class="btn" data-empty="import">${icon('import')} Import…</button>
-      <button class="btn" data-empty="new">${icon('plus')} New Item</button></div></div>`;
-  }
-  el.addEventListener('click', (e) => {
-    const act = e.target.closest('[data-empty]')?.dataset.empty;
-    if (act === 'fulltext') emit('set-search-mode', 'fulltext');
-    if (act === 'clear') emit('clear-search');
-    if (act === 'identifier') emit('open-identifier');
-    if (act === 'import') emit('open-import');
-    if (act === 'new') A.newItem();
-    if (act === 'clear-tags') A.clearTagFilter();
-    if (act === 'edit-smart') smartFolderDialog(state.sidebar.smart.find((s) => `smart:${s.id}` === state.view));
-  });
-  return el;
-}
-
-let painted = new Set();
-function paintSelection() {
-  // only touch rows whose state changed (fast with thousands of rows)
-  for (const id of painted) if (!state.selection.has(id)) rowEl(id)?.classList.remove('selected');
-  for (const id of state.selection) if (!painted.has(id)) rowEl(id)?.classList.add('selected');
-  painted = new Set(state.selection);
-}
-const rowEl = (id) => body.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
-
-function scrollToRow(id) {
-  const i = posIndex.get(id);
-  if (i === undefined) return;
-  const top = body.offsetTop + offsets[i], bottom = top + rowHeight();
-  const headH = head.offsetHeight;
-  if (top - headH < scroller.scrollTop) scroller.scrollTop = top - headH;
-  else if (bottom > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = bottom - scroller.clientHeight;
-  renderWindow();   // the row is in the DOM right away (keyboard menus look for it)
-}
-on('selection', () => { if (state.cursor) scrollToRow(state.cursor); });
 
 /* ============================================================ interaction */
-function toggleExpand(id, force) {
-  const open = force ?? !state.expanded.has(id);
-  if (open) state.expanded.add(id); else state.expanded.delete(id);
-  updateRow(id);
-}
-
-function bindBody() {
+function bindBody(): void {
+  const at = (e: Event, sel: string) => (e.target as Element).closest<HTMLElement>(sel);
   // drag rows onto sidebar folders / tags / Unfiled / Trash
   body.addEventListener('dragstart', (e) => {
-    const row = e.target.closest('.row[data-id]');
-    if (!row) return;
+    const row = at(e, '.row[data-id]');
+    if (!row || !e.dataTransfer) return;
     pendingCollapse = null;
-    const id = row.dataset.id;
+    const id = row.dataset.id!;
     if (!state.selection.has(id)) A.select([id], { anchor: id, cursor: id });
     const ids = order.filter((x) => state.selection.has(x));
     e.dataTransfer.setData(ITEMS_MIME, JSON.stringify(ids));
@@ -436,18 +71,18 @@ function bindBody() {
   });
 
   body.addEventListener('mousedown', (e) => {
-    const row = e.target.closest('.row');
+    const row = at(e, '.row');
     if (!row || e.button !== 0) return;
     if (row.dataset.att || row.classList.contains('snippet')) return;
-    const id = row.dataset.id;
-    if (e.target.closest('[data-act="toggle"]')) { toggleExpand(id); return; }
+    const id = row.dataset.id!;
+    if (at(e, '[data-act="toggle"]')) { toggleExpand(id); return; }
     if (e.shiftKey && state.anchor) {
       const a = order.indexOf(state.anchor), b = order.indexOf(id);
       const [s, t] = a < b ? [a, b] : [b, a];
       A.select(order.slice(s, t + 1), { cursor: id });
     } else if (modKey(e)) {
       const sel = new Set(state.selection);
-      sel.has(id) ? sel.delete(id) : sel.add(id);
+      if (sel.has(id)) sel.delete(id); else sel.add(id);
       A.select([...sel], { anchor: id, cursor: id });
     } else if (!state.selection.has(id)) {
       A.select([id], { anchor: id, cursor: id });
@@ -457,165 +92,50 @@ function bindBody() {
     }
   });
   body.addEventListener('click', (e) => {
-    if (pendingCollapse && e.target.closest(`.row[data-id="${CSS.escape(pendingCollapse)}"]`)) {
+    if (pendingCollapse && at(e, `.row[data-id="${CSS.escape(pendingCollapse)}"]`)) {
       A.select([pendingCollapse], { anchor: pendingCollapse, cursor: pendingCollapse });
     }
     pendingCollapse = null;
-    const child = e.target.closest('.row.child');
+    const child = at(e, '.row.child');
     if (child) {
-      const it = byId(child.dataset.parent);
-      const att = it?.attachments.find((a) => String(a.id) === child.dataset.att);
-      if (att) openAttachment(it, att);
+      const it = byId(child.dataset.parent!);
+      const att = it?.attachments?.find((a) => String(a.id) === child.dataset.att);
+      if (it && att) openAttachment(it, att);
       return;
     }
-    if (e.target.closest('[data-act="open"]')) A.openPdf(e.target.closest('.row').dataset.id);
-    if (e.target.closest('[data-act="note"]')) openItemNote(byId(e.target.closest('.row').dataset.id));
-    const snip = e.target.closest('.row.snippet');
-    if (snip) A.openPdf(snip.dataset.parent);
+    if (at(e, '[data-act="open"]')) A.openPdf(at(e, '.row')!.dataset.id!);
+    if (at(e, '[data-act="note"]')) openItemNote(byId(at(e, '.row')!.dataset.id!));
+    const snip = at(e, '.row.snippet');
+    if (snip) A.openPdf(snip.dataset.parent!);
   });
   body.addEventListener('dblclick', (e) => {
-    const row = e.target.closest('.row[data-id]');
-    if (!row || e.target.closest('[data-act]')) return;
-    if (state.settings.open_pdf_on_double_click !== false) A.openPdf(row.dataset.id);
+    const row = at(e, '.row[data-id]');
+    if (!row || at(e, '[data-act]')) return;
+    if (state.settings.open_pdf_on_double_click !== false) A.openPdf(row.dataset.id!);
     else emit('focus-field', { id: row.dataset.id, field: 'title' });
   });
   body.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    const child = e.target.closest('.row.child');
-    if (child) return attachmentMenu(child.dataset.parent, child.dataset.att, { x: e.clientX, y: e.clientY });
-    const row = e.target.closest('.row[data-id]');
+    const child = at(e, '.row.child');
+    if (child) { attachmentMenu(byId(child.dataset.parent!), child.dataset.att, { x: e.clientX, y: e.clientY }); return; }
+    const row = at(e, '.row[data-id]');
     if (!row) return;
-    if (!state.selection.has(row.dataset.id)) A.select([row.dataset.id], { anchor: row.dataset.id });
+    if (!state.selection.has(row.dataset.id!)) A.select([row.dataset.id!], { anchor: row.dataset.id });
     itemMenu({ x: e.clientX, y: e.clientY });
   });
   scroller.addEventListener('mousedown', (e) => {
-    if (e.target === scroller || e.target === body || e.target.closest('.list-empty')) {
-      if (!e.target.closest('.list-empty button')) A.select([]);
+    if (e.target === scroller || e.target === body || at(e, '.list-empty')) {
+      if (!at(e, '.list-empty button')) A.select([]);
     }
   });
 }
 
-/** Open the item's paper note, or else the first note that cites it. */
-async function openItemNote(it) {
-  if (!it) return;
-  const n = state.noteKeys[it.citation_key];
-  if (n?.paper) { emit('open-note', { path: n.paper }); return; }
-  try {
-    const res = await api.itemNotes(it.id);
-    const first = res.paper_notes[0] || res.citing[0];
-    if (first) emit('open-note', { path: first.path, line: first.line || null });
-  } catch (e) { toastError(e); }
-}
-
-async function newPaperNote(it) {
-  try {
-    const res = await api.createNote({ item_id: it.id });
-    emit('open-note', { path: res.path });
-  } catch (e) {
-    if (e.data?.path) emit('open-note', { path: e.data.path }); else toastError(e);
-  }
-}
-
-export function itemMenu(at) {
-  const items = selectedItems();
-  if (!items.length) return;
-  const one = items.length === 1 ? items[0] : null;
-  const ids = items.map((i) => i.id);
-  if (state.view === 'trash') {
-    openMenu([
-      { label: 'Restore to Library', icon: 'restore', run: A.restoreSelected },
-      'sep',
-      { label: `Delete Permanently…`, icon: 'trash', danger: true, run: () => A.deleteForever(ids) },
-    ], at);
-    return;
-  }
-  const hasPdf = one && (one.attachments || []).length > 0;
-  const onlineUrl = one && (one.url || (one.doi ? `https://doi.org/${one.doi}` : ''));
-  const notesOn = state.settings.notes_enabled !== false;
-  const noteInfo = one && state.noteKeys[one.citation_key];
-  openMenu([
-    one && state.view === 'duplicates' && { label: 'Keep This One, Trash the Others', icon: 'check', run: () => A.keepOnly(one.id) },
-    one && state.view === 'duplicates' && 'sep',
-    ...(one && one.attachments?.length > 1
-      ? one.attachments.map((a) => ({ label: `Open “${a.name || 'PDF'}”`, icon: 'pdf', run: () => openAttachment(one, a) }))
-      : [one && { label: hasPdf ? 'Open PDF' : 'Open PDF (none attached)', icon: 'pdf', disabled: !hasPdf, run: () => A.openPdf(one), shortcut: '↵' }]),
-    one && { label: 'View Online', icon: 'globe', disabled: !onlineUrl, run: () => window.open(onlineUrl, '_blank') },
-    one && notesOn && (noteInfo ? { label: noteInfo.paper ? 'Open Paper Note' : 'Open Notes Citing This', icon: 'edit', run: () => openItemNote(one) }
-      : { label: 'New Paper Note', icon: 'edit', disabled: !one.citation_key, run: () => newPaperNote(one) }),
-    one && 'sep',
-    { label: one ? 'Retrieve Metadata…' : `Retrieve Metadata for ${items.length} Items…`, icon: 'sparkle', run: () => openMetadataReview(ids) },
-    { label: one ? 'Find Available PDF' : `Find PDFs for ${items.length} Items`, icon: 'find', run: () => (one ? A.findPdf(one.id) : A.findPdfs(ids)) },
-    { label: one ? 'Fetch References' : `Fetch References for ${items.length} Items`, icon: 'link', run: () => fetchReferencesBulk(ids) },
-    one && notesOn && { label: 'Show in Graph', icon: 'link', run: () => emit('show-graph', `item:${one.id}`) },
-    one && { label: 'Add PDF Attachment…', icon: 'paperclip', run: () => pickFiles((files) => A.uploadAttachments(one.id, files)) },
-    'sep',
-    { label: one ? 'Add to Folder…' : `Add ${items.length} Items to Folder…`, icon: 'folderPlus', run: () => addSelectionToFolder(ids) },
-    currentFolderId() && { label: 'Move to Another Folder…', icon: 'folder', run: () => moveSelectionToFolder(ids) },
-    currentFolderId() && { label: `Remove from “${folderById(currentFolderId())?.name || 'Folder'}”`, icon: 'unfiled', run: () => A.removeFromFolder(ids, currentFolderId()), shortcut: '⌫' },
-    { label: one ? 'Edit Tags…' : `Tags for ${items.length} Items…`, icon: 'tag', run: () => editTagsDialog(ids), shortcut: `${modLabel}T` },
-    'sep',
-    { label: one ? 'Copy Citation Key' : 'Copy Citation Keys', icon: 'key', run: () => copyKeys(items), shortcut: `${modLabel}⇧C` },
-    { label: 'Copy as BibTeX', icon: 'copy', run: () => copyBibtex(ids), shortcut: `${modLabel}C` },
-    { label: one ? 'Export Item…' : `Export ${items.length} Items…`, icon: 'export', run: () => openExport(ids) },
-    { label: one ? 'Regenerate Citation Key' : 'Regenerate Citation Keys', icon: 'refresh', run: () => A.regenerateCitekeys(ids) },
-    'sep',
-    { label: one ? 'Move Item to Trash' : `Move ${items.length} Items to Trash`, icon: 'trash', danger: true, run: A.trashSelected, shortcut: currentFolderId() ? `${modLabel}⌫` : '⌫' },
-  ], at);
-}
-
-function attachmentMenu(itemId, attId, at) {
-  const it = byId(itemId);
-  const att = it?.attachments.find((a) => String(a.id) === String(attId));
-  if (!att) return;
-  openMenu([
-    { label: 'Open', icon: 'open', run: () => openAttachment(it, att) },
-    { label: 'Rename…', icon: 'edit', run: () => renameAttachment(att) },
-    { label: 'Download', icon: 'download', run: () => { const a = document.createElement('a'); a.href = `/pdfs/${encodeURIComponent(att.url)}`; a.download = att.name || 'file.pdf'; a.click(); } },
-    'sep',
-    { label: 'Delete Attachment', icon: 'trash', danger: true, run: () => deleteAttachment(att) },
-  ], at);
-}
-
-export async function renameAttachment(att) {
-  const name = await promptDialog('Name', { title: 'Rename Attachment', value: att.name || '', confirm: 'Rename' });
-  if (!name) return;
-  try { await api.renameAttachment(att.id, name); await A.refreshItems([att.paper_id]); } catch (e) { toastError(e); }
-}
-
-export async function deleteAttachment(att) {
-  const { confirmDialog } = await import('../ui/dialog.js');
-  if (!(await confirmDialog(`Delete “${att.name}”?`, { title: 'Delete attachment', confirm: 'Delete', danger: true, detail: 'The file is removed from disk.' }))) return;
-  try { await api.deleteAttachment(att.id); await A.refreshItems([att.paper_id]); toast('Attachment deleted'); } catch (e) { toastError(e); }
-}
-
-export async function copyKeys(items) {
-  const keys = items.map((i) => i.citation_key).filter(Boolean);
-  if (!keys.length) return toast('No citation keys yet — use “Regenerate Citation Key”.', { type: 'error' });
-  await copyText(keys.join(', '));
-  toast(`Copied ${keys.length === 1 ? keys[0] : plural(keys.length, 'key')}`, { type: 'success' });
-}
-
-async function copyBibtex(ids) {
-  try {
-    const res = await api.exportText('bibtex', ids);
-    await copyText(res.text);
-    toast(`Copied BibTeX for ${plural(res.count, 'item')}`, { type: 'success' });
-  } catch (e) { toastError(e); }
-}
-
-export function pickFiles(cb: (files: FileList) => void, accept = 'application/pdf,.pdf', multiple = true): void {
-  const input = document.createElement('input');
-  input.type = 'file'; input.accept = accept; input.multiple = multiple;
-  input.onchange = () => { if (input.files?.length) cb(input.files); };
-  input.click();
-}
-
 /* ============================================================== keyboard */
-function bindKeyboard() {
+function bindKeyboard(): void {
   scroller.addEventListener('keydown', (e) => {
     if (e.target !== scroller) return;
-    const idx = order.indexOf(state.cursor);
-    const move = (to, extend) => {
+    const idx = state.cursor ? order.indexOf(state.cursor) : -1;
+    const move = (to: number, extend: boolean) => {
       to = Math.max(0, Math.min(order.length - 1, to));
       const id = order[to];
       if (!id) return;
@@ -625,7 +145,8 @@ function bindKeyboard() {
         A.select(order.slice(s, t + 1), { cursor: id });
       } else A.select([id], { anchor: id, cursor: id });
     };
-    const page = Math.max(1, Math.floor(scroller.clientHeight / (body.querySelector('.row')?.offsetHeight || 28)) - 1);
+    const page = Math.max(1, Math.floor(scroller.clientHeight / (body.querySelector<HTMLElement>('.row')?.offsetHeight || 28)) - 1);
+    const folder = currentFolderId();
     switch (e.key) {
       case 'ArrowDown': e.preventDefault(); move(idx < 0 ? 0 : idx + 1, e.shiftKey); break;
       case 'ArrowUp': e.preventDefault(); move(idx < 0 ? 0 : idx - 1, e.shiftKey); break;
@@ -640,7 +161,7 @@ function bindKeyboard() {
         if (!state.selection.size) break;
         e.preventDefault();
         // inside a folder, Delete takes items out of the folder; Cmd/Ctrl+Delete moves them to the Trash
-        if (currentFolderId() && !modKey(e)) A.removeFromFolder([...state.selection], currentFolderId());
+        if (folder && !modKey(e)) A.removeFromFolder([...state.selection], folder);
         else A.trashSelected();
         break;
       case 'a': case 'A': if (modKey(e)) { e.preventDefault(); A.select(order, { anchor: order[0], cursor: state.cursor }); } break;
@@ -661,23 +182,23 @@ function bindKeyboard() {
 }
 
 /* ================================================================= drops */
-function bindDrops() {
-  let depth = 0, overRow = null;
-  const isFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+function bindDrops(): void {
+  let depth = 0, overRow: HTMLElement | null = null;
+  const isFiles = (e: DragEvent) => [...(e.dataTransfer?.types || [])].includes('Files');
   const clearRow = () => { overRow?.classList.remove('selected'); overRow = null; };
   pane.addEventListener('dragenter', (e) => { if (!isFiles(e)) return; depth++; pane.classList.add('drag-over'); });
   pane.addEventListener('dragleave', (e) => { if (!isFiles(e)) return; if (--depth <= 0) { depth = 0; pane.classList.remove('drag-over'); clearRow(); } });
   pane.addEventListener('dragover', (e) => {
     if (!isFiles(e)) return;
     e.preventDefault();
-    const row = e.target.closest('.row[data-id]');
+    const row = (e.target as Element).closest<HTMLElement>('.row[data-id]');
     if (row !== overRow) {
       clearRow();
       if (row && state.view === 'library') { overRow = row; row.classList.add('selected'); pane.classList.remove('drag-over'); } else pane.classList.add('drag-over');
     }
   });
   pane.addEventListener('drop', (e) => {
-    if (!isFiles(e)) return;
+    if (!isFiles(e) || !e.dataTransfer) return;
     e.preventDefault();
     depth = 0; pane.classList.remove('drag-over');
     const files = e.dataTransfer.files;
@@ -690,7 +211,7 @@ function bindDrops() {
   });
 }
 
-export function focusList() { scroller?.focus(); closeMenu(); }
+export function focusList(): void { scroller?.focus(); closeMenu(); }
 
 /* ========================================================== copy BibTeX */
 // Cmd/Ctrl+C on selected items copies their BibTeX. The text is prefetched
@@ -709,8 +230,8 @@ const prefetchBibtex = debounce(async () => {
   } catch { /* copy will fetch on demand */ }
 }, 150);
 
-function bindCopy() {
-  on('selection', prefetchBibtex);
+function bindCopy(): void {
+  on('selection', () => prefetchBibtex());
   on('items', () => { bibCache = { key: '', text: '' }; prefetchBibtex(); });   // edits change the BibTeX
   document.addEventListener('copy', (e) => {
     // only when the list has focus and the user isn't copying selected text
@@ -720,7 +241,7 @@ function bindCopy() {
     e.preventDefault();
     const n = state.selection.size;
     const done = () => toast(`Copied BibTeX for ${plural(n, 'item')}`, { type: 'success', timeout: 2500 });
-    if (bibCache.key === selectionKey() && bibCache.text) {
+    if (bibCache.key === selectionKey() && bibCache.text && e.clipboardData) {
       e.clipboardData.setData('text/plain', bibCache.text);
       done();
     } else {

@@ -7,7 +7,7 @@ import { openMenu } from '../ui/menu.js';
 import { toast, toastError } from '../ui/toast.js';
 import { copyText, debounce, escapeHtml, formatDate, plural, shortAuthors, storage, store } from '../util.js';
 import { openExport } from './exportDialog.js';
-import { copyKeys, deleteAttachment, pickFiles, renameAttachment } from './itemlist.js';
+import { copyKeys, deleteAttachment, pickFiles, renameAttachment } from './itemlist/menus.js';
 import { openMetadataReview } from './metadataReview.js';
 import { confirmKeyChange } from './notes/rekeyDialog.js';
 import { fetchReferencesBulk, fillReferences } from './referencesSection.js';

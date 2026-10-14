@@ -128,6 +128,9 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
 - `views/*` holds the screens and dialogs, and `views/notes/*` the notes workspace (a CodeMirror 6
   editor, live preview and Markdown rendering). `settingsView.ts` is the Settings page; its markup
   is in `views/settings/page.ts`, and Backups and Devices have their own modules there.
+  `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
+  header is `views/itemlist/columns.ts`, its virtualised rows `rows.ts` (only the rows near the
+  viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`.
 - `ui/*` holds the generic widgets (dialogs, menus, toasts, long press).
 - `viewer/*` holds the PDF viewer (`viewer.html`): `viewer.ts` lays out, draws and zooms the pages
   and publishes `window.zcViewer`; `annotations.ts`, `links.ts` and `notesBridge.ts` add to it
