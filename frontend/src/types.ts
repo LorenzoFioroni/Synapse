@@ -52,6 +52,7 @@ export interface Item {
   tags?: string[];
   folder_ids?: number[];
   dup_group?: number;      // in the Duplicates view: items of one group share it
+  _lean?: boolean;         // set by the frontend: a list entry without the abstract (the pane fetches it)
   [field: string]: unknown;
 }
 
@@ -317,6 +318,12 @@ export interface ItemReferences {
   can_fetch: boolean;
   queued: boolean;
 }
+
+/** POST /api/items/<id>/find_pdf. */
+export interface FindPdfResult { status: 'success' | 'not_found' | 'error'; message?: string; attachment?: Attachment; source?: string }
+
+/** POST /api/items/from_pdf: one entry per PDF; ``note`` says why no metadata was found. */
+export interface PdfImport { item: Item; identifier: { doi?: string; arxiv?: string } | null; note?: string | null }
 
 /* ------------------------------------------------------------------ misc */
 

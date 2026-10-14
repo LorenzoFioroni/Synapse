@@ -1,4 +1,3 @@
-// @ts-nocheck
 // The graph in Notes, Obsidian-style:
 //
 // - Local graph: at the top of the note's side panel (on by default, can be collapsed). It shows
@@ -9,7 +8,7 @@
 //   they cite; citations between papers and cited works not in the library can be added.
 //
 // Clicking a note opens it. Clicking a paper shows a small card (paper note, library, PDF).
-// Data: /api/graph (backend/references/graph.py), filtered with model.js, drawn with forceGraph.js.
+// Data: /api/graph (backend/references/graph.py), filtered with model.ts, drawn with forceGraph.ts.
 
 import * as A from '../../actions.js';
 import { api } from '../../api.js';
@@ -17,37 +16,52 @@ import { icon } from '../../icons.js';
 import { emit } from '../../store.js';
 import { toast, toastError } from '../../ui/toast.js';
 import { escapeHtml as esc, h, shortAuthors, storage, store } from '../../util.js';
-import { createGraph } from './forceGraph.js';
+import type { ApiError } from '../../api.js';
+import type { GraphData } from '../../types.js';
+import { type GNode, type GraphCanvas, createGraph } from './forceGraph.js';
 import { buildView, matchNodes, relations } from './model.js';
 
-let data = null, dataAt = 0, fetching = null;
-let ctx = null;                 // {root, openNote(path), currentPath(), openGraph(focus), onGlobalClosed()}
-let local = null, localHost = null, localPath = null;
-let global = null, globalEl = null, globalFocus = null;
-let card = null;
-let localOpts = { depth: 1, papers: true, ...storage('zc.graph.local', {}) };
-let globalOpts = { papers: true, citations: false, works: false, orphans: true, ...storage('zc.graph.global', {}) };
+/** What the graphs need from the notes view. */
+export interface NotesGraphContext {
+  root: HTMLElement;
+  openNote(path: string): void;
+  currentPath(): string | null;
+  openGraph(focus: string | null): void;   // the full graph, with a history entry
+  onGlobalClosed?(): void;
+}
+
+type LocalOptions = { depth: number; papers: boolean };
+type GlobalOptions = { papers: boolean; citations: boolean; works: boolean; orphans: boolean };
+
+let data: GraphData | null = null, dataAt = 0, fetching: Promise<GraphData> | null = null;
+let ctx: NotesGraphContext;
+let local: (GraphCanvas & { host?: HTMLElement }) | null = null, localHost: HTMLElement | null = null, localPath: string | null = null;
+let global: GraphCanvas | null = null, globalEl: HTMLElement | null = null, globalFocus: string | null = null;
+let card: HTMLElement | null = null;
+let changedTimer: ReturnType<typeof setTimeout> | undefined;
+const localOpts: LocalOptions = { depth: 1, papers: true, ...storage<Partial<LocalOptions>>('zc.graph.local', {}) };
+const globalOpts: GlobalOptions = { papers: true, citations: false, works: false, orphans: true, ...storage<Partial<GlobalOptions>>('zc.graph.global', {}) };
 
 /** Graph data, fetched again when it may have changed (after a save) or is older than a minute. */
-async function getData(fresh = false) {
+async function getData(fresh = false): Promise<GraphData> {
   if (!fresh && data && Date.now() - dataAt < 60000) return data;
   fetching ||= api.graph().then((d) => { data = d; dataAt = Date.now(); return d; }).finally(() => { fetching = null; });
   return fetching;
 }
 
 /** Call after a note was saved, moved or deleted: the next paint fetches the graph again. */
-export function graphChanged() {
+export function graphChanged(): void {
   dataAt = 0;
-  clearTimeout(graphChanged.t);
-  graphChanged.t = setTimeout(() => { if (localPath) paintLocal(); if (global) paintGlobal(); }, 400);
+  clearTimeout(changedTimer);
+  changedTimer = setTimeout(() => { if (localPath) paintLocal(); if (global) paintGlobal(); }, 400);
 }
 
-export function initNotesGraph(c) {
+export function initNotesGraph(c: NotesGraphContext): void {
   ctx = c;
   new MutationObserver(() => { local?.refreshColors(); global?.refreshColors(); })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && card) closeCard(); });
-  document.addEventListener('mousedown', (e) => { if (card && !card.contains(e.target)) closeCard(); });
+  document.addEventListener('mousedown', (e) => { if (card && !card.contains(e.target as Node)) closeCard(); });
   window.zcGraph = {   // for tests
     local: () => local, global: () => global, localPath: () => localPath, globalFocus: () => globalFocus,
     get data() { return data; },
@@ -56,7 +70,7 @@ export function initNotesGraph(c) {
 
 /* ================================================================ local */
 /** The local graph section (rendered once into the side panel; it survives repaints of the rest). */
-export function localSection() {
+export function localSection(): HTMLElement {
   const open = storage('zc.graph.localOpen', true);
   const el = h(`<div class="ns-section ns-graph${open ? '' : ' collapsed'}">
     <div class="ns-title ns-graph-head">
@@ -69,9 +83,9 @@ export function localSection() {
     </div>
     <div class="ns-graph-canvas"></div>
   </div>`);
-  localHost = el.querySelector('.ns-graph-canvas');
+  localHost = el.querySelector<HTMLElement>('.ns-graph-canvas');
   el.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-lg],[data-lg-depth]');
+    const b = (e.target as Element).closest<HTMLElement>('[data-lg],[data-lg-depth]');
     if (!b) return;
     if (b.dataset.lgDepth) { localOpts.depth = Number(b.dataset.lgDepth); store('zc.graph.local', localOpts); paintLocal(); }
     else if (b.dataset.lg === 'papers') { localOpts.papers = !localOpts.papers; store('zc.graph.local', localOpts); paintLocal(); }
@@ -87,13 +101,13 @@ export function localSection() {
   return el;
 }
 
-function paintLocalControls(el) {
-  el.querySelectorAll('[data-lg-depth]').forEach((b) => b.classList.toggle('active', Number(b.dataset.lgDepth) === localOpts.depth));
-  el.querySelector('[data-lg="papers"]').classList.toggle('on', localOpts.papers);
+function paintLocalControls(el: HTMLElement): void {
+  el.querySelectorAll<HTMLElement>('[data-lg-depth]').forEach((b) => b.classList.toggle('active', Number(b.dataset.lgDepth) === localOpts.depth));
+  el.querySelector('[data-lg="papers"]')!.classList.toggle('on', localOpts.papers);
 }
 
 /** Show the neighbourhood of a note (null: nothing open). */
-export function showLocal(path) {
+export function showLocal(path: string | null): void {
   localPath = path;
   paintLocal();
 }
@@ -101,10 +115,11 @@ export function showLocal(path) {
 async function paintLocal() {
   const section = localHost?.closest('.ns-graph');
   if (!localHost || !localPath || !section || section.classList.contains('collapsed') || !localHost.isConnected) return;
+  const host = localHost;
   const path = localPath;
-  let d;
+  let d: GraphData;
   try { d = await getData(); } catch { return; }
-  if (path !== localPath || !localHost.isConnected) return;
+  if (path !== localPath || !host.isConnected) return;
   const focus = `note:${path}`;
   const view = buildView(d, {
     papers: localOpts.papers, works: false, notes: true, hideIsolated: false, focus, depth: localOpts.depth,
@@ -112,26 +127,28 @@ async function paintLocal() {
   });
   if (!local || local.host !== localHost) {
     local?.destroy();
-    local = await createGraph(localHost, { compact: true, onNodeClick: (n, e) => onNodeClick(n, e, localHost) });
-    local.host = localHost;
-    new ResizeObserver(() => local?.host === localHost && local.resize()).observe(localHost);
+    const g: GraphCanvas & { host?: HTMLElement } = await createGraph(host, { compact: true, onNodeClick: (n, e) => onNodeClick(n, e, host) });
+    g.host = host;
+    local = g;
+    new ResizeObserver(() => { if (local?.host === localHost) local.resize(); }).observe(host);
   }
-  local.setCurrent(focus);
-  local.setData(view);
-  local.graph.onEngineStop(() => local.fit(300));
+  const g = local;
+  g.setCurrent(focus);
+  g.setData(view);
+  g.graph.onEngineStop(() => g.fit(300));
   setTimeout(() => local?.fit(300), 350);
-  localHost.dataset.count = String(view.nodes.length);
-  localHost.classList.toggle('alone', view.nodes.length <= 1);
+  host.dataset.count = String(view.nodes.length);
+  host.classList.toggle('alone', view.nodes.length <= 1);
 }
 
 /* =============================================================== global */
 export const globalOpen = () => !!globalEl && !globalEl.hidden;
 
 /** Show the full graph in place of the editor, optionally centred on a node. */
-export async function openGlobal(focus = null) {
-  const main = ctx.root.querySelector('.notes-main');
+export async function openGlobal(focus: string | null = null): Promise<void> {
+  const main = ctx.root.querySelector('.notes-main')!;
   if (!globalEl) {
-    globalEl = h(`<div class="notes-graph" hidden>
+    const el = h(`<div class="notes-graph" hidden>
       <div class="ng-bar">
         <span class="ng-title">${icon('link', 'icon-sm')} Graph</span>
         <div class="ng-search">${icon('search', 'icon-sm')}<input class="input" type="search" placeholder="Find" spellcheck="false" aria-label="Find in graph"></div>
@@ -149,36 +166,38 @@ export async function openGlobal(focus = null) {
       <div class="ng-canvas"></div>
       <div class="ng-empty empty-state" hidden></div>
     </div>`);
-    main.appendChild(globalEl);
-    globalEl.querySelector('.ng-opts').addEventListener('change', (e) => {
-      const k = e.target.dataset.go;
+    globalEl = el;
+    main.appendChild(el);
+    el.querySelector('.ng-opts')!.addEventListener('change', (e) => {
+      const box = e.target as HTMLInputElement;
+      const k = box.dataset.go as keyof GlobalOptions | undefined;
       if (!k) return;
-      globalOpts[k] = e.target.checked;
+      globalOpts[k] = box.checked;
       store('zc.graph.global', globalOpts);
       paintGlobalControls();
       paintGlobal();
     });
-    globalEl.querySelector('.ng-bar').addEventListener('click', (e) => {
-      const b = e.target.closest('[data-ng]');
+    el.querySelector('.ng-bar')!.addEventListener('click', (e) => {
+      const b = (e.target as Element).closest<HTMLElement>('[data-ng]');
       if (b?.dataset.ng === 'close') closeGlobal({ push: true });
       if (b?.dataset.ng === 'fit') global?.fit();
-      if (b?.dataset.ng === 'opts') { const o = globalEl.querySelector('.ng-opts'); o.hidden = !o.hidden; b.classList.toggle('active', !o.hidden); }
+      if (b?.dataset.ng === 'opts') { const o = el.querySelector<HTMLElement>('.ng-opts')!; o.hidden = !o.hidden; b.classList.toggle('active', !o.hidden); }
     });
-    const input = globalEl.querySelector('.ng-search input');
+    const input = el.querySelector<HTMLInputElement>('.ng-search input')!;
     input.addEventListener('input', () => {
       const hits = new Set(matchNodes(global?.nodes() || [], input.value).map((n) => n.id));
       global?.setMatches(input.value.trim() ? hits : null);
     });
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { const first = matchNodes(global?.nodes() || [], input.value)[0]; if (first) global.focus(first.id); }
+      if (e.key === 'Enter') { const first = matchNodes(global?.nodes() || [], input.value)[0]; if (first) global!.focus(first.id); }
       if (e.key === 'Escape') { e.stopPropagation(); input.value = ''; global?.setMatches(null); }
     });
-    globalEl.addEventListener('keydown', (e) => {
-      if (e.target.closest('input')) return;
+    el.addEventListener('keydown', (e) => {
+      if ((e.target as Element).closest('input')) return;
       if (e.key === 'Escape') closeGlobal({ push: true });
       if (e.key === 'f') global?.fit();
     });
-    globalEl.tabIndex = -1;
+    el.tabIndex = -1;
   }
   globalFocus = focus;
   ctx.root.classList.add('graph-on');
@@ -188,25 +207,26 @@ export async function openGlobal(focus = null) {
   globalEl.focus();
 }
 
-export function closeGlobal({ push = false } = {}) {
+export function closeGlobal({ push = false } = {}): void {
   if (!globalOpen()) return;
-  globalEl.hidden = true;
+  globalEl!.hidden = true;
   ctx.root.classList.remove('graph-on');
   closeCard();
   global?.graph.pauseAnimation();
   if (push) ctx.onGlobalClosed?.();
 }
 
-function paintGlobalControls() {
-  for (const el of globalEl.querySelectorAll('[data-go]')) el.checked = !!globalOpts[el.dataset.go];
-  globalEl.querySelector('[data-go="works"]').disabled = !globalOpts.citations;
+function paintGlobalControls(): void {
+  for (const el of globalEl!.querySelectorAll<HTMLInputElement>('[data-go]')) el.checked = !!globalOpts[el.dataset.go as keyof GlobalOptions];
+  globalEl!.querySelector<HTMLInputElement>('[data-go="works"]')!.disabled = !globalOpts.citations;
 }
 
-async function paintGlobal({ refit = false } = {}) {
+async function paintGlobal({ refit = false } = {}): Promise<void> {
   if (!globalOpen()) return;
-  let d;
+  const root = globalEl!;
+  let d: GraphData;
   try { d = await getData(); } catch (e) { toastError(e); return; }
-  const host = globalEl.querySelector('.ng-canvas');
+  const host = root.querySelector<HTMLElement>('.ng-canvas')!;
   const view = buildView(d, {
     papers: globalOpts.papers, notes: true, works: globalOpts.papers && globalOpts.citations && globalOpts.works, minCited: 2,
     hideIsolated: !globalOpts.orphans,
@@ -221,33 +241,35 @@ async function paintGlobal({ refit = false } = {}) {
     global = await createGraph(host, { onNodeClick: (n, e) => onNodeClick(n, e, host), onBackgroundClick: closeCard });
     new ResizeObserver(() => global?.resize()).observe(host);
   }
-  global.graph.resumeAnimation();
-  global.setCurrent(ctx.currentPath() ? `note:${ctx.currentPath()}` : null);
-  if (refit) global.setMarked(null);
-  global.setData(view);
-  const empty = globalEl.querySelector('.ng-empty');
+  const g = global;
+  g.graph.resumeAnimation();
+  g.setCurrent(ctx.currentPath() ? `note:${ctx.currentPath()}` : null);
+  if (refit) g.setMarked(null);
+  g.setData(view);
+  const empty = root.querySelector<HTMLElement>('.ng-empty')!;
   empty.hidden = view.nodes.length > 0;
   empty.innerHTML = `${icon('link')}<h3>No notes yet</h3><p>Link notes with [[Note name]] and cite papers with [@key]; they will show up here.</p>`;
   if (refit) {
-    if (globalFocus && view.nodes.some((n) => n.id === globalFocus)) {
-      global.setMarked(globalFocus);
-      setTimeout(() => global.focus(globalFocus, 500), 700);
-    } else setTimeout(() => global.fit(500), 700);
+    const focus = globalFocus;
+    if (focus && view.nodes.some((n) => n.id === focus)) {
+      g.setMarked(focus);
+      setTimeout(() => g.focus(focus, 500), 700);
+    } else setTimeout(() => g.fit(500), 700);
   }
 }
 
 /* ================================================================ clicks */
-function onNodeClick(n, e, host) {
+function onNodeClick(n: GNode, e: MouseEvent | undefined, host: HTMLElement): void {
   closeCard();
-  if (n.kind === 'note') { closeGlobal({ push: false }); ctx.openNote(n.path); return; }
+  if (n.kind === 'note') { closeGlobal({ push: false }); ctx.openNote(n.path!); return; }
   showCard(n, e, host);
 }
 
-function showCard(n, e, host) {
+function showCard(n: GNode, e: MouseEvent | undefined, host: HTMLElement): void {
   const r = data ? relations(data, n.id) : { notes: [], citedInNotes: [] };
   const paperNote = r.notes[0];
   const ident = n.doi || n.arxiv_id;
-  card = h(`<div class="graph-card">
+  const card_ = h(`<div class="graph-card">
     <div class="gc-kind">${n.kind === 'paper' ? 'In your library' : 'Cited work · not in your library'}</div>
     <div class="gc-title">${esc(n.title || '')}</div>
     <div class="gc-meta">${esc([shortAuthors(n.authors || ''), n.year].filter(Boolean).join(' · '))}${n.citation_key ? ` · <span class="mono">@${esc(n.citation_key)}</span>` : ''}</div>
@@ -258,29 +280,30 @@ function showCard(n, e, host) {
       ${n.kind === 'paper' && n.has_pdf ? `<button class="btn btn-sm" data-gc="pdf">${icon('pdf', 'icon-sm')} PDF</button>` : ''}
       ${n.kind === 'work' && ident ? `<button class="btn btn-sm" data-gc="add">${icon('plus', 'icon-sm')} Add to Library</button>` : ''}
     </div></div>`);
-  document.body.appendChild(card);
+  card = card_;
+  document.body.appendChild(card_);
   const hr = host.getBoundingClientRect();
-  const x = Math.min((e?.clientX ?? hr.left + hr.width / 2) + 10, window.innerWidth - card.offsetWidth - 8);
-  const y = Math.min((e?.clientY ?? hr.top + hr.height / 2) + 10, window.innerHeight - card.offsetHeight - 8);
-  card.style.left = `${Math.max(8, x)}px`;
-  card.style.top = `${Math.max(8, y)}px`;
-  card.addEventListener('click', async (ev) => {
-    const b = ev.target.closest('[data-gc]');
+  const x = Math.min((e?.clientX ?? hr.left + hr.width / 2) + 10, window.innerWidth - card_.offsetWidth - 8);
+  const y = Math.min((e?.clientY ?? hr.top + hr.height / 2) + 10, window.innerHeight - card_.offsetHeight - 8);
+  card_.style.left = `${Math.max(8, x)}px`;
+  card_.style.top = `${Math.max(8, y)}px`;
+  card_.addEventListener('click', async (ev) => {
+    const b = (ev.target as Element).closest<HTMLButtonElement>('[data-gc]');
     if (!b) return;
     const a = b.dataset.gc;
-    if (a === 'note') { closeCard(); closeGlobal({ push: false }); ctx.openNote(paperNote.path); }
+    if (a === 'note') { closeCard(); closeGlobal({ push: false }); ctx.openNote(paperNote.path!); }
     else if (a === 'item') { closeCard(); emit('show-item', n.item_id); }
     else if (a === 'pdf') { closeCard(); A.openPdf(n.item_id); }
     else if (a === 'add') {
       b.disabled = true;
       try {
-        await api.fromIdentifier(ident, false, null);
+        await api.fromIdentifier(ident!, false, null);
         toast('Added to your library.', { type: 'success' });
         await A.loadItems();
         graphChanged();
         closeCard();
       } catch (err) {
-        if (err.status === 409) toast('Already in your library.'); else toastError(err);
+        if ((err as ApiError).status === 409) toast('Already in your library.'); else toastError(err);
         b.disabled = false;
       }
     }

@@ -101,6 +101,7 @@ export interface AppState {
   expanded: Set<string>;
   indexer: unknown;
   noteKeys: NoteKeys;
+  order?: string[];        // the list's display order, set by itemlist.ts (the DOM holds only the rows on screen)
 }
 
 export const state: AppState = {

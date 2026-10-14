@@ -1,8 +1,8 @@
 // Thin client for the JSON API. Every call throws an Error with a readable
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
-  Attachment, ChangeFeed, CiteEntry, Format, HistoryEntry, ImportEntry, ImportPreview, Item, ItemList, ItemReferences, ItemsByIds, NoteAttachments, NoteFile, NoteHistory, NotesListing,
-  RenamePlan, Schema, Settings, SettingsResponse,
+  Attachment, ChangeFeed, CiteEntry, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item, ItemList, ItemReferences, ItemsByIds, NoteAttachments, NoteFile, NoteHistory, NotesListing,
+  PdfImport, RenamePlan, Schema, Settings, SettingsResponse, Tag,
 } from './types.js';
 
 export class ApiError extends Error {
@@ -59,7 +59,7 @@ export const api = {
   restore: (ids: string[]) => request('POST', '/api/items/restore', { ids }),
   deleteForever: (ids: string[]) => request('POST', '/api/items/delete', { ids }),
   emptyTrash: () => request('POST', '/api/trash/empty'),
-  regenerateCitekeys: (ids: string[]) => request('POST', '/api/items/citekeys', { ids }),
+  regenerateCitekeys: (ids: string[]) => request<{ keys: Record<string, string> }>('POST', '/api/items/citekeys', { ids }),
 
   lookup: (id: string) => request('POST', `/api/items/${id}/lookup`),
   fromIdentifier: (identifier: string, allowDuplicate = false, folderId: number | null = null, { fetchReferences }: { fetchReferences?: boolean } = {}) =>
@@ -67,9 +67,9 @@ export const api = {
   fromPdfs: (files: Iterable<File>, folderId: number | null = null) => {
     const fd = new FormData(); [...files].forEach((f) => fd.append('file', f));
     if (folderId) fd.append('folder_id', String(folderId));
-    return request('POST', '/api/items/from_pdf', fd);
+    return request<{ created: PdfImport[] }>('POST', '/api/items/from_pdf', fd);
   },
-  findPdf: (id: string) => request('POST', `/api/items/${id}/find_pdf`),
+  findPdf: (id: string) => request<FindPdfResult>('POST', `/api/items/${id}/find_pdf`),
 
   uploadAttachments: (id: string, files: Iterable<File>) => { const fd = new FormData(); [...files].forEach((f) => fd.append('file', f)); return request('POST', `/api/items/${id}/attachments`, fd); },
   renameAttachment: (attId: number, name: string) => request<Attachment>('PATCH', `/api/attachments/${attId}`, { name }),
@@ -102,12 +102,12 @@ export const api = {
   rebuildFulltext: () => request('POST', '/api/fulltext/rebuild'),
 
   // folders · tags · smart folders
-  createFolder: (name: string, parentId: number | null = null) => request('POST', '/api/folders', { name, parent_id: parentId }),
+  createFolder: (name: string, parentId: number | null = null) => request<Folder>('POST', '/api/folders', { name, parent_id: parentId }),
   updateFolder: (id: number, data: { name?: string; parent_id?: number | null; position?: number }) => request('PATCH', `/api/folders/${id}`, data),
   deleteFolder: (id: number) => request('DELETE', `/api/folders/${id}`),
   changeFolders: (ids: string[], add: number[] = [], remove: number[] = []) => request('POST', '/api/items/folders', { ids, add, remove }),
   tagItems: (ids: string[], add: string[] = [], remove: string[] = []) => request('POST', '/api/items/tags', { ids, add, remove }),
-  updateTag: (id: number, data: { name?: string; color?: string | null }) => request('PATCH', `/api/tags/${id}`, data),
+  updateTag: (id: number, data: { name?: string; color?: string | null }) => request<Tag>('PATCH', `/api/tags/${id}`, data),
   deleteTag: (id: number) => request('DELETE', `/api/tags/${id}`),
   createSmart: (name: string, query: string, mode: string) => request('POST', '/api/smart', { name, query, mode }),
   updateSmart: (id: number, data: { name?: string; query?: string; mode?: string; position?: number }) => request('PATCH', `/api/smart/${id}`, data),
@@ -133,7 +133,7 @@ export const api = {
   fetchReferences: (id: string) => request<ItemReferences>('POST', `/api/items/${id}/references`),
   queueReferences: (ids: string[]) => request('POST', '/api/references/queue', { ids }),
   citationGraph: () => request('GET', '/api/graph/citations'),
-  graph: () => request('GET', '/api/graph'),
+  graph: () => request<GraphData>('GET', '/api/graph'),
   noteTrash: () => request('GET', '/api/notes/trash'),
   noteAttachments: () => request<NoteAttachments>('GET', '/api/notes/attachments'),
   restoreNoteAttachment: (trashId: string, name: string) => request('POST', '/api/notes/attachments/restore', { trash_id: trashId, name }),

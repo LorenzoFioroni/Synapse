@@ -15,6 +15,8 @@ declare global {
     mermaid?: Mermaid;
     /** force-graph (vendor/force-graph/force-graph.min.js), loaded when a graph is shown (forceGraph.ts). */
     ForceGraph?: typeof ForceGraph;
+    /** The notes graphs (notesGraph.ts), for the browser tests. */
+    zcGraph?: unknown;
     zcChanges?: { poll(): Promise<void>; state(): { seq: number | null; epoch: string | null; pending: string[] } };
   }
 }
