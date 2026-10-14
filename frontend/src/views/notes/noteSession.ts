@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Save logic for one open note, kept free of DOM code so it can be unit-tested
 // (tests/js/noteSession.test.mjs).
 //
@@ -11,26 +10,62 @@
 //    as soon as the server has the same text.
 //  * Network or server errors keep the text and retry with backoff ("offline").
 //
-// Status: 'saved' | 'dirty' | 'saving' | 'offline' | 'conflict'
+export type SaveStatus = 'saved' | 'dirty' | 'saving' | 'offline' | 'conflict';
 
-const draftKey = (path) => `zc.noteDraft:${path}`;
+/** The server calls a session needs (injectable for tests). Errors carry the HTTP ``status``. */
+export interface NoteSessionApi {
+  save(path: string, text: string, hash: string | null): Promise<{ hash: string }>;
+  create(path: string, text: string): Promise<{ hash: string }>;
+  get(path: string): Promise<{ text: string; hash: string }>;
+}
+
+/** Where drafts are kept (local storage in the app). */
+export interface DraftStore {
+  get(key: string): Draft | null | undefined;
+  set(key: string, value: Draft): void;
+  remove(key: string): void;
+}
+
+export interface Draft { text: string; baseHash: string | null; at?: number }
+
+export interface Conflict { mine: string; theirs: string | null; theirsHash: string | null; deleted: boolean }
+
+export interface NoteSessionOptions {
+  path: string;
+  text: string;                      // what the editor starts with
+  hash: string | null;               // server hash of serverText
+  serverText?: string;               // default: text
+  api: NoteSessionApi;
+  drafts: DraftStore;
+  delay?: number;                    // ms without typing before saving (default 1500)
+  onStatus?: (status: SaveStatus, session: NoteSession) => void;
+  onConflict?: (info: Conflict) => void;
+  onRemoteText?: (text: string) => void;   // replace the editor content
+  onSaved?: (hash: string | null) => void;
+}
+
+const draftKey = (path: string) => `zc.noteDraft:${path}`;
 
 export class NoteSession {
-  /**
-   * @param {object} o
-   * @param {string} o.path
-   * @param {string} o.text      text the editor starts with
-   * @param {string} o.hash      server hash of o.serverText
-   * @param {string} [o.serverText=o.text]
-   * @param {{save(path,text,hash):Promise<{hash}>, create(path,text):Promise<{hash}>, get(path):Promise<{text,hash}>}} o.api
-   * @param {{get(k), set(k,v), remove(k)}} o.drafts
-   * @param {number} [o.delay=1500]
-   * @param {(status, session) => void} [o.onStatus]
-   * @param {(info:{mine, theirs, theirsHash, deleted}) => void} [o.onConflict]
-   * @param {(text) => void} [o.onRemoteText]  replace the editor content
-   * @param {(hash) => void} [o.onSaved]
-   */
-  constructor(o) {
+  path: string;
+  api: NoteSessionApi;
+  drafts: DraftStore;
+  delay: number;
+  onStatus: (status: SaveStatus, session: NoteSession) => void;
+  onConflict: (info: Conflict) => void;
+  onRemoteText: (text: string) => void;
+  onSaved: (hash: string | null) => void;
+  saved: { text: string; hash: string | null };
+  text: string;
+  status: SaveStatus;
+  timer: ReturnType<typeof setTimeout> | null;
+  inFlight: Promise<void> | null;
+  again: boolean;
+  retryMs: number;
+  disposed: boolean;
+  conflict: Conflict | null;
+
+  constructor(o: NoteSessionOptions) {
     this.path = o.path;
     this.api = o.api;
     this.drafts = o.drafts;
@@ -52,7 +87,7 @@ export class NoteSession {
   }
 
   /** Decide what to show when a note is opened and a draft may exist. */
-  static open(path, server, drafts) {
+  static open(path: string, server: { text: string; hash: string | null }, drafts: DraftStore): { text: string; restored: boolean; conflict: boolean } {
     const d = drafts.get(draftKey(path));
     if (!d || typeof d.text !== 'string') return { text: server.text, restored: false, conflict: false };
     if (d.text === server.text) { drafts.remove(draftKey(path)); return { text: server.text, restored: false, conflict: false }; }
@@ -60,7 +95,7 @@ export class NoteSession {
     return { text: d.text, restored: true, conflict: true };   // the file changed since the draft was made
   }
 
-  _set(status) {
+  _set(status: SaveStatus) {
     if (this.status === status) return;
     this.status = status;
     this.onStatus(status, this);
@@ -75,13 +110,13 @@ export class NoteSession {
 
   _clean() {
     this.drafts.remove(draftKey(this.path));
-    clearTimeout(this.timer);
+    clearTimeout(this.timer ?? undefined);
     this.timer = null;
     if (!this.conflict) this._set(this.inFlight && this.status === 'saving' ? 'saving' : 'saved');
   }
 
-  _schedule(ms) {
-    clearTimeout(this.timer);
+  _schedule(ms: number) {
+    clearTimeout(this.timer ?? undefined);
     if (this.conflict || this.disposed) return;
     this.timer = setTimeout(() => { this.timer = null; this.save(); }, ms);
   }
@@ -89,7 +124,7 @@ export class NoteSession {
   get dirty() { return this.text !== this.saved.text; }
 
   /** Call on every editor change. */
-  update(text) {
+  update(text: string): void {
     this.text = text;
     if (this.conflict) {   // keep the draft current, but never save
       this.drafts.set(draftKey(this.path), { text, baseHash: this.saved.hash, at: Date.now() });
@@ -99,11 +134,11 @@ export class NoteSession {
   }
 
   /** Save now if needed. Resolves when the server has the current text (or saving failed). */
-  async save() {
+  async save(): Promise<void> {
     if (this.disposed && !this.dirty) return;
     if (this.conflict || !this.dirty) return;
     if (this.inFlight) { this.again = true; return this.inFlight; }
-    clearTimeout(this.timer);
+    clearTimeout(this.timer ?? undefined);
     this.timer = null;
     const sent = this.text;
     this._set('saving');
@@ -116,7 +151,7 @@ export class NoteSession {
         this.onSaved(res.hash);
         if (this.text === sent) this._clean(); else this._dirty();
       } catch (e) {
-        if (e && e.status === 409) {
+        if ((e as { status?: number } | null)?.status === 409) {
           await this._enterConflict();
         } else {
           this.retryMs = Math.min(30000, this.retryMs ? this.retryMs * 2 : 2000);
@@ -132,12 +167,12 @@ export class NoteSession {
   }
 
   async _enterConflict() {
-    let theirs = null, theirsHash = null, deleted = false;
+    let theirs: string | null = null, theirsHash: string | null = null, deleted = false;
     try {
       const r = await this.api.get(this.path);
       theirs = r.text; theirsHash = r.hash;
     } catch (e) {
-      if (e && e.status === 404) deleted = true;
+      if ((e as { status?: number } | null)?.status === 404) deleted = true;
     }
     if (!deleted && theirs === this.text) {   // the other side wrote exactly our text
       this.saved = { text: theirs, hash: theirsHash };
@@ -145,7 +180,7 @@ export class NoteSession {
       this._clean();
       return;
     }
-    clearTimeout(this.timer);
+    clearTimeout(this.timer ?? undefined);
     this.conflict = { mine: this.text, theirs, theirsHash, deleted };
     this.drafts.set(draftKey(this.path), { text: this.text, baseHash: this.saved.hash, at: Date.now() });
     this._set('conflict');
@@ -156,14 +191,15 @@ export class NoteSession {
   async startConflict() { await this._enterConflict(); }
 
   /** 'mine' overwrites the file with the editor text; 'theirs' loads the file into the editor. */
-  async resolve(choice) {
+  async resolve(choice: 'mine' | 'theirs'): Promise<void> {
     const c = this.conflict;
     if (!c) return;
     this.conflict = null;
     if (choice === 'theirs' && !c.deleted) {
-      this.saved = { text: c.theirs, hash: c.theirsHash };
-      this.text = c.theirs;
-      this.onRemoteText(c.theirs);
+      // not deleted, so theirs was read (a failed read leaves null, as before)
+      this.saved = { text: c.theirs as string, hash: c.theirsHash };
+      this.text = c.theirs as string;
+      this.onRemoteText(this.text);
       this._clean();
       return;
     }
@@ -181,9 +217,9 @@ export class NoteSession {
   }
 
   /** When the window regains focus: pick up edits made in another tab if we have none. */
-  async checkRemote() {
+  async checkRemote(): Promise<void> {
     if (this.status !== 'saved' || this.inFlight) return;
-    let r;
+    let r: { text: string; hash: string };
     try { r = await this.api.get(this.path); } catch { return; }
     if (this.status !== 'saved' || this.dirty || r.hash === this.saved.hash) return;
     this.saved = { text: r.text, hash: r.hash };
@@ -195,7 +231,7 @@ export class NoteSession {
   /** Stop timers. Unsaved text stays in the draft. */
   dispose() {
     this.disposed = true;
-    clearTimeout(this.timer);
+    clearTimeout(this.timer ?? undefined);
   }
 }
 

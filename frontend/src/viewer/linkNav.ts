@@ -1,16 +1,26 @@
-// @ts-nocheck
 // Pure helpers for links in the PDF viewer (no DOM, unit-tested in tests/js/linkNav.test.mjs).
+
+/** [x0, y0, x1, y1] in PDF coordinates (y up). */
+export type Box = [number, number, number, number];
+/** A 2D affine transform [a, b, c, d, e, f], as PDF writes them. */
+type Matrix = number[];
+/** A page laid out in the viewer: its top and height in scroll coordinates. */
+export interface PageBox { num: number; top: number; height: number }
+export interface ReadingPosition { page: number; frac: number }
+/** A text run of a page, in PDF coordinates (y up). */
+export interface PageText { str: string; x: number; y: number; w: number; h: number }
+export interface Caption { top: number; bottom: number; x: number; table: boolean }
 
 /**
  * Where an explicit PDF destination points: [pageRef, {name}, ...args] → {ref, x, y}, with x/y in
  * PDF user space (y grows upwards) or null when the destination leaves them free.
  * See PDF 32000-1 §12.3.2.2 for the destination kinds.
  */
-export function destTarget(dest) {
+export function destTarget(dest: unknown): { ref: unknown; x: number | null; y: number | null } | null {
   if (!Array.isArray(dest) || dest.length < 2) return null;
   const [ref, kind, ...args] = dest;
-  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-  switch (kind?.name) {
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  switch ((kind as { name?: string } | undefined)?.name) {
     case 'XYZ': return { ref, x: num(args[0]), y: num(args[1]) };
     case 'FitH': case 'FitBH': return { ref, x: null, y: num(args[0]) };
     case 'FitV': case 'FitBV': return { ref, x: num(args[0]), y: null };
@@ -20,10 +30,10 @@ export function destTarget(dest) {
 }
 
 /** A rectangle in page CSS pixels [x1, y1, x2, y2] (any corner order) → percentages of the page. */
-export function rectPercent(r, width, height) {
+export function rectPercent(r: number[], width: number, height: number): { left: string; top: string; width: string; height: string } {
   const left = Math.min(r[0], r[2]), right = Math.max(r[0], r[2]);
   const top = Math.min(r[1], r[3]), bottom = Math.max(r[1], r[3]);
-  const pct = (v, of) => `${(100 * v / of).toFixed(4)}%`;
+  const pct = (v: number, of: number) => `${(100 * v / of).toFixed(4)}%`;
   return { left: pct(left, width), top: pct(top, height), width: pct(right - left, width), height: pct(bottom - top, height) };
 }
 
@@ -32,7 +42,7 @@ export function rectPercent(r, width, height) {
  * as a fraction of its height — so it survives zooming. `pages` are [{num, top, height}] in
  * scroll coordinates, in order.
  */
-export function positionAt(pages, scrollTop) {
+export function positionAt(pages: PageBox[], scrollTop: number): ReadingPosition | null {
   if (!pages.length) return null;
   let p = pages[0];
   for (const q of pages) {
@@ -43,13 +53,13 @@ export function positionAt(pages, scrollTop) {
 }
 
 /** The scroll offset for a position (inverse of positionAt), or null if its page isn't laid out. */
-export function scrollFor(pages, pos) {
+export function scrollFor(pages: PageBox[], pos: ReadingPosition | null | undefined): number | null {
   const p = pages.find((q) => q.num === pos?.page);
-  return p ? p.top + (pos.frac || 0) * p.height : null;
+  return p ? p.top + (pos!.frac || 0) * p.height : null;
 }
 
 /** Where a popup of size w×h goes next to an anchor rect, inside a viewport of vw×vh. */
-export function popupPlacement(anchor, w, h, vw, vh, gap = 8) {
+export function popupPlacement(anchor: { top: number; bottom: number; left: number }, w: number, h: number, vw: number, vh: number, gap = 8): { left: number; top: number; below: boolean } {
   const below = anchor.bottom + gap + h <= vh || anchor.top - gap - h < 0;
   const top = below ? Math.min(anchor.bottom + gap, Math.max(vh - h - 4, 4)) : anchor.top - gap - h;
   const left = Math.min(Math.max(anchor.left, 4), Math.max(vw - w - 4, 4));
@@ -64,9 +74,9 @@ export function popupPlacement(anchor, w, h, vw, vh, gap = 8) {
  * the destination sits near the top, or — with `bottom` (page CSS px) — that line sits near the
  * bottom of the window (figures: the caption is at the bottom, the figure above it).
  */
-export function previewOrigin(x, y, w, h, pageW, pageH, margin = 16, bottom = null) {
-  const clampX = (v) => Math.max(0, Math.min(v, pageW - w));
-  const clampY = (v) => Math.max(0, Math.min(v, pageH - h));
+export function previewOrigin(x: number | null, y: number | null, w: number, h: number, pageW: number, pageH: number, margin = 16, bottom: number | null = null): { x: number; y: number } {
+  const clampX = (v: number) => Math.max(0, Math.min(v, pageW - w));
+  const clampY = (v: number) => Math.max(0, Math.min(v, pageH - h));
   let ox = 0;
   if (x != null && pageW > w) {
     const half = pageW / 2;
@@ -93,13 +103,13 @@ const CAPTION = /^\s*(fig(ure)?s?|tab(le)?|scheme|chart|algorithm|listing)\.?\s*
  * when it sits at the caption's first line (anchored at its start) or at its last line (anchored
  * at its end, as most LaTeX figures are).
  */
-export function findCaption(items, destX, destY, pageW) {
+export function findCaption(items: PageText[], destX: number | null, destY: number | null, pageW: number): Caption | null {
   if (destY == null) return null;
   const half = pageW / 2;
-  const col = (x) => (pageW > 0 ? x < half : true);
+  const col = (x: number) => (pageW > 0 ? x < half : true);
   const inCol = destX == null ? null : col(destX);
-  const lineOf = (it) => items.filter((o) => Math.abs(o.y - it.y) < Math.max(1, (it.h || 10) * 0.3) && col(o.x) === col(it.x));
-  let best = null;
+  const lineOf = (it: PageText) => items.filter((o) => Math.abs(o.y - it.y) < Math.max(1, (it.h || 10) * 0.3) && col(o.x) === col(it.x));
+  let best: (Caption & { d: number }) | null = null;
   for (const it of items) {
     if (!CAPTION.test(it.str) || (inCol !== null && col(it.x) !== inCol)) continue;
     if (lineOf(it).some((o) => o.x < it.x - 1 && o.str.trim())) continue;   // "Fig. 3" inside a sentence
@@ -115,7 +125,7 @@ export function findCaption(items, destX, destY, pageW) {
 }
 
 /** Baseline of the last line of the paragraph starting at `start` (lines in its column, line-break gaps). */
-function paragraphEnd(items, start, col) {
+function paragraphEnd(items: PageText[], start: PageText, col: (x: number) => boolean): number {
   const lineH = start.h || 10;
   const below = items.filter((it) => it.str.trim() && col(it.x) === col(start.x) && it.y <= start.y + 0.5)
     .sort((a, b) => b.y - a.y);
@@ -131,21 +141,21 @@ function paragraphEnd(items, start, col) {
  * A named destination of a float (LaTeX hyperref: figure.3, table.2, subfigure.1.2, figure.caption.7,
  * algocf.1, lstlisting.4…): its anchor is at the caption, usually below the figure itself.
  */
-export function isFloatDest(dest) {
+export function isFloatDest(dest: unknown): boolean {
   return typeof dest === 'string' && /^(sub)?(figure|table)\b|^(algocf|algorithm|lstlisting|listing)\b/i.test(dest);
 }
 
 /* ------------------------------------------------------------------ figures */
-const mul = (m, n) => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3],
+const mul = (m: Matrix, n: Matrix): Matrix => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3],
   m[1] * n[2] + m[3] * n[3], m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]];
-const apply = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
-function boxOf(m, x0, y0, x1, y1) {
+const apply = (m: Matrix, x: number, y: number) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+function boxOf(m: Matrix, x0: number, y0: number, x1: number, y1: number): Box {
   const pts = [apply(m, x0, y0), apply(m, x1, y0), apply(m, x0, y1), apply(m, x1, y1)];
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
-const meet = (a, b) => (a && b ? [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.min(a[2], b[2]), Math.min(a[3], b[3])] : a || b);
+const meet = (a: Box | null, b: Box | null): Box | null => (a && b ? [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.min(a[2], b[2]), Math.min(a[3], b[3])] : a || b);
 
 /**
  * Where a page draws things: boxes [x0, y0, x1, y1] (PDF coordinates, y up) of its images and of
@@ -153,18 +163,18 @@ const meet = (a, b) => (a && b ? [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Ma
  * (page.getOperatorList(): fnArray, argsArray) and its OPS table. Text is not included.
  * Boxes are cut to the clipping in force (clip paths, form bounding boxes) and to `view` (the page).
  */
-export function graphicsBoxes(fnArray, argsArray, OPS, view = null) {
+export function graphicsBoxes(fnArray: number[], argsArray: any[], OPS: Record<string, number>, view: Box | null = null): Box[] {
   const PAINT = new Set([OPS.stroke, OPS.closeStroke, OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke,
     OPS.closeFillStroke, OPS.closeEOFillStroke, OPS.shadingFill]);
   const IMAGE = new Set([OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject,
     OPS.paintImageXObjectRepeat, OPS.paintImageMaskXObjectRepeat, OPS.paintSolidColorImageMask, OPS.paintInlineImageXObjectGroup,
     OPS.paintImageMaskXObjectGroup]);
-  let m = [1, 0, 0, 1, 0, 0];
-  let clip = view ? [...view] : null;
-  const stack = [];
-  const out = [];
-  const add = (b) => { const c = meet(b, clip); if (c && c[2] >= c[0] && c[3] >= c[1]) out.push(c); };
-  let pending = null;   // the box of the last constructed path, until we know whether it is painted or clips
+  let m: Matrix = [1, 0, 0, 1, 0, 0];
+  let clip: Box | null = view ? [...view] : null;
+  const stack: [Matrix, Box | null][] = [];
+  const out: Box[] = [];
+  const add = (b: Box) => { const c = meet(b, clip); if (c && c[2] >= c[0] && c[3] >= c[1]) out.push(c); };
+  let pending: Box | null = null;   // the box of the last constructed path, until we know whether it is painted or clips
   for (let i = 0; i < fnArray.length; i++) {
     const fn = fnArray[i], args = argsArray[i];
     if (fn === OPS.save) stack.push([m, clip]);
@@ -177,7 +187,7 @@ export function graphicsBoxes(fnArray, argsArray, OPS, view = null) {
       if (bb && bb.length === 4) clip = meet(clip, boxOf(m, bb[0], bb[1], bb[2], bb[3]));
     } else if (fn === OPS.paintFormXObjectEnd) [m, clip] = stack.pop() || [m, clip];
     else if (fn === OPS.constructPath) {
-      const mm = args?.[2];
+      const mm = args?.[2] as ArrayLike<number> | undefined;   // the path's bounding box: minX, maxX, minY, maxY
       pending = Array.isArray(mm) || ArrayBuffer.isView(mm) ? boxOf(m, mm[0], mm[2], mm[1], mm[3]) : null;
       continue;
     } else if (fn === OPS.clip || fn === OPS.eoClip) {
@@ -196,34 +206,34 @@ export function graphicsBoxes(fnArray, argsArray, OPS, view = null) {
  * the caption and the text inside the figure (labels), or null if nothing is drawn there.
  * `caption` comes from findCaption; `texts` are the page's text items [{x, y, w}].
  */
-export function figureRegion(boxes, caption, pageW, pageH, texts = []) {
+export function figureRegion(boxes: Box[], caption: Caption | null, pageW: number, pageH: number, texts: PageText[] = []): Box | null {
   if (!caption) return null;
   const half = pageW / 2;
   const left = caption.x < half;
   // in the caption's column: mostly on its side of the middle, or a full-width figure
-  const inCol = (b) => b[2] - b[0] > half * 1.1 || (left ? (b[0] + b[2]) / 2 < half : (b[0] + b[2]) / 2 >= half);
-  const big = (b) => b[2] - b[0] > pageW * 0.9 && b[3] - b[1] > pageH * 0.9;   // a page background
+  const inCol = (b: Box) => b[2] - b[0] > half * 1.1 || (left ? (b[0] + b[2]) / 2 < half : (b[0] + b[2]) / 2 >= half);
+  const big = (b: Box) => b[2] - b[0] > pageW * 0.9 && b[3] - b[1] > pageH * 0.9;   // a page background
   // Lines of running text (body text, other captions) are where a figure ends: growing never
   // crosses one, and a box with one inside it is a background, not part of the figure.
   // (the caption's own lines excepted: a figure's box often overlaps them with white margins)
-  const ownCaption = (l) => l.y <= caption.top + 1 && l.y >= caption.bottom - 2 && (l.x0 + l.x1) / 2 < half === left;
+  const ownCaption = (l: ProseLine) => l.y <= caption.top + 1 && l.y >= caption.bottom - 2 && (l.x0 + l.x1) / 2 < half === left;
   const prose = proseLines(texts, half).filter((l) => !ownCaption(l));
-  const proseIn = (y0, y1, x0, x1) => prose.some((l) => l.y > y0 + 1 && l.y < y1 - 1 && l.x1 > x0 && l.x0 < x1);
+  const proseIn = (y0: number, y1: number, x0: number, x1: number) => prose.some((l) => l.y > y0 + 1 && l.y < y1 - 1 && l.x1 > x0 && l.x0 < x1);
   const cand = boxes.filter((b) => inCol(b) && !big(b) && !proseIn(b[1], b[3], b[0], b[2]));
   const GAP = 40;
-  let lo, hi;
+  let lo: number, hi: number;
   if (!caption.table) {
     // start with what ends just above the caption, then keep adding what is close above the region
     // drawing above the caption; its box may reach into the caption (white margins), not below it
-    const above = (b) => b[1] >= caption.bottom - 2 && b[3] > caption.top + 4;
-    const ok = (b, from) => above(b) && b[1] <= from + GAP && !proseIn(Math.max(from, caption.top) - 2, b[1], b[0], b[2]);
+    const above = (b: Box) => b[1] >= caption.bottom - 2 && b[3] > caption.top + 4;
+    const ok = (b: Box, from: number) => above(b) && b[1] <= from + GAP && !proseIn(Math.max(from, caption.top) - 2, b[1], b[0], b[2]);
     const near = cand.filter((b) => ok(b, caption.top));
     if (!near.length) return null;
     let top = Math.max(...near.map((b) => b[3]));
     // Grow upwards through drawing and through short text between its pieces (panel labels, axis
     // titles); `reach` is how far up we got, `top` the highest drawing reached.
     // (the short last line of a paragraph is not a label: running text sits right above it)
-    const paragraphTail = (it) => prose.some((l) => l.y > it.y + 1 && l.y <= it.y + 2.2 * (it.h || 8) && l.x1 > it.x && l.x0 < it.x + it.w);
+    const paragraphTail = (it: PageText) => prose.some((l) => l.y > it.y + 1 && l.y <= it.y + 2.2 * (it.h || 8) && l.x1 > it.x && l.x0 < it.x + it.w);
     const short = texts.filter((it) => Number.isFinite(it.w) && it.w <= half * 0.6 && inCol([it.x, 0, it.x + it.w, 0])
       && !prose.some((l) => Math.abs(l.y - it.y) < 1 && l.x1 > it.x && l.x0 < it.x + it.w) && !paragraphTail(it));
     let reach = top;
@@ -259,7 +269,7 @@ export function figureRegion(boxes, caption, pageW, pageH, texts = []) {
     if (!near.length) return null;
     const rows = texts.filter((it) => Number.isFinite(it.w) && (it.w > half * 1.1 || ((it.x + it.w / 2) < half) === left)
         && !prose.some((l) => Math.abs(l.y - it.y) < 1 && l.x1 > it.x && l.x0 < it.x + it.w))   // not the text after the table
-      .map((it) => [it.x, it.y, it.x + it.w, it.y + 8]);
+      .map((it): Box => [it.x, it.y, it.x + it.w, it.y + 8]);
     let reach = Math.min(...near.map((b) => b[1]));
     let bottom = reach;
     let grew = true;
@@ -284,8 +294,10 @@ export function figureRegion(boxes, caption, pageW, pageH, texts = []) {
 }
 
 /** Lines of running text: [{y, x0, x1}] — long enough (characters) and wide enough (in its column). */
-function proseLines(texts, half) {
-  const lines = new Map();
+interface ProseLine { y: number; x0: number; x1: number; chars: number }
+
+function proseLines(texts: PageText[], half: number): ProseLine[] {
+  const lines = new Map<string, ProseLine>();
   for (const it of texts) {
     if (!Number.isFinite(it.w)) continue;
     const key = `${Math.round(it.y)}:${it.x + it.w / 2 < half ? 'L' : 'R'}`;
@@ -300,7 +312,7 @@ function proseLines(texts, half) {
  * How to show a region (page CSS px at scale 1: {x, y, w, h}) in a popup of at most maxW×maxH:
  * the scale (between minS and maxS) and the popup's size, with `pad` around the region.
  */
-export function fitRegion(r, maxW, maxH, { pad = 14, minS = 0.45, maxS = 1.6 } = {}) {
+export function fitRegion(r: { w: number; h: number }, maxW: number, maxH: number, { pad = 14, minS = 0.45, maxS = 1.6 } = {}): { s: number; w: number; h: number } {
   const s = Math.max(minS, Math.min(maxS, (maxW - 2 * pad) / r.w, (maxH - 2 * pad) / r.h));
   const w = Math.round(Math.min(maxW, Math.max(320, r.w * s + 2 * pad)));
   const h = Math.round(Math.min(maxH, Math.max(140, r.h * s + 2 * pad)));

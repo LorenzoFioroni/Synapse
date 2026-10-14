@@ -1,4 +1,3 @@
-// @ts-nocheck
 // JavaScript port of backend/notes/parser.py, used ONLY for display: the live preview and the
 // read view use it to know which characters are math, links or citations.
 //
@@ -19,11 +18,51 @@ const IMAGE = /!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/gd;
 const TAG = /(?<![\p{L}\p{N}_/&#\])([])#([A-Za-z][\p{L}\p{N}_\-/]*)/gu;
 const DIGITS = '0123456789';
 
+/** A region the scanner blanked (code, math, comments, fenced blocks). */
+export interface Span {
+  kind: 'code' | 'math' | 'comment' | 'fence' | 'mathblock';
+  from: number;
+  to: number;
+  display?: boolean;
+  open?: boolean;          // a fence or math block that is never closed
+}
+
+/** A link, embed, citation or image, as backend/notes/parser.py reports it. */
+export interface ScanLink {
+  kind: 'note' | 'embed' | 'cite' | 'image';
+  from: number;
+  to: number;
+  target: string;
+  line: number;
+  heading: string;
+  alias: string;
+  locator: string;
+  page: number | null;
+  prefix: string;
+  suppress_author: boolean;
+  group: number;           // citations in the same [ … ] share it
+  width?: number | null;   // images: ![alt|300](…)
+}
+
+export interface Heading { level: number; text: string; line: number; from: number }
+export interface TagHit { tag: string; from: number; to: number }
+
+export interface Scan {
+  bodyStart: number;
+  masked: string;
+  spans: Span[];
+  links: ScanLink[];
+  headings: Heading[];
+  tags: TagHit[];
+}
+
+interface CitePart { key: string; prefix: string; suppress: boolean; locator: string; page: number | null }
+
 /** Python str.strip() for the whitespace that matters here. */
-const strip = (s) => s.replace(/^\s+|\s+$/gu, '');
+const strip = (s: string) => s.replace(/^\s+|\s+$/gu, '');
 
 /** Mirror of frontmatter.split(): returns {header, bodyStart (offset), bodyLine (0-based)}. */
-export function splitFrontmatter(text) {
+export function splitFrontmatter(text: string): { header: string | null; bodyStart: number; bodyLine: number } {
   if (!text.startsWith('---\n')) return { header: null, bodyStart: 0, bodyLine: 0 };
   let pos = 4, line = 1;
   while (pos <= text.length) {
@@ -40,11 +79,11 @@ export function splitFrontmatter(text) {
   return { header: null, bodyStart: 0, bodyLine: 0 };
 }
 
-function blank(chars, a, b) {
+function blank(chars: string[], a: number, b: number): void {
   for (let i = a; i < b; i++) if (chars[i] !== '\n') chars[i] = ' ';
 }
 
-function maskInline(text, chars, start, end, spans) {
+function maskInline(text: string, chars: string[], start: number, end: number, spans: Span[]): void {
   let i = start;
   while (i < end) {
     const ch = text[i];
@@ -105,15 +144,15 @@ function maskInline(text, chars, start, end, spans) {
  * Mirror of parser.mask(body). Returns {masked, spans} where spans lists the regions that were
  * blanked: {kind: 'code'|'math'|'comment'|'fence'|'mathblock', from, to, display?}.
  */
-export function mask(body) {
+export function mask(body: string): { masked: string; spans: Span[] } {
   const units = body.split('');   // UTF-16 units, so offsets match CodeMirror
-  const spans = [];
+  const spans: Span[] = [];
   const lines = body.split('\n');
-  const offsets = [];
+  const offsets: number[] = [];
   let pos = 0;
   for (const l of lines) { offsets.push(pos); pos += l.length + 1; }
-  let paraStart = null, fence = null, fenceStart = 0, mathBlock = false, mathStart = 0;
-  const flush = (upto) => { if (paraStart !== null) { maskInline(body, units, paraStart, upto, spans); paraStart = null; } };
+  let paraStart: number | null = null, fence: [string, number] | null = null, fenceStart = 0, mathBlock = false, mathStart = 0;
+  const flush = (upto: number) => { if (paraStart !== null) { maskInline(body, units, paraStart, upto, spans); paraStart = null; } };
   lines.forEach((line, n) => {
     const start = offsets[n], stop = start + line.length;
     if (fence) {
@@ -155,8 +194,8 @@ export function mask(body) {
   return { masked: units.join(''), spans };
 }
 
-function parseCiteGroup(inner) {
-  const out = [];
+function parseCiteGroup(inner: string): CitePart[] | null {
+  const out: CitePart[] = [];
   for (const part of inner.split(';')) {
     const m = CITE_PART.exec(strip(part));
     if (!m) return null;
@@ -169,7 +208,7 @@ function parseCiteGroup(inner) {
   return out;
 }
 
-function splitWiki(inner) {
+function splitWiki(inner: string): { target: string; heading: string; alias: string } {
   inner = inner.replaceAll('\\|', '|');
   const bar = inner.indexOf('|');
   let target = bar >= 0 ? inner.slice(0, bar) : inner;
@@ -182,11 +221,8 @@ function splitWiki(inner) {
 
 /**
  * Scan a whole note. Offsets in the result are relative to `text` (front-matter included).
- * Returns {bodyStart, masked, spans, links, headings, tags}.
- *   links: {kind: 'note'|'embed'|'cite'|'image', from, to, target, line, heading, alias,
- *           locator, page, prefix, suppress_author, group}
  */
-export function scan(text) {
+export function scan(text: string): Scan {
   text = text.replace(/\r\n?/g, '\n');
   const fm = splitFrontmatter(text);
   const body = text.slice(fm.bodyStart);
@@ -194,42 +230,45 @@ export function scan(text) {
   const { masked, spans } = mask(body);
   const lineStarts = [0];
   for (let i = 0; i < masked.length; i++) if (masked[i] === '\n') lineStarts.push(i + 1);
-  const lineOf = (o) => {
+  const lineOf = (o: number) => {
     let lo = 0, hi = lineStarts.length - 1;
     while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (lineStarts[mid] <= o) lo = mid; else hi = mid - 1; }
     return lo + 1 + fm.bodyLine;
   };
-  const found = [];
+  const found: [number, ScanLink][] = [];
   for (const m of masked.matchAll(WIKI)) {
-    const inner = body.slice(m.index + m[1].length + 2, m.index + m[0].length - 2);
+    const at = m.index!;
+    const inner = body.slice(at + m[1].length + 2, at + m[0].length - 2);
     const w = splitWiki(inner);
     if (!w.target && !w.heading) continue;
-    found.push([m.index, { kind: m[1] ? 'embed' : 'note', from: m.index + off, to: m.index + m[0].length + off,
+    found.push([at, { kind: m[1] ? 'embed' : 'note', from: at + off, to: at + m[0].length + off,
       target: w.target, heading: w.heading, alias: w.alias, locator: '', page: null, prefix: '', suppress_author: false,
-      group: 0, line: lineOf(m.index) }]);
+      group: 0, line: lineOf(at) }]);
   }
   let group = 0;
   for (const m of masked.matchAll(BRACKET)) {
-    const cites = parseCiteGroup(body.slice(m.index + 1, m.index + m[0].length - 1));
+    const at = m.index!;
+    const cites = parseCiteGroup(body.slice(at + 1, at + m[0].length - 1));
     if (!cites) continue;
     group++;
     for (const c of cites) {
-      found.push([m.index, { kind: 'cite', from: m.index + off, to: m.index + m[0].length + off, target: c.key,
+      found.push([at, { kind: 'cite', from: at + off, to: at + m[0].length + off, target: c.key,
         heading: '', alias: '', locator: c.locator, page: c.page, prefix: c.prefix, suppress_author: c.suppress,
-        group, line: lineOf(m.index) }]);
+        group, line: lineOf(at) }]);
     }
   }
   for (const m of masked.matchAll(IMAGE)) {
+    const at = m.index!;
     const alt = m[1];
-    found.push([m.index, { kind: 'image', from: m.index + off, to: m.index + m[0].length + off,
+    found.push([at, { kind: 'image', from: at + off, to: at + m[0].length + off,
       target: m[2], heading: '', alias: strip(alt.split('|')[0]),
       width: Number((alt.split('|')[1] || '').trim()) || null,
-      locator: '', page: null, prefix: '', suppress_author: false, group: 0, line: lineOf(m.index) }]);
+      locator: '', page: null, prefix: '', suppress_author: false, group: 0, line: lineOf(at) }]);
   }
   found.sort((a, b) => a[0] - b[0]);
 
-  const headings = [];
-  const tags = [];
+  const headings: Heading[] = [];
+  const tags: TagHit[] = [];
   const bodyLines = body.split('\n');
   masked.split('\n').forEach((ml, idx) => {
     const hm = HEADING.exec(ml);
@@ -239,7 +278,7 @@ export function scan(text) {
     }
     for (const tm of ml.matchAll(TAG)) {
       const t = tm[1].replace(/[/-]+$/, '');
-      if (t && !/^\d+$/.test(t)) tags.push({ tag: t, from: lineStarts[idx] + tm.index + off, to: lineStarts[idx] + tm.index + tm[0].length + off });
+      if (t && !/^\d+$/.test(t)) tags.push({ tag: t, from: lineStarts[idx] + tm.index! + off, to: lineStarts[idx] + tm.index! + tm[0].length + off });
     }
   });
   return {

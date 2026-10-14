@@ -1,5 +1,4 @@
-// @ts-nocheck
-// Math macros for notes (PR #46): your own commands and those of the LaTeX physics package.
+// Math macros for notes: your own commands and those of the LaTeX physics package.
 //
 // KaTeX has no packages, and a \newcommand only lasts for the formula that contains it. So the
 // definitions are collected here and handed to every formula as KaTeX ``macros``:
@@ -13,10 +12,25 @@
 // \newcommand with a default for its first argument (\newcommand{\x}[2][1]{…}) works too, which
 // KaTeX alone does not support. DOM-free (tested with Node).
 
+/** A \newcommand-like definition: ``opt`` is the default of an optional first argument. */
+export interface Definition { name: string; nargs: number; opt: string | null; body: string; provide: boolean }
+
+/** The part of KaTeX's macro expander that function macros use. */
+export interface MacroContext {
+  consumeSpaces(): void;
+  consumeArg(): { tokens: { text: string }[] };
+  future(): { text: string };
+  popToken(): { text: string };
+}
+
+/** A KaTeX macro: replacement TeX, or a function that reads its arguments itself. */
+export type Macro = string | ((ctx: MacroContext) => string);
+export type Macros = Record<string, Macro>;
+
 /* ------------------------------------------------------------------ reading definitions */
 
 /** A balanced {…} at i: [content, index after it], or null. */
-function group(s, i) {
+function group(s: string, i: number): [string, number] | null {
   if (s[i] !== '{') return null;
   let depth = 0;
   for (let j = i; j < s.length; j++) {
@@ -29,7 +43,7 @@ function group(s, i) {
 }
 
 /** A balanced [ … ] at i (braces protect a ]): [content, index after it], or null. */
-function bracket(s, i) {
+function bracket(s: string, i: number): [string, number] | null {
   if (s[i] !== '[') return null;
   let depth = 0;
   for (let j = i + 1; j < s.length; j++) {
@@ -42,10 +56,10 @@ function bracket(s, i) {
   return null;
 }
 
-const ws = (s, i) => { while (i < s.length && /\s/.test(s[i])) i++; return i; };
+const ws = (s: string, i: number) => { while (i < s.length && /\s/.test(s[i])) i++; return i; };
 
 /** The command name at i: "\name" (letters) or "{\name}". [name, index after it] or null. */
-function commandName(s, i) {
+function commandName(s: string, i: number): [string, number] | null {
   if (s[i] === '{') {
     const g = group(s, i);
     if (!g) return null;
@@ -60,13 +74,13 @@ const START = /\\(newcommand|renewcommand|providecommand|DeclareMathOperator|def
 export const HAS_DEFINITIONS = /\\(?:newcommand|renewcommand|providecommand|DeclareMathOperator|g?def)(?![A-Za-z@])/;
 
 /** One definition starting at i (the backslash of the keyword). */
-function readDefinition(s, i, kind) {
+function readDefinition(s: string, i: number, kind: string): (Omit<Definition, 'opt' | 'provide'> & { opt?: string | null; provide?: boolean; end: number }) | null {
   let j = i + kind.length + 1;
   if (kind === 'def' || kind === 'gdef') {
     const n = commandName(s, ws(s, j));
     if (!n || n[0].startsWith('{')) return null;
     j = n[1];
-    const params = /^(?:\s*#\d)*\s*/.exec(s.slice(j))[0];
+    const params = /^(?:\s*#\d)*\s*/.exec(s.slice(j))![0];
     j += params.length;
     const body = group(s, j);
     if (!body) return null;
@@ -84,7 +98,7 @@ function readDefinition(s, i, kind) {
   const n = commandName(s, ws(s, j));
   if (!n) return null;
   j = ws(s, n[1]);
-  let nargs = 0, opt = null;
+  let nargs = 0, opt: string | null = null;
   const count = bracket(s, j);
   if (count) {
     if (!/^\s*\d\s*$/.test(count[0])) return null;
@@ -99,11 +113,10 @@ function readDefinition(s, i, kind) {
 }
 
 /**
- * The macro definitions in a piece of TeX.
- * @returns {{defs: {name, nargs, opt, body, provide}[], rest: string}}  rest: the TeX without them
+ * The macro definitions in a piece of TeX, and ``rest``: the TeX without them.
  */
-export function parseDefinitions(tex) {
-  const defs = [];
+export function parseDefinitions(tex: string): { defs: Definition[]; rest: string } {
+  const defs: Definition[] = [];
   let rest = '', last = 0;
   START.lastIndex = 0;
   for (let m = START.exec(tex); m; m = START.exec(tex)) {
@@ -120,7 +133,7 @@ export function parseDefinitions(tex) {
 /* ------------------------------------------------------------------ turning them into KaTeX macros */
 
 /** TeX text of KaTeX tokens (as consumeArg gives them: in reverse order). */
-function tokText(tokens) {
+function tokText(tokens: { text: string }[]): string {
   let out = '', prev = '';
   for (let k = tokens.length - 1; k >= 0; k--) {
     const x = tokens[k].text;
@@ -131,14 +144,14 @@ function tokText(tokens) {
   return out;
 }
 
-const arg = (ctx) => { ctx.consumeSpaces(); return tokText(ctx.consumeArg().tokens); };
-const next = (ctx) => { ctx.consumeSpaces(); return ctx.future().text; };
-const star = (ctx) => { if (ctx.future().text === '*') { ctx.popToken(); return true; } return false; };
+const arg = (ctx: MacroContext) => { ctx.consumeSpaces(); return tokText(ctx.consumeArg().tokens); };
+const next = (ctx: MacroContext) => { ctx.consumeSpaces(); return ctx.future().text; };
+const star = (ctx: MacroContext) => { if (ctx.future().text === '*') { ctx.popToken(); return true; } return false; };
 
 /** Tokens up to the matching close (e.g. "(" … ")"), braces and nesting respected; the delimiters are dropped. */
-function delimited(ctx, open, close) {
+function delimited(ctx: MacroContext, open: string, close: string): string {
   ctx.popToken();   // the opening one
-  const toks = [];
+  const toks: { text: string }[] = [];
   let depth = 0, braces = 0;
   for (;;) {
     const t = ctx.future();
@@ -154,26 +167,26 @@ function delimited(ctx, open, close) {
 }
 
 /** An optional [ … ] argument, or null. */
-function optional(ctx) {
+function optional(ctx: MacroContext): string | null {
   if (next(ctx) !== '[') return null;
   return delimited(ctx, '[', ']');
 }
 
 /** "#1 … #n" all present, so KaTeX takes n arguments even when some are unused. */
-function withAllArgs(body, n, from = 1) {
+function withAllArgs(body: string, n: number, from = 1): string {
   let out = body;
   for (let k = from; k <= n; k++) if (!new RegExp(`#${k}(?!\\d)`).test(body)) out += `\\@secondoftwo{#${k}}{}`;
   return out;
 }
 
 /** A definition as a KaTeX macro (a string, or a function for an optional first argument). */
-export function toMacro(d) {
+export function toMacro(d: Pick<Definition, 'nargs' | 'opt' | 'body'>): Macro {
   if (d.opt == null) return withAllArgs(d.body, d.nargs);
   const n = d.nargs;
-  return (ctx) => {
-    const o = optional(ctx) ?? d.opt;
+  return (ctx: MacroContext) => {
+    const o = optional(ctx) ?? d.opt!;
     // #1 is the optional argument; #2… become #1… for KaTeX to read
-    const body = d.body.replace(/#(\d)/g, (m, k) => (k === '1' ? o : `#${Number(k) - 1}`));
+    const body = d.body.replace(/#(\d)/g, (m, k: string) => (k === '1' ? o : `#${Number(k) - 1}`));
     return withAllArgs(body, n - 1);
   };
 }
@@ -181,7 +194,7 @@ export function toMacro(d) {
 /* ------------------------------------------------------------------ the physics package */
 
 /** \qty( … ), \qty[ … ], \qty| … |, \qty{ … }: brackets that grow with their content. */
-function quantity(ctx) {
+function quantity(ctx: MacroContext): string {
   const t = next(ctx);
   if (t === '(') return `\\left( ${delimited(ctx, '(', ')')} \\right)`;
   if (t === '[') return `\\left[ ${delimited(ctx, '[', ']')} \\right]`;
@@ -191,15 +204,18 @@ function quantity(ctx) {
 }
 
 /** \mqty( … ) and friends: a matrix (rows with \\, columns with &). */
-const matrix = (env) => (ctx) => {
+const MATRIX_KIND: Record<string, string> = { '(': 'pmatrix', '[': 'bmatrix', '|': 'vmatrix' };
+const CLOSING: Record<string, string> = { '(': ')', '[': ']', '|': '|' };
+
+const matrix = (env: string) => (ctx: MacroContext) => {
   const t = next(ctx);
-  const kind = { '(': 'pmatrix', '[': 'bmatrix', '|': 'vmatrix' }[t];
-  if (env === 'matrix' && kind) return `\\begin{${kind}} ${delimited(ctx, t, { '(': ')', '[': ']', '|': '|' }[t])} \\end{${kind}}`;
+  const kind = MATRIX_KIND[t];
+  if (env === 'matrix' && kind) return `\\begin{${kind}} ${delimited(ctx, t, CLOSING[t])} \\end{${kind}}`;
   return `\\begin{${env}} ${arg(ctx)} \\end{${env}}`;
 };
 
 /** \dv{f}{x}, \dv[n]{f}{x}, \dv{x}; \pdv also \pdv{f}{x}{y} (mixed). */
-const derivative = (d) => (ctx) => {
+const derivative = (d: string) => (ctx: MacroContext) => {
   star(ctx);
   const n = optional(ctx);
   const p = n ? `^{${n}}` : '';
@@ -210,9 +226,9 @@ const derivative = (d) => (ctx) => {
   return `\\frac{${d}${p} ${a}}{${d} ${b}${p}}`;
 };
 
-const sized = (l, r) => (ctx) => (star(ctx) ? `${l.replace('\\left', '')} #1 ${r.replace('\\right', '')}` : `${l} #1 ${r}`);
+const sized = (l: string, r: string) => (ctx: MacroContext) => (star(ctx) ? `${l.replace('\\left', '')} #1 ${r.replace('\\right', '')}` : `${l} #1 ${r}`);
 
-export const PHYSICS = {
+export const PHYSICS: Record<string, Macro> = {
   // vectors
   '\\vb': (ctx) => (star(ctx) ? '\\boldsymbol{#1}' : '\\boldsymbol{\\mathbf{#1}}'),
   '\\va': (ctx) => (star(ctx) ? '\\vec{#1}' : '\\vec{\\mathrm{#1}}'),
@@ -246,12 +262,12 @@ export const PHYSICS = {
   '\\ip': '\\left\\langle #1 \\middle| #2 \\right\\rangle',
   '\\innerproduct': '\\left\\langle #1 \\middle| #2 \\right\\rangle',
   '\\expval': (ctx) => { const a = arg(ctx); return next(ctx) === '{' ? (() => { const b = arg(ctx); return `\\left\\langle ${b} \\middle| ${a} \\middle| ${b} \\right\\rangle`; })() : `\\left\\langle ${a} \\right\\rangle`; },
-  '\\ev': (ctx) => PHYSICS['\\expval'](ctx),
+  '\\ev': (ctx) => (PHYSICS['\\expval'] as (c: MacroContext) => string)(ctx),
   '\\mel': '\\left\\langle #1 \\middle| #2 \\middle| #3 \\right\\rangle',
   '\\matrixel': '\\left\\langle #1 \\middle| #2 \\middle| #3 \\right\\rangle',
   '\\dyad': (ctx) => { const a = arg(ctx); const b = next(ctx) === '{' ? arg(ctx) : a; return `\\left\\lvert ${a} \\middle\\rangle\\!\\middle\\langle ${b} \\right\\rvert`; },
-  '\\outerproduct': (ctx) => PHYSICS['\\dyad'](ctx),
-  '\\op': (ctx) => PHYSICS['\\dyad'](ctx),
+  '\\outerproduct': (ctx) => (PHYSICS['\\dyad'] as (c: MacroContext) => string)(ctx),
+  '\\op': (ctx) => (PHYSICS['\\dyad'] as (c: MacroContext) => string)(ctx),
   // matrices
   '\\mqty': matrix('matrix'),
   '\\pmqty': matrix('pmatrix'),
@@ -274,16 +290,18 @@ export const PHYSICS_NAMES = Object.keys(PHYSICS);
 
 /* ------------------------------------------------------------------ putting it together */
 
-let cached = { key: null, value: null };
+export interface BaseMacros { macros: Macros; names: string[]; problems: string[] }
+
+let cached: { key: string | null; value: BaseMacros | null } = { key: null, value: null };
 
 /**
  * The macros every note starts from: the physics commands (if on) and the definitions in
  * Settings. Returns {macros, names, problems} (problems: lines that are not definitions).
  */
-export function baseMacros({ physics = true, text = '' } = {}) {
+export function baseMacros({ physics = true, text = '' } = {}): BaseMacros {
   const key = `${physics}\u0000${text}`;
-  if (cached.key === key) return cached.value;
-  const macros = physics ? { ...PHYSICS } : {};
+  if (cached.key === key) return cached.value!;
+  const macros: Macros = physics ? { ...PHYSICS } : {};
   const { defs, rest } = parseDefinitions(text || '');
   for (const d of defs) macros[d.name] = toMacro(d);
   const problems = rest.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('%'));
@@ -294,7 +312,7 @@ export function baseMacros({ physics = true, text = '' } = {}) {
 
 /** The macros of one note: the base ones plus the note's own definitions (a \providecommand
  *  never replaces one that exists). */
-export function withDefinitions(base, defs) {
+export function withDefinitions(base: Macros, defs: Definition[]): Macros {
   if (!defs.length) return base;
   const out = { ...base };
   for (const d of defs) if (!(d.provide && d.name in out)) out[d.name] = toMacro(d);
