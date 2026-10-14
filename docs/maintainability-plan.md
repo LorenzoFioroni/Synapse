@@ -49,13 +49,13 @@ the last commit, once everything it lists is done or has moved into the permanen
    - The browser extension stays plain JavaScript (Chrome loads it without a build) and is
      type-checked from JSDoc by the same `npm run check`; it has a browser checklist now.
    - Issue numbers dropped from the frontend's and the tests' comments.
-4. **Documentation.** Write the subsystem pages listed in `docs/architecture.md`, a "how to add a
-   feature" guide, and the testing guide. Update the README to link them.
-5. **Further polish.**
-   - pre-commit hooks.
-   - A runner for the `tests/e2e` browser checklists.
-   - Coverage reporting.
-   - Python type hints on the core modules.
+4. **Documentation** (done): a page per subsystem, linked from `docs/architecture.md`, the data
+   flow of a typical change, `docs/adding-a-feature.md` and `docs/testing.md`.
+5. **Further polish** (done):
+   - pre-commit hooks (`.pre-commit-config.yaml`, local hooks: no network).
+   - `tests/e2e/run.py` runs the browser checklists, each on its own port.
+   - Coverage reporting (`pytest --cov`, in the CI log).
+   - mypy over the backend, in CI and pre-commit.
 6. **Redesign review (last).** Look over the restructured code for places where a deeper redesign
    would pay off, for example the layering, the service wiring or the frontend state model. Write
    up the candidates with cost, risk and benefit, and **ask the owner before doing any of them**.
