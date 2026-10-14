@@ -175,3 +175,14 @@ def test_title_search_requests(monkeypatch):
     url, timeout = calls[-1]
     assert url.startswith("https://export.arxiv.org/api/query?") and timeout == http.TIMEOUT
     assert waits == [len(calls) - 1]  # right before the arXiv request
+
+
+def test_find_pdf_endpoint_accepts_an_arxiv_id_alone(client, svc, web, tmp_path):
+    routes, _ = web
+    routes["https://arxiv.org/pdf/2403.05147"] = Resp(content=pdf_bytes(tmp_path, "arXiv:2403.05147v1"))
+    item = svc.papers.create({"archive_id": "arXiv:2403.05147"})
+    r = client.post(f"/api/items/{item['id']}/find_pdf")
+    assert r.status_code == 200 and r.get_json()["status"] == "success"
+    bare = svc.papers.create({"item_type": "webpage"})
+    r = client.post(f"/api/items/{bare['id']}/find_pdf")
+    assert r.status_code == 400 and "arXiv ID" in r.get_json()["error"]

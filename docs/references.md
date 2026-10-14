@@ -275,7 +275,7 @@ checkboxes; see [browser extension](browser-extension.md).
 | `POST /api/items/<id>/lookup` | `api/metadata.py` | Fresh metadata for the review; saves nothing. 404 with the message on `LookupFailed`. |
 | `POST /api/items/from_identifier` | `api/metadata.py` | Creates an item from a DOI, arXiv ID or ISBN. 409 with `duplicate_of` unless `allow_duplicate`. |
 | `POST /api/items/from_pdf` | `api/attachments.py` | One item per uploaded PDF, filled from a DOI or arXiv id found in its text. |
-| `POST /api/items/<id>/find_pdf` | `api/attachments.py` | Looks for an open-access PDF and attaches it. |
+| `POST /api/items/<id>/find_pdf` | `api/attachments.py` | Looks for an open-access PDF and attaches it (`Services.find_pdf`). The item needs a title, DOI or arXiv id, else 400. |
 | `GET /api/attachments/<id>/remote` | `api/attachments.py` | The PDF behind a web-link attachment. |
 | `GET /api/items/<id>/references` | `api/references.py` | The item's references and the library items citing it. |
 | `POST /api/items/<id>/references` | `api/references.py` | Fetches the list now. 502 on `FetchFailed` or network trouble, 404 on `LookupFailed`. |
