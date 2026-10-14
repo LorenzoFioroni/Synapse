@@ -13,7 +13,8 @@ from backend.pdf import render as pdfrender
 
 from backend.mcp import build_server
 from backend.mcp.protocol import PROTOCOL_VERSIONS, Server, Tool, serve_stdio
-from backend.mcp.tools import parse_pages, ToolError
+from backend.mcp.protocol import ToolError
+from backend.mcp.tools.common import parse_pages
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -631,8 +632,8 @@ def test_view_image_scales_big_images(lib, svc, monkeypatch):
     monkeypatch.setitem(sys.modules, "PIL", None)
     err, content = _blocks(lib["server"], path=path)
     assert not err and json.loads(content[0]["text"])["size"] == "4000x1000"
-    import backend.mcp.tools as tools_mod
-    monkeypatch.setattr(tools_mod, "IMAGE_MAX_BYTES", 100)
+    from backend.mcp.tools import images as images_mod
+    monkeypatch.setattr(images_mod, "IMAGE_MAX_BYTES", 100)
     err, content = _blocks(lib["server"], path=path)
     assert err and "pip install pillow" in content[0]["text"]
 

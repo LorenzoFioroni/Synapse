@@ -57,7 +57,7 @@ Two objects tie the backend together:
 | `notes/` | Markdown notes. The files are the source of truth; the index is disposable. | `notes/`, `notes_index.db` |
 | `formats/` | Import and export for BibTeX, RIS, EndNote and CSL-JSON, behind one registry. | none |
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
-| `mcp/` | The MCP server: the JSON-RPC layer and the library tools. | none (it uses the other packages) |
+| `mcp/` | The MCP server: the JSON-RPC layer (`protocol.py`), the library tools (`tools/`, one mixin per family), their schemas (`server.py`) and the instructions given to the AI app (`instructions.py`). | none (it uses the other packages) |
 | `pdf/` | PDF files on disk: text extraction (`text.py`), page rendering for the MCP tools (`render.py`) and the full-text index (`fulltext.py`). | `fulltext.db` |
 | `online/` | Lookups on the web: item metadata (`metadata.py`), open-access PDFs (`pdf_finder.py`) and PDFs behind an attachment's web link (`remote_pdf.py`). `http.py` has what they share: timeout, User-Agent, the error type and the arXiv request spacing. | none |
 | `references/` | The citation graph: reference lists fetched from Semantic Scholar, OpenAlex or Crossref (`sources.py`), stored (`store.py`), fetched in the background and matched to library items (`service.py`), and the Graph view's network (`graph.py`). | `citations.db` |
