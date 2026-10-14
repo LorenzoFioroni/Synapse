@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify
 
 from ..metadata import LookupError_
 from ..references import FetchFailed
-from ..repository import NotFound
+from ..library.repository import NotFound
 from . import body, error, svc
 
 bp = Blueprint("references", __name__, url_prefix="/api")

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from .. import citekeys
+from ..library import citekeys
 from ..settings import DEFAULTS, SEARCH_MODES, SettingsError
 from . import body, error, svc
 

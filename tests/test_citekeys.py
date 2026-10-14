@@ -1,4 +1,4 @@
-from backend import citekeys
+from backend.library import citekeys
 
 PAPER = {"authors": "Cui, Jian; Cirac, J. Ignacio; Bañuls, Mari Carmen",
          "title": "Variational Matrix Product Operators for the Steady State", "year": 2015,

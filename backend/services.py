@@ -5,14 +5,14 @@ import logging
 import threading
 
 from .config import Config
-from .db import Database
+from .library.db import Database
 from .fulltext import FulltextIndex, Indexer
 from .notes import NotesIndex, Vault
 from .notes.attachments import Attachments
 from .notes.service import NotesService
 from .references import Citations, CitationStore
-from .organize import FolderRepository, SmartFolderRepository, TagRepository
-from .repository import PaperRepository
+from .library.organize import FolderRepository, SmartFolderRepository, TagRepository
+from .library.repository import PaperRepository
 from .settings import SettingsStore
 
 
@@ -27,7 +27,7 @@ class Services:
         self.changes = ChangeFeed(config.db_path, config.notes_index_path)   # for the other windows (#34)
         self.db.on_write = self._library_written
         self.papers = PaperRepository(self.db, self.settings, config.pdf_dir)
-        from .annotations import AnnotationStore
+        from .library.annotations import AnnotationStore
         self.annotations = AnnotationStore(self.db)
         self.folders = FolderRepository(self.db)
         self.tags = TagRepository(self.db)

@@ -1,4 +1,4 @@
-from backend.search import parse_query, search
+from backend.library.search import parse_query, search
 
 PAPERS = [
     {"id": "1", "title": "Variational Matrix Product Operators", "authors": "Bañuls, Mari Carmen",

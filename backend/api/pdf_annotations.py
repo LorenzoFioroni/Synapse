@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify
 
-from ..annotations import AnnotationError
+from ..library.annotations import AnnotationError
 from . import body, error, svc
 
 bp = Blueprint("annotations", __name__, url_prefix="/api")

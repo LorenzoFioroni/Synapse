@@ -1,7 +1,7 @@
 """Helpers shared by the import/export formats.
 
 Every format converts to and from the same intermediate representation: a
-plain dict keyed by the field names in ``backend.fields`` (authors are stored
+plain dict keyed by the field names in ``backend.library.fields`` (authors are stored
 as ``"Family, Given; Family2, Given2"``).
 """
 from __future__ import annotations

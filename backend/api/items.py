@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from .. import search as search_mod
-from ..fields import schema_payload
-from ..repository import NotFound
+from ..library import search as search_mod
+from ..library.fields import schema_payload
+from ..library.repository import NotFound
 from . import body, error, ids_from_body, svc
 
 bp = Blueprint("items", __name__, url_prefix="/api")
@@ -17,7 +17,7 @@ def schema():
 
 
 def search_context(s) -> dict:
-    from ..fields import ITEM_TYPE_LABELS
+    from ..library.fields import ITEM_TYPE_LABELS
     return {"folder_paths": s.folders.paths(), "type_labels": ITEM_TYPE_LABELS}
 
 

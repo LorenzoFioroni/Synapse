@@ -56,7 +56,7 @@ class NoteTextMatcher:
     """
 
     def __init__(self, texts: dict[str, list[tuple[str, str]]], key_to_id: dict[str, str]):
-        from ..search import normalize
+        from ..library.search import normalize
         self._normalize = normalize
         self._entries = []   # (item_id, title, original text, normalised text)
         for key, items in texts.items():

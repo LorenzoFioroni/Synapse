@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from .. import citekeys
+from ..library import citekeys
 from .common import join_authors, parse_display_name, split_authors, split_keywords, year_from
 from .latex import escape, latex_to_unicode, protect_case
 

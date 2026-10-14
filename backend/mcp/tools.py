@@ -1,6 +1,6 @@
 """The library tools offered over MCP.
 
-Every tool is a thin layer over the existing backend (search.py, the notes index,
+Every tool is a thin layer over the existing backend (library/search.py, the notes index,
 the full-text index, the citation store). Papers are named by citation key (an
 item id works too); notes by path or title. Page numbers are PDF page indices
 (1 = first page), the same numbers ``[@key, p. N]`` uses in notes, so answers
@@ -18,8 +18,8 @@ import unicodedata
 from collections import OrderedDict
 from pathlib import PurePosixPath
 
-from .. import search as search_mod
-from ..fields import FIELDS, ITEM_TYPE_LABELS
+from ..library import search as search_mod
+from ..library.fields import FIELDS, ITEM_TYPE_LABELS
 from ..notes import frontmatter, parser
 from ..notes.attachments import attachment_name
 from ..notes.service import now_iso, sniff_image, ulid
@@ -27,7 +27,7 @@ from ..notes.vault import ATTACHMENTS, Conflict, InvalidPath, NoteExists, slugif
 from .. import pdfrender
 from ..pdftext import extract_pages
 from ..references import identifiers
-from ..repository import NotFound
+from ..library.repository import NotFound
 from .notecheck import NoteChecker
 from .protocol import Image, Parts, Server, Tool, ToolError
 

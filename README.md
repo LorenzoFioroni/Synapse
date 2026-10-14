@@ -233,38 +233,14 @@ For how the code fits together and where new code goes, see
 
 ```
 ./
-├── server.py              CLI entry point
+├── server.py              starts the web app
 ├── mcp_server.py          MCP server for Claude Desktop / Claude Code (stdio)
-├── backend/
-│   ├── app.py             Flask app factory (serves frontend/ and the API)
-│   ├── config.py          paths of the data folder
-│   ├── db.py              SQLite connection + schema migrations
-│   ├── fields.py          item fields and types (single source of truth)
-│   ├── repository.py      all SQL for items/attachments, duplicate detection
-│   ├── organize.py        folders, tags, smart folders
-│   ├── search.py          search scopes and query parsing
-│   ├── fulltext.py        separate FTS5 index + background indexer
-│   ├── citekeys.py        citation-key patterns
-│   ├── settings.py        preferences store with validation
-│   ├── metadata.py        Crossref / OpenAlex / arXiv / Open Library lookups
-│   ├── references.py      reference lists (citation graph) in citations.db + background fetching
-│   ├── graph.py           the Graph view's network: papers, cited works, notes and their links
-│   ├── pdf_finder.py      open-access PDF search + verification
-│   ├── pdftext.py         PDF text extraction
-│   ├── formats/           bibtex, ris, endnote (+XML), csljson
-│   ├── mcp/               MCP protocol (protocol.py) and the library tools (tools.py)
-│   ├── notes/             Markdown notes: vault (files), frontmatter, parser (links and
-│   │                      citations), index (notes_index.db), service
-│   └── api/               Flask blueprints: items, attachments, settings, io, metadata,
-│                          organize (folders/tags/smart), connector (browser extension), notes
-├── frontend/
-│   ├── index.html, viewer.html
-│   ├── css/               tokens (themes), base, components, layout, items, item pane, settings
-│   ├── js/                api, store, actions, ui/ (toast, dialog, menu), views/
-│   └── vendor/pdfjs/
+├── backend/               Flask + SQLite backend (packages described in docs/architecture.md)
+├── frontend/              the web app (index.html, viewer.html, js/, css/, vendor/ = third-party libraries)
 ├── browser_extension/     Chrome extension (Manifest V3) – load unpacked
-├── tools/                 build scripts for the vendored editor and Markdown bundles
-├── tests/                 pytest suite (python -m pytest tests), e2e/ browser checklists
+├── tools/                 build scripts for the vendored libraries
+├── tests/                 pytest suite, js/ unit tests, e2e/ browser checklists
+├── docs/                  technical documentation
 └── data/                  your library (git-ignored)
 ```
 
@@ -275,7 +251,7 @@ the source of truth; `data/notes_index.db` is derived from them and can be delet
 time — it is rebuilt on the next start.
 
 The frontend never talks to external services directly; all lookups go through
-the backend, and all SQL lives in `repository.py`.
+the backend.
 
 ## Tests
 

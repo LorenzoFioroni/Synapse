@@ -6,9 +6,9 @@ from datetime import date
 from flask import Blueprint, Response, jsonify, request
 
 from .. import formats
-from ..fields import EDITABLE_KEYS
+from ..library.fields import EDITABLE_KEYS
 from ..formats.common import split_keywords
-from ..repository import DuplicateFinder
+from ..library.repository import DuplicateFinder
 from . import body, error, svc
 
 bp = Blueprint("io", __name__, url_prefix="/api")

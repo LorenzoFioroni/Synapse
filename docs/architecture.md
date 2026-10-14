@@ -40,33 +40,33 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
 
 ## Backend
 
-*TODO (step 2): update after the package regrouping.*
+*In progress (step 2): modules are being grouped into packages; the table shows the current state.*
+
+Two objects tie the backend together:
 
 - **`app.py`** has `create_app(config)`, the Flask factory. It installs the guard, registers the
-  blueprints, serves the frontend, and starts the background work (the full-text indexer and the
-  backup scheduler, the cleanup of the attachment trash).
+  blueprints, serves the frontend, and starts the background work (the full-text indexer, the
+  backup scheduler and the cleanup of the attachment trash).
 - **`services.py`** has `Services`, the one object that owns every component (repositories,
   indexes, the notes vault and service, backups, devices, the change feed) and wires their
   callbacks together. The API reaches it through `api.svc()`.
-- **`api/`** has one Flask blueprint per area. Endpoints only parse requests and shape responses.
-  Business logic lives outside this package.
-- **Storage.** Four databases make up the storage layer:
-  - `db.py` manages `library.db` and its schema migrations. `repository.py`, `organize.py` and
-    `annotations.py` give access to its data.
-  - `fulltext.py` (`fulltext.db`), `notes/index.py` (`notes_index.db`) and `references.py`
-    (`citations.db`) each keep their own database, and each of these can be rebuilt or re-fetched.
-- **Notes.** In `notes/`, the Markdown files in `data/notes/` are the source of truth, and the
-  index is disposable.
-- **Formats.** `formats/` holds import and export for BibTeX, RIS, EndNote and CSL-JSON, behind
-  one registry.
-- **Online lookups.** `metadata.py`, `pdf_finder.py`, `remote_pdf.py` and `references.py` are the
-  only modules that use the network.
-- **Cross-cutting concerns:**
-  - `guard.py` decides who may use the server.
-  - `changes.py` tells other windows and devices what changed.
-  - `backup.py` handles backups.
-  - `settings.py` stores the preferences.
-  - `fields.py` is the single source of truth for item fields and types.
+
+| Package / module | Responsibility | Storage |
+|---|---|---|
+| `library/` | Items, attachments, folders, tags, smart folders, PDF annotations, citation keys and search. `fields.py` is the single source of truth for item fields and types. | `library.db` (schema and migrations in `library/db.py`) |
+| `notes/` | Markdown notes. The files are the source of truth; the index is disposable. | `notes/`, `notes_index.db` |
+| `formats/` | Import and export for BibTeX, RIS, EndNote and CSL-JSON, behind one registry. | none |
+| `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
+| `mcp/` | The MCP server: the JSON-RPC layer and the library tools. | none (it uses the other packages) |
+| `fulltext.py`, `pdftext.py`, `pdfrender.py` | The PDF text index, text extraction and page rendering. | `fulltext.db` |
+| `metadata.py`, `pdf_finder.py`, `remote_pdf.py` | Online lookups: metadata, open-access PDFs and PDFs behind web links. | none |
+| `references.py`, `graph.py` | The citation graph: reference lists fetched online and the Graph view's network. | `citations.db` |
+| `guard.py`, `devices.py`, `lan.py` | Who may use the server: other websites never, other devices only once paired. | `auth.db` |
+| `config.py`, `settings.py` | Paths of the data folder, and the user's preferences. | `settings.json` |
+| `changes.py` | The change feed that tells other windows and devices what changed. | none |
+| `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
+
+Only the online-lookup modules and `references.py` use the network.
 
 ## Frontend
 

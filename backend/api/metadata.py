@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify
 
-from .. import citekeys
+from ..library import citekeys
 from ..metadata import LookupError_, arxiv_id_of, known_authors, lookup
 from . import body, error, svc
 

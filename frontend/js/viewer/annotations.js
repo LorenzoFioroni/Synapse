@@ -3,7 +3,7 @@
 // overwrite each other, and the app (and Claude) can read what was highlighted.
 //
 // Positions are fractions of the page as displayed (0–1, origin top left), sizes are PDF points at
-// 100 % zoom; see backend/annotations.py. Each page gets an SVG layer whose viewBox is the page in
+// 100 % zoom; see backend/library/annotations.py. Each page gets an SVG layer whose viewBox is the page in
 // points, so drawings scale with the zoom by themselves. Text boxes are HTML in a layer of their own
 // above it (Safari misplaces HTML inside an SVG foreignObject), sized through --zc-scale.
 //
