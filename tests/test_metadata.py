@@ -1,6 +1,6 @@
 import pytest
 
-from backend import metadata
+from backend.online import metadata
 
 
 def test_classify_identifier():

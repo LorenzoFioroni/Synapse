@@ -59,14 +59,14 @@ Two objects tie the backend together:
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
 | `mcp/` | The MCP server: the JSON-RPC layer and the library tools. | none (it uses the other packages) |
 | `pdf/` | PDF files on disk: text extraction (`text.py`), page rendering for the MCP tools (`render.py`) and the full-text index (`fulltext.py`). | `fulltext.db` |
-| `metadata.py`, `pdf_finder.py`, `remote_pdf.py` | Online lookups: metadata, open-access PDFs and PDFs behind web links. | none |
+| `online/` | Lookups on the web: item metadata (`metadata.py`), open-access PDFs (`pdf_finder.py`) and PDFs behind an attachment's web link (`remote_pdf.py`). | none |
 | `references.py`, `graph.py` | The citation graph: reference lists fetched online and the Graph view's network. | `citations.db` |
 | `guard.py`, `devices.py`, `lan.py` | Who may use the server: other websites never, other devices only once paired. | `auth.db` |
 | `config.py`, `settings.py` | Paths of the data folder, and the user's preferences. | `settings.json` |
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
 
-Only the online-lookup modules and `references.py` use the network.
+Only `online/` and `references.py` use the network.
 
 ## Frontend
 

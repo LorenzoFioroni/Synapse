@@ -29,8 +29,8 @@ import requests
 
 from .library.db import utcnow
 from .formats.common import join_authors, parse_display_name
-from .metadata import TIMEOUT, LookupError_, _headers, arxiv_id_of
-from .pdf_finder import clean_doi
+from .online.metadata import TIMEOUT, LookupError_, _headers, arxiv_id_of
+from .online.pdf_finder import clean_doi
 
 log = logging.getLogger(__name__)
 

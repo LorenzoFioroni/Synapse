@@ -11,7 +11,7 @@ from backend.config import Config  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _no_arxiv_spacing(monkeypatch):
-    from backend import metadata
+    from backend.online import metadata
     monkeypatch.setattr(metadata, "ARXIV_SPACING", 0)
 
 

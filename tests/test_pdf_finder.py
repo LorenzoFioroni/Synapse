@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from backend import metadata, pdf_finder
+from backend.online import metadata, pdf_finder
 from tests.conftest import make_pdf
 
 

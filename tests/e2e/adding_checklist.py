@@ -29,8 +29,8 @@ sys.path.insert(0, {str(APP)!r})
 from backend import create_app
 from backend.config import Config
 from backend.api import metadata as M
-from backend import pdf_finder
-from backend.metadata import LookupError_
+from backend.online import pdf_finder
+from backend.online.metadata import LookupError_
 calls = []
 lock = threading.Lock()
 def fake_lookup(**k):

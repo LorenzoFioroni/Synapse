@@ -12,7 +12,7 @@ def test_ping(client):
 
 def test_save_from_page_metadata_without_network(client, monkeypatch):
     from backend.api import connector
-    from backend.metadata import LookupError_
+    from backend.online.metadata import LookupError_
 
     def offline(**k):
         raise LookupError_("offline")
@@ -89,7 +89,7 @@ def test_file_existing_item_into_another_folder(client):
 
 def test_on_add_settings_for_the_browser_button(client, svc, monkeypatch):
     from backend.api import connector
-    from backend.metadata import LookupError_
+    from backend.online.metadata import LookupError_
 
     def offline(**k):
         raise LookupError_("offline")
@@ -113,7 +113,7 @@ def test_on_add_settings_for_the_browser_button(client, svc, monkeypatch):
 
 
 def test_background_pdf_search_attaches_the_file(svc, monkeypatch, tmp_path):
-    from backend import pdf_finder
+    from backend.online import pdf_finder
     item = svc.papers.create({"title": "Some paper", "doi": "10.1/x"})
 
     def fake(title, doi, pdf_dir, email, **kw):

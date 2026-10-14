@@ -11,8 +11,8 @@ from backend.config import Config
 ROOT = Path(__file__).resolve().parent.parent
 USER_FACING = ["README.md", "server.py", "mcp_server.py", "frontend/index.html", "frontend/viewer.html",
                "frontend/js/main.js", "browser_extension/manifest.json", "browser_extension/README.md",
-               "browser_extension/popup.html", "browser_extension/options.html", "backend/metadata.py",
-               "backend/pdf_finder.py", "backend/api/connector.py"]
+               "browser_extension/popup.html", "browser_extension/options.html", "backend/online/metadata.py",
+               "backend/online/pdf_finder.py", "backend/api/connector.py"]
 
 
 @pytest.mark.parametrize("rel", USER_FACING)

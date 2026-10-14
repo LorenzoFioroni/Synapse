@@ -151,7 +151,7 @@ def test_empty_item_gets_citekey_once_it_has_metadata(client):
 
 
 def test_items_from_pdf_without_network(client, tmp_path, monkeypatch):
-    from backend import metadata
+    from backend.online import metadata
 
     def offline(*a, **k):
         raise metadata.LookupError_("offline")
@@ -167,7 +167,7 @@ def test_items_from_pdf_without_network(client, tmp_path, monkeypatch):
 
 
 def test_items_from_pdf_with_metadata(client, tmp_path, monkeypatch):
-    from backend import metadata
+    from backend.online import metadata
     monkeypatch.setattr(metadata, "lookup", lambda **k: {"title": "Asymmetry", "authors": "Doe, J", "year": "2019",
                                                          "doi": k.get("doi")})
     pdf = make_pdf(tmp_path / "x.pdf", "doi: 10.1103/PhysRevB.99.094435")

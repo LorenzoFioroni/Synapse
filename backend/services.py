@@ -56,7 +56,7 @@ class Services:
 
     def find_pdf(self, item_id: str) -> dict:
         """Look for an open-access PDF of an item and attach it. Returns the finder's result."""
-        from . import pdf_finder
+        from .online import pdf_finder
         from .references import identifiers
         item = self.papers.get(item_id)
         _, arxiv_id = identifiers(item)   # from archive_id, an arXiv DOI, the URL, Extra …

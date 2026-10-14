@@ -17,9 +17,9 @@ import uuid
 import requests
 from flask import Blueprint, jsonify, request
 
-from .. import pdf_finder
+from ..online import pdf_finder
 from ..formats.common import join_authors, parse_display_name, year_from
-from ..metadata import LookupError_, known_authors, lookup
+from ..online.metadata import LookupError_, known_authors, lookup
 from . import error, svc
 
 log = logging.getLogger(__name__)

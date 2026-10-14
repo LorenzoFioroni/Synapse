@@ -7,7 +7,7 @@ import uuid
 from flask import Blueprint, Response, jsonify, request, send_from_directory
 from werkzeug.utils import secure_filename
 
-from .. import pdf_finder, remote_pdf
+from ..online import pdf_finder, remote_pdf
 from ..pdf.text import clean_text, extract_text, find_identifier
 from . import body, error, svc
 
@@ -43,7 +43,7 @@ def items_from_pdfs():
     files = request.files.getlist("file")
     if not files:
         return error("No file uploaded")
-    from ..metadata import LookupError_, known_authors, lookup
+    from ..online.metadata import LookupError_, known_authors, lookup
     known = known_authors(s.papers.list())
     created = []
     for f in files:

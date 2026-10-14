@@ -4,7 +4,7 @@ import socket
 
 import pytest
 
-from backend import remote_pdf
+from backend.online import remote_pdf
 
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"
 

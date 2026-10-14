@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from .formats.common import join_authors, parse_display_name, split_authors, strip_tags
+from ..formats.common import join_authors, parse_display_name, split_authors, strip_tags
 from .pdf_finder import clean_doi
 
 log = logging.getLogger(__name__)

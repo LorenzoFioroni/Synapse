@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify
 
-from ..metadata import LookupError_
+from ..online.metadata import LookupError_
 from ..references import FetchFailed
 from ..library.repository import NotFound
 from . import body, error, svc

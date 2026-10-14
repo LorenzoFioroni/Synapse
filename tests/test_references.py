@@ -2,7 +2,7 @@
 import pytest
 
 from backend import references as R
-from backend.metadata import LookupError_
+from backend.online.metadata import LookupError_
 
 
 class Resp:
@@ -156,7 +156,7 @@ def test_api_graph_and_cleanup(client, svc, monkeypatch):
 
 
 def test_fetched_automatically_after_add_by_identifier(client, svc, monkeypatch):
-    from backend import metadata
+    from backend.online import metadata
     crossref_item = {"message": {"type": "journal-article", "title": ["Citing paper"], "DOI": "10.1234/X",
                                  "author": [{"family": "Cui", "given": "Jian"}], "published-print": {"date-parts": [[2015]]}}}
     monkeypatch.setattr(metadata.requests, "get", router([
