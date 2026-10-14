@@ -91,6 +91,15 @@ def new_pairing():
     return jsonify(expires=expires, links=links), 201  # qr is None without segno: the page says so
 
 
+@bp.delete("/pairing")
+def cancel_pairing():
+    """Void the pairing code being shown (Cancel, or leaving Settings)."""
+    if not g.get("this_computer"):
+        return error("Devices can only be added on the computer running Synapse.", 403)
+    svc().devices.cancel_pairing()
+    return jsonify(ok=True)
+
+
 @bp.post("/pair")
 def pair():
     data = body()
@@ -109,8 +118,18 @@ def pair():
     return resp
 
 
+def _may_manage(dev_id: str) -> bool:
+    """The computer running Synapse manages every device; another device only itself."""
+    return bool(g.get("this_computer")) or (g.get("device") or {}).get("id") == dev_id
+
+
+MANAGE_REFUSED = "Other devices can only be renamed or removed on the computer running Synapse."
+
+
 @bp.patch("/<dev_id>")
 def rename(dev_id):
+    if not _may_manage(dev_id):
+        return error(MANAGE_REFUSED, 403)
     try:
         device = svc().devices.rename(dev_id, str(body().get("name") or ""))
     except PairingError as e:
@@ -122,6 +141,8 @@ def rename(dev_id):
 
 @bp.delete("/<dev_id>")
 def revoke(dev_id):
+    if not _may_manage(dev_id):
+        return error(MANAGE_REFUSED, 403)
     if not svc().devices.revoke(dev_id):
         return error("No such device.", 404)
     resp = jsonify(ok=True, devices=svc().devices.list())

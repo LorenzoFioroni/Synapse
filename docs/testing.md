@@ -54,7 +54,7 @@ well (`test_remote_pdf.py`).
 | Formats | `test_formats.py`: BibTeX, RIS, EndNote and CSL-JSON round trips |
 | Online and references | `test_metadata.py` (lookups), `test_pdf_finder.py` (Find Available PDF), `test_remote_pdf.py` (PDFs behind a web link: public addresses only, PDFs only, size cap), `test_references.py` (reference lists), `test_graph.py` (`/api/graph`) |
 | Notes | `tests/notes/`: `test_vault.py` (safe paths, save conflicts, trash, move), `test_index.py`, `test_parser.py` (golden tests on the fixtures), `test_frontmatter.py`, `test_rewrite.py`, `test_rekey.py`, `test_attachments.py`, `test_api_notes.py`, `test_scanner_parity.py` |
-| Access and sync | `test_guard.py` (other websites refused), `test_devices.py` (pairing), `test_changes.py` (change feed), `test_connector.py` (browser extension API), `test_backup.py` |
+| Access and sync | `test_guard.py` (other websites and extensions refused), `test_devices.py` (pairing, who manages devices, `--debug` refused on the network), `test_changes.py` (change feed), `test_connector.py` (browser extension API), `test_backup.py` |
 | MCP | `test_mcp.py`: the protocol and every tool, in-process and over stdio |
 | Frontend | `test_frontend_build.py` (`needs_build` and `ensure_built`), `test_frontend_js.py` (runs the JavaScript tests) |
 | Architecture | `test_layers.py`, `test_offline.py`, `test_branding.py` (below) |

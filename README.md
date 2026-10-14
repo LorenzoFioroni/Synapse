@@ -32,11 +32,14 @@ python server.py --lan            # also reachable on your network (paired devic
 1. On the computer, open **Settings → Devices → Add a Device**. It shows a QR code.
 2. Scan it with the iPad's camera (or open the link it shows) and tap **Pair This Device**.
 
-The iPad stays paired until you remove it in Settings → Devices. Without pairing, another
+The iPad stays paired until you remove it in Settings → Devices on the computer (or sign it
+out on the iPad itself; a paired device cannot remove others). Without pairing, another
 device sees only a "pair this device" page — the library, PDFs and notes stay closed. The
 computer running Synapse never needs pairing. Both devices must be on the same network, and the
 computer must be awake (System Settings → Energy, or `caffeinate -s python server.py --lan`).
 If the `.local` address in the QR code doesn't open, pick the IP address instead.
+
+`--debug` only works without `--lan`: Flask's debugger must never be reachable from the network.
 
 The connection is plain HTTP, so use it on a network you trust (your home Wi-Fi). Paired
 devices are kept in `data/auth.db` (hashed), which backups leave out on purpose.

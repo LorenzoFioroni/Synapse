@@ -33,7 +33,9 @@ def main() -> None:
     )
     ap.add_argument("--data-dir", default=None, help="folder for the library data (default: ./data)")
     ap.add_argument("--no-browser", action="store_true", help="don't open a browser tab")
-    ap.add_argument("--debug", action="store_true", help="Flask debug mode with auto-reload")
+    ap.add_argument(
+        "--debug", action="store_true", help="Flask debug mode with auto-reload (this computer only: not with --lan)"
+    )
     ap.add_argument(
         "--allow-host",
         action="append",
@@ -53,6 +55,14 @@ def main() -> None:
         a.host = "0.0.0.0"
     wildcard = a.host in ("0.0.0.0", "::")
     loopback_only = a.host in ("127.0.0.1", "localhost", "::1")
+    if a.debug and not loopback_only:
+        # Werkzeug's debugger answers before the guard's checks, and its console runs Python code:
+        # on the network that would let anyone who reaches the port run code on this computer.
+        raise SystemExit(
+            "--debug cannot be combined with --lan or a --host that is not loopback: Flask's debugger "
+            "would let anyone on the network run code on this computer. Use --debug on its own, or "
+            "--lan without --debug."
+        )
 
     config = Config.from_env(a.data_dir)
     config.allowed_hosts = set(a.allow_host)
@@ -79,7 +89,7 @@ def main() -> None:
             print("Tip: pip install segno  (shows the pairing QR code; without it only the link works)")
     if not a.no_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    if config.lan and not a.debug:
+    if config.lan:
         # Several devices and long PDF downloads: a real WSGI server rather than Flask's development one.
         try:
             from waitress import serve

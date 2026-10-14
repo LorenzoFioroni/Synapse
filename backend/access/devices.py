@@ -1,7 +1,8 @@
 """Other devices (an iPad, a phone) allowed to use the library over the network.
 
 There is one user, so there are no accounts: a device is added by **pairing**. On this computer,
-Settings → Devices makes a one-time code (valid for a few minutes) and shows it as a QR code;
+Settings → Devices makes a one-time code (valid for a few minutes, and only the newest one; Cancel
+voids it) and shows it as a QR code;
 opening that link on the other device exchanges the code for a long-lived **device token**,
 which the browser keeps in a cookie. Requests from this computer itself need no token.
 
@@ -75,7 +76,7 @@ class Devices:
         self.path = Path(path)
         self.clock = clock
         self._lock = threading.Lock()
-        self._codes: dict[str, float] = {}  # code hash → expiry (in memory: a restart voids them)
+        self._code: tuple[str, float] | None = None  # (hash, expiry) of the one code (a restart voids it)
         self._failed: dict[str, list[float]] = {}  # address → times of failed pairing attempts
         self._touched: dict[str, float] = {}  # device id → last "last seen" write
         self._db: sqlite3.Connection | None = None
@@ -97,35 +98,43 @@ class Devices:
 
     # -- pairing -------------------------------------------------------------
     def new_pairing_code(self) -> tuple[str, float]:
-        """A one-time code and the time it expires (epoch seconds)."""
+        """A one-time code and the time it expires (epoch seconds). It replaces any earlier code, so
+        a code shown and then abandoned stops working as soon as a new one is made."""
         code = secrets.token_urlsafe(18)
         expires = self.clock() + PAIRING_TTL
         with self._lock:
-            now = self.clock()
-            self._codes = {h: t for h, t in self._codes.items() if t > now}
-            self._codes[_hash(code)] = expires
+            self._code = (_hash(code), expires)
         return code, expires
+
+    def cancel_pairing(self) -> None:
+        """Void the current pairing code, if any (Cancel in Settings → Devices)."""
+        with self._lock:
+            self._code = None
 
     def _too_many_failures(self, addr: str) -> bool:
         now = self.clock()
-        recent = [t for t in self._failed.get(addr, []) if now - t < FAILED_WINDOW]
-        self._failed[addr] = recent
-        return len(recent) >= FAILED_LIMIT
+        # Forget every address whose failures are all older than the window, not only this one, so
+        # addresses that stop trying don't stay in memory for good.
+        self._failed = {
+            a: kept for a, ts in self._failed.items() if (kept := [t for t in ts if now - t < FAILED_WINDOW])
+        }
+        return len(self._failed.get(addr, [])) >= FAILED_LIMIT
 
     def redeem(self, code: str, name: str, user_agent: str, addr: str) -> tuple[dict, str]:
         """Exchange a pairing code for a new device. Returns (device, token)."""
         with self._lock:
             if self._too_many_failures(addr):
                 raise PairingError("Too many attempts. Wait a few minutes and make a new code on the computer.", 429)
-            h = _hash(code or "")
-            expires = self._codes.pop(h, None)
-            if expires is None or expires < self.clock():
+            if self._code is not None and self._code[1] < self.clock():
+                self._code = None  # expired
+            if self._code is None or not secrets.compare_digest(self._code[0], _hash(code or "")):
                 self._failed.setdefault(addr, []).append(self.clock())
                 raise PairingError(
                     "This pairing code is not valid any more. Make a new one in Settings → Devices "
                     "on the computer running Synapse.",
                     401,
                 )
+            self._code = None  # it works once
             token = secrets.token_urlsafe(32)
             dev_id = secrets.token_hex(8)
             name = (name or "").strip()[:NAME_MAX] or guess_name(user_agent)

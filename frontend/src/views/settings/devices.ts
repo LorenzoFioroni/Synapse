@@ -12,9 +12,16 @@ let pairing: (Pick<Pairing, 'links' | 'expires'> & { index: number; known: Set<s
   timer?: ReturnType<typeof setInterval> }) | null = null;
 let overview: DevicesOverview | null = null;   // last answer of GET /api/devices
 
-export function stopPairing(): void {
+function stopPairing(): void {
   if (pairing) clearInterval(pairing.timer);
   pairing = null;
+}
+
+/** Stop showing the pairing code and void it on the server, so the link stops working too. */
+export function cancelPairing(): void {
+  if (!pairing) return;
+  stopPairing();
+  api.cancelPairing().catch(toastError);
 }
 
 function relTime(iso: string | null): string {
@@ -86,11 +93,12 @@ export async function refreshDevices(view: HTMLElement): Promise<void> {
     }
   }
   desc.textContent = st.devices.length ? '' : 'No devices yet.';
+  // Only the computer running Synapse manages other devices; a device manages only itself.
   list.innerHTML = st.devices.map((d) => `<div class="backup-row" data-device="${escapeHtml(d.id)}">
       <div class="b-main"><div class="b-when">${escapeHtml(d.name)}${d.id === st.current ? ' <span class="device-this">This device</span>' : ''}</div>
         <div class="b-what">Paired ${escapeHtml(formatDate(d.created, true))} · last used ${escapeHtml(relTime(d.last_seen))}${d.last_addr ? ` from ${escapeHtml(d.last_addr)}` : ''}</div></div>
-      <button class="btn btn-sm" data-device-rename>${icon('edit')} Rename…</button>
-      <button class="btn btn-sm" data-device-remove>${d.id === st.current ? 'Sign Out' : 'Remove…'}</button></div>`).join('');
+      ${st.this_computer || d.id === st.current ? `<button class="btn btn-sm" data-device-rename>${icon('edit')} Rename…</button>
+      <button class="btn btn-sm" data-device-remove>${d.id === st.current ? 'Sign Out' : 'Remove…'}</button>` : ''}</div>`).join('');
   overview = st;
 }
 
@@ -119,7 +127,7 @@ export function bindDevices(view: HTMLElement): void {
   devAdd.addEventListener('click', async (e) => {
     const target = e.target as Element;
     if (target.closest('[data-pair-new]')) startPairing(view);
-    else if (target.closest('[data-pair-cancel]')) { stopPairing(); refreshDevices(view); }
+    else if (target.closest('[data-pair-cancel]')) { cancelPairing(); refreshDevices(view); }
     else if (target.closest('[data-pair-addr]') && pairing) {
       pairing.index = Number(target.closest<HTMLElement>('[data-pair-addr]')!.dataset.pairAddr);
       renderPairing(devAdd);
