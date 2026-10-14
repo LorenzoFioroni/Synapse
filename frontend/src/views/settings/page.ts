@@ -12,6 +12,7 @@ const SECTIONS: [string, string, string][] = [
   ['general', 'General', 'palette'],
   ['citekeys', 'Citation Keys', 'key'],
   ['search', 'Search & Full Text', 'search'],
+  ['viewer', 'PDF Viewer', 'pdf'],
   ['adding', 'Adding Items', 'plus'],
   ['io', 'Import & Export', 'export'],
   ['online', 'Online Services', 'globe'],
@@ -49,6 +50,11 @@ function selectRow(key: Key, title: string, desc: string, options: Options): str
 function segmentedRow(key: Key, title: string, desc: string, options: Options): string {
   return `<div class="setting"><div class="s-text"><div class="s-title">${title}</div><div class="s-desc">${desc}</div></div>
     <div class="s-control">${saved}<div class="segmented" data-seg="${key}">${options.map(([v, l]) => `<button data-v="${v}" class="${setting(key) === v ? 'active' : ''}">${l}</button>`).join('')}</div></div></div>`;
+}
+
+function colorRow(key: Key, title: string, desc: string): string {
+  return `<div class="setting"><div class="s-text"><div class="s-title">${title}</div><div class="s-desc">${desc}</div></div>
+    <div class="s-control">${saved}<input type="color" class="color-input" data-key="${key}" value="${escapeHtml(String(setting(key) || '#000000'))}"></div></div>`;
 }
 
 /** The whole page for settings ``s``. */
@@ -106,6 +112,18 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
             <div class="s-desc" data-index-desc>Loading…</div></div>
             <div class="s-control"><button class="btn" data-rebuild>${icon('refresh')} Rebuild Index</button></div></div>
             <div class="progress" data-index-progress hidden><div style="width:0"></div></div></div>
+        </div></section>
+
+      <section class="settings-section" id="set-viewer"><h2>PDF Viewer</h2>
+        <p class="lead">The colour each annotation tool starts with. A tool keeps the colour you last used it with on a device, until you change its colour here.
+          To change the colour of an annotation, select it in the viewer.</p>
+        <div class="card">
+          ${colorRow('annotation_color_highlight', 'Highlight', 'Highlighting text, and highlighting an area of the page.')}
+          ${colorRow('annotation_color_underline', 'Underline', 'Underlining text.')}
+          ${colorRow('annotation_color_text', 'Text', 'Text boxes.')}
+          ${colorRow('annotation_color_box', 'Box', 'Rectangles drawn around part of the page.')}
+          ${colorRow('annotation_color_draw', 'Drawing', 'Freehand drawings with the pen, the Pencil or a finger.')}
+          ${switchRow('annotation_snap_words', 'Highlight whole words', 'Highlights and underlines take the whole of the first and last word you select. Hold Alt (⌥) while selecting to take exactly the characters you select.')}
         </div></section>
 
       <section class="settings-section" id="set-adding"><h2>Adding Items</h2>

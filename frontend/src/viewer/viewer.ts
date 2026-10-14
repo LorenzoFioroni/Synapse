@@ -195,7 +195,6 @@ function initPdf(pdfUrl: string): void {
   }
 
   let currentTool = 'select';
-  const toolColor = document.getElementById('tool-color') as HTMLInputElement;
   const colorWrapper = document.getElementById('color-wrapper')!;
   const toolSize = document.getElementById('tool-size') as HTMLInputElement;
   const toolbarSep = document.querySelector<HTMLElement>('.toolbar-sep')!;
@@ -208,71 +207,34 @@ function initPdf(pdfUrl: string): void {
   }
   for (const n of [toolbarSep, colorWrapper, toolSize]) showOpt(n, false);
 
+  const DRAWING = ['box', 'area', 'draw', 'text'];   // tools that draw on the page rather than select text
   function updateToolMode() {
     document.body.dataset.zcTool = currentTool;
     document.querySelectorAll('.anno-layer').forEach(svg => {
       svg.classList.remove('mode-draw', 'mode-select', 'mode-highlight');
-      if (currentTool === 'box' || currentTool === 'draw' || currentTool === 'text') {
-        svg.classList.add('mode-draw');
-      } else if (currentTool === 'eraser' || currentTool === 'select') {
-        svg.classList.add('mode-select');
-      } else if (currentTool === 'highlight' || currentTool === 'underline') {
-        svg.classList.add('mode-highlight');
-      } else {
-        svg.classList.add('mode-select');
-      }
+      if (DRAWING.includes(currentTool)) svg.classList.add('mode-draw');
+      else if (currentTool === 'highlight' || currentTool === 'underline') svg.classList.add('mode-highlight');
+      else svg.classList.add('mode-select');
     });
     document.querySelectorAll<HTMLElement>('.textLayer').forEach(tl => {
-      tl.style.pointerEvents = (currentTool === 'box' || currentTool === 'draw' || currentTool === 'text') ? 'none' : 'auto';
+      tl.style.pointerEvents = DRAWING.includes(currentTool) ? 'none' : 'auto';
     });
   }
 
+  // Which tools have a colour and a size; the annotations add-on sets their values (zc:toolchange).
+  const HAS_COLOR = ['highlight', 'area', 'underline', 'text', 'box', 'draw'];
+  const HAS_SIZE = ['underline', 'text', 'box', 'draw'];
   document.querySelectorAll<HTMLElement>('.tool-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const tool = btn.dataset.tool!;
-      if (currentTool === tool && tool !== 'select') {
-        // Switch back to select if clicking the active tool again
-        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-        document.querySelector('.tool-btn[data-tool="select"]')!.classList.add('active');
-        currentTool = 'select';
-        showOpt(toolbarSep, false);
-        showOpt(colorWrapper, false);
-        showOpt(toolSize, false);
-      } else {
-        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-        currentTool = tool;
-        btn.classList.add('active');
-        showOpt(toolbarSep, true);
-        showOpt(colorWrapper, true);
-
-        if (tool === 'highlight') {
-          showOpt(colorWrapper, true);
-          toolColor.value = '#ffff00';
-          showOpt(toolSize, false);
-        } else if (tool === 'underline') {
-          showOpt(colorWrapper, true);
-          toolColor.value = '#ff0000';
-          toolSize.value = '2';
-          showOpt(toolSize, true);
-        } else if (tool === 'eraser') {
-          showOpt(colorWrapper, false);
-          showOpt(toolSize, false);
-        } else if (tool === 'select') {
-          showOpt(colorWrapper, false);
-          showOpt(toolSize, false);
-        } else if (tool === 'text') {
-          showOpt(colorWrapper, true);
-          toolColor.value = '#000000';
-          toolSize.value = '16';
-          showOpt(toolSize, true);
-        } else {
-          showOpt(colorWrapper, true);
-          toolColor.value = '#000000';
-          toolSize.value = '2';
-          showOpt(toolSize, true);
-        }
-      }
+      // clicking the active tool again goes back to Select
+      currentTool = currentTool === tool ? 'select' : tool;
+      document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', (b as HTMLElement).dataset.tool === currentTool));
+      showOpt(toolbarSep, currentTool !== 'select');
+      showOpt(colorWrapper, HAS_COLOR.includes(currentTool));
+      showOpt(toolSize, HAS_SIZE.includes(currentTool));
       updateToolMode();
+      document.dispatchEvent(new CustomEvent('zc:toolchange', { detail: { tool: currentTool } }));
     });
   });
 

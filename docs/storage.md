@@ -183,7 +183,8 @@ starts this maintenance (`Attachments.start`, hourly). See [notes](notes.md).
 `SettingsStore` (`backend/settings.py`) keeps the preferences in `settings.json`. `DEFAULTS`
 lists every key with its default value, and its type decides how `update()` coerces a value.
 `CHOICES` lists the allowed values of the enumerated keys; a few keys have range or format checks
-in `update()` (for example `backup_dir` must be an absolute folder that can be written to).
+in `update()` (for example `backup_dir` must be an absolute folder that can be written to, and
+the `annotation_color_…` keys must be colours like `#ffcc00`, stored in lower case).
 
 - Reading: the file is merged over `DEFAULTS`; unknown keys are ignored, and a file that cannot
   be read or parsed gives the defaults.

@@ -84,6 +84,15 @@
         border: 1px solid var(--border, #ddd); box-shadow: 0 6px 20px rgba(0,0,0,.18); font: 12px -apple-system, system-ui, sans-serif; }
     .zc-pill button { border: none; background: none; padding: 5px 9px; border-radius: 6px; color: var(--text, #222); cursor: pointer; font: inherit; white-space: nowrap; }
     .zc-sel-pill button[data-del] { color: var(--danger, #c33); }
+    .zc-sel-pill { align-items: center; }
+    .zc-pill .zc-swatch { width: 20px; height: 20px; padding: 0; margin: 0 1px; border-radius: 50%; background: var(--swatch);
+        border: 1px solid rgba(0,0,0,.2); box-sizing: border-box; cursor: pointer; flex: none; }
+    .zc-pill .zc-swatch:hover { background: var(--swatch); filter: brightness(.92); }   /* over the pill's button hover */
+    .zc-pill .zc-swatch.active { box-shadow: 0 0 0 2px var(--bg-elev, #fff), 0 0 0 3.5px var(--accent, #0066cc); }
+    .zc-pill .zc-swatch-custom { position: relative; overflow: hidden;
+        --swatch: conic-gradient(#f44, #fd4, #4d4, #4df, #44f, #f4f, #f44); }
+    .zc-swatch-custom input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; }
+    .zc-pill-sep { width: 1px; align-self: stretch; margin: 2px 3px; background: var(--border, #ddd); }
     @media (pointer: coarse) {
         /* one row whatever the tool: the title gives way first; the colour and size keep their
            place while hidden (visibility), so choosing a tool never moves the toolbar around */
@@ -93,14 +102,16 @@
         #toolbar .toolbar-section.center { flex: none; }
         #toolbar .toolbar-section.right { flex: none; margin-left: auto; }
         #toolbar .divider { margin: 0 2px; }
-        .icon-btn, .tool-btn { width: 38px; height: 40px; border-radius: 9px; }
+        .icon-btn, .tool-btn { width: 36px; height: 40px; border-radius: 9px; }
         .icon-btn svg, .tool-btn svg { width: 19px; height: 19px; }
         input[type="color"] { width: 26px; height: 26px; }
         .color-picker-wrapper { padding: 4px; }
+        .color-picker-wrapper svg { display: none; }   /* room for every tool in one row in portrait */
         #tool-size { width: 44px; height: 34px; font-size: 16px; }   /* < 16 px: Safari zooms the page on focus */
         #doc-title { flex: 1 1 0; width: 0; max-width: none; }   /* takes what is left, never wraps the row */
         .zc-pill { font-size: 15px; }
         .zc-pill button { padding: 10px 14px; min-height: 44px; }
+        .zc-pill .zc-swatch { width: 30px; height: 30px; min-height: 0; margin: 0 3px; }
         .anno-text-handle { width: 22px; height: 22px; right: -11px; bottom: -11px; }
         .thumb-wrapper canvas { width: 100px; }
     }
@@ -138,6 +149,11 @@
         <svg width="16" height="16" viewBox="0 0 16 16">
           <rect x="1" y="11" width="14" height="4" fill="#ffeb3b"/>
           <path d="M8 1 L14 13 H11.5 L10 10 H6 L4.5 13 H2 Z M8 4.5 L6.8 8.5 H9.2 Z" fill="currentColor"/>
+        </svg>
+      </button>
+      <button class="tool-btn" data-tool="area" title="Highlight Area">
+        <svg width="16" height="16" viewBox="0 0 16 16">
+          <rect x="2" y="3" width="12" height="10" rx="1" fill="#ffeb3b" stroke="currentColor" stroke-width="1.2"/>
         </svg>
       </button>
       <button class="tool-btn" data-tool="underline" title="Underline">

@@ -110,7 +110,8 @@ In `viewer.html` the order matters. pdf.js is a classic script, so it has run be
 Modules run in document order, so `viewer.ts` publishes `window.zcViewer` before the add-ons run.
 The add-ons import nothing from `viewer.ts` at run time (only its types). They hook in through
 `window.zcViewer` and the `zc:pagecreated` / `zc:pagerendered` events, so each can change
-without touching the others. `notesBridge.ts` also defines `window.zcViewerGoto`, which other app
+without touching the others. `viewer.ts` owns the toolbar and shows the colour and size inputs a
+tool has; it fires `zc:toolchange`, and `annotations/prefs.ts` then sets their values. `notesBridge.ts` also defines `window.zcViewerGoto`, which other app
 tabs call to point an open viewer tab at a new spot (`api.ts`, `openAttachment`).
 
 The viewer modules do not use `api.ts`: `viewer/annotations/model.ts` has a small `api()` of its
@@ -288,7 +289,35 @@ zooms. `links.ts` makes links clickable with hover previews and Back/Forward, us
 helpers in `linkNav.ts`. `notesBridge.ts` is Quote to note and Snapshot to note, and finds a
 quote on the page with `locate.ts`. `annotations.ts` adds a layer per page, loads the records and
 picks up changes made elsewhere; `annotations/model.ts` holds the records, draws them, saves each
-change and keeps undo and redo; `annotations/input.ts` is the tools (pointer, Pencil, touch).
+change and keeps undo and redo; `annotations/input.ts` is the drawing tools (boxes, area
+highlights, ink, text boxes, the eraser) and the controls of a selected annotation (its colour,
+Delete); `annotations/textMarks.ts` highlights and underlines selected text; `annotations/pointer.ts`
+tells mouse, Pencil and finger apart; `annotations/prefs.ts` keeps each tool's colour and size.
+
+How the annotation tools behave:
+
+- **Colours.** Each tool starts with the colour and size it was last used with on this device
+  (`localStorage`, key `zc.toolStyle`), or else with its colour from Settings → PDF Viewer
+  (`annotation_color_…`, read from `GET /api/settings` when the viewer opens and when its tab
+  gets the focus again). A remembered colour is stored with the default it was chosen over, so
+  a new default in Settings replaces it on every device. The area highlight uses the
+  highlight's colour.
+- **Whole words.** A highlight or underline of text is widened to whole words
+  (`snapToWords`, with `wordStart` / `wordEnd` from `annotations/lines.ts`) unless
+  `annotation_snap_words` is off or Alt is held when the mouse button or the Pencil is lifted.
+  Only the text of the runs where the selection starts and ends is looked at. On a touch screen
+  the preview drawn while selecting is snapped the same way.
+- **One rect per line.** The text layer gives a box per run of text, and inline math, sub- and
+  superscripts sit higher or lower than the words around them. `mergeLines`
+  (`annotations/lines.ts`, unit-tested in `tests/js/annotationLines.test.mjs`) merges the boxes
+  into one per line at the height most of the line's text has, so an underline does not break at
+  every formula. Boxes level with each other but more than a line height apart (two columns)
+  stay apart.
+- **Area highlights.** The Highlight Area tool draws a filled rectangle; it is saved as a
+  `highlight` with one rect, and its `text` is the words of the text layer inside it.
+- **Changing an annotation.** Selecting an annotation (Select tool) shows a pill with colour
+  swatches, a custom colour and Delete. A new colour is one `change` (one undo step); the custom
+  picker shows the colour while it is open and saves when it closes.
 
 ### Patterns for splitting a module
 

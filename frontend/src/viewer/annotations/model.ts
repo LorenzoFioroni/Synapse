@@ -95,7 +95,7 @@ export async function resolveAttachment(): Promise<number | null> {
 
 /* ------------------------------------------------------------------ drawing */
 export function modeClass(t = tool()): string {
-  if (t === 'box' || t === 'draw' || t === 'text') return 'mode-draw';
+  if (t === 'box' || t === 'area' || t === 'draw' || t === 'text') return 'mode-draw';
   if (t === 'highlight' || t === 'underline') return 'mode-highlight';
   return 'mode-select';
 }

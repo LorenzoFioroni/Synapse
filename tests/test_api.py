@@ -42,6 +42,10 @@ def test_settings_validation_and_citekey_style(client):
     ]
     assert r["notes_math_physics"] is False and r["notes_math_macros"] == macros
     assert client.put("/api/settings", json={"notes_math_macros": "x" * 20001}).status_code == 400
+    assert client.put("/api/settings", json={"annotation_color_highlight": "yellow"}).status_code == 400
+    r = client.put("/api/settings", json={"annotation_color_highlight": "#A5F3A0", "annotation_snap_words": False})
+    s = r.get_json()["settings"]
+    assert s["annotation_color_highlight"] == "#a5f3a0" and s["annotation_snap_words"] is False
     r = client.put("/api/settings", json={"citekey_pattern": "{Auth}{year}", "default_search_mode": "all"})
     assert r.status_code == 200
     item = client.post("/api/items", json={"title": "T", "authors": "Doe, J", "year": 2020}).get_json()

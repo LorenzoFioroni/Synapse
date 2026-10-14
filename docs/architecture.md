@@ -140,10 +140,13 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
 - `ui/*` holds the generic widgets (dialogs, menus, toasts, long press).
 - `viewer/*` holds the PDF viewer (`viewer.html`): `viewer.ts` lays out, draws and zooms the pages
   and publishes `window.zcViewer`; `notesBridge.ts`, `links.ts` and `annotations.ts` add to it
-  through the `zc:pagecreated` and `zc:pagerendered` events. The annotations are split three ways:
+  through the `zc:pagecreated` and `zc:pagerendered` events. The annotations are split into
   `annotations/model.ts` (the records, drawing them, saving each change, undo and redo),
-  `annotations/input.ts` (the tools: pointer, Pencil and touch input) and the entry
-  `annotations.ts` (a layer on each page, loading, and changes made elsewhere).
+  `annotations/input.ts` (the drawing tools and the controls of a selected annotation),
+  `annotations/textMarks.ts` (highlighting and underlining text) with its geometry in
+  `annotations/lines.ts`, `annotations/pointer.ts` (mouse, Pencil or finger),
+  `annotations/prefs.ts` (each tool's colour and size) and the entry `annotations.ts` (a layer
+  on each page, loading, and changes made elsewhere).
 - `vendor/` holds third-party libraries, committed as built files and loaded from disk. See
   [`frontend/vendor/README.md`](../frontend/vendor/README.md).
 

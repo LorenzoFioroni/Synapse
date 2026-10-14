@@ -9,15 +9,15 @@ displayed (0–1, origin top left, rotation applied) — the same convention as 
 =========  ===================================================================  =============
 type       geometry                                                             ``size``
 =========  ===================================================================  =============
-highlight  ``rects``: one ``[x, y, w, h]`` per line of text                       —
+highlight  ``rects``: one ``[x, y, w, h]`` per line of text, or one for an area     —
 underline  ``rects``: the text lines; the line is drawn along each bottom edge    stroke width
 box        ``rects``: ``[[x, y, w, h]]``                                         stroke width
 ink        ``path``: ``[[x, y], …]``                                             stroke width
 text       ``rects``: ``[[x, y, w, h]]`` (top left; w, h as last drawn)           font size
 =========  ===================================================================  =============
 
-Sizes are in PDF points at 100 % zoom. ``text`` is the highlighted or underlined words, or the
-content of a text box; ``comment`` is free text.
+Sizes are in PDF points at 100 % zoom. ``text`` is the highlighted or underlined words (for an
+area highlight, the words inside it), or the content of a text box; ``comment`` is free text.
 
 Older versions stored the raw SVG markup of each page in one blob per item
 (``papers.annotations``). ``annotations_legacy.migrate_legacy`` converts those blobs once, after a backup,
