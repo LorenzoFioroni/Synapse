@@ -4,6 +4,7 @@
 import { state } from '../../store.js';
 import type { CiteEntry, NoteDetails, NoteHistory, NoteLinks, NotesListing } from '../../types.js';
 import type { MD, NoteEditor } from './editor.js';
+import { type LinkData, normTarget } from './linkData.js';
 import { baseMacros, type Macros } from './macros.js';
 import type { NoteSession } from './noteSession.js';
 import type { Renderer } from './render.js';
@@ -21,7 +22,7 @@ export const ws = {
   lib: null as MD | null,                        // markdown-it + KaTeX, once loaded
   renderer: null as Renderer | null,             // for tables and math in the live preview
   // What the backend says the open note links to (refreshed after each save).
-  linkData: { notes: new Map<string, string | null>(), cites: new Map<string, Omit<CiteEntry, 'key'>>() },
+  linkData: { notes: new Map(), cites: new Map() } as LinkData,
   linkResp: null as (NoteLinks & { path_for: string }) | null,   // last /notes/links answer (for the side panel)
   // Citable library items (for autocomplete and citation cards), keyed by citation key.
   library: { list: [] as CiteEntry[], byKey: new Map<string, CiteEntry>() },
@@ -45,7 +46,7 @@ export const stemOf = (p: string) => p.split('/').pop()!.replace(/\.md$/i, '');
 export const parentOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
 export const nameOf = (p: string) => p.split('/').pop()!;
 export const within = (p: string, folder: string) => p.startsWith(`${folder}/`);
-export const normTarget = (t: string) => t.trim().replace(/\\/g, '/').toLowerCase().replace(/\.md$/, '');
+export { normTarget };
 
 /** Path a [[target]] goes to: a path, null (no such note) or undefined (not known yet). */
 export function resolveNote(target: string): string | null | undefined {

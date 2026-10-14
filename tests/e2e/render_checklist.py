@@ -64,6 +64,12 @@ def setup():
         f"{BASE}/api/notes/note",
         json={"title": "Other", "text": "# Other\n\n## Results\n\nEmbedded **content** with $x^2$.\n"},
     )
+    # embeds inside embeds: each level cites the item; the fourth level is one too deep
+    requests.post(f"{BASE}/api/notes/note", json={"path": "Embeds.md", "title": "Embeds", "text": "![[Deep 1]]\n"})
+    for i in range(1, 5):
+        more = f"\n\n![[Deep {i + 1}]]\n" if i < 4 else "\n"
+        text = f"Level {i} cites [@cuiVariational2015].{more}"
+        requests.post(f"{BASE}/api/notes/note", json={"path": f"Deep {i}.md", "title": f"Deep {i}", "text": text})
     img = requests.post(f"{BASE}/api/notes/attachments", files={"file": ("pixel.png", PNG, "image/png")}).json()
     text = (APP / "tests/e2e/kitchen-sink.md").read_text().replace("attachments/pixel.png", img["path"])
     body = text.split("---\n", 2)[2]  # drop the fixture's front-matter; the app writes its own
@@ -252,6 +258,36 @@ async def main():
             check(
                 "clicking a missing link creates the note",
                 (NOTES / "Missing note.md").exists() and "Missing note" in await page.text_content(".note-crumbs"),
+            )
+
+            # ---- embedded notes render with their own link data
+            await page.click('.nt-row.note[data-path="Embeds.md"]')
+            await page.click('[data-mode="read"]')
+            await wait_for(
+                lambda: page.evaluate(
+                    "document.querySelector('.note-read .prose').textContent.includes('Embedded too deeply')"
+                )
+            )
+            levels = await page.evaluate(
+                "[...document.querySelectorAll('.note-read .note-embed.filled')].map(e => e.dataset.path)"
+            )
+            check(
+                "read: embeds inside embeds are filled", levels[:3] == ["Deep 1.md", "Deep 2.md", "Deep 3.md"], levels
+            )
+            check(
+                "read: the fourth level is one too deep",
+                "Embedded too deeply"
+                in await page.evaluate(
+                    "document.querySelector('.note-embed[data-path=\"Deep 4.md\"] .embed-body')?.textContent || ''"
+                ),
+            )
+            labels = await page.locator(".note-read .note-embed .cite").all_text_contents()
+            check(
+                "read: citations inside embeds know their item",
+                len(labels) == 3
+                and await count(page, ".note-read .note-embed .cite.missing") == 0
+                and all("Cui & Cirac 2015" in l for l in labels),
+                labels,
             )
             check("no console errors", not errors, errors[:5])
             await b.close()

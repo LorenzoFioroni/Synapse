@@ -13,7 +13,7 @@
 import type MarkdownIt from 'markdown-it';
 import type { RendererRule as MdRenderRule, StateBlock, StateCore, StateInline, Token as MdToken } from 'markdown-it';
 
-type MdLib = typeof import('../../../vendor/md/md.js');
+export type MdLib = typeof import('../../../vendor/md/md.js');
 import { labelId, layoutTag, numberEquations, refText, resolveRefs } from './equations.js';
 import { type Cite, attachmentOf, parseCites, splitWiki } from './mdscan.js';
 import { type Definition, HAS_DEFINITIONS, type Macros, baseMacros, parseDefinitions, withDefinitions } from './macros.js';

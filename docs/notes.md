@@ -280,7 +280,8 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `editor.ts`, `livePreview.ts` | CodeMirror 6 (`vendor/cm6/`) and the live preview decorations, built on `mdscan.ts`. |
 | `completion.ts`, `library.ts` | `[@` and `[[` autocomplete and its ranking. |
 | `render.ts` | Markdown to HTML with markdown-it and KaTeX (`vendor/md/`): math, links, citations, callouts, tasks. Raw HTML is never rendered. No DOM. |
-| `richRender.ts` | Mermaid (loaded on demand from `vendor/mermaid/`), code highlighting, embedded notes. |
+| `richRender.ts` | Mermaid (loaded on demand from `vendor/mermaid/`), code highlighting, filling embedded notes into the page. |
+| `embed.ts`, `linkData.ts` | What an embedded note shows; what a note links to (`/api/notes/links` as maps for the renderer). No DOM. |
 | `equations.ts`, `macros.ts` | Equation numbering, `\label`/`\eqref`, and math macros (physics package, Settings, `\newcommand`). |
 | `mathClick.ts`, `mathFit.ts` | Clicking into rendered math; shrinking wide equations. |
 | `readView.ts` | Read mode, following `[[links]]` (offering to create missing notes), going to a line. |
@@ -289,6 +290,15 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `aiBar.ts`, `aiEdits.ts`, `diff.ts` | Claude's edits: the bar, the history dialog, line diffs. |
 | `conflict.ts` | The dialog for a note changed or deleted elsewhere. |
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
+
+### Embedded notes
+
+In read mode, `renderEmbeds` (`richRender.ts`) fills each `![[Note]]` or `![[Note#Heading]]`
+that resolves to a path. It loads the note and its `/api/notes/links` together, and `embedHtml`
+(`embed.ts`) renders the note (or the section under the heading) with that link data, falling
+back to the open note's for what it does not cover. Citations in an embed therefore show their
+item, and embeds inside it get a `data-path` and are filled in turn, up to three levels
+(`MAX_EMBED_DEPTH`); a note that embeds itself is not shown again.
 
 ### Saving: `NoteSession`
 
