@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from backend.online import metadata, pdf_finder
+from backend.online import http, pdf_finder
 from tests.conftest import make_pdf
 
 
@@ -112,7 +112,7 @@ def test_items_without_arxiv_id_behave_as_before(svc, web, tmp_path):
 
 def test_arxiv_downloads_are_spaced(svc, web, tmp_path, monkeypatch):
     routes, calls = web
-    monkeypatch.setattr(metadata, "ARXIV_SPACING", 0.3)
+    monkeypatch.setattr(http, "ARXIV_SPACING", 0.3)
     stamps = []
 
     def arxiv_pdf():

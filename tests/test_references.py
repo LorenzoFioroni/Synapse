@@ -2,7 +2,7 @@
 import pytest
 
 from backend.references import service as R
-from backend.online.metadata import LookupError_
+from backend.online.http import LookupError_
 
 
 class Resp:

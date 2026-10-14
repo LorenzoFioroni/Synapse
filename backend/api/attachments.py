@@ -7,7 +7,8 @@ import uuid
 from flask import Blueprint, Response, jsonify, request, send_from_directory
 from werkzeug.utils import secure_filename
 
-from ..online import pdf_finder, remote_pdf
+from ..online import remote_pdf
+from ..online.http import BROWSER_UA
 from ..pdf.text import clean_text, extract_text, find_identifier
 from . import body, error, svc
 
@@ -43,7 +44,8 @@ def items_from_pdfs():
     files = request.files.getlist("file")
     if not files:
         return error("No file uploaded")
-    from ..online.metadata import LookupError_, known_authors, lookup
+    from ..online.http import LookupError_
+    from ..online.metadata import known_authors, lookup
     known = known_authors(s.papers.list())
     created = []
     for f in files:
@@ -114,7 +116,7 @@ def remote_attachment(att_id):
     if not att or not str(att.get("url") or "").startswith(("http://", "https://")):
         return error("This attachment is not a web link.", 404)
     try:
-        data = remote_pdf.fetch_pdf(att["url"], pdf_finder.UA)
+        data = remote_pdf.fetch_pdf(att["url"], BROWSER_UA)
     except remote_pdf.RemoteError as e:
         return error(str(e), e.status)
     return Response(data, mimetype="application/pdf")

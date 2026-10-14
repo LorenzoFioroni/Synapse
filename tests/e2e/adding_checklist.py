@@ -30,7 +30,7 @@ from backend import create_app
 from backend.config import Config
 from backend.api import metadata as M
 from backend.online import pdf_finder
-from backend.online.metadata import LookupError_
+from backend.online.http import LookupError_
 calls = []
 lock = threading.Lock()
 def fake_lookup(**k):

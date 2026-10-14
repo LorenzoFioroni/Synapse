@@ -15,10 +15,10 @@ import requests
 
 from ..library.identifiers import clean_doi
 from ..pdf.text import extract_text
+from .http import BROWSER_UA, arxiv_wait
 
 log = logging.getLogger(__name__)
 
-UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
 FALLBACK_EMAIL = "synapse@example.com"
 
 
@@ -88,7 +88,7 @@ def candidate_urls(title: str | None, doi: str | None, email: str, arxiv_id: str
             log.info("Unpaywall search failed: %s", e)
         try:
             gs = f"https://scholar.google.com/scholar?q=%22{urllib.parse.quote(title)}%22"
-            r = requests.get(gs, headers={"User-Agent": UA}, timeout=10)
+            r = requests.get(gs, headers={"User-Agent": BROWSER_UA}, timeout=10)
             if r.ok:
                 m = re.search(r'<div class="gs_r gs_or gs_scl".*?(?=<div class="gs_r gs_or gs_scl"|id="gs_bdy_ft"|$)',
                               r.text, re.DOTALL)
@@ -146,12 +146,11 @@ def find_and_download(title: str | None, doi: str | None, pdf_dir: Path, email: 
 
 def _download_first(urls: list[str], title, doi, arxiv_id, pdf_dir) -> dict | None:
     """Download the candidates in order; the first that is the right paper is kept."""
-    from .metadata import arxiv_wait
     for url in urls:
         try:
             if urllib.parse.urlparse(url).hostname in ("arxiv.org", "export.arxiv.org"):
                 arxiv_wait()   # batch Find PDF: keep arXiv requests apart
-            r = requests.get(url, headers={"User-Agent": UA}, timeout=20)
+            r = requests.get(url, headers={"User-Agent": BROWSER_UA}, timeout=20)
             ctype = r.headers.get("Content-Type", "application/pdf")
             if not (r.ok and ("pdf" in ctype or r.content[:4] == b"%PDF")):
                 continue

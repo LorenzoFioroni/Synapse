@@ -17,9 +17,9 @@ import uuid
 import requests
 from flask import Blueprint, jsonify, request
 
-from ..online import pdf_finder
 from ..formats.common import join_authors, parse_display_name, year_from
-from ..online.metadata import LookupError_, known_authors, lookup
+from ..online.http import BROWSER_UA, LookupError_
+from ..online.metadata import known_authors, lookup
 from . import error, svc
 
 log = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ def _page_item(page: dict) -> dict:
 
 def _download_pdf(url: str, pdf_dir) -> str | None:
     try:
-        r = requests.get(url, timeout=30, headers={"User-Agent": pdf_finder.UA})
+        r = requests.get(url, timeout=30, headers={"User-Agent": BROWSER_UA})
         if r.ok and r.content[:5] == b"%PDF-":
             name = f"{uuid.uuid4().hex}_connector.pdf"
             (pdf_dir / name).write_bytes(r.content)

@@ -4,8 +4,6 @@ from __future__ import annotations
 import difflib
 import logging
 import re
-import threading
-import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 import xml.etree.ElementTree as ET
@@ -15,20 +13,9 @@ import requests
 
 from ..formats.common import join_authors, parse_display_name, split_authors, strip_tags
 from ..library.identifiers import ARXIV_DOI, ARXIV_ID, clean_doi
+from .http import TIMEOUT, LookupError_, api_headers, arxiv_wait
 
 log = logging.getLogger(__name__)
-TIMEOUT = 15
-
-
-class LookupError_(Exception):
-    pass
-
-
-def _headers(email: str) -> dict:
-    ua = "Synapse/2.0 (https://github.com/LorenzoFioroni/Synapse; mailto:%s)" % (email or "synapse@example.com")
-    return {"User-Agent": ua}
-
-
 # ------------------------------------------------------------ identifiers
 def classify_identifier(s: str) -> tuple[str, str]:
     s = (s or "").strip()
@@ -132,7 +119,7 @@ def _crossref_to_item(m: dict) -> dict:
 
 def crossref_doi(doi: str, email: str = "") -> dict:
     r = requests.get(f"https://api.crossref.org/works/{requests.utils.quote(doi)}",
-                     headers=_headers(email), timeout=TIMEOUT)
+                     headers=api_headers(email), timeout=TIMEOUT)
     if r.status_code == 404:
         raise LookupError_(f"DOI {doi} was not found on Crossref.")
     r.raise_for_status()
@@ -141,7 +128,7 @@ def crossref_doi(doi: str, email: str = "") -> dict:
 
 def crossref_title(title: str, email: str = "") -> dict:
     r = requests.get("https://api.crossref.org/works", params={"query.bibliographic": title, "rows": 3},
-                     headers=_headers(email), timeout=TIMEOUT)
+                     headers=api_headers(email), timeout=TIMEOUT)
     r.raise_for_status()
     items = r.json()["message"].get("items") or []
     if not items:
@@ -172,7 +159,7 @@ def title_similarity(a: str, b: str) -> float:
 def openalex_authors(doi: str, email: str = "") -> list[tuple[str, str]]:
     try:
         r = requests.get(f"https://api.openalex.org/works/doi:{requests.utils.quote(doi)}",
-                         headers=_headers(email), timeout=TIMEOUT)
+                         headers=api_headers(email), timeout=TIMEOUT)
         if not r.ok:
             return []
         return [parse_display_name((a.get("author") or {}).get("display_name") or "")
@@ -184,22 +171,6 @@ def openalex_authors(doi: str, email: str = "") -> list[tuple[str, str]]:
 
 ARXIV_API = "https://export.arxiv.org/api/query"
 _ARXIV_NS = {"a": "http://www.w3.org/2005/Atom", "x": "http://arxiv.org/schemas/atom"}
-
-
-# Lookups of several items now run side by side; arXiv asks API users to space their requests.
-ARXIV_SPACING = 1.0
-_arxiv_lock = threading.Lock()
-_arxiv_last = 0.0
-
-
-def arxiv_wait() -> None:
-    """Space requests to arXiv (API and PDF downloads alike) by ARXIV_SPACING seconds."""
-    global _arxiv_last
-    with _arxiv_lock:
-        wait = _arxiv_last + ARXIV_SPACING - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        _arxiv_last = time.monotonic()
 
 
 def _arxiv_get(params: dict):

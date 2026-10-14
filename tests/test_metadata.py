@@ -1,6 +1,6 @@
 import pytest
 
-from backend.online import metadata
+from backend.online import http, metadata
 
 
 def test_classify_identifier():
@@ -186,7 +186,7 @@ def test_doi_lookup_asks_crossref_and_openalex_side_by_side(monkeypatch):
 
 def test_arxiv_requests_are_spaced(monkeypatch):
     import time as _t
-    monkeypatch.setattr(metadata, "ARXIV_SPACING", 0.3)
+    monkeypatch.setattr(http, "ARXIV_SPACING", 0.3)
     stamps = []
     monkeypatch.setattr(metadata.requests, "get", lambda *a, **k: stamps.append(_t.monotonic()) or
                         type("R", (), {"raise_for_status": lambda self: None, "content": b"<feed xmlns='http://www.w3.org/2005/Atom'/>"})())

@@ -29,7 +29,7 @@ import requests
 from ..library.db import utcnow
 from ..formats.common import join_authors, parse_display_name
 from ..library.identifiers import ARXIV_DOI, ARXIV_ID, identifiers, norm_arxiv, norm_doi, title_key
-from ..online.metadata import TIMEOUT, LookupError_, _headers
+from ..online.http import TIMEOUT, LookupError_, api_headers
 
 log = logging.getLogger(__name__)
 
@@ -128,7 +128,7 @@ def semantic_scholar(doi: str | None, arxiv_id: str | None, *, email: str = "", 
 
 
 def _s2_references(pid: str, *, email: str, api_key: str) -> list[dict]:
-    headers = _headers(email)
+    headers = api_headers(email)
     if api_key:
         headers["x-api-key"] = api_key
     out, offset = [], 0
@@ -175,7 +175,7 @@ def openalex(doi: str | None, *, email: str = "", api_key: str = "") -> list[dic
         params["api_key"] = api_key
     elif email:
         params["mailto"] = email
-    r = _get(f"{OPENALEX_API}/works/doi:{_q(doi)}", params=params, headers=_headers(email))
+    r = _get(f"{OPENALEX_API}/works/doi:{_q(doi)}", params=params, headers=api_headers(email))
     if r is None:
         return []
     wids = [w.rsplit("/", 1)[-1] for w in r.json().get("referenced_works") or []]
@@ -188,7 +188,7 @@ def openalex(doi: str | None, *, email: str = "", api_key: str = "") -> list[dic
             p["api_key"] = api_key
         elif email:
             p["mailto"] = email
-        rr = _get(f"{OPENALEX_API}/works", params=p, headers=_headers(email))
+        rr = _get(f"{OPENALEX_API}/works", params=p, headers=api_headers(email))
         for w in (rr.json().get("results") or []) if rr is not None else []:
             details[(w.get("id") or "").rsplit("/", 1)[-1]] = _openalex_work(w)
     return [details.get(w) or {"openalex_id": w} for w in wids]   # keep the original order
@@ -197,7 +197,7 @@ def openalex(doi: str | None, *, email: str = "", api_key: str = "") -> list[dic
 def crossref(doi: str | None, *, email: str = "") -> list[dict]:
     if not doi or ARXIV_DOI.match(doi):
         return []
-    r = _get(f"{CROSSREF_API}/works/{_q(doi)}", headers=_headers(email))
+    r = _get(f"{CROSSREF_API}/works/{_q(doi)}", headers=api_headers(email))
     if r is None:
         return []
     out = []
