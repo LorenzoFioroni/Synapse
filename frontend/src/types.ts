@@ -348,6 +348,52 @@ export interface Stats {
   data_dir: string;
 }
 
+/** A backup archive (backend/backup.py). ``items`` and ``notes`` come from its manifest. */
+export interface Backup {
+  name: string;
+  size: number;
+  created: string;
+  reason: string | null;   // 'manual', 'scheduled', or what it was made before ('import', …)
+  items: number | null;
+  notes: number | null;
+  damaged?: boolean;       // the manifest cannot be read
+}
+
+/** GET /api/backups. */
+export interface BackupStatus {
+  dir: string;
+  backups: Backup[];
+  last: Backup | null;
+  error: string | null;
+  interval: Settings['backup_interval'];
+  keep: number;
+}
+
+/** A paired device (backend/access/devices.py). */
+export interface Device {
+  id: string;
+  name: string;
+  user_agent: string | null;
+  created: string;
+  last_seen: string | null;
+  last_addr: string | null;
+}
+
+/** GET /api/devices: the paired devices, and whether and where other devices can reach this server. */
+export interface DevicesOverview {
+  lan: boolean;
+  this_computer: boolean;
+  current: string | null;  // the device asking (null on this computer)
+  devices: Device[];
+  addresses: { label: string; url: string }[];
+}
+
+/** POST /api/devices/pairing: a one-time code, as a link (and QR code SVG) per address. */
+export interface Pairing {
+  expires: number;         // Unix time
+  links: { label: string; url: string; qr: string | null }[];
+}
+
 /** GET /api/changes: what changed since ``seq`` (backend/changes.py). */
 export interface ChangeFeed {
   epoch: string;

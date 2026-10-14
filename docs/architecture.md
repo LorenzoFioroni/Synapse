@@ -126,7 +126,8 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
 - `changes.ts` polls `/api/changes` and refreshes whatever another window, device or background
   job changed.
 - `views/*` holds the screens and dialogs, and `views/notes/*` the notes workspace (a CodeMirror 6
-  editor, live preview and Markdown rendering).
+  editor, live preview and Markdown rendering). `settingsView.ts` is the Settings page; its markup
+  is in `views/settings/page.ts`, and Backups and Devices have their own modules there.
 - `ui/*` holds the generic widgets (dialogs, menus, toasts, long press).
 - `viewer/*` holds the PDF viewer (`viewer.html`): `viewer.ts` lays out, draws and zooms the pages
   and publishes `window.zcViewer`; `annotations.ts`, `links.ts` and `notesBridge.ts` add to it

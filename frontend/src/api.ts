@@ -1,8 +1,8 @@
 // Thin client for the JSON API. Every call throws an Error with a readable
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
-  Attachment, ChangeFeed, CiteEntry, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
-  ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NotesListing,
+  Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
+  ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NotesListing, Pairing,
   PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag,
 } from './types.js';
 
@@ -80,14 +80,14 @@ export const api = {
   saveSettings: (changes: Partial<Settings>) => request<{ settings: Settings }>('PUT', '/api/settings', changes),
   resetSettings: () => request<{ settings: Settings }>('POST', '/api/settings/reset'),
   changes: (since?: number | null, epoch?: string | null) => request<ChangeFeed>('GET', `/api/changes?${qs({ since, epoch })}`),
-  devices: () => request('GET', '/api/devices'),
-  newPairing: () => request('POST', '/api/devices/pairing'),
+  devices: () => request<DevicesOverview>('GET', '/api/devices'),
+  newPairing: () => request<Pairing>('POST', '/api/devices/pairing'),
   renameDevice: (id: string, name: string) => request('PATCH', `/api/devices/${encodeURIComponent(id)}`, { name }),
   removeDevice: (id: string) => request('DELETE', `/api/devices/${encodeURIComponent(id)}`),
-  backups: () => request('GET', '/api/backups'),
+  backups: () => request<BackupStatus>('GET', '/api/backups'),
   backupNow: () => request('POST', '/api/backups'),
-  restoreBackup: (name: string) => request('POST', '/api/backups/restore', { name }),
-  citekeyPreview: (pattern: string) => request('GET', `/api/settings/citekey_preview?${qs({ pattern })}`),
+  restoreBackup: (name: string) => request<BackupStatus & { restored: string; safety_backup: string }>('POST', '/api/backups/restore', { name }),
+  citekeyPreview: (pattern: string) => request<{ pattern: string; examples: string[] }>('GET', `/api/settings/citekey_preview?${qs({ pattern })}`),
 
   formats: () => request<{ formats: Format[] }>('GET', '/api/formats'),
   importPreview: (fileOrText: string | File, format?: string) => {
