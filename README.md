@@ -264,15 +264,18 @@ the backend.
 
 ```bash
 pip install -r requirements-dev.txt
-(cd frontend && npm ci && npm run check)   # type-check the frontend
+(cd frontend && npm ci && npm run check)   # type-check the frontend and the browser extension
 ruff check .                    # lint
 ruff format .                   # format
 python -m pytest                # backend + JavaScript unit tests (the JS part needs Node.js)
+pre-commit install              # optional: ruff and the type check on every commit
 ```
 
-CI (`.github/workflows/ci.yml`) runs both on every pull request.
+CI (`.github/workflows/ci.yml`) runs all of these on every pull request.
 
-Browser checklists for notes (need Playwright; each uses a throw-away data folder):
+Browser checklists (need Playwright; each uses a throw-away data folder).
+`python tests/e2e/run.py` runs them all and prints a summary, `python tests/e2e/run.py notes render`
+only those, and `--retries 1` gives a failed one a second try. Or run one directly:
 
 ```bash
 pip install playwright requests && playwright install chromium

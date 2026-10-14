@@ -1,0 +1,21 @@
+# Checks run on `git commit` (install once: pre-commit install). The hooks call the tools already
+# installed by requirements-dev.txt and `npm ci` in frontend/, so committing needs no network.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: ruff check --fix
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format
+        language: system
+        types: [python]
+      - id: tsc
+        name: type-check the frontend and the browser extension
+        entry: npm --prefix frontend run -s check
+        language: system
+        files: ^(frontend/(src/|tsconfig\.json|package\.json)|browser_extension/.*\.js$|browser_extension/tsconfig\.json)
+        pass_filenames: false

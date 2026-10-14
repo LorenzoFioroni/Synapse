@@ -3,4 +3,5 @@
 -r requirements.txt
 pytest>=8
 ruff>=0.15
+pre-commit>=4  # optional: runs ruff and the type check on each commit (pre-commit install)
 # browser checklists in tests/e2e (optional): pip install playwright
