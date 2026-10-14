@@ -319,6 +319,9 @@ export interface ItemReferences {
   queued: boolean;
 }
 
+/** POST /api/items/<id>/lookup: the item as it is, and what the metadata services say. */
+export interface MetadataLookup { current: Item; fetched: Partial<Item> }
+
 /** POST /api/items/<id>/find_pdf. */
 export interface FindPdfResult { status: 'success' | 'not_found' | 'error'; message?: string; attachment?: Attachment; source?: string }
 

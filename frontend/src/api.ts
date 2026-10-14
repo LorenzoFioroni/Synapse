@@ -1,7 +1,8 @@
 // Thin client for the JSON API. Every call throws an Error with a readable
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
-  Attachment, ChangeFeed, CiteEntry, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item, ItemList, ItemReferences, ItemsByIds, NoteAttachments, NoteFile, NoteHistory, NotesListing,
+  Attachment, ChangeFeed, CiteEntry, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
+  ItemList, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NotesListing,
   PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag,
 } from './types.js';
 
@@ -61,7 +62,7 @@ export const api = {
   emptyTrash: () => request('POST', '/api/trash/empty'),
   regenerateCitekeys: (ids: string[]) => request<{ keys: Record<string, string> }>('POST', '/api/items/citekeys', { ids }),
 
-  lookup: (id: string) => request('POST', `/api/items/${id}/lookup`),
+  lookup: (id: string) => request<MetadataLookup>('POST', `/api/items/${id}/lookup`),
   fromIdentifier: (identifier: string, allowDuplicate = false, folderId: number | null = null, { fetchReferences }: { fetchReferences?: boolean } = {}) =>
     request<Item>('POST', '/api/items/from_identifier', { identifier, allow_duplicate: allowDuplicate, folder_id: folderId, fetch_references: fetchReferences }),
   fromPdfs: (files: Iterable<File>, folderId: number | null = null) => {

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // "Retrieve Metadata" for one or many items.
 //
 // Fresh metadata is fetched by a lookup job: several items at a time, cancellable, and able
@@ -7,12 +6,29 @@
 // each, followed by the item's other metadata), then the ones that were not found, and the
 // ones that are already up to date folded away at the end. Nothing is saved until "Apply".
 import * as A from '../actions.js';
-import { api } from '../api.js';
+import { type ApiError, api } from '../api.js';
 import { icon, typeIcon } from '../icons.js';
 import { byId, state } from '../store.js';
 import { openDialog } from '../ui/dialog.js';
 import { progressToast, toast, toastError } from '../ui/toast.js';
+import type { Item, MetadataLookup } from '../types.js';
 import { diffWords, escapeHtml, h, plural, shortAuthors } from '../util.js';
+
+/** A field the lookup would change. */
+export interface Change { key: string; current: unknown; fetched: unknown; isNew: boolean; checked: boolean }
+
+export type ArticleStatus = 'pending' | 'changes' | 'same' | 'error' | 'skipped';
+
+/** One item of a lookup job, and what came back for it. */
+export interface Article {
+  id: string;
+  n: number;               // its place in the list, from 1
+  item: Item | undefined;
+  status: ArticleStatus;
+  changes: Change[];
+  unchanged: { key: string; value: string }[];
+  error: string | null;
+}
 
 // Fields the lookup can return, in display order.
 const LOOKUP_FIELDS = [
@@ -26,19 +42,19 @@ const MULTILINE = new Set(['title', 'authors', 'abstract', 'extra']);
 const CONCURRENCY = 4;
 const PAUSE_MS = 120;   // per worker, between its requests
 
-const blank = (v) => v === null || v === undefined || String(v).trim() === '';
+const blank = (v: unknown) => v === null || v === undefined || String(v).trim() === '';
 const DONE = new Set(['changes', 'same', 'error']);
 
-function label(key) {
-  return state.schema.fields.find((f) => f.key === key)?.label || key;
+function label(key: string): string {
+  return state.schema!.fields.find((f) => f.key === key)?.label || key;
 }
-function display(key, v) {
-  if (key === 'item_type') return state.schema.itemTypes.find((t) => t.key === v)?.label || v || '';
+function display(key: string, v: unknown): string {
+  if (key === 'item_type') return state.schema!.itemTypes.find((t) => t.key === v)?.label || String(v || '');
   return v === null || v === undefined ? '' : String(v);
 }
 
 /** Changed fields between the current item and the fetched metadata. */
-export function computeChanges(current, fetched) {
+export function computeChanges(current: Item, fetched: Partial<Item>): Change[] {
   return LOOKUP_FIELDS
     .filter((k) => !blank(fetched[k]) && String(fetched[k]) !== String(current[k] ?? ''))
     .filter((k) => !(k === 'item_type' && blank(current[k])))
@@ -53,9 +69,9 @@ export function computeChanges(current, fetched) {
 }
 
 /** Every non-empty field of the item that the lookup leaves as it is. */
-function unchangedFields(current, changes) {
+function unchangedFields(current: Item, changes: Change[]): { key: string; value: string }[] {
   const changed = new Set(changes.map((c) => c.key));
-  return state.schema.fields
+  return state.schema!.fields
     .filter((f) => f.editable && !changed.has(f.key) && !blank(current[f.key]))
     .map((f) => ({ key: f.key, value: display(f.key, current[f.key]) }));
 }
@@ -67,7 +83,22 @@ function unchangedFields(current, changes) {
  * (null) when the job ends.
  */
 export class LookupJob {
-  constructor(ids, { prefetched = null, references = false, lookup = (id) => api.lookup(id), items = byId } = {}) {
+  articles: Article[];
+  prefetched: MetadataLookup | null;
+  references: boolean;
+  lookup: (id: string) => Promise<MetadataLookup>;
+  stopped: boolean;
+  finished: boolean;
+  applied: boolean;
+  listeners: Set<(a: Article | null) => void>;
+  done: Promise<void> | null;
+
+  constructor(ids: string[], { prefetched = null, references = false, lookup = (id: string) => api.lookup(id), items = byId }: {
+    prefetched?: MetadataLookup | null;
+    references?: boolean;
+    lookup?: (id: string) => Promise<MetadataLookup>;
+    items?: (id: string) => Item | undefined;
+  } = {}) {
     this.articles = ids.map((id, n) => ({ id, n: n + 1, item: items(id), status: 'pending', changes: [], unchanged: [], error: null }));
     this.prefetched = prefetched;
     this.references = references;   // also fetch reference lists of the articles when applying
@@ -80,14 +111,14 @@ export class LookupJob {
   }
 
   get running() { return !this.finished; }
-  count(status) { return this.articles.filter((a) => a.status === status).length; }
+  count(status: ArticleStatus): number { return this.articles.filter((a) => a.status === status).length; }
   get looked() { return this.articles.filter((a) => DONE.has(a.status)).length; }
   get withChanges() { return this.count('changes'); }
 
-  on(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
-  emit(a) { for (const fn of [...this.listeners]) { try { fn(a); } catch (e) { console.error(e); } } }
+  on(fn: (a: Article | null) => void): () => void { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
+  emit(a: Article | null): void { for (const fn of [...this.listeners]) { try { fn(a); } catch (e) { console.error(e); } } }
 
-  start() {
+  start(): Promise<void> {
     if (this.done) return this.done;
     let next = 0;
     const worker = async () => {
@@ -107,7 +138,7 @@ export class LookupJob {
     return this.done;
   }
 
-  async lookupOne(a) {
+  async lookupOne(a: Article): Promise<void> {
     try {
       const res = this.prefetched && a.id === this.prefetched.current.id ? this.prefetched : await this.lookup(a.id);
       a.item = res.current;
@@ -118,27 +149,29 @@ export class LookupJob {
       a.status = a.changes.some((c) => c.checked) ? 'changes' : 'same';
     } catch (e) {
       a.status = 'error';
-      a.error = e.message;
+      a.error = (e as Error).message;
       a.unchanged = a.item ? unchangedFields(a.item, []) : [];
-      if (e.status === 0) this.stopped = true;   // server unreachable: stop instead of failing every item
+      if ((e as ApiError).status === 0) this.stopped = true;   // server unreachable: stop instead of failing every item
     }
   }
 
-  stop() { this.stopped = true; }
+  stop(): void { this.stopped = true; }
 }
 
 /* ------------------------------------------------------------------ entry */
-export async function openMetadataReview(idOrIds) {
+export async function openMetadataReview(idOrIds: string | string[]): Promise<unknown> {
   const ids = (Array.isArray(idOrIds) ? idOrIds : [idOrIds]).filter((id) => byId(id));
   if (!ids.length) return;
 
   // A single item with nothing new doesn't need a dialog.
-  let prefetched = null;
+  let prefetched: MetadataLookup | null = null;
   if (ids.length === 1) {
     const close = toast('Looking up metadata…', { timeout: 0 });
-    try { prefetched = await api.lookup(ids[0]); } catch (e) { close(); return toastError(e); }
+    let found: MetadataLookup;
+    try { found = await api.lookup(ids[0]); } catch (e) { close(); return toastError(e); }
+    prefetched = found;
     close();
-    if (!computeChanges(prefetched.current, prefetched.fetched).length) {
+    if (!computeChanges(found.current, found.fetched).length) {
       return toast('Metadata is already up to date', { type: 'success' });
     }
   }
@@ -151,45 +184,46 @@ export async function openMetadataReview(idOrIds) {
  * Retrieve metadata without opening the dialog (e.g. right after an import): progress in a
  * toast, and a "Review" button when the results are in.
  */
-export function retrieveInBackground(ids, { references = false } = {}) {
-  ids = ids.filter((id) => byId(id));
-  if (!ids.length) return null;
-  const job = new LookupJob(ids, { references });
+export function retrieveInBackground(ids: string[], { references = false } = {}): LookupJob | null {
+  const known = ids.filter((id) => byId(id));
+  if (!known.length) return null;
+  const job = new LookupJob(known, { references });
   job.start();
   watchInBackground(job);
   return job;
 }
 
-function watchInBackground(job) {
-  if (!job.running) return finishedToast(job);
+function watchInBackground(job: LookupJob): void {
+  if (!job.running) { finishedToast(job); return; }
   const pt = progressToast('Retrieving metadata…', { onCancel: () => job.stop() });
   const paint = () => pt.set(`Retrieving metadata ${job.looked}/${job.articles.length}${job.withChanges ? ` · ${plural(job.withChanges, 'article')} with updates` : ''}`,
     job.looked, job.articles.length);
   paint();
   const off = job.on((a) => {
-    if (a) return paint();
+    if (a) { paint(); return; }
     off();
     pt.close();
     finishedToast(job);
   });
 }
 
-function finishedToast(job) {
+function finishedToast(job: LookupJob): void {
   if (job.applied) return;
   const n = job.withChanges, failed = job.count('error'), skipped = job.count('skipped');
   const parts = [n ? `Metadata: ${plural(n, 'article')} with updates` : 'Metadata is up to date'];
   if (job.count('same') && n) parts.push(`${job.count('same')} up to date`);
   if (failed) parts.push(`${failed} not found`);
   if (skipped) parts.push(`stopped, ${skipped} not looked up`);
-  if (!n) return toast(parts.join(' · '), { type: failed && !job.count('same') ? 'error' : 'success', timeout: 7000 });
+  if (!n) { toast(parts.join(' · '), { type: failed && !job.count('same') ? 'error' : 'success', timeout: 7000 }); return; }
   // stays until dismissed, so the results can't be missed
   toast(parts.join(' · '), { type: 'success', timeout: 0, action: { label: 'Review', run: () => reviewDialog(job) } });
 }
 
 /* ----------------------------------------------------------------- dialog */
-function reviewDialog(job) {
+function reviewDialog(job: LookupJob): Promise<unknown> {
   const { articles } = job;
-  let applyBtn, list, summary, stopBtn, bgBtn, groups, offJob, background = false;
+  let applyBtn: HTMLButtonElement, list: HTMLElement, summary: HTMLElement, stopBtn: HTMLButtonElement, bgBtn: HTMLButtonElement;
+  let groups: Record<string, HTMLElement>, offJob: (() => void) | undefined, background = false;
 
   const refreshSummary = () => {
     const done = job.looked;
@@ -210,19 +244,19 @@ function reviewDialog(job) {
     applyBtn.textContent = ticked ? `Apply ${plural(ticked, 'Change')}` : 'Apply';
     const same = job.count('same');
     groups.same.hidden = !same;
-    groups.same.querySelector('.mr-group-count').textContent = same;
+    groups.same.querySelector('.mr-group-count')!.textContent = String(same);
     groups.error.hidden = !failed;
-    groups.error.querySelector('.mr-group-count').textContent = failed;
+    groups.error.querySelector('.mr-group-count')!.textContent = String(failed);
   };
 
   // Where each article goes: changes on top, then the ones still pending, then those not
   // found, and the ones already up to date folded away at the end.
-  const groupOf = (a) => ({ changes: 'changes', pending: 'pending', skipped: 'pending', error: 'error', same: 'same' }[a.status]);
-  const renderArticle = (a) => {
+  const groupOf = (a: Article) => ({ changes: 'changes', pending: 'pending', skipped: 'pending', error: 'error', same: 'same' } as const)[a.status];
+  const renderArticle = (a: Article) => {
     list.querySelector(`[data-article="${a.id}"]`)?.remove();
     const el = articleSection(a, refreshSummary);
     const box = groups[groupOf(a)].querySelector('.mr-group-items') || groups[groupOf(a)];
-    const after = [...box.children].find((c) => Number(c.dataset.n) > a.n);
+    const after = ([...box.children] as HTMLElement[]).find((c) => Number(c.dataset.n) > a.n);
     box.insertBefore(el, after || null);
   };
 
@@ -232,7 +266,7 @@ function reviewDialog(job) {
     wide: true,
     render: (body, close, buttons) => {
       applyBtn = buttons[buttons.length - 1];
-      body.closest('.dialog').classList.add('mr-dialog');
+      body.closest('.dialog')!.classList.add('mr-dialog');
       body.innerHTML = `<div class="mr-summary"></div><div class="mr-list">
           <div class="mr-group" data-group="changes"></div>
           <div class="mr-group" data-group="pending"></div>
@@ -240,13 +274,13 @@ function reviewDialog(job) {
           <details class="mr-group mr-same" data-group="same" hidden><summary class="mr-group-head">${icon('check', 'icon-sm')} Already up to date (<span class="mr-group-count"></span>)
             <span class="subtle">— nothing to change</span></summary><div class="mr-group-items"></div></details>
         </div>`;
-      summary = body.querySelector('.mr-summary');
-      list = body.querySelector('.mr-list');
-      groups = Object.fromEntries([...list.querySelectorAll('[data-group]')].map((g) => [g.dataset.group, g]));
-      const left = body.closest('.dialog').querySelector('.dialog-footer .left');
-      stopBtn = h('<button class="btn btn-sm">Stop</button>');
+      summary = body.querySelector<HTMLElement>('.mr-summary')!;
+      list = body.querySelector<HTMLElement>('.mr-list')!;
+      groups = Object.fromEntries([...list.querySelectorAll<HTMLElement>('[data-group]')].map((g) => [g.dataset.group!, g]));
+      const left = body.closest('.dialog')!.querySelector('.dialog-footer .left')!;
+      stopBtn = h<HTMLButtonElement>('<button class="btn btn-sm">Stop</button>');
       stopBtn.onclick = () => { job.stop(); stopBtn.disabled = true; stopBtn.textContent = 'Stopping…'; };
-      bgBtn = h('<button class="btn btn-sm" title="Close this window and keep looking up; a notification lets you review when it is done">Continue in Background</button>');
+      bgBtn = h<HTMLButtonElement>('<button class="btn btn-sm" title="Close this window and keep looking up; a notification lets you review when it is done">Continue in Background</button>');
       bgBtn.onclick = () => { background = true; close(null); };
       left.append(stopBtn, bgBtn);
       articles.forEach(renderArticle);
@@ -292,8 +326,8 @@ function reviewDialog(job) {
 }
 
 /* --------------------------------------------------------- one article */
-function articleSection(a, onChange) {
-  const it = a.item || {};
+function articleSection(a: Article, onChange: () => void): HTMLElement {
+  const it: Partial<Item> = a.item || {};
   const sub = [shortAuthors(it.authors), it.year, it.journal].filter(Boolean).join(' · ');
   const ticked = a.changes.filter((c) => c.checked).length;
   const badge = {
@@ -314,9 +348,9 @@ function articleSection(a, onChange) {
       </header>
       <div class="mr-body"></div>
     </section>`);
-  const all = el.querySelector('.mr-all');
+  const all = el.querySelector<HTMLInputElement>('.mr-all');
   if (all) all.indeterminate = ticked > 0 && ticked < a.changes.length;
-  const body = el.querySelector('.mr-body');
+  const body = el.querySelector<HTMLElement>('.mr-body')!;
 
   if (a.status === 'error') body.appendChild(h(`<div class="mr-error">${icon('alert', 'icon-sm')} ${escapeHtml(a.error || 'Lookup failed')}</div>`));
   if (a.status === 'pending') body.appendChild(h('<div class="mr-pending">Waiting for the metadata service…</div>'));
@@ -339,14 +373,14 @@ function articleSection(a, onChange) {
   }
   all?.addEventListener('change', () => {
     a.changes.forEach((c) => { c.checked = all.checked; });
-    body.querySelectorAll('.diff-block input[type=checkbox]').forEach((cb) => { cb.checked = all.checked; cb.dispatchEvent(new Event('sync')); });
+    body.querySelectorAll<HTMLInputElement>('.diff-block input[type=checkbox]').forEach((cb) => { cb.checked = all.checked; cb.dispatchEvent(new Event('sync')); });
     onChange();
   });
-  el.querySelector('.mr-collapse').addEventListener('click', () => el.classList.toggle('collapsed'));
+  el.querySelector('.mr-collapse')!.addEventListener('click', () => el.classList.toggle('collapsed'));
   return el;
 }
 
-function changeBlock(c, onToggle) {
+function changeBlock(c: Change, onToggle: () => void): HTMLElement {
   const cur = display(c.key, c.current), nxt = display(c.key, c.fetched);
   const d = diffWords(cur, nxt);
   const note = c.key === 'citation_key' && !c.isNew ? '<span class="subtle" style="font-weight:400;font-size:var(--fs-xs)">notes are updated; LaTeX \\cite commands are not</span>' : '';
@@ -357,45 +391,45 @@ function changeBlock(c, onToggle) {
       <div class="diff-body">${c.isNew ? '' : `<div class="diff-old">${d.old || '<em>(empty)</em>'}</div>`}<div class="diff-new">${d.new || '<em>(empty)</em>'}</div></div>
       <div class="diff-edit" hidden><textarea class="input" rows="${c.key === 'abstract' ? 6 : (MULTILINE.has(c.key) ? 3 : 1)}"></textarea></div>
     </div>`);
-  const cb = block.querySelector('input');
-  const ta = block.querySelector('textarea');
+  const cb = block.querySelector('input')!;
+  const ta = block.querySelector('textarea')!;
   ta.value = String(c.fetched);
   const sync = () => { c.checked = cb.checked; block.classList.toggle('off', !cb.checked); };
   cb.addEventListener('change', () => { sync(); onToggle(); });
   cb.addEventListener('sync', sync);
   ta.addEventListener('input', () => { c.fetched = ta.value; });
   block.querySelector('[data-edit]')?.addEventListener('click', (e) => {
-    const edit = block.querySelector('.diff-edit');
+    const edit = block.querySelector<HTMLElement>('.diff-edit')!;
     const opening = edit.hidden;
     edit.hidden = !opening;
-    block.querySelector('.diff-body').hidden = opening;
-    e.target.textContent = opening ? 'Show Diff' : 'Edit';
+    block.querySelector<HTMLElement>('.diff-body')!.hidden = opening;
+    (e.target as HTMLElement).textContent = opening ? 'Show Diff' : 'Edit';
     if (opening) ta.focus();
     else {
       const nd = diffWords(cur, ta.value);
       const o = block.querySelector('.diff-old'); if (o) o.innerHTML = nd.old || '<em>(empty)</em>';
-      block.querySelector('.diff-new').innerHTML = nd.new || '<em>(empty)</em>';
+      block.querySelector('.diff-new')!.innerHTML = nd.new || '<em>(empty)</em>';
     }
   });
   return block;
 }
 
 /* ----------------------------------------------------------------- apply */
-async function applyChanges(articles, withReferences = false) {
+async function applyChanges(articles: Article[], withReferences = false): Promise<boolean> {
   // Keys proposed for several articles in this batch must stay unique.
   const others = new Set(state.items.filter((i) => !articles.some((a) => a.id === i.id)).map((i) => i.citation_key).filter(Boolean));
-  const uniqueKey = (k) => {
+  const uniqueKey = (k: string) => {
     let key = k, n = 0;
     while (others.has(key)) key = k + String.fromCharCode(97 + n++);
     others.add(key);
     return key;
   };
   let saved = 0, fields = 0;
-  const errors = [];
+  const errors: string[] = [];
   for (const a of articles) {
-    const updates = {};
+    const updates: Record<string, unknown> = {};
     for (const c of a.changes) if (c.checked) updates[c.key] = c.fetched;
-    if (updates.citation_key) updates.citation_key = uniqueKey(updates.citation_key);
+    if (updates.citation_key) updates.citation_key = uniqueKey(String(updates.citation_key));
     else if (a.item?.citation_key) others.add(a.item.citation_key);
     if (!Object.keys(updates).length) continue;
     try {
@@ -403,7 +437,7 @@ async function applyChanges(articles, withReferences = false) {
       A.patchLocal(item);
       saved++;
       fields += Object.keys(updates).length;
-    } catch (e) { errors.push(`${a.item?.title || a.id}: ${e.message}`); }
+    } catch (e) { errors.push(`${a.item?.title || a.id}: ${(e as Error).message}`); }
   }
   await A.refreshItems(articles.map((a) => a.id));   // just the reviewed items (a full reload only where needed)
   // the reference lists come with the metadata (in the background; see Settings → Online Services)
