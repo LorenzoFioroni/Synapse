@@ -98,6 +98,7 @@ def test_random_documents_agree():
         "-",
         ";",
         ",",
+        ":",
         "p. 3",
         "<!--",
         "-->",

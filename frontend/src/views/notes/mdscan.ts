@@ -15,7 +15,7 @@ const ATT = /(?:^|[\s,])att:(\d+)(?=$|[\s,])/i;
 const FENCE = /^([ \t]*)(`{3,}|~{3,})(.*)$/;
 const HEADING = /^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*(?:#+[ \t]*)?$/;
 const WIKI = /(!?)\[\[([^[\]\n]+?)\]\]/g;
-const BRACKET = /(?<![![\]\\])\[([^[\]\n]*@[^[\]\n]*)\](?![([\]:])/g;
+const BRACKET = /(?<![![\]\\])\[([^[\]\n]*@[^[\]\n]*)\](?![([\]])/g;
 const IMAGE = /!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/gd;
 const TAG = /(?<![\p{L}\p{N}_/&#\])([])#([A-Za-z][\p{L}\p{N}_\-/]*)/gu;
 const DIGITS = '0123456789';
@@ -197,6 +197,17 @@ export function mask(body: string): { masked: string; spans: Span[] } {
   return { masked: units.join(''), spans };
 }
 
+/**
+ * `[label]:` at the start of a line (at most three spaces in) defines a Markdown link reference.
+ * Anywhere else a colon after the brackets is punctuation: "as in [@key]:". Also used by the
+ * renderer (render.ts).
+ */
+export function referenceDefinition(text: string, start: number, end: number): boolean {
+  if (text[end] !== ':') return false;
+  const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+  return start - lineStart <= 3 && !text.slice(lineStart, start).replace(/ /g, '');
+}
+
 /** The citations inside [ … ] (split on ';'), or null when any part is not a citation. Also used by
  *  the renderer (render.ts), so the editor, read mode and the backend agree on what a citation is. */
 export function parseCites(inner: string): Cite[] | null {
@@ -258,7 +269,7 @@ export function scan(text: string): Scan {
   for (const m of masked.matchAll(BRACKET)) {
     const at = m.index!;
     const cites = parseCites(body.slice(at + 1, at + m[0].length - 1));
-    if (!cites) continue;
+    if (!cites || referenceDefinition(masked, at, at + m[0].length)) continue;
     group++;
     for (const c of cites) {
       found.push([at, { kind: 'cite', from: at + off, to: at + m[0].length + off, target: c.key,

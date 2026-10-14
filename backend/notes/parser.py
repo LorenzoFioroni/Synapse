@@ -47,7 +47,7 @@ _ATT = re.compile(r"(?:^|[\s,])att:([0-9]+)(?=$|[\s,])", re.I)
 _FENCE = re.compile(r"^([ \t]*)(`{3,}|~{3,})(.*)$")
 _HEADING = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*(?:#+[ \t]*)?$")
 _WIKI = re.compile(r"(!?)\[\[([^\[\]\n]+?)\]\]")
-_BRACKET = re.compile(r"(?<![!\[\]\\])\[([^\[\]\n]*@[^\[\]\n]*)\](?![(\[\]:])")
+_BRACKET = re.compile(r"(?<![!\[\]\\])\[([^\[\]\n]*@[^\[\]\n]*)\](?![(\[\]])")
 _IMAGE = re.compile(r"!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 _TAG = re.compile(r"(?<![\w/&#\]\)(\[])#([A-Za-z][\w\-/]*)")
 
@@ -256,6 +256,15 @@ def attachment_of(locator: str | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _reference_definition(masked: str, start: int, end: int) -> bool:
+    """``[label]:`` at the start of a line (at most three spaces in) defines a Markdown link
+    reference. Anywhere else a colon after the brackets is punctuation: "as in [@key]:"."""
+    if not masked.startswith(":", end):
+        return False
+    line_start = masked.rfind("\n", 0, start) + 1
+    return start - line_start <= 3 and not masked[line_start:start].strip(" ")
+
+
 def _parse_cite_group(inner: str) -> list[dict] | None:
     parts = inner.split(";")
     out = []
@@ -343,7 +352,7 @@ def parse(text: str, *, fallback_title: str = "") -> ParsedNote:
     group = 0
     for m in _BRACKET.finditer(masked):
         cites = _parse_cite_group(body[m.start(1) : m.end(1)])
-        if not cites:
+        if not cites or _reference_definition(masked, m.start(), m.end()):
             continue
         group += 1
         idx, col = locate(m.start())
@@ -422,7 +431,7 @@ def link_spans(text: str) -> list[dict]:
     out = []
     for m in _BRACKET.finditer(masked):
         inner = body[m.start(1) : m.end(1)]
-        if _parse_cite_group(inner) is None:
+        if _parse_cite_group(inner) is None or _reference_definition(masked, m.start(), m.end()):
             continue
         off = m.start(1)
         for part in inner.split(";"):

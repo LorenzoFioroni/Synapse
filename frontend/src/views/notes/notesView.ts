@@ -24,7 +24,7 @@ import { linkDataOf } from './linkData.js';
 import { refitOnResize } from './mathFit.js';
 import { NoteSession } from './noteSession.js';
 import { initPanels, listHidden, panelButton, peek, toggleList } from './panels.js';
-import { followLink, citeTargetOf, gotoLine, initReadView, renderRead, scheduleRead } from './readView.js';
+import { followLink, citeTargetOf, gotoLine, initReadView, readTopLine, renderRead, scheduleRead, scrollReadTo } from './readView.js';
 import { createRenderer, renderDefaults } from './render.js';
 import { renderMermaid } from './richRender.js';
 import { paintCrumbs, paintSide, paintStatus } from './sidePanel.js';
@@ -118,7 +118,7 @@ export function initNotes(): void {
   document.addEventListener('visibilitychange', () => { if (document.hidden) ws.session?.save(); });
   window.addEventListener('pagehide', flushOnUnload);
   // Diagrams are drawn for one theme: redraw them when light/dark changes.
-  new MutationObserver(() => { if (!notesOpen() || !ws.session) return; ws.editor?.refresh(); if (ws.mode === 'read') renderRead(); })
+  new MutationObserver(() => { if (!notesOpen() || !ws.session) return; ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   on('search', () => { if (notesOpen() && state.query) closeNotes(); });   // a library search shows its results
   on('settings', () => {
@@ -126,7 +126,7 @@ export function initNotes(): void {
     emit('notes-count', notesEnabled() ? ws.overview.notes.length : null);
     applyLayout();
     const key = `${equationMode()}|${state.settings.notes_math_physics}|${state.settings.notes_math_macros}`;
-    if (key !== lastMathKey) { lastMathKey = key; ws.editor?.refresh(); if (ws.mode === 'read') renderRead(); }
+    if (key !== lastMathKey) { lastMathKey = key; ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); }
   });
 
   if (notesEnabled()) refreshTree().then(() => { if (storage('zc.notes.open', false)) openNotes(); });
@@ -284,8 +284,11 @@ async function loadLinks(): Promise<void> {
   } catch { /* shown as unknown until the next save */ }
 }
 
-function setMode(m: Mode, { focus = true } = {}): void {
+/** Show the note in another mode. ``keepPlace``: the line at the top stays there (false when a
+ *  note was just opened: it starts at its top). */
+function setMode(m: Mode, { focus = true, keepPlace = true } = {}): void {
   if (!['live', 'source', 'read'].includes(m)) m = 'live';
+  const at = !keepPlace ? 1 : ws.mode === 'read' ? readTopLine() : ws.editor?.topLine() ?? 1;
   ws.mode = m;
   if (m !== 'read') ws.editMode = m;
   store('zc.notes.mode', m);
@@ -294,8 +297,9 @@ function setMode(m: Mode, { focus = true } = {}): void {
   const read = root.querySelector<HTMLElement>('.note-read')!;
   root.classList.toggle('reading', m === 'read');
   read.hidden = m !== 'read';
-  if (m === 'read') { renderRead(); if (focus) read.focus(); return; }
+  if (m === 'read') { renderRead({ fresh: true }); scrollReadTo(at); if (focus) read.focus(); return; }
   ws.editor?.setMode(m);
+  if (keepPlace) ws.editor?.scrollToLine(at);
   if (focus) ws.editor?.focus();
 }
 
@@ -340,7 +344,7 @@ async function doOpen(path: string): Promise<void> {
   paintSide();
   paintTree();
   // opened from the file list: the keyboard stays there (arrows, Delete) until you click the note
-  setMode(ws.mode, { focus: !treeEl().contains(document.activeElement) });
+  setMode(ws.mode, { focus: !treeEl().contains(document.activeElement), keepPlace: false });
   loadLinks();
   loadAiEdits();
   if (start.conflict) await session.startConflict();

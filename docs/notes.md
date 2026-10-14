@@ -106,7 +106,8 @@ Errors are `VaultError` subclasses with an HTTP `status`: `InvalidPath` (400), `
 ### The index (`backend/notes/index.py`)
 
 `NotesIndex` keeps `data/notes_index.db`. It is derived data: when `SCHEMA_VERSION` changes the
-old tables are dropped and rebuilt instead of migrated.
+old tables are dropped and rebuilt instead of migrated. The version is also bumped when the parser
+changes what it finds, so notes indexed by the old rules are read again.
 
 | Table | Rows |
 |---|---|
@@ -151,7 +152,9 @@ The parser is the only code that decides what a note links to or cites. `parse()
 | `#tag`, `#nested/tag` | tag (starts with a letter; not after a word character, `/`, `&`, `#`, brackets or parentheses) |
 
 Citations follow Pandoc. The brackets must contain `@` and must not be a Markdown link or
-reference (`_BRACKET`). Each `;`-separated part has an optional prefix, an optional `-` that
+reference (`_BRACKET`). A colon right after the brackets makes them a link reference definition
+only at the start of a line (at most three spaces in, `_reference_definition`); elsewhere, as in
+"the convention of [@key]:", it is punctuation and the citation counts. Each `;`-separated part has an optional prefix, an optional `-` that
 suppresses the author, the key and an optional locator after a comma. If one part is not a
 citation, the whole bracket is not one. Keys use `[A-Za-z0-9_][A-Za-z0-9_:.+\-/]*`, and a
 trailing `.`, `:`, `/` or `-` is punctuation. A bare `@key` is not a citation. The locator gives
@@ -277,7 +280,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `noteSession.ts` | Saving one note: autosave, drafts, retries, conflicts. No DOM. |
 | `tree.ts`, `treeInput.ts` | The notes list and filter; mouse, keyboard, context menu, drag and drop. |
 | `fileOps.ts` | New, rename, move, trash with Undo, the trash dialog, rescan. |
-| `editor.ts`, `livePreview.ts` | CodeMirror 6 (`vendor/cm6/`) and the live preview decorations, built on `mdscan.ts`. |
+| `editor.ts`, `livePreview.ts`, `previewWidgets.ts` | CodeMirror 6 (`vendor/cm6/`), the live preview decorations (built on `mdscan.ts`) and the widgets they draw. |
 | `completion.ts`, `library.ts` | `[@` and `[[` autocomplete and its ranking. |
 | `render.ts` | Markdown to HTML with markdown-it and KaTeX (`vendor/md/`): math, links, citations, callouts, tasks. Raw HTML is never rendered. No DOM. |
 | `richRender.ts` | Mermaid (loaded on demand from `vendor/mermaid/`), code highlighting, filling embedded notes into the page. |
@@ -290,6 +293,35 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `aiBar.ts`, `aiEdits.ts`, `diff.ts` | Claude's edits: the bar, the history dialog, line diffs. |
 | `conflict.ts` | The dialog for a note changed or deleted elsewhere. |
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
+
+### The editor and read mode
+
+A note shows in one of three modes: **Live** (Markdown rendered except where the cursor is),
+**Source** (the plain Markdown, in a monospaced font with one text size, so it reads as code) and
+**Read** (`readView.ts`). Switching keeps the line at the top of the view at the top:
+`NoteEditor.topLine` and `readTopLine` give it as a line number with a fraction (read mode uses
+the `data-line` of its blocks), `scrollToLine` and `scrollReadTo` go back to it. A note that was
+just opened starts at its top.
+
+The work done per keystroke is kept small, so long notes stay quick to edit:
+
+- **Live preview** (`livePreview.ts`). The block-level decorations (front matter, `$$` blocks,
+  tables, Mermaid diagrams) come from a state field, because CodeMirror needs them for the whole
+  note; it walks only the block structure of the syntax tree. Everything inline (formulas on one
+  line, links, citations, emphasis, headings, lists, quotes, tasks) comes from a view plugin that
+  works only on the part of the note on screen. `mdscan.scan` runs once per version of the text.
+  Widgets (`previewWidgets.ts`) keep their DOM while their key stays the same, so a formula,
+  table or diagram is drawn again only when its own source changed. A table is drawn by the
+  renderer, so math, citations and links in its cells are rendered as in read mode.
+- **Read mode.** `renderRead` keeps every top-level block whose HTML did not change, and changes
+  the DOM in place: ticking a task redraws only its list, and formulas, diagrams and embedded
+  notes elsewhere are not drawn or loaded again. Opening read mode, the theme and the math
+  settings redraw everything (`fresh`), so embedded notes are reloaded then.
+- **KaTeX** output is remembered by formula and set of macros (`katexMemo` in `render.ts`),
+  shared by every renderer.
+
+Task boxes are drawn the same way in both modes (a rounded square, ticked and filled when done),
+and a done task is greyed and struck through.
 
 ### Embedded notes
 
@@ -347,7 +379,7 @@ Each open note has one `NoteSession`. It keeps `saved` (the text and hash the se
 
 | To change… | Edit |
 |---|---|
-| What counts as a link, citation, tag or heading | `backend/notes/parser.py` and `frontend/src/views/notes/mdscan.ts` together, plus a fixture in `tests/notes/fixtures/`. The renderer (`render.ts`) uses `parseCites`, `splitWiki` and `attachmentOf` from `mdscan.ts`, so it follows. |
+| What counts as a link, citation, tag or heading | `backend/notes/parser.py` and `frontend/src/views/notes/mdscan.ts` together, plus a fixture in `tests/notes/fixtures/` and a bump of `SCHEMA_VERSION` in `backend/notes/index.py`. The renderer (`render.ts`) uses `parseCites`, `splitWiki` and `attachmentOf` from `mdscan.ts`, so it follows. |
 | Front-matter reading or writing | `backend/notes/frontmatter.py` (and `splitFrontmatter` in `mdscan.ts` for the delimiters). |
 | A new query over notes | A method on `NotesIndex`, called from `NotesService`, exposed in `backend/api/notes.py`. |
 | The index layout | `SCHEMA` and `SCHEMA_VERSION` in `backend/notes/index.py`. Bumping the version rebuilds it. |

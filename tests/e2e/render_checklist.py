@@ -74,7 +74,23 @@ def setup():
     text = (APP / "tests/e2e/kitchen-sink.md").read_text().replace("attachments/pixel.png", img["path"])
     body = text.split("---\n", 2)[2]  # drop the fixture's front-matter; the app writes its own
     requests.post(f"{BASE}/api/notes/note", json={"path": "Kitchen sink.md", "title": "Kitchen sink", "text": body})
+    table = (
+        "# Tables\n\nIn the convention of [@cuiVariational2015, p. 1]:\n\n"
+        "| Regime | Ref |\n|---|---|\n| small $\\mu$ | [@cuiVariational2015] |\n\nEnd.\n"
+    )
+    requests.post(f"{BASE}/api/notes/note", json={"path": "Table math.md", "title": "Table math", "text": table})
+    long = "# Long\n\n" + "\n\n".join(f"Paragraph {i} of a long note." for i in range(1, 301)) + "\n"
+    requests.post(f"{BASE}/api/notes/note", json={"path": "Long.md", "title": "Long", "text": long})
     return item
+
+
+# the number of the first "Paragraph N" at the top of the editor or of the read view
+TOP_PARAGRAPH = """(read) => {
+  const box = document.querySelector(read ? '.note-read' : '.cm-scroller').getBoundingClientRect();
+  const els = document.querySelectorAll(read ? '.note-read .prose p' : '.cm-line');
+  const el = [...els].find((e) => /Paragraph/.test(e.textContent) && e.getBoundingClientRect().bottom > box.top + 1);
+  return el ? Number(/Paragraph (\\d+)/.exec(el.textContent)[1]) : null;
+}"""
 
 
 async def main():
@@ -205,9 +221,13 @@ async def main():
             check("read: footnote", await count(page, ".note-read .footnotes") == 1)
             await shot(page, "read-light")
 
+            await page.evaluate("document.querySelector('.note-read .math-block').dataset.mark = 'kept'")
             await page.locator(".note-read .task-box").nth(1).click()
             await page.wait_for_timeout(2200)
             check("read: ticking a task edits the file", "- [ ] a done task" in (NOTES / "Kitchen sink.md").read_text())
+            kept = await count(page, ".note-read .math-block[data-mark='kept']")
+            done = await page.locator(".note-read li.task.done").all_text_contents()
+            check("read: ticking a task redraws only its list", kept == 1 and done == ["an open task"], (kept, done))
 
             await page.locator(".note-read .cite:not(.missing)").first.click()
             await page.wait_for_timeout(700)
@@ -289,6 +309,33 @@ async def main():
                 and all("Cui & Cirac 2015" in l for l in labels),
                 labels,
             )
+            # ---- tables with math and citations; a citation followed by a colon
+            await page.click('.nt-row.note[data-path="Table math.md"]')
+            await page.click('[data-mode="live"]')
+            await wait_for(lambda: count(page, ".cm-lp-table table"))
+            check(
+                "live: a table with math and a citation is rendered",
+                await count(page, ".cm-lp-table .katex") == 1 and await count(page, ".cm-lp-table .cite") == 1,
+            )
+            labels = await page.locator(".cm-lp-chip.cite").all_text_contents()
+            check("live: [@key, p. 1]: is a citation", any("Cui & Cirac 2015, p. 1" in l for l in labels), labels)
+
+            # ---- switching modes keeps the line at the top
+            await page.click('.nt-row.note[data-path="Long.md"]')
+            await page.wait_for_selector(".cm-content")
+            await page.evaluate("document.querySelector('.cm-scroller').scrollTop = 6000")
+            await page.wait_for_timeout(300)
+            tops = [await page.evaluate(TOP_PARAGRAPH, False)]
+            for mode in ("read", "source", "read", "live"):
+                await page.click(f'[data-mode="{mode}"]')
+                await page.wait_for_timeout(400)
+                tops.append(await page.evaluate(TOP_PARAGRAPH, mode == "read"))
+            check(
+                "modes keep the place: live, read, source, read, live",
+                tops[0] and tops[0] > 50 and max(tops) - min(tops) <= 1,
+                tops,
+            )
+
             check("no console errors", not errors, errors[:5])
             await b.close()
     finally:

@@ -152,7 +152,9 @@ never mix.
   in the item list marks items with a paper note (blue) or cited in notes (grey).
   In live preview a formula, link or citation shows its source only while the cursor is in it, and
   clicking a symbol of a rendered formula puts the cursor on it; a `$$` block being edited shows
-  the formula below its source. While Notes is open, the toolbar's two panel buttons hide and show
+  the formula below its source. Tables are rendered in live preview too, with their math and
+  citations. Source mode shows the Markdown as code, in a monospaced font. Switching between
+  Live, Source and Read keeps your place in the note. While Notes is open, the toolbar's two panel buttons hide and show
   the notes list (also Cmd/Ctrl+\) and the note details; a hidden list slides in when the pointer
   reaches the window's left edge (or with a tap there). Settings → General → *Note width* lets
   the text use the whole pane. A `$$` equation gets a number when it has a `\label{name}`

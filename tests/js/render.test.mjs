@@ -41,6 +41,9 @@ test('wiki links, embeds and citations', () => {
   assert.match(c, />see 2021<\/a>/);
   assert.ok(!html('[link](http://x.org) and [@user](http://x.org)').includes('class="cite'));
   assert.ok(!html('mail [me@x.org]').includes('class="cite'));
+  // a colon after a citation is punctuation; at the start of a line it defines a link reference
+  assert.match(html('in the convention of [@smith2021, p. 1]:\n\nmore'), /data-key="smith2021"/);
+  assert.ok(!html('[@smith2021]: not a cite').includes('class="cite'));
 });
 
 test('callouts, tasks, images, fences', () => {
@@ -51,6 +54,7 @@ test('callouts, tasks, images, fences', () => {
   const tk = html('- [ ] todo\n- [x] done');
   assert.equal((tk.match(/type="checkbox"/g) || []).length, 2);
   assert.match(tk, /checked data-task-line="1"/);
+  assert.match(tk, /<li class="task done"[^>]*><input/);   // a done task is styled as done
   assert.ok(!tk.includes('[ ]'));
   assert.match(html('![plot|300](attachments/a-b.png)'), /src="\/api\/notes\/attachments\/a-b.png" alt="plot"[^>]* width="300"/);
   assert.match(html('```mermaid\ngraph TD\nA-->B\n```'), /class="mermaid-block"/);
