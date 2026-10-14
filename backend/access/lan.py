@@ -105,5 +105,13 @@ def is_this_computer(remote_addr: str | None) -> bool:
     return str(ip) in own_addresses()
 
 
+def host_name(host: str) -> str:
+    """``127.0.0.1:8000`` → ``127.0.0.1``; ``[::1]:8000`` → ``::1``; lower case."""
+    host = (host or "").strip().lower()
+    if host.startswith("["):
+        return host[1 : host.find("]")] if "]" in host else host[1:]
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
 def is_ip_literal(host: str) -> bool:
     return parse_ip(host) is not None

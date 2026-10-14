@@ -28,7 +28,7 @@ data/
 ├── citations.db        reference lists fetched online (a cache)
 ├── backups/            library-*.tar.gz and notes-*.tar.gz
 ├── settings.json       preferences
-└── auth.db             paired devices (hashed tokens)
+└── auth.db             paired devices (hashed tokens), passkeys (public keys), access tokens (hashed)
 ```
 
 `Config.ensure_dirs` creates the folder and `pdfs/`; `Vault.ensure` (`backend/notes/vault.py`)
@@ -46,7 +46,7 @@ Each file has one owner. Other code goes through that owner, with the few except
 | `pdfs/` | `PaperRepository` (`attachment_path`, `_remove_file`) and the upload code in `backend/api/attachments.py` | none | source of truth |
 | `notes/` | `Vault` in `backend/notes/vault.py` | none (see [notes](notes.md)) | source of truth |
 | `settings.json` | `SettingsStore` in `backend/settings.py` | `DEFAULTS`, `_migrate` | source of truth |
-| `auth.db` | `Devices` in `backend/access/devices.py` | `SCHEMA` there | source of truth, not in backups |
+| `auth.db` | `Devices`, `Passkeys` and `AccessTokens` in `backend/access/` (`devices.py`, `passkeys.py`, `tokens.py`), one table each, on `AuthTable` (`authdb.py`) | `SCHEMA` in each | source of truth, not in backups |
 | `fulltext.db` | `FulltextIndex` in `backend/pdf/fulltext.py` | `FulltextIndex._init` | derived from `pdfs/` |
 | `notes_index.db` | `NotesIndex` in `backend/notes/index.py` | `SCHEMA`, `SCHEMA_VERSION` | derived from `notes/` |
 | `citations.db` | `CitationStore` in `backend/references/store.py` | `SCHEMA` there | cache of online data |
@@ -68,7 +68,7 @@ notices the other's writes.
 |---|---|
 | `library.db`, `notes/`, `settings.json` | Restore a backup. |
 | `pdfs/` | Not in backups. The user must back it up separately. |
-| `auth.db` | Paired devices must pair again. Left out of backups on purpose, so a restore never brings back a device that was signed out. |
+| `auth.db` | Paired devices must pair again, passkeys be added again and AI apps get new tokens. Left out of backups on purpose, so a restore never brings back a device, passkey or token that was removed. |
 | `fulltext.db` | Rebuilt from the PDFs: by the indexer at startup when `fulltext_auto_index` is on, or with Settings → Rebuild Index. See [full-text search](fulltext-search.md). |
 | `notes_index.db` | Rebuilt at startup: `Services.__init__` calls `NotesIndex.sync()`, which indexes every note it does not know. |
 | `citations.db` | The reference lists are fetched again. See [references](references.md). |
@@ -155,7 +155,8 @@ waits for a later start.
 ### The other databases
 
 They have no migrations. `fulltext.db`, `citations.db` and `auth.db` only run
-`CREATE TABLE IF NOT EXISTS`. `notes_index.db` stores `SCHEMA_VERSION` in its `meta` table; when
+`CREATE TABLE IF NOT EXISTS`; an `auth.db` from before passkeys simply gains the `passkeys` and
+`access_tokens` tables. `notes_index.db` stores `SCHEMA_VERSION` in its `meta` table; when
 the stored number differs, `NotesIndex._init_schema` drops every table and the next sync fills
 them again. That is fine because the index is derived data.
 

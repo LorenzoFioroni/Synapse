@@ -8,10 +8,10 @@ The server has no accounts. Three checks decide whether a request goes ahead:
   DNS-rebinding page (``evil.example`` resolving to 127.0.0.1) sends its own name, so it can
   neither change nor read anything.
 * **Device** — a request that comes over the network from another device (judged by the
-  connection's address, never by a header) needs the cookie of a paired device; see
-  ``devices.py``. Requests from this computer itself — loopback or one of its own LAN
-  addresses — need none, as before. Without the cookie, pages answer with "pair this device"
-  and the API with 401.
+  connection's address, never by a header) needs the cookie of a device that was paired or
+  signed in with a passkey; see ``devices.py`` and ``passkeys.py``. Requests from this computer
+  itself — loopback or one of its own LAN addresses — need none. Without the cookie, pages answer
+  with the sign-in page (``frontend/signin.html``) and the API with 401.
 * **Origin** — a request that changes something (POST, PUT, PATCH, DELETE) must come from the
   app's own pages. On this computer clients that send no Origin at all (curl, scripts, the test
   client) are also allowed, and so are browser extensions, but only on the connector endpoints
@@ -21,6 +21,11 @@ The server has no accounts. Three checks decide whether a request goes ahead:
 
 Reading (GET) needs no Origin check: the browser does not let other origins read the answers,
 and the Host check stops rebinding.
+
+The MCP endpoint (``/mcp``) is for AI apps, not browsers: it takes neither cookies nor the Origin
+rules above. Every request to it, from this computer too, needs an access token
+(``Authorization: Bearer …``, see ``tokens.py``), and a browser's request with a foreign Origin is
+refused.
 """
 
 from __future__ import annotations
@@ -29,22 +34,25 @@ from flask import Flask, Response, current_app, g, jsonify, request
 
 from . import lan
 from .devices import COOKIE, COOKIE_MAX_AGE
+from .lan import host_name
+from .tokens import bearer
 
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 EXTENSION_SCHEMES = ("chrome-extension://", "moz-extension://", "safari-web-extension://")
 CONNECTOR_PREFIX = "/api/connector/"  # the only endpoints extension origins may change things through
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
-# What an unpaired device may open: the pairing page and the call it makes, plus the icon.
-PAIRING_PATHS = {"/pair", "/api/devices/pair", "/favicon.ico", "/assets/favicon.svg"}
-
-
-def host_name(host: str) -> str:
-    """``127.0.0.1:8000`` → ``127.0.0.1``; ``[::1]:8000`` → ``::1``; lower case."""
-    host = (host or "").strip().lower()
-    if host.startswith("["):
-        return host[1 : host.find("]")] if "]" in host else host[1:]
-    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+# What an unpaired device may open: the pairing page and the calls it and the sign-in page make,
+# plus the icon.
+PAIRING_PATHS = {
+    "/pair",
+    "/api/devices/pair",
+    "/api/passkeys/login/options",
+    "/api/passkeys/login",
+    "/favicon.ico",
+    "/assets/favicon.svg",
+}
+MCP_PATH = "/mcp"  # AI apps, with an access token instead of a device cookie
 
 
 def allowed_origin(origin: str, host: str, extensions: bool = True) -> bool:
@@ -98,29 +106,18 @@ def refusal(
     return "Changes can only be made from the app itself."
 
 
-NOT_PAIRED_PAGE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Synapse — device not paired</title><link rel="icon" href="/assets/favicon.svg">
-<style>
-  :root { color-scheme: light dark; }
-  body { font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0;
-         display: grid; place-items: center; min-height: 100vh; background: Canvas; color: CanvasText; }
-  main { max-width: 30em; padding: 24px; }
-  h1 { font-size: 22px; margin: 0 0 12px; }
-  ol { padding-left: 1.2em; } li { margin: 6px 0; }
-  .muted { opacity: .7; font-size: 14px; }
-</style></head>
-<body><main>
-  <h1>This device isn't paired with Synapse</h1>
-  <p>To use your library here:</p>
-  <ol>
-    <li>On the computer running Synapse, open <b>Settings → Devices</b>.</li>
-    <li>Click <b>Add a Device</b>.</li>
-    <li>Scan the QR code with this device's camera, or open the link it shows.</li>
-  </ol>
-  <p class="muted">If this device was paired before, it was signed out or its pairing was removed.</p>
-</main></body></html>
-"""
+# Shown when frontend/signin.html cannot be read (it always can in a normal checkout).
+NOT_PAIRED_FALLBACK = """<!doctype html><meta charset="utf-8"><title>Synapse</title>
+<h1>This device isn't paired with Synapse</h1>
+<p>On the computer running Synapse, open Settings → Devices and click Add a Device.</p>"""
+
+
+def _signin_page() -> str:
+    path = current_app.extensions["synapse"].config.frontend_dir / "signin.html"
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return NOT_PAIRED_FALLBACK
 
 
 def not_paired() -> Response:
@@ -132,7 +129,7 @@ def not_paired() -> Response:
         )
         resp.status_code = 401
         return resp
-    return Response(NOT_PAIRED_PAGE, status=401, mimetype="text/html", headers={"Cache-Control": "no-store"})
+    return Response(_signin_page(), status=401, mimetype="text/html", headers={"Cache-Control": "no-store"})
 
 
 def set_device_cookie(resp: Response, token: str) -> None:
@@ -149,6 +146,10 @@ def install(app: Flask, allowed_hosts: set[str] | None = None, lan_mode: bool = 
         local = lan.is_this_computer(request.remote_addr)
         g.this_computer = local
         g.device = None
+        if request.path == MCP_PATH:
+            if not host_allowed(request.host, hosts, lan_mode):
+                return jsonify(error=f"Requests for host '{request.host}' are not accepted."), 403
+            return _ai_app()
         why = refusal(
             request.host,
             request.method,
@@ -170,6 +171,23 @@ def install(app: Flask, allowed_hosts: set[str] | None = None, lan_mode: bool = 
                 return None
             return not_paired()
         g.device = device
+        return None
+
+    def _ai_app():
+        origin = request.headers.get("Origin")
+        if origin is not None and not allowed_origin(origin, request.host, extensions=False):
+            return jsonify(error="The MCP endpoint does not answer other websites."), 403
+        tokens = current_app.extensions["synapse"].tokens
+        entry = tokens.check(bearer(request.headers.get("Authorization")), request.remote_addr)
+        if entry is None:
+            resp = jsonify(
+                error="This needs an access token. Make one in Settings → AI Access on the computer running "
+                "Synapse and send it as  Authorization: Bearer <token>."
+            )
+            resp.status_code = 401
+            resp.headers["WWW-Authenticate"] = 'Bearer realm="Synapse"'
+            return resp
+        g.access_token = entry
         return None
 
     @app.after_request

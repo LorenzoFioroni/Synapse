@@ -440,6 +440,41 @@ export interface Pairing {
   links: { label: string; url: string; qr: string | null }[];
 }
 
+/** A passkey that signs devices in without pairing (backend/access/passkeys.py). */
+export interface Passkey {
+  id: string;
+  name: string;
+  rp_id: string;           // the host name it works on
+  created: string;
+  last_used: string | null;
+  last_addr: string | null;
+}
+
+/** GET /api/passkeys: the passkeys, and why this page cannot add one (``unavailable``), if it cannot. */
+export interface PasskeysOverview {
+  this_computer: boolean;
+  rp_id: string | null;
+  unavailable: string | null;
+  passkeys: Passkey[];
+}
+
+/** An access token for an AI app using the MCP endpoint (backend/access/tokens.py). */
+export interface AccessToken {
+  id: string;
+  name: string;
+  created: string;
+  last_used: string | null;
+  last_addr: string | null;
+}
+
+/** GET /api/mcp/tokens: the tokens, and the MCP endpoint's URLs. */
+export interface AccessTokensOverview {
+  this_computer: boolean;
+  lan: boolean;
+  endpoints: { label: string; url: string }[];
+  tokens: AccessToken[];
+}
+
 /** GET /api/changes: what changed since ``seq`` (backend/changes.py). */
 export interface ChangeFeed {
   epoch: string;

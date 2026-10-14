@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Synapse — sign in</title>
+  <link rel="icon" href="/assets/favicon.svg">
+  <!-- What a device that is not signed in sees instead of any page (backend/access/guard.py,
+       not_paired). Self-contained: such a device may load nothing else from the server. -->
+  <style>
+    :root { color-scheme: light dark; --accent: #2f6fde; }
+    * { box-sizing: border-box; }
+    body { font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0;
+           display: grid; place-items: center; min-height: 100vh; background: Canvas; color: CanvasText; }
+    main { width: min(30em, 100%); padding: 24px; }
+    h1 { font-size: 22px; margin: 0 0 12px; }
+    h2 { font-size: 16px; margin: 22px 0 6px; }
+    ol { padding-left: 1.2em; margin: 6px 0; } li { margin: 6px 0; }
+    button { font: inherit; font-weight: 600; padding: 12px; border: 0; border-radius: 10px; width: 100%;
+             background: var(--accent); color: #fff; min-height: 48px; cursor: pointer; }
+    button:disabled { opacity: .6; }
+    .error { color: #d33; }
+    .muted { opacity: .7; font-size: 14px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>This device isn't paired with Synapse</h1>
+  <div id="passkey" hidden>
+    <h2>Sign in with a passkey</h2>
+    <p class="muted">If you added a passkey in Settings → Devices, use it here — no need for the computer running Synapse.</p>
+    <button id="go">Sign In with a Passkey</button>
+    <p id="error" class="error" hidden></p>
+  </div>
+  <h2>Or pair it from the computer</h2>
+  <ol>
+    <li>On the computer running Synapse, open <b>Settings → Devices</b>.</li>
+    <li>Click <b>Add a Device</b>.</li>
+    <li>Scan the QR code with this device's camera, or open the link it shows.</li>
+  </ol>
+  <p class="muted" id="nopasskey" hidden>Signing in with a passkey works when Synapse is served over HTTPS and opened by its
+    name (such as <b>https://your-computer.local</b>). See “Signing in with a passkey” in the README.</p>
+  <p class="muted">If this device was paired before, it was signed out or its pairing was removed.</p>
+</main>
+<script>
+  (function () {
+    function enc(buf) {
+      var bytes = new Uint8Array(buf), s = '';
+      for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+      return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    function dec(text) {
+      var s = text.replace(/-/g, '+').replace(/_/g, '/');
+      while (s.length % 4) s += '=';
+      var bin = atob(s), out = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+    function post(url, data) {
+      return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data || {}) })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (d) {
+            if (!r.ok) throw new Error((d && d.error) || ('Signing in failed (' + r.status + ').'));
+            return d;
+          });
+        });
+    }
+    var host = location.hostname;
+    var byIp = /^[\d.]+$/.test(host) || host.indexOf(':') >= 0 || host.charAt(0) === '[';
+    if (!window.PublicKeyCredential || !window.isSecureContext || byIp) {
+      document.getElementById('nopasskey').hidden = false;
+      return;
+    }
+    document.getElementById('passkey').hidden = false;
+    var ua = navigator.userAgent;
+    // iPadOS Safari presents itself as a Mac; touch points tell them apart.
+    var name = /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'iPad'
+      : /iPhone/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android device' : '';
+    var btn = document.getElementById('go');
+    var err = document.getElementById('error');
+    btn.onclick = function () {
+      btn.disabled = true; err.hidden = true;
+      post('/api/passkeys/login/options')
+        .then(function (o) {
+          return navigator.credentials.get({ publicKey: {
+            challenge: dec(o.challenge), rpId: o.rpId, allowCredentials: [],
+            userVerification: o.userVerification, timeout: o.timeout } });
+        })
+        .then(function (cred) {
+          var r = cred.response;
+          return post('/api/passkeys/login', { name: name, credential: {
+            id: cred.id, clientDataJSON: enc(r.clientDataJSON), authenticatorData: enc(r.authenticatorData),
+            signature: enc(r.signature), userHandle: r.userHandle ? enc(r.userHandle) : null } });
+        })
+        .then(function () { location.reload(); })
+        .catch(function (e) {
+          err.textContent = e && e.name === 'NotAllowedError'
+            ? 'Signing in was cancelled, or this device has no passkey for Synapse.'
+            : (e && e.message) || 'Signing in failed.';
+          err.hidden = false; btn.disabled = false;
+        });
+    };
+  })();
+</script>
+</body>
+</html>

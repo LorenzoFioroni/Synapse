@@ -4,6 +4,8 @@ Run:   python server.py                 (http://127.0.0.1:8000, opens your brows
        python server.py --port 5050 --no-browser
        python server.py --data-dir ~/MyLibrary
        python server.py --lan            (also reachable from your iPad/phone; pair them in Settings → Devices)
+       python server.py --lan --cert mac.local.pem --key mac.local-key.pem
+                                         (HTTPS, needed to sign devices in with passkeys)
 
 Your library (database, PDFs, full-text index, settings) lives in ./data
 unless --data-dir or the SYNAPSE_DATA_DIR environment variable say otherwise.
@@ -31,6 +33,13 @@ def main() -> None:
         help="listen on the local network too (same as --host 0.0.0.0), so paired devices such as an "
         "iPad can use the library; pair them in Settings → Devices",
     )
+    ap.add_argument(
+        "--cert",
+        metavar="FILE",
+        help="serve over HTTPS with this certificate (PEM; with --key). Passkeys need HTTPS with a "
+        "certificate your devices trust",
+    )
+    ap.add_argument("--key", metavar="FILE", help="the certificate's private key (PEM)")
     ap.add_argument("--data-dir", default=None, help="folder for the library data (default: ./data)")
     ap.add_argument("--no-browser", action="store_true", help="don't open a browser tab")
     ap.add_argument(
@@ -64,6 +73,11 @@ def main() -> None:
             "--lan without --debug."
         )
 
+    if bool(a.cert) != bool(a.key):
+        raise SystemExit("--cert and --key go together: give both, or neither.")
+    tls = (a.cert, a.key) if a.cert and a.key else None
+    scheme = "https" if tls else "http"
+
     config = Config.from_env(a.data_dir)
     config.allowed_hosts = set(a.allow_host)
     config.lan = not loopback_only
@@ -74,14 +88,14 @@ def main() -> None:
     except BuildError as e:
         raise SystemExit(str(e)) from e
     app = create_app(config)
-    url = f"http://{'127.0.0.1' if wildcard else a.host}:{a.port}/"
+    url = f"{scheme}://{'127.0.0.1' if wildcard else a.host}:{a.port}/"
     print(f"Synapse running at {url}  (library: {config.data_dir})  — Ctrl+C to stop")
     if config.lan:
         from backend.access import lan
 
         names = [n for n in [lan.local_hostname(), *lan.own_addresses()] if n]
         if names:
-            print("On the network:  " + "  ".join(f"http://{n}:{a.port}/" for n in names))
+            print("On the network:  " + "  ".join(f"{scheme}://{n}:{a.port}/" for n in names))
         print("Other devices must be paired first: Settings → Devices → Add a Device (on this computer).")
         try:
             import segno  # noqa: F401
@@ -89,8 +103,9 @@ def main() -> None:
             print("Tip: pip install segno  (shows the pairing QR code; without it only the link works)")
     if not a.no_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    if config.lan:
+    if config.lan and not tls:
         # Several devices and long PDF downloads: a real WSGI server rather than Flask's development one.
+        # waitress has no TLS, so HTTPS is served by Werkzeug's threaded server below.
         try:
             from waitress import serve
         except ImportError:
@@ -99,7 +114,7 @@ def main() -> None:
             logging.getLogger("waitress.queue").setLevel(logging.ERROR)
             serve(app, host=a.host, port=a.port, threads=12, channel_timeout=300, ident="Synapse")
             return
-    app.run(host=a.host, port=a.port, debug=a.debug, threaded=True, use_reloader=a.debug)
+    app.run(host=a.host, port=a.port, debug=a.debug, threaded=True, use_reloader=a.debug, ssl_context=tls)
 
 
 if __name__ == "__main__":

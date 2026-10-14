@@ -4,8 +4,7 @@ Independent of the transport. ``Server.handle(message)`` takes one decoded
 JSON-RPC message (or a list of them) and returns the reply to send back, or
 ``None`` for notifications. ``serve_stdio`` runs it over stdin/stdout, one JSON
 message per line, which is how Claude Desktop and Claude Code start local
-servers. A Streamable HTTP endpoint can later call ``handle`` from a Flask
-route in the same way.
+servers. ``http.py`` runs it over HTTP for apps on another computer.
 
 Only what a tools-only server needs is implemented: ``initialize``, ``ping``,
 ``tools/list`` and ``tools/call`` (plus empty ``resources/list`` and
@@ -116,7 +115,9 @@ class Server:
         ):
             if isinstance(message, dict) and ("result" in message or "error" in message):
                 return None  # a response to a request we never send; ignore
-            return _error(message.get("id") if isinstance(message, dict) else None, INVALID_REQUEST, "Invalid request")
+            return error_reply(
+                message.get("id") if isinstance(message, dict) else None, INVALID_REQUEST, "Invalid request"
+            )
         method, params = message["method"], message.get("params") or {}
         is_request = "id" in message
         if not is_request:
@@ -125,15 +126,15 @@ class Server:
         try:
             handler = getattr(self, "_m_" + method.replace("/", "_"), None)
             if handler is None:
-                return _error(rid, METHOD_NOT_FOUND, f"Method not found: {method}")
+                return error_reply(rid, METHOD_NOT_FOUND, f"Method not found: {method}")
             if not isinstance(params, dict):
-                return _error(rid, INVALID_PARAMS, "params must be an object")
+                return error_reply(rid, INVALID_PARAMS, "params must be an object")
             return {"jsonrpc": "2.0", "id": rid, "result": handler(params)}
         except _ProtocolError as e:
-            return _error(rid, e.code, str(e))
+            return error_reply(rid, e.code, str(e))
         except Exception as e:  # never crash the server on one bad request
             log.exception("MCP request %s failed", method)
-            return _error(rid, INTERNAL_ERROR, f"Internal error: {e}")
+            return error_reply(rid, INTERNAL_ERROR, f"Internal error: {e}")
 
     # ------------------------------------------------------------------ methods
     def _m_initialize(self, params: dict) -> dict:
@@ -187,7 +188,7 @@ class _ProtocolError(Exception):
         self.code = code
 
 
-def _error(rid, code: int, message: str) -> dict:
+def error_reply(rid, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": rid, "error": {"code": code, "message": message}}
 
 
@@ -246,7 +247,7 @@ def serve_stdio(server: Server, stdin=None, stdout=None) -> None:
             try:
                 message = json.loads(line)
             except json.JSONDecodeError as e:
-                reply = _error(None, PARSE_ERROR, f"Parse error: {e}")
+                reply = error_reply(None, PARSE_ERROR, f"Parse error: {e}")
             else:
                 reply = server.handle(message)
             if reply is not None:

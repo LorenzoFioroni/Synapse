@@ -41,8 +41,35 @@ If the `.local` address in the QR code doesn't open, pick the IP address instead
 
 `--debug` only works without `--lan`: Flask's debugger must never be reachable from the network.
 
-The connection is plain HTTP, so use it on a network you trust (your home Wi-Fi). Paired
-devices are kept in `data/auth.db` (hashed), which backups leave out on purpose.
+The connection is plain HTTP, so use it on a network you trust (your home Wi-Fi), or serve it
+over HTTPS (below). Paired devices are kept in `data/auth.db` (hashed), which backups leave out on
+purpose.
+
+#### Signing in with a passkey
+
+Pairing needs the computer at hand. With a passkey, a device signs itself in: on the "This device
+isn't paired" page, tap **Sign In with a Passkey**. A passkey saved in iCloud Keychain or Google
+Password Manager reaches your other devices by itself; a security key or a phone nearby works too.
+
+Browsers only use passkeys on HTTPS pages opened by a name (not an IP address), so Synapse needs a
+certificate your devices trust. [mkcert](https://github.com/FiloSottile/mkcert) makes one, offline:
+
+```bash
+mkcert -install                                   # once: a local certificate authority on this computer
+mkcert Lorenzos-MacBook.local                     # your computer's .local name (Synapse prints it)
+python server.py --lan --cert Lorenzos-MacBook.local.pem --key Lorenzos-MacBook.local-key.pem
+```
+
+Then install mkcert's authority on each device: `mkcert -CAROOT` shows the folder; send
+`rootCA.pem` to the iPad (AirDrop or mail), install the profile in Settings → General → VPN &
+Device Management, and turn it on in Settings → General → About → Certificate Trust Settings. On
+Android: Settings → Security → Encryption & credentials → Install a certificate → CA certificate.
+
+Open `https://Lorenzos-MacBook.local:8000/` (on the computer too), go to **Settings → Devices →
+Add a Passkey…** and save it. A device already paired can add one as well. Passkeys work only at
+the address they were made on. Remove one in Settings → Devices on the computer; devices it signed
+in stay until you remove them there too. Passkeys need the `cryptography` package (in
+`requirements.txt`).
 
 Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
 
@@ -56,7 +83,7 @@ Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
 | `citations.db` | reference lists fetched online (the citation graph); if deleted they can be fetched again |
 | `backups/` | automatic backups of the library, settings and notes (`library-*.tar.gz`, see below), and note backups taken before a citation-key rename (`notes-*.tar.gz`); both go to the backup folder chosen in Settings instead, if there is one |
 | `settings.json` | preferences from the Settings page |
-| `auth.db` | devices paired with `--lan` (Settings → Devices); not in backups |
+| `auth.db` | devices paired with `--lan` or signed in with a passkey, the passkeys, and AI apps' access tokens; not in backups |
 
 Back up the `data/` folder to keep everything. It is git-ignored: code and data
 never mix.
@@ -195,7 +222,7 @@ never mix.
 `mcp_server.py` lets Claude Desktop and Claude Code read your library through MCP (Model Context
 Protocol): ask a question about a project note and Claude can read the note, the papers it cites,
 the relevant pages of their PDFs and their references. It reads the same `data/` folder as the app
-(which does not need to be running) and works only on this computer. When you ask it to save an
+(which does not need to be running); from another computer, see below. When you ask it to save an
 answer it adds a new note in `notes/ai/`; when you ask it to change a note, the edit is checked
 against the version on disk and recorded, so the app can show it and undo it. Figures it cuts out of
 a PDF go to `notes/attachments/`. It never changes the library's items.
@@ -209,6 +236,20 @@ python mcp_server.py --config     # prints the exact entries for your paths
 - **Claude Desktop:** Settings → Developer → Edit Config, merge the printed `mcpServers` entry into
   `claude_desktop_config.json`, and restart Claude. "synapse" then appears in the tools menu of a chat.
 - **Claude Code:** run the printed `claude mcp add …` line.
+
+**From another computer.** Claude Code on another computer of your network reaches the library
+through the running app instead (start it with `--lan`). On the computer running Synapse, open
+**Settings → AI Access → New Token…**, name it, and run the command it shows on the other computer:
+
+```bash
+claude mcp add --scope user --transport http synapse http://Lorenzos-MacBook.local:8000/mcp \
+  --header "Authorization: Bearer syn_…"
+```
+
+The token is shown once; Settings lists when each token was last used, and **Remove…** locks its
+app out at once. The tools are the same. Over plain HTTP the token crosses the network unencrypted,
+like everything else in `--lan`; with `--cert` the address starts with `https://` (and Claude Code
+must trust the certificate: `NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem"`).
 
 Add `--data DIR` if your library is not in `./data`. Tools:
 

@@ -10,6 +10,8 @@ backend, see [`architecture.md`](architecture.md).
 | Viewer tab and app tab | `frontend/src/api.ts` (tab reuse), `frontend/src/viewer/notesBridge.ts`, `listenForQuotes` in `frontend/src/views/notes/notesView.ts` |
 | Guard | `backend/access/guard.py` |
 | LAN mode and pairing | `server.py`, `backend/access/devices.py`, `backend/access/lan.py`, `backend/api/devices.py`, `frontend/pair.html`, `frontend/src/views/settings/devices.ts` |
+| Passkeys and HTTPS | `server.py` (`--cert`, `--key`), `backend/access/passkeys.py`, `backend/access/webauthn.py`, `backend/api/passkeys.py`, `frontend/signin.html`, `frontend/src/views/settings/passkeys.ts` |
+| Access tokens for AI apps | `backend/access/tokens.py`, `backend/api/mcp.py`, `frontend/src/views/settings/aiAccess.ts` (see [MCP](mcp.md#over-http-mcp)) |
 
 ## The change feed
 
@@ -129,7 +131,8 @@ block goes to the item's paper note through `POST /api/notes/append` instead. Th
 ## The guard
 
 The server has no accounts. `guard.install` adds a `before_request` hook that every request goes
-through, pages and static files included. It makes three checks, in this order.
+through, pages and static files included. It makes three checks, in this order. The MCP endpoint,
+`/mcp`, is the one exception after the Host check: see [AI apps](#ai-apps-mcp) below.
 
 ### 1. Host
 
@@ -167,11 +170,21 @@ connection's address (`request.remote_addr`), never from a header. Loopback coun
 this computer's own LAN addresses (`lan.own_addresses`, cached 30 s). The result is stored as
 `g.this_computer`.
 
-Requests from this computer need nothing more. Any other request needs the cookie of a paired
-device. Without it, only `PAIRING_PATHS` are served (`/pair`, `/api/devices/pair` and the icon).
-Everything else answers `not_paired()`: 401 with `{error, paired: false}` under `/api/`, and a
-"This device isn't paired" page otherwise. The app's `request()` in `api.ts` reloads the page
-1.5 s after such a 401, so a device that was just removed lands on that page.
+Requests from this computer need nothing more. Any other request needs the cookie of a device
+that was paired or signed in with a passkey. Without it, only `PAIRING_PATHS` are served (`/pair`,
+`/api/devices/pair`, `/api/passkeys/login/options`, `/api/passkeys/login` and the icon).
+Everything else answers `not_paired()`: 401 with `{error, paired: false}` under `/api/`, and the
+sign-in page otherwise (`frontend/signin.html`, read on each request; it says how to pair and, where
+passkeys can work, offers **Sign In with a Passkey**). The page is self-contained, because such a
+device may load nothing else. The app's `request()` in `api.ts` reloads the page 1.5 s after such a
+401, so a device that was just removed lands on that page.
+
+### AI apps (`/mcp`)
+
+Requests to `/mcp` pass the Host check like any other, then skip the Origin and device checks:
+they need `Authorization: Bearer <access token>` instead, from this computer too, and a request
+that has an `Origin` must name the server itself. The token's entry is stored as `g.access_token`.
+See [MCP](mcp.md#over-http-mcp).
 
 ### The browser extension
 
@@ -229,13 +242,78 @@ After 10 failed attempts from one address within 10 minutes (`FAILED_LIMIT`, `FA
 attempt drops every address whose failures are all older than the window, so addresses that
 stop trying do not stay in memory.
 
+### Passkeys
+
+Pairing needs the computer at hand to show a code. A passkey does not: once one is added, any
+device that has it signs itself in from the "not paired" page. A passkey synced through iCloud
+Keychain or Google Password Manager reaches the user's other devices by itself; a phone nearby or a
+security key works too, through the browser's own dialog.
+
+**Where they work.** Browsers offer WebAuthn only to secure pages, and tie each passkey to a host
+*name*, its relying party ID. `relying_party(host, scheme)` in `passkeys.py` answers the ID (the
+host name from the `Host` header) and the expected origin, or 409 with a reason when the page is
+not HTTPS or was opened by an IP address. So passkeys need `server.py --cert … --key …` with a
+certificate the devices trust, and Synapse opened by a name such as `mac.local`. A passkey made on
+one name does not work on another. `GET /api/passkeys` says why not (`unavailable`), and Settings
+shows that instead of the button.
+
+**HTTPS.** `--cert` and `--key` (PEM files, given together) make `server.py` serve HTTPS. waitress
+has no TLS, so with them the server runs on Werkzeug's threaded server, as without `--lan`. The
+printed addresses and the pairing links then start with `https://`, and cookies get `Secure`. The
+README has the steps with `mkcert`, which makes a local certificate authority to install on each
+device.
+
+**Adding one.** Settings → Devices → **Add a Passkey…** (`frontend/src/views/settings/passkeys.ts`),
+on this computer or on any device already signed in:
+
+1. `POST /api/passkeys/register/options {name}` answers the options for
+   `navigator.credentials.create`: a 32-byte challenge, `rp`, a random user handle (a new one each
+   time, because a password manager replaces a passkey with the same site and handle), ES256, EdDSA
+   and RS256, a discoverable credential (`residentKey: required`), `userVerification: preferred`,
+   `attestation: none`, and the passkeys already known for this name in `excludeCredentials`.
+2. The browser makes the key pair; the page posts `{id, clientDataJSON, attestationObject}` to
+   `POST /api/passkeys/register`.
+3. `webauthn.verify_registration` checks the client data (`webauthn.create`, the origin, not
+   cross-origin), the authenticator data (the hash of the relying party ID, the user-present flag)
+   and that the credential id matches, and reads the COSE public key out of the CBOR. The
+   challenge must be one the server gave out for registering on this name. The public key is
+   stored as SubjectPublicKeyInfo DER in `auth.db`, table `passkeys`, with its algorithm and
+   signature counter.
+
+The attestation statement is not checked: there is no list of trusted authenticator makers to
+check it against, and only someone already signed in can add a passkey.
+
+**Signing in.** On the sign-in page (`frontend/signin.html`):
+
+1. `POST /api/passkeys/login/options` answers a challenge and the relying party ID, with an empty
+   `allowCredentials`: the browser offers the passkeys it has for this name, and an unpaired device
+   learns nothing about the ones stored here.
+2. The page posts `{credential: {id, clientDataJSON, authenticatorData, signature, userHandle}, name}`
+   to `POST /api/passkeys/login`. The name is guessed as on the pairing page.
+3. `Passkeys.sign_in` checks the client data and uses up the challenge, finds the passkey by its
+   credential id and relying party ID, then `webauthn.verify_assertion` checks the authenticator
+   data and the signature over `authenticatorData ‖ SHA-256(clientDataJSON)` with the saved key. A
+   signature counter that does not go up is refused (a copied authenticator); synced passkeys always
+   send 0, which passes.
+4. It makes a new device with `Devices.add`, exactly as pairing does, and the answer sets the
+   device cookie. The passkey's `last_used` and `last_addr` are updated.
+
+Challenges live in memory for 5 minutes (`CHALLENGE_TTL`) and work once. At most 64 are pending
+(`MAX_CHALLENGES`; the oldest goes first), because anyone may ask for a sign-in challenge. A
+restart voids them. Signatures are checked with the `cryptography` package; without it the
+endpoints answer 501 with what to install.
+
+**Removing one.** Only the computer running Synapse removes passkeys (`DELETE /api/passkeys/<id>`,
+403 elsewhere), as it is the one that removes other devices. Removing a passkey does not sign out
+the devices it signed in; they are listed under Paired devices and removed there.
+
 ### Cookies and tokens
 
 | | |
 |---|---|
 | Cookie | `synapse_device` (`COOKIE`), `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` only over HTTPS |
 | Lifetime | 400 days (`COOKIE_MAX_AGE`, the most browsers keep), renewed while the device is in use |
-| Storage | `data/auth.db`, table `devices`: SHA-256 hashes of tokens only |
+| Storage | `data/auth.db`, table `devices`: SHA-256 hashes of tokens only (`passkeys` holds public keys, `access_tokens` hashes of AI apps' tokens) |
 
 Codes and tokens are long random strings, so a plain hash is enough. `auth.db` is kept out of
 `settings.json` and out of backups, so restoring a backup never brings back a removed device (see
@@ -269,9 +347,12 @@ What is protected:
 
 - **Other websites** in the user's browser cannot change anything (Origin check) and cannot read
   anything (same-origin policy, plus the Host check against DNS rebinding).
-- **Other devices** on the network get nothing but the pairing page until they are paired. Only
-  the computer running Synapse can make a pairing code. Only the newest code works, once, for at
-  most 5 minutes, and Cancel voids it.
+- **Other devices** on the network get nothing but the sign-in page until they are paired or
+  signed in with a passkey. Only the computer running Synapse can make a pairing code. Only the
+  newest code works, once, for at most 5 minutes, and Cancel voids it. A passkey sign-in needs a
+  signature from a private key that never leaves the user's authenticator, over a fresh challenge.
+- **AI apps** reach only `/mcp`, and only with an access token made on the computer running
+  Synapse. A token gives the MCP tools, not the rest of the API.
 - **Stored secrets** are hashes. A copy of `auth.db` does not give anyone a working token.
 - **Pages from another device** must also pass the Origin check, so a paired device's browser
   cannot be used for CSRF either.
@@ -282,11 +363,14 @@ What is assumed:
   token. Browser extensions can change things only through the connector endpoints (add an item,
   file an existing one); like any local process they can still read the API, and an extension
   allowed to rewrite request headers could get around the Origin check.
-- **The local network is trusted.** The connection is plain HTTP. Anyone who can watch the
-  traffic can read the library and copy a device cookie. The README says to use `--lan` only on a
-  trusted network.
+- **The local network is trusted**, unless Synapse is served over HTTPS. Over plain HTTP anyone
+  who can watch the traffic can read the library and copy a device cookie or an access token. The
+  README says to use `--lan` without `--cert` only on a trusted network.
 - **A paired device is trusted with the library.** It has the same API as this computer, apart
-  from making or cancelling pairing codes and renaming or removing other devices.
+  from making or cancelling pairing codes, renaming or removing other devices, removing passkeys and
+  making or removing access tokens. It may add a passkey, which the computer's Settings lists.
+- **Whoever holds a passkey is the user.** Anyone who has it (a shared iCloud account, say) can
+  sign a device in. Remove the passkey on the computer to stop that.
 - **No proxy in front.** "This computer" is judged by the connection's address, so a reverse proxy
   on the same machine would make every request look local.
 - **`--debug` is for development, on this computer only.** `server.py` refuses it with `--lan`
@@ -301,12 +385,18 @@ What is assumed:
 | When a refresh must wait | `editing()` in `frontend/src/changes.ts` |
 | Messages between viewer and notes | `notesBridge.ts` and `listenForQuotes` in `notesView.ts`, together |
 | Which hosts or origins are accepted | `host_allowed`, `allowed_origin` and `refusal` in `backend/access/guard.py` |
-| What an unpaired device may open | `PAIRING_PATHS` in `guard.py` (and keep `frontend/pair.html` self-contained) |
+| What an unpaired device may open | `PAIRING_PATHS` in `guard.py` (and keep `frontend/pair.html` and `frontend/signin.html` self-contained) |
+| Where passkeys work, what is asked of the authenticator | `relying_party` and `registration_options` in `backend/access/passkeys.py` |
+| Key types, checks of the browser's answer | `backend/access/webauthn.py` |
+| Who may add or remove passkeys | `backend/api/passkeys.py`, and the buttons in `refreshPasskeys` in `passkeys.ts` |
+| How AI apps authenticate at `/mcp` | `_ai_app` in `guard.py`, `backend/access/tokens.py` |
 | Code lifetime, rate limits, cookie lifetime | the constants at the top of `backend/access/devices.py` |
 | Who may rename or remove a device | `_may_manage` in `backend/api/devices.py`, and the buttons in `refreshDevices` in `devices.ts` |
 | Addresses shown for pairing | `backend/access/lan.py`, `addresses()` in `backend/api/devices.py` |
 | The Devices screen | `frontend/src/views/settings/devices.ts` |
 
-Tests: `tests/test_changes.py`, `tests/test_guard.py` and `tests/test_devices.py`. Browser
-checklists: `tests/e2e/changes_checklist.py`, `tests/e2e/devices_checklist.py` and
+Tests: `tests/test_changes.py`, `tests/test_guard.py`, `tests/test_devices.py`,
+`tests/test_passkeys.py` (with a software authenticator) and `tests/test_mcp_http.py`. Browser
+checklists: `tests/e2e/changes_checklist.py`, `tests/e2e/devices_checklist.py`,
+`tests/e2e/passkeys_checklist.py` (Chromium's virtual authenticator over HTTPS) and
 `tests/e2e/pdf_tabs_checklist.py`. See [`testing.md`](testing.md).

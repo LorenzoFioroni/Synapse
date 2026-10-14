@@ -69,6 +69,10 @@
 .pair-url { word-break: break-all; }
 .pair-addrs { font-size: var(--fs-sm); color: var(--text-2); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .pair-addrs .token.active { border-color: var(--accent); color: var(--accent); }
+[data-ai-fresh]:not(:empty) { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; margin: 4px 0 8px; border-radius: 8px;
+  border: 1px solid var(--accent); }
+.ai-command { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--bg-app); border: 1px solid var(--border); font-size: var(--fs-sm);
+  white-space: pre-wrap; word-break: break-all; user-select: all; }
 .device-this { font-size: var(--fs-xs); font-weight: 500; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 5px; margin-left: 6px; }
 [data-macro-check] .warn { color: var(--warning); }
 .setting .color-input { width: 44px; height: 28px; padding: 2px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg-input); cursor: pointer; }

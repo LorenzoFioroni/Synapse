@@ -104,7 +104,8 @@ When a library is updated, change its version in the `tools/*/package.json` and 
 |---|---|---|
 | `index.html` | the CSS files, `vendor/md/katex/katex.min.css`, then `js/main.js` as a module | An inline script applies the cached theme (`zc.themeHint` in `localStorage`) before the first paint, to avoid a white flash. |
 | `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, the classic script `vendor/pdfjs/pdf.min.js`, then the modules `js/viewer/viewer.js`, `notesBridge.js`, `links.js`, `annotations.js` | The PDF viewer, one tab per PDF. Its own styles and toolbar markup are inline. |
-| `pair.html` | nothing else | Shown to unpaired devices under `--lan`. Self-contained (inline style and script, no build) because the guard lets an unpaired device fetch only `PAIRING_PATHS` (`backend/access/guard.py`). |
+| `pair.html` | nothing else | Opened from the pairing QR code under `--lan`. Self-contained (inline style and script, no build) because the guard lets an unpaired device fetch only `PAIRING_PATHS` (`backend/access/guard.py`). |
+| `signin.html` | nothing else | Sent by the guard, with status 401, instead of any page a device that is not signed in asks for: how to pair, and **Sign In with a Passkey** where passkeys can work. Self-contained for the same reason. |
 
 In `viewer.html` the order matters. pdf.js is a classic script, so it has run before any module.
 Modules run in document order, so `viewer.ts` publishes `window.zcViewer` before the add-ons run.
@@ -264,6 +265,8 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `settingsView.ts` | The Settings page: binds the controls and saves each change; `applyAppearance`. |
 | `settings/page.ts` | The Settings markup (`settingsHtml`). |
 | `settings/backups.ts`, `settings/devices.ts` | Settings → Backups and Settings → Devices (pairing). |
+| `settings/passkeys.ts` | Settings → Devices → Passkeys: adding one with `navigator.credentials.create`, removing one. |
+| `settings/aiAccess.ts` | Settings → AI Access: access tokens for `/mcp`, with the `claude mcp add` command shown once. |
 
 **`views/notes/`: the notes workspace.** [Notes](notes.md) covers it in depth. In short:
 `notesView.ts` sets the workspace up and opens and closes notes; `workspace.ts` is the shared

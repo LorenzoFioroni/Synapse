@@ -36,9 +36,11 @@ def register_blueprints(app: Flask) -> None:
         devices,
         io,
         items,
+        mcp,
         metadata,
         notes,
         organize,
+        passkeys,
         pdf_annotations,
         references,
         settings,
@@ -57,6 +59,8 @@ def register_blueprints(app: Flask) -> None:
         backups,
         pdf_annotations,
         devices,
+        passkeys,
+        mcp,
         changes,
     ):
         app.register_blueprint(module.bp)

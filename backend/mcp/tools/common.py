@@ -101,8 +101,6 @@ class ToolsBase:
 
     def __init__(self, services):
         self.s = services
-        # The MCP process never runs the app's background jobs (attachment sweeps etc.).
-        self.s.note_service.on_change = None
         self._page_cache: OrderedDict[tuple, list[str]] = OrderedDict()
         self._last_sync = 0.0
 

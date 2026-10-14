@@ -21,6 +21,8 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
  extension    │                                                                 │
  Claude    ──►│ mcp_server.py ─► backend.mcp   same data/, over stdin/stdout    │
  Desktop/Code │                                                                 │
+ Claude Code ►│ /mcp (token) ─► backend.mcp   the web app's own Services        │
+ (other PC)   │                                                                 │
               │ data/  library.db · fulltext.db · notes/ · notes_index.db ·     │
               │        citations.db · pdfs/ · backups/ · settings.json · auth.db│
               └─────────────────────────────────────────────────────────────────┘
@@ -32,7 +34,9 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
 | `mcp_server.py` | The MCP server that Claude Desktop and Claude Code start themselves. It reads the same `data/` folder. New notes it writes go into `notes/ai/`; changes it makes to existing notes are hash-checked and recorded so they can be undone (see [MCP](mcp.md)). |
 | `frontend/index.html` | The single-page app. It loads `js/main.js` as an ES module. |
 | `frontend/viewer.html` | The PDF viewer, opened in its own tab. It loads pdf.js and `js/viewer/viewer.js` (the viewer), then its add-ons `notesBridge`, `links` and `annotations`. |
-| `frontend/pair.html` | The page that unpaired devices see under `--lan`. |
+| `frontend/pair.html` | The page the pairing QR code opens on another device. |
+| `frontend/signin.html` | What a device that is not signed in sees instead of any page: how to pair, and **Sign In with a Passkey**. |
+| `/mcp` | The MCP tools over HTTP, served by the web app, for an AI app on another computer with an access token (`api/mcp.py`, `mcp/http.py`). |
 | `browser_extension/` | The Chrome extension that saves the page you are on to the library. It is plain JavaScript (ES modules) that Chrome loads as it is, with no build; JSDoc comments type it and `npm run check` in `frontend/` type-checks it with `browser_extension/tsconfig.json`. |
 
 ## Backend
@@ -56,11 +60,11 @@ Two objects tie the backend together:
 | `notes/` | Markdown notes. The files are the source of truth; the index is disposable. | `notes/`, `notes_index.db` |
 | `formats/` | Import and export for BibTeX, RIS, EndNote and CSL-JSON, behind one registry. | none |
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
-| `mcp/` | The MCP server: the JSON-RPC layer (`protocol.py`), the library tools (`tools/`, one mixin per family), their schemas (`server.py`) and the instructions given to the AI app (`instructions.py`). | none (it uses the other packages) |
+| `mcp/` | The MCP server: the JSON-RPC layer (`protocol.py`), its HTTP transport (`http.py`), the library tools (`tools/`, one mixin per family), their schemas (`server.py`) and the instructions given to the AI app (`instructions.py`). | none (it uses the other packages) |
 | `pdf/` | PDF files on disk: text extraction (`text.py`), the full-text index (`fulltext.py`), and for the MCP tools page rendering (`render.py`), finding figures and equations (`regions.py`) and PNG encoding (`png.py`). | `fulltext.db` |
 | `online/` | Lookups on the web: item metadata (`metadata.py`), open-access PDFs (`pdf_finder.py`) and PDFs behind an attachment's web link (`remote_pdf.py`). `http.py` has what they share: timeout, User-Agent, the error type and the arXiv request spacing. | none |
 | `references/` | The citation graph: reference lists fetched from Semantic Scholar, OpenAlex or Crossref (`sources.py`), stored (`store.py`), fetched in the background and matched to library items (`service.py`), and the Graph view's network (`graph.py`). | `citations.db` |
-| `access/` | Who may use the server: other websites never (`guard.py`), other devices only once paired (`devices.py`); `lan.py` finds this computer's network addresses. | `auth.db` |
+| `access/` | Who may use the server: other websites never (`guard.py`), other devices only once paired (`devices.py`) or signed in with a passkey (`passkeys.py`, checked by `webauthn.py`), AI apps at `/mcp` only with an access token (`tokens.py`); `authdb.py` is what the `auth.db` tables share; `lan.py` finds this computer's network addresses and names. | `auth.db` |
 | `config.py`, `settings.py` | Paths of the data folder, and the user's preferences. | `settings.json` |
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |

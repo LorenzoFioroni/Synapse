@@ -77,6 +77,8 @@ def main(argv=None) -> int:
     from backend.services import Services
 
     services = Services(config)
+    # This process never runs the app's background jobs (attachment sweeps etc.).
+    services.note_service.on_change = None
     serve_stdio(build_server(services, VERSION))
     return 0
 
