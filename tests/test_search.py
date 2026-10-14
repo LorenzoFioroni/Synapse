@@ -90,7 +90,7 @@ ORG = [
 ]
 CTX = {
     "folder_paths": {1: ["Physics"], 2: ["Physics", "Transport"], 3: ["Reading group"]},
-    "type_labels": {"book": "Book", "journalArticle": "Journal Article"},
+    "type_labels": {"book": "Book", "bookSection": "Book Section", "journalArticle": "Journal Article"},
 }
 
 
@@ -112,6 +112,16 @@ def test_filters():
     assert f("year:2019") == ["a"] and f("year:2000-2020") == ["a", "b"] and f("year:>2010") == ["a", "c"]
     assert f("has:pdf") == ["a"] and f("has:doi") == ["a"] and f("-has:pdf") == ["b", "c"]
     assert f("author:roe") == ["c"]
+
+
+def test_type_names_a_whole_type_or_the_start_of_one():
+    items = [{"id": t, "title": "x", "item_type": t} for t in ("book", "bookSection", "journalArticle")]
+    t = lambda q: [p["id"] for p in search(items, q, "basic", None, CTX)[0]]
+    assert t("type:book") == ["book"]  # not bookSection
+    assert t('type:"book section"') == t("type:bookSection") == ["bookSection"]
+    assert t("-type:book") == ["bookSection", "journalArticle"]
+    assert t("type:boo") == ["book", "bookSection"]  # not a whole name: any type starting so
+    assert t("type:journal") == t("type:article") == ["journalArticle"]
 
 
 def test_filters_combine_with_text():

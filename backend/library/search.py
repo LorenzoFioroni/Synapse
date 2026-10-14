@@ -19,7 +19,7 @@ any can be negated with ``-``):
 
     tag:quantum   tag:"open systems"   tag:none
     folder:Transport   folder:"Physics/Transport"   folder:none
-    type:book   year:2020   year:2018-2022   year:>2015   year:<=2000
+    type:book   type:journal   year:2020   year:2018-2022   year:>2015   year:<=2000
     has:pdf   has:doi   has:abstract   (any field: has:<field>)
     author:cirac   title:lindblad   journal:"physical review"   doi:10.1103   key:cui2015
 
@@ -28,6 +28,7 @@ Unknown prefixes (``arXiv:2205.03415``) are searched as plain text.
 
 from __future__ import annotations
 
+import functools
 import re
 import unicodedata
 
@@ -108,6 +109,12 @@ def _year_matches(value, spec: str) -> bool:
     return spec.isdigit() and y == int(spec)
 
 
+@functools.lru_cache(maxsize=8)
+def _type_names(labels: tuple[tuple[str, str], ...]) -> frozenset[str]:
+    """Every type key and label, normalised."""
+    return frozenset(normalize(n) for pair in labels for n in pair)
+
+
 def _filter_matches(p: dict, field: str, value: str, ctx: dict) -> bool:
     v = normalize(value)
     if field in ("tag", "tags"):
@@ -127,9 +134,12 @@ def _filter_matches(p: dict, field: str, value: str, ctx: dict) -> bool:
                 return True
         return False
     if field == "type":
+        labels = ctx.get("type_labels", {})
         key = p.get("item_type") or ""
-        label = ctx.get("type_labels", {}).get(key, "")
-        return normalize(key).startswith(v) or normalize(label).startswith(v) or v in normalize(label)
+        names = (normalize(key), normalize(labels.get(key, "")))
+        if v in _type_names(tuple(labels.items())):
+            return v in names  # a whole type name: that type only (type:book is not bookSection)
+        return names[0].startswith(v) or names[1].startswith(v) or v in names[1]
     if field == "year":
         return _year_matches(p.get("year"), value)
     if field == "has":
