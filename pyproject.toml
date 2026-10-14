@@ -1,0 +1,26 @@
+# Project tooling only: Synapse is run from the checkout (python server.py), not installed.
+# Runtime dependencies stay in requirements.txt, development ones in requirements-dev.txt.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# tests/e2e/*_checklist.py are browser scripts run by hand (python tests/e2e/<name>.py), not pytest tests.
+norecursedirs = ["tests/e2e", "frontend", "tools", ".venv"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["frontend/vendor", "tools/*/node_modules"]
+
+[tool.ruff.lint]
+select = [
+    "F",    # pyflakes: unused imports and variables, undefined names
+    "E9",   # syntax errors
+    "W",    # whitespace
+    "B",    # bugbear: likely bugs
+    "UP",   # pyupgrade: modern syntax for the target Python
+]
+ignore = [
+    "B023",   # closures defined in a loop and used in the same iteration are fine (and common here)
+    "B904",   # `raise ... from` inside except: to be adopted module by module during the restructure
+    "B905",   # zip(strict=...): same
+]
