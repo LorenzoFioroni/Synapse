@@ -228,6 +228,9 @@ the conversation, as if you had pasted them.
 
 ## Project layout
 
+For how the code fits together and where new code goes, see
+[`docs/architecture.md`](docs/architecture.md) (and [`CLAUDE.md`](CLAUDE.md) for the working rules).
+
 ```
 ./
 ├── server.py              CLI entry point
@@ -277,9 +280,12 @@ the backend, and all SQL lives in `repository.py`.
 ## Tests
 
 ```bash
-pip install pytest
-python -m pytest tests          # backend + JavaScript unit tests (the JS part needs Node.js)
+pip install -r requirements-dev.txt
+ruff check .                    # lint
+python -m pytest                # backend + JavaScript unit tests (the JS part needs Node.js)
 ```
+
+CI (`.github/workflows/ci.yml`) runs both on every pull request.
 
 Browser checklists for notes (need Playwright; each uses a throw-away data folder):
 
