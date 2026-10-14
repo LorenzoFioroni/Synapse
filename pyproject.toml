@@ -6,6 +6,17 @@ testpaths = ["tests"]
 # tests/e2e/*_checklist.py are browser scripts run by hand (python tests/e2e/<name>.py), not pytest tests.
 norecursedirs = ["tests/e2e", "frontend", "tools", ".venv"]
 
+# Coverage of the backend by the pytest suite: python -m pytest --cov (report in the terminal;
+# --cov-report=html writes htmlcov/). The browser checklists are not counted.
+[tool.coverage.run]
+source = ["backend"]
+branch = true
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true
+sort = "Cover"
+
 [tool.ruff]
 line-length = 120
 target-version = "py310"

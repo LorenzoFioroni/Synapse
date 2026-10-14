@@ -32,4 +32,4 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: ruff format --check .
-      - run: python -m pytest -q
+      - run: python -m pytest -q --cov   # coverage of backend/ in the log (pyproject.toml)
