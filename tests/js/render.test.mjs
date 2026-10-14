@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as lib from '../../frontend/vendor/md/md.js';
-import { attachmentOf, citeLabel, createRenderer, imageSrc, parseCites } from '../../frontend/js/views/notes/render.js';
+import { attachmentOf, parseCites } from '../../frontend/js/views/notes/mdscan.js';
+import { citeLabel, createRenderer, imageSrc } from '../../frontend/js/views/notes/render.js';
 
 const r = createRenderer(lib, {
   citeInfo: (k) => (k === 'smith2021' ? { authors: 'Smith, Anna; Doe, J; Roe, K', year: 2021, title: 'Quantum' } : null),

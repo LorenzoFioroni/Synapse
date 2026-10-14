@@ -12,9 +12,9 @@
 import type { EditorState, Range as CMRange, Text } from '@codemirror/state';
 import type { Decoration as DecorationT, DecorationSet, EditorView as EditorViewT } from '@codemirror/view';
 import type { CM } from './editor.js';
-import { type Scan, type ScanLink, type Span, scan, splitFrontmatter } from './mdscan.js';
+import { type Scan, type ScanLink, type Span, attachmentOf, scan, splitFrontmatter } from './mdscan.js';
 import { type CiteTarget, citeTargetInText } from './citeTarget.js';
-import { type CiteInfo, type Renderer, attachmentOf, citeLabel, imageSrc } from './render.js';
+import { type CiteInfo, type Renderer, citeLabel, imageSrc } from './render.js';
 import { numberEquations, refText, resolveRefs, textRefs } from './equations.js';
 import { clickOffset } from './mathClick.js';
 import { type Definition, HAS_DEFINITIONS, type Macros, parseDefinitions, withDefinitions } from './macros.js';

@@ -15,10 +15,8 @@ import type { RendererRule as MdRenderRule, StateBlock, StateCore, StateInline, 
 
 type MdLib = typeof import('../../../vendor/md/md.js');
 import { labelId, layoutTag, numberEquations, refText, resolveRefs } from './equations.js';
+import { type Cite, attachmentOf, parseCites, splitWiki } from './mdscan.js';
 import { type Definition, HAS_DEFINITIONS, type Macros, baseMacros, parseDefinitions, withDefinitions } from './macros.js';
-
-/** A citation inside [ … ]: [see @key, p. 4] → {prefix: 'see', key, locator: 'p. 4', page: 4}. */
-export interface Cite { key: string; prefix: string; suppress: boolean; locator: string; page: number | null }
 
 /** What a renderer may know about a cited key (any CiteEntry fits). */
 export interface CiteInfo { title?: string; authors?: string; year?: number | string | null; trashed?: boolean }
@@ -46,40 +44,8 @@ const CALLOUTS: Record<string, string> = {
   note: 'Note', tip: 'Tip', warning: 'Warning', question: 'Question', quote: 'Quote',
   info: 'Info', important: 'Important', caution: 'Caution', example: 'Example', todo: 'To do',
 };
-const KEY = '[A-Za-z0-9_][A-Za-z0-9_:.+\\-/]*';
-const CITE_PART = new RegExp(`^((?:[\\s\\S]*?[\\s(])?)(-?)@(${KEY})(?:\\s*,\\s*([\\s\\S]*?))?\\s*$`, 'u');
-const PAGE = /^(?:p|pp|page|pages|pg)\.?\s*(\d+)/i;
-// [@key, p. 4, att:12]: the PDF (attachment id) the citation means; see backend/notes/parser.py.
-const ATT = /(?:^|[\s,])att:(\d+)(?=$|[\s,])/i;
-export const attachmentOf = (locator: string | null | undefined): number | null => { const m = ATT.exec(locator || ''); return m ? Number(m[1]) : null; };
-const strip = (s: string) => s.replace(/^\s+|\s+$/gu, '');
 const ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ESCAPES[c]);
-
-export function parseCites(inner: string): Cite[] | null {
-  const out: Cite[] = [];
-  for (const part of inner.split(';')) {
-    const m = CITE_PART.exec(strip(part));
-    if (!m) return null;
-    const key = m[3].replace(/[.:/-]+$/, '');
-    if (!key) return null;
-    const loc = strip(m[4] || '');
-    const pm = PAGE.exec(loc);
-    out.push({ key, prefix: strip(m[1]), suppress: m[2] === '-', locator: loc, page: pm ? Number(pm[1]) : null });
-  }
-  return out;
-}
-
-export function splitWiki(inner: string): { target: string; heading: string; alias: string } {
-  inner = inner.replaceAll('\\|', '|');
-  const bar = inner.indexOf('|');
-  let target = bar >= 0 ? inner.slice(0, bar) : inner;
-  const alias = bar >= 0 ? inner.slice(bar + 1) : '';
-  const hash = target.indexOf('#');
-  const heading = hash >= 0 ? target.slice(hash + 1) : '';
-  if (hash >= 0) target = target.slice(0, hash);
-  return { target: strip(target), heading: strip(heading), alias: strip(alias) };
-}
 
 export function slugHeading(text: string): string {
   return String(text).toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').trim().replace(/\s+/g, '-');

@@ -10,6 +10,8 @@
 const KEY = '[A-Za-z0-9_][A-Za-z0-9_:.+\\-/]*';
 const CITE_PART = new RegExp(`^((?:[\\s\\S]*?[\\s(])?)(-?)@(${KEY})(?:\\s*,\\s*([\\s\\S]*?))?\\s*$`, 'u');
 const PAGE = /^(?:p|pp|page|pages|pg)\.?\s*(\d+)/i;
+// [@key, p. 4, att:12]: the PDF (attachment id) a citation means (attachment_of in parser.py).
+const ATT = /(?:^|[\s,])att:(\d+)(?=$|[\s,])/i;
 const FENCE = /^([ \t]*)(`{3,}|~{3,})(.*)$/;
 const HEADING = /^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*(?:#+[ \t]*)?$/;
 const WIKI = /(!?)\[\[([^[\]\n]+?)\]\]/g;
@@ -56,7 +58,8 @@ export interface Scan {
   tags: TagHit[];
 }
 
-interface CitePart { key: string; prefix: string; suppress: boolean; locator: string; page: number | null }
+/** One citation inside [ … ]: [see @key, p. 4] → {prefix: 'see', key, locator: 'p. 4', page: 4}. */
+export interface Cite { key: string; prefix: string; suppress: boolean; locator: string; page: number | null }
 
 /** Python str.strip() for the whitespace that matters here. */
 const strip = (s: string) => s.replace(/^\s+|\s+$/gu, '');
@@ -194,8 +197,10 @@ export function mask(body: string): { masked: string; spans: Span[] } {
   return { masked: units.join(''), spans };
 }
 
-function parseCiteGroup(inner: string): CitePart[] | null {
-  const out: CitePart[] = [];
+/** The citations inside [ … ] (split on ';'), or null when any part is not a citation. Also used by
+ *  the renderer (render.ts), so the editor, read mode and the backend agree on what a citation is. */
+export function parseCites(inner: string): Cite[] | null {
+  const out: Cite[] = [];
   for (const part of inner.split(';')) {
     const m = CITE_PART.exec(strip(part));
     if (!m) return null;
@@ -208,7 +213,8 @@ function parseCiteGroup(inner: string): CitePart[] | null {
   return out;
 }
 
-function splitWiki(inner: string): { target: string; heading: string; alias: string } {
+/** [[target#heading|alias]] split into its parts (an escaped \\| also starts the alias). */
+export function splitWiki(inner: string): { target: string; heading: string; alias: string } {
   inner = inner.replaceAll('\\|', '|');
   const bar = inner.indexOf('|');
   let target = bar >= 0 ? inner.slice(0, bar) : inner;
@@ -218,6 +224,9 @@ function splitWiki(inner: string): { target: string; heading: string; alias: str
   if (hash >= 0) target = target.slice(0, hash);
   return { target: strip(target), heading: strip(heading), alias: strip(alias) };
 }
+
+/** The attachment id a citation names with att:<id> in its locator, or null. */
+export const attachmentOf = (locator: string | null | undefined): number | null => { const m = ATT.exec(locator || ''); return m ? Number(m[1]) : null; };
 
 /**
  * Scan a whole note. Offsets in the result are relative to `text` (front-matter included).
@@ -248,7 +257,7 @@ export function scan(text: string): Scan {
   let group = 0;
   for (const m of masked.matchAll(BRACKET)) {
     const at = m.index!;
-    const cites = parseCiteGroup(body.slice(at + 1, at + m[0].length - 1));
+    const cites = parseCites(body.slice(at + 1, at + m[0].length - 1));
     if (!cites) continue;
     group++;
     for (const c of cites) {

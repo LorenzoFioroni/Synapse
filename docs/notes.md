@@ -169,8 +169,10 @@ in the stored text, so a rewrite changes those characters and nothing else.
 ### Keeping the frontend port in step
 
 `frontend/src/views/notes/mdscan.ts` is a line-by-line port of `parser.py` (`mask`, `scan`,
-`splitFrontmatter`). The frontend uses it only for display: the live preview needs to know
-which characters are math, links or citations while you type. It also reports the masked
+`splitFrontmatter`, and the pieces `parseCites`, `splitWiki` and `attachmentOf`). The frontend
+uses it only for display: the live preview needs to know which characters are math, links or
+citations while you type, and the renderer (`render.ts`) takes its citation and link parsing from
+it, so the editor, read mode and the backend agree. It also reports the masked
 `spans` and image widths (`![alt|300](…)`). The backend stays the authority on the link graph.
 
 The two must agree exactly. `tests/notes/test_scanner_parity.py` runs both on every fixture in
@@ -325,7 +327,7 @@ Each open note has one `NoteSession`. It keeps `saved` (the text and hash the se
 
 | To change… | Edit |
 |---|---|
-| What counts as a link, citation, tag or heading | `backend/notes/parser.py` and `frontend/src/views/notes/mdscan.ts` together, plus a fixture in `tests/notes/fixtures/`. `render.ts` has its own `parseCites`/`splitWiki` for HTML output; keep them in line too. |
+| What counts as a link, citation, tag or heading | `backend/notes/parser.py` and `frontend/src/views/notes/mdscan.ts` together, plus a fixture in `tests/notes/fixtures/`. The renderer (`render.ts`) uses `parseCites`, `splitWiki` and `attachmentOf` from `mdscan.ts`, so it follows. |
 | Front-matter reading or writing | `backend/notes/frontmatter.py` (and `splitFrontmatter` in `mdscan.ts` for the delimiters). |
 | A new query over notes | A method on `NotesIndex`, called from `NotesService`, exposed in `backend/api/notes.py`. |
 | The index layout | `SCHEMA` and `SCHEMA_VERSION` in `backend/notes/index.py`. Bumping the version rebuilds it. |
