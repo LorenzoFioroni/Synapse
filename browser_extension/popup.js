@@ -228,7 +228,9 @@ async function doSave({ tags, allowDuplicate = false }) {
       const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: fetchPdfInPage, args: [pdfUrl, MAX_PDF_BYTES] });
       if (result?.b64) {
         const bytes = Uint8Array.from(atob(result.b64), (c) => c.charCodeAt(0));
-        const name = decodeURIComponent(new URL(pdfUrl).pathname.split('/').pop() || 'paper.pdf');
+        const last = new URL(pdfUrl).pathname.split('/').pop() || 'paper.pdf';
+        let name = last;
+        try { name = decodeURIComponent(last); } catch { /* malformed %-escapes: keep the raw name */ }
         fd.append('file', new Blob([bytes], { type: 'application/pdf' }), /\.pdf$/i.test(name) ? name : `${name}.pdf`);
         meta.pdf_name = 'Full Text PDF';
         meta.attach_pdf = false;   // already attached as upload; don't download again

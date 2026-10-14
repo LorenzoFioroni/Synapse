@@ -91,6 +91,7 @@ These check rules of the code base rather than behaviour:
 | `citeTarget.test.mjs` | `views/notes/citeTarget.js` and `viewer/locate.js`: where a citation points in a PDF, finding a quote |
 | `diff.test.mjs` | `views/notes/diff.js` |
 | `equations.test.mjs` | `equations.js`, `mathClick.js`, `macros.js` and math in `render.js` |
+| `extract.test.mjs` | `extractCitation` in `browser_extension/extract.js`, with a faked `document` and `location` |
 | `graph.test.mjs` | `views/graph/model.js` |
 | `library.test.mjs` | `views/notes/library.js`: autocomplete ranking |
 | `linkNav.test.mjs` | `viewer/linkNav.js`: link targets and previews in the PDF viewer |

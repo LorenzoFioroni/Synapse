@@ -39,7 +39,9 @@ library.
 `func`. Chrome serialises the function's source and runs it in the page. That is why **each
 function must be self-contained**: it cannot use imports, module-level constants or helpers
 defined outside its own body. `extractCitation` declares its helpers (`metas`, `meta`, `clean`,
-`cleanDoi`) inside itself for this reason.
+`decode`, `cleanDoi`) inside itself for this reason. `decode` is a `decodeURIComponent` that
+keeps the text as it is when its `%`-escapes are malformed, so an odd URL cannot abort the
+extraction.
 
 ### What it extracts, and in what order
 
@@ -242,6 +244,8 @@ this side: keep them in step with `connector.py`.
   metadata winning, an uploaded PDF, a DOI read from a PDF, duplicates and `allow_duplicate`,
   `/file`, the `on_add` settings, the background PDF search, the page's PDF link fetched only from
   public addresses, and CORS for extension origins only.
+- `tests/js/extract.test.mjs`: `extractCitation` with a faked page (malformed `%`-escapes in a PDF
+  URL, an escaped DOI).
 - `tests/test_guard.py`: `test_browser_extension_can_save`.
 - `tests/test_branding.py`: the ping names (above).
 - `tests/e2e/extension_checklist.py`, run by hand: loads the extension into Chromium, saves the
