@@ -154,7 +154,7 @@ def test_items_from_pdf_without_network(client, tmp_path, monkeypatch):
     from backend.online import metadata
 
     def offline(*a, **k):
-        raise metadata.LookupError_("offline")
+        raise metadata.LookupFailed("offline")
     monkeypatch.setattr(metadata, "lookup", offline)
     pdf = make_pdf(tmp_path / "Some_Paper_Title.pdf", "Published as doi:10.1103/PhysRevB.99.094435 in PRB")
     r = client.post("/api/items/from_pdf", data={"file": (open(pdf, "rb"), "Some_Paper_Title.pdf")},

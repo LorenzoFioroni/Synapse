@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify
 
-from ..online.http import LookupError_
+from ..online.http import LookupFailed
 from ..references.service import FetchFailed
 from ..library.repository import NotFound
 from . import body, error, svc
@@ -26,7 +26,7 @@ def fetch_references(item_id):
         raise
     except FetchFailed as e:   # the services failed: try again later
         return error(str(e), 502)
-    except LookupError_ as e:
+    except LookupFailed as e:
         return error(str(e), 404)
     except Exception as e:   # network trouble
         return error(f"Could not fetch references: {e}", 502)

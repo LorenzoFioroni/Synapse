@@ -11,7 +11,7 @@ TIMEOUT = 15   # seconds, for API requests
 BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
 
 
-class LookupError_(Exception):
+class LookupFailed(Exception):
     """A lookup failed; the message is shown to the user as is."""
 
 

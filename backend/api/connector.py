@@ -18,7 +18,7 @@ import requests
 from flask import Blueprint, jsonify, request
 
 from ..formats.common import join_authors, parse_display_name, year_from
-from ..online.http import BROWSER_UA, LookupError_
+from ..online.http import BROWSER_UA, LookupFailed
 from ..online.metadata import known_authors, lookup
 from . import error, svc
 
@@ -142,7 +142,7 @@ def save():
             if page.get("page_url") and not fetched.get("url"):
                 item["url"] = page["page_url"]
             source = "online"
-        except LookupError_ as e:
+        except LookupFailed as e:
             log.info("Connector lookup failed, using page metadata: %s", e)
 
     dup = s.papers.find_duplicate(item)

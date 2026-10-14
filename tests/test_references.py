@@ -2,7 +2,7 @@
 import pytest
 
 from backend.references import service as R
-from backend.online.http import LookupError_
+from backend.online.http import LookupFailed
 
 
 class Resp:
@@ -52,7 +52,7 @@ def router(routes, calls=None):
 
 
 def test_fetch_needs_an_identifier():
-    with pytest.raises(LookupError_):
+    with pytest.raises(LookupFailed):
         R.fetch({"title": "No ids"})
 
 

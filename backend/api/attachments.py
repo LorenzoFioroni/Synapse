@@ -44,7 +44,7 @@ def items_from_pdfs():
     files = request.files.getlist("file")
     if not files:
         return error("No file uploaded")
-    from ..online.http import LookupError_
+    from ..online.http import LookupFailed
     from ..online.metadata import known_authors, lookup
     known = known_authors(s.papers.list())
     created = []
@@ -59,7 +59,7 @@ def items_from_pdfs():
                 meta = lookup(doi=ident["doi"], known=known, email=s.settings.get("contact_email"))
             elif ident.get("arxiv"):
                 meta = lookup(identifier="arXiv:" + ident["arxiv"], known=known)
-        except LookupError_ as e:
+        except LookupFailed as e:
             note = str(e)
         if not meta:
             meta = {"title": os.path.splitext(name)[0].replace("_", " ")}

@@ -30,14 +30,14 @@ from backend import create_app
 from backend.config import Config
 from backend.api import metadata as M
 from backend.online import pdf_finder
-from backend.online.http import LookupError_
+from backend.online.http import LookupFailed
 calls = []
 lock = threading.Lock()
 def fake_lookup(**k):
     with lock: calls.append(time.monotonic())
     time.sleep(0.6)
     title = k.get('title') or ''
-    if 'Unknown' in title: raise LookupError_('No match found on Crossref for this title.')
+    if 'Unknown' in title: raise LookupFailed('No match found on Crossref for this title.')
     if 'Old' in title: return {{'title': title.replace('Old', 'New'), 'journal': 'Physical Review Letters'}}
     return {{'title': title}}
 M.lookup = fake_lookup

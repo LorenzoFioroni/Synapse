@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify
 
 from ..library import citekeys
 from ..library.identifiers import arxiv_id_of
-from ..online.http import LookupError_
+from ..online.http import LookupFailed
 from ..online.metadata import known_authors, lookup
 from . import body, error, svc
 
@@ -21,7 +21,7 @@ def lookup_for_item(item_id):
     try:
         fetched = lookup(doi=item.get("doi"), title=item.get("title"), arxiv_id=arxiv_id_of(item),
                          known=known_authors(others), email=s.settings.get("contact_email"))
-    except LookupError_ as e:
+    except LookupFailed as e:
         return error(str(e), 404)
     merged = {**item, **fetched}
     taken = s.papers.all_citation_keys(exclude_id=item_id)
@@ -37,7 +37,7 @@ def create_from_identifier():
         return error("Enter a DOI, arXiv ID or ISBN.")
     try:
         meta = lookup(identifier=ident, known=known_authors(s.papers.list()), email=s.settings.get("contact_email"))
-    except LookupError_ as e:
+    except LookupFailed as e:
         return error(str(e), 404)
     dup = s.papers.find_duplicate(meta)
     if dup and not body().get("allow_duplicate"):

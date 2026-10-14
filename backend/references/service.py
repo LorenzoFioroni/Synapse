@@ -29,7 +29,7 @@ import requests
 from ..library.db import utcnow
 from ..formats.common import join_authors, parse_display_name
 from ..library.identifiers import ARXIV_DOI, ARXIV_ID, identifiers, norm_arxiv, norm_doi, title_key
-from ..online.http import TIMEOUT, LookupError_, api_headers
+from ..online.http import TIMEOUT, LookupFailed, api_headers
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_refs_arxiv ON refs(arxiv_id);
 REF_FIELDS = ("doi", "arxiv_id", "openalex_id", "s2_id", "title", "authors", "year", "venue", "raw")
 
 
-class FetchFailed(LookupError_):
+class FetchFailed(LookupFailed):
     """The online services could not be reached / answered with errors (unlike an item
     without identifiers, trying again later may work)."""
 
@@ -209,11 +209,11 @@ def crossref(doi: str | None, *, email: str = "") -> list[dict]:
 
 
 def fetch(item: dict, *, email: str = "", openalex_key: str = "", s2_key: str = "") -> tuple[str, list[dict]]:
-    """The reference list of ``item``: (source name, references). Raises LookupError_ when the
+    """The reference list of ``item``: (source name, references). Raises LookupFailed when the
     item has no DOI or arXiv id; returns ("none", []) when no source knows its references."""
     doi, arx = identifiers(item)
     if not doi and not arx:
-        raise LookupError_("This item has no DOI or arXiv ID to look up its references with.")
+        raise LookupFailed("This item has no DOI or arXiv ID to look up its references with.")
     attempts = [
         ("semanticscholar", lambda: semantic_scholar(doi, arx, email=email, api_key=s2_key)),
         ("openalex", lambda: openalex(doi or (f"10.48550/arxiv.{arx}" if arx else None), email=email, api_key=openalex_key)),

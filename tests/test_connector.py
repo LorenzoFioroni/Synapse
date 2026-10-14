@@ -12,10 +12,10 @@ def test_ping(client):
 
 def test_save_from_page_metadata_without_network(client, monkeypatch):
     from backend.api import connector
-    from backend.online.http import LookupError_
+    from backend.online.http import LookupFailed
 
     def offline(**k):
-        raise LookupError_("offline")
+        raise LookupFailed("offline")
     monkeypatch.setattr(connector, "lookup", offline)
     f = client.post("/api/folders", json={"name": "Inbox"}).get_json()
     page = {"title": "A page title", "authors": ["Jane Doe", "Bañuls, Mari Carmen"], "year": "2021-03-04",
@@ -89,10 +89,10 @@ def test_file_existing_item_into_another_folder(client):
 
 def test_on_add_settings_for_the_browser_button(client, svc, monkeypatch):
     from backend.api import connector
-    from backend.online.http import LookupError_
+    from backend.online.http import LookupFailed
 
     def offline(**k):
-        raise LookupError_("offline")
+        raise LookupFailed("offline")
     monkeypatch.setattr(connector, "lookup", offline)
     searched = []
     monkeypatch.setattr(type(svc), "find_pdf_later", lambda self, item_id: searched.append(item_id))

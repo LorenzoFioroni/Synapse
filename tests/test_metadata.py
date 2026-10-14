@@ -8,7 +8,7 @@ def test_classify_identifier():
     assert metadata.classify_identifier("arXiv:2205.03415v2") == ("arxiv", "2205.03415")
     assert metadata.classify_identifier("https://arxiv.org/abs/2205.03415") == ("arxiv", "2205.03415")
     assert metadata.classify_identifier("978-0-262-03384-8") == ("isbn", "9780262033848")
-    with pytest.raises(metadata.LookupError_):
+    with pytest.raises(metadata.LookupFailed):
         metadata.classify_identifier("hello world")
 
 
@@ -142,7 +142,7 @@ def test_title_falls_back_to_arxiv_search(monkeypatch):
 
 def test_no_match_anywhere_has_a_helpful_message(monkeypatch):
     monkeypatch.setattr(metadata.requests, "get", fake_net([], arxiv_feed=[{"id": "9999.99999", "title": "Unrelated"}]))
-    with pytest.raises(metadata.LookupError_, match="Crossref or arXiv"):
+    with pytest.raises(metadata.LookupFailed, match="Crossref or arXiv"):
         metadata.lookup(title="Variational matrix product operators for the steady state")
 
 
