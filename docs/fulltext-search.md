@@ -40,11 +40,18 @@ and rebuilt from the PDFs.
 | `documents` | One row per indexed attachment: `attachment_id` (primary key), `paper_id`, `file`, `mtime`, `size`, `pages`, `chars`, `indexed_at`. |
 | `content` | An FTS5 table with `text`, and `attachment_id` and `paper_id` as unindexed columns. Tokenizer `unicode61 remove_diacritics 2`, so matching ignores case and accents. |
 | `content_plain` | The fallback when SQLite has no FTS5: `attachment_id`, `paper_id`, `text`. |
+| `meta` | `content`: which of the two tables the `documents` rows belong to. |
 
 `_init` tries to create `content`. If SQLite raises because FTS5 is missing, it logs a warning,
 sets `fts = False` and uses `content_plain` instead. `_table` names whichever is in use, so the
 write code is the same for both. `stats()` reports `fts5`, and Settings shows
 "FTS5 unavailable (slower fallback)" when it is false.
+
+This is decided at every start, so it can change (another Python or SQLite build), while
+`documents` is shared. `_check_content_table` compares the table in use with `meta`; when they
+differ it empties `documents` and both text tables, so the next indexer run indexes every PDF
+again instead of counting them as indexed while the table in use has none of their text. An
+index from before `meta` existed is checked by looking for `documents` rows with no text row.
 
 ### Writing
 

@@ -1,5 +1,7 @@
 """The full-text index and its background indexer (without real PDFs: extraction is faked)."""
 
+import sqlite3
+
 import pytest
 
 from backend.pdf import fulltext
@@ -49,3 +51,47 @@ def test_errors_count_only_the_last_run(tmp_path, texts):
     texts["bad.pdf"] = "repaired"
     ix.sync(background=False)
     assert ix.status["errors"] == 0 and ix.index.indexed_ids() == {1, 2}
+
+
+def no_fts5(monkeypatch):
+    def fail(c):
+        raise sqlite3.OperationalError("no such module: fts5")
+
+    monkeypatch.setattr(FulltextIndex, "_create_fts", staticmethod(fail))
+
+
+def indexed(tmp_path, texts):
+    repo = Repo(tmp_path)
+    repo.add(1, "a.pdf")
+    texts["a.pdf"] = "Lindblad master equation"
+    ix = Indexer(repo, FulltextIndex(tmp_path / "ft.db"))
+    ix.sync(background=False)
+    return repo
+
+
+@pytest.mark.parametrize("fts_first", [True, False])
+def test_a_change_of_fts5_availability_reindexes_everything(tmp_path, texts, monkeypatch, fts_first):
+    if not fts_first:
+        no_fts5(monkeypatch)
+    repo = indexed(tmp_path, texts)
+    assert FulltextIndex(tmp_path / "ft.db").match("lindblad").keys() == {"p1"}
+
+    if fts_first:  # the next start has no FTS5 …
+        no_fts5(monkeypatch)
+    else:  # … or has it again
+        monkeypatch.undo()
+        monkeypatch.setattr(fulltext, "extract_text", lambda path, max_pages=None: (texts[path.name], 1))
+    index = FulltextIndex(tmp_path / "ft.db")
+    assert index.fts is not fts_first
+    assert index.indexed_ids() == set()  # nothing counts as indexed in the table now in use
+    Indexer(repo, index).sync(background=False)
+    assert index.match("lindblad").keys() == {"p1"}
+    assert FulltextIndex(tmp_path / "ft.db").indexed_ids() == {1}  # an unchanged start keeps it
+
+
+def test_an_index_from_before_the_marker_is_checked_too(tmp_path, texts, monkeypatch):
+    indexed(tmp_path, texts)  # with FTS5
+    with sqlite3.connect(tmp_path / "ft.db") as c:
+        c.execute("DROP TABLE meta")
+    no_fts5(monkeypatch)
+    assert FulltextIndex(tmp_path / "ft.db").indexed_ids() == set()
