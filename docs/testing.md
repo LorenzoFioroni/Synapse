@@ -167,6 +167,7 @@ looking for a bug.
 | `claude_edits` | 8785 | An edit by the real MCP server appears in the open note; Undo, Show changes, restoring a version |
 | `devices` | 8781 | Pairing under `--lan`: the unpaired page, the QR code, pairing, renaming and removing a device |
 | `equations` | 8786 | Editing notes with equations |
+| `export` | 8792 | Exporting a note: a self-contained HTML page that works offline, portable Markdown, PDF through the print dialog |
 | `extension` | 8789, 8790 | The browser extension: options page connects, the popup reads an article's citation tags and saves it with a tag |
 | `graph` | 8787 | Local and global graph in Notes, Show in Graph, Cmd/Ctrl+Shift+G, Back/Forward |
 | `lazy_viewer` | 8778 | A 300-page PDF: pages drawn only near the viewport, fast jumps and zoom, annotations on far pages |

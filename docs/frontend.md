@@ -273,7 +273,8 @@ state; `noteSession.ts` saves (hash-checked, with drafts and retries); `editor.t
 math; `tree.ts`, `treeInput.ts` and `fileOps.ts` are the notes list; `readView.ts`,
 `sidePanel.ts` and `panels.ts` the views around a note; `citeCard.ts`, `citeTarget.ts` and
 `library.ts` connect citations to the library; `aiBar.ts` and `aiEdits.ts` show Claude's edits;
-`conflict.ts`, `diff.ts`, `rekeyDialog.ts` and `attachmentsDialog.ts` are dialogs.
+`conflict.ts`, `diff.ts`, `rekeyDialog.ts` and `attachmentsDialog.ts` are dialogs; `exportNote.ts`
+and `portable.ts` export a note as PDF, HTML or Markdown.
 
 **`views/graph/`: the graph in Notes.** `model.ts` turns `/api/graph` into what is shown (no
 DOM, unit-tested); `forceGraph.ts` draws it with force-graph; `notesGraph.ts` is the local graph
@@ -363,6 +364,7 @@ state and call each other without import cycles. Three patterns are used:
 | `layout.css` | The shell: toolbar, sidebar, panes, resizers, status bar, narrow screens. |
 | `items.css`, `itempane.css` | The items table; the item pane and the metadata review. |
 | `settings.css`, `notes.css`, `graph.css` | Settings, the notes workspace, the graph. |
+| `export.css` | Not loaded by the app: the page and print rules of an exported note, added after `tokens.css` and `notes.css` (`views/notes/exportNote.ts`). |
 
 **Themes.** Every colour is a variable in `tokens.css`. Light is the default; dark applies under
 `@media (prefers-color-scheme: dark)` unless `<html data-theme="light">`, and always with
