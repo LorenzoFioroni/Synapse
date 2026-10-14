@@ -121,6 +121,16 @@ def _download_pdf(url: str, pdf_dir) -> str | None:
     return name
 
 
+def _wants_lookup(s: Services, page: dict) -> bool:
+    """Look the identifier up online? ``lookup`` is the user's answer in the popup ("Complete
+    metadata online"). A request without it (no checkbox, or another client) follows Settings →
+    "Retrieve metadata": anything but "never" looks up, as saving always did before the setting."""
+    asked = page.get("lookup")
+    if asked is not None:
+        return bool(asked)
+    return s.settings.get("add_fetch_metadata") != "never"
+
+
 def save(s: Services, page: dict, pdf_bytes: bytes | None) -> dict:
     """Save the page as a new item. Returns ``{item, source, pdf}``: where the metadata came from
     (``online`` or ``page``) and what happened to the PDF (``attached``, ``downloaded``,
@@ -139,7 +149,7 @@ def save(s: Services, page: dict, pdf_bytes: bytes | None) -> dict:
 
     item = page_item(page)
     source = "page"
-    if page.get("lookup", True) and (page.get("doi") or page.get("arxiv")):
+    if _wants_lookup(s, page) and (page.get("doi") or page.get("arxiv")):
         try:
             identifier = page.get("doi") or f"arXiv:{page['arxiv']}"
             fetched = lookup(
@@ -159,8 +169,8 @@ def save(s: Services, page: dict, pdf_bytes: bytes | None) -> dict:
 
     tags = page.get("tags") or []
     created = s.papers.create({**item, "folder_id": folder, "tags": tags})
-    if source == "online":
-        s.citations.maybe_enqueue(created, page.get("fetch_references"))
+    # whether or not it was looked up: the reference list only needs the DOI or arXiv id
+    s.citations.maybe_enqueue(created, page.get("fetch_references"))
 
     pdf = "none"
     filename = None

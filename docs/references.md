@@ -253,9 +253,9 @@ ticked checkbox (`afterAddHtml` in `frontend/src/afterAdd.ts`). On the server,
 
 | Setting (default) | Where it acts | What runs |
 |---|---|---|
-| `add_fetch_metadata` (`ask`) | Import dialog only (`importDialog.ts` → `runAfterAdd`) | `retrieveInBackground`, then the review. Items added by identifier or from PDFs are always looked up; the browser button has its own checkbox. |
+| `add_fetch_metadata` (`ask`) | Import dialog (`importDialog.ts` → `runAfterAdd`); the browser button (`backend/connector.py`, and the popup's checkbox) | `retrieveInBackground`, then the review. Items added by identifier or from PDFs are always looked up. The browser button asks with its own checkbox, which starts unticked when this is `never`; a save without that answer follows this setting (`ask` counts as yes). |
 | `add_find_pdf` (`ask`) | Import dialog and Add by Identifier (`runAfterAdd` → `A.findPdfs`); the browser button on the server (`backend/connector.py`, when the page gave no PDF) | `POST /api/items/<id>/find_pdf` per item; `Services.find_pdf_later` for the browser button. |
-| `add_fetch_references` (`always`) | Server: `from_identifier`, `from_pdf` (when the lookup found metadata) and the connector's `save` (when metadata came from online), via `Citations.maybe_enqueue`. Import dialog: `runAfterAdd` → `POST /api/references/queue`. | The background queue. Only items with a DOI or arXiv id. For dropped PDFs, `ask` is a Fetch References button in the toast (`addPdfsAsItems` in `actions.ts`). |
+| `add_fetch_references` (`always`) | Server: `from_identifier`, `from_pdf` (when the lookup found metadata) and the connector's `save` (whether or not it looked the item up), via `Citations.maybe_enqueue`. Import dialog: `runAfterAdd` → `POST /api/references/queue`. | The background queue. Only items with a DOI or arXiv id. For dropped PDFs, `ask` is a Fetch References button in the toast (`addPdfsAsItems` in `actions.ts`). |
 
 `GET /api/connector/ping` sends the three values to the browser extension, which shows its own
 checkboxes; see [browser extension](browser-extension.md).
