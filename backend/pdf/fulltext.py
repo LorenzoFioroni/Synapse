@@ -28,6 +28,11 @@ def _fts_quote(term: str) -> str:
     return '"' + term.replace('"', '""') + '"'
 
 
+def _like_escape(term: str) -> str:
+    """``term`` for ``LIKE … ESCAPE '\\'``: its ``%`` and ``_`` are plain characters."""
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 class FulltextIndex:
     def __init__(self, path: Path | str):
         self.path = str(path)
@@ -175,7 +180,8 @@ class FulltextIndex:
                     out.setdefault(r["paper_id"], self._to_html(r["snip"]))
             else:
                 for r in c.execute(
-                    "SELECT paper_id, text FROM content_plain WHERE text LIKE ? LIMIT ?", (f"%{term}%", limit)
+                    "SELECT paper_id, text FROM content_plain WHERE text LIKE ? ESCAPE '\\' LIMIT ?",
+                    (f"%{_like_escape(term)}%", limit),
                 ):
                     t = r["text"]
                     i = t.lower().find(term.lower())

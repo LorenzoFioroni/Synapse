@@ -169,7 +169,8 @@ With FTS5, `match()` quotes the term (`_fts_quote`). A single word becomes a pre
 `rank`, at most 2000 per term, and the snippet is FTS5's `snippet()` with about 14 tokens. Note
 that FTS5 matches whole tokens or their beginnings, while metadata is matched anywhere in a word.
 
-Without FTS5, `match()` uses `LIKE '%term%'` on `content_plain` and cuts a snippet of 60
+Without FTS5, `match()` uses `LIKE '%term%'` on `content_plain` (with `%`, `_` and `\` in the
+term escaped, so `100%` or `snake_case` match only themselves) and cuts a snippet of 60
 characters on each side of the first match. This is slower, and SQLite's `LIKE` ignores case
 only for ASCII letters and does not ignore accents.
 

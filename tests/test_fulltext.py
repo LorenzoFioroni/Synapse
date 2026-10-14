@@ -95,3 +95,18 @@ def test_an_index_from_before_the_marker_is_checked_too(tmp_path, texts, monkeyp
         c.execute("DROP TABLE meta")
     no_fts5(monkeypatch)
     assert FulltextIndex(tmp_path / "ft.db").indexed_ids() == set()
+
+
+def test_like_fallback_takes_percent_and_underscore_literally(tmp_path, texts, monkeypatch):
+    no_fts5(monkeypatch)
+    repo = Repo(tmp_path)
+    for i, text in enumerate(["a 100% yield", "a 1000 yield", "uses snake_case", "uses snakeXcase", "C:\\temp"], 1):
+        repo.add(i, f"{i}.pdf")
+        texts[f"{i}.pdf"] = text
+    index = FulltextIndex(tmp_path / "ft.db")
+    Indexer(repo, index).sync(background=False)
+    assert not index.fts
+    assert index.match("100%").keys() == {"p1"}
+    assert index.match("snake_case").keys() == {"p3"}
+    assert index.match("C:\\temp").keys() == {"p5"}
+    assert "<mark>100%</mark>" in index.match("100%")["p1"]
