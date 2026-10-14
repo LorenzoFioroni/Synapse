@@ -40,8 +40,6 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
 
 ## Backend
 
-*In progress (step 2): modules are being grouped into packages; the table shows the current state.*
-
 Two objects tie the backend together:
 
 - **`app.py`** has `create_app(config)`, the Flask factory. It installs the guard, registers the
@@ -68,6 +66,29 @@ Two objects tie the backend together:
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
 
 Only `online/` and `references/` use the network.
+
+### Layers
+
+Packages depend on each other in one direction only. A package may import from those below it,
+never from those above:
+
+```
+  app · frontend · api · services        composition: wires and exposes everything
+  mcp                                    (library, notes, pdf, references)
+  references                             (library, formats, online)
+  online                                 (library, formats, pdf)
+  formats · notes · pdf                  (library)
+  library · backup · access              (base only)
+  config · settings · changes            base: no backend imports
+```
+
+`tests/test_layers.py` checks this. When a change needs an import against the layers, the code
+usually belongs in a lower package (shared helpers moved to `library/identifiers.py` and
+`online/http.py` for this reason). If the layering itself must change, update the diagram above
+and `ALLOWED` in the test together.
+
+Components that need something from a higher layer get it passed in. For example, `Services`
+gives `NotesService` the paper repository, and `backup.Backups` receives the services object.
 
 ## Frontend
 
@@ -112,4 +133,18 @@ To be written in step 4 (one page each):
   `tests/test_offline.py` checks this.
 - **Docs go with code.** A change that alters behaviour or structure updates the matching page in
   `docs/` in the same commit.
-- **Where code goes.** *TODO (step 2)*: the package layout and the rule for each package.
+- **Where code goes.**
+  - Put code in the package whose responsibility it is (see the table above), at the lowest layer
+    that fits.
+  - HTTP endpoints go in `api/` and only parse the request, call a component through `svc()`, and
+    shape the response.
+  - A new component is created and wired in `Services`.
+  - Anything that talks to the web goes in `online/` (or `references/sources.py`), using
+    `online/http.py`.
+  - A module that grows a second responsibility is split. As a guide, a module past roughly 400
+    lines usually has one.
+- **Names.** Helpers used only inside their own module start with `_`. Anything imported by
+  another module has a public name.
+- **Errors.** Components raise their own exception types (`LookupFailed`, `AnnotationError`,
+  `VaultError` and so on) with a message that can be shown to the user. The API turns them into
+  JSON errors. When one exception is turned into another, chain it with `raise ... from e`.

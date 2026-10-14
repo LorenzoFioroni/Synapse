@@ -28,15 +28,17 @@ the last commit, once everything it lists is done or has moved into the permanen
    - The offline test.
    - CI (`.github/workflows/ci.yml`).
    - `CLAUDE.md`, the PR template, and the `docs/architecture.md` skeleton.
-2. **Backend restructure.**
-   - Group the flat `backend/` modules into domain packages (library, pdf, references, devices
-     and security, infrastructure).
-   - Split `mcp/tools.py` by tool family, and split the other large modules where they have seams.
-   - Move the routes defined inline in `create_app` into blueprints.
-   - Rename the leftover `zclone` identifiers, keeping compatibility where users can see them, such
-     as the `ZCLONE_DATA_DIR` env var and `localStorage` keys.
-   - Replace issue-number comments with explanations of *why*.
-   - Tighten the lint rules (import sorting, `raise … from`, the formatter).
+2. **Backend restructure** (done):
+   - Domain packages: `library/`, `pdf/`, `online/`, `references/`, `access/`.
+   - Shared helpers extracted (`library/identifiers.py`, `online/http.py`), which removed the import
+     cycles.
+   - `mcp/tools.py`, `references`, `pdf/render.py` and `library/annotations.py` split along their
+     seams.
+   - The routes defined inside `create_app` moved into blueprints, and `zclone` renamed.
+   - Issue numbers dropped from backend comments.
+   - Lint rules tightened (import sorting, `raise … from`), and the code formatted with ruff
+     format.
+   - The package layering is documented and enforced by `tests/test_layers.py`.
 3. **Frontend: TypeScript and module splits.**
    - Set up the build (`tools/` or a `frontend/` package), with `tsc --noEmit` running in CI and
      the build output served from disk.
