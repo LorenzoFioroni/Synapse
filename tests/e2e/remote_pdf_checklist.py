@@ -30,7 +30,8 @@ results = []
 SERVER = f"""
 import sys, socket
 sys.path.insert(0, {str(APP)!r})
-from backend import create_app, remote_pdf
+from backend import create_app
+from backend.online import remote_pdf
 from backend.config import Config
 PDF = open({str(PDF)!r}, 'rb').read()
 IPS = {{'journal.example': '93.184.216.34', 'router.example': '192.168.1.1'}}
