@@ -309,7 +309,11 @@ Each open note has one `NoteSession`. It keeps `saved` (the text and hash the se
 - **Conflicts.** A 409 makes the session fetch the file. If it already holds our text, that is
   not a conflict. Otherwise saving stops and `conflictDialog` shows a diff: keep mine (save over
   the file's current hash), use the saved file, or, for a deleted note, save it again
-  (`PUT` with `create: true`). Nothing is overwritten before the user chooses.
+  (`PUT` with `create: true`). Nothing is overwritten before the user chooses. If the file
+  could not be read when the conflict began, `resolve` reads it again before using it. If that
+  still fails, or writing a deleted note again fails, the session stays in conflict, the error
+  is shown and the dialog comes back; a note someone else wrote again meanwhile becomes a
+  conflict with their text.
 - **Remote checks.** `checkRemote()` loads the file and replaces the editor text only when the
   session is `saved` with no edits. `editor.replace` changes just the differing span, so the
   cursor stays and the change is one undo step.
