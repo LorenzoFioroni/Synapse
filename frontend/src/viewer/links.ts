@@ -1,8 +1,7 @@
-// @ts-nocheck
 // PDF viewer: clickable links, a preview of the target on hover, and Back/Forward between the
 // places you jumped to.
 //
-// Loaded by viewer.html as a separate module, like notesBridge.js. The viewer exposes
+// Loaded by viewer.html as a separate module, like notesBridge.ts. The viewer exposes
 // window.zcViewer ({pdfDoc, scale, container}) and fires 'zc:pagecreated' when it lays out a page.
 //
 // - Internal links (citations, figures, sections…) jump inside the PDF; external links open in a
@@ -15,8 +14,26 @@
 // - Every jump is a browser history entry holding the reading position, so Back (toolbar arrow,
 //   Alt+←, Cmd+[, the mouse's back button) returns to where you were before following the link.
 
-import { destTarget, figureRegion, findCaption, fitRegion, graphicsBoxes, isFloatDest, popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor } from './linkNav.js';
+import type { PageViewport, PDFPageProxy, RenderTask } from 'pdfjs-dist';
+import type { TextItem } from 'pdfjs-dist/types/src/display/api.js';
 import { installLongPress } from '../ui/longpress.js';
+import {
+  type Box, type PageText, type ReadingPosition, destTarget, figureRegion, findCaption, fitRegion, graphicsBoxes, isFloatDest,
+  popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor,
+} from './linkNav.js';
+import type { PageWrapper } from './viewer.js';
+
+/** What a link in the PDF points to: a destination in it, a web address, or a page action. */
+interface LinkTarget { dest?: unknown; url?: string; action?: string }
+/** A destination resolved to a page, with x/y in page CSS pixels at scale 1 (null = free). */
+interface Resolved { pageNum: number; x: number | null; y: number | null; page?: PDFPageProxy; vp?: PageViewport }
+type LinkEl = HTMLAnchorElement & { zcTarget: LinkTarget };
+/** A reading position, plus the horizontal scroll when the page is wider than the view. */
+type Position = ReadingPosition & { sx?: number };
+interface PageBox { num: number; top: number; height: number; el: HTMLElement }
+
+/** pdf.js 3.4 types its point conversions as Object; they return [x, y]. */
+const xy = (p: object) => p as [number, number];
 
 const HOVER_DELAY = 250;
 const PREVIEW_W = 460, PREVIEW_H = 260, PREVIEW_H_FLOAT = 360, PREVIEW_SCALE = 1.35;
@@ -50,22 +67,22 @@ css.textContent = `
 document.head.appendChild(css);
 
 const viewer = () => window.zcViewer;
-const container = document.getElementById('pdf-container');
+const container = document.getElementById('pdf-container')!;
 
 /* ---------------------------------------------------------------- link layer */
-async function addLinks(wrapper, page) {
+async function addLinks(wrapper: HTMLElement, page: PDFPageProxy): Promise<void> {
   if (wrapper.querySelector('.zc-links')) return;
   const layer = document.createElement('div');
   layer.className = 'zc-links';
   wrapper.appendChild(layer);
-  let annots;
+  let annots: any[];   // pdf.js annotation data (link annotations: rect, dest, url, action)
   try { annots = await page.getAnnotations({ intent: 'display' }); } catch { return; }
   const vp = page.getViewport({ scale: 1 });
   for (const a of annots) {
     if (a.subtype !== 'Link' || !a.rect) continue;
     const target = linkTarget(a);
     if (!target) continue;
-    const el = document.createElement('a');
+    const el = document.createElement('a') as LinkEl;
     el.className = 'zc-link';
     Object.assign(el.style, rectPercent(vp.convertToViewportRectangle(a.rect), vp.width, vp.height));
     if (target.url) { el.href = target.url; el.target = '_blank'; el.rel = 'noopener noreferrer'; }
@@ -74,36 +91,37 @@ async function addLinks(wrapper, page) {
   }
 }
 
-function linkTarget(a) {
+function linkTarget(a: { dest?: unknown; url?: string; action?: string }): LinkTarget | null {
   if (a.dest) return { dest: a.dest };
   if (a.url) return { url: a.url };
-  if (['NextPage', 'PrevPage', 'FirstPage', 'LastPage'].includes(a.action)) return { action: a.action };
+  if (a.action && ['NextPage', 'PrevPage', 'FirstPage', 'LastPage'].includes(a.action)) return { action: a.action };
   return null;
 }
 
 /** {pageNum, x, y} for a link target, with x/y in page CSS pixels at scale 1 (null = free). */
-const resolved = new Map();
-async function resolveTarget(target) {
+const resolved = new Map<string, Resolved | null>();
+async function resolveTarget(target: LinkTarget): Promise<Resolved | null> {
   const doc = viewer()?.pdfDoc;
   if (!doc) return null;
   if (target.action) {
     const cur = currentPosition()?.page || 1;
-    const n = { NextPage: cur + 1, PrevPage: cur - 1, FirstPage: 1, LastPage: doc.numPages }[target.action];
+    const n = ({ NextPage: cur + 1, PrevPage: cur - 1, FirstPage: 1, LastPage: doc.numPages } as Record<string, number>)[target.action];
     return n >= 1 && n <= doc.numPages ? { pageNum: n, x: null, y: null } : null;
   }
   const key = JSON.stringify(target.dest);
-  if (resolved.has(key)) return resolved.get(key);
-  let out = null;
+  if (resolved.has(key)) return resolved.get(key)!;
+  let out: Resolved | null = null;
   try {
     const explicit = typeof target.dest === 'string' ? await doc.getDestination(target.dest) : target.dest;
     const t = destTarget(explicit);
     if (t) {
-      const index = typeof t.ref === 'object' && t.ref ? await doc.getPageIndex(t.ref) : Number.isInteger(t.ref) ? t.ref : null;
+      const index = typeof t.ref === 'object' && t.ref ? await doc.getPageIndex(t.ref as Parameters<typeof doc.getPageIndex>[0])
+        : Number.isInteger(t.ref) ? t.ref as number : null;
       if (index != null && index >= 0 && index < doc.numPages) {
         const page = await doc.getPage(index + 1);
         const vp = page.getViewport({ scale: 1 });
         // a free coordinate is converted as the page's top-left corner, then reported as null
-        const [cx, cy] = vp.convertToViewportPoint(t.x ?? page.view[0], t.y ?? page.view[3]);
+        const [cx, cy] = xy(vp.convertToViewportPoint(t.x ?? page.view[0], t.y ?? page.view[3]));
         out = { pageNum: index + 1, x: t.x == null ? null : cx, y: t.y == null ? null : cy, page, vp };
       }
     }
@@ -113,22 +131,22 @@ async function resolveTarget(target) {
 }
 
 /* ------------------------------------------------------------------ positions */
-function pageBoxes() {
+function pageBoxes(): PageBox[] {
   const cTop = container.getBoundingClientRect().top - container.scrollTop + container.clientTop;
-  return [...container.querySelectorAll('.page-wrapper')].map((w) => {
+  return [...container.querySelectorAll<HTMLElement>('.page-wrapper')].map((w) => {
     const r = w.getBoundingClientRect();
     return { num: Number(w.dataset.pageNumber), top: r.top - cTop, height: r.height, el: w };
   }).sort((a, b) => a.num - b.num);
 }
 
-function currentPosition() {
-  const pos = positionAt(pageBoxes(), container.scrollTop);
+function currentPosition(): Position | null {
+  const pos: Position | null = positionAt(pageBoxes(), container.scrollTop);
   if (pos && container.scrollWidth > container.clientWidth) pos.sx = Math.round(1000 * container.scrollLeft / container.scrollWidth) / 1000;
   return pos;
 }
 
 /** Wait (up to 20 s) for a page to be laid out — the viewer creates them one after another. */
-function waitForPage(num) {
+function waitForPage(num: number): Promise<boolean> {
   const has = () => container.querySelector(`.page-wrapper[data-page-number="${num}"]`);
   if (has()) return Promise.resolve(true);
   return new Promise((resolve) => {
@@ -138,16 +156,16 @@ function waitForPage(num) {
   });
 }
 
-async function scrollToPosition(pos) {
+async function scrollToPosition(pos: Position | null | undefined): Promise<void> {
   if (!pos?.page || !(await waitForPage(pos.page))) return;
   const top = scrollFor(pageBoxes(), pos);
   if (top != null) container.scrollTop = top;
   if (pos.sx != null) container.scrollLeft = pos.sx * container.scrollWidth;
 }
 
-async function scrollToTarget(t) {
+async function scrollToTarget(t: Resolved): Promise<void> {
   if (!(await waitForPage(t.pageNum))) return;
-  const box = pageBoxes().find((b) => b.num === t.pageNum);
+  const box = pageBoxes().find((b) => b.num === t.pageNum)!;
   const scale = box.height / Number(box.el.dataset.baseHeight || box.height);
   const y = t.y == null ? 0 : t.y * scale;
   container.scrollTop = box.top + y - Math.min(24, y);   // a little context above, never the previous page
@@ -170,13 +188,13 @@ function recordPosition() {
   if (pos) history.replaceState({ ...(history.state || {}), zcIdx: navIdx, zcPos: pos }, '');
 }
 
-let scrollTimer = null;
+let scrollTimer: ReturnType<typeof setTimeout> | undefined;
 container.addEventListener('scroll', () => {
   clearTimeout(scrollTimer);
   scrollTimer = setTimeout(recordPosition, 200);
 }, { passive: true });
 
-async function followInternal(target) {
+async function followInternal(target: LinkTarget): Promise<void> {
   const t = await resolveTarget(target);
   if (!t) return;
   await jumpRecorded(() => scrollToTarget(t));
@@ -184,7 +202,7 @@ async function followInternal(target) {
 
 /** Run a jump (`scroll`, async) as a new history entry, so Back returns to where the reader was.
  *  `url` (optional) becomes the entry's address, so a reload reopens at the new spot. */
-async function jumpRecorded(scroll, url) {
+async function jumpRecorded(scroll: () => unknown, url?: string): Promise<void> {
   clearTimeout(scrollTimer);
   recordPosition();                         // where to come back to
   await scroll();
@@ -203,7 +221,7 @@ window.addEventListener('popstate', (e) => {
   updateNavButtons();
 });
 
-let backBtn = null, fwdBtn = null;
+let backBtn: HTMLButtonElement | null = null, fwdBtn: HTMLButtonElement | null = null;
 function addNavButtons() {
   const center = document.querySelector('.toolbar-section.center');
   if (!center || document.getElementById('zc-nav')) return;
@@ -213,8 +231,8 @@ function addNavButtons() {
     <button class="icon-btn" id="zc-back" title="Back (Alt+←)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5"/></svg></button>
     <button class="icon-btn" id="zc-forward" title="Forward (Alt+→)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg></button>`;
   center.prepend(nav);
-  backBtn = nav.querySelector('#zc-back');
-  fwdBtn = nav.querySelector('#zc-forward');
+  backBtn = nav.querySelector<HTMLButtonElement>('#zc-back')!;
+  fwdBtn = nav.querySelector<HTMLButtonElement>('#zc-forward')!;
   backBtn.addEventListener('click', () => history.back());
   fwdBtn.addEventListener('click', () => history.forward());
   updateNavButtons();
@@ -226,7 +244,8 @@ function updateNavButtons() {
 }
 
 /* ---------------------------------------------------------------------- popup */
-let popup = null, hoverTimer = null, hideTimer = null, hoverLink = null;
+let popup: HTMLElement | null = null, hoverLink: LinkEl | null = null;
+let hoverTimer: ReturnType<typeof setTimeout> | undefined, hideTimer: ReturnType<typeof setTimeout> | undefined;
 
 function hidePopup() {
   clearTimeout(hoverTimer);
@@ -240,7 +259,7 @@ function scheduleHide() {
   hideTimer = setTimeout(hidePopup, 180);
 }
 
-function placePopup(el, link) {
+function placePopup(el: HTMLElement, link: HTMLElement): void {
   const a = link.getBoundingClientRect();
   document.body.appendChild(el);
   const { left, top } = popupPlacement(a, el.offsetWidth, el.offsetHeight, window.innerWidth, window.innerHeight);
@@ -251,7 +270,7 @@ function placePopup(el, link) {
   popup = el;
 }
 
-async function showPopup(link) {
+async function showPopup(link: LinkEl): Promise<void> {
   hidePopup();
   const target = link.zcTarget;
   const el = document.createElement('div');
@@ -266,14 +285,14 @@ async function showPopup(link) {
   }
   const t = await resolveTarget(target);
   if (!t || hoverLink !== link) return;
-  let page = t.page, vp = t.vp;
-  if (!page) { page = await viewer().pdfDoc.getPage(t.pageNum); vp = page.getViewport({ scale: 1 }); }
+  let page: PDFPageProxy, vp: PageViewport;
+  if (t.page && t.vp) { page = t.page; vp = t.vp; } else { page = await viewer()!.pdfDoc!.getPage(t.pageNum); vp = page.getViewport({ scale: 1 }); }
   if (hoverLink !== link) return;
   // A figure or table: fit the whole of it, with its caption, in the popup. Anything else: the
   // destination near the top-left of a fixed window, on its column.
   const fig = t.y == null ? null : await figureAt(page, vp, t);
   if (hoverLink !== link) return;
-  let scale = PREVIEW_SCALE, w, h, ox, oy;
+  let scale = PREVIEW_SCALE, w: number, h: number, ox: number, oy: number;
   if (fig?.region) {
     const r = fig.region;
     const f = fitRegion(r, Math.min(640, window.innerWidth * 0.5), Math.min(620, window.innerHeight * 0.72));
@@ -285,8 +304,9 @@ async function showPopup(link) {
     const float = !!fig || isFloatDest(target.dest);
     w = Math.min(PREVIEW_W, Math.round(pageW));
     h = Math.min(float ? PREVIEW_H_FLOAT : PREVIEW_H, Math.round(pageH));
-    const top = fig?.table ? fig.top * scale : t.y * scale;
-    const bottom = fig?.table ? null : fig ? fig.bottom * scale : float ? t.y * scale + 16 : null;
+    const ty = t.y ?? 0;   // (t.y null: a page without a spot, top of the page)
+    const top = fig?.table ? fig.top * scale : ty * scale;
+    const bottom = fig?.table ? null : fig ? fig.bottom * scale : float ? ty * scale + 16 : null;
     ({ x: ox, y: oy } = previewOrigin(t.x == null ? null : t.x * scale, top, w, h, pageW, pageH, 16, bottom));
   }
   // The whole page, in a window onto it that can be scrolled and zoomed.
@@ -304,38 +324,39 @@ async function showPopup(link) {
   el.classList.add('preview');
   el.append(head, scroller);
   el.addEventListener('click', (e) => {
-    const z = e.target.closest('[data-z]');
+    const z = (e.target as Element).closest<HTMLElement>('[data-z]');
     if (z) { e.stopPropagation(); zoomTo(scale * (z.dataset.z === '1' ? 1.25 : 0.8)); return; }
-    if (e.target.closest('.zc-pop-head')) return;
+    if ((e.target as Element).closest('.zc-pop-head')) return;
     hidePopup();
     followInternal(target);
   });
   placePopup(el, link);
 
-  let renderTask = null, renderTimer = null;
+  let renderTask: RenderTask | null = null, renderTimer: ReturnType<typeof setTimeout> | undefined;
   const paint = () => {
     const dpr = window.devicePixelRatio || 1;
     const pw = vp.width * scale, ph = vp.height * scale;
     canvas.style.width = `${Math.round(pw)}px`;
     canvas.style.height = `${Math.round(ph)}px`;
-    head.querySelector('.zc-pop-pct').textContent = `${Math.round((scale / PREVIEW_SCALE) * 100)}%`;
+    head.querySelector('.zc-pop-pct')!.textContent = `${Math.round((scale / PREVIEW_SCALE) * 100)}%`;
     clearTimeout(renderTimer);
     renderTimer = setTimeout(async () => {   // the canvas is stretched until the new rendering is ready
       renderTask?.cancel();
       const fresh = document.createElement('canvas');
       fresh.width = Math.round(pw * dpr);
       fresh.height = Math.round(ph * dpr);
-      renderTask = page.render({ canvasContext: fresh.getContext('2d'), viewport: page.getViewport({ scale }),
-        transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null });
+      const task = page.render({ canvasContext: fresh.getContext('2d')!, viewport: page.getViewport({ scale }),
+        transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined });
+      renderTask = task;
       try {
-        await renderTask.promise;
+        await task.promise;
         canvas.width = fresh.width; canvas.height = fresh.height;
-        canvas.getContext('2d').drawImage(fresh, 0, 0);
-      } catch (e) { if (e?.name !== 'RenderingCancelledException') console.warn('Link preview failed', e); }
+        canvas.getContext('2d')!.drawImage(fresh, 0, 0);
+      } catch (e) { if ((e as Error | null)?.name !== 'RenderingCancelledException') console.warn('Link preview failed', e); }
     }, canvas.width ? 120 : 0);
   };
   // Zoom around a point of the window (its centre by default), keeping that point in place.
-  const zoomTo = (next, px = scroller.clientWidth / 2, py = scroller.clientHeight / 2) => {
+  const zoomTo = (next: number, px = scroller.clientWidth / 2, py = scroller.clientHeight / 2) => {
     next = Math.max(0.3, Math.min(4, next));
     if (Math.abs(next - scale) < 1e-3) return;
     const k = next / scale;
@@ -361,7 +382,7 @@ async function showPopup(link) {
   paint();
   scroller.scrollLeft = ox;
   scroller.scrollTop = oy;
-  el.zcPreview = { get scale() { return scale; }, zoomTo, region: fig?.region || null };   // for tests
+  (el as HTMLElement & { zcPreview?: unknown }).zcPreview = { get scale() { return scale; }, zoomTo, region: fig?.region || null };   // for tests
 }
 
 /**
@@ -369,24 +390,27 @@ async function showPopup(link) {
  * caption, and region {x, y, w, h}: the drawing above the caption (below it for a table) together
  * with the caption — or null if the destination is not a caption.
  */
-const pageText = new Map(), pageGraphics = new Map();
-async function figureAt(page, vp, t) {
+const pageText = new Map<number, Promise<PageText[]>>(), pageGraphics = new Map<number, Promise<Box[]>>();
+async function figureAt(page: PDFPageProxy, vp: PageViewport, t: Resolved):
+  Promise<{ top: number; bottom: number; table: boolean; region: { x: number; y: number; w: number; h: number } | null } | null> {
   const n = page.pageNumber;
   if (!pageText.has(n)) {
-    pageText.set(n, page.getTextContent().then((tc) => tc.items.filter((i) => i.str?.trim()).map((i) => (
+    pageText.set(n, page.getTextContent().then((tc) => tc.items.filter((i): i is TextItem => 'str' in i && !!i.str?.trim()).map((i) => (
       { str: i.str, x: i.transform[4], y: i.transform[5], w: i.width, h: i.height || Math.hypot(i.transform[2], i.transform[3]) }))).catch(() => []));
   }
-  const items = await pageText.get(n);
+  const items = await pageText.get(n)!;
   // back to PDF coordinates (the target is in page CSS px)
-  const [px, py] = vp.convertToPdfPoint(t.x ?? 0, t.y);
+  const [px, py] = xy(vp.convertToPdfPoint(t.x ?? 0, t.y!));   // only called with a y
   const width = page.view[0] + page.view[2];   // half of it: the middle of the page
   const c = findCaption(items, t.x == null ? null : px, py, width);
   if (!c) return null;
-  const out = { top: vp.convertToViewportPoint(0, c.top)[1], bottom: vp.convertToViewportPoint(0, c.bottom)[1], table: c.table, region: null };
+  const out: { top: number; bottom: number; table: boolean; region: { x: number; y: number; w: number; h: number } | null } = {
+    top: xy(vp.convertToViewportPoint(0, c.top))[1], bottom: xy(vp.convertToViewportPoint(0, c.bottom))[1], table: c.table, region: null,
+  };
   if (!pageGraphics.has(n)) {
-    pageGraphics.set(n, page.getOperatorList().then((ol) => graphicsBoxes(ol.fnArray, ol.argsArray, window.pdfjsLib.OPS, page.view)).catch(() => []));
+    pageGraphics.set(n, page.getOperatorList().then((ol) => graphicsBoxes(ol.fnArray, ol.argsArray, window.pdfjsLib!.OPS, page.view as Box)).catch(() => []));
   }
-  const box = figureRegion(await pageGraphics.get(n), c, width, page.view[1] + page.view[3], items);
+  const box = figureRegion(await pageGraphics.get(n)!, c, width, page.view[1] + page.view[3], items);
   if (box) {
     const r = vp.convertToViewportRectangle(box);
     const x = Math.min(r[0], r[2]), y = Math.min(r[1], r[3]);
@@ -395,8 +419,10 @@ async function figureAt(page, vp, t) {
   return out;
 }
 
+const linkAt = (e: Event) => (e.target as Element).closest?.<LinkEl>('.zc-link') ?? null;
+
 container.addEventListener('mouseover', (e) => {
-  const link = e.target.closest?.('.zc-link');
+  const link = linkAt(e);
   if (!link || link === hoverLink) return;
   hoverLink = link;
   clearTimeout(hideTimer);
@@ -405,15 +431,15 @@ container.addEventListener('mouseover', (e) => {
 });
 
 container.addEventListener('mouseout', (e) => {
-  const link = e.target.closest?.('.zc-link');
-  if (!link || link.contains(e.relatedTarget)) return;
+  const link = linkAt(e);
+  if (!link || link.contains(e.relatedTarget as Node | null)) return;
   hoverLink = null;
   clearTimeout(hoverTimer);
   scheduleHide();
 });
 
 container.addEventListener('click', (e) => {
-  const link = e.target.closest?.('.zc-link');
+  const link = linkAt(e);
   if (!link || e.button !== 0) return;
   const target = link.zcTarget;
   if (target.url) { hidePopup(); return; }   // the <a> opens it in a new tab
@@ -423,11 +449,11 @@ container.addEventListener('click', (e) => {
 });
 
 container.addEventListener('scroll', () => { if (popup && !popup.matches(':hover')) hidePopup(); }, { passive: true });
-// Touch screens (issue #34): a long press on a link shows its preview (a tap follows it); a tap
+// Touch screens: a long press on a link shows its preview (a tap follows it); a tap
 // outside closes the preview.
 installLongPress();
 container.addEventListener('zc:longpress', (e) => {
-  const link = e.target.closest?.('.zc-link');
+  const link = linkAt(e);
   if (!link) return;
   e.preventDefault();
   clearTimeout(hoverTimer);
@@ -436,12 +462,12 @@ container.addEventListener('zc:longpress', (e) => {
   showPopup(link);
 });
 document.addEventListener('pointerdown', (e) => {
-  if (popup && e.pointerType !== 'mouse' && !popup.contains(e.target)) hidePopup();
+  if (popup && e.pointerType !== 'mouse' && !popup.contains(e.target as Node)) hidePopup();
 }, true);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hidePopup(); });
 
 /* ---------------------------------------------------------------------- setup */
 document.addEventListener('zc:pagecreated', (e) => addLinks(e.detail.wrapper, e.detail.page));
-for (const w of container.querySelectorAll('.page-wrapper')) if (w.zcPage) addLinks(w, w.zcPage);
+for (const w of container.querySelectorAll<PageWrapper>('.page-wrapper')) if (w.zcPage) addLinks(w, w.zcPage);
 addNavButtons();
-window.zcLinks = { currentPosition, followInternal, jumpRecorded, ready: true };   // jumpRecorded: notesBridge.js; the rest for tests
+window.zcLinks = { currentPosition, followInternal, jumpRecorded, ready: true };   // jumpRecorded: notesBridge.ts; the rest for tests

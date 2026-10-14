@@ -1,6 +1,7 @@
 // Hooks the pages put on `window` for other tabs, other modules and the browser tests.
 import type ForceGraph from 'force-graph';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import type { PageWrapper } from './viewer/viewer.js';
 import type { Item } from './types.js';
 
 /** The part of Mermaid we call. */
@@ -19,6 +20,16 @@ export interface Mermaid {
 }
 
 declare global {
+  /** The viewer's page events (viewer.ts), heard by its add-ons. */
+  interface DocumentEventMap {
+    'zc:pagecreated': CustomEvent<{ wrapper: PageWrapper; page: PDFPageProxy }>;
+    'zc:pagerendered': CustomEvent<{ wrapper: PageWrapper; page: PDFPageProxy; num: number }>;
+  }
+  /** A long press on a touch screen (ui/longpress.ts). */
+  interface HTMLElementEventMap {
+    'zc:longpress': CustomEvent<{ x: number; y: number }>;
+  }
+
   interface Window {
     /** The change feed's poll and state (changes.ts), for the browser tests. */
     /** Mermaid (vendor/mermaid/mermaid.min.js), loaded when a note has a diagram (richRender.ts). */
@@ -26,6 +37,11 @@ declare global {
     /** pdf.js (vendor/pdfjs/pdf.min.js, a classic script in viewer.html). */
     pdfjsLib?: typeof import('pdfjs-dist');
     zcViewer?: ZcViewer;
+    /** Points this viewer tab at another spot (notesBridge.ts); other app tabs call it (api.ts). */
+    zcViewerGoto?: (to: { page?: number | string | null; q?: string | null; rect?: string | null }) => void;
+    zcViewerBridge?: unknown;   // for the browser tests
+    /** links.ts: Back/Forward between spots in the PDF; jumpRecorded is used by notesBridge.ts. */
+    zcLinks?: { jumpRecorded?: (run: () => unknown, href: string) => void; [k: string]: unknown };
     /** force-graph (vendor/force-graph/force-graph.min.js), loaded when a graph is shown (forceGraph.ts). */
     ForceGraph?: typeof ForceGraph;
     /** The notes graphs (notesGraph.ts), for the browser tests. */
