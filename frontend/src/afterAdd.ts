@@ -50,14 +50,13 @@ const hasIdentifier = (it: Item | undefined) => !!(it && (it.doi || /arxiv/i.tes
 export async function runAfterAdd(ids: string[], { metadata = false, pdf = false, references = false }: Partial<Record<AfterAddKind, boolean>> = {}): Promise<void> {
   ids = ids.filter((id) => byId(id));
   if (!ids.length) return;
-  if (references) {
-    const withId = ids.filter((id) => hasIdentifier(byId(id)));
-    if (withId.length) api.queueReferences(withId).catch(() => {});
-  }
+  const withId = references ? ids.filter((id) => hasIdentifier(byId(id))) : [];
+  if (withId.length) api.queueReferences(withId).catch(() => {});
   if (metadata) {
     const { retrieveInBackground } = await import('./views/metadataReview.js');
-    // items that only get their DOI from the lookup fetch their references once it is applied
-    retrieveInBackground(ids, { references });
+    // items that only get their DOI from the lookup fetch their references once it is applied;
+    // the others are queued above already
+    retrieveInBackground(ids, { references, referencesQueued: withId });
   }
   if (pdf) A.findPdfs(ids, { auto: true });
 }

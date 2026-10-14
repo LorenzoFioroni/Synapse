@@ -47,3 +47,20 @@ test('stop leaves the rest unlooked, and an unreachable server stops the job', a
   await down.start();
   assert.ok(down.count('error') <= 4 && down.count('skipped') >= 2);
 });
+
+test('applying queues the reference lists of looked-up articles only when asked, and only once', async () => {
+  const lookup = async (id) => {
+    if (id === 'c') throw new Error('not found');
+    return { current: { id, title: 'T' }, fetched: { title: id === 'a' ? 'New title' : 'T' } };
+  };
+  const items = (id) => ({ id, title: 'T' });
+  const off = new LookupJob(['a', 'b'], { lookup, items });
+  await off.start();
+  assert.deepEqual(off.referencesToQueue(), []);   // e.g. new items with references set to never
+
+  // after an import: 'b' had a DOI and was queued when it was added
+  const job = new LookupJob(['a', 'b', 'c'], { lookup, items, references: true, referencesQueued: ['b'] });
+  await job.start();
+  assert.deepEqual(job.referencesToQueue(), ['a']);
+  assert.deepEqual(job.referencesToQueue(job.articles.slice(1)), []);
+});
