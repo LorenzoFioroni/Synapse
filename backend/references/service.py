@@ -21,7 +21,6 @@ import re
 import sqlite3
 import threading
 import time
-import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -29,16 +28,14 @@ import requests
 
 from ..library.db import utcnow
 from ..formats.common import join_authors, parse_display_name
-from ..online.metadata import TIMEOUT, LookupError_, _headers, arxiv_id_of
-from ..online.pdf_finder import clean_doi
+from ..library.identifiers import ARXIV_DOI, ARXIV_ID, identifiers, norm_arxiv, norm_doi, title_key
+from ..online.metadata import TIMEOUT, LookupError_, _headers
 
 log = logging.getLogger(__name__)
 
 S2_API = "https://api.semanticscholar.org/graph/v1"
 OPENALEX_API = "https://api.openalex.org"
 CROSSREF_API = "https://api.crossref.org"
-_ARXIV_DOI = re.compile(r"^10\.48550/arxiv\.(.+)$", re.I)
-_ARXIV_ID = re.compile(r"(\d{4}\.\d{4,5}|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?", re.I)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS fetches (
@@ -68,41 +65,6 @@ class FetchFailed(LookupError_):
     without identifiers, trying again later may work)."""
 
 
-# ------------------------------------------------------------------ identifiers
-def norm_doi(doi: str | None) -> str | None:
-    if not doi:
-        return None
-    d = clean_doi(str(doi).strip())
-    d = re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", d, flags=re.I).strip().rstrip(".")
-    return d.lower() or None
-
-
-def norm_arxiv(aid: str | None) -> str | None:
-    if not aid:
-        return None
-    m = _ARXIV_ID.search(str(aid))
-    return m.group(1).lower() if m else None
-
-
-def identifiers(item: dict) -> tuple[str | None, str | None]:
-    """(doi, arXiv id) of a library item; an arXiv DOI counts as its arXiv id."""
-    doi = norm_doi(item.get("doi"))
-    arx = norm_arxiv(arxiv_id_of(item))
-    if doi and _ARXIV_DOI.match(doi):
-        arx = arx or norm_arxiv(_ARXIV_DOI.match(doi).group(1))
-    return doi, arx
-
-
-def title_key(title: str | None) -> str | None:
-    """A title reduced for matching: no accents, case, punctuation, LaTeX or spacing differences.
-    Very short titles ("Introduction") are too ambiguous and give None."""
-    t = unicodedata.normalize("NFKD", str(title or ""))
-    t = "".join(ch for ch in t if not unicodedata.combining(ch)).casefold()
-    t = re.sub(r"<[^>]+>|\\[a-z]+", " ", t)          # markup tags, LaTeX commands
-    t = " ".join(re.sub(r"[\W_]+", " ", t).split())
-    return t if len(t) >= 15 else None
-
-
 def _year(v) -> int | None:
     try:
         return int(str(v)[:4]) if v else None
@@ -114,8 +76,8 @@ def _clean_ref(r: dict) -> dict:
     out = {k: r.get(k) for k in REF_FIELDS}
     out["doi"] = norm_doi(out["doi"])
     out["arxiv_id"] = norm_arxiv(out["arxiv_id"])
-    if out["doi"] and not out["arxiv_id"] and _ARXIV_DOI.match(out["doi"]):
-        out["arxiv_id"] = norm_arxiv(_ARXIV_DOI.match(out["doi"]).group(1))
+    if out["doi"] and not out["arxiv_id"] and ARXIV_DOI.match(out["doi"]):
+        out["arxiv_id"] = norm_arxiv(ARXIV_DOI.match(out["doi"]).group(1))
     try:
         out["year"] = int(out["year"]) if out["year"] else None
     except (TypeError, ValueError):
@@ -152,11 +114,11 @@ def _q(s: str) -> str:
 def semantic_scholar(doi: str | None, arxiv_id: str | None, *, email: str = "", api_key: str = "") -> list[dict]:
     """Try the DOI first (a journal version), then the arXiv id."""
     ids = []
-    if doi and not _ARXIV_DOI.match(doi):
+    if doi and not ARXIV_DOI.match(doi):
         ids.append(f"DOI:{doi}")
     if arxiv_id:
         ids.append(f"arXiv:{arxiv_id}")
-    elif doi and _ARXIV_DOI.match(doi):
+    elif doi and ARXIV_DOI.match(doi):
         ids.append(f"DOI:{doi}")
     for pid in ids:
         refs = _s2_references(pid, email=email, api_key=api_key)
@@ -193,7 +155,7 @@ def _openalex_work(w: dict) -> dict:
     ids = w.get("ids") or {}
     arx = None
     for loc in [w.get("primary_location") or {}] + list(w.get("locations") or []):
-        m = re.search(r"arxiv\.org/(?:abs|pdf)/" + _ARXIV_ID.pattern, (loc or {}).get("landing_page_url") or "", re.I)
+        m = re.search(r"arxiv\.org/(?:abs|pdf)/" + ARXIV_ID.pattern, (loc or {}).get("landing_page_url") or "", re.I)
         if m:
             arx = m.group(1)
             break
@@ -233,7 +195,7 @@ def openalex(doi: str | None, *, email: str = "", api_key: str = "") -> list[dic
 
 
 def crossref(doi: str | None, *, email: str = "") -> list[dict]:
-    if not doi or _ARXIV_DOI.match(doi):
+    if not doi or ARXIV_DOI.match(doi):
         return []
     r = _get(f"{CROSSREF_API}/works/{_q(doi)}", headers=_headers(email))
     if r is None:

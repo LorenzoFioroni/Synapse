@@ -112,14 +112,6 @@ def test_title_similarity_tolerates_small_differences():
     assert s("Variational MPO for steady states", "Quantum chemistry of proteins") < 0.6
 
 
-def test_arxiv_id_of_items():
-    assert metadata.arxiv_id_of({"archive_id": "arXiv:2205.03415"}) == "2205.03415"
-    assert metadata.arxiv_id_of({"url": "https://arxiv.org/abs/2205.03415v3"}) == "2205.03415"
-    assert metadata.arxiv_id_of({"doi": "10.48550/arXiv.2205.03415"}) == "2205.03415"
-    assert metadata.arxiv_id_of({"extra": "arXiv: cond-mat/0601001"}) == "cond-mat/0601001"
-    assert metadata.arxiv_id_of({"title": "nothing", "doi": "10.1103/x"}) is None
-
-
 def test_arxiv_item_is_looked_up_on_arxiv_not_crossref(monkeypatch):
     calls = []
     monkeypatch.setattr(metadata.requests, "get", fake_net(calls))

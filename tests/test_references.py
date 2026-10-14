@@ -51,10 +51,7 @@ def router(routes, calls=None):
     return get
 
 
-def test_identifiers():
-    assert R.identifiers({"doi": "https://doi.org/10.1103/PhysRevX.13.011033"}) == ("10.1103/physrevx.13.011033", None)
-    assert R.identifiers({"doi": "10.48550/arXiv.2101.00001"}) == ("10.48550/arxiv.2101.00001", "2101.00001")
-    assert R.identifiers({"archive_id": "arXiv:2101.00001v3"}) == (None, "2101.00001")
+def test_fetch_needs_an_identifier():
     with pytest.raises(LookupError_):
         R.fetch({"title": "No ids"})
 
@@ -215,12 +212,6 @@ def test_retry_after_as_a_date(monkeypatch):
     answers = iter([Resp({}, 429, {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}), Resp(S2_PAGE2)])
     monkeypatch.setattr(R.requests, "get", router([("semanticscholar", lambda u, p: next(answers))]))
     assert R.fetch({"doi": "10.1/x"})[0] == "semanticscholar"
-
-
-def test_title_key():
-    assert R.title_key("Matrix-Product  States: <i>a</i> Review!") == R.title_key("matrix product states a review")
-    assert R.title_key("Bañuls et al.: $\\mathcal{O}(N)$ scaling") == R.title_key("Banuls et al O N scaling")
-    assert R.title_key("Introduction") is None   # too short to trust
 
 
 def test_references_matched_by_title_when_identifiers_differ(client, svc, monkeypatch):

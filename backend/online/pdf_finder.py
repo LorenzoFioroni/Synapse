@@ -13,18 +13,13 @@ from pathlib import Path
 
 import requests
 
+from ..library.identifiers import clean_doi
 from ..pdf.text import extract_text
 
 log = logging.getLogger(__name__)
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
 FALLBACK_EMAIL = "synapse@example.com"
-
-
-def clean_doi(doi: str | None) -> str:
-    doi = (doi or "").strip()
-    doi = re.sub(r"^https?://(dx\.)?doi\.org/", "", doi, flags=re.I)
-    return re.sub(r"^doi:\s*", "", doi, flags=re.I).strip()
 
 
 def _ratio(a: str, b: str) -> float:

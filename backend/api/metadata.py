@@ -4,7 +4,8 @@ from __future__ import annotations
 from flask import Blueprint, jsonify
 
 from ..library import citekeys
-from ..online.metadata import LookupError_, arxiv_id_of, known_authors, lookup
+from ..library.identifiers import arxiv_id_of
+from ..online.metadata import LookupError_, known_authors, lookup
 from . import body, error, svc
 
 bp = Blueprint("metadata", __name__, url_prefix="/api")

@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import requests
 
 from ..formats.common import join_authors, parse_display_name, split_authors, strip_tags
-from .pdf_finder import clean_doi
+from ..library.identifiers import ARXIV_DOI, ARXIV_ID, clean_doi
 
 log = logging.getLogger(__name__)
 TIMEOUT = 15
@@ -183,19 +183,7 @@ def openalex_authors(doi: str, email: str = "") -> list[tuple[str, str]]:
 
 
 ARXIV_API = "https://export.arxiv.org/api/query"
-_ARXIV_DOI = re.compile(r"^10\.48550/arxiv\.(.+)$", re.I)
 _ARXIV_NS = {"a": "http://www.w3.org/2005/Atom", "x": "http://arxiv.org/schemas/atom"}
-_ARXIV_ID = re.compile(r"(\d{4}\.\d{4,5}|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?", re.I)
-
-
-def arxiv_id_of(item: dict) -> str | None:
-    """The arXiv identifier of an existing item, if it records one anywhere."""
-    for field in ("archive_id", "doi", "url", "extra", "journal", "number"):
-        v = str(item.get(field) or "")
-        m = re.search(r"(?:arxiv[:./\s]*|arxiv\.org/(?:abs|pdf)/|10\.48550/arxiv\.)" + _ARXIV_ID.pattern, v, re.I)
-        if m:
-            return m.group(1)
-    return None
 
 
 # Lookups of several items now run side by side; arXiv asks API users to space their requests.
@@ -237,7 +225,7 @@ def arxiv_title(title: str) -> dict:
     if not scored:
         raise LookupError_("No close match on Crossref or arXiv for this title.")
     entry = max(scored, key=lambda x: x[0])[1]
-    m = _ARXIV_ID.search(entry.findtext("a:id", default="", namespaces=_ARXIV_NS).split("/abs/")[-1])
+    m = ARXIV_ID.search(entry.findtext("a:id", default="", namespaces=_ARXIV_NS).split("/abs/")[-1])
     return _arxiv_item(entry, m.group(1) if m else "")
 
 
@@ -304,7 +292,7 @@ def lookup(*, identifier: str | None = None, doi: str | None = None, title: str 
     tried on arXiv (preprints are often only there).
     """
     doi = clean_doi(doi) if doi else None
-    if doi and (m := _ARXIV_DOI.match(doi)):
+    if doi and (m := ARXIV_DOI.match(doi)):
         arxiv_id, doi = arxiv_id or m.group(1), None
     if doi:
         kind, value = "doi", doi
@@ -312,7 +300,7 @@ def lookup(*, identifier: str | None = None, doi: str | None = None, title: str 
         kind, value = "arxiv", arxiv_id
     elif identifier:
         kind, value = classify_identifier(identifier)
-        if kind == "doi" and (m := _ARXIV_DOI.match(value)):
+        if kind == "doi" and (m := ARXIV_DOI.match(value)):
             kind, value = "arxiv", m.group(1)
     else:
         kind, value = "title", title

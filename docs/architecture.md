@@ -53,7 +53,7 @@ Two objects tie the backend together:
 
 | Package / module | Responsibility | Storage |
 |---|---|---|
-| `library/` | Items, attachments, folders, tags, smart folders, PDF annotations, citation keys and search. `fields.py` is the single source of truth for item fields and types. | `library.db` (schema and migrations in `library/db.py`) |
+| `library/` | Items, attachments, folders, tags, smart folders, PDF annotations, citation keys and search. `fields.py` is the single source of truth for item fields and types, and `identifiers.py` for DOIs and arXiv ids (cleaning, normalising, matching). | `library.db` (schema and migrations in `library/db.py`) |
 | `notes/` | Markdown notes. The files are the source of truth; the index is disposable. | `notes/`, `notes_index.db` |
 | `formats/` | Import and export for BibTeX, RIS, EndNote and CSL-JSON, behind one registry. | none |
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
