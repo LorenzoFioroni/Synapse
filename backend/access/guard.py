@@ -20,6 +20,7 @@ The server has no accounts. Three checks decide whether a request goes ahead:
 Reading (GET) needs no Origin check: the browser does not let other origins read the answers,
 and the Host check stops rebinding.
 """
+
 from __future__ import annotations
 
 from flask import Flask, Response, current_app, g, jsonify, request
@@ -39,7 +40,7 @@ def host_name(host: str) -> str:
     """``127.0.0.1:8000`` → ``127.0.0.1``; ``[::1]:8000`` → ``::1``; lower case."""
     host = (host or "").strip().lower()
     if host.startswith("["):
-        return host[1:host.find("]")] if "]" in host else host[1:]
+        return host[1 : host.find("]")] if "]" in host else host[1:]
     return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
 
 
@@ -61,8 +62,16 @@ def host_allowed(host: str, allowed_hosts: set[str], lan_mode: bool = False) -> 
     return False
 
 
-def refusal(host: str, method: str, origin: str | None, fetch_site: str | None,
-            allowed_hosts: set[str], *, local: bool = True, lan_mode: bool = False) -> str | None:
+def refusal(
+    host: str,
+    method: str,
+    origin: str | None,
+    fetch_site: str | None,
+    allowed_hosts: set[str],
+    *,
+    local: bool = True,
+    lan_mode: bool = False,
+) -> str | None:
     """Why this request is refused (Host and Origin checks), or ``None`` when it may go ahead.
     The device check is separate (``install``)."""
     if not host_allowed(host, allowed_hosts, lan_mode):
@@ -110,17 +119,20 @@ NOT_PAIRED_PAGE = """<!doctype html>
 
 def not_paired() -> Response:
     if request.path.startswith("/api/"):
-        resp = jsonify(error="This device is not paired with Synapse. Pair it in Settings → Devices on the computer "
-                             "running Synapse.", paired=False)
+        resp = jsonify(
+            error="This device is not paired with Synapse. Pair it in Settings → Devices on the computer "
+            "running Synapse.",
+            paired=False,
+        )
         resp.status_code = 401
         return resp
-    return Response(NOT_PAIRED_PAGE, status=401, mimetype="text/html",
-                    headers={"Cache-Control": "no-store"})
+    return Response(NOT_PAIRED_PAGE, status=401, mimetype="text/html", headers={"Cache-Control": "no-store"})
 
 
 def set_device_cookie(resp: Response, token: str) -> None:
-    resp.set_cookie(COOKIE, token, max_age=COOKIE_MAX_AGE, httponly=True, samesite="Lax",
-                    secure=request.is_secure, path="/")
+    resp.set_cookie(
+        COOKIE, token, max_age=COOKIE_MAX_AGE, httponly=True, samesite="Lax", secure=request.is_secure, path="/"
+    )
 
 
 def install(app: Flask, allowed_hosts: set[str] | None = None, lan_mode: bool = False) -> None:
@@ -131,8 +143,15 @@ def install(app: Flask, allowed_hosts: set[str] | None = None, lan_mode: bool = 
         local = lan.is_this_computer(request.remote_addr)
         g.this_computer = local
         g.device = None
-        why = refusal(request.host, request.method, request.headers.get("Origin"),
-                      request.headers.get("Sec-Fetch-Site"), hosts, local=local, lan_mode=lan_mode)
+        why = refusal(
+            request.host,
+            request.method,
+            request.headers.get("Origin"),
+            request.headers.get("Sec-Fetch-Site"),
+            hosts,
+            local=local,
+            lan_mode=lan_mode,
+        )
         if why:
             return jsonify(error=why), 403
         if local:
@@ -150,6 +169,10 @@ def install(app: Flask, allowed_hosts: set[str] | None = None, lan_mode: bool = 
     def _refresh_cookie(resp: Response):
         # Keep a device's cookie from running out while the device is in use.
         dev = g.get("device")
-        if dev and dev.get("_touched") and not any(c.startswith(COOKIE + "=") for c in resp.headers.getlist("Set-Cookie")):
+        if (
+            dev
+            and dev.get("_touched")
+            and not any(c.startswith(COOKIE + "=") for c in resp.headers.getlist("Set-Cookie"))
+        ):
             set_device_cookie(resp, request.cookies.get(COOKIE, ""))
         return resp

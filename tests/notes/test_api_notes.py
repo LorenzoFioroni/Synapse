@@ -20,7 +20,9 @@ def test_crud_cycle(client, svc):
     got = client.get("/api/notes/note", query_string={"path": n["path"]}).json
     assert got["hash"] == n["hash"] and got["info"]["title"] == "My idea"
 
-    r = client.put("/api/notes/note", json={"path": n["path"], "text": got["text"] + "See [[Other]].", "hash": got["hash"]})
+    r = client.put(
+        "/api/notes/note", json={"path": n["path"], "text": got["text"] + "See [[Other]].", "hash": got["hash"]}
+    )
     assert r.status_code == 200
     new_hash = r.json["hash"]
 
@@ -79,7 +81,7 @@ def test_paper_note_links_and_backlinks(client, svc):
     assert {c["key"]: c for c in links["cited"]}[key]["item"]["trashed"] is True
 
     idx = {r["key"]: r for r in client.get("/api/notes/cite_index").json["items"]}
-    assert idx[key]["trashed"] is True   # autocomplete greys out trashed items
+    assert idx[key]["trashed"] is True  # autocomplete greys out trashed items
     svc.papers.restore([item["id"]])
     idx = {r["key"]: r for r in client.get("/api/notes/cite_index").json["items"]}
     assert idx[key]["trashed"] is False
@@ -89,14 +91,15 @@ def test_move_reports_broken_links(client):
     create(client, title="Target")
     src = create(client, title="Source", text="see [[Target]]")
     r = client.post("/api/notes/move", json={"path": "Target.md", "to": "sub/Target.md"})
-    assert r.json["broken_links"] == []          # name unchanged: link still works
+    assert r.json["broken_links"] == []  # name unchanged: link still works
     r = client.post("/api/notes/move", json={"path": "sub/Target.md", "to": "sub/Renamed.md"})
     assert [b["path"] for b in r.json["broken_links"]] == [src["path"]]
 
 
 def test_image_upload(client, svc):
-    r = client.post("/api/notes/attachments", data={"file": (io.BytesIO(PNG), "My Plot.png")},
-                    content_type="multipart/form-data")
+    r = client.post(
+        "/api/notes/attachments", data={"file": (io.BytesIO(PNG), "My Plot.png")}, content_type="multipart/form-data"
+    )
     assert r.status_code == 201
     rel = r.json["path"]
     assert rel.startswith("attachments/") and rel.endswith("-My-Plot.png")
@@ -104,8 +107,9 @@ def test_image_upload(client, svc):
     got = client.get(f"/api/notes/{rel}")
     assert got.status_code == 200 and got.data == PNG
     for data, name in [(b"<svg onload=alert(1)>", "x.svg"), (b"not an image", "x.png"), (b"%PDF-1.4", "x.png")]:
-        r = client.post("/api/notes/attachments", data={"file": (io.BytesIO(data), name)},
-                        content_type="multipart/form-data")
+        r = client.post(
+            "/api/notes/attachments", data={"file": (io.BytesIO(data), name)}, content_type="multipart/form-data"
+        )
         assert r.status_code == 400
 
 
@@ -119,11 +123,13 @@ def test_search_and_rescan(client, svc):
 
 def test_library_db_is_untouched(app, svc, client):
     import sqlite3
+
     def tables():
         c = sqlite3.connect(svc.config.db_path)
         t = sorted(r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'"))
         c.close()
         return t
+
     before = tables()
     create(client, title="x", text="[@a]")
     assert tables() == before
@@ -141,9 +147,10 @@ def test_save_with_create_flag(client):
 
 def test_cite_index(client, svc, tmp_path):
     from tests.conftest import make_pdf
+
     a = svc.papers.create({"authors": "Smith, Anna", "title": "Quantum things", "year": 2021, "journal": "PRL"})
     b = svc.papers.create({"authors": "Doe, J", "title": "Gone", "year": 1999})
-    svc.papers.create({"title": ""}, auto_citekey=False)          # no key: not citable
+    svc.papers.create({"title": ""}, auto_citekey=False)  # no key: not citable
     pdf = make_pdf(svc.config.pdf_dir / "x.pdf", "hello")
     svc.papers.add_attachment(a["id"], "paper.pdf", pdf.name, "pdf")
     svc.papers.trash([b["id"]])
@@ -152,7 +159,11 @@ def test_cite_index(client, svc, tmp_path):
     assert set(items) == {a["citation_key"], b["citation_key"]}
     ia = items[a["citation_key"]]
     assert ia["journal"] == "PRL" and ia["pdf"]["url"] == "x.pdf" and ia["note"] == f"papers/{a['citation_key']}.md"
-    assert ia["trashed"] is False and items[b["citation_key"]]["trashed"] is True and items[b["citation_key"]]["pdf"] is None
+    assert (
+        ia["trashed"] is False
+        and items[b["citation_key"]]["trashed"] is True
+        and items[b["citation_key"]]["pdf"] is None
+    )
 
 
 def test_append_to_paper_note(client, svc):
@@ -188,7 +199,7 @@ def test_delete_and_rename_folders(client):
     ov = client.get("/api/notes").json
     assert ov["notes"] == [] and "projects" not in ov["folders"]
 
-    r = client.post("/api/notes/restore", json={"trash_id": r.json["trash_id"]})   # one undo for all
+    r = client.post("/api/notes/restore", json={"trash_id": r.json["trash_id"]})  # one undo for all
     assert sorted(r.json["paths"]) == ["Source.md", "projects/Target.md", "projects/sub/Plan.md"]
     assert len(client.get("/api/notes").json["notes"]) == 3
     assert client.get("/api/notes/links", query_string={"path": "projects/sub/Plan.md"}).json["backlinks"]
@@ -200,7 +211,7 @@ def test_delete_and_rename_folders(client):
 def test_key_summary(client, svc):
     item = svc.papers.create({"title": "Quantum things", "authors": "Smith, A", "year": 2021})
     key = svc.papers.get(item["id"])["citation_key"]
-    pn = client.post("/api/notes/note", json={"item_id": item["id"]}).json      # cites itself: not counted
+    pn = client.post("/api/notes/note", json={"item_id": item["id"]}).json  # cites itself: not counted
     create(client, title="A", text=f"[@{key}] and again [@{key}]")
     create(client, title="B", text=f"[@{key}; @other2020]")
     keys = client.get("/api/notes/keys").json["keys"]
@@ -211,6 +222,7 @@ def test_key_summary(client, svc):
 def test_cite_index_lists_every_pdf(client, svc):
     """An item with several PDFs: `pdfs` lists all of them in order; `pdf` stays the default (the first)."""
     from tests.conftest import make_pdf
+
     a = svc.papers.create({"authors": "Smith, Anna", "title": "Two files", "year": 2021})
     for name in ("main.pdf", "supplement.pdf"):
         pdf = make_pdf(svc.config.pdf_dir / name, name)

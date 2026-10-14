@@ -11,6 +11,7 @@ When an item's key changes from ``old`` to ``new``, every note is updated:
 ``apply()`` first makes a backup of the notes folder, then writes each note with a
 hash check, so a note edited at the same moment is never overwritten blindly.
 """
+
 from __future__ import annotations
 
 import logging
@@ -24,7 +25,7 @@ from .vault import Conflict, NoteExists, slugify
 
 log = logging.getLogger(__name__)
 
-BACKUP_EVERY_S = 60       # one backup covers a burst of renames (e.g. "Regenerate all keys")
+BACKUP_EVERY_S = 60  # one backup covers a burst of renames (e.g. "Regenerate all keys")
 BACKUPS_KEPT = 20
 
 
@@ -33,7 +34,7 @@ class Rekeyer:
         self.vault = vault
         self.index = index
         self.backups_dir = Path(backups_dir)
-        self._last_backup = None   # not 0: time.monotonic() can itself be < 60 s just after boot
+        self._last_backup = None  # not 0: time.monotonic() can itself be < 60 s just after boot
 
     # ------------------------------------------------------------------ backups
     def backup(self, force: bool = False) -> Path | None:
@@ -94,7 +95,7 @@ class Rekeyer:
                 for i, (a, b) in enumerate(zip(lines, new_lines)):
                     if a != b:
                         changes.append({"line": i + 1, "before": a.rstrip("\r"), "after": b.rstrip("\r")})
-            else:   # front-matter grew (cannot happen today, but stay correct)
+            else:  # front-matter grew (cannot happen today, but stay correct)
                 changes.append({"line": 1, "before": "(front-matter)", "after": "(front-matter updated)"})
         return new_text, changes
 
@@ -114,8 +115,13 @@ class Rekeyer:
             if changes:
                 info = self.index.note(path) or {}
                 notes.append({"path": path, "title": info.get("title") or Path(path).stem, "changes": changes})
-        return {"old": old, "new": new, "notes": notes, "count": sum(len(n["changes"]) for n in notes),
-                "moves": [{"from": a, "to": b} for a, b in moved.items()]}
+        return {
+            "old": old,
+            "new": new,
+            "notes": notes,
+            "count": sum(len(n["changes"]) for n in notes),
+            "moves": [{"from": a, "to": b} for a, b in moved.items()],
+        }
 
     # ------------------------------------------------------------------ applying
     def apply(self, old: str, new: str) -> dict:

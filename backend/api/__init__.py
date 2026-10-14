@@ -1,4 +1,5 @@
 """HTTP API (JSON). One blueprint per area; all business logic lives outside this package."""
+
 from __future__ import annotations
 
 from flask import Flask, current_app, jsonify, request
@@ -43,6 +44,19 @@ def register_blueprints(app: Flask) -> None:
         settings,
     )
 
-    for module in (items, attachments, settings, io, metadata, organize, connector, notes, references, backups,
-                   pdf_annotations, devices, changes):
+    for module in (
+        items,
+        attachments,
+        settings,
+        io,
+        metadata,
+        organize,
+        connector,
+        notes,
+        references,
+        backups,
+        pdf_annotations,
+        devices,
+        changes,
+    ):
         app.register_blueprint(module.bp)

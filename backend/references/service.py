@@ -9,6 +9,7 @@ a lot that I have not read").
 ``sources.py`` fetches the lists, ``store.py`` keeps them; ``Citations`` here fetches now or in
 the background, and matches cited works to library items.
 """
+
 from __future__ import annotations
 
 import logging
@@ -49,9 +50,12 @@ class Citations:
         item = self.papers.get(item_id)
         doi, arx = identifiers(item)
         try:
-            source, refs = fetch(item, email=self.settings.get("contact_email") or "",
-                                 openalex_key=self.settings.get("openalex_api_key") or "",
-                                 s2_key=self.settings.get("semantic_scholar_api_key") or "")
+            source, refs = fetch(
+                item,
+                email=self.settings.get("contact_email") or "",
+                openalex_key=self.settings.get("openalex_api_key") or "",
+                s2_key=self.settings.get("semantic_scholar_api_key") or "",
+            )
         except Exception as e:
             self.store.save_error(item_id, str(e))
             raise
@@ -91,14 +95,14 @@ class Citations:
             try:
                 self.fetch_now(item_id)
                 self.last_error = None
-            except Exception as e:   # keep going with the rest of the queue
+            except Exception as e:  # keep going with the rest of the queue
                 self.last_error = str(e)
                 log.info("Fetching references for %s failed: %s", item_id, e)
             finally:
                 self.running = None
                 with self._lock:
                     self._pending.discard(item_id)
-            time.sleep(1.0)   # be gentle with the free APIs
+            time.sleep(1.0)  # be gentle with the free APIs
 
     def wait(self, timeout: float = 30) -> None:
         t = self._thread
@@ -110,13 +114,14 @@ class Citations:
             return {"queued": len(self._pending), "running": self.running, "last_error": self.last_error}
 
     # -- reading
-    _index_cache = None   # (signature, index, items)
+    _index_cache = None  # (signature, index, items)
 
     def _library_signature(self) -> tuple:
         """Changes whenever an item is added, edited, trashed, restored or deleted."""
         with self.papers.db.session() as c:
-            return (self.papers.db.version,) + tuple(c.execute(
-                "SELECT COUNT(*), MAX(date_modified), COUNT(deleted_at), MAX(rowid) FROM papers").fetchone())
+            return (self.papers.db.version,) + tuple(
+                c.execute("SELECT COUNT(*), MAX(date_modified), COUNT(deleted_at), MAX(rowid) FROM papers").fetchone()
+            )
 
     def _library_index(self):
         """Lookup tables of the library: by DOI, by arXiv id, by title key -> [(id, year)].
@@ -133,7 +138,7 @@ class Citations:
     def _build_library_index(self):
         by_doi, by_arxiv, by_title, items = {}, {}, {}, {}
         for p in self.papers.list():
-            items[p["id"]] = {k: v for k, v in p.items() if k != "abstract"}   # kept in memory: no abstracts
+            items[p["id"]] = {k: v for k, v in p.items() if k != "abstract"}  # kept in memory: no abstracts
             doi, arx = identifiers(p)
             if doi:
                 by_doi.setdefault(doi, p["id"])
@@ -149,8 +154,9 @@ class Citations:
         """The library item a cited work is, by DOI, arXiv id, or title (+ year within one,
         as a preprint and its journal version are often a year apart)."""
         by_doi, by_arxiv, by_title = index
-        hit = (by_doi.get(ref.get("doi")) if ref.get("doi") else None) or \
-              (by_arxiv.get(ref.get("arxiv_id")) if ref.get("arxiv_id") else None)
+        hit = (by_doi.get(ref.get("doi")) if ref.get("doi") else None) or (
+            by_arxiv.get(ref.get("arxiv_id")) if ref.get("arxiv_id") else None
+        )
         if hit:
             return hit
         t = title_key(ref.get("title"))
@@ -167,13 +173,23 @@ class Citations:
         refs = self.store.references(item_id)
         for r in refs:
             m = self._match(r, index)
-            r["library_id"] = m if m != item_id else None   # the cited work is in the library
+            r["library_id"] = m if m != item_id else None  # the cited work is in the library
         doi, arx = identifiers(item)
-        citing = {r["item_id"] for r in self.store.all_refs() if r["item_id"] != item_id and self._match(r, index) == item_id}
-        cited_by = [{"id": i, "title": items[i].get("title"), "authors": items[i].get("authors"), "year": items[i].get("year")}
-                    for i in items if i in citing]
-        return {"fetch": self.store.fetch_info(item_id), "references": refs, "cited_by": cited_by,
-                "can_fetch": bool(doi or arx), "queued": item_id in self._pending}
+        citing = {
+            r["item_id"] for r in self.store.all_refs() if r["item_id"] != item_id and self._match(r, index) == item_id
+        }
+        cited_by = [
+            {"id": i, "title": items[i].get("title"), "authors": items[i].get("authors"), "year": items[i].get("year")}
+            for i in items
+            if i in citing
+        ]
+        return {
+            "fetch": self.store.fetch_info(item_id),
+            "references": refs,
+            "cited_by": cited_by,
+            "can_fetch": bool(doi or arx),
+            "queued": item_id in self._pending,
+        }
 
     def graph(self) -> dict:
         """The whole citation graph: library items and the works they cite, for analysis."""
@@ -181,22 +197,45 @@ class Citations:
         nodes: dict[str, dict] = {}
         for pid, p in items.items():
             doi, arx = identifiers(p)
-            nodes[f"item:{pid}"] = {"id": f"item:{pid}", "item_id": pid, "in_library": True, "title": p.get("title"),
-                                    "authors": p.get("authors"), "year": p.get("year"), "doi": doi, "arxiv_id": arx,
-                                    "citation_key": p.get("citation_key")}
+            nodes[f"item:{pid}"] = {
+                "id": f"item:{pid}",
+                "item_id": pid,
+                "in_library": True,
+                "title": p.get("title"),
+                "authors": p.get("authors"),
+                "year": p.get("year"),
+                "doi": doi,
+                "arxiv_id": arx,
+                "citation_key": p.get("citation_key"),
+            }
         edges = []
         for r in self.store.all_refs():
             if r["item_id"] not in items:
-                continue   # item deleted since
+                continue  # item deleted since
             target = self._match(r, index)
             if target:
                 tid = f"item:{target}"
             else:
-                tid = (f"doi:{r['doi']}" if r["doi"] else f"arxiv:{r['arxiv_id']}" if r["arxiv_id"]
-                       else f"openalex:{r['openalex_id']}" if r["openalex_id"] else f"ref:{r['item_id']}:{r['position']}")
+                tid = (
+                    f"doi:{r['doi']}"
+                    if r["doi"]
+                    else f"arxiv:{r['arxiv_id']}"
+                    if r["arxiv_id"]
+                    else f"openalex:{r['openalex_id']}"
+                    if r["openalex_id"]
+                    else f"ref:{r['item_id']}:{r['position']}"
+                )
                 if tid not in nodes:
-                    nodes[tid] = {"id": tid, "item_id": None, "in_library": False, "title": r["title"] or r["raw"],
-                                  "authors": r["authors"], "year": r["year"], "doi": r["doi"], "arxiv_id": r["arxiv_id"]}
+                    nodes[tid] = {
+                        "id": tid,
+                        "item_id": None,
+                        "in_library": False,
+                        "title": r["title"] or r["raw"],
+                        "authors": r["authors"],
+                        "year": r["year"],
+                        "doi": r["doi"],
+                        "arxiv_id": r["arxiv_id"],
+                    }
             if tid != f"item:{r['item_id']}":
                 edges.append({"source": f"item:{r['item_id']}", "target": tid})
         cited = {}
@@ -205,6 +244,13 @@ class Citations:
         for n in nodes.values():
             n["cited_by_library"] = cited.get(n["id"], 0)
         fetched = self.store.fetched_ids() & set(items)
-        return {"nodes": list(nodes.values()), "edges": edges,
-                "stats": {"items": len(items), "items_with_references": len(fetched), "edges": len(edges),
-                          "works": len(nodes)}}
+        return {
+            "nodes": list(nodes.values()),
+            "edges": edges,
+            "stats": {
+                "items": len(items),
+                "items_with_references": len(fetched),
+                "edges": len(edges),
+                "works": len(nodes),
+            },
+        }

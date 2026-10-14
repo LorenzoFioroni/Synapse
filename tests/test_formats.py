@@ -56,14 +56,37 @@ def test_bibtex_broken_entry_is_skipped():
     assert [i.get("citation_key") for i in items][-1] == "good"
 
 
-ITEM = {"item_type": "journalArticle", "title": "Asymmetry in energy versus spin transport",
-        "authors": "Mendoza-Arenas, Juan José; Žnidarič, Marko", "year": 2019, "journal": "Physical Review B",
-        "volume": "99", "issue": "9", "pages": "094435-094440", "doi": "10.1103/PhysRevB.99.094435",
-        "abstract": "We study & compare 50% of things.", "keywords": "transport; disorder",
-        "citation_key": "mendozaarenasAsymmetry2019", "url": "https://example.org/x", "issn": "2469-9950"}
+ITEM = {
+    "item_type": "journalArticle",
+    "title": "Asymmetry in energy versus spin transport",
+    "authors": "Mendoza-Arenas, Juan José; Žnidarič, Marko",
+    "year": 2019,
+    "journal": "Physical Review B",
+    "volume": "99",
+    "issue": "9",
+    "pages": "094435-094440",
+    "doi": "10.1103/PhysRevB.99.094435",
+    "abstract": "We study & compare 50% of things.",
+    "keywords": "transport; disorder",
+    "citation_key": "mendozaarenasAsymmetry2019",
+    "url": "https://example.org/x",
+    "issn": "2469-9950",
+}
 
-KEYS = ["item_type", "title", "authors", "journal", "volume", "issue", "pages", "doi", "abstract", "keywords",
-        "citation_key", "url"]
+KEYS = [
+    "item_type",
+    "title",
+    "authors",
+    "journal",
+    "volume",
+    "issue",
+    "pages",
+    "doi",
+    "abstract",
+    "keywords",
+    "citation_key",
+    "url",
+]
 
 
 def _check(fmt):
@@ -117,5 +140,6 @@ ER  -
 
 def test_detect_unknown():
     import pytest
+
     with pytest.raises(formats.FormatError):
         formats.parse("just some text")

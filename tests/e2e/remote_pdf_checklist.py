@@ -6,6 +6,7 @@ through /api/attachments/<id>/remote, and links to the local network are refused
 Starts its own server on port 8774 with a throw-away data folder; "the web" is faked inside
 that server (journal.example serves tests/e2e/fixtures/twocolumn.pdf). Your library is not touched.
 """
+
 import asyncio
 import subprocess
 import sys
@@ -76,13 +77,21 @@ async def main():
             page.on("pageerror", lambda e: errors.append(str(e)))
             await page.goto(BASE)
             await page.wait_for_selector("[data-id]")
-            urls = await page.evaluate("""async (items) => {
+            urls = await page.evaluate(
+                """async (items) => {
                 const { viewerUrl } = await import('/js/api.js');
                 return items.map((it) => viewerUrl(it, it.attachments[0]));
-            }""", [items["Remote paper"], items["Router page"]])
+            }""",
+                [items["Remote paper"], items["Router page"]],
+            )
             from urllib.parse import parse_qs, urlparse
+
             file = parse_qs(urlparse(urls[0]).query)["file"][0]
-            check("viewer URL uses the attachment endpoint", file.startswith("/api/attachments/") and file.endswith("/remote"), file)
+            check(
+                "viewer URL uses the attachment endpoint",
+                file.startswith("/api/attachments/") and file.endswith("/remote"),
+                file,
+            )
             await page.goto(BASE + "/" + urls[0].lstrip("/"))
             await page.wait_for_selector(".page-wrapper canvas", timeout=20000)
             n = await page.evaluate("document.querySelectorAll('.page-wrapper').length")

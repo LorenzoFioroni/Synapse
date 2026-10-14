@@ -1,5 +1,6 @@
 """The fetched reference lists, in their own database (``data/citations.db``) so the library database
 is never touched. Deleting the file loses the lists, which can be fetched again."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -54,10 +55,15 @@ class CitationStore:
     def save(self, item_id: str, source: str, refs: list[dict], *, doi=None, arxiv_id=None) -> None:
         with self._session() as c:
             c.execute("DELETE FROM refs WHERE item_id = ?", (item_id,))
-            c.executemany(f"INSERT INTO refs (item_id, position, {', '.join(REF_FIELDS)}) VALUES (?, ?, {', '.join('?' * len(REF_FIELDS))})",
-                          [(item_id, i, *(r.get(k) for k in REF_FIELDS)) for i, r in enumerate(refs)])
-            c.execute("INSERT OR REPLACE INTO fetches (item_id, source, fetched_at, doi, arxiv_id, count, error) "
-                      "VALUES (?, ?, ?, ?, ?, ?, NULL)", (item_id, source, utcnow(), doi, arxiv_id, len(refs)))
+            c.executemany(
+                f"INSERT INTO refs (item_id, position, {', '.join(REF_FIELDS)}) VALUES (?, ?, {', '.join('?' * len(REF_FIELDS))})",
+                [(item_id, i, *(r.get(k) for k in REF_FIELDS)) for i, r in enumerate(refs)],
+            )
+            c.execute(
+                "INSERT OR REPLACE INTO fetches (item_id, source, fetched_at, doi, arxiv_id, count, error) "
+                "VALUES (?, ?, ?, ?, ?, ?, NULL)",
+                (item_id, source, utcnow(), doi, arxiv_id, len(refs)),
+            )
 
     def save_error(self, item_id: str, message: str) -> None:
         """Remember a failed fetch without losing references fetched earlier."""
@@ -65,8 +71,10 @@ class CitationStore:
             if c.execute("SELECT 1 FROM fetches WHERE item_id = ?", (item_id,)).fetchone():
                 c.execute("UPDATE fetches SET error = ? WHERE item_id = ?", (message, item_id))
             else:
-                c.execute("INSERT INTO fetches (item_id, source, fetched_at, count, error) VALUES (?, 'none', ?, 0, ?)",
-                          (item_id, utcnow(), message))
+                c.execute(
+                    "INSERT INTO fetches (item_id, source, fetched_at, count, error) VALUES (?, 'none', ?, 0, ?)",
+                    (item_id, utcnow(), message),
+                )
 
     def fetch_info(self, item_id: str) -> dict | None:
         with self._session() as c:

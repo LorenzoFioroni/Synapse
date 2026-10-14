@@ -1,13 +1,14 @@
 """Synapse must run fully offline: the pages may link to the web (a DOI opens doi.org when clicked),
 but must never *load* code, styles, fonts or images from it. Libraries are vendored under
 frontend/vendor/ instead (see frontend/vendor/README.md)."""
+
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = ROOT / "frontend"
 
-REMOTE = r"""["'`]?(?:https?:)?//"""   # http://, https:// or protocol-relative //
+REMOTE = r"""["'`]?(?:https?:)?//"""  # http://, https:// or protocol-relative //
 LOADS = {
     ".html": [
         rf"<(?:script|img|iframe|audio|video|source|embed)\b[^>]*\bsrc\s*=\s*{REMOTE}",
@@ -18,7 +19,7 @@ LOADS = {
         rf"@import\s+{REMOTE}",
     ],
     ".js": [
-        rf"\bimport\s*(?:[\w{{}}*,\s]+\s+from\s*)?\(?\s*{REMOTE}",   # import x from '...', import('...')
+        rf"\bimport\s*(?:[\w{{}}*,\s]+\s+from\s*)?\(?\s*{REMOTE}",  # import x from '...', import('...')
         rf"\bimportScripts\(\s*{REMOTE}",
         rf"\bnew\s+(?:Shared)?Worker\(\s*{REMOTE}",
         rf"\.src\s*=\s*{REMOTE}",

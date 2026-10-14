@@ -1,4 +1,5 @@
 """EndNote import and export: tagged "refer" format (.enw) and EndNote XML."""
+
 from __future__ import annotations
 
 import re
@@ -9,20 +10,48 @@ from .common import join_authors, parse_display_name, split_authors, split_keywo
 
 # ------------------------------------------------------------------ types
 ENW_TYPE_IN = {
-    "journal article": "journalArticle", "magazine article": "journalArticle", "newspaper article": "journalArticle",
-    "electronic article": "journalArticle", "book": "book", "edited book": "book", "electronic book": "book",
-    "book section": "bookSection", "conference proceedings": "conferencePaper", "conference paper": "conferencePaper",
-    "thesis": "thesis", "report": "report", "unpublished work": "manuscript", "manuscript": "manuscript",
-    "web page": "webpage", "dataset": "dataset", "generic": "journalArticle",
+    "journal article": "journalArticle",
+    "magazine article": "journalArticle",
+    "newspaper article": "journalArticle",
+    "electronic article": "journalArticle",
+    "book": "book",
+    "edited book": "book",
+    "electronic book": "book",
+    "book section": "bookSection",
+    "conference proceedings": "conferencePaper",
+    "conference paper": "conferencePaper",
+    "thesis": "thesis",
+    "report": "report",
+    "unpublished work": "manuscript",
+    "manuscript": "manuscript",
+    "web page": "webpage",
+    "dataset": "dataset",
+    "generic": "journalArticle",
 }
 ENW_TYPE_OUT = {
-    "journalArticle": "Journal Article", "book": "Book", "bookSection": "Book Section",
-    "conferencePaper": "Conference Paper", "thesis": "Thesis", "report": "Report",
-    "preprint": "Unpublished Work", "manuscript": "Manuscript", "webpage": "Web Page", "dataset": "Dataset",
+    "journalArticle": "Journal Article",
+    "book": "Book",
+    "bookSection": "Book Section",
+    "conferencePaper": "Conference Paper",
+    "thesis": "Thesis",
+    "report": "Report",
+    "preprint": "Unpublished Work",
+    "manuscript": "Manuscript",
+    "webpage": "Web Page",
+    "dataset": "Dataset",
 }
 XML_REF_NUMBERS = {
-    "Journal Article": 17, "Book": 6, "Book Section": 5, "Conference Paper": 47, "Conference Proceedings": 10,
-    "Thesis": 32, "Report": 27, "Unpublished Work": 34, "Manuscript": 36, "Web Page": 12, "Dataset": 59,
+    "Journal Article": 17,
+    "Book": 6,
+    "Book Section": 5,
+    "Conference Paper": 47,
+    "Conference Proceedings": 10,
+    "Thesis": 32,
+    "Report": 27,
+    "Unpublished Work": 34,
+    "Manuscript": 36,
+    "Web Page": 12,
+    "Dataset": 59,
     "Generic": 13,
 }
 
@@ -61,8 +90,8 @@ def _enw_item(r: dict) -> dict:
     item = {
         "item_type": itype,
         "title": _f(r, "T"),
-        "authors": join_authors(parse_display_name(a) for a in r.get("A", []) if a) or
-                   join_authors(parse_display_name(a) for a in r.get("E", []) if a),
+        "authors": join_authors(parse_display_name(a) for a in r.get("A", []) if a)
+        or join_authors(parse_display_name(a) for a in r.get("E", []) if a),
         "journal": _f(r, "J") or _f(r, "B"),
         "year": year_from(_f(r, "D") or _f(r, "8")),
         "volume": _f(r, "V"),
@@ -95,6 +124,7 @@ def dump(items: list[dict], *, abstract: bool = True, **_) -> str:
         def add(tag, val):
             if val not in (None, ""):
                 lines.append(f"%{tag} {' '.join(str(val).split())}")
+
         add("T", it.get("title"))
         for fam, giv in split_authors(it.get("authors")):
             add("A", f"{fam}, {giv}" if giv else fam)
@@ -174,6 +204,7 @@ def parse_xml(text: str) -> list[dict]:
 def dump_xml(items: list[dict], *, abstract: bool = True, **_) -> str:
     def el(tag, val):
         return f"<{tag}>{xml_escape(str(val))}</{tag}>" if val not in (None, "") else ""
+
     recs = []
     for n, it in enumerate(items, 1):
         tname = ENW_TYPE_OUT.get(it.get("item_type") or "journalArticle", "Generic")
@@ -183,23 +214,33 @@ def dump_xml(items: list[dict], *, abstract: bool = True, **_) -> str:
             f"<rec-number>{n}</rec-number>",
             f'<ref-type name="{tname}">{XML_REF_NUMBERS.get(tname, 13)}</ref-type>',
             f"<contributors><authors>{authors}</authors></contributors>" if authors else "",
-            "<titles>" + el("title", it.get("title")) + el("secondary-title", it.get("journal")) +
-            el("tertiary-title", it.get("series")) + el("short-title", it.get("short_title")) + "</titles>",
-            f"<periodical>{el('full-title', it.get('journal'))}</periodical>" if it.get("journal") and tname == "Journal Article" else "",
-            el("pages", it.get("pages")), el("volume", it.get("volume")), el("number", it.get("issue")),
+            "<titles>"
+            + el("title", it.get("title"))
+            + el("secondary-title", it.get("journal"))
+            + el("tertiary-title", it.get("series"))
+            + el("short-title", it.get("short_title"))
+            + "</titles>",
+            f"<periodical>{el('full-title', it.get('journal'))}</periodical>"
+            if it.get("journal") and tname == "Journal Article"
+            else "",
+            el("pages", it.get("pages")),
+            el("volume", it.get("volume")),
+            el("number", it.get("issue")),
             el("edition", it.get("edition")),
             f"<keywords>{kws}</keywords>" if kws else "",
             f"<dates>{el('year', it.get('year'))}</dates>" if it.get("year") else "",
-            el("pub-location", it.get("place")), el("publisher", it.get("publisher")),
+            el("pub-location", it.get("place")),
+            el("publisher", it.get("publisher")),
             el("isbn", it.get("isbn") or it.get("issn")),
             el("abstract", it.get("abstract")) if abstract else "",
-            el("notes", it.get("extra")), el("label", it.get("citation_key")),
+            el("notes", it.get("extra")),
+            el("label", it.get("citation_key")),
             el("electronic-resource-num", it.get("doi")),
             f"<urls><related-urls>{el('url', it.get('url'))}</related-urls></urls>" if it.get("url") else "",
             el("language", it.get("language")),
         ]
         recs.append("<record>" + "".join(p for p in parts if p) + "</record>")
-    return ('<?xml version="1.0" encoding="UTF-8"?>\n<xml><records>\n' + "\n".join(recs) + "\n</records></xml>\n")
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<xml><records>\n' + "\n".join(recs) + "\n</records></xml>\n"
 
 
 def sniff_xml(text: str) -> bool:

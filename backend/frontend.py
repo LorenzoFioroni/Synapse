@@ -3,6 +3,7 @@
 Pages, scripts and styles are sent with ``Cache-Control: no-store`` so that a changed frontend
 is picked up on the next reload, without a stale copy from the browser cache.
 """
+
 from __future__ import annotations
 
 from flask import Blueprint, current_app, send_from_directory

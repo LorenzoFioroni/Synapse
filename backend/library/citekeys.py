@@ -13,15 +13,43 @@ Tokens (case of the token name selects the case of the output):
 
 Anything outside braces is copied literally (e.g. "{auth}_{year}").
 """
+
 from __future__ import annotations
 
 import re
 import unicodedata
 
 STOPWORDS = {
-    "a", "an", "the", "of", "on", "in", "at", "to", "for", "and", "or", "with",
-    "from", "by", "via", "into", "onto", "about", "over", "under", "is", "are",
-    "as", "its", "their", "towards", "toward", "between", "using", "new",
+    "a",
+    "an",
+    "the",
+    "of",
+    "on",
+    "in",
+    "at",
+    "to",
+    "for",
+    "and",
+    "or",
+    "with",
+    "from",
+    "by",
+    "via",
+    "into",
+    "onto",
+    "about",
+    "over",
+    "under",
+    "is",
+    "are",
+    "as",
+    "its",
+    "their",
+    "towards",
+    "toward",
+    "between",
+    "using",
+    "new",
 }
 
 PRESETS = [

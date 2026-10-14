@@ -10,6 +10,7 @@ Modules:
     parser       the ONLY place that decides what a note links to or cites
     index        SQLite index of notes, links and tags, plus full-text search
 """
+
 from .index import NotesIndex
 from .vault import Conflict, InvalidPath, NoteExists, NoteMissing, Vault
 

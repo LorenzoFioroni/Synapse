@@ -2,6 +2,7 @@
 
 Regions are fractions of the page as displayed (origin top left, rotation applied); see render.py.
 """
+
 from __future__ import annotations
 
 import re
@@ -26,12 +27,18 @@ def _captions(page) -> list[dict]:
             if not m:
                 continue
             # "Fig. 3 shows…" in running text is not a caption: those continue with a lowercase verb
-            rest = text[m.end():].lstrip()
+            rest = text[m.end() :].lstrip()
             if rest[:1].islower() and not m.group(0).rstrip().endswith((":", ".", "|")):
                 continue
             kind = "table" if m.group(1).lower().startswith("tab") else "figure"
-            out.append({"kind": kind, "label": f"{'Table' if kind == 'table' else 'Figure'} {m.group(2)}",
-                        "text": text[:160], "box": (l, b, r, t)})
+            out.append(
+                {
+                    "kind": kind,
+                    "label": f"{'Table' if kind == 'table' else 'Figure'} {m.group(2)}",
+                    "text": text[:160],
+                    "box": (l, b, r, t),
+                }
+            )
         return out
     finally:
         tp.close()
@@ -40,6 +47,7 @@ def _captions(page) -> list[dict]:
 def _objects(page) -> tuple[list[tuple], list[tuple]]:
     """(graphics boxes, text boxes) of the page in PDF units (l, b, r, t)."""
     import pypdfium2.raw as raw
+
     graphics, texts = [], []
     W, H = page.get_size()
     for obj in page.get_objects(max_depth=2):
@@ -51,9 +59,14 @@ def _objects(page) -> tuple[list[tuple], list[tuple]]:
             continue
         if obj.type == raw.FPDF_PAGEOBJ_TEXT:
             texts.append((l, b, r, t))
-        elif obj.type in (raw.FPDF_PAGEOBJ_PATH, raw.FPDF_PAGEOBJ_IMAGE, raw.FPDF_PAGEOBJ_SHADING, raw.FPDF_PAGEOBJ_FORM):
+        elif obj.type in (
+            raw.FPDF_PAGEOBJ_PATH,
+            raw.FPDF_PAGEOBJ_IMAGE,
+            raw.FPDF_PAGEOBJ_SHADING,
+            raw.FPDF_PAGEOBJ_FORM,
+        ):
             if (r - l) > 0.9 * W and (t - b) > 0.9 * H:
-                continue   # a page background
+                continue  # a page background
             graphics.append((l, b, r, t))
     return graphics, texts
 
@@ -97,29 +110,43 @@ def figure_regions(path: Path | str, page_no: int) -> list[dict]:
         entry = {"label": c["label"], "caption": c["text"]}
         if c["kind"] == "figure":
             # graphics above the caption, closest first, while they stay close together
-            limit = min([t for t in tops if t > ct_ + 1] + [cb + H])   # next caption above, if any
-            cand = sorted((g for g in graphics if g[1] >= cb_ - 2 and g[3] <= limit + 2 and g[1] < limit),
-                          key=lambda g: g[1])
+            limit = min([t for t in tops if t > ct_ + 1] + [cb + H])  # next caption above, if any
+            cand = sorted(
+                (g for g in graphics if g[1] >= cb_ - 2 and g[3] <= limit + 2 and g[1] < limit), key=lambda g: g[1]
+            )
             box = None
             for g in cand:
                 gap = g[1] - (box[3] if box else ct_)
                 if gap > 60:
                     break
                 if _overlap_x(g, box or c["box"]) < -10:
-                    continue   # beside it, e.g. in the other column
+                    continue  # beside it, e.g. in the other column
                 box = g if box is None else _union([box, g])
             if box and (box[2] - box[0]) > 20 and (box[3] - box[1]) > 20:
                 # labels and tick numbers drawn as text around the plot
                 grow = (box[0] - 15, box[1] - 15, box[2] + 15, box[3] + 15)
-                small = [t for t in texts if _overlap_x(t, grow) > 0 and t[1] < grow[3] and t[3] > grow[1]
-                         and (t[2] - t[0]) < 0.6 * (box[2] - box[0]) and t[1] >= ct_ - 1]
+                small = [
+                    t
+                    for t in texts
+                    if _overlap_x(t, grow) > 0
+                    and t[1] < grow[3]
+                    and t[3] > grow[1]
+                    and (t[2] - t[0]) < 0.6 * (box[2] - box[0])
+                    and t[1] >= ct_ - 1
+                ]
                 if small:
                     box = _union([box] + small)
                 entry["rect"] = frac(box)
         else:
             # a table below its caption: down to the last horizontal rule close to the one before
-            rules = sorted((g for g in graphics if g[3] <= cb_ + 2 and (g[3] - g[1]) < 3 and (g[2] - g[0]) > 30
-                            and _overlap_x(g, c["box"]) > 0), key=lambda g: -g[3])
+            rules = sorted(
+                (
+                    g
+                    for g in graphics
+                    if g[3] <= cb_ + 2 and (g[3] - g[1]) < 3 and (g[2] - g[0]) > 30 and _overlap_x(g, c["box"]) > 0
+                ),
+                key=lambda g: -g[3],
+            )
             last, box = cb_, None
             for g in rules:
                 if last - g[3] > 200:
@@ -138,8 +165,11 @@ def figure_regions(path: Path | str, page_no: int) -> list[dict]:
 # An equation number: "(3)", "(2.5)", "(A1)", "(S2)", "(3b)", "(4-2)".
 EQ_NUMBER = re.compile(r"\(([A-Z]{0,2}\d{1,3}(?:[.\-–]\d{1,3})*[a-z]?)\)")
 # Fonts that set mathematics (TeX's Computer Modern / AMS / STIX / Cambria Math / Symbol …).
-MATH_FONT = re.compile(r"cmmi|cmsy|cmex|cmbsy|cmmib|msam|msbm|eufm|eusm|rsfs|math|stix|symbol|esint|wasy|"
-                       r"bbm|dsrom|(?:tx|px|lm|mt|ntx|zx)(?:mi|sy|ex)|\+?(?:mi|sy|ex)\d|euler", re.I)
+MATH_FONT = re.compile(
+    r"cmmi|cmsy|cmex|cmbsy|cmmib|msam|msbm|eufm|eusm|rsfs|math|stix|symbol|esint|wasy|"
+    r"bbm|dsrom|(?:tx|px|lm|mt|ntx|zx)(?:mi|sy|ex)|\+?(?:mi|sy|ex)\d|euler",
+    re.I,
+)
 
 
 def _chars(page) -> list[tuple]:
@@ -147,6 +177,7 @@ def _chars(page) -> list[tuple]:
     import ctypes
 
     import pypdfium2.raw as raw
+
     tp = page.get_textpage()
     try:
         text = tp.get_text_range()
@@ -179,7 +210,7 @@ def _box(chars) -> tuple:
 def _bands(chars: list[tuple]) -> list[list[tuple]]:
     """Group characters into horizontal bands, top first: characters whose boxes overlap vertically
     (an equation with a fraction or big brackets forms one band, sub/superscripts join their line)."""
-    bands: list[list] = []   # [bottom, chars]
+    bands: list[list] = []  # [bottom, chars]
     for c in sorted(chars, key=lambda c: -c[4]):
         if bands and c[4] > bands[-1][0] + 0.3:
             bands[-1][0] = min(bands[-1][0], c[2])
@@ -202,13 +233,13 @@ def _equation_numbers(chars: list[tuple]) -> list[dict]:
     out = []
     s = "".join(c[0] for c in chars)
     for m in EQ_NUMBER.finditer(s):
-        num = chars[m.start():m.end()]
+        num = chars[m.start() : m.end()]
         if any(c[6] for c in num):
-            continue   # "(x)" inside a formula
+            continue  # "(x)" inside a formula
         mine = {id(c) for c in num}
         l, b, r, t = _box(num)
         h = max(t - b, 1.0)
-        em = max(6.0, h / 0.75)   # parentheses span ~0.75 em
+        em = max(6.0, h / 0.75)  # parentheses span ~0.75 em
         row = [c for c in chars if id(c) not in mine and min(c[4], t) - max(c[2], b) > 0.3 * min(h, (c[4] - c[2]) or h)]
         gap_left = l - max((c[3] for c in row if c[3] <= l + 0.5), default=-1e9)
         gap_right = min((c[1] for c in row if c[1] >= r - 0.5), default=1e9) - r
@@ -254,7 +285,7 @@ def _column(prose: dict[int, list[tuple]], lefts: list[float], num: dict) -> tup
     one, the column starts at the nearest common line start (or the text) left of the number."""
     l, b, r, t = num["box"]
     near = [c for v in prose.values() for c in v if c[2] < t + 250 and c[4] > b - 250 and c[3] <= l - 2]
-    spans: list[list] = []   # [from, to, chars]
+    spans: list[list] = []  # [from, to, chars]
     for c in sorted(near, key=lambda c: c[1]):
         if spans and c[1] <= spans[-1][1] + 8:
             spans[-1][1] = max(spans[-1][1], c[3])
@@ -312,7 +343,7 @@ def _page_equations(page) -> list[dict]:
             starts.setdefault(where[id(n["chars"][0])], n)
         numbered = set(starts)
 
-        def gap(i: int) -> float:   # between band i and band i + 1 below it
+        def gap(i: int) -> float:  # between band i and band i + 1 below it
             return boxes[i][1] - boxes[i + 1][3]
 
         def display(i: int, em: float) -> bool:
@@ -330,16 +361,17 @@ def _page_equations(page) -> list[dict]:
                 hi += 1
             spans.append([lo, hi, s, n])
         for a, b in zip(spans, spans[1:]):
-            if a[1] >= b[0]:   # they meet: cut at the widest gap between the two numbers
+            if a[1] >= b[0]:  # they meet: cut at the widest gap between the two numbers
                 cut = max(range(a[2], b[2]), key=gap)
                 a[1], b[0] = cut, cut + 1
         for lo, hi, _s, n in spans:
-            box = _union(boxes[lo:hi + 1])
-            for g in graphics:   # fraction bars, root signs and rules drawn as paths
+            box = _union(boxes[lo : hi + 1])
+            for g in graphics:  # fraction bars, root signs and rules drawn as paths
                 if g[0] >= col_l - 1 and g[2] <= col_r + 1 and g[1] >= box[1] - 2 and g[3] <= box[3] + 2:
                     box = _union([box, g])
-            out.append({"label": f"Equation ({n['number']})", "number": n["number"], "rect": _frac(page, box),
-                        "_y": -box[3]})
+            out.append(
+                {"label": f"Equation ({n['number']})", "number": n["number"], "rect": _frac(page, box), "_y": -box[3]}
+            )
     seen, result = set(), []
     for e in sorted(out, key=lambda e: e.pop("_y")):
         if e["number"] not in seen:

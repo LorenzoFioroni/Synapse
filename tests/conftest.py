@@ -12,6 +12,7 @@ from backend.config import Config  # noqa: E402
 @pytest.fixture(autouse=True)
 def _no_arxiv_spacing(monkeypatch):
     from backend.online import http
+
     monkeypatch.setattr(http, "ARXIV_SPACING", 0)
 
 
@@ -20,7 +21,9 @@ def app(tmp_path):
     app = create_app(Config.from_env(tmp_path / "data"), start_indexer=False)
     app.config["TESTING"] = True
     # no background reference fetching unless a test turns it on (it would outlive the test)
-    app.extensions["synapse"].settings.update({"references_auto": False, "add_fetch_references": "never", "add_find_pdf": "never"})
+    app.extensions["synapse"].settings.update(
+        {"references_auto": False, "add_fetch_references": "never", "add_find_pdf": "never"}
+    )
     return app
 
 

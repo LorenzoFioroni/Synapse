@@ -3,6 +3,7 @@
 Used by the online lookups, the citation graph and the MCP tools, so that all of them agree on what
 counts as the same paper.
 """
+
 from __future__ import annotations
 
 import re
@@ -62,6 +63,6 @@ def title_key(title: str | None) -> str | None:
     Very short titles ("Introduction") are too ambiguous and give None."""
     t = unicodedata.normalize("NFKD", str(title or ""))
     t = "".join(ch for ch in t if not unicodedata.combining(ch)).casefold()
-    t = re.sub(r"<[^>]+>|\\[a-z]+", " ", t)          # markup tags, LaTeX commands
+    t = re.sub(r"<[^>]+>|\\[a-z]+", " ", t)  # markup tags, LaTeX commands
     t = " ".join(re.sub(r"[\W_]+", " ", t).split())
     return t if len(t) >= 15 else None

@@ -1,4 +1,5 @@
 """Backups of the library and notes (issue #18)."""
+
 import io
 import json
 import sqlite3
@@ -33,8 +34,11 @@ def library(client, svc, tmp_path):
     a = client.post("/api/items", json={"title": "Alpha paper", "year": 2020}).get_json()
     client.post("/api/items", json={"title": "Beta paper"})
     pdf = make_pdf(tmp_path / "a.pdf", "Alpha")
-    client.post(f"/api/items/{a['id']}/attachments", data={"file": (pdf.open("rb"), "a.pdf")},
-                content_type="multipart/form-data")
+    client.post(
+        f"/api/items/{a['id']}/attachments",
+        data={"file": (pdf.open("rb"), "a.pdf")},
+        content_type="multipart/form-data",
+    )
     client.post("/api/folders", json={"name": "Thesis"})
     note(svc, "ideas/plan.md", "# Plan\n\n![fig](attachments/fig.png)\n")
     (svc.config.notes_dir / "attachments" / "fig.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
@@ -52,8 +56,13 @@ def test_archive_holds_exactly_the_library_settings_and_notes(svc, library):
     entry = svc.backups.create("manual")
     names = members(svc.backups.dir / entry["name"])
     assert names[0] == "manifest.json"
-    assert {"library.db", "settings.json", "notes/ideas/plan.md", "notes/attachments/fig.png",
-            "notes/.trash/20261010-120000/old.md"} <= set(names)
+    assert {
+        "library.db",
+        "settings.json",
+        "notes/ideas/plan.md",
+        "notes/attachments/fig.png",
+        "notes/.trash/20261010-120000/old.md",
+    } <= set(names)
     for n in names:
         assert n in ("manifest.json", "library.db", "settings.json") or n.startswith("notes/"), n
         assert not n.startswith(("pdfs", "notes_index", "fulltext", "citations", "backups")), n
@@ -75,6 +84,7 @@ def test_backup_during_writes_is_a_valid_database(svc, library, tmp_path):
         while not stop.is_set():
             svc.papers.create({"title": f"Busy {i}"})
             i += 1
+
     t = threading.Thread(target=writer)
     t.start()
     try:
@@ -138,7 +148,7 @@ def test_restore_keeps_the_current_backup_settings(client, svc, library, tmp_pat
     (elsewhere / first["name"]).write_bytes((svc.config.backups_dir / first["name"]).read_bytes())
     assert client.post("/api/backups/restore", json={"name": first["name"]}).status_code == 200
     assert svc.settings.get("backup_dir") == str(elsewhere) and svc.settings.get("backup_keep") == 30
-    assert svc.settings.get("font_size") == 13   # everything else comes from the backup
+    assert svc.settings.get("font_size") == 13  # everything else comes from the backup
 
 
 def test_unwritable_folder_fails_without_touching_data(svc, library, tmp_path, monkeypatch):
@@ -162,12 +172,15 @@ def bad_archive(svc, name, files):
             tar.addfile(info, io.BytesIO(data))
 
 
-@pytest.mark.parametrize("files,why", [
-    ([("manifest.json", b"{}"), ("library.db", b"not a database at all")], "damaged"),
-    ([("manifest.json", b"{}")], "no library database"),
-    ([("manifest.json", b"{}"), ("../evil.txt", b"x")], "Unexpected entry"),
-    ([("manifest.json", b"{}"), ("pdfs/x.pdf", b"x")], "Unexpected entry"),
-])
+@pytest.mark.parametrize(
+    "files,why",
+    [
+        ([("manifest.json", b"{}"), ("library.db", b"not a database at all")], "damaged"),
+        ([("manifest.json", b"{}")], "no library database"),
+        ([("manifest.json", b"{}"), ("../evil.txt", b"x")], "Unexpected entry"),
+        ([("manifest.json", b"{}"), ("pdfs/x.pdf", b"x")], "Unexpected entry"),
+    ],
+)
 def test_bad_archives_are_refused_and_change_nothing(client, svc, library, files, why):
     bad_archive(svc, "library-20200101-000000.tar.gz", files)
     before = sorted(p["id"] for p in svc.papers.list())
@@ -178,13 +191,15 @@ def test_bad_archives_are_refused_and_change_nothing(client, svc, library, files
     assert not (svc.config.data_dir / "evil.txt").exists()
 
 
-@pytest.mark.parametrize("name", ["../settings.json", "library.db", "library-x.tar.gz", "", "notes-20261001-100000-000000.tar.gz"])
+@pytest.mark.parametrize(
+    "name", ["../settings.json", "library.db", "library-x.tar.gz", "", "notes-20261001-100000-000000.tar.gz"]
+)
 def test_restore_only_known_backups(client, library, name):
     assert client.post("/api/backups/restore", json={"name": name}).status_code == 400
 
 
 def test_due(svc, library):
-    assert svc.backups.due()                       # no backup yet
+    assert svc.backups.due()  # no backup yet
     svc.backups.create("scheduled")
     assert not svc.backups.due()
     assert svc.backups.due(datetime.now() + timedelta(days=1, minutes=1))
@@ -200,7 +215,7 @@ def test_backup_before_emptying_the_trash_at_most_every_ten_minutes(client, svc,
     client.post("/api/items/trash", json={"ids": [library["id"]]})
     assert client.post("/api/trash/empty").status_code == 200
     [b] = svc.backups.list()
-    assert b["reason"] == "before emptying the Trash" and b["items"] == 1   # the trashed item is in it
+    assert b["reason"] == "before emptying the Trash" and b["items"] == 1  # the trashed item is in it
     with tarfile.open(svc.backups.dir / b["name"]) as tar:
         tar.extract("library.db", svc.config.data_dir / "check", filter="data")
     c = sqlite3.connect(svc.config.data_dir / "check" / "library.db")
@@ -209,7 +224,7 @@ def test_backup_before_emptying_the_trash_at_most_every_ten_minutes(client, svc,
     other = client.post("/api/items", json={"title": "Temp"}).get_json()
     client.post("/api/items/trash", json={"ids": [other["id"]]})
     client.post("/api/trash/empty")
-    assert len(svc.backups.list()) == 1   # within ten minutes: no second one
+    assert len(svc.backups.list()) == 1  # within ten minutes: no second one
 
 
 def test_backup_before_import_and_regenerate_all(client, svc, library, monkeypatch):

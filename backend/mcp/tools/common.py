@@ -1,4 +1,5 @@
 """What the tools share: limits, small helpers, and ``ToolsBase`` (finding items, PDFs, pages and notes)."""
+
 from __future__ import annotations
 
 import html
@@ -61,14 +62,14 @@ def fold_text(text: str) -> tuple[str, list[int]]:
 
 
 def parse_pages(spec: str, n: int) -> list[int]:
-    """"3", "2-5", "1,4,7-9", "10-" (to the end) -> sorted page numbers (1-based)."""
+    """ "3", "2-5", "1,4,7-9", "10-" (to the end) -> sorted page numbers (1-based)."""
     pages: set[int] = set()
     for part in str(spec).replace(" ", "").split(","):
         if not part:
             continue
         m = re.fullmatch(r"(\d*)-(\d*)|(\d+)", part)
         if not m or part == "-":
-            raise ToolError(f"Bad page range '{part}'. Use e.g. \"3\", \"2-5\" or \"1,4,7-9\".")
+            raise ToolError(f'Bad page range \'{part}\'. Use e.g. "3", "2-5" or "1,4,7-9".')
         if m.group(3):
             a = b = int(m.group(3))
         else:
@@ -125,7 +126,7 @@ class ToolsBase:
 
     def _by_key(self, items: dict[str, dict]) -> dict[str, dict]:
         out = {}
-        for p in items.values():   # library items win over trashed ones with the same key
+        for p in items.values():  # library items win over trashed ones with the same key
             k = p.get("citation_key")
             if k and (k not in out or out[k]["_trashed"]):
                 out[k] = p
@@ -155,13 +156,21 @@ class ToolsBase:
 
     def _brief(self, p: dict) -> dict:
         doi, arx = identifiers(p)
-        return drop_empty({
-            "key": p.get("citation_key"), "id": None if p.get("citation_key") else p["id"], "title": p.get("title"),
-            "authors": short_authors(p.get("authors")), "year": p.get("year"),
-            "type": ITEM_TYPE_LABELS.get(p.get("item_type") or "", p.get("item_type")),
-            "venue": p.get("journal"), "doi": doi, "arxiv": arx,
-            "has_pdf": bool(self._pdfs(p)), "in_trash": p.get("_trashed") or None,
-        })
+        return drop_empty(
+            {
+                "key": p.get("citation_key"),
+                "id": None if p.get("citation_key") else p["id"],
+                "title": p.get("title"),
+                "authors": short_authors(p.get("authors")),
+                "year": p.get("year"),
+                "type": ITEM_TYPE_LABELS.get(p.get("item_type") or "", p.get("item_type")),
+                "venue": p.get("journal"),
+                "doi": doi,
+                "arxiv": arx,
+                "has_pdf": bool(self._pdfs(p)),
+                "in_trash": p.get("_trashed") or None,
+            }
+        )
 
     def _label(self, p: dict) -> str:
         return p.get("citation_key") or f"item:{p['id']}"
@@ -190,15 +199,18 @@ class ToolsBase:
         key = (att["id"], st.st_mtime, st.st_size)
         if key in self._page_cache:
             return len(self._page_cache[key])
-        try:   # the full-text index already knows it
+        try:  # the full-text index already knows it
             with sqlite3.connect(self.s.fulltext.path, timeout=5) as c:
-                row = c.execute("SELECT pages, mtime, size FROM documents WHERE attachment_id = ?", (att["id"],)).fetchone()
+                row = c.execute(
+                    "SELECT pages, mtime, size FROM documents WHERE attachment_id = ?", (att["id"],)
+                ).fetchone()
             if row and row[1] == st.st_mtime and row[2] == st.st_size and row[0]:
                 return row[0]
         except sqlite3.Error:
             pass
         try:
             import pypdf
+
             return len(pypdf.PdfReader(str(path)).pages)
         except Exception:
             return None
@@ -209,14 +221,18 @@ class ToolsBase:
             for a in pdfs:
                 if a["id"] == attachment:
                     return a
-            raise ToolError(f"Attachment {attachment} is not a PDF of '{self._label(p)}'. "
-                            f"Its PDFs: {[a['id'] for a in pdfs] or 'none'}.")
+            raise ToolError(
+                f"Attachment {attachment} is not a PDF of '{self._label(p)}'. "
+                f"Its PDFs: {[a['id'] for a in pdfs] or 'none'}."
+            )
         if not pdfs:
             doi, arx = identifiers(p)
             where = ", ".join(x for x in (f"DOI {doi}" if doi else "", f"arXiv {arx}" if arx else "") if x)
-            raise ToolError(f"'{self._label(p)}' has no PDF in the library."
-                            + (f" It can be found online via {where}." if where else "")
-                            + " get_paper shows its abstract.")
+            raise ToolError(
+                f"'{self._label(p)}' has no PDF in the library."
+                + (f" It can be found online via {where}." if where else "")
+                + " get_paper shows its abstract."
+            )
         return pdfs[0]
 
     # ------------------------------------------------------------------ notes
@@ -238,8 +254,10 @@ class ToolsBase:
         if by_title:
             return sorted(by_title, key=len)[0]
         hints = [f"{h['path']} ({h['title']})" for h in self.s.notes.search(r, limit=5)]
-        raise ToolError(f"No note '{ref}'." + (" Similar: " + "; ".join(hints) if hints else
-                                              " Use search_library with scope 'notes' to find it."))
+        raise ToolError(
+            f"No note '{ref}'."
+            + (" Similar: " + "; ".join(hints) if hints else " Use search_library with scope 'notes' to find it.")
+        )
 
     def _link_target(self, path: str) -> str:
         """What to write inside [[…]] to reach ``path``: the file name when that is unambiguous."""

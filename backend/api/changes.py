@@ -1,4 +1,5 @@
 """The change feed: what changed since a page last asked (see backend/changes.py)."""
+
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, request

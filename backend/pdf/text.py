@@ -1,4 +1,5 @@
 """PDF text extraction (PyMuPDF when installed, pypdf otherwise)."""
+
 from __future__ import annotations
 
 import logging
@@ -17,6 +18,7 @@ def extract_text(path: Path | str, max_pages: int | None = None) -> tuple[str, i
     path = str(path)
     try:
         import fitz  # PyMuPDF
+
         with fitz.open(path) as doc:
             n = doc.page_count
             pages = range(n if max_pages is None else min(n, max_pages))
@@ -27,6 +29,7 @@ def extract_text(path: Path | str, max_pages: int | None = None) -> tuple[str, i
         log.warning("PyMuPDF failed on %s: %s", path, e)
     try:
         import pypdf
+
         reader = pypdf.PdfReader(path)
         n = len(reader.pages)
         limit = n if max_pages is None else min(n, max_pages)
@@ -47,6 +50,7 @@ def extract_pages(path: Path | str) -> list[str]:
     path = str(path)
     try:
         import fitz  # PyMuPDF
+
         with fitz.open(path) as doc:
             return [clean_text(doc[i].get_text()) for i in range(doc.page_count)]
     except ImportError:
@@ -55,6 +59,7 @@ def extract_pages(path: Path | str) -> list[str]:
         log.warning("PyMuPDF failed on %s: %s", path, e)
     try:
         import pypdf
+
         out = []
         for page in pypdf.PdfReader(path).pages:
             try:
@@ -69,7 +74,7 @@ def extract_pages(path: Path | str) -> list[str]:
 
 def clean_text(text: str) -> str:
     text = unicodedata.normalize("NFKC", text.replace("\x00", ""))  # also splits ligatures (ﬀ -> ff)
-    text = re.sub(r"-\n(?=[a-z])", "", text)        # re-join hyphenated line breaks
+    text = re.sub(r"-\n(?=[a-z])", "", text)  # re-join hyphenated line breaks
     text = re.sub(r"[ \t\r\f\v]+", " ", text)
     return text
 

@@ -4,6 +4,7 @@ Used for the addresses shown when pairing a device and to recognise requests tha
 computer itself through one of its own LAN addresses (they need no device login, like 127.0.0.1).
 Nothing here sends a packet: the UDP "connect" only asks the system which interface it would use.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -40,7 +41,7 @@ def parse_ip(text: str | None):
 def _primary_ipv4() -> str | None:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect(("10.255.255.255", 1))   # never sent; picks the interface of the default route
+        s.connect(("10.255.255.255", 1))  # never sent; picks the interface of the default route
         return s.getsockname()[0]
     except OSError:
         return None
@@ -64,7 +65,7 @@ def _addresses() -> list[str]:
         if ip is None or ip.is_loopback or ip.is_unspecified or ip.is_multicast:
             continue
         if ip.version == 6 and ip.is_link_local:
-            continue   # fe80:: addresses need a zone id in URLs; not useful for pairing
+            continue  # fe80:: addresses need a zone id in URLs; not useful for pairing
         if str(ip) not in out:
             out.append(str(ip))
     return out
@@ -78,8 +79,9 @@ def own_addresses() -> list[str]:
 def _local_hostname() -> str | None:
     if platform.system() == "Darwin":
         try:
-            name = subprocess.run(["scutil", "--get", "LocalHostName"], capture_output=True, text=True,
-                                  timeout=2).stdout.strip()
+            name = subprocess.run(
+                ["scutil", "--get", "LocalHostName"], capture_output=True, text=True, timeout=2
+            ).stdout.strip()
             if name:
                 return f"{name}.local"
         except (OSError, subprocess.SubprocessError):

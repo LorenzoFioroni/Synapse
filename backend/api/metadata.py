@@ -1,4 +1,5 @@
 """Online metadata lookups."""
+
 from __future__ import annotations
 
 from flask import Blueprint, jsonify
@@ -19,8 +20,13 @@ def lookup_for_item(item_id):
     item = s.papers.get(item_id)
     others = [p for p in s.papers.list() if p["id"] != item_id]
     try:
-        fetched = lookup(doi=item.get("doi"), title=item.get("title"), arxiv_id=arxiv_id_of(item),
-                         known=known_authors(others), email=s.settings.get("contact_email"))
+        fetched = lookup(
+            doi=item.get("doi"),
+            title=item.get("title"),
+            arxiv_id=arxiv_id_of(item),
+            known=known_authors(others),
+            email=s.settings.get("contact_email"),
+        )
     except LookupFailed as e:
         return error(str(e), 404)
     merged = {**item, **fetched}

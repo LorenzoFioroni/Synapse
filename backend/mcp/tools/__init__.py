@@ -9,6 +9,7 @@ can cite pages the app opens directly.
 One mixin per family of tools; ``ToolsBase`` (``common.py``) has the lookups they share.
 ``backend/mcp/server.py`` registers the tools with their descriptions and argument schemas.
 """
+
 from __future__ import annotations
 
 from .citations import CitationToolsMixin

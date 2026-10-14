@@ -4,6 +4,7 @@ Everything the user owns (the library database, the full-text index, PDFs and
 settings) lives under ``data/`` so the code folders stay clean and the data
 folder can be backed up or moved as a whole.
 """
+
 from __future__ import annotations
 
 import os

@@ -5,6 +5,7 @@ only from public addresses: a link to the local network (a router page, ``169.25
 another service on this machine) is refused, also when a redirect leads there. The response
 must be a PDF and is capped in size.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -53,8 +54,9 @@ def fetch_pdf(url: str, user_agent: str, max_bytes: int | None = None) -> bytes:
     for _ in range(MAX_REDIRECTS + 1):
         check_url(url)
         try:
-            r = requests.get(url, timeout=TIMEOUT, stream=True, allow_redirects=False,
-                             headers={"User-Agent": user_agent})
+            r = requests.get(
+                url, timeout=TIMEOUT, stream=True, allow_redirects=False, headers={"User-Agent": user_agent}
+            )
         except requests.RequestException as e:
             raise RemoteError("The PDF could not be downloaded.", 502) from e
         with r:
@@ -71,7 +73,7 @@ def fetch_pdf(url: str, user_agent: str, max_bytes: int | None = None) -> bytes:
                 data += chunk
                 if len(data) > max_bytes:
                     raise RemoteError("The file is too large.", 413)
-        if b"%PDF-" not in bytes(data[:1024]):   # the header may follow a little junk
+        if b"%PDF-" not in bytes(data[:1024]):  # the header may follow a little junk
             raise RemoteError("The link does not lead to a PDF.", 415)
         return bytes(data)
     raise RemoteError("Too many redirects.", 502)

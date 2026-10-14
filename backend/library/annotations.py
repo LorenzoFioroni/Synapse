@@ -23,6 +23,7 @@ Older versions stored the raw SVG markup of each page in one blob per item
 (``papers.annotations``). ``annotations_legacy.migrate_legacy`` converts those blobs once, after a backup,
 and leaves the old column untouched.
 """
+
 from __future__ import annotations
 
 import json
@@ -167,15 +168,18 @@ class AnnotationStore:
 
     def for_attachment(self, attachment_id: int) -> list[dict]:
         with self.db.session() as c:
-            rows = c.execute("SELECT * FROM annotations WHERE attachment_id = ? ORDER BY page, created, id",
-                             (attachment_id,)).fetchall()
+            rows = c.execute(
+                "SELECT * FROM annotations WHERE attachment_id = ? ORDER BY page, created, id", (attachment_id,)
+            ).fetchall()
         return [_row(r) for r in rows]
 
     def for_item(self, paper_id: str) -> list[dict]:
         with self.db.session() as c:
-            rows = c.execute("SELECT a.* FROM annotations a JOIN attachments t ON t.id = a.attachment_id "
-                             "WHERE t.paper_id = ? ORDER BY a.attachment_id, a.page, a.created",
-                             (paper_id,)).fetchall()
+            rows = c.execute(
+                "SELECT a.* FROM annotations a JOIN attachments t ON t.id = a.attachment_id "
+                "WHERE t.paper_id = ? ORDER BY a.attachment_id, a.page, a.created",
+                (paper_id,),
+            ).fetchall()
         return [_row(r) for r in rows]
 
     def get(self, ann_id: str) -> dict | None:
@@ -189,8 +193,13 @@ class AnnotationStore:
         if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", ann_id):
             raise AnnotationError("id must be 8–64 letters, digits, - or _.")
         now = utcnow()
-        row = {"id": ann_id, "attachment_id": attachment_id, "created": data.get("created") or now, "modified": now,
-               **{k: fields.get(k) for k in FIELDS}}
+        row = {
+            "id": ann_id,
+            "attachment_id": attachment_id,
+            "created": data.get("created") or now,
+            "modified": now,
+            **{k: fields.get(k) for k in FIELDS},
+        }
         row["rects"] = json.dumps(row["rects"]) if row["rects"] is not None else None
         row["path"] = json.dumps(row["path"]) if row["path"] is not None else None
         cols = ", ".join(row)
@@ -206,14 +215,15 @@ class AnnotationStore:
 
     def update(self, ann_id: str, data: dict) -> dict:
         fields = clean(data, partial=True)
-        fields.pop("type", None)   # an annotation keeps its kind
+        fields.pop("type", None)  # an annotation keeps its kind
         if not fields:
             raise AnnotationError("Nothing to change.")
         sets = {k: (json.dumps(v) if k in ("rects", "path") and v is not None else v) for k, v in fields.items()}
         sets["modified"] = utcnow()
         with self.db.session() as c:
-            cur = c.execute(f"UPDATE annotations SET {', '.join(f'{k} = ?' for k in sets)} WHERE id = ?",
-                            (*sets.values(), ann_id))
+            cur = c.execute(
+                f"UPDATE annotations SET {', '.join(f'{k} = ?' for k in sets)} WHERE id = ?", (*sets.values(), ann_id)
+            )
             if not cur.rowcount:
                 raise KeyError(ann_id)
         return self.get(ann_id)
@@ -226,8 +236,10 @@ class AnnotationStore:
     def pending_legacy(self) -> list[str]:
         """Items with an old SVG blob that has not been converted yet."""
         with self.db.session() as c:
-            rows = c.execute("SELECT id, annotations FROM papers WHERE annotations IS NOT NULL AND annotations != '' "
-                             "AND id NOT IN (SELECT paper_id FROM annotation_migration)").fetchall()
+            rows = c.execute(
+                "SELECT id, annotations FROM papers WHERE annotations IS NOT NULL AND annotations != '' "
+                "AND id NOT IN (SELECT paper_id FROM annotation_migration)"
+            ).fetchall()
         out = []
         for r in rows:
             try:
@@ -237,13 +249,15 @@ class AnnotationStore:
             if isinstance(blob, dict) and any(str(v or "").strip() for v in blob.values()):
                 out.append(r["id"])
             else:
-                with self.db.session() as c:   # empty blob: nothing to convert, never look again
-                    c.execute("INSERT OR REPLACE INTO annotation_migration VALUES (?, NULL, 0, '[]', ?)",
-                              (r["id"], utcnow()))
+                with self.db.session() as c:  # empty blob: nothing to convert, never look again
+                    c.execute(
+                        "INSERT OR REPLACE INTO annotation_migration VALUES (?, NULL, 0, '[]', ?)", (r["id"], utcnow())
+                    )
         return out
 
     def migration_report(self) -> list[dict]:
         with self.db.session() as c:
-            rows = c.execute("SELECT m.*, p.title FROM annotation_migration m LEFT JOIN papers p ON p.id = m.paper_id "
-                             "ORDER BY m.at").fetchall()
+            rows = c.execute(
+                "SELECT m.*, p.title FROM annotation_migration m LEFT JOIN papers p ON p.id = m.paper_id ORDER BY m.at"
+            ).fetchall()
         return [{**dict(r), "skipped": json.loads(r["skipped"] or "[]")} for r in rows]

@@ -10,6 +10,7 @@ does not need to be running) and only ever writes new notes into ``notes/ai/``.
 
 See the README section "AI access (MCP)".
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,22 +47,34 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
 
     from backend.config import Config
+
     config = Config.from_env(a.data)
 
     if a.config:
-        print(_config(config.data_dir, bool(a.data or os.environ.get("SYNAPSE_DATA_DIR") or os.environ.get("ZCLONE_DATA_DIR"))))
+        print(
+            _config(
+                config.data_dir, bool(a.data or os.environ.get("SYNAPSE_DATA_DIR") or os.environ.get("ZCLONE_DATA_DIR"))
+            )
+        )
         return 0
 
     # stdout carries the protocol: all logging goes to stderr (Claude shows it in its MCP logs).
-    logging.basicConfig(stream=sys.stderr, level=logging.INFO if a.verbose else logging.WARNING,
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        stream=sys.stderr,
+        level=logging.INFO if a.verbose else logging.WARNING,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     if not config.db_path.exists():
-        print(f"No library found at {config.data_dir} (missing library.db). Start the app once, "
-              f"or pass --data with the right folder.", file=sys.stderr)
+        print(
+            f"No library found at {config.data_dir} (missing library.db). Start the app once, "
+            f"or pass --data with the right folder.",
+            file=sys.stderr,
+        )
         return 1
 
     from backend.mcp import build_server, serve_stdio
     from backend.services import Services
+
     services = Services(config)
     serve_stdio(build_server(services, VERSION))
     return 0

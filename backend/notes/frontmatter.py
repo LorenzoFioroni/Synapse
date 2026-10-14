@@ -12,6 +12,7 @@ Anything else (nested maps, multi-line strings, …) is kept verbatim as a raw s
 written back untouched. Editing goes through ``set_fields``, which rewrites only the keys
 it is given and leaves every other line of the file byte-for-byte as it was.
 """
+
 from __future__ import annotations
 
 import re
@@ -36,7 +37,7 @@ def split(text: str) -> tuple[str | None, str, int]:
     lines = text.splitlines(keepends=True)
     for i in range(1, len(lines)):
         if lines[i].rstrip("\r\n") in ("---", "..."):
-            return "".join(lines[1:i]), "".join(lines[i + 1:]), i + 1
+            return "".join(lines[1:i]), "".join(lines[i + 1 :]), i + 1
     return None, text, 0  # unterminated: treat the whole file as body
 
 
@@ -127,8 +128,12 @@ def read(text: str) -> dict:
 def _scalar(v, *, in_list: bool = False) -> str:
     s = "" if v is None else str(v)
     plain = (s == "" and not in_list) or (
-        bool(_PLAIN_SAFE.match(s)) and ": " not in s and not s.endswith(":") and s.strip() == s
-        and not (in_list and "," in s))
+        bool(_PLAIN_SAFE.match(s))
+        and ": " not in s
+        and not s.endswith(":")
+        and s.strip() == s
+        and not (in_list and "," in s)
+    )
     if plain:
         return s
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'

@@ -1,4 +1,5 @@
 """PDF annotations, one record each (see backend/annotations.py)."""
+
 from __future__ import annotations
 
 from flask import Blueprint, jsonify
@@ -11,7 +12,7 @@ bp = Blueprint("annotations", __name__, url_prefix="/api")
 
 @bp.get("/attachments/<int:att_id>/annotations")
 def list_for_attachment(att_id):
-    svc().papers.get_attachment(att_id)   # 404 for an unknown attachment
+    svc().papers.get_attachment(att_id)  # 404 for an unknown attachment
     return jsonify(annotations=svc().annotations.for_attachment(att_id))
 
 

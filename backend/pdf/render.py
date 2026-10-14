@@ -7,6 +7,7 @@ Regions are ``[x, y, w, h]`` as fractions of the page as it is displayed (origin
 the top left, rotation applied), the same convention the PDF viewer uses for
 snapshots (``rect=`` in its URL and the ``zc:pdf-region`` PNG chunk).
 """
+
 from __future__ import annotations
 
 import json
@@ -18,31 +19,41 @@ from .png import REGION_KEYWORD, png_encode
 def available() -> bool:
     try:
         import pypdfium2  # noqa: F401
+
         return True
     except ImportError:
         return False
 
 
-MISSING = ("Viewing and snapshotting pages needs the pypdfium2 package. Install it in the app's "
-           "environment (pip install pypdfium2, or pip install -r requirements.txt) and restart Claude.")
+MISSING = (
+    "Viewing and snapshotting pages needs the pypdfium2 package. Install it in the app's "
+    "environment (pip install pypdfium2, or pip install -r requirements.txt) and restart Claude."
+)
 
 
 def open_pdf(path: Path | str):
     import pypdfium2 as pdfium
+
     return pdfium.PdfDocument(str(path))
 
 
 def _render_rgb(page, scale: float, crop=(0, 0, 0, 0)) -> tuple[bytearray, int, int]:
     import pypdfium2.raw as raw
-    bm = page.render(scale=scale, crop=crop, rev_byteorder=True, force_bitmap_format=raw.FPDFBitmap_BGR,
-                     fill_color=(255, 255, 255, 255))
+
+    bm = page.render(
+        scale=scale,
+        crop=crop,
+        rev_byteorder=True,
+        force_bitmap_format=raw.FPDFBitmap_BGR,
+        fill_color=(255, 255, 255, 255),
+    )
     w, h, stride = bm.width, bm.height, bm.stride
     buf = bytes(bm.buffer)
     if stride == w * 3:
-        return bytearray(buf[:w * h * 3]), w, h
+        return bytearray(buf[: w * h * 3]), w, h
     out = bytearray()
     for y in range(h):
-        out += buf[y * stride:y * stride + w * 3]
+        out += buf[y * stride : y * stride + w * 3]
     return out, w, h
 
 
@@ -54,8 +65,9 @@ def page_count(path: Path | str) -> int:
         doc.close()
 
 
-def render_region(path: Path | str, page_no: int, rect: list[float], *, scale: float = 3.0,
-                  max_side: int = 2400) -> tuple[bytes, int, int]:
+def render_region(
+    path: Path | str, page_no: int, rect: list[float], *, scale: float = 3.0, max_side: int = 2400
+) -> tuple[bytes, int, int]:
     """PNG of a region (fractions of the displayed page) with the region recorded in it."""
     doc = open_pdf(path)
     try:
@@ -72,17 +84,25 @@ def render_region(path: Path | str, page_no: int, rect: list[float], *, scale: f
 
 
 # ============================================================================ page view
-_GLYPHS = {   # 3×5 pixel digits for the grid labels
-    "0": "111101101101111", "1": "010110010010111", "2": "111001111100111", "3": "111001111001111",
-    "4": "101101111001001", "5": "111100111001111", "6": "111100111101111", "7": "111001001001001",
-    "8": "111101111101111", "9": "111101111001111", ".": "000000000000010",
+_GLYPHS = {  # 3×5 pixel digits for the grid labels
+    "0": "111101101101111",
+    "1": "010110010010111",
+    "2": "111001111100111",
+    "3": "111001111001111",
+    "4": "101101111001001",
+    "5": "111100111001111",
+    "6": "111100111101111",
+    "7": "111001001001001",
+    "8": "111101111101111",
+    "9": "111101111001111",
+    ".": "000000000000010",
 }
 
 
 def _put(img, w, h, x, y, color):
     if 0 <= x < w and 0 <= y < h:
         i = (y * w + x) * 3
-        img[i:i + 3] = bytes(color)
+        img[i : i + 3] = bytes(color)
 
 
 def _blend(img, w, h, x, y, color, a):
@@ -116,11 +136,11 @@ def page_view(path: Path | str, page_no: int, regions: list[dict] | None = None,
         rgb, pw, ph = _render_rgb(page, scale)
     finally:
         doc.close()
-    m = 40   # margin for the labels
-    w, h = pw + m + 14, ph + m + 14   # room for the last labels too
+    m = 40  # margin for the labels
+    w, h = pw + m + 14, ph + m + 14  # room for the last labels too
     img = bytearray(b"\xff" * (w * h * 3))
     for y in range(ph):
-        img[((y + m) * w + m) * 3:((y + m) * w + m + pw) * 3] = rgb[y * pw * 3:(y + 1) * pw * 3]
+        img[((y + m) * w + m) * 3 : ((y + m) * w + m + pw) * 3] = rgb[y * pw * 3 : (y + 1) * pw * 3]
     grid, ink = (0, 120, 255), (60, 60, 60)
     for k in range(11):
         gx, gy = m + min(pw - 1, round(k / 10 * pw)), m + min(ph - 1, round(k / 10 * ph))
@@ -143,7 +163,7 @@ def page_view(path: Path | str, page_no: int, regions: list[dict] | None = None,
             for y in range(y0, y1 + 1):
                 _put(img, w, h, x0 + t, y, red)
                 _put(img, w, h, x1 - t, y, red)
-        ly = y0 - 22 if y0 - 22 >= m else y0   # the number above the box, so it hides nothing
+        ly = y0 - 22 if y0 - 22 >= m else y0  # the number above the box, so it hides nothing
         for x in range(x0, x0 + 8 + 16 * len(str(n))):
             for y in range(ly, ly + 22):
                 _put(img, w, h, x, y, red)

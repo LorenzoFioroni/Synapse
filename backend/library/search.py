@@ -25,6 +25,7 @@ any can be negated with ``-``):
 
 Unknown prefixes (``arXiv:2205.03415``) are searched as plain text.
 """
+
 from __future__ import annotations
 
 import re
@@ -54,7 +55,7 @@ def parse_query(q: str) -> list[tuple]:
         neg, field, quoted, bare = bool(m.group(1)), m.group(2), m.group(3), m.group(4)
         value = quoted if quoted is not None else bare
         if field and field.lower() not in FILTER_KEYS:
-            value, field = f"{field}:{value}", None       # e.g. arXiv:2205.03415 is plain text
+            value, field = f"{field}:{value}", None  # e.g. arXiv:2205.03415 is plain text
         if value in (None, "", "-"):
             continue
         out.append((value, neg, field.lower() if field else None))
@@ -69,8 +70,13 @@ _hay_cache: dict[tuple, str] = {}
 
 
 def _haystack(paper: dict, mode: str) -> str:
-    key = (paper["id"], paper.get("date_modified"), mode, len(paper.get("attachments") or []),
-           tuple(paper.get("tags") or ()))
+    key = (
+        paper["id"],
+        paper.get("date_modified"),
+        mode,
+        len(paper.get("attachments") or []),
+        tuple(paper.get("tags") or ()),
+    )
     hit = _hay_cache.get(key)
     if hit is None:
         if len(_hay_cache) > 50000:
@@ -112,10 +118,10 @@ def _filter_matches(p: dict, field: str, value: str, ctx: dict) -> bool:
         if v in ("none", "unfiled"):
             return not fids
         want = [x.strip() for x in v.split("/") if x.strip()]
-        for fid in fids:   # matches if ANY of the item's folders matches
+        for fid in fids:  # matches if ANY of the item's folders matches
             path = [normalize(n) for n in ctx.get("folder_paths", {}).get(fid, [])]
-            if "/" in v:   # a path: must match from the root, e.g. "Physics/Transport"
-                if path[:len(want)] == want:
+            if "/" in v:  # a path: must match from the root, e.g. "Physics/Transport"
+                if path[: len(want)] == want:
                     return True
             elif v in path:
                 return True
@@ -139,8 +145,9 @@ def _filter_matches(p: dict, field: str, value: str, ctx: dict) -> bool:
     return v in normalize(p.get(key) or "")
 
 
-def search(papers: list[dict], query: str, mode: str = "basic", fulltext=None,
-           ctx: dict | None = None, notes=None) -> tuple[list[dict], dict]:
+def search(
+    papers: list[dict], query: str, mode: str = "basic", fulltext=None, ctx: dict | None = None, notes=None
+) -> tuple[list[dict], dict]:
     """Filter ``papers``. Returns (matches, hits) where hits[paper_id] = {"fulltext": snippet}.
 
     ``ctx`` gives filters what they need: ``folder_paths`` {folder_id: [names]}
@@ -156,8 +163,7 @@ def search(papers: list[dict], query: str, mode: str = "basic", fulltext=None,
     terms = [(v, neg) for v, neg, f in parsed if not f]
 
     if filters:
-        papers = [p for p in papers
-                  if all(_filter_matches(p, f, v, ctx) != neg for v, neg, f in filters)]
+        papers = [p for p in papers if all(_filter_matches(p, f, v, ctx) != neg for v, neg, f in filters)]
     if not terms:
         return papers, {}
 

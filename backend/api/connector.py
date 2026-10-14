@@ -6,6 +6,7 @@ DOI or arXiv id the metadata is looked up online and the page's own metadata
 only fills the gaps. A PDF can be sent along (fetched by the extension with the
 user's own browser session, so institutional access works) or downloaded here.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,8 +27,24 @@ log = logging.getLogger(__name__)
 bp = Blueprint("connector", __name__, url_prefix="/api/connector")
 
 VERSION = "1.0"
-PAGE_FIELDS = ["title", "year", "journal", "volume", "issue", "pages", "publisher", "abstract", "issn", "isbn",
-               "doi", "url", "language", "item_type", "place", "short_title"]
+PAGE_FIELDS = [
+    "title",
+    "year",
+    "journal",
+    "volume",
+    "issue",
+    "pages",
+    "publisher",
+    "abstract",
+    "issn",
+    "isbn",
+    "doi",
+    "url",
+    "language",
+    "item_type",
+    "place",
+    "short_title",
+]
 
 
 @bp.after_request
@@ -46,12 +63,19 @@ def allow_extension_origins(resp):
 def ping():
     """Lets the extension check the library is running and fill its folder/tag pickers."""
     s = svc()
-    return jsonify(app="synapse", version=VERSION, folders=s.folders.tree(),
-                   tags=[t["name"] for t in s.tags.list()], counts=s.papers.counts(),
-                   # Settings → "When an item is added": the popup shows a checkbox for each "ask"
-                   on_add={"fetch_metadata": s.settings.get("add_fetch_metadata"),
-                           "find_pdf": s.settings.get("add_find_pdf"),
-                           "fetch_references": s.settings.get("add_fetch_references")})
+    return jsonify(
+        app="synapse",
+        version=VERSION,
+        folders=s.folders.tree(),
+        tags=[t["name"] for t in s.tags.list()],
+        counts=s.papers.counts(),
+        # Settings → "When an item is added": the popup shows a checkbox for each "ask"
+        on_add={
+            "fetch_metadata": s.settings.get("add_fetch_metadata"),
+            "find_pdf": s.settings.get("add_find_pdf"),
+            "fetch_references": s.settings.get("add_fetch_references"),
+        },
+    )
 
 
 def _payload() -> tuple[dict, object]:
@@ -122,6 +146,7 @@ def save():
         import tempfile
 
         from ..pdf.text import clean_text, extract_text, find_identifier
+
         with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
             tmp.write(pdf_bytes)
             tmp.flush()
@@ -136,8 +161,9 @@ def save():
     if page.get("lookup", True) and (page.get("doi") or page.get("arxiv")):
         try:
             ident = page.get("doi") or f"arXiv:{page['arxiv']}"
-            fetched = lookup(identifier=ident, known=known_authors(s.papers.list()),
-                             email=s.settings.get("contact_email"))
+            fetched = lookup(
+                identifier=ident, known=known_authors(s.papers.list()), email=s.settings.get("contact_email")
+            )
             # online metadata wins; the page fills whatever is missing
             item = {**item, **{k: v for k, v in fetched.items() if v}}
             if page.get("page_url") and not fetched.get("url"):
@@ -170,11 +196,11 @@ def save():
         filename = _download_pdf(page["pdf_url"], s.config.pdf_dir)
         pdf = "downloaded" if filename else "failed"
     if filename:
-        name = (os.path.basename(page.get("pdf_name") or "") or "Full Text PDF")
+        name = os.path.basename(page.get("pdf_name") or "") or "Full Text PDF"
         s.papers.add_attachment(created["id"], name, filename, "pdf")
         s.attachments_changed()
     elif s.settings.wants("add_find_pdf", page.get("find_pdf")) and (item.get("doi") or item.get("title")):
-        s.find_pdf_later(created["id"])     # no PDF from the page: look for an open-access copy
+        s.find_pdf_later(created["id"])  # no PDF from the page: look for an open-access copy
         pdf = "searching"
 
     return jsonify(item=s.papers.get(created["id"]), source=source, pdf=pdf), 201

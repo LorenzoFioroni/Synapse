@@ -7,6 +7,7 @@ ones away, it can continue in the background, and new items follow never / alway
 Starts its own server on port 8771 with a throw-away data folder and fake online services
 (each lookup takes 0.6 s); your library is not touched.
 """
+
 import asyncio
 import os
 import subprocess
@@ -78,7 +79,9 @@ async def wait_for(fn, timeout=10):
 
 async def main():
     guard(PORT)
-    srv = subprocess.Popen([sys.executable, "-c", SERVER], cwd=APP, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    srv = subprocess.Popen(
+        [sys.executable, "-c", SERVER], cwd=APP, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
     for _ in range(50):
         try:
             requests.get(BASE + "/api/schema", timeout=1)
@@ -119,17 +122,26 @@ async def main():
             g = {name: (hidden, ns) for name, hidden, ns in groups}
             check("articles with updates come first, in order", g["changes"][1] == [3, 8, 10], str(g["changes"]))
             check("not found ones are listed next", g["error"] == (False, [6]), str(g["error"]))
-            check("up-to-date ones are in a section at the end", g["same"][1] == [1, 2, 4, 5, 7, 9, 11, 12], str(g["same"]))
+            check(
+                "up-to-date ones are in a section at the end",
+                g["same"][1] == [1, 2, 4, 5, 7, 9, 11, 12],
+                str(g["same"]),
+            )
             check("…which is collapsed", not await page.evaluate("document.querySelector('[data-group=same]').open"))
-            check("the up-to-date articles are not visible", not await page.locator('[data-group=same] .mr-article').first.is_visible())
-            head = " ".join((await page.text_content('[data-group=same] summary')).split())
+            check(
+                "the up-to-date articles are not visible",
+                not await page.locator("[data-group=same] .mr-article").first.is_visible(),
+            )
+            head = " ".join((await page.text_content("[data-group=same] summary")).split())
             check("the section says how many", "Already up to date (8)" in head, head)
             await shot(page, "a1-review-grouped")
-            await page.click('[data-group=same] summary')
-            check("it opens on click", await page.locator('[data-group=same] .mr-article').first.is_visible())
-            await page.click('.dialog .btn-primary')
+            await page.click("[data-group=same] summary")
+            check("it opens on click", await page.locator("[data-group=same] .mr-article").first.is_visible())
+            await page.click(".dialog .btn-primary")
             await page.wait_for_selector(".mr-dialog", state="detached")
-            titles = await page.evaluate(f"fetch('/api/items/{ids[2]}').then((r) => r.json()).then((i) => i.title + ' | ' + i.journal)")
+            titles = await page.evaluate(
+                f"fetch('/api/items/{ids[2]}').then((r) => r.json()).then((i) => i.title + ' | ' + i.journal)"
+            )
             check("applying saves the changes", titles == "New paper 2 | Physical Review Letters", titles)
 
             # ---- continue in the background, review later
@@ -145,44 +157,64 @@ async def main():
             check("'Continue in Background' is offered while looking up", await bg.is_visible())
             await bg.click()
             await page.wait_for_selector(".mr-dialog", state="detached")
-            check("a progress notification shows instead", await page.locator('.progress-toast').count() == 1,
-                  await page.text_content('.progress-toast') if await page.locator('.progress-toast').count() else "")
+            check(
+                "a progress notification shows instead",
+                await page.locator(".progress-toast").count() == 1,
+                await page.text_content(".progress-toast") if await page.locator(".progress-toast").count() else "",
+            )
             await shot(page, "a2-background")
             await wait_for(lambda: page.locator('.toast .toast-action:has-text("Review")').count(), 15)
-            await page.wait_for_selector('.progress-toast', state="detached")
-            msg = " ".join((await page.text_content('.toast:not(.progress-toast):has(.toast-action)')).split())
+            await page.wait_for_selector(".progress-toast", state="detached")
+            msg = " ".join((await page.text_content(".toast:not(.progress-toast):has(.toast-action)")).split())
             check("when done, a notification offers Review", "Review" in msg and "up to date" in msg, msg)
-            check("…and the progress notification is gone", await page.locator('.progress-toast').count() == 0)
+            check("…and the progress notification is gone", await page.locator(".progress-toast").count() == 0)
             await page.click('.toast .toast-action:has-text("Review")')
             await page.wait_for_selector(".mr-dialog")
-            check("an article whose only change is a new citation key counts as up to date", "3 articles with updates" in msg
-                  and "8 up to date" in msg, msg)
-            check("Review opens the finished results", await page.locator('.mr-article.pending').count() == 0
-                  and await page.locator('.dialog-footer button:has-text("Continue in Background")').is_hidden())
+            check(
+                "an article whose only change is a new citation key counts as up to date",
+                "3 articles with updates" in msg and "8 up to date" in msg,
+                msg,
+            )
+            check(
+                "Review opens the finished results",
+                await page.locator(".mr-article.pending").count() == 0
+                and await page.locator('.dialog-footer button:has-text("Continue in Background")').is_hidden(),
+            )
             await page.keyboard.press("Escape")
 
             # ---- Settings → Adding Items
             await page.keyboard.press(f"{mod}+,")
             await page.wait_for_selector("#set-adding")
             labels = await page.eval_on_selector_all("#set-adding .s-title", "els => els.map((e) => e.textContent)")
-            check("Settings has an Adding Items section with four never/ask/always choices",
-                  len(labels) == 4 and await page.locator('#set-adding .segmented button').count() == 12, str(labels))
+            check(
+                "Settings has an Adding Items section with four never/ask/always choices",
+                len(labels) == 4 and await page.locator("#set-adding .segmented button").count() == 12,
+                str(labels),
+            )
             await page.click('#set-adding [data-seg="add_find_pdf"] button[data-v="always"]')
-            await wait_for(lambda: page.evaluate("fetch('/api/settings').then((r) => r.json()).then((s) => s.settings.add_find_pdf === 'always')"))
+            await wait_for(
+                lambda: page.evaluate(
+                    "fetch('/api/settings').then((r) => r.json()).then((s) => s.settings.add_find_pdf === 'always')"
+                )
+            )
             check("choosing saves it", True)
             await shot(page, "a3-settings")
             await page.keyboard.press("Escape")
 
             # ---- import: ask
-            bib = ("@article{a1, title={Imported Old one}, author={Doe, J}, year={2020}, keywords={spin, transport}}\n"
-                   "@article{a2, title={Imported fine}, author={Roe, R}, year={2021}}")
+            bib = (
+                "@article{a1, title={Imported Old one}, author={Doe, J}, year={2020}, keywords={spin, transport}}\n"
+                "@article{a2, title={Imported fine}, author={Roe, R}, year={2021}}"
+            )
             await page.keyboard.press(f"{mod}+i")
             await page.wait_for_selector(".dialog .drop-zone")
             await page.click(".dialog details summary")
             await page.fill(".dialog textarea", bib)
             await page.click(".dialog [data-parse]")
             await page.wait_for_selector(".import-list")
-            boxes = await page.eval_on_selector_all(".import-after [data-after]", "els => els.map((e) => e.dataset.after + (e.checked ? '+' : '-'))")
+            boxes = await page.eval_on_selector_all(
+                ".import-after [data-after]", "els => els.map((e) => e.dataset.after + (e.checked ? '+' : '-'))"
+            )
             check("the import dialog asks about tags and metadata, ticked", boxes == ["tags+", "metadata+"], str(boxes))
             hint = await page.text_content(".import-after .field-hint")
             check("…and names the 'always' action", "looks for PDFs" in hint, hint)
@@ -191,10 +223,15 @@ async def main():
             await page.click(".dialog .btn-primary")
             await page.wait_for_selector(".import-list", state="detached")
             await wait_for(lambda: page.locator('.toast .toast-action:has-text("Review")').count(), 15)
-            items = await page.evaluate("fetch('/api/items').then((r) => r.json()).then((d) => d.items.filter((i) => i.title.startsWith('Imported')))")
+            items = await page.evaluate(
+                "fetch('/api/items').then((r) => r.json()).then((d) => d.items.filter((i) => i.title.startsWith('Imported')))"
+            )
             first = next(i for i in items if "one" in i["title"])
-            check("unticked: keywords are not turned into tags", first["tags"] == [] and "spin" in (first.get("keywords") or ""),
-                  str(first["tags"]))
+            check(
+                "unticked: keywords are not turned into tags",
+                first["tags"] == [] and "spin" in (first.get("keywords") or ""),
+                str(first["tags"]),
+            )
             msg = " ".join((await page.text_content('.toast:has(.toast-action:has-text("Review"))')).split())
             check("the imported items' metadata is retrieved in the background", "1 article with updates" in msg, msg)
             calls_after = len(requests.get(BASE + "/test/calls").json()["calls"])

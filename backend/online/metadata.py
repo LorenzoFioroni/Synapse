@@ -1,4 +1,5 @@
 """Online metadata lookup: Crossref (DOI / title), OpenAlex, arXiv and Open Library."""
+
 from __future__ import annotations
 
 import difflib
@@ -16,6 +17,8 @@ from ..library.identifiers import ARXIV_DOI, ARXIV_ID, clean_doi
 from .http import TIMEOUT, LookupFailed, api_headers, arxiv_wait
 
 log = logging.getLogger(__name__)
+
+
 # ------------------------------------------------------------ identifiers
 def classify_identifier(s: str) -> tuple[str, str]:
     s = (s or "").strip()
@@ -88,38 +91,52 @@ def _crossref_to_item(m: dict) -> dict:
             year = str(dp[0][0])
             break
     ctype = m.get("type", "")
-    itype = {"journal-article": "journalArticle", "book": "book", "monograph": "book", "edited-book": "book",
-             "book-chapter": "bookSection", "proceedings-article": "conferencePaper", "dissertation": "thesis",
-             "report": "report", "posted-content": "preprint", "dataset": "dataset"}.get(ctype, "journalArticle")
+    itype = {
+        "journal-article": "journalArticle",
+        "book": "book",
+        "monograph": "book",
+        "edited-book": "book",
+        "book-chapter": "bookSection",
+        "proceedings-article": "conferencePaper",
+        "dissertation": "thesis",
+        "report": "report",
+        "posted-content": "preprint",
+        "dataset": "dataset",
+    }.get(ctype, "journalArticle")
     authors = [(a.get("family") or a.get("name") or "", a.get("given") or "") for a in m.get("author") or []]
     issn = m.get("ISSN") or []
     isbn = m.get("ISBN") or []
     lic = m.get("license") or []
-    return {k: v for k, v in {
-        "item_type": itype,
-        "title": strip_tags(first("title")),
-        "authors": join_authors(authors),
-        "year": year,
-        "journal": first("container-title"),
-        "volume": m.get("volume", ""),
-        "issue": m.get("issue", ""),
-        "pages": (m.get("page") or "").replace("–", "-"),
-        "publisher": m.get("publisher", ""),
-        "doi": m.get("DOI", ""),
-        "url": m.get("URL", ""),
-        "issn": ", ".join(issn),
-        "isbn": ", ".join(isbn),
-        "abstract": strip_tags(m.get("abstract", "")),
-        "short_title": first("short-title"),
-        "language": m.get("language", ""),
-        "license": lic[0].get("URL", "") if lic else "",
-        "library_catalog": "Crossref",
-    }.items() if v}
+    return {
+        k: v
+        for k, v in {
+            "item_type": itype,
+            "title": strip_tags(first("title")),
+            "authors": join_authors(authors),
+            "year": year,
+            "journal": first("container-title"),
+            "volume": m.get("volume", ""),
+            "issue": m.get("issue", ""),
+            "pages": (m.get("page") or "").replace("–", "-"),
+            "publisher": m.get("publisher", ""),
+            "doi": m.get("DOI", ""),
+            "url": m.get("URL", ""),
+            "issn": ", ".join(issn),
+            "isbn": ", ".join(isbn),
+            "abstract": strip_tags(m.get("abstract", "")),
+            "short_title": first("short-title"),
+            "language": m.get("language", ""),
+            "license": lic[0].get("URL", "") if lic else "",
+            "library_catalog": "Crossref",
+        }.items()
+        if v
+    }
 
 
 def crossref_doi(doi: str, email: str = "") -> dict:
-    r = requests.get(f"https://api.crossref.org/works/{requests.utils.quote(doi)}",
-                     headers=api_headers(email), timeout=TIMEOUT)
+    r = requests.get(
+        f"https://api.crossref.org/works/{requests.utils.quote(doi)}", headers=api_headers(email), timeout=TIMEOUT
+    )
     if r.status_code == 404:
         raise LookupFailed(f"DOI {doi} was not found on Crossref.")
     r.raise_for_status()
@@ -127,8 +144,12 @@ def crossref_doi(doi: str, email: str = "") -> dict:
 
 
 def crossref_title(title: str, email: str = "") -> dict:
-    r = requests.get("https://api.crossref.org/works", params={"query.bibliographic": title, "rows": 3},
-                     headers=api_headers(email), timeout=TIMEOUT)
+    r = requests.get(
+        "https://api.crossref.org/works",
+        params={"query.bibliographic": title, "rows": 3},
+        headers=api_headers(email),
+        timeout=TIMEOUT,
+    )
     r.raise_for_status()
     items = r.json()["message"].get("items") or []
     if not items:
@@ -158,12 +179,17 @@ def title_similarity(a: str, b: str) -> float:
 
 def openalex_authors(doi: str, email: str = "") -> list[tuple[str, str]]:
     try:
-        r = requests.get(f"https://api.openalex.org/works/doi:{requests.utils.quote(doi)}",
-                         headers=api_headers(email), timeout=TIMEOUT)
+        r = requests.get(
+            f"https://api.openalex.org/works/doi:{requests.utils.quote(doi)}",
+            headers=api_headers(email),
+            timeout=TIMEOUT,
+        )
         if not r.ok:
             return []
-        return [parse_display_name((a.get("author") or {}).get("display_name") or "")
-                for a in r.json().get("authorships") or []]
+        return [
+            parse_display_name((a.get("author") or {}).get("display_name") or "")
+            for a in r.json().get("authorships") or []
+        ]
     except Exception as e:
         log.info("OpenAlex failed: %s", e)
         return []
@@ -181,8 +207,12 @@ def _arxiv_get(params: dict):
 def _arxiv_entries(params: dict) -> list:
     r = _arxiv_get(params)
     r.raise_for_status()
-    return [e for e in ET.fromstring(r.content).findall("a:entry", _ARXIV_NS) if e.find("a:title", _ARXIV_NS) is not None
-            and (e.findtext("a:id", default="", namespaces=_ARXIV_NS) or "").find("api/errors") < 0]
+    return [
+        e
+        for e in ET.fromstring(r.content).findall("a:entry", _ARXIV_NS)
+        if e.find("a:title", _ARXIV_NS) is not None
+        and (e.findtext("a:id", default="", namespaces=_ARXIV_NS) or "").find("api/errors") < 0
+    ]
 
 
 def arxiv_title(title: str) -> dict:
@@ -210,7 +240,9 @@ def arxiv(arxiv_id: str) -> dict:
 def _arxiv_item(entry, arxiv_id: str) -> dict:
     ns = _ARXIV_NS
     t = lambda path: " ".join((entry.findtext(path, default="", namespaces=ns) or "").split())
-    authors = [parse_display_name(a.findtext("a:name", default="", namespaces=ns)) for a in entry.findall("a:author", ns)]
+    authors = [
+        parse_display_name(a.findtext("a:name", default="", namespaces=ns)) for a in entry.findall("a:author", ns)
+    ]
     item = {
         "item_type": "preprint",
         "title": t("a:title"),
@@ -231,31 +263,47 @@ def _arxiv_item(entry, arxiv_id: str) -> dict:
 
 
 def openlibrary_isbn(isbn: str) -> dict:
-    r = requests.get("https://openlibrary.org/api/books",
-                     params={"bibkeys": f"ISBN:{isbn}", "format": "json", "jscmd": "data"}, timeout=TIMEOUT)
+    r = requests.get(
+        "https://openlibrary.org/api/books",
+        params={"bibkeys": f"ISBN:{isbn}", "format": "json", "jscmd": "data"},
+        timeout=TIMEOUT,
+    )
     r.raise_for_status()
     d = r.json().get(f"ISBN:{isbn}")
     if not d:
         raise LookupFailed(f"ISBN {isbn} was not found on Open Library.")
-    return {k: v for k, v in {
-        "item_type": "book",
-        "title": d.get("title", "") + (f": {d['subtitle']}" if d.get("subtitle") else ""),
-        "authors": join_authors(parse_display_name(a.get("name", "")) for a in d.get("authors") or []),
-        "year": re.search(r"\d{4}", d.get("publish_date", "") or "").group(0) if re.search(r"\d{4}", d.get("publish_date", "") or "") else "",
-        "publisher": ", ".join(p.get("name", "") for p in d.get("publishers") or []),
-        "place": ", ".join(p.get("name", "") for p in d.get("publish_places") or []),
-        "isbn": isbn,
-        "url": d.get("url", ""),
-        "library_catalog": "Open Library",
-    }.items() if v}
+    return {
+        k: v
+        for k, v in {
+            "item_type": "book",
+            "title": d.get("title", "") + (f": {d['subtitle']}" if d.get("subtitle") else ""),
+            "authors": join_authors(parse_display_name(a.get("name", "")) for a in d.get("authors") or []),
+            "year": re.search(r"\d{4}", d.get("publish_date", "") or "").group(0)
+            if re.search(r"\d{4}", d.get("publish_date", "") or "")
+            else "",
+            "publisher": ", ".join(p.get("name", "") for p in d.get("publishers") or []),
+            "place": ", ".join(p.get("name", "") for p in d.get("publish_places") or []),
+            "isbn": isbn,
+            "url": d.get("url", ""),
+            "library_catalog": "Open Library",
+        }.items()
+        if v
+    }
 
 
 # ------------------------------------------------------------------ facade
 _POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="lookup")
 
 
-def lookup(*, identifier: str | None = None, doi: str | None = None, title: str | None = None,
-           arxiv_id: str | None = None, known: list[tuple[str, str]] | None = None, email: str = "") -> dict:
+def lookup(
+    *,
+    identifier: str | None = None,
+    doi: str | None = None,
+    title: str | None = None,
+    arxiv_id: str | None = None,
+    known: list[tuple[str, str]] | None = None,
+    email: str = "",
+) -> dict:
     """Return normalized metadata for an identifier, a DOI, an arXiv id or a title.
 
     arXiv's own DOIs (10.48550/arXiv.…) are registered with DataCite, not Crossref, so they and
@@ -293,14 +341,20 @@ def lookup(*, identifier: str | None = None, doi: str | None = None, title: str 
                 try:
                     item = arxiv_title(value)
                 except LookupFailed:
-                    raise LookupFailed("No close match for this title on Crossref or arXiv. "
-                                       "Add the DOI or arXiv ID to the item and try again.") from None
+                    raise LookupFailed(
+                        "No close match for this title on Crossref or arXiv. "
+                        "Add the DOI or arXiv ID to the item and try again."
+                    ) from None
                 except (requests.RequestException, ET.ParseError):
                     raise crossref_error from None
         else:
             raise LookupFailed("PubMed lookups are not supported yet.")
     except requests.RequestException as e:
-        host = urlparse(e.request.url).netloc if getattr(e, "request", None) is not None and e.request.url else "the metadata service"
+        host = (
+            urlparse(e.request.url).netloc
+            if getattr(e, "request", None) is not None and e.request.url
+            else "the metadata service"
+        )
         raise LookupFailed(f"Could not reach {host}. Check your internet connection and try again.") from e
 
     if item.get("doi") and kind in ("doi", "title"):

@@ -6,6 +6,7 @@ under it (a trackpad pinch / Ctrl+wheel), on any page, and +/- keep the middle o
 Starts its own server on port 8780 with a throw-away data folder and a 12-page PDF made from
 tests/e2e/fixtures/twocolumn.pdf; your library is not touched.
 """
+
 import asyncio
 import subprocess
 import sys
@@ -43,6 +44,7 @@ def check(name, cond, extra=""):
 
 def long_pdf() -> Path:
     from pypdf import PdfReader, PdfWriter
+
     src = PdfReader(APP / "tests" / "e2e" / "fixtures" / "twocolumn.pdf")
     w = PdfWriter()
     for _ in range(4):
@@ -54,7 +56,9 @@ def long_pdf() -> Path:
 
 
 def same(a, b, tol=0.01, x=True):
-    return a and b and a["page"] == b["page"] and abs(a["fy"] - b["fy"]) < tol and (not x or abs(a["fx"] - b["fx"]) < tol)
+    return (
+        a and b and a["page"] == b["page"] and abs(a["fy"] - b["fy"]) < tol and (not x or abs(a["fx"] - b["fx"]) < tol)
+    )
 
 
 async def open_at(page, url, start):
@@ -69,8 +73,12 @@ async def open_at(page, url, start):
 async def main():
     guard(PORT)
     pdf = long_pdf()
-    srv = subprocess.Popen([sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
-                           cwd=APP, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    srv = subprocess.Popen(
+        [sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
+        cwd=APP,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     try:
         for _ in range(100):
             try:
@@ -80,9 +88,12 @@ async def main():
                 time.sleep(0.2)
         item = requests.post(BASE + "/api/items", json={"title": "Zoom test"}).json()
         with open(pdf, "rb") as fh:
-            att = requests.post(f"{BASE}/api/items/{item['id']}/attachments",
-                                files={"file": ("twelve.pdf", fh, "application/pdf")}).json()["attachments"][0]
-        url = f"{BASE}/viewer.html?" + urlencode({"file": f"/pdfs/{att['url']}", "paper_id": item["id"], "att": att["id"], "title": "x"})
+            att = requests.post(
+                f"{BASE}/api/items/{item['id']}/attachments", files={"file": ("twelve.pdf", fh, "application/pdf")}
+            ).json()["attachments"][0]
+        url = f"{BASE}/viewer.html?" + urlencode(
+            {"file": f"/pdfs/{att['url']}", "paper_id": item["id"], "att": att["id"], "title": "x"}
+        )
         async with async_playwright() as p:
             browser = await p.chromium.launch()
             page = await browser.new_page(viewport={"width": 1200, "height": 900})
@@ -90,13 +101,15 @@ async def main():
             page.on("pageerror", lambda e: errors.append(str(e)))
 
             # a pinch is many small Ctrl+wheel events at one pointer position
-            cases = [("zoom in, left column, page 5", 400, 300, -8, 12, 5),
-                     ("zoom in, right column low on the screen, page 5", 900, 700, -8, 12, 5),
-                     ("zoom in near the top, page 1", 300, 150, -8, 12, 1),
-                     ("zoom in at a page break, page 12", 1000, 120, -8, 12, 12),
-                     ("zoom in to the limit, page 8", 600, 450, -8, 25, 8),
-                     ("zoom out, page 5", 900, 500, 10, 8, 5),
-                     ("zoom out low on the screen, page 3", 500, 800, 10, 8, 3)]
+            cases = [
+                ("zoom in, left column, page 5", 400, 300, -8, 12, 5),
+                ("zoom in, right column low on the screen, page 5", 900, 700, -8, 12, 5),
+                ("zoom in near the top, page 1", 300, 150, -8, 12, 1),
+                ("zoom in at a page break, page 12", 1000, 120, -8, 12, 12),
+                ("zoom in to the limit, page 8", 600, 450, -8, 25, 8),
+                ("zoom out, page 5", 900, 500, 10, 8, 5),
+                ("zoom out low on the screen, page 3", 500, 800, 10, 8, 3),
+            ]
             for name, x, y, dy, n, start in cases:
                 await open_at(page, url, start)
                 before = await page.evaluate(PROBE, [x, y])
@@ -109,21 +122,29 @@ async def main():
                 await page.wait_for_timeout(600)
                 after = await page.evaluate(PROBE, [x, y])
                 scale = await page.evaluate("window.zcViewer.scale")
-                check(f"{name}: the spot under the pointer stays (zoom {scale:.2f})",
-                      same(before, after, x=after and after["xFree"]),
-                      f"{before and {k: round(v, 3) for k, v in before.items() if k != 'xFree'}} → "
-                      f"{after and {k: round(v, 3) for k, v in after.items() if k != 'xFree'}}")
+                check(
+                    f"{name}: the spot under the pointer stays (zoom {scale:.2f})",
+                    same(before, after, x=after and after["xFree"]),
+                    f"{before and {k: round(v, 3) for k, v in before.items() if k != 'xFree'}} → "
+                    f"{after and {k: round(v, 3) for k, v in after.items() if k != 'xFree'}}",
+                )
 
             # the buttons keep the middle of the view
             await open_at(page, url, 6)
-            mid = await page.evaluate("(() => { const r = document.getElementById('pdf-container').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+            mid = await page.evaluate(
+                "(() => { const r = document.getElementById('pdf-container').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"
+            )
             before = await page.evaluate(PROBE, mid)
             for _ in range(3):
                 await page.click("#zoom-in")
                 await page.wait_for_timeout(60)
             await page.wait_for_timeout(600)
             after = await page.evaluate(PROBE, mid)
-            check("+ three times keeps the middle of the view", same(before, after, x=after and after["xFree"]), f"{before} → {after}")
+            check(
+                "+ three times keeps the middle of the view",
+                same(before, after, x=after and after["xFree"]),
+                f"{before} → {after}",
+            )
             await page.click("#zoom-out")
             await page.wait_for_timeout(600)
             again = await page.evaluate(PROBE, mid)

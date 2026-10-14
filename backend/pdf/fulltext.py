@@ -5,6 +5,7 @@ database stays small; it can be deleted at any time and rebuilt from the PDFs.
 SQLite FTS5 is used when available (fast, accent-insensitive, ranked
 snippets); otherwise a plain table with LIKE matching is used as a fallback.
 """
+
 from __future__ import annotations
 
 import html
@@ -86,10 +87,13 @@ class FulltextIndex:
         st = path.stat()
         with self._write_lock, self._session() as c:
             c.execute(f"DELETE FROM {self._table} WHERE attachment_id = ?", (att_id,))
-            c.execute(f"INSERT INTO {self._table} (text, attachment_id, paper_id) VALUES (?, ?, ?)",
-                      (text, att_id, paper_id))
-            c.execute("INSERT OR REPLACE INTO documents VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                      (att_id, paper_id, path.name, st.st_mtime, st.st_size, pages, len(text), utcnow()))
+            c.execute(
+                f"INSERT INTO {self._table} (text, attachment_id, paper_id) VALUES (?, ?, ?)", (text, att_id, paper_id)
+            )
+            c.execute(
+                "INSERT OR REPLACE INTO documents VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (att_id, paper_id, path.name, st.st_mtime, st.st_size, pages, len(text), utcnow()),
+            )
         return len(text)
 
     def remove(self, att_ids) -> None:
@@ -124,19 +128,23 @@ class FulltextIndex:
                     rows = c.execute(
                         "SELECT paper_id, snippet(content, 0, ?, ?, '…', 14) AS snip FROM content "
                         "WHERE content MATCH ? ORDER BY rank LIMIT ?",
-                        (MARK_OPEN, MARK_CLOSE, q, limit)).fetchall()
+                        (MARK_OPEN, MARK_CLOSE, q, limit),
+                    ).fetchall()
                 except sqlite3.OperationalError as e:
                     log.info("FTS query failed for %r: %s", term, e)
                     rows = []
                 for r in rows:
                     out.setdefault(r["paper_id"], self._to_html(r["snip"]))
             else:
-                for r in c.execute("SELECT paper_id, text FROM content_plain WHERE text LIKE ? LIMIT ?",
-                                   (f"%{term}%", limit)):
+                for r in c.execute(
+                    "SELECT paper_id, text FROM content_plain WHERE text LIKE ? LIMIT ?", (f"%{term}%", limit)
+                ):
                     t = r["text"]
                     i = t.lower().find(term.lower())
                     s = max(0, i - 60)
-                    snip = t[s:i] + MARK_OPEN + t[i:i + len(term)] + MARK_CLOSE + t[i + len(term):i + len(term) + 60]
+                    snip = (
+                        t[s:i] + MARK_OPEN + t[i : i + len(term)] + MARK_CLOSE + t[i + len(term) : i + len(term) + 60]
+                    )
                     out.setdefault(r["paper_id"], self._to_html(("…" if s else "") + snip + "…"))
         return out
 
@@ -147,7 +155,9 @@ class FulltextIndex:
 
     def stats(self) -> dict:
         with self._session() as c:
-            row = c.execute("SELECT COUNT(*), COALESCE(SUM(chars), 0), COALESCE(SUM(pages), 0) FROM documents").fetchone()
+            row = c.execute(
+                "SELECT COUNT(*), COALESCE(SUM(chars), 0), COALESCE(SUM(pages), 0) FROM documents"
+            ).fetchone()
         size = Path(self.path).stat().st_size if Path(self.path).exists() else 0
         return {"documents": row[0], "chars": row[1], "pages": row[2], "bytes": size, "fts5": self.fts}
 

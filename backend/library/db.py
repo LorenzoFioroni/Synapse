@@ -1,4 +1,5 @@
 """SQLite access and schema migrations for the library database."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -16,8 +17,8 @@ def utcnow() -> str:
 class Database:
     def __init__(self, path: Path | str):
         self.path = str(path)
-        self.version = 0   # goes up with every write through this object (for caches)
-        self.on_write = None   # called after each commit that changed something (the change feed)
+        self.version = 0  # goes up with every write through this object (for caches)
+        self.on_write = None  # called after each commit that changed something (the change feed)
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=15)
@@ -44,7 +45,7 @@ class Database:
         if changed and self.on_write:
             try:
                 self.on_write()
-            except Exception:   # telling others must never undo a saved change
+            except Exception:  # telling others must never undo a saved change
                 pass
 
     # ------------------------------------------------------------------ schema
@@ -109,9 +110,11 @@ class Database:
                 )""")
             c.execute("CREATE INDEX IF NOT EXISTS idx_paper_folders_folder ON paper_folders(folder_id)")
             # One-time migration from the single-folder column.
-            c.execute("INSERT OR IGNORE INTO paper_folders (paper_id, folder_id) "
-                      "SELECT id, folder_id FROM papers WHERE folder_id IS NOT NULL "
-                      "AND folder_id IN (SELECT id FROM folders)")
+            c.execute(
+                "INSERT OR IGNORE INTO paper_folders (paper_id, folder_id) "
+                "SELECT id, folder_id FROM papers WHERE folder_id IS NOT NULL "
+                "AND folder_id IN (SELECT id FROM folders)"
+            )
             c.execute("UPDATE papers SET folder_id = NULL WHERE folder_id IS NOT NULL")
             c.execute("CREATE INDEX IF NOT EXISTS idx_paper_tags_tag ON paper_tags(tag_id)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_title ON papers(title)")
@@ -120,6 +123,7 @@ class Database:
             c.execute("CREATE INDEX IF NOT EXISTS idx_att_paper ON attachments(paper_id)")
             # PDF annotations, one row each (see backend/library/annotations.py)
             from .annotations import SCHEMA as ANNOTATIONS_SCHEMA
+
             for stmt in ANNOTATIONS_SCHEMA.split(";"):
                 if stmt.strip():
                     c.execute(stmt)
@@ -133,5 +137,7 @@ class Database:
             # Orphaned attachments from older versions that deleted papers without cascading.
             c.execute("DELETE FROM attachments WHERE paper_id NOT IN (SELECT id FROM papers)")
             c.execute("DELETE FROM paper_tags WHERE paper_id NOT IN (SELECT id FROM papers)")
-            c.execute("DELETE FROM paper_folders WHERE paper_id NOT IN (SELECT id FROM papers) "
-                      "OR folder_id NOT IN (SELECT id FROM folders)")
+            c.execute(
+                "DELETE FROM paper_folders WHERE paper_id NOT IN (SELECT id FROM papers) "
+                "OR folder_id NOT IN (SELECT id FROM folders)"
+            )

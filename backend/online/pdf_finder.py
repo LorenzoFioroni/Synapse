@@ -1,4 +1,5 @@
 """Find an open-access PDF for an item and verify it is the right paper."""
+
 from __future__ import annotations
 
 import logging
@@ -25,15 +26,17 @@ FALLBACK_EMAIL = "synapse@example.com"
 def _ratio(a: str, b: str) -> float:
     try:
         from rapidfuzz import fuzz
+
         return fuzz.partial_ratio(a, b)
     except ImportError:
         from difflib import SequenceMatcher
+
         if len(a) > len(b):
             a, b = b, a
         best = 0.0
         step = max(1, len(a) // 4)
         for i in range(0, max(1, len(b) - len(a) + 1), step):
-            best = max(best, SequenceMatcher(None, a, b[i:i + len(a)]).ratio())
+            best = max(best, SequenceMatcher(None, a, b[i : i + len(a)]).ratio())
         return best * 100
 
 
@@ -56,8 +59,9 @@ def arxiv_pdf_url(arxiv_id: str) -> str:
     return f"https://arxiv.org/pdf/{arxiv_id}"
 
 
-def candidate_urls(title: str | None, doi: str | None, email: str, arxiv_id: str | None = None,
-                   title_search: bool = True) -> list[str]:
+def candidate_urls(
+    title: str | None, doi: str | None, email: str, arxiv_id: str | None = None, title_search: bool = True
+) -> list[str]:
     """Where to look, best first. With a known arXiv id its PDF comes first for a preprint; for a
     published paper the publisher's open-access copy (Unpaywall) comes first and arXiv second.
     ``title_search=False`` skips the searches by title (Unpaywall, Scholar, arXiv)."""
@@ -78,8 +82,9 @@ def candidate_urls(title: str | None, doi: str | None, email: str, arxiv_id: str
         out.append(arxiv_pdf_url(arxiv_id))
     if title and title_search:
         try:
-            r = requests.get(f"https://api.unpaywall.org/v2/search?query={urllib.parse.quote(title)}&email={email}",
-                             timeout=10)
+            r = requests.get(
+                f"https://api.unpaywall.org/v2/search?query={urllib.parse.quote(title)}&email={email}", timeout=10
+            )
             if r.ok:
                 for res in r.json().get("results", [])[:2]:
                     loc = (res.get("response") or {}).get("best_oa_location") or {}
@@ -90,8 +95,11 @@ def candidate_urls(title: str | None, doi: str | None, email: str, arxiv_id: str
             gs = f"https://scholar.google.com/scholar?q=%22{urllib.parse.quote(title)}%22"
             r = requests.get(gs, headers={"User-Agent": BROWSER_UA}, timeout=10)
             if r.ok:
-                m = re.search(r'<div class="gs_r gs_or gs_scl".*?(?=<div class="gs_r gs_or gs_scl"|id="gs_bdy_ft"|$)',
-                              r.text, re.DOTALL)
+                m = re.search(
+                    r'<div class="gs_r gs_or gs_scl".*?(?=<div class="gs_r gs_or gs_scl"|id="gs_bdy_ft"|$)',
+                    r.text,
+                    re.DOTALL,
+                )
                 if m:
                     pm = re.search(r'<div class="gs_or_ggsm"[^>]*>.*?<a[^>]+href="([^"]+)"', m.group(0), re.DOTALL)
                     if pm:
@@ -100,8 +108,10 @@ def candidate_urls(title: str | None, doi: str | None, email: str, arxiv_id: str
         except Exception as e:
             log.info("Scholar lookup failed: %s", e)
         try:
-            r = requests.get("http://export.arxiv.org/api/query?search_query=ti:%22"
-                             f"{urllib.parse.quote(title)}%22&max_results=1", timeout=10)
+            r = requests.get(
+                f"http://export.arxiv.org/api/query?search_query=ti:%22{urllib.parse.quote(title)}%22&max_results=1",
+                timeout=10,
+            )
             if r.ok:
                 ns = "{http://www.w3.org/2005/Atom}"
                 for entry in ET.fromstring(r.content).findall(f"{ns}entry"):
@@ -122,8 +132,9 @@ def _unique(urls: list) -> list[str]:
     return uniq
 
 
-def find_and_download(title: str | None, doi: str | None, pdf_dir: Path, email: str = "",
-                      arxiv_id: str | None = None) -> dict:
+def find_and_download(
+    title: str | None, doi: str | None, pdf_dir: Path, email: str = "", arxiv_id: str | None = None
+) -> dict:
     """Returns {"status": "success", "filename": ...} or {"status": "not_found", "message": ...}."""
     doi = clean_doi(doi)
     if arxiv_id:
@@ -140,8 +151,10 @@ def find_and_download(title: str | None, doi: str | None, pdf_dir: Path, email: 
         return found
     if not first and not rest:
         return {"status": "not_found", "message": "No open-access copy was found online."}
-    return {"status": "not_found",
-            "message": "Candidates were found, but none passed verification (wrong paper or a login page)."}
+    return {
+        "status": "not_found",
+        "message": "Candidates were found, but none passed verification (wrong paper or a login page).",
+    }
 
 
 def _download_first(urls: list[str], title, doi, arxiv_id, pdf_dir) -> dict | None:
@@ -149,7 +162,7 @@ def _download_first(urls: list[str], title, doi, arxiv_id, pdf_dir) -> dict | No
     for url in urls:
         try:
             if urllib.parse.urlparse(url).hostname in ("arxiv.org", "export.arxiv.org"):
-                arxiv_wait()   # batch Find PDF: keep arXiv requests apart
+                arxiv_wait()  # batch Find PDF: keep arXiv requests apart
             r = requests.get(url, headers={"User-Agent": BROWSER_UA}, timeout=20)
             ctype = r.headers.get("Content-Type", "application/pdf")
             if not (r.ok and ("pdf" in ctype or r.content[:4] == b"%PDF")):
@@ -165,4 +178,3 @@ def _download_first(urls: list[str], title, doi, arxiv_id, pdf_dir) -> dict | No
         except Exception as e:
             log.info("Download failed for %s: %s", url, e)
     return None
-

@@ -1,4 +1,5 @@
 """Items: list/search, create, edit, trash."""
+
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
@@ -18,6 +19,7 @@ def schema():
 
 def search_context(s) -> dict:
     from ..library.fields import ITEM_TYPE_LABELS
+
     return {"folder_paths": s.folders.paths(), "type_labels": ITEM_TYPE_LABELS}
 
 
@@ -73,8 +75,7 @@ def list_items():
         hits = {**{k: v for k, v in hits.items() if k in {p["id"] for p in items}}, **more}
     if request.args.get("lean") in ("1", "true"):
         items = [lean(p) for p in items]
-    return jsonify(items=items, hits=hits, counts=s.papers.counts(library), mode=mode, query=q,
-                   sidebar=sidebar(s))
+    return jsonify(items=items, hits=hits, counts=s.papers.counts(library), mode=mode, query=q, sidebar=sidebar(s))
 
 
 def items_by_ids():
@@ -98,8 +99,13 @@ def search_preview():
     q = request.args.get("q", "").strip()
     mode = request.args.get("mode", "all")
     items, _ = search_mod.search(s.papers.list(), q, mode, s.fulltext, search_context(s)) if q else ([], {})
-    return jsonify(count=len(items), sample=[{"id": p["id"], "title": p.get("title"), "year": p.get("year"),
-                                              "authors": p.get("authors")} for p in items[:6]])
+    return jsonify(
+        count=len(items),
+        sample=[
+            {"id": p["id"], "title": p.get("title"), "year": p.get("year"), "authors": p.get("authors")}
+            for p in items[:6]
+        ],
+    )
 
 
 @bp.post("/items")
@@ -121,7 +127,7 @@ def update_item(item_id):
     s.papers.get(item_id)
     if "tags" in data:
         s.tags.set_for_item(item_id, data.pop("tags") or [])
-    if "folder_ids" in data:   # replaces the item's folder memberships
+    if "folder_ids" in data:  # replaces the item's folder memberships
         s.folders.set_item_folders(item_id, data.pop("folder_ids") or [])
     return jsonify(s.papers.update(item_id, data))
 

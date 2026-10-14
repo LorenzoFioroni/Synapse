@@ -32,7 +32,7 @@ def test_items_by_ids(client):
     res = client.get(f"/api/items?ids={a['id']},{b['id']},{c['id']},nope").get_json()
     got = {i["id"]: i for i in res["items"]}
     assert set(got) == {a["id"], b["id"], c["id"]} and res["missing"] == ["nope"]
-    assert got[b["id"]]["deleted_at"]                     # the browser drops trashed ones from its list
+    assert got[b["id"]]["deleted_at"]  # the browser drops trashed ones from its list
     assert "abstract" not in got[c["id"]]
     assert res["counts"] == {"library": 2, "trash": 1, "duplicates": 0} and "folders" in res["sidebar"]
 

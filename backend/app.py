@@ -1,5 +1,6 @@
 """Flask application factory: builds the app from the services, the access guard, the JSON API
 blueprints and the frontend, and starts the background work."""
+
 from __future__ import annotations
 
 import logging
@@ -25,12 +26,14 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
     app.extensions["synapse"] = services
 
     from .access import guard
+
     guard.install(app, config.allowed_hosts, config.lan)
 
     from . import frontend
     from .api import register_blueprints
+
     register_blueprints(app)
-    app.register_blueprint(frontend.bp)   # last: its catch-all serves the static files
+    app.register_blueprint(frontend.bp)  # last: its catch-all serves the static files
 
     @app.errorhandler(NotFound)
     def not_found(e):
@@ -45,6 +48,7 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
     # Annotations saved by older versions as SVG markup become records (once, after a backup).
     try:
         from .library.annotations_legacy import migrate_legacy
+
         migrate_legacy(services)
     except Exception:
         log.exception("Converting old annotations failed; the old data is kept")

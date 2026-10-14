@@ -1,10 +1,23 @@
 from backend.library.search import parse_query, search
 
 PAPERS = [
-    {"id": "1", "title": "Variational Matrix Product Operators", "authors": "Bañuls, Mari Carmen",
-     "abstract": "steady state", "journal": "PRL", "doi": "10.1/abc", "attachments": []},
-    {"id": "2", "title": "Superdiffusive Energy Transport", "authors": "Ljubotina, Marko",
-     "abstract": "", "journal": "Physical Review X", "attachments": [{"name": "supplement.pdf"}]},
+    {
+        "id": "1",
+        "title": "Variational Matrix Product Operators",
+        "authors": "Bañuls, Mari Carmen",
+        "abstract": "steady state",
+        "journal": "PRL",
+        "doi": "10.1/abc",
+        "attachments": [],
+    },
+    {
+        "id": "2",
+        "title": "Superdiffusive Energy Transport",
+        "authors": "Ljubotina, Marko",
+        "abstract": "",
+        "journal": "Physical Review X",
+        "attachments": [{"name": "supplement.pdf"}],
+    },
 ]
 
 
@@ -43,14 +56,42 @@ def test_fulltext():
 
 
 ORG = [
-    {"id": "a", "title": "Spin transport", "authors": "Doe, J", "year": 2019, "item_type": "journalArticle",
-     "tags": ["Transport", "open systems"], "folder_ids": [2, 3], "attachments": [{"name": "x.pdf"}], "doi": "10.1/a"},
-    {"id": "b", "title": "Open quantum systems", "authors": "Breuer, H", "year": 2002, "item_type": "book",
-     "tags": [], "folder_ids": [], "attachments": []},
-    {"id": "c", "title": "Energy transport", "authors": "Roe, R", "year": 2023, "item_type": "journalArticle",
-     "tags": ["transport"], "folder_ids": [1], "attachments": []},
+    {
+        "id": "a",
+        "title": "Spin transport",
+        "authors": "Doe, J",
+        "year": 2019,
+        "item_type": "journalArticle",
+        "tags": ["Transport", "open systems"],
+        "folder_ids": [2, 3],
+        "attachments": [{"name": "x.pdf"}],
+        "doi": "10.1/a",
+    },
+    {
+        "id": "b",
+        "title": "Open quantum systems",
+        "authors": "Breuer, H",
+        "year": 2002,
+        "item_type": "book",
+        "tags": [],
+        "folder_ids": [],
+        "attachments": [],
+    },
+    {
+        "id": "c",
+        "title": "Energy transport",
+        "authors": "Roe, R",
+        "year": 2023,
+        "item_type": "journalArticle",
+        "tags": ["transport"],
+        "folder_ids": [1],
+        "attachments": [],
+    },
 ]
-CTX = {"folder_paths": {1: ["Physics"], 2: ["Physics", "Transport"], 3: ["Reading group"]}, "type_labels": {"book": "Book", "journalArticle": "Journal Article"}}
+CTX = {
+    "folder_paths": {1: ["Physics"], 2: ["Physics", "Transport"], 3: ["Reading group"]},
+    "type_labels": {"book": "Book", "journalArticle": "Journal Article"},
+}
 
 
 def f(q, mode="basic"):
@@ -58,14 +99,14 @@ def f(q, mode="basic"):
 
 
 def test_filters():
-    assert f("tag:transport") == ["a", "c"]          # case-insensitive
+    assert f("tag:transport") == ["a", "c"]  # case-insensitive
     assert f('tag:"open systems"') == ["a"]
     assert f("tag:none") == ["b"]
     assert f("-tag:transport") == ["b"]
-    assert f("folder:physics") == ["a", "c"]         # any folder on the path
+    assert f("folder:physics") == ["a", "c"]  # any folder on the path
     assert f('folder:"Physics/Transport"') == ["a"]
     assert f("folder:none") == ["b"]
-    assert f('folder:"reading group"') == ["a"]       # any of the item's folders
+    assert f('folder:"reading group"') == ["a"]  # any of the item's folders
     assert f("has:folder") == ["a", "c"]
     assert f("type:book") == ["b"] and f("type:journal") == ["a", "c"]
     assert f("year:2019") == ["a"] and f("year:2000-2020") == ["a", "b"] and f("year:>2010") == ["a", "c"]
@@ -76,7 +117,7 @@ def test_filters():
 def test_filters_combine_with_text():
     assert f("transport year:>2020") == ["c"]
     assert f("tag:transport -energy") == ["a"]
-    assert f("arXiv:2205.03415") == []                # unknown prefix = plain text, no crash
+    assert f("arXiv:2205.03415") == []  # unknown prefix = plain text, no crash
 
 
 def test_search_finds_items_through_notes(client, svc):
@@ -84,14 +125,22 @@ def test_search_finds_items_through_notes(client, svc):
     b = svc.papers.create({"authors": "Doe, J", "title": "Unrelated", "year": 2001})
     svc.papers.create({"authors": "Roe, K", "title": "Also unrelated", "year": 2002})
     client.post("/api/notes/note", json={"item_id": a["id"], "text": "Uses Lindblad steady states."})
-    client.put("/api/notes/note", json={"path": "Idea.md", "create": True,
-                                        "text": f"Doe's trick [@{b['citation_key']}] avoids sign problems.\nOther line about steady states."})
+    client.put(
+        "/api/notes/note",
+        json={
+            "path": "Idea.md",
+            "create": True,
+            "text": f"Doe's trick [@{b['citation_key']}] avoids sign problems.\nOther line about steady states.",
+        },
+    )
     ids = lambda r: {i["id"] for i in r.json["items"]}
     r = client.get("/api/items", query_string={"q": "steady states", "mode": "all"})
-    assert ids(r) == {a["id"]}                          # paper note text; the other line does not cite b
-    assert "Note" in r.json["hits"][a["id"]]["fulltext"] and "<mark>steady</mark>" in r.json["hits"][a["id"]]["fulltext"]
+    assert ids(r) == {a["id"]}  # paper note text; the other line does not cite b
+    assert (
+        "Note" in r.json["hits"][a["id"]]["fulltext"] and "<mark>steady</mark>" in r.json["hits"][a["id"]]["fulltext"]
+    )
     r = client.get("/api/items", query_string={"q": "sign problems", "mode": "fulltext"})
-    assert ids(r) == {b["id"]}                          # the line that cites b
+    assert ids(r) == {b["id"]}  # the line that cites b
     assert client.get("/api/items", query_string={"q": "sign problems", "mode": "basic"}).json["items"] == []
     r = client.get("/api/items", query_string={"q": "-lindblad", "mode": "all"})
     assert a["id"] not in ids(r) and b["id"] in ids(r)  # negation works through notes too

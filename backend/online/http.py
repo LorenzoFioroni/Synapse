@@ -1,11 +1,12 @@
 """What every lookup on the web shares: the timeout, how we introduce ourselves, the error type,
 and the spacing of requests to arXiv."""
+
 from __future__ import annotations
 
 import threading
 import time
 
-TIMEOUT = 15   # seconds, for API requests
+TIMEOUT = 15  # seconds, for API requests
 
 # Browsers' User-Agent: some publishers only serve PDFs to what looks like a browser.
 BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"

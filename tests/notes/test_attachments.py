@@ -1,4 +1,5 @@
 """Attachments no note uses go to their own trash; both notes trashes are emptied after a while."""
+
 import io
 import os
 import time
@@ -7,13 +8,15 @@ from datetime import datetime, timedelta
 from backend.notes.attachments import ATTACHMENT_TRASH, STAMP, attachment_name
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 32
-OLD = time.time() - 2 * 3600            # older than the grace period
+OLD = time.time() - 2 * 3600  # older than the grace period
 
 
 def upload(client, name="fig.png"):
-    r = client.post("/api/notes/attachments", data={"file": (io.BytesIO(PNG), name)}, content_type="multipart/form-data")
+    r = client.post(
+        "/api/notes/attachments", data={"file": (io.BytesIO(PNG), name)}, content_type="multipart/form-data"
+    )
     assert r.status_code == 201, r.json
-    return r.json["path"]               # attachments/<stamp>-fig.png
+    return r.json["path"]  # attachments/<stamp>-fig.png
 
 
 def note(client, title, text):
@@ -31,7 +34,7 @@ def age(svc, path, when=OLD):
 def test_attachment_name():
     assert attachment_name("attachments/a.png") == "a.png"
     assert attachment_name("./attachments/sub/a.png") == "sub/a.png"
-    assert attachment_name("a.png") == "a.png"                    # resolved under attachments/ by the editor
+    assert attachment_name("a.png") == "a.png"  # resolved under attachments/ by the editor
     assert attachment_name("../attachments/a.png?x=1#y") == "a.png"
     assert attachment_name("https://example.org/a.png") is None
     assert attachment_name("data:image/png;base64,xx") is None
@@ -39,7 +42,12 @@ def test_attachment_name():
 
 
 def test_sweep_moves_unused_and_brings_them_back(client, svc):
-    used, unused, fresh, in_trashed = upload(client, "used.png"), upload(client, "unused.png"), upload(client, "fresh.png"), upload(client, "t.png")
+    used, unused, fresh, in_trashed = (
+        upload(client, "used.png"),
+        upload(client, "unused.png"),
+        upload(client, "fresh.png"),
+        upload(client, "t.png"),
+    )
     for p in (used, unused, in_trashed):
         age(svc, p)
     note(client, "Keeps", f"\n![]({used})\n")
@@ -47,10 +55,10 @@ def test_sweep_moves_unused_and_brings_them_back(client, svc):
     client.post("/api/notes/trash", json={"path": gone})
 
     r = svc.attachments.sweep()
-    name = lambda p: p.split("/", 1)[1]   # noqa: E731
-    assert r["trashed"] == [name(unused)]                          # not the fresh one (grace), nor the used ones
+    name = lambda p: p.split("/", 1)[1]  # noqa: E731
+    assert r["trashed"] == [name(unused)]  # not the fresh one (grace), nor the used ones
     assert (svc.vault.root / used).exists() and (svc.vault.root / fresh).exists()
-    assert (svc.vault.root / in_trashed).exists()                  # a note in the notes trash still uses it
+    assert (svc.vault.root / in_trashed).exists()  # a note in the notes trash still uses it
     assert not (svc.vault.root / unused).exists()
 
     ov = client.get("/api/notes/attachments").json
@@ -72,18 +80,21 @@ def test_sweep_moves_unused_and_brings_them_back(client, svc):
 
 def test_restore_and_delete_from_the_trash(client, svc):
     a, b = upload(client, "a.png"), upload(client, "b.png")
-    age(svc, a); age(svc, b)
+    age(svc, a)
+    age(svc, b)
     svc.attachments.sweep()
     trash = {t["name"]: t for t in client.get("/api/notes/attachments").json["trash"]}
     ta, tb = trash[a.split("/", 1)[1]], trash[b.split("/", 1)[1]]
     r = client.post("/api/notes/attachments/restore", json=ta)
     assert r.status_code == 200 and r.json["path"] == a and (svc.vault.root / a).exists()
-    assert svc.attachments.sweep()["trashed"] == []                # just restored: not swept again right away
+    assert svc.attachments.sweep()["trashed"] == []  # just restored: not swept again right away
     assert client.post("/api/notes/attachments/delete", json=tb).json == {"ok": True}
     assert client.get("/api/notes/attachments").json["trash"] == []
     assert client.post("/api/notes/attachments/delete", json=tb).status_code == 404
     assert client.post("/api/notes/attachments/restore", json={"trash_id": "../x", "name": "a.png"}).status_code == 400
-    assert client.post("/api/notes/attachments/delete", json={"trash_id": ta["trash_id"], "name": "../../notes.db"}).status_code in (400, 404)
+    assert client.post(
+        "/api/notes/attachments/delete", json={"trash_id": ta["trash_id"], "name": "../../notes.db"}
+    ).status_code in (400, 404)
 
 
 def test_purge_after_the_retention(client, svc):
@@ -101,7 +112,7 @@ def test_purge_after_the_retention(client, svc):
     # right after updating, nothing old is deleted: the clock starts when the feature first runs
     svc.settings.update({"notes_trash_retention": "1d"})
     assert svc.attachments.purge() == {"attachments": 0, "notes": 0}
-    (svc.vault.root / ATTACHMENT_TRASH / ".since").write_text(str(time.time() - 30 * 86400))   # as if long ago
+    (svc.vault.root / ATTACHMENT_TRASH / ".since").write_text(str(time.time() - 30 * 86400))  # as if long ago
 
     svc.settings.update({"notes_trash_retention": "never"})
     assert svc.attachments.purge() == {"attachments": 0, "notes": 0}

@@ -2,6 +2,7 @@
 
 Only the fields listed in the expectation are compared, so expectations stay readable.
 """
+
 import json
 from pathlib import Path
 
@@ -62,6 +63,7 @@ def test_fallback_title():
 
 def test_fuzz_never_crashes_and_mask_is_aligned():
     import random
+
     rnd = random.Random(7)
     alphabet = list("ab @#$`~[]()!|\\-*>:;,.\n\t") + ["[[", "]]", "[@", "```", "$$", "<!--", "-->", "---\n", "é"]
     for _ in range(2000):
@@ -79,7 +81,7 @@ def test_attachment_qualifier_names_the_pdf():
     assert parser.attachment_of("att:7") == 7
     assert parser.attachment_of("ATT:9, p. 2") == 9
     assert parser.attachment_of("p. 4") is None
-    assert parser.attachment_of("p. 4, attx:3") is None   # not a qualifier
+    assert parser.attachment_of("p. 4, attx:3") is None  # not a qualifier
     assert parser.attachment_of("") is None and parser.attachment_of(None) is None
     cites = parser._parse_cite_group("@smith2021, p. 4, att:12")
     assert cites[0]["key"] == "smith2021" and cites[0]["page"] == 4

@@ -5,6 +5,7 @@ They stored the raw SVG markup of each page in one blob per item (``papers.annot
 backup, and leaves the old column untouched. The PDF's page sizes and rotation are needed to
 turn SVG coordinates into page fractions, and the words under a highlight are read from the PDF.
 """
+
 from __future__ import annotations
 
 import json
@@ -29,6 +30,7 @@ class _Element:
 class _SvgFragment(HTMLParser):
     """Tolerant parser for the innerHTML of an annotation layer (SVG with HTML inside
     foreignObject, as the browser serialised it)."""
+
     VOID = {"br", "img", "input", "hr", "wbr", "meta", "link"}
 
     def __init__(self):
@@ -140,44 +142,83 @@ def parse_legacy_page(markup: str, width: float, height: float) -> tuple[list[di
                 kids = [k for k in el.children if not isinstance(k, str)]
                 lines = [k for k in kids if k.tag == "line"]
                 rects = [k for k in kids if k.tag == "rect"]
-                if lines:   # underline: a line per text line plus a transparent hit box
+                if lines:  # underline: a line per text line plus a transparent hit box
                     boxes = [rect_of(r) for r in rects if r.attrs.get("fill") == "transparent"]
-                    if not boxes:   # no hit boxes: rebuild from the lines (1 em tall)
-                        boxes = [[fx(min(_f(l.attrs.get("x1")), _f(l.attrs.get("x2")))), fy(_f(l.attrs.get("y1")) - 11),
-                                  fx(abs(_f(l.attrs.get("x2")) - _f(l.attrs.get("x1")))), fy(11)] for l in lines]
-                    out.append({"type": "underline", "rects": boxes, "color": _hex(lines[0].attrs.get("stroke"), "#ff0000"),
-                                "size": _f(lines[0].attrs.get("stroke-width"), 2) or 2})
+                    if not boxes:  # no hit boxes: rebuild from the lines (1 em tall)
+                        boxes = [
+                            [
+                                fx(min(_f(l.attrs.get("x1")), _f(l.attrs.get("x2")))),
+                                fy(_f(l.attrs.get("y1")) - 11),
+                                fx(abs(_f(l.attrs.get("x2")) - _f(l.attrs.get("x1")))),
+                                fy(11),
+                            ]
+                            for l in lines
+                        ]
+                    out.append(
+                        {
+                            "type": "underline",
+                            "rects": boxes,
+                            "color": _hex(lines[0].attrs.get("stroke"), "#ff0000"),
+                            "size": _f(lines[0].attrs.get("stroke-width"), 2) or 2,
+                        }
+                    )
                 elif rects:
-                    fill = next((r.attrs.get("fill") for r in rects if r.attrs.get("fill") not in ("transparent", "none")), None)
-                    out.append({"type": "highlight", "rects": [rect_of(r) for r in rects if r.attrs.get("fill") != "transparent"],
-                                "color": _hex(fill, "#ffff00")})
+                    fill = next(
+                        (r.attrs.get("fill") for r in rects if r.attrs.get("fill") not in ("transparent", "none")), None
+                    )
+                    out.append(
+                        {
+                            "type": "highlight",
+                            "rects": [rect_of(r) for r in rects if r.attrs.get("fill") != "transparent"],
+                            "color": _hex(fill, "#ffff00"),
+                        }
+                    )
                 else:
                     skipped.append("an empty group")
             elif el.tag == "rect":
-                out.append({"type": "box", "rects": [rect_of(el)], "color": _hex(el.attrs.get("stroke"), "#000000"),
-                            "size": _f(el.attrs.get("stroke-width"), 2) or 2})
+                out.append(
+                    {
+                        "type": "box",
+                        "rects": [rect_of(el)],
+                        "color": _hex(el.attrs.get("stroke"), "#000000"),
+                        "size": _f(el.attrs.get("stroke-width"), 2) or 2,
+                    }
+                )
             elif el.tag == "path":
                 pts = _path_points(el.attrs.get("d", ""))
                 if not pts:
                     skipped.append("a drawing without points")
                     continue
-                out.append({"type": "ink", "path": [[x / W, y / H] for x, y in pts],
-                            "color": _hex(el.attrs.get("stroke"), "#000000"), "size": _f(el.attrs.get("stroke-width"), 2) or 2})
+                out.append(
+                    {
+                        "type": "ink",
+                        "path": [[x / W, y / H] for x, y in pts],
+                        "color": _hex(el.attrs.get("stroke"), "#000000"),
+                        "size": _f(el.attrs.get("stroke-width"), 2) or 2,
+                    }
+                )
             elif el.tag == "foreignobject":
                 editable = _find(el, lambda e: "contenteditable" in e.attrs)
                 text = _text_of(editable or el).strip("\n")
                 if not text.strip():
-                    continue   # an empty text box is deleted by the viewer anyway
+                    continue  # an empty text box is deleted by the viewer anyway
                 st = _style((editable or el).attrs.get("style", ""))
                 size = _f(st.get("font-size"), 16) or 16
                 lines = text.split("\n")
                 w = max(len(line) for line in lines) * size * 0.55 + 8
                 h = len(lines) * size * 1.2 + 8
-                out.append({"type": "text", "rects": [[fx(el.attrs.get("x")), fy(el.attrs.get("y")), w / W, h / H]],
-                            "text": text, "color": _hex(st.get("color"), "#000000"), "size": size})
+                out.append(
+                    {
+                        "type": "text",
+                        "rects": [[fx(el.attrs.get("x")), fy(el.attrs.get("y")), w / W, h / H]],
+                        "text": text,
+                        "color": _hex(st.get("color"), "#000000"),
+                        "size": size,
+                    }
+                )
             else:
                 skipped.append(f"an unknown <{el.tag}> element")
-        except Exception as e:   # one bad element never stops the rest
+        except Exception as e:  # one bad element never stops the rest
             skipped.append(f"a <{el.tag}> element ({e})")
     return out, skipped
 
@@ -198,6 +239,7 @@ def _find(el, pred):
 def page_sizes(path) -> list[tuple[float, float, int, tuple]]:
     """(width, height, rotation, cropbox) of each page as displayed (rotation applied), in points."""
     import pypdfium2 as pdfium
+
     doc = pdfium.PdfDocument(str(path))
     try:
         out = []
@@ -225,6 +267,7 @@ def to_pdf(u: float, v: float, rotation: int, crop: tuple) -> tuple[float, float
 def text_under(path, page: int, rects: list[list[float]]) -> str:
     """The words of the PDF inside the rects (fractions of the displayed page), line by line."""
     import pypdfium2 as pdfium
+
     doc = pdfium.PdfDocument(str(path))
     try:
         pg = doc[page - 1]
@@ -268,10 +311,14 @@ def migrate_legacy(services) -> dict:
         try:
             with services.db.session() as c:
                 blob = json.loads(c.execute("SELECT annotations FROM papers WHERE id = ?", (pid,)).fetchone()[0])
-                atts = c.execute("SELECT id, url, type FROM attachments WHERE paper_id = ? ORDER BY id", (pid,)).fetchall()
-            pdfs = [a for a in atts if services.papers.attachment_path(dict(a)) is not None
-                    and str(a["url"]).lower().endswith(".pdf")] or \
-                   [a for a in atts if services.papers.attachment_path(dict(a)) is not None]
+                atts = c.execute(
+                    "SELECT id, url, type FROM attachments WHERE paper_id = ? ORDER BY id", (pid,)
+                ).fetchall()
+            pdfs = [
+                a
+                for a in atts
+                if services.papers.attachment_path(dict(a)) is not None and str(a["url"]).lower().endswith(".pdf")
+            ] or [a for a in atts if services.papers.attachment_path(dict(a)) is not None]
             if not pdfs:
                 skipped.append("the item has no PDF file to put the annotations on")
             else:
@@ -305,8 +352,10 @@ def migrate_legacy(services) -> dict:
             log.exception("Converting the annotations of %s failed", pid)
             skipped.append(f"conversion failed: {e}")
         with services.db.session() as c:
-            c.execute("INSERT OR REPLACE INTO annotation_migration VALUES (?, ?, ?, ?, ?)",
-                      (pid, att_id, converted, json.dumps(skipped), utcnow()))
+            c.execute(
+                "INSERT OR REPLACE INTO annotation_migration VALUES (?, ?, ?, ?, ?)",
+                (pid, att_id, converted, json.dumps(skipped), utcnow()),
+            )
         if skipped:
             log.warning("Annotations of item %s: %s converted, not converted: %s", pid, converted, "; ".join(skipped))
         total += converted

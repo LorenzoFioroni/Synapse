@@ -20,6 +20,7 @@ be interpreted (code, math, comments, escaped characters) is replaced by a space
 line breaks and the length intact. The link regexes then run on the masked copy, so
 offsets map straight back to the original text for line numbers and context.
 """
+
 from __future__ import annotations
 
 import re
@@ -34,7 +35,9 @@ CONTEXT_CHARS = 240
 _KEY = r"[A-Za-z0-9_][A-Za-z0-9_:.+\-/]*"
 _CITE_PART = re.compile(
     r"^(?P<prefix>(?:.*?[\s(])?)(?P<supp>-?)@(?P<key>" + _KEY + r")"
-    r"(?:\s*,\s*(?P<loc>.*?))?\s*$", re.S)
+    r"(?:\s*,\s*(?P<loc>.*?))?\s*$",
+    re.S,
+)
 _PAGE = re.compile(r"^(?:p|pp|page|pages|pg)\.?\s*([0-9]+)", re.I)
 # A citation can name which PDF of the item it means: [@key, p. 4, att:12] (12 = attachment id).
 # Without it, the citation means the item's first PDF.
@@ -51,17 +54,17 @@ _TAG = re.compile(r"(?<![\w/&#\]\)(\[])#([A-Za-z][\w\-/]*)")
 
 @dataclass
 class Link:
-    kind: str                 # "note" | "embed" | "cite" | "image"
-    target: str               # note name, citekey or image path
-    line: int                 # 1-based line in the whole file
-    context: str              # the surrounding line (trimmed), for "cited in …" panels
-    heading: str = ""         # [[Note#Heading]]
-    alias: str = ""           # [[Note|alias]]  or image alt text
-    locator: str = ""         # "p. 4"
-    page: int | None = None   # 4  (when the locator names a page)
-    prefix: str = ""          # "see"
+    kind: str  # "note" | "embed" | "cite" | "image"
+    target: str  # note name, citekey or image path
+    line: int  # 1-based line in the whole file
+    context: str  # the surrounding line (trimmed), for "cited in …" panels
+    heading: str = ""  # [[Note#Heading]]
+    alias: str = ""  # [[Note|alias]]  or image alt text
+    locator: str = ""  # "p. 4"
+    page: int | None = None  # 4  (when the locator names a page)
+    prefix: str = ""  # "see"
     suppress_author: bool = False  # [-@key]
-    group: int = 0            # citations in the same [...] share a group number
+    group: int = 0  # citations in the same [...] share a group number
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -81,16 +84,20 @@ class ParsedNote:
     links: list[Link] = field(default_factory=list)
     headings: list[Heading] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
-    body: str = ""            # body without front-matter (for full-text search)
+    body: str = ""  # body without front-matter (for full-text search)
 
     @property
     def citations(self) -> list[Link]:
         return [l for l in self.links if l.kind == "cite"]
 
     def to_dict(self) -> dict:
-        return {"meta": self.meta, "title": self.title,
-                "links": [l.to_dict() for l in self.links],
-                "headings": [asdict(h) for h in self.headings], "tags": self.tags}
+        return {
+            "meta": self.meta,
+            "title": self.title,
+            "links": [l.to_dict() for l in self.links],
+            "headings": [asdict(h) for h in self.headings],
+            "tags": self.tags,
+        }
 
 
 # --------------------------------------------------------------------------- masking
@@ -154,8 +161,11 @@ def _mask_inline(text: str, chars: list[str], start: int, end: int) -> None:
                     if text[k] == "\\":
                         k += 2
                         continue
-                    if text[k] == "$" and text[k - 1] not in " \t\n" \
-                            and not (k + 1 < len(text) and text[k + 1] in "0123456789"):
+                    if (
+                        text[k] == "$"
+                        and text[k - 1] not in " \t\n"
+                        and not (k + 1 < len(text) and text[k + 1] in "0123456789")
+                    ):
                         break
                     k += 1
                 if k < line_end:
@@ -182,8 +192,8 @@ def mask(body: str) -> str:
         offsets.append(pos)
         pos += len(l) + 1
 
-    para_start = None   # offset where the current paragraph began
-    fence = None        # (char, length) while inside a fenced block
+    para_start = None  # offset where the current paragraph began
+    fence = None  # (char, length) while inside a fenced block
     display_math = False
 
     def flush(upto: int) -> None:
@@ -236,7 +246,7 @@ def _context(lines: list[str], idx: int, col: int) -> str:
     lead = len(raw) - len(raw.lstrip())
     c = max(0, col - lead)
     a = max(0, c - CONTEXT_CHARS // 2)
-    s = line[a:a + CONTEXT_CHARS]
+    s = line[a : a + CONTEXT_CHARS]
     return ("…" if a > 0 else "") + s + ("…" if a + CONTEXT_CHARS < len(line) else "")
 
 
@@ -258,8 +268,15 @@ def _parse_cite_group(inner: str) -> list[dict] | None:
             return None
         loc = (m.group("loc") or "").strip()
         pm = _PAGE.match(loc)
-        out.append({"key": key, "prefix": m.group("prefix").strip(), "suppress": m.group("supp") == "-",
-                    "locator": loc, "page": int(pm.group(1)) if pm else None})
+        out.append(
+            {
+                "key": key,
+                "prefix": m.group("prefix").strip(),
+                "suppress": m.group("supp") == "-",
+                "locator": loc,
+                "page": int(pm.group(1)) if pm else None,
+            }
+        )
     return out
 
 
@@ -306,31 +323,64 @@ def parse(text: str, *, fallback_title: str = "") -> ParsedNote:
 
     for m in _WIKI.finditer(masked):
         idx, col = locate(m.start())
-        target, heading, alias = _split_wiki(body[m.start(2):m.end(2)])
+        target, heading, alias = _split_wiki(body[m.start(2) : m.end(2)])
         if not target and not heading:
             continue
-        found.append((m.start(), Link(kind="embed" if m.group(1) else "note", target=target, heading=heading,
-                                      alias=alias, line=idx + 1 + offset, context=_context(lines, idx, col))))
+        found.append(
+            (
+                m.start(),
+                Link(
+                    kind="embed" if m.group(1) else "note",
+                    target=target,
+                    heading=heading,
+                    alias=alias,
+                    line=idx + 1 + offset,
+                    context=_context(lines, idx, col),
+                ),
+            )
+        )
 
     group = 0
     for m in _BRACKET.finditer(masked):
-        cites = _parse_cite_group(body[m.start(1):m.end(1)])
+        cites = _parse_cite_group(body[m.start(1) : m.end(1)])
         if not cites:
             continue
         group += 1
         idx, col = locate(m.start())
         ctx = _context(lines, idx, col)
         for c in cites:
-            found.append((m.start(), Link(kind="cite", target=c["key"], line=idx + 1 + offset, context=ctx,
-                                          locator=c["locator"], page=c["page"], prefix=c["prefix"],
-                                          suppress_author=c["suppress"], group=group)))
+            found.append(
+                (
+                    m.start(),
+                    Link(
+                        kind="cite",
+                        target=c["key"],
+                        line=idx + 1 + offset,
+                        context=ctx,
+                        locator=c["locator"],
+                        page=c["page"],
+                        prefix=c["prefix"],
+                        suppress_author=c["suppress"],
+                        group=group,
+                    ),
+                )
+            )
 
     for m in _IMAGE.finditer(masked):
         idx, col = locate(m.start())
-        alt = body[m.start(1):m.end(1)]
-        found.append((m.start(), Link(kind="image", target=body[m.start(2):m.end(2)],
-                                      alias=alt.split("|")[0].strip(),
-                                      line=idx + 1 + offset, context=_context(lines, idx, col))))
+        alt = body[m.start(1) : m.end(1)]
+        found.append(
+            (
+                m.start(),
+                Link(
+                    kind="image",
+                    target=body[m.start(2) : m.end(2)],
+                    alias=alt.split("|")[0].strip(),
+                    line=idx + 1 + offset,
+                    context=_context(lines, idx, col),
+                ),
+            )
+        )
 
     found.sort(key=lambda t: t[0])
 
@@ -341,8 +391,7 @@ def parse(text: str, *, fallback_title: str = "") -> ParsedNote:
         if hm:
             # Text comes from the original line (inline code/math inside headings is kept).
             raw = _HEADING.match(lines[idx])
-            headings.append(Heading(level=len(hm.group(1)), text=(raw or hm).group(2).strip(),
-                                    line=idx + 1 + offset))
+            headings.append(Heading(level=len(hm.group(1)), text=(raw or hm).group(2).strip(), line=idx + 1 + offset))
         for tm in _TAG.finditer(ml):
             t = tm.group(1).rstrip("/-")
             if t and not t.isdigit() and t not in tags:
@@ -356,8 +405,7 @@ def parse(text: str, *, fallback_title: str = "") -> ParsedNote:
     if not title:
         h1 = next((h for h in headings if h.level == 1), None)
         title = h1.text if h1 else fallback_title
-    return ParsedNote(meta=meta, title=title, links=[l for _, l in found], headings=headings,
-                      tags=tags, body=body)
+    return ParsedNote(meta=meta, title=title, links=[l for _, l in found], headings=headings, tags=tags, body=body)
 
 
 # --------------------------------------------------------------------------- rewriting
@@ -373,7 +421,7 @@ def link_spans(text: str) -> list[dict]:
     masked = mask(body)
     out = []
     for m in _BRACKET.finditer(masked):
-        inner = body[m.start(1):m.end(1)]
+        inner = body[m.start(1) : m.end(1)]
         if _parse_cite_group(inner) is None:
             continue
         off = m.start(1)
@@ -385,7 +433,7 @@ def link_spans(text: str) -> list[dict]:
             out.append({"kind": "cite", "target": key, "start": start, "end": start + len(key)})
             off += len(part) + 1
     for m in _WIKI.finditer(masked):
-        inner = body[m.start(2):m.end(2)]
+        inner = body[m.start(2) : m.end(2)]
         bar = inner.find("|")
         if bar > 0 and inner[bar - 1] == "\\":
             bar -= 1
@@ -398,7 +446,9 @@ def link_spans(text: str) -> list[dict]:
         if not target:
             continue
         start = base + m.start(2) + (len(raw) - len(raw.lstrip()))
-        out.append({"kind": "embed" if m.group(1) else "note", "target": target, "start": start, "end": start + len(target)})
+        out.append(
+            {"kind": "embed" if m.group(1) else "note", "target": target, "start": start, "end": start + len(target)}
+        )
     out.sort(key=lambda s: s["start"])
     return out
 

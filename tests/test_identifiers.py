@@ -1,4 +1,5 @@
 """DOI and arXiv identifiers (backend/library/identifiers.py)."""
+
 from backend.library import identifiers as I
 
 
@@ -19,4 +20,4 @@ def test_arxiv_id_of_items():
 def test_title_key():
     assert I.title_key("Matrix-Product  States: <i>a</i> Review!") == I.title_key("matrix product states a review")
     assert I.title_key("Bañuls et al.: $\\mathcal{O}(N)$ scaling") == I.title_key("Banuls et al O N scaling")
-    assert I.title_key("Introduction") is None   # too short to trust
+    assert I.title_key("Introduction") is None  # too short to trust

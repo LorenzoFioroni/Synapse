@@ -1,4 +1,5 @@
 """Paired devices (Settings → Devices) and the pairing itself. See backend/access/devices.py."""
+
 from __future__ import annotations
 
 import io
@@ -16,7 +17,7 @@ bp = Blueprint("devices", __name__, url_prefix="/api/devices")
 def _port() -> str:
     host = request.host
     if host.startswith("["):
-        rest = host[host.find("]") + 1:]
+        rest = host[host.find("]") + 1 :]
         return rest[1:] if rest.startswith(":") else ""
     return host.rsplit(":", 1)[1] if host.count(":") == 1 else ""
 
@@ -38,17 +39,33 @@ def addresses() -> list[dict]:
 
 def _qr_svg(text: str) -> str:
     import segno
+
     buf = io.BytesIO()
-    segno.make(text, error="m").save(buf, kind="svg", scale=5, border=2, dark="#000000", light="#ffffff",
-                                    xmldecl=False, svgns=True, nl=False, omitsize=True)   # viewBox: scales to its box
+    segno.make(text, error="m").save(
+        buf,
+        kind="svg",
+        scale=5,
+        border=2,
+        dark="#000000",
+        light="#ffffff",
+        xmldecl=False,
+        svgns=True,
+        nl=False,
+        omitsize=True,
+    )  # viewBox: scales to its box
     return buf.getvalue().decode("utf-8")
 
 
 @bp.get("")
 def overview():
     current = (g.get("device") or {}).get("id")
-    return jsonify(lan=svc().config.lan, this_computer=bool(g.get("this_computer")), current=current,
-                   devices=svc().devices.list(), addresses=addresses() if svc().config.lan else [])
+    return jsonify(
+        lan=svc().config.lan,
+        this_computer=bool(g.get("this_computer")),
+        current=current,
+        devices=svc().devices.list(),
+        addresses=addresses() if svc().config.lan else [],
+    )
 
 
 @bp.post("/pairing")
@@ -57,26 +74,33 @@ def new_pairing():
     if not g.get("this_computer"):
         return error("Devices can only be added on the computer running Synapse.", 403)
     if not svc().config.lan:
-        return error("Synapse is only reachable from this computer. Start it with  python server.py --lan  "
-                     "to use it from other devices.", 409)
+        return error(
+            "Synapse is only reachable from this computer. Start it with  python server.py --lan  "
+            "to use it from other devices.",
+            409,
+        )
     code, expires = svc().devices.new_pairing_code()
     links = []
     for a in addresses():
-        url = f"{a['url']}pair#code={code}"   # the code is in the fragment: never sent in a request line or logged
+        url = f"{a['url']}pair#code={code}"  # the code is in the fragment: never sent in a request line or logged
         try:
             qr = _qr_svg(url)
         except ImportError:
             qr = None
         links.append({"label": a["label"], "url": url, "qr": qr})
-    return jsonify(expires=expires, links=links), 201   # qr is None without segno: the page says so
+    return jsonify(expires=expires, links=links), 201  # qr is None without segno: the page says so
 
 
 @bp.post("/pair")
 def pair():
     data = body()
     try:
-        device, token = svc().devices.redeem(str(data.get("code") or ""), str(data.get("name") or ""),
-                                             request.headers.get("User-Agent", ""), request.remote_addr or "")
+        device, token = svc().devices.redeem(
+            str(data.get("code") or ""),
+            str(data.get("name") or ""),
+            request.headers.get("User-Agent", ""),
+            request.remote_addr or "",
+        )
     except PairingError as e:
         return error(str(e), e.status)
     resp = jsonify(device=device)
@@ -101,7 +125,7 @@ def revoke(dev_id):
     if not svc().devices.revoke(dev_id):
         return error("No such device.", 404)
     resp = jsonify(ok=True, devices=svc().devices.list())
-    if (g.get("device") or {}).get("id") == dev_id:   # signed this device out
+    if (g.get("device") or {}).get("id") == dev_id:  # signed this device out
         resp.delete_cookie(COOKIE, path="/")
         resp.headers["X-Synapse-Signed-Out"] = "1"
     return resp

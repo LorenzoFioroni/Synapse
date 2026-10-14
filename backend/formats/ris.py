@@ -1,4 +1,5 @@
 """RIS import and export."""
+
 from __future__ import annotations
 
 import re
@@ -6,16 +7,41 @@ import re
 from .common import join_authors, join_pages, parse_display_name, split_authors, split_keywords, split_pages, year_from
 
 TYPE_IN = {
-    "JOUR": "journalArticle", "JFULL": "journalArticle", "MGZN": "journalArticle", "NEWS": "journalArticle",
-    "EJOUR": "journalArticle", "BOOK": "book", "EBOOK": "book", "EDBOOK": "book", "CHAP": "bookSection",
-    "ECHAP": "bookSection", "CONF": "conferencePaper", "CPAPER": "conferencePaper", "THES": "thesis",
-    "RPRT": "report", "UNPB": "manuscript", "UNPD": "manuscript", "MANSCPT": "manuscript", "ELEC": "webpage",
-    "WEB": "webpage", "BLOG": "webpage", "DATA": "dataset", "DBASE": "dataset", "GEN": "journalArticle",
+    "JOUR": "journalArticle",
+    "JFULL": "journalArticle",
+    "MGZN": "journalArticle",
+    "NEWS": "journalArticle",
+    "EJOUR": "journalArticle",
+    "BOOK": "book",
+    "EBOOK": "book",
+    "EDBOOK": "book",
+    "CHAP": "bookSection",
+    "ECHAP": "bookSection",
+    "CONF": "conferencePaper",
+    "CPAPER": "conferencePaper",
+    "THES": "thesis",
+    "RPRT": "report",
+    "UNPB": "manuscript",
+    "UNPD": "manuscript",
+    "MANSCPT": "manuscript",
+    "ELEC": "webpage",
+    "WEB": "webpage",
+    "BLOG": "webpage",
+    "DATA": "dataset",
+    "DBASE": "dataset",
+    "GEN": "journalArticle",
 }
 TYPE_OUT = {
-    "journalArticle": "JOUR", "book": "BOOK", "bookSection": "CHAP", "conferencePaper": "CONF",
-    "thesis": "THES", "report": "RPRT", "preprint": "UNPB", "manuscript": "MANSCPT",
-    "webpage": "ELEC", "dataset": "DATA",
+    "journalArticle": "JOUR",
+    "book": "BOOK",
+    "bookSection": "CHAP",
+    "conferencePaper": "CONF",
+    "thesis": "THES",
+    "report": "RPRT",
+    "preprint": "UNPB",
+    "manuscript": "MANSCPT",
+    "webpage": "ELEC",
+    "dataset": "DATA",
 }
 TAG_RE = re.compile(r"^([A-Z][A-Z0-9])  -(?: (.*))?$")
 
@@ -95,6 +121,7 @@ def dump(items: list[dict], *, abstract: bool = True, **_) -> str:
         def add(tag, val):
             if val not in (None, ""):
                 lines.append(f"{tag}  - {' '.join(str(val).split()) if tag != 'N1' else str(val)}")
+
         add("TI", it.get("title"))
         for fam, giv in split_authors(it.get("authors")):
             add("AU", f"{fam}, {giv}" if giv else fam)

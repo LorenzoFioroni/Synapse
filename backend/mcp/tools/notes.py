@@ -1,4 +1,5 @@
 """Tools for notes: get_note, write_note, edit_note, undo_note_edit."""
+
 from __future__ import annotations
 
 import json
@@ -26,31 +27,69 @@ class NoteToolsMixin:
         cited = []
         for c in links["cited"]:
             p = keys.get(c["key"])
-            cites = [drop_empty({"line": l["line"], "locator": l.get("locator"), "page": l.get("page"),
-                             "context": l.get("context")})
-                     for l in links["outgoing"] if l["kind"] == "cite" and l["target"] == c["key"]]
-            cited.append(drop_empty({"key": c["key"], "paper": self._brief(p) if p else None,
-                                 "not_in_library": None if p else True, "citations": cites}))
-        notes_out = [drop_empty({"target": l["target"], "resolves_to": l.get("resolved"),
-                             "broken": None if l.get("resolved") else True, "line": l["line"],
-                             "embed": l["kind"] == "embed" or None})
-                     for l in links["outgoing"] if l["kind"] in ("note", "embed")]
-        backlinks = [drop_empty({"path": b["path"], "title": b.get("source_title"),
-                             "link": self._note_link(b["path"], b.get("source_title")), "line": b["line"],
-                             "context": b.get("context")}) for b in links["backlinks"]]
+            cites = [
+                drop_empty(
+                    {"line": l["line"], "locator": l.get("locator"), "page": l.get("page"), "context": l.get("context")}
+                )
+                for l in links["outgoing"]
+                if l["kind"] == "cite" and l["target"] == c["key"]
+            ]
+            cited.append(
+                drop_empty(
+                    {
+                        "key": c["key"],
+                        "paper": self._brief(p) if p else None,
+                        "not_in_library": None if p else True,
+                        "citations": cites,
+                    }
+                )
+            )
+        notes_out = [
+            drop_empty(
+                {
+                    "target": l["target"],
+                    "resolves_to": l.get("resolved"),
+                    "broken": None if l.get("resolved") else True,
+                    "line": l["line"],
+                    "embed": l["kind"] == "embed" or None,
+                }
+            )
+            for l in links["outgoing"]
+            if l["kind"] in ("note", "embed")
+        ]
+        backlinks = [
+            drop_empty(
+                {
+                    "path": b["path"],
+                    "title": b.get("source_title"),
+                    "link": self._note_link(b["path"], b.get("source_title")),
+                    "line": b["line"],
+                    "context": b.get("context"),
+                }
+            )
+            for b in links["backlinks"]
+        ]
         paper = keys.get(info.get("paper")) if info.get("paper") else None
         mtime = self.s.vault.abs(path).stat().st_mtime
-        summary = drop_empty({
-            "path": path, "link": self._note_link(path, info.get("title")), "title": info.get("title"),
-            "type": info.get("type"), "author": info.get("author"),
-            "tags": info.get("tags"), "created": info.get("created"),
-            "modified": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime)),
-            "about_paper": self._brief(paper) if paper else info.get("paper"),
-            "outline": [("#" * h["level"]) + " " + h["text"] for h in info.get("headings") or []],
-            "cited_papers": cited, "links_to_notes": notes_out, "linked_from": backlinks,
-            "images": self._note_images(got["text"]) or None,
-            "math_macros": self._math_macros() or None,
-        })
+        summary = drop_empty(
+            {
+                "path": path,
+                "link": self._note_link(path, info.get("title")),
+                "title": info.get("title"),
+                "type": info.get("type"),
+                "author": info.get("author"),
+                "tags": info.get("tags"),
+                "created": info.get("created"),
+                "modified": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime)),
+                "about_paper": self._brief(paper) if paper else info.get("paper"),
+                "outline": [("#" * h["level"]) + " " + h["text"] for h in info.get("headings") or []],
+                "cited_papers": cited,
+                "links_to_notes": notes_out,
+                "linked_from": backlinks,
+                "images": self._note_images(got["text"]) or None,
+                "math_macros": self._math_macros() or None,
+            }
+        )
         if summary.get("images"):
             summary["images_hint"] = "view_image(note=…) shows these images (paths are inside the notes folder)."
         text = got["text"]
@@ -64,7 +103,9 @@ class NoteToolsMixin:
 
     def write_note(self, title: str, text: str, folder: str = "", tags: list | None = None):
         title = " ".join(str(title).split())
-        sub = "/".join(slugify(x) for x in re.split(r"[/\\]+", folder or "") if x.strip() and x.strip() not in (".", ".."))
+        sub = "/".join(
+            slugify(x) for x in re.split(r"[/\\]+", folder or "") if x.strip() and x.strip() not in (".", "..")
+        )
         base = f"{AI_FOLDER}/{sub}" if sub else AI_FOLDER
         name = slugify(title, fallback="AI note")
         path = f"{base}/{name}.md"
@@ -83,19 +124,26 @@ class NoteToolsMixin:
         checker = NoteChecker(self)
         content, errors, warnings = checker.check(content, path)
         if errors:
-            raise ToolError("Nothing was saved: the note has problems that would show as broken in the app. "
-                            "Fix them and call write_note again.\n- " + "\n- ".join(errors)
-                            + ("\nAlso: " + " ".join(warnings) if warnings else ""))
+            raise ToolError(
+                "Nothing was saved: the note has problems that would show as broken in the app. "
+                "Fix them and call write_note again.\n- "
+                + "\n- ".join(errors)
+                + ("\nAlso: " + " ".join(warnings) if warnings else "")
+            )
         try:
             self.s.note_service.save(path, content, None)
         except NoteExists as e:
             raise ToolError(f"A note already exists at {path}; try another title.") from e
         parsed = parser.parse(content, fallback_title=title)
-        return drop_empty({"saved": path, "link": self._note_link(path, title),
-                       "citations": len([l for l in parsed.links if l.kind == "cite"]),
-                       "links_fixed": checker.fixes or None,
-                       "warnings": warnings or None})
-
+        return drop_empty(
+            {
+                "saved": path,
+                "link": self._note_link(path, title),
+                "citations": len([l for l in parsed.links if l.kind == "cite"]),
+                "links_fixed": checker.fixes or None,
+                "warnings": warnings or None,
+            }
+        )
 
     # ------------------------------------------------------------------ editing notes
     def _check_change(self, old: str, new: str, path: str) -> tuple[str, list[str], list[str], list[str]]:
@@ -121,48 +169,62 @@ class NoteToolsMixin:
     @staticmethod
     def _diff(old: str, new: str, limit: int = 4000) -> str:
         import difflib
+
         lines = list(difflib.unified_diff(old.split("\n"), new.split("\n"), "before", "after", n=1, lineterm=""))[2:]
         out = "\n".join(lines)
         return out if len(out) <= limit else out[:limit] + "\n[… diff cut]"
 
-    def edit_note(self, note: str, edits: list | None = None, append: str | None = None, text: str | None = None,
-                  summary: str | None = None):
+    def edit_note(
+        self,
+        note: str,
+        edits: list | None = None,
+        append: str | None = None,
+        text: str | None = None,
+        summary: str | None = None,
+    ):
         path = self._note_path(note)
         if text is not None and (edits or append):
             raise ToolError("Give either text (the whole new note) or edits and/or append, not both.")
         if text is None and not edits and not append:
             raise ToolError("Nothing to change: give edits=[{old, new}], append or text.")
         flat = []
-        for e in edits or []:   # some clients send the list (or its items) as JSON text
+        for e in edits or []:  # some clients send the list (or its items) as JSON text
             if isinstance(e, str):
                 try:
                     e = json.loads(e)
                 except ValueError as err:
-                    raise ToolError("edits must be a list of {\"old\": …, \"new\": …} objects.") from err
+                    raise ToolError('edits must be a list of {"old": …, "new": …} objects.') from err
             flat.extend(e if isinstance(e, list) else [e])
         edits = flat
-        for _ in range(3):   # the user may be saving this note right now: re-read and apply again
+        for _ in range(3):  # the user may be saving this note right now: re-read and apply again
             old, h = self.s.vault.read(path)
             new = old
             if text is not None:
                 body = text if text.endswith("\n") else text + "\n"
                 header, old_body, _ = frontmatter.split(old)
                 new_header, _, _ = frontmatter.split(body)
-                if header is not None and new_header is None:   # keep the note's front matter
-                    body = old[:len(old) - len(old_body)] + body
+                if header is not None and new_header is None:  # keep the note's front matter
+                    body = old[: len(old) - len(old_body)] + body
                 new = body
             for k, e in enumerate(edits or [], 1):
                 if not isinstance(e, dict) or not isinstance(e.get("old"), str) or not isinstance(e.get("new"), str):
-                    raise ToolError(f"Edit {k}: give {{\"old\": exact text now in the note, \"new\": its replacement}}.")
+                    raise ToolError(f'Edit {k}: give {{"old": exact text now in the note, "new": its replacement}}.')
                 if not e["old"]:
-                    raise ToolError(f"Edit {k}: old is empty. To add at the end use append; to add elsewhere, "
-                                    "include a neighbouring line in old and new.")
+                    raise ToolError(
+                        f"Edit {k}: old is empty. To add at the end use append; to add elsewhere, "
+                        "include a neighbouring line in old and new."
+                    )
                 count = new.count(e["old"])
                 if count != 1:
-                    raise ToolError(f"Edit {k}: the old text occurs {count} times in {path}"
-                                    + (" (it must be copied exactly from get_note, with its line breaks)." if not count
-                                       else "; include more of the surrounding text so it occurs once.")
-                                    + " Nothing was saved.")
+                    raise ToolError(
+                        f"Edit {k}: the old text occurs {count} times in {path}"
+                        + (
+                            " (it must be copied exactly from get_note, with its line breaks)."
+                            if not count
+                            else "; include more of the surrounding text so it occurs once."
+                        )
+                        + " Nothing was saved."
+                    )
                 new = new.replace(e["old"], e["new"], 1)
             if append:
                 nl = "\r\n" if "\r\n" in new else "\n"
@@ -173,9 +235,12 @@ class NoteToolsMixin:
                 raise ToolError("The note would become too long.")
             new, errors, warnings, fixes = self._check_change(old, new, path)
             if errors:
-                raise ToolError("Nothing was saved: the change adds problems that would show as broken in the app. "
-                                "Fix them and call edit_note again.\n- " + "\n- ".join(errors)
-                                + ("\nAlso: " + " ".join(warnings) if warnings else ""))
+                raise ToolError(
+                    "Nothing was saved: the change adds problems that would show as broken in the app. "
+                    "Fix them and call edit_note again.\n- "
+                    + "\n- ".join(errors)
+                    + ("\nAlso: " + " ".join(warnings) if warnings else "")
+                )
             summary_text = " ".join(str(summary or "").split()) or "Edited by Claude"
             try:
                 res = self.s.note_service.edit(path, new, h, by="ai", summary=summary_text)
@@ -183,13 +248,21 @@ class NoteToolsMixin:
             except Conflict:
                 continue
         else:
-            raise ToolError(f"{path} kept changing while saving (the user is probably typing in it). Try again shortly.")
-        return drop_empty({
-            "saved": path, "link": self._note_link(path), "version": res["version"],
-            "changes": self._diff(old, new), "links_fixed": fixes or None, "warnings": warnings or None,
-            "undo": "The user sees the change in the app and can undo it there (Cmd+Z in the open note, or the "
-                    "note's Claude edits list); undo_note_edit reverts it if the user asks you to.",
-        })
+            raise ToolError(
+                f"{path} kept changing while saving (the user is probably typing in it). Try again shortly."
+            )
+        return drop_empty(
+            {
+                "saved": path,
+                "link": self._note_link(path),
+                "version": res["version"],
+                "changes": self._diff(old, new),
+                "links_fixed": fixes or None,
+                "warnings": warnings or None,
+                "undo": "The user sees the change in the app and can undo it there (Cmd+Z in the open note, or the "
+                "note's Claude edits list); undo_note_edit reverts it if the user asks you to.",
+            }
+        )
 
     def undo_note_edit(self, note: str):
         path = self._note_path(note)
@@ -199,12 +272,18 @@ class NoteToolsMixin:
         full = self.s.note_service.history.get(e["id"])
         cur, h = self.s.vault.read(path)
         if h != e["after_hash"]:
-            raise ToolError(f"{path} was changed after Claude's last edit ({e['summary']}), so undoing it would also "
-                            "remove those changes. Nothing was undone. The user can restore any earlier version in "
-                            "the app (the note's Claude edits list), or read the note with get_note and edit_note it.")
+            raise ToolError(
+                f"{path} was changed after Claude's last edit ({e['summary']}), so undoing it would also "
+                "remove those changes. Nothing was undone. The user can restore any earlier version in "
+                "the app (the note's Claude edits list), or read the note with get_note and edit_note it."
+            )
         try:
             res = self.s.note_service.edit(path, full["before"], h, by="ai", summary=f"Undid: {e['summary']}")
         except Conflict as err:
             raise ToolError(f"{path} changed just now; nothing was undone.") from err
-        return {"restored": path, "undid": e["summary"], "version": res["version"],
-                "changes": self._diff(cur, full["before"])}
+        return {
+            "restored": path,
+            "undid": e["summary"],
+            "version": res["version"],
+            "changes": self._diff(cur, full["before"]),
+        }

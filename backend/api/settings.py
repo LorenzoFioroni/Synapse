@@ -1,4 +1,5 @@
 """User settings."""
+
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
@@ -12,14 +13,17 @@ bp = Blueprint("settings", __name__, url_prefix="/api/settings")
 SAMPLE = {
     "authors": "Cui, Jian; Cirac, J. Ignacio; Bañuls, Mari Carmen",
     "title": "Variational Matrix Product Operators for the Steady State of Dissipative Quantum Systems",
-    "year": 2015, "journal": "Physical Review Letters", "doi": "10.1103/PhysRevLett.114.220601",
+    "year": 2015,
+    "journal": "Physical Review Letters",
+    "doi": "10.1103/PhysRevLett.114.220601",
 }
 
 
 @bp.get("")
 def get_settings():
-    return jsonify(settings=svc().settings.all(), defaults=DEFAULTS, searchModes=SEARCH_MODES,
-                   citekeyPresets=citekeys.PRESETS)
+    return jsonify(
+        settings=svc().settings.all(), defaults=DEFAULTS, searchModes=SEARCH_MODES, citekeyPresets=citekeys.PRESETS
+    )
 
 
 @bp.put("")

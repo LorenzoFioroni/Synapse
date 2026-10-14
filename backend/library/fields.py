@@ -4,6 +4,7 @@ The database schema, the API whitelist, the search scopes and the item pane
 in the browser are all derived from these definitions (the frontend fetches
 them from ``GET /api/schema``).
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -16,9 +17,9 @@ class Field:
     sql: str = "TEXT"
     multiline: bool = False
     editable: bool = True
-    basic_search: bool = False     # part of the "Title, Abstract & Authors" scope
-    searchable: bool = True        # part of the "All Fields" scope
-    rare: bool = False             # hidden in the item pane while empty
+    basic_search: bool = False  # part of the "Title, Abstract & Authors" scope
+    searchable: bool = True  # part of the "All Fields" scope
+    rare: bool = False  # hidden in the item pane while empty
 
 
 FIELDS: list[Field] = [
@@ -66,7 +67,7 @@ INTERNAL_COLUMNS = {
     "annotations": "TEXT",
     "pdfUrl": "TEXT",
     "deleted_at": "TEXT",
-    "folder_id": "INTEGER",   # legacy (single folder); superseded by the paper_folders table
+    "folder_id": "INTEGER",  # legacy (single folder); superseded by the paper_folders table
 }
 
 ITEM_TYPES = [
@@ -110,8 +111,7 @@ FIELD_LABEL_OVERRIDES = {
     "thesis": {"publisher": "University"},
     "report": {"publisher": "Institution"},
 }
-COMMON_FIELDS = ["year", "doi", "url", "citation_key", "short_title", "language",
-                 "keywords", "abstract", "extra"]
+COMMON_FIELDS = ["year", "doi", "url", "citation_key", "short_title", "language", "keywords", "abstract", "extra"]
 
 
 def schema_payload() -> dict:

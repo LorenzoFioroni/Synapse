@@ -4,6 +4,7 @@ Every format converts to and from the same intermediate representation: a
 plain dict keyed by the field names in ``backend.library.fields`` (authors are stored
 as ``"Family, Given; Family2, Given2"``).
 """
+
 from __future__ import annotations
 
 import re
@@ -33,7 +34,25 @@ def join_authors(pairs) -> str:
     return "; ".join(parts)
 
 
-PARTICLES = {"van", "von", "der", "den", "de", "del", "della", "di", "da", "du", "la", "le", "ter", "ten", "dos", "das", "do"}
+PARTICLES = {
+    "van",
+    "von",
+    "der",
+    "den",
+    "de",
+    "del",
+    "della",
+    "di",
+    "da",
+    "du",
+    "la",
+    "le",
+    "ter",
+    "ten",
+    "dos",
+    "das",
+    "do",
+}
 
 
 def parse_display_name(name: str) -> tuple[str, str]:

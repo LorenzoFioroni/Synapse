@@ -1,4 +1,5 @@
 """User preferences, stored as JSON next to the library."""
+
 from __future__ import annotations
 
 import json
@@ -19,45 +20,45 @@ DEFAULTS: dict = {
     "default_search_mode": "basic",
     "fulltext_auto_index": True,
     # Appearance
-    "theme": "system",            # system | light | dark
-    "density": "comfortable",     # comfortable | compact
+    "theme": "system",  # system | light | dark
+    "density": "comfortable",  # comfortable | compact
     "font_size": 13,
     # Behaviour
     "confirm_trash": False,
     "open_pdf_on_double_click": True,
     # Import / export
     "export_format": "bibtex",
-    "bibtex_unicode": True,       # False -> escape non-ASCII as LaTeX commands
+    "bibtex_unicode": True,  # False -> escape non-ASCII as LaTeX commands
     "export_abstract": True,
     "import_skip_duplicates": True,
-    "import_tags": "ask",              # keywords in imported files become tags: never | always | ask
+    "import_tags": "ask",  # keywords in imported files become tags: never | always | ask
     # Folders
-    "show_subfolder_items": True,      # a folder also lists the items of its subfolders
+    "show_subfolder_items": True,  # a folder also lists the items of its subfolders
     # Online lookups
     "contact_email": "",
-    "references_auto": True,           # Retrieve Metadata on existing items also fetches their reference lists
+    "references_auto": True,  # Retrieve Metadata on existing items also fetches their reference lists
     # What to do with items that were just added (by identifier, PDF, import or the browser
     # button): never | always | ask. "Ask" shows a checkbox where the item is added.
-    "add_fetch_metadata": "ask",       # imported items: look up their metadata online (then review it)
-    "add_find_pdf": "ask",             # look for an open-access PDF when the new item has none
+    "add_fetch_metadata": "ask",  # imported items: look up their metadata online (then review it)
+    "add_find_pdf": "ask",  # look for an open-access PDF when the new item has none
     "add_fetch_references": "always",  # fetch the list of papers the new item cites
-    "openalex_api_key": "",            # optional: OpenAlex allows only ~5 reference lookups a day without one
-    "semantic_scholar_api_key": "",    # optional: avoids the shared rate limit
+    "openalex_api_key": "",  # optional: OpenAlex allows only ~5 reference lookups a day without one
+    "semantic_scholar_api_key": "",  # optional: avoids the shared rate limit
     # Notes (beta): shows the Notes entry in the sidebar
     "notes_enabled": True,
-    "notes_autosave_ms": 1500,         # save after this long without typing (also on blur)
+    "notes_autosave_ms": 1500,  # save after this long without typing (also on blur)
     # Deleted notes and attachments no note uses any more are deleted for good after this long
-    "notes_trash_retention": "1m",     # never | 1d | 1w | 2w | 1m | 6m
-    "notes_width": "readable",         # readable (a column of ~760 px) | full (the whole pane)
+    "notes_trash_retention": "1m",  # never | 1d | 1w | 2w | 1m | 6m
+    "notes_width": "readable",  # readable (a column of ~760 px) | full (the whole pane)
     # Display equations: "labelled" numbers those with a \label (and equation/align… as in LaTeX);
     # "all" numbers every one
     "notes_equation_numbers": "labelled",
-    "notes_math_physics": True,        # the physics package's commands (\vb, \dv, \qty…) in formulas
-    "notes_math_macros": "",           # \newcommand definitions used by every note
+    "notes_math_physics": True,  # the physics package's commands (\vb, \dv, \qty…) in formulas
+    "notes_math_macros": "",  # \newcommand definitions used by every note
     # Backups of library.db, settings and notes (not the PDFs): see backend/backup.py
-    "backup_interval": "daily",        # off | daily | weekly
-    "backup_keep": 14,                 # newest archives kept
-    "backup_dir": "",                  # empty: data/backups
+    "backup_interval": "daily",  # off | daily | weekly
+    "backup_keep": 14,  # newest archives kept
+    "backup_dir": "",  # empty: data/backups
 }
 
 ASK_CHOICES = ("never", "always", "ask")
@@ -87,7 +88,7 @@ def _migrate(stored: dict) -> dict:
         stored["import_tags"] = "never"
     if stored.get("references_auto") is False and "add_fetch_references" not in stored:
         stored["add_fetch_references"] = "never"
-    if stored.get("notes_equation_numbers") == "latex":   # value used by an early version of equation numbering
+    if stored.get("notes_equation_numbers") == "latex":  # value used by an early version of equation numbering
         stored["notes_equation_numbers"] = "labelled"
     return stored
 

@@ -1,4 +1,5 @@
 """Folders, tags and smart folders."""
+
 from __future__ import annotations
 
 from flask import Blueprint, jsonify

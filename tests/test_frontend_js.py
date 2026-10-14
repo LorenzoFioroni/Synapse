@@ -1,4 +1,5 @@
 """Runs the JavaScript unit tests (tests/js/*.test.mjs) with Node, if Node is installed."""
+
 import shutil
 import subprocess
 from pathlib import Path

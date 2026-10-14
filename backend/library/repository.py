@@ -3,6 +3,7 @@
 All SQL that touches the library lives here; the HTTP layer only calls these
 methods and never builds queries itself.
 """
+
 from __future__ import annotations
 
 import logging
@@ -49,6 +50,7 @@ class DuplicateFinder:
     @staticmethod
     def _keys(entry: dict) -> tuple[str, str]:
         from .search import normalize
+
         return (entry.get("doi") or "").strip().lower(), normalize(entry.get("title") or "")
 
     def add(self, entry: dict, item_id) -> None:
@@ -93,11 +95,12 @@ class PaperRepository:
             for r in c.execute("SELECT * FROM attachments ORDER BY id"):
                 atts.setdefault(r["paper_id"], []).append(dict(r))
             from .organize import folders_by_paper, tags_by_paper
+
             tags = tags_by_paper(c)
             folders = folders_by_paper(c)
         for p in papers:
             p.pop("annotations", None)  # large and only needed by the viewer
-            p.pop("folder_id", None)    # legacy column
+            p.pop("folder_id", None)  # legacy column
             p["attachments"] = atts.get(p["id"], [])
             p["tags"] = tags.get(p["id"], [])
             p["folder_ids"] = folders.get(p["id"], [])
@@ -110,13 +113,23 @@ class PaperRepository:
                 raise NotFound(paper_id)
             p = dict(row)
             p.pop("annotations", None)
-            p["attachments"] = [dict(r) for r in c.execute(
-                "SELECT * FROM attachments WHERE paper_id = ? ORDER BY id", (paper_id,))]
-            p["tags"] = [r[0] for r in c.execute(
-                "SELECT t.name FROM paper_tags pt JOIN tags t ON t.id = pt.tag_id WHERE pt.paper_id = ? "
-                "ORDER BY t.name COLLATE NOCASE", (paper_id,))]
-            p["folder_ids"] = [r[0] for r in c.execute(
-                "SELECT folder_id FROM paper_folders WHERE paper_id = ? ORDER BY folder_id", (paper_id,))]
+            p["attachments"] = [
+                dict(r) for r in c.execute("SELECT * FROM attachments WHERE paper_id = ? ORDER BY id", (paper_id,))
+            ]
+            p["tags"] = [
+                r[0]
+                for r in c.execute(
+                    "SELECT t.name FROM paper_tags pt JOIN tags t ON t.id = pt.tag_id WHERE pt.paper_id = ? "
+                    "ORDER BY t.name COLLATE NOCASE",
+                    (paper_id,),
+                )
+            ]
+            p["folder_ids"] = [
+                r[0]
+                for r in c.execute(
+                    "SELECT folder_id FROM paper_folders WHERE paper_id = ? ORDER BY folder_id", (paper_id,)
+                )
+            ]
             p.pop("folder_id", None)
         return p
 
@@ -130,6 +143,7 @@ class PaperRepository:
     def duplicate_groups(self, papers: list[dict] | None = None) -> list[list[str]]:
         """Groups of item ids that look like the same work (same DOI, or same title and year)."""
         from .search import normalize
+
         papers = papers if papers is not None else self.list()
         parent = {p["id"]: p["id"] for p in papers}
 
@@ -141,6 +155,7 @@ class PaperRepository:
 
         def union(a, b):
             parent[find(a)] = find(b)
+
         by_doi, by_title = {}, {}
         for p in papers:
             doi = (p.get("doi") or "").strip().lower()
@@ -163,7 +178,9 @@ class PaperRepository:
 
     def all_citation_keys(self, exclude_id: str | None = None) -> set[str]:
         with self.db.session() as c:
-            rows = c.execute("SELECT id, citation_key FROM papers WHERE citation_key IS NOT NULL AND citation_key != ''")
+            rows = c.execute(
+                "SELECT id, citation_key FROM papers WHERE citation_key IS NOT NULL AND citation_key != ''"
+            )
             return {r["citation_key"] for r in rows if r["id"] != exclude_id}
 
     def find_duplicate(self, entry: dict, papers: list[dict] | None = None) -> str | None:
@@ -180,6 +197,7 @@ class PaperRepository:
         Besides metadata fields, an entry may carry ``folder_id`` / ``folder_ids`` and ``tags``.
         """
         from .organize import add_tags_conn
+
         if auto_citekey is None:
             auto_citekey = self.settings.get("citekey_auto")
         pattern = self.settings.get("citekey_pattern")
@@ -197,12 +215,16 @@ class PaperRepository:
                     taken.add(values["citation_key"])
                 new_id = uuid.uuid4().hex
                 values.update(id=new_id, date_added=now, date_modified=now)
-                c.execute(f"INSERT INTO papers ({', '.join(values)}) VALUES ({', '.join('?' * len(values))})",
-                          list(values.values()))
+                c.execute(
+                    f"INSERT INTO papers ({', '.join(values)}) VALUES ({', '.join('?' * len(values))})",
+                    list(values.values()),
+                )
                 folders = list(data.get("folder_ids") or []) + [data.get("folder_id")]
                 for f in {int(f) for f in folders if f not in (None, "")}:
                     if c.execute("SELECT 1 FROM folders WHERE id = ?", (f,)).fetchone():
-                        c.execute("INSERT OR IGNORE INTO paper_folders (paper_id, folder_id) VALUES (?, ?)", (new_id, f))
+                        c.execute(
+                            "INSERT OR IGNORE INTO paper_folders (paper_id, folder_id) VALUES (?, ?)", (new_id, f)
+                        )
                 if data.get("tags"):
                     add_tags_conn(c, [new_id], data["tags"])
                 ids.append(new_id)
@@ -210,8 +232,12 @@ class PaperRepository:
 
     def update(self, paper_id: str, data: dict) -> dict:
         values = {k: _clean_value(k, v) for k, v in data.items() if k in EDITABLE_KEYS}
-        if values and "citation_key" not in values and self.settings.get("citekey_auto") \
-                and {"authors", "title", "year"} & values.keys():
+        if (
+            values
+            and "citation_key" not in values
+            and self.settings.get("citekey_auto")
+            and {"authors", "title", "year"} & values.keys()
+        ):
             # Items created empty get a key as soon as they have enough metadata.
             current = self.get(paper_id)
             if not current.get("citation_key"):
@@ -219,7 +245,8 @@ class PaperRepository:
                 pattern = self.settings.get("citekey_pattern")
                 if all(merged.get(f) for f in citekeys.required_fields(pattern) or {"authors", "title"}):
                     values["citation_key"] = citekeys.generate(
-                        pattern, merged, self.all_citation_keys(exclude_id=paper_id))
+                        pattern, merged, self.all_citation_keys(exclude_id=paper_id)
+                    )
         changed_key = None
         if values:
             values["date_modified"] = utcnow()
@@ -298,7 +325,8 @@ class PaperRepository:
                 raise NotFound(paper_id)
             cur = c.execute(
                 "INSERT INTO attachments (paper_id, name, url, type, date_added) VALUES (?, ?, ?, ?, ?)",
-                (paper_id, name, filename, type_, utcnow()))
+                (paper_id, name, filename, type_, utcnow()),
+            )
             att_id = cur.lastrowid
         return self.get_attachment(att_id)
 
@@ -328,7 +356,7 @@ class PaperRepository:
         url = att.get("url") or ""
         if url.startswith(("http://", "https://")):
             return None
-        p = (self.pdf_dir / os.path.basename(url))
+        p = self.pdf_dir / os.path.basename(url)
         return p if p.exists() else None
 
     def _remove_file(self, url: str | None) -> None:

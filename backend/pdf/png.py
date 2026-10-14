@@ -3,13 +3,14 @@
 A snapshot of a PDF region stores where it came from in a ``zc:pdf-region`` text chunk, so a
 note's image can be traced back to its page (``read_region``).
 """
+
 from __future__ import annotations
 
 import json
 import struct
 import zlib
 
-REGION_KEYWORD = "zc:pdf-region"   # same as frontend/js/views/notes/citeTarget.js
+REGION_KEYWORD = "zc:pdf-region"  # same as frontend/js/views/notes/citeTarget.js
 
 
 def _chunk(kind: bytes, data: bytes) -> bytes:
@@ -22,7 +23,7 @@ def png_encode(rgb: bytes | bytearray, width: int, height: int, text: dict[str, 
     raw = bytearray()
     for y in range(height):
         raw.append(0)
-        raw += rgb[y * row:(y + 1) * row]
+        raw += rgb[y * row : (y + 1) * row]
     out = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
     out += _chunk(b"IDAT", zlib.compress(bytes(raw), 6))
     for k, v in (text or {}).items():
@@ -36,8 +37,8 @@ def read_region(png: bytes) -> dict | None:
         return None
     i = 8
     while i + 12 <= len(png):
-        n = struct.unpack(">I", png[i:i + 4])[0]
-        kind, data = png[i + 4:i + 8], png[i + 8:i + 8 + n]
+        n = struct.unpack(">I", png[i : i + 4])[0]
+        kind, data = png[i + 4 : i + 8], png[i + 8 : i + 8 + n]
         if kind == b"tEXt" and data.startswith(REGION_KEYWORD.encode() + b"\0"):
             try:
                 return json.loads(data.split(b"\0", 1)[1].decode("latin-1"))

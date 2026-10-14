@@ -1,4 +1,5 @@
 """Tools for papers and their PDFs: get_paper, search_in_paper, read_paper, view_page, snapshot."""
+
 from __future__ import annotations
 
 import re
@@ -32,15 +33,23 @@ class PaperToolsMixin:
         doi, arx = identifiers(p)
         paths = self.s.folders.paths()
         key = p.get("citation_key") or ""
-        out = drop_empty({
-            "key": key or None, "id": p["id"],
-            "type": ITEM_TYPE_LABELS.get(p.get("item_type") or "", p.get("item_type")),
-            "doi": doi, "arxiv": arx, **drop_empty(meta),
-            "tags": p.get("tags"), "folders": ["/".join(paths.get(f, [])) for f in p.get("folder_ids") or []],
-            "in_trash": p.get("_trashed") or None,
-            "pdfs": [drop_empty({"attachment": a["id"], "name": a.get("name"), "pages": self._page_count(a)})
-                     for a in self._pdfs(p)],
-        })
+        out = drop_empty(
+            {
+                "key": key or None,
+                "id": p["id"],
+                "type": ITEM_TYPE_LABELS.get(p.get("item_type") or "", p.get("item_type")),
+                "doi": doi,
+                "arxiv": arx,
+                **drop_empty(meta),
+                "tags": p.get("tags"),
+                "folders": ["/".join(paths.get(f, [])) for f in p.get("folder_ids") or []],
+                "in_trash": p.get("_trashed") or None,
+                "pdfs": [
+                    drop_empty({"attachment": a["id"], "name": a.get("name"), "pages": self._page_count(a)})
+                    for a in self._pdfs(p)
+                ],
+            }
+        )
         note_text = None
         if key:
             pnotes = self.s.notes.paper_notes(key)
@@ -53,21 +62,36 @@ class PaperToolsMixin:
                 except Exception:
                     note_text = None
             mine = {n["path"] for n in pnotes}
-            out["cited_in_notes"] = [drop_empty({"path": c["path"], "title": c.get("source_title"),
-                                             "link": self._note_link(c["path"], c.get("source_title")), "line": c["line"],
-                                             "locator": c.get("locator"), "context": c.get("context")})
-                                     for c in self.s.notes.citing(key) if c["path"] not in mine]
+            out["cited_in_notes"] = [
+                drop_empty(
+                    {
+                        "path": c["path"],
+                        "title": c.get("source_title"),
+                        "link": self._note_link(c["path"], c.get("source_title")),
+                        "line": c["line"],
+                        "locator": c.get("locator"),
+                        "context": c.get("context"),
+                    }
+                )
+                for c in self.s.notes.citing(key)
+                if c["path"] not in mine
+            ]
         try:
             view = self.s.citations.item_view(p["id"])
         except NotFound:
             view = None
         if view:
             f = view["fetch"] or {}
-            out["references"] = drop_empty({
-                "stored": len(view["references"]),
-                "in_library": sum(1 for r in view["references"] if r.get("library_id")),
-                "source": f.get("source"), "fetched_at": f.get("fetched_at"), "error": f.get("error"),
-                "never_fetched": True if not f else None})
+            out["references"] = drop_empty(
+                {
+                    "stored": len(view["references"]),
+                    "in_library": sum(1 for r in view["references"] if r.get("library_id")),
+                    "source": f.get("source"),
+                    "fetched_at": f.get("fetched_at"),
+                    "error": f.get("error"),
+                    "never_fetched": True if not f else None,
+                }
+            )
             out["cited_by_in_library"] = [self._label(items[c["id"]]) for c in view["cited_by"] if c["id"] in items]
         if note_text is None:
             return drop_empty(out)
@@ -111,8 +135,14 @@ class PaperToolsMixin:
                 if len(snippets) == 3:
                     break
             results.append({"page": n, "matched": matched, "occurrences": score[2], "snippets": snippets})
-        out = {"paper": self._label(p), "title": p.get("title"), "attachment": att["id"],
-               "pages_total": len(pages), "pages_matching": len(scored), "results": results}
+        out = {
+            "paper": self._label(p),
+            "title": p.get("title"),
+            "attachment": att["id"],
+            "pages_total": len(pages),
+            "pages_matching": len(scored),
+            "results": results,
+        }
         if not results:
             out["hint"] = "No page contains these words. Try other words or synonyms."
         return out
@@ -125,8 +155,10 @@ class PaperToolsMixin:
             raise ToolError(f"No text could be extracted from the PDF of '{self._label(p)}'.")
         want = parse_pages(pages, len(texts))
         given, chars = [], 0
-        parts = [f"{self._label(p)} — {p.get('title') or ''} (PDF, {len(texts)} pages). "
-                 f"Cite as [@{p.get('citation_key') or '?'}, p. N] with N the page number below."]
+        parts = [
+            f"{self._label(p)} — {p.get('title') or ''} (PDF, {len(texts)} pages). "
+            f"Cite as [@{p.get('citation_key') or '?'}, p. N] with N the page number below."
+        ]
         for n in want:
             t = texts[n - 1].strip()
             if len(given) >= MAX_PAGES_PER_READ or (given and chars + len(t) > MAX_CHARS_PER_READ):
@@ -136,8 +168,10 @@ class PaperToolsMixin:
             chars += len(t)
         rest = [n for n in want if n not in given]
         if rest:
-            parts.append(f"[Not included (at most {MAX_PAGES_PER_READ} pages / {MAX_CHARS_PER_READ} characters "
-                         f"per call): pages {page_ranges(rest)}. Ask for them in another call if needed.]")
+            parts.append(
+                f"[Not included (at most {MAX_PAGES_PER_READ} pages / {MAX_CHARS_PER_READ} characters "
+                f"per call): pages {page_ranges(rest)}. Ask for them in another call if needed.]"
+            )
         return "\n\n".join(parts)
 
     def view_page(self, paper: str, page: int, attachment: int | None = None):
@@ -159,14 +193,27 @@ class PaperToolsMixin:
             equations = []
         boxed = [f for f in figures if f.get("rect")] + equations
         png = pdfrender.page_view(path, page, boxed)
-        info = {"paper": self._label(p), "page": page, "pages_total": n,
-                "grid": "Blue lines every 0.1 of the page width/height, labelled in the margins (0 = top/left). "
-                        "Regions are [x, y, w, h] in these fractions.",
-                "figures": [drop_empty({"box": boxed.index(f) + 1 if f in boxed else None, "label": f["label"],
-                                    "caption": f["caption"], "rect": f.get("rect")}) for f in figures],
-                "equations": [{"box": boxed.index(e) + 1, "label": e["label"], "rect": e["rect"]} for e in equations],
-                "next": "snapshot(paper, figure=\"Figure N\") or snapshot(paper, equation=\"N\") takes a proposed "
-                        "(red, numbered) region; or pass page and rect=[x, y, w, h] read off the grid."}
+        info = {
+            "paper": self._label(p),
+            "page": page,
+            "pages_total": n,
+            "grid": "Blue lines every 0.1 of the page width/height, labelled in the margins (0 = top/left). "
+            "Regions are [x, y, w, h] in these fractions.",
+            "figures": [
+                drop_empty(
+                    {
+                        "box": boxed.index(f) + 1 if f in boxed else None,
+                        "label": f["label"],
+                        "caption": f["caption"],
+                        "rect": f.get("rect"),
+                    }
+                )
+                for f in figures
+            ],
+            "equations": [{"box": boxed.index(e) + 1, "label": e["label"], "rect": e["rect"]} for e in equations],
+            "next": 'snapshot(paper, figure="Figure N") or snapshot(paper, equation="N") takes a proposed '
+            "(red, numbered) region; or pass page and rect=[x, y, w, h] read off the grid.",
+        }
         if not figures:
             info["figures_note"] = "No figure or table captions were recognised on this page."
         if not equations:
@@ -179,12 +226,16 @@ class PaperToolsMixin:
         fold = lambda x: x.casefold().replace("–", "-")
         if kind == "equation":
             want = fold(number)
-            find = lambda pg: next((r for r in pdfregions.equation_regions(path, pg) if fold(r["number"]) == want), None)
+            find = lambda pg: next(
+                (r for r in pdfregions.equation_regions(path, pg) if fold(r["number"]) == want), None
+            )
             name = f"Equation ({number})"
             mention = re.compile(r"\(\s*" + re.escape(number) + r"\s*\)", re.I)
         else:
             want = f"{'Table' if kind == 'table' else 'Figure'} {number}"
-            find = lambda pg: next((r for r in pdfregions.figure_regions(path, pg) if fold(r["label"]) == fold(want)), None)
+            find = lambda pg: next(
+                (r for r in pdfregions.figure_regions(path, pg) if fold(r["label"]) == fold(want)), None
+            )
             name = want
             mention = re.compile(r"(?:fig(?:ure)?|tab(?:le)?)\.?\s*" + re.escape(number) + r"\b", re.I)
         n = self._page_count(att) or pdfrender.page_count(path)
@@ -195,8 +246,11 @@ class PaperToolsMixin:
             if hit:
                 return page, hit
             labels = [r["label"] for r in pdfregions.page_regions(path, page)]
-            raise ToolError(f"No {name} on page {page}" + (f" (found: {', '.join(labels)})" if labels else "")
-                            + ". Leave out page to search the whole PDF, or use view_page and pass rect=[x, y, w, h].")
+            raise ToolError(
+                f"No {name} on page {page}"
+                + (f" (found: {', '.join(labels)})" if labels else "")
+                + ". Leave out page to search the whole PDF, or use view_page and pass rect=[x, y, w, h]."
+            )
         try:
             texts = self._pages(att)
         except Exception:
@@ -206,17 +260,28 @@ class PaperToolsMixin:
             hit = find(pg)
             if hit:
                 return pg, hit
-        raise ToolError(f"{name} was not found in the PDF. Equations are found by a number in parentheses at "
-                        f"the end of their line; figures and tables by their caption. Use view_page on the "
-                        f"page and pass rect=[x, y, w, h].")
+        raise ToolError(
+            f"{name} was not found in the PDF. Equations are found by a number in parentheses at "
+            f"the end of their line; figures and tables by their caption. Use view_page on the "
+            f"page and pass rect=[x, y, w, h]."
+        )
 
-    def snapshot(self, paper: str, page: int | None = None, figure: str | None = None, equation: str | None = None,
-                 rect: list | None = None, attachment: int | None = None):
+    def snapshot(
+        self,
+        paper: str,
+        page: int | None = None,
+        figure: str | None = None,
+        equation: str | None = None,
+        rect: list | None = None,
+        attachment: int | None = None,
+    ):
         if not pdfrender.available():
             raise ToolError(pdfrender.MISSING)
         if sum(x is not None for x in (figure, equation, rect)) != 1:
-            raise ToolError("Give either figure (e.g. \"Figure 2\", \"Table 1\"), equation (e.g. \"3\" for (3)) "
-                            "or page and rect=[x, y, w, h].")
+            raise ToolError(
+                'Give either figure (e.g. "Figure 2", "Table 1"), equation (e.g. "3" for (3)) '
+                "or page and rect=[x, y, w, h]."
+            )
         p = self._paper(paper)
         key = p.get("citation_key")
         if not key:
@@ -226,16 +291,22 @@ class PaperToolsMixin:
         label = None
         if rect is None:
             if equation is not None:
-                parsed = pdfregions.parse_label(equation if re.match(r"\s*(eq|\()", str(equation), re.I) else f"({str(equation).strip()})")
+                parsed = pdfregions.parse_label(
+                    equation if re.match(r"\s*(eq|\()", str(equation), re.I) else f"({str(equation).strip()})"
+                )
             else:
                 parsed = pdfregions.parse_label(figure)
             if not parsed:
-                raise ToolError(f"Could not read '{equation if equation is not None else figure}': write e.g. "
-                                f"figure=\"Figure 2\", figure=\"Table 1\" or equation=\"3\".")
+                raise ToolError(
+                    f"Could not read '{equation if equation is not None else figure}': write e.g. "
+                    f'figure="Figure 2", figure="Table 1" or equation="3".'
+                )
             page, hit = self._find_region(att, path, parsed[0], parsed[1], page)
             if not hit.get("rect"):
-                raise ToolError(f"{hit['label']} was found on page {page} but not its region. "
-                                f"Use view_page and pass rect=[x, y, w, h].")
+                raise ToolError(
+                    f"{hit['label']} was found on page {page} but not its region. "
+                    f"Use view_page and pass rect=[x, y, w, h]."
+                )
             rect, label = hit["rect"], hit["label"]
         else:
             if page is None:
@@ -255,12 +326,21 @@ class PaperToolsMixin:
         preview, _, _ = pdfrender.render_region(path, page, [x, y, w, h], scale=2.0, max_side=900)
         caption = label or "Figure"
         markdown = f"![{key} p. {page}]({saved['path']})\n*{caption}: [@{key}, p. {page}]*"
-        return Parts([Image(preview), drop_empty({
-            "saved": saved["path"], "label": label, "size": f"{pw}x{ph}",
-            "region": {"page": page, "rect": [round(v, 4) for v in (x, y, w, h)]},
-            "markdown": markdown,
-            "how_to_use": "Paste the markdown into the note text (write_note or edit_note), as is. You may write a "
-                          f"caption after '{caption}:' but keep the citation on the line right below the image. If "
-                          "the crop is wrong, call snapshot again with page and a corrected rect (unused images are "
-                          "cleaned up later).",
-        })])
+        return Parts(
+            [
+                Image(preview),
+                drop_empty(
+                    {
+                        "saved": saved["path"],
+                        "label": label,
+                        "size": f"{pw}x{ph}",
+                        "region": {"page": page, "rect": [round(v, 4) for v in (x, y, w, h)]},
+                        "markdown": markdown,
+                        "how_to_use": "Paste the markdown into the note text (write_note or edit_note), as is. You may write a "
+                        f"caption after '{caption}:' but keep the citation on the line right below the image. If "
+                        "the crop is wrong, call snapshot again with page and a corrected rect (unused images are "
+                        "cleaned up later).",
+                    }
+                ),
+            ]
+        )

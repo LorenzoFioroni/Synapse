@@ -9,6 +9,7 @@ Only SHA-256 hashes of codes and tokens are stored (both are long random strings
 hash is enough). The tokens live in ``auth.db`` in the data folder — not in settings.json and
 not in backups, so restoring a backup never brings back a device that was signed out.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -20,11 +21,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 COOKIE = "synapse_device"
-COOKIE_MAX_AGE = 400 * 24 * 3600     # the longest browsers keep a cookie
-PAIRING_TTL = 5 * 60                 # seconds a pairing code stays valid
-TOUCH_EVERY = 60                     # seconds between "last seen" updates of a device
-FAILED_LIMIT = 10                    # failed pairing attempts per address …
-FAILED_WINDOW = 10 * 60              # … within this many seconds
+COOKIE_MAX_AGE = 400 * 24 * 3600  # the longest browsers keep a cookie
+PAIRING_TTL = 5 * 60  # seconds a pairing code stays valid
+TOUCH_EVERY = 60  # seconds between "last seen" updates of a device
+FAILED_LIMIT = 10  # failed pairing attempts per address …
+FAILED_WINDOW = 10 * 60  # … within this many seconds
 NAME_MAX = 60
 
 SCHEMA = """
@@ -73,9 +74,9 @@ class Devices:
         self.path = Path(path)
         self.clock = clock
         self._lock = threading.Lock()
-        self._codes: dict[str, float] = {}           # code hash → expiry (in memory: a restart voids them)
-        self._failed: dict[str, list[float]] = {}    # address → times of failed pairing attempts
-        self._touched: dict[str, float] = {}         # device id → last "last seen" write
+        self._codes: dict[str, float] = {}  # code hash → expiry (in memory: a restart voids them)
+        self._failed: dict[str, list[float]] = {}  # address → times of failed pairing attempts
+        self._touched: dict[str, float] = {}  # device id → last "last seen" write
         self._db: sqlite3.Connection | None = None
 
     # -- storage -------------------------------------------------------------
@@ -119,16 +120,21 @@ class Devices:
             expires = self._codes.pop(h, None)
             if expires is None or expires < self.clock():
                 self._failed.setdefault(addr, []).append(self.clock())
-                raise PairingError("This pairing code is not valid any more. Make a new one in Settings → Devices "
-                                   "on the computer running Synapse.", 401)
+                raise PairingError(
+                    "This pairing code is not valid any more. Make a new one in Settings → Devices "
+                    "on the computer running Synapse.",
+                    401,
+                )
             token = secrets.token_urlsafe(32)
             dev_id = secrets.token_hex(8)
             name = (name or "").strip()[:NAME_MAX] or guess_name(user_agent)
             now = _now_iso()
             db = self._conn()
-            db.execute("INSERT INTO devices (id, name, token_hash, user_agent, created, last_seen, last_addr) "
-                       "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                       (dev_id, name, _hash(token), (user_agent or "")[:300], now, now, addr))
+            db.execute(
+                "INSERT INTO devices (id, name, token_hash, user_agent, created, last_seen, last_addr) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (dev_id, name, _hash(token), (user_agent or "")[:300], now, now, addr),
+            )
             db.commit()
             self._touched[dev_id] = self.clock()
             return self._get(dev_id), token
@@ -147,8 +153,10 @@ class Devices:
             if now - self._touched.get(row["id"], 0) >= TOUCH_EVERY:
                 dev["_touched"] = True
                 self._touched[row["id"]] = now
-                self._conn().execute("UPDATE devices SET last_seen = ?, last_addr = ? WHERE id = ?",
-                                     (_now_iso(), addr or row["last_addr"], row["id"]))
+                self._conn().execute(
+                    "UPDATE devices SET last_seen = ?, last_addr = ? WHERE id = ?",
+                    (_now_iso(), addr or row["last_addr"], row["id"]),
+                )
                 self._conn().commit()
             return dev
 

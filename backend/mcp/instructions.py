@@ -1,4 +1,5 @@
 """What the MCP server tells the AI app: how to use the tools, and the note syntax to write."""
+
 WRITING_RULES = """\
 Note syntax (the app's own Markdown; write_note checks it and refuses notes that would not work):
 - Cite library items as [@key] or [@key, p. N] (N = PDF page from 1, as the tools report). Several: [@a; @b].
@@ -23,7 +24,8 @@ caption before the citation). Clicking it flashes that region.
 - Also available: GFM tables, task lists, footnotes [^1], callouts "> [!note] Title" (types note, tip, \
 warning, question, quote, info, important, caution, example, todo), ```mermaid diagrams, #tags."""
 
-INSTRUCTIONS = """\
+INSTRUCTIONS = (
+    """\
 Tools for the user's research library ("Synapse", a Zotero-like app): papers with metadata and PDFs, \
 Markdown notes that cite papers as [@citationkey], and reference lists fetched from Semantic Scholar/OpenAlex/Crossref.
 
@@ -41,4 +43,6 @@ see them with view_image (one path, or every image of a note).
 - edit_note changes an existing note (after get_note), when the user asks for it; the user can see and undo \
 every change in the app.
 
-""" + WRITING_RULES
+"""
+    + WRITING_RULES
+)

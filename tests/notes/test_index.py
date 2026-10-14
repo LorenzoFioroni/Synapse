@@ -24,7 +24,11 @@ def test_links_backlinks_citations(env):
     put(v, idx, "Review.md", "# Review\nUses [@smith2021, p. 3] and [[smith2021]] and [[Missing]].")
     put(v, idx, "other/Review.md", "duplicate name")
     out = idx.outgoing("Review.md")
-    assert [(l["kind"], l["target"]) for l in out] == [("cite", "smith2021"), ("note", "smith2021"), ("note", "Missing")]
+    assert [(l["kind"], l["target"]) for l in out] == [
+        ("cite", "smith2021"),
+        ("note", "smith2021"),
+        ("note", "Missing"),
+    ]
     assert out[1]["resolved"] == "papers/smith2021.md"
     assert out[2]["resolved"] is None
     # [[Review]] is ambiguous; the shortest path wins, so the backlink goes to Review.md only
@@ -65,6 +69,7 @@ def test_schema_change_rebuilds(env, tmp_path):
     v, idx = env
     put(v, idx, "a.md", "x")
     import sqlite3
+
     c = sqlite3.connect(idx.db_path)
     c.execute("UPDATE meta SET value = '0' WHERE key = 'schema'")
     c.commit()

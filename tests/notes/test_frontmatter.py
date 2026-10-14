@@ -2,8 +2,10 @@ from backend.notes import frontmatter as fm
 
 
 def test_parse_subset():
-    text = ("---\nid: 01ABC\ntitle: \"A: quoted\"\ntags: [a, \"b c\"]\nproject:\n  - p1\n  - p2\n"
-            "# a comment\nnested:\n  key: value\nempty:\n---\nbody")
+    text = (
+        '---\nid: 01ABC\ntitle: "A: quoted"\ntags: [a, "b c"]\nproject:\n  - p1\n  - p2\n'
+        "# a comment\nnested:\n  key: value\nempty:\n---\nbody"
+    )
     d = fm.read(text)
     assert d["id"] == "01ABC"
     assert d["title"] == "A: quoted"
@@ -22,8 +24,10 @@ def test_no_frontmatter():
 def test_set_fields_touches_only_given_keys():
     text = "---\n# keep me\nid: 1\ncustom:   odd   spacing\ntags: [x]\n---\nBody\n---\nnot fm\n"
     out = fm.set_fields(text, {"tags": ["x", "y"], "updated": "2026-10-09T09:00:00+02:00"})
-    assert out == ("---\n# keep me\nid: 1\ncustom:   odd   spacing\ntags: [x, y]\n"
-                   "updated: 2026-10-09T09:00:00+02:00\n---\nBody\n---\nnot fm\n")
+    assert out == (
+        "---\n# keep me\nid: 1\ncustom:   odd   spacing\ntags: [x, y]\n"
+        "updated: 2026-10-09T09:00:00+02:00\n---\nBody\n---\nnot fm\n"
+    )
     assert fm.set_fields(out, {"custom": None}).count("custom") == 0
 
 

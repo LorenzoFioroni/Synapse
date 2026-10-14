@@ -1,4 +1,5 @@
 """Images in notes: view_image."""
+
 from __future__ import annotations
 
 import re
@@ -12,8 +13,8 @@ from ...pdf import png as pdfpng
 from ..protocol import Image, Parts, ToolError
 from .common import MAX_IMAGES_PER_VIEW, drop_empty
 
-IMAGE_MAX_SIDE = 1568          # larger images are scaled down (clients shrink them anyway)
-IMAGE_MAX_BYTES = 3_500_000    # ~4.7 MB as base64, under the usual 5 MB per image
+IMAGE_MAX_SIDE = 1568  # larger images are scaled down (clients shrink them anyway)
+IMAGE_MAX_BYTES = 3_500_000  # ~4.7 MB as base64, under the usual 5 MB per image
 
 
 class ImageToolsMixin:
@@ -27,12 +28,21 @@ class ImageToolsMixin:
             if l.kind != "image":
                 continue
             caption = None
-            nxt = lines[l.line] if l.line < len(lines) else ""   # the line below (l.line is 1-based)
+            nxt = lines[l.line] if l.line < len(lines) else ""  # the line below (l.line is 1-based)
             m = re.fullmatch(r"\s*\*(.+)\*\s*", nxt)
             if m:
                 caption = m.group(1).strip()
-            out.append(drop_empty({"line": l.line, "path": l.target, "alt": l.alias or None, "caption": caption,
-                               "url": True if re.match(r"^(https?:)?//|^data:", l.target, re.I) else None}))
+            out.append(
+                drop_empty(
+                    {
+                        "line": l.line,
+                        "path": l.target,
+                        "alt": l.alias or None,
+                        "caption": caption,
+                        "url": True if re.match(r"^(https?:)?//|^data:", l.target, re.I) else None,
+                    }
+                )
+            )
         return out
 
     def _image_file(self, target: str):
@@ -42,11 +52,13 @@ class ImageToolsMixin:
         if not t:
             raise ToolError("Give the image path as written in the note, e.g. attachments/x.png.")
         if re.match(r"^(https?:)?//|^data:", t, re.I):
-            raise ToolError(f"{t[:80]} is an image on the web, not in the notes folder; this tool only shows "
-                            "images stored with the notes.")
+            raise ToolError(
+                f"{t[:80]} is an image on the web, not in the notes folder; this tool only shows "
+                "images stored with the notes."
+            )
         t = t.replace("\\", "/")
-        if "/" + ATTACHMENTS + "/" in t:   # e.g. /Users/…/data/notes/attachments/x.png
-            t = t[t.rindex("/" + ATTACHMENTS + "/") + 1:]
+        if "/" + ATTACHMENTS + "/" in t:  # e.g. /Users/…/data/notes/attachments/x.png
+            t = t[t.rindex("/" + ATTACHMENTS + "/") + 1 :]
         candidates = []
         try:
             candidates.append(self.s.vault.clean_rel(re.sub(r"^(\./)+", "", t), suffix=None))
@@ -62,9 +74,11 @@ class ImageToolsMixin:
             p = self.s.vault.root / rel
             if p.is_file():
                 return rel, p
-        raise ToolError(f"No image '{target}' in the notes folder"
-                        + (f" (looked for {candidates[-1]})." if candidates else ".")
-                        + " Use the path exactly as the note writes it, e.g. attachments/x.png.")
+        raise ToolError(
+            f"No image '{target}' in the notes folder"
+            + (f" (looked for {candidates[-1]})." if candidates else ".")
+            + " Use the path exactly as the note writes it, e.g. attachments/x.png."
+        )
 
     def _image_block(self, rel: str, p) -> tuple[Image, dict]:
         data = p.read_bytes()
@@ -80,6 +94,7 @@ class ImageToolsMixin:
             PILImage = None
         if PILImage is not None:
             import io
+
             try:
                 im = PILImage.open(io.BytesIO(data))
                 info["size"] = f"{im.width}x{im.height}"
@@ -89,7 +104,7 @@ class ImageToolsMixin:
                     im.thumbnail((IMAGE_MAX_SIDE, IMAGE_MAX_SIDE))
                     buf = io.BytesIO()
                     im.save(buf, "PNG", optimize=True)
-                    if buf.tell() > IMAGE_MAX_BYTES:   # a big photo: JPEG keeps it under the limit
+                    if buf.tell() > IMAGE_MAX_BYTES:  # a big photo: JPEG keeps it under the limit
                         buf = io.BytesIO()
                         im.convert("RGB").save(buf, "JPEG", quality=85)
                         mime = "image/jpeg"
@@ -103,8 +118,10 @@ class ImageToolsMixin:
             w, h = struct.unpack(">II", data[16:24])
             info["size"] = f"{w}x{h}"
         if len(data) > IMAGE_MAX_BYTES:
-            raise ToolError(f"{rel} is too large to send ({len(data) / 1e6:.1f} MB). Installing Pillow "
-                            "(pip install pillow) lets this tool scale it down.")
+            raise ToolError(
+                f"{rel} is too large to send ({len(data) / 1e6:.1f} MB). Installing Pillow "
+                "(pip install pillow) lets this tool scale it down."
+            )
         if region:
             info["snapshot_of"] = region
         return Image(data, mime), info
@@ -139,9 +156,14 @@ class ImageToolsMixin:
             meta = drop_empty({**{k: img.get(k) for k in ("line", "alt", "caption")}, **info})
             parts += [meta, block]
         if skipped:
-            parts.append({"not_shown": skipped,
-                          "hint": f"At most {MAX_IMAGES_PER_VIEW} images per call; ask for the others by path."
-                          if any("web" not in s for s in skipped) else None})
+            parts.append(
+                {
+                    "not_shown": skipped,
+                    "hint": f"At most {MAX_IMAGES_PER_VIEW} images per call; ask for the others by path."
+                    if any("web" not in s for s in skipped)
+                    else None,
+                }
+            )
             parts[-1] = drop_empty(parts[-1])
         if not any(isinstance(x, Image) for x in parts):
             raise ToolError("None of the note's images is stored in the notes folder: " + "; ".join(skipped))

@@ -1,4 +1,5 @@
 """Attachments, PDF files and PDFs of attachments stored as web links. Annotations: api/pdf_annotations.py."""
+
 from __future__ import annotations
 
 import os
@@ -46,6 +47,7 @@ def items_from_pdfs():
         return error("No file uploaded")
     from ..online.http import LookupFailed
     from ..online.metadata import known_authors, lookup
+
     known = known_authors(s.papers.list())
     created = []
     for f in files:
@@ -66,7 +68,7 @@ def items_from_pdfs():
             if ident.get("doi"):
                 meta["doi"] = ident["doi"]
         item = s.papers.create({**meta, "folder_id": request.form.get("folder_id") or None})
-        if note is None and len(meta) > 2:   # metadata came from a lookup
+        if note is None and len(meta) > 2:  # metadata came from a lookup
             s.citations.maybe_enqueue(item, request.form.get("fetch_references") in ("1", "true"))
         s.papers.add_attachment(item["id"], name, filename, "pdf")
         created.append({"item": s.papers.get(item["id"]), "identifier": ident, "note": note})

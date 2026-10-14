@@ -1,4 +1,5 @@
 """Requests from other websites are refused (issue #17)."""
+
 import io
 
 import pytest
@@ -54,8 +55,12 @@ def test_trash_survives_a_cross_site_empty(client, svc):
 
 def test_cross_site_upload_adds_nothing(client, svc, tmp_path):
     pdf = make_pdf(tmp_path / "x.pdf", "Injected paper")
-    r = client.post("/api/items/from_pdf", headers=EVIL,
-                    data={"file": (io.BytesIO(pdf.read_bytes()), "x.pdf")}, content_type="multipart/form-data")
+    r = client.post(
+        "/api/items/from_pdf",
+        headers=EVIL,
+        data={"file": (io.BytesIO(pdf.read_bytes()), "x.pdf")},
+        content_type="multipart/form-data",
+    )
     assert r.status_code == 403
     assert svc.papers.list() == []
 
@@ -64,8 +69,11 @@ def test_same_origin_and_plain_clients_work(client):
     # the app's own pages
     r = client.post("/api/items", json={"title": "Mine"}, headers={"Origin": "http://localhost"})
     assert r.status_code in (200, 201)
-    r = client.post("/api/items", json={"title": "Mine 2"},
-                    headers={"Host": "127.0.0.1:8000", "Origin": "http://127.0.0.1:8000", "Sec-Fetch-Site": "same-origin"})
+    r = client.post(
+        "/api/items",
+        json={"title": "Mine 2"},
+        headers={"Host": "127.0.0.1:8000", "Origin": "http://127.0.0.1:8000", "Sec-Fetch-Site": "same-origin"},
+    )
     assert r.status_code in (200, 201)
     # curl / scripts send no Origin
     assert client.post("/api/items", json={"title": "Script"}).status_code in (200, 201)
@@ -82,8 +90,11 @@ def test_another_local_port_is_another_site(client):
 
 
 def test_browser_extension_can_save(client, svc):
-    r = client.post("/api/connector/save", headers={"Origin": "chrome-extension://abcdef"},
-                    json={"title": "Saved from the button", "doi": "10.1/x", "options": {"fetch_metadata": False}})
+    r = client.post(
+        "/api/connector/save",
+        headers={"Origin": "chrome-extension://abcdef"},
+        json={"title": "Saved from the button", "doi": "10.1/x", "options": {"fetch_metadata": False}},
+    )
     assert r.status_code in (200, 201), r.get_json()
     assert client.get("/api/connector/ping", headers={"Origin": "moz-extension://xyz"}).status_code == 200
 
@@ -91,19 +102,27 @@ def test_browser_extension_can_save(client, svc):
 def test_allowed_hosts(tmp_path):
     from backend import create_app
     from backend.config import Config
+
     cfg = Config.from_env(tmp_path / "d")
     cfg.allowed_hosts = {"192.168.1.20"}
     c = create_app(cfg, start_indexer=False).test_client()
     assert c.get("/api/settings", headers={"Host": "192.168.1.20:8000"}).status_code == 200
-    r = c.post("/api/items", json={"title": "LAN"},
-               headers={"Host": "192.168.1.20:8000", "Origin": "http://192.168.1.20:8000"})
+    r = c.post(
+        "/api/items", json={"title": "LAN"}, headers={"Host": "192.168.1.20:8000", "Origin": "http://192.168.1.20:8000"}
+    )
     assert r.status_code in (200, 201)
     assert c.get("/api/settings", headers={"Host": "192.168.1.21:8000"}).status_code == 403
 
 
-@pytest.mark.parametrize("host,name", [
-    ("127.0.0.1:8000", "127.0.0.1"), ("LOCALHOST", "localhost"), ("[::1]:8000", "::1"),
-    ("::1", "::1"), ("evil.example:80", "evil.example"),
-])
+@pytest.mark.parametrize(
+    "host,name",
+    [
+        ("127.0.0.1:8000", "127.0.0.1"),
+        ("LOCALHOST", "localhost"),
+        ("[::1]:8000", "::1"),
+        ("::1", "::1"),
+        ("evil.example:80", "evil.example"),
+    ],
+)
 def test_host_name(host, name):
     assert guard.host_name(host) == name
