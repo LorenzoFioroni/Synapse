@@ -144,8 +144,10 @@ never mix.
   attachment id 12 (a citation without `att:` means the first PDF). **Export** (the button next
   to Live | Source | Read, or **Export…** in a note's menu in the notes list) saves a note as a
   **PDF** (print dialog, "Save as PDF"), a self-contained **HTML page**, or **Markdown** that any
-  viewer shows. Citations are written out as "(Smith et al. 2021, p. 4)" with a References list,
-  `[[links]]` become their text, embedded notes are included, and formulas, diagrams, code and
+  viewer shows. Citations are written out as "(Smith et al. 2021, p. 4)" and, in PDF and HTML,
+  link to their entry in a References list at the end. Each entry has what is needed to find the
+  work (journal, volume, issue and pages; publisher and edition for books; the arXiv id of a
+  preprint) and its DOI as a link (else its arXiv page or URL). `[[links]]` become their text, embedded notes are included, and formulas, diagrams, code and
   images are kept. Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
   Cmd+[ / Alt+←) go back to the note or library selection you came from.

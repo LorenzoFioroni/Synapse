@@ -1,10 +1,10 @@
 // Exporting a note so it can be read outside the app: as a PDF (through the browser's print
 // dialog, "Save as PDF"), as one self-contained HTML file, or as portable Markdown (portable.ts).
 // HTML and PDF show the note as read mode does, in the light theme. Citations become text with a
-// list of references, [[links]] become text, and embeds, formulas, diagrams and images are
-// included. Everything is built here from files the app already serves, so it works offline.
+// list of references (each citation links to its entry in HTML and PDF, and each entry to the
+// work's DOI), [[links]] become text, and embeds, formulas, diagrams and images are included. Everything is built here from files the app already serves, so it works offline.
 import { api } from '../../api.js';
-import type { NoteLinks } from '../../types.js';
+import type { Item, NoteLinks } from '../../types.js';
 import { openMenu } from '../../ui/menu.js';
 import { toast, toastError } from '../../ui/toast.js';
 import { downloadBlob, escapeHtml as esc } from '../../util.js';
@@ -12,7 +12,7 @@ import { loadMD } from './editor.js';
 import { embedHtml, section } from './embed.js';
 import { linkDataOf } from './linkData.js';
 import { splitFrontmatter } from './mdscan.js';
-import { type Portable, type RefInfo, portableBody, portableMarkdown, referenceKeys, referenceParts } from './portable.js';
+import { type Portable, type RefInfo, portableBody, portableMarkdown, referenceHtml, referenceId, referenceKeys } from './portable.js';
 import type { RendererOptions } from './render.js';
 import { highlightCodeBlocks, renderEmbeds, renderMermaidBlocks } from './richRender.js';
 import { equationMode, noteMacros, normTarget, stemOf, ws } from './workspace.js';
@@ -42,7 +42,9 @@ export async function exportNote(path: string, format: ExportFormat): Promise<vo
     const links = await api.noteLinks(path).catch(() => null);
     const file = fileName(title);
     if (format === 'md') {
-      const md = portableMarkdown(title, text, await portableOptions(path, links, new Set([path]), 1));
+      const opts = await portableOptions(path, links, new Set([path]), 1);
+      const note = portableBody(text, opts);
+      const md = portableMarkdown(title, note, await fullItems(note.keys, opts.citeInfo));
       downloadBlob(new Blob([md], { type: 'text/markdown;charset=utf-8' }), `${file}.md`);
       return;
     }
@@ -63,6 +65,21 @@ function fileName(title: string): string {
 function infoFor(links: Pick<NoteLinks, 'outgoing'> | null): (key: string) => RefInfo | null {
   const data = links ? linkDataOf(links) : null;
   return (key) => data?.cites.get(key) || ws.library.byKey.get(key) || null;
+}
+
+/** The full library items of the cited keys (volume, issue, pages, DOI …) for the references, in
+ *  one request; the citation index's entries when they cannot be loaded. */
+async function fullItems(keys: string[], citeInfo: (key: string) => RefInfo | null): Promise<(key: string) => RefInfo | null> {
+  const ids = [...new Set(keys.map((k) => citeInfo(k)?.id).filter((id): id is string => !!id))];
+  const byId = new Map<string, Item>();
+  if (ids.length) {
+    try { for (const it of (await api.itemsByIds(ids)).items) byId.set(it.id, it); } catch { /* the short entries */ }
+  }
+  return (key) => {
+    const base = citeInfo(key);
+    const it = base?.id ? byId.get(base.id) : undefined;
+    return base && it ? { ...base, ...(it as RefInfo) } : base;
+  };
 }
 
 /* ------------------------------------------------------------- Markdown */
@@ -107,14 +124,13 @@ async function htmlDocument(path: string, title: string, text: string, links: Pi
       renderMermaidBlocks(art, 'default'),
     ]);
     const keys = [...art.querySelectorAll<HTMLElement>('.cite[data-key]')].map((el) => el.dataset.key!);
-    staticCopy(art);
+    const refInfo = await fullItems(keys, citeInfo);
+    const refs = referenceKeys(keys, refInfo);
+    staticCopy(art, new Set(refs));
     await inlineImages(art);
-    const refs = referenceKeys(keys, citeInfo);
     const body = (art.firstElementChild?.tagName === 'H1' ? '' : `<h1>${esc(title)}</h1>\n`) + art.innerHTML
-      + (refs.length ? `\n<section class="references"><h2>References</h2><ol>${refs.map((k) => {
-        const r = referenceParts(k, citeInfo(k)!);
-        return `<li>${r.authors ? `${esc(r.authors)} ` : ''}(${esc(r.year)}). ${esc(r.title)}.${r.journal ? ` <i>${esc(r.journal)}</i>.` : ''}</li>`;
-      }).join('')}</ol></section>` : '');
+      + (refs.length ? `\n<section class="references"><h2>References</h2><ol>${refs
+        .map((k) => `<li id="${referenceId(k)}">${referenceHtml(k, refInfo(k)!)}</li>`).join('')}</ol></section>` : '');
     const css = await styles(!!art.querySelector('.katex'));
     return `<!doctype html>
 <html lang="${esc(document.documentElement.lang || 'en')}" data-theme="light">
@@ -139,15 +155,18 @@ ${body}
   }
 }
 
-/** Remove what only works inside the app: links into it, buttons, ticking tasks. */
-function staticCopy(root: HTMLElement): void {
+/** Remove what only works inside the app: links into it, buttons, ticking tasks. A citation of
+ *  a key in ``listed`` links to its entry in the References list instead. */
+function staticCopy(root: HTMLElement, listed: Set<string>): void {
   root.querySelectorAll('.copy-code').forEach((el) => el.remove());
   root.querySelectorAll('[data-line]').forEach((el) => el.removeAttribute('data-line'));
   for (const el of root.querySelectorAll<HTMLElement>('a.wikilink, a.cite, .eqref.missing')) {
-    const span = document.createElement('span');
-    span.className = el.className;
-    span.innerHTML = el.innerHTML;
-    el.replaceWith(span);
+    const key = el.classList.contains('cite') ? el.dataset.key : undefined;
+    const out = document.createElement(key && listed.has(key) ? 'a' : 'span');
+    out.className = el.className;
+    out.innerHTML = el.innerHTML;
+    if (out.tagName === 'A') { out.setAttribute('href', `#${referenceId(key!)}`); out.title = el.title; }
+    el.replaceWith(out);
   }
   root.querySelectorAll<HTMLInputElement>('.task-box').forEach((box) => {
     box.removeAttribute('data-task-line');

@@ -4,8 +4,9 @@ html { background: var(--bg); color-scheme: light; }
 body { margin: 0; font-family: var(--font); color: var(--text); background: var(--bg); -webkit-text-size-adjust: 100%; }
 .prose { padding: 48px 32px 64px; font-size: 15.5px; }
 
-/* citations and links are text here: nothing to click */
+/* [[links]] are text here; a citation links to its entry in the references */
 .prose .cite, .prose .cite.missing { background: none; color: inherit; padding: 0; font-size: inherit; cursor: auto; }
+.prose a.cite { color: var(--accent); cursor: pointer; }
 .prose .cite-group { color: inherit; }
 .prose .wikilink, .prose .wikilink.unresolved { color: inherit; text-decoration: none; cursor: auto; }
 .prose .note-embed .embed-title { cursor: auto; }
@@ -15,7 +16,9 @@ body { margin: 0; font-family: var(--font); color: var(--text); background: var(
 .prose .references { margin-top: 2.4em; border-top: 1px solid var(--border); padding-top: .6em; }
 .prose .references h2 { margin-top: .4em; }
 .prose .references ol { padding-left: 1.8em; font-size: .94em; }
-.prose .references li { margin: .35em 0; }
+.prose .references li { margin: .35em 0; scroll-margin-top: 16px; }
+.prose .references li:target { background: var(--accent-soft); border-radius: 4px; }
+.prose .ref-link { overflow-wrap: anywhere; }
 
 @page { margin: 18mm 16mm; }
 @media print {
@@ -26,6 +29,5 @@ body { margin: 0; font-family: var(--font); color: var(--text); background: var(
   .prose .math-block, .prose .math.display, .mermaid-block { overflow: visible; }
   .prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 { break-after: avoid; }
   .prose .code-block, .prose .math-block, .prose figure, .prose img, .prose .callout, .mermaid-block, .prose tr { break-inside: avoid; }
-  .prose a { color: inherit; }
   .prose .callout, .prose .task-box:checked, .prose th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

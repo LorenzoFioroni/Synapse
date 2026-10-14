@@ -387,16 +387,18 @@ the library list as the fallback (as in read mode).
 - **HTML page.** `embedHtml` renders the note as read mode does. It is drawn off screen so that
   `renderEmbeds` (which now waits for its code and diagrams), `highlightCodeBlocks` and
   `renderMermaidBlocks` can fill it, with Mermaid in its light theme. Then what only works inside
-  the app is removed: citations and `[[links]]` become text, task boxes are disabled, and the copy
-  buttons, `data-line` and the properties block are dropped. Images served by the app become
-  `data:` URLs. The cited keys (embeds included) give a References list, in order of first
-  citation, built from `referenceParts`. The styles are `css/tokens.css`, `css/notes.css` and
+  the app is removed: `[[links]]` become text, task boxes are disabled, and the copy buttons,
+  `data-line` and the properties block are dropped. Images served by the app become `data:` URLs.
+  The cited keys (embeds included) give a References list, in order of first citation. Each
+  citation of a listed key links to its entry (`#ref-<key>`, `referenceId`); a key not in the
+  library stays text. The styles are `css/tokens.css`, `css/notes.css` and
   `css/export.css` (page and print rules), with `<html data-theme="light">`. When there is math,
   KaTeX's CSS is added with its woff2 fonts as `data:` URLs. The result is one file that needs
   neither the app nor the network.
 - **PDF.** The same page goes into a hidden `<iframe srcdoc>`, which waits for its fonts and then
   calls `print()`. The browser's print dialog saves the PDF, and `export.css` sets the margins and
-  page breaks. No PDF library is needed.
+  page breaks. No PDF library is needed. The browser keeps the links in the PDF: citations jump to
+  their entry, and DOIs open the paper.
 - **Markdown.** `portableMarkdown` (`portable.ts`, tested in `tests/js/portable.test.mjs`) works
   on the `mdscan.scan` links, so code and math are left alone. It drops the front matter, adds the
   title as `# Title` unless the note starts with one, writes citation groups with `citeLabel` as
@@ -404,6 +406,22 @@ the library list as the fallback (as in read mode).
   `![[embeds]]` are replaced by the embedded note (or section), itself converted, up to three
   levels and never in a cycle; `exportNote.ts` loads them first. It ends with
   `## References` (`referenceMarkdown`). Image paths are kept as they are in the notes folder.
+
+**References.** `exportNote.ts` loads the full library items of the cited keys with one
+`GET /api/items?ids=…` (`fullItems`), since the citation index has only authors, year, title and
+journal. If that request fails, the entries are made from the index. `referenceParts`
+(`portable.ts`) writes an author–year entry by item type:
+
+| Item type | Entry |
+|---|---|
+| journal article, preprint, web page, other | Authors (Year). Title. *Journal*, *volume*(issue), pages. A preprint adds its archive id (`arXiv:…`). |
+| book | Authors (Year). *Title* (2nd ed., Vol. 3). Series. Publisher, Place. |
+| book section, conference paper | Authors (Year). Title. In *Book or proceedings* (pp. 1–20). Publisher. |
+| thesis, report, data set | Authors (Year). *Title* (series) [Thesis]. University or institution. |
+
+`referenceLink` adds the DOI as `https://doi.org/…`, else the arXiv page of an `arXiv:` archive id,
+else the item's URL. `referenceHtml` makes it a link, and `referenceMarkdown` writes it as
+`<…>`.
 
 ## Where to change things
 

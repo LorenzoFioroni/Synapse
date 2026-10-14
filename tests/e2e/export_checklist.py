@@ -1,5 +1,5 @@
 """Browser checklist for exporting a note: the Export button and the notes-list menu, the HTML
-page (rendered like read mode, light theme, citations as text with references, embeds, formulas
+page (rendered like read mode, light theme, citations linked to full references with their DOI, embeds, formulas
 with their fonts, diagrams, images inlined, nothing that needs the app or the network), portable
 Markdown, and PDF through the print dialog.
 
@@ -39,14 +39,35 @@ def check(name, cond, extra=""):
 
 
 def seed(s):
-    for key, authors, title, year, journal in [
-        ("smith2021", "Smith, Anna; Doe, John; Roe, Rita", "Quantum things", 2021, "Physical Review X"),
-        ("lee2019", "Lee, Ji-Hoon", "Tensor networks", 2019, ""),
-    ]:
-        s.post(
-            BASE + "/api/items",
-            json={"title": title, "authors": authors, "year": year, "journal": journal, "citation_key": key},
-        ).raise_for_status()
+    s.post(
+        BASE + "/api/items",
+        json={
+            "citation_key": "smith2021",
+            "item_type": "journalArticle",
+            "title": "Quantum things",
+            "authors": "Smith, Anna; Doe, John; Roe, Rita",
+            "year": 2021,
+            "journal": "Physical Review X",
+            "volume": "11",
+            "issue": "2",
+            "pages": "021001",
+            "doi": "10.1103/PhysRevX.11.021001",
+        },
+    ).raise_for_status()
+    s.post(
+        BASE + "/api/items",
+        json={
+            "citation_key": "lee2019",
+            "item_type": "book",
+            "title": "Tensor networks",
+            "authors": "Lee, Ji-Hoon",
+            "year": 2019,
+            "publisher": "Springer",
+            "place": "Cham",
+            "edition": "2",
+            "url": "https://example.org/tn",
+        },
+    ).raise_for_status()
     img = s.post(BASE + "/api/notes/attachments", files={"file": ("plot.png", PNG, "image/png")}).json()
     s.post(
         BASE + "/api/notes/note",
@@ -117,21 +138,30 @@ async def main():
             check("a title", "<h1>Report</h1>" in html)
             article = html[html.index('<article class="prose">') :]
             text = re.sub(r"<[^>]+>", "", article)
+            cites = re.findall(r'<a class="cite" href="#([^"]+)"', article)
             check(
-                "citations as text",
-                "(Smith et al. 2021, p. 4)" in text and not re.search(r"<a [^>]*class=\"(cite|wikilink)", article),
+                "citations link to their reference",
+                "(Smith et al. 2021, p. 4)" in text
+                and cites == ["ref-smith2021", "ref-lee2019"]
+                and all(f'<li id="{c}">' in article for c in cites),
+                cites,
             )
             check("links as text", '<span class="wikilink"' in html and "the part" in html)
             check("embedded note included", "The embedded part cites" in html)
             refs = re.search(r'<section class="references">.*?</section>', html, re.S)
+            rtext = refs.group(0) if refs else ""
+            smith = (
+                "Smith, A., Doe, J. &amp; Roe, R. (2021). Quantum things. <i>Physical Review X</i>, <i>11</i>(2), 021001. "
+                '<a class="ref-link" href="https://doi.org/10.1103/PhysRevX.11.021001">'
+            )
+            lee = (
+                "Lee, J.-H. (2019). <i>Tensor networks</i> (2nd ed.). Springer, Cham. "
+                '<a class="ref-link" href="https://example.org/tn">'
+            )
             check(
-                "references, embeds included, in order",
-                refs
-                and refs.group(0).index(
-                    "Smith, A., Doe, J. &amp; Roe, R. (2021). Quantum things. <i>Physical Review X</i>"
-                )
-                < refs.group(0).index("Lee, J.-H. (2019). Tensor networks."),
-                refs.group(0)[:300] if refs else None,
+                "full references (volume, issue, pages, publisher) with DOI or URL links, embeds included, in order",
+                smith in rtext and lee in rtext and rtext.index(smith) < rtext.index(lee),
+                rtext[:400],
             )
             check("formula and its number", 'class="katex' in html and "(1)" in html)
             check("KaTeX fonts inside the file", "data:font/woff2;base64," in html)
@@ -140,7 +170,7 @@ async def main():
             check("image inlined", "data:image/png;base64," in html)
             check("tasks shown, not editable", html.count("disabled") >= 2 and "data-task-line" not in html)
             check("no copy buttons or app links", "copy-code" not in article and "data-line" not in article)
-            outside = sorted(set(re.findall(r'(?:src|href)="(?!data:|#)([^"]+)"', html)))
+            outside = sorted(set(re.findall(r'(?:src="|<link [^>]*href=")(?!data:|#)([^"]+)"', html)))
             check("loads nothing from outside", not outside and "url(fonts/" not in html, outside)
 
             # open it as a file, offline: it looks like the read view
@@ -153,8 +183,23 @@ async def main():
                 "document.fonts.check('16px KaTeX_Main') && [...document.fonts].some((f) => f.family.includes('KaTeX') && f.status === 'loaded')"
             )
             check("KaTeX fonts load from the file", fam)
+            await view.click("a.cite >> nth=0")
+            await view.wait_for_timeout(300)
+            target = await view.evaluate(
+                "(() => { const r = document.getElementById('ref-smith2021').getBoundingClientRect();"
+                " return r.top >= 0 && r.top < innerHeight; })()"
+            )
+            check("clicking a citation goes to its reference", target)
+            # what "Save as PDF" makes of the page: the DOI and the citations stay links
+            pdf_bytes = await view.pdf()
+            pdf = pdf_bytes.decode("latin-1")
+            check(
+                "in the PDF, DOIs and citations are links",
+                "/URI (https://doi.org/10.1103/PhysRevX.11.021001)" in pdf and ("/Dest" in pdf or "/GoTo" in pdf),
+            )
             if SHOTS:
                 os.makedirs(SHOTS, exist_ok=True)
+                Path(SHOTS, "export.pdf").write_bytes(pdf_bytes)
                 await view.screenshot(path=f"{SHOTS}/export-html.png", full_page=True)
             await view.close()
 
@@ -173,8 +218,9 @@ async def main():
             check(
                 "references at the end",
                 md.rstrip().endswith(
-                    "## References\n\n1. Smith, A., Doe, J. & Roe, R. (2021). Quantum things. *Physical Review X*.\n"
-                    "2. Lee, J.-H. (2019). Tensor networks."
+                    "## References\n\n1. Smith, A., Doe, J. & Roe, R. (2021). Quantum things. *Physical Review X*, *11*(2), "
+                    "021001. <https://doi.org/10.1103/PhysRevX.11.021001>\n"
+                    "2. Lee, J.-H. (2019). *Tensor networks* (2nd ed.). Springer, Cham. <https://example.org/tn>"
                 ),
                 md[-200:],
             )
