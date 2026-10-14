@@ -192,7 +192,7 @@
 details.mr-same { display: block; }
 details.mr-same > .mr-group-items { margin-top: 12px; }
 
-/* Touch screens have no hover: the tools that appear on hover are always shown (issue #34) */
+/* Touch screens have no hover: the tools that appear on hover are always shown */
 @media (hover: none) {
   .field-row .field-tools .icon-btn, .ip-ref .r-add { opacity: 1; }
   .author-row .icon-btn { width: 22px; opacity: 1; }

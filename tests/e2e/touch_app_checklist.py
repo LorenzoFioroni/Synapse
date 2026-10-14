@@ -1,4 +1,4 @@
-"""Browser checklist for the library on a tablet (issue #34): the collections become a drawer on
+"""Browser checklist for the library on a tablet: the collections become a drawer on
 narrow screens, a long press opens the menus a right-click opens (items, folders, notes) and the
 cards a hover opens (citations, PDF link previews), hover-only tools are shown, the item pane can be
 resized with a finger, and the page can be added to the Home Screen.

@@ -1,4 +1,4 @@
-"""Browser checklist for big libraries (issue #24): with 10,000 items the list opens fast, keeps
+"""Browser checklist for big libraries: with 10,000 items the list opens fast, keeps
 few rows in the DOM, moves the selection quickly, and small changes (editing a field, tagging,
 trashing) do not reload the whole list.
 

@@ -1,4 +1,4 @@
-"""Find Available PDF uses a known arXiv id first (issue #22). The network is faked."""
+"""Find Available PDF uses a known arXiv id first. The network is faked."""
 
 import time
 

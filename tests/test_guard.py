@@ -1,4 +1,4 @@
-"""Requests from other websites are refused (issue #17)."""
+"""Requests from other websites are refused."""
 
 import io
 

@@ -60,7 +60,7 @@
 .format-opt .e { font-size: var(--fs-xs); color: var(--text-3); font-family: var(--font-mono); }
 .export-preview { font-family: var(--font-mono); font-size: 11.5px; white-space: pre; overflow: auto; max-height: 260px; background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; margin: 0; }
 
-/* Devices (issue #34) */
+/* Devices */
 .pair-box { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
 .pair-qr { flex: none; background: #fff; border-radius: 8px; padding: 6px; line-height: 0; }
 .pair-qr svg { display: block; width: 200px; height: 200px; }

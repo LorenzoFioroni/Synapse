@@ -1,4 +1,4 @@
-"""Browser checklist for precise PDF citations (issue #8): a quote's or a snapshot's citation
+"""Browser checklist for precise PDF citations: a quote's or a snapshot's citation
 opens the PDF at the exact spot — not just the top of the page — and flashes it for a moment.
 
     python tests/e2e/citation_spot_checklist.py        (SHOTS=/some/dir to save screenshots)

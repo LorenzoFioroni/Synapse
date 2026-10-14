@@ -1,4 +1,4 @@
-"""Browser checklist for the change feed (issue #34): with the computer and an iPad open at the same
+"""Browser checklist for the change feed: with the computer and an iPad open at the same
 time, each shows what the other changed without a reload — items, notes and PDF annotations — as
 well as changes made outside the app; typing is never interrupted; an idle page does not keep
 refreshing itself.

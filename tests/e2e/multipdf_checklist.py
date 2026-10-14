@@ -1,4 +1,4 @@
-"""Browser checklist for items with several PDFs (issue #39): citations, cards and menus.
+"""Browser checklist for items with several PDFs: citations, cards and menus.
 
     python tests/e2e/multipdf_checklist.py              (SHOTS=/some/dir to save screenshots)
 

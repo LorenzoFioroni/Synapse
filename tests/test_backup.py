@@ -1,4 +1,4 @@
-"""Backups of the library and notes (issue #18)."""
+"""Backups of the library and notes."""
 
 import io
 import json

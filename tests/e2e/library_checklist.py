@@ -292,7 +292,7 @@ async def main():
             num = await v3.text_content("#page-num-text")
             check("viewer opens at the requested page", top < 40 and num.strip().startswith("3"), (top, num))
             await v3.goto(f"{BASE}/viewer.html?file=/pdfs/{att3['url']}&paper_id={cui['id']}&title=x")
-            await v3.wait_for_selector('.page-wrapper[data-page-number="3"]', timeout=15000)  # laid out (#19)
+            await v3.wait_for_selector('.page-wrapper[data-page-number="3"]', timeout=15000)  # laid out
             await v3.wait_for_selector('.page-wrapper[data-page-number="1"] canvas', timeout=15000)
             st = await v3.evaluate("document.getElementById('pdf-container').scrollTop")
             check("without page= it stays at the top", st < 5, st)

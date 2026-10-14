@@ -63,7 +63,7 @@
         .anno-layer.mode-draw { pointer-events: auto; }
     .anno-layer > * { pointer-events: auto !important; }
 
-    /* Touch screens (issue #34). The page zooms itself (pinch → applyZoom), never the browser;
+    /* Touch screens. The page zooms itself (pinch → applyZoom), never the browser;
        fingers scroll. Before any Pencil has been used, fingers draw in the drawing tools. */
     html, body { touch-action: manipulation; }   /* no double-tap zoom of the browser page */
     #pdf-container { touch-action: pan-x pan-y; -webkit-touch-callout: none; }
@@ -72,7 +72,7 @@
     body:not(.zc-pen) .anno-layer.mode-draw { touch-action: none; }
     /* Text boxes are HTML over the page, not in the SVG: Safari draws HTML inside an SVG
        foreignObject in the wrong place (it ignores the SVG's scaling), so boxes were invisible
-       or drifted when zooming (issue #36). Sizes follow the zoom through --zc-scale. */
+       or drifted when zooming. Sizes follow the zoom through --zc-scale. */
     .anno-text-layer { width: 100%; height: 100%; }
     .anno-text { position: absolute; }
     .anno-text-frame { border: 1px dotted transparent; }

@@ -1,4 +1,4 @@
-"""Browser checklist for annotations as records (issue #20): each kind is created, saved on its
+"""Browser checklist for annotations as records: each kind is created, saved on its
 own, drawn again after a reload and at another zoom; eraser, Delete, undo/redo and moving a text
 box work; two PDFs of one item and two tabs on one PDF keep their own work; annotations saved by
 the old viewer are converted and shown.

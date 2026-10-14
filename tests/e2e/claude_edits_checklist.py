@@ -1,4 +1,4 @@
-"""Browser checklist for Claude's edits of notes (issue #40): a change saved by the MCP server
+"""Browser checklist for Claude's edits of notes: a change saved by the MCP server
 (another process) appears in the open note, Cmd/Ctrl+Z undoes it, the bar's Undo / Show changes
 work, and the note's list of Claude edits restores any earlier version.
 

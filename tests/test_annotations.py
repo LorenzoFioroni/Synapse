@@ -1,4 +1,4 @@
-"""Annotations as records per attachment (issue #20)."""
+"""Annotations as records per attachment."""
 
 import json
 import re

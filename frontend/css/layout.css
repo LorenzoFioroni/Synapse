@@ -105,7 +105,7 @@ body { display: flex; flex-direction: column; }
 .tag-clear { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; border: none; background: none; color: var(--accent); font-size: var(--fs-xs); padding: 0; }
 .tag-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; display: inline-block; }
 
-/* ------------------------------------------- tablets and narrow windows (issue #34) */
+/* ------------------------------------------- tablets and narrow windows */
 .side-toggle { display: none; }
 @media (max-width: 1100px) {
   .side-toggle { display: inline-flex; flex: none; }

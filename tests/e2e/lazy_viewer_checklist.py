@@ -1,4 +1,4 @@
-"""Browser checklist for the PDF viewer on long documents (issue #19): pages are drawn only near
+"""Browser checklist for the PDF viewer on long documents: pages are drawn only near
 the viewport, so a 300-page PDF opens fast, keeps few canvases alive, jumps and zooms quickly, and
 annotations on far pages are neither lost nor missing when you get there.
 

@@ -1,4 +1,4 @@
-"""PDFs of attachments stored as web links (issue #21): only the attachment's own URL, only
+"""PDFs of attachments stored as web links: only the attachment's own URL, only
 public addresses, only PDFs, and a size cap. The network and DNS are faked."""
 
 import socket

@@ -1,4 +1,4 @@
-"""Browser checklist for pairing other devices (issue #34): an unpaired iPad sees only "pair this
+"""Browser checklist for pairing other devices: an unpaired iPad sees only "pair this
 device", Settings → Devices on the computer shows a QR code, the pairing link pairs the iPad, the
 iPad can then use the library, and renaming / removing the device works.
 

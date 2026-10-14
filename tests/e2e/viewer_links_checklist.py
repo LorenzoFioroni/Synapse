@@ -132,7 +132,7 @@ async def main():
             errors = []
             v.on("pageerror", lambda e: errors.append(str(e)))
             await v.goto(f"{BASE}/viewer.html?file=/pdfs/{att['url']}&paper_id={item['id']}&title=x")
-            # every page is laid out at once; only those near the viewport are drawn (#19)
+            # every page is laid out at once; only those near the viewport are drawn
             await v.wait_for_selector('.page-wrapper[data-page-number="5"]', timeout=15000)
             await v.wait_for_selector('.page-wrapper[data-page-number="1"] canvas', timeout=15000)
             await v.wait_for_selector('.page-wrapper[data-page-number="1"] .zc-link', timeout=8000)

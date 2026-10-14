@@ -1,4 +1,4 @@
-"""Browser checklist for Settings → Backups (issue #18): a backup is made when the app starts,
+"""Browser checklist for Settings → Backups: a backup is made when the app starts,
 Back Up Now adds one, the folder can be changed (and a bad one is refused), and Restore puts the
 library back as it was.
 

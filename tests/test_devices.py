@@ -1,4 +1,4 @@
-"""Other devices on the network must be paired (issue #34). See backend/access/devices.py and backend/access/guard.py."""
+"""Other devices on the network must be paired. See backend/access/devices.py and backend/access/guard.py."""
 
 import sqlite3
 import tarfile

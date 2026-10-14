@@ -1,4 +1,4 @@
-"""Browser checklist for attachments stored as web links (issue #21): the viewer opens them
+"""Browser checklist for attachments stored as web links: the viewer opens them
 through /api/attachments/<id>/remote, and links to the local network are refused.
 
     python tests/e2e/remote_pdf_checklist.py

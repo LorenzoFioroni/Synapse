@@ -1,4 +1,4 @@
-"""Browser checklist for the PDF viewer on a tablet (issue #34): every annotation tool works with a
+"""Browser checklist for the PDF viewer on a tablet: every annotation tool works with a
 pen (Apple Pencil), fingers scroll once a pen has been used (and draw before that), a finger
 selection can be highlighted, pinching zooms the pages around the fingers, a snapshot can be cut
 with the pen, and fewer, smaller canvases are kept.

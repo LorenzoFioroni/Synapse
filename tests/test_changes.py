@@ -1,4 +1,4 @@
-"""The change feed: other windows and devices learn what changed (issue #34). See backend/changes.py."""
+"""The change feed: other windows and devices learn what changed. See backend/changes.py."""
 
 import sqlite3
 

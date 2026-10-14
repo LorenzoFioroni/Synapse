@@ -1,4 +1,4 @@
-"""One name (Synapse) and one icon everywhere (issue #23)."""
+"""One name (Synapse) and one icon everywhere."""
 
 import re
 import struct

@@ -1,4 +1,4 @@
-"""Browser checklist for editing notes with equations (issue #43). Not part of the pytest run.
+"""Browser checklist for editing notes with equations. Not part of the pytest run.
 
     python tests/e2e/equations_checklist.py              (SHOTS=/some/dir to save screenshots)
 

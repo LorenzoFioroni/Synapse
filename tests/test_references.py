@@ -333,7 +333,7 @@ def test_references_matched_by_title_when_identifiers_differ(client, svc, monkey
 
 
 def test_library_index_is_reused_until_the_library_changes(svc, monkeypatch):
-    """The item pane asks for references on every selection; the library is read only when it changed (#24)."""
+    """The item pane asks for references on every selection; the library is read only when it changed."""
     a = svc.papers.create({"title": "Cited work", "doi": "10.1/a"})
     b = svc.papers.create({"title": "Citing work", "doi": "10.1/b"})
     calls = []

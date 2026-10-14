@@ -137,7 +137,7 @@ async def main():
             )
             await shot(page, "live-light")
 
-            # ---- reveal: the cursor's line keeps its formulas rendered; clicking one opens only that one (#43)
+            # ---- reveal: the cursor's line keeps its formulas rendered; clicking one opens only that one
             line = page.locator(".cm-line", has_text="Inline math")
             await line.click(position={"x": 5, "y": 8})
             await page.wait_for_timeout(200)

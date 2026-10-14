@@ -1,4 +1,4 @@
-"""Browser checklist for the name and icon (issue #23): the toolbar shows the program's icon
+"""Browser checklist for the name and icon: the toolbar shows the program's icon
 (the favicon), in light and dark theme; the tab title says Synapse.
 
     python tests/e2e/branding_checklist.py              (SHOTS=/some/dir to save screenshots)

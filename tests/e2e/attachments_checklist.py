@@ -1,4 +1,4 @@
-"""Browser checklist for note attachments (issue #12): unused images go to the attachment trash,
+"""Browser checklist for note attachments: unused images go to the attachment trash,
 the Attachments dialog (in use / not used / trash, insert into the open note, restore, delete),
 the retention setting, and the deletion dates in Deleted notes.
 

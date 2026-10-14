@@ -1,4 +1,4 @@
-"""Browser checklist for Retrieve Metadata in bulk and Settings → Adding Items (issue #9):
+"""Browser checklist for Retrieve Metadata in bulk and Settings → Adding Items:
 lookups run side by side, the review lists articles with updates first and folds the up-to-date
 ones away, it can continue in the background, and new items follow never / always / ask.
 

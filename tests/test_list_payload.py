@@ -1,4 +1,4 @@
-"""Lean item list and fetching a few items by id (issue #24)."""
+"""Lean item list and fetching a few items by id."""
 
 
 def make(client, **kw):

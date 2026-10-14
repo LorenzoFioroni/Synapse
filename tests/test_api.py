@@ -26,7 +26,7 @@ def test_create_edit_trash_restore(client):
 def test_settings_validation_and_citekey_style(client):
     assert client.put("/api/settings", json={"theme": "neon"}).status_code == 400
     assert client.put("/api/settings", json={"nope": 1}).status_code == 400
-    # notes: text width and equation numbering (issue #43)
+    # notes: text width and equation numbering
     s = client.get("/api/settings").get_json()["settings"]
     assert s["notes_width"] == "readable" and s["notes_equation_numbers"] == "labelled"
     assert s["notes_math_physics"] is True and s["notes_math_macros"] == ""
