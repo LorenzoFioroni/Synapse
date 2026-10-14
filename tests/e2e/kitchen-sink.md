@@ -49,7 +49,7 @@ $$
 ```python
 def f(x):
     # comment
-    return x ** 2  # [@notacite] stays code
+    return x**2  # [@notacite] stays code
 ```
 
 ```mermaid

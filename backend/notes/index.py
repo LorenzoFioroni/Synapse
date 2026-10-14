@@ -5,8 +5,10 @@ exact same state. Each note is re-parsed only when its content hash changes.
 
 Notes are identified by their path relative to the vault (``papers/smith2021.md``).
 """
+
 from __future__ import annotations
 
+import builtins
 import logging
 import re
 import sqlite3
@@ -67,7 +69,7 @@ class NotesIndex:
         self.db_path = str(db_path)
         self.vault = vault
         self._lock = threading.RLock()
-        self.revision = 0          # bumped on every change (lets callers cache derived data)
+        self.revision = 0  # bumped on every change (lets callers cache derived data)
         self._init_schema()
 
     # ------------------------------------------------------------------ plumbing
@@ -111,21 +113,51 @@ class NotesIndex:
         p = parser.parse(text, fallback_title=PurePosixPath(path).stem)
         m = p.meta
         paper = str(m.get("paper") or "").strip() or None
-        c.execute("INSERT INTO notes (path, stem, id, title, type, paper, author, created, updated, hash, mtime, size) "
-                  "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                  (path, stem_of(path), str(m.get("id") or "") or None, p.title,
-                   str(m.get("type") or ("paper" if paper else "note")), paper,
-                   str(m.get("author") or "human"), str(m.get("created") or "") or None,
-                   str(m.get("updated") or "") or None, h, mtime, size))
+        c.execute(
+            "INSERT INTO notes (path, stem, id, title, type, paper, author, created, updated, hash, mtime, size) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                path,
+                stem_of(path),
+                str(m.get("id") or "") or None,
+                p.title,
+                str(m.get("type") or ("paper" if paper else "note")),
+                paper,
+                str(m.get("author") or "human"),
+                str(m.get("created") or "") or None,
+                str(m.get("updated") or "") or None,
+                h,
+                mtime,
+                size,
+            ),
+        )
         c.executemany(
             "INSERT INTO links (path, kind, target, target_norm, heading, alias, locator, page, prefix, "
             "suppress_author, grp, line, context) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            [(path, l.kind, l.target, l.target if l.kind == "cite" else norm_target(l.target),
-              l.heading, l.alias, l.locator, l.page, l.prefix, int(l.suppress_author), l.group, l.line, l.context)
-             for l in p.links])
+            [
+                (
+                    path,
+                    l.kind,
+                    l.target,
+                    l.target if l.kind == "cite" else norm_target(l.target),
+                    l.heading,
+                    l.alias,
+                    l.locator,
+                    l.page,
+                    l.prefix,
+                    int(l.suppress_author),
+                    l.group,
+                    l.line,
+                    l.context,
+                )
+                for l in p.links
+            ],
+        )
         c.executemany("INSERT INTO tags (path, tag) VALUES (?, ?)", [(path, t) for t in p.tags])
-        c.executemany("INSERT INTO headings (path, level, text, line) VALUES (?,?,?,?)",
-                      [(path, h_.level, h_.text, h_.line) for h_ in p.headings])
+        c.executemany(
+            "INSERT INTO headings (path, level, text, line) VALUES (?,?,?,?)",
+            [(path, h_.level, h_.text, h_.line) for h_ in p.headings],
+        )
         c.execute("INSERT INTO notes_fts (path, title, body) VALUES (?,?,?)", (path, p.title, p.body))
 
     def update(self, path: str) -> bool:
@@ -193,14 +225,20 @@ class NotesIndex:
                 return None
             d = dict(row)
             d["tags"] = [r["tag"] for r in c.execute("SELECT tag FROM tags WHERE path = ? ORDER BY rowid", (path,))]
-            d["headings"] = [dict(r) for r in c.execute(
-                "SELECT level, text, line FROM headings WHERE path = ? ORDER BY line", (path,))]
+            d["headings"] = [
+                dict(r)
+                for r in c.execute("SELECT level, text, line FROM headings WHERE path = ? ORDER BY line", (path,))
+            ]
             return d
 
-    def list(self) -> list[dict]:
+    def list(self) -> builtins.list[dict]:
         with self._session() as c:
-            rows = [dict(r) for r in c.execute(
-                "SELECT path, id, title, type, paper, author, created, updated, mtime FROM notes ORDER BY path")]
+            rows = [
+                dict(r)
+                for r in c.execute(
+                    "SELECT path, id, title, type, paper, author, created, updated, mtime FROM notes ORDER BY path"
+                )
+            ]
             tags: dict[str, list[str]] = {}
             for r in c.execute("SELECT path, tag FROM tags ORDER BY rowid"):
                 tags.setdefault(r["path"], []).append(r["tag"])
@@ -208,22 +246,24 @@ class NotesIndex:
             r["tags"] = tags.get(r["path"], [])
         return rows
 
-    def resolve(self, target: str, *, from_path: str = "") -> list[str]:
+    def resolve(self, target: str, *, from_path: str = "") -> builtins.list[str]:
         """Paths a [[target]] may refer to (best first). Empty target = the note itself."""
         t = norm_target(target)
         if not t:
             return [from_path] if from_path else []
         with self._session() as c:
             if "/" in t:
-                rows = c.execute("SELECT path FROM notes WHERE lower(path) = ? OR lower(path) LIKE ? ESCAPE '\\'",
-                                 (t + ".md", "%/" + _like_escape(t) + ".md")).fetchall()
+                rows = c.execute(
+                    "SELECT path FROM notes WHERE lower(path) = ? OR lower(path) LIKE ? ESCAPE '\\'",
+                    (t + ".md", "%/" + _like_escape(t) + ".md"),
+                ).fetchall()
             else:
                 rows = c.execute("SELECT path FROM notes WHERE stem = ?", (t,)).fetchall()
         paths = [r["path"] for r in rows]
         # Prefer the shortest path, then alphabetical: deterministic and predictable.
         return sorted(paths, key=lambda p: (p.count("/"), len(p), p))
 
-    def outgoing(self, path: str) -> list[dict]:
+    def outgoing(self, path: str) -> builtins.list[dict]:
         with self._session() as c:
             rows = [dict(r) for r in c.execute("SELECT * FROM links WHERE path = ? ORDER BY line, rowid", (path,))]
         for r in rows:
@@ -234,7 +274,7 @@ class NotesIndex:
                 r["ambiguous"] = len(matches) > 1
         return rows
 
-    def backlinks(self, path: str) -> list[dict]:
+    def backlinks(self, path: str) -> builtins.list[dict]:
         """Links from other notes to ``path`` (by stem or by folder/stem)."""
         stem = stem_of(path)
         noext = norm_target(path)
@@ -245,43 +285,63 @@ class NotesIndex:
             candidates.add("/".join(parts[i:]))
         with self._session() as c:
             q = ",".join("?" * len(candidates))
-            rows = [dict(r) for r in c.execute(
-                f"SELECT l.*, n.title AS source_title FROM links l JOIN notes n ON n.path = l.path "
-                f"WHERE l.kind IN ('note','embed') AND l.target_norm IN ({q}) AND l.path != ? "
-                f"ORDER BY l.path, l.line", (*candidates, path))]
+            rows = [
+                dict(r)
+                for r in c.execute(
+                    f"SELECT l.*, n.title AS source_title FROM links l JOIN notes n ON n.path = l.path "
+                    f"WHERE l.kind IN ('note','embed') AND l.target_norm IN ({q}) AND l.path != ? "
+                    f"ORDER BY l.path, l.line",
+                    (*candidates, path),
+                )
+            ]
         # Keep only links that actually resolve here (a same-named note elsewhere may win).
-        return [r for r in rows if (self.resolve(r["target"], from_path=r["path"]) or [None])[0] == path]
+        return [r for r in rows if next(iter(self.resolve(r["target"], from_path=r["path"])), None) == path]
 
-    def citing(self, key: str) -> list[dict]:
+    def citing(self, key: str) -> builtins.list[dict]:
         """Every citation of ``key`` with its note and context."""
         with self._session() as c:
-            return [dict(r) for r in c.execute(
-                "SELECT l.path, l.line, l.context, l.locator, l.page, n.title AS source_title, n.type, n.author "
-                "FROM links l JOIN notes n ON n.path = l.path WHERE l.kind = 'cite' AND l.target = ? "
-                "ORDER BY n.path, l.line", (key,))]
+            return [
+                dict(r)
+                for r in c.execute(
+                    "SELECT l.path, l.line, l.context, l.locator, l.page, n.title AS source_title, n.type, n.author "
+                    "FROM links l JOIN notes n ON n.path = l.path WHERE l.kind = 'cite' AND l.target = ? "
+                    "ORDER BY n.path, l.line",
+                    (key,),
+                )
+            ]
 
-    def paper_notes(self, key: str) -> list[dict]:
+    def paper_notes(self, key: str) -> builtins.list[dict]:
         with self._session() as c:
-            return [dict(r) for r in c.execute(
-                "SELECT path, title, type, author, updated FROM notes WHERE paper = ? ORDER BY path", (key,))]
+            return [
+                dict(r)
+                for r in c.execute(
+                    "SELECT path, title, type, author, updated FROM notes WHERE paper = ? ORDER BY path", (key,)
+                )
+            ]
 
-    def texts_by_key(self) -> dict[str, list[tuple[str, str]]]:
+    def texts_by_key(self) -> dict[str, builtins.list[tuple[str, str]]]:
         """citation key -> [(note title, text)]: the body of its paper notes, and every line
         in which a note cites it (what you wrote about the paper, in your own words)."""
         out: dict[str, list[tuple[str, str]]] = {}
         with self._session() as c:
-            for r in c.execute("SELECT n.paper, n.title, f.body FROM notes n JOIN notes_fts f ON f.path = n.path "
-                               "WHERE n.paper IS NOT NULL"):
+            for r in c.execute(
+                "SELECT n.paper, n.title, f.body FROM notes n JOIN notes_fts f ON f.path = n.path "
+                "WHERE n.paper IS NOT NULL"
+            ):
                 out.setdefault(r["paper"], []).append((r["title"] or "", r["body"] or ""))
-            for r in c.execute("SELECT l.target, n.title, l.context FROM links l JOIN notes n ON n.path = l.path "
-                               "WHERE l.kind = 'cite' AND (n.paper IS NULL OR n.paper != l.target)"):
+            for r in c.execute(
+                "SELECT l.target, n.title, l.context FROM links l JOIN notes n ON n.path = l.path "
+                "WHERE l.kind = 'cite' AND (n.paper IS NULL OR n.paper != l.target)"
+            ):
                 out.setdefault(r["target"], []).append((r["title"] or "", r["context"] or ""))
         return out
 
     def paper_note_map(self) -> dict[str, str]:
         """citation key -> path of its paper note (the shortest path if there are several)."""
         with self._session() as c:
-            rows = c.execute("SELECT paper, path FROM notes WHERE paper IS NOT NULL ORDER BY length(path) DESC, path DESC")
+            rows = c.execute(
+                "SELECT paper, path FROM notes WHERE paper IS NOT NULL ORDER BY length(path) DESC, path DESC"
+            )
             return {r["paper"]: r["path"] for r in rows}
 
     def key_summary(self) -> dict[str, dict]:
@@ -289,29 +349,36 @@ class NotesIndex:
         notes that cite it}. For the note markers in the item list."""
         out: dict[str, dict] = {k: {"paper": v, "citing": 0} for k, v in self.paper_note_map().items()}
         with self._session() as c:
-            for r in c.execute("SELECT l.target AS key, COUNT(DISTINCT l.path) AS n FROM links l "
-                               "JOIN notes n ON n.path = l.path WHERE l.kind = 'cite' "
-                               "AND (n.paper IS NULL OR n.paper != l.target) GROUP BY l.target"):
+            for r in c.execute(
+                "SELECT l.target AS key, COUNT(DISTINCT l.path) AS n FROM links l "
+                "JOIN notes n ON n.path = l.path WHERE l.kind = 'cite' "
+                "AND (n.paper IS NULL OR n.paper != l.target) GROUP BY l.target"
+            ):
                 out.setdefault(r["key"], {"paper": None, "citing": 0})["citing"] = r["n"]
         return out
 
-    def cited_keys(self, path: str | None = None) -> list[str]:
+    def cited_keys(self, path: str | None = None) -> builtins.list[str]:
         with self._session() as c:
             if path:
-                rows = c.execute("SELECT DISTINCT target FROM links WHERE kind = 'cite' AND path = ? ORDER BY target",
-                                 (path,))
+                rows = c.execute(
+                    "SELECT DISTINCT target FROM links WHERE kind = 'cite' AND path = ? ORDER BY target", (path,)
+                )
             else:
                 rows = c.execute("SELECT DISTINCT target FROM links WHERE kind = 'cite' ORDER BY target")
             return [r["target"] for r in rows]
 
-    def link_graph(self) -> list[dict]:
+    def link_graph(self) -> builtins.list[dict]:
         """Every link between notes and every citation, in one pass (for the graph view):
         [{"source": path, "kind": "note" | "cite", "target": resolved path or citation key}].
         [[links]] resolve exactly like ``resolve``; unresolved ones are left out."""
         with self._session() as c:
             paths = [r["path"] for r in c.execute("SELECT path FROM notes")]
-            rows = [dict(r) for r in c.execute(
-                "SELECT DISTINCT path, kind, target FROM links WHERE kind IN ('note','embed','cite')")]
+            rows = [
+                dict(r)
+                for r in c.execute(
+                    "SELECT DISTINCT path, kind, target FROM links WHERE kind IN ('note','embed','cite')"
+                )
+            ]
         by_stem: dict[str, list[str]] = {}
         for p in paths:
             by_stem.setdefault(stem_of(p), []).append(p)
@@ -323,7 +390,7 @@ class NotesIndex:
             else:
                 t = norm_target(r["target"])
                 if not t:
-                    continue   # [[#heading]]: a link inside the note itself
+                    continue  # [[#heading]]: a link inside the note itself
                 if "/" in t:
                     target = best([p for p in paths if p.lower() == t + ".md" or p.lower().endswith("/" + t + ".md")])
                 else:
@@ -336,24 +403,33 @@ class NotesIndex:
                 out.append({"source": edge[0], "kind": edge[1], "target": edge[2]})
         return out
 
-    def image_links(self) -> list[tuple[str, str]]:
+    def image_links(self) -> builtins.list[tuple[str, str]]:
         """(note path, image target) for every image shown by a note."""
         with self._session() as c:
-            return [(r["path"], r["target"]) for r in c.execute("SELECT DISTINCT path, target FROM links WHERE kind = 'image'")]
+            return [
+                (r["path"], r["target"])
+                for r in c.execute("SELECT DISTINCT path, target FROM links WHERE kind = 'image'")
+            ]
 
-    def search(self, query: str, limit: int = 50) -> list[dict]:
+    def search(self, query: str, limit: int = 50) -> builtins.list[dict]:
         q = _fts_query(query)
         if not q:
             return []
         import html
+
         with self._session() as c:
             try:
-                rows = [dict(r) for r in c.execute(
-                    "SELECT path, title, snippet(notes_fts, 2, char(1), char(2), '…', 12) AS snippet "
-                    "FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT ?", (q, limit))]
+                rows = [
+                    dict(r)
+                    for r in c.execute(
+                        "SELECT path, title, snippet(notes_fts, 2, char(1), char(2), '…', 12) AS snippet "
+                        "FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT ?",
+                        (q, limit),
+                    )
+                ]
             except sqlite3.OperationalError:
                 return []
-        for r in rows:   # note text is escaped; only our own markers become <mark>
+        for r in rows:  # note text is escaped; only our own markers become <mark>
             r["snippet"] = html.escape(r["snippet"] or "").replace("\x01", "<mark>").replace("\x02", "</mark>")
         return rows
 
@@ -361,18 +437,26 @@ class NotesIndex:
         """Canonical dump of all derived data (used by tests: incremental == rebuild)."""
         with self._session() as c:
             out = {}
-            for t, cols in (("notes", "path, stem, id, title, type, paper, author, created, updated, hash"),
-                            ("links", "path, kind, target, target_norm, heading, alias, locator, page, prefix, "
-                                      "suppress_author, grp, line, context"),
-                            ("tags", "path, tag"), ("headings", "path, level, text, line"),
-                            ("notes_fts", "path, title, body")):
+            for t, cols in (
+                ("notes", "path, stem, id, title, type, paper, author, created, updated, hash"),
+                (
+                    "links",
+                    "path, kind, target, target_norm, heading, alias, locator, page, prefix, "
+                    "suppress_author, grp, line, context",
+                ),
+                ("tags", "path, tag"),
+                ("headings", "path, level, text, line"),
+                ("notes_fts", "path, title, body"),
+            ):
                 out[t] = sorted(tuple(r) for r in c.execute(f"SELECT {cols} FROM {t}"))
             return out
 
     def stats(self) -> dict:
         with self._session() as c:
-            return {"notes": c.execute("SELECT count(*) FROM notes").fetchone()[0],
-                    "links": c.execute("SELECT count(*) FROM links").fetchone()[0]}
+            return {
+                "notes": c.execute("SELECT count(*) FROM notes").fetchone()[0],
+                "links": c.execute("SELECT count(*) FROM links").fetchone()[0],
+            }
 
 
 def _like_escape(s: str) -> str:

@@ -1,14 +1,24 @@
 """Markdown notes. Notes are addressed by their path inside the vault, e.g. ``papers/smith2021.md``."""
+
 from __future__ import annotations
 
 from functools import wraps
 
 from flask import Blueprint, jsonify, request, send_from_directory
 
+from ..changes import CLIENT_HEADER
 from ..notes.vault import ATTACHMENTS, Conflict, NoteExists, VaultError
 from . import body, error, svc
 
 bp = Blueprint("notes", __name__, url_prefix="/api")
+
+
+@bp.after_request
+def _record_change(resp):
+    """Tell the other windows and devices that notes changed (see backend/changes.py)."""
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and resp.status_code < 400:
+        svc().changes.record({"notes"}, request.headers.get(CLIENT_HEADER))
+    return resp
 
 
 def guarded(fn):
@@ -24,6 +34,7 @@ def guarded(fn):
             return error(str(e) if e.args else type(e).__name__, e.status)
         except ValueError as e:
             return error(str(e))
+
     return wrapper
 
 
@@ -47,9 +58,13 @@ def get_note():
 @guarded
 def create_note():
     d = body()
-    res = svc().note_service.create(path=d.get("path") or None, folder=d.get("folder") or "",
-                                    title=(d.get("title") or "").strip(), item_id=d.get("item_id") or None,
-                                    text=d.get("text"))
+    res = svc().note_service.create(
+        path=d.get("path") or None,
+        folder=d.get("folder") or "",
+        title=(d.get("title") or "").strip(),
+        item_id=d.get("item_id") or None,
+        text=d.get("text"),
+    )
     return jsonify(res), 201
 
 
@@ -90,7 +105,7 @@ def move_folder():
 @guarded
 def trash_note():
     d = body()
-    if "paths" in d or "folders" in d:   # several notes and/or folders, restored together by one undo
+    if "paths" in d or "folders" in d:  # several notes and/or folders, restored together by one undo
         return jsonify(svc().note_service.trash_many(list(d.get("paths") or []), list(d.get("folders") or [])))
     return jsonify(svc().note_service.trash(_path_arg()))
 
@@ -99,15 +114,17 @@ def trash_note():
 @guarded
 def trashed_notes():
     """Deleted notes, with when they will be deleted for good (Settings → notes trash)."""
-    return jsonify(trash=svc().attachments.with_deletion_dates(svc().vault.trashed()),
-                   retention=svc().settings.get("notes_trash_retention"))
+    return jsonify(
+        trash=svc().attachments.with_deletion_dates(svc().vault.trashed()),
+        retention=svc().settings.get("notes_trash_retention"),
+    )
 
 
 @bp.post("/notes/restore")
 @guarded
 def restore_note():
     d = body()
-    if not d.get("path"):   # everything deleted together
+    if not d.get("path"):  # everything deleted together
         return jsonify(svc().note_service.restore_batch(d.get("trash_id") or ""))
     return jsonify(svc().note_service.restore(d.get("trash_id") or "", d.get("path") or ""))
 

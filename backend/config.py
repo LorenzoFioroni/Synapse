@@ -4,6 +4,7 @@ Everything the user owns (the library database, the full-text index, PDFs and
 settings) lives under ``data/`` so the code folders stay clean and the data
 folder can be backed up or moved as a whole.
 """
+
 from __future__ import annotations
 
 import os
@@ -17,14 +18,14 @@ APP_ROOT = Path(__file__).resolve().parent.parent
 class Config:
     data_dir: Path
     # Extra host names (besides 127.0.0.1 / localhost) the server answers to, e.g. a LAN address
-    # when it is started with --host 0.0.0.0. See backend/guard.py.
+    # when it is started with --host 0.0.0.0. See backend/access/guard.py.
     allowed_hosts: set[str] = field(default_factory=set)
     # True when the server listens on the network (``--lan`` or ``--host 0.0.0.0``): other devices can
     # pair (Settings → Devices) and requests naming this computer by a LAN address are accepted.
     lan: bool = False
 
     @classmethod
-    def from_env(cls, data_dir: str | os.PathLike | None = None) -> "Config":
+    def from_env(cls, data_dir: str | os.PathLike | None = None) -> Config:
         # SYNAPSE_DATA_DIR; ZCLONE_DATA_DIR is the old name, still accepted
         d = data_dir or os.environ.get("SYNAPSE_DATA_DIR") or os.environ.get("ZCLONE_DATA_DIR") or (APP_ROOT / "data")
         return cls(Path(d).expanduser().resolve())

@@ -1,4 +1,5 @@
 """Attachments, PDF files and PDFs of attachments stored as web links. Annotations: api/pdf_annotations.py."""
+
 from __future__ import annotations
 
 import os
@@ -7,8 +8,9 @@ import uuid
 from flask import Blueprint, Response, jsonify, request, send_from_directory
 from werkzeug.utils import secure_filename
 
-from .. import pdf_finder, remote_pdf
-from ..pdftext import clean_text, extract_text, find_identifier
+from ..online import remote_pdf
+from ..online.http import BROWSER_UA
+from ..pdf.text import clean_text, extract_text, find_identifier
 from . import body, error, svc
 
 bp = Blueprint("attachments", __name__)
@@ -43,7 +45,9 @@ def items_from_pdfs():
     files = request.files.getlist("file")
     if not files:
         return error("No file uploaded")
-    from ..metadata import LookupError_, known_authors, lookup
+    from ..online.http import LookupFailed
+    from ..online.metadata import known_authors, lookup
+
     known = known_authors(s.papers.list())
     created = []
     for f in files:
@@ -57,14 +61,14 @@ def items_from_pdfs():
                 meta = lookup(doi=ident["doi"], known=known, email=s.settings.get("contact_email"))
             elif ident.get("arxiv"):
                 meta = lookup(identifier="arXiv:" + ident["arxiv"], known=known)
-        except LookupError_ as e:
+        except LookupFailed as e:
             note = str(e)
         if not meta:
             meta = {"title": os.path.splitext(name)[0].replace("_", " ")}
             if ident.get("doi"):
                 meta["doi"] = ident["doi"]
         item = s.papers.create({**meta, "folder_id": request.form.get("folder_id") or None})
-        if note is None and len(meta) > 2:   # metadata came from a lookup
+        if note is None and len(meta) > 2:  # metadata came from a lookup
             s.citations.maybe_enqueue(item, request.form.get("fetch_references") in ("1", "true"))
         s.papers.add_attachment(item["id"], name, filename, "pdf")
         created.append({"item": s.papers.get(item["id"]), "identifier": ident, "note": note})
@@ -109,12 +113,12 @@ def serve_pdf(filename):
 @bp.get("/api/attachments/<int:att_id>/remote")
 def remote_attachment(att_id):
     """The PDF of an attachment stored as a web link. Only the attachment's own URL is fetched,
-    never one sent by the browser, and never from the local network (#21)."""
+    never one sent by the browser, and never from the local network."""
     att = svc().papers.get_attachment(att_id)
     if not att or not str(att.get("url") or "").startswith(("http://", "https://")):
         return error("This attachment is not a web link.", 404)
     try:
-        data = remote_pdf.fetch_pdf(att["url"], pdf_finder.UA)
+        data = remote_pdf.fetch_pdf(att["url"], BROWSER_UA)
     except remote_pdf.RemoteError as e:
         return error(str(e), e.status)
     return Response(data, mimetype="application/pdf")

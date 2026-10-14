@@ -10,8 +10,23 @@ def vault(tmp_path):
     return v
 
 
-@pytest.mark.parametrize("bad", ["../x.md", "a/../../x.md", "/etc/x.md", "C:/x.md", ".trash/x.md",
-                                 "a/.hidden/x.md", "x.txt", "", "  ", "a\x00.md", "a/b:c.md", "..\\x.md"])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "../x.md",
+        "a/../../x.md",
+        "/etc/x.md",
+        "C:/x.md",
+        ".trash/x.md",
+        "a/.hidden/x.md",
+        "x.txt",
+        "",
+        "  ",
+        "a\x00.md",
+        "a/b:c.md",
+        "..\\x.md",
+    ],
+)
 def test_rejects_unsafe_paths(vault, bad):
     with pytest.raises(InvalidPath):
         vault.clean_rel(bad)
@@ -99,20 +114,20 @@ def test_trash_batch_and_restore_together(vault):
     assert moved == ["a/one.md", "a/sub/two.md", "four.md"]
     assert not (vault.root / "a").exists() and not (vault.root / "empty").exists()
     assert vault.exists("b/three.md")
-    vault.write("four.md", "a new four", expected_hash=None)   # the place is taken again
+    vault.write("four.md", "a new four", expected_hash=None)  # the place is taken again
     restored, skipped = vault.restore_batch(tid)
     assert restored == ["a/one.md", "a/sub/two.md"] and skipped == ["four.md"]
     assert (vault.root / "a" / "sub" / "fig.txt").read_text() == "kept with the folder"
     assert (vault.root / "empty").is_dir()
-    assert vault.read("four.md")[0] == "a new four"              # never overwritten
-    assert [t["path"] for t in vault.trashed()] == ["four.md"]   # the skipped one stays in the trash
+    assert vault.read("four.md")[0] == "a new four"  # never overwritten
+    assert [t["path"] for t in vault.trashed()] == ["four.md"]  # the skipped one stays in the trash
 
 
 def test_trash_batch_validates_everything_first(vault):
     vault.write("x.md", "x", expected_hash=None)
     with pytest.raises(NoteMissing):
         vault.trash_batch(["x.md", "missing.md"], [])
-    assert vault.exists("x.md")                                  # nothing moved
+    assert vault.exists("x.md")  # nothing moved
     for bad in (["attachments"], [".trash"], ["../x"]):
         with pytest.raises((InvalidPath, NoteMissing)):
             vault.trash_batch([], bad)
@@ -124,8 +139,10 @@ def test_move_folder(vault):
     vault.write("proj/a.md", "a", expected_hash=None)
     vault.write("proj/deep/b.md", "b", expected_hash=None)
     vault.write("other/c.md", "c", expected_hash=None)
-    assert vault.move_folder("proj", "archive/proj2") == [("proj/a.md", "archive/proj2/a.md"),
-                                                         ("proj/deep/b.md", "archive/proj2/deep/b.md")]
+    assert vault.move_folder("proj", "archive/proj2") == [
+        ("proj/a.md", "archive/proj2/a.md"),
+        ("proj/deep/b.md", "archive/proj2/deep/b.md"),
+    ]
     assert vault.read("archive/proj2/deep/b.md")[0] == "b" and not (vault.root / "proj").exists()
     with pytest.raises(NoteExists):
         vault.move_folder("archive/proj2", "other")
@@ -142,7 +159,7 @@ def test_symlinks_and_collisions_do_not_break_folder_operations(vault, tmp_path)
     outside.write_text("not ours")
     vault.write("A/n.md", "n", expected_hash=None)
     (vault.root / "A" / "link.md").symlink_to(outside)
-    assert vault.notes_in("A") == ["A/n.md"]                       # like iter_notes: links are not notes
+    assert vault.notes_in("A") == ["A/n.md"]  # like iter_notes: links are not notes
     assert vault.move_folder("A", "B") == [("A/n.md", "B/n.md")]
     tid, moved = vault.trash_batch([], ["B"])
     assert moved == ["B/n.md"]
@@ -154,7 +171,7 @@ def test_symlinks_and_collisions_do_not_break_folder_operations(vault, tmp_path)
     tid, _ = vault.trash_batch([], ["C"])
     (vault.root / "C").mkdir()
     (vault.root / "C" / "D").write_text("a file where the folder was")
-    restored, skipped = vault.restore_batch(tid)                  # no crash: that part stays in the trash
+    restored, skipped = vault.restore_batch(tid)  # no crash: that part stays in the trash
     assert restored == [] and skipped == ["C/D/y.md"]
     assert [t["path"] for t in vault.trashed()] == ["C/D/y.md"]
 

@@ -1,4 +1,4 @@
-"""Browser checklist for pairing other devices (issue #34): an unpaired iPad sees only "pair this
+"""Browser checklist for pairing other devices: an unpaired iPad sees only "pair this
 device", Settings → Devices on the computer shows a QR code, the pairing link pairs the iPad, the
 iPad can then use the library, and renaming / removing the device works.
 
@@ -9,16 +9,23 @@ touched. Everything runs on one machine, so the server is started through a smal
 treats only 127.0.0.1 as "this computer": the "iPad" (a touch browser context) reaches the server
 through this machine's LAN address and therefore counts as another device.
 """
-import asyncio, os, subprocess, sys, tempfile, time
+
+import asyncio
+import os
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
+
 import requests
 from playwright.async_api import async_playwright
 
 APP = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(APP))
-from tests.e2e._guard import guard  # noqa: E402
+from backend.access import lan  # noqa: E402
 from tests.conftest import make_pdf  # noqa: E402
-from backend import lan  # noqa: E402
+from tests.e2e._guard import guard  # noqa: E402
 
 PORT = 8781
 BASE = f"http://127.0.0.1:{PORT}"
@@ -29,7 +36,7 @@ mod = "Meta" if sys.platform == "darwin" else "Control"
 
 LAUNCHER = """
 import runpy, sys
-from backend import lan
+from backend.access import lan
 lan.is_this_computer = lambda a: (lambda ip: ip is not None and ip.is_loopback)(lan.parse_ip(a))
 sys.argv = ["server.py"] + sys.argv[1:]
 runpy.run_path("server.py", run_name="__main__")
@@ -62,8 +69,12 @@ async def main():
     if not ip:
         sys.exit("This machine has no LAN IPv4 address to test with.")
     LAN = f"http://{ip}:{PORT}"
-    srv = subprocess.Popen([sys.executable, "-c", LAUNCHER, "--lan", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
-                           cwd=APP, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    srv = subprocess.Popen(
+        [sys.executable, "-c", LAUNCHER, "--lan", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
+        cwd=APP,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     try:
         for _ in range(100):
             try:
@@ -74,8 +85,9 @@ async def main():
         item = requests.post(f"{BASE}/api/items", json={"title": "Paper on the Mac", "year": 2020}).json()
         pdf = make_pdf(Path(DATA) / "upload.pdf", "Readable on the iPad")
         with open(pdf, "rb") as fh:
-            att = requests.post(f"{BASE}/api/items/{item['id']}/attachments",
-                                files={"file": ("paper.pdf", fh, "application/pdf")}).json()["attachments"][0]
+            att = requests.post(
+                f"{BASE}/api/items/{item['id']}/attachments", files={"file": ("paper.pdf", fh, "application/pdf")}
+            ).json()["attachments"][0]
 
         async with async_playwright() as p:
             browser = await p.chromium.launch()
@@ -104,7 +116,11 @@ async def main():
             await mac.click('.settings-nav [data-nav="devices"]')
             await mac.wait_for_selector("[data-pair-new]")
             add_text = await mac.text_content("[data-device-add]")
-            check("Devices shows Add a Device and where other devices reach Synapse", "Add a device" in add_text and f":{PORT}/" in add_text, add_text.split("reach it at")[-1].strip()[:40])
+            check(
+                "Devices shows Add a Device and where other devices reach Synapse",
+                "Add a device" in add_text and f":{PORT}/" in add_text,
+                add_text.split("reach it at")[-1].strip()[:40],
+            )
             await mac.click("[data-pair-new]")
             await mac.wait_for_selector(".pair-qr svg")
             box = await mac.eval_on_selector(".pair-qr svg", "e => e.getBoundingClientRect().width")
@@ -114,14 +130,20 @@ async def main():
             await mac.wait_for_timeout(300)
             await shot(mac, "02-qr")
             # the link behind the QR code: pick the IP address (the .local name may not resolve here)
-            idx = await mac.evaluate("""ip => [...document.querySelectorAll('[data-pair-addr]')].findIndex(b => b.textContent === ip)""", ip)
+            idx = await mac.evaluate(
+                """ip => [...document.querySelectorAll('[data-pair-addr]')].findIndex(b => b.textContent === ip)""", ip
+            )
             if idx >= 0:
                 await mac.click(f'[data-pair-addr="{idx}"]')
             # the link the QR code holds (Copy Link copies the same)
             await mac.context.grant_permissions(["clipboard-read", "clipboard-write"])
             await mac.click("[data-pair-copy]")
             link = await mac.evaluate("navigator.clipboard.readText()")
-            check("the link carries the code after #, for this computer's address", f"{ip}:{PORT}/pair#code=" in link, link.split("#")[0])
+            check(
+                "the link carries the code after #, for this computer's address",
+                f"{ip}:{PORT}/pair#code=" in link,
+                link.split("#")[0],
+            )
 
             # -- pairing on the iPad ------------------------------------------------------
             await ipad.goto(link)
@@ -139,7 +161,11 @@ async def main():
             r = await ipad.evaluate("""() => fetch('/api/items', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                          body: JSON.stringify({ title: 'Added on the iPad' }) }).then(r => r.status)""")
             titles = [i["title"] for i in requests.get(f"{BASE}/api/items").json()["items"]]
-            check("the iPad can add an item, and the computer sees it", r in (200, 201) and "Added on the iPad" in titles, r)
+            check(
+                "the iPad can add an item, and the computer sees it",
+                r in (200, 201) and "Added on the iPad" in titles,
+                r,
+            )
 
             ok = await wait_for(lambda: mac.evaluate("() => !document.querySelector('.pair-qr')"), timeout=8)
             check("the computer notices the new device and hides the QR code", ok)
@@ -151,8 +177,10 @@ async def main():
             await ipad.evaluate("() => import('/js/views/settingsView.js').then(m => m.openSettings('devices'))")
             await ipad.wait_for_selector("[data-device] .device-this")
             add_text = await ipad.text_content("[data-device-add]")
-            check("on the iPad: 'This device', and no Add button", "computer running Synapse" in add_text
-                  and not await ipad.query_selector("[data-pair-new]"))
+            check(
+                "on the iPad: 'This device', and no Add button",
+                "computer running Synapse" in add_text and not await ipad.query_selector("[data-pair-new]"),
+            )
             await shot(ipad, "06-ipad-devices")
 
             # -- rename and remove from the computer -----------------------------------------------
@@ -161,7 +189,11 @@ async def main():
             inp = await mac.query_selector(".dialog input, dialog input, .modal input")
             await inp.fill("Reading iPad")
             await mac.keyboard.press("Enter")
-            ok = await wait_for(lambda: mac.evaluate("() => document.querySelector('[data-device] .b-when')?.textContent === 'Reading iPad'"))
+            ok = await wait_for(
+                lambda: mac.evaluate(
+                    "() => document.querySelector('[data-device] .b-when')?.textContent === 'Reading iPad'"
+                )
+            )
             check("the computer can rename the device", ok)
             await mac.click("[data-device-remove]")
             await mac.wait_for_selector("text=Remove Reading iPad?")
@@ -171,14 +203,18 @@ async def main():
             r = await ipad.evaluate("() => fetch('/api/items').then(r => r.status)")
             check("a removed device is locked out at once", r == 401, r)
             await ipad.evaluate("() => import('/js/api.js').then(m => m.api.stats()).catch(() => 0)")
-            ok = await wait_for(lambda: ipad.evaluate("() => document.body.textContent.includes(\"isn't paired\")"), timeout=8)
+            ok = await wait_for(
+                lambda: ipad.evaluate('() => document.body.textContent.includes("isn\'t paired")'), timeout=8
+            )
             check("… and its open page turns into 'pair this device'", ok)
 
             # -- a used link does not pair again ---------------------------------------------
             await ipad.goto(link)
             await ipad.click("#go")
             await ipad.wait_for_selector("#error:not([hidden])")
-            check("a used pairing link is refused with an explanation", "not valid" in await ipad.text_content("#error"))
+            check(
+                "a used pairing link is refused with an explanation", "not valid" in await ipad.text_content("#error")
+            )
 
             r = await mac.evaluate("() => fetch('/api/items').then(r => r.status)")
             check("the computer itself never needed pairing", r == 200)

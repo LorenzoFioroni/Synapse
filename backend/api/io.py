@@ -1,4 +1,5 @@
 """Import and export of references."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -6,9 +7,9 @@ from datetime import date
 from flask import Blueprint, Response, jsonify, request
 
 from .. import formats
-from ..fields import EDITABLE_KEYS
 from ..formats.common import split_keywords
-from ..repository import DuplicateFinder
+from ..library.fields import EDITABLE_KEYS
+from ..library.repository import DuplicateFinder
 from . import body, error, svc
 
 bp = Blueprint("io", __name__, url_prefix="/api")
@@ -41,8 +42,8 @@ def import_preview():
     except formats.FormatError as e:
         return error(str(e))
     finder = DuplicateFinder(s.papers.list())
-    for e in entries:
-        e["duplicate_of"] = finder.find(e)
+    for entry in entries:
+        entry["duplicate_of"] = finder.find(entry)
     return jsonify(format=fmt, label=formats.FORMATS[fmt].label, entries=entries)
 
 
@@ -95,15 +96,24 @@ def export():
     for p in items:  # tags travel as keywords in every format
         kws = split_keywords(p.get("keywords")) + list(p.get("tags") or [])
         p["keywords"] = "; ".join(dict.fromkeys(kws))
-    text = formats.dump(items, fmt, unicode=s.settings.get("bibtex_unicode"),
-                        abstract=s.settings.get("export_abstract"), pattern=s.settings.get("citekey_pattern"))
+    text = formats.dump(
+        items,
+        fmt,
+        unicode=s.settings.get("bibtex_unicode"),
+        abstract=s.settings.get("export_abstract"),
+        pattern=s.settings.get("citekey_pattern"),
+    )
     f = formats.FORMATS[fmt]
     if args.get("download", "1") in ("0", "false", False):
         return jsonify(text=text, format=fmt, count=len(items))
-    name = f"library-{date.today().isoformat()}.{f.extension}" if not ids or len(ids) > 1 else \
-        f"{(items[0].get('citation_key') or 'item') if items else 'empty'}.{f.extension}"
-    return Response(text, mimetype=f.mimetype + "; charset=utf-8",
-                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    name = (
+        f"library-{date.today().isoformat()}.{f.extension}"
+        if not ids or len(ids) > 1
+        else f"{(items[0].get('citation_key') or 'item') if items else 'empty'}.{f.extension}"
+    )
+    return Response(
+        text, mimetype=f.mimetype + "; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{name}"'}
+    )
 
 
 def _decode(raw: bytes) -> str:

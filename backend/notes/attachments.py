@@ -9,6 +9,7 @@ than the retention setting are deleted for good; their age counts from when they
 but never from before this feature first ran (``.trash-attachments/.since``), so a trash that
 filled up over the years is not emptied the moment the app is updated.
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,10 +27,10 @@ from .vault import ATTACHMENTS, TRASH, InvalidPath
 log = logging.getLogger(__name__)
 
 ATTACHMENT_TRASH = ".trash-attachments"
-GRACE_SECONDS = 3600            # a new attachment is not "unused" until its note had time to be saved
+GRACE_SECONDS = 3600  # a new attachment is not "unused" until its note had time to be saved
 STAMP = "%Y%m%d-%H%M%S-%f"
 
-RETENTION = {                   # setting value -> seconds (None: keep forever)
+RETENTION = {  # setting value -> seconds (None: keep forever)
     "never": None,
     "1d": 86400,
     "1w": 7 * 86400,
@@ -49,7 +50,7 @@ def attachment_name(target: str) -> str | None:
     while t.startswith("./") or t.startswith("../"):
         t = t[2:] if t.startswith("./") else t[3:]
     if t.lower().startswith(ATTACHMENTS + "/"):
-        t = t[len(ATTACHMENTS) + 1:]
+        t = t[len(ATTACHMENTS) + 1 :]
     parts = [p for p in PurePosixPath(t).parts if p not in ("", ".")]
     if not parts or any(p == ".." for p in parts):
         return None
@@ -128,8 +129,11 @@ class Attachments:
     def files(self) -> list[str]:
         if not self.dir.is_dir():
             return []
-        return sorted(p.relative_to(self.dir).as_posix() for p in self.dir.rglob("*")
-                      if p.is_file() and not p.name.startswith("."))
+        return sorted(
+            p.relative_to(self.dir).as_posix()
+            for p in self.dir.rglob("*")
+            if p.is_file() and not p.name.startswith(".")
+        )
 
     def trashed(self) -> list[dict]:
         out = []
@@ -140,9 +144,14 @@ class Attachments:
                 when = _stamp_time(stamp_dir.name, stamp_dir)
                 for f in sorted(stamp_dir.rglob("*")):
                     if f.is_file():
-                        out.append({"trash_id": stamp_dir.name, "name": f.relative_to(stamp_dir).as_posix(),
-                                    "trashed_at": datetime.fromtimestamp(when).isoformat(timespec="seconds"),
-                                    "size": f.stat().st_size})
+                        out.append(
+                            {
+                                "trash_id": stamp_dir.name,
+                                "name": f.relative_to(stamp_dir).as_posix(),
+                                "trashed_at": datetime.fromtimestamp(when).isoformat(timespec="seconds"),
+                                "size": f.stat().st_size,
+                            }
+                        )
         return out
 
     def with_deletion_dates(self, notes: list[dict]) -> list[dict]:
@@ -152,9 +161,17 @@ class Attachments:
         for n in notes:
             d = self.vault.root / TRASH / n["trash_id"]
             when = _stamp_time(n["trash_id"], d)
-            out.append({**n, "trashed_at": datetime.fromtimestamp(when).isoformat(timespec="seconds"),
-                        **({"deletes_at": datetime.fromtimestamp(self._deleted_at(d) + secs).isoformat(timespec="seconds")}
-                           if secs else {})})
+            out.append(
+                {
+                    **n,
+                    "trashed_at": datetime.fromtimestamp(when).isoformat(timespec="seconds"),
+                    **(
+                        {"deletes_at": datetime.fromtimestamp(self._deleted_at(d) + secs).isoformat(timespec="seconds")}
+                        if secs
+                        else {}
+                    ),
+                }
+            )
         return out
 
     def overview(self) -> dict:
@@ -163,9 +180,15 @@ class Attachments:
         for name in self.files():
             p = self.dir / name
             st = p.stat()
-            files.append({"name": name, "path": f"{ATTACHMENTS}/{name}", "size": st.st_size,
-                          "modified": datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds"),
-                          "used_by": sorted(usage.get(name, []))})
+            files.append(
+                {
+                    "name": name,
+                    "path": f"{ATTACHMENTS}/{name}",
+                    "size": st.st_size,
+                    "modified": datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds"),
+                    "used_by": sorted(usage.get(name, [])),
+                }
+            )
         retention = self.settings.get("notes_trash_retention")
         secs = RETENTION.get(retention)
         trash = self.trashed()
@@ -213,7 +236,7 @@ class Attachments:
             if dst.exists():
                 raise InvalidPath(f"An attachment called {name} already exists")
             self._move(src, dst)
-            os.utime(dst)          # restored now: not swept again right away
+            os.utime(dst)  # restored now: not swept again right away
             self._tidy(self.trash_dir)
         return f"{ATTACHMENTS}/{name}"
 
@@ -238,7 +261,9 @@ class Attachments:
                 for stamp_dir in base.iterdir():
                     if not stamp_dir.is_dir() or now - self._deleted_at(stamp_dir) < secs:
                         continue
-                    n = sum(1 for f in stamp_dir.rglob("*") if f.is_file() and (key == "attachments" or f.suffix == ".md"))
+                    n = sum(
+                        1 for f in stamp_dir.rglob("*") if f.is_file() and (key == "attachments" or f.suffix == ".md")
+                    )
                     shutil.rmtree(stamp_dir, ignore_errors=True)
                     counts[key] += n
         if counts["attachments"] or counts["notes"]:
@@ -279,6 +304,7 @@ class Attachments:
             self._timer = threading.Timer(every, run)
             self._timer.daemon = True
             self._timer.start()
+
         t = threading.Thread(target=run, daemon=True)
         t.start()
 

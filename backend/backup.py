@@ -1,4 +1,4 @@
-"""Automatic backups of the library and the notes (issue #18).
+"""Automatic backups of the library and the notes.
 
 One archive per backup, ``library-YYYYMMDD-HHMMSS.tar.gz``, holding:
 
@@ -21,8 +21,10 @@ Restoring first backs up the current state, then puts back ``library.db`` (throu
 API, so open connections stay valid), ``settings.json`` and ``notes/``, and rebuilds the
 indexes. Nothing in the live data is touched until the archive has been checked.
 """
+
 from __future__ import annotations
 
+import builtins
 import io
 import json
 import logging
@@ -45,9 +47,11 @@ def _order(p: Path) -> tuple:
     """Oldest first: by time, then by the -1, -2 … suffix of backups made in the same second."""
     m = NAME_RE.match(p.name)
     return (m.group(1), int(m.group(2) or 0)) if m else ("", 0)
+
+
 INTERVALS = {"off": None, "daily": timedelta(days=1), "weekly": timedelta(weeks=1)}
-BEFORE_EVERY = timedelta(minutes=10)   # backups before risky operations: at most this often
-CHECK_EVERY_S = 15 * 60                # how often the scheduler looks at the clock
+BEFORE_EVERY = timedelta(minutes=10)  # backups before risky operations: at most this often
+CHECK_EVERY_S = 15 * 60  # how often the scheduler looks at the clock
 FORMAT = 1
 
 
@@ -79,13 +83,21 @@ class Backups:
         return p
 
     # ------------------------------------------------------------------ list
-    def list(self) -> list[dict]:
-        out = []
+    def list(self) -> builtins.list[dict]:
+        out: builtins.list[dict] = []
         if not self.dir.is_dir():
             return out
-        for p in sorted((p for p in self.dir.glob("library-*.tar.gz") if NAME_RE.match(p.name)), key=_order, reverse=True):
-            entry = {"name": p.name, "size": p.stat().st_size, "created": None, "reason": None,
-                     "items": None, "notes": None}
+        for p in sorted(
+            (p for p in self.dir.glob("library-*.tar.gz") if NAME_RE.match(p.name)), key=_order, reverse=True
+        ):
+            entry = {
+                "name": p.name,
+                "size": p.stat().st_size,
+                "created": None,
+                "reason": None,
+                "items": None,
+                "notes": None,
+            }
             try:
                 entry.update({k: v for k, v in self._manifest(p).items() if k in entry})
             except Exception:
@@ -98,10 +110,13 @@ class Backups:
     @staticmethod
     def _manifest(path: Path) -> dict:
         with tarfile.open(path, "r:gz") as tar:
-            member = tar.next()   # written first, so this does not read the whole archive
+            member = tar.next()  # written first, so this does not read the whole archive
             if not member or member.name != "manifest.json":
                 raise BackupError("No manifest")
-            return json.loads(tar.extractfile(member).read().decode("utf-8"))
+            f = tar.extractfile(member)
+            if f is None:
+                raise BackupError("No manifest")
+            return json.loads(f.read().decode("utf-8"))
 
     def newest(self) -> dict | None:
         backups = [b for b in self.list() if not b.get("damaged")]
@@ -109,8 +124,14 @@ class Backups:
 
     def status(self) -> dict:
         newest = self.newest()
-        return {"dir": str(self.dir), "backups": self.list(), "last": newest, "error": self.last_error,
-                "interval": self.s.settings.get("backup_interval"), "keep": self.s.settings.get("backup_keep")}
+        return {
+            "dir": str(self.dir),
+            "backups": self.list(),
+            "last": newest,
+            "error": self.last_error,
+            "interval": self.s.settings.get("backup_interval"),
+            "keep": self.s.settings.get("backup_keep"),
+        }
 
     # ------------------------------------------------------------------ create
     def create(self, reason: str = "manual") -> dict:
@@ -128,7 +149,7 @@ class Backups:
         dest_dir = self.dir
         dest_dir.mkdir(parents=True, exist_ok=True)
         now = datetime.now()
-        stamp = now.strftime('%Y%m%d-%H%M%S')
+        stamp = now.strftime("%Y%m%d-%H%M%S")
         # Several backups in the same second get -1, -2 …, always above any taken before
         # (even ones already pruned), so the newest also sorts last.
         same = [_order(p)[1] for p in dest_dir.glob(f"library-{stamp}*.tar.gz") if NAME_RE.match(p.name)]
@@ -147,10 +168,20 @@ class Backups:
                 src.close()
             items = self._count_items(db_copy)
             note_files = [p for p in cfg.notes_dir.rglob("*") if p.is_file()] if cfg.notes_dir.is_dir() else []
-            notes = sum(1 for p in note_files if p.suffix == ".md"
-                        and not any(part.startswith(".") for part in p.relative_to(cfg.notes_dir).parts))
-            manifest = {"app": "synapse", "format": FORMAT, "created": now.isoformat(timespec="seconds"),
-                        "reason": reason, "items": items, "notes": notes, "note_files": len(note_files)}
+            notes = sum(
+                1
+                for p in note_files
+                if p.suffix == ".md" and not any(part.startswith(".") for part in p.relative_to(cfg.notes_dir).parts)
+            )
+            manifest = {
+                "app": "synapse",
+                "format": FORMAT,
+                "created": now.isoformat(timespec="seconds"),
+                "reason": reason,
+                "items": items,
+                "notes": notes,
+                "note_files": len(note_files),
+            }
             part = dest_dir / (name + ".part")
             try:
                 with tarfile.open(part, "w:gz") as tar:
@@ -163,7 +194,7 @@ class Backups:
                         tar.add(cfg.settings_path, arcname="settings.json")
                     for p in note_files:
                         tar.add(p, arcname=f"notes/{p.relative_to(cfg.notes_dir).as_posix()}", recursive=False)
-                part.replace(dest_dir / name)   # a half-written archive never looks like a backup
+                part.replace(dest_dir / name)  # a half-written archive never looks like a backup
             finally:
                 part.unlink(missing_ok=True)
         size = (dest_dir / name).stat().st_size
@@ -182,7 +213,7 @@ class Backups:
         except sqlite3.Error:
             return None
 
-    def prune(self) -> list[str]:
+    def prune(self) -> builtins.list[str]:
         keep = max(1, int(self.s.settings.get("backup_keep") or 1))
         archives = sorted((p for p in self.dir.glob("library-*.tar.gz") if NAME_RE.match(p.name)), key=_order)
         removed = []
@@ -237,6 +268,7 @@ class Backups:
     def start(self) -> None:
         """Back up now if one is due, then check every quarter of an hour (the web app only;
         the MCP server never calls this)."""
+
         def tick():
             try:
                 self.run_if_due()
@@ -245,6 +277,7 @@ class Backups:
             self._timer = threading.Timer(CHECK_EVERY_S, tick)
             self._timer.daemon = True
             self._timer.start()
+
         t = threading.Thread(target=tick, name="backups", daemon=True)
         t.start()
 
@@ -282,15 +315,20 @@ class Backups:
                 members = tar.getmembers()
                 for m in members:
                     parts = Path(m.name).parts
-                    if (m.name.startswith(("/", "\\")) or ".." in parts or not (m.isfile() or m.isdir())
-                            or not parts or parts[0] not in ("manifest.json", "library.db", "settings.json", "notes")):
+                    if (
+                        m.name.startswith(("/", "\\"))
+                        or ".." in parts
+                        or not (m.isfile() or m.isdir())
+                        or not parts
+                        or parts[0] not in ("manifest.json", "library.db", "settings.json", "notes")
+                    ):
                         raise BackupError(f"Unexpected entry in the backup: {m.name}")
                 if hasattr(tarfile, "data_filter"):
                     tar.extractall(dest, members=members, filter="data")
-                else:   # Python without extraction filters: entries were checked above
+                else:  # Python without extraction filters: entries were checked above
                     tar.extractall(dest, members=members)
         except (tarfile.TarError, OSError, EOFError) as e:
-            raise BackupError(f"The backup cannot be read: {e}")
+            raise BackupError(f"The backup cannot be read: {e}") from e
 
     @staticmethod
     def _check_db(db: Path) -> None:
@@ -304,7 +342,7 @@ class Backups:
             finally:
                 c.close()
         except sqlite3.Error as e:
-            raise BackupError(f"The library database in the backup is damaged: {e}")
+            raise BackupError(f"The library database in the backup is damaged: {e}") from e
         if ok != "ok":
             raise BackupError(f"The library database in the backup is damaged: {ok}")
 
@@ -316,7 +354,7 @@ class Backups:
         finally:
             dst.close()
             src.close()
-        self.s.db.migrate()   # an older backup gets the columns this version needs
+        self.s.db.migrate()  # an older backup gets the columns this version needs
 
     def _restore_notes(self, notes: Path) -> None:
         live = self.s.config.notes_dir

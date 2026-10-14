@@ -1,17 +1,24 @@
 # Synapse
 
 A local, web-based reference manager: a Flask backend with SQLite storage and a
-dependency-free JavaScript frontend. Everything runs on your machine.
+TypeScript frontend. Everything runs on your machine.
 
 ## Run it
+
+You need Python 3.10+ and [Node.js](https://nodejs.org) 20+ (Node only builds the web app's
+scripts; the app itself runs offline).
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+(cd frontend && npm ci)           # once, and again when frontend/package-lock.json changes
 python server.py                  # http://127.0.0.1:8000 opens in your browser
 python server.py --port 5050 --no-browser
 python server.py --data-dir ~/MyLibrary
 ```
+
+`server.py` compiles the web app's scripts (`frontend/src` → `frontend/js`) whenever they changed,
+for example after a `git pull`.
 
 The server only answers to `127.0.0.1` / `localhost`, and only the app's own pages and the
 browser button can change the library: other websites open in your browser cannot.
@@ -179,8 +186,10 @@ never mix.
 `mcp_server.py` lets Claude Desktop and Claude Code read your library through MCP (Model Context
 Protocol): ask a question about a project note and Claude can read the note, the papers it cites,
 the relevant pages of their PDFs and their references. It reads the same `data/` folder as the app
-(which does not need to be running), works only on this computer, and never changes anything except
-adding new notes in `notes/ai/` when you ask it to save an answer.
+(which does not need to be running) and works only on this computer. When you ask it to save an
+answer it adds a new note in `notes/ai/`; when you ask it to change a note, the edit is checked
+against the version on disk and recorded, so the app can show it and undo it. Figures it cuts out of
+a PDF go to `notes/attachments/`. It never changes the library's items.
 
 Set it up once, from the repository root with the virtual environment active:
 
@@ -228,40 +237,19 @@ the conversation, as if you had pasted them.
 
 ## Project layout
 
+For how the code fits together and where new code goes, see
+[`docs/architecture.md`](docs/architecture.md) (and [`CLAUDE.md`](CLAUDE.md) for the working rules).
+
 ```
 ./
-├── server.py              CLI entry point
+├── server.py              starts the web app
 ├── mcp_server.py          MCP server for Claude Desktop / Claude Code (stdio)
-├── backend/
-│   ├── app.py             Flask app factory (serves frontend/ and the API)
-│   ├── config.py          paths of the data folder
-│   ├── db.py              SQLite connection + schema migrations
-│   ├── fields.py          item fields and types (single source of truth)
-│   ├── repository.py      all SQL for items/attachments, duplicate detection
-│   ├── organize.py        folders, tags, smart folders
-│   ├── search.py          search scopes and query parsing
-│   ├── fulltext.py        separate FTS5 index + background indexer
-│   ├── citekeys.py        citation-key patterns
-│   ├── settings.py        preferences store with validation
-│   ├── metadata.py        Crossref / OpenAlex / arXiv / Open Library lookups
-│   ├── references.py      reference lists (citation graph) in citations.db + background fetching
-│   ├── graph.py           the Graph view's network: papers, cited works, notes and their links
-│   ├── pdf_finder.py      open-access PDF search + verification
-│   ├── pdftext.py         PDF text extraction
-│   ├── formats/           bibtex, ris, endnote (+XML), csljson
-│   ├── mcp/               MCP protocol (protocol.py) and the library tools (tools.py)
-│   ├── notes/             Markdown notes: vault (files), frontmatter, parser (links and
-│   │                      citations), index (notes_index.db), service
-│   └── api/               Flask blueprints: items, attachments, settings, io, metadata,
-│                          organize (folders/tags/smart), connector (browser extension), notes
-├── frontend/
-│   ├── index.html, viewer.html
-│   ├── css/               tokens (themes), base, components, layout, items, item pane, settings
-│   ├── js/                api, store, actions, ui/ (toast, dialog, menu), views/
-│   └── vendor/pdfjs/
+├── backend/               Flask + SQLite backend (packages described in docs/architecture.md)
+├── frontend/              the web app: index.html, viewer.html, src/ (TypeScript; built to js/), css/, vendor/ (third-party libraries)
 ├── browser_extension/     Chrome extension (Manifest V3) – load unpacked
-├── tools/                 build scripts for the vendored editor and Markdown bundles
-├── tests/                 pytest suite (python -m pytest tests), e2e/ browser checklists
+├── tools/                 build scripts for the vendored libraries
+├── tests/                 pytest suite, js/ unit tests, e2e/ browser checklists
+├── docs/                  technical documentation
 └── data/                  your library (git-ignored)
 ```
 
@@ -272,16 +260,25 @@ the source of truth; `data/notes_index.db` is derived from them and can be delet
 time — it is rebuilt on the next start.
 
 The frontend never talks to external services directly; all lookups go through
-the backend, and all SQL lives in `repository.py`.
+the backend.
 
 ## Tests
 
 ```bash
-pip install pytest
-python -m pytest tests          # backend + JavaScript unit tests (the JS part needs Node.js)
+pip install -r requirements-dev.txt
+(cd frontend && npm ci && npm run check)   # type-check the frontend and the browser extension
+ruff check .                    # lint
+ruff format .                   # format
+mypy                            # type-check the Python code
+python -m pytest                # backend + JavaScript unit tests (the JS part needs Node.js)
+pre-commit install              # optional: ruff, mypy and the type check on every commit
 ```
 
-Browser checklists for notes (need Playwright; each uses a throw-away data folder):
+CI (`.github/workflows/ci.yml`) runs all of these on every pull request.
+
+Browser checklists (need Playwright; each uses a throw-away data folder).
+`python tests/e2e/run.py` runs them all and prints a summary, `python tests/e2e/run.py notes render`
+only those, and `--retries 1` gives a failed one a second try. Or run one directly:
 
 ```bash
 pip install playwright requests && playwright install chromium
@@ -297,6 +294,7 @@ python tests/e2e/attachments_checklist.py  # note attachments: unused ones to th
 python tests/e2e/adding_checklist.py     # bulk Retrieve Metadata (parallel, grouped, background), Settings → Adding Items
 python tests/e2e/claude_edits_checklist.py  # Claude's note edits: appear live, ⌘Z / bar Undo / Show changes, edit list
 python tests/e2e/equations_checklist.py  # equation numbers, \eqref, macros, clicks into formulas, panels and width
+python tests/e2e/extension_checklist.py  # the browser button: options, reading an article page, saving it
 ```
 
 The notes editor (CodeMirror 6) is vendored as a pre-built bundle in `frontend/vendor/cm6/`;

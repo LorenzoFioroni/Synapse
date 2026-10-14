@@ -26,16 +26,20 @@ def test_create_edit_trash_restore(client):
 def test_settings_validation_and_citekey_style(client):
     assert client.put("/api/settings", json={"theme": "neon"}).status_code == 400
     assert client.put("/api/settings", json={"nope": 1}).status_code == 400
-    # notes: text width and equation numbering (issue #43)
+    # notes: text width and equation numbering
     s = client.get("/api/settings").get_json()["settings"]
     assert s["notes_width"] == "readable" and s["notes_equation_numbers"] == "labelled"
     assert s["notes_math_physics"] is True and s["notes_math_macros"] == ""
     assert client.put("/api/settings", json={"notes_width": "huge"}).status_code == 400
     assert client.put("/api/settings", json={"notes_equation_numbers": "some"}).status_code == 400
-    r = client.put("/api/settings", json={"notes_width": "full", "notes_equation_numbers": "all"}).get_json()["settings"]
+    r = client.put("/api/settings", json={"notes_width": "full", "notes_equation_numbers": "all"}).get_json()[
+        "settings"
+    ]
     assert r["notes_width"] == "full" and r["notes_equation_numbers"] == "all"
     macros = "\\newcommand{\\R}{\\mathbb{R}}\n\\DeclareMathOperator{\\Var}{Var}"
-    r = client.put("/api/settings", json={"notes_math_physics": False, "notes_math_macros": macros}).get_json()["settings"]
+    r = client.put("/api/settings", json={"notes_math_physics": False, "notes_math_macros": macros}).get_json()[
+        "settings"
+    ]
     assert r["notes_math_physics"] is False and r["notes_math_macros"] == macros
     assert client.put("/api/settings", json={"notes_math_macros": "x" * 20001}).status_code == 400
     r = client.put("/api/settings", json={"citekey_pattern": "{Auth}{year}", "default_search_mode": "all"})
@@ -54,6 +58,7 @@ def test_settings_validation_and_citekey_style(client):
 def test_settings_persist(app, tmp_path):
     from backend import create_app
     from backend.config import Config
+
     c = app.test_client()
     c.put("/api/settings", json={"density": "compact"})
     app2 = create_app(Config.from_env(tmp_path / "data"), start_indexer=False)
@@ -61,10 +66,13 @@ def test_settings_persist(app, tmp_path):
 
 
 def test_import_preview_commit_and_export(client):
-    bib = "@article{a1, title={First Paper}, author={Doe, Jane}, year={2020}, doi={10.1/x}}\n" \
-          "@article{a2, title={Second Paper}, author={Roe, Rick}, year={2021}}"
-    prev = client.post("/api/import/preview", data={"file": (io.BytesIO(bib.encode()), "refs.bib")},
-                       content_type="multipart/form-data").get_json()
+    bib = (
+        "@article{a1, title={First Paper}, author={Doe, Jane}, year={2020}, doi={10.1/x}}\n"
+        "@article{a2, title={Second Paper}, author={Roe, Rick}, year={2021}}"
+    )
+    prev = client.post(
+        "/api/import/preview", data={"file": (io.BytesIO(bib.encode()), "refs.bib")}, content_type="multipart/form-data"
+    ).get_json()
     assert prev["format"] == "bibtex" and len(prev["entries"]) == 2
     res = client.post("/api/import/commit", json={"entries": prev["entries"]}).get_json()
     assert len(res["created"]) == 2
@@ -84,8 +92,11 @@ def test_import_preview_commit_and_export(client):
 def test_attachments_and_fulltext_search(client, svc, tmp_path):
     item = client.post("/api/items", json={"title": "Plain title", "authors": "Doe, Jane"}).get_json()
     pdf = make_pdf(tmp_path / "paper.pdf", "The Lindblad master equation describes open systems")
-    r = client.post(f"/api/items/{item['id']}/attachments",
-                    data={"file": (open(pdf, "rb"), "paper.pdf")}, content_type="multipart/form-data")
+    r = client.post(
+        f"/api/items/{item['id']}/attachments",
+        data={"file": (open(pdf, "rb"), "paper.pdf")},
+        content_type="multipart/form-data",
+    )
     assert r.status_code == 201
     att = r.get_json()["attachments"][0]
     svc.indexer.wait(30)
@@ -121,16 +132,21 @@ def test_schema(client):
 
 def test_old_schema_is_upgraded(tmp_path):
     import sqlite3
+
     from backend import config as cfg
+
     data = tmp_path / "data"
     data.mkdir()
     con = sqlite3.connect(data / "library.db")
-    con.execute("CREATE TABLE papers (id TEXT PRIMARY KEY, title TEXT, authors TEXT, year INTEGER, journal TEXT, "
-                "abstract TEXT, pdfUrl TEXT)")
+    con.execute(
+        "CREATE TABLE papers (id TEXT PRIMARY KEY, title TEXT, authors TEXT, year INTEGER, journal TEXT, "
+        "abstract TEXT, pdfUrl TEXT)"
+    )
     con.execute("INSERT INTO papers (id, title) VALUES ('p1', 'Old')")
     con.commit()
     con.close()
     from backend import create_app
+
     app = create_app(cfg.Config(data), start_indexer=False)
     items = app.test_client().get("/api/items").get_json()["items"]
     assert items[0]["title"] == "Old" and items[0]["date_added"] and items[0]["item_type"] == "journalArticle"
@@ -151,14 +167,18 @@ def test_empty_item_gets_citekey_once_it_has_metadata(client):
 
 
 def test_items_from_pdf_without_network(client, tmp_path, monkeypatch):
-    from backend import metadata
+    from backend.online import metadata
 
     def offline(*a, **k):
-        raise metadata.LookupError_("offline")
+        raise metadata.LookupFailed("offline")
+
     monkeypatch.setattr(metadata, "lookup", offline)
     pdf = make_pdf(tmp_path / "Some_Paper_Title.pdf", "Published as doi:10.1103/PhysRevB.99.094435 in PRB")
-    r = client.post("/api/items/from_pdf", data={"file": (open(pdf, "rb"), "Some_Paper_Title.pdf")},
-                    content_type="multipart/form-data")
+    r = client.post(
+        "/api/items/from_pdf",
+        data={"file": (open(pdf, "rb"), "Some_Paper_Title.pdf")},
+        content_type="multipart/form-data",
+    )
     assert r.status_code == 201
     c = r.get_json()["created"][0]
     assert c["identifier"] == {"doi": "10.1103/PhysRevB.99.094435"}
@@ -167,17 +187,22 @@ def test_items_from_pdf_without_network(client, tmp_path, monkeypatch):
 
 
 def test_items_from_pdf_with_metadata(client, tmp_path, monkeypatch):
-    from backend import metadata
-    monkeypatch.setattr(metadata, "lookup", lambda **k: {"title": "Asymmetry", "authors": "Doe, J", "year": "2019",
-                                                         "doi": k.get("doi")})
+    from backend.online import metadata
+
+    monkeypatch.setattr(
+        metadata, "lookup", lambda **k: {"title": "Asymmetry", "authors": "Doe, J", "year": "2019", "doi": k.get("doi")}
+    )
     pdf = make_pdf(tmp_path / "x.pdf", "doi: 10.1103/PhysRevB.99.094435")
-    c = client.post("/api/items/from_pdf", data={"file": (open(pdf, "rb"), "x.pdf")},
-                    content_type="multipart/form-data").get_json()["created"][0]
+    c = client.post(
+        "/api/items/from_pdf", data={"file": (open(pdf, "rb"), "x.pdf")}, content_type="multipart/form-data"
+    ).get_json()["created"][0]
     assert c["item"]["title"] == "Asymmetry" and c["item"]["citation_key"] == "doeAsymmetry2019"
 
 
 def test_duplicates_view(client):
-    a = client.post("/api/items", json={"title": "Quantum transport in chains", "year": 2020, "doi": "10.1/A"}).get_json()
+    a = client.post(
+        "/api/items", json={"title": "Quantum transport in chains", "year": 2020, "doi": "10.1/A"}
+    ).get_json()
     b = client.post("/api/items", json={"title": "Quantum Transport in Chains", "year": 2020}).get_json()
     c = client.post("/api/items", json={"title": "Other", "doi": "10.1/a"}).get_json()
     client.post("/api/items", json={"title": "Unrelated paper about things"})

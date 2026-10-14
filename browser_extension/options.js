@@ -1,10 +1,11 @@
+// Options page: the address of the library (default: this computer, port 8000).
 const DEFAULT_SERVER = 'http://127.0.0.1:8000';
-const input = document.getElementById('server');
-const status = document.getElementById('status');
+const input = /** @type {HTMLInputElement} */ (document.getElementById('server'));
+const status = /** @type {HTMLElement} */ (document.getElementById('status'));
 
-chrome.storage.sync.get('server').then(({ server }) => { input.value = server || DEFAULT_SERVER; });
+chrome.storage.sync.get('server').then((stored) => { input.value = /** @type {{ server?: string }} */ (stored).server || DEFAULT_SERVER; });
 
-document.getElementById('save').onclick = async () => {
+/** @type {HTMLElement} */ (document.getElementById('save')).onclick = async () => {
   let v = input.value.trim().replace(/\/+$/, '') || DEFAULT_SERVER;
   if (!/^https?:\/\//.test(v)) v = `http://${v}`;
   input.value = v;

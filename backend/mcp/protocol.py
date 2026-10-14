@@ -11,6 +11,7 @@ Only what a tools-only server needs is implemented: ``initialize``, ``ping``,
 ``tools/list`` and ``tools/call`` (plus empty ``resources/list`` and
 ``prompts/list`` for clients that ask anyway).
 """
+
 from __future__ import annotations
 
 import base64
@@ -18,8 +19,9 @@ import json
 import logging
 import sys
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -49,9 +51,13 @@ class Tool:
             "title": self.title,
             "description": self.description,
             "inputSchema": self.input_schema,
-            "annotations": {"title": self.title, "readOnlyHint": self.read_only,
-                            "destructiveHint": False, "idempotentHint": self.read_only,
-                            "openWorldHint": False},
+            "annotations": {
+                "title": self.title,
+                "readOnlyHint": self.read_only,
+                "destructiveHint": False,
+                "idempotentHint": self.read_only,
+                "openWorldHint": False,
+            },
         }
 
 
@@ -93,24 +99,28 @@ class Server:
     version: str
     instructions: str = ""
     tools: dict[str, Tool] = field(default_factory=dict)
-    before_call: Callable[[], None] | None = None   # e.g. refresh indexes before each tool call
+    before_call: Callable[[], None] | None = None  # e.g. refresh indexes before each tool call
 
     def add(self, tool: Tool) -> None:
         self.tools[tool.name] = tool
 
     # ------------------------------------------------------------------ dispatch
     def handle(self, message: Any) -> Any:
-        if isinstance(message, list):   # JSON-RPC batch (older protocol versions)
+        if isinstance(message, list):  # JSON-RPC batch (older protocol versions)
             replies = [r for r in (self.handle(m) for m in message) if r is not None]
             return replies or None
-        if not isinstance(message, dict) or message.get("jsonrpc") != "2.0" or not isinstance(message.get("method"), str):
+        if (
+            not isinstance(message, dict)
+            or message.get("jsonrpc") != "2.0"
+            or not isinstance(message.get("method"), str)
+        ):
             if isinstance(message, dict) and ("result" in message or "error" in message):
-                return None   # a response to a request we never send; ignore
+                return None  # a response to a request we never send; ignore
             return _error(message.get("id") if isinstance(message, dict) else None, INVALID_REQUEST, "Invalid request")
         method, params = message["method"], message.get("params") or {}
         is_request = "id" in message
         if not is_request:
-            return None   # notifications (initialized, cancelled, …) need no reply
+            return None  # notifications (initialized, cancelled, …) need no reply
         rid = message["id"]
         try:
             handler = getattr(self, "_m_" + method.replace("/", "_"), None)
@@ -121,7 +131,7 @@ class Server:
             return {"jsonrpc": "2.0", "id": rid, "result": handler(params)}
         except _ProtocolError as e:
             return _error(rid, e.code, str(e))
-        except Exception as e:   # never crash the server on one bad request
+        except Exception as e:  # never crash the server on one bad request
             log.exception("MCP request %s failed", method)
             return _error(rid, INTERNAL_ERROR, f"Internal error: {e}")
 
@@ -129,9 +139,11 @@ class Server:
     def _m_initialize(self, params: dict) -> dict:
         asked = params.get("protocolVersion")
         version = asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
-        out = {"protocolVersion": version,
-               "capabilities": {"tools": {"listChanged": False}},
-               "serverInfo": {"name": self.name, "title": "Synapse library", "version": self.version}}
+        out = {
+            "protocolVersion": version,
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {"name": self.name, "title": "Synapse library", "version": self.version},
+        }
         if self.instructions:
             out["instructions"] = self.instructions
         return out
@@ -150,7 +162,7 @@ class Server:
 
     def _m_tools_call(self, params: dict) -> dict:
         name = params.get("name")
-        tool = self.tools.get(name)
+        tool = self.tools.get(name) if isinstance(name, str) else None
         if tool is None:
             raise _ProtocolError(INVALID_PARAMS, f"Unknown tool: {name}")
         args = params.get("arguments") or {}
@@ -203,7 +215,7 @@ def check_args(schema: dict, args: dict) -> dict:
         if t == "integer" and isinstance(v, str) and v.strip().lstrip("-").isdigit():
             v = int(v)
         if t == "array" and isinstance(v, str):
-            v = [v]   # a single value where a list is expected
+            v = [v]  # a single value where a list is expected
         py = _TYPES.get(t)
         if py and (not isinstance(v, py) or (py is int and isinstance(v, bool))):
             raise ToolError(f"Argument '{k}' must be {'an' if t[0] in 'aeiou' else 'a'} {t}.")

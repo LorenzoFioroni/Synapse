@@ -13,6 +13,7 @@ Problems are returned as errors (nothing is saved); things that still work but l
 (a citation of an item in the trash) as warnings. Math written with Unicode symbols
 outside ``$…$`` is an error too: notes render LaTeX with KaTeX.
 """
+
 from __future__ import annotations
 
 import difflib
@@ -23,7 +24,7 @@ from ..notes import frontmatter, parser
 
 CITES = re.compile(r"\[[^\[\]]*@[^\[\]]*\]")
 QUOTE_LINE = re.compile(r"^\s{0,3}>")
-HEAD = 40   # as frontend/js/viewer/locate.js
+HEAD = 40  # as frontend/src/viewer/locate.ts
 LETTERS = {"æ": "ae", "œ": "oe", "ß": "ss", "ø": "o", "ł": "l", "đ": "d", "ı": "i"}
 MATHY = re.compile(r"[≈≲≳∼≃≅≡≠≤≥≪≫∑∏∫∮√∞∝⟨⟩⊗⊕†∂∇∈∉⊂⊆∀∃±∓×ℏ₀₁₂₃₄₅₆₇₈₉⁰¹²³⁴⁵⁶⁷⁸⁹ⁿ̄̂̃]")
 
@@ -69,7 +70,7 @@ class NoteChecker:
     def __init__(self, tools):
         self.t = tools
         self.s = tools.s
-        self.fixes: list[str] = []   # links rewritten from a title to the file name
+        self.fixes: list[str] = []  # links rewritten from a title to the file name
 
     def check(self, text: str, path: str) -> tuple[str, list[str], list[str]]:
         """Returns (text with title links fixed, errors, warnings)."""
@@ -97,7 +98,7 @@ class NoteChecker:
         own_headings = [h.text for h in parser.parse(text).headings]
         edits = []
         for m in parser._WIKI.finditer(masked):
-            inner = body[m.start(2):m.end(2)]
+            inner = body[m.start(2) : m.end(2)]
             target, rest = inner, ""
             cut = len(inner)
             for sep in ("|", "#"):
@@ -109,8 +110,8 @@ class NoteChecker:
             if rest.startswith("#"):
                 heading = rest[1:].split("|", 1)[0].strip()
             alias = rest.split("|", 1)[1].strip() if "|" in rest else ""
-            line = text[:base + m.start()].count("\n") + 1
-            if not target:   # [[#Heading]] in this note
+            line = text[: base + m.start()].count("\n") + 1
+            if not target:  # [[#Heading]] in this note
                 if heading and slug_heading(heading) not in {slug_heading(h) for h in own_headings}:
                     errors.append(f"line {line}: [[#{heading}]]: this note has no such heading.")
                 continue
@@ -126,15 +127,19 @@ class NoteChecker:
                     self.fixes.append(f"[[{inner}]] → [[{new}]]")
                 else:
                     hint = self._similar_notes(target)
-                    errors.append(f"line {line}: [[{target}]] does not match any note. Links use the file name "
-                                  f"(the `link` value the tools give for each note)." + (f" Did you mean {hint}?" if hint else ""))
+                    errors.append(
+                        f"line {line}: [[{target}]] does not match any note. Links use the file name "
+                        f"(the `link` value the tools give for each note)." + (f" Did you mean {hint}?" if hint else "")
+                    )
                     continue
             if heading:
                 info = self.s.notes.note(resolved) or {}
                 hs = [h["text"] for h in info.get("headings") or []]
                 if slug_heading(heading) not in {slug_heading(h) for h in hs}:
-                    errors.append(f"line {line}: [[{target}#{heading}]]: no such heading in {resolved}. "
-                                  f"Its headings: {', '.join(hs) or 'none'}.")
+                    errors.append(
+                        f"line {line}: [[{target}#{heading}]]: no such heading in {resolved}. "
+                        f"Its headings: {', '.join(hs) or 'none'}."
+                    )
         return parser.replace_spans(text, edits) if edits else text
 
     def _similar_notes(self, target: str) -> str:
@@ -158,9 +163,14 @@ class NoteChecker:
             p = keys.get(l.target)
             if not p:
                 close = difflib.get_close_matches(l.target, list(keys), n=3, cutoff=0.6)
-                errors.append(f"line {l.line}: [@{l.target}] is not in the library."
-                              + (f" Did you mean {', '.join('@' + c for c in close)}?" if close else
-                                 " Only library items can be cited; mention other works in plain text (with their DOI)."))
+                errors.append(
+                    f"line {l.line}: [@{l.target}] is not in the library."
+                    + (
+                        f" Did you mean {', '.join('@' + c for c in close)}?"
+                        if close
+                        else " Only library items can be cited; mention other works in plain text (with their DOI)."
+                    )
+                )
                 continue
             if p.get("_trashed"):
                 warnings.append(f"line {l.line}: [@{l.target}] is in the library's trash.")
@@ -182,7 +192,7 @@ class NoteChecker:
             a = n
             while n + 1 < len(lines) and QUOTE_LINE.match(lines[n + 1]):
                 n += 1
-            block = [re.sub(r"^\s{0,3}(?:>\s?)+", "", l) for l in lines[a:n + 1]]
+            block = [re.sub(r"^\s{0,3}(?:>\s?)+", "", l) for l in lines[a : n + 1]]
             block = [l for l in block if not re.match(r"^\[![a-z]+\]", l, re.I)]
             n += 1
             cites = [c for c in parser.parse("\n".join(block)).links if c.kind == "cite"]
@@ -195,10 +205,12 @@ class NoteChecker:
             for c in cites:
                 p = keys.get(c.target)
                 if not p or not self.t._pdfs(p):
-                    continue   # unknown key: reported already; no PDF: nothing to check against
+                    continue  # unknown key: reported already; no PDF: nothing to check against
                 where = f"line {line}: the block quote citing [@{c.target}{', ' + c.locator if c.locator else ''}]"
-                why = (" (A citation inside a block quote or callout marks a quote: the app looks for the quoted "
-                       "words on that page. Quote the PDF's words exactly, or put the citation outside the quote.)")
+                why = (
+                    " (A citation inside a block quote or callout marks a quote: the app looks for the quoted "
+                    "words on that page. Quote the PDF's words exactly, or put the citation outside the quote.)"
+                )
                 if not c.page:
                     errors.append(f"{where} needs a page: [@{c.target}, p. N].{why}")
                     continue
@@ -212,8 +224,10 @@ class NoteChecker:
                 if elsewhere:
                     errors.append(f"{where}: these words are on page {elsewhere[0]}, not {c.page}.")
                 else:
-                    errors.append(f"{where}: the quoted words were not found on page {c.page} of its PDF."
-                                  f" Copy them from read_paper (prose only; formulas in a PDF's text rarely match).{why}")
+                    errors.append(
+                        f"{where}: the quoted words were not found on page {c.page} of its PDF."
+                        f" Copy them from read_paper (prose only; formulas in a PDF's text rarely match).{why}"
+                    )
 
     # ------------------------------------------------------------------ images, math
     def _check_images(self, parsed, errors) -> None:
@@ -234,5 +248,7 @@ class NoteChecker:
         bad = [start_line + i + 1 for i, l in enumerate(masked) if MATHY.search(l) and not QUOTE_LINE.match(l)]
         if bad:
             shown = ", ".join(map(str, bad[:8])) + ("…" if len(bad) > 8 else "")
-            errors.append(f"{'line' if len(bad) == 1 else 'lines'} {shown}: math is written with Unicode symbols (≈, ⟨⟩, subscripts…) outside $…$. "
-                          f"Notes render LaTeX with KaTeX: write $t \\lesssim N - 1.6$ inline and $$…$$ for display.")
+            errors.append(
+                f"{'line' if len(bad) == 1 else 'lines'} {shown}: math is written with Unicode symbols (≈, ⟨⟩, subscripts…) outside $…$. "
+                f"Notes render LaTeX with KaTeX: write $t \\lesssim N - 1.6$ inline and $$…$$ for display."
+            )

@@ -1,0 +1,55 @@
+# Project tooling only: Synapse is run from the checkout (python server.py), not installed.
+# Runtime dependencies stay in requirements.txt, development ones in requirements-dev.txt.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# tests/e2e/*_checklist.py are browser scripts run by hand (python tests/e2e/<name>.py), not pytest tests.
+norecursedirs = ["tests/e2e", "frontend", "tools", ".venv"]
+
+# Coverage of the backend by the pytest suite: python -m pytest --cov (report in the terminal;
+# --cov-report=html writes htmlcov/). The browser checklists are not counted.
+[tool.coverage.run]
+source = ["backend"]
+branch = true
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true
+sort = "Cover"
+
+# Type checking of the Python code: mypy (CI runs it). Functions without annotations are not
+# checked inside, so type hints can be added module by module; annotated code must type-check.
+[tool.mypy]
+files = ["backend", "server.py", "mcp_server.py"]
+python_version = "3.10"
+ignore_missing_imports = true   # optional libraries without type information (fitz, pypdfium2, segno …)
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["frontend/vendor", "tools/*/node_modules"]
+
+[tool.ruff.format]
+# defaults: double quotes, spaces, magic trailing commas
+
+[tool.ruff.lint]
+select = [
+    "F",    # pyflakes: unused imports and variables, undefined names
+    "E9",   # syntax errors
+    "W",    # whitespace
+    "B",    # bugbear: likely bugs
+    "UP",   # pyupgrade: modern syntax for the target Python
+    "I",    # import sorting
+]
+ignore = [
+    "B023",   # closures defined in a loop and used in the same iteration are fine (and common here)
+    "B905",   # zip(strict=...): same
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["backend"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/test_formats.py" = ["W291"]   # RIS fixtures end records with "ER  - " (trailing space is part of the format)

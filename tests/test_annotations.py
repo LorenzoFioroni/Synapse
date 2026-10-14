@@ -1,15 +1,15 @@
-"""Annotations as records per attachment (issue #20)."""
+"""Annotations as records per attachment."""
+
 import json
 import re
 import shutil
-import tarfile
 from pathlib import Path
 
 import pytest
 
-from backend import annotations as A
 from backend import create_app
 from backend.config import Config
+from backend.library import annotations_legacy as A
 
 ROOT = Path(__file__).resolve().parent
 PDF = ROOT / "e2e" / "fixtures" / "twocolumn.pdf"
@@ -17,8 +17,9 @@ LEGACY = json.loads((ROOT / "fixtures" / "legacy_annotations.json").read_text())
 
 
 def attach(client, item_id, pdf=PDF, name="paper.pdf"):
-    r = client.post(f"/api/items/{item_id}/attachments", data={"file": (pdf.open("rb"), name)},
-                    content_type="multipart/form-data")
+    r = client.post(
+        f"/api/items/{item_id}/attachments", data={"file": (pdf.open("rb"), name)}, content_type="multipart/form-data"
+    )
     return r.get_json()["attachments"][0]
 
 
@@ -28,8 +29,13 @@ def att(client):
     return {**attach(client, item["id"]), "item": item}
 
 
-HIGHLIGHT = {"type": "highlight", "page": 1, "rects": [[0.1, 0.2, 0.3, 0.015], [0.1, 0.215, 0.25, 0.015]],
-             "text": "some words", "color": "#ffff00"}
+HIGHLIGHT = {
+    "type": "highlight",
+    "page": 1,
+    "rects": [[0.1, 0.2, 0.3, 0.015], [0.1, 0.215, 0.25, 0.015]],
+    "text": "some words",
+    "color": "#ffff00",
+}
 
 
 # ============================================================================ API
@@ -50,12 +56,22 @@ def test_create_list_update_delete(client, att):
     assert client.patch(f"/api/annotations/{ann['id']}", json={"comment": "x"}).status_code == 404
 
 
-@pytest.mark.parametrize("ann", [
-    {"type": "underline", "page": 2, "rects": [[0.1, 0.5, 0.4, 0.014]], "color": "#ff0000", "size": 2, "text": "w"},
-    {"type": "box", "page": 1, "rects": [[0.1, 0.4, 0.2, 0.1]], "color": "#000000", "size": 2},
-    {"type": "ink", "page": 3, "path": [[0.1, 0.1], [0.2, 0.15], [0.3, 0.1]], "color": "#0000ff", "size": 3},
-    {"type": "text", "page": 1, "rects": [[0.2, 0.6, 0.1, 0.03]], "text": "Line 1\nLine 2", "color": "#000000", "size": 16},
-])
+@pytest.mark.parametrize(
+    "ann",
+    [
+        {"type": "underline", "page": 2, "rects": [[0.1, 0.5, 0.4, 0.014]], "color": "#ff0000", "size": 2, "text": "w"},
+        {"type": "box", "page": 1, "rects": [[0.1, 0.4, 0.2, 0.1]], "color": "#000000", "size": 2},
+        {"type": "ink", "page": 3, "path": [[0.1, 0.1], [0.2, 0.15], [0.3, 0.1]], "color": "#0000ff", "size": 3},
+        {
+            "type": "text",
+            "page": 1,
+            "rects": [[0.2, 0.6, 0.1, 0.03]],
+            "text": "Line 1\nLine 2",
+            "color": "#000000",
+            "size": 16,
+        },
+    ],
+)
 def test_every_type(client, att, ann):
     r = client.post(f"/api/attachments/{att['id']}/annotations", json=ann)
     assert r.status_code == 201, r.get_json()
@@ -68,23 +84,26 @@ def test_client_chosen_id_for_undo(client, att):
     """Undoing a delete re-creates the annotation with its old id."""
     body = {**HIGHLIGHT, "id": "a1b2c3d4e5f6"}
     assert client.post(f"/api/attachments/{att['id']}/annotations", json=body).status_code == 201
-    assert client.post(f"/api/attachments/{att['id']}/annotations", json=body).status_code == 400   # exists
+    assert client.post(f"/api/attachments/{att['id']}/annotations", json=body).status_code == 400  # exists
     client.delete("/api/annotations/a1b2c3d4e5f6")
     assert client.post(f"/api/attachments/{att['id']}/annotations", json=body).status_code == 201
 
 
-@pytest.mark.parametrize("bad,msg", [
-    ({"type": "scribble", "page": 1, "rects": [[0, 0, 1, 1]]}, "type"),
-    ({"type": "box", "page": 0, "rects": [[0, 0, 1, 1]]}, "page"),
-    ({"type": "box", "page": 1}, "rects"),
-    ({"type": "ink", "page": 1}, "path"),
-    ({"type": "box", "page": 1, "rects": [[0, 0, 1]]}, "[x, y, w, h]"),
-    ({"type": "box", "page": 1, "rects": [[0, 0, -0.1, 1]]}, "negative"),
-    ({"type": "box", "page": 1, "rects": [[0, 0, 900, 1]]}, "fractions"),
-    ({"type": "box", "page": 1, "rects": [[0, 0, 1, 1]], "color": "red;x"}, "color"),
-    ({"type": "box", "page": 1, "rects": [[0, 0, 1, 1]], "size": 9999}, "size"),
-    ({"type": "box", "page": 1, "rects": [[0, 0, 1, 1]], "id": "../../x"}, "id"),
-])
+@pytest.mark.parametrize(
+    "bad,msg",
+    [
+        ({"type": "scribble", "page": 1, "rects": [[0, 0, 1, 1]]}, "type"),
+        ({"type": "box", "page": 0, "rects": [[0, 0, 1, 1]]}, "page"),
+        ({"type": "box", "page": 1}, "rects"),
+        ({"type": "ink", "page": 1}, "path"),
+        ({"type": "box", "page": 1, "rects": [[0, 0, 1]]}, "[x, y, w, h]"),
+        ({"type": "box", "page": 1, "rects": [[0, 0, -0.1, 1]]}, "negative"),
+        ({"type": "box", "page": 1, "rects": [[0, 0, 900, 1]]}, "fractions"),
+        ({"type": "box", "page": 1, "rects": [[0, 0, 1, 1]], "color": "red;x"}, "color"),
+        ({"type": "box", "page": 1, "rects": [[0, 0, 1, 1]], "size": 9999}, "size"),
+        ({"type": "box", "page": 1, "rects": [[0, 0, 1, 1]], "id": "../../x"}, "id"),
+    ],
+)
 def test_validation(client, att, bad, msg):
     r = client.post(f"/api/attachments/{att['id']}/annotations", json=bad)
     assert r.status_code == 400 and msg in r.get_json()["error"]
@@ -151,37 +170,46 @@ def test_parse_real_legacy_page():
     assert hl["rects"][0][1] * 792 == pytest.approx(114.29166666666667)
     assert hl["rects"][1][2] * 612 == pytest.approx(242.28702799479166)
     assert ul["color"] == "#ff0000" and ul["size"] == 2 and ul["rects"][0][1] * 792 == pytest.approx(198.25)
-    assert box["rects"][0][2] * 612 == pytest.approx(133.33333333333331) and box["rects"][0][3] * 792 == pytest.approx(80)
+    assert box["rects"][0][2] * 612 == pytest.approx(133.33333333333331) and box["rects"][0][3] * 792 == pytest.approx(
+        80
+    )
     assert len(ink["path"]) == 13 and ink["path"][0][0] * 612 == pytest.approx(233.33333333333334)
     assert ink["path"][-1][1] * 792 == pytest.approx(400)
     assert text["text"] == "Check this\nsecond line" and text["color"] == "#000000" and text["size"] == 16
-    assert text["rects"][0][0] * 612 == pytest.approx(80) and text["rects"][0][1] * 792 == pytest.approx(466.6666666666667)
+    assert text["rects"][0][0] * 612 == pytest.approx(80) and text["rects"][0][1] * 792 == pytest.approx(
+        466.6666666666667
+    )
     anns2, _ = A.parse_legacy_page(LEGACY["2"], 612, 792)
     assert [a["type"] for a in anns2] == ["box"]
 
 
 def test_parse_odd_markup():
-    markup = ('<rect class="selection-box" x="1" y="1" width="2" height="2"></rect>'
-              '<circle cx="1" cy="1" r="1"></circle>'
-              '<foreignObject x="10" y="10" width="1000" height="1000"><div><div contenteditable="true" '
-              'style="color: rgb(255, 0, 0); font-size: 20px">  </div><div></div></div></foreignObject>'
-              '<path d=""></path>'
-              '<g class="anno-group"><rect x="0" y="0" width="10" height="5" fill="rgb(0, 255, 0)" fill-opacity="0.8"></rect></g>'
-              '<foreignObject x="5" y="6"><div><div contenteditable="true" style="color: #00f; font-size: 12px">a<br>b &amp; c</div></div></foreignObject>')
+    markup = (
+        '<rect class="selection-box" x="1" y="1" width="2" height="2"></rect>'
+        '<circle cx="1" cy="1" r="1"></circle>'
+        '<foreignObject x="10" y="10" width="1000" height="1000"><div><div contenteditable="true" '
+        'style="color: rgb(255, 0, 0); font-size: 20px">  </div><div></div></div></foreignObject>'
+        '<path d=""></path>'
+        '<g class="anno-group"><rect x="0" y="0" width="10" height="5" fill="rgb(0, 255, 0)" fill-opacity="0.8"></rect></g>'
+        '<foreignObject x="5" y="6"><div><div contenteditable="true" style="color: #00f; font-size: 12px">a<br>b &amp; c</div></div></foreignObject>'
+    )
     anns, skipped = A.parse_legacy_page(markup, 100, 200)
     assert [a["type"] for a in anns] == ["highlight", "text"]
     assert anns[0]["color"] == "#00ff00" and anns[1]["text"] == "a\nb & c" and anns[1]["color"] == "#0000ff"
     assert any("circle" in s for s in skipped) and any("without points" in s for s in skipped)
 
 
-@pytest.mark.parametrize("rot,corners", [
-    (0, {(0, 0): (10, 800), (600, 790): (610, 10)}),
-    (90, {(0, 0): (10, 10), (790, 600): (610, 800)}),
-    (180, {(0, 0): (610, 10), (600, 790): (10, 800)}),
-    (270, {(0, 0): (610, 800), (790, 600): (10, 10)}),
-])
+@pytest.mark.parametrize(
+    "rot,corners",
+    [
+        (0, {(0, 0): (10, 800), (600, 790): (610, 10)}),
+        (90, {(0, 0): (10, 10), (790, 600): (610, 800)}),
+        (180, {(0, 0): (610, 10), (600, 790): (10, 800)}),
+        (270, {(0, 0): (610, 800), (790, 600): (10, 10)}),
+    ],
+)
 def test_displayed_point_to_pdf_space(rot, corners):
-    crop = (10, 10, 610, 800)   # 600 × 790
+    crop = (10, 10, 610, 800)  # 600 × 790
     for (u, v), want in corners.items():
         assert A.to_pdf(u, v, rot, crop) == pytest.approx(want)
 
@@ -189,6 +217,7 @@ def test_displayed_point_to_pdf_space(rot, corners):
 def test_page_sizes_follow_rotation_and_crop(tmp_path):
     from pypdf import PdfReader, PdfWriter
     from pypdf.generic import RectangleObject
+
     w = PdfWriter()
     for p in PdfReader(PDF).pages:
         w.add_page(p)
@@ -204,7 +233,7 @@ def legacy_library(tmp_path, blobs: dict, pdf=True):
     """A data folder written by an older version: items with SVG blobs in papers.annotations."""
     data = tmp_path / "data"
     app = create_app(Config.from_env(data), start_indexer=False)
-    s = app.extensions["zclone"]
+    s = app.extensions["synapse"]
     ids = {}
     for title, blob in blobs.items():
         item = s.papers.create({"title": title})
@@ -221,33 +250,48 @@ def legacy_library(tmp_path, blobs: dict, pdf=True):
 
 def test_migration_converts_real_blobs_once_after_a_backup(tmp_path):
     data, ids = legacy_library(tmp_path, {"Legacy": LEGACY})
-    app = create_app(Config.from_env(data), start_indexer=False)   # the app starts: conversion runs
-    s = app.extensions["zclone"]
+    app = create_app(Config.from_env(data), start_indexer=False)  # the app starts: conversion runs
+    s = app.extensions["synapse"]
     anns = s.annotations.for_item(ids["Legacy"])
     assert sorted((a["page"], a["type"]) for a in anns) == [
-        (1, "box"), (1, "highlight"), (1, "ink"), (1, "text"), (1, "underline"), (2, "box")]
+        (1, "box"),
+        (1, "highlight"),
+        (1, "ink"),
+        (1, "text"),
+        (1, "underline"),
+        (2, "box"),
+    ]
     hl = next(a for a in anns if a["type"] == "highlight")
-    assert re.search(r"[A-Za-z]{3,}", hl["text"]), hl["text"]   # the words under it, from the PDF
+    assert re.search(r"[A-Za-z]{3,}", hl["text"]), hl["text"]  # the words under it, from the PDF
     # a backup was made first, and it still holds the old blob
     [b] = s.backups.list()
     assert b["reason"] == "before converting annotations"
     # the old column is left as it was
     with s.db.session() as c:
-        assert json.loads(c.execute("SELECT annotations FROM papers WHERE id = ?", (ids["Legacy"],)).fetchone()[0]) == LEGACY
+        assert (
+            json.loads(c.execute("SELECT annotations FROM papers WHERE id = ?", (ids["Legacy"],)).fetchone()[0])
+            == LEGACY
+        )
     report = s.annotations.migration_report()
     assert report[0]["converted"] == 6 and report[0]["skipped"] == []
     # starting again converts nothing twice
     app2 = create_app(Config.from_env(data), start_indexer=False)
-    assert len(app2.extensions["zclone"].annotations.for_item(ids["Legacy"])) == 6
-    assert len(app2.extensions["zclone"].backups.list()) == 1
+    assert len(app2.extensions["synapse"].annotations.for_item(ids["Legacy"])) == 6
+    assert len(app2.extensions["synapse"].backups.list()) == 1
 
 
 def test_migration_reports_what_it_cannot_convert(tmp_path):
-    data, ids = legacy_library(tmp_path, {
-        "Odd": {"1": '<circle r="3"></circle><rect x="1" y="1" width="5" height="5" stroke="#000000" stroke-width="2" fill="none"></rect>',
-                "9": '<rect x="1" y="1" width="5" height="5"></rect>', "2": ""},
-    })
-    s = create_app(Config.from_env(data), start_indexer=False).extensions["zclone"]
+    data, ids = legacy_library(
+        tmp_path,
+        {
+            "Odd": {
+                "1": '<circle r="3"></circle><rect x="1" y="1" width="5" height="5" stroke="#000000" stroke-width="2" fill="none"></rect>',
+                "9": '<rect x="1" y="1" width="5" height="5"></rect>',
+                "2": "",
+            },
+        },
+    )
+    s = create_app(Config.from_env(data), start_indexer=False).extensions["synapse"]
     assert [a["type"] for a in s.annotations.for_item(ids["Odd"])] == ["box"]
     [rep] = s.annotations.migration_report()
     assert rep["converted"] == 1 and rep["title"] == "Odd"
@@ -258,7 +302,7 @@ def test_migration_reports_what_it_cannot_convert(tmp_path):
 
 def test_migration_without_a_pdf_keeps_the_blob(tmp_path):
     data, ids = legacy_library(tmp_path, {"No PDF": LEGACY}, pdf=False)
-    s = create_app(Config.from_env(data), start_indexer=False).extensions["zclone"]
+    s = create_app(Config.from_env(data), start_indexer=False).extensions["synapse"]
     [rep] = s.annotations.migration_report()
     assert rep["converted"] == 0 and "no PDF" in rep["skipped"][0]
     with s.db.session() as c:
@@ -267,12 +311,13 @@ def test_migration_without_a_pdf_keeps_the_blob(tmp_path):
 
 def test_empty_blobs_need_no_backup(tmp_path):
     data, _ = legacy_library(tmp_path, {"Empty": {"1": "", "2": ""}})
-    s = create_app(Config.from_env(data), start_indexer=False).extensions["zclone"]
+    s = create_app(Config.from_env(data), start_indexer=False).extensions["synapse"]
     assert s.backups.list() == [] and s.annotations.for_item(next(iter(_.values()))) == []
 
 
 def test_without_pypdfium2_the_conversion_waits(tmp_path, monkeypatch):
     import builtins
+
     data, ids = legacy_library(tmp_path, {"Legacy": LEGACY})
     real = builtins.__import__
 
@@ -280,9 +325,10 @@ def test_without_pypdfium2_the_conversion_waits(tmp_path, monkeypatch):
         if name == "pypdfium2":
             raise ImportError(name)
         return real(name, *a, **k)
+
     monkeypatch.setattr(builtins, "__import__", no_pdfium)
-    s = create_app(Config.from_env(data), start_indexer=False).extensions["zclone"]
+    s = create_app(Config.from_env(data), start_indexer=False).extensions["synapse"]
     assert s.annotations.migration_report() == [] and s.annotations.for_item(ids["Legacy"]) == []
     monkeypatch.setattr(builtins, "__import__", real)
-    s = create_app(Config.from_env(data), start_indexer=False).extensions["zclone"]
+    s = create_app(Config.from_env(data), start_indexer=False).extensions["synapse"]
     assert len(s.annotations.for_item(ids["Legacy"])) == 6

@@ -3,11 +3,13 @@
 Keeps the vault (files) and the index (derived data) in step: every change goes to the file
 first and the index is updated from the file afterwards.
 """
+
 from __future__ import annotations
 
 import logging
 import os
 import time
+from collections.abc import Callable
 from datetime import datetime
 
 from . import frontmatter
@@ -56,9 +58,10 @@ class NoteTextMatcher:
     """
 
     def __init__(self, texts: dict[str, list[tuple[str, str]]], key_to_id: dict[str, str]):
-        from ..search import normalize
+        from ..library.search import normalize
+
         self._normalize = normalize
-        self._entries = []   # (item_id, title, original text, normalised text)
+        self._entries = []  # (item_id, title, original text, normalised text)
         for key, items in texts.items():
             pid = key_to_id.get(key)
             if pid:
@@ -68,6 +71,7 @@ class NoteTextMatcher:
     def match(self, term: str) -> dict[str, str]:
         import html
         import re
+
         t = self._normalize(term)
         out: dict[str, str] = {}
         if not t:
@@ -77,11 +81,16 @@ class NoteTextMatcher:
                 continue
             flat = " ".join(text.split())
             m = re.search(re.escape(term.strip()), flat, re.I)
-            if m:   # the term as typed: show it highlighted in context
+            if m:  # the term as typed: show it highlighted in context
                 a = max(0, m.start() - 60)
-                piece = (html.escape(flat[a:m.start()]) + "<mark>" + html.escape(m.group(0)) + "</mark>"
-                         + html.escape(flat[m.end():m.end() + 80]))
-            else:   # matched only after removing accents/case: show the start of the text
+                piece = (
+                    html.escape(flat[a : m.start()])
+                    + "<mark>"
+                    + html.escape(m.group(0))
+                    + "</mark>"
+                    + html.escape(flat[m.end() : m.end() + 80])
+                )
+            else:  # matched only after removing accents/case: show the start of the text
                 a = 0
                 piece = html.escape(flat[:140])
             out[pid] = f'<span class="hit-src">Note · {html.escape(title)}</span> {"…" if a else ""}{piece}…'
@@ -94,8 +103,8 @@ class NotesService:
         self.index = index
         self.papers = papers
         self.rekeyer = Rekeyer(vault, index, backups_dir or (vault.root.parent / "backups"))
-        self.on_change = None   # called after notes are saved, deleted or restored
-        self.history = NoteHistory(vault.root)   # earlier versions of notes Claude changed
+        self.on_change: Callable[[], None] | None = None  # called after notes are saved, deleted or restored
+        self.history = NoteHistory(vault.root)  # earlier versions of notes Claude changed
 
     # ------------------------------------------------------------------ citation keys
     def text_matcher(self) -> NoteTextMatcher:
@@ -125,13 +134,19 @@ class NotesService:
                 k = p.get("citation_key")
                 if k and k not in out:
                     pdfs = [a for a in p.get("attachments") or [] if (a.get("type") or "") == "pdf"]
-                    pdf = pdfs[0] if pdfs else None   # the default PDF of a citation without att:<id>
-                    out[k] = {"id": p["id"], "title": p.get("title") or "", "authors": p.get("authors") or "",
-                              "year": p.get("year"), "journal": p.get("journal") or "", "trashed": view == "trash",
-                              "has_pdf": pdf is not None,
-                              "pdf": {"id": pdf["id"], "url": pdf["url"], "name": pdf.get("name") or ""} if pdf else None,
-                              "pdfs": [{"id": a["id"], "url": a["url"], "name": a.get("name") or ""} for a in pdfs],
-                              "note": notes.get(k)}
+                    pdf = pdfs[0] if pdfs else None  # the default PDF of a citation without att:<id>
+                    out[k] = {
+                        "id": p["id"],
+                        "title": p.get("title") or "",
+                        "authors": p.get("authors") or "",
+                        "year": p.get("year"),
+                        "journal": p.get("journal") or "",
+                        "trashed": view == "trash",
+                        "has_pdf": pdf is not None,
+                        "pdf": {"id": pdf["id"], "url": pdf["url"], "name": pdf.get("name") or ""} if pdf else None,
+                        "pdfs": [{"id": a["id"], "url": a["url"], "name": a.get("name") or ""} for a in pdfs],
+                        "note": notes.get(k),
+                    }
         return out
 
     def cite_index(self) -> list[dict]:
@@ -176,8 +191,11 @@ class NotesService:
         return {
             "outgoing": out,
             "cited": list(cited.values()),
-            "unresolved": [l for l in out if (l["kind"] in ("note", "embed") and not l["resolved"])
-                           or (l["kind"] == "cite" and not l["item"])],
+            "unresolved": [
+                l
+                for l in out
+                if (l["kind"] in ("note", "embed") and not l["resolved"]) or (l["kind"] == "cite" and not l["item"])
+            ],
             "backlinks": self.index.backlinks(path),
         }
 
@@ -186,15 +204,26 @@ class NotesService:
         key = item.get("citation_key") or ""
         if not key:
             return {"key": "", "paper_notes": [], "citing": []}
-        return {"key": key, "paper_notes": self.index.paper_notes(key), "citing": self.index.citing(key),
-                "suggested_path": f"papers/{slugify(key)}.md"}
+        return {
+            "key": key,
+            "paper_notes": self.index.paper_notes(key),
+            "citing": self.index.citing(key),
+            "suggested_path": f"papers/{slugify(key)}.md",
+        }
 
     def search(self, q: str) -> list[dict]:
         return self.index.search(q)
 
     # ------------------------------------------------------------------ writes
-    def create(self, *, path: str | None = None, folder: str = "", title: str = "", item_id: str | None = None,
-               text: str | None = None) -> dict:
+    def create(
+        self,
+        *,
+        path: str | None = None,
+        folder: str = "",
+        title: str = "",
+        item_id: str | None = None,
+        text: str | None = None,
+    ) -> dict:
         meta = {"id": ulid(), "title": title or None, "type": "note", "author": "human", "created": now_iso()}
         if item_id:
             item = self.papers.get(item_id)
@@ -269,8 +298,11 @@ class NotesService:
         self.index.update(dst)
         self.history.moved([(src, dst)])
         # Links by name keep working if only the folder changed; report the ones that broke.
-        broken = [b for b in linked_before if b["path"] != dst and
-                  (self.index.resolve(b["target"], from_path=b["path"]) or [None])[0] != dst]
+        broken = [
+            b
+            for b in linked_before
+            if b["path"] != dst and next(iter(self.index.resolve(b["target"], from_path=b["path"])), None) != dst
+        ]
         return {"path": dst, "broken_links": broken}
 
     def make_folder(self, path: str) -> dict:
@@ -317,10 +349,13 @@ class NotesService:
         for old, links in before.items():
             for b in links:
                 src_now = new_of.get(b["path"], b["path"])
-                if (self.index.resolve(b["target"], from_path=src_now) or [None])[0] != new_of[old]:
+                if next(iter(self.index.resolve(b["target"], from_path=src_now)), None) != new_of[old]:
                     broken.append({**b, "path": src_now})
-        return {"path": self.vault.clean_rel(to, suffix=None), "moved": [{"from": o, "to": n} for o, n in moved],
-                "broken_links": broken}
+        return {
+            "path": self.vault.clean_rel(to, suffix=None),
+            "moved": [{"from": o, "to": n} for o, n in moved],
+            "broken_links": broken,
+        }
 
     def key_summary(self) -> dict:
         return self.index.key_summary()
@@ -353,7 +388,7 @@ class NotesService:
             raise ValueError("This item has no citation key yet.")
         existing = self.index.paper_notes(key)
         path = existing[0]["path"] if existing else self.create(item_id=item_id)["path"]
-        for _ in range(3):   # someone may be saving the same note right now: re-read and retry
+        for _ in range(3):  # someone may be saving the same note right now: re-read and retry
             text, h = self.vault.read(path)
             nl = "\r\n" if "\r\n" in text else "\n"
             new = text.rstrip("\r\n") + nl + nl + markdown.replace("\n", nl) + nl

@@ -1,6 +1,7 @@
 """Shared safety for the browser checklists: refuse to run against a server that is already
 listening on the port (it would be someone else's data folder), and never leave the test
 server running when a checklist stops on an error."""
+
 import atexit
 import socket
 import subprocess

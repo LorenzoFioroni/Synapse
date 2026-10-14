@@ -1,4 +1,5 @@
 """CSL-JSON import and export (used by Zotero, Pandoc, citeproc)."""
+
 from __future__ import annotations
 
 import json
@@ -6,20 +7,49 @@ import json
 from .common import join_authors, split_authors, split_keywords, year_from
 
 TYPE_OUT = {
-    "journalArticle": "article-journal", "book": "book", "bookSection": "chapter",
-    "conferencePaper": "paper-conference", "thesis": "thesis", "report": "report",
-    "preprint": "article", "manuscript": "manuscript", "webpage": "webpage", "dataset": "dataset",
+    "journalArticle": "article-journal",
+    "book": "book",
+    "bookSection": "chapter",
+    "conferencePaper": "paper-conference",
+    "thesis": "thesis",
+    "report": "report",
+    "preprint": "article",
+    "manuscript": "manuscript",
+    "webpage": "webpage",
+    "dataset": "dataset",
 }
 TYPE_IN = {v: k for k, v in TYPE_OUT.items()}
-TYPE_IN.update({"article-magazine": "journalArticle", "article-newspaper": "journalArticle",
-                "post-weblog": "webpage", "post": "webpage"})
+TYPE_IN.update(
+    {
+        "article-magazine": "journalArticle",
+        "article-newspaper": "journalArticle",
+        "post-weblog": "webpage",
+        "post": "webpage",
+    }
+)
 
-SIMPLE = [("volume", "volume"), ("issue", "issue"), ("pages", "page"), ("publisher", "publisher"),
-          ("place", "publisher-place"), ("edition", "edition"), ("series", "collection-title"),
-          ("isbn", "ISBN"), ("issn", "ISSN"), ("doi", "DOI"), ("url", "URL"), ("abstract", "abstract"),
-          ("language", "language"), ("short_title", "title-short"), ("extra", "note"),
-          ("pmid", "PMID"), ("pmcid", "PMCID"), ("call_number", "call-number"), ("archive", "archive"),
-          ("archive_id", "archive_location")]
+SIMPLE = [
+    ("volume", "volume"),
+    ("issue", "issue"),
+    ("pages", "page"),
+    ("publisher", "publisher"),
+    ("place", "publisher-place"),
+    ("edition", "edition"),
+    ("series", "collection-title"),
+    ("isbn", "ISBN"),
+    ("issn", "ISSN"),
+    ("doi", "DOI"),
+    ("url", "URL"),
+    ("abstract", "abstract"),
+    ("language", "language"),
+    ("short_title", "title-short"),
+    ("extra", "note"),
+    ("pmid", "PMID"),
+    ("pmcid", "PMCID"),
+    ("call_number", "call-number"),
+    ("archive", "archive"),
+    ("archive_id", "archive_location"),
+]
 
 
 def parse(text: str) -> list[dict]:

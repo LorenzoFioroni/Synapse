@@ -1,0 +1,20 @@
+{
+  // Type checking only (npm run check in frontend/): the extension is plain JavaScript that
+  // Chrome loads as it is, typed with JSDoc comments. The types come from frontend/node_modules.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "typeRoots": ["../frontend/node_modules/@types"],
+    "types": ["chrome"]
+  },
+  "include": ["*.js"]
+}

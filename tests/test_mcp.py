@@ -1,4 +1,5 @@
 """The MCP server: protocol handling and every library tool, in-process and over stdio."""
+
 from __future__ import annotations
 
 import base64
@@ -9,11 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from backend import pdfrender
-
 from backend.mcp import build_server
-from backend.mcp.protocol import PROTOCOL_VERSIONS, Server, Tool, serve_stdio
-from backend.mcp.tools import parse_pages, ToolError
+from backend.mcp.protocol import PROTOCOL_VERSIONS, Server, Tool, ToolError, serve_stdio
+from backend.mcp.tools.common import parse_pages
+from backend.pdf import png as pdfpng
+from backend.pdf import regions as pdfregions
+from backend.pdf import render as pdfrender
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -27,8 +29,10 @@ def make_stream_pdf(path: Path, streams: list[str]) -> Path:
         stream = st.encode("latin-1")
         page_no, content_no = len(objs) + 1, len(objs) + 2
         kids.append(page_no)
-        objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {content_no} 0 R "
-                    f"/Resources << /Font << /F1 {font} 0 R >> >> >>".encode())
+        objs.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {content_no} 0 R "
+            f"/Resources << /Font << /F1 {font} 0 R >> >> >>".encode()
+        )
         objs.append(b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream")
     objs[1] = f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] /Count {len(streams)} >>".encode()
     objs.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
@@ -57,8 +61,10 @@ def make_pages_pdf(path: Path, pages: list[str]) -> Path:
 
 def figure_page() -> str:
     """Body text, a bar chart (paths) with its caption below, a table (rules) with its caption above."""
-    s = "".join(_text(72, y, f"Body text line {i} of the introduction, describing the model in words.")
-                for i, y in enumerate(range(740, 630, -14)))
+    s = "".join(
+        _text(72, y, f"Body text line {i} of the introduction, describing the model in words.")
+        for i, y in enumerate(range(740, 630, -14))
+    )
     s += "q 0 0 0 RG 1 w 120 430 380 170 re S Q\n"
     for k, hgt in enumerate((60, 110, 150, 90)):
         s += f"q 0.2 0.4 0.8 rg {160 + 80 * k} 431 40 {hgt} re f Q\n"
@@ -71,15 +77,18 @@ def figure_page() -> str:
         s += f"q 0 0 0 RG 0.5 w 100 {y} m 500 {y} l S Q\n"
     s += _text(110, 281, "N p depth") + _text(110, 260, "16 0.01 100") + _text(110, 240, "32 0.02 200")
     s += _text(110, 220, "64 0.05 400")
-    s += "".join(_text(72, y, f"Conclusion line {i}: the master equation remains valid in this regime.")
-                 for i, y in enumerate(range(180, 80, -14)))
+    s += "".join(
+        _text(72, y, f"Conclusion line {i}: the master equation remains valid in this regime.")
+        for i, y in enumerate(range(180, 80, -14))
+    )
     return s
 
 
-PAGES = ["Introduction to open quantum systems",
-         "We derive the Lindblad master equation for the reduced density matrix",
-         "Conclusion: tensor networks simulate the master equation efficiently"] + \
-        [f"Appendix page {n} with filler text" for n in range(4, 13)]
+PAGES = [
+    "Introduction to open quantum systems",
+    "We derive the Lindblad master equation for the reduced density matrix",
+    "Conclusion: tensor networks simulate the master equation efficiently",
+] + [f"Appendix page {n} with filler text" for n in range(4, 13)]
 
 PROJECT = """# Crispr project
 
@@ -92,25 +101,47 @@ See also [[other]].
 @pytest.fixture
 def lib(svc):
     s = svc
-    smith = s.papers.create({"title": "Open quantum dynamics", "authors": "Smith, John; Doe, Jane", "year": 2021,
-                             "doi": "10.1000/smith", "abstract": "We study open systems.", "citation_key": "smith2021",
-                             "journal": "Phys. Rev. A"})
-    doe = s.papers.create({"title": "Earlier results", "authors": "Doe, Jane", "year": 2019, "doi": "10.1000/doe",
-                           "citation_key": "doe2019"})
-    lee = s.papers.create({"title": "Unrelated book", "authors": "Lee, Ann", "year": 2020, "citation_key": "lee2020",
-                           "item_type": "book"})
+    smith = s.papers.create(
+        {
+            "title": "Open quantum dynamics",
+            "authors": "Smith, John; Doe, Jane",
+            "year": 2021,
+            "doi": "10.1000/smith",
+            "abstract": "We study open systems.",
+            "citation_key": "smith2021",
+            "journal": "Phys. Rev. A",
+        }
+    )
+    doe = s.papers.create(
+        {
+            "title": "Earlier results",
+            "authors": "Doe, Jane",
+            "year": 2019,
+            "doi": "10.1000/doe",
+            "citation_key": "doe2019",
+        }
+    )
+    lee = s.papers.create(
+        {"title": "Unrelated book", "authors": "Lee, Ann", "year": 2020, "citation_key": "lee2020", "item_type": "book"}
+    )
     make_pages_pdf(s.config.pdf_dir / "smith.pdf", PAGES)
     s.papers.add_attachment(smith["id"], "Full Text PDF", "smith.pdf")
     folder = s.folders.create("Physics")
     sub = s.folders.create("Transport", folder["id"])
     s.folders.change_items([smith["id"], doe["id"]], add=[sub["id"]])
     s.tags.add([smith["id"]], ["quantum"])
-    s.citations.store.save(smith["id"], "openalex", [
-        {"doi": "10.1000/doe", "title": "Earlier results", "year": 2019},
-        {"doi": "10.9999/ext", "title": "External foundation", "authors": "Old, Al", "year": 2010},
-    ], doi="10.1000/smith")
-    s.citations.store.save(doe["id"], "crossref", [{"doi": "10.9999/ext", "title": "External foundation"}],
-                           doi="10.1000/doe")
+    s.citations.store.save(
+        smith["id"],
+        "openalex",
+        [
+            {"doi": "10.1000/doe", "title": "Earlier results", "year": 2019},
+            {"doi": "10.9999/ext", "title": "External foundation", "authors": "Old, Al", "year": 2010},
+        ],
+        doi="10.1000/smith",
+    )
+    s.citations.store.save(
+        doe["id"], "crossref", [{"doi": "10.9999/ext", "title": "External foundation"}], doi="10.1000/doe"
+    )
     s.note_service.create(path="projects/crispr.md", title="Crispr project", text=PROJECT)
     s.note_service.create(path="other.md", title="Other", text="# Other\n\nBack to [[crispr]].\n")
     pn = s.note_service.create(item_id=smith["id"])
@@ -123,7 +154,9 @@ def lib(svc):
 
 
 def call(server: Server, name: str, **args):
-    reply = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}})
+    reply = server.handle(
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}}
+    )
     assert "result" in reply, reply
     res = reply["result"]
     texts = [c["text"] if c["type"] == "text" else f"<{c['type']}>" for c in res["content"]]
@@ -139,8 +172,14 @@ def call_json(server, name, **args):
 # ======================================================================== protocol
 def test_initialize_and_list(lib):
     server = lib["server"]
-    r = server.handle({"jsonrpc": "2.0", "id": 0, "method": "initialize",
-                       "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t"}}})
+    r = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t"}},
+        }
+    )
     res = r["result"]
     assert res["protocolVersion"] == "2025-06-18"
     assert res["capabilities"] == {"tools": {"listChanged": False}}
@@ -152,12 +191,27 @@ def test_initialize_and_list(lib):
     assert server.handle({"jsonrpc": "2.0", "id": 2, "method": "ping"})["result"] == {}
     tools = server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})["result"]["tools"]
     names = [t["name"] for t in tools]
-    assert names == ["search_library", "list_collections", "get_note", "view_image", "get_paper", "search_in_paper",
-                     "read_paper", "view_page", "snapshot", "get_references", "get_citation_graph", "write_note",
-                     "edit_note", "undo_note_edit"]
+    assert names == [
+        "search_library",
+        "list_collections",
+        "get_note",
+        "view_image",
+        "get_paper",
+        "search_in_paper",
+        "read_paper",
+        "view_page",
+        "snapshot",
+        "get_references",
+        "get_citation_graph",
+        "write_note",
+        "edit_note",
+        "undo_note_edit",
+    ]
     for t in tools:
         assert t["inputSchema"]["type"] == "object" and t["description"]
-        assert t["annotations"]["readOnlyHint"] == (t["name"] not in ("write_note", "snapshot", "edit_note", "undo_note_edit"))
+        assert t["annotations"]["readOnlyHint"] == (
+            t["name"] not in ("write_note", "snapshot", "edit_note", "undo_note_edit")
+        )
     assert "KaTeX" in res["instructions"] and "by file name" in res["instructions"]
 
 
@@ -182,6 +236,7 @@ def test_protocol_errors(lib):
 def test_tool_crash_is_a_tool_error():
     def boom():
         raise RuntimeError("kaputt")
+
     server = Server("t", "0")
     server.add(Tool("boom", "Boom", "d", {"type": "object", "properties": {}}, boom))
     err, texts = call(server, "boom")
@@ -194,11 +249,19 @@ def test_stdio_loop_keeps_stdout_clean():
     def noisy():
         print("stray output")
         return "ok"
+
     server = Server("t", "0")
     server.add(Tool("noisy", "Noisy", "d", {"type": "object", "properties": {}}, noisy))
-    lines = "\n".join(json.dumps(m) for m in [
-        {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "noisy"}},
-        {"jsonrpc": "2.0", "method": "notifications/initialized"}]) + "\nnot json\n"
+    lines = (
+        "\n".join(
+            json.dumps(m)
+            for m in [
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "noisy"}},
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            ]
+        )
+        + "\nnot json\n"
+    )
     out = io.StringIO()
     serve_stdio(server, io.StringIO(lines), out)
     replies = [json.loads(l) for l in out.getvalue().splitlines()]
@@ -270,7 +333,7 @@ def test_get_paper(lib):
     assert "master equation is derived" in texts[1]
     assert [c["path"] for c in r["cited_in_notes"]] == ["projects/crispr.md"]
     assert r["references"]["stored"] == 2 and r["references"]["in_library"] == 1
-    doe = call_json(lib["server"], "get_paper", paper=lib["doe"]["id"])   # by item id; no PDF, no note
+    doe = call_json(lib["server"], "get_paper", paper=lib["doe"]["id"])  # by item id; no PDF, no note
     assert doe["key"] == "doe2019" and doe["cited_by_in_library"] == ["smith2021"] and "pdfs" not in doe
 
 
@@ -280,7 +343,7 @@ def test_search_in_paper(lib):
     assert [x["page"] for x in r["results"]][:2] == [2, 3]
     assert "Lindblad master equation" in r["results"][0]["snippets"][0]
     assert r["pages_total"] == 12
-    r = call_json(server, "search_in_paper", paper="smith2021", query="LINDBLÁD")   # case and accents ignored
+    r = call_json(server, "search_in_paper", paper="smith2021", query="LINDBLÁD")  # case and accents ignored
     assert [x["page"] for x in r["results"]] == [2]
     r = call_json(server, "search_in_paper", paper="smith2021", query="graphene")
     assert r["results"] == [] and r["hint"]
@@ -306,8 +369,13 @@ def test_get_references(lib):
     r = call_json(server, "get_references", paper="smith2021")
     assert r["references_total"] == 2 and r["references_in_library"] == 1
     assert r["references"][0]["in_library"] and r["references"][0]["key"] == "doe2019"
-    assert r["references"][1] == {"in_library": False, "title": "External foundation", "authors": "Old, Al",
-                                  "year": 2010, "doi": "10.9999/ext"}
+    assert r["references"][1] == {
+        "in_library": False,
+        "title": "External foundation",
+        "authors": "Old, Al",
+        "year": 2010,
+        "doi": "10.9999/ext",
+    }
     r = call_json(server, "get_references", paper="smith2021", in_library_only=True)
     assert len(r["references"]) == 1
     r = call_json(server, "get_references", paper="doe2019", direction="cited_by")
@@ -333,14 +401,19 @@ def test_get_citation_graph(lib):
 
 def test_write_note(lib, svc):
     server = lib["server"]
-    r = call_json(server, "write_note", title="Answer: dynamics", text="Based on [@smith2021, p. 2], with $t \\lesssim N$.",
-                  tags=["qa"])
+    r = call_json(
+        server,
+        "write_note",
+        title="Answer: dynamics",
+        text="Based on [@smith2021, p. 2], with $t \\lesssim N$.",
+        tags=["qa"],
+    )
     assert r["saved"].startswith("ai/") and r["citations"] == 1 and r["link"].startswith("[[")
     text = svc.vault.read(r["saved"])[0]
     assert "author: ai" in text and "# Answer: dynamics" in text and "qa" in text
     assert svc.notes.note(r["saved"])["author"] == "ai"
     again = call_json(server, "write_note", title="Answer: dynamics", text="Second.")
-    assert again["saved"] != r["saved"] and svc.vault.read(r["saved"])[0] == text   # never overwrites
+    assert again["saved"] != r["saved"] and svc.vault.read(r["saved"])[0] == text  # never overwrites
     sneaky = call_json(server, "write_note", title="x", text="y", folder="../../etc")
     assert sneaky["saved"].startswith("ai/") and ".." not in sneaky["saved"]
 
@@ -367,11 +440,16 @@ def test_write_note_refuses_broken_notes(lib, svc):
     assert "does not exist" in e
     e = write_error(server, "The limit is t ≲ N − 1.6 and ⟨τ⟩ ≈ 1.607.")
     assert "KaTeX" in e and "line 10:" in e
-    assert sorted(p.name for p in (svc.vault.root).rglob("*.md")) == before   # nothing written
+    assert sorted(p.name for p in (svc.vault.root).rglob("*.md")) == before  # nothing written
 
 
 def test_write_note_fixes_title_links(lib, svc):
-    r = call_json(lib["server"], "write_note", title="Linked", text="See [[Crispr project]] and [[Crispr project#Crispr project|the project]].")
+    r = call_json(
+        lib["server"],
+        "write_note",
+        title="Linked",
+        text="See [[Crispr project]] and [[Crispr project#Crispr project|the project]].",
+    )
     text = svc.vault.read(r["saved"])[0]
     assert "[[crispr|Crispr project]]" in text and "[[crispr#Crispr project|the project]]" in text
     assert len(r["links_fixed"]) == 2
@@ -382,13 +460,18 @@ def test_edit_note(lib, svc):
     server = lib["server"]
     path = "projects/crispr.md"
     before, h0 = svc.vault.read(path)
-    r = call_json(server, "edit_note", note="Crispr project", summary="Pointed to Lee",
-                  edits=[{"old": "earlier work [@doe2019]", "new": "earlier work [@doe2019; @lee2020]"}])
+    r = call_json(
+        server,
+        "edit_note",
+        note="Crispr project",
+        summary="Pointed to Lee",
+        edits=[{"old": "earlier work [@doe2019]", "new": "earlier work [@doe2019; @lee2020]"}],
+    )
     assert r["saved"] == path and r["version"]
     assert "-The dynamics follow" in r["changes"] and "+The dynamics follow" in r["changes"]
     after, h1 = svc.vault.read(path)
     assert after == before.replace("[@doe2019]", "[@doe2019; @lee2020]")
-    assert "lee2020" in [l["target"] for l in svc.notes.outgoing(path)]   # index updated
+    assert "lee2020" in [l["target"] for l in svc.notes.outgoing(path)]  # index updated
     # the version before is kept, for the app's undo
     hist = svc.note_service.history_of(path)
     assert hist["hash"] == h1 and len(hist["entries"]) == 1
@@ -397,8 +480,13 @@ def test_edit_note(lib, svc):
     assert e["before_hash"] == h0 and e["after_hash"] == h1
     assert svc.note_service.history_version(e["id"])["before"] == before
     # append, and several edits in one call; the old [@missing2000] in the note does not block them
-    r = call_json(server, "edit_note", note=path, append="## Next\n\nRead [@smith2021, p. 3].",
-                  edits=[{"old": "See also [[other]].", "new": "See also [[other]] and [[crispr]]."}])
+    r = call_json(
+        server,
+        "edit_note",
+        note=path,
+        append="## Next\n\nRead [@smith2021, p. 3].",
+        edits=[{"old": "See also [[other]].", "new": "See also [[other]] and [[crispr]]."}],
+    )
     text = svc.vault.read(path)[0]
     assert text.endswith("\n\n## Next\n\nRead [@smith2021, p. 3].\n") and "[[other]] and [[crispr]]" in text
     assert len(svc.note_service.history_of(path)["entries"]) == 2
@@ -449,7 +537,7 @@ def test_undo_note_edit_and_history_follows_moves(lib, svc):
     assert len(svc.note_service.history_of("moved/other2.md")["entries"]) == 3
     svc.note_service.move_folder("moved", "elsewhere")
     assert len(svc.note_service.history_of("elsewhere/other2.md")["entries"]) == 3
-    assert not any(p.suffix == ".md" for p in (svc.vault.root / ".history").iterdir())   # hidden, not notes
+    assert not any(p.suffix == ".md" for p in (svc.vault.root / ".history").iterdir())  # hidden, not notes
 
 
 def test_history_api(lib, svc, client):
@@ -464,9 +552,13 @@ def test_history_api(lib, svc, client):
 
 def test_write_note_checks_quotes(lib, svc):
     server = lib["server"]
-    ok = call_json(server, "write_note", title="Quoted",
-                   text="> We derive the Lindblad master equation [@smith2021, p. 2]\n\nMath as $\\rho$, Unicode only in quotes:\n\n"
-                        "> We derive the Lindblad master equation for the reduced density matrix ρ ≈ ρ' [@smith2021, p. 2]\n")
+    ok = call_json(
+        server,
+        "write_note",
+        title="Quoted",
+        text="> We derive the Lindblad master equation [@smith2021, p. 2]\n\nMath as $\\rho$, Unicode only in quotes:\n\n"
+        "> We derive the Lindblad master equation for the reduced density matrix ρ ≈ ρ' [@smith2021, p. 2]\n",
+    )
     assert ok["saved"]
     e = write_error(server, "> We derive the Lindblad master equation [@smith2021, p. 3]")
     assert "on page 2, not 3" in e
@@ -496,8 +588,9 @@ def test_notes_edited_elsewhere_are_seen(lib, svc):
     server = lib["server"]
     (svc.vault.root / "fresh.md").write_text("# Fresh\n\nCites [@doe2019].\n")
     import time
+
     time.sleep(0.01)
-    server.tools["get_note"].fn.__self__._last_sync = 0   # skip the 2 s throttle
+    server.tools["get_note"].fn.__self__._last_sync = 0  # skip the 2 s throttle
     r = call_json(server, "search_library", query="fresh", scope="notes")
     assert [n["path"] for n in r["notes"]] == ["fresh.md"]
 
@@ -507,15 +600,17 @@ needs_pdfium = pytest.mark.skipif(not pdfrender.available(), reason="pypdfium2 n
 
 
 def test_png_region_roundtrip():
-    png = pdfrender.png_encode(bytes([255, 0, 0] * 4), 2, 2, {pdfrender.REGION_KEYWORD: '{"page":3,"rect":[0.1,0.2,0.3,0.4]}'})
-    assert png.startswith(b"\x89PNG") and pdfrender.read_region(png) == {"page": 3, "rect": [0.1, 0.2, 0.3, 0.4]}
-    assert pdfrender.read_region(pdfrender.png_encode(b"\0\0\0", 1, 1)) is None
+    png = pdfpng.png_encode(
+        bytes([255, 0, 0] * 4), 2, 2, {pdfpng.REGION_KEYWORD: '{"page":3,"rect":[0.1,0.2,0.3,0.4]}'}
+    )
+    assert png.startswith(b"\x89PNG") and pdfpng.read_region(png) == {"page": 3, "rect": [0.1, 0.2, 0.3, 0.4]}
+    assert pdfpng.read_region(pdfpng.png_encode(b"\0\0\0", 1, 1)) is None
 
 
 @needs_pdfium
 def test_figure_regions(lib, svc):
-    regions = pdfrender.figure_regions(svc.config.pdf_dir / "fig.pdf", 2)
-    assert [r["label"] for r in regions] == ["Figure 2", "Table 1"]   # "Fig. 2 shows…" is running text
+    regions = pdfregions.figure_regions(svc.config.pdf_dir / "fig.pdf", 2)
+    assert [r["label"] for r in regions] == ["Figure 2", "Table 1"]  # "Fig. 2 shows…" is running text
     x, y, w, h = regions[0]["rect"]
     # the chart (x 98…500 pt incl. its "0.5" label, y 412…600 pt from the bottom) without the caption
     assert abs(x - 98 / 612) < 0.02 and abs(x + w - 500 / 612) < 0.02
@@ -526,8 +621,14 @@ def test_figure_regions(lib, svc):
 
 @needs_pdfium
 def test_view_page(lib):
-    reply = lib["server"].handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                                  "params": {"name": "view_page", "arguments": {"paper": "fig2024", "page": 2}}})
+    reply = lib["server"].handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "view_page", "arguments": {"paper": "fig2024", "page": 2}},
+        }
+    )
     content = reply["result"]["content"]
     assert content[0]["type"] == "image" and content[0]["mimeType"] == "image/png"
     assert base64.b64decode(content[0]["data"]).startswith(b"\x89PNG")
@@ -540,21 +641,36 @@ def test_view_page(lib):
 @needs_pdfium
 def test_snapshot_and_use_in_note(lib, svc):
     server = lib["server"]
-    reply = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                           "params": {"name": "snapshot", "arguments": {"paper": "fig2024", "page": 2, "figure": "Fig. 2"}}})
+    reply = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "snapshot", "arguments": {"paper": "fig2024", "page": 2, "figure": "Fig. 2"}},
+        }
+    )
     content = reply["result"]["content"]
     assert content[0]["type"] == "image"
     info = json.loads(content[1]["text"])
     saved = svc.vault.root / info["saved"]
     assert info["saved"].startswith("attachments/") and saved.is_file()
-    region = pdfrender.read_region(saved.read_bytes())
+    region = pdfpng.read_region(saved.read_bytes())
     assert region["page"] == 2 and region["rect"] == info["region"]["rect"]
     assert info["markdown"] == f"![fig2024 p. 2]({info['saved']})\n*Figure 2: [@fig2024, p. 2]*"
-    note = call_json(server, "write_note", title="With figure", text="The chart:\n\n" + info["markdown"].replace(
-        "*Figure 2: ", "*Figure 2: phase diagram "))
+    note = call_json(
+        server,
+        "write_note",
+        title="With figure",
+        text="The chart:\n\n" + info["markdown"].replace("*Figure 2: ", "*Figure 2: phase diagram "),
+    )
     assert note["saved"]
     err, texts = call(server, "snapshot", paper="fig2024", page=2, rect=[0.1, 0.6, 0.7, 0.15])
-    assert not err and pdfrender.read_region((svc.vault.root / json.loads(texts[1])["saved"]).read_bytes())["rect"] == [0.1, 0.6, 0.7, 0.15]
+    assert not err and pdfpng.read_region((svc.vault.root / json.loads(texts[1])["saved"]).read_bytes())["rect"] == [
+        0.1,
+        0.6,
+        0.7,
+        0.15,
+    ]
     err, texts = call(server, "snapshot", paper="fig2024", page=2, figure="Figure 7")
     assert err and "Figure 2, Table 1" in texts[0]
     err, texts = call(server, "snapshot", paper="fig2024", page=2)
@@ -564,24 +680,29 @@ def test_snapshot_and_use_in_note(lib, svc):
 
 
 def _blocks(server, **args):
-    reply = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                           "params": {"name": "view_image", "arguments": args}})
+    reply = server.handle(
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "view_image", "arguments": args}}
+    )
     return reply["result"]["isError"], reply["result"]["content"]
 
 
 def test_view_image(lib, svc):
     server = lib["server"]
-    small = pdfrender.png_encode(bytes([200, 30, 30]) * (40 * 20), 40, 20)
+    small = pdfpng.png_encode(bytes([200, 30, 30]) * (40 * 20), 40, 20)
     pasted = svc.note_service.add_image("pasted.png", small)["path"]
     snap = json.loads(call(server, "snapshot", paper="fig2024", page=2, figure="Figure 2")[1][1])
-    text = (f"# Pictures\n\nA pasted one:\n\n![my sketch]({pasted})\n\nFrom the paper:\n\n{snap['markdown']}\n\n"
-            "![web](https://example.org/x.png)\n")
+    text = (
+        f"# Pictures\n\nA pasted one:\n\n![my sketch]({pasted})\n\nFrom the paper:\n\n{snap['markdown']}\n\n"
+        "![web](https://example.org/x.png)\n"
+    )
     svc.note_service.create(path="pics.md", title="Pictures", text=text)
 
     # get_note lists the images and points at view_image
     summary = call_json(server, "get_note", note="pics")
     assert [i["path"] for i in summary["images"]] == [pasted, snap["saved"], "https://example.org/x.png"]
-    assert summary["images"][0]["alt"] == "my sketch" and summary["images"][1]["caption"] == "Figure 2: [@fig2024, p. 2]"
+    assert (
+        summary["images"][0]["alt"] == "my sketch" and summary["images"][1]["caption"] == "Figure 2: [@fig2024, p. 2]"
+    )
     assert "view_image" in summary["images_hint"]
     assert "math_macros" not in summary
     svc.settings.update({"notes_math_macros": "\\newcommand{\\R}{\\mathbb{R}}"})
@@ -606,9 +727,13 @@ def test_view_image(lib, svc):
     assert not err and len(content) == 2 and json.loads(content[0]["text"])["line"] == summary["images"][1]["line"]
 
     # refusals
-    for args, words in (({"path": "attachments/nope.png"}, "No image"), ({"path": "https://x.org/a.png"}, "on the web"),
-                        ({"path": "../../etc/passwd"}, "No image"), ({}, "Give path"),
-                        ({"note": "other"}, "shows no images")):
+    for args, words in (
+        ({"path": "attachments/nope.png"}, "No image"),
+        ({"path": "https://x.org/a.png"}, "on the web"),
+        ({"path": "../../etc/passwd"}, "No image"),
+        ({}, "Give path"),
+        ({"note": "other"}, "shows no images"),
+    ):
         err, content = _blocks(server, **args)
         assert err and words in content[0]["text"], (args, content)
     (svc.vault.root / "attachments" / "fake.png").write_bytes(b"not an image")
@@ -619,6 +744,7 @@ def test_view_image(lib, svc):
 def test_view_image_scales_big_images(lib, svc, monkeypatch):
     PIL = pytest.importorskip("PIL.Image")
     import io
+
     buf = io.BytesIO()
     PIL.new("RGB", (4000, 1000), (10, 120, 200)).save(buf, "PNG")
     path = svc.note_service.add_image("big.png", buf.getvalue())["path"]
@@ -631,13 +757,14 @@ def test_view_image_scales_big_images(lib, svc, monkeypatch):
     monkeypatch.setitem(sys.modules, "PIL", None)
     err, content = _blocks(lib["server"], path=path)
     assert not err and json.loads(content[0]["text"])["size"] == "4000x1000"
-    import backend.mcp.tools as tools_mod
-    monkeypatch.setattr(tools_mod, "IMAGE_MAX_BYTES", 100)
+    from backend.mcp.tools import images as images_mod
+
+    monkeypatch.setattr(images_mod, "IMAGE_MAX_BYTES", 100)
     err, content = _blocks(lib["server"], path=path)
     assert err and "pip install pillow" in content[0]["text"]
 
 
-EQ_PDF = ROOT / "tests" / "fixtures" / "equations.pdf"   # pdflatex of equations.tex next to it
+EQ_PDF = ROOT / "tests" / "fixtures" / "equations.pdf"  # pdflatex of equations.tex next to it
 
 
 def _overlap(a, b) -> float:
@@ -646,27 +773,27 @@ def _overlap(a, b) -> float:
 
 @needs_pdfium
 def test_equation_regions():
-    one = {e["number"]: e["rect"] for e in pdfrender.equation_regions(EQ_PDF, 1)}
+    one = {e["number"]: e["rect"] for e in pdfregions.equation_regions(EQ_PDF, 1)}
     # two columns; "Eq. (1)", "see (1)." and "Equation (5) closes…" in the text are not equations
     assert sorted(one) == ["1", "2", "3", "4", "5", "6"]
     for n in "12345":
         x, y, w, h = one[n]
-        assert x > 0.08 and x + w < 0.52, n   # left column only
+        assert x > 0.08 and x + w < 0.52, n  # left column only
     x, y, w, h = one["6"]
-    assert x > 0.55 and x + w < 0.93 and h > 0.03   # right column, both lines of the split equation
-    assert one["1"][3] > 0.035   # the fraction dρ/dt: both lines of it
-    assert _overlap(one["2"], one["3"]) < 0.005   # align: two numbered lines, each its own region
-    two = {e["number"]: e["rect"] for e in pdfrender.equation_regions(EQ_PDF, 2)}
+    assert x > 0.55 and x + w < 0.93 and h > 0.03  # right column, both lines of the split equation
+    assert one["1"][3] > 0.035  # the fraction dρ/dt: both lines of it
+    assert _overlap(one["2"], one["3"]) < 0.005  # align: two numbered lines, each its own region
+    two = {e["number"]: e["rect"] for e in pdfregions.equation_regions(EQ_PDF, 2)}
     assert sorted(two) == ["2.1", "2.2", "2.3a", "2.3b", "2.4", "2.5", "A1"]
-    assert two["2.2"][0] < 0.25 and two["2.2"][0] + two["2.2"][2] > 0.9   # wide: from "Z =" to the number
-    assert two["2.5"][3] > 0.045   # the whole 3×3 matrix
+    assert two["2.2"][0] < 0.25 and two["2.2"][0] + two["2.2"][2] > 0.9  # wide: from "Z =" to the number
+    assert two["2.5"][3] > 0.045  # the whole 3×3 matrix
     assert _overlap(two["2.4"], two["2.5"]) < 0.005
     for rect in list(one.values()) + list(two.values()):
         assert rect[2] > 0.03 and rect[3] < 0.1
 
 
 def test_parse_label():
-    p = pdfrender.parse_label
+    p = pdfregions.parse_label
     assert p("Eq. (3)") == p("equation 3") == p("(3)") == p("eq3") == ("equation", "3")
     assert p("Eqs. (2.5)") == ("equation", "2.5") and p("(A1)") == ("equation", "A1")
     assert p("Fig. 2") == p("Figure 2") == ("figure", "2") and p("Table I") == ("table", "I")
@@ -676,17 +803,26 @@ def test_parse_label():
 @needs_pdfium
 def test_snapshot_equation_and_figure_by_number(lib, svc):
     import shutil
+
     shutil.copy(EQ_PDF, svc.config.pdf_dir / "eq.pdf")
     eq = svc.papers.create({"title": "Equations paper", "authors": "Eq, Al", "year": 2025, "citation_key": "eq2025"})
     svc.papers.add_attachment(eq["id"], "Full Text PDF", "eq.pdf")
     server = build_server(svc)
-    reply = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                           "params": {"name": "snapshot", "arguments": {"paper": "eq2025", "equation": "A1"}}})
+    reply = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "snapshot", "arguments": {"paper": "eq2025", "equation": "A1"}},
+        }
+    )
     info = json.loads(reply["result"]["content"][1]["text"])
-    assert info["region"]["page"] == 2 and info["label"] == "Equation (A1)"   # page found without being told
-    assert info["region"]["rect"] == next(e["rect"] for e in pdfrender.equation_regions(EQ_PDF, 2) if e["number"] == "A1")
+    assert info["region"]["page"] == 2 and info["label"] == "Equation (A1)"  # page found without being told
+    assert info["region"]["rect"] == next(
+        e["rect"] for e in pdfregions.equation_regions(EQ_PDF, 2) if e["number"] == "A1"
+    )
     assert info["markdown"].endswith("\n*Equation (A1): [@eq2025, p. 2]*")
-    region = pdfrender.read_region((svc.vault.root / info["saved"]).read_bytes())
+    region = pdfpng.read_region((svc.vault.root / info["saved"]).read_bytes())
     assert region["page"] == 2
     for spelled in ("(3)", "Eq. 3", "3"):
         r = json.loads(call(server, "snapshot", paper="eq2025", equation=spelled)[1][1])
@@ -701,8 +837,14 @@ def test_snapshot_equation_and_figure_by_number(lib, svc):
     assert err and "not found" in texts[0]
     err, texts = call(server, "snapshot", paper="eq2025", rect=[0.1, 0.1, 0.2, 0.2])
     assert err and "page" in texts[0]
-    reply = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                           "params": {"name": "view_page", "arguments": {"paper": "eq2025", "page": 1}}})
+    reply = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "view_page", "arguments": {"paper": "eq2025", "page": 1}},
+        }
+    )
     v = json.loads(reply["result"]["content"][1]["text"])
     assert [e["label"] for e in v["equations"]][:2] == ["Equation (1)", "Equation (6)"]
     assert v["figures"][0]["box"] == 1 and v["equations"][0]["box"] == 2
@@ -717,15 +859,32 @@ def test_page_tools_without_pdfium(lib, monkeypatch):
 # ======================================================================== the script
 def test_stdio_server_end_to_end(lib, svc):
     msgs = [
-        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
-         "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test", "version": "1"}}},
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "1"},
+            },
+        },
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-        {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "read_paper",
-                                                                      "arguments": {"paper": "smith2021", "pages": "3"}}},
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {"name": "read_paper", "arguments": {"paper": "smith2021", "pages": "3"}},
+        },
     ]
-    p = subprocess.run([sys.executable, str(ROOT / "mcp_server.py"), "--data", str(svc.config.data_dir)],
-                       input="".join(json.dumps(m) + "\n" for m in msgs), capture_output=True, text=True, timeout=60)
+    p = subprocess.run(
+        [sys.executable, str(ROOT / "mcp_server.py"), "--data", str(svc.config.data_dir)],
+        input="".join(json.dumps(m) + "\n" for m in msgs),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
     assert p.returncode == 0, p.stderr
     replies = [json.loads(l) for l in p.stdout.splitlines()]
     assert [r["id"] for r in replies] == [1, 2, 3]
@@ -734,10 +893,17 @@ def test_stdio_server_end_to_end(lib, svc):
 
 
 def test_script_config_and_missing_library(tmp_path):
-    p = subprocess.run([sys.executable, str(ROOT / "mcp_server.py"), "--config"], capture_output=True, text=True, timeout=30)
+    p = subprocess.run(
+        [sys.executable, str(ROOT / "mcp_server.py"), "--config"], capture_output=True, text=True, timeout=30
+    )
     assert p.returncode == 0 and '"mcpServers"' in p.stdout and "claude mcp add" in p.stdout
     assert str(ROOT / "mcp_server.py") in p.stdout
-    p = subprocess.run([sys.executable, str(ROOT / "mcp_server.py"), "--data", str(tmp_path / "nothing")],
-                       capture_output=True, text=True, timeout=30, input="")
+    p = subprocess.run(
+        [sys.executable, str(ROOT / "mcp_server.py"), "--data", str(tmp_path / "nothing")],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        input="",
+    )
     assert p.returncode == 1 and "No library found" in p.stderr and p.stdout == ""
     assert not (tmp_path / "nothing").exists()

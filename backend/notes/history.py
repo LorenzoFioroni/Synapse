@@ -10,8 +10,10 @@ so the app can tell whether the note still is exactly what Claude left (then Und
 switch back) or was edited since. The MCP server and the app run in different processes; each
 change is its own file with a unique name, so neither can overwrite the other's entries.
 """
+
 from __future__ import annotations
 
+import builtins
 import json
 import logging
 import os
@@ -23,8 +25,8 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 HISTORY = ".history"
-KEEP = 1000                     # changes kept in all
-MAX_AGE = 365 * 86400           # … and none older than a year
+KEEP = 1000  # changes kept in all
+MAX_AGE = 365 * 86400  # … and none older than a year
 _ID = re.compile(r"^[0-9A-Z]{26}$")
 
 
@@ -34,11 +36,21 @@ class NoteHistory:
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------ writing
-    def record(self, path: str, *, before: str, before_hash: str, after_hash: str, by: str = "ai",
-               summary: str = "") -> dict:
+    def record(
+        self, path: str, *, before: str, before_hash: str, after_hash: str, by: str = "ai", summary: str = ""
+    ) -> dict:
         from .service import now_iso, ulid
-        entry = {"id": ulid(), "path": path, "at": now_iso(), "by": by, "summary": summary[:300],
-                 "before": before, "before_hash": before_hash, "after_hash": after_hash}
+
+        entry = {
+            "id": ulid(),
+            "path": path,
+            "at": now_iso(),
+            "by": by,
+            "summary": summary[:300],
+            "before": before,
+            "before_hash": before_hash,
+            "after_hash": after_hash,
+        }
         self.dir.mkdir(parents=True, exist_ok=True)
         p = self.dir / f"{entry['id']}.json"
         tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
@@ -47,7 +59,7 @@ class NoteHistory:
         self.prune()
         return entry
 
-    def moved(self, pairs: list[tuple[str, str]]) -> None:
+    def moved(self, pairs: builtins.list[tuple[str, str]]) -> None:
         """Notes were renamed or moved: their history follows them."""
         new_of = dict(pairs)
         if not new_of:
@@ -83,10 +95,13 @@ class NoteHistory:
             except (OSError, ValueError):
                 continue
 
-    def list(self, path: str | None = None, limit: int = 50) -> list[dict]:
+    def list(self, path: str | None = None, limit: int = 50) -> builtins.list[dict]:
         """Newest first, without the stored text."""
-        out = [{k: v for k, v in e.items() if k != "before"} for _, e in self._all()
-               if path is None or e.get("path") == path]
+        out = [
+            {k: v for k, v in e.items() if k != "before"}
+            for _, e in self._all()
+            if path is None or e.get("path") == path
+        ]
         return out[::-1][:limit]
 
     def get(self, entry_id: str) -> dict | None:
@@ -101,4 +116,3 @@ class NoteHistory:
     def latest(self, path: str) -> dict | None:
         found = self.list(path, limit=1)
         return self.get(found[0]["id"]) if found else None
-

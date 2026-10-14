@@ -1,0 +1,68 @@
+// Inline SVG icons (stroke-based, 16px grid). Usage: icon('search')
+const P: Record<string, string> = {
+  search: '<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>',
+  plus: '<path d="M8 3v10M3 8h10"/>',
+  wand: '<path d="M3 13l7-7"/><path d="M11 2v2M14 5h-2M13.5 2.5l-1.2 1.2M9 3.2l.6.9M12.8 7l-.9-.6"/>',
+  import: '<path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 11v2h10v-2"/>',
+  export: '<path d="M8 10V2M5 5l3-3 3 3"/><path d="M3 11v2h10v-2"/>',
+  gear: '<circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M1.8 8h1.6M12.6 8h1.6M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/>',
+  library: '<path d="M2.5 3h3v10h-3zM6.5 3h3v10h-3z"/><path d="M10.5 3.6l2.8-.8 2.2 9.6-2.8.8z"/>',
+  trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/>',
+  restore: '<path d="M3 8a5 5 0 1 0 1.5-3.5"/><path d="M3 2.5V5h2.5"/>',
+  doc: '<path d="M4 1.8h5l3 3v9.4H4z"/><path d="M9 1.8v3h3"/>',
+  book: '<path d="M3 2.5h7.5a1.5 1.5 0 0 1 1.5 1.5v9.5H4.5A1.5 1.5 0 0 1 3 12z"/><path d="M3 12a1.5 1.5 0 0 1 1.5-1.5H12"/>',
+  bookSection: '<path d="M3 2.5h7.5a1.5 1.5 0 0 1 1.5 1.5v9.5H4.5A1.5 1.5 0 0 1 3 12z"/><path d="M6 5.5h3.5M6 7.5h3.5"/>',
+  conferencePaper: '<rect x="2" y="3" width="12" height="8" rx="1"/><path d="M8 11v2.5M5.5 13.5h5"/>',
+  thesis: '<path d="M1.5 6L8 3l6.5 3L8 9z"/><path d="M4.5 7.5v3c1 1 2.2 1.5 3.5 1.5s2.5-.5 3.5-1.5v-3"/>',
+  report: '<path d="M4 1.8h8v12.4H4z"/><path d="M6 5h4M6 7.5h4M6 10h2.5"/>',
+  preprint: '<path d="M4 1.8h5l3 3v9.4H4z"/><path d="M6 8h4M6 10.5h4"/>',
+  manuscript: '<path d="M4 1.8h8v12.4H4z"/><path d="M6 5.5c1-.6 3-.6 4 0M6 8.5c1-.6 3-.6 4 0"/>',
+  webpage: '<circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/>',
+  dataset: '<ellipse cx="8" cy="4" rx="5" ry="2"/><path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>',
+  pdf: '<path d="M4 1.8h5l3 3v9.4H4z"/><path d="M9 1.8v3h3"/><path d="M5.6 11.6c1.4-.8 3-3.6 3-5.2 0-1-1-1-1 0 0 1.6 2.2 4.2 3.6 4.4.8.1.8-.8 0-.8-1.6 0-4.6.8-5.6 1.6z" stroke-width="1"/>',
+  chevron: '<path d="M6 4l4 4-4 4"/>',
+  chevronDown: '<path d="M4 6l4 4 4-4"/>',
+  close: '<path d="M4 4l8 8M12 4l-8 8"/>',
+  check: '<path d="M3 8.5l3 3 7-7"/>',
+  info: '<circle cx="8" cy="8" r="6"/><path d="M8 7v4M8 5v.01"/>',
+  alert: '<path d="M8 2l6.5 11.5h-13z"/><path d="M8 6.5v3M8 11.5v.01"/>',
+  edit: '<path d="M10.5 2.5l3 3L6 13H3v-3z"/>',
+  copy: '<rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.5A1 1 0 0 1 4 2.5h6.5"/>',
+  link: '<path d="M7 9a3 3 0 0 0 4.2 0l2-2a3 3 0 0 0-4.2-4.2l-.8.8"/><path d="M9 7a3 3 0 0 0-4.2 0l-2 2a3 3 0 0 0 4.2 4.2l.8-.8"/>',
+  download: '<path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/>',
+  refresh: '<path d="M13 8a5 5 0 1 1-1.5-3.5"/><path d="M13 2.5V5h-2.5"/>',
+  key: '<circle cx="5.5" cy="10.5" r="3"/><path d="M7.6 8.4L13.5 2.5M11.5 4.5l1.5 1.5M10 6l1.2 1.2"/>',
+  tablet: '<rect x="3" y="1.8" width="10" height="12.4" rx="1.6"/><path d="M7 12h2"/>',
+  globe: '<circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/>',
+  columns: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M6 3v10M10 3v10"/>',
+  menu: '<path d="M2.5 4h11M2.5 8h11M2.5 12h11"/>',
+  sidebar: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M10 3v10"/>',
+  sidebarLeft: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M6 3v10"/>',
+  sun: '<circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/>',
+  moon: '<path d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5z"/>',
+  text: '<path d="M3 4h10M3 7h10M3 10h7M3 13h5"/>',
+  paperclip: '<path d="M13 7.5l-5.2 5.2a3 3 0 0 1-4.3-4.3L9 2.9a2 2 0 0 1 2.9 2.9L6.5 11.2a1 1 0 0 1-1.4-1.4l4.8-4.8"/>',
+  find: '<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14M5 7h4M7 5v4"/>',
+  keyboard: '<rect x="1.5" y="4" width="13" height="8" rx="1.5"/><path d="M4 6.5h.01M6.5 6.5h.01M9 6.5h.01M11.5 6.5h.01M5 9.5h6"/>',
+  database: '<ellipse cx="8" cy="4" rx="5" ry="2"/><path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4"/>',
+  palette: '<path d="M8 2a6 6 0 1 0 0 12c1 0 1.5-.6 1.5-1.3 0-1.2-1-1.2-1-2.2 0-.8.6-1.3 1.4-1.3H12a2 2 0 0 0 2-2C14 4.3 11.3 2 8 2z"/><path d="M5 7.5h.01M6.5 5h.01M9.5 5h.01"/>',
+  drag: '<path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" stroke-width="2.2"/>',
+  minus: '<path d="M3.5 8h9"/>',
+  open: '<path d="M9 2.5h4.5V7M13.5 2.5L8 8"/><path d="M12 9.5V13H3V4h3.5"/>',
+  arrowLeft: '<path d="M13 8H3M7 4L3 8l4 4"/>',
+  folder: '<path d="M1.8 4.2a1 1 0 0 1 1-1h3.4l1.5 1.6h5.5a1 1 0 0 1 1 1v6.9a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z"/>',
+  folderPlus: '<path d="M1.8 4.2a1 1 0 0 1 1-1h3.4l1.5 1.6h5.5a1 1 0 0 1 1 1v6.9a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z"/><path d="M8 7.3v4M6 9.3h4"/>',
+  smartFolder: '<path d="M1.8 4.2a1 1 0 0 1 1-1h3.4l1.5 1.6h5.5a1 1 0 0 1 1 1v6.9a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z"/><circle cx="7.6" cy="9" r="1.8"/><path d="M9 10.4l1.6 1.6"/>',
+  tag: '<path d="M2 2.5h5.3l6.5 6.5-5 5L2.3 7.5z"/><circle cx="5" cy="5.3" r="1"/>',
+  unfiled: '<path d="M1.8 4.2a1 1 0 0 1 1-1h3.4l1.5 1.6h5.5a1 1 0 0 1 1 1v6.9a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z" stroke-dasharray="2 1.6"/>',
+  sparkle: '<path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z"/>',
+};
+
+export function icon(name: string, cls = ''): string {
+  const body = P[name] || P.doc;
+  return `<svg class="icon ${cls}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+}
+
+export function typeIcon(itemType: string | null | undefined, cls = ''): string {
+  return icon(itemType && P[itemType] ? itemType : 'doc', cls);
+}

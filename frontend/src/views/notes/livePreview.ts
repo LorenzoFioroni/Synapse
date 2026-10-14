@@ -1,0 +1,528 @@
+// Live preview for the notes editor (CodeMirror decorations).
+//
+// Rule: what the cursor (or selection) touches shows its raw Markdown, the rest is rendered.
+// Inline things (math, links, citations, emphasis, code) open only when the cursor is in them or
+// next to them, so typing in a long paragraph does not unfold all of its formulas;
+// line marks (headings, lists, quotes) open for the cursor's line; multi-line constructs (tables,
+// $$ blocks, Mermaid diagrams) count as one unit: touching any of their lines reveals all of them,
+// and a $$ block being edited shows its rendering below the source.
+//
+// What counts as math, a [[link]] or a [@citation] comes from mdscan.js (the port of the
+// backend parser); everything else from CodeMirror's own Markdown syntax tree.
+import type { EditorState, Range as CMRange, Text } from '@codemirror/state';
+import type { Decoration as DecorationT, DecorationSet, EditorView as EditorViewT } from '@codemirror/view';
+import type { CM } from './editor.js';
+import { type Scan, type ScanLink, type Span, attachmentOf, scan, splitFrontmatter } from './mdscan.js';
+import { type CiteTarget, citeTargetInText } from './citeTarget.js';
+import { type CiteInfo, type Renderer, citeLabel, imageSrc } from './render.js';
+import { numberEquations, refText, resolveRefs, textRefs } from './equations.js';
+import { clickOffset } from './mathClick.js';
+import { type Definition, HAS_DEFINITIONS, type Macros, parseDefinitions, withDefinitions } from './macros.js';
+import { fitSoon } from './mathFit.js';
+
+/** A DOM text node (``Text`` is CodeMirror's document here). */
+type Text_ = globalThis.Text;
+
+const CALLOUT_TYPES = ['note', 'tip', 'warning', 'question', 'quote', 'info', 'important', 'caution', 'example', 'todo'];
+
+/** What the live preview needs from the notes view. */
+export interface PreviewDeps {
+  /** The Markdown renderer, or null while it loads. */
+  renderer(): Renderer | null;
+  /** The path a [[target]] goes to: a path, null (no such note) or undefined (not known yet). */
+  resolveNote(target: string): string | null | undefined;
+  citeInfo(key: string): CiteInfo | null | undefined;
+  openNote(target: string, heading: string): void;
+  openCite?(key: string, page: number | null, target: CiteTarget | null, opts: { newTab?: boolean; att?: number | null }): void;
+  /** Render a Mermaid diagram into the element. */
+  mermaid(el: HTMLElement, code: string): void;
+  /** Equation numbering: 'labelled' or 'all'. */
+  equations?(): string;
+  /** The KaTeX macros every note starts from (macros.ts). */
+  macros?(): Macros;
+}
+
+/** The note's formulas, prepared once per version of the document (see equationsOf). */
+interface Equations {
+  tex: Map<number, string>;
+  labels: Map<string, string | null>;
+  macros: Macros;
+  sig: string;
+  defines: Map<number, string[]>;
+}
+
+export function livePreview(cm: CM, deps: PreviewDeps) {
+  const { Decoration, WidgetType, StateField, StateEffect, EditorView, syntaxTree } = cm;
+  const refresh = StateEffect.define<null>();
+  // Lines show their source only while you are editing: with the editor unfocused, all is rendered.
+  const setFocus = StateEffect.define<boolean>();
+  const focusField = StateField.define<boolean>({
+    create: () => false,
+    update: (v, tr) => tr.effects.reduce((acc, e) => (e.is(setFocus) ? e.value : acc), v),
+  });
+
+  /* ------------------------------------------------------------------ widgets */
+  class HtmlWidget extends WidgetType {
+    key: string;
+    make: (el: HTMLElement) => void;
+    block: boolean;
+    cls: string;
+    constructor(key: string, make: (el: HTMLElement) => void, { block = false, cls = '' } = {}) {
+      super(); this.key = key; this.make = make; this.block = block; this.cls = cls;
+    }
+    eq(o: HtmlWidget) { return o.key === this.key; }
+    toDOM(_view?: EditorViewT): HTMLElement {
+      const el = document.createElement(this.block ? 'div' : 'span');
+      el.className = `cm-lp-widget ${this.cls}`;
+      this.make(el);
+      return el;
+    }
+    ignoreEvent(e: Event) { return e.type !== 'mousedown'; }   // a click places the cursor (and reveals the source)
+  }
+
+  class CheckboxWidget extends WidgetType {
+    checked: boolean;
+    pos: number;
+    constructor(checked: boolean, pos: number) { super(); this.checked = checked; this.pos = pos; }
+    eq(o: CheckboxWidget) { return o.checked === this.checked && o.pos === this.pos; }
+    toDOM(view: EditorViewT) {
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.className = 'cm-lp-task';
+      box.checked = this.checked;
+      box.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        view.dispatch({ changes: { from: this.pos + 1, to: this.pos + 2, insert: this.checked ? ' ' : 'x' } });
+      });
+      return box;
+    }
+    ignoreEvent() { return true; }
+  }
+
+  const bullet = new HtmlWidget('bullet', (el) => { el.textContent = '•'; }, { cls: 'cm-lp-bullet' });
+
+  // a formula; ``src`` is where its TeX starts in the document (for clicks into it)
+  // ``eq`` (equationsOf) brings the note's macros; their signature is part of the key, so a
+  // changed \newcommand redraws the formulas that may use it
+  class MathWidget extends HtmlWidget {
+    display: boolean;
+    constructor(tex: string, display: boolean, block: boolean, preview: boolean, eq: Equations) {
+      super(`m:${display}:${block}:${preview}:${eq.sig}:${tex}`, (el) => {
+        const r = deps.renderer();
+        el.innerHTML = r ? r.katex(tex, display, eq.macros) : tex;
+      }, { block, cls: (block ? 'cm-lp-mathblock' : display ? 'cm-lp-math display' : 'cm-lp-math') + (preview ? ' cm-lp-mathpreview' : '') });
+      this.display = display;
+    }
+    toDOM(view: EditorViewT) {
+      const el = super.toDOM(view);
+      if (this.display) fitSoon(el, () => view.requestMeasure());
+      return el;
+    }
+  }
+  const katexWidget = (eq: Equations, tex: string, display: boolean, block = false, preview = false) => new MathWidget(tex, display, block, preview, eq);
+  // a formula that only defines macros: a small label (click it to edit the definitions)
+  const defsWidget = (names: string[], block: boolean) => new HtmlWidget(`defs:${block}:${names.join(' ')}`, (el) => {
+    el.textContent = `Macros: ${names.join('  ')}`;
+    el.title = 'Macro definitions, used by every formula of this note: click to edit';
+  }, { block, cls: 'cm-lp-mathdefs' });
+
+  const chip = (key: string, cls: string, label: string, attrs: Record<string, string | number | null | undefined>) => new HtmlWidget(key, (el) => {
+    el.textContent = label;
+    for (const [k, v] of Object.entries(attrs)) if (v != null) el.dataset[k] = String(v);
+  }, { cls: `cm-lp-chip ${cls}` });
+
+  // "key: value" lines (and "- item" lists) of the front matter, shown as a small table
+  const propsWidget = (header: string) => new HtmlWidget(`fm:${header}`, (el) => {
+    const rows: [string, string][] = [];
+    for (const line of header.split('\n')) {
+      const m = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+      if (m) rows.push([m[1], m[2].replace(/^\[(.*)\]$/, '$1').replace(/^["']|["']$/g, '')]);
+      else if (/^\s+-\s+/.test(line) && rows.length) {
+        const last = rows[rows.length - 1];
+        last[1] = (last[1] ? `${last[1]}, ` : '') + line.replace(/^\s+-\s+/, '').replace(/^["']|["']$/g, '');
+      }
+    }
+    const shown = rows.filter(([k, v]) => k !== 'id' && v !== '');
+    el.title = 'Properties (front matter): click to edit';
+    const dl = document.createElement('dl');
+    for (const [k, v] of shown) {
+      const dt = document.createElement('dt'); dt.textContent = k;
+      const dd = document.createElement('dd'); dd.textContent = v;
+      dl.append(dt, dd);
+    }
+    if (!shown.length) { const dd = document.createElement('dd'); dd.textContent = 'Properties'; dl.append(dd); }
+    el.appendChild(dl);
+  }, { block: true, cls: 'cm-lp-props' });
+
+  /* ------------------------------------------------------------------ build */
+  let cache: { doc: Text | null; scan: Scan | null; eq: Equations | null; mode: string | null; base: Macros | null } = { doc: null, scan: null, eq: null, mode: null, base: null };
+  let lastBase: Macros | null = null, baseVersion = 0;
+  const scanOf = (state: EditorState): Scan => {
+    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), eq: null, mode: null, base: null };
+    return cache.scan!;
+  };
+  // the whole note's formulas: macro definitions taken out (they apply to every formula), display
+  // equations numbered; formula start → TeX for KaTeX; labels for \eqref
+  const mathSrc = (doc: Text, sp: Span) => (sp.kind === 'mathblock'
+    ? doc.sliceString(doc.lineAt(sp.from).from, doc.lineAt(sp.to).to).trim().replace(/^\$\$/, '').replace(/\$\$$/, '').trim()
+    : doc.sliceString(sp.from + (sp.display ? 2 : 1), sp.to - (sp.display ? 2 : 1)));
+  const equationsOf = (state: EditorState): Equations => {
+    const s = scanOf(state);
+    const mode = deps.equations?.() || 'labelled';
+    const base = deps.macros?.() || {};
+    if (base !== lastBase) { lastBase = base; baseVersion++; }
+    if (cache.eq && cache.mode === mode && cache.base === base) return cache.eq;
+    const doc = state.doc;
+    const maths = s.spans.filter((sp) => (sp.kind === 'mathblock' && !sp.open) || sp.kind === 'math').sort((a, b) => a.from - b.from);
+    const src = new Map<number, string>(), defines = new Map<number, string[]>(), defs: Definition[] = [];
+    for (const sp of maths) {
+      let t = mathSrc(doc, sp);
+      if (HAS_DEFINITIONS.test(t)) {
+        const p = parseDefinitions(t);
+        if (p.defs.length) { defs.push(...p.defs); defines.set(sp.from, p.defs.map((d) => d.name)); t = p.rest; }
+      }
+      src.set(sp.from, t);
+    }
+    const display = maths.filter((sp) => sp.kind === 'mathblock' || sp.display);
+    const res = numberEquations(display.map((sp) => src.get(sp.from)!), { mode });
+    const tex = new Map(display.map((sp, i) => [sp.from, resolveRefs(res.formulas[i], res.labels)]));
+    for (const sp of maths) if (!tex.has(sp.from)) tex.set(sp.from, resolveRefs(src.get(sp.from)!, res.labels));
+    const sig = `${baseVersion}|${defs.map((d) => `${d.name}[${d.nargs}][${d.opt ?? ''}]{${d.body}}`).join('|')}`;
+    cache.eq = { tex, labels: res.labels, macros: withDefinitions(base, defs), sig, defines };
+    cache.mode = mode;
+    cache.base = base;
+    return cache.eq;
+  };
+
+  function build(state: EditorState): DecorationSet {
+    const doc = state.doc;
+    const s = scanOf(state);
+    const out: CMRange<DecorationT>[] = [];
+    const add = (from: number, to: number, deco: DecorationT) => { if (from <= to) out.push(deco.range(from, to)); };
+    const lineDeco = (pos: number, cls: string) => out.push(Decoration.line({ class: cls }).range(doc.lineAt(pos).from));
+
+    const focused = state.field(focusField, false);
+    const active: [number, number][] = focused ? state.selection.ranges.map((r) => [doc.lineAt(r.from).from, doc.lineAt(r.to).to]) : [];
+    const isActive = (from: number, to: number) => active.some(([a, b]) => from <= b && to >= a);
+    const lineActive = (pos: number) => { const l = doc.lineAt(pos); return isActive(l.from, l.to); };
+    const blockActive = (from: number, to: number) => isActive(doc.lineAt(from).from, doc.lineAt(to).to);
+    // inline things open only when the selection is in them or right next to them
+    const touches = (from: number, to: number) => focused && state.selection.ranges.some((r) => r.from <= to && r.to >= from);
+    const eq = equationsOf(state);
+    const hide = Decoration.replace({});
+
+    // regions handled by the scanner win over CodeMirror's own nodes
+    const taken: [number, number][] = [];
+    const overlapsTaken = (from: number, to: number) => taken.some(([a, b]) => from < b && to > a);
+
+    // front matter: a compact box of properties until the cursor goes into it
+    if (doc.sliceString(0, 4) === '---\n') {
+      const fm = splitFrontmatter(doc.sliceString(0, Math.min(doc.length, 50000)));
+      if (fm.header !== null) {
+        const to = doc.lineAt(Math.max(0, fm.bodyStart - 1)).to;
+        taken.push([0, to]);
+        if (!blockActive(0, to)) add(0, to, Decoration.replace({ widget: propsWidget(fm.header), block: true }));
+      }
+    }
+
+    // math (from the scanner: same rules as the backend)
+    for (const sp of s.spans) {
+      if (sp.kind === 'mathblock' && !sp.open) {
+        const from = doc.lineAt(sp.from).from, to = doc.lineAt(sp.to).to;
+        taken.push([from, to]);
+        const tex = eq.tex.get(sp.from) ?? mathSrc(doc, sp);
+        const onlyDefines = eq.defines.has(sp.from) && !tex.trim();
+        if (blockActive(from, to)) {
+          for (let p = from; p <= to; p = doc.lineAt(p).to + 1) {
+            const l = doc.lineAt(p);
+            lineDeco(p, `cm-lp-mathsrc cm-lp-mathsrc-block${l.from === from ? ' first' : ''}${l.to === to ? ' last' : ''}`);
+          }
+          // the formula being edited stays visible below its source
+          if (!onlyDefines) out.push(Decoration.widget({ widget: katexWidget(eq, tex, true, true, true), block: true, side: 1 }).range(to));
+          continue;
+        }
+        add(from, to, Decoration.replace({ widget: onlyDefines ? defsWidget(eq.defines.get(sp.from)!, true) : katexWidget(eq, tex, true, true), block: true }));
+      } else if (sp.kind === 'math') {
+        taken.push([sp.from, sp.to]);
+        if (touches(sp.from, sp.to)) { add(sp.from, sp.to, Decoration.mark({ class: 'cm-lp-mathsrc' })); continue; }
+        const tex = eq.tex.get(sp.from) ?? mathSrc(doc, sp);
+        const onlyDefines = eq.defines.has(sp.from) && !tex.trim();
+        add(sp.from, sp.to, Decoration.replace({ widget: onlyDefines ? defsWidget(eq.defines.get(sp.from)!, false) : katexWidget(eq, tex, !!sp.display) }));
+      }
+    }
+
+    // \eqref{label} / \ref{label} in the text: the equation's number
+    const inCode = (from: number, to: number) => s.spans.some((sp) => from < sp.to && to > sp.from);
+    for (const r of textRefs(doc.sliceString(s.bodyStart))) {
+      const from = r.from + s.bodyStart, to = r.to + s.bodyStart;
+      if (inCode(from, to)) continue;
+      taken.push([from, to]);
+      if (touches(from, to)) { add(from, to, Decoration.mark({ class: 'cm-lp-linksrc eqref' })); continue; }
+      const text = refText(r.kind, r.name, eq.labels);
+      add(from, to, Decoration.replace({ widget: chip(`e:${from}:${text}`, `eqref${text == null ? ' missing' : ''}`, text ?? '(??)', { label: r.name }) }));
+    }
+
+    // [[links]], ![[embeds]], [@citations], images
+    const groups = new Map<number, ScanLink[]>();
+    for (const l of s.links) {
+      if (l.kind === 'cite') { (groups.get(l.from) || groups.set(l.from, []).get(l.from)!).push(l); continue; }
+      taken.push([l.from, l.to]);
+      if (l.kind === 'image') {
+        if (touches(l.from, l.to)) continue;
+        const src = imageSrc(l.target);
+        add(l.from, l.to, Decoration.replace({ widget: new HtmlWidget(`img:${src}:${l.width}`, (el) => {
+          const img = document.createElement('img');
+          img.src = src; img.alt = l.alias; img.loading = 'lazy';
+          if (l.width) img.width = l.width;
+          img.onerror = () => { el.classList.add('broken'); el.textContent = `Image not found: ${l.target}`; };
+          el.appendChild(img);
+        }, { cls: 'cm-lp-image' }) }));
+        continue;
+      }
+      const path = deps.resolveNote(l.target);
+      const cls = `${l.kind === 'embed' ? 'embed' : 'wikilink'}${path === null && l.target ? ' unresolved' : ''}`;
+      if (touches(l.from, l.to)) { add(l.from, l.to, Decoration.mark({ class: `cm-lp-linksrc ${cls}` })); continue; }
+      const label = (l.kind === 'embed' ? '↪ ' : '') + (l.alias || (l.target ? l.target + (l.heading ? ` › ${l.heading}` : '') : `› ${l.heading}`));
+      add(l.from, l.to, Decoration.replace({ widget: chip(`n:${l.from}:${label}:${cls}`, cls, label, { note: l.target, heading: l.heading, path }) }));
+    }
+    for (const [from, ls] of groups) {
+      const to = ls[0].to;
+      taken.push([from, to]);
+      const missing = ls.some((l) => !deps.citeInfo(l.target));
+      const trashed = ls.some((l) => deps.citeInfo(l.target)?.trashed);
+      const keys = ls.map((l) => l.target).join(';');
+      const pages = ls.map((l) => l.page ?? '').join(';');
+      const atts = ls.map((l) => attachmentOf(l.locator) ?? '').join(';');
+      if (touches(from, to)) { add(from, to, Decoration.mark({ class: `cm-lp-citesrc${missing ? ' missing' : ''}`, attributes: { 'data-keys': keys, 'data-pages': pages, 'data-atts': atts } })); continue; }
+      const label = `(${ls.map((l) => citeLabel({ key: l.target, prefix: l.prefix, suppress: l.suppress_author, locator: l.locator }, deps.citeInfo(l.target))).join('; ')})`;
+      add(from, to, Decoration.replace({ widget: chip(`c:${from}:${label}:${missing}:${trashed}`, `cite${missing ? ' missing' : ''}${trashed ? ' trashed' : ''}`, label, { keys, pages, atts }) }));
+    }
+    for (const t of s.tags) add(t.from, t.to, Decoration.mark({ class: 'cm-lp-tag' }));
+
+    // CodeMirror syntax tree: headings, emphasis, quotes, callouts, tasks, rules, tables, code
+    const tree = syntaxTree(state);
+    tree.iterate({
+      from: s.bodyStart,
+      enter: (node) => {
+        const name = node.name;
+        if (/^ATXHeading[1-6]$/.test(name)) {
+          lineDeco(node.from, `cm-lp-h cm-lp-h${name.slice(-1)}`);
+          if (!lineActive(node.from)) {
+            const mark = node.node.getChild('HeaderMark');
+            if (mark && mark.from === node.from) add(mark.from, Math.min(mark.to + 1, node.to), hide);
+          }
+          return;
+        }
+        if (name === 'Emphasis' || name === 'StrongEmphasis' || name === 'Strikethrough' || name === 'InlineCode') {
+          if (overlapsTaken(node.from, node.to) || touches(node.from, node.to)) return name === 'InlineCode' ? false : undefined;
+          const markName = name === 'Strikethrough' ? 'StrikethroughMark' : name === 'InlineCode' ? 'CodeMark' : 'EmphasisMark';
+          for (const m of node.node.getChildren(markName)) add(m.from, m.to, hide);
+          return name === 'InlineCode' ? false : undefined;
+        }
+        if (name === 'Link') {
+          if (overlapsTaken(node.from, node.to)) return false;
+          const url = node.node.getChild('URL');
+          if (!url) return false;   // [text] without a destination: leave as typed
+          add(node.from, node.to, Decoration.mark({ class: 'cm-lp-link', attributes: { 'data-href': doc.sliceString(url.from, url.to) } }));
+          if (touches(node.from, node.to)) return false;
+          const marks = node.node.getChildren('LinkMark');
+          // hide "[" and "](url "title")"
+          if (marks[0]) add(marks[0].from, marks[0].to, hide);
+          if (marks[1]) add(marks[1].from, node.to, hide);
+          return false;
+        }
+        if (name === 'Image') return false;
+        if (name === 'Escape') {
+          if (!touches(node.from, node.to) && !overlapsTaken(node.from, node.to)) add(node.from, node.from + 1, hide);
+          return false;
+        }
+        if (name === 'ListMark') {
+          const item = node.node.parent;
+          if (!item || item.parent?.name !== 'BulletList' || lineActive(node.from)) return false;
+          if (item.getChild('Task')) add(node.from, Math.min(node.to + 1, doc.lineAt(node.from).to), hide);   // the checkbox is enough
+          else add(node.from, node.to, Decoration.replace({ widget: bullet }));
+          return false;
+        }
+        if (name === 'HorizontalRule') {
+          if (!lineActive(node.from)) add(node.from, node.to, Decoration.replace({ widget: new HtmlWidget('hr', () => {}, { cls: 'cm-lp-hr' }) }));
+          return false;
+        }
+        if (name === 'Blockquote') {
+          const first = doc.lineAt(node.from);
+          const m = /^\s*>\s*\[!([A-Za-z]+)\]([+-]?)[ \t]*(.*)$/.exec(first.text);
+          const type = m ? (CALLOUT_TYPES.includes(m[1].toLowerCase()) ? m[1].toLowerCase() : 'note') : null;
+          for (let p = node.from; p <= node.to; p = doc.lineAt(p).to + 1) {
+            const line = doc.lineAt(p);
+            lineDeco(p, type ? `cm-lp-callout cm-lp-callout-${type}${line.from === first.from ? ' cm-lp-callout-head' : ''}` : 'cm-lp-quote');
+            if (!lineActive(p)) {
+              const qm = /^(\s*>[ \t]?)/.exec(line.text);
+              if (qm) add(line.from, line.from + qm[1].length, hide);
+            }
+            if (line.to >= node.to) break;
+          }
+          if (m && !lineActive(first.from)) {
+            const start = first.from + first.text.indexOf('[!');
+            const end = start + m[1].length + 3 + m[2].length;
+            const title = m[3] ? '' : m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
+            add(start, Math.min(end + (m[3] ? 1 : 0), first.to), Decoration.replace({ widget: new HtmlWidget(`co:${type}:${title}`, (el) => { el.textContent = title; }, { cls: `cm-lp-callout-icon ${type}` }) }));
+          }
+          return undefined;
+        }
+        if (name === 'TaskMarker') {
+          if (!lineActive(node.from)) {
+            const checked = /x/i.test(doc.sliceString(node.from, node.to));
+            add(node.from, node.to, Decoration.replace({ widget: new CheckboxWidget(checked, node.from) }));
+          }
+          return false;
+        }
+        if (name === 'Table') {
+          const from = doc.lineAt(node.from).from, to = doc.lineAt(node.to).to;
+          if (blockActive(from, to) || overlapsTaken(from, to)) { for (let p = from; p <= to; p = doc.lineAt(p).to + 1) lineDeco(p, 'cm-lp-tablesrc'); return false; }
+          const src = doc.sliceString(from, to);
+          add(from, to, Decoration.replace({ widget: new HtmlWidget(`t:${src}`, (el) => {
+            const r = deps.renderer();
+            el.innerHTML = r ? r.render(src) : '';
+          }, { block: true, cls: 'cm-lp-table' }), block: true }));
+          return false;
+        }
+        if (name === 'FencedCode') {
+          const from = doc.lineAt(node.from).from, to = doc.lineAt(node.to).to;
+          const info = node.node.getChild('CodeInfo');
+          const lang = info ? doc.sliceString(info.from, info.to).trim().toLowerCase() : '';
+          if (lang === 'mermaid' && !blockActive(from, to)) {
+            const textNode = node.node.getChild('CodeText');
+            const code = textNode ? doc.sliceString(textNode.from, textNode.to) : '';
+            add(from, to, Decoration.replace({ widget: new HtmlWidget(`mm:${code}:${document.documentElement.dataset.theme}`, (el) => deps.mermaid(el, code), { block: true, cls: 'cm-lp-mermaid' }), block: true }));
+            return false;
+          }
+          for (let p = from; p <= to; p = doc.lineAt(p).to + 1) {
+            const l = doc.lineAt(p);
+            lineDeco(p, `cm-lp-code${l.from === from ? ' cm-lp-code-first' : ''}${l.to === to ? ' cm-lp-code-last' : ''}`);
+            if (l.to >= to) break;
+          }
+          return false;
+        }
+        return undefined;
+      },
+    });
+    return Decoration.set(out, true);
+  }
+
+  const field = StateField.define<DecorationSet>({
+    create: (state) => build(state),
+    update(deco, tr) {
+      if (tr.docChanged || tr.selection || tr.effects.some((e) => e.is(refresh) || e.is(setFocus))
+          || syntaxTree(tr.startState) !== syntaxTree(tr.state)) return build(tr.state);
+      return deco;
+    },
+    provide: (f) => EditorView.decorations.from(f),
+  });
+
+  /** Put the cursor where a rendered formula was clicked (mathClick.js), instead of at its edge. */
+  function clickIntoMath(e: MouseEvent, view: EditorViewT, w: HTMLElement): boolean {
+    const html = w.querySelector('.katex-html');
+    if (!html) return false;
+    let start: number | null;
+    try { start = view.posAtDOM(w); } catch { return false; }
+    if (w.classList.contains('cm-lp-mathpreview')) start = null;
+    const s = scanOf(view.state);
+    const sp = s.spans.find((x) => (x.kind === 'math' && start != null && x.from === start)
+      || (x.kind === 'mathblock' && !x.open && (start != null ? view.state.doc.lineAt(x.from).from === start
+        : view.state.selection.main.head >= x.from && view.state.selection.main.head <= x.to)));
+    if (!sp) return false;
+    const doc = view.state.doc;
+    let texFrom: number, tex: string;
+    if (sp.kind === 'math') {
+      const d = sp.display ? 2 : 1;
+      texFrom = sp.from + d; tex = doc.sliceString(texFrom, sp.to - d);
+    } else {
+      const from = doc.lineAt(sp.from).from, to = doc.lineAt(sp.to).to;
+      const raw = doc.sliceString(from, to);
+      const a = raw.indexOf('$$') + 2, b = raw.lastIndexOf('$$');
+      texFrom = from + a; tex = raw.slice(a, b > a ? b : raw.length);
+    }
+    // the characters KaTeX drew (not the number column), and which one was clicked
+    const nodes: Text_[] = [];
+    const walk = document.createTreeWalker(html, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => (n.parentElement!.closest('.katex-tag, .eq-ghost') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    });
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) nodes.push(n as Text_);
+    const drawn: string[] = [], owner: number[] = [];
+    nodes.forEach((n, k) => { for (const ch of n.data) { if (/\S/.test(ch) && ch !== '\u200b') { drawn.push(ch); owner.push(k); } } });
+    let pos: number;
+    const caret = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+    const at = caret ? nodes.indexOf(caret.startContainer as Text_) : -1;
+    if (caret && at >= 0) {
+      const before = drawn.filter((_, i) => owner[i] < at).length;
+      const inNode = nodes[at].data.slice(0, caret.startOffset).replace(/\s|\u200b/g, '').length;
+      const idx = Math.min(drawn.length - 1, before + Math.max(0, inNode - 1));
+      const after = inNode > 0 && caret.startOffset >= nodes[at].data.length;
+      pos = texFrom + clickOffset(tex, drawn, idx, after || inNode > 1);
+    } else if ((e.target as Element).closest?.('.katex-tag')) {
+      const t = tex.search(/\\tag\b/);
+      pos = texFrom + (t >= 0 ? t : tex.length);
+    } else {
+      // between symbols: the nearest one by position
+      const r = html.getBoundingClientRect();
+      const frac = r.width ? Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) : 0;
+      pos = texFrom + (drawn.length ? clickOffset(tex, drawn, Math.round(frac * (drawn.length - 1)), frac > 0.5) : 0);
+    }
+    e.preventDefault();
+    view.dispatch({ selection: { anchor: pos }, effects: setFocus.of(true), scrollIntoView: true, userEvent: 'select.pointer' });
+    view.focus();
+    return true;
+  }
+
+  const clicks = EditorView.domEventHandlers({
+    mousedown(e, view) {
+      const target = e.target as Element;
+      const mw = e.button === 0 && !e.shiftKey && !e.metaKey && !e.ctrlKey && target.closest?.<HTMLElement>('.cm-lp-math, .cm-lp-mathblock');
+      if (mw && clickIntoMath(e, view, mw)) return true;
+      const ref = target.closest?.<HTMLElement>('.cm-lp-chip.eqref');
+      if (ref && e.button === 0 && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        const label = ref.dataset.label || '';
+        const s = scanOf(view.state);
+        const sp = s.spans.find((x) => (x.kind === 'mathblock' || (x.kind === 'math' && x.display))
+          && new RegExp(`\\\\label\\s*\\{\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\}`).test(view.state.doc.sliceString(x.from, x.to)));
+        if (sp) view.dispatch({ effects: EditorView.scrollIntoView(sp.from, { y: 'center' }) });
+        return true;
+      }
+      const c = target.closest?.<HTMLElement>('.cm-lp-chip.wikilink, .cm-lp-chip.embed');
+      if (c && e.button === 0) {
+        e.preventDefault();
+        deps.openNote(c.dataset.note || '', c.dataset.heading || '');
+        return true;
+      }
+      const cite = target.closest?.<HTMLElement>('.cm-lp-chip.cite, .cm-lp-citesrc');
+      if (cite && (e.metaKey || e.ctrlKey) && e.button === 0) {
+        const keys = (cite.dataset.keys || '').split(';');
+        const pages = (cite.dataset.pages || '').split(';');
+        const atts = (cite.dataset.atts || '').split(';');
+        e.preventDefault();
+        let spot: CiteTarget | null = null;   // the quote or snapshot the citation belongs to (citeTarget.js)
+        try { spot = citeTargetInText(view.state.doc.toString(), view.posAtDOM(cite)); } catch { /* not in the document */ }
+        deps.openCite?.(keys[0], pages[0] ? Number(pages[0]) : null, spot, { newTab: e.shiftKey, att: atts[0] ? Number(atts[0]) : null });   // Cmd/Ctrl+Shift: new tab
+        return true;
+      }
+      const link = target.closest?.<HTMLElement>('.cm-lp-link');
+      if (link && (e.metaKey || e.ctrlKey) && link.dataset.href) {
+        e.preventDefault();
+        window.open(link.dataset.href, '_blank', 'noopener');
+        return true;
+      }
+      return false;
+    },
+  });
+
+  const focusEvents = EditorView.domEventHandlers({
+    focus(_e, view) { if (!view.state.field(focusField)) view.dispatch({ effects: setFocus.of(true) }); return false; },
+    blur(_e, view) {
+      // a click on a widget blurs for a moment: only collapse when focus has really left
+      setTimeout(() => { if (!view.hasFocus && view.state.field(focusField)) view.dispatch({ effects: setFocus.of(false) }); }, 0);
+      return false;
+    },
+  });
+
+  return { extension: [focusField, field, clicks, focusEvents], refresh };
+}

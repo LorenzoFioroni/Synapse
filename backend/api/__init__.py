@@ -1,4 +1,5 @@
 """HTTP API (JSON). One blueprint per area; all business logic lives outside this package."""
+
 from __future__ import annotations
 
 from flask import Flask, current_app, jsonify, request
@@ -7,7 +8,7 @@ from ..services import Services
 
 
 def svc() -> Services:
-    return current_app.extensions["zclone"]
+    return current_app.extensions["synapse"]
 
 
 def body() -> dict:
@@ -27,9 +28,35 @@ def ids_from_body() -> list[str]:
 
 
 def register_blueprints(app: Flask) -> None:
-    from . import (attachments, backups, connector, devices, io, items, metadata, notes, organize, pdf_annotations,
-                   references, settings)
+    from . import (
+        attachments,
+        backups,
+        changes,
+        connector,
+        devices,
+        io,
+        items,
+        metadata,
+        notes,
+        organize,
+        pdf_annotations,
+        references,
+        settings,
+    )
 
-    for module in (items, attachments, settings, io, metadata, organize, connector, notes, references, backups,
-                   pdf_annotations, devices):
+    for module in (
+        items,
+        attachments,
+        settings,
+        io,
+        metadata,
+        organize,
+        connector,
+        notes,
+        references,
+        backups,
+        pdf_annotations,
+        devices,
+        changes,
+    ):
         app.register_blueprint(module.bp)

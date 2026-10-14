@@ -33,3 +33,15 @@ extension's options (right-click the button → Options).
 Permissions: `activeTab` + `scripting` to read the current page only when you
 click the button, `storage` for the settings, and access to `127.0.0.1` /
 `localhost` to talk to the library. Nothing is sent anywhere else.
+
+## Changing it
+
+The extension is plain JavaScript that Chrome loads as it is: there is no build, so
+**Load unpacked** works straight from the repository. `extract.js` runs inside the web page
+(each of its functions is serialised by `chrome.scripting`, so it must not use anything from
+outside itself); `popup.js` and `options.js` are the two pages.
+
+The code is typed with JSDoc comments and type-checked by TypeScript together with the web
+app: `npm run check` in `frontend/` (it uses `tsconfig.json` here and the `@types/chrome`
+package installed in `frontend/`). `tests/e2e/extension_checklist.py` loads the extension into
+Chromium and saves a test page with it.

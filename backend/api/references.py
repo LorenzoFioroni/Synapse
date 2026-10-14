@@ -1,11 +1,12 @@
 """Reference lists (the citation graph)."""
+
 from __future__ import annotations
 
 from flask import Blueprint, jsonify
 
-from ..metadata import LookupError_
-from ..references import FetchFailed
-from ..repository import NotFound
+from ..library.repository import NotFound
+from ..online.http import LookupFailed
+from ..references.sources import FetchFailed
 from . import body, error, svc
 
 bp = Blueprint("references", __name__, url_prefix="/api")
@@ -24,11 +25,11 @@ def fetch_references(item_id):
         return jsonify(svc().citations.fetch_now(item_id))
     except NotFound:
         raise
-    except FetchFailed as e:   # the services failed: try again later
+    except FetchFailed as e:  # the services failed: try again later
         return error(str(e), 502)
-    except LookupError_ as e:
+    except LookupFailed as e:
         return error(str(e), 404)
-    except Exception as e:   # network trouble
+    except Exception as e:  # network trouble
         return error(f"Could not fetch references: {e}", 502)
 
 
@@ -53,5 +54,6 @@ def citation_graph():
 @bp.get("/graph")
 def knowledge_graph():
     """Papers, the works they cite and notes, with their links (the Graph view)."""
-    from ..graph import build_graph
+    from ..references.graph import build_graph
+
     return jsonify(build_graph(svc()))

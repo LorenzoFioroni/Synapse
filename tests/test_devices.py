@@ -1,13 +1,15 @@
-"""Other devices on the network must be paired (issue #34). See backend/devices.py and backend/guard.py."""
+"""Other devices on the network must be paired. See backend/access/devices.py and backend/access/guard.py."""
+
 import sqlite3
 import tarfile
 
 import pytest
 
-from backend import create_app, devices as devmod
+from backend import create_app
+from backend.access import devices as devmod
 from backend.config import Config
 
-IPAD = "192.0.2.10"          # TEST-NET: never one of this computer's own addresses
+IPAD = "192.0.2.10"  # TEST-NET: never one of this computer's own addresses
 LAN_HOST = "192.168.1.5:8000"
 REMOTE = {"REMOTE_ADDR": IPAD}
 APP = {"Host": LAN_HOST, "Origin": f"http://{LAN_HOST}"}
@@ -49,8 +51,15 @@ def pair(mac, ipad, name="iPad"):
 
 
 def test_unpaired_device_gets_nothing(ipad):
-    for path in ("/api/items", "/api/settings", "/api/notes/overview", "/api/devices", "/viewer.html",
-                 "/js/main.js", "/api/attachments/x/file"):
+    for path in (
+        "/api/items",
+        "/api/settings",
+        "/api/notes/overview",
+        "/api/devices",
+        "/viewer.html",
+        "/js/main.js",
+        "/api/attachments/x/file",
+    ):
         r = remote(ipad, "GET", path)
         assert r.status_code == 401, path
     r = remote(ipad, "GET", "/")
@@ -73,7 +82,8 @@ def test_this_computer_needs_no_pairing(mac):
 
 
 def test_own_lan_address_counts_as_this_computer(mac, monkeypatch):
-    from backend import lan
+    from backend.access import lan
+
     monkeypatch.setattr(lan, "own_addresses", lambda: ["192.168.1.5"])
     r = mac.get("/api/items", headers={"Host": LAN_HOST}, environ_base={"REMOTE_ADDR": "192.168.1.5"})
     assert r.status_code == 200
@@ -99,7 +109,7 @@ def test_code_is_single_use_and_expires(lan_app, mac, ipad):
     r = remote(other, "POST", "/api/devices/pair", json={"code": code})
     assert r.status_code == 401
     # expiry
-    store = lan_app.extensions["zclone"].devices
+    store = lan_app.extensions["synapse"].devices
     t = [1000.0]
     store.clock = lambda: t[0]
     code2, _ = store.new_pairing_code()
@@ -131,16 +141,19 @@ def test_pairing_links_carry_code_in_fragment_and_qr(mac):
     links = mac.post("/api/devices/pairing", headers={"Host": "127.0.0.1:8000"}).get_json()["links"]
     for link in links:
         assert "/pair#code=" in link["url"] and ":8000/" in link["url"]
-        assert link["qr"].startswith("<svg") and "viewBox=" in link["qr"]   # viewBox: scales with the CSS size
+        assert link["qr"].startswith("<svg") and "viewBox=" in link["qr"]  # viewBox: scales with the CSS size
 
 
 def test_pairing_without_segno_still_gives_links(mac, monkeypatch):
     import builtins
+
     real_import = builtins.__import__
+
     def no_segno(name, *a, **k):
         if name == "segno":
             raise ImportError(name)
         return real_import(name, *a, **k)
+
     monkeypatch.setattr(builtins, "__import__", no_segno)
     res = mac.post("/api/devices/pairing", headers={"Host": "127.0.0.1:8000"}).get_json()
     assert res["links"] and all(l["qr"] is None and "#code=" in l["url"] for l in res["links"])
@@ -164,7 +177,7 @@ def test_sign_out_this_device(mac, ipad):
 def test_rename(mac, ipad):
     pair(mac, ipad, name="")
     dev = mac.get("/api/devices").get_json()["devices"][0]
-    assert dev["name"] == "Device"   # the test client sends no user agent
+    assert dev["name"] == "Device"  # the test client sends no user agent
     r = mac.patch(f"/api/devices/{dev['id']}", json={"name": "Reading iPad"})
     assert r.get_json()["device"]["name"] == "Reading iPad"
     assert mac.patch(f"/api/devices/{dev['id']}", json={"name": "  "}).status_code == 400
@@ -180,17 +193,23 @@ def test_paired_device_still_needs_the_apps_origin(mac, ipad):
     # no Origin at all from another device: only a same-origin fetch
     bare = ipad.open("/api/items", method="POST", json={"title": "x"}, headers={"Host": LAN_HOST}, environ_base=REMOTE)
     assert bare.status_code == 403
-    same = ipad.open("/api/items", method="POST", json={"title": "x"}, environ_base=REMOTE,
-                     headers={"Host": LAN_HOST, "Sec-Fetch-Site": "same-origin"})
+    same = ipad.open(
+        "/api/items",
+        method="POST",
+        json={"title": "x"},
+        environ_base=REMOTE,
+        headers={"Host": LAN_HOST, "Sec-Fetch-Site": "same-origin"},
+    )
     assert same.status_code in (200, 201)
 
 
 def test_lan_mode_hosts(mac, ipad, monkeypatch):
-    from backend import lan
+    from backend.access import lan
+
     monkeypatch.setattr(lan, "local_hostname", lambda: "lorenzos-mac.local")
     for host in ("10.0.0.7:8000", "lorenzos-mac.local:8000", "[fe80::1]:8000"):
         r = ipad.get("/api/settings", headers={"Host": host}, environ_base=REMOTE)
-        assert r.status_code == 401, host   # past the Host check; only the pairing is missing
+        assert r.status_code == 401, host  # past the Host check; only the pairing is missing
         assert mac.get("/api/settings", headers={"Host": host}).status_code == 200, host
     # a DNS name that isn't this computer's is still refused (rebinding)
     assert ipad.get("/api/settings", headers={"Host": "evil.example:8000"}, environ_base=REMOTE).status_code == 403
@@ -209,7 +228,7 @@ def test_without_lan_mode_remote_needs_pairing_too(tmp_path):
 def test_tokens_are_stored_hashed(lan_app, mac, ipad):
     _, r = pair(mac, ipad)
     token = r.headers.get("Set-Cookie").split(";")[0].split("=", 1)[1]
-    store = lan_app.extensions["zclone"].devices
+    store = lan_app.extensions["synapse"].devices
     raw = store.path.read_bytes()
     assert token.encode() not in raw
     rows = sqlite3.connect(store.path).execute("SELECT token_hash FROM devices").fetchall()
@@ -224,7 +243,7 @@ def test_api_never_shows_token_hashes(mac, ipad):
 
 def test_backups_leave_devices_out(lan_app, mac, ipad):
     pair(mac, ipad)
-    svc = lan_app.extensions["zclone"]
+    svc = lan_app.extensions["synapse"]
     entry = svc.backups.create("manual")
     path = svc.backups.dir / entry["name"]
     with tarfile.open(path) as tar:
@@ -233,20 +252,23 @@ def test_backups_leave_devices_out(lan_app, mac, ipad):
 
 def test_cookie_refreshed_while_in_use(lan_app, mac, ipad):
     pair(mac, ipad)
-    store = lan_app.extensions["zclone"].devices
+    store = lan_app.extensions["synapse"].devices
     t = [store.clock() + devmod.TOUCH_EVERY + 5]
     store.clock = lambda: t[0]
     r = remote(ipad, "GET", "/api/items")
     assert r.status_code == 200 and devmod.COOKIE in (r.headers.get("Set-Cookie") or "")
-    r = remote(ipad, "GET", "/api/items")   # within a minute: no new cookie
+    r = remote(ipad, "GET", "/api/items")  # within a minute: no new cookie
     assert devmod.COOKIE not in (r.headers.get("Set-Cookie") or "")
 
 
-@pytest.mark.parametrize("ua,name", [
-    ("Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)", "iPad"),
-    ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", "iPhone"),
-    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "Mac"),
-    ("", "Device"),
-])
+@pytest.mark.parametrize(
+    "ua,name",
+    [
+        ("Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)", "iPad"),
+        ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", "iPhone"),
+        ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "Mac"),
+        ("", "Device"),
+    ],
+)
 def test_guess_name(ua, name):
     assert devmod.guess_name(ua) == name

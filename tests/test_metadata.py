@@ -1,14 +1,17 @@
 import pytest
 
-from backend import metadata
+from backend.online import http, metadata
 
 
 def test_classify_identifier():
-    assert metadata.classify_identifier("https://doi.org/10.1103/PhysRevX.13.011033") == ("doi", "10.1103/PhysRevX.13.011033")
+    assert metadata.classify_identifier("https://doi.org/10.1103/PhysRevX.13.011033") == (
+        "doi",
+        "10.1103/PhysRevX.13.011033",
+    )
     assert metadata.classify_identifier("arXiv:2205.03415v2") == ("arxiv", "2205.03415")
     assert metadata.classify_identifier("https://arxiv.org/abs/2205.03415") == ("arxiv", "2205.03415")
     assert metadata.classify_identifier("978-0-262-03384-8") == ("isbn", "9780262033848")
-    with pytest.raises(metadata.LookupError_):
+    with pytest.raises(metadata.LookupFailed):
         metadata.classify_identifier("hello world")
 
 
@@ -31,12 +34,22 @@ class FakeResp:
             raise RuntimeError(self.status_code)
 
 
-CROSSREF = {"message": {
-    "type": "journal-article", "title": ["Superdiffusive Energy Transport"], "DOI": "10.1103/PhysRevX.13.011033",
-    "author": [{"family": "Ljubotina", "given": "Marko"}, {"family": "Papic", "given": "Zlatko"}],
-    "container-title": ["Physical Review X"], "published-print": {"date-parts": [[2023, 2]]},
-    "volume": "13", "issue": "1", "page": "011033", "abstract": "<jats:p>We study transport.</jats:p>",
-    "ISSN": ["2160-3308"], "license": [{"URL": "https://creativecommons.org/licenses/by/4.0/"}]}}
+CROSSREF = {
+    "message": {
+        "type": "journal-article",
+        "title": ["Superdiffusive Energy Transport"],
+        "DOI": "10.1103/PhysRevX.13.011033",
+        "author": [{"family": "Ljubotina", "given": "Marko"}, {"family": "Papic", "given": "Zlatko"}],
+        "container-title": ["Physical Review X"],
+        "published-print": {"date-parts": [[2023, 2]]},
+        "volume": "13",
+        "issue": "1",
+        "page": "011033",
+        "abstract": "<jats:p>We study transport.</jats:p>",
+        "ISSN": ["2160-3308"],
+        "license": [{"URL": "https://creativecommons.org/licenses/by/4.0/"}],
+    }
+}
 
 
 def test_lookup_doi(monkeypatch):
@@ -44,6 +57,7 @@ def test_lookup_doi(monkeypatch):
         if "crossref" in url:
             return FakeResp(CROSSREF)
         return FakeResp({}, 404)  # OpenAlex unavailable
+
     monkeypatch.setattr(metadata.requests, "get", fake_get)
     item = metadata.lookup(doi="https://doi.org/10.1103/PhysRevX.13.011033", known=[("Papić", "Zlatko")])
     assert item["title"] == "Superdiffusive Energy Transport"
@@ -53,8 +67,9 @@ def test_lookup_doi(monkeypatch):
 
 
 def test_api_lookup_and_from_identifier(client, monkeypatch):
-    monkeypatch.setattr(metadata.requests, "get",
-                        lambda url, **kw: FakeResp(CROSSREF) if "crossref" in url else FakeResp({}, 404))
+    monkeypatch.setattr(
+        metadata.requests, "get", lambda url, **kw: FakeResp(CROSSREF) if "crossref" in url else FakeResp({}, 404)
+    )
     r = client.post("/api/items/from_identifier", json={"identifier": "10.1103/PhysRevX.13.011033"})
     assert r.status_code == 201
     item = r.get_json()
@@ -69,15 +84,18 @@ def test_api_lookup_and_from_identifier(client, monkeypatch):
 
 # ---------------------------------------------------------------- arXiv (bugs.md #1)
 def atom(entries):
-    body = "".join(f"""
+    body = "".join(
+        f"""
   <entry>
-    <id>http://arxiv.org/abs/{e['id']}</id>
-    <published>{e.get('published', '2022-05-06T17:59:59Z')}</published>
-    <title>{e['title']}</title>
-    <summary>  {e.get('summary', 'An abstract.')} </summary>
+    <id>http://arxiv.org/abs/{e["id"]}</id>
+    <published>{e.get("published", "2022-05-06T17:59:59Z")}</published>
+    <title>{e["title"]}</title>
+    <summary>  {e.get("summary", "An abstract.")} </summary>
     <author><name>Jian Cui</name></author><author><name>J. Ignacio Cirac</name></author>
-    {f"<arxiv:doi>{e['doi']}</arxiv:doi>" if e.get('doi') else ''}
-  </entry>""" for e in entries)
+    {f"<arxiv:doi>{e['doi']}</arxiv:doi>" if e.get("doi") else ""}
+  </entry>"""
+        for e in entries
+    )
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
   <title>ArXiv Query</title>{body}
@@ -90,8 +108,15 @@ class XmlResp(FakeResp):
         self.content = content
 
 
-PREPRINT = {"id": "2205.03415v2", "title": "Variational Matrix Product Operators for the Steady State\n  of Dissipative Quantum Systems"}
-CROSSREF_UNRELATED = {"message": {"items": [{"title": ["Steady states of something else entirely"], "DOI": "10.1/x", "type": "journal-article"}]}}
+PREPRINT = {
+    "id": "2205.03415v2",
+    "title": "Variational Matrix Product Operators for the Steady State\n  of Dissipative Quantum Systems",
+}
+CROSSREF_UNRELATED = {
+    "message": {
+        "items": [{"title": ["Steady states of something else entirely"], "DOI": "10.1/x", "type": "journal-article"}]
+    }
+}
 
 
 def fake_net(calls, arxiv_feed=None, crossref=CROSSREF_UNRELATED):
@@ -102,6 +127,7 @@ def fake_net(calls, arxiv_feed=None, crossref=CROSSREF_UNRELATED):
         if "crossref" in url:
             return FakeResp(crossref)
         return FakeResp({}, 404)
+
     return get
 
 
@@ -110,14 +136,6 @@ def test_title_similarity_tolerates_small_differences():
     assert s("Superdiffusive energy transport", "The superdiffusive energy transport") > 0.85
     assert s("Variational MPO for steady states", "Variational M.P.O. for steady-states") > 0.95
     assert s("Variational MPO for steady states", "Quantum chemistry of proteins") < 0.6
-
-
-def test_arxiv_id_of_items():
-    assert metadata.arxiv_id_of({"archive_id": "arXiv:2205.03415"}) == "2205.03415"
-    assert metadata.arxiv_id_of({"url": "https://arxiv.org/abs/2205.03415v3"}) == "2205.03415"
-    assert metadata.arxiv_id_of({"doi": "10.48550/arXiv.2205.03415"}) == "2205.03415"
-    assert metadata.arxiv_id_of({"extra": "arXiv: cond-mat/0601001"}) == "cond-mat/0601001"
-    assert metadata.arxiv_id_of({"title": "nothing", "doi": "10.1103/x"}) is None
 
 
 def test_arxiv_item_is_looked_up_on_arxiv_not_crossref(monkeypatch):
@@ -142,7 +160,9 @@ def test_arxiv_doi_goes_to_arxiv(monkeypatch):
 def test_title_falls_back_to_arxiv_search(monkeypatch):
     calls = []
     monkeypatch.setattr(metadata.requests, "get", fake_net(calls))
-    item = metadata.lookup(title="Variational matrix product operators for the steady state of dissipative quantum systems")
+    item = metadata.lookup(
+        title="Variational matrix product operators for the steady state of dissipative quantum systems"
+    )
     assert item["archive_id"] == "arXiv:2205.03415"
     assert [u for u, _ in calls][:2] == ["https://api.crossref.org/works", metadata.ARXIV_API]
     assert calls[1][1]["search_query"].startswith("ti:(Variational AND matrix")
@@ -150,7 +170,7 @@ def test_title_falls_back_to_arxiv_search(monkeypatch):
 
 def test_no_match_anywhere_has_a_helpful_message(monkeypatch):
     monkeypatch.setattr(metadata.requests, "get", fake_net([], arxiv_feed=[{"id": "9999.99999", "title": "Unrelated"}]))
-    with pytest.raises(metadata.LookupError_, match="Crossref or arXiv"):
+    with pytest.raises(metadata.LookupFailed, match="Crossref or arXiv"):
         metadata.lookup(title="Variational matrix product operators for the steady state")
 
 
@@ -173,18 +193,39 @@ def test_api_lookup_for_arxiv_item(client, svc, monkeypatch):
 def test_doi_lookup_asks_crossref_and_openalex_side_by_side(monkeypatch):
     import threading
     import time as _t
+
     inside = []
-    both = threading.Barrier(2, timeout=3)   # fails if the two requests are not in flight together
+    both = threading.Barrier(2, timeout=3)  # fails if the two requests are not in flight together
 
     def fake_get(url, **k):
         inside.append(url)
         both.wait()
         if "openalex" in url:
-            return type("R", (), {"ok": True, "json": lambda self: {"authorships": [
-                {"author": {"display_name": "Jian Cui"}}, {"author": {"display_name": "J. Ignacio Cirac"}}]}})()
-        return type("R", (), {"status_code": 200, "raise_for_status": lambda self: None,
-                              "json": lambda self: {"message": {"title": ["T"], "DOI": "10.1/x",
-                                                                "author": [{"family": "Cui", "given": "J"}]}}})()
+            return type(
+                "R",
+                (),
+                {
+                    "ok": True,
+                    "json": lambda self: {
+                        "authorships": [
+                            {"author": {"display_name": "Jian Cui"}},
+                            {"author": {"display_name": "J. Ignacio Cirac"}},
+                        ]
+                    },
+                },
+            )()
+        return type(
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "raise_for_status": lambda self: None,
+                "json": lambda self: {
+                    "message": {"title": ["T"], "DOI": "10.1/x", "author": [{"family": "Cui", "given": "J"}]}
+                },
+            },
+        )()
+
     monkeypatch.setattr(metadata.requests, "get", fake_get)
     t0 = _t.monotonic()
     item = metadata.lookup(doi="10.1/x")
@@ -194,11 +235,23 @@ def test_doi_lookup_asks_crossref_and_openalex_side_by_side(monkeypatch):
 
 def test_arxiv_requests_are_spaced(monkeypatch):
     import time as _t
-    monkeypatch.setattr(metadata, "ARXIV_SPACING", 0.3)
+
+    monkeypatch.setattr(http, "ARXIV_SPACING", 0.3)
     stamps = []
-    monkeypatch.setattr(metadata.requests, "get", lambda *a, **k: stamps.append(_t.monotonic()) or
-                        type("R", (), {"raise_for_status": lambda self: None, "content": b"<feed xmlns='http://www.w3.org/2005/Atom'/>"})())
+    monkeypatch.setattr(
+        metadata.requests,
+        "get",
+        lambda *a, **k: (
+            stamps.append(_t.monotonic())
+            or type(
+                "R",
+                (),
+                {"raise_for_status": lambda self: None, "content": b"<feed xmlns='http://www.w3.org/2005/Atom'/>"},
+            )()
+        ),
+    )
     from concurrent.futures import ThreadPoolExecutor
+
     with ThreadPoolExecutor(3) as ex:
         list(ex.map(lambda _: metadata._arxiv_entries({"id_list": "1"}), range(3)))
     stamps.sort()

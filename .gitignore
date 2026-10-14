@@ -7,6 +7,8 @@ virtual_env/
 __pycache__/
 *.pyc
 .pytest_cache/
+.coverage
+htmlcov/
 .DS_Store
 server.log
 
@@ -18,3 +20,7 @@ tools/*/node_modules/
 
 # Personal scratch files
 Claude outputs/
+
+# Frontend build output and tools (cd frontend && npm ci && npm run build)
+frontend/js/
+frontend/node_modules/

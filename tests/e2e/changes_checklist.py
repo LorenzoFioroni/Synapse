@@ -1,4 +1,4 @@
-"""Browser checklist for the change feed (issue #34): with the computer and an iPad open at the same
+"""Browser checklist for the change feed: with the computer and an iPad open at the same
 time, each shows what the other changed without a reload — items, notes and PDF annotations — as
 well as changes made outside the app; typing is never interrupted; an idle page does not keep
 refreshing itself.
@@ -7,9 +7,17 @@ refreshing itself.
 
 Starts its own server on port 8784 with a throw-away data folder; your library is not touched.
 """
-import asyncio, os, shutil, sqlite3, subprocess, sys, tempfile, time
+
+import asyncio
+import os
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlencode
+
 import requests
 from playwright.async_api import async_playwright
 
@@ -56,8 +64,12 @@ async def as_page(page, js):
 
 async def main():
     guard(PORT)
-    srv = subprocess.Popen([sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
-                           cwd=APP, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    srv = subprocess.Popen(
+        [sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
+        cwd=APP,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     try:
         for _ in range(100):
             try:
@@ -68,7 +80,9 @@ async def main():
         first = requests.post(f"{BASE}/api/items", json={"title": "First paper", "year": 2019}).json()
         second = requests.post(f"{BASE}/api/items", json={"title": "Second paper", "year": 2021}).json()
         with open(PDF, "rb") as fh:
-            att = requests.post(f"{BASE}/api/items/{first['id']}/attachments", files={"file": ("p.pdf", fh, "application/pdf")}).json()["attachments"][0]
+            att = requests.post(
+                f"{BASE}/api/items/{first['id']}/attachments", files={"file": ("p.pdf", fh, "application/pdf")}
+            ).json()["attachments"][0]
 
         async with async_playwright() as p:
             browser = await p.chromium.launch()
@@ -81,7 +95,7 @@ async def main():
                 pg.on("pageerror", lambda e, w=who: errors.append(f"{w}: {e}"))
                 await pg.goto(BASE)
                 await pg.wait_for_selector(".row[data-id]")
-            await mac.wait_for_timeout(1500)   # both pages have started their feed
+            await mac.wait_for_timeout(1500)  # both pages have started their feed
 
             # ---- an item added on the iPad appears on the computer ---------------------------------
             await as_page(ipad, "api.createItem({ title: 'Added on the iPad' })")
@@ -99,9 +113,15 @@ async def main():
             await as_page(mac, f"api.updateItem('{first['id']}', {{ year: 2018 }})")
             await mac.wait_for_timeout(5000)
             st1 = await mac.evaluate("window.zcChanges.state()")
-            r = requests.get(f"{BASE}/api/changes?since={st0['seq']}&epoch={st0['epoch']}", headers={"X-Synapse-Client": "someone-else"}).json()
-            check("the feed reports an edit to others but not back to the page that made it",
-                  "library" in r["changes"] and st1["pending"] == [], f"{r['changes']} / pending {st1['pending']}")
+            r = requests.get(
+                f"{BASE}/api/changes?since={st0['seq']}&epoch={st0['epoch']}",
+                headers={"X-Synapse-Client": "someone-else"},
+            ).json()
+            check(
+                "the feed reports an edit to others but not back to the page that made it",
+                "library" in r["changes"] and st1["pending"] == [],
+                f"{r['changes']} / pending {st1['pending']}",
+            )
 
             # ---- typing is not interrupted -----------------------------------------------------------------
             await mac.click(f'.row[data-id="{first["id"]}"]')
@@ -113,7 +133,11 @@ async def main():
             await mac.wait_for_timeout(6000)
             still = await mac.evaluate("""(() => { const a = document.activeElement;
                 return [a?.dataset?.field, a?.textContent]; })()""")
-            check("while the computer types in a field, a change from the iPad waits", still[0] == "title" and still[1].endswith("— draft"), str(still))
+            check(
+                "while the computer types in a field, a change from the iPad waits",
+                still[0] == "title" and still[1].endswith("— draft"),
+                str(still),
+            )
             await mac.keyboard.press("Escape")
             await mac.evaluate("document.activeElement.blur()")
             ok = await wait_for(lambda: _has(mac, "While typing"))
@@ -122,21 +146,31 @@ async def main():
             # ---- notes -------------------------------------------------------------------------------------
             await mac.click('[data-ws="notes"]')
             await mac.wait_for_selector("#notes-view:not([hidden])")
-            await as_page(ipad, "fetch('/api/notes/note', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Synapse-Client': 'ipad-notes' }, body: JSON.stringify({ path: 'From the iPad.md', create: true, text: '# From the iPad\\n' }) })")
-            ok = await wait_for(lambda: mac.evaluate("!!document.querySelector('.nt-row.note[data-path=\"From the iPad.md\"]')"))
+            await as_page(
+                ipad,
+                "fetch('/api/notes/note', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Synapse-Client': 'ipad-notes' }, body: JSON.stringify({ path: 'From the iPad.md', create: true, text: '# From the iPad\\n' }) })",
+            )
+            ok = await wait_for(
+                lambda: mac.evaluate("!!document.querySelector('.nt-row.note[data-path=\"From the iPad.md\"]')")
+            )
             check("a note written on the iPad appears in the computer's notes", ok)
             await mac.click('[data-ws="library"]')
 
             # ---- annotations in an open PDF -------------------------------------------------------------------
-            q = urlencode({"file": f"/pdfs/{att['url']}", "paper_id": first["id"], "title": first["title"], "att": att["id"]})
+            q = urlencode(
+                {"file": f"/pdfs/{att['url']}", "paper_id": first["id"], "title": first["title"], "att": att["id"]}
+            )
             v = await mac_ctx.new_page()
             v.on("pageerror", lambda e: errors.append(f"viewer: {e}"))
             await v.goto(f"{BASE}/viewer.html?{q}")
             await v.wait_for_function("document.querySelectorAll('.page-wrapper .textLayer span').length > 20")
             await v.evaluate("window.zcAnnotations.ready")
             await v.wait_for_timeout(1500)
-            requests.post(f"{BASE}/api/attachments/{att['id']}/annotations", headers={"X-Synapse-Client": "ipad-viewer"},
-                          json={"type": "box", "page": 1, "rects": [[0.1, 0.2, 0.2, 0.1]], "color": "#ff0000", "size": 2})
+            requests.post(
+                f"{BASE}/api/attachments/{att['id']}/annotations",
+                headers={"X-Synapse-Client": "ipad-viewer"},
+                json={"type": "box", "page": 1, "rects": [[0.1, 0.2, 0.2, 0.1]], "color": "#ff0000", "size": 2},
+            )
             ok = await wait_for(lambda: v.evaluate("document.querySelectorAll('.anno-layer g.anno-box').length === 1"))
             check("an annotation made on the iPad appears in the computer's open PDF", ok)
             await shot(v, "02-viewer")
@@ -151,12 +185,24 @@ async def main():
 
             # ---- idle pages stay quiet ---------------------------------------------------------------------------
             await mac.wait_for_timeout(3000)
-            n0 = await mac.evaluate("performance.getEntriesByType('resource').filter(e => e.name.includes('/api/items?')).length")
-            m0 = await ipad.evaluate("performance.getEntriesByType('resource').filter(e => e.name.includes('/api/items?')).length")
+            n0 = await mac.evaluate(
+                "performance.getEntriesByType('resource').filter(e => e.name.includes('/api/items?')).length"
+            )
+            m0 = await ipad.evaluate(
+                "performance.getEntriesByType('resource').filter(e => e.name.includes('/api/items?')).length"
+            )
             await mac.wait_for_timeout(13000)
-            n1 = await mac.evaluate("performance.getEntriesByType('resource').filter(e => e.name.includes('/api/items?')).length")
-            m1 = await ipad.evaluate("performance.getEntriesByType('resource').filter(e => e.name.includes('/api/items?')).length")
-            check("idle pages do not keep reloading the list", n1 == n0 and m1 == m0, f"mac {n1 - n0}, ipad {m1 - m0} reloads in 13 s")
+            n1 = await mac.evaluate(
+                "performance.getEntriesByType('resource').filter(e => e.name.includes('/api/items?')).length"
+            )
+            m1 = await ipad.evaluate(
+                "performance.getEntriesByType('resource').filter(e => e.name.includes('/api/items?')).length"
+            )
+            check(
+                "idle pages do not keep reloading the list",
+                n1 == n0 and m1 == m0,
+                f"mac {n1 - n0}, ipad {m1 - m0} reloads in 13 s",
+            )
 
             check("no JavaScript errors", not errors, errors[:3])
             await browser.close()

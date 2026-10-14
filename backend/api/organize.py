@@ -1,9 +1,10 @@
 """Folders, tags and smart folders."""
+
 from __future__ import annotations
 
 from flask import Blueprint, jsonify
 
-from ..organize import OrganizeError
+from ..library.organize import OrganizeError
 from . import body, error, ids_from_body, svc
 
 bp = Blueprint("organize", __name__, url_prefix="/api")

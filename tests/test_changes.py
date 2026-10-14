@@ -1,4 +1,5 @@
-"""The change feed: other windows and devices learn what changed (issue #34). See backend/changes.py."""
+"""The change feed: other windows and devices learn what changed. See backend/changes.py."""
+
 import sqlite3
 
 from backend import changes as ch
@@ -40,7 +41,7 @@ def test_seq_moves_on(client):
 
 def test_background_work_is_reported_to_everyone(client, svc):
     seq, ep = start(client, MAC)
-    svc.papers.create({"title": "Fetched in the background"})   # no request: e.g. the metadata queue
+    svc.papers.create({"title": "Fetched in the background"})  # no request: e.g. the metadata queue
     assert poll(client, MAC, seq, ep)["changes"] == ["library"]
     assert poll(client, IPAD, seq, ep)["changes"] == ["library"]
 
@@ -49,11 +50,15 @@ def test_annotations_are_their_own_kind(client, svc, tmp_path):
     item = client.post("/api/items", json={"title": "Annotated"}).get_json()
     pdf = make_pdf(tmp_path / "a.pdf", "hello")
     with open(pdf, "rb") as fh:
-        att = client.post(f"/api/items/{item['id']}/attachments", data={"file": (fh, "a.pdf")},
-                          content_type="multipart/form-data").get_json()["attachments"][0]
+        att = client.post(
+            f"/api/items/{item['id']}/attachments", data={"file": (fh, "a.pdf")}, content_type="multipart/form-data"
+        ).get_json()["attachments"][0]
     seq, ep = start(client, MAC)
-    r = client.post(f"/api/attachments/{att['id']}/annotations", headers=IPAD,
-                    json={"type": "box", "page": 1, "rects": [[0.1, 0.1, 0.2, 0.2]]})
+    r = client.post(
+        f"/api/attachments/{att['id']}/annotations",
+        headers=IPAD,
+        json={"type": "box", "page": 1, "rects": [[0.1, 0.1, 0.2, 0.2]]},
+    )
     assert r.status_code in (200, 201), r.get_json()
     assert poll(client, MAC, seq, ep)["changes"] == ["annotations"]
     ann = r.get_json()["annotation"]
@@ -72,17 +77,17 @@ def test_notes_saved_through_the_api(client):
 
 def test_writes_from_outside_the_server_are_noticed(client, svc):
     seq, ep = start(client, MAC)
-    with sqlite3.connect(svc.config.db_path) as c:   # e.g. another program on the library
+    with sqlite3.connect(svc.config.db_path) as c:  # e.g. another program on the library
         c.execute("UPDATE papers SET title = title")
         c.execute("CREATE TABLE IF NOT EXISTS outside (x)")
     r = poll(client, MAC, seq, ep)
     assert "library" in r["changes"]
-    assert poll(client, MAC, r["seq"], ep)["changes"] == []   # only once
+    assert poll(client, MAC, r["seq"], ep)["changes"] == []  # only once
 
 
 def test_note_index_changed_outside(client, svc):
     seq, ep = start(client, MAC)
-    svc.notes  # the index exists
+    assert svc.notes is not None  # the index exists
     with sqlite3.connect(svc.config.notes_index_path) as c:
         c.execute("CREATE TABLE IF NOT EXISTS outside (x)")
     assert "notes" in poll(client, MAC, seq, ep)["changes"]

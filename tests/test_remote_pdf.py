@@ -1,10 +1,11 @@
-"""PDFs of attachments stored as web links (issue #21): only the attachment's own URL, only
+"""PDFs of attachments stored as web links: only the attachment's own URL, only
 public addresses, only PDFs, and a size cap. The network and DNS are faked."""
+
 import socket
 
 import pytest
 
-from backend import remote_pdf
+from backend.online import remote_pdf
 
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"
 
@@ -34,7 +35,7 @@ class FakeResponse:
 
     def iter_content(self, n):
         for i in range(0, len(self._body), n):
-            yield self._body[i:i + n]
+            yield self._body[i : i + n]
 
     def __enter__(self):
         return self
@@ -56,7 +57,7 @@ def net(monkeypatch):
         return [(fam, socket.SOCK_STREAM, 6, "", (ip, 0))]
 
     def fake_get(url, **kw):
-        assert kw.get("allow_redirects") is False   # redirects are checked one by one
+        assert kw.get("allow_redirects") is False  # redirects are checked one by one
         calls.append(url)
         return routes.get(url, FakeResponse(404))
 
@@ -87,14 +88,15 @@ def test_follows_public_redirects(client, svc, net):
     assert calls == ["https://journal.example/a", "https://journal.example/b.pdf"]
 
 
-@pytest.mark.parametrize("host", ["router.example", "meta.example", "local.example", "v6local.example",
-                                  "mapped.example"])
+@pytest.mark.parametrize(
+    "host", ["router.example", "meta.example", "local.example", "v6local.example", "mapped.example"]
+)
 def test_local_network_is_refused(client, svc, net, host):
     _, calls = net
     att = remote_attachment(svc, f"http://{host}/admin")
     r = client.get(f"/api/attachments/{att['id']}/remote")
     assert r.status_code == 403
-    assert calls == []   # nothing was requested
+    assert calls == []  # nothing was requested
 
 
 def test_redirect_into_local_network_is_refused(client, svc, net):

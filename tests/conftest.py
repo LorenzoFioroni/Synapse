@@ -11,8 +11,9 @@ from backend.config import Config  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _no_arxiv_spacing(monkeypatch):
-    from backend import metadata
-    monkeypatch.setattr(metadata, "ARXIV_SPACING", 0)
+    from backend.online import http
+
+    monkeypatch.setattr(http, "ARXIV_SPACING", 0)
 
 
 @pytest.fixture
@@ -20,7 +21,9 @@ def app(tmp_path):
     app = create_app(Config.from_env(tmp_path / "data"), start_indexer=False)
     app.config["TESTING"] = True
     # no background reference fetching unless a test turns it on (it would outlive the test)
-    app.extensions["zclone"].settings.update({"references_auto": False, "add_fetch_references": "never", "add_find_pdf": "never"})
+    app.extensions["synapse"].settings.update(
+        {"references_auto": False, "add_fetch_references": "never", "add_find_pdf": "never"}
+    )
     return app
 
 
@@ -31,7 +34,7 @@ def client(app):
 
 @pytest.fixture
 def svc(app):
-    return app.extensions["zclone"]
+    return app.extensions["synapse"]
 
 
 def make_pdf(path: Path, text: str) -> Path:
@@ -57,3 +60,20 @@ def make_pdf(path: Path, text: str) -> Path:
     out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
     path.write_bytes(bytes(out))
     return path
+
+
+@pytest.fixture(scope="session")
+def built_frontend():
+    """frontend/js, built from frontend/src if needed (the JavaScript tests run the built code)."""
+    import shutil
+
+    from backend.frontend import BuildError, ensure_built
+
+    if not shutil.which("node"):
+        pytest.skip("Node.js not installed")
+    frontend = Path(__file__).resolve().parent.parent / "frontend"
+    try:
+        ensure_built(frontend)
+    except BuildError as e:
+        pytest.skip(f"frontend not built: {e}")
+    return frontend / "js"

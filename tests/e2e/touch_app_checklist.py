@@ -1,4 +1,4 @@
-"""Browser checklist for the library on a tablet (issue #34): the collections become a drawer on
+"""Browser checklist for the library on a tablet: the collections become a drawer on
 narrow screens, a long press opens the menus a right-click opens (items, folders, notes) and the
 cards a hover opens (citations, PDF link previews), hover-only tools are shown, the item pane can be
 resized with a finger, and the page can be added to the Home Screen.
@@ -8,9 +8,16 @@ resized with a finger, and the page can be added to the Home Screen.
 Starts its own server on port 8783 with a throw-away data folder; your library is not touched.
 Runs Chromium with the "iPad Pro 11" profiles (portrait and landscape; touch, no hover).
 """
-import asyncio, os, shutil, subprocess, sys, tempfile, time
+
+import asyncio
+import os
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlencode
+
 import requests
 from playwright.async_api import async_playwright
 
@@ -61,7 +68,9 @@ class Finger:
     async def drag(self, a, b, steps=10):
         await self.send("touchStart", [{"x": a[0], "y": a[1]}])
         for k in range(1, steps + 1):
-            await self.send("touchMove", [{"x": a[0] + (b[0] - a[0]) * k / steps, "y": a[1] + (b[1] - a[1]) * k / steps}])
+            await self.send(
+                "touchMove", [{"x": a[0] + (b[0] - a[0]) * k / steps, "y": a[1] + (b[1] - a[1]) * k / steps}]
+            )
             await asyncio.sleep(0.016)
         await self.send("touchEnd", [])
 
@@ -72,21 +81,31 @@ async def centre(page, sel):
 
 
 def setup():
-    item = requests.post(f"{BASE}/api/items", json={"authors": "Cui, Jian", "title": "Touch paper", "year": 2015}).json()
+    item = requests.post(
+        f"{BASE}/api/items", json={"authors": "Cui, Jian", "title": "Touch paper", "year": 2015}
+    ).json()
     with open(PDF, "rb") as fh:
-        att = requests.post(f"{BASE}/api/items/{item['id']}/attachments", files={"file": ("paper.pdf", fh, "application/pdf")}).json()["attachments"][0]
+        att = requests.post(
+            f"{BASE}/api/items/{item['id']}/attachments", files={"file": ("paper.pdf", fh, "application/pdf")}
+        ).json()["attachments"][0]
     for k in range(5):
         requests.post(f"{BASE}/api/items", json={"title": f"Another paper {k}", "year": 2020 + k})
     folder = requests.post(f"{BASE}/api/folders", json={"name": "Manuscript"}).json()
     key = item["citation_key"]
-    requests.post(f"{BASE}/api/notes/note", json={"title": "Reading", "text": f"# Reading\n\nAs shown in [@{key}, p. 2].\n"})
+    requests.post(
+        f"{BASE}/api/notes/note", json={"title": "Reading", "text": f"# Reading\n\nAs shown in [@{key}, p. 2].\n"}
+    )
     return item, att, folder, key
 
 
 async def main():
     guard(PORT)
-    srv = subprocess.Popen([sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
-                           cwd=APP, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    srv = subprocess.Popen(
+        [sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
+        cwd=APP,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     try:
         for _ in range(100):
             try:
@@ -102,9 +121,14 @@ async def main():
             # ---- Home Screen ------------------------------------------------------------------
             r = requests.get(BASE + "/manifest.webmanifest")
             man = r.json() if r.ok else {}
-            check("the manifest is served as a web app manifest", r.ok and "manifest+json" in r.headers.get("Content-Type", "")
-                  and man.get("name") == "Synapse", r.headers.get("Content-Type"))
-            icons = [requests.get(BASE + i["src"]).status_code for i in man.get("icons", [])] + [requests.get(BASE + "/assets/apple-touch-icon.png").status_code]
+            check(
+                "the manifest is served as a web app manifest",
+                r.ok and "manifest+json" in r.headers.get("Content-Type", "") and man.get("name") == "Synapse",
+                r.headers.get("Content-Type"),
+            )
+            icons = [requests.get(BASE + i["src"]).status_code for i in man.get("icons", [])] + [
+                requests.get(BASE + "/assets/apple-touch-icon.png").status_code
+            ]
             check("… with its icons and an Apple touch icon", icons and all(c == 200 for c in icons), icons)
 
             # ---- portrait: the collections are a drawer ----------------------------------------------
@@ -115,15 +139,24 @@ async def main():
             await page.wait_for_selector(".row[data-id]")
             f = Finger(await ctx.new_cdp_session(page))
             html = await page.content()
-            check("the page links the manifest and the touch icon", 'rel="manifest"' in html and 'rel="apple-touch-icon"' in html)
+            check(
+                "the page links the manifest and the touch icon",
+                'rel="manifest"' in html and 'rel="apple-touch-icon"' in html,
+            )
             side = await page.evaluate("document.getElementById('sidebar').getBoundingClientRect().right")
             toggle = await page.locator('[data-a="sidebar"]').is_visible()
-            check("portrait: the collections are hidden, with a button to show them", side <= 1 and toggle, f"sidebar right {side}")
+            check(
+                "portrait: the collections are hidden, with a button to show them",
+                side <= 1 and toggle,
+                f"sidebar right {side}",
+            )
             lw = await page.evaluate("document.getElementById('items-pane').getBoundingClientRect().width")
             check("… so the item list gets the room", lw > 380, f"{lw:.0f}px")
             await shot(page, "01-portrait")
             await page.tap('[data-a="sidebar"]')
-            ok = await wait_for(lambda: page.evaluate("document.getElementById('sidebar').getBoundingClientRect().left >= -1"))
+            ok = await wait_for(
+                lambda: page.evaluate("document.getElementById('sidebar').getBoundingClientRect().left >= -1")
+            )
             check("the button slides the collections in", ok)
             await page.wait_for_timeout(300)
             await shot(page, "02-drawer")
@@ -143,11 +176,16 @@ async def main():
             ok = await wait_for(lambda: page.evaluate("!!document.querySelector('.menu .menu-item')"), timeout=3)
             labels = await page.eval_on_selector_all(".menu .menu-item", "es => es.map(e => e.textContent.trim())")
             check("a long press on an item opens its menu", ok and any("Trash" in l for l in labels), labels[:4])
-            hs = await page.eval_on_selector_all(".menu .menu-item", "es => es.map(e => e.getBoundingClientRect().height)")
+            hs = await page.eval_on_selector_all(
+                ".menu .menu-item", "es => es.map(e => e.getBoundingClientRect().height)"
+            )
             check("… with finger-sized entries", hs and min(hs) >= 44, f"{min(hs) if hs else None}px")
             await page.wait_for_timeout(500)
-            check("… which stays open after lifting the finger (nothing chosen by accident)",
-                  await page.evaluate("!!document.querySelector('.menu')") and len(requests.get(f"{BASE}/api/items?view=trash").json()["items"]) == 0)
+            check(
+                "… which stays open after lifting the finger (nothing chosen by accident)",
+                await page.evaluate("!!document.querySelector('.menu')")
+                and len(requests.get(f"{BASE}/api/items?view=trash").json()["items"]) == 0,
+            )
             await shot(page, "03-item-menu")
             await page.tap("#statusbar")
             ok = await wait_for(lambda: page.evaluate("!document.querySelector('.menu')"), timeout=3)
@@ -159,10 +197,15 @@ async def main():
             await f.long_press(x, y)
             ok = await wait_for(lambda: page.evaluate("!!document.querySelector('.menu .menu-item')"), timeout=3)
             labels = await page.eval_on_selector_all(".menu .menu-item", "es => es.map(e => e.textContent.trim())")
-            check("a long press on a folder opens the folder menu", ok and any("Rename" in l for l in labels), labels[:4])
-            check("… and keeps the drawer open meanwhile", await page.evaluate("document.body.classList.contains('sidebar-open')"))
+            check(
+                "a long press on a folder opens the folder menu", ok and any("Rename" in l for l in labels), labels[:4]
+            )
+            check(
+                "… and keeps the drawer open meanwhile",
+                await page.evaluate("document.body.classList.contains('sidebar-open')"),
+            )
             await page.keyboard.press("Escape")
-            await page.touchscreen.tap(650, 700)   # outside the drawer: closes it
+            await page.touchscreen.tap(650, 700)  # outside the drawer: closes it
             ok = await wait_for(lambda: page.evaluate("!document.body.classList.contains('sidebar-open')"), timeout=3)
             check("a tap outside the drawer closes it", ok)
             await page.wait_for_timeout(300)
@@ -170,8 +213,12 @@ async def main():
             # hover-only tools are shown
             await page.tap(".row[data-id]")
             await page.wait_for_selector("#item-pane .field-row")
-            op = await page.evaluate("(() => { const b = document.querySelector('#item-pane .field-row .field-tools .icon-btn'); return b ? getComputedStyle(b).opacity : null; })()")
-            check("the item pane's hover tools are always shown on touch screens", op is None or float(op) == 1, str(op))
+            op = await page.evaluate(
+                "(() => { const b = document.querySelector('#item-pane .field-row .field-tools .icon-btn'); return b ? getComputedStyle(b).opacity : null; })()"
+            )
+            check(
+                "the item pane's hover tools are always shown on touch screens", op is None or float(op) == 1, str(op)
+            )
 
             # ---- notes: long press on a note and on a citation ------------------------------------------
             await page.tap('[data-ws="notes"]')
@@ -189,7 +236,9 @@ async def main():
             x, y = await centre(page, ".note-read .cite")
             pages_before = len(ctx.pages)
             await f.long_press(x, y)
-            ok = await wait_for(lambda: page.evaluate("!!document.querySelector('.cite-card:not([hidden]) .cc-title')"), timeout=4)
+            ok = await wait_for(
+                lambda: page.evaluate("!!document.querySelector('.cite-card:not([hidden]) .cc-title')"), timeout=4
+            )
             check("a long press on a citation shows its card (no hover on a tablet)", ok)
             await page.wait_for_timeout(500)
             check("… without opening the PDF as a tap would", len(ctx.pages) == pages_before, f"{len(ctx.pages)} tabs")
@@ -207,7 +256,10 @@ async def main():
             await page.wait_for_selector(".row[data-id]")
             f = Finger(await ctx.new_cdp_session(page))
             left = await page.evaluate("document.getElementById('sidebar').getBoundingClientRect().left")
-            check("landscape: the collections stay in place, no drawer button", left >= 0 and not await page.locator('[data-a="sidebar"]').is_visible())
+            check(
+                "landscape: the collections stay in place, no drawer button",
+                left >= 0 and not await page.locator('[data-a="sidebar"]').is_visible(),
+            )
             await shot(page, "05-landscape")
             w0 = await page.evaluate("document.getElementById('item-pane').offsetWidth")
             x, y = await centre(page, "#resizer-right")
@@ -216,7 +268,9 @@ async def main():
             check("the item pane can be resized with a finger", w1 > w0 + 80, f"{w0} → {w1}px")
 
             # ---- the viewer: long press on a link previews it --------------------------------------------------
-            q = urlencode({"file": f"/pdfs/{att['url']}", "paper_id": item["id"], "title": item["title"], "att": att["id"]})
+            q = urlencode(
+                {"file": f"/pdfs/{att['url']}", "paper_id": item["id"], "title": item["title"], "att": att["id"]}
+            )
             v = await ctx.new_page()
             v.on("pageerror", lambda e: errors.append(str(e)))
             await v.goto(f"{BASE}/viewer.html?{q}")

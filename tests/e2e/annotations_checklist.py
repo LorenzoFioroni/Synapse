@@ -1,4 +1,4 @@
-"""Browser checklist for annotations as records (issue #20): each kind is created, saved on its
+"""Browser checklist for annotations as records: each kind is created, saved on its
 own, drawn again after a reload and at another zoom; eraser, Delete, undo/redo and moving a text
 box work; two PDFs of one item and two tabs on one PDF keep their own work; annotations saved by
 the old viewer are converted and shown.
@@ -7,9 +7,18 @@ the old viewer are converted and shown.
 
 Starts its own server on port 8777 with a throw-away data folder; your library is not touched.
 """
-import asyncio, json, os, shutil, subprocess, sys, tempfile, time
+
+import asyncio
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlencode
+
 import requests
 from playwright.async_api import async_playwright
 
@@ -97,7 +106,8 @@ def setup_library():
     """Items with PDFs, and one whose annotations were saved by the old viewer."""
     from backend import create_app
     from backend.config import Config
-    s = create_app(Config.from_env(DATA), start_indexer=False).extensions["zclone"]
+
+    s = create_app(Config.from_env(DATA), start_indexer=False).extensions["synapse"]
     made = {}
     for title, n_pdfs in (("Annotated paper", 2), ("Legacy paper", 1)):
         item = s.papers.create({"title": title})
@@ -116,8 +126,12 @@ def setup_library():
 async def main():
     guard(PORT)
     made = setup_library()
-    srv = subprocess.Popen([sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
-                           cwd=APP, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    srv = subprocess.Popen(
+        [sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
+        cwd=APP,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     try:
         for _ in range(100):
             try:
@@ -138,15 +152,24 @@ async def main():
 
             # ---- each kind, saved on its own
             await tool(page, "highlight")
-            await drag(page, (lines[2]["x"] + 2, lines[2]["y"] + lines[2]["height"] / 2),
-                       (lines[3]["x"] + lines[3]["width"] - 2, lines[3]["y"] + lines[3]["height"] / 2))
+            await drag(
+                page,
+                (lines[2]["x"] + 2, lines[2]["y"] + lines[2]["height"] / 2),
+                (lines[3]["x"] + lines[3]["width"] - 2, lines[3]["y"] + lines[3]["height"] / 2),
+            )
             ok = await until_count(att["id"], 1)
             hl = anns(att["id"])[0] if ok else {}
-            check("highlight: saved with the words and one rect per line", ok and hl.get("type") == "highlight"
-                  and len(hl.get("text", "")) > 10 and len(hl.get("rects", [])) >= 2, str(hl)[:160])
+            check(
+                "highlight: saved with the words and one rect per line",
+                ok and hl.get("type") == "highlight" and len(hl.get("text", "")) > 10 and len(hl.get("rects", [])) >= 2,
+                str(hl)[:160],
+            )
             await tool(page, "underline")
-            await drag(page, (lines[6]["x"] + 2, lines[6]["y"] + lines[6]["height"] / 2),
-                       (lines[6]["x"] + lines[6]["width"] - 2, lines[6]["y"] + lines[6]["height"] / 2))
+            await drag(
+                page,
+                (lines[6]["x"] + 2, lines[6]["y"] + lines[6]["height"] / 2),
+                (lines[6]["x"] + lines[6]["width"] - 2, lines[6]["y"] + lines[6]["height"] / 2),
+            )
             check("underline saved", await until_count(att["id"], 2))
             await tool(page, "box")
             await drag(page, (w1["x"] + 100, w1["y"] + 520), (w1["x"] + 300, w1["y"] + 640))
@@ -174,8 +197,11 @@ async def main():
             n = await page.evaluate("document.querySelectorAll('.anno-layer .anno').length")
             check("after a reload all five are drawn again", n == 5, str(n))
             hl_box2 = await page.locator(f'[data-id="{hl["id"]}"]').bounding_box()
-            check("in the same place", abs(hl_box["x"] - hl_box2["x"]) < 1.5 and abs(hl_box["width"] - hl_box2["width"]) < 1.5,
-                  f"{hl_box} {hl_box2}")
+            check(
+                "in the same place",
+                abs(hl_box["x"] - hl_box2["x"]) < 1.5 and abs(hl_box["width"] - hl_box2["width"]) < 1.5,
+                f"{hl_box} {hl_box2}",
+            )
             await page.click("#zoom-in")
             await page.wait_for_timeout(700)
             hl_box3 = await page.locator(f'[data-id="{hl["id"]}"]').bounding_box()
@@ -209,10 +235,17 @@ async def main():
             before = txt["rects"][0][:2]
             frame = await page.locator(f'[data-id="{txt["id"]}"] .anno-text-frame').bounding_box()
             await drag(page, (frame["x"] + 2, frame["y"] + 2), (frame["x"] + 82, frame["y"] + 42))
-            moved = await wait_for(lambda: asyncio.to_thread(
-                lambda: next(a for a in anns(att["id"]) if a["id"] == txt["id"])["rects"][0][:2] != before))
+            moved = await wait_for(
+                lambda: asyncio.to_thread(
+                    lambda: next(a for a in anns(att["id"]) if a["id"] == txt["id"])["rects"][0][:2] != before
+                )
+            )
             after = next(a for a in anns(att["id"]) if a["id"] == txt["id"])["rects"][0]
-            check("dragging a text box's frame moves it", moved and after[0] > before[0] and after[1] > before[1], f"{before} → {after[:2]}")
+            check(
+                "dragging a text box's frame moves it",
+                moved and after[0] > before[0] and after[1] > before[1],
+                f"{before} → {after[:2]}",
+            )
 
             # ---- the other PDF of the same item
             p2 = await ctx.new_page()
@@ -247,19 +280,27 @@ async def main():
 
             # ---- an old viewer link without ?att=
             await open_viewer(page, viewer(item, att, with_att=False))
-            check("a link without the attachment id still finds it",
-                  await page.evaluate("window.zcAnnotations.attachment()") == att["id"]
-                  and await page.evaluate("document.querySelectorAll('.anno-layer .anno').length") == 7)
+            check(
+                "a link without the attachment id still finds it",
+                await page.evaluate("window.zcAnnotations.attachment()") == att["id"]
+                and await page.evaluate("document.querySelectorAll('.anno-layer .anno').length") == 7,
+            )
 
             # ---- annotations saved by the old viewer
             legacy, (latt,) = made["Legacy paper"]
             await open_viewer(page, viewer(legacy, latt))
             kinds = sorted(a["type"] for a in await page.evaluate("window.zcAnnotations.list()"))
-            check("old annotations were converted", kinds == ["box", "box", "highlight", "ink", "text", "underline"], str(kinds))
+            check(
+                "old annotations were converted",
+                kinds == ["box", "box", "highlight", "ink", "text", "underline"],
+                str(kinds),
+            )
             drawn = await page.evaluate("document.querySelectorAll('.anno-layer .anno').length")
             check("and are drawn", drawn == 6, str(drawn))
             text = await page.evaluate("document.querySelector('.anno-text-input')?.innerText")
-            check("the old text box keeps both lines", text and "Check this" in text and "second line" in text, repr(text))
+            check(
+                "the old text box keeps both lines", text and "Check this" in text and "second line" in text, repr(text)
+            )
             await shot(page, "n2-legacy")
             check("no JavaScript errors", not errors, "; ".join(errors[:3]))
             await browser.close()

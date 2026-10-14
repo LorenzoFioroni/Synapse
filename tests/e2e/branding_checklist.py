@@ -1,12 +1,19 @@
-"""Browser checklist for the name and icon (issue #23): the toolbar shows the program's icon
+"""Browser checklist for the name and icon: the toolbar shows the program's icon
 (the favicon), in light and dark theme; the tab title says Synapse.
 
     python tests/e2e/branding_checklist.py              (SHOTS=/some/dir to save screenshots)
 
 Starts its own server on port 8776 with a throw-away data folder; your library is not touched.
 """
-import asyncio, os, subprocess, sys, tempfile, time
+
+import asyncio
+import os
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
+
 import requests
 from playwright.async_api import async_playwright
 
@@ -28,8 +35,12 @@ def check(name, cond, extra=""):
 
 async def main():
     guard(PORT)
-    srv = subprocess.Popen([sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
-                           cwd=APP, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    srv = subprocess.Popen(
+        [sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
+        cwd=APP,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     try:
         for _ in range(100):
             try:
@@ -50,8 +61,11 @@ async def main():
                     const r = el.getBoundingClientRect();
                     return { tag: el.tagName, src: el.getAttribute('src'), w: el.naturalWidth, text: el.textContent,
                              width: r.width, height: r.height }; })()""")
-                check(f"[{scheme}] the toolbar shows the favicon image", logo["tag"] == "IMG" and "favicon.svg" in logo["src"]
-                      and logo["w"] > 0 and not logo["text"], str(logo))
+                check(
+                    f"[{scheme}] the toolbar shows the favicon image",
+                    logo["tag"] == "IMG" and "favicon.svg" in logo["src"] and logo["w"] > 0 and not logo["text"],
+                    str(logo),
+                )
                 check(f"[{scheme}] at 24×24", round(logo["width"]) == 24 and round(logo["height"]) == 24)
                 if scheme == "light":
                     check("the tab title says Synapse", "Synapse" in await page.title(), await page.title())
@@ -62,7 +76,9 @@ async def main():
                     check("the SVG favicon is served as SVG", svg.headers["Content-Type"].startswith("image/svg+xml"))
                 if SHOTS:
                     os.makedirs(SHOTS, exist_ok=True)
-                    await page.screenshot(path=f"{SHOTS}/toolbar-{scheme}.png", clip={"x": 0, "y": 0, "width": 520, "height": 60})
+                    await page.screenshot(
+                        path=f"{SHOTS}/toolbar-{scheme}.png", clip={"x": 0, "y": 0, "width": 520, "height": 60}
+                    )
                 check(f"[{scheme}] no JavaScript errors", not errors, "; ".join(errors[:3]))
                 await page.close()
             await browser.close()

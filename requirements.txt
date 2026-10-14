@@ -8,5 +8,4 @@ segno>=1.6        # QR codes for pairing devices (Settings → Devices)
 rapidfuzz>=3.0      # better fuzzy title check when verifying downloaded PDFs
 # pillow>=10       # lets the MCP tool view_image scale down large note images
 # pymupdf>=1.24     # faster, more accurate PDF text extraction for the full-text index
-# for development:
-# pytest>=8
+# for development: requirements-dev.txt

@@ -1,11 +1,19 @@
-"""Browser checklist for items with several PDFs (issue #39): citations, cards and menus.
+"""Browser checklist for items with several PDFs: citations, cards and menus.
 
     python tests/e2e/multipdf_checklist.py              (SHOTS=/some/dir to save screenshots)
 
 Starts its own server on port 8788 with a throw-away data folder; your library is not touched.
 """
-import asyncio, os, shutil, subprocess, sys, tempfile, time
+
+import asyncio
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
+
 import requests
 from playwright.async_api import async_playwright
 
@@ -41,16 +49,21 @@ async def wait_for(fn, timeout=8):
 
 
 def setup():
-    item = requests.post(f"{BASE}/api/items", json={"authors": "Cui, Jian; Cirac, J. Ignacio", "title": "Variational matrix product operators", "year": 2015}).json()
+    item = requests.post(
+        f"{BASE}/api/items",
+        json={"authors": "Cui, Jian; Cirac, J. Ignacio", "title": "Variational matrix product operators", "year": 2015},
+    ).json()
     ids = []
     for name in ("paper.pdf", "supplement.pdf"):
         pdf = make_pdf(Path(DATA) / f"up-{name}", name)
         with open(pdf, "rb") as fh:
-            r = requests.post(f"{BASE}/api/items/{item['id']}/attachments", files={"file": (name, fh, "application/pdf")}).json()
+            r = requests.post(
+                f"{BASE}/api/items/{item['id']}/attachments", files={"file": (name, fh, "application/pdf")}
+            ).json()
         ids.append(r["attachments"][0]["id"])
     main_id, supp_id = ids
     k = item["citation_key"]
-    text = (f"# Review\n\nNo attachment: [@{k}, p. 2].\n\nNamed: [@{k}, p. 3, att:{supp_id}].\n\nSee [[Other]].\n")
+    text = f"# Review\n\nNo attachment: [@{k}, p. 2].\n\nNamed: [@{k}, p. 3, att:{supp_id}].\n\nSee [[Other]].\n"
     requests.post(f"{BASE}/api/notes/note", json={"title": "Review", "text": text})
     requests.post(f"{BASE}/api/notes/note", json={"title": "Other", "text": "# Other\n\nNothing.\n"})
     return item, main_id, supp_id
@@ -58,8 +71,13 @@ def setup():
 
 async def main():
     env = dict(os.environ, SYNAPSE_DATA_DIR=DATA)
-    srv = subprocess.Popen([sys.executable, "server.py", "--port", str(PORT), "--no-browser"], cwd=APP, env=env,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    srv = subprocess.Popen(
+        [sys.executable, "server.py", "--port", str(PORT), "--no-browser"],
+        cwd=APP,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     time.sleep(1.5)
     try:
         item, main_id, supp_id = setup()
@@ -74,24 +92,28 @@ async def main():
             await page.wait_for_timeout(800)
 
             # ---- item pane: Open PDF lists every PDF
-            await page.locator('.row', has_text="Variational matrix product").first.click()
+            await page.locator(".row", has_text="Variational matrix product").first.click()
             btn = page.locator('[data-tool="open-pdf"]')
             await btn.wait_for()
             await btn.click()
-            menu = page.locator('.menu')
+            menu = page.locator(".menu")
             await menu.wait_for()
-            labels = await menu.locator('.menu-item, button').all_text_contents()
-            check("item pane 'Open PDF' lists both PDFs", any("paper.pdf" in l for l in labels) and any("supplement.pdf" in l for l in labels), labels)
-            await page.keyboard.press('Escape')
+            labels = await menu.locator(".menu-item, button").all_text_contents()
+            check(
+                "item pane 'Open PDF' lists both PDFs",
+                any("paper.pdf" in l for l in labels) and any("supplement.pdf" in l for l in labels),
+                labels,
+            )
+            await page.keyboard.press("Escape")
             await shot(page, "1-item-menu")
 
             # ---- notes: a citation with att: and one without
             await page.click('[data-act="open-notes"]')
             await page.click('.nt-row.note[data-path="Review.md"]')
-            await page.wait_for_selector('.cm-content')
+            await page.wait_for_selector(".cm-content")
             await page.mouse.move(5, 5)
-            await wait_for(lambda: page.locator('.cm-lp-chip.cite').count())
-            chips = page.locator('.cm-lp-chip.cite')
+            await wait_for(lambda: page.locator(".cm-lp-chip.cite").count())
+            chips = page.locator(".cm-lp-chip.cite")
             check("two citation chips rendered", await chips.count() == 2, await chips.count())
             label_texts = await chips.all_text_contents()
             check("the label never shows att:", all("att:" not in t for t in label_texts), label_texts)
@@ -110,16 +132,22 @@ async def main():
             await chips.nth(1).hover()
             await wait_for(lambda: page.locator('.cite-card:not([hidden]) [data-cc="pdf"]').count())
             named = page.locator('.cite-card:not([hidden]) [data-cc="pdf"]')
-            check("card with att: offers the named PDF only",
-                  await named.count() == 1 and await named.first.get_attribute("data-att") == str(supp_id),
-                  await named.count())
+            check(
+                "card with att: offers the named PDF only",
+                await named.count() == 1 and await named.first.get_attribute("data-att") == str(supp_id),
+                await named.count(),
+            )
 
             # clicking it opens the viewer on the supplement
             async with ctx.expect_page() as newp:
                 await named.first.click()
             viewer = await newp.value
             await viewer.wait_for_load_state()
-            check("opens the viewer on the named PDF", f"att={supp_id}" in viewer.url and "page=3" in viewer.url, viewer.url)
+            check(
+                "opens the viewer on the named PDF",
+                f"att={supp_id}" in viewer.url and "page=3" in viewer.url,
+                viewer.url,
+            )
             await viewer.close()
             await page.mouse.move(5, 5)
             await page.wait_for_timeout(500)

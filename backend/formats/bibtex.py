@@ -1,26 +1,51 @@
 """BibTeX / BibLaTeX import and export."""
+
 from __future__ import annotations
 
 import re
 
-from .. import citekeys
+from ..library import citekeys
 from .common import join_authors, parse_display_name, split_authors, split_keywords, year_from
 from .latex import escape, latex_to_unicode, protect_case
 
-MONTHS = {m: str(i) for i, m in enumerate(
-    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+MONTHS = {
+    m: str(i)
+    for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)
+}
 
 TYPE_IN = {
-    "article": "journalArticle", "book": "book", "inbook": "bookSection", "incollection": "bookSection",
-    "inproceedings": "conferencePaper", "conference": "conferencePaper", "proceedings": "book",
-    "phdthesis": "thesis", "mastersthesis": "thesis", "thesis": "thesis", "techreport": "report",
-    "report": "report", "unpublished": "manuscript", "online": "webpage", "electronic": "webpage",
-    "www": "webpage", "dataset": "dataset", "misc": "journalArticle", "booklet": "book", "manual": "book",
+    "article": "journalArticle",
+    "book": "book",
+    "inbook": "bookSection",
+    "incollection": "bookSection",
+    "inproceedings": "conferencePaper",
+    "conference": "conferencePaper",
+    "proceedings": "book",
+    "phdthesis": "thesis",
+    "mastersthesis": "thesis",
+    "thesis": "thesis",
+    "techreport": "report",
+    "report": "report",
+    "unpublished": "manuscript",
+    "online": "webpage",
+    "electronic": "webpage",
+    "www": "webpage",
+    "dataset": "dataset",
+    "misc": "journalArticle",
+    "booklet": "book",
+    "manual": "book",
 }
 TYPE_OUT = {
-    "journalArticle": "article", "book": "book", "bookSection": "incollection",
-    "conferencePaper": "inproceedings", "thesis": "phdthesis", "report": "techreport",
-    "preprint": "misc", "manuscript": "unpublished", "webpage": "misc", "dataset": "misc",
+    "journalArticle": "article",
+    "book": "book",
+    "bookSection": "incollection",
+    "conferencePaper": "inproceedings",
+    "thesis": "phdthesis",
+    "report": "techreport",
+    "preprint": "misc",
+    "manuscript": "unpublished",
+    "webpage": "misc",
+    "dataset": "misc",
 }
 
 
@@ -41,7 +66,7 @@ class _Parser:
         start = self.i
         while self.i < self.n and (self.s[self.i].isalnum() or self.s[self.i] in "_-:.+/'!?*&"):
             self.i += 1
-        return self.s[start:self.i]
+        return self.s[start : self.i]
 
     def braced(self) -> str:
         # assumes s[i] == "{"
@@ -57,7 +82,7 @@ class _Parser:
                 depth -= 1
                 if depth == 0:
                     self.i += 1
-                    return self.s[start:self.i - 1]
+                    return self.s[start : self.i - 1]
             self.i += 1
         raise ValueError("Unbalanced braces")
 
@@ -75,7 +100,7 @@ class _Parser:
                 depth -= 1
             elif c == '"' and depth == 0:
                 self.i += 1
-                return self.s[start:self.i - 1]
+                return self.s[start : self.i - 1]
             self.i += 1
         raise ValueError("Unterminated string")
 
@@ -144,7 +169,7 @@ class _Parser:
                 key_start = self.i
                 while self.i < self.n and self.s[self.i] not in ",\n" + close:
                     self.i += 1
-                key = self.s[key_start:self.i].strip()
+                key = self.s[key_start : self.i].strip()
                 fields = {}
                 while True:
                     self.ws()
@@ -201,7 +226,9 @@ def parse(text: str) -> list[dict]:
     for etype, key, f in _Parser(text).entries():
         g = {k: latex_to_unicode(v) for k, v in f.items() if k not in ("author", "editor", "file")}
         itype = TYPE_IN.get(etype, "journalArticle")
-        if etype == "misc" and (g.get("eprint") or "arxiv" in (g.get("archiveprefix", "") + g.get("eprinttype", "")).lower()):
+        if etype == "misc" and (
+            g.get("eprint") or "arxiv" in (g.get("archiveprefix", "") + g.get("eprinttype", "")).lower()
+        ):
             itype = "preprint"
         if etype == "misc" and g.get("howpublished", "").startswith("http") and not g.get("journal"):
             itype = "webpage"
@@ -262,8 +289,11 @@ def dump(items: list[dict], *, unicode: bool = True, abstract: bool = True, patt
         pairs = split_authors(it.get("authors"))
         if pairs:
             names = " and ".join(
-                ("{" + escape(f, unicode) + "}") if not g and " " in f else
-                (f"{escape(f, unicode)}, {escape(g, unicode)}" if g else escape(f, unicode)) for f, g in pairs)
+                ("{" + escape(f, unicode) + "}")
+                if not g and " " in f
+                else (f"{escape(f, unicode)}, {escape(g, unicode)}" if g else escape(f, unicode))
+                for f, g in pairs
+            )
             lines.append(f"  author = {{{names}}},")
         container = it.get("journal")
         if container:
@@ -280,13 +310,28 @@ def dump(items: list[dict], *, unicode: bool = True, abstract: bool = True, patt
             if it.get(src):
                 lines.append(_field(dst, it[src], unicode))
         if it.get("pages"):
-            lines.append(_field("pages", str(it["pages"]).replace("–", "-").replace("-", "--").replace("----", "--"), unicode, raw=True))
+            lines.append(
+                _field(
+                    "pages",
+                    str(it["pages"]).replace("–", "-").replace("-", "--").replace("----", "--"),
+                    unicode,
+                    raw=True,
+                )
+            )
         if it.get("publisher"):
             pub_name = {"thesis": "school", "report": "institution"}.get(itype, "publisher")
             lines.append(_field(pub_name, it["publisher"], unicode))
-        for src, dst in (("place", "address"), ("edition", "edition"), ("series", "series"),
-                         ("isbn", "isbn"), ("issn", "issn"), ("language", "langid"),
-                         ("short_title", "shorttitle"), ("pmid", "pmid"), ("pmcid", "pmcid")):
+        for src, dst in (
+            ("place", "address"),
+            ("edition", "edition"),
+            ("series", "series"),
+            ("isbn", "isbn"),
+            ("issn", "issn"),
+            ("language", "langid"),
+            ("short_title", "shorttitle"),
+            ("pmid", "pmid"),
+            ("pmcid", "pmcid"),
+        ):
             if it.get(src):
                 lines.append(_field(dst, it[src], unicode))
         if it.get("doi"):

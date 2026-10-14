@@ -4,10 +4,11 @@ Each format provides ``parse(text) -> list[dict]`` and
 ``dump(items, **options) -> str`` working on the shared item dict
 representation (see ``common.py``).
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from . import bibtex, csljson, endnote, ris
 
@@ -23,18 +24,42 @@ class Format:
     sniff: Callable[[str], bool]
 
 
-FORMATS: dict[str, Format] = {f.key: f for f in [
-    Format("bibtex", "BibTeX", "bib", "application/x-bibtex", bibtex.parse, bibtex.dump, bibtex.sniff),
-    Format("ris", "RIS", "ris", "application/x-research-info-systems", ris.parse, ris.dump, ris.sniff),
-    Format("endnote", "EndNote (tagged .enw)", "enw", "application/x-endnote-refer", endnote.parse, endnote.dump,
-           endnote.sniff),
-    Format("endnote_xml", "EndNote XML", "xml", "application/xml", endnote.parse_xml, endnote.dump_xml,
-           endnote.sniff_xml),
-    Format("csljson", "CSL JSON", "json", "application/json", csljson.parse, csljson.dump, csljson.sniff),
-]}
+FORMATS: dict[str, Format] = {
+    f.key: f
+    for f in [
+        Format("bibtex", "BibTeX", "bib", "application/x-bibtex", bibtex.parse, bibtex.dump, bibtex.sniff),
+        Format("ris", "RIS", "ris", "application/x-research-info-systems", ris.parse, ris.dump, ris.sniff),
+        Format(
+            "endnote",
+            "EndNote (tagged .enw)",
+            "enw",
+            "application/x-endnote-refer",
+            endnote.parse,
+            endnote.dump,
+            endnote.sniff,
+        ),
+        Format(
+            "endnote_xml",
+            "EndNote XML",
+            "xml",
+            "application/xml",
+            endnote.parse_xml,
+            endnote.dump_xml,
+            endnote.sniff_xml,
+        ),
+        Format("csljson", "CSL JSON", "json", "application/json", csljson.parse, csljson.dump, csljson.sniff),
+    ]
+}
 
-EXTENSIONS = {"bib": "bibtex", "bibtex": "bibtex", "ris": "ris", "enw": "endnote", "txt": None,
-              "xml": "endnote_xml", "json": "csljson"}
+EXTENSIONS = {
+    "bib": "bibtex",
+    "bibtex": "bibtex",
+    "ris": "ris",
+    "enw": "endnote",
+    "txt": None,
+    "xml": "endnote_xml",
+    "json": "csljson",
+}
 
 
 class FormatError(ValueError):

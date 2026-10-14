@@ -1,6 +1,3 @@
-import io
-
-
 def mk(client, **data):
     return client.post("/api/items", json={"title": "T", "authors": "Doe, J", "year": 2020, **data}).get_json()
 
@@ -9,7 +6,7 @@ def test_folders_tree_and_multiple_membership(client):
     phys = client.post("/api/folders", json={"name": "Physics"}).get_json()
     tr = client.post("/api/folders", json={"name": "Transport", "parent_id": phys["id"]}).get_json()
     rg = client.post("/api/folders", json={"name": "Reading group"}).get_json()
-    assert client.post("/api/folders", json={"name": "physics"}).status_code == 400   # sibling names are unique
+    assert client.post("/api/folders", json={"name": "physics"}).status_code == 400  # sibling names are unique
     assert client.post("/api/folders", json={"name": "  "}).status_code == 400
     a, b = mk(client, title="A"), mk(client, title="B", folder_id=tr["id"])
     assert b["folder_ids"] == [tr["id"]]
@@ -31,7 +28,7 @@ def test_folders_tree_and_multiple_membership(client):
     # "move" = remove from one folder + add to another; removing never deletes the item
     client.post("/api/items/folders", json={"ids": [a["id"]], "remove": [tr["id"]], "add": [phys["id"]]})
     assert client.get(f"/api/items/{a['id']}").get_json()["folder_ids"] == [phys["id"], rg["id"]]
-    client.patch(f"/api/items/{a['id']}", json={"folder_ids": [rg["id"]]})          # replace all memberships
+    client.patch(f"/api/items/{a['id']}", json={"folder_ids": [rg["id"]]})  # replace all memberships
     assert client.get(f"/api/items/{a['id']}").get_json()["folder_ids"] == [rg["id"]]
     assert client.post("/api/items/folders", json={"ids": [a["id"]], "add": [999]}).status_code == 404
     unfiled = lambda: sorted(i["id"] for i in client.get("/api/items?q=folder:none").get_json()["items"])
@@ -60,7 +57,7 @@ def test_tags(client):
     # filter by tags (AND)
     res = client.get("/api/items?tags=Quantum,transport").get_json()["items"]
     assert len(res) == 2
-    client.patch(f"/api/items/{a['id']}", json={"tags": ["Quantum"]})            # replace an item's tags
+    client.patch(f"/api/items/{a['id']}", json={"tags": ["Quantum"]})  # replace an item's tags
     assert [i["id"] for i in client.get("/api/items?tags=transport").get_json()["items"]] == [b["id"]]
     # colour + rename-merge
     assert client.patch(f"/api/tags/{tags['transport']['id']}", json={"color": "red"}).status_code == 400
@@ -97,8 +94,9 @@ def test_import_keywords_become_tags_and_export_them(client):
     phys = client.post("/api/folders", json={"name": "Physics"}).get_json()
     bib = "@article{k1, title={Paper}, author={Doe, J}, year={2020}, keywords={spin chains, transport}}"
     prev = client.post("/api/import/preview", json={"text": bib}).get_json()
-    res = client.post("/api/import/commit", json={"entries": prev["entries"], "folder_id": phys["id"],
-                                                  "keywords_as_tags": True}).get_json()
+    res = client.post(
+        "/api/import/commit", json={"entries": prev["entries"], "folder_id": phys["id"], "keywords_as_tags": True}
+    ).get_json()
     item = client.get(f"/api/items/{res['created'][0]}").get_json()
     assert item["tags"] == ["spin chains", "transport"] and not item["keywords"] and item["folder_ids"] == [phys["id"]]
     out = client.get(f"/api/export?format=bibtex&ids={item['id']}&download=0").get_json()["text"]
@@ -113,8 +111,8 @@ def test_import_tags_setting(client, svc):
         res = client.post("/api/import/commit", json={"entries": entries, "skip_duplicates": False, **extra}).get_json()
         return client.get(f"/api/items/{res['created'][0]}").get_json()
 
-    assert svc.settings.get("import_tags") == "ask"              # the default: the import dialog asks
-    no = imported()                                              # not ticked: keywords stay keywords
+    assert svc.settings.get("import_tags") == "ask"  # the default: the import dialog asks
+    no = imported()  # not ticked: keywords stay keywords
     assert no["tags"] == [] and no["keywords"] == "spin chains; transport"
     assert imported(keywords_as_tags=True)["tags"] == ["spin chains", "transport"]
     svc.settings.update({"import_tags": "never"})
@@ -125,26 +123,30 @@ def test_import_tags_setting(client, svc):
 
 def test_old_settings_file_is_migrated(tmp_path):
     import json
+
     from backend.settings import SettingsStore
+
     path = tmp_path / "settings.json"
     path.write_text(json.dumps({"import_keywords_as_tags": False, "references_auto": False}))
     s = SettingsStore(path)
     assert s.get("import_tags") == "never" and s.get("add_fetch_references") == "never"
     path.write_text(json.dumps({"import_keywords_as_tags": True, "references_auto": True}))
-    s = SettingsStore(path)   # the old defaults: the new defaults apply
+    s = SettingsStore(path)  # the old defaults: the new defaults apply
     assert s.get("import_tags") == "ask" and s.get("add_fetch_references") == "always"
     import pytest
+
     from backend.settings import SettingsError
+
     with pytest.raises(SettingsError):
         s.update({"add_find_pdf": "sometimes"})
-    path.write_text(json.dumps({"notes_equation_numbers": "latex"}))   # the first version of PR #46
+    path.write_text(json.dumps({"notes_equation_numbers": "latex"}))  # the first version of PR #46
     assert SettingsStore(path).get("notes_equation_numbers") == "labelled"
 
 
 def test_permanent_delete_cleans_tags(client):
     a = mk(client, tags=["solo"])
     client.post("/api/items/trash", json={"ids": [a["id"]]})
-    assert client.get("/api/tags").get_json()["tags"][0]["count"] == 0   # trashed items don't count
+    assert client.get("/api/tags").get_json()["tags"][0]["count"] == 0  # trashed items don't count
     client.post("/api/trash/empty")
     assert client.get("/api/tags").get_json()["tags"] == []
 
@@ -152,14 +154,16 @@ def test_permanent_delete_cleans_tags(client):
 def test_migration_from_single_folder_column(tmp_path):
     """Libraries created with the one-folder-per-item version keep their folders."""
     import sqlite3
+
     from backend import create_app
     from backend.config import Config
+
     data = tmp_path / "data"
     app = create_app(Config.from_env(data), start_indexer=False)
     c = app.test_client()
     f = c.post("/api/folders", json={"name": "Old"}).get_json()
     item = c.post("/api/items", json={"title": "X"}).get_json()
-    con = sqlite3.connect(data / "library.db")     # simulate the previous layout
+    con = sqlite3.connect(data / "library.db")  # simulate the previous layout
     con.execute("DELETE FROM paper_folders")
     con.execute("UPDATE papers SET folder_id = ? WHERE id = ?", (f["id"], item["id"]))
     con.commit()

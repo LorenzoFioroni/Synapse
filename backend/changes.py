@@ -1,4 +1,4 @@
-"""What changed, for the other open windows and devices (issue #34).
+"""What changed, for the other open windows and devices.
 
 With an iPad and the computer open at the same time, each needs to notice what the other changed.
 Every page polls ``GET /api/changes?since=N`` every few seconds and refreshes what the answer
@@ -14,6 +14,7 @@ Changes are recorded
 * when ``library.db`` or ``notes_index.db`` changed on disk without going through this server
   (the MCP server writing a note, for example) — noticed at the next poll.
 """
+
 from __future__ import annotations
 
 import os
@@ -22,12 +23,12 @@ import threading
 from collections import deque
 from pathlib import Path
 
-KEEP = 2000          # entries remembered; a page further behind refreshes everything
+KEEP = 2000  # entries remembered; a page further behind refreshes everything
 CLIENT_HEADER = "X-Synapse-Client"
 
 
 def _mtime(*paths: Path) -> tuple:
-    out = []
+    out: list[tuple[int, int] | None] = []
     for p in paths:
         try:
             st = os.stat(p)
@@ -82,11 +83,20 @@ class ChangeFeed:
                 # a page that just opened (or a server restart): nothing to refresh yet, start here —
                 # unless it knew another epoch, then everything may have changed
                 full = epoch is not None and epoch != self.epoch
-                return {"epoch": self.epoch, "seq": current, "changes": ["library", "annotations", "notes"] if full else [],
-                        "reset": full}
+                return {
+                    "epoch": self.epoch,
+                    "seq": current,
+                    "changes": ["library", "annotations", "notes"] if full else [],
+                    "reset": full,
+                }
             oldest = self._log[0][0] if self._log else current + 1
             if seq < oldest - 1:
-                return {"epoch": self.epoch, "seq": current, "changes": ["library", "annotations", "notes"], "reset": True}
+                return {
+                    "epoch": self.epoch,
+                    "seq": current,
+                    "changes": ["library", "annotations", "notes"],
+                    "reset": True,
+                }
             kinds: set[str] = set()
             for s, who, k in self._log:
                 if s > seq and (who is None or who != client):

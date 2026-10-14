@@ -7,6 +7,7 @@ Writes are atomic (temp file + rename) and use optimistic concurrency: the calle
 the hash of the version it loaded, and the write is refused if the file changed since.
 Nothing is ever hard-deleted; "delete" moves the file into ``.trash/<timestamp>/``.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -41,6 +42,7 @@ class NoteExists(VaultError):
 
 class Conflict(VaultError):
     """The file changed on disk since the caller loaded it."""
+
     status = 409
 
     def __init__(self, path: str, current_hash: str | None):
@@ -122,8 +124,9 @@ class Vault:
         """Yield ``(rel, stat)`` for every note, skipping hidden folders and attachments."""
         for dirpath, dirnames, filenames in os.walk(self.root):
             here = Path(dirpath)
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith(".")
-                                 and not (here == self.root and d == ATTACHMENTS))
+            dirnames[:] = sorted(
+                d for d in dirnames if not d.startswith(".") and not (here == self.root and d == ATTACHMENTS)
+            )
             for f in sorted(filenames):
                 if f.startswith(".") or not f.lower().endswith(NOTE_SUFFIX):
                     continue
@@ -136,8 +139,9 @@ class Vault:
         out = []
         for dirpath, dirnames, _ in os.walk(self.root):
             here = Path(dirpath)
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith(".")
-                                 and not (here == self.root and d == ATTACHMENTS))
+            dirnames[:] = sorted(
+                d for d in dirnames if not d.startswith(".") and not (here == self.root and d == ATTACHMENTS)
+            )
             if here != self.root:
                 out.append(here.relative_to(self.root).as_posix())
         return out
@@ -254,7 +258,7 @@ class Vault:
             notes = self.notes_in(src)
             pd.parent.mkdir(parents=True, exist_ok=True)
             os.replace(ps, pd)
-        return [(n, dst + n[len(src):]) for n in notes]
+        return [(n, dst + n[len(src) :]) for n in notes]
 
     # ------------------------------------------------------------------ trash
     def trash(self, rel: str) -> str:
@@ -285,7 +289,7 @@ class Vault:
                     raise NoteMissing(n)
             contents = {f: self.notes_in(f) for f in folders}
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-            moved = []
+            moved: list[str] = []
             for rel in folders + notes:
                 dest = self.root / TRASH / stamp / rel
                 try:
@@ -313,12 +317,12 @@ class Vault:
                 here = Path(dirpath)
                 rel_dir = here.relative_to(base)
                 try:
-                    (self.root / rel_dir).mkdir(parents=True, exist_ok=True)   # empty folders come back too
-                except OSError:   # a file now has this folder's name: leave this part in the trash
+                    (self.root / rel_dir).mkdir(parents=True, exist_ok=True)  # empty folders come back too
+                except OSError:  # a file now has this folder's name: leave this part in the trash
                     skipped += [(rel_dir / f).as_posix() for f in filenames + dirnames]
                     dirnames[:] = []
                     continue
-                links = [d for d in dirnames if (here / d).is_symlink()]   # os.walk does not enter these
+                links = [d for d in dirnames if (here / d).is_symlink()]  # os.walk does not enter these
                 dirnames[:] = [d for d in dirnames if d not in links]
                 for f in filenames + links:
                     rel = (rel_dir / f).as_posix()
@@ -332,7 +336,7 @@ class Vault:
                         continue
                     if f.lower().endswith(NOTE_SUFFIX) and not (self.root / rel).is_symlink():
                         restored.append(rel)
-            for dirpath, _, _ in sorted(os.walk(base), key=lambda t: -len(t[0])):   # tidy up emptied folders
+            for dirpath, _, _ in sorted(os.walk(base), key=lambda t: -len(t[0])):  # tidy up emptied folders
                 try:
                     Path(dirpath).rmdir()
                 except OSError:
