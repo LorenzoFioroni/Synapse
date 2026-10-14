@@ -3,7 +3,7 @@ import * as A from '../actions.js';
 import { afterAddChoices, afterAddHtml, runAfterAdd } from '../afterAdd.js';
 import { api } from '../api.js';
 import { icon } from '../icons.js';
-import { currentFolderId, folderPath, folderTree, state } from '../store.js';
+import { currentFolderId, folderTree, state } from '../store.js';
 import { openDialog } from '../ui/dialog.js';
 import { toast, toastError } from '../ui/toast.js';
 import type { ImportEntry, ImportPreview } from '../types.js';

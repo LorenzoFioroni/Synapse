@@ -109,7 +109,7 @@ once, `npm ci` in `frontend/`.
 | `npm ci` | Installs the build tools (esbuild, TypeScript), pinned in `package-lock.json`. |
 | `npm run build` | Compiles `src/` to `js/`. |
 | `npm run watch` | Rebuilds on every change. Reload the page to see it. |
-| `npm run check` | Type-checks with `tsc` (`tsconfig.json`, strict mode). CI runs it. |
+| `npm run check` | Type-checks with `tsc` (`tsconfig.json`: strict mode, no unused locals or imports). CI runs it. |
 
 The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest builds it first.
 
