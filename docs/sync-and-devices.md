@@ -201,17 +201,17 @@ extension. The connector API is described in [`browser-extension.md`](browser-ex
 
 `python server.py --lan` listens on `0.0.0.0` instead of `127.0.0.1`. `config.lan` is true
 whenever the host is not a loopback one, so `--host 0.0.0.0` also counts. The server prints the
-`.local` name and IP addresses, and tips if `segno` or `waitress` is missing.
+`.local` name and IP addresses, and a tip if `segno` is missing.
 
 `server.py` refuses `--debug` together with `--lan`, or with any `--host` that is not loopback,
 and exits with a message. Werkzeug's debugger is WSGI middleware that answers before the guard's
 `before_request` hook, and its console runs Python code. On the network it would let anyone who
 reaches the port run code on this computer.
 
-In LAN mode the server runs on **waitress** (12 threads,
-`channel_timeout=300`) rather than Flask's development server, because several devices and long
-PDF downloads need a real WSGI server. Both packages are in `requirements.txt`. Without waitress
-the server falls back to Flask; without segno pairing works through the link alone.
+The server is Werkzeug's threaded server (`app.run(threaded=True)`) in every mode: one thread per
+connection, which is plenty for one person's computer and devices, and it serves HTTPS
+(`--cert`, `--key`) as well. `segno` is in `requirements.txt`; without it pairing works through the
+link alone.
 
 ### Pairing
 
@@ -257,8 +257,7 @@ certificate the devices trust, and Synapse opened by a name such as `mac.local`.
 one name does not work on another. `GET /api/passkeys` says why not (`unavailable`), and Settings
 shows that instead of the button.
 
-**HTTPS.** `--cert` and `--key` (PEM files, given together) make `server.py` serve HTTPS. waitress
-has no TLS, so with them the server runs on Werkzeug's threaded server, as without `--lan`. The
+**HTTPS.** `--cert` and `--key` (PEM files, given together) make `server.py` serve HTTPS. The
 printed addresses and the pairing links then start with `https://`, and cookies get `Secure`. The
 README has the steps with `mkcert`, which makes a local certificate authority to install on each
 device.

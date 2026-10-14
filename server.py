@@ -103,17 +103,8 @@ def main() -> None:
             print("Tip: pip install segno  (shows the pairing QR code; without it only the link works)")
     if not a.no_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    if config.lan and not tls:
-        # Several devices and long PDF downloads: a real WSGI server rather than Flask's development one.
-        # waitress has no TLS, so HTTPS is served by Werkzeug's threaded server below.
-        try:
-            from waitress import serve
-        except ImportError:
-            print("Tip: pip install waitress  (a sturdier server for use from several devices)")
-        else:
-            logging.getLogger("waitress.queue").setLevel(logging.ERROR)
-            serve(app, host=a.host, port=a.port, threads=12, channel_timeout=300, ident="Synapse")
-            return
+    # Werkzeug's threaded server (one thread per connection) is plenty for one person's devices,
+    # and it serves HTTPS too.
     app.run(host=a.host, port=a.port, debug=a.debug, threaded=True, use_reloader=a.debug, ssl_context=tls)
 
 
