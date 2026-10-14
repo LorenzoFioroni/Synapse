@@ -1,3 +1,4 @@
+import os
 import random
 
 import pytest
@@ -114,3 +115,24 @@ def test_search_snippets_are_escaped(env):
     put(v, idx, "x.md", "danger <script>alert(1)</script> entanglement here")
     snip = idx.search("entanglement")[0]["snippet"]
     assert "<script>" not in snip and "&lt;script&gt;" in snip and "<mark>entanglement</mark>" in snip
+
+
+def test_a_change_while_indexing_is_picked_up_by_the_next_sync(env, monkeypatch):
+    v, idx = env
+    put(v, idx, "a.md", "[@old]")
+    read = v.read
+
+    def read_then_change(rel):  # another program saves the note just after it was read
+        out = read(rel)
+        (v.root / rel).write_text("[@newer]")
+        os.utime(v.root / rel, ns=(10**18, 10**18))
+        return out
+
+    (v.root / "a.md").write_text("[@new]")
+    os.utime(v.root / "a.md", ns=(9 * 10**17, 9 * 10**17))
+    monkeypatch.setattr(v, "read", read_then_change)
+    idx.sync()
+    monkeypatch.setattr(v, "read", read)
+    assert idx.cited_keys() == ["new"]
+    idx.sync()
+    assert idx.cited_keys() == ["newer"]

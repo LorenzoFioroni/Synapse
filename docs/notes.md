@@ -117,7 +117,9 @@ old tables are dropped and rebuilt instead of migrated.
 | `notes_fts` | FTS5 table of title and body (`unicode61 remove_diacritics 2`). |
 
 `sync()` walks the vault and skips every file whose `(mtime, size)` matches the index. `update()`
-then compares the content hash and re-parses only when it changed. Files that disappeared are
+then compares the content hash and re-parses only when it changed. It takes the file's `stat()`
+before reading it, so a file saved in between keeps an older `mtime` in the index and is read
+again by the next sync. Files that disappeared are
 removed. `rebuild()` empties the tables and syncs. The app syncs at startup and on
 `POST /api/notes/rescan`; `NotesService.get` also re-indexes a note whose hash differs. A file
 changed by another program therefore shows in the listing only after a rescan or a restart.

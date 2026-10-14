@@ -182,11 +182,14 @@ class NotesIndex:
         """(Re)index one note from disk; removes it if the file is gone. Returns True if changed."""
         path = self.vault.clean_rel(path)
         with self._lock:
+            # stat before reading: if the file changes in between, the stored mtime is older than
+            # the file's and sync() reads it again (stat after would pair the new mtime with the
+            # old text, and sync() would skip the file until it changed once more)
             try:
+                st = self.vault.abs(path).stat()
                 text, h = self.vault.read(path)
-            except NoteMissing:
+            except (NoteMissing, FileNotFoundError):
                 return self.remove(path)
-            st = self.vault.abs(path).stat()
             with self._session() as c:
                 row = c.execute("SELECT hash FROM notes WHERE path = ?", (path,)).fetchone()
                 if row and row["hash"] == h:
