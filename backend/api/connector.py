@@ -120,7 +120,7 @@ def save():
     pdf_bytes = upload.read() if upload is not None else None
     if pdf_bytes and pdf_bytes[:5] == b"%PDF-" and not (page.get("doi") or page.get("arxiv")):
         import tempfile
-        from ..pdftext import clean_text, extract_text, find_identifier
+        from ..pdf.text import clean_text, extract_text, find_identifier
         with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
             tmp.write(pdf_bytes)
             tmp.flush()

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import requests
 
-from .pdftext import extract_text
+from .pdf.text import extract_text
 
 log = logging.getLogger(__name__)
 

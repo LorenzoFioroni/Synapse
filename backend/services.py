@@ -6,7 +6,7 @@ import threading
 
 from .config import Config
 from .library.db import Database
-from .fulltext import FulltextIndex, Indexer
+from .pdf.fulltext import FulltextIndex, Indexer
 from .notes import NotesIndex, Vault
 from .notes.attachments import Attachments
 from .notes.service import NotesService

@@ -8,7 +8,7 @@ from flask import Blueprint, Response, jsonify, request, send_from_directory
 from werkzeug.utils import secure_filename
 
 from .. import pdf_finder, remote_pdf
-from ..pdftext import clean_text, extract_text, find_identifier
+from ..pdf.text import clean_text, extract_text, find_identifier
 from . import body, error, svc
 
 bp = Blueprint("attachments", __name__)

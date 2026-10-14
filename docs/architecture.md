@@ -58,7 +58,7 @@ Two objects tie the backend together:
 | `formats/` | Import and export for BibTeX, RIS, EndNote and CSL-JSON, behind one registry. | none |
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
 | `mcp/` | The MCP server: the JSON-RPC layer and the library tools. | none (it uses the other packages) |
-| `fulltext.py`, `pdftext.py`, `pdfrender.py` | The PDF text index, text extraction and page rendering. | `fulltext.db` |
+| `pdf/` | PDF files on disk: text extraction (`text.py`), page rendering for the MCP tools (`render.py`) and the full-text index (`fulltext.py`). | `fulltext.db` |
 | `metadata.py`, `pdf_finder.py`, `remote_pdf.py` | Online lookups: metadata, open-access PDFs and PDFs behind web links. | none |
 | `references.py`, `graph.py` | The citation graph: reference lists fetched online and the Graph view's network. | `citations.db` |
 | `guard.py`, `devices.py`, `lan.py` | Who may use the server: other websites never, other devices only once paired. | `auth.db` |

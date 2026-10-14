@@ -24,8 +24,8 @@ from ..notes import frontmatter, parser
 from ..notes.attachments import attachment_name
 from ..notes.service import now_iso, sniff_image, ulid
 from ..notes.vault import ATTACHMENTS, Conflict, InvalidPath, NoteExists, slugify
-from .. import pdfrender
-from ..pdftext import extract_pages
+from ..pdf import render as pdfrender
+from ..pdf.text import extract_pages
 from ..references import identifiers
 from ..library.repository import NotFound
 from .notecheck import NoteChecker

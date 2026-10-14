@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from backend import pdfrender
+from backend.pdf import render as pdfrender
 
 from backend.mcp import build_server
 from backend.mcp.protocol import PROTOCOL_VERSIONS, Server, Tool, serve_stdio
