@@ -2,7 +2,7 @@
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
   Attachment, ChangeFeed, CiteEntry, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
-  ItemList, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NotesListing,
+  ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NotesListing,
   PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag,
 } from './types.js';
 
@@ -118,7 +118,7 @@ export const api = {
   // notes (addressed by their path inside the notes folder)
   notes: () => request<NotesListing>('GET', '/api/notes'),
   getNote: (path: string) => request<NoteFile>('GET', `/api/notes/note?${qs({ path })}`),
-  createNote: (data: Record<string, unknown>) => request('POST', '/api/notes/note', data),
+  createNote: (data: Record<string, unknown>) => request<Omit<NoteFile, 'info'>>('POST', '/api/notes/note', data),
   noteHistory: (path: string) => request<NoteHistory>('GET', `/api/notes/history?${qs({ path })}`),
   noteVersion: (id: string) => request<HistoryEntry & { before: string }>('GET', `/api/notes/history/version?${qs({ id })}`),
   saveNote: (path: string, text: string, hash: string | null) => request('PUT', '/api/notes/note', { path, text, hash }),
@@ -141,7 +141,7 @@ export const api = {
   deleteNoteAttachment: (trashId: string, name: string) => request('POST', '/api/notes/attachments/delete', { trash_id: trashId, name }),
   citeIndex: () => request<CiteEntry[]>('GET', '/api/notes/cite_index'),
   renamePlan: (old: string, nu: string) => request<RenamePlan>('GET', `/api/notes/rename_plan?${qs({ old, new: nu })}`),
-  itemNotes: (id: string) => request('GET', `/api/items/${id}/notes`),
+  itemNotes: (id: string) => request<ItemNotes>('GET', `/api/items/${id}/notes`),
   restoreNote: (trashId: string, path: string) => request('POST', '/api/notes/restore', { trash_id: trashId, path }),
   noteLinks: (path: string) => request('GET', `/api/notes/links?${qs({ path })}`),
   searchNotes: (q: string) => request('GET', `/api/notes/search?${qs({ q })}`),

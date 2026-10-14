@@ -216,6 +216,15 @@ export interface NoteAttachments {
 /** GET /api/notes/note: a note's text, its hash (for hash-checked saves) and its index entry. */
 export interface NoteFile { path: string; text: string; hash: string; info: NoteInfo | null }
 
+/** GET /api/items/<id>/notes: the item's paper notes and the notes that cite it (empty without a citation key). */
+export interface ItemNotes {
+  key: string;
+  paper_notes: { path: string; title: string | null; type: string | null; author: string | null; updated: string | null }[];
+  citing: { path: string; line: number; context: string; locator: string; page: number | null;
+    source_title: string | null; type: string | null; author: string | null }[];
+  suggested_path?: string;
+}
+
 export interface NotesListing {
   notes: NoteInfo[];
   folders: string[];

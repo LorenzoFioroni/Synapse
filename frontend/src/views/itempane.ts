@@ -1,7 +1,6 @@
-// @ts-nocheck
 // Right-hand item pane: editable metadata, authors, abstract, attachments.
 import * as A from '../actions.js';
-import { api, openAttachment } from '../api.js';
+import { type ApiError, api, openAttachment } from '../api.js';
 import { icon, typeIcon } from '../icons.js';
 import { byId, emit, folderById, folderPath, itemTypeLabel, on, selectedItems, state } from '../store.js';
 import { openMenu } from '../ui/menu.js';
@@ -13,44 +12,46 @@ import { openMetadataReview } from './metadataReview.js';
 import { confirmKeyChange } from './notes/rekeyDialog.js';
 import { fetchReferencesBulk, fillReferences } from './referencesSection.js';
 import { addSelectionToFolder, editTagsDialog, tagInput } from './organizeDialogs.js';
+import type { Item, ItemNotes } from '../types.js';
 
-let root, shownId = null;
+let root: HTMLElement;
+let shownId: string | null = null;
 // Sections open/closed: the user's choice per section, else the default (Abstract and
 // References start collapsed; Notes, Info, Folder & Tags and Attachments open).
 const DEFAULT_COLLAPSED = new Set(['abstract', 'references']);
-const sectionState = storage('zc.sectionState', null)
-  || Object.fromEntries(storage('zc.collapsedSections', []).map((id) => [id, true]));   // older setting
-const isCollapsed = (id) => (id in sectionState ? sectionState[id] : DEFAULT_COLLAPSED.has(id));
+const sectionState: Record<string, boolean> = storage<Record<string, boolean> | null>('zc.sectionState', null)
+  || Object.fromEntries(storage<string[]>('zc.collapsedSections', []).map((id) => [id, true]));   // older setting
+const isCollapsed = (id: string) => (id in sectionState ? sectionState[id] : DEFAULT_COLLAPSED.has(id));
 let showAllFields = storage('zc.showAllFields', false);
 
-export function initItemPane() {
-  root = document.getElementById('item-pane');
+export function initItemPane(): void {
+  root = document.getElementById('item-pane')!;
   root.addEventListener('click', handleClick);
-  root.addEventListener('dragover', (e) => { if (shownId && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+  root.addEventListener('dragover', (e) => { if (shownId && [...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
   root.addEventListener('drop', (e) => {
-    if (shownId && e.dataTransfer.files.length && !e.defaultPrevented) { e.preventDefault(); A.uploadAttachments(shownId, e.dataTransfer.files); }
+    if (shownId && e.dataTransfer?.files.length && !e.defaultPrevented) { e.preventDefault(); A.uploadAttachments(shownId, e.dataTransfer.files); }
   });
-  on('selection', render);
-  on('items', render);
+  on('selection', () => render());
+  on('items', () => render());
   on('item-updated', (id) => { if (id === shownId) refreshHeader(); });
   on('focus-field', ({ id, field }) => {
     if (shownId !== id) render(true);
     setTimeout(() => {
-      const el = root.querySelector(`[data-field="${field}"]`);
+      const el = root.querySelector<HTMLElement>(`[data-field="${field}"]`);
       if (el) { el.focus(); selectAll(el); }
     }, 30);
   });
   render();
 }
 
-function selectAll(el) {
+function selectAll(el: HTMLElement): void {
   if (el.isContentEditable) {
     const r = document.createRange(); r.selectNodeContents(el);
-    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
-  } else el.select?.();
+    const s = getSelection()!; s.removeAllRanges(); s.addRange(r);
+  } else (el as HTMLInputElement).select?.();
 }
 
-function render(force = false) {
+function render(force = false): void {
   const items = selectedItems();
   if (items.length === 1) {
     const it = items[0];
@@ -75,9 +76,9 @@ function render(force = false) {
 }
 
 /** The list holds lean items (no abstract, no empty fields): fetch the whole one for the pane. */
-const loading = new Set();
-const whole = new Map();   // id → last whole item fetched (the list reloads lean copies)
-async function loadWhole(id) {
+const loading = new Set<string>();
+const whole = new Map<string, Item>();   // id → last whole item fetched (the list reloads lean copies)
+async function loadWhole(id: string): Promise<void> {
   if (loading.has(id)) return;
   loading.add(id);
   try {
@@ -98,16 +99,16 @@ async function loadWhole(id) {
   } catch { /* the pane keeps the lean copy */ } finally { loading.delete(id); }
 }
 
-function renderEmpty() {
-  const n = state.counts[state.view] || 0;
-  const where = { trash: 'in the Trash', duplicates: 'look like duplicates' }[state.view] || 'in your library';
+function renderEmpty(): void {
+  const n = state.counts[state.view as keyof typeof state.counts] || 0;
+  const where = ({ trash: 'in the Trash', duplicates: 'look like duplicates' } as Record<string, string>)[state.view] || 'in your library';
   const tip = state.view === 'duplicates' && n ? '<p class="subtle">Select one item of a group and choose “Keep This One” to trash the others.</p>' : '';
   root.innerHTML = `<div class="empty-state">${icon(state.view === 'trash' ? 'trash' : 'doc')}
     <h3>${state.view === 'trash' ? 'Trash' : 'No item selected'}</h3>
     <p class="muted">${plural(n, 'item')} ${where}.</p>${tip}</div>`;
 }
 
-function renderMulti(items) {
+function renderMulti(items: Item[]): void {
   const ids = items.map((i) => i.id);
   const trash = state.view === 'trash';
   root.innerHTML = `<div class="multi"><div class="count">${items.length}</div><div class="muted">items selected</div>
@@ -124,8 +125,8 @@ function renderMulti(items) {
        <button class="btn" data-a="regen">${icon('refresh')} Regenerate Keys</button>
        <button class="btn btn-danger" data-a="trash">${icon('trash')} Move to Trash</button>`}
     </div></div>`;
-  root.querySelector('.actions').addEventListener('click', (e) => {
-    const a = e.target.closest('[data-a]')?.dataset.a;
+  root.querySelector('.actions')!.addEventListener('click', (e) => {
+    const a = (e.target as Element).closest<HTMLElement>('[data-a]')?.dataset.a;
     if (a === 'move') addSelectionToFolder(ids);
     if (a === 'tags') editTagsDialog(ids);
     if (a === 'metadata') openMetadataReview(ids);
@@ -141,8 +142,8 @@ function renderMulti(items) {
 }
 
 /* ------------------------------------------------------------ one item */
-function fieldLabel(key, type) {
-  const s = state.schema;
+function fieldLabel(key: string, type: string): string {
+  const s = state.schema!;
   if (key === 'journal') return s.containerLabels[type] || 'Publication';
   return s.fieldLabelOverrides[type]?.[key] || s.fields.find((f) => f.key === key)?.label || key;
 }
@@ -151,39 +152,39 @@ function fieldLabel(key, type) {
 // (type-specific details, URL, Extra, rare identifiers…) is behind "Show more fields".
 const MAIN_FIELDS = ['year', 'journal', 'doi'];
 
-function infoFieldKeys(it) {
-  const s = state.schema;
+function infoFieldKeys(it: Item): { main: string[]; more: string[] } {
+  const s = state.schema!;
   const type = it.item_type || 'journalArticle';
   const typeFields = s.typeFields[type] || [];
   const main = MAIN_FIELDS.filter((k) => k !== 'journal' || typeFields.includes('journal'));
   const shown = new Set(['citation_key', 'title', 'authors', 'item_type', 'abstract', ...main]);
-  const more = [];
+  const more: string[] = [];
   for (const k of [...typeFields, ...s.commonFields, ...s.fields.filter((f) => f.editable).map((f) => f.key)]) {
     if (!shown.has(k) && !more.includes(k)) more.push(k);
   }
   return { main, more };
 }
 
-function fv(key, value, { multiline = false, placeholder = '' } = {}) {
+function fv(key: string, value: unknown, { multiline = false, placeholder = '' } = {}): string {
   const v = value === null || value === undefined ? '' : String(value);
   return `<div class="fv" contenteditable="plaintext-only" spellcheck="${multiline ? 'true' : 'false'}" data-field="${key}"
     data-multiline="${multiline}" data-empty="${v === ''}" data-placeholder="${escapeHtml(placeholder)}">${escapeHtml(v)}</div>`;
 }
 
-function section(id, title, bodyHtml, { count = '', act = '' } = {}) {
+function section(id: string, title: string, bodyHtml: string, { count = '' as string | number, act = '' } = {}): string {
   return `<div class="section ${isCollapsed(id) ? 'collapsed' : ''}" data-section="${id}">
     <button class="section-head">${icon('chevronDown', 'icon-sm chev')}${title}${count !== '' ? ` <span class="count">${count}</span>` : ''}${act ? `<span class="act">${act}</span>` : ''}</button>
     <div class="section-body">${bodyHtml}</div></div>`;
 }
 
-function renderItem(it) {
+function renderItem(it: Item): void {
   shownId = it.id;
   const type = it.item_type || 'journalArticle';
   const trash = state.view === 'trash';
   const { main, more } = infoFieldKeys(it);
-  const typeOptions = state.schema.itemTypes.map((t) => `<option value="${t.key}" ${t.key === type ? 'selected' : ''}>${escapeHtml(t.label)}</option>`).join('');
+  const typeOptions = state.schema!.itemTypes.map((t) => `<option value="${t.key}" ${t.key === type ? 'selected' : ''}>${escapeHtml(t.label)}</option>`).join('');
 
-  const fieldRow = (key) => {
+  const fieldRow = (key: string) => {
     let tools = '';
     if (key === 'doi' && it.doi) tools = `<button class="icon-btn" data-tool="open-doi" title="Open DOI">${icon('open', 'icon-sm')}</button>`;
     if (key === 'url' && it.url) tools = `<button class="icon-btn" data-tool="open-url" title="Open URL">${icon('open', 'icon-sm')}</button>`;
@@ -251,33 +252,33 @@ function renderItem(it) {
     </div>`;
   bindItem(it);
   // Notes and references take a request each: wait until the selection rests, so holding an
-  // arrow key through a big library does not queue hundreds of them (issue #24).
+  // arrow key through a big library does not queue hundreds of them.
   clearTimeout(fillTimer);
   const fill = () => {
     if (shownId !== it.id) return;
     fillNotes(it);
-    fillReferences(root.querySelector('[data-ip-refs]'), it, () => shownId === it.id);
+    fillReferences(root.querySelector<HTMLElement>('[data-ip-refs]')!, it, () => shownId === it.id);
   };
   if (Date.now() - lastFill > FILL_SETTLE_MS) { lastFill = Date.now(); fill(); }
   else fillTimer = setTimeout(() => { lastFill = Date.now(); fill(); }, FILL_SETTLE_MS);
 }
 const FILL_SETTLE_MS = 180;
-let fillTimer = null, lastFill = 0;
+let fillTimer: ReturnType<typeof setTimeout> | undefined, lastFill = 0;
 
 /* ---------------------------------------------------------------- notes */
-async function fillNotes(it) {
-  const el = root.querySelector('[data-ip-notes]');
+async function fillNotes(it: Item): Promise<void> {
+  const el = root.querySelector<HTMLElement>('[data-ip-notes]');
   if (!el) return;
-  let res;
-  try { res = await api.itemNotes(it.id); } catch (e) { el.innerHTML = `<span class="muted">${escapeHtml(e.message)}</span>`; return; }
+  let res: ItemNotes;
+  try { res = await api.itemNotes(it.id); } catch (e) { el.innerHTML = `<span class="muted">${escapeHtml((e as Error).message)}</span>`; return; }
   if (shownId !== it.id || !el.isConnected) return;
   if (!res.key) { el.innerHTML = '<span class="muted">Give this item a citation key to write notes about it.</span>'; return; }
   const trash = state.view === 'trash';
   const paper = res.paper_notes[0];
-  const byNote = new Map();
+  const byNote = new Map<string, { title: string | null; path: string; refs: ItemNotes['citing'] }>();
   for (const c of res.citing) {
     if (paper && c.path === paper.path) continue;           // its own paper note is shown above
-    (byNote.get(c.path) || byNote.set(c.path, { title: c.source_title, path: c.path, refs: [] }).get(c.path)).refs.push(c);
+    (byNote.get(c.path) || byNote.set(c.path, { title: c.source_title, path: c.path, refs: [] }).get(c.path)!).refs.push(c);
   }
   const head = paper
     ? `<button class="ip-note paper" data-open-note="${escapeHtml(paper.path)}">${icon('edit', 'icon-sm')}<span class="nm">${escapeHtml(paper.title || 'Paper note')}</span><span class="muted">paper note</span></button>`
@@ -294,26 +295,26 @@ async function fillNotes(it) {
   if (count && n && !count.querySelector('.count')) count.insertAdjacentHTML('beforeend', ` <span class="count">${n}</span>`);
 }
 
-function subline(it) {
+function subline(it: Item): string {
   return [shortAuthors(it.authors), it.year, it.journal].filter(Boolean).join(' · ');
 }
 
-function refreshHeader() {
-  const it = byId(shownId);
+function refreshHeader(): void {
+  const it = shownId && byId(shownId);
   if (!it) return;
   const t = root.querySelector('[data-h="title"]');
   if (t) t.textContent = it.title || 'Untitled';
   const s = root.querySelector('[data-h="sub"]');
   if (s) s.textContent = subline(it);
   // reflect server-side changes (e.g. an auto-generated citation key) in fields not being edited
-  root.querySelectorAll('.fv[contenteditable][data-field]').forEach((el) => {
+  root.querySelectorAll<HTMLElement>('.fv[contenteditable][data-field]').forEach((el) => {
     if (el === document.activeElement) return;
-    const v = it[el.dataset.field] == null ? '' : String(it[el.dataset.field]);
+    const v = it[el.dataset.field!] == null ? '' : String(it[el.dataset.field!]);
     if (el.textContent !== v) { el.textContent = v; el.dataset.empty = v === '' ? 'true' : 'false'; }
   });
 }
 
-function authorRow(a) {
+function authorRow(a: string): string {
   const [last, first] = a.includes(',') ? a.split(/,(.*)/s).map((x) => (x || '').trim()) : [a, ''];
   return `<div class="author-row">
     <input class="last" placeholder="Last" value="${escapeHtml(last)}" aria-label="Last name">
@@ -322,11 +323,11 @@ function authorRow(a) {
     <button class="icon-btn" data-author="add" title="Add author below" tabindex="-1">${icon('plus', 'icon-sm')}</button></div>`;
 }
 
-function bindItem(it) {
+function bindItem(it: Item): void {
   const id = it.id;
 
   // tags: changes are saved immediately
-  const tagBox = root.querySelector('.ip-tags');
+  const tagBox = root.querySelector<HTMLElement>('.ip-tags');
   if (tagBox) {
     tagInput(tagBox, {
       tags: it.tags || [],
@@ -338,21 +339,21 @@ function bindItem(it) {
 
   // sections collapse
   root.querySelectorAll('.section-head').forEach((b) => b.addEventListener('click', (e) => {
-    if (e.target.closest('.act')) return;
-    const sec = b.parentElement;
-    sectionState[sec.dataset.section] = sec.classList.toggle('collapsed');
+    if ((e.target as Element).closest('.act')) return;
+    const sec = b.parentElement!;
+    sectionState[sec.dataset.section!] = sec.classList.toggle('collapsed');
     store('zc.sectionState', sectionState);
   }));
 
   // text fields
-  root.querySelectorAll('.fv[contenteditable]').forEach((el) => {
+  root.querySelectorAll<HTMLElement>('.fv[contenteditable]').forEach((el) => {
     if (!('contentEditable' in el) || el.contentEditable !== 'plaintext-only') el.contentEditable = 'true'; // Firefox
     let original = el.textContent;
     el.addEventListener('focus', () => { original = el.textContent; });
     el.addEventListener('input', () => { el.dataset.empty = el.textContent === '' ? 'true' : 'false'; });
     el.addEventListener('paste', (e) => {
       e.preventDefault();
-      const text = (e.clipboardData.getData('text/plain') || '').replace(el.dataset.multiline === 'true' && el.dataset.field !== 'title' ? /\r/g : /\s*\n\s*/g, ' ');
+      const text = (e.clipboardData?.getData('text/plain') || '').replace(el.dataset.multiline === 'true' && el.dataset.field !== 'title' ? /\r/g : /\s*\n\s*/g, ' ');
       document.execCommand('insertText', false, text);
     });
     el.addEventListener('keydown', (e) => {
@@ -361,7 +362,8 @@ function bindItem(it) {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); el.blur(); }
     });
     el.addEventListener('blur', async () => {
-      const value = el.dataset.field === 'title' ? el.textContent.replace(/\s*\n\s*/g, ' ').trim() : el.textContent.trim();
+      const content = el.textContent || '';
+      const value = el.dataset.field === 'title' ? content.replace(/\s*\n\s*/g, ' ').trim() : content.trim();
       if (value === (original || '').trim()) return;
       if (el.dataset.field === 'citation_key' && state.settings.notes_enabled !== false
           && !(await confirmKeyChange((original || '').trim(), value))) {
@@ -371,38 +373,38 @@ function bindItem(it) {
       }
       original = value;
       try {
-        await A.updateField(id, el.dataset.field, value);
+        await A.updateField(id, el.dataset.field!, value);
         el.classList.remove('saved'); void el.offsetWidth; el.classList.add('saved');
       } catch { el.textContent = original; }
     });
   });
 
   root.querySelector('select[data-field="item_type"]')?.addEventListener('change', async (e) => {
-    await A.updateField(id, 'item_type', e.target.value);
+    await A.updateField(id, 'item_type', (e.target as HTMLSelectElement).value);
     render(true);
   });
 
   // authors
-  const box = root.querySelector('.authors');
+  const box = root.querySelector<HTMLElement>('.authors')!;
   const saveAuthors = debounce(async () => {
     const value = [...box.querySelectorAll('.author-row')].map((r) => {
-      const l = r.querySelector('.last').value.trim(), f = r.querySelector('.first').value.trim();
+      const l = r.querySelector<HTMLInputElement>('.last')!.value.trim(), f = r.querySelector<HTMLInputElement>('.first')!.value.trim();
       return l || f ? (f ? `${l}, ${f}` : l) : '';
     }).filter(Boolean).join('; ');
     if (value === (byId(id)?.authors || '')) return;
     await A.updateField(id, 'authors', value);
   }, 700);
   box.addEventListener('input', saveAuthors);
-  box.addEventListener('focusout', (e) => { if (!box.contains(e.relatedTarget)) saveAuthors.flush(); });
+  box.addEventListener('focusout', (e) => { if (!box.contains(e.relatedTarget as Node | null)) saveAuthors.flush(); });
   box.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-author]');
+    const b = (e.target as Element).closest<HTMLElement>('[data-author]');
     if (!b) return;
-    const row = b.closest('.author-row');
+    const row = b.closest('.author-row')!;
     if (b.dataset.author === 'add') {
       const n = document.createElement('div');
       n.innerHTML = authorRow('');
-      row.after(n.firstElementChild);
-      row.nextElementSibling.querySelector('.last').focus();
+      row.after(n.firstElementChild!);
+      row.nextElementSibling!.querySelector<HTMLElement>('.last')!.focus();
     } else {
       if (box.children.length > 1) row.remove();
       else row.querySelectorAll('input').forEach((i) => { i.value = ''; });
@@ -410,52 +412,57 @@ function bindItem(it) {
     }
   });
   box.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+    const target = e.target as HTMLElement;
+    if (e.key === 'Enter' && target.tagName === 'INPUT') {
       e.preventDefault();
-      const row = e.target.closest('.author-row');
-      if (e.shiftKey || e.target.classList.contains('first')) {
-        row.querySelector('[data-author="add"]').click();
-      } else row.querySelector('.first').focus();
+      const row = target.closest('.author-row')!;
+      if (e.shiftKey || target.classList.contains('first')) {
+        row.querySelector<HTMLElement>('[data-author="add"]')!.click();
+      } else row.querySelector<HTMLElement>('.first')!.focus();
     }
-    if (e.key === 'Escape') e.target.blur();
+    if (e.key === 'Escape') target.blur();
   });
 
   // attachment drop zone
-  const dz = root.querySelector('.att-drop');
+  const dz = root.querySelector<HTMLElement>('.att-drop');
   if (dz) {
     dz.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); dz.classList.add('over'); });
     dz.addEventListener('dragleave', () => dz.classList.remove('over'));
-    dz.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); dz.classList.remove('over'); A.uploadAttachments(id, e.dataTransfer.files); });
+    dz.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); dz.classList.remove('over'); if (e.dataTransfer) A.uploadAttachments(id, e.dataTransfer.files); });
   }
 }
 
-async function handleClick(e) {
+async function handleClick(e: MouseEvent): Promise<void> {
   const id = shownId;
   if (!id) return;
   const it = byId(id);
   if (!it) return;
-  const rm = e.target.closest('[data-remove-folder]');
+  const target = e.target as Element;
+  const rm = target.closest<HTMLElement>('[data-remove-folder]');
   if (rm) { e.stopPropagation(); A.removeFolderMembership(id, Number(rm.dataset.removeFolder)); return; }
-  const open = e.target.closest('[data-open-folder]');
+  const open = target.closest<HTMLElement>('[data-open-folder]');
   if (open) { A.setView(`folder:${open.dataset.openFolder}`); return; }
-  const on = e.target.closest('[data-open-note]');
-  if (on) { emit('open-note', { path: on.dataset.openNote, line: Number(on.dataset.openLine) || null }); return; }
-  const t = e.target.closest('[data-tool]')?.dataset.tool;
+  const note = target.closest<HTMLElement>('[data-open-note]');
+  if (note) { emit('open-note', { path: note.dataset.openNote!, line: Number(note.dataset.openLine) || null }); return; }
+  const t = target.closest<HTMLElement>('[data-tool]')?.dataset.tool;
   const it2 = byId(id) || it;
   if (t === 'new-paper-note') {
     try {
       const res = await api.createNote({ item_id: id });
       emit('open-note', { path: res.path });
     } catch (err) {
-      if (err.data?.path) emit('open-note', { path: err.data.path }); else toastError(err);
+      const existing = ((err as ApiError).data as { path?: string } | undefined)?.path;   // the item has a paper note already
+      if (existing) emit('open-note', { path: existing }); else toastError(err);
     }
     return;
   }
   if (!t) {
-    const att = e.target.closest('.att');
-    const menuBtn = e.target.closest('[data-att-menu]');
+    const att = target.closest<HTMLElement>('.att');
+    const menuBtn = target.closest<HTMLElement>('[data-att-menu]');
+    const atts = it2.attachments || [];
     if (menuBtn) {
-      const a = it2.attachments.find((x) => String(x.id) === menuBtn.dataset.attMenu);
+      const a = atts.find((x) => String(x.id) === menuBtn.dataset.attMenu);
+      if (!a) return;
       openMenu([
         { label: 'Open', icon: 'open', run: () => openAttachment(it2, a) },
         { label: 'Rename…', icon: 'edit', run: () => renameAttachment(a) },
@@ -463,14 +470,14 @@ async function handleClick(e) {
         { label: 'Delete Attachment', icon: 'trash', danger: true, run: () => deleteAttachment(a) },
       ], menuBtn);
     } else if (att) {
-      const a = it2.attachments.find((x) => String(x.id) === att.dataset.att);
+      const a = atts.find((x) => String(x.id) === att.dataset.att);
       if (a) openAttachment(it2, a);
     }
     return;
   }
   if (t === 'open-pdf') {
     const atts = it2.attachments || [];
-    if (atts.length > 1) openMenu(atts.map((a) => ({ label: `Open “${a.name || 'PDF'}”`, icon: 'pdf', run: () => openAttachment(it2, a) })), e.target.closest('[data-tool]'));
+    if (atts.length > 1) openMenu(atts.map((a) => ({ label: `Open “${a.name || 'PDF'}”`, icon: 'pdf', run: () => openAttachment(it2, a) })), target.closest<HTMLElement>('[data-tool]')!);
     else A.openPdf(it2);
   }
   if (t === 'pick-folder') addSelectionToFolder([id]);
@@ -479,7 +486,7 @@ async function handleClick(e) {
   if (t === 'find-pdf') A.findPdf(id);
   if (t === 'restore') A.restoreSelected();
   if (t === 'open-doi') window.open(`https://doi.org/${it2.doi}`, '_blank');
-  if (t === 'open-url') window.open(it2.url, '_blank');
+  if (t === 'open-url' && it2.url) window.open(it2.url, '_blank');
   if (t === 'copy-key') { if (it2.citation_key) { await copyText(it2.citation_key); toast(`Copied ${it2.citation_key}`, { type: 'success' }); } }
   if (t === 'regen-key') { await A.regenerateCitekeys([id]); render(true); }
   if (t === 'add-pdf') pickFiles((files) => A.uploadAttachments(id, files));
@@ -494,14 +501,14 @@ async function handleClick(e) {
       { label: 'Export Item…', icon: 'export', run: () => openExport([id]) },
       'sep',
       { label: 'Move to Trash', icon: 'trash', danger: true, run: A.trashSelected },
-    ], e.target.closest('[data-tool]'));
+    ], target.closest<HTMLElement>('[data-tool]')!);
   }
 }
 
-export function toggleItemPane(force) {
+export function toggleItemPane(force?: boolean): void {
   const hide = force !== undefined ? !force : !root.classList.contains('collapsed');
   root.classList.toggle('collapsed', hide);
-  document.getElementById('resizer-right').hidden = hide;
+  document.getElementById('resizer-right')!.hidden = hide;
   store('zc.itemPaneHidden', hide);
   emit('layout');
 }

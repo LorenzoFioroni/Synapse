@@ -152,7 +152,7 @@ async function onCardClick(e: MouseEvent): Promise<void> {
   if (act === 'note') deps.openNote(it.note!);
   if (act === 'new-note') {
     try {
-      const res = await api.createNote({ item_id: it.id }) as { path: string };
+      const res = await api.createNote({ item_id: it.id });
       await deps.refreshLibrary();
       deps.openNote(res.path);
     } catch (err) {

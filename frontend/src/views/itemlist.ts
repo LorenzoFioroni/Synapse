@@ -603,10 +603,10 @@ async function copyBibtex(ids) {
   } catch (e) { toastError(e); }
 }
 
-export function pickFiles(cb, accept = 'application/pdf,.pdf', multiple = true) {
+export function pickFiles(cb: (files: FileList) => void, accept = 'application/pdf,.pdf', multiple = true): void {
   const input = document.createElement('input');
   input.type = 'file'; input.accept = accept; input.multiple = multiple;
-  input.onchange = () => { if (input.files.length) cb(input.files); };
+  input.onchange = () => { if (input.files?.length) cb(input.files); };
   input.click();
 }
 
