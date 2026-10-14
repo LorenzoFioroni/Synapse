@@ -40,11 +40,18 @@ and rebuilt from the PDFs.
 | `documents` | One row per indexed attachment: `attachment_id` (primary key), `paper_id`, `file`, `mtime`, `size`, `pages`, `chars`, `indexed_at`. |
 | `content` | An FTS5 table with `text`, and `attachment_id` and `paper_id` as unindexed columns. Tokenizer `unicode61 remove_diacritics 2`, so matching ignores case and accents. |
 | `content_plain` | The fallback when SQLite has no FTS5: `attachment_id`, `paper_id`, `text`. |
+| `meta` | `content`: which of the two tables the `documents` rows belong to. |
 
 `_init` tries to create `content`. If SQLite raises because FTS5 is missing, it logs a warning,
 sets `fts = False` and uses `content_plain` instead. `_table` names whichever is in use, so the
 write code is the same for both. `stats()` reports `fts5`, and Settings shows
 "FTS5 unavailable (slower fallback)" when it is false.
+
+This is decided at every start, so it can change (another Python or SQLite build), while
+`documents` is shared. `_check_content_table` compares the table in use with `meta`; when they
+differ it empties `documents` and both text tables, so the next indexer run indexes every PDF
+again instead of counting them as indexed while the table in use has none of their text. An
+index from before `meta` existed is checked by looking for `documents` rows with no text row.
 
 ### Writing
 
@@ -70,7 +77,9 @@ Writes take `_write_lock`, because the indexer thread and request threads can bo
 2. Collects the attachments whose file is on disk, ends in `.pdf`, and `needs_indexing`.
    Web-link attachments have no file and are skipped.
 3. Indexes them one by one. An exception on one file is logged and counted in
-   `status["errors"]`; the run goes on.
+   `status["errors"]`; the run goes on. The count starts from zero at each run, so it is the
+   number of files that failed in the last run (a failed file has no `documents` row and is
+   tried again every run).
 
 `sync()` starts a run. If a run is already going, it sets `_again` instead, and the thread does
 one more run when it finishes. Many calls in a row therefore cost at most one extra run.
@@ -86,7 +95,7 @@ What starts a run:
 | The web app starts | `create_app` | yes |
 | A file is attached (upload, dropped PDF, browser extension, PDF found online) | `Services.attachments_changed` | yes |
 | A backup is restored | `Backups._after_restore` | yes |
-| `POST /api/fulltext/sync` | `backend/api/items.py` | no |
+| `POST /api/fulltext/sync` (also sent when Settings → "Index PDFs automatically" is turned on) | `backend/api/items.py` | no |
 | `POST /api/fulltext/rebuild` (Settings → Rebuild Index) | `backend/api/items.py` | no |
 
 The MCP server never starts the indexer. It reads `fulltext.db` for search and for page counts.
@@ -125,7 +134,7 @@ field is searchable without touching the search code.
 | `folder:Transport` | In a folder with this name, at any depth. |
 | `folder:"Physics/Transport"` | In a folder with this path, starting at the top level. |
 | `folder:none`, `folder:unfiled` | In no folder. |
-| `type:book` | Item type key or label starts with the value, or the label contains it. |
+| `type:book`, `type:journal` | A whole type key or label (`book`, `"book section"`) means that type only. Anything else matches types whose key or label starts with the value, or whose label contains it. |
 | `year:2020`, `year:2018-2022`, `year:>2015`, `year:<=2000` | By year (the first four digits of `year`). |
 | `has:pdf` (or `attachment`, `file`), `has:tag`, `has:folder`, `has:<field>` | Has any attachment, tag or folder, or a non-empty field. |
 | `author:`, `title:`, `journal:`, `doi:`, `key:` | The value appears in that field (`key` is `citation_key`). |
@@ -147,7 +156,8 @@ matched as substrings of the normalised text.
 4. Each item's metadata is joined into a normalised haystack (`_build_haystack`), and each term
    must be in the haystack or in that term's text matches. Fields are joined with a `\u0001`
    separator, so a phrase cannot match across two fields. Haystacks are cached in `_hay_cache`,
-   keyed by id, `date_modified`, mode, number of attachments and tags.
+   keyed by id, `date_modified`, mode, the attachments' names and the tags. `date_modified`
+   counts whole seconds, so the key names what the haystack holds rather than trusting it alone.
 
 Each term is matched on its own, so in one query one word can match the title and another the
 PDF.
@@ -159,7 +169,8 @@ With FTS5, `match()` quotes the term (`_fts_quote`). A single word becomes a pre
 `rank`, at most 2000 per term, and the snippet is FTS5's `snippet()` with about 14 tokens. Note
 that FTS5 matches whole tokens or their beginnings, while metadata is matched anywhere in a word.
 
-Without FTS5, `match()` uses `LIKE '%term%'` on `content_plain` and cuts a snippet of 60
+Without FTS5, `match()` uses `LIKE '%term%'` on `content_plain` (with `%`, `_` and `\` in the
+term escaped, so `100%` or `snake_case` match only themselves) and cuts a snippet of 60
 characters on each side of the first match. This is slower, and SQLite's `LIKE` ignores case
 only for ASCII letters and does not ignore accents.
 
@@ -182,14 +193,18 @@ that matched only in the PDF or notes text; if every term also matched the metad
 shows the first text match in `all` and `fulltext` modes, for context. A snippet from a note
 starts with `<span class="hit-src">Note · <title></span>`. Despite the key name `fulltext`,
 `hits` holds note snippets too. The browser shows the snippet in the items table
-(`frontend/src/views/itemlist/rows.ts`) and the item pane.
+(`frontend/src/views/itemlist/rows.ts`) and the item pane. The badge after the title says
+"full text" for a PDF snippet and "note" for a note snippet (`hitBadge`, which looks for that
+label).
 
 ### Matching through notes
 
 `NoteTextMatcher` in `backend/notes/service.py` lets the search find an item by what the notes
 say about it: the body of its paper note, and each line in another note that cites it
 (`NotesIndex.texts_by_key`). `NotesService.text_matcher()` caches it until the notes index or
-the citation keys change. `GET /api/items` uses it only while the `notes_enabled` setting is on.
+the citation keys change. `NotesIndex.signature()` tells when the index changed: it combines a
+counter bumped by this process with the size, modification time and SQLite change counter of
+`notes_index.db`, so a note the MCP server edits in its own process is searched as it is now. `GET /api/items` uses it only while the `notes_enabled` setting is on.
 
 ## Smart folders
 
@@ -200,7 +215,9 @@ mode must be one of `MODES`). It uses the same `search()` and query language.
 For `view=smart:<id>`, `items_for_view` returns the whole library (not the Trash) with the
 folder's query and mode. `GET /api/items` runs that query first, then the `tags` filter, then
 the query typed in the search box with the current mode, and merges the snippets.
-`GET /api/search/preview` counts the matches while the user edits a smart folder.
+`GET /api/search/preview` counts the matches while the user edits a smart folder. It searches
+with the notes matcher too (`notes_matcher` in `backend/api/items.py`, shared with
+`GET /api/items`), so the count is what the folder will show.
 
 ## Search elsewhere
 

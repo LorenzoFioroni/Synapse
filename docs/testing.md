@@ -90,15 +90,18 @@ These check rules of the code base rather than behaviour:
 |---|---|
 | `citeTarget.test.mjs` | `views/notes/citeTarget.js` and `viewer/locate.js`: where a citation points in a PDF, finding a quote |
 | `diff.test.mjs` | `views/notes/diff.js` |
+| `embed.test.mjs` | `views/notes/embed.js` and `linkData.js`: what an embedded note shows, with its own link data |
 | `equations.test.mjs` | `equations.js`, `mathClick.js`, `macros.js` and math in `render.js` |
+| `extract.test.mjs` | `extractCitation` in `browser_extension/extract.js`, with a faked `document` and `location` |
 | `graph.test.mjs` | `views/graph/model.js` |
 | `library.test.mjs` | `views/notes/library.js`: autocomplete ranking |
 | `linkNav.test.mjs` | `viewer/linkNav.js`: link targets and previews in the PDF viewer |
 | `lookupJob.test.mjs` | `LookupJob` in `views/metadataReview.js` |
 | `noteSession.test.mjs` | `views/notes/noteSession.js`: saving, conflicts, drafts |
 | `render.test.mjs` | `views/notes/render.js` |
+| `store.test.mjs` | `sortedItems` in `store.js`, `hitBadge` in `util.js` |
 
-`equations.test.mjs` and `render.test.mjs` load the real markdown-it and KaTeX from
+`embed.test.mjs`, `equations.test.mjs` and `render.test.mjs` load the real markdown-it and KaTeX from
 `frontend/vendor/md/md.js`.
 
 **How pytest runs them.** `tests/test_frontend_js.py` has one test, `test_js_units`. It takes the

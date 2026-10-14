@@ -182,3 +182,14 @@ def test_reserved_folder_any_case(vault):
     vault.write("x/a.md", "a", expected_hash=None)
     with pytest.raises(InvalidPath):
         vault.move_folder("x", "ATTACHMENTS")
+
+
+def test_no_notes_in_the_attachments_folder(vault):
+    """The index never lists notes there (iter_notes skips it), so none may be written there."""
+    for rel in ("attachments/n.md", "Attachments/sub/n.md"):
+        with pytest.raises(InvalidPath):
+            vault.write(rel, "x", expected_hash=None)
+    vault.write("n.md", "x", expected_hash=None)
+    with pytest.raises(InvalidPath):
+        vault.move("n.md", "attachments/n.md")
+    assert vault.exists("n.md") and [r for r, _ in vault.iter_notes()] == ["n.md"]

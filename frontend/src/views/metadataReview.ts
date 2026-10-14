@@ -86,6 +86,7 @@ export class LookupJob {
   articles: Article[];
   prefetched: MetadataLookup | null;
   references: boolean;
+  referencesQueued: Set<string>;
   lookup: (id: string) => Promise<MetadataLookup>;
   stopped: boolean;
   finished: boolean;
@@ -93,15 +94,17 @@ export class LookupJob {
   listeners: Set<(a: Article | null) => void>;
   done: Promise<void> | null;
 
-  constructor(ids: string[], { prefetched = null, references = false, lookup = (id: string) => api.lookup(id), items = byId }: {
+  constructor(ids: string[], { prefetched = null, references = false, referencesQueued = [], lookup = (id: string) => api.lookup(id), items = byId }: {
     prefetched?: MetadataLookup | null;
     references?: boolean;
+    referencesQueued?: string[];
     lookup?: (id: string) => Promise<MetadataLookup>;
     items?: (id: string) => Item | undefined;
   } = {}) {
     this.articles = ids.map((id, n) => ({ id, n: n + 1, item: items(id), status: 'pending', changes: [], unchanged: [], error: null }));
     this.prefetched = prefetched;
     this.references = references;   // also fetch reference lists of the articles when applying
+    this.referencesQueued = new Set(referencesQueued);   // ... except these, already fetched
     this.lookup = lookup;
     this.stopped = false;
     this.finished = false;
@@ -156,6 +159,13 @@ export class LookupJob {
   }
 
   stop(): void { this.stopped = true; }
+
+  /** The articles whose reference lists to queue when `articles` are applied: those looked up,
+   * when the job fetches references, and not queued already. */
+  referencesToQueue(articles: Article[] = this.articles): string[] {
+    if (!this.references) return [];
+    return articles.filter((a) => (a.status === 'changes' || a.status === 'same') && !this.referencesQueued.has(a.id)).map((a) => a.id);
+  }
 }
 
 /* ------------------------------------------------------------------ entry */
@@ -175,7 +185,9 @@ export async function openMetadataReview(idOrIds: string | string[]): Promise<un
       return toast('Metadata is already up to date', { type: 'success' });
     }
   }
-  const job = new LookupJob(ids, { prefetched });
+  // Retrieve Metadata on items already in the library: Settings → "Fetch reference lists with
+  // Retrieve Metadata" decides (new items follow Adding Items instead: retrieveInBackground)
+  const job = new LookupJob(ids, { prefetched, references: state.settings.references_auto !== false });
   job.start();
   return reviewDialog(job);
 }
@@ -184,10 +196,10 @@ export async function openMetadataReview(idOrIds: string | string[]): Promise<un
  * Retrieve metadata without opening the dialog (e.g. right after an import): progress in a
  * toast, and a "Review" button when the results are in.
  */
-export function retrieveInBackground(ids: string[], { references = false } = {}): LookupJob | null {
+export function retrieveInBackground(ids: string[], { references = false, referencesQueued = [] as string[] } = {}): LookupJob | null {
   const known = ids.filter((id) => byId(id));
   if (!known.length) return null;
-  const job = new LookupJob(known, { references });
+  const job = new LookupJob(known, { references, referencesQueued });
   job.start();
   watchInBackground(job);
   return job;
@@ -310,7 +322,7 @@ function reviewDialog(job: LookupJob): Promise<unknown> {
         onClick: async (close, btn) => {
           btn.disabled = true;
           btn.textContent = 'Saving…';
-          const ok = await applyChanges(articles, job.references);
+          const ok = await applyChanges(articles, job.referencesToQueue(articles));
           if (!ok) { btn.disabled = false; btn.textContent = 'Apply'; return false; }
           job.applied = true;
           return undefined;
@@ -415,7 +427,7 @@ function changeBlock(c: Change, onToggle: () => void): HTMLElement {
 }
 
 /* ----------------------------------------------------------------- apply */
-async function applyChanges(articles: Article[], withReferences = false): Promise<boolean> {
+async function applyChanges(articles: Article[], referenceIds: string[] = []): Promise<boolean> {
   // Keys proposed for several articles in this batch must stay unique.
   const others = new Set(state.items.filter((i) => !articles.some((a) => a.id === i.id)).map((i) => i.citation_key).filter(Boolean));
   const uniqueKey = (k: string) => {
@@ -440,9 +452,8 @@ async function applyChanges(articles: Article[], withReferences = false): Promis
     } catch (e) { errors.push(`${a.item?.title || a.id}: ${(e as Error).message}`); }
   }
   await A.refreshItems(articles.map((a) => a.id));   // just the reviewed items (a full reload only where needed)
-  // the reference lists come with the metadata (in the background; see Settings → Online Services)
-  const looked = articles.filter((a) => a.status === 'changes' || a.status === 'same').map((a) => a.id);
-  if (looked.length && (withReferences || state.settings.references_auto !== false)) api.queueReferences(looked).catch(() => {});
+  // the reference lists come with the metadata, in the background (see LookupJob.referencesToQueue)
+  if (referenceIds.length) api.queueReferences(referenceIds).catch(() => {});
   if (errors.length) {
     toastError(new Error(`${errors.length} could not be saved — ${errors[0]}`));
     return saved > 0;

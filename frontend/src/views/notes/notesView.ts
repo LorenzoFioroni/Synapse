@@ -20,6 +20,7 @@ import { attachCiteCards, openCitation, pdfsOf, showCard } from './citeCard.js';
 import { conflictDialog } from './conflict.js';
 import { createEditor, loadMD } from './editor.js';
 import { folderOfSelection, newFolder, newNote, renameNote, rescan, showTrash } from './fileOps.js';
+import { linkDataOf } from './linkData.js';
 import { refitOnResize } from './mathFit.js';
 import { NoteSession } from './noteSession.js';
 import { initPanels, listHidden, panelButton, peek, toggleList } from './panels.js';
@@ -30,7 +31,7 @@ import { paintCrumbs, paintSide, paintStatus } from './sidePanel.js';
 import { nKey, paintTree, refreshTree, saveCollapsed, selectOnly, setFilter, tree, treeEl } from './tree.js';
 import { initTreeInput } from './treeInput.js';
 import {
-  citeInfo, equationMode, hooks, itemInfo, type Mode, noteMacros, normTarget, notesEnabled, notesOpen, resolveNote, stemOf, ws,
+  citeInfo, equationMode, hooks, itemInfo, type Mode, noteMacros, notesEnabled, notesOpen, resolveNote, stemOf, ws,
 } from './workspace.js';
 
 export { notesOpen } from './workspace.js';
@@ -275,12 +276,7 @@ async function loadLinks(): Promise<void> {
   try {
     const res = await api.noteLinks(path);
     if (ws.session?.path !== path) return;
-    const notes = new Map<string, string | null>(), cites = new Map<string, NonNullable<typeof res.outgoing[number]['item']>>();
-    for (const l of res.outgoing) {
-      if (l.kind === 'note' || l.kind === 'embed') notes.set(normTarget(l.target), l.resolved || null);
-      if (l.kind === 'cite' && l.item) cites.set(l.target, l.item);
-    }
-    ws.linkData = { notes, cites };
+    ws.linkData = linkDataOf(res);
     ws.linkResp = { ...res, path_for: path };
     ws.editor?.refresh();
     paintSide();

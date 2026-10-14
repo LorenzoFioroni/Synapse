@@ -53,7 +53,11 @@ PAGE_FIELDS = [
 ]
 
 
-class NothingToSave(ValueError):
+class BadRequest(ValueError):
+    """The request cannot be saved as it is (the endpoint answers 400)."""
+
+
+class NothingToSave(BadRequest):
     """The page has no title, no identifier and no PDF."""
 
 
@@ -83,6 +87,19 @@ def page_item(page: dict) -> dict:
     return {k: v for k, v in item.items() if v}
 
 
+def folder_id(value) -> int | None:
+    """The folder a request names, as an id (None for none). The popup sends it as a number or a
+    string. Raises :class:`BadRequest` for anything else."""
+    if value is None or value == "":
+        return None
+    if not isinstance(value, bool):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            pass
+    raise BadRequest(f"Invalid folder_id: {value!r}")
+
+
 def _identifier_in_pdf(pdf_bytes: bytes) -> dict:
     """A DOI or arXiv id from the first pages of a PDF ({} if none)."""
     with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
@@ -104,11 +121,22 @@ def _download_pdf(url: str, pdf_dir) -> str | None:
     return name
 
 
+def _wants_lookup(s: Services, page: dict) -> bool:
+    """Look the identifier up online? ``lookup`` is the user's answer in the popup ("Complete
+    metadata online"). A request without it (no checkbox, or another client) follows Settings →
+    "Retrieve metadata": anything but "never" looks up, as saving always did before the setting."""
+    asked = page.get("lookup")
+    if asked is not None:
+        return bool(asked)
+    return s.settings.get("add_fetch_metadata") != "never"
+
+
 def save(s: Services, page: dict, pdf_bytes: bytes | None) -> dict:
     """Save the page as a new item. Returns ``{item, source, pdf}``: where the metadata came from
     (``online`` or ``page``) and what happened to the PDF (``attached``, ``downloaded``,
     ``failed``, ``not-a-pdf``, ``searching`` or ``none``). Raises :class:`NothingToSave` and
-    :class:`Duplicate`."""
+    :class:`Duplicate`, and :class:`BadRequest` for a malformed ``folder_id``."""
+    folder = folder_id(page.get("folder_id"))
     if not (page.get("title") or page.get("doi") or page.get("arxiv") or pdf_bytes is not None):
         raise NothingToSave("Nothing to save: the page has no title or identifier.")
 
@@ -121,7 +149,7 @@ def save(s: Services, page: dict, pdf_bytes: bytes | None) -> dict:
 
     item = page_item(page)
     source = "page"
-    if page.get("lookup", True) and (page.get("doi") or page.get("arxiv")):
+    if _wants_lookup(s, page) and (page.get("doi") or page.get("arxiv")):
         try:
             identifier = page.get("doi") or f"arXiv:{page['arxiv']}"
             fetched = lookup(
@@ -139,11 +167,10 @@ def save(s: Services, page: dict, pdf_bytes: bytes | None) -> dict:
     if dup and not page.get("allow_duplicate"):
         raise Duplicate(s.papers.get(dup))
 
-    folder = page.get("folder_id")
     tags = page.get("tags") or []
-    created = s.papers.create({**item, "folder_id": int(folder) if folder not in (None, "") else None, "tags": tags})
-    if source == "online":
-        s.citations.maybe_enqueue(created, page.get("fetch_references"))
+    created = s.papers.create({**item, "folder_id": folder, "tags": tags})
+    # whether or not it was looked up: the reference list only needs the DOI or arXiv id
+    s.citations.maybe_enqueue(created, page.get("fetch_references"))
 
     pdf = "none"
     filename = None
@@ -168,12 +195,14 @@ def save(s: Services, page: dict, pdf_bytes: bytes | None) -> dict:
     return {"item": s.papers.get(created["id"]), "source": source, "pdf": pdf}
 
 
-def file_existing(s: Services, item_id: str, folder_id, tags) -> dict:
+def file_existing(s: Services, item_id: str, folder, tags) -> dict:
     """Add an item that is already in the library to a folder and/or tag it (the extension's
-    "already in your library" screen). Returns the item."""
+    "already in your library" screen). Returns the item. Raises :class:`BadRequest` for a
+    malformed ``folder_id``."""
+    folder = folder_id(folder)
     item = s.papers.get(item_id)
-    if folder_id not in (None, ""):
-        s.folders.change_items([item["id"]], add=[folder_id])
+    if folder is not None:
+        s.folders.change_items([item["id"]], add=[folder])
     if tags:
         s.tags.add([item["id"]], tags)
     return s.papers.get(item["id"])

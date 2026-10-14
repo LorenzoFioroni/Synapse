@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import builtins
 import logging
+import os
 import re
 import sqlite3
 import threading
@@ -69,8 +70,25 @@ class NotesIndex:
         self.db_path = str(db_path)
         self.vault = vault
         self._lock = threading.RLock()
-        self.revision = 0  # bumped on every change (lets callers cache derived data)
+        self.revision = 0  # bumped on every change made through this object
         self._init_schema()
+
+    def signature(self) -> tuple:
+        """Changes whenever the index changes, in this process or another one (the MCP server
+        writes the same file), so callers can cache data derived from it."""
+        files: list[tuple | None] = []
+        for p in (self.db_path, f"{self.db_path}-wal"):
+            try:
+                st = os.stat(p)
+                files.append((st.st_mtime_ns, st.st_size))
+            except OSError:
+                files.append(None)
+        try:  # SQLite's file change counter: bumped by every commit, even within one clock tick
+            with open(self.db_path, "rb") as fh:
+                counter = fh.read(28)[24:]
+        except OSError:
+            counter = b""
+        return (self.revision, counter, *files)
 
     # ------------------------------------------------------------------ plumbing
     def _connect(self) -> sqlite3.Connection:
@@ -164,11 +182,14 @@ class NotesIndex:
         """(Re)index one note from disk; removes it if the file is gone. Returns True if changed."""
         path = self.vault.clean_rel(path)
         with self._lock:
+            # stat before reading: if the file changes in between, the stored mtime is older than
+            # the file's and sync() reads it again (stat after would pair the new mtime with the
+            # old text, and sync() would skip the file until it changed once more)
             try:
+                st = self.vault.abs(path).stat()
                 text, h = self.vault.read(path)
-            except NoteMissing:
+            except (NoteMissing, FileNotFoundError):
                 return self.remove(path)
-            st = self.vault.abs(path).stat()
             with self._session() as c:
                 row = c.execute("SELECT hash FROM notes WHERE path = ?", (path,)).fetchone()
                 if row and row["hash"] == h:

@@ -242,7 +242,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `main.ts` | Entry point: loads the schema and settings, calls each view's `init…`, the toolbar, search, status bar, resizer, drawer, shortcuts, and the handlers for the events above. |
 | `afterAdd.ts` | What runs after items are added (metadata, PDF, references, tags), per the never / always / ask settings. |
 | `icons.ts` | Inline SVG icons: `icon(name, cls)` and `typeIcon(itemType)`. |
-| `util.ts` | Small helpers: `escapeHtml`, `h`, `debounce`, dates and sizes, `storage` / `store` (`localStorage` that never throws), `modKey`, `copyText`, `diffWords`. |
+| `util.ts` | Small helpers: `escapeHtml`, `h`, `debounce`, dates and sizes, `storage` / `store` (`localStorage` that never throws), `modKey`, `copyText`, `diffWords`, `hitBadge` (the "full text" or "note" badge of a search match). |
 
 **`views/`: the library screens and dialogs.**
 
@@ -268,7 +268,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 `notesView.ts` sets the workspace up and opens and closes notes; `workspace.ts` is the shared
 state; `noteSession.ts` saves (hash-checked, with drafts and retries); `editor.ts`,
 `livePreview.ts`, `completion.ts` and `mathClick.ts` are the CodeMirror editor; `render.ts`,
-`richRender.ts`, `mdscan.ts`, `equations.ts`, `macros.ts` and `mathFit.ts` render Markdown and
+`richRender.ts`, `embed.ts`, `linkData.ts`, `mdscan.ts`, `equations.ts`, `macros.ts` and `mathFit.ts` render Markdown and
 math; `tree.ts`, `treeInput.ts` and `fileOps.ts` are the notes list; `readView.ts`,
 `sidePanel.ts` and `panels.ts` the views around a note; `citeCard.ts`, `citeTarget.ts` and
 `library.ts` connect citations to the library; `aiBar.ts` and `aiEdits.ts` show Claude's edits;

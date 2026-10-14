@@ -39,7 +39,7 @@ export function renderRead(): void {
   page.scrollTop = scroll;
   highlightCodeBlocks(art);
   renderMermaidBlocks(art);
-  renderEmbeds(art, new Set([session.path]));
+  renderEmbeds(art, { citeInfo, resolveNote, equations: equationMode, macros: noteMacros }, new Set([session.path]));
 }
 
 /** Go to a [[target]] (and heading); offer to create the note when there is none. */

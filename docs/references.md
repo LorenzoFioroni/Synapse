@@ -130,8 +130,13 @@ The review is `frontend/src/views/metadataReview.ts`:
   keys unique within the batch.
 - `retrieveInBackground` runs a job without the dialog (after an import), with a progress toast
   and a Review button at the end. A job opened in the dialog can also continue in the background.
-- After Apply, the reference lists of the looked-up items are queued when the job was asked to
-  (`references`) or when the Settings → Online Services switch `references_auto` is on.
+- After Apply, the reference lists of the looked-up items are queued when the job's
+  `references` is set (`LookupJob.referencesToQueue`). Retrieve Metadata on items already in the
+  library sets it from the Settings → Online Services switch `references_auto`. After an import,
+  `runAfterAdd` sets it from `add_fetch_references` (or its checkbox) instead, so "never" for new
+  items wins over `references_auto`; and the items it already queued because they had a DOI or
+  arXiv id (`referencesQueued`) are not queued again, so only those that got their identifier
+  from the lookup are.
 
 ## Open-access PDFs
 
@@ -142,10 +147,13 @@ It then calls `attachments_changed()` so the full-text index picks the file up.
 `candidate_urls()` lists where to look, best first:
 
 1. For a preprint (an arXiv id, and no DOI or only an arXiv DOI): `arxiv.org/pdf/<id>`.
-2. For a DOI that is not an arXiv DOI: Unpaywall's `best_oa_location.url_for_pdf`.
+2. For a DOI that is not an arXiv DOI: Unpaywall's `best_oa_location.url_for_pdf`. Unpaywall
+   requests carry the contact e-mail (Settings → Online Services, else `FALLBACK_EMAIL`),
+   URL-encoded.
 3. For a published paper that also has an arXiv id: the arXiv PDF, after Unpaywall.
 4. Searches by title: Unpaywall's search (first two results), the PDF link of Google Scholar's
-   first result (scraped, with the browser User-Agent), and an arXiv title search.
+   first result (scraped, with the browser User-Agent), and an arXiv title search (the arXiv
+   API over https, after `arxiv_wait()`, with `TIMEOUT`).
 
 When the item has an arXiv id, `find_and_download` tries steps 1–3 first and runs the title
 searches only if none of those was the paper.
@@ -253,9 +261,9 @@ ticked checkbox (`afterAddHtml` in `frontend/src/afterAdd.ts`). On the server,
 
 | Setting (default) | Where it acts | What runs |
 |---|---|---|
-| `add_fetch_metadata` (`ask`) | Import dialog only (`importDialog.ts` → `runAfterAdd`) | `retrieveInBackground`, then the review. Items added by identifier or from PDFs are always looked up; the browser button has its own checkbox. |
+| `add_fetch_metadata` (`ask`) | Import dialog (`importDialog.ts` → `runAfterAdd`); the browser button (`backend/connector.py`, and the popup's checkbox) | `retrieveInBackground`, then the review. Items added by identifier or from PDFs are always looked up. The browser button asks with its own checkbox, which starts unticked when this is `never`; a save without that answer follows this setting (`ask` counts as yes). |
 | `add_find_pdf` (`ask`) | Import dialog and Add by Identifier (`runAfterAdd` → `A.findPdfs`); the browser button on the server (`backend/connector.py`, when the page gave no PDF) | `POST /api/items/<id>/find_pdf` per item; `Services.find_pdf_later` for the browser button. |
-| `add_fetch_references` (`always`) | Server: `from_identifier`, `from_pdf` (when the lookup found metadata) and the connector's `save` (when metadata came from online), via `Citations.maybe_enqueue`. Import dialog: `runAfterAdd` → `POST /api/references/queue`. | The background queue. Only items with a DOI or arXiv id. For dropped PDFs, `ask` is a Fetch References button in the toast (`addPdfsAsItems` in `actions.ts`). |
+| `add_fetch_references` (`always`) | Server: `from_identifier`, `from_pdf` (when the lookup found metadata) and the connector's `save` (whether or not it looked the item up), via `Citations.maybe_enqueue`. Import dialog: `runAfterAdd` → `POST /api/references/queue` for items with an identifier, and the metadata review's Apply for the ones that got it from the lookup. | The background queue. Only items with a DOI or arXiv id. For dropped PDFs, `ask` is a Fetch References button in the toast (`addPdfsAsItems` in `actions.ts`). |
 
 `GET /api/connector/ping` sends the three values to the browser extension, which shows its own
 checkboxes; see [browser extension](browser-extension.md).
@@ -267,7 +275,7 @@ checkboxes; see [browser extension](browser-extension.md).
 | `POST /api/items/<id>/lookup` | `api/metadata.py` | Fresh metadata for the review; saves nothing. 404 with the message on `LookupFailed`. |
 | `POST /api/items/from_identifier` | `api/metadata.py` | Creates an item from a DOI, arXiv ID or ISBN. 409 with `duplicate_of` unless `allow_duplicate`. |
 | `POST /api/items/from_pdf` | `api/attachments.py` | One item per uploaded PDF, filled from a DOI or arXiv id found in its text. |
-| `POST /api/items/<id>/find_pdf` | `api/attachments.py` | Looks for an open-access PDF and attaches it. |
+| `POST /api/items/<id>/find_pdf` | `api/attachments.py` | Looks for an open-access PDF and attaches it (`Services.find_pdf`). The item needs a title, DOI or arXiv id, else 400. |
 | `GET /api/attachments/<id>/remote` | `api/attachments.py` | The PDF behind a web-link attachment. |
 | `GET /api/items/<id>/references` | `api/references.py` | The item's references and the library items citing it. |
 | `POST /api/items/<id>/references` | `api/references.py` | Fetches the list now. 502 on `FetchFailed` or network trouble, 404 on `LookupFailed`. |

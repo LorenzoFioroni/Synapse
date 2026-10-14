@@ -13,10 +13,10 @@ import { extractCitation, fetchPdfInPage } from './extract.js';
  * @property {{ library: number }} counts
  * @property {{ id: number; name: string; parent_id: number | null }[]} folders
  * @property {string[]} tags
- * @property {{ find_pdf?: string; fetch_references?: string }} [on_add]
+ * @property {{ fetch_metadata?: string; find_pdf?: string; fetch_references?: string }} [on_add]
  */
 /** @typedef {{ id: string; title?: string; folder_id?: number | null }} SavedItem */
-/** @typedef {{ tags: string[]; folder: string; findPdf?: boolean; fetchRefs?: boolean }} SaveState */
+/** @typedef {{ tags: string[]; folder: string; lookup?: boolean; findPdf?: boolean; fetchRefs?: boolean }} SaveState */
 
 /**
  * The element with this id if it is of this type (the form's optional checkboxes may be missing).
@@ -156,7 +156,7 @@ async function renderForm() {
     <datalist id="tagList">${lib.tags.map((t) => `<option value="${esc(t)}">`).join('')}</datalist>
     <div class="checks">
       ${page.pdf_url ? '<label><input type="checkbox" id="attach" checked> Attach the PDF</label>' : ''}
-      ${page.doi || page.arxiv ? '<label><input type="checkbox" id="lookup" checked> Complete metadata online (Crossref / arXiv)</label>' : ''}
+      ${page.doi || page.arxiv ? `<label><input type="checkbox" id="lookup"${onAdd.fetch_metadata === 'never' ? '' : ' checked'}> Complete metadata online (Crossref / arXiv)</label>` : ''}
       ${onAdd.find_pdf === 'ask' && !page.is_pdf ? `<label><input type="checkbox" id="findPdf" checked> ${page.pdf_url ? 'If the PDF can’t be attached, look' : 'Look'} for an open-access PDF</label>` : ''}
       ${onAdd.fetch_references === 'ask' && (page.doi || page.arxiv) ? '<label><input type="checkbox" id="refs" checked> Fetch the reference list</label>' : ''}
     </div>
@@ -207,14 +207,15 @@ async function doSave({ tags, allowDuplicate = false }) {
   const btn = find('save', HTMLButtonElement);
   const folder = find('folder', HTMLSelectElement)?.value ?? '';
   const attach = page.pdf_url && (find('attach', HTMLInputElement)?.checked ?? true);
-  const lookup = find('lookup', HTMLInputElement)?.checked ?? true;
+  // without the checkbox (no identifier on the page) the library's setting decides
+  const lookup = find('lookup', HTMLInputElement)?.checked ?? saveState.lookup;
   // only asked when the setting is "ask"; "Save Anyway" (no form on screen) keeps the earlier answer
   const findPdf = find('findPdf', HTMLInputElement)?.checked ?? saveState.findPdf ?? false;
   const fetchRefs = find('refs', HTMLInputElement)?.checked ?? saveState.fetchRefs ?? false;
   const title = find('title', HTMLTextAreaElement)?.value.trim() || page.title;
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving…'; }
   await chrome.storage.local.set({ lastFolder: folder });
-  saveState = { tags, folder, findPdf, fetchRefs };
+  saveState = { tags, folder, lookup, findPdf, fetchRefs };
 
   /** @type {Record<string, unknown>} */
   const meta = { ...page, title, folder_id: folder || null, tags, lookup, attach_pdf: attach, allow_duplicate: allowDuplicate,
@@ -228,7 +229,9 @@ async function doSave({ tags, allowDuplicate = false }) {
       const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: fetchPdfInPage, args: [pdfUrl, MAX_PDF_BYTES] });
       if (result?.b64) {
         const bytes = Uint8Array.from(atob(result.b64), (c) => c.charCodeAt(0));
-        const name = decodeURIComponent(new URL(pdfUrl).pathname.split('/').pop() || 'paper.pdf');
+        const last = new URL(pdfUrl).pathname.split('/').pop() || 'paper.pdf';
+        let name = last;
+        try { name = decodeURIComponent(last); } catch { /* malformed %-escapes: keep the raw name */ }
         fd.append('file', new Blob([bytes], { type: 'application/pdf' }), /\.pdf$/i.test(name) ? name : `${name}.pdf`);
         meta.pdf_name = 'Full Text PDF';
         meta.attach_pdf = false;   // already attached as upload; don't download again

@@ -94,11 +94,9 @@ def delete(att_id):
 
 @bp.post("/api/items/<item_id>/find_pdf")
 def find_pdf(item_id):
-    s = svc()
-    item = s.papers.get(item_id)
-    if not item.get("title") and not item.get("doi"):
-        return error("The item needs a title or DOI to search for a PDF.")
-    result = s.find_pdf(item_id)
+    result = svc().find_pdf(item_id)  # a title, DOI or arXiv id is enough
+    if result["status"] == "error":
+        return error(result["message"])
     if result["status"] == "success":
         return jsonify(status="success", attachment=result["attachment"], source=result.get("source"))
     return jsonify(result)

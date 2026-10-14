@@ -127,6 +127,76 @@ test('note deleted elsewhere: keep mine writes it again', async () => {
   assert.equal(s.status, 'saved');
 });
 
+test('the file could not be read when the conflict began: it is read again before use', async () => {
+  const { server, api, s, events } = setup();
+  const get = api.get;
+  let reads = 0;
+  api.get = async (...a) => { if (reads++ < 2) throw Object.assign(new Error('server error'), { status: 500 }); return get(...a); };
+  server.text = 'theirs'; server.hash = hashOf('theirs');
+  s.update('mine');
+  await s.save();
+  assert.deepEqual(events.conflicts[0], { mine: 'mine', theirs: null, theirsHash: null, deleted: false });
+  // still unreadable: nothing changes, the session stays in conflict
+  await assert.rejects(s.resolve('theirs'), /server error/);
+  assert.equal(s.status, 'conflict');
+  assert.ok(s.conflict);
+  assert.deepEqual(events.remote, []);
+  assert.equal(s.text, 'mine');
+  // readable again: "use the saved file" loads the file, never null
+  await s.resolve('theirs');
+  assert.deepEqual(events.remote, ['theirs']);
+  assert.equal(s.text, 'theirs');
+  assert.equal(s.status, 'saved');
+  assert.equal(server.text, 'theirs');
+});
+
+test('the file could not be read, then keep mine saves over its current version', async () => {
+  const { server, api, s } = setup();
+  const get = api.get;
+  let reads = 0;
+  api.get = async (...a) => { if (reads++ < 1) throw Object.assign(new Error('server error'), { status: 500 }); return get(...a); };
+  server.text = 'theirs'; server.hash = hashOf('theirs');
+  s.update('mine');
+  await s.save();
+  await s.resolve('mine');
+  assert.equal(server.text, 'mine');
+  assert.equal(s.status, 'saved');
+});
+
+test('note deleted elsewhere: if writing it again fails, it stays in conflict', async () => {
+  const { server, api, s, mem } = setup();
+  const create = api.create;
+  api.create = async () => { throw Object.assign(new Error('offline'), { status: 0 }); };
+  server.deleted = true;
+  s.update('mine');
+  await s.save();
+  await assert.rejects(s.resolve('mine'), /offline/);
+  assert.equal(s.status, 'conflict');
+  assert.equal(s.conflict.deleted, true);
+  assert.equal(mem.get(draftStorageKey('a.md')).text, 'mine');   // the text is safe meanwhile
+  s.update('mine 2');
+  await sleep(50);
+  assert.equal(server.deleted, true);                              // still never saved behind the user's back
+  api.create = create;
+  await s.resolve('mine');
+  assert.equal(server.text, 'mine 2');
+  assert.equal(s.status, 'saved');
+});
+
+test('note deleted elsewhere and written again by someone else meanwhile: a conflict with their text', async () => {
+  const { server, api, s, events } = setup();
+  server.deleted = true;
+  s.update('mine');
+  await s.save();
+  api.create = async () => { throw Object.assign(new Error('exists'), { status: 409 }); };
+  server.deleted = false; server.text = 'recreated'; server.hash = hashOf('recreated');
+  await s.resolve('mine');
+  assert.equal(s.status, 'conflict');
+  assert.deepEqual(events.conflicts.at(-1), { mine: 'mine', theirs: 'recreated', theirsHash: hashOf('recreated'), deleted: false });
+  await s.resolve('mine');
+  assert.equal(server.text, 'mine');
+});
+
 test('server down: offline with retry, then saved; the draft survives meanwhile', async () => {
   const { server, s, mem } = setup('v1', { delay: 5 });
   server.down = true;

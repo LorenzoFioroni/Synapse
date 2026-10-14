@@ -102,6 +102,7 @@ export const api = {
   exportUrl: (format: string, ids?: string[] | null) => `/api/export?${qs({ format, ids: ids && ids.join(',') })}`,
 
   rebuildFulltext: () => request('POST', '/api/fulltext/rebuild'),
+  syncFulltext: () => request('POST', '/api/fulltext/sync'),
 
   // folders · tags · smart folders
   createFolder: (name: string, parentId: number | null = null) => request<Folder>('POST', '/api/folders', { name, parent_id: parentId }),

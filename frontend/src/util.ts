@@ -57,6 +57,15 @@ export function shortAuthors(authors: string | null | undefined): string {
   return `${fams[0]} et al.`;
 }
 
+/** The badge after the title of a search match, by where its snippet comes from: `hits` keeps
+ * note snippets under `fulltext` too, and those start with a "Note · <title>" label. */
+export function hitBadge(snippet: string | undefined): string {
+  if (!snippet) return '';
+  return snippet.startsWith('<span class="hit-src">Note')
+    ? ' <span class="badge accent" title="Matched in a note">note</span>'
+    : ' <span class="badge accent" title="Matched in the full text">full text</span>';
+}
+
 export const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 export const modKey = (e: KeyboardEvent | MouseEvent): boolean => (isMac ? e.metaKey : e.ctrlKey);
 export const modLabel = isMac ? '⌘' : 'Ctrl+';
