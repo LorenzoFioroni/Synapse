@@ -14,7 +14,7 @@ from playwright.async_api import async_playwright
 
 APP = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(APP))
-from backend.references import CitationStore  # noqa: E402
+from backend.references.service import CitationStore  # noqa: E402
 
 PORT = 8771
 BASE = f"http://127.0.0.1:{PORT}"

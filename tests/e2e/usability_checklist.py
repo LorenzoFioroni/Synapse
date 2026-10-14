@@ -65,7 +65,7 @@ def setup():
                                                  "doi": "10.1080/14789940801912366"}).json()
     # a reference list as if fetched online: a cites b (in the library) and a work that is not
     sys.path.insert(0, str(APP))
-    from backend.references import CitationStore
+    from backend.references.service import CitationStore
     CitationStore(Path(DATA) / "citations.db").save(a["id"], "semanticscholar", [
         {"doi": "10.1080/14789940801912366", "title": "Matrix product states", "year": 2008},
         {"doi": "10.1000/elsewhere", "title": "A paper you do not have", "authors": "Doe, Jane", "year": 1999}],

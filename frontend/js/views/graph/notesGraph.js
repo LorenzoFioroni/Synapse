@@ -8,7 +8,7 @@
 //   they cite; citations between papers and cited works not in the library can be added.
 //
 // Clicking a note opens it. Clicking a paper shows a small card (paper note, library, PDF).
-// Data: /api/graph (backend/graph.py), filtered with model.js, drawn with forceGraph.js.
+// Data: /api/graph (backend/references/graph.py), filtered with model.js, drawn with forceGraph.js.
 
 import * as A from '../../actions.js';
 import { api } from '../../api.js';

@@ -26,7 +26,7 @@ from ..notes.service import now_iso, sniff_image, ulid
 from ..notes.vault import ATTACHMENTS, Conflict, InvalidPath, NoteExists, slugify
 from ..pdf import render as pdfrender
 from ..pdf.text import extract_pages
-from ..references import identifiers
+from ..references.service import identifiers
 from ..library.repository import NotFound
 from .notecheck import NoteChecker
 from .protocol import Image, Parts, Server, Tool, ToolError

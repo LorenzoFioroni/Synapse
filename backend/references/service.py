@@ -27,10 +27,10 @@ from pathlib import Path
 
 import requests
 
-from .library.db import utcnow
-from .formats.common import join_authors, parse_display_name
-from .online.metadata import TIMEOUT, LookupError_, _headers, arxiv_id_of
-from .online.pdf_finder import clean_doi
+from ..library.db import utcnow
+from ..formats.common import join_authors, parse_display_name
+from ..online.metadata import TIMEOUT, LookupError_, _headers, arxiv_id_of
+from ..online.pdf_finder import clean_doi
 
 log = logging.getLogger(__name__)
 

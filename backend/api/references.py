@@ -4,7 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify
 
 from ..online.metadata import LookupError_
-from ..references import FetchFailed
+from ..references.service import FetchFailed
 from ..library.repository import NotFound
 from . import body, error, svc
 
@@ -53,5 +53,5 @@ def citation_graph():
 @bp.get("/graph")
 def knowledge_graph():
     """Papers, the works they cite and notes, with their links (the Graph view)."""
-    from ..graph import build_graph
+    from ..references.graph import build_graph
     return jsonify(build_graph(svc()))
