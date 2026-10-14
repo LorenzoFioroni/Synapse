@@ -24,7 +24,7 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
     services = Services(config)
     app.extensions["zclone"] = services
 
-    from . import guard
+    from .access import guard
     guard.install(app, config.allowed_hosts, config.lan)   # other websites never, other devices once paired (#17, #34)
 
     from .api import register_blueprints

@@ -17,7 +17,7 @@ APP_ROOT = Path(__file__).resolve().parent.parent
 class Config:
     data_dir: Path
     # Extra host names (besides 127.0.0.1 / localhost) the server answers to, e.g. a LAN address
-    # when it is started with --host 0.0.0.0. See backend/guard.py.
+    # when it is started with --host 0.0.0.0. See backend/access/guard.py.
     allowed_hosts: set[str] = field(default_factory=set)
     # True when the server listens on the network (``--lan`` or ``--host 0.0.0.0``): other devices can
     # pair (Settings → Devices) and requests naming this computer by a LAN address are accepted.

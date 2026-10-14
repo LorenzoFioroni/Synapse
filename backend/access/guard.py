@@ -9,7 +9,7 @@ The server has no accounts. Three checks decide whether a request goes ahead:
   neither change nor read anything.
 * **Device** — a request that comes over the network from another device (judged by the
   connection's address, never by a header) needs the cookie of a paired device; see
-  ``backend/devices.py``. Requests from this computer itself — loopback or one of its own LAN
+  ``devices.py``. Requests from this computer itself — loopback or one of its own LAN
   addresses — need none, as before. Without the cookie, pages answer with "pair this device"
   and the API with 401.
 * **Origin** — a request that changes something (POST, PUT, PATCH, DELETE) must come from the

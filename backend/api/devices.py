@@ -5,9 +5,9 @@ import io
 
 from flask import Blueprint, g, jsonify, request
 
-from .. import lan
-from ..devices import COOKIE, PairingError
-from ..guard import set_device_cookie
+from ..access import lan
+from ..access.devices import COOKIE, PairingError
+from ..access.guard import set_device_cookie
 from . import body, error, svc
 
 bp = Blueprint("devices", __name__, url_prefix="/api/devices")

@@ -1,10 +1,11 @@
-"""Other devices on the network must be paired (issue #34). See backend/devices.py and backend/guard.py."""
+"""Other devices on the network must be paired (issue #34). See backend/access/devices.py and backend/access/guard.py."""
 import sqlite3
 import tarfile
 
 import pytest
 
-from backend import create_app, devices as devmod
+from backend import create_app
+from backend.access import devices as devmod
 from backend.config import Config
 
 IPAD = "192.0.2.10"          # TEST-NET: never one of this computer's own addresses
@@ -73,7 +74,7 @@ def test_this_computer_needs_no_pairing(mac):
 
 
 def test_own_lan_address_counts_as_this_computer(mac, monkeypatch):
-    from backend import lan
+    from backend.access import lan
     monkeypatch.setattr(lan, "own_addresses", lambda: ["192.168.1.5"])
     r = mac.get("/api/items", headers={"Host": LAN_HOST}, environ_base={"REMOTE_ADDR": "192.168.1.5"})
     assert r.status_code == 200
@@ -186,7 +187,7 @@ def test_paired_device_still_needs_the_apps_origin(mac, ipad):
 
 
 def test_lan_mode_hosts(mac, ipad, monkeypatch):
-    from backend import lan
+    from backend.access import lan
     monkeypatch.setattr(lan, "local_hostname", lambda: "lorenzos-mac.local")
     for host in ("10.0.0.7:8000", "lorenzos-mac.local:8000", "[fe80::1]:8000"):
         r = ipad.get("/api/settings", headers={"Host": host}, environ_base=REMOTE)

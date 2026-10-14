@@ -3,7 +3,7 @@ import io
 
 import pytest
 
-from backend import guard
+from backend.access import guard
 from tests.conftest import make_pdf
 
 EVIL = {"Origin": "https://evil.example"}

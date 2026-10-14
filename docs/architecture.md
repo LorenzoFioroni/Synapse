@@ -61,7 +61,7 @@ Two objects tie the backend together:
 | `pdf/` | PDF files on disk: text extraction (`text.py`), page rendering for the MCP tools (`render.py`) and the full-text index (`fulltext.py`). | `fulltext.db` |
 | `online/` | Lookups on the web: item metadata (`metadata.py`), open-access PDFs (`pdf_finder.py`) and PDFs behind an attachment's web link (`remote_pdf.py`). | none |
 | `references.py`, `graph.py` | The citation graph: reference lists fetched online and the Graph view's network. | `citations.db` |
-| `guard.py`, `devices.py`, `lan.py` | Who may use the server: other websites never, other devices only once paired. | `auth.db` |
+| `access/` | Who may use the server: other websites never (`guard.py`), other devices only once paired (`devices.py`); `lan.py` finds this computer's network addresses. | `auth.db` |
 | `config.py`, `settings.py` | Paths of the data folder, and the user's preferences. | `settings.json` |
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |

@@ -52,7 +52,7 @@ def main() -> None:
     url = f"http://{'127.0.0.1' if wildcard else a.host}:{a.port}/"
     print(f"Synapse running at {url}  (library: {config.data_dir})  — Ctrl+C to stop")
     if config.lan:
-        from backend import lan
+        from backend.access import lan
         names = [n for n in [lan.local_hostname(), *lan.own_addresses()] if n]
         if names:
             print("On the network:  " + "  ".join(f"http://{n}:{a.port}/" for n in names))

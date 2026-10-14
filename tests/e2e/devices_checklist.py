@@ -18,7 +18,7 @@ APP = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(APP))
 from tests.e2e._guard import guard  # noqa: E402
 from tests.conftest import make_pdf  # noqa: E402
-from backend import lan  # noqa: E402
+from backend.access import lan  # noqa: E402
 
 PORT = 8781
 BASE = f"http://127.0.0.1:{PORT}"
@@ -29,7 +29,7 @@ mod = "Meta" if sys.platform == "darwin" else "Control"
 
 LAUNCHER = """
 import runpy, sys
-from backend import lan
+from backend.access import lan
 lan.is_this_computer = lambda a: (lambda ip: ip is not None and ip.is_loopback)(lan.parse_ip(a))
 sys.argv = ["server.py"] + sys.argv[1:]
 runpy.run_path("server.py", run_name="__main__")
