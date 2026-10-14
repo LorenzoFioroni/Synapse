@@ -131,7 +131,7 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
       <section class="settings-section" id="set-online"><h2>Online Services</h2><p class="lead">Used for Retrieve Metadata, Add by Identifier, Find Available PDF and reference lists (Crossref, OpenAlex, arXiv, Open Library, Unpaywall, Semantic Scholar).</p>
         <div class="card">
           <div class="setting stack"><div class="s-text"><div class="s-title">Contact e-mail ${saved}</div>
-            <div class="s-desc">Crossref and Unpaywall ask clients to identify themselves; with an e-mail you get faster, more reliable responses. It is only sent to those services.</div></div>
+            <div class="s-desc">Crossref, OpenAlex and Unpaywall ask clients to identify themselves; with an e-mail you get faster, more reliable responses. It is only sent to the scholarly services Synapse looks things up in (Crossref, OpenAlex, Unpaywall, Semantic Scholar).</div></div>
             <input class="input" type="email" data-email placeholder="you@university.edu" value="${escapeHtml(s.contact_email)}"></div>
           ${switchRow('references_auto', 'Fetch reference lists with Retrieve Metadata', 'When metadata of existing items is retrieved, also fetch the list of papers they cite, in the background. For new items see Adding Items. You can always fetch them from the item menu.')}
           <div class="setting stack"><div class="s-text"><div class="s-title">API keys for reference lists (optional) ${saved}</div>

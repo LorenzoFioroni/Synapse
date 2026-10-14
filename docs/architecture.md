@@ -8,9 +8,6 @@ fetching reference lists.
 This page is the map. Each subsystem gets its own page under `docs/` (see
 [Subsystem pages](#subsystem-pages)), and the [conventions](#conventions) say where new code goes.
 
-> **Status:** skeleton, written at the start of the maintainability work (#51). Sections marked
-> *TODO* are filled in as each area is restructured.
-
 ## The pieces
 
 ```
@@ -32,9 +29,9 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
 | Entry point | What it is |
 |---|---|
 | `server.py` | Starts the web app: parses the flags, builds a `Config`, calls `backend.create_app`, and serves with Flask (local) or waitress (`--lan`). |
-| `mcp_server.py` | The MCP server that Claude Desktop and Claude Code start themselves. It reads the same `data/` folder and writes notes only into `notes/ai/`. |
+| `mcp_server.py` | The MCP server that Claude Desktop and Claude Code start themselves. It reads the same `data/` folder. New notes it writes go into `notes/ai/`; changes it makes to existing notes are hash-checked and recorded so they can be undone (see [MCP](mcp.md)). |
 | `frontend/index.html` | The single-page app. It loads `js/main.js` as an ES module. |
-| `frontend/viewer.html` | The PDF viewer, opened in its own tab. It loads pdf.js and `js/viewer/viewer.js` (the viewer), then its add-ons `annotations`, `links` and `notesBridge`. |
+| `frontend/viewer.html` | The PDF viewer, opened in its own tab. It loads pdf.js and `js/viewer/viewer.js` (the viewer), then its add-ons `notesBridge`, `links` and `annotations`. |
 | `frontend/pair.html` | The page that unpaired devices see under `--lan`. |
 | `browser_extension/` | The Chrome extension that saves the page you are on to the library. It is plain JavaScript (ES modules) that Chrome loads as it is, with no build; JSDoc comments type it and `npm run check` in `frontend/` type-checks it with `browser_extension/tsconfig.json`. |
 
@@ -138,7 +135,7 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`.
 - `ui/*` holds the generic widgets (dialogs, menus, toasts, long press).
 - `viewer/*` holds the PDF viewer (`viewer.html`): `viewer.ts` lays out, draws and zooms the pages
-  and publishes `window.zcViewer`; `annotations.ts`, `links.ts` and `notesBridge.ts` add to it
+  and publishes `window.zcViewer`; `notesBridge.ts`, `links.ts` and `annotations.ts` add to it
   through the `zc:pagecreated` and `zc:pagerendered` events. The annotations are split three ways:
   `annotations/model.ts` (the records, drawing them, saving each change, undo and redo),
   `annotations/input.ts` (the tools: pointer, Pencil and touch input) and the entry
@@ -148,22 +145,66 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
 
 ## Data flow of a typical change
 
-*TODO (step 4)*: follow one edit from the item pane through `actions` → `api` → blueprint →
-repository → `library.db`, and back to the other windows through the change feed.
+Follow one edit: you change an item's title in the item pane and press Enter.
+
+```
+frontend                                   backend
+views/itempane.ts   blur                    api/items.py   update_item()     parse, call, shape
+  └ actions.updateField(id, 'title', v)       └ svc().papers.update(id, data)
+      └ api.updateItem()  PATCH /api/items/<id>   library/repository.py        clean, citation key
+          (X-Synapse-Client: <this page>)           └ Database.session()       library/db.py
+      └ patchLocal(item)                               commit → on_write
+          └ emit('item-updated')                         └ Services._library_written
+              list row and pane repaint                     └ ChangeFeed.record({'library'}, client)
+
+other windows and devices
+changes.ts  every 4 s: GET /api/changes?since=N&epoch=E
+  └ answer names 'library' (this page's own edits are left out)
+      └ actions.loadItems() → the list, sidebar and pane redraw
+```
+
+1. **View.** `views/itempane.ts` saves a field when it loses focus. It calls
+   `actions.updateField`. Most user-level operations go through `actions.ts` like this; a few
+   views call `api.ts` directly and then ask `actions.refreshItems` to reload what changed.
+2. **Action.** `actions.ts` sends the change with `api.updateItem` and puts the item the server
+   returns into the store (`patchLocal`), then emits `item-updated`. The list row and the item
+   pane listen for it and repaint only that item. The server's answer is the truth: it may have
+   added a citation key or cleaned a value.
+3. **API.** `api/items.py` (`update_item`) only reads the request and shapes the answer. Tags and
+   folders go to their own components; the fields go to `PaperRepository.update`.
+4. **Component.** `library/repository.py` keeps only editable fields, cleans the values, gives an
+   item its first citation key once it has enough metadata, and writes inside
+   `Database.session()`. A changed citation key is reported to listeners, so the notes service can
+   rewrite notes that cite the old key.
+5. **Change feed.** When a session commits a change, `Database.on_write` calls
+   `Services._library_written`, which records a `library` change in `changes.py`, credited to the
+   page that sent the request (its `X-Synapse-Client` header). Background work is credited to no
+   one, so every page refreshes.
+6. **Other windows.** Each page polls `GET /api/changes` (`changes.ts`). The answer lists what
+   changed since the page last asked, minus its own edits, and the page reloads that part
+   (`actions.loadItems` for `library`, the notes tree and open note for `notes`). It waits while
+   you are typing in a field or a dialog is open. Writes from another process, such as the MCP
+   server saving a note, are noticed from the database files' modification times.
+
+Notes follow the same path with their own pieces: `views/notes/noteSession.ts` saves with the
+note's hash, `api/notes.py` passes it to the notes service, and a mismatch comes back as a
+conflict instead of overwriting (see [notes](notes.md)). The change feed is described in
+[sync and devices](sync-and-devices.md).
 
 ## Subsystem pages
 
-To be written in step 4 (one page each):
-
-- `storage.md`: the databases, the schema and migrations, and what can be rebuilt.
-- `notes.md`: the vault, the index, the parser, rekeying, and history of AI edits.
-- `fulltext-search.md`: PDF text extraction, the FTS index and the search syntax.
-- `references.md`: metadata lookup, the citation graph and PDF finding.
-- `sync-and-devices.md`: the change feed, the guard, LAN pairing and the security model.
-- `mcp.md`: the MCP server and its tools.
-- `browser-extension.md`: the connector API and the extension.
-- `frontend.md`: the module map, the state and actions contract, and the build.
-- `testing.md`: unit tests, JS tests and the browser checklists.
+| Page | What it covers |
+|---|---|
+| [Adding a feature](adding-a-feature.md) | Where the pieces of a new feature go, in the order you write them. |
+| [Storage](storage.md) | The data folder, who owns each file, the `library.db` schema and its migrations, settings and backups. |
+| [Notes](notes.md) | The notes format, the vault, the index, the parser and its frontend port, rekeying, Claude's edits, and the notes workspace. |
+| [Full-text search](fulltext-search.md) | PDF text extraction, the full-text index and the library search with its query syntax. |
+| [References](references.md) | Metadata lookup, finding PDFs, the citation graph, and what the Adding Items settings trigger. |
+| [Sync and devices](sync-and-devices.md) | The change feed, the viewer and app tabs, the guard, LAN pairing and the security model. |
+| [MCP](mcp.md) | The MCP server, its tools and the rules it enforces. |
+| [Browser extension](browser-extension.md) | The extension and the connector API it uses. |
+| [Frontend](frontend.md) | The build, the type checking, the pages, state and events, and the module map. |
+| [Testing](testing.md) | pytest, the JavaScript tests, the browser checklists, CI and the tools. |
 
 ## Conventions
 

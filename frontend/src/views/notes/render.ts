@@ -1,7 +1,7 @@
 // Markdown → HTML for notes (read mode, tables and math in the live preview, later export).
 // No DOM access here, so it is unit-tested with Node (tests/js/render.test.mjs).
 //
-// Rules follow the syntax spec in notes_plan.md §3 and the backend parser:
+// Rules follow the notes syntax (docs/notes.md) and the backend parser:
 //  * raw HTML is NOT rendered (shown as text): notes may later be written by an AI, and the
 //    app must never run a script that came from a note;
 //  * indented code blocks are off; fenced code only;

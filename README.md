@@ -186,8 +186,10 @@ never mix.
 `mcp_server.py` lets Claude Desktop and Claude Code read your library through MCP (Model Context
 Protocol): ask a question about a project note and Claude can read the note, the papers it cites,
 the relevant pages of their PDFs and their references. It reads the same `data/` folder as the app
-(which does not need to be running), works only on this computer, and never changes anything except
-adding new notes in `notes/ai/` when you ask it to save an answer.
+(which does not need to be running) and works only on this computer. When you ask it to save an
+answer it adds a new note in `notes/ai/`; when you ask it to change a note, the edit is checked
+against the version on disk and recorded, so the app can show it and undo it. Figures it cuts out of
+a PDF go to `notes/attachments/`. It never changes the library's items.
 
 Set it up once, from the repository root with the virtual environment active:
 

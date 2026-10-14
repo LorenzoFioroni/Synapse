@@ -30,11 +30,10 @@ goes.
 
 ```bash
 pip install -r requirements-dev.txt
-(cd frontend && npm ci && npm run check)   # type-check the frontend (TypeScript in frontend/src)
+(cd frontend && npm ci && npm run check)   # type-check the frontend and the browser extension
 ruff check .                 # lint (ruff check --fix . fixes most findings)
 ruff format .                # format; CI runs ruff format --check .
 python -m pytest -q          # includes the JavaScript unit tests when Node is installed
-(cd frontend && npm run check)   # type-checks the frontend and the browser extension
 ```
 
 `pre-commit install` runs ruff and the type check on every commit (`.pre-commit-config.yaml`).

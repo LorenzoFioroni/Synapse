@@ -3,7 +3,7 @@
 This is the only code in the app that decides what a note links to. The frontend renders
 and autocompletes but never builds the link graph itself.
 
-Syntax (see notes_plan.md §3):
+Syntax (see docs/notes.md):
 
     [[Note]]  [[Note|alias]]  [[Note#Heading]]  [[folder/Note]]     note links
     ![[Note]]                                                    embeds

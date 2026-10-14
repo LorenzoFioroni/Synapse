@@ -3,7 +3,8 @@
 
 The AI app starts this script itself and talks to it over stdin/stdout; you do
 not run it by hand. It reads the same ``data/`` folder as the web app (which
-does not need to be running) and only ever writes new notes into ``notes/ai/``.
+does not need to be running). New notes go into ``notes/ai/``; edits of existing notes are
+hash-checked and recorded in ``notes/.history/`` so they can be undone. See docs/mcp.md.
 
     python mcp_server.py --config     # print the setup for Claude Desktop and Claude Code
     python mcp_server.py --data DIR   # use another data folder (default: ./data or $SYNAPSE_DATA_DIR)
