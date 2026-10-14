@@ -5,6 +5,7 @@ import re
 
 from ...library import search as search_mod
 from ...library.fields import FIELDS, ITEM_TYPE_LABELS
+from ...pdf import regions as pdfregions
 from ...pdf import render as pdfrender
 from ...library.identifiers import identifiers
 from ...library.repository import NotFound
@@ -141,11 +142,11 @@ class PaperToolsMixin:
         if not 1 <= page <= n:
             raise ToolError(f"Page {page} does not exist: the PDF has {n} pages.")
         try:
-            figures = pdfrender.figure_regions(path, page)
+            figures = pdfregions.figure_regions(path, page)
         except Exception:
             figures = []
         try:
-            equations = pdfrender.equation_regions(path, page)
+            equations = pdfregions.equation_regions(path, page)
         except Exception:
             equations = []
         boxed = [f for f in figures if f.get("rect")] + equations
@@ -170,12 +171,12 @@ class PaperToolsMixin:
         fold = lambda x: x.casefold().replace("–", "-")
         if kind == "equation":
             want = fold(number)
-            find = lambda pg: next((r for r in pdfrender.equation_regions(path, pg) if fold(r["number"]) == want), None)
+            find = lambda pg: next((r for r in pdfregions.equation_regions(path, pg) if fold(r["number"]) == want), None)
             name = f"Equation ({number})"
             mention = re.compile(r"\(\s*" + re.escape(number) + r"\s*\)", re.I)
         else:
             want = f"{'Table' if kind == 'table' else 'Figure'} {number}"
-            find = lambda pg: next((r for r in pdfrender.figure_regions(path, pg) if fold(r["label"]) == fold(want)), None)
+            find = lambda pg: next((r for r in pdfregions.figure_regions(path, pg) if fold(r["label"]) == fold(want)), None)
             name = want
             mention = re.compile(r"(?:fig(?:ure)?|tab(?:le)?)\.?\s*" + re.escape(number) + r"\b", re.I)
         n = self._page_count(att) or pdfrender.page_count(path)
@@ -185,7 +186,7 @@ class PaperToolsMixin:
             hit = find(page)
             if hit:
                 return page, hit
-            labels = [r["label"] for r in pdfrender.page_regions(path, page)]
+            labels = [r["label"] for r in pdfregions.page_regions(path, page)]
             raise ToolError(f"No {name} on page {page}" + (f" (found: {', '.join(labels)})" if labels else "")
                             + ". Leave out page to search the whole PDF, or use view_page and pass rect=[x, y, w, h].")
         try:
@@ -217,9 +218,9 @@ class PaperToolsMixin:
         label = None
         if rect is None:
             if equation is not None:
-                parsed = pdfrender.parse_label(equation if re.match(r"\s*(eq|\()", str(equation), re.I) else f"({str(equation).strip()})")
+                parsed = pdfregions.parse_label(equation if re.match(r"\s*(eq|\()", str(equation), re.I) else f"({str(equation).strip()})")
             else:
-                parsed = pdfrender.parse_label(figure)
+                parsed = pdfregions.parse_label(figure)
             if not parsed:
                 raise ToolError(f"Could not read '{equation if equation is not None else figure}': write e.g. "
                                 f"figure=\"Figure 2\", figure=\"Table 1\" or equation=\"3\".")

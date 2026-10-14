@@ -8,7 +8,7 @@ from ...notes import parser
 from ...notes.attachments import attachment_name
 from ...notes.service import sniff_image
 from ...notes.vault import ATTACHMENTS, InvalidPath
-from ...pdf import render as pdfrender
+from ...pdf import png as pdfpng
 from ..protocol import Image, Parts, ToolError
 from .common import MAX_IMAGES_PER_VIEW, drop_empty
 
@@ -72,7 +72,7 @@ class ImageToolsMixin:
         if not ext:
             raise ToolError(f"{rel} is not a PNG, JPEG, GIF or WebP image.")
         info = {"path": rel, "bytes": len(data)}
-        region = pdfrender.read_region(data) if ext == "png" else None
+        region = pdfpng.read_region(data) if ext == "png" else None
         mime = {"png": "image/png", "jpg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"}[ext]
         try:
             from PIL import Image as PILImage

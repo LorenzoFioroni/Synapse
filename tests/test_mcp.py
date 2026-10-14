@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from backend.pdf import png as pdfpng
+from backend.pdf import regions as pdfregions
 from backend.pdf import render as pdfrender
 
 from backend.mcp import build_server
@@ -508,14 +510,14 @@ needs_pdfium = pytest.mark.skipif(not pdfrender.available(), reason="pypdfium2 n
 
 
 def test_png_region_roundtrip():
-    png = pdfrender.png_encode(bytes([255, 0, 0] * 4), 2, 2, {pdfrender.REGION_KEYWORD: '{"page":3,"rect":[0.1,0.2,0.3,0.4]}'})
-    assert png.startswith(b"\x89PNG") and pdfrender.read_region(png) == {"page": 3, "rect": [0.1, 0.2, 0.3, 0.4]}
-    assert pdfrender.read_region(pdfrender.png_encode(b"\0\0\0", 1, 1)) is None
+    png = pdfpng.png_encode(bytes([255, 0, 0] * 4), 2, 2, {pdfpng.REGION_KEYWORD: '{"page":3,"rect":[0.1,0.2,0.3,0.4]}'})
+    assert png.startswith(b"\x89PNG") and pdfpng.read_region(png) == {"page": 3, "rect": [0.1, 0.2, 0.3, 0.4]}
+    assert pdfpng.read_region(pdfpng.png_encode(b"\0\0\0", 1, 1)) is None
 
 
 @needs_pdfium
 def test_figure_regions(lib, svc):
-    regions = pdfrender.figure_regions(svc.config.pdf_dir / "fig.pdf", 2)
+    regions = pdfregions.figure_regions(svc.config.pdf_dir / "fig.pdf", 2)
     assert [r["label"] for r in regions] == ["Figure 2", "Table 1"]   # "Fig. 2 shows…" is running text
     x, y, w, h = regions[0]["rect"]
     # the chart (x 98…500 pt incl. its "0.5" label, y 412…600 pt from the bottom) without the caption
@@ -548,14 +550,14 @@ def test_snapshot_and_use_in_note(lib, svc):
     info = json.loads(content[1]["text"])
     saved = svc.vault.root / info["saved"]
     assert info["saved"].startswith("attachments/") and saved.is_file()
-    region = pdfrender.read_region(saved.read_bytes())
+    region = pdfpng.read_region(saved.read_bytes())
     assert region["page"] == 2 and region["rect"] == info["region"]["rect"]
     assert info["markdown"] == f"![fig2024 p. 2]({info['saved']})\n*Figure 2: [@fig2024, p. 2]*"
     note = call_json(server, "write_note", title="With figure", text="The chart:\n\n" + info["markdown"].replace(
         "*Figure 2: ", "*Figure 2: phase diagram "))
     assert note["saved"]
     err, texts = call(server, "snapshot", paper="fig2024", page=2, rect=[0.1, 0.6, 0.7, 0.15])
-    assert not err and pdfrender.read_region((svc.vault.root / json.loads(texts[1])["saved"]).read_bytes())["rect"] == [0.1, 0.6, 0.7, 0.15]
+    assert not err and pdfpng.read_region((svc.vault.root / json.loads(texts[1])["saved"]).read_bytes())["rect"] == [0.1, 0.6, 0.7, 0.15]
     err, texts = call(server, "snapshot", paper="fig2024", page=2, figure="Figure 7")
     assert err and "Figure 2, Table 1" in texts[0]
     err, texts = call(server, "snapshot", paper="fig2024", page=2)
@@ -572,7 +574,7 @@ def _blocks(server, **args):
 
 def test_view_image(lib, svc):
     server = lib["server"]
-    small = pdfrender.png_encode(bytes([200, 30, 30]) * (40 * 20), 40, 20)
+    small = pdfpng.png_encode(bytes([200, 30, 30]) * (40 * 20), 40, 20)
     pasted = svc.note_service.add_image("pasted.png", small)["path"]
     snap = json.loads(call(server, "snapshot", paper="fig2024", page=2, figure="Figure 2")[1][1])
     text = (f"# Pictures\n\nA pasted one:\n\n![my sketch]({pasted})\n\nFrom the paper:\n\n{snap['markdown']}\n\n"
@@ -647,7 +649,7 @@ def _overlap(a, b) -> float:
 
 @needs_pdfium
 def test_equation_regions():
-    one = {e["number"]: e["rect"] for e in pdfrender.equation_regions(EQ_PDF, 1)}
+    one = {e["number"]: e["rect"] for e in pdfregions.equation_regions(EQ_PDF, 1)}
     # two columns; "Eq. (1)", "see (1)." and "Equation (5) closes…" in the text are not equations
     assert sorted(one) == ["1", "2", "3", "4", "5", "6"]
     for n in "12345":
@@ -657,7 +659,7 @@ def test_equation_regions():
     assert x > 0.55 and x + w < 0.93 and h > 0.03   # right column, both lines of the split equation
     assert one["1"][3] > 0.035   # the fraction dρ/dt: both lines of it
     assert _overlap(one["2"], one["3"]) < 0.005   # align: two numbered lines, each its own region
-    two = {e["number"]: e["rect"] for e in pdfrender.equation_regions(EQ_PDF, 2)}
+    two = {e["number"]: e["rect"] for e in pdfregions.equation_regions(EQ_PDF, 2)}
     assert sorted(two) == ["2.1", "2.2", "2.3a", "2.3b", "2.4", "2.5", "A1"]
     assert two["2.2"][0] < 0.25 and two["2.2"][0] + two["2.2"][2] > 0.9   # wide: from "Z =" to the number
     assert two["2.5"][3] > 0.045   # the whole 3×3 matrix
@@ -667,7 +669,7 @@ def test_equation_regions():
 
 
 def test_parse_label():
-    p = pdfrender.parse_label
+    p = pdfregions.parse_label
     assert p("Eq. (3)") == p("equation 3") == p("(3)") == p("eq3") == ("equation", "3")
     assert p("Eqs. (2.5)") == ("equation", "2.5") and p("(A1)") == ("equation", "A1")
     assert p("Fig. 2") == p("Figure 2") == ("figure", "2") and p("Table I") == ("table", "I")
@@ -685,9 +687,9 @@ def test_snapshot_equation_and_figure_by_number(lib, svc):
                            "params": {"name": "snapshot", "arguments": {"paper": "eq2025", "equation": "A1"}}})
     info = json.loads(reply["result"]["content"][1]["text"])
     assert info["region"]["page"] == 2 and info["label"] == "Equation (A1)"   # page found without being told
-    assert info["region"]["rect"] == next(e["rect"] for e in pdfrender.equation_regions(EQ_PDF, 2) if e["number"] == "A1")
+    assert info["region"]["rect"] == next(e["rect"] for e in pdfregions.equation_regions(EQ_PDF, 2) if e["number"] == "A1")
     assert info["markdown"].endswith("\n*Equation (A1): [@eq2025, p. 2]*")
-    region = pdfrender.read_region((svc.vault.root / info["saved"]).read_bytes())
+    region = pdfpng.read_region((svc.vault.root / info["saved"]).read_bytes())
     assert region["page"] == 2
     for spelled in ("(3)", "Eq. 3", "3"):
         r = json.loads(call(server, "snapshot", paper="eq2025", equation=spelled)[1][1])
