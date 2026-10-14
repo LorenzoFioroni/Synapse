@@ -1,46 +1,55 @@
-// @ts-nocheck
 // Citation card: shown when hovering a citation (editor chips, read view, side panel).
 // Lists the cited item(s) with "Open in library", "Open PDF (p. N)" and the paper note. An item
 // with several PDFs gets one PDF button each; a citation with att:<id> names the one it means.
-import { api, openAttachment, pdfTabFor, pointPdfTab } from '../../api.js';
+import { type ApiError, api, openAttachment, pdfTabFor, pointPdfTab } from '../../api.js';
 import { icon } from '../../icons.js';
 import { emit } from '../../store.js';
 import { toastError } from '../../ui/toast.js';
 import { escapeHtml } from '../../util.js';
-import { citeTargetInDom, viewerTarget } from './citeTarget.js';
+import type { CiteEntry, CitePdf } from '../../types.js';
+import { type CiteTarget, citeTargetInDom, viewerTarget } from './citeTarget.js';
 import { shortAuthors } from './library.js';
 import { imageSrc } from './render.js';
 
-let card = null;
-let anchor = null;
-let showTimer = null;
-let hideTimer = null;
-let deps = null;      // { itemInfo(key), openNote(path), refreshLibrary(), targetOf?(el) }
+/** What the cards need from the notes view. */
+export interface CiteCardDeps {
+  itemInfo(key: string): CiteEntry | null | undefined;
+  openNote(path: string): void;
+  refreshLibrary(): Promise<unknown>;
+  /** Where a citation element in the editor points (its quote or snapshot), if not from the DOM. */
+  targetOf?(el: HTMLElement): CiteTarget | null | undefined;
+}
+
+let card: HTMLElement | null = null;
+let anchor: HTMLElement | null = null;
+let showTimer: ReturnType<typeof setTimeout> | undefined;
+let hideTimer: ReturnType<typeof setTimeout> | undefined;
+let deps: CiteCardDeps | null = null;
 
 const HOVER = '.cm-lp-chip.cite, .cm-lp-citesrc[data-keys], .prose .cite, [data-cite-keys]';
 
-function keysOf(el) {
+function keysOf(el: HTMLElement): string[] {
   if (el.dataset.keys) return el.dataset.keys.split(';').filter(Boolean);
   if (el.dataset.citeKeys) return el.dataset.citeKeys.split(';').filter(Boolean);
   return el.dataset.key ? [el.dataset.key] : [];
 }
-function pagesOf(el) {
+function pagesOf(el: HTMLElement): (number | null)[] {
   if (el.dataset.pages) return el.dataset.pages.split(';').map((p) => (p ? Number(p) : null));
   return [el.dataset.page ? Number(el.dataset.page) : null];
 }
-function attsOf(el) {
+function attsOf(el: HTMLElement): (number | null)[] {
   if (el.dataset.atts) return el.dataset.atts.split(';').map((a) => (a ? Number(a) : null));
   return [el.dataset.att ? Number(el.dataset.att) : null];
 }
 
 /** The PDFs of a library item (the first one is the default a citation without att: means). */
-export function pdfsOf(it) {
+export function pdfsOf(it: Pick<CiteEntry, 'pdf' | 'pdfs'> | null | undefined): CitePdf[] {
   if (it?.pdfs?.length) return it.pdfs;
   return it?.pdf ? [it.pdf] : [];
 }
-const shortName = (n) => (n || 'PDF').length > 26 ? `${n.slice(0, 25)}…` : (n || 'PDF');
+const shortName = (n: string) => (n || 'PDF').length > 26 ? `${n.slice(0, 25)}…` : (n || 'PDF');
 
-function ensureCard() {
+function ensureCard(): HTMLElement {
   if (card) return card;
   card = document.createElement('div');
   card.className = 'cite-card';
@@ -52,13 +61,13 @@ function ensureCard() {
   card.addEventListener('auxclick', (e) => { if (e.button === 1) onCardClick(e); });   // middle click: new tab
   document.body.appendChild(card);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
-  document.addEventListener('pointerdown', (e) => { if (card && !card.hidden && !card.contains(e.target)) hide(); }, true);
+  document.addEventListener('pointerdown', (e) => { if (card && !card.hidden && !card.contains(e.target as Node)) hide(); }, true);
   return card;
 }
 
-function render(keys, pages, atts) {
+function render(keys: string[], pages: (number | null)[], atts: (number | null)[]): string {
   return keys.map((key, i) => {
-    const it = deps.itemInfo(key);
+    const it = deps!.itemInfo(key);
     const page = pages[i] ?? null;
     const att = atts[i] ?? null;
     if (!it) {
@@ -80,15 +89,16 @@ function render(keys, pages, atts) {
 }
 
 /** One button per PDF the citation can mean: the named one, else every PDF of the item. */
-function pdfButtons(it, page, att) {
+function pdfButtons(it: CiteEntry, page: number | null, att: number | null): string {
   const all = pdfsOf(it);
   const named = att ? all.filter((p) => p.id === att) : [];
   const list = named.length ? named : all;
-  const label = (p) => (list.length > 1 ? shortName(p.name) : 'PDF') + (page ? ` p. ${page}` : '');
+  const label = (p: CitePdf) => (list.length > 1 ? shortName(p.name) : 'PDF') + (page ? ` p. ${page}` : '');
   return list.map((p) => `<button class="btn btn-sm" data-cc="pdf" data-att="${p.id}" data-page="${page ?? ''}" title="${escapeHtml(p.name || 'PDF')}">${icon('pdf', 'icon-sm')} ${escapeHtml(label(p))}</button>`).join('');
 }
 
-function place(el) {
+function place(el: HTMLElement): void {
+  const card = ensureCard();
   const r = el.getBoundingClientRect();
   card.style.left = '0px';
   card.style.top = '0px';
@@ -102,8 +112,8 @@ function place(el) {
 }
 
 /** Show the card for a citation element now. */
-export function showCard(el) {
-  ensureCard();
+export function showCard(el: HTMLElement): void {
+  const card = ensureCard();
   clearTimeout(hideTimer);
   clearTimeout(showTimer);
   const keys = keysOf(el);
@@ -114,7 +124,7 @@ export function showCard(el) {
   place(el);
 }
 
-export function hide() {
+export function hide(): void {
   clearTimeout(showTimer);
   if (card) card.hidden = true;
   anchor = null;
@@ -124,12 +134,12 @@ function scheduleHide() {
   hideTimer = setTimeout(hide, 250);
 }
 
-async function onCardClick(e) {
-  const b = e.target.closest('[data-cc]');
-  if (!b) return;
-  const key = b.closest('[data-key]')?.dataset.key;
+async function onCardClick(e: MouseEvent): Promise<void> {
+  const b = (e.target as Element).closest<HTMLElement>('[data-cc]');
+  if (!b || !deps) return;
+  const key = b.closest<HTMLElement>('[data-key]')?.dataset.key;
   const it = key && deps.itemInfo(key);
-  if (!it) return;
+  if (!key || !it) return;
   const act = b.dataset.cc;
   const from = anchor;
   hide();
@@ -139,14 +149,15 @@ async function onCardClick(e) {
     const att = b.dataset.att ? Number(b.dataset.att) : null;
     openCitation(key, page ?? null, from && (deps.targetOf?.(from) ?? citeTargetInDom(from)), { pdfOnly: true, att, newTab: e.metaKey || e.ctrlKey || e.button === 1 });
   }
-  if (act === 'note') deps.openNote(it.note);
+  if (act === 'note') deps.openNote(it.note!);
   if (act === 'new-note') {
     try {
-      const res = await api.createNote({ item_id: it.id });
+      const res = await api.createNote({ item_id: it.id }) as { path: string };
       await deps.refreshLibrary();
       deps.openNote(res.path);
     } catch (err) {
-      if (err.data?.path) deps.openNote(err.data.path); else toastError(err);
+      const existing = ((err as ApiError).data as { path?: string } | undefined)?.path;   // the item has a paper note already
+      if (existing) deps.openNote(existing); else toastError(err);
     }
   }
 }
@@ -157,10 +168,11 @@ async function onCardClick(e) {
  * The PDF's tab is reused if it is open; Cmd/Ctrl+click in read mode (Cmd/Ctrl+Shift+click in
  * the editor) or a middle click opens a new tab instead.
  */
-export function attachCiteCards(container, d) {
+export function attachCiteCards(container: HTMLElement, d: CiteCardDeps): void {
   deps = d;
+  const citeAt = (e: Event) => (e.target as Element).closest?.<HTMLElement>(HOVER);
   container.addEventListener('mouseover', (e) => {
-    const el = e.target.closest?.(HOVER);
+    const el = citeAt(e);
     if (!el || el === anchor) { if (el) clearTimeout(hideTimer); return; }
     clearTimeout(showTimer);
     clearTimeout(hideTimer);   // moving straight to another citation: don't let the old card's hide cancel this one
@@ -168,7 +180,7 @@ export function attachCiteCards(container, d) {
   });
   // touch screens: a long press opens the card (ui/longpress.js); a tap does what a click does
   container.addEventListener('zc:longpress', (e) => {
-    const el = e.target.closest?.(HOVER);
+    const el = citeAt(e);
     if (!el) return;
     e.preventDefault();
     clearTimeout(showTimer);
@@ -176,10 +188,10 @@ export function attachCiteCards(container, d) {
     showCard(el);
   });
   container.addEventListener('mouseout', (e) => {
-    const el = e.target.closest?.(HOVER);
+    const el = citeAt(e);
     if (!el) return;
     clearTimeout(showTimer);
-    if (!e.relatedTarget || !card?.contains(e.relatedTarget)) scheduleHide();
+    if (!e.relatedTarget || !card?.contains(e.relatedTarget as Node)) scheduleHide();
   });
 }
 
@@ -187,7 +199,8 @@ export function attachCiteCards(container, d) {
  * Default action for a citation: the PDF at the cited page if there is one — at the quoted words
  * or the snapshot's region when `target` says so (citeTarget.js) — else the item.
  */
-export function openCitation(key, page, target = null, { pdfOnly = false, newTab = false, att = null } = {}) {
+export function openCitation(key: string, page: number | null, target: CiteTarget | null = null,
+  { pdfOnly = false, newTab = false, att = null }: { pdfOnly?: boolean; newTab?: boolean; att?: number | null } = {}): boolean {
   const it = deps?.itemInfo(key);
   if (!it) return false;
   const pdfs = pdfsOf(it);
@@ -196,7 +209,7 @@ export function openCitation(key, page, target = null, { pdfOnly = false, newTab
     // The PDF's tab is reused (scrolled to the spot and brought forward) unless `newTab`.
     // A snapshot's region is read from its image first: take the tab right away (popup blockers
     // want it inside the click), then point it.
-    const tab = target?.quote || !target ? null : pdfTabFor(pdf, { newTab });
+    const tab = !target || 'quote' in target ? null : pdfTabFor(pdf, { newTab });
     viewerTarget(target, { imageUrl: imageSrc }).then((at) => {
       const p = page || at.page || undefined;
       if (!tab) return openAttachment({ id: it.id, title: it.title }, pdf, p, at, { newTab });

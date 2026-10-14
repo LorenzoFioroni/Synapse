@@ -276,6 +276,48 @@ export interface Format { key: string; label: string; extension: string }
 /** The body of a 409 from POST /api/items/from_identifier: the item is already in the library. */
 export interface DuplicateFound { error: string; duplicate_of: string; metadata: Partial<Item> }
 
+/** An entry read from an import file (item fields), and the library item it duplicates, if any. */
+export type ImportEntry = Partial<Item> & { duplicate_of?: string | null };
+
+export interface ImportPreview { format: string; label: string; entries: ImportEntry[] }
+
+/* ------------------------------------------------------------------ references */
+
+/** A work an item cites (backend/references), matched to a library item when it is one. */
+export interface Reference {
+  item_id: string;
+  position: number;
+  doi: string | null;
+  arxiv_id: string | null;
+  openalex_id: string | null;
+  s2_id: string | null;
+  title: string | null;
+  authors: string | null;
+  year: number | null;
+  venue: string | null;
+  raw: string | null;
+  library_id: string | null;
+}
+
+export interface ReferenceFetch {
+  item_id: string;
+  source: 'semanticscholar' | 'openalex' | 'crossref' | 'none';
+  fetched_at: string;
+  doi: string | null;
+  arxiv_id: string | null;
+  count: number;
+  error: string | null;
+}
+
+/** GET/POST /api/items/<id>/references. */
+export interface ItemReferences {
+  fetch: ReferenceFetch | null;
+  references: Reference[];
+  cited_by: { id: string; title: string | null; authors: string | null; year: number | string | null }[];
+  can_fetch: boolean;
+  queued: boolean;
+}
+
 /* ------------------------------------------------------------------ misc */
 
 /** GET /api/changes: what changed since ``seq`` (backend/changes.py). */

@@ -1,19 +1,49 @@
-// @ts-nocheck
 // CodeMirror 6 set-up for notes: live preview or source mode. The libraries are loaded on
 // first use. Colours come from the app's CSS variables, so light and dark themes just work.
+import type { HighlightStyle } from '@codemirror/language';
+import type { EditorView } from '@codemirror/view';
+import type { MarkdownConfig } from '@lezer/markdown';
+import type { CiteEntry, NoteInfo } from '../../types.js';
 import { completions } from './completion.js';
-import { livePreview } from './livePreview.js';
 import { changedSpan } from './diff.js';
-import { splitFrontmatter } from './mdscan.js';
+import { livePreview } from './livePreview.js';
 import { refitOnResize } from './mathFit.js';
+import { splitFrontmatter } from './mdscan.js';
 
-let CM = null;
-let MD = null;
-export async function loadCM() {
+export type CM = typeof import('../../../vendor/cm6/cm6.js');
+export type MD = typeof import('../../../vendor/md/md.js');
+
+/** What the editor reports to the notes view. */
+export interface EditorHandlers {
+  onChange?(text: string): void;
+  onSave?(): void;
+  onBlur?(): void;
+  /** A pasted or dropped image: store it and return the Markdown that shows it (null: nothing to insert). */
+  onImage?(file: File): Promise<string | null> | string | null;
+  onToggleRead?(): void;
+}
+
+export interface NoteEditor {
+  view: EditorView;
+  load(text: string): void;
+  replace(text: string, options?: { userEvent?: string }): void;
+  setMode(mode: 'live' | 'source'): void;
+  refresh(): void;
+  toggleTask(line0: number): boolean;
+  insertBlock(md: string): void;
+  text(): string;
+  focus(): void;
+  gotoLine(n: number): void;
+  destroy(): void;
+}
+
+let CM: CM | null = null;
+let MD: MD | null = null;
+export async function loadCM(): Promise<CM> {
   CM ||= await import('../../../vendor/cm6/cm6.js');
   return CM;
 }
-export async function loadMD() {
+export async function loadMD(): Promise<MD> {
   MD ||= await import('../../../vendor/md/md.js');
   return MD;
 }
@@ -23,7 +53,7 @@ export async function loadMD() {
  * the next `---` (or `...`) line. Same rule as the backend (frontmatter.split): if it is never
  * closed, it is not front-matter.
  */
-function frontmatter(cm) {
+function frontmatter(cm: CM): MarkdownConfig {
   return {
     defineNodes: [{ name: 'Frontmatter', block: true }],
     parseBlock: [{
@@ -31,7 +61,9 @@ function frontmatter(cm) {
       before: 'HorizontalRule',
       parse(cx, line) {
         if (cx.lineStart !== 0 || line.text !== '---') return false;
-        const doc = cx.input.read(0, cx.input.length);
+        // the whole document: BlockContext.input exists but is not in @lezer/markdown's public types
+        const input = (cx as unknown as { input: { read(from: number, to: number): string; length: number } }).input;
+        const doc = input.read(0, input.length);
         const m = /\n(---|\.\.\.)(\n|$)/.exec(doc.slice(3));
         if (!m) return false;
         const end = 3 + m.index + 1 + m[1].length;
@@ -45,9 +77,9 @@ function frontmatter(cm) {
   };
 }
 
-let HL = null;
+let HL: HighlightStyle | null = null;
 /** The highlight style, shared with read mode so code looks the same in both. */
-export function highlightStyle(cm) {
+export function highlightStyle(cm: CM): HighlightStyle {
   if (HL) return HL;
   const t = cm.tags;
   HL = cm.HighlightStyle.define([
@@ -77,25 +109,27 @@ export function highlightStyle(cm) {
 }
 
 /**
- * @param {HTMLElement} parent
- * @param {object} handlers  onChange(text), onSave(), onBlur(), onImage(file) → markdown|null,
- *                           onToggleRead()
- * @param {object} preview   deps for livePreview.js (renderer, resolveNote, citeInfo, openNote, mermaid)
- * @param {'live'|'source'} mode
- * @param {{items(), notes()}} data      for autocomplete: cite index and notes overview
+ * The notes editor in ``parent``. ``preview`` is what livePreview.ts needs (renderer, resolveNote,
+ * citeInfo, openNote …); ``data`` gives autocomplete the cite index and the notes overview.
  */
-export async function createEditor(parent, handlers, preview, mode = 'live', data = { items: () => [], notes: () => [] }) {
+export async function createEditor(
+  parent: HTMLElement,
+  handlers: EditorHandlers,
+  preview: Parameters<typeof livePreview>[1],
+  mode: 'live' | 'source' = 'live',
+  data: { items(): CiteEntry[]; notes(): NoteInfo[] } = { items: () => [], notes: () => [] },
+): Promise<NoteEditor> {
   const cm = await loadCM();
   const lp = livePreview(cm, preview);
   const modeSlot = new cm.Compartment();
-  const modeExt = (m) => (m === 'live' ? [lp.extension, cm.EditorView.editorAttributes.of({ class: 'cm-live' })] : []);
+  const modeExt = (m: string) => (m === 'live' ? [lp.extension, cm.EditorView.editorAttributes.of({ class: 'cm-live' })] : []);
   let currentMode = mode;
   const keys = [
     { key: 'Mod-s', preventDefault: true, run: () => { handlers.onSave?.(); return true; } },
     { key: 'Mod-e', preventDefault: true, run: () => { handlers.onToggleRead?.(); return true; } },
   ];
 
-  const insertImages = async (view, files, pos) => {
+  const insertImages = async (view: EditorView, files: File[], pos?: number) => {
     for (const f of files) {
       const md = await handlers.onImage?.(f);
       if (!md) continue;
@@ -106,7 +140,7 @@ export async function createEditor(parent, handlers, preview, mode = 'live', dat
       pos = at + text.length;
     }
   };
-  const imagesOf = (dt) => [...(dt?.files || [])].filter((f) => f.type.startsWith('image/'));
+  const imagesOf = (dt: DataTransfer | null) => [...(dt?.files || [])].filter((f) => f.type.startsWith('image/'));
 
   const extensions = () => [
     cm.history(),

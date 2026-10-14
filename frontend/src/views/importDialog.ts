@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Import references: pick/drop/paste a file, preview entries, flag duplicates.
 import * as A from '../actions.js';
 import { afterAddChoices, afterAddHtml, runAfterAdd } from '../afterAdd.js';
@@ -7,13 +6,15 @@ import { icon } from '../icons.js';
 import { currentFolderId, folderPath, folderTree, state } from '../store.js';
 import { openDialog } from '../ui/dialog.js';
 import { toast, toastError } from '../ui/toast.js';
+import type { ImportEntry, ImportPreview } from '../types.js';
 import { escapeHtml, plural, shortAuthors } from '../util.js';
+import type { AfterAddKind } from '../afterAdd.js';
 
-export async function openImport(initialFile = null) {
-  let preview = null;
-  let entriesState = [];
-  let importBtn, folderSelect, afterBox;
-  const AFTER = ['metadata', 'pdf', 'references'];
+export async function openImport(initialFile: File | null = null): Promise<void> {
+  let preview: ImportPreview | null = null;
+  let entriesState: { e: ImportEntry; on: boolean }[] = [];
+  let importBtn: HTMLButtonElement, folderSelect: HTMLSelectElement, afterBox: HTMLElement;
+  const AFTER: AfterAddKind[] = ['metadata', 'pdf', 'references'];
   await openDialog({
     title: 'Import References',
     subtitle: 'BibTeX (.bib), RIS (.ris), EndNote (.enw or XML) and CSL JSON are detected automatically.',
@@ -32,35 +33,35 @@ export async function openImport(initialFile = null) {
           <select class="select" data-folder style="max-width:360px"><option value="">My Library (no folder)</option>
           ${folderTree().map((f) => `<option value="${f.id}" ${f.id === currentFolderId() ? 'selected' : ''}>${'\u2003'.repeat(f.depth)}${escapeHtml(f.name)}</option>`).join('')}</select>
           <div class="import-after"></div></div>`;
-      folderSelect = body.querySelector('[data-folder]');
-      afterBox = body.querySelector('.import-after');
-      const dz = body.querySelector('.drop-zone');
-      const result = body.querySelector('.import-result');
-      const load = async (src) => {
+      folderSelect = body.querySelector<HTMLSelectElement>('[data-folder]')!;
+      afterBox = body.querySelector<HTMLElement>('.import-after')!;
+      const dz = body.querySelector<HTMLElement>('.drop-zone')!;
+      const result = body.querySelector<HTMLElement>('.import-result')!;
+      const load = async (src: string | File) => {
         result.innerHTML = '<div class="import-summary"><span class="spinner"></span> Reading…</div>';
         try {
           preview = await api.importPreview(src);
-          entriesState = preview.entries.map((e) => ({ e, on: !(e.duplicate_of && state.settings.import_skip_duplicates !== false) }));
+          entriesState = preview!.entries.map((e) => ({ e, on: !(e.duplicate_of && state.settings.import_skip_duplicates !== false) }));
           showPreview(result);
           dz.hidden = true;
         } catch (e) {
-          result.innerHTML = `<div class="form-error">${escapeHtml(e.message)}</div>`;
+          result.innerHTML = `<div class="form-error">${escapeHtml((e as Error).message)}</div>`;
           importBtn.disabled = true;
         }
       };
       const pick = () => {
         const input = document.createElement('input');
         input.type = 'file'; input.accept = '.bib,.bibtex,.ris,.enw,.xml,.json,.txt,.nbib';
-        input.onchange = () => input.files[0] && load(input.files[0]);
+        input.onchange = () => input.files?.[0] && load(input.files[0]);
         input.click();
       };
       dz.addEventListener('click', pick);
       dz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
       dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('over'); });
       dz.addEventListener('dragleave', () => dz.classList.remove('over'));
-      dz.addEventListener('drop', (e) => { e.preventDefault(); dz.classList.remove('over'); if (e.dataTransfer.files[0]) load(e.dataTransfer.files[0]); });
-      body.querySelector('[data-parse]').addEventListener('click', () => {
-        const t = body.querySelector('textarea').value;
+      dz.addEventListener('drop', (e) => { e.preventDefault(); dz.classList.remove('over'); if (e.dataTransfer?.files[0]) load(e.dataTransfer.files[0]); });
+      body.querySelector('[data-parse]')!.addEventListener('click', () => {
+        const t = body.querySelector('textarea')!.value;
         if (t.trim()) load(t);
       });
       if (initialFile) load(initialFile);
@@ -70,7 +71,7 @@ export async function openImport(initialFile = null) {
       {
         label: 'Import', kind: 'primary',
         onClick: async (close, btn) => {
-          const chosen = entriesState.filter((x) => x.on).map((x) => { const { duplicate_of, ...rest } = x.e; return rest; });
+          const chosen = entriesState.filter((x) => x.on).map((x) => { const { duplicate_of: _dup, ...rest } = x.e; return rest; });
           if (!chosen.length) return false;
           btn.disabled = true; btn.textContent = 'Importing…';
           try {
@@ -89,7 +90,7 @@ export async function openImport(initialFile = null) {
     ],
   });
 
-  function showPreview(result) {
+  function showPreview(result: HTMLElement) {
     const dupes = entriesState.filter((x) => x.e.duplicate_of).length;
     // "Turn keywords into tags" only matters when the file has keywords
     const keywords = new Set(entriesState.flatMap((x) => (x.e.keywords || '').split(/[;,]/).map((k) => k.trim()).filter(Boolean)));
@@ -102,7 +103,7 @@ export async function openImport(initialFile = null) {
     if (afterBox.innerHTML) afterBox.insertAdjacentHTML('afterbegin', '<label class="field-label" style="margin:14px 0 6px">After importing</label>');
     result.innerHTML = `
       <div class="import-summary">
-        <span class="badge accent">${escapeHtml(preview.label)}</span>
+        <span class="badge accent">${escapeHtml(preview!.label)}</span>
         <b>${plural(entriesState.length, 'reference')}</b>
         ${dupes ? `<span class="badge warn">${dupes} already in library</span>` : ''}
         <span class="spacer"></span>
@@ -120,10 +121,11 @@ export async function openImport(initialFile = null) {
       importBtn.textContent = n ? `Import ${plural(n, 'item')}` : 'Import';
     };
     result.addEventListener('change', (e) => {
-      if (e.target.dataset.all !== undefined) {
-        entriesState.forEach((x) => { x.on = e.target.checked; });
-        result.querySelectorAll('[data-i]').forEach((cb) => { cb.checked = e.target.checked; });
-      } else if (e.target.dataset.i !== undefined) entriesState[+e.target.dataset.i].on = e.target.checked;
+      const box = e.target as HTMLInputElement;
+      if (box.dataset.all !== undefined) {
+        entriesState.forEach((x) => { x.on = box.checked; });
+        result.querySelectorAll<HTMLInputElement>('[data-i]').forEach((cb) => { cb.checked = box.checked; });
+      } else if (box.dataset.i !== undefined) entriesState[+box.dataset.i].on = box.checked;
       update();
     });
     update();

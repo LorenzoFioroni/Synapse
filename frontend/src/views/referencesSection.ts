@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Item pane: "References" — what the item cites (fetched online, the base of the citation
 // graph) and which library items cite it. Works that are in the library link to them; the
 // others can be added by DOI / arXiv ID with one click.
@@ -7,19 +6,21 @@ import { api } from '../api.js';
 import { icon } from '../icons.js';
 import { byId, emit, state } from '../store.js';
 import { progressToast, toast, toastError } from '../ui/toast.js';
+import type { ApiError } from '../api.js';
+import type { Item, ItemReferences } from '../types.js';
 import { escapeHtml, formatDate, plural, shortAuthors } from '../util.js';
 
-const SOURCES = { semanticscholar: 'Semantic Scholar', openalex: 'OpenAlex', crossref: 'Crossref', none: 'no service' };
+const SOURCES: Record<string, string> = { semanticscholar: 'Semantic Scholar', openalex: 'OpenAlex', crossref: 'Crossref', none: 'no service' };
 const SHOW = 8;
-const expanded = new Set();   // items whose full list is open
-let pollTimer = null;
+const expanded = new Set<string>();   // items whose full list is open
+let pollTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** Fill the section of item ``it``; ``current()`` says whether the pane still shows it. */
-export async function fillReferences(el, it, current) {
+export async function fillReferences(el: HTMLElement | null, it: Item, current: () => boolean): Promise<void> {
   if (!el) return;
   clearTimeout(pollTimer);
-  let v;
-  try { v = await api.itemReferences(it.id); } catch (e) { el.innerHTML = `<span class="muted">${escapeHtml(e.message)}</span>`; return; }
+  let v: ItemReferences;
+  try { v = await api.itemReferences(it.id); } catch (e) { el.innerHTML = `<span class="muted">${escapeHtml((e as Error).message)}</span>`; return; }
   if (!current() || !el.isConnected) return;
   paint(el, it, v);
   if (v.queued) pollTimer = setTimeout(() => fillReferences(el, it, current), 2000);   // fetching in the background
@@ -29,11 +30,11 @@ export async function fillReferences(el, it, current) {
   }
 }
 
-function paint(el, it, v) {
+function paint(el: HTMLElement, it: Item, v: ItemReferences): void {
   const f = v.fetch;
   const refs = v.references || [];
   const inLib = refs.filter((r) => r.library_id).length;
-  let status;
+  let status: string;
   if (v.queued) status = '<span class="spinner"></span> Fetching the reference list…';
   else if (!f) status = v.can_fetch ? 'Not fetched yet.' : 'Needs a DOI or arXiv ID to look up its references.';
   else if (f.error && !f.count) status = `<span class="warn">${escapeHtml(f.error)}</span>`;
@@ -74,13 +75,14 @@ function paint(el, it, v) {
   if (refs.length) head?.insertAdjacentHTML('beforeend', ` <span class="count">${refs.length}</span>`);
 }
 
-async function onClick(e, el, it, current) {
-  const show = e.target.closest('[data-show-item]');
+async function onClick(e: MouseEvent, el: HTMLElement, it: Item, current: () => boolean): Promise<void> {
+  const target = e.target as Element;
+  const show = target.closest<HTMLElement>('[data-show-item]');
   if (show) { emit('show-item', show.dataset.showItem); return; }
-  const act = e.target.closest('[data-ref]')?.dataset.ref;
-  if (act === 'more') { expanded.has(it.id) ? expanded.delete(it.id) : expanded.add(it.id); fillReferences(el, it, current); return; }
+  const act = target.closest<HTMLElement>('[data-ref]')?.dataset.ref;
+  if (act === 'more') { if (expanded.has(it.id)) expanded.delete(it.id); else expanded.add(it.id); fillReferences(el, it, current); return; }
   if (act === 'fetch') {
-    const b = e.target.closest('button');
+    const b = target.closest('button')!;
     b.disabled = true;
     b.innerHTML = '<span class="spinner"></span> Fetching…';
     try {
@@ -90,14 +92,14 @@ async function onClick(e, el, it, current) {
     } catch (err) { toastError(err); if (current() && el.isConnected) fillReferences(el, it, current); }
     return;
   }
-  const add = e.target.closest('[data-add-ident]');
+  const add = target.closest<HTMLButtonElement>('[data-add-ident]');
   if (add) {
     add.disabled = true;
     try {
-      await api.fromIdentifier(add.dataset.addIdent, false, null);
+      await api.fromIdentifier(add.dataset.addIdent!, false, null);
       toast('Added to your library.', { type: 'success' });
     } catch (err) {
-      if (err.status === 409) toast('Already in your library.');
+      if ((err as ApiError).status === 409) toast('Already in your library.');
       else { toastError(err); add.disabled = false; return; }
     }
     await A.loadItems();
@@ -109,11 +111,11 @@ async function onClick(e, el, it, current) {
  * Fetch the reference lists of several items (item menu, multi-selection pane), one by one
  * with a progress toast that can be stopped. Items without a DOI / arXiv ID are skipped.
  */
-export async function fetchReferencesBulk(ids) {
+export async function fetchReferencesBulk(ids: string[]): Promise<void> {
   if (!ids.length) return;
   let cancelled = false;
   const pt = progressToast('Fetching references…', { onCancel: () => { cancelled = true; } });
-  const found = [], none = [], noId = [], failed = [];
+  const found: string[] = [], none: string[] = [], noId: string[] = [], failed: string[] = [];
   let linked = 0;
   for (let n = 0; n < ids.length && !cancelled; n++) {
     const it = byId(ids[n]);
@@ -122,7 +124,8 @@ export async function fetchReferencesBulk(ids) {
       const v = await api.fetchReferences(ids[n]);
       (v.fetch?.count ? found : none).push(ids[n]);
       linked += (v.references || []).filter((r) => r.library_id).length;
-    } catch (e) {
+    } catch (err) {
+      const e = err as ApiError;
       if (e.status === 404) noId.push(ids[n]);
       else {
         failed.push(ids[n]);

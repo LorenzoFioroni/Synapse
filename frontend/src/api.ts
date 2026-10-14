@@ -1,7 +1,7 @@
 // Thin client for the JSON API. Every call throws an Error with a readable
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
-  Attachment, ChangeFeed, CiteEntry, Format, HistoryEntry, Item, ItemList, ItemsByIds, NoteAttachments, NoteFile, NoteHistory, NotesListing,
+  Attachment, ChangeFeed, CiteEntry, Format, HistoryEntry, ImportEntry, ImportPreview, Item, ItemList, ItemReferences, ItemsByIds, NoteAttachments, NoteFile, NoteHistory, NotesListing,
   RenamePlan, Schema, Settings, SettingsResponse,
 } from './types.js';
 
@@ -90,12 +90,12 @@ export const api = {
 
   formats: () => request<{ formats: Format[] }>('GET', '/api/formats'),
   importPreview: (fileOrText: string | File, format?: string) => {
-    if (typeof fileOrText === 'string') return request('POST', '/api/import/preview', { text: fileOrText, format });
+    if (typeof fileOrText === 'string') return request<ImportPreview>('POST', '/api/import/preview', { text: fileOrText, format });
     const fd = new FormData(); fd.append('file', fileOrText); if (format) fd.append('format', format);
-    return request('POST', '/api/import/preview', fd);
+    return request<ImportPreview>('POST', '/api/import/preview', fd);
   },
-  importCommit: (entries: unknown[], skipDuplicates: boolean, folderId: number | null = null, { keywordsAsTags }: { keywordsAsTags?: boolean } = {}) =>
-    request('POST', '/api/import/commit', { entries, skip_duplicates: skipDuplicates, folder_id: folderId, keywords_as_tags: keywordsAsTags }),
+  importCommit: (entries: ImportEntry[], skipDuplicates: boolean, folderId: number | null = null, { keywordsAsTags }: { keywordsAsTags?: boolean } = {}) =>
+    request<{ created: string[]; skipped: number }>('POST', '/api/import/commit', { entries, skip_duplicates: skipDuplicates, folder_id: folderId, keywords_as_tags: keywordsAsTags }),
   exportText: (format: string, ids?: string[] | null) => request<{ text: string }>('GET', `/api/export?${qs({ format, ids: ids && ids.join(','), download: 0 })}`),
   exportUrl: (format: string, ids?: string[] | null) => `/api/export?${qs({ format, ids: ids && ids.join(',') })}`,
 
@@ -129,8 +129,8 @@ export const api = {
   restoreNoteBatch: (trashId: string) => request('POST', '/api/notes/restore', { trash_id: trashId }),
   noteKeys: () => request('GET', '/api/notes/keys'),
   // reference lists (citation graph)
-  itemReferences: (id: string) => request('GET', `/api/items/${id}/references`),
-  fetchReferences: (id: string) => request('POST', `/api/items/${id}/references`),
+  itemReferences: (id: string) => request<ItemReferences>('GET', `/api/items/${id}/references`),
+  fetchReferences: (id: string) => request<ItemReferences>('POST', `/api/items/${id}/references`),
   queueReferences: (ids: string[]) => request('POST', '/api/references/queue', { ids }),
   citationGraph: () => request('GET', '/api/graph/citations'),
   graph: () => request('GET', '/api/graph'),
