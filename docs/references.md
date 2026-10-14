@@ -147,10 +147,13 @@ It then calls `attachments_changed()` so the full-text index picks the file up.
 `candidate_urls()` lists where to look, best first:
 
 1. For a preprint (an arXiv id, and no DOI or only an arXiv DOI): `arxiv.org/pdf/<id>`.
-2. For a DOI that is not an arXiv DOI: Unpaywall's `best_oa_location.url_for_pdf`.
+2. For a DOI that is not an arXiv DOI: Unpaywall's `best_oa_location.url_for_pdf`. Unpaywall
+   requests carry the contact e-mail (Settings → Online Services, else `FALLBACK_EMAIL`),
+   URL-encoded.
 3. For a published paper that also has an arXiv id: the arXiv PDF, after Unpaywall.
 4. Searches by title: Unpaywall's search (first two results), the PDF link of Google Scholar's
-   first result (scraped, with the browser User-Agent), and an arXiv title search.
+   first result (scraped, with the browser User-Agent), and an arXiv title search (the arXiv
+   API over https, after `arxiv_wait()`, with `TIMEOUT`).
 
 When the item has an arXiv id, `find_and_download` tries steps 1–3 first and runs the title
 searches only if none of those was the paper.

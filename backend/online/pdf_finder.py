@@ -16,7 +16,7 @@ import requests
 
 from ..library.identifiers import clean_doi
 from ..pdf.text import extract_text
-from .http import BROWSER_UA, arxiv_wait
+from .http import BROWSER_UA, TIMEOUT, arxiv_wait
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def candidate_urls(
     published paper the publisher's open-access copy (Unpaywall) comes first and arXiv second.
     ``title_search=False`` skips the searches by title (Unpaywall, Scholar, arXiv)."""
     out: list[str | None] = []  # _unique drops the empty ones
-    email = email or FALLBACK_EMAIL
+    email = urllib.parse.quote(email or FALLBACK_EMAIL, safe="@")  # a "+" would read as a space
     preprint = bool(arxiv_id) and (not doi or doi.lower().startswith("10.48550/"))
     if arxiv_id and preprint:
         out.append(arxiv_pdf_url(arxiv_id))
@@ -108,9 +108,10 @@ def candidate_urls(
         except Exception as e:
             log.info("Scholar lookup failed: %s", e)
         try:
+            arxiv_wait()
             r = requests.get(
-                f"http://export.arxiv.org/api/query?search_query=ti:%22{urllib.parse.quote(title)}%22&max_results=1",
-                timeout=10,
+                f"https://export.arxiv.org/api/query?search_query=ti:%22{urllib.parse.quote(title)}%22&max_results=1",
+                timeout=TIMEOUT,
             )
             if r.ok:
                 ns = "{http://www.w3.org/2005/Atom}"
