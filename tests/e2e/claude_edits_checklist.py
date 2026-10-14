@@ -7,8 +7,14 @@ work, and the note's list of Claude edits restores any earlier version.
 Starts its own server on port 8785 with a throw-away data folder and runs the real MCP server
 (mcp_server.py) as Claude; your library is not touched.
 """
-import asyncio, json, subprocess, sys, tempfile, time
+import asyncio
+import json
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
+
 import requests
 from playwright.async_api import async_playwright
 

@@ -7,9 +7,16 @@ refreshing itself.
 
 Starts its own server on port 8784 with a throw-away data folder; your library is not touched.
 """
-import asyncio, os, sqlite3, subprocess, sys, tempfile, time
+import asyncio
+import os
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlencode
+
 import requests
 from playwright.async_api import async_playwright
 

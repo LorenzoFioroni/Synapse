@@ -124,6 +124,7 @@ def test_import_tags_setting(client, svc):
 
 def test_old_settings_file_is_migrated(tmp_path):
     import json
+
     from backend.settings import SettingsStore
     path = tmp_path / "settings.json"
     path.write_text(json.dumps({"import_keywords_as_tags": False, "references_auto": False}))
@@ -133,6 +134,7 @@ def test_old_settings_file_is_migrated(tmp_path):
     s = SettingsStore(path)   # the old defaults: the new defaults apply
     assert s.get("import_tags") == "ask" and s.get("add_fetch_references") == "always"
     import pytest
+
     from backend.settings import SettingsError
     with pytest.raises(SettingsError):
         s.update({"add_find_pdf": "sometimes"})
@@ -151,6 +153,7 @@ def test_permanent_delete_cleans_tags(client):
 def test_migration_from_single_folder_column(tmp_path):
     """Libraries created with the one-folder-per-item version keep their folders."""
     import sqlite3
+
     from backend import create_app
     from backend.config import Config
     data = tmp_path / "data"

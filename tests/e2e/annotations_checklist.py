@@ -7,9 +7,17 @@ the old viewer are converted and shown.
 
 Starts its own server on port 8777 with a throw-away data folder; your library is not touched.
 """
-import asyncio, json, os, shutil, subprocess, sys, tempfile, time
+import asyncio
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlencode
+
 import requests
 from playwright.async_api import async_playwright
 

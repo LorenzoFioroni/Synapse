@@ -6,9 +6,14 @@ under it (a trackpad pinch / Ctrl+wheel), on any page, and +/- keep the middle o
 Starts its own server on port 8780 with a throw-away data folder and a 12-page PDF made from
 tests/e2e/fixtures/twocolumn.pdf; your library is not touched.
 """
-import asyncio, subprocess, sys, tempfile, time
+import asyncio
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlencode
+
 import requests
 from playwright.async_api import async_playwright
 

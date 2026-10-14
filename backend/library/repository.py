@@ -10,10 +10,10 @@ import os
 import uuid
 from pathlib import Path
 
+from ..settings import SettingsStore
 from . import citekeys
 from .db import Database, utcnow
 from .fields import DEFAULT_ITEM_TYPE, EDITABLE_KEYS, ITEM_TYPE_LABELS
-from ..settings import SettingsStore
 
 log = logging.getLogger(__name__)
 

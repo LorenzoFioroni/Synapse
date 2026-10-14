@@ -1,7 +1,6 @@
 """Tools for the citation graph: get_references, get_citation_graph."""
 from __future__ import annotations
 
-
 from .common import drop_empty, short_authors
 
 

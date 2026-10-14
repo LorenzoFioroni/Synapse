@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify
 
+from ..library.repository import NotFound
 from ..online.http import LookupFailed
 from ..references.sources import FetchFailed
-from ..library.repository import NotFound
 from . import body, error, svc
 
 bp = Blueprint("references", __name__, url_prefix="/api")

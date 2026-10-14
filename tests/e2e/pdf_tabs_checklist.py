@@ -6,15 +6,22 @@ tab; Cmd/Ctrl+click (Cmd/Ctrl+Shift+click in the editor, or a middle click) open
 
 Starts its own server on port 8773 with a throw-away data folder; your library is not touched.
 """
-import asyncio, os, shutil, subprocess, sys, tempfile, time
+import asyncio
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
+
 import requests
 from playwright.async_api import async_playwright
 
 APP = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(APP))
-from tests.e2e._guard import guard  # noqa: E402
 import tests.e2e.citation_spot_checklist as spot  # noqa: E402  (PDF builder, flash probe)
+from tests.e2e._guard import guard  # noqa: E402
 
 shutil.rmtree(spot.DATA, ignore_errors=True)   # made when that module is imported; not used here
 PORT = 8773

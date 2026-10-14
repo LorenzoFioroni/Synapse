@@ -18,9 +18,9 @@ import json
 import logging
 import sys
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
-from collections.abc import Callable
 
 log = logging.getLogger(__name__)
 

@@ -9,14 +9,12 @@ from pathlib import Path
 
 import pytest
 
+from backend.mcp import build_server
+from backend.mcp.protocol import PROTOCOL_VERSIONS, Server, Tool, ToolError, serve_stdio
+from backend.mcp.tools.common import parse_pages
 from backend.pdf import png as pdfpng
 from backend.pdf import regions as pdfregions
 from backend.pdf import render as pdfrender
-
-from backend.mcp import build_server
-from backend.mcp.protocol import PROTOCOL_VERSIONS, Server, Tool, serve_stdio
-from backend.mcp.protocol import ToolError
-from backend.mcp.tools.common import parse_pages
 
 ROOT = Path(__file__).resolve().parent.parent
 

@@ -10,9 +10,16 @@ Runs Chromium with the "iPad Pro 11" profile (touch, no hover). Pen input is sen
 events (DevTools protocol), finger input as touch events. Safari's pinch events are simulated:
 the real Pencil, palm and pinch behaviour still need a try on an iPad.
 """
-import asyncio, os, shutil, subprocess, sys, tempfile, time
+import asyncio
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlencode
+
 import requests
 from playwright.async_api import async_playwright
 
@@ -54,6 +61,7 @@ def anns(att_id):
 
 def setup_library():
     from pypdf import PdfReader, PdfWriter
+
     from backend import create_app
     from backend.config import Config
     s = create_app(Config.from_env(DATA), start_indexer=False).extensions["synapse"]

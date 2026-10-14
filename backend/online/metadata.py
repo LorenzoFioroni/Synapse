@@ -5,8 +5,8 @@ import difflib
 import logging
 import re
 import unicodedata
-from concurrent.futures import ThreadPoolExecutor
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
 import requests

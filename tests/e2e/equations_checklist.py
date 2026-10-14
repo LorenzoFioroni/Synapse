@@ -4,8 +4,14 @@
 
 Starts its own server on port 8786 with a throw-away data folder; your library is not touched.
 """
-import asyncio, os, subprocess, sys, tempfile, time
+import asyncio
+import os
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
+
 import requests
 from playwright.async_api import async_playwright
 

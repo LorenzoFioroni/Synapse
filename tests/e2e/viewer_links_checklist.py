@@ -5,8 +5,15 @@ tab, hovering shows a preview of the target, and Back/Forward return to the prev
 
 Starts its own server on port 8770 with a throw-away data folder; your library is not touched.
 """
-import asyncio, os, shutil, subprocess, sys, tempfile, time
+import asyncio
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
+
 import requests
 from playwright.async_api import async_playwright
 
@@ -322,5 +329,6 @@ async def main():
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _guard import guard  # noqa: E402
+
 guard(PORT)
 asyncio.run(main())

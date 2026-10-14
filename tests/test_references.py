@@ -1,8 +1,8 @@
 """Reference lists / citation graph (network mocked)."""
 import pytest
 
-from backend.references import sources as R
 from backend.online.http import LookupFailed
+from backend.references import sources as R
 
 
 class Resp:

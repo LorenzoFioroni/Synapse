@@ -6,8 +6,8 @@ representation (see ``common.py``).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from . import bibtex, csljson, endnote, ris
 

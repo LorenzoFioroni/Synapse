@@ -5,12 +5,20 @@ import re
 
 from ...library import search as search_mod
 from ...library.fields import FIELDS, ITEM_TYPE_LABELS
-from ...pdf import regions as pdfregions
-from ...pdf import render as pdfrender
 from ...library.identifiers import identifiers
 from ...library.repository import NotFound
+from ...pdf import regions as pdfregions
+from ...pdf import render as pdfrender
 from ..protocol import Image, Parts, ToolError
-from .common import MAX_CHARS_PER_READ, MAX_PAGES_PER_READ, MAX_PAPER_NOTE_CHARS, drop_empty, fold_text, page_ranges, parse_pages
+from .common import (
+    MAX_CHARS_PER_READ,
+    MAX_PAGES_PER_READ,
+    MAX_PAPER_NOTE_CHARS,
+    drop_empty,
+    fold_text,
+    page_ranges,
+    parse_pages,
+)
 
 
 class PaperToolsMixin:

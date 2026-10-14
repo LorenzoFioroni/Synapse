@@ -9,16 +9,22 @@ touched. Everything runs on one machine, so the server is started through a smal
 treats only 127.0.0.1 as "this computer": the "iPad" (a touch browser context) reaches the server
 through this machine's LAN address and therefore counts as another device.
 """
-import asyncio, os, subprocess, sys, tempfile, time
+import asyncio
+import os
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
+
 import requests
 from playwright.async_api import async_playwright
 
 APP = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(APP))
-from tests.e2e._guard import guard  # noqa: E402
-from tests.conftest import make_pdf  # noqa: E402
 from backend.access import lan  # noqa: E402
+from tests.conftest import make_pdf  # noqa: E402
+from tests.e2e._guard import guard  # noqa: E402
 
 PORT = 8781
 BASE = f"http://127.0.0.1:{PORT}"

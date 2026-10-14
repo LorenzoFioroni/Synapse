@@ -10,7 +10,6 @@ from pathlib import Path
 
 from .render import open_pdf
 
-
 # ============================================================================ figures
 CAPTION = re.compile(r"^\s*(fig(?:ure)?\.?|table)\s*([A-Z]?\d+[a-z]?|[IVX]+)\b\s*[.:|]?", re.I)
 
@@ -146,6 +145,7 @@ MATH_FONT = re.compile(r"cmmi|cmsy|cmex|cmbsy|cmmib|msam|msbm|eufm|eusm|rsfs|mat
 def _chars(page) -> list[tuple]:
     """The page's visible characters in reading order: (char, l, b, r, t, line, math), PDF units, tight boxes."""
     import ctypes
+
     import pypdfium2.raw as raw
     tp = page.get_textpage()
     try:

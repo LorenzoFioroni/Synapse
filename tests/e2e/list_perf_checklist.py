@@ -7,8 +7,16 @@ trashing) do not reload the whole list.
 Starts its own server on port 8779 with a throw-away data folder of 10,000 synthetic items (with
 150-word abstracts); your library is not touched.
 """
-import asyncio, random, shutil, string, subprocess, sys, tempfile, time
+import asyncio
+import random
+import shutil
+import string
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
+
 import requests
 from playwright.async_api import async_playwright
 

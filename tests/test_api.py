@@ -121,6 +121,7 @@ def test_schema(client):
 
 def test_old_schema_is_upgraded(tmp_path):
     import sqlite3
+
     from backend import config as cfg
     data = tmp_path / "data"
     data.mkdir()

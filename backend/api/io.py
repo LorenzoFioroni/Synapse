@@ -6,8 +6,8 @@ from datetime import date
 from flask import Blueprint, Response, jsonify, request
 
 from .. import formats
-from ..library.fields import EDITABLE_KEYS
 from ..formats.common import split_keywords
+from ..library.fields import EDITABLE_KEYS
 from ..library.repository import DuplicateFinder
 from . import body, error, svc
 

@@ -10,11 +10,10 @@ from collections import OrderedDict
 from pathlib import PurePosixPath
 
 from ...library.fields import ITEM_TYPE_LABELS
+from ...library.identifiers import identifiers
 from ...notes.vault import InvalidPath
 from ...pdf.text import extract_pages
-from ...library.identifiers import identifiers
 from ..protocol import ToolError
-
 
 AI_FOLDER = "ai"
 MAX_PAGES_PER_READ = 10

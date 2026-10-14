@@ -5,8 +5,15 @@
 
 Starts its own server on port 8765 with a throw-away data folder; your library is not touched.
 """
+import asyncio
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
-import asyncio, os, shutil, subprocess, sys, tempfile, time
+
 from playwright.async_api import async_playwright
 
 APP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -149,5 +156,6 @@ async def main():
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _guard import guard  # noqa: E402
+
 guard(PORT)
 asyncio.run(main())

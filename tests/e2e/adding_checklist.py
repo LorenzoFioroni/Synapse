@@ -7,8 +7,14 @@ ones away, it can continue in the background, and new items follow never / alway
 Starts its own server on port 8771 with a throw-away data folder and fake online services
 (each lookup takes 0.6 s); your library is not touched.
 """
-import asyncio, os, subprocess, sys, tempfile, time
+import asyncio
+import os
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
+
 import requests
 from playwright.async_api import async_playwright
 

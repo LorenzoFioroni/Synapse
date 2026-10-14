@@ -6,8 +6,13 @@ through /api/attachments/<id>/remote, and links to the local network are refused
 Starts its own server on port 8774 with a throw-away data folder; "the web" is faked inside
 that server (journal.example serves tests/e2e/fixtures/twocolumn.pdf). Your library is not touched.
 """
-import asyncio, subprocess, sys, tempfile, time
+import asyncio
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
+
 import requests
 from playwright.async_api import async_playwright
 

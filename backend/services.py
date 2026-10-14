@@ -6,14 +6,14 @@ import threading
 
 from .config import Config
 from .library.db import Database
-from .pdf.fulltext import FulltextIndex, Indexer
+from .library.organize import FolderRepository, SmartFolderRepository, TagRepository
+from .library.repository import PaperRepository
 from .notes import NotesIndex, Vault
 from .notes.attachments import Attachments
 from .notes.service import NotesService
+from .pdf.fulltext import FulltextIndex, Indexer
 from .references.service import Citations
 from .references.store import CitationStore
-from .library.organize import FolderRepository, SmartFolderRepository, TagRepository
-from .library.repository import PaperRepository
 from .settings import SettingsStore
 
 
@@ -57,8 +57,8 @@ class Services:
 
     def find_pdf(self, item_id: str) -> dict:
         """Look for an open-access PDF of an item and attach it. Returns the finder's result."""
-        from .online import pdf_finder
         from .library.identifiers import identifiers
+        from .online import pdf_finder
         item = self.papers.get(item_id)
         _, arxiv_id = identifiers(item)   # from archive_id, an arXiv DOI, the URL, Extra …
         if not item.get("title") and not item.get("doi") and not arxiv_id:
@@ -89,6 +89,7 @@ class Services:
 
     def _library_written(self) -> None:
         from flask import has_request_context, request
+
         from .changes import CLIENT_HEADER, kind_of
         if has_request_context():
             self.changes.record({kind_of(request.path)}, request.headers.get(CLIENT_HEADER))
