@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from pathlib import Path
 
 from .config import Config
 from .library.db import Database
@@ -44,7 +45,8 @@ class Services:
         self.vault = Vault(config.notes_dir)
         self.vault.ensure()
         self.notes = NotesIndex(config.notes_index_path, self.vault)
-        self.note_service = NotesService(self.vault, self.notes, self.papers, config.backups_dir)
+        # key renames back up the notes into the backup folder from Settings, like Backups does
+        self.note_service = NotesService(self.vault, self.notes, self.papers, self._backup_dir)
         # Attachments no note uses go to their own trash; both trashes are emptied after a while.
         self.attachments = Attachments(self.vault, self.notes, self.settings)
         self.note_service.on_change = self.attachments.poke
@@ -61,6 +63,9 @@ class Services:
             self.notes.sync()
         except Exception:  # notes must never stop the library from starting
             logging.getLogger(__name__).exception("Notes index sync failed")
+
+    def _backup_dir(self) -> Path:
+        return self.backups.dir
 
     def find_pdf(self, item_id: str) -> dict:
         """Look for an open-access PDF of an item and attach it. Returns the finder's result."""

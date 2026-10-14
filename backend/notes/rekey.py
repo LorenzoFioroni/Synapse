@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import tarfile
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -30,26 +31,50 @@ BACKUPS_KEPT = 20
 
 
 class Rekeyer:
-    def __init__(self, vault, index, backups_dir: Path):
+    def __init__(self, vault, index, backups_dir: Path | Callable[[], Path], fallback_dir: Path | None = None):
+        """``backups_dir`` may be a function: the backup folder is a setting that can change.
+        ``fallback_dir`` is used when that folder cannot be written (a disk that is not there)."""
         self.vault = vault
         self.index = index
-        self.backups_dir = Path(backups_dir)
+        self._backups_dir = backups_dir
+        self.fallback_dir = Path(fallback_dir) if fallback_dir else None
         self._last_backup: float | None = None  # not 0: time.monotonic() can itself be < 60 s just after boot
 
     # ------------------------------------------------------------------ backups
+    @property
+    def backups_dir(self) -> Path:
+        d = self._backups_dir
+        return Path(d() if callable(d) else d)
+
     def backup(self, force: bool = False) -> Path | None:
         """tar.gz of every note (attachments and trash excluded: renames never touch them)."""
         if not force and self._last_backup is not None and time.monotonic() - self._last_backup < BACKUP_EVERY_S:
             return None
-        self.backups_dir.mkdir(parents=True, exist_ok=True)
-        dest = self.backups_dir / f"notes-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.tar.gz"
-        with tarfile.open(dest, "w:gz") as tar:
-            for rel, _ in self.vault.iter_notes():
-                tar.add(self.vault.root / rel, arcname=f"notes/{rel}")
+        folder = self.backups_dir
+        try:
+            dest = self._write_backup(folder)
+        except OSError:
+            if not self.fallback_dir or self.fallback_dir == folder:
+                raise  # no backup, no rewrite: the caller logs it and the notes stay as they are
+            log.exception("Cannot back up the notes into %s; using %s", folder, self.fallback_dir)
+            folder = self.fallback_dir
+            dest = self._write_backup(folder)
         self._last_backup = time.monotonic()
-        old = sorted(self.backups_dir.glob("notes-*.tar.gz"))
+        old = sorted(folder.glob("notes-*.tar.gz"))
         for p in old[:-BACKUPS_KEPT]:
             p.unlink(missing_ok=True)
+        return dest
+
+    def _write_backup(self, folder: Path) -> Path:
+        folder.mkdir(parents=True, exist_ok=True)
+        dest = folder / f"notes-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.tar.gz"
+        try:
+            with tarfile.open(dest, "w:gz") as tar:
+                for rel, _ in self.vault.iter_notes():
+                    tar.add(self.vault.root / rel, arcname=f"notes/{rel}")
+        except BaseException:
+            dest.unlink(missing_ok=True)  # never leave half an archive that looks like a backup
+            raise
         return dest
 
     # ------------------------------------------------------------------ planning

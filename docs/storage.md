@@ -223,8 +223,9 @@ more than ten citation keys. It skips the backup if one was made in the last ten
 backup made before an operation also postpones the next scheduled one. `migrate_legacy` calls
 `create()` directly.
 
-The `notes-*.tar.gz` archives are different: `Rekeyer.backup` writes them into `data/backups/`
-before rewriting notes for a citation-key change, keeps the newest 20 (`BACKUPS_KEPT`), and
+The `notes-*.tar.gz` archives are different: `Rekeyer.backup` writes them into the same folder
+(`backup_dir` or `data/backups/`, read at each backup) before rewriting notes for a citation-key
+change, keeps the newest 20 (`BACKUPS_KEPT`), and
 `Backups.prune` never touches them. See [notes](notes.md).
 
 **Restore.** `Backups.restore(name)` works in this order, so nothing live is touched until the

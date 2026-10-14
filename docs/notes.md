@@ -213,7 +213,9 @@ When an item's citation key changes, `PaperRepository.on_citekey_change` calls
 1. `plan()` finds the affected notes (citing the key, paper notes of it, notes linking to a paper
    note that will be renamed) and computes each change. It writes nothing. When a key is changed
    by hand, the item pane shows this preview first (`GET /api/notes/rename_plan`, `rekeyDialog.ts`).
-2. `backup()` writes `backups/notes-<timestamp>.tar.gz` of every note, at most once a minute
+2. `backup()` writes `notes-<timestamp>.tar.gz` of every note into the backup folder
+   (`backup_dir` from Settings, else `data/backups/`; `data/backups/` too when that folder
+   cannot be written, and without any backup nothing is rewritten), at most once a minute
    (`BACKUP_EVERY_S`) so "regenerate all keys" makes one backup, keeping `BACKUPS_KEPT` (20).
 3. Each note is rewritten with `link_spans`/`replace_spans` (`[@old]` becomes `[@new]`, never
    inside code or math) and `paper: old` in the front matter, hash-checked, up to three tries.

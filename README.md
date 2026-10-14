@@ -51,7 +51,7 @@ Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
 | `notes/` | your Markdown notes (the files are the source of truth) |
 | `notes_index.db` | links and search index of the notes; safe to delete, it is rebuilt |
 | `citations.db` | reference lists fetched online (the citation graph); if deleted they can be fetched again |
-| `backups/` | automatic backups of the library, settings and notes (`library-*.tar.gz`, see below), and note backups taken before a citation-key rename (`notes-*.tar.gz`) |
+| `backups/` | automatic backups of the library, settings and notes (`library-*.tar.gz`, see below), and note backups taken before a citation-key rename (`notes-*.tar.gz`); both go to the backup folder chosen in Settings instead, if there is one |
 | `settings.json` | preferences from the Settings page |
 | `auth.db` | devices paired with `--lan` (Settings → Devices); not in backups |
 
