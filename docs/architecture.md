@@ -36,7 +36,7 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
 | `frontend/index.html` | The single-page app. It loads `js/main.js` as an ES module. |
 | `frontend/viewer.html` | The PDF viewer, opened in its own tab. It loads pdf.js and `js/viewer/viewer.js` (the viewer), then its add-ons `annotations`, `links` and `notesBridge`. |
 | `frontend/pair.html` | The page that unpaired devices see under `--lan`. |
-| `browser_extension/` | The Chrome extension that saves the page you are on to the library. |
+| `browser_extension/` | The Chrome extension that saves the page you are on to the library. It is plain JavaScript (ES modules) that Chrome loads as it is, with no build; JSDoc comments type it and `npm run check` in `frontend/` type-checks it with `browser_extension/tsconfig.json`. |
 
 ## Backend
 

@@ -39,13 +39,16 @@ the last commit, once everything it lists is done or has moved into the permanen
    - Lint rules tightened (import sorting, `raise … from`), and the code formatted with ruff
      format.
    - The package layering is documented and enforced by `tests/test_layers.py`.
-3. **Frontend: TypeScript and module splits.**
-   - Set up the build (`tools/` or a `frontend/` package), with `tsc --noEmit` running in CI and
-     the build output served from disk.
-   - Migrate `frontend/js` to TypeScript module by module, with types for the API payloads.
-   - Move the large inline script of `viewer.html` into modules.
-   - Split `notesView`, `itemlist`, `viewer/annotations` and `settingsView` along their seams.
-   - Bring the browser extension into the same tooling.
+3. **Frontend: TypeScript and module splits** (done):
+   - A `frontend/` package builds `src/` (TypeScript) to `js/` with esbuild; `server.py` rebuilds
+     it when needed, and CI runs `tsc --noEmit` (strict, no unused locals).
+   - Every module is typed, with types for the API payloads (`src/types.ts`); no `@ts-nocheck`
+     is left.
+   - The inline script of `viewer.html` is a module (`viewer/viewer.ts`).
+   - `notesView`, `itemlist`, `viewer/annotations` and `settingsView` are split along their seams.
+   - The browser extension stays plain JavaScript (Chrome loads it without a build) and is
+     type-checked from JSDoc by the same `npm run check`; it has a browser checklist now.
+   - Issue numbers dropped from the frontend's and the tests' comments.
 4. **Documentation.** Write the subsystem pages listed in `docs/architecture.md`, a "how to add a
    feature" guide, and the testing guide. Update the README to link them.
 5. **Further polish.**

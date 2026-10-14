@@ -1,12 +1,12 @@
 {
   "name": "synapse-frontend",
   "private": true,
-  "description": "Build of the Synapse web app: TypeScript in src/ is compiled to js/ (not committed). The @codemirror, @lezer, katex, markdown-it (@types) and force-graph packages are here for their types only: the app uses the bundles in vendor/ (built by tools/), pinned to the same versions.",
+  "description": "Build of the Synapse web app: TypeScript in src/ is compiled to js/ (not committed). The @codemirror, @lezer, katex, markdown-it (@types) and force-graph packages are here for their types only: the app uses the bundles in vendor/ (built by tools/), pinned to the same versions. @types/chrome types the browser extension (type-checked JavaScript, see ../browser_extension/tsconfig.json).",
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
     "watch": "node build.mjs --watch",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit && tsc --noEmit -p ../browser_extension"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "6.20.3",
@@ -20,6 +20,7 @@
     "@lezer/common": "1.5.3",
     "@lezer/highlight": "1.2.4",
     "@lezer/markdown": "1.7.2",
+    "@types/chrome": "0.3.0",
     "@types/markdown-it": "14.2.0",
     "esbuild": "0.28.2",
     "force-graph": "1.51.4",
