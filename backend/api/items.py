@@ -23,6 +23,11 @@ def search_context(s) -> dict:
     return {"folder_paths": s.folders.paths(), "type_labels": ITEM_TYPE_LABELS}
 
 
+def notes_matcher(s):
+    """What the search uses to find items through the notes (None while notes are turned off)."""
+    return s.note_service.text_matcher() if s.settings.get("notes_enabled") else None
+
+
 def items_for_view(s, view: str, library: list[dict]) -> tuple[list[dict], str | None, str | None]:
     """Resolve a view name to its items. Returns (items, smart_query, smart_mode)."""
     if view == "library":
@@ -64,7 +69,7 @@ def list_items():
     items, smart_q, smart_mode = items_for_view(s, view, library)
     ctx = search_context(s)
     hits = {}
-    notes = s.note_service.text_matcher() if (q or smart_q) and s.settings.get("notes_enabled") else None
+    notes = notes_matcher(s) if q or smart_q else None
     if smart_q:
         items, hits = search_mod.search(items, smart_q, smart_mode, s.fulltext, ctx, notes=notes)
     if tag_filter:
@@ -98,7 +103,11 @@ def search_preview():
     s = svc()
     q = request.args.get("q", "").strip()
     mode = request.args.get("mode", "all")
-    items, _ = search_mod.search(s.papers.list(), q, mode, s.fulltext, search_context(s)) if q else ([], {})
+    items = (
+        search_mod.search(s.papers.list(), q, mode, s.fulltext, search_context(s), notes=notes_matcher(s))[0]
+        if q
+        else []
+    )
     return jsonify(
         count=len(items),
         sample=[

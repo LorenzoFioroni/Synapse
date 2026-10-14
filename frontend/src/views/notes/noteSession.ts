@@ -190,28 +190,54 @@ export class NoteSession {
   /** Enter the conflict state directly (used when a draft is older than the file). */
   async startConflict() { await this._enterConflict(); }
 
-  /** 'mine' overwrites the file with the editor text; 'theirs' loads the file into the editor. */
+  /** 'mine' overwrites the file with the editor text; 'theirs' loads the file into the editor.
+   *  If this fails (the file still cannot be read, or writing it again fails), the session stays
+   *  in conflict and the error is thrown, so the caller can say so and ask again. */
   async resolve(choice: 'mine' | 'theirs'): Promise<void> {
-    const c = this.conflict;
+    let c = this.conflict;
     if (!c) return;
-    this.conflict = null;
-    if (choice === 'theirs' && !c.deleted) {
-      // not deleted, so theirs was read (a failed read leaves null, as before)
+    if (!c.deleted && c.theirs === null) {   // the file could not be read when the conflict began
+      try {
+        const r = await this.api.get(this.path);
+        c = { ...c, theirs: r.text, theirsHash: r.hash };
+      } catch (e) {
+        if ((e as { status?: number } | null)?.status !== 404) throw e;
+        c = { ...c, deleted: true };
+      }
+      this.conflict = c;
+    }
+    if (choice === 'theirs' && c.deleted) {   // there is no saved file to use any more: ask again
+      this.onConflict(c);
+      return;
+    }
+    if (choice === 'theirs') {
+      this.conflict = null;
       this.saved = { text: c.theirs as string, hash: c.theirsHash };
       this.text = c.theirs as string;
       this.onRemoteText(this.text);
       this._clean();
       return;
     }
-    if (c.deleted) {   // the file was deleted elsewhere: write it again
-      const res = await this.api.create(this.path, this.text);
-      this.saved = { text: this.text, hash: res.hash };
+    if (c.deleted) {   // the file was deleted elsewhere: write it again (still in conflict meanwhile)
+      const sent = this.text;
+      let res: { hash: string };
+      try {
+        res = await this.api.create(this.path, sent);
+      } catch (e) {
+        // someone else wrote it again in the meantime: that is a conflict with their text
+        if ((e as { status?: number } | null)?.status === 409) { this.conflict = null; await this._enterConflict(); return; }
+        throw e;
+      }
+      this.conflict = null;
+      this.saved = { text: sent, hash: res.hash };
       this.onSaved(res.hash);
-      this._clean();
+      if (this.text === sent) this._clean(); else this._dirty();
       return;
     }
     // keep mine: base the next save on the file's current version
-    this.saved = { text: c.theirs ?? '', hash: c.theirsHash };
+    this.conflict = null;
+    this.saved = { text: c.theirs as string, hash: c.theirsHash };
+    if (this.text === this.saved.text) { this._clean(); return; }
     this._dirty();
     await this.save();
   }

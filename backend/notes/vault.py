@@ -166,7 +166,7 @@ class Vault:
         Returns the new hash. Raises Conflict when the file on disk is not the version the
         caller loaded, NoteExists when creating over an existing file.
         """
-        rel = self.clean_rel(rel)
+        rel = self._note_path(rel)
         p = self.root / rel
         data = text.encode("utf-8")
         with self._lock:
@@ -192,7 +192,7 @@ class Vault:
             return self.rel(p)
 
     def move(self, src: str, dst: str, *, expected_hash: str | None = None) -> str:
-        src, dst = self.clean_rel(src), self.clean_rel(dst)
+        src, dst = self.clean_rel(src), self._note_path(dst)
         with self._lock:
             ps, pd = self.root / src, self.root / dst
             if not ps.is_file():
@@ -212,6 +212,13 @@ class Vault:
     def _reserved(rel: str) -> bool:
         """The images folder (compared without case: macOS disks ignore it)."""
         return rel.split("/")[0].lower() == ATTACHMENTS
+
+    def _note_path(self, rel: str) -> str:
+        """A path a note may be written to: never in the images folder, which is not indexed."""
+        rel = self.clean_rel(rel)
+        if self._reserved(rel):
+            raise InvalidPath("The attachments folder is reserved for images")
+        return rel
 
     def make_folder(self, rel: str) -> str:
         rel = self.clean_rel(rel, suffix=None)

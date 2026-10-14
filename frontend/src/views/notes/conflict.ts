@@ -1,12 +1,22 @@
 // The dialog for a note that was saved or deleted elsewhere while it had unsaved changes here
 // (NoteSession detects it; nothing is overwritten until you choose).
 import { openDialog } from '../../ui/dialog.js';
+import { toastError } from '../../ui/toast.js';
 import { diffHtml } from './aiEdits.js';
 import type { Conflict } from './noteSession.js';
 import { refreshTree } from './tree.js';
 import { hooks, ws } from './workspace.js';
 
 export function conflictDialog(c: Conflict): Promise<void> {
+  return ask(c).catch((e) => {
+    // resolving failed (the file cannot be read or written): the note is still in conflict
+    toastError(e);
+    const session = ws.session;
+    if (session?.conflict) return conflictDialog(session.conflict);
+  });
+}
+
+function ask(c: Conflict): Promise<void> {
   if (c.deleted) {
     return openDialog({
       title: 'This note was deleted elsewhere',

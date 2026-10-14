@@ -3,8 +3,8 @@ import { api } from '../../api.js';
 import type { Mermaid } from '../../globals.js';
 import { escapeHtml } from '../../util.js';
 import { highlightStyle, loadCM, loadMD } from './editor.js';
-import { splitFrontmatter } from './mdscan.js';
-import { createRenderer, slugHeading } from './render.js';
+import { embedHtml } from './embed.js';
+import type { RendererOptions } from './render.js';
 
 /* --------------------------------------------------------------- Mermaid */
 let mermaidLoading: Promise<Mermaid> | null = null;
@@ -84,23 +84,9 @@ export function renderMermaidBlocks(root: ParentNode): void {
 /* --------------------------------------------------------------- embeds */
 const MAX_EMBED_DEPTH = 3;
 
-/** Text of one section (from a heading to the next heading of the same or higher level). */
-function section(body: string, heading: string | undefined): string {
-  if (!heading) return body;
-  const lines = body.split('\n');
-  const want = slugHeading(heading);
-  let start = -1, level = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const m = /^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/.exec(lines[i]);
-    if (!m) continue;
-    if (start < 0 && slugHeading(m[2]) === want) { start = i; level = m[1].length; continue; }
-    if (start >= 0 && m[1].length <= level) return lines.slice(start, i).join('\n');
-  }
-  return start >= 0 ? lines.slice(start).join('\n') : `*Heading “${heading}” not found.*`;
-}
-
-/** Fill every ![[embed]] under `root` (recursively, at most 3 levels, never in a cycle). */
-export async function renderEmbeds(root: HTMLElement, seen = new Set<string>(), depth = 1): Promise<void> {
+/** Fill every ![[embed]] under `root` (recursively, at most 3 levels, never in a cycle). `opts`
+ *  is what the embedding note is rendered with (library info for citations, equation settings). */
+export async function renderEmbeds(root: HTMLElement, opts: RendererOptions = {}, seen = new Set<string>(), depth = 1): Promise<void> {
   const lib = await loadMD();
   for (const el of root.querySelectorAll<HTMLElement>(':scope .note-embed[data-path]:not(.filled)')) {
     el.classList.add('filled');
@@ -111,12 +97,10 @@ export async function renderEmbeds(root: HTMLElement, seen = new Set<string>(), 
       continue;
     }
     try {
-      const res = await api.getNote(path);
-      const text = res.text.replace(/\r\n?/g, '\n');
-      const src = section(text.slice(splitFrontmatter(text).bodyStart), el.dataset.heading);
-      body.innerHTML = createRenderer(lib).render(src);
+      const [res, links] = await Promise.all([api.getNote(path), api.noteLinks(path).catch(() => null)]);
+      body.innerHTML = embedHtml(lib, path, res.text, el.dataset.heading, links, opts);
       const next = new Set(seen).add(path);
-      await renderEmbeds(body, next, depth + 1);
+      await renderEmbeds(body, opts, next, depth + 1);
       highlightCodeBlocks(body);
       renderMermaidBlocks(body);
     } catch (e) {

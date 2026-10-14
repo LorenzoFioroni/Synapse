@@ -99,10 +99,12 @@ class NoteTextMatcher:
 
 class NotesService:
     def __init__(self, vault: Vault, index: NotesIndex, papers, backups_dir=None):
+        """``backups_dir``: where key renames back up the notes (a path, or a function giving it)."""
         self.vault = vault
         self.index = index
         self.papers = papers
-        self.rekeyer = Rekeyer(vault, index, backups_dir or (vault.root.parent / "backups"))
+        default = vault.root.parent / "backups"  # data/backups
+        self.rekeyer = Rekeyer(vault, index, backups_dir or default, fallback_dir=default)
         self.on_change: Callable[[], None] | None = None  # called after notes are saved, deleted or restored
         self.history = NoteHistory(vault.root)  # earlier versions of notes Claude changed
 
@@ -110,7 +112,7 @@ class NotesService:
     def text_matcher(self) -> NoteTextMatcher:
         """For the library search (cached until the notes or the keys change)."""
         keys = {p["citation_key"]: p["id"] for p in self.papers.list() if p.get("citation_key")}
-        sig = (self.index.revision, tuple(sorted(keys.items())))
+        sig = (self.index.signature(), tuple(sorted(keys.items())))
         if getattr(self, "_matcher_sig", None) != sig:
             self._matcher = NoteTextMatcher(self.index.texts_by_key(), keys)
             self._matcher_sig = sig

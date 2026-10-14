@@ -108,3 +108,24 @@ def test_first_rename_is_backed_up_even_just_after_boot(tmp_path, monkeypatch):
     monkeypatch.setattr(rekey.time, "monotonic", lambda: 5.0)
     assert r.backup() is not None  # the first one is always made
     assert r.backup() is None  # then one per burst of renames
+
+
+def test_rename_backups_go_to_the_backup_folder_from_settings(lib, client, tmp_path):
+    svc, item, other, key, text = lib
+    custom = tmp_path / "elsewhere"
+    svc.settings.update({"backup_dir": str(custom)})
+    client.patch(f"/api/items/{item['id']}", json={"citation_key": "smith2021"})
+    assert len(list(custom.glob("notes-*.tar.gz"))) == 1
+    assert not list(svc.config.backups_dir.glob("notes-*.tar.gz"))
+
+
+def test_rename_backups_fall_back_to_data_backups(lib, client, tmp_path):
+    """The chosen folder may be on a disk that is not there; the notes are still backed up."""
+    svc, item, other, key, text = lib
+    custom = tmp_path / "elsewhere"
+    svc.settings.update({"backup_dir": str(custom)})
+    custom.rmdir()
+    custom.write_text("not a folder any more")
+    client.patch(f"/api/items/{item['id']}", json={"citation_key": "smith2021"})
+    assert len(list(svc.config.backups_dir.glob("notes-*.tar.gz"))) == 1
+    assert "[@smith2021, p. 3]" in svc.vault.read("Review.md")[0]  # and rewritten

@@ -90,7 +90,7 @@ ORG = [
 ]
 CTX = {
     "folder_paths": {1: ["Physics"], 2: ["Physics", "Transport"], 3: ["Reading group"]},
-    "type_labels": {"book": "Book", "journalArticle": "Journal Article"},
+    "type_labels": {"book": "Book", "bookSection": "Book Section", "journalArticle": "Journal Article"},
 }
 
 
@@ -112,6 +112,16 @@ def test_filters():
     assert f("year:2019") == ["a"] and f("year:2000-2020") == ["a", "b"] and f("year:>2010") == ["a", "c"]
     assert f("has:pdf") == ["a"] and f("has:doi") == ["a"] and f("-has:pdf") == ["b", "c"]
     assert f("author:roe") == ["c"]
+
+
+def test_type_names_a_whole_type_or_the_start_of_one():
+    items = [{"id": t, "title": "x", "item_type": t} for t in ("book", "bookSection", "journalArticle")]
+    t = lambda q: [p["id"] for p in search(items, q, "basic", None, CTX)[0]]
+    assert t("type:book") == ["book"]  # not bookSection
+    assert t('type:"book section"') == t("type:bookSection") == ["bookSection"]
+    assert t("-type:book") == ["bookSection", "journalArticle"]
+    assert t("type:boo") == ["book", "bookSection"]  # not a whole name: any type starting so
+    assert t("type:journal") == t("type:article") == ["journalArticle"]
 
 
 def test_filters_combine_with_text():
@@ -144,5 +154,54 @@ def test_search_finds_items_through_notes(client, svc):
     assert client.get("/api/items", query_string={"q": "sign problems", "mode": "basic"}).json["items"] == []
     r = client.get("/api/items", query_string={"q": "-lindblad", "mode": "all"})
     assert a["id"] not in ids(r) and b["id"] in ids(r)  # negation works through notes too
+    # the smart-folder editor's count agrees with what the folder will show
+    sf = client.post("/api/smart", json={"name": "Sign", "query": "sign problems", "mode": "all"}).json
+    shown = ids(client.get("/api/items", query_string={"view": f"smart:{sf['id']}"}))
+    preview = client.get("/api/search/preview", query_string={"q": "sign problems", "mode": "all"}).json
+    assert shown == {b["id"]} and preview["count"] == 1 and preview["sample"][0]["id"] == b["id"]
     svc.settings.update({"notes_enabled": False})
     assert client.get("/api/items", query_string={"q": "sign problems", "mode": "all"}).json["items"] == []
+    assert client.get("/api/search/preview", query_string={"q": "sign problems", "mode": "all"}).json["count"] == 0
+
+
+def test_notes_search_sees_edits_made_by_another_process(client, svc):
+    """The MCP server edits notes and updates notes_index.db in its own process."""
+    from backend.notes import NotesIndex, Vault
+
+    a = svc.papers.create({"authors": "Cui, Jian", "title": "Variational operators", "year": 2015})
+    client.post("/api/notes/note", json={"item_id": a["id"], "text": "Uses Lindblad steady states."})
+    found = lambda q: {i["id"] for i in client.get("/api/items", query_string={"q": q, "mode": "all"}).json["items"]}
+    assert found("lindblad") == {a["id"]}
+    assert found("kraus") == set()
+
+    vault = Vault(svc.config.notes_dir)  # what the other process has: its own objects, same files
+    other = NotesIndex(svc.config.notes_index_path, vault)
+    (path,) = [n["path"] for n in other.list()]
+    text, h = vault.read(path)
+    vault.write(path, text.replace("Lindblad", "Kraus"), expected_hash=h)
+    other.update(path)
+
+    assert found("kraus") == {a["id"]}
+    assert found("lindblad") == set()
+
+
+def test_renamed_attachment_is_searched_by_its_new_name(client, svc, monkeypatch):
+    from backend.library import repository
+
+    item = svc.papers.create({"title": "Plain title"})
+    att = svc.papers.add_attachment(item["id"], "Supplement", "s.pdf")
+    found = lambda q: [i["id"] for i in client.get("/api/items", query_string={"q": q, "mode": "all"}).json["items"]]
+    assert found("supplement") == [item["id"]]
+    monkeypatch.setattr(repository, "utcnow", lambda: "2099-01-01T00:00:00Z")
+    client.patch(f"/api/attachments/{att['id']}", json={"name": "Appendix"})
+    assert svc.papers.get(item["id"])["date_modified"] == "2099-01-01T00:00:00Z"  # the item changed
+    assert found("supplement") == []
+    assert found("appendix") == [item["id"]]
+
+
+def test_haystack_follows_attachment_names_even_within_one_second():
+    paper = {"id": "x", "title": "t", "date_modified": "2024-01-01T00:00:00Z", "attachments": [{"name": "Old"}]}
+    assert ids(search([paper], "old", "all")) == ["x"]
+    paper = {**paper, "attachments": [{"name": "New"}]}  # same date_modified (it has one-second steps)
+    assert ids(search([paper], "old", "all")) == []
+    assert ids(search([paper], "new", "all")) == ["x"]

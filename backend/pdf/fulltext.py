@@ -28,6 +28,11 @@ def _fts_quote(term: str) -> str:
     return '"' + term.replace('"', '""') + '"'
 
 
+def _like_escape(term: str) -> str:
+    """``term`` for ``LIKE … ESCAPE '\\'``: its ``%`` and ``_`` are plain characters."""
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 class FulltextIndex:
     def __init__(self, path: Path | str):
         self.path = str(path)
@@ -61,15 +66,52 @@ class FulltextIndex:
                 chars INTEGER,
                 indexed_at TEXT
             )""")
+            c.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
             try:
-                c.execute("""CREATE VIRTUAL TABLE IF NOT EXISTS content USING fts5(
-                    text, attachment_id UNINDEXED, paper_id UNINDEXED,
-                    tokenize = "unicode61 remove_diacritics 2")""")
+                self._create_fts(c)
             except sqlite3.OperationalError:
                 log.warning("SQLite FTS5 not available; full-text search falls back to LIKE")
                 self.fts = False
                 c.execute("""CREATE TABLE IF NOT EXISTS content_plain (
                     attachment_id INTEGER PRIMARY KEY, paper_id TEXT, text TEXT)""")
+            self._check_content_table(c)
+
+    @staticmethod
+    def _create_fts(c: sqlite3.Connection) -> None:
+        c.execute("""CREATE VIRTUAL TABLE IF NOT EXISTS content USING fts5(
+            text, attachment_id UNINDEXED, paper_id UNINDEXED,
+            tokenize = "unicode61 remove_diacritics 2")""")
+
+    def _check_content_table(self, c: sqlite3.Connection) -> None:
+        """Start over if ``documents`` describes text kept in the other table.
+
+        Whether FTS5 is there is decided at each start (another Python, another SQLite), but
+        ``documents`` is shared: its rows would count every file as indexed while the table now
+        in use is empty. ``meta`` records which table the rows belong to.
+        """
+        row = c.execute("SELECT value FROM meta WHERE key = 'content'").fetchone()
+        if row is None:  # an index from before this was recorded: look for rows without text
+            stale = (
+                c.execute(
+                    f"SELECT 1 FROM documents WHERE attachment_id NOT IN (SELECT attachment_id FROM {self._table}) "
+                    "LIMIT 1"
+                ).fetchone()
+                is not None
+            )
+        else:
+            stale = row["value"] != self._table
+        if stale:
+            log.warning(
+                "The full-text index was made %s FTS5; the PDFs will be indexed again",
+                "without" if self.fts else "with",
+            )
+            c.execute("DELETE FROM documents")
+            for table in ("content", "content_plain"):
+                try:
+                    c.execute(f"DELETE FROM {table}")
+                except sqlite3.OperationalError:  # not there, or FTS5 is what is missing
+                    pass
+        c.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('content', ?)", (self._table,))
 
     @property
     def _table(self) -> str:
@@ -138,7 +180,8 @@ class FulltextIndex:
                     out.setdefault(r["paper_id"], self._to_html(r["snip"]))
             else:
                 for r in c.execute(
-                    "SELECT paper_id, text FROM content_plain WHERE text LIKE ? LIMIT ?", (f"%{term}%", limit)
+                    "SELECT paper_id, text FROM content_plain WHERE text LIKE ? ESCAPE '\\' LIMIT ?",
+                    (f"%{_like_escape(term)}%", limit),
                 ):
                     t = r["text"]
                     i = t.lower().find(term.lower())
@@ -220,7 +263,7 @@ class Indexer:
             path = self.repo.attachment_path(a)
             if path and path.suffix.lower() == ".pdf" and self.index.needs_indexing(a["id"], path):
                 todo.append((a, path))
-        self.status.update(running=bool(todo), total=len(todo), done=0, current="")
+        self.status.update(running=bool(todo), total=len(todo), done=0, current="", errors=0)  # this run's
         for a, path in todo:
             self.status["current"] = a.get("name") or path.name
             try:

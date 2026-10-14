@@ -94,7 +94,9 @@ MCP server builds the same objects in its own process over the same folder.
   both sides also re-read and retry on `Conflict`.
 - **Moves and folders.** `move` (optionally hash-checked) allows case-only renames on
   case-insensitive disks. `make_folder`, `move_folder` and `notes_in` refuse the `attachments`
-  folder (`_reserved`, compared without case for macOS).
+  folder (`_reserved`, compared without case for macOS), and so do `write` and the destination
+  of `move`: the index never lists notes there, so a note written there would disappear at the
+  next sync.
 - **Trash.** `trash`, `trash_batch`, `trashed`, `restore` and `restore_batch`. Restoring skips
   files whose place is taken again and leaves them in the trash.
 
@@ -115,7 +117,9 @@ old tables are dropped and rebuilt instead of migrated.
 | `notes_fts` | FTS5 table of title and body (`unicode61 remove_diacritics 2`). |
 
 `sync()` walks the vault and skips every file whose `(mtime, size)` matches the index. `update()`
-then compares the content hash and re-parses only when it changed. Files that disappeared are
+then compares the content hash and re-parses only when it changed. It takes the file's `stat()`
+before reading it, so a file saved in between keeps an older `mtime` in the index and is read
+again by the next sync. Files that disappeared are
 removed. `rebuild()` empties the tables and syncs. The app syncs at startup and on
 `POST /api/notes/rescan`; `NotesService.get` also re-indexes a note whose hash differs. A file
 changed by another program therefore shows in the listing only after a rescan or a restart.
@@ -209,7 +213,9 @@ When an item's citation key changes, `PaperRepository.on_citekey_change` calls
 1. `plan()` finds the affected notes (citing the key, paper notes of it, notes linking to a paper
    note that will be renamed) and computes each change. It writes nothing. When a key is changed
    by hand, the item pane shows this preview first (`GET /api/notes/rename_plan`, `rekeyDialog.ts`).
-2. `backup()` writes `backups/notes-<timestamp>.tar.gz` of every note, at most once a minute
+2. `backup()` writes `notes-<timestamp>.tar.gz` of every note into the backup folder
+   (`backup_dir` from Settings, else `data/backups/`; `data/backups/` too when that folder
+   cannot be written, and without any backup nothing is rewritten), at most once a minute
    (`BACKUP_EVERY_S`) so "regenerate all keys" makes one backup, keeping `BACKUPS_KEPT` (20).
 3. Each note is rewritten with `link_spans`/`replace_spans` (`[@old]` becomes `[@new]`, never
    inside code or math) and `paper: old` in the front matter, hash-checked, up to three tries.
@@ -274,7 +280,8 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `editor.ts`, `livePreview.ts` | CodeMirror 6 (`vendor/cm6/`) and the live preview decorations, built on `mdscan.ts`. |
 | `completion.ts`, `library.ts` | `[@` and `[[` autocomplete and its ranking. |
 | `render.ts` | Markdown to HTML with markdown-it and KaTeX (`vendor/md/`): math, links, citations, callouts, tasks. Raw HTML is never rendered. No DOM. |
-| `richRender.ts` | Mermaid (loaded on demand from `vendor/mermaid/`), code highlighting, embedded notes. |
+| `richRender.ts` | Mermaid (loaded on demand from `vendor/mermaid/`), code highlighting, filling embedded notes into the page. |
+| `embed.ts`, `linkData.ts` | What an embedded note shows; what a note links to (`/api/notes/links` as maps for the renderer). No DOM. |
 | `equations.ts`, `macros.ts` | Equation numbering, `\label`/`\eqref`, and math macros (physics package, Settings, `\newcommand`). |
 | `mathClick.ts`, `mathFit.ts` | Clicking into rendered math; shrinking wide equations. |
 | `readView.ts` | Read mode, following `[[links]]` (offering to create missing notes), going to a line. |
@@ -283,6 +290,15 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `aiBar.ts`, `aiEdits.ts`, `diff.ts` | Claude's edits: the bar, the history dialog, line diffs. |
 | `conflict.ts` | The dialog for a note changed or deleted elsewhere. |
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
+
+### Embedded notes
+
+In read mode, `renderEmbeds` (`richRender.ts`) fills each `![[Note]]` or `![[Note#Heading]]`
+that resolves to a path. It loads the note and its `/api/notes/links` together, and `embedHtml`
+(`embed.ts`) renders the note (or the section under the heading) with that link data, falling
+back to the open note's for what it does not cover. Citations in an embed therefore show their
+item, and embeds inside it get a `data-path` and are filled in turn, up to three levels
+(`MAX_EMBED_DEPTH`); a note that embeds itself is not shown again.
 
 ### Saving: `NoteSession`
 
@@ -303,7 +319,11 @@ Each open note has one `NoteSession`. It keeps `saved` (the text and hash the se
 - **Conflicts.** A 409 makes the session fetch the file. If it already holds our text, that is
   not a conflict. Otherwise saving stops and `conflictDialog` shows a diff: keep mine (save over
   the file's current hash), use the saved file, or, for a deleted note, save it again
-  (`PUT` with `create: true`). Nothing is overwritten before the user chooses.
+  (`PUT` with `create: true`). Nothing is overwritten before the user chooses. If the file
+  could not be read when the conflict began, `resolve` reads it again before using it. If that
+  still fails, or writing a deleted note again fails, the session stays in conflict, the error
+  is shown and the dialog comes back; a note someone else wrote again meanwhile becomes a
+  conflict with their text.
 - **Remote checks.** `checkRemote()` loads the file and replaces the editor text only when the
   session is `saved` with no edits. `editor.replace` changes just the differing span, so the
   cursor stays and the change is one undo step.
