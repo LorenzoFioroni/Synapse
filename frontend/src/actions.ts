@@ -190,9 +190,11 @@ export async function keepOnly(id: string): Promise<void> {
 export async function restoreSelected(): Promise<void> {
   const ids = [...state.selection];
   if (!ids.length) return;
-  await api.restore(ids);
-  await removeLocal(ids);   // they leave the Trash
-  toast(`Restored ${plural(ids.length, 'item')} to My Library`, { type: 'success' });
+  try {
+    await api.restore(ids);
+    await removeLocal(ids);   // they leave the Trash
+    toast(`Restored ${plural(ids.length, 'item')} to My Library`, { type: 'success' });
+  } catch (e) { toastError(e); }
 }
 
 export async function deleteForever(ids: string[]): Promise<void> {
@@ -210,9 +212,11 @@ export async function emptyTrash(): Promise<void> {
   if (!n) return;
   if (!(await confirmDialog(`Permanently delete all ${plural(n, 'item')} in the Trash?`,
     { title: 'Empty Trash', confirm: 'Empty Trash', danger: true, detail: 'Attached files are deleted too. This cannot be undone.' }))) return;
-  await api.emptyTrash();
-  await loadItems();
-  toast('Trash emptied');
+  try {
+    await api.emptyTrash();
+    await loadItems();
+    toast('Trash emptied');
+  } catch (e) { toastError(e); }
 }
 
 /** Open an item's PDF (``att``, else its first attachment), or its web page when it has none. */
