@@ -121,6 +121,23 @@ def test_file_existing_item_into_another_folder(client):
     assert r["item"]["folder_ids"] == [a["id"], b["id"]] and r["item"]["tags"] == ["x"]
 
 
+def test_malformed_folder_id_is_refused(client):
+    folder = client.post("/api/folders", json={"name": "A"}).get_json()
+    for bad in ("inbox", "1.5", True, [1]):
+        r = client.post("/api/connector/save", json={"title": "T", "folder_id": bad})
+        assert r.status_code == 400 and "folder_id" in r.get_json()["error"]
+    assert client.get("/api/items").get_json()["items"] == []  # nothing was saved
+    # the popup sends the folder as a string
+    r = client.post("/api/connector/save", json={"title": "T", "folder_id": str(folder["id"])})
+    assert r.status_code == 201 and r.get_json()["item"]["folder_ids"] == [folder["id"]]
+
+    item = r.get_json()["item"]
+    b = client.post("/api/folders", json={"name": "B"}).get_json()
+    assert client.post("/api/connector/file", json={"id": item["id"], "folder_id": "B"}).status_code == 400
+    r = client.post("/api/connector/file", json={"id": item["id"], "folder_id": str(b["id"])}).get_json()
+    assert r["item"]["folder_ids"] == [folder["id"], b["id"]]
+
+
 def test_on_add_settings_for_the_browser_button(client, svc, monkeypatch):
     from backend import connector
     from backend.online.http import LookupFailed
@@ -145,6 +162,46 @@ def test_on_add_settings_for_the_browser_button(client, svc, monkeypatch):
     svc.settings.update({"add_find_pdf": "always"})
     r = client.post("/api/connector/save", json=page).get_json()
     assert r["pdf"] == "searching" and len(searched) == 2
+
+
+def test_lookup_and_references_follow_the_settings(client, svc, monkeypatch):
+    from backend import connector
+
+    looked_up, queued = [], []
+
+    def fake(**k):
+        looked_up.append(k["identifier"])
+        return {"title": "Online title", "doi": "10.1/refs", "item_type": "journalArticle"}
+
+    monkeypatch.setattr(connector, "lookup", fake)
+    monkeypatch.setattr(svc.citations, "enqueue", lambda ids: queued.extend(ids))
+    page = {"title": "Page title", "doi": "10.1/refs", "allow_duplicate": True}
+
+    # the popup's checkbox decides; references need only the DOI, not an online lookup
+    svc.settings.update({"add_fetch_metadata": "always", "add_fetch_references": "always"})
+    r = client.post("/api/connector/save", json={**page, "lookup": False}).get_json()
+    assert r["source"] == "page" and looked_up == [] and queued == [r["item"]["id"]]
+
+    # without the checkbox, Settings → "Retrieve metadata" decides
+    svc.settings.update({"add_fetch_metadata": "never", "add_fetch_references": "never"})
+    r = client.post("/api/connector/save", json=page).get_json()
+    assert r["source"] == "page" and looked_up == [] and len(queued) == 1
+    for setting in ("ask", "always"):
+        svc.settings.update({"add_fetch_metadata": setting})
+        r = client.post("/api/connector/save", json=page).get_json()
+        assert r["source"] == "online" and r["item"]["title"] == "Online title"
+    assert looked_up == ["10.1/refs", "10.1/refs"]
+
+    # "ask" for references: the popup's answer
+    svc.settings.update({"add_fetch_references": "ask"})
+    r = client.post("/api/connector/save", json={**page, "lookup": False}).get_json()
+    assert len(queued) == 1
+    r = client.post("/api/connector/save", json={**page, "lookup": False, "fetch_references": True}).get_json()
+    assert queued[-1] == r["item"]["id"] and len(queued) == 2
+    # no identifier, no reference list
+    svc.settings.update({"add_fetch_references": "always"})
+    client.post("/api/connector/save", json={"title": "Just a web page"})
+    assert len(queued) == 2
 
 
 def test_background_pdf_search_attaches_the_file(svc, monkeypatch, tmp_path):

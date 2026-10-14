@@ -156,3 +156,33 @@ def test_an_arxiv_id_alone_is_enough(svc, web, tmp_path):
     routes["https://arxiv.org/pdf/2403.05147"] = Resp(content=pdf_bytes(tmp_path, "arXiv:2403.05147v1"))
     item = svc.papers.create({"archive_id": "arXiv:2403.05147"})
     assert svc.find_pdf(item["id"])["status"] == "success"
+
+
+def test_title_search_requests(monkeypatch):
+    """The contact e-mail is URL-encoded, and the arXiv search is https, spaced and on TIMEOUT."""
+    calls, waits = [], []
+
+    def get(url, **kw):
+        calls.append((url, kw.get("timeout")))
+        return Resp(404, ctype="text/html")
+
+    monkeypatch.setattr(pdf_finder.requests, "get", get)
+    monkeypatch.setattr(pdf_finder, "arxiv_wait", lambda: waits.append(len(calls)))
+    assert pdf_finder.candidate_urls("A title", "10.1/abc", "me+lib@example.org") == []
+    urls = [u for u, _ in calls]
+    assert urls[0] == "https://api.unpaywall.org/v2/10.1/abc?email=me%2Blib@example.org"
+    assert urls[1].endswith("&email=me%2Blib@example.org")
+    url, timeout = calls[-1]
+    assert url.startswith("https://export.arxiv.org/api/query?") and timeout == http.TIMEOUT
+    assert waits == [len(calls) - 1]  # right before the arXiv request
+
+
+def test_find_pdf_endpoint_accepts_an_arxiv_id_alone(client, svc, web, tmp_path):
+    routes, _ = web
+    routes["https://arxiv.org/pdf/2403.05147"] = Resp(content=pdf_bytes(tmp_path, "arXiv:2403.05147v1"))
+    item = svc.papers.create({"archive_id": "arXiv:2403.05147"})
+    r = client.post(f"/api/items/{item['id']}/find_pdf")
+    assert r.status_code == 200 and r.get_json()["status"] == "success"
+    bare = svc.papers.create({"item_type": "webpage"})
+    r = client.post(f"/api/items/{bare['id']}/find_pdf")
+    assert r.status_code == 400 and "arXiv ID" in r.get_json()["error"]

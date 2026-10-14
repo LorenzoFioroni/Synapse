@@ -86,7 +86,7 @@ What starts a run:
 | The web app starts | `create_app` | yes |
 | A file is attached (upload, dropped PDF, browser extension, PDF found online) | `Services.attachments_changed` | yes |
 | A backup is restored | `Backups._after_restore` | yes |
-| `POST /api/fulltext/sync` | `backend/api/items.py` | no |
+| `POST /api/fulltext/sync` (also sent when Settings → "Index PDFs automatically" is turned on) | `backend/api/items.py` | no |
 | `POST /api/fulltext/rebuild` (Settings → Rebuild Index) | `backend/api/items.py` | no |
 
 The MCP server never starts the indexer. It reads `fulltext.db` for search and for page counts.
@@ -182,7 +182,9 @@ that matched only in the PDF or notes text; if every term also matched the metad
 shows the first text match in `all` and `fulltext` modes, for context. A snippet from a note
 starts with `<span class="hit-src">Note · <title></span>`. Despite the key name `fulltext`,
 `hits` holds note snippets too. The browser shows the snippet in the items table
-(`frontend/src/views/itemlist/rows.ts`) and the item pane.
+(`frontend/src/views/itemlist/rows.ts`) and the item pane. The badge after the title says
+"full text" for a PDF snippet and "note" for a note snippet (`hitBadge`, which looks for that
+label).
 
 ### Matching through notes
 

@@ -40,10 +40,12 @@ export function extractCitation() {
   const meta = (...names) => { for (const n of names) { const v = metas(n)[0]; if (v) return v; } return ''; };
   /** @param {unknown} s */
   const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+  /** decodeURIComponent, keeping the text as it is when its %-escapes are malformed. @param {string} s */
+  const decode = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
   const DOI_RE = /\b(10\.\d{4,9}\/[^\s"'<>?#&]+)/i;
   /** @param {unknown} s */
   const cleanDoi = (s) => {
-    const m = DOI_RE.exec(decodeURIComponent(String(s || '')));
+    const m = DOI_RE.exec(decode(String(s || '')));
     return m ? m[1].replace(/[.,;)\]}]+$/, '') : '';
   };
   const url = location.href;
@@ -54,7 +56,7 @@ export function extractCitation() {
   if (document.contentType === 'application/pdf' || /\.pdf($|\?)/i.test(location.pathname) && document.querySelector('embed[type="application/pdf"]')) {
     out.is_pdf = true;
     out.pdf_url = url;
-    out.title = clean(document.title) || decodeURIComponent(location.pathname.split('/').pop() || '');
+    out.title = clean(document.title) || decode(location.pathname.split('/').pop() || '');
     const arx = /arxiv\.org\/pdf\/([^/?#]+?)(v\d+)?(\.pdf)?$/i.exec(url);
     if (arx) { out.arxiv = arx[1]; out.item_type = 'preprint'; }
     out.doi = cleanDoi(url);

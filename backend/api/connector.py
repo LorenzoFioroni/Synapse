@@ -62,7 +62,10 @@ def _payload() -> tuple[dict, FileStorage | None]:
 @bp.post("/file")
 def file_existing():
     d = request.get_json(silent=True) or {}
-    item = connector.file_existing(svc(), str(d.get("id") or ""), d.get("folder_id"), d.get("tags"))
+    try:
+        item = connector.file_existing(svc(), str(d.get("id") or ""), d.get("folder_id"), d.get("tags"))
+    except connector.BadRequest as e:
+        return error(str(e))
     return jsonify(item=item)
 
 
@@ -72,7 +75,7 @@ def save():
     pdf_bytes = upload.read() if upload is not None else None
     try:
         result = connector.save(svc(), page, pdf_bytes)
-    except connector.NothingToSave as e:
+    except connector.BadRequest as e:  # nothing to save, or a malformed field
         return error(str(e))
     except connector.Duplicate as e:
         existing = e.item

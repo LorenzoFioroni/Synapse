@@ -89,13 +89,20 @@ def test_another_local_port_is_another_site(client):
     assert r.status_code == 403
 
 
-def test_browser_extension_can_save(client, svc):
+def test_browser_extension_can_save(client, monkeypatch):
+    from backend import connector
+    from backend.online.http import LookupFailed
+
+    def offline(**k):  # the DOI would be looked up online
+        raise LookupFailed("offline")
+
+    monkeypatch.setattr(connector, "lookup", offline)
     r = client.post(
         "/api/connector/save",
         headers={"Origin": "chrome-extension://abcdef"},
-        json={"title": "Saved from the button", "doi": "10.1/x", "options": {"fetch_metadata": False}},
+        json={"title": "Saved from the button", "doi": "10.1/x"},
     )
-    assert r.status_code in (200, 201), r.get_json()
+    assert r.status_code == 201, r.get_json()
     assert client.get("/api/connector/ping", headers={"Origin": "moz-extension://xyz"}).status_code == 200
 
 

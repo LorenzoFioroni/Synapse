@@ -234,7 +234,7 @@ export function itemTypeLabel(key: string | null | undefined): string {
 
 export function sortedItems(): Item[] {
   const { col, dir } = state.sort;
-  const def = COLUMNS.find((c) => c.id === col) || COLUMNS[1];
+  const def = COLUMNS.find((c) => c.id === col) || COLUMNS.find((c) => c.id === 'title')!;
   const key = def.sortKey;
   const mul = dir === 'asc' ? 1 : -1;
   const val = (it: Item): string | number => {
