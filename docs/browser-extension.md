@@ -162,7 +162,7 @@ The body is JSON, or multipart with a `meta` field (JSON) and an optional `file`
 | `authors` | A list of names, or one string separated by `;` or new lines. |
 | `arxiv` | An arXiv id; becomes `archive: arXiv` and `archive_id: arXiv:<id>`. |
 | `page_url` | Used as `url` when nothing else gives one. |
-| `folder_id`, `tags` | Where to file the new item. |
+| `folder_id`, `tags` | Where to file the new item. `folder_id` is a folder id, as a number or a string of digits; anything else is refused (400). |
 | `lookup` | Look the identifier up online (default `true`). |
 | `allow_duplicate` | Save even if the item is already in the library. |
 | `pdf_url`, `attach_pdf` | Download this PDF on the server (default `true`) when no file was sent. |
@@ -174,7 +174,7 @@ Other fields the extension sends (`site`, `is_pdf`, `has_citation_meta`) are ign
 What saving does (`save` in `backend/connector.py`; the endpoint only reads the request and
 shapes the answer):
 
-1. Refuses a request with no title, DOI, arXiv id or file (400).
+1. Refuses a request with a malformed `folder_id`, or with no title, DOI, arXiv id or file (400).
 2. If a PDF was uploaded and there is no DOI or arXiv id, extracts the text of its first two
    pages and looks for an identifier (`find_identifier` in `backend/pdf/text.py`).
 3. Normalises the page data into item fields (`page_item`): authors through
@@ -197,12 +197,13 @@ shapes the answer):
 |---|---|
 | 201 | `{item, source, pdf}`. `source` is `"online"` or `"page"`. `pdf` is `attached`, `downloaded`, `failed`, `not-a-pdf`, `searching` or `none`. |
 | 409 | `{duplicate_of, title, folder_ids}`: the existing item. Nothing is saved. |
-| 400 | `{error}`: nothing to save. |
+| 400 | `{error}`: nothing to save, or a malformed `folder_id`. Nothing is saved. |
 
 ### `POST /file`
 
 For the "already in your library" screen. The body is `{id, folder_id, tags}`. It adds the
-existing item to the folder and the tags, and answers `{item}`. An unknown id gives 404.
+existing item to the folder and the tags, and answers `{item}`. `folder_id` is read as in `/save`
+(the popup sends a string): a malformed one gives 400, and an unknown item id gives 404.
 
 ### CORS and the guard
 
