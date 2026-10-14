@@ -86,7 +86,7 @@ What starts a run:
 | The web app starts | `create_app` | yes |
 | A file is attached (upload, dropped PDF, browser extension, PDF found online) | `Services.attachments_changed` | yes |
 | A backup is restored | `Backups._after_restore` | yes |
-| `POST /api/fulltext/sync` | `backend/api/items.py` | no |
+| `POST /api/fulltext/sync` (also sent when Settings → "Index PDFs automatically" is turned on) | `backend/api/items.py` | no |
 | `POST /api/fulltext/rebuild` (Settings → Rebuild Index) | `backend/api/items.py` | no |
 
 The MCP server never starts the indexer. It reads `fulltext.db` for search and for page counts.

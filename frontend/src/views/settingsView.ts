@@ -134,9 +134,12 @@ function bind(view: HTMLElement): void {
       return;
     }
     const value = el.type === 'checkbox' ? (el as HTMLInputElement).checked : (el.type === 'range' ? Number(el.value) : el.value);
-    await save({ [key]: value }, el);
+    if (!(await save({ [key]: value }, el))) return;
     if (key === 'default_search_mode') emit('set-search-mode', value as SearchMode);
-    if (key === 'fulltext_auto_index' && value) api.stats();
+    if (key === 'fulltext_auto_index' && value) {
+      // index the PDFs that arrived while it was off, now rather than at the next start
+      try { await api.syncFulltext(); setTimeout(refreshStats, 300); } catch (err) { toastError(err); }
+    }
   });
   // Math macros: say what the definitions define, and which lines are not definitions
   const mt = view.querySelector<HTMLTextAreaElement>('[data-key="notes_math_macros"]')!;
