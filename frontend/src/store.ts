@@ -76,7 +76,7 @@ function loadColumns(): Column[] {
   return cols;
 }
 
-/** The citation keys notes use: whether the item has a paper note, and how many notes cite it. */
+/** The library app's state. Views read it; actions.ts changes the list, the view and the selection. */
 export interface AppState {
   schema: Schema | null;
   settings: Settings;
@@ -106,7 +106,7 @@ export const state: AppState = {
   schema: null,
   settings: {} as Settings,   // filled by main.ts before any view is built
   settingsMeta: {},
-  view: 'library',          // 'library' | 'trash'
+  view: 'library',          // 'library' | 'trash' | 'duplicates' | 'unfiled' | 'folder:<id>' | 'smart:<id>'
   query: '',
   mode: 'basic',            // search scope
   items: [],                // already filtered by the server

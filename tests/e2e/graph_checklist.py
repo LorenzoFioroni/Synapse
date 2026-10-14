@@ -4,7 +4,7 @@ Library), Show in Graph from the item and note menus, Cmd/Ctrl+Shift+G and Back/
 
     python tests/e2e/graph_checklist.py                 (SHOTS=/some/dir to save screenshots)
 
-Starts its own server on port 8771 with a throw-away data folder; your library is not touched.
+Starts its own server on port 8787 with a throw-away data folder; your library is not touched.
 Reference lists are written straight into citations.db (no network).
 """
 
@@ -24,7 +24,7 @@ APP = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(APP))
 from backend.references.store import CitationStore  # noqa: E402
 
-PORT = 8771
+PORT = 8787
 BASE = f"http://127.0.0.1:{PORT}"
 DATA = tempfile.mkdtemp(prefix="zc-graph-e2e-")
 SHOTS = os.environ.get("SHOTS")

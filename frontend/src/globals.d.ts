@@ -2,7 +2,6 @@
 import type ForceGraph from 'force-graph';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import type { PageWrapper } from './viewer/viewer.js';
-import type { Item } from './types.js';
 
 /** What the PDF viewer (viewer.ts) offers its add-ons. */
 export interface ZcViewer {
@@ -54,4 +53,3 @@ declare global {
   }
 }
 
-export type { Item };

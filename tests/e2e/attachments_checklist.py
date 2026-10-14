@@ -106,9 +106,14 @@ async def main():
             await page.wait_for_selector(".att-grid")
             tabs = " ".join((await page.text_content(".att-tabs")).split())
             check("tabs count all / not used / trash", tabs == "All 2 Not used 1 Trash 1", tabs)
-            loaded = await page.evaluate(
-                "[...document.querySelectorAll('.att-thumb img')].every((i) => i.complete && i.naturalWidth > 0)"
-            )
+            try:  # the images load after the dialog opens
+                await page.wait_for_function(
+                    "[...document.querySelectorAll('.att-thumb img')].every((i) => i.complete && i.naturalWidth > 0)",
+                    timeout=5000,
+                )
+                loaded = True
+            except Exception:
+                loaded = False
             check("thumbnails load", loaded)
             names = await page.locator(".att-card .att-name").all_text_contents()
             check(

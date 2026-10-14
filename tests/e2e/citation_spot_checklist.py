@@ -3,7 +3,7 @@ opens the PDF at the exact spot — not just the top of the page — and flashes
 
     python tests/e2e/citation_spot_checklist.py        (SHOTS=/some/dir to save screenshots)
 
-Starts its own server on port 8772 with a throw-away data folder; your library is not touched.
+Starts its own server on port 8791 with a throw-away data folder; your library is not touched.
 """
 
 import asyncio
@@ -22,7 +22,7 @@ APP = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(APP))
 from tests.e2e._guard import guard  # noqa: E402
 
-PORT = 8772
+PORT = 8791
 BASE = f"http://127.0.0.1:{PORT}"
 DATA = tempfile.mkdtemp(prefix="zc-spot-e2e-")
 NOTES = Path(DATA) / "notes"
