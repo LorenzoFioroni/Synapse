@@ -202,7 +202,9 @@ mode must be one of `MODES`). It uses the same `search()` and query language.
 For `view=smart:<id>`, `items_for_view` returns the whole library (not the Trash) with the
 folder's query and mode. `GET /api/items` runs that query first, then the `tags` filter, then
 the query typed in the search box with the current mode, and merges the snippets.
-`GET /api/search/preview` counts the matches while the user edits a smart folder.
+`GET /api/search/preview` counts the matches while the user edits a smart folder. It searches
+with the notes matcher too (`notes_matcher` in `backend/api/items.py`, shared with
+`GET /api/items`), so the count is what the folder will show.
 
 ## Search elsewhere
 

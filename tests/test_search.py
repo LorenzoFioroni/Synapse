@@ -154,8 +154,14 @@ def test_search_finds_items_through_notes(client, svc):
     assert client.get("/api/items", query_string={"q": "sign problems", "mode": "basic"}).json["items"] == []
     r = client.get("/api/items", query_string={"q": "-lindblad", "mode": "all"})
     assert a["id"] not in ids(r) and b["id"] in ids(r)  # negation works through notes too
+    # the smart-folder editor's count agrees with what the folder will show
+    sf = client.post("/api/smart", json={"name": "Sign", "query": "sign problems", "mode": "all"}).json
+    shown = ids(client.get("/api/items", query_string={"view": f"smart:{sf['id']}"}))
+    preview = client.get("/api/search/preview", query_string={"q": "sign problems", "mode": "all"}).json
+    assert shown == {b["id"]} and preview["count"] == 1 and preview["sample"][0]["id"] == b["id"]
     svc.settings.update({"notes_enabled": False})
     assert client.get("/api/items", query_string={"q": "sign problems", "mode": "all"}).json["items"] == []
+    assert client.get("/api/search/preview", query_string={"q": "sign problems", "mode": "all"}).json["count"] == 0
 
 
 def test_notes_search_sees_edits_made_by_another_process(client, svc):
