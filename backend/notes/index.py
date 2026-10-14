@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import builtins
 import logging
+import os
 import re
 import sqlite3
 import threading
@@ -69,8 +70,25 @@ class NotesIndex:
         self.db_path = str(db_path)
         self.vault = vault
         self._lock = threading.RLock()
-        self.revision = 0  # bumped on every change (lets callers cache derived data)
+        self.revision = 0  # bumped on every change made through this object
         self._init_schema()
+
+    def signature(self) -> tuple:
+        """Changes whenever the index changes, in this process or another one (the MCP server
+        writes the same file), so callers can cache data derived from it."""
+        files: list[tuple | None] = []
+        for p in (self.db_path, f"{self.db_path}-wal"):
+            try:
+                st = os.stat(p)
+                files.append((st.st_mtime_ns, st.st_size))
+            except OSError:
+                files.append(None)
+        try:  # SQLite's file change counter: bumped by every commit, even within one clock tick
+            with open(self.db_path, "rb") as fh:
+                counter = fh.read(28)[24:]
+        except OSError:
+            counter = b""
+        return (self.revision, counter, *files)
 
     # ------------------------------------------------------------------ plumbing
     def _connect(self) -> sqlite3.Connection:

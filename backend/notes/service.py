@@ -110,7 +110,7 @@ class NotesService:
     def text_matcher(self) -> NoteTextMatcher:
         """For the library search (cached until the notes or the keys change)."""
         keys = {p["citation_key"]: p["id"] for p in self.papers.list() if p.get("citation_key")}
-        sig = (self.index.revision, tuple(sorted(keys.items())))
+        sig = (self.index.signature(), tuple(sorted(keys.items())))
         if getattr(self, "_matcher_sig", None) != sig:
             self._matcher = NoteTextMatcher(self.index.texts_by_key(), keys)
             self._matcher_sig = sig

@@ -146,3 +146,24 @@ def test_search_finds_items_through_notes(client, svc):
     assert a["id"] not in ids(r) and b["id"] in ids(r)  # negation works through notes too
     svc.settings.update({"notes_enabled": False})
     assert client.get("/api/items", query_string={"q": "sign problems", "mode": "all"}).json["items"] == []
+
+
+def test_notes_search_sees_edits_made_by_another_process(client, svc):
+    """The MCP server edits notes and updates notes_index.db in its own process."""
+    from backend.notes import NotesIndex, Vault
+
+    a = svc.papers.create({"authors": "Cui, Jian", "title": "Variational operators", "year": 2015})
+    client.post("/api/notes/note", json={"item_id": a["id"], "text": "Uses Lindblad steady states."})
+    found = lambda q: {i["id"] for i in client.get("/api/items", query_string={"q": q, "mode": "all"}).json["items"]}
+    assert found("lindblad") == {a["id"]}
+    assert found("kraus") == set()
+
+    vault = Vault(svc.config.notes_dir)  # what the other process has: its own objects, same files
+    other = NotesIndex(svc.config.notes_index_path, vault)
+    (path,) = [n["path"] for n in other.list()]
+    text, h = vault.read(path)
+    vault.write(path, text.replace("Lindblad", "Kraus"), expected_hash=h)
+    other.update(path)
+
+    assert found("kraus") == {a["id"]}
+    assert found("lindblad") == set()

@@ -189,7 +189,9 @@ starts with `<span class="hit-src">Note · <title></span>`. Despite the key name
 `NoteTextMatcher` in `backend/notes/service.py` lets the search find an item by what the notes
 say about it: the body of its paper note, and each line in another note that cites it
 (`NotesIndex.texts_by_key`). `NotesService.text_matcher()` caches it until the notes index or
-the citation keys change. `GET /api/items` uses it only while the `notes_enabled` setting is on.
+the citation keys change. `NotesIndex.signature()` tells when the index changed: it combines a
+counter bumped by this process with the size, modification time and SQLite change counter of
+`notes_index.db`, so a note the MCP server edits in its own process is searched as it is now. `GET /api/items` uses it only while the `notes_enabled` setting is on.
 
 ## Smart folders
 
