@@ -1,4 +1,3 @@
-// @ts-nocheck   (until notesView and settingsView are typed: their untyped defaults read as null)
 // Entry point: loads schema + settings, builds the views, wires the toolbar,
 // search, status bar and global keyboard shortcuts.
 import * as A from './actions.js';

@@ -214,7 +214,43 @@ export interface NoteAttachments {
 }
 
 /** GET /api/notes/note: a note's text, its hash (for hash-checked saves) and its index entry. */
-export interface NoteFile { path: string; text: string; hash: string; info: NoteInfo | null }
+export interface NoteFile { path: string; text: string; hash: string; info: NoteDetails | null }
+
+/** PUT /api/notes/note: the saved note's new hash and index entry. */
+export interface NoteSaved { path: string; hash: string; info: NoteDetails | null }
+
+/** A note's index entry with its tags and headings (GET /api/notes/note: ``info``). */
+export interface NoteDetails extends NoteInfo {
+  headings: { level: number; text: string; line: number }[];
+}
+
+/** A link in a note, as the notes index stores it (backend/notes/index.py, table links). */
+export interface NoteLink {
+  path: string;            // the note containing the link
+  kind: 'note' | 'embed' | 'cite' | 'image';
+  target: string;
+  heading: string | null;
+  alias: string | null;
+  locator: string | null;
+  page: number | null;
+  prefix: string | null;
+  suppress_author: boolean;
+  line: number;
+  context: string;
+  resolved?: string | null;   // note / embed: the path it goes to
+  item?: Omit<CiteEntry, 'key'> | null;   // cite: the library item
+}
+
+/** GET /api/notes/links: what a note links to and cites, what does not resolve, and what links to it. */
+export interface NoteLinks {
+  outgoing: NoteLink[];
+  cited: { key: string; item: Omit<CiteEntry, 'key'> | null; count: number; lines: number[] }[];
+  unresolved: NoteLink[];
+  backlinks: (NoteLink & { source_title: string | null })[];
+}
+
+/** A moved note or folder (POST /api/notes/move, /api/notes/folder/move): links that no longer resolve. */
+export interface NoteMoved { path: string; broken_links: { path: string; line: number }[] }
 
 /** GET /api/items/<id>/notes: the item's paper notes and the notes that cite it (empty without a citation key). */
 export interface ItemNotes {

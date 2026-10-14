@@ -2,7 +2,7 @@
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
   Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
-  ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NotesListing, Pairing,
+  ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
   PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag,
 } from './types.js';
 
@@ -121,13 +121,13 @@ export const api = {
   createNote: (data: Record<string, unknown>) => request<Omit<NoteFile, 'info'>>('POST', '/api/notes/note', data),
   noteHistory: (path: string) => request<NoteHistory>('GET', `/api/notes/history?${qs({ path })}`),
   noteVersion: (id: string) => request<HistoryEntry & { before: string }>('GET', `/api/notes/history/version?${qs({ id })}`),
-  saveNote: (path: string, text: string, hash: string | null) => request('PUT', '/api/notes/note', { path, text, hash }),
-  recreateNote: (path: string, text: string) => request('PUT', '/api/notes/note', { path, text, create: true }),
-  moveNote: (path: string, to: string, hash?: string | null) => request('POST', '/api/notes/move', { path, to, hash }),
-  newNoteFolder: (path: string) => request('POST', '/api/notes/folder', { path }),
-  trashNotes: (paths: string[], folders: string[] = []) => request('POST', '/api/notes/trash', { paths, folders }),
-  moveNoteFolder: (path: string, to: string) => request('POST', '/api/notes/folder/move', { path, to }),
-  restoreNoteBatch: (trashId: string) => request('POST', '/api/notes/restore', { trash_id: trashId }),
+  saveNote: (path: string, text: string, hash: string | null) => request<NoteSaved>('PUT', '/api/notes/note', { path, text, hash }),
+  recreateNote: (path: string, text: string) => request<NoteSaved>('PUT', '/api/notes/note', { path, text, create: true }),
+  moveNote: (path: string, to: string, hash?: string | null) => request<NoteMoved>('POST', '/api/notes/move', { path, to, hash }),
+  newNoteFolder: (path: string) => request<{ path: string }>('POST', '/api/notes/folder', { path }),
+  trashNotes: (paths: string[], folders: string[] = []) => request<{ trash_id: string; paths: string[] }>('POST', '/api/notes/trash', { paths, folders }),
+  moveNoteFolder: (path: string, to: string) => request<NoteMoved>('POST', '/api/notes/folder/move', { path, to }),
+  restoreNoteBatch: (trashId: string) => request<{ paths: string[]; skipped: string[] }>('POST', '/api/notes/restore', { trash_id: trashId }),
   noteKeys: () => request<{ keys: NoteKeys }>('GET', '/api/notes/keys'),
   // reference lists (citation graph)
   itemReferences: (id: string) => request<ItemReferences>('GET', `/api/items/${id}/references`),
@@ -135,18 +135,18 @@ export const api = {
   queueReferences: (ids: string[]) => request('POST', '/api/references/queue', { ids }),
   citationGraph: () => request('GET', '/api/graph/citations'),
   graph: () => request<GraphData>('GET', '/api/graph'),
-  noteTrash: () => request('GET', '/api/notes/trash'),
+  noteTrash: () => request<{ trash: { trash_id: string; path: string; trashed_at?: string; deletes_at?: string }[]; retention: Settings['notes_trash_retention'] }>('GET', '/api/notes/trash'),
   noteAttachments: () => request<NoteAttachments>('GET', '/api/notes/attachments'),
   restoreNoteAttachment: (trashId: string, name: string) => request('POST', '/api/notes/attachments/restore', { trash_id: trashId, name }),
   deleteNoteAttachment: (trashId: string, name: string) => request('POST', '/api/notes/attachments/delete', { trash_id: trashId, name }),
-  citeIndex: () => request<CiteEntry[]>('GET', '/api/notes/cite_index'),
+  citeIndex: () => request<{ items: CiteEntry[] }>('GET', '/api/notes/cite_index'),
   renamePlan: (old: string, nu: string) => request<RenamePlan>('GET', `/api/notes/rename_plan?${qs({ old, new: nu })}`),
   itemNotes: (id: string) => request<ItemNotes>('GET', `/api/items/${id}/notes`),
   restoreNote: (trashId: string, path: string) => request('POST', '/api/notes/restore', { trash_id: trashId, path }),
-  noteLinks: (path: string) => request('GET', `/api/notes/links?${qs({ path })}`),
-  searchNotes: (q: string) => request('GET', `/api/notes/search?${qs({ q })}`),
-  rescanNotes: () => request('POST', '/api/notes/rescan'),
-  uploadNoteImage: (file: File) => { const fd = new FormData(); fd.append('file', file); return request('POST', '/api/notes/attachments', fd); },
+  noteLinks: (path: string) => request<NoteLinks>('GET', `/api/notes/links?${qs({ path })}`),
+  searchNotes: (q: string) => request<{ results: { path: string; title: string | null; snippet: string }[] }>('GET', `/api/notes/search?${qs({ q })}`),
+  rescanNotes: () => request<{ added: number; changed: number; removed: number }>('POST', '/api/notes/rescan'),
+  uploadNoteImage: (file: File) => { const fd = new FormData(); fd.append('file', file); return request<{ path: string; markdown: string }>('POST', '/api/notes/attachments', fd); },
 };
 
 export function fileUrl(att: Pick<Attachment, 'id' | 'url'>): string {

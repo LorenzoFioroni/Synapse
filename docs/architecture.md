@@ -92,9 +92,6 @@ gives `NotesService` the paper repository, and `backup.Backups` receives the ser
 
 ## Frontend
 
-*In progress (step 3): the code is TypeScript now. Files are being typed one by one: a file that
-still starts with `// @ts-nocheck` is not type-checked yet.*
-
 ### Build
 
 The sources are TypeScript in `frontend/src/`. `frontend/build.mjs` compiles them with esbuild
@@ -123,10 +120,18 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
 - `store.ts` holds the application state, with a small pub/sub that views subscribe to.
 - `actions.ts` has the user-level operations. Views call these, and these call `api.ts` (the thin
   JSON client) and update the store.
+- `types.ts` describes what the JSON API answers; keep it in step with the backend when an endpoint
+  changes. `globals.d.ts` types what the pages put on `window` and the custom events between
+  modules. Everything is type-checked in strict mode; there is no `@ts-nocheck` left.
 - `changes.ts` polls `/api/changes` and refreshes whatever another window, device or background
   job changed.
 - `views/*` holds the screens and dialogs, and `views/notes/*` the notes workspace (a CodeMirror 6
-  editor, live preview and Markdown rendering). `settingsView.ts` is the Settings page; its markup
+  editor, live preview and Markdown rendering). In the workspace, `notesView.ts` sets things up and
+  opens and closes notes; the parts share the open note through `workspace.ts` (its `hooks` are how
+  they call back into `notesView.ts`). `tree.ts` draws the notes list and `treeInput.ts` handles
+  its mouse, keyboard and drag and drop; `fileOps.ts` creates, renames, moves and trashes notes;
+  `readView.ts` is read mode and link following; `sidePanel.ts` the status, breadcrumbs and
+  details panel; `aiBar.ts` Claude's edits; `conflict.ts` the dialog for a note changed elsewhere. `settingsView.ts` is the Settings page; its markup
   is in `views/settings/page.ts`, and Backups and Devices have their own modules there.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
   header is `views/itemlist/columns.ts`, its virtualised rows `rows.ts` (only the rows near the

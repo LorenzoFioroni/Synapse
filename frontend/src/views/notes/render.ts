@@ -25,7 +25,7 @@ export interface CiteInfo { title?: string; authors?: string; year?: number | st
 
 export interface RendererOptions {
   citeInfo?: (key: string) => CiteInfo | null;   // library info for a key (null if unknown)
-  resolveNote?: (target: string) => string | null;   // path a [[target]] resolves to, or null
+  resolveNote?: (target: string) => string | null | undefined;   // path a [[target]] goes to; null: no such note, undefined: not known
   lineOffset?: number;                            // added to data-line (front-matter lines)
   equations?: string | (() => string);           // equation numbering: 'labelled' (default) or 'all'
   macros?: Macros | (() => Macros);              // KaTeX macros every note starts from (macros.ts)

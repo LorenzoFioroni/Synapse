@@ -43,6 +43,8 @@ declare global {
     zcLinks?: { jumpRecorded?: (run: () => unknown, href: string) => void; [k: string]: unknown };
     /** force-graph (vendor/force-graph/force-graph.min.js), loaded when a graph is shown (forceGraph.ts). */
     ForceGraph?: typeof ForceGraph;
+    /** The open note (notes/notesView.ts), read-only, for the browser tests. */
+    zcNotes?: { text(): string | null; path(): string | null; cursor(): number | null; focused(): boolean };
     /** The notes graphs (notesGraph.ts), for the browser tests. */
     zcGraph?: unknown;
     /** The change feed's poll and state (changes.ts), for the browser tests. */
