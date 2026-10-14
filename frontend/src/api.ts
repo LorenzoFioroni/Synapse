@@ -82,6 +82,7 @@ export const api = {
   changes: (since?: number | null, epoch?: string | null) => request<ChangeFeed>('GET', `/api/changes?${qs({ since, epoch })}`),
   devices: () => request<DevicesOverview>('GET', '/api/devices'),
   newPairing: () => request<Pairing>('POST', '/api/devices/pairing'),
+  cancelPairing: () => request('DELETE', '/api/devices/pairing'),
   renameDevice: (id: string, name: string) => request('PATCH', `/api/devices/${encodeURIComponent(id)}`, { name }),
   removeDevice: (id: string) => request('DELETE', `/api/devices/${encodeURIComponent(id)}`),
   backups: () => request<BackupStatus>('GET', '/api/backups'),

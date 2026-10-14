@@ -1,7 +1,10 @@
 """Other devices on the network must be paired. See backend/access/devices.py and backend/access/guard.py."""
 
 import sqlite3
+import subprocess
+import sys
 import tarfile
+from pathlib import Path
 
 import pytest
 
@@ -172,6 +175,82 @@ def test_sign_out_this_device(mac, ipad):
     r = remote(ipad, "DELETE", f"/api/devices/{dev}")
     assert r.status_code == 200 and f"{devmod.COOKIE}=;" in r.headers.get("Set-Cookie")
     assert remote(ipad, "GET", "/api/items").status_code == 401
+
+
+def test_new_code_replaces_the_old_one(lan_app, mac):
+    old = mac.post("/api/devices/pairing").get_json()["links"][0]["url"].split("#code=")[1]
+    new = mac.post("/api/devices/pairing").get_json()["links"][0]["url"].split("#code=")[1]
+    a, b = lan_app.test_client(), lan_app.test_client()
+    assert remote(a, "POST", "/api/devices/pair", json={"code": old}).status_code == 401
+    assert remote(b, "POST", "/api/devices/pair", json={"code": new}).status_code == 201
+
+
+def test_cancel_voids_the_code(lan_app, mac, ipad):
+    code = mac.post("/api/devices/pairing").get_json()["links"][0]["url"].split("#code=")[1]
+    assert mac.delete("/api/devices/pairing").get_json() == {"ok": True}
+    assert remote(ipad, "POST", "/api/devices/pair", json={"code": code}).status_code == 401
+    assert mac.delete("/api/devices/pairing").status_code == 200  # nothing to cancel: still fine
+
+
+def test_only_this_computer_cancels_codes(lan_app, mac, ipad):
+    pair(mac, ipad)
+    code = mac.post("/api/devices/pairing").get_json()["links"][0]["url"].split("#code=")[1]
+    assert remote(ipad, "DELETE", "/api/devices/pairing").status_code == 403
+    r = remote(lan_app.test_client(), "POST", "/api/devices/pair", json={"code": code})
+    assert r.status_code == 201  # the code still works
+
+
+def test_failed_attempts_are_forgotten_after_the_window(lan_app):
+    store = lan_app.extensions["synapse"].devices
+    t = [1000.0]
+    store.clock = lambda: t[0]
+    for addr in ("192.0.2.20", "192.0.2.21"):
+        with pytest.raises(devmod.PairingError):
+            store.redeem("wrong", "", "", addr)
+    assert set(store._failed) == {"192.0.2.20", "192.0.2.21"}
+    t[0] += devmod.FAILED_WINDOW + 1
+    with pytest.raises(devmod.PairingError):
+        store.redeem("wrong", "", "", "192.0.2.22")
+    assert set(store._failed) == {"192.0.2.22"}  # the addresses that stopped trying are gone
+
+
+def test_paired_device_cannot_manage_other_devices(lan_app, mac, ipad):
+    pair(mac, ipad, name="iPad")
+    phone = lan_app.test_client()
+    pair(mac, phone, name="Phone")
+    st = remote(ipad, "GET", "/api/devices").get_json()
+    me = st["current"]
+    other = next(d["id"] for d in st["devices"] if d["id"] != me)
+    r = remote(ipad, "PATCH", f"/api/devices/{other}", json={"name": "Mine now"})
+    assert r.status_code == 403 and "computer running Synapse" in r.get_json()["error"]
+    assert remote(ipad, "DELETE", f"/api/devices/{other}").status_code == 403
+    assert remote(ipad, "DELETE", "/api/devices/no-such-id").status_code == 403  # no hint whether it exists
+    names = {d["id"]: d["name"] for d in mac.get("/api/devices").get_json()["devices"]}
+    assert names[other] == "Phone"
+    assert remote(phone, "GET", "/api/items").status_code == 200  # still paired
+    # a device may still rename itself and sign itself out
+    r = remote(ipad, "PATCH", f"/api/devices/{me}", json={"name": "Reading iPad"})
+    assert r.status_code == 200 and r.get_json()["device"]["name"] == "Reading iPad"
+    assert remote(ipad, "DELETE", f"/api/devices/{me}").status_code == 200
+    # and the computer running Synapse manages them all
+    assert mac.patch(f"/api/devices/{other}", json={"name": "Old phone"}).status_code == 200
+    assert mac.delete(f"/api/devices/{other}").status_code == 200
+    assert remote(phone, "GET", "/api/items").status_code == 401
+
+
+@pytest.mark.parametrize("args", [["--lan"], ["--host", "0.0.0.0"], ["--host", "192.168.1.5"]])
+def test_debug_is_refused_on_the_network(tmp_path, args):
+    """Werkzeug's debugger runs before the guard: it must never listen on the network."""
+    root = Path(__file__).resolve().parents[1]
+    p = subprocess.run(
+        [sys.executable, str(root / "server.py"), *args, "--debug", "--no-browser", "--data-dir", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=root,
+    )
+    assert p.returncode != 0 and "--debug cannot be combined with --lan" in p.stderr
+    assert not any(tmp_path.iterdir())  # stopped before touching the library
 
 
 def test_rename(mac, ipad):

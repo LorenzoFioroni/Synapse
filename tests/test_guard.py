@@ -99,6 +99,35 @@ def test_browser_extension_can_save(client, svc):
     assert client.get("/api/connector/ping", headers={"Origin": "moz-extension://xyz"}).status_code == 200
 
 
+@pytest.mark.parametrize("origin", ["chrome-extension://other", "moz-extension://other", "safari-web-extension://x"])
+def test_extensions_only_reach_the_connector(client, svc, origin):
+    """Any installed extension sends an extension origin: it may save through the connector, but not
+    edit or delete the library."""
+    item = client.post("/api/items", json={"title": "Keep me"}).get_json()
+    ext = {"Origin": origin}
+    for method, path, kw in [
+        ("DELETE", f"/api/items/{item['id']}", {}),
+        ("PATCH", f"/api/items/{item['id']}", {"json": {"title": "Changed"}}),
+        ("POST", "/api/items/trash", {"json": {"ids": [item["id"]]}}),
+        ("POST", "/api/trash/empty", {}),
+        ("POST", "/api/settings/reset", {}),
+        ("POST", "/api/devices/pairing", {}),
+        ("POST", "/api/connectorx", {}),
+    ]:
+        r = client.open(path, method=method, headers=ext, **kw)
+        assert r.status_code == 403, (method, path)
+    assert svc.papers.get(item["id"])["title"] == "Keep me"
+    assert svc.papers.trashed_ids() == []
+    r = client.post(
+        "/api/connector/save",
+        headers=ext,
+        json={"title": "Saved from the button", "options": {"fetch_metadata": False}},
+    )
+    assert r.status_code in (200, 201), r.get_json()
+    r = client.post("/api/connector/file", headers=ext, json={"id": item["id"], "tags": ["from-extension"]})
+    assert r.status_code == 200, r.get_json()
+
+
 def test_allowed_hosts(tmp_path):
     from backend import create_app
     from backend.config import Config

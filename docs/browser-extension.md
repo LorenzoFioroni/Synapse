@@ -208,8 +208,10 @@ The blueprint's `after_request` hook adds `Access-Control-Allow-Origin` (and all
 methods) for `chrome-extension://` and `moz-extension://` origins only. No other origin gets CORS
 headers, so websites cannot read the ping's folders and tags.
 
-The guard treats the connector like any other endpoint. On this computer it accepts extension
-origins for requests that change something; from another device it does not. See
+The guard accepts extension origins for requests that change something only on this computer,
+and only under `/api/connector/` (`CONNECTOR_PREFIX` in `backend/access/guard.py`). Anywhere else
+an extension origin gets 403, so another installed extension cannot edit or delete the library.
+A new endpoint the extension must call therefore belongs in this blueprint. See
 [The guard](sync-and-devices.md#the-guard).
 
 ## Compatibility
@@ -242,7 +244,8 @@ this side: keep them in step with `connector.py`.
   metadata winning, an uploaded PDF, a DOI read from a PDF, duplicates and `allow_duplicate`,
   `/file`, the `on_add` settings, the background PDF search, the page's PDF link fetched only from
   public addresses, and CORS for extension origins only.
-- `tests/test_guard.py`: `test_browser_extension_can_save`.
+- `tests/test_guard.py`: `test_browser_extension_can_save`, and `test_extensions_only_reach_the_connector`
+  (an extension origin is refused outside `/api/connector/`).
 - `tests/test_branding.py`: the ping names (above).
 - `tests/e2e/extension_checklist.py`, run by hand: loads the extension into Chromium, saves the
   address in the options page, opens `tests/e2e/fixtures/article.html`, checks that the popup reads

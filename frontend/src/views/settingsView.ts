@@ -9,7 +9,7 @@ import type { SearchMode, Settings } from '../types.js';
 import { debounce, escapeHtml, formatBytes, formatDate, plural, store } from '../util.js';
 import { baseMacros } from './notes/macros.js';
 import { bindBackups, refreshBackups } from './settings/backups.js';
-import { bindDevices, refreshDevices, stopPairing } from './settings/devices.js';
+import { bindDevices, cancelPairing, refreshDevices } from './settings/devices.js';
 import { TOKENS, flashSaved, settingsHtml } from './settings/page.js';
 
 let view: HTMLElement | null = null;
@@ -60,7 +60,7 @@ export function openSettings(sectionId: string | null = null): void {
 export function closeSettings(): void {
   if (!view) return;
   clearInterval(statsTimer);
-  stopPairing();
+  cancelPairing();
   view.remove();
   view = null;
   emit('focus-list');

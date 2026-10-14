@@ -149,7 +149,7 @@ Only POST, PUT, PATCH and DELETE (`UNSAFE`) are checked. This is the **CSRF** de
 
 | Request comes from | Allowed when |
 |---|---|
-| This computer, with `Origin` | `Origin` is `http://<Host>` or `https://<Host>`, or starts with `chrome-extension://`, `moz-extension://` or `safari-web-extension://`. |
+| This computer, with `Origin` | `Origin` is `http://<Host>` or `https://<Host>`. On the connector endpoints (`/api/connector/…`, `CONNECTOR_PREFIX`) an origin starting with `chrome-extension://`, `moz-extension://` or `safari-web-extension://` is accepted too. |
 | This computer, no `Origin` | `Sec-Fetch-Site` is not `cross-site` or `same-site`. Covers curl, scripts, the test client and typed URLs (`none`). |
 | Another device | `Origin` is `http://<Host>` or `https://<Host>`, or there is no `Origin` and `Sec-Fetch-Site` is `same-origin`. Extension origins are refused. |
 
@@ -176,8 +176,11 @@ Everything else answers `not_paired()`: 401 with `{error, paired: false}` under 
 ### The browser extension
 
 The extension's popup calls the server from its own `chrome-extension://` origin, from this
-computer. Check 2 accepts that origin for any request on this computer, not only for
-`/api/connector/*`. The connector API is described in [`browser-extension.md`](browser-extension.md).
+computer. Check 2 accepts extension origins only for the connector endpoints (`/api/connector/…`),
+which is all the extension uses: `ping`, `save` and `file`. Every installed extension sends an
+extension origin, so accepting them elsewhere would let any extension edit or delete the library.
+Requests that change something elsewhere with an extension origin answer 403, whatever the
+extension. The connector API is described in [`browser-extension.md`](browser-extension.md).
 
 ## LAN mode and pairing
 
@@ -187,7 +190,12 @@ computer. Check 2 accepts that origin for any request on this computer, not only
 whenever the host is not a loopback one, so `--host 0.0.0.0` also counts. The server prints the
 `.local` name and IP addresses, and tips if `segno` or `waitress` is missing.
 
-In LAN mode, and without `--debug`, the server runs on **waitress** (12 threads,
+`server.py` refuses `--debug` together with `--lan`, or with any `--host` that is not loopback,
+and exits with a message. Werkzeug's debugger is WSGI middleware that answers before the guard's
+`before_request` hook, and its console runs Python code. On the network it would let anyone who
+reaches the port run code on this computer.
+
+In LAN mode the server runs on **waitress** (12 threads,
 `channel_timeout=300`) rather than Flask's development server, because several devices and long
 PDF downloads need a real WSGI server. Both packages are in `requirements.txt`. Without waitress
 the server falls back to Flask; without segno pairing works through the link alone.
@@ -197,7 +205,8 @@ the server falls back to Flask; without segno pairing works through the link alo
 1. On this computer, **Settings → Devices → Add a Device** calls `POST /api/devices/pairing`. It
    answers 403 unless `g.this_computer`, and 409 unless `config.lan`.
 2. `Devices.new_pairing_code` makes a code with `secrets.token_urlsafe(18)`. It is valid for
-   5 minutes (`PAIRING_TTL`) and kept only in memory, so a restart voids it.
+   5 minutes (`PAIRING_TTL`) and kept only in memory, so a restart voids it. Only one code exists
+   at a time: a new code replaces the previous one, which stops working at once.
 3. The answer has one link per address, the `.local` name first: `http://<addr>:<port>/pair#code=…`.
    The code is in the URL fragment, so it never appears in a request line or a log. Each link has
    a QR code as inline SVG (`_qr_svg`), or `qr: null` when `segno` is not installed.
@@ -210,8 +219,15 @@ the server falls back to Flask; without segno pairing works through the link alo
 6. Settings on the computer polls `GET /api/devices` every 3 seconds while the code is shown, and
    says when a new device has appeared.
 
+**Cancel**, and closing Settings while a code is shown, call `cancelPairing` in `devices.ts`. It
+sends `DELETE /api/devices/pairing` (403 unless `g.this_computer`), and `Devices.cancel_pairing`
+voids the code, so a link that was copied or photographed stops working too. A code that simply
+runs out on screen needs nothing: it has expired on the server as well.
+
 After 10 failed attempts from one address within 10 minutes (`FAILED_LIMIT`, `FAILED_WINDOW`),
-`redeem` answers 429 until the window passes.
+`redeem` answers 429 until the window passes. The record of failures is kept in memory, and each
+attempt drops every address whose failures are all older than the window, so addresses that
+stop trying do not stay in memory.
 
 ### Cookies and tokens
 
@@ -239,6 +255,11 @@ request, if any), `devices` and `addresses`. `frontend/src/views/settings/device
 - the list of devices with **Rename…** (`PATCH /api/devices/<id>`) and **Remove…**
   (`DELETE /api/devices/<id>`). On the device itself the button reads **Sign Out**.
 
+Only the computer running Synapse renames or removes any device. Another device may rename or
+sign out only itself: for any other id both endpoints answer 403 (`_may_manage` in
+`backend/api/devices.py`), before checking that the id exists. The page shows those buttons only
+where they work: on another device, only on its own row.
+
 Removing a device deletes its row, so its next request fails the device check. When a device
 removes itself, the answer also deletes its cookie and the page reloads to the "not paired" page.
 
@@ -249,24 +270,27 @@ What is protected:
 - **Other websites** in the user's browser cannot change anything (Origin check) and cannot read
   anything (same-origin policy, plus the Host check against DNS rebinding).
 - **Other devices** on the network get nothing but the pairing page until they are paired. Only
-  the computer running Synapse can make a pairing code, and each code works once, for 5 minutes.
+  the computer running Synapse can make a pairing code. Only the newest code works, once, for at
+  most 5 minutes, and Cancel voids it.
 - **Stored secrets** are hashes. A copy of `auth.db` does not give anyone a working token.
 - **Pages from another device** must also pass the Origin check, so a paired device's browser
   cannot be used for CSRF either.
 
 What is assumed:
 
-- **Everything on this computer is trusted.** Any local process, and any installed browser
-  extension, can use the whole API without a token.
+- **Everything on this computer is trusted.** Any local process can use the whole API without a
+  token. Browser extensions can change things only through the connector endpoints (add an item,
+  file an existing one); like any local process they can still read the API, and an extension
+  allowed to rewrite request headers could get around the Origin check.
 - **The local network is trusted.** The connection is plain HTTP. Anyone who can watch the
   traffic can read the library and copy a device cookie. The README says to use `--lan` only on a
   trusted network.
-- **A paired device is fully trusted.** It has the same API as this computer, apart from making
-  pairing codes, and can rename or remove any device.
+- **A paired device is trusted with the library.** It has the same API as this computer, apart
+  from making or cancelling pairing codes and renaming or removing other devices.
 - **No proxy in front.** "This computer" is judged by the connection's address, so a reverse proxy
   on the same machine would make every request look local.
-- **`--debug` is for development.** With `--lan --debug` the Flask development server, with its
-  debugger, listens on the network.
+- **`--debug` is for development, on this computer only.** `server.py` refuses it with `--lan`
+  or a non-loopback `--host`, because the debugger runs before the guard.
 
 ## Where to change things
 
@@ -279,6 +303,7 @@ What is assumed:
 | Which hosts or origins are accepted | `host_allowed`, `allowed_origin` and `refusal` in `backend/access/guard.py` |
 | What an unpaired device may open | `PAIRING_PATHS` in `guard.py` (and keep `frontend/pair.html` self-contained) |
 | Code lifetime, rate limits, cookie lifetime | the constants at the top of `backend/access/devices.py` |
+| Who may rename or remove a device | `_may_manage` in `backend/api/devices.py`, and the buttons in `refreshDevices` in `devices.ts` |
 | Addresses shown for pairing | `backend/access/lan.py`, `addresses()` in `backend/api/devices.py` |
 | The Devices screen | `frontend/src/views/settings/devices.ts` |
 

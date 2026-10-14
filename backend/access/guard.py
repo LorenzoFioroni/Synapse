@@ -13,9 +13,11 @@ The server has no accounts. Three checks decide whether a request goes ahead:
   addresses — need none, as before. Without the cookie, pages answer with "pair this device"
   and the API with 401.
 * **Origin** — a request that changes something (POST, PUT, PATCH, DELETE) must come from the
-  app's own pages. On this computer a browser extension (the "Save to library" button) and
-  clients that send no Origin at all (curl, scripts, the test client) are also allowed; from
-  another device only the app's own pages are (``Origin``, or ``Sec-Fetch-Site: same-origin``).
+  app's own pages. On this computer clients that send no Origin at all (curl, scripts, the test
+  client) are also allowed, and so are browser extensions, but only on the connector endpoints
+  (``/api/connector/…``, the "Save to library" button): any installed extension sends an
+  extension origin, and it must not be able to edit or delete the library. From another device
+  only the app's own pages are allowed (``Origin``, or ``Sec-Fetch-Site: same-origin``).
 
 Reading (GET) needs no Origin check: the browser does not let other origins read the answers,
 and the Host check stops rebinding.
@@ -30,6 +32,7 @@ from .devices import COOKIE, COOKIE_MAX_AGE
 
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 EXTENSION_SCHEMES = ("chrome-extension://", "moz-extension://", "safari-web-extension://")
+CONNECTOR_PREFIX = "/api/connector/"  # the only endpoints extension origins may change things through
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
 # What an unpaired device may open: the pairing page and the call it makes, plus the icon.
@@ -45,6 +48,8 @@ def host_name(host: str) -> str:
 
 
 def allowed_origin(origin: str, host: str, extensions: bool = True) -> bool:
+    """``extensions``: whether an extension origin may make this request (this computer, connector
+    endpoint)."""
     if origin.startswith(EXTENSION_SCHEMES):
         return extensions
     return origin.lower() in {f"http://{host.lower()}", f"https://{host.lower()}"}
@@ -71,6 +76,7 @@ def refusal(
     *,
     local: bool = True,
     lan_mode: bool = False,
+    path: str = "/",
 ) -> str | None:
     """Why this request is refused (Host and Origin checks), or ``None`` when it may go ahead.
     The device check is separate (``install``)."""
@@ -79,7 +85,7 @@ def refusal(
     if method not in UNSAFE:
         return None
     if origin is not None:
-        if allowed_origin(origin, host, extensions=local):
+        if allowed_origin(origin, host, extensions=local and path.startswith(CONNECTOR_PREFIX)):
             return None
         return "Changes can only be made from the app itself."
     if local:
@@ -151,6 +157,7 @@ def install(app: Flask, allowed_hosts: set[str] | None = None, lan_mode: bool = 
             hosts,
             local=local,
             lan_mode=lan_mode,
+            path=request.path,
         )
         if why:
             return jsonify(error=why), 403

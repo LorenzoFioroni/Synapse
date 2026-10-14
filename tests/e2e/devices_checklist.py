@@ -1,6 +1,7 @@
 """Browser checklist for pairing other devices: an unpaired iPad sees only "pair this
 device", Settings → Devices on the computer shows a QR code, the pairing link pairs the iPad, the
-iPad can then use the library, and renaming / removing the device works.
+iPad can then use the library, Cancel voids a code, a paired device can only manage itself, and
+renaming / removing the device works.
 
     python tests/e2e/devices_checklist.py              (SHOTS=/some/dir to save screenshots)
 
@@ -121,6 +122,20 @@ async def main():
                 "Add a device" in add_text and f":{PORT}/" in add_text,
                 add_text.split("reach it at")[-1].strip()[:40],
             )
+            # Cancel voids the code on the server, not only on screen
+            await mac.context.grant_permissions(["clipboard-read", "clipboard-write"])
+            await mac.click("[data-pair-new]")
+            await mac.wait_for_selector("[data-pair-copy]")
+            await mac.click("[data-pair-copy]")
+            cancelled = (await mac.evaluate("navigator.clipboard.readText()")).split("#code=")[1]
+            async with mac.expect_response(
+                lambda r: r.url.endswith("/api/devices/pairing") and r.request.method == "DELETE"
+            ):
+                await mac.click("[data-pair-cancel]")
+            await mac.wait_for_selector("[data-pair-new]")
+            r = requests.post(f"{BASE}/api/devices/pair", json={"code": cancelled})
+            check("Cancel voids the code: its link no longer pairs", r.status_code == 401, r.status_code)
+
             await mac.click("[data-pair-new]")
             await mac.wait_for_selector(".pair-qr svg")
             box = await mac.eval_on_selector(".pair-qr svg", "e => e.getBoundingClientRect().width")
@@ -136,7 +151,6 @@ async def main():
             if idx >= 0:
                 await mac.click(f'[data-pair-addr="{idx}"]')
             # the link the QR code holds (Copy Link copies the same)
-            await mac.context.grant_permissions(["clipboard-read", "clipboard-write"])
             await mac.click("[data-pair-copy]")
             link = await mac.evaluate("navigator.clipboard.readText()")
             check(
@@ -173,7 +187,9 @@ async def main():
             check("… and lists it", rows == ["iPad"], rows)
             await shot(mac, "05-listed")
 
-            # -- the iPad's own view of Devices -------------------------------------------------
+            # -- the iPad's own view of Devices, with a second device paired -------------------------
+            code = requests.post(f"{BASE}/api/devices/pairing").json()["links"][0]["url"].split("#code=")[1]
+            phone = requests.post(f"{BASE}/api/devices/pair", json={"code": code, "name": "Phone"}).json()["device"]
             await ipad.evaluate("() => import('/js/views/settingsView.js').then(m => m.openSettings('devices'))")
             await ipad.wait_for_selector("[data-device] .device-this")
             add_text = await ipad.text_content("[data-device-add]")
@@ -181,7 +197,21 @@ async def main():
                 "on the iPad: 'This device', and no Add button",
                 "computer running Synapse" in add_text and not await ipad.query_selector("[data-pair-new]"),
             )
+            buttons = await ipad.evaluate(
+                """() => Object.fromEntries([...document.querySelectorAll('[data-device]')].map(r =>
+                     [r.querySelector('.b-when').firstChild.textContent.trim(), [...r.querySelectorAll('button')].map(b => b.textContent.trim())]))"""
+            )
+            check(
+                "… Rename and Sign Out for itself, no buttons for the other device",
+                buttons == {"iPad": ["Rename…", "Sign Out"], "Phone": []},
+                buttons,
+            )
+            r = await ipad.evaluate(
+                "id => fetch('/api/devices/' + id, { method: 'DELETE' }).then(r => r.status)", phone["id"]
+            )
+            check("… and the server refuses it too", r == 403, r)
             await shot(ipad, "06-ipad-devices")
+            requests.delete(f"{BASE}/api/devices/{phone['id']}")
 
             # -- rename and remove from the computer -----------------------------------------------
             await mac.click("[data-device-rename]")
