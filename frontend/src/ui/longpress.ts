@@ -1,5 +1,4 @@
-// @ts-nocheck
-// Long press on touch screens (issue #34). A tablet has no right-click and no hover, so holding a
+// Long press on touch screens. A tablet has no right-click and no hover, so holding a
 // finger (or the Pencil) still for half a second stands in for both:
 //   1. a cancelable `zc:longpress` event is sent to the element first (detail: {x, y}); hover
 //      cards and link previews take it (preventDefault) and open;
@@ -10,10 +9,12 @@
 const DELAY = 500;
 const SLOP = 10;   // px a finger may move and still be "still"
 
-let press = null;          // { id, x, y, target, timer, native }
+interface Press { id: number; x: number; y: number; target: Element; timer?: ReturnType<typeof setTimeout>; native: boolean }
+
+let press: Press | null = null;
 let swallowUntil = 0;
 let swallowDblUntil = 0;  // the swallowed click still counts towards a double click: don't let it make one
-let held = null;           // pointer id of a press that fired and has not been lifted yet
+let held: number | null = null;   // pointer id of a press that fired and has not been lifted yet
 
 function cancel() {
   if (press) clearTimeout(press.timer);
@@ -31,41 +32,44 @@ function fire() {
   p.target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: p.x, clientY: p.y, button: 2 }));
 }
 
-export function installLongPress(root = document) {
+export function installLongPress(root: (Document | HTMLElement) & { zcLongPress?: boolean } = document): void {
   if (root.zcLongPress) return;
   root.zcLongPress = true;
-  root.addEventListener('pointerdown', (e) => {
+  const on = <K extends keyof DocumentEventMap>(type: K, fn: (e: DocumentEventMap[K]) => void) =>
+    root.addEventListener(type, fn as EventListener, true);
+  on('pointerdown', (e) => {
+    const target = e.target as Element;
     cancel();
     if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
     // text fields keep the system's own long press (select, paste, Scribble) — except citations,
     // whose card opens on a long press
-    if (e.target.closest?.('input, textarea, [contenteditable="true"], .cm-editor, .anno-layer, .zc-snap-layer')
-        && !e.target.closest?.('.cite, [data-cite-keys], .cm-lp-citesrc')) return;
-    press = { id: e.pointerId, x: e.clientX, y: e.clientY, target: e.target, native: false };
+    if (target.closest?.('input, textarea, [contenteditable="true"], .cm-editor, .anno-layer, .zc-snap-layer')
+        && !target.closest?.('.cite, [data-cite-keys], .cm-lp-citesrc')) return;
+    press = { id: e.pointerId, x: e.clientX, y: e.clientY, target, native: false };
     press.timer = setTimeout(fire, DELAY);
-  }, true);
-  root.addEventListener('pointermove', (e) => {
+  });
+  on('pointermove', (e) => {
     if (press && e.pointerId === press.id && Math.hypot(e.clientX - press.x, e.clientY - press.y) > SLOP) cancel();
-  }, true);
-  for (const t of ['pointerup', 'pointercancel']) {
-    root.addEventListener(t, (e) => {
+  });
+  for (const t of ['pointerup', 'pointercancel'] as const) {
+    on(t, (e) => {
       if (press && e.pointerId === press.id) cancel();
       if (held === e.pointerId) { held = null; swallowUntil = performance.now() + 400; swallowDblUntil = performance.now() + 1000; }
-    }, true);
+    });
   }
-  root.addEventListener('scroll', cancel, true);
-  root.addEventListener('contextmenu', (e) => {
+  on('scroll', cancel);
+  on('contextmenu', (e) => {
     if (!e.isTrusted) return;
     if (press) { press.native = true; return; }                  // the browser does it itself
     if (performance.now() < swallowUntil) { e.preventDefault(); e.stopImmediatePropagation(); }   // ours already opened
-  }, true);
-  root.addEventListener('click', (e) => {
+  });
+  on('click', (e) => {
     if (performance.now() < swallowUntil) {
       e.preventDefault(); e.stopImmediatePropagation(); swallowUntil = 0;
       swallowDblUntil = performance.now() + 1000;
     }
-  }, true);
-  root.addEventListener('dblclick', (e) => {
+  });
+  on('dblclick', (e) => {
     if (performance.now() < swallowDblUntil) { e.preventDefault(); e.stopImmediatePropagation(); swallowDblUntil = 0; }
-  }, true);
+  });
 }

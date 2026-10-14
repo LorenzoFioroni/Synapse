@@ -1,6 +1,5 @@
-// @ts-nocheck
 // Inline SVG icons (stroke-based, 16px grid). Usage: icon('search')
-const P = {
+const P: Record<string, string> = {
   search: '<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>',
   plus: '<path d="M8 3v10M3 8h10"/>',
   wand: '<path d="M3 13l7-7"/><path d="M11 2v2M14 5h-2M13.5 2.5l-1.2 1.2M9 3.2l.6.9M12.8 7l-.9-.6"/>',
@@ -59,11 +58,11 @@ const P = {
   sparkle: '<path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z"/>',
 };
 
-export function icon(name, cls = '') {
+export function icon(name: string, cls = ''): string {
   const body = P[name] || P.doc;
   return `<svg class="icon ${cls}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 }
 
-export function typeIcon(itemType, cls = '') {
-  return icon(P[itemType] ? itemType : 'doc', cls);
+export function typeIcon(itemType: string | null | undefined, cls = ''): string {
+  return icon(itemType && P[itemType] ? itemType : 'doc', cls);
 }
