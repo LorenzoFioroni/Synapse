@@ -97,6 +97,8 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .note-editor .cm-content { max-width: var(--note-col); margin: 0 auto; padding: 0 var(--note-pad); caret-color: var(--accent); }
 .note-editor .cm-line { padding: 0; }
 .note-editor .cm-cursor { border-left-color: var(--accent); border-left-width: 2px; }
+/* autocompletion's suggestion (ghost.ts): grey, in the text's own font, accepted by Tab or a click */
+.note-editor .cm-ghost { color: var(--text-3); opacity: .75; white-space: pre-wrap; cursor: pointer; }
 .note-editor .cm-selectionBackground, .note-editor .cm-editor ::selection { background: var(--accent-soft-2) !important; }
 .note-editor .cm-focused .cm-selectionBackground { background: var(--accent-soft-2) !important; }
 .note-editor .cm-selectionMatch { background: color-mix(in srgb, var(--mark) 60%, transparent); }

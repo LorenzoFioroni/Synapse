@@ -15,6 +15,7 @@ import { toast, toastError } from '../../ui/toast.js';
 import { h, modLabel, storage, store } from '../../util.js';
 import { closeGlobal, globalOpen, graphChanged, initNotesGraph, localSection, openGlobal, showLocal } from '../graph/notesGraph.js';
 import { loadAiEdits, onAiAction, paintAiBar, remoteArrived } from './aiBar.js';
+import { assistSettingsChanged, assistSource, checkAssist } from './assist.js';
 import { openAttachments } from './attachmentsDialog.js';
 import { attachCiteCards, openCitation, pdfsOf, showCard } from './citeCard.js';
 import { conflictDialog } from './conflict.js';
@@ -127,6 +128,7 @@ export function initNotes(): void {
     if (!notesEnabled() && notesOpen()) closeNotes();
     emit('notes-count', notesEnabled() ? ws.overview.notes.length : null);
     applyLayout();
+    assistSettingsChanged();
     const key = `${equationMode()}|${state.settings.notes_math_physics}|${state.settings.notes_math_macros}`;
     if (key !== lastMathKey) { lastMathKey = key; ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); }
   });
@@ -259,7 +261,9 @@ async function ensureEditor() {
   }, ws.mode === 'read' ? ws.editMode : ws.mode, {
     items: () => ws.library.list,
     notes: () => ws.overview.notes,
+    assist: assistSource,
   });
+  checkAssist();   // and load the model, so the first suggestion does not wait for it
   return ws.editor;
 }
 

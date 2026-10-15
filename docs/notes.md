@@ -282,6 +282,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `fileOps.ts` | New, rename, move, trash with Undo, the trash dialog, rescan. |
 | `editor.ts`, `livePreview.ts`, `previewWidgets.ts` | CodeMirror 6 (`vendor/cm6/`), the live preview decorations (built on `mdscan.ts`) and the widgets they draw. |
 | `completion.ts`, `library.ts` | `[@` and `[[` autocomplete and its ranking. |
+| `ghost.ts`, `ghostLogic.ts`, `assist.ts` | Autocompletion: suggestions from a local model as ghost text, and the status checks before any request (see [autocompletion](autocompletion.md)). |
 | `render.ts` | Markdown to HTML with markdown-it and KaTeX (`vendor/md/`): math, links, citations, callouts, tasks. Raw HTML is never rendered. No DOM. |
 | `richRender.ts` | Mermaid (loaded on demand from `vendor/mermaid/`), code highlighting, filling embedded notes into the page. |
 | `embed.ts`, `linkData.ts` | What an embedded note shows; what a note links to (`/api/notes/links` as maps for the renderer). No DOM. |

@@ -177,6 +177,12 @@ never mix.
   In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
   drag to move; folders can be renamed, moved and deleted the same way.
+- **Autocompletion** in notes (Settings → Autocompletion; off by default): after a short pause a
+  model running on this computer in [Ollama](https://ollama.com) suggests how the text goes on, in
+  grey after the cursor. Tab accepts, Esc dismisses, Cmd/Ctrl+→ takes one word, Alt/⌥+\ asks for
+  one now, clicking it accepts it. Only local models are supported: install Ollama and a model
+  (`ollama pull qwen2.5-coder:1.5b`); Settings says what is missing. Without them nothing is sent
+  and the notes say so once. See [docs/autocompletion.md](docs/autocompletion.md).
 - Sortable, resizable, re-orderable columns; light/dark theme; compact density;
   keyboard navigation (see Settings → Library & Shortcuts).
 - Built-in PDF viewer with highlights, underlines, boxes (with a border, a fill or both: a filled

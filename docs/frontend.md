@@ -264,6 +264,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `settingsView.ts` | The Settings page: binds the controls and saves each change; `applyAppearance`. |
 | `settings/page.ts` | The Settings markup (`settingsHtml`). |
 | `settings/backups.ts`, `settings/devices.ts` | Settings → Backups and Settings → Devices (pairing). |
+| `settings/assist.ts` | Settings → Autocompletion: the status of Ollama and the model, with what to do when one is missing. |
 
 **`views/notes/`: the notes workspace.** [Notes](notes.md) covers it in depth. In short:
 `notesView.ts` sets the workspace up and opens and closes notes; `workspace.ts` is the shared

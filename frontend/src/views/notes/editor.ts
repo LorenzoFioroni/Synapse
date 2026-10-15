@@ -6,6 +6,7 @@ import type { MarkdownConfig } from '@lezer/markdown';
 import type { CiteEntry, NoteInfo } from '../../types.js';
 import { completions } from './completion.js';
 import { changedSpan } from './diff.js';
+import { type GhostSource, ghostText } from './ghost.js';
 import { type PreviewDeps, livePreview } from './livePreview.js';
 import { refitOnResize } from './mathFit.js';
 import { splitFrontmatter } from './mdscan.js';
@@ -112,17 +113,20 @@ export function highlightStyle(cm: CM): HighlightStyle {
 
 /**
  * The notes editor in ``parent``. ``preview`` is what livePreview.ts needs (renderer, resolveNote,
- * citeInfo, openNote …); ``data`` gives autocomplete the cite index and the notes overview.
+ * citeInfo, openNote …); ``data`` gives autocomplete the cite index and the notes overview, and
+ * ``data.assist`` the source of ghost-text suggestions (assist.ts).
  */
 export async function createEditor(
   parent: HTMLElement,
   handlers: EditorHandlers,
   preview: PreviewDeps,
   mode: 'live' | 'source' = 'live',
-  data: { items(): CiteEntry[]; notes(): NoteInfo[] } = { items: () => [], notes: () => [] },
+  data: { items(): CiteEntry[]; notes(): NoteInfo[]; assist?: GhostSource } = { items: () => [], notes: () => [] },
 ): Promise<NoteEditor> {
   const cm = await loadCM();
   const lp = livePreview(cm, preview);
+  // suggestions from a local model as ghost text (its keys come before Tab's indenting)
+  const ghost = data.assist ? ghostText(cm, data.assist).extension : [];
   const modeSlot = new cm.Compartment();
   const modeExt = (m: string) => (m === 'live' ? [lp.extension, cm.EditorView.editorAttributes.of({ class: 'cm-live' })] : []);
   let currentMode = mode;
@@ -159,6 +163,7 @@ export async function createEditor(
     cm.syntaxHighlighting(highlightStyle(cm)),
     completions(cm, data),
     modeSlot.of(modeExt(currentMode)),
+    ghost,
     cm.EditorView.contentAttributes.of({ spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences' }),
     cm.keymap.of([...keys, ...cm.closeBracketsKeymap, ...cm.markdownKeymap, ...cm.defaultKeymap,
       ...cm.searchKeymap, ...cm.historyKeymap, cm.indentWithTab]),
