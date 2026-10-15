@@ -165,6 +165,10 @@ export interface Settings {
   notes_equation_numbers: 'labelled' | 'all';
   notes_math_physics: boolean;
   notes_math_macros: string;
+  notes_ai_complete: boolean;
+  notes_ai_model: string;
+  notes_ai_url: string;
+  notes_ai_length: 'line' | 'paragraph';
   annotation_color_highlight: string;
   annotation_color_underline: string;
   annotation_color_text: string;
@@ -176,6 +180,23 @@ export interface Settings {
   backup_keep: number;
   backup_dir: string;
 }
+
+/** Why autocompletion can or cannot make suggestions (GET /api/assist/status, backend/assist). */
+export type AssistReason = '' | 'off' | 'unreachable' | 'no_model' | 'unsupported' | 'timeout' | 'error' | 'superseded';
+export interface AssistStatus {
+  enabled: boolean;
+  ok: boolean;
+  reason: AssistReason;
+  message: string;
+  url: string;
+  model: string;
+  models: string[];      // installed in Ollama
+  version: string;       // Ollama's
+  fim: boolean;          // the model fills in the middle (sees the text after the cursor)
+  thinking: boolean;
+}
+/** POST /api/assist/complete: the suggestion, or why there is none. */
+export interface AssistCompletion { text: string; reason: AssistReason; message?: string }
 
 export interface SettingsResponse {
   settings: Settings;

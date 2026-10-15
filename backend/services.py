@@ -62,6 +62,9 @@ class Services:
         from .backup import Backups
 
         self.backups = Backups(self)
+        from .assist import Completer
+
+        self.assist = Completer(self.settings)  # autocompletion in notes, from Ollama on this computer
         # A changed citation key is rewritten in every note (with a backup first).
         self.papers.on_citekey_change(lambda _id, old, new: self.note_service.rename_key(old, new) if new else None)
         try:

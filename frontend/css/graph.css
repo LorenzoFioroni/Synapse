@@ -37,6 +37,11 @@
 .ng-search .icon-sm { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: var(--text-3); pointer-events: none; }
 .ng-search input { width: 100%; height: 28px; padding-left: 26px; }
 .ng-bar .btn.active { background: var(--bg-active); }
+.ng-depth { flex: none; padding: 1px; }
+.ng-depth button { padding: 0 8px; font-size: var(--fs-xs); line-height: 22px; }
+.ng-centre { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.ng-centre[hidden] { display: none; }
+.ng-centre b { color: var(--text); font-weight: 600; }
 .ng-opts { position: absolute; top: 52px; right: 12px; z-index: 2; display: flex; flex-direction: column; gap: 7px; padding: 10px 12px;
   border-radius: var(--radius); background: var(--bg-elev); border: 1px solid var(--border); box-shadow: var(--shadow-md); font-size: var(--fs-sm); }
 .ng-opts[hidden] { display: none; }

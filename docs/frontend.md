@@ -267,6 +267,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `settings/backups.ts`, `settings/devices.ts` | Settings → Backups and Settings → Devices (pairing). |
 | `settings/passkeys.ts` | Settings → Devices → Passkeys: adding one with `navigator.credentials.create`, removing one. |
 | `settings/aiAccess.ts` | Settings → AI Access: access tokens for `/mcp`, with the `claude mcp add` command shown once. |
+| `settings/assist.ts` | Settings → Autocompletion: the status of Ollama and the model, with what to do when one is missing. |
 
 **`views/notes/`: the notes workspace.** [Notes](notes.md) covers it in depth. In short:
 `notesView.ts` sets the workspace up and opens and closes notes; `workspace.ts` is the shared
@@ -276,11 +277,15 @@ state; `noteSession.ts` saves (hash-checked, with drafts and retries); `editor.t
 math; `tree.ts`, `treeInput.ts` and `fileOps.ts` are the notes list; `readView.ts`,
 `sidePanel.ts` and `panels.ts` the views around a note; `citeCard.ts`, `citeTarget.ts` and
 `library.ts` connect citations to the library; `aiBar.ts` and `aiEdits.ts` show Claude's edits;
-`conflict.ts`, `diff.ts`, `rekeyDialog.ts` and `attachmentsDialog.ts` are dialogs.
+`conflict.ts`, `diff.ts`, `rekeyDialog.ts` and `attachmentsDialog.ts` are dialogs; `exportNote.ts`
+and `portable.ts` export a note as PDF, HTML or Markdown.
 
 **`views/graph/`: the graph in Notes.** `model.ts` turns `/api/graph` into what is shown (no
 DOM, unit-tested); `forceGraph.ts` draws it with force-graph; `notesGraph.ts` is the local graph
-beside a note and the global graph in place of the editor.
+beside a note and the global graph in place of the editor. Both show a neighbourhood through
+`buildView`'s `focus` and `depth`: the local graph around the open note (depth 1 or 2), the global
+graph around the node it was opened for (`globalFocus`, depth 1, 2, 3 or 0 for everything, kept
+with the other options in `localStorage` under `zc.graph.global`).
 
 **`ui/`: generic widgets.** `dialog.ts` (`openDialog`, `confirmDialog`, `promptDialog`),
 `menu.ts` (`openMenu`, `closeMenu`, with keyboard navigation), `toast.ts` (`toast`,
@@ -363,6 +368,7 @@ state and call each other without import cycles. Three patterns are used:
 | `layout.css` | The shell: toolbar, sidebar, panes, resizers, status bar, narrow screens. |
 | `items.css`, `itempane.css` | The items table; the item pane and the metadata review. |
 | `settings.css`, `notes.css`, `graph.css` | Settings, the notes workspace, the graph. |
+| `export.css` | Not loaded by the app: the page and print rules of an exported note, added after `tokens.css` and `notes.css` (`views/notes/exportNote.ts`). |
 
 **Themes.** Every colour is a variable in `tokens.css`. Light is the default; dark applies under
 `@media (prefers-color-scheme: dark)` unless `<html data-theme="light">`, and always with

@@ -1,7 +1,7 @@
 // Thin client for the JSON API. Every call throws an Error with a readable
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
-  AccessToken, AccessTokensOverview, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
+  AccessToken, AccessTokensOverview, AssistCompletion, AssistStatus, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
   ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
   Passkey, PasskeysOverview, PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag,
 } from './types.js';
@@ -18,9 +18,9 @@ export const CLIENT_ID = (globalThis.crypto?.randomUUID?.() || `${Date.now().toS
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /** A JSON request; resolves to the parsed answer (typed by the caller as T). */
-async function request<T = unknown>(method: Method, url: string, body?: unknown): Promise<T> {
+async function request<T = unknown>(method: Method, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const headers: Record<string, string> = { 'X-Synapse-Client': CLIENT_ID };
-  const opts: RequestInit = { method, headers };
+  const opts: RequestInit = { method, headers, signal };
   if (body instanceof FormData) opts.body = body;
   else if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
@@ -29,7 +29,8 @@ async function request<T = unknown>(method: Method, url: string, body?: unknown)
   let res: Response;
   try {
     res = await fetch(url, opts);
-  } catch {
+  } catch (e) {
+    if (signal?.aborted) throw e;   // the caller cancelled it
     throw new ApiError('Cannot reach the server. Is it still running?', 0);
   }
   let data: any = null;
@@ -97,6 +98,9 @@ export const api = {
   backups: () => request<BackupStatus>('GET', '/api/backups'),
   backupNow: () => request('POST', '/api/backups'),
   restoreBackup: (name: string) => request<BackupStatus & { restored: string; safety_backup: string }>('POST', '/api/backups/restore', { name }),
+  // autocompletion in notes (a model in Ollama on this computer)
+  assistStatus: ({ fresh = false, warm = false } = {}) => request<AssistStatus>('GET', `/api/assist/status?${qs({ fresh: fresh ? 1 : '', warm: warm ? 1 : '' })}`),
+  assistComplete: (prefix: string, suffix: string, signal?: AbortSignal) => request<AssistCompletion>('POST', '/api/assist/complete', { prefix, suffix }, signal),
   citekeyPreview: (pattern: string) => request<{ pattern: string; examples: string[] }>('GET', `/api/settings/citekey_preview?${qs({ pattern })}`),
 
   formats: () => request<{ formats: Format[] }>('GET', '/api/formats'),

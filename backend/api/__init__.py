@@ -29,6 +29,7 @@ def ids_from_body() -> list[str]:
 
 def register_blueprints(app: Flask) -> None:
     from . import (
+        assist,
         attachments,
         backups,
         changes,
@@ -62,5 +63,6 @@ def register_blueprints(app: Flask) -> None:
         passkeys,
         mcp,
         changes,
+        assist,
     ):
         app.register_blueprint(module.bp)

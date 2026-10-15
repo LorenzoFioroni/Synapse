@@ -139,8 +139,11 @@ never mix.
   connect to, e.g. other notes citing the same papers); click a node to open it. The full graph
   replaces the editor (link button in the notes list, the local graph's expand button, or **Show in
   Graph** in the item and note menus): notes and the papers they cite, with filters for citations
-  between papers, cited works not in your library and orphans. Clicking a paper shows a card (paper
-  note, Show in Library, PDF, Add to Library). The data is at `GET /api/graph`.
+  between papers, cited works not in your library and orphans. It is centred on the note or paper
+  you opened it from and shows only what is 1, 2 (the default) or 3 links away, or **All** of it;
+  Shift-click a node, or **Centre graph here** on a paper's card, to move the centre. Clicking a
+  paper shows a card (paper note, Show in Library, PDF, Add to Library). The data is at
+  `GET /api/graph`.
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
   arXiv, Scholar) and checks the file is really the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.
@@ -168,7 +171,14 @@ never mix.
 - **Notes**: Markdown notes with live preview, KaTeX, code, Mermaid and images; `[@key]`
   citations and `[[links]]` between notes; a paper note per item. An item with several PDFs gets
   one button per PDF in citation cards and in its menus; `[@key, p. 4, att:12]` names the PDF with
-  attachment id 12 (a citation without `att:` means the first PDF). Switch with the
+  attachment id 12 (a citation without `att:` means the first PDF). **Export** (the button next
+  to Live | Source | Read, or **Export…** in a note's menu in the notes list) saves a note as a
+  **PDF** (print dialog, "Save as PDF"), a self-contained **HTML page**, or **Markdown** that any
+  viewer shows. Citations are written out as "(Smith et al. 2021, p. 4)" and, in PDF and HTML,
+  link to their entry in a References list at the end. Each entry has what is needed to find the
+  work (journal, volume, issue and pages; publisher and edition for books; the arXiv id of a
+  preprint) and its DOI as a link (else its arXiv page or URL). `[[links]]` become their text, embedded notes are included, and formulas, diagrams, code and
+  images are kept. Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
   Cmd+[ / Alt+←) go back to the note or library selection you came from.
   Images pasted into notes are kept in the notes' attachments folder; one that no note uses any more
@@ -194,6 +204,12 @@ never mix.
   In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
   drag to move; folders can be renamed, moved and deleted the same way.
+- **Autocompletion** in notes (Settings → Autocompletion; off by default): after a short pause a
+  model running on this computer in [Ollama](https://ollama.com) suggests how the text goes on, in
+  grey after the cursor. Tab accepts, Esc dismisses, Cmd/Ctrl+→ takes one word, Alt/⌥+\ asks for
+  one now, clicking it accepts it. Only local models are supported: install Ollama and a model
+  (`ollama pull qwen2.5-coder:1.5b`); Settings says what is missing. Without them nothing is sent
+  and the notes say so once. See [docs/autocompletion.md](docs/autocompletion.md).
 - Sortable, resizable, re-orderable columns; light/dark theme; compact density;
   keyboard navigation (see Settings → Library & Shortcuts).
 - Built-in PDF viewer with highlights, underlines, boxes (with a border, a fill or both: a filled
@@ -339,7 +355,8 @@ python tests/e2e/library_checklist.py    # key rename, notes in search, quote/sn
 python tests/e2e/citation_spot_checklist.py  # a quote's / snapshot's citation opens the PDF at that spot and flashes it
 python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders, Back/Forward, item-list markers
 python tests/e2e/viewer_links_checklist.py  # PDF links: jump, hover preview, Back/Forward in the viewer
-python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, filters, paper card, Show in Graph, Back/Forward
+python tests/e2e/export_checklist.py     # Export: HTML (self-contained, offline), Markdown, PDF via the print dialog
+python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, levels, filters, paper card, Show in Graph, Back/Forward
 python tests/e2e/attachments_checklist.py  # note attachments: unused ones to the trash, Attachments dialog, retention
 python tests/e2e/adding_checklist.py     # bulk Retrieve Metadata (parallel, grouped, background), Settings → Adding Items
 python tests/e2e/claude_edits_checklist.py  # Claude's note edits: appear live, ⌘Z / bar Undo / Show changes, edit list

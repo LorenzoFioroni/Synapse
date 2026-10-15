@@ -6,7 +6,7 @@ token whose command lets another computer use /mcp, and removing the token locks
     python tests/e2e/passkeys_checklist.py              (SHOTS=/some/dir to save screenshots)
 
 Starts its own server with --lan and a throw-away self-signed certificate for ``synapse.test`` on
-port 8792, with a throw-away data folder; your library is not touched. Each browser maps
+port 8794, with a throw-away data folder; your library is not touched. Each browser maps
 ``synapse.test`` to an address of its own: the computer's to 127.0.0.1, the iPad's to this
 machine's LAN address, which the launcher (as in devices_checklist.py) treats as another device.
 Chromium's virtual authenticator stands in for the passkey; the iPad gets a copy of the
@@ -31,7 +31,7 @@ sys.path.insert(0, str(APP))
 from backend.access import lan  # noqa: E402
 from tests.e2e._guard import guard  # noqa: E402
 
-PORT = 8792
+PORT = 8794
 NAME = "synapse.test"
 SITE = f"https://{NAME}:{PORT}"
 LOCAL = f"https://127.0.0.1:{PORT}"

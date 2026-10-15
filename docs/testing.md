@@ -159,6 +159,7 @@ looking for a bug.
 |---|---|---|
 | `adding` | 8771 | Retrieve Metadata in bulk (side by side, review, background) and Settings → Adding Items, with slow fake lookups |
 | `annotations` | 8777 | Each annotation kind saved on its own, redrawn after reload and zoom; eraser, Delete, undo and redo; two PDFs and two tabs; old annotations converted |
+| `assist` | 8793 | Autocompletion: nothing asked without Ollama or the model, Settings → Autocompletion, ghost text keys and where it never appears (a stand-in for Ollama, `tests/fake_ollama.py`) |
 | `attachments` | 8772 | Note attachments: the attachment trash, the Attachments dialog, retention, deletion dates |
 | `backups` | 8775 | Settings → Backups: backup at start, Back Up Now, changing the folder, Restore |
 | `branding` | 8776 | The toolbar icon in light and dark theme, the tab title, the favicons |
@@ -167,6 +168,7 @@ looking for a bug.
 | `claude_edits` | 8785 | An edit by the real MCP server appears in the open note; Undo, Show changes, restoring a version |
 | `devices` | 8781 | Pairing under `--lan`: the unpaired page, the QR code, pairing, renaming and removing a device |
 | `equations` | 8786 | Editing notes with equations |
+| `export` | 8792 | Exporting a note: a self-contained HTML page that works offline, portable Markdown, PDF through the print dialog |
 | `extension` | 8789, 8790 | The browser extension: options page connects, the popup reads an article's citation tags and saves it with a tag |
 | `graph` | 8787 | Local and global graph in Notes, Show in Graph, Cmd/Ctrl+Shift+G, Back/Forward |
 | `lazy_viewer` | 8778 | A 300-page PDF: pages drawn only near the viewport, fast jumps and zoom, annotations on far pages |
@@ -175,7 +177,7 @@ looking for a bug.
 | `list_perf` | 8779 | 10,000 items: fast list, few rows in the DOM, quick selection, small changes without a full reload |
 | `multipdf` | 8788 | Items with several PDFs: citations, cards and menus |
 | `notes` | 8765 | The notes editor |
-| `passkeys` | 8792 | Over HTTPS: adding a passkey, signing an unpaired iPad in with it (Chromium's virtual authenticator), removing it; Settings → AI Access makes a token that reaches `/mcp` from another computer, and removing it locks the app out |
+| `passkeys` | 8794 | Over HTTPS: adding a passkey, signing an unpaired iPad in with it (Chromium's virtual authenticator), removing it; Settings → AI Access makes a token that reaches `/mcp` from another computer, and removing it locks the app out |
 | `pdf_tabs` | 8773 | One viewer tab per PDF; Cmd/Ctrl+click or middle click opens a new one |
 | `remote_pdf` | 8774 | Attachments stored as web links open through `/api/attachments/<id>/remote`; local-network links refused |
 | `render` | 8766 | Note rendering (uses `tests/e2e/kitchen-sink.md`) |

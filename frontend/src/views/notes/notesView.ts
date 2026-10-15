@@ -15,10 +15,12 @@ import { toast, toastError } from '../../ui/toast.js';
 import { h, modLabel, storage, store } from '../../util.js';
 import { closeGlobal, globalOpen, graphChanged, initNotesGraph, localSection, openGlobal, showLocal } from '../graph/notesGraph.js';
 import { loadAiEdits, onAiAction, paintAiBar, remoteArrived } from './aiBar.js';
+import { assistSettingsChanged, assistSource, checkAssist } from './assist.js';
 import { openAttachments } from './attachmentsDialog.js';
 import { attachCiteCards, openCitation, pdfsOf, showCard } from './citeCard.js';
 import { conflictDialog } from './conflict.js';
 import { createEditor, loadMD } from './editor.js';
+import { exportMenu } from './exportNote.js';
 import { folderOfSelection, newFolder, newNote, renameNote, rescan, showTrash } from './fileOps.js';
 import { linkDataOf } from './linkData.js';
 import { refitOnResize } from './mathFit.js';
@@ -71,6 +73,7 @@ export function initNotes(): void {
           <button data-mode="source" title="Plain Markdown">Source</button>
           <button data-mode="read" title="Read (${modLabel}E)">Read</button>
         </div>
+        <button class="icon-btn" data-act="export" title="Export as PDF, HTML or Markdown">${icon('export')}</button>
       </div>
       <div class="note-ai-bar" role="status" hidden></div>
       <div class="note-body">
@@ -125,6 +128,7 @@ export function initNotes(): void {
     if (!notesEnabled() && notesOpen()) closeNotes();
     emit('notes-count', notesEnabled() ? ws.overview.notes.length : null);
     applyLayout();
+    assistSettingsChanged();
     const key = `${equationMode()}|${state.settings.notes_math_physics}|${state.settings.notes_math_macros}`;
     if (key !== lastMathKey) { lastMathKey = key; ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); }
   });
@@ -257,7 +261,9 @@ async function ensureEditor() {
   }, ws.mode === 'read' ? ws.editMode : ws.mode, {
     items: () => ws.library.list,
     notes: () => ws.overview.notes,
+    assist: assistSource,
   });
+  checkAssist();   // and load the model, so the first suggestion does not wait for it
   return ws.editor;
 }
 
@@ -400,6 +406,7 @@ function onClick(e: MouseEvent): void {
   if (act === 'new-folder') { newFolder(folderOfSelection()); return; }
   if (act === 'graph') { openNotesGraph(session ? `note:${session.path}` : null); return; }
   if (act === 'rename' && session) { renameNote(session.path); return; }
+  if (act === 'export' && session) { exportMenu(session.path, actEl!); return; }
   if (act === 'show-conflict' && session?.conflict) { conflictDialog(session.conflict); return; }
   if (act?.startsWith('ai-')) { onAiAction(act, t.closest<HTMLElement>('[data-ai-id]')?.dataset.aiId); return; }
   if (act === 'paper-item' && info?.paper) { const it = itemInfo(info.paper); if (it) emit('show-item', it.id); return; }
