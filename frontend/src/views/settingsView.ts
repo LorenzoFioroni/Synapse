@@ -8,6 +8,7 @@ import { toast, toastError } from '../ui/toast.js';
 import type { SearchMode, Settings } from '../types.js';
 import { debounce, escapeHtml, formatBytes, formatDate, plural, store } from '../util.js';
 import { baseMacros } from './notes/macros.js';
+import { bindAssist, refreshAssist } from './settings/assist.js';
 import { bindBackups, refreshBackups } from './settings/backups.js';
 import { bindDevices, cancelPairing, refreshDevices } from './settings/devices.js';
 import { TOKENS, flashSaved, settingsHtml } from './settings/page.js';
@@ -51,6 +52,7 @@ export function openSettings(sectionId: string | null = null): void {
   refreshStats();
   refreshBackups(page);
   refreshDevices(page);
+  refreshAssist(page, { fresh: false });
   statsTimer = setInterval(refreshStats, 2000);
   const sel = page.querySelector<HTMLSelectElement>('[data-key="_preset"]')!;
   sel.value = presetMatch ? presetMatch.pattern : 'custom';
@@ -135,6 +137,7 @@ function bind(view: HTMLElement): void {
     }
     const value = el.type === 'checkbox' ? (el as HTMLInputElement).checked : (el.type === 'range' ? Number(el.value) : el.value);
     if (!(await save({ [key]: value }, el))) return;
+    if (key === 'notes_ai_complete') refreshAssist(view, { fresh: false });
     if (key === 'default_search_mode') emit('set-search-mode', value as SearchMode);
     if (key === 'fulltext_auto_index' && value) {
       // index the PDFs that arrived while it was off, now rather than at the next start
@@ -201,6 +204,7 @@ function bind(view: HTMLElement): void {
 
   bindDevices(view);
   bindBackups(view);
+  bindAssist(view);
 
   view.querySelector<HTMLElement>('[data-rebuild]')!.onclick = async () => {
     await api.rebuildFulltext();

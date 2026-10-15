@@ -64,8 +64,10 @@ Two objects tie the backend together:
 | `config.py`, `settings.py` | Paths of the data folder, and the user's preferences. | `settings.json` |
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
+| `assist/` | Autocompletion in notes from a model in Ollama on this computer: the client, the prompt, and checking that Ollama and the model are there (see [autocompletion](autocompletion.md)). | none |
 
-Only `online/` and `references/` use the network.
+Only `online/` and `references/` use the network. `assist/` talks only to Ollama on this computer
+(its address must be a loopback one).
 
 ### Layers
 
@@ -79,7 +81,7 @@ never from those above:
   references                             (library, formats, online)
   online                                 (library, formats, pdf)
   formats · notes · pdf                  (library)
-  library · backup · access              (base only)
+  library · backup · access · assist     (base only)
   config · settings · changes            base: no backend imports
 ```
 
@@ -132,9 +134,9 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   they call back into `notesView.ts`). `tree.ts` draws the notes list and `treeInput.ts` handles
   its mouse, keyboard and drag and drop; `fileOps.ts` creates, renames, moves and trashes notes;
   `readView.ts` is read mode and link following; `sidePanel.ts` the status, breadcrumbs and
-  details panel; `aiBar.ts` Claude's edits; `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
+  details panel; `aiBar.ts` Claude's edits; `ghost.ts` and `assist.ts` autocompletion's ghost text and where it comes from; `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
   exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`). `settingsView.ts` is the Settings page; its markup
-  is in `views/settings/page.ts`, and Backups and Devices have their own modules there.
+  is in `views/settings/page.ts`, and Autocompletion, Backups and Devices have their own modules there.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
   header is `views/itemlist/columns.ts`, its virtualised rows `rows.ts` (only the rows near the
   viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`.
@@ -211,6 +213,7 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
 | [References](references.md) | Metadata lookup, finding PDFs, the citation graph, and what the Adding Items settings trigger. |
 | [Sync and devices](sync-and-devices.md) | The change feed, the viewer and app tabs, the guard, LAN pairing and the security model. |
 | [MCP](mcp.md) | The MCP server, its tools and the rules it enforces. |
+| [Autocompletion](autocompletion.md) | Ghost-text suggestions in notes from a local model (Ollama), and the checks that guard against a missing Ollama or model. |
 | [Browser extension](browser-extension.md) | The extension and the connector API it uses. |
 | [Frontend](frontend.md) | The build, the type checking, the pages, state and events, and the module map. |
 | [Testing](testing.md) | pytest, the JavaScript tests, the browser checklists, CI and the tools. |

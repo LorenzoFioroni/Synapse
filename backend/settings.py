@@ -6,6 +6,7 @@ import json
 import re
 import threading
 from pathlib import Path
+from urllib.parse import urlsplit
 
 SEARCH_MODES = {
     "basic": "Title, Abstract & Authors",
@@ -56,6 +57,12 @@ DEFAULTS: dict = {
     "notes_equation_numbers": "labelled",
     "notes_math_physics": True,  # the physics package's commands (\vb, \dv, \qty…) in formulas
     "notes_math_macros": "",  # \newcommand definitions used by every note
+    # Autocompletion in the notes editor (ghost text) from a model served by Ollama on this
+    # computer (backend/assist/). Off until the user turns it on: most computers have no Ollama.
+    "notes_ai_complete": False,
+    "notes_ai_model": "qwen2.5-coder:1.5b",  # small and fills in the middle (it sees the text after the cursor)
+    "notes_ai_url": "http://127.0.0.1:11434",  # Ollama's default address; only this computer is accepted
+    "notes_ai_length": "line",  # line (the rest of the line) | paragraph
     # PDF viewer: the colour each annotation tool starts with. A tool keeps the colour it was last
     # used with on a device until its default here changes (frontend/src/viewer/annotations/prefs.ts).
     "annotation_color_highlight": "#ffff00",  # also the area highlight
@@ -86,6 +93,7 @@ CHOICES = {
     "notes_trash_retention": {"never", "1d", "1w", "2w", "1m", "6m"},
     "notes_width": {"readable", "full"},
     "notes_equation_numbers": {"labelled", "all"},
+    "notes_ai_length": {"line", "paragraph"},
     "backup_interval": {"off", "daily", "weekly"},
 }
 
@@ -106,6 +114,27 @@ def _migrate(stored: dict) -> dict:
 
 class SettingsError(ValueError):
     pass
+
+
+def local_url(value: str) -> str:
+    """The Ollama address, cleaned: http(s) on this computer only (localhost, 127.x.x.x, ::1),
+    so a note's text is never sent elsewhere and the server cannot be pointed at other hosts.
+    Empty means the default."""
+    v = value.strip().rstrip("/") or DEFAULTS["notes_ai_url"]
+    if "://" not in v:
+        v = "http://" + v
+    try:
+        u = urlsplit(v)
+        host = (u.hostname or "").lower()
+        u.port  # noqa: B018 - raises ValueError on a port that is not a number
+    except ValueError as e:
+        raise SettingsError("Ollama address: something like http://127.0.0.1:11434") from e
+    loopback = host == "localhost" or host == "::1" or re.fullmatch(r"127(\.\d{1,3}){3}", host)
+    if u.scheme not in ("http", "https") or not loopback or u.username or u.password:
+        raise SettingsError("Ollama address: only a model on this computer is supported (localhost or 127.0.0.1)")
+    if u.path not in ("", "/") or u.query or u.fragment:
+        raise SettingsError("Ollama address: just the address and port, e.g. http://127.0.0.1:11434")
+    return f"{u.scheme}://{u.netloc}"
 
 
 class SettingsStore:
@@ -169,6 +198,10 @@ class SettingsStore:
                     raise SettingsError("A colour looks like #ffcc00")
             if k == "notes_math_macros" and len(v) > 20000:
                 raise SettingsError("Math macros: at most 20,000 characters")
+            if k == "notes_ai_url":
+                v = local_url(v)
+            if k == "notes_ai_model" and (not v or len(v) > 200 or any(c.isspace() for c in v)):
+                raise SettingsError("Model: a name such as qwen2.5-coder:1.5b")
             if k == "citekey_pattern" and not v:
                 raise SettingsError("Citation key pattern cannot be empty")
             if k == "backup_dir" and v:
