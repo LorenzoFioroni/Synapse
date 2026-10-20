@@ -151,6 +151,13 @@ async def main():
                 str(geo),
             )
 
+            # ---- every box in one column: task lines with or without a leading space or a list marker, checkboxes
+            lefts = await page.evaluate(
+                "[...document.querySelectorAll('.cm-lp-taskref .task-check, input.cm-lp-task')]"
+                ".map(e => Math.round(e.getBoundingClientRect().left))"
+            )
+            check("All boxes line up (task lines and checkboxes)", len(lefts) == 4 and len(set(lefts)) == 1, str(lefts))
+
             # ---- ticking from the note changes the task, not the note
             before = note_text()
             await page.locator(".cm-lp-taskref .task-check").first.click()
@@ -239,6 +246,8 @@ async def main():
             check("A checkbox line's text is the title", title == "a plain checkbox", title)
             await page.keyboard.press("Enter")
             made3 = until(lambda: [t for t in all_tasks()["tasks"] if t["title"] == "a plain checkbox"])
+            if made3:  # the editor writes the line once the task exists
+                await wait_for(page, f"window.zcNotes.text().includes('{{{{task:{made3[0]['id']}}}}}')")
             ed = await page.evaluate("window.zcNotes.text()")
             line = next((x for x in ed.split("\n") if made3 and f"{{{{task:{made3[0]['id']}}}}}" in x), None)
             check(
@@ -338,6 +347,11 @@ async def main():
             await page.locator("[data-mode=read]").click()
             await page.wait_for_timeout(600)
             check("Read mode draws tasks too", await page.locator(".note-read .task-ref").count() >= 3)
+            lefts = await page.evaluate(
+                "[...document.querySelectorAll('.note-read .task-ref .task-check, .note-read input.task-box')]"
+                ".map(e => Math.round(e.getBoundingClientRect().left))"
+            )
+            check("…with every box in one column", len(set(lefts)) == 1, str(lefts))
             await page.locator(".note-read .task-ref .task-check").first.click()
             check("…and ticks them", until(lambda: get(plot)["status"] == "done"))
             await page.locator("[data-mode=live]").click()

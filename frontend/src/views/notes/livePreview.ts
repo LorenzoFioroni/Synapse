@@ -306,7 +306,14 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
         // a task never shows its {{task:…}} source in the live preview: the cursor steps over it
         const hooks = deps.task?.();
         // a line of its own is laid out as a row, so the task takes the width left after any indentation
-        if (hooks && TASK_LINE.test(doc.lineAt(l.from).text)) lineDeco(l.from, 'cm-lp-taskline');
+        const tline = doc.lineAt(l.from);
+        if (hooks && TASK_LINE.test(tline.text)) {
+          lineDeco(l.from, 'cm-lp-taskline');
+          // up to three spaces before it mean nothing in Markdown (read mode ignores them): not drawn,
+          // so its box lines up with the others
+          const pad = /^ {1,3}(?=\{\{task:)/.exec(tline.text);
+          if (pad) replace(tline.from, tline.from + pad[0].length, hide);
+        }
         if (hooks) replace(l.from, l.to, Decoration.replace({ widget: W.task(l.target, hooks) }));
         else if (!touches(l.from, l.to)) replace(l.from, l.to, Decoration.replace({ widget: W.chip(`k:${l.from}:${l.target}`, 'taskref', `Task ${l.target}`, { task: l.target }) }));
         continue;

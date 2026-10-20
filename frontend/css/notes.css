@@ -201,7 +201,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .prose p, .prose ul, .prose ol, .prose blockquote, .prose table, .prose .code-block, .prose .math-block, .prose figure { margin: 0 0 .9em; }
 .prose ul, .prose ol { padding-left: 1.5em; }
 .prose li { margin: .15em 0; }
-.prose li.task { list-style: none; margin-left: -1.3em; }
+.prose li.task { list-style: none; margin-left: -1.5em; }   /* the box where the bullet would be: in line with task lines */
 .prose li.task.done { color: var(--text-3); text-decoration: line-through; }
 /* task boxes, in read mode and the live preview: a rounded square, filled and ticked when done */
 .prose .task-box, .cm-lp-task {

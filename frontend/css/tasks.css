@@ -57,7 +57,8 @@ button.link:hover { text-decoration: underline; }
 .cm-lp-chip.taskref { color: var(--text-3); }
 /* read mode: a task line is its own row, without a list bullet */
 .prose .task-ref { display: flex; margin: 3px 0; }
-.prose li:has(> .task-ref:only-child), .prose li:has(> p > .task-ref:only-child) { list-style: none; margin-left: -1.3em; }
+/* (a line right below a task's list item belongs to that item: it may hold several task lines) */
+.prose li:has(> .task-ref:first-child), .prose li:has(> p:first-child > .task-ref:first-child) { list-style: none; margin-left: -1.5em; }
 
 /* "{{" autocomplete: the task's rendered title in place of the plain label */
 .cm-task-option .cm-completionLabel { display: none; }
