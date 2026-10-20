@@ -36,6 +36,24 @@ def test_mask_keeps_length_and_lines():
     assert "[@x]" not in m and "[@y]" not in m and "[@z]" in m
 
 
+def test_gallery_blocks_are_text_not_code():
+    # Only the fence lines of a ```gallery block are blanked: its images and captions count.
+    body = "```gallery|600\n![a](x.png) see [@k]\n```\n```gallery2\n[@code]\n```\n~~~Gallery\n[@t]\n~~~"
+    m = parser.mask(body)
+    assert len(m) == len(body) and "```gallery" not in m
+    assert "![a](x.png) see [@k]" in m and "[@code]" not in m and "[@t]" in m
+    got = parser.parse(body)
+    assert [(l.kind, l.target) for l in got.links] == [("image", "x.png"), ("cite", "k"), ("cite", "t")]
+
+
+def test_gallery_closes_only_on_its_own_fence():
+    # inside a gallery other fences and $$ lines are text; ~~~ does not close a ``` gallery
+    got = parser.parse("```gallery\n~~~\n$$\n[@a]\n````\n[@b]\n")
+    assert [l.target for l in got.citations] == ["a", "b"]
+    got = parser.parse("```gallery\n[@a]\n```\n```\n[@b]\n```\n")
+    assert [l.target for l in got.citations] == ["a"]
+
+
 def test_unclosed_fence_hides_the_rest():
     # Same behaviour as the renderer: an unclosed fence runs to the end of the note.
     got = parser.parse("[@a]\n```\n[@b]\n")

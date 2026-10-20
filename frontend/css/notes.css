@@ -253,8 +253,8 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 /* wider than the room: a little smaller first (mathFit.js), then a scroll bar */
 .katex-display > .katex { font-size: calc(1.21em * var(--eq-scale, 1)); }
 .eq-anchor { display: block; height: 0; }
-.prose .eqref, .cm-lp-chip.eqref { color: var(--accent); text-decoration: none; cursor: pointer; }
-.prose .eqref.missing, .cm-lp-chip.eqref.missing { color: var(--danger); cursor: help; }
+.prose .eqref, .cm-lp-gallery .eqref, .cm-lp-chip.eqref { color: var(--accent); text-decoration: none; cursor: pointer; }
+.prose .eqref.missing, .cm-lp-gallery .eqref.missing, .cm-lp-chip.eqref.missing { color: var(--danger); cursor: help; }
 .prose .flash { animation: eq-flash 1.2s ease-out; border-radius: 6px; }
 @keyframes eq-flash { from { background: var(--accent-soft-2); } to { background: transparent; } }
 .math-error { color: var(--danger); font-family: var(--font-mono); font-size: .9em; }
@@ -265,14 +265,14 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .properties dd { margin: 0; font-family: var(--font-mono); overflow-wrap: anywhere; }
 
 /* links, citations, tags (a table in the live preview is drawn by the renderer, as in read mode) */
-:is(.prose, .cm-lp-table) .wikilink, .cm-lp-chip.wikilink, .cm-lp-chip.embed { color: var(--accent); cursor: pointer; }
-:is(.prose, .cm-lp-table) .wikilink.unresolved, .cm-lp-chip.unresolved { color: var(--text-3); text-decoration: underline dashed; text-underline-offset: 3px; }
-:is(.prose, .cm-lp-table) .cite-group { color: var(--text-2); }
-:is(.prose, .cm-lp-table) .cite, .cm-lp-chip.cite {
+:is(.prose, .cm-lp-table, .cm-lp-gallery) .wikilink, .cm-lp-chip.wikilink, .cm-lp-chip.embed { color: var(--accent); cursor: pointer; }
+:is(.prose, .cm-lp-table, .cm-lp-gallery) .wikilink.unresolved, .cm-lp-chip.unresolved { color: var(--text-3); text-decoration: underline dashed; text-underline-offset: 3px; }
+:is(.prose, .cm-lp-table, .cm-lp-gallery) .cite-group { color: var(--text-2); }
+:is(.prose, .cm-lp-table, .cm-lp-gallery) .cite, .cm-lp-chip.cite {
   color: var(--text); background: var(--accent-soft); border-radius: 4px; padding: 0 .3em; font-size: .92em; text-decoration: none !important; cursor: pointer;
 }
-:is(.prose, .cm-lp-table) .cite.missing, .cm-lp-chip.cite.missing { background: var(--danger-soft); color: var(--danger); }
-:is(.prose, .cm-lp-table) .cite.trashed { text-decoration: line-through !important; opacity: .7; }
+:is(.prose, .cm-lp-table, .cm-lp-gallery) .cite.missing, .cm-lp-chip.cite.missing { background: var(--danger-soft); color: var(--danger); }
+:is(.prose, .cm-lp-table, .cm-lp-gallery) .cite.trashed { text-decoration: line-through !important; opacity: .7; }
 .cm-lp-tag { color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 0 .2em; }
 
 /* embeds */
@@ -422,3 +422,58 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .att-card .btn-link:hover { text-decoration: underline; }
 
 @media (hover: none) { .prose .code-block .copy-code { opacity: 1; } }   /* touch screens */
+
+/* ---------------------------------------------------------- galleries (gallery.ts, galleryView.ts)
+   The panels sit side by side in a track that scrolls with snapping; one panel shows at a time. */
+.gallery { margin: 0 auto .9em; padding: 0; }
+.gallery-view { position: relative; }
+.gallery-track { display: flex; align-items: stretch; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; border-radius: 8px; }
+.gallery-track::-webkit-scrollbar { display: none; }
+.gallery-panel { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; scroll-snap-stop: always; display: flex; flex-direction: column; align-items: center; }
+/* panels are as tall as the tallest: a shorter image is centred above its caption */
+.gallery-image { flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; }
+.gallery-image img { display: block; max-width: 100%; max-height: 70vh; height: auto; object-fit: contain; border-radius: 6px; }
+.gallery-panel-caption { max-width: 92%; margin-top: .4em; text-align: center; font-size: .9em; line-height: 1.5; color: var(--text-2); }
+/* the label hangs to the left of the text, which stays centred (in flow when there is no caption) */
+.gallery-caption-text { position: relative; display: inline-block; }
+.gallery-caption-text:not(.empty) > .gallery-label { position: absolute; right: 100%; top: 0; margin-right: .3em; white-space: nowrap; }
+.gallery-label { font-weight: 650; color: var(--text); }
+.gallery-caption { margin-top: .5em; font-size: .92em; line-height: 1.55; color: var(--text-2); }
+.gallery-empty { padding: 18px; width: 100%; text-align: center; color: var(--text-3); font-size: var(--fs-sm); border: 1px dashed var(--border-strong); border-radius: 8px; }
+.gallery-btn {
+  position: absolute; top: calc(50% - 16px); width: 32px; height: 32px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 88%, transparent); color: var(--text);
+  font: 600 20px/1 var(--font); display: grid; place-items: center; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .12); opacity: 0; transition: opacity .15s;
+}
+.gallery-prev { left: 8px; } .gallery-next { right: 8px; }
+.gallery-view:hover .gallery-btn, .gallery-btn:focus-visible { opacity: 1; }
+.gallery-view:hover .gallery-btn:disabled { opacity: .3; cursor: default; }
+.gallery-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.gallery-dots { display: flex; justify-content: center; gap: 7px; margin-top: .45em; }
+.gallery-dot { width: 8px; height: 8px; padding: 0; border: none; border-radius: 50%; background: var(--border-strong); cursor: pointer; }
+.gallery-dot.active { background: var(--accent); }
+.gallery-dot:focus-visible, .gallery-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (hover: none) { .gallery-btn { opacity: 1; } .gallery-btn:disabled { opacity: .3; } }   /* touch screens */
+/* in the live preview: the carousel in place of the block, or below its source while it is edited */
+.cm-lp-widget.cm-lp-gallery { padding: .4em 0; cursor: text; }
+.cm-lp-widget.cm-lp-gallery .gallery { margin-bottom: 0; }
+.cm-lp-widget.cm-lp-gallery p { margin: 0; }
+.cm-lp-widget.cm-lp-gallerypreview { opacity: .85; padding-top: .2em; }
+.cm-live .cm-line.cm-lp-gallerysrc { background: var(--bg-app); padding-left: 12px; padding-right: 12px; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+.cm-live .cm-line.cm-lp-gallerysrc.first { border-top: 1px solid var(--border); border-top-left-radius: 8px; border-top-right-radius: 8px; padding-top: 3px; color: var(--text-3); }
+.cm-live .cm-line.cm-lp-gallerysrc.last { border-bottom: 1px solid var(--border); border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; padding-bottom: 3px; color: var(--text-3); }
+/* its lines are Markdown text, not code: no code font or shading */
+.cm-live .cm-line.cm-lp-gallerysrc .cmt-code { font-family: inherit; font-size: inherit; background: none; color: inherit; border-radius: 0; }
+
+/* ---------------------------------------------------------- figures (figures.ts): an image with its
+   caption, numbered Fig. 1, 2, … like galleries with a caption */
+.figure { margin: 0 0 .9em; padding: 0; }
+.figure-image { display: flex; justify-content: center; }
+.figure-image img { display: block; max-width: 100%; height: auto; border-radius: 6px; }
+.figure-caption { margin-top: .5em; font-size: .92em; line-height: 1.55; color: var(--text-2); }
+/* as in LaTeX: a short caption is centred, a long one fills the width and reads from the left */
+.figure-caption, .gallery-caption { display: table; margin-left: auto; margin-right: auto; text-align: left; }
+.fig-num { font-weight: 650; color: var(--text); white-space: nowrap; }
+.cm-live .cm-line.cm-lp-figcaption { color: var(--text-2); }
+.cm-lp-chip.fignum { font-weight: 650; color: var(--text); margin-right: .35em; font-style: normal; }

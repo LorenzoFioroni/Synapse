@@ -9,11 +9,14 @@ Syntax (see docs/notes.md):
     ![[Note]]                                                    embeds
     [@key]  [@key, p. 4]  [see @a; @b, ch. 2]  [-@key]             citations (Pandoc)
     ![alt](attachments/x.png)                                     images
+    ```gallery … ```                                              a gallery of images (not code)
     # Heading                                                     headings (ATX)
     #tag  #nested/tag                                             tags (+ front-matter tags)
 
 Nothing inside fenced code, inline code, math ($…$, $$…$$), HTML comments or the
-front-matter counts. A backslash escapes the next character (``\\[[x]]`` is plain text).
+front-matter counts. A fenced block whose info string is ``gallery`` is not code: its lines are
+images and their captions, read like any paragraph (only the fence lines are blanked).
+A backslash escapes the next character (``\\[[x]]`` is plain text).
 
 How it works: a "masked" copy of the body is made in which every character that must not
 be interpreted (code, math, comments, escaped characters) is replaced by a space, keeping
@@ -45,6 +48,8 @@ _ATT = re.compile(r"(?:^|[\s,])att:([0-9]+)(?=$|[\s,])", re.I)
 # Any indentation: fences inside list items are common. (Indented code blocks are not
 # supported, by the parser and the renderer alike.)
 _FENCE = re.compile(r"^([ \t]*)(`{3,}|~{3,})(.*)$")
+# ```gallery, ```gallery|600, ~~~gallery 600: images and captions, not code
+_GALLERY = re.compile(r"^gallery(?![^\s|])", re.I)
 _HEADING = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*(?:#+[ \t]*)?$")
 _WIKI = re.compile(r"(!?)\[\[([^\[\]\n]+?)\]\]")
 _BRACKET = re.compile(r"(?<![!\[\]\\])\[([^\[\]\n]*@[^\[\]\n]*)\](?![(\[\]])")
@@ -183,8 +188,11 @@ def _mask_inline(text: str, chars: list[str], start: int, end: int) -> None:
         i += 1
 
 
-def mask(body: str) -> str:
-    """Return ``body`` with code, math, comments and escaped characters blanked out."""
+def mask(body: str, galleries: list[tuple[int, int | None, str]] | None = None) -> str:
+    """Return ``body`` with code, math, comments and escaped characters blanked out.
+
+    ``galleries``, when given, receives each ```gallery block as (opening line, closing line or
+    None when it is never closed, info string), with 0-based line numbers of ``body``."""
     chars = list(body)
     lines = body.split("\n")
     offsets, pos = [], 0
@@ -194,6 +202,8 @@ def mask(body: str) -> str:
 
     para_start = None  # offset where the current paragraph began
     fence = None  # (char, length) while inside a fenced block
+    gallery = None  # (char, length) while inside a ```gallery block
+    gallery_open = (0, "")  # where the current gallery began, and its info string
     display_math = False
 
     def flush(upto: int) -> None:
@@ -210,6 +220,21 @@ def mask(body: str) -> str:
             if m and m.group(2)[0] == fence[0] and len(m.group(2)) >= fence[1] and not m.group(3).strip():
                 fence = None
             continue
+        if gallery:
+            m = _FENCE.match(line)
+            if m and m.group(2)[0] == gallery[0] and len(m.group(2)) >= gallery[1] and not m.group(3).strip():
+                flush(start)
+                _blank(chars, start, stop)
+                gallery = None
+                if galleries is not None:
+                    galleries.append((gallery_open[0], n, gallery_open[1]))
+                continue
+            # inside a gallery every line is text: no code, $$ blocks or nested fences
+            if not line.strip():
+                flush(start)
+            elif para_start is None:
+                para_start = start
+            continue
         if display_math:
             _blank(chars, start, stop)
             if line.strip().endswith("$$"):
@@ -218,7 +243,11 @@ def mask(body: str) -> str:
         m = _FENCE.match(line)
         if m and not (m.group(2)[0] == "`" and "`" in m.group(3)):
             flush(start)
-            fence = (m.group(2)[0], len(m.group(2)))
+            if _GALLERY.match(m.group(3).strip()):
+                gallery = (m.group(2)[0], len(m.group(2)))
+                gallery_open = (n, m.group(3).strip())
+            else:
+                fence = (m.group(2)[0], len(m.group(2)))
             _blank(chars, start, stop)
             continue
         stripped = line.strip()
@@ -234,6 +263,8 @@ def mask(body: str) -> str:
         if para_start is None:
             para_start = start
     flush(len(body))
+    if gallery and galleries is not None:
+        galleries.append((gallery_open[0], None, gallery_open[1]))
     return "".join(chars)
 
 

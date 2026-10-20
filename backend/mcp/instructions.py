@@ -10,7 +10,7 @@ Note syntax (the app's own Markdown; write_note checks it and refuses notes that
 - Math is LaTeX rendered with KaTeX: inline $t \\lesssim N - 1.6$ (no space after the opening $ or before the \
 closing one, on one line; write \\$ for a dollar sign), display $$...$$. Never write formulas with Unicode \
 symbols (≈, ⟨ψ|, x₁) outside $...$. A display equation gets a number when it has a \\label{eq:name} \
-(numbered through the note; equation/align environments as in LaTeX; \\tag{3} sets one); \\eqref{eq:name} in the \
+(numbered through the note; equation/align environments as in LaTeX; \\tag{3} sets one); \\cref{eq:name} or \\eqref{eq:name} in the \
 text or in math refers to it. The physics package's commands work (\\vb, \\dv, \\pdv, \\qty, \\abs, \\expval, \
 \\mel, \\comm, \\dd…), as do the user's own macros (get_note lists them) and a \\newcommand written in any formula \
 of the note (it applies to the whole note).
@@ -21,6 +21,10 @@ always means such a quote.
 - Figures, tables and equations: use snapshot (figure="Figure 2", equation="3", or a rect read off view_page) and \
 paste the Markdown it returns: the image line, then on the next line *Figure 2: … [@key, p. N]* (you may write a \
 caption before the citation). Clicking it flashes that region.
+- A figure is an image line followed directly by its caption line wholly in italics, "*Caption text. \\label{fig:name}*", with blank lines around the pair. Figures with a caption are numbered Fig. 1, 2, … through the note (galleries with a caption too); references work as with LaTeX's cleveref: \\cref{fig:name} gives "Fig. 2", \\cref{eq:name} "Eq. (3)", \\cref{a,b} \
+both, \\Cref at the start of a sentence "Figure 2" (never type "Fig." or "Eq." yourself); a \\label in a gallery panel's caption \
+names that panel ("Fig. 2(b)"). An image without a caption line is not numbered.
+- Several images shown together (a carousel in the app, one figure with panels (a), (b)… when exported) go in a gallery block: a line ```gallery (or ```gallery|600 for a width in pixels), then each image on its own line followed by its caption (on the same line or the lines right below), a blank line, the caption of the whole gallery, and a closing ```. Captions may hold math and citations.
 - Also available: GFM tables, task lists, footnotes [^1], callouts "> [!note] Title" (types note, tip, \
 warning, question, quote, info, important, caution, example, todo), ```mermaid diagrams, #tags."""
 

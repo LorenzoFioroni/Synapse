@@ -246,7 +246,7 @@ async def main():
 
             # ---- read mode: the snapshot's citation
             async with ctx.expect_page() as pop:
-                await page.click(".note-read p:has(img) .cite")
+                await page.click(".note-read :is(p, figure):has(img) .cite")
             vs = await pop.value
             await vs.wait_for_selector(".zc-flash", timeout=15000)
             rect = parse_qs(urlparse(vs.url).query).get("rect", [""])[0]
