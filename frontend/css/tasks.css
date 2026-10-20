@@ -40,20 +40,31 @@ button.link:hover { text-decoration: underline; }
 .task-ring .fill { stroke: var(--success); }
 
 /* ------------------------------------------------------------- tasks in notes */
-.task-ref { display: inline-flex; align-items: baseline; gap: 8px; max-width: 100%; text-decoration: none; }
-.task-ref .task-check { align-self: center; }
-.task-ref .task-title { cursor: pointer; border-radius: 4px; min-width: 0; }
+.task-ref { display: inline-flex; align-items: flex-start; gap: .5em; max-width: 100%; text-decoration: none; vertical-align: top; }
+/* the box: as large as a note's checkbox, centred on the title's first line however many lines it has */
+.task-ref .task-check { width: 1.05em; height: 1.05em; margin-top: .3em; margin-top: calc((1lh - 1.05em) / 2); }
+.task-ref .task-text { min-width: 0; }
+.task-ref .task-title { cursor: pointer; border-radius: 4px; }
 .task-ref .task-title:hover { background: var(--bg-hover); box-shadow: 0 0 0 3px var(--bg-hover); }
 .task-ref.done .task-title { color: var(--text-3); text-decoration: line-through; }
 .task-ref.missing .task-title { color: var(--text-3); font-style: italic; }
-.task-ref .task-chips { align-self: center; }
+.task-ref .task-chips { display: inline-flex; vertical-align: 1px; margin-left: 8px; }
 .task-ref-actions { display: inline-flex; gap: 10px; margin-left: 4px; }
 /* in the live preview the widget sits on its own line */
 .cm-lp-taskref { display: inline-flex; padding: 1px 0; }
+.cm-line.cm-lp-taskline { display: flex; align-items: flex-start; }
+.cm-line.cm-lp-taskline > .cm-lp-taskref { flex: 1 1 auto; min-width: 0; }
 .cm-lp-chip.taskref { color: var(--text-3); }
 /* read mode: a task line is its own row, without a list bullet */
 .prose .task-ref { display: flex; margin: 3px 0; }
 .prose li:has(> .task-ref:only-child), .prose li:has(> p > .task-ref:only-child) { list-style: none; margin-left: -1.3em; }
+
+/* "{{" autocomplete: the task's rendered title in place of the plain label */
+.cm-task-option .cm-completionLabel { display: none; }
+.cm-task-label { display: inline-flex; align-items: center; gap: 7px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.cm-task-label .task-check { width: 13px; height: 13px; }
+.cm-task-label .task-check .icon { width: 9px; height: 9px; }
+.cm-tooltip-autocomplete .cm-completionInfo { white-space: pre-line; }
 
 /* the note head's button and the side panel */
 .note-head .note-add-task { gap: 5px; color: var(--text-2); }

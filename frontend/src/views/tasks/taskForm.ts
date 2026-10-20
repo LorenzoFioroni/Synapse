@@ -128,7 +128,7 @@ export function mountTaskForm(root: HTMLElement, opts: TaskFormOptions): TaskFor
         equations: equationMode,
         macros: noteMacros,
         task: () => taskHooks.preview,
-      }, 'live', { items: () => ws.library.list, notes: () => ws.overview.notes });
+      }, 'live', { items: () => ws.library.list, notes: () => ws.overview.notes, tasks: () => taskHooks.choices?.() ?? [], taskHtml: (tid) => taskHooks.titleHtml?.(tid) ?? '' });
       const made = await making;
       if (destroyed) { made.destroy(); return; }
       if (!editor) { editor = made; editor.view.contentDOM.setAttribute('aria-label', 'Details'); }

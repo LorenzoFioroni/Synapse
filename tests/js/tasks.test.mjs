@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { dueLabel, dueState, monthGrid, parseDue, parseQuick } from '../../frontend/js/views/tasks/dates.js';
 import { buildRows, effectiveDue, inView, parseQuery, viewCounts } from '../../frontend/js/views/tasks/taskQuery.js';
 import { portableBody } from '../../frontend/js/views/notes/portable.js';
+import { searchTasks } from '../../frontend/js/views/notes/completion.js';
 
 const NOW = new Date(2026, 9, 20, 15, 0);   // Tue 20 Oct 2026
 
@@ -165,4 +166,16 @@ test('the Markdown export writes task lines as checkbox lists', () => {
   assert.equal(md.markdown, '# N\n\n- [ ] Write (Smith 2021)\n  - [x] Figures\n    - [ ] Fig. 1\n- [x] Book the room\n> - [x] Book the room\n\n'
     + 'See Book the room today.\n\n- [ ] *(deleted task)*\n');
   assert.deepEqual(md.keys, ['smith2021']);
+});
+
+test('"{{task" autocomplete: every word must match; titles starting with it first, open before done', () => {
+  const C = (id, title, done = false, updated = '2026-10-10') => ({ id, title, detail: '', info: '', done, updated });
+  const all = [C('a', 'Write the outlook section'), C('b', 'Discuss the Ising model', true), C('c', 'Discuss Potts at finite coupling'),
+    C('d', 'Re-read the discussion of Prosen', false, '2026-10-19'), C('e', 'Plot chi vs epsilon')];
+  assert.deepEqual(searchTasks(all, 'disc').map((t) => t.id), ['c', 'b', 'd']);
+  assert.deepEqual(searchTasks(all, 'ising model').map((t) => t.id), ['b']);
+  assert.deepEqual(searchTasks(all, 'outlook write').map((t) => t.id), ['a']);
+  assert.deepEqual(searchTasks(all, 'nothing like this'), []);
+  assert.equal(searchTasks(all, '').length, 5);
+  assert.equal(searchTasks(all, '', 2).length, 2);
 });

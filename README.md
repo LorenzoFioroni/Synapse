@@ -180,7 +180,8 @@ never mix.
 - **Tasks**: to-dos with a title, a due date, details written in Markdown like a note, and
   sub-tasks to any depth. In a note, Cmd/Ctrl+Enter (or **Task** in the note's header) opens a
   small popup: name the task (the line's text, if any), give it a date in words ("fri", "27 oct",
-  "in 3 days") and details, or pick a task you already have. The note then shows the task as one
+  "in 3 days") and details, or pick a task you already have — or type `{{task` and a few words of
+  its title to pick one from a list, as `[@` does for papers. The note then shows the task as one
   line with its checkbox; ticking it or clicking it to edit changes the task, not the note (the note
   only holds `{{task:id}}`). Plain `- [ ]` checkboxes stay checkboxes; select some and press
   Cmd/Ctrl+Enter to turn them into tasks. The **Tasks** page (Cmd/Ctrl+Shift+K) lists the tasks of

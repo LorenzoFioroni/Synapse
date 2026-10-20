@@ -24,6 +24,10 @@ parser and the editor), [storage](storage.md) (the tables and backups), [mcp](mc
   already have and that match are offered (<kbd>↓</kbd> picks one): the note then shows that task.
   On a line that shows a task, <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd> ticks it. With checkbox lines
   selected, it turns them into tasks (see [Turning checkboxes into tasks](#turning-checkboxes-into-tasks)).
+- **Referring to a task you already have**, as `[@` does for papers: type `{{task` and some words
+  of its title. The list shows the matching tasks (rendered titles, their date, and where they are
+  already shown); <kbd>Enter</kbd> writes the chosen task's line. The last entry, *New task “…”*,
+  makes a task with the words typed instead. `{{` alone offers nothing.
 - **A task line** shows the checkbox, the title (math, citations and links rendered) and small
   labels: the due date (red when overdue, amber today), sub-task progress ("1/2") and a mark when
   it has details. The box ticks it; the title opens the task in a popup (title, status, date,
@@ -187,7 +191,10 @@ inventing ids). The writing rules tell Claude that `- [ ]` is a checkbox and `{{
 
 The notes code never imports the tasks code: `noteTasks.ts` fills in `taskHooks`
 (`views/notes/workspace.ts`) at start-up — `preview` (drawing a task line in the live preview:
-`TaskWidget` in `previewWidgets.ts`, made atomic in `livePreview.ts`), `key` (the editor's
+`TaskWidget` in `previewWidgets.ts`, made atomic in `livePreview.ts`; a line that only shows a task
+is laid out as a row, `cm-lp-taskline`, so an indented task does not wrap below its indentation),
+`choices`, `create` and `titleHtml` (the `{{task` autocomplete in `completion.ts`: `taskSource`,
+ranked by `searchTasks`), `key` (the editor's
 `onModEnter`), `add` (the note head's button), `paintSide`, `click`, `saved` and `portable` (the
 Markdown export writes a task line as a checkbox list item with its sub-tasks, `portable.ts`). The
 HTML and PDF export draw tasks with `refHtml` and `css/tasks.css`, without anything to click.

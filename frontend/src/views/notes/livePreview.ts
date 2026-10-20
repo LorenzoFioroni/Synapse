@@ -56,6 +56,8 @@ export interface PreviewDeps {
 
 /** A list item whose only content is a task line: its bullet is not drawn (the checkbox is enough). */
 const TASK_ITEM = /^\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+\{\{task:[a-z0-9]{4,32}\}\}\s*$/;
+/** A line that only shows a task (perhaps indented, quoted or in a list item). */
+const TASK_LINE = /^\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s+)?\{\{task:[a-z0-9]{4,32}\}\}\s*$/;
 
 /** The block-level decorations, and the ranges they draw (nothing inline is added inside those). */
 interface Blocks { deco: DecorationSet; taken: [number, number][]; version: number }
@@ -303,6 +305,8 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
       if (l.kind === 'task') {
         // a task never shows its {{task:…}} source in the live preview: the cursor steps over it
         const hooks = deps.task?.();
+        // a line of its own is laid out as a row, so the task takes the width left after any indentation
+        if (hooks && TASK_LINE.test(doc.lineAt(l.from).text)) lineDeco(l.from, 'cm-lp-taskline');
         if (hooks) replace(l.from, l.to, Decoration.replace({ widget: W.task(l.target, hooks) }));
         else if (!touches(l.from, l.to)) replace(l.from, l.to, Decoration.replace({ widget: W.chip(`k:${l.from}:${l.target}`, 'taskref', `Task ${l.target}`, { task: l.target }) }));
         continue;

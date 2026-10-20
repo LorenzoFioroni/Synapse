@@ -3,8 +3,7 @@
 import type { HighlightStyle } from '@codemirror/language';
 import type { EditorView } from '@codemirror/view';
 import type { MarkdownConfig } from '@lezer/markdown';
-import type { CiteEntry, NoteInfo } from '../../types.js';
-import { completions } from './completion.js';
+import { type CompletionData, completions } from './completion.js';
 import { changedSpan } from './diff.js';
 import { type GhostSource, ghostText } from './ghost.js';
 import { type PreviewDeps, livePreview } from './livePreview.js';
@@ -123,7 +122,7 @@ export async function createEditor(
   handlers: EditorHandlers,
   preview: PreviewDeps,
   mode: 'live' | 'source' = 'live',
-  data: { items(): CiteEntry[]; notes(): NoteInfo[]; assist?: GhostSource } = { items: () => [], notes: () => [] },
+  data: CompletionData & { assist?: GhostSource } = { items: () => [], notes: () => [] },
 ): Promise<NoteEditor> {
   const cm = await loadCM();
   const lp = livePreview(cm, preview);

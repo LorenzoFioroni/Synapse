@@ -65,6 +65,10 @@ export const taskHooks = {
   click: null as ((e: MouseEvent) => boolean) | null,
   /** A note was saved (its task lines may have changed). */
   saved: null as ((path: string, text: string) => void) | null,
+  /** The tasks "{{" offers in the editor (completion.ts), and making a new one from there. */
+  choices: null as (() => import('./completion.js').TaskChoice[]) | null,
+  create: null as ((title: string) => Promise<string | null>) | null,
+  titleHtml: null as ((id: string) => string) | null,
   /** A task for the Markdown export (portable.ts). */
   portable: null as ((id: string) => import('./portable.js').PortableTask | null) | null,
 };

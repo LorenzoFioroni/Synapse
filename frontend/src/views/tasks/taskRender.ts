@@ -70,12 +70,13 @@ function ring(done: number, total: number): string {
 export function refInnerHtml(id: string): string {
   const t = td.tasks.get(id);
   if (!t) {
-    if (!td.loaded) return `<span class="task-check"></span><span class="task-title muted">Loading task…</span>`;
-    return `<span class="task-check missing"></span><span class="task-title muted">Deleted or unknown task</span>`
+    if (!td.loaded) return `<span class="task-check"></span><span class="task-text"><span class="task-title muted">Loading task…</span></span>`;
+    return `<span class="task-check missing"></span><span class="task-text"><span class="task-title muted">Deleted or unknown task</span>`
       + `<span class="task-ref-actions"><button type="button" class="link" data-task-act="restore">Restore</button>`
-      + `<button type="button" class="link" data-task-act="remove">Remove</button></span>`;
+      + `<button type="button" class="link" data-task-act="remove">Remove</button></span></span>`;
   }
-  return `${boxHtml(t, 'data-task-act="toggle"')}<span class="task-title" data-task-act="open">${titleHtml(t.title)}</span>${chipsHtml(t)}`;
+  // the title and its labels flow as one text, so a long title wraps and the labels follow it
+  return `${boxHtml(t, 'data-task-act="toggle"')}<span class="task-text"><span class="task-title" data-task-act="open">${titleHtml(t.title)}</span>${chipsHtml(t)}</span>`;
 }
 
 /** The whole {{task:id}} element, for read mode and exports (renderDefaults.taskHtml). */

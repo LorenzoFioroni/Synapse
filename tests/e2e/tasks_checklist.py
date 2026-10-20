@@ -9,6 +9,7 @@ Starts its own server on port 8795 with a throw-away data folder; your library i
 """
 
 import asyncio
+import re
 import subprocess
 import sys
 import tempfile
@@ -91,9 +92,13 @@ async def main():
         sub1 = task("Reproduce the profile", parent_id=ising)
         task("Simulate $N = 100$", parent_id=sub1)
         admin = task("Send the plots to Alex")
+        long = task(
+            "If that's the case, show a plot that demonstrates that there is little advantage and only at the "
+            "boundaries of the Ising phase in the weakly coupled regime"
+        )
         text = (
             "# Plan\n\nIntro line.\n\n## TODOs\n"
-            f"{{{{task:{plot}}}}}\n- {{{{task:{ising}}}}}\n\n"
+            f"{{{{task:{plot}}}}}\n- {{{{task:{ising}}}}}\n {{{{task:{long}}}}}\n\n"
             "## Plain\n- [ ] a plain checkbox\n\nWrite the outlook section\n"
         )
         s.post(BASE + "/api/notes/note", json={"path": PATH, "text": text})
@@ -112,8 +117,8 @@ async def main():
             await page.keyboard.press(f"{MOD}+Shift+L")
             await page.wait_for_selector(".notes-tree")
             await page.locator(".notes-tree >> text=Plan").first.click()
-            drawn = await wait_for(page, "document.querySelectorAll('.cm-lp-taskref').length === 2")
-            check("A note draws its two task lines as tasks", drawn)
+            drawn = await wait_for(page, "document.querySelectorAll('.cm-lp-taskref').length === 3")
+            check("A note draws its task lines as tasks", drawn)
             src = await page.evaluate("document.querySelector('.note-editor .cm-content').innerText")
             check("No {{task:…}} source shows in the live preview", "{{task:" not in src)
             check(
@@ -129,7 +134,21 @@ async def main():
             check("Its sub-task progress shows", "0/1" in await page.locator(".cm-lp-taskref").nth(1).inner_text())
             check(
                 "A plain checkbox stays a checkbox",
-                await page.locator("input.cm-lp-task").count() == 1 and len(all_tasks()["tasks"]) == 5,
+                await page.locator("input.cm-lp-task").count() == 1 and len(all_tasks()["tasks"]) == 6,
+            )
+
+            # ---- a long title on an indented line: the box stays on its first line, no gap above it
+            geo = await page.evaluate(
+                f"""(() => {{ const w = [...document.querySelectorAll('.cm-lp-taskref')].find(e => e.dataset.task === '{long}');
+                  if (!w) return null; const line = w.closest('.cm-line'), box = w.querySelector('.task-check'), title = w.querySelector('.task-title');
+                  const lr = line.getBoundingClientRect(), wr = w.getBoundingClientRect(), br = box.getBoundingClientRect(), tr = title.getClientRects()[0];
+                  return [Math.round(lr.height - wr.height), Math.round((br.top + br.bottom) / 2 - (tr.top + tr.bottom) / 2), Math.round(wr.height / tr.height)]; }})()"""
+            )
+            check("A wrapped task on an indented line takes no extra space", geo and abs(geo[0]) <= 3, str(geo))
+            check(
+                "…and its box is centred on the first line of the title",
+                geo and abs(geo[1]) <= 2 and geo[2] >= 2,
+                str(geo),
             )
 
             # ---- ticking from the note changes the task, not the note
@@ -233,6 +252,46 @@ async def main():
             listed = until(lambda: any(r["path"] == PATH for r in all_tasks()["refs"].get(admin, [])))
             check("The index knows which note shows the task", listed)
 
+            # ---- "{{task" offers your tasks, like "[@" offers papers
+            await page.keyboard.press("End")
+            await page.keyboard.press("Enter")
+            await page.keyboard.type("{{task ising", delay=40)
+            listed = await wait_for(
+                page,
+                "[...document.querySelectorAll('.cm-tooltip-autocomplete li')].some(li => li.innerText.includes('Ising'))",
+            )
+            check("Typing {{task shows matching tasks", listed)
+            await page.wait_for_timeout(250)  # Enter picks only once the list has been open a moment
+            await page.keyboard.press("Enter")
+            await page.wait_for_timeout(300)
+            ed = await page.evaluate("window.zcNotes.text()")
+            check("…and Enter writes that task's line", ed.rstrip().endswith(f"{{{{task:{ising}}}}}"), repr(ed[-40:]))
+            await page.keyboard.press("End")
+            await page.keyboard.press("Enter")
+            await page.keyboard.type("{{task: Email the referee", delay=30)
+            await wait_for(
+                page,
+                "[...document.querySelectorAll('.cm-tooltip-autocomplete li')]"
+                ".some(li => li.innerText.includes('New task “Email the referee”'))",
+            )
+            await page.wait_for_timeout(250)
+            await page.keyboard.press("Enter")
+            made2 = until(lambda: [t for t in all_tasks()["tasks"] if t["title"] == "Email the referee"])
+            check("…or makes a new task from the words typed", bool(made2))
+            ok = await wait_for(
+                page, f"window.zcNotes.text().includes('{{{{task:{made2[0]['id'] if made2 else 'none'}}}}}')"
+            )
+            check("…and writes its line", ok)
+            await page.keyboard.press("End")
+            await page.keyboard.press("Enter")
+            await page.keyboard.type("{{ not a task", delay=30)
+            await page.wait_for_timeout(500)
+            check("A plain {{ offers nothing", await page.locator(".cm-tooltip-autocomplete").count() == 0)
+            await page.keyboard.press("End")
+            await page.keyboard.press("Shift+Home")
+            await page.keyboard.press("Backspace")
+            await page.keyboard.press("Backspace")
+
             # ---- the side panel
             side = await wait_for(
                 page, "(document.querySelector('.ns-tasks')?.innerText || '').includes('Send the plots')", 8000
@@ -241,20 +300,20 @@ async def main():
 
             # ---- the cursor steps over a task line; Backspace takes it out of the note (the task stays)
             await page.locator(".note-editor .cm-content").press(f"{MOD}+End")
-            if (await page.evaluate("window.zcNotes.text()")).endswith("\n"):
-                await page.keyboard.press("ArrowLeft")  # to the end of the task's line
+            before = await page.evaluate("window.zcNotes.text()")
+            for _ in range(len(before) - len(before.rstrip("\n"))):
+                await page.keyboard.press("ArrowLeft")  # to the end of the last task's line
+            last = re.findall(r"\{\{task:([a-z0-9]+)\}\}", before)[-1]
             await page.keyboard.press("Backspace")
             await page.wait_for_timeout(300)
             ed = await page.evaluate("window.zcNotes.text()")
-            where = await page.evaluate(
-                "[window.zcNotes.cursor(), window.zcNotes.text().length, window.zcNotes.focused()]"
-            )
             check(
                 "Backspace removes a task line in one go",
-                f"{{{{task:{admin}}}}}" not in ed and "{{task:" in ed,
-                f"{ed[-60:]!r} {where}",
+                ed.count(f"{{{{task:{last}}}}}") == before.count(f"{{{{task:{last}}}}}") - 1
+                and len(before) - len(ed) == len(f"{{{{task:{last}}}}}"),
+                f"{ed[-60:]!r}",
             )
-            check("…and the task itself stays", any(t["id"] == admin for t in all_tasks()["tasks"]))
+            check("…and the task itself stays", any(t["id"] == last for t in all_tasks()["tasks"]))
             await page.keyboard.press(f"{MOD}+z")
 
             # ---- read mode

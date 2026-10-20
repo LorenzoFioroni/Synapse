@@ -266,6 +266,9 @@ async function ensureEditor() {
   }, ws.mode === 'read' ? ws.editMode : ws.mode, {
     items: () => ws.library.list,
     notes: () => ws.overview.notes,
+    tasks: () => taskHooks.choices?.() ?? [],
+    newTask: (title) => taskHooks.create?.(title) ?? Promise.resolve(null),
+    taskHtml: (id) => taskHooks.titleHtml?.(id) ?? '',
     assist: assistSource,
   });
   checkAssist();   // and load the model, so the first suggestion does not wait for it

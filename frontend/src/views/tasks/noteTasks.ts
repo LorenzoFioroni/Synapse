@@ -12,6 +12,7 @@ import { toast, toastError } from '../../ui/toast.js';
 import { escapeHtml, modLabel, plural } from '../../util.js';
 import { scan } from '../notes/mdscan.js';
 import type { PortableTask } from '../notes/portable.js';
+import type { TaskChoice } from '../notes/completion.js';
 import { notesOpen, taskHooks, ws } from '../notes/workspace.js';
 import { dueLabel, dueState, parseDue } from './dates.js';
 import { childrenOf, createTask, loadTasks, plainTitle, progress, restoreTask, td, toggleTask } from './taskData.js';
@@ -44,6 +45,9 @@ export function initNoteTasks(): void {
   taskHooks.click = onSideClick;
   taskHooks.saved = noteSaved;
   taskHooks.portable = portableTask;
+  taskHooks.choices = taskChoices;
+  taskHooks.titleHtml = (id) => { const t = td.tasks.get(id); return t ? `${boxHtml(t)} ${titleHtml(t.title)}` : ''; };
+  taskHooks.create = async (title) => (await createTask({ title }))?.id ?? null;
   if (state.settings.notes_enabled !== false) loadTasks().catch(() => {});
   ensureRenderer().then(() => ws.editor?.refresh());
   on('tasks', () => {
@@ -75,6 +79,23 @@ function noteSaved(path: string, text: string): void {
   shown.set(path, ids);
   const known = Object.entries(td.refs).filter(([, rs]) => rs.some((r) => r.path === path)).map(([id]) => id).sort().join(',');
   if (before !== undefined ? before !== ids : known !== ids) setTimeout(() => loadTasks(true).catch(() => {}), 300);   // after the index has the save
+}
+
+/** What "{{" offers in the editor: every task, with its date or state, and where it is shown. */
+function taskChoices(): TaskChoice[] {
+  const here = new Set([...(ws.session?.text ?? '').matchAll(TOKEN_RE)].map((m) => m[1]));
+  return [...td.tasks.values()].map((t) => {
+    const parent = t.parent_id ? td.tasks.get(t.parent_id) : undefined;
+    const notes = (td.refs[t.id] || []).map((r) => r.title || r.path);
+    return {
+      id: t.id,
+      title: plainTitle(t.title),
+      detail: here.has(t.id) ? 'in this note' : t.status === 'done' ? 'done' : t.due ? dueLabel(t.due) : '',
+      info: [parent ? `Sub-task of “${plainTitle(parent.title)}”` : '', notes.length ? `In ${notes.join(', ')}` : 'Not in a note yet'].filter(Boolean).join('\n'),
+      done: t.status === 'done',
+      updated: t.updated_at,
+    };
+  });
 }
 
 /** A task and its sub-tasks for the Markdown export (open sub-tasks and done ones alike). */
