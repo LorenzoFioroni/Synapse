@@ -1,5 +1,5 @@
 // The widgets the live preview (livePreview.ts) draws in place of Markdown source: formulas,
-// chips for links and citations, task boxes, the front-matter box, tables and diagrams.
+// chips for links and citations, task boxes, the front-matter box, tables, diagrams and galleries.
 //
 // CodeMirror keeps a widget's DOM as long as a new widget at the same place is `eq` to it, so each
 // widget's key holds everything it draws from, and nothing else: a widget whose key did not
@@ -7,6 +7,8 @@
 import type { EditorView as EditorViewT } from '@codemirror/view';
 import type { CM } from './editor.js';
 import type { Macros } from './macros.js';
+import type { Lookup, RefKind } from './crossref.js';
+import { refHtml } from './render.js';
 import { fitSoon } from './mathFit.js';
 import type { PreviewDeps } from './livePreview.js';
 import type { TaskPreview } from './workspace.js';
@@ -39,6 +41,11 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
       return el;
     }
     ignoreEvent(e: Event) { return e.type !== 'mousedown'; }   // a click places the cursor (and reveals the source)
+  }
+
+  // the carousel's arrows and dots turn it (galleryView.ts); a click anywhere else opens the source
+  class GalleryWidget extends HtmlWidget {
+    ignoreEvent(e: Event) { return !!(e.target as Element | null)?.closest?.('.gallery-btn, .gallery-dot') || super.ignoreEvent(e); }
   }
 
   class CheckboxWidget extends WidgetType {
@@ -135,6 +142,22 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
       const r = deps.renderer();
       el.innerHTML = r ? r.render(src) : '';
     }, { block: true, cls: 'cm-lp-table' }),
+
+    /** A gallery's carousel, drawn by the renderer; ``preview``: shown below its source while it is edited. */
+    /** A gallery's carousel, drawn by the renderer; ``preview``: shown below its source while it is
+     *  edited. Its figure number and \ref numbers come from the whole note (``fig``, ``labels``). */
+    gallery: (src: string, lookup: Lookup, fig: number | null, version: string, preview: boolean) => new GalleryWidget(`g:${version}:${preview}:${src}`, (el) => {
+      const r = deps.renderer();
+      el.innerHTML = r ? r.render(src) : '';
+      if (fig != null) el.querySelectorAll('.fig-num').forEach((n) => { n.textContent = n.textContent!.replace(/\d+/, String(fig)); });
+      // written again with the whole note's labels (the renderer saw only this block)
+      for (const ref of el.querySelectorAll<HTMLElement>('.cref[data-names]')) {
+        ref.outerHTML = refHtml(ref.dataset.kind as RefKind, (ref.dataset.names || '').split(','), lookup);
+      }
+      for (const ref of el.querySelectorAll<HTMLElement>('.eqref[data-label]')) {
+        if (!ref.closest('.cref')) ref.outerHTML = refHtml((ref.dataset.kind || 'eqref') as RefKind, [ref.dataset.label!], lookup);
+      }
+    }, { block: true, cls: `cm-lp-gallery${preview ? ' cm-lp-gallerypreview' : ''}` }),
 
     mermaid: (code: string) => new HtmlWidget(`mm:${code}:${document.documentElement.dataset.theme}`, (el) => deps.mermaid(el, code), { block: true, cls: 'cm-lp-mermaid' }),
 

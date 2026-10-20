@@ -54,7 +54,7 @@ test('equations: rows, references and the number column', () => {
 test('equations: numbered through a rendered note, \\eqref in text and math', () => {
   const r = createRenderer(lib, {});
   const html = r.render('See \\eqref{b} and $\\eqref{a}$, `\\eqref{a}` and \\ref{nope}.\n\n$$\nx \\label{a}\\tag{7}\n$$\n\n$$\\begin{align} y \\label{b}\\\\ z \\end{align}$$\n');
-  assert.match(html, /<a class="eqref" href="#eq-b" data-label="b">\(1\)<\/a>/);
+  assert.match(html, /<a class="eqref" href="#eq-b" data-kind="eqref" data-label="b">\(1\)<\/a>/);
   assert.match(html, /<span class="eqref missing"[^>]*>\(\?\?\)<\/span>/);
   assert.match(html, /<code>\\eqref\{a\}<\/code>/);                 // code is left alone
   assert.ok(html.includes('id="eq-a"') && html.includes('id="eq-b"'));

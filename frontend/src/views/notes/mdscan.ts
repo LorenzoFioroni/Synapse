@@ -13,6 +13,8 @@ const PAGE = /^(?:p|pp|page|pages|pg)\.?\s*(\d+)/i;
 // [@key, p. 4, att:12]: the PDF (attachment id) a citation means (attachment_of in parser.py).
 const ATT = /(?:^|[\s,])att:(\d+)(?=$|[\s,])/i;
 const FENCE = /^([ \t]*)(`{3,}|~{3,})(.*)$/;
+// ```gallery, ```gallery|600, ~~~gallery 600: images and captions, not code (_GALLERY in parser.py)
+export const GALLERY_INFO = /^gallery(?![^\s|])/i;
 const HEADING = /^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*(?:#+[ \t]*)?$/;
 const WIKI = /(!?)\[\[([^[\]\n]+?)\]\]/g;
 const BRACKET = /(?<![![\]\\])\[([^[\]\n]*@[^[\]\n]*)\](?![([\]])/g;
@@ -22,9 +24,10 @@ const TASK = /\{\{task:([a-z0-9]{4,32})\}\}/g;
 const TAG = /(?<![\p{L}\p{N}_/&#\])([])#([A-Za-z][\p{L}\p{N}_\-/]*)/gu;
 const DIGITS = '0123456789';
 
-/** A region the scanner blanked (code, math, comments, fenced blocks). */
+/** A region the scanner blanked (code, math, comments, fenced blocks), or a gallery block (whose
+ *  fence lines only are blanked: its images and captions are read like any paragraph). */
 export interface Span {
-  kind: 'code' | 'math' | 'comment' | 'fence' | 'mathblock';
+  kind: 'code' | 'math' | 'comment' | 'fence' | 'mathblock' | 'gallery';
   from: number;
   to: number;
   display?: boolean;
@@ -157,6 +160,7 @@ export function mask(body: string): { masked: string; spans: Span[] } {
   let pos = 0;
   for (const l of lines) { offsets.push(pos); pos += l.length + 1; }
   let paraStart: number | null = null, fence: [string, number] | null = null, fenceStart = 0, mathBlock = false, mathStart = 0;
+  let gallery: [string, number] | null = null, galleryStart = 0;
   const flush = (upto: number) => { if (paraStart !== null) { maskInline(body, units, paraStart, upto, spans); paraStart = null; } };
   lines.forEach((line, n) => {
     const start = offsets[n], stop = start + line.length;
@@ -169,6 +173,20 @@ export function mask(body: string): { masked: string; spans: Span[] } {
       }
       return;
     }
+    if (gallery) {
+      const m = FENCE.exec(line);
+      if (m && m[2][0] === gallery[0] && m[2].length >= gallery[1] && !strip(m[3])) {
+        flush(start);
+        blank(units, start, stop);
+        gallery = null;
+        spans.push({ kind: 'gallery', from: galleryStart, to: stop });
+        return;
+      }
+      // inside a gallery every line is text: no code, $$ blocks or nested fences
+      if (!strip(line)) flush(start);
+      else if (paraStart === null) paraStart = start;
+      return;
+    }
     if (mathBlock) {
       blank(units, start, stop);
       if (strip(line).endsWith('$$')) { mathBlock = false; spans.push({ kind: 'mathblock', display: true, from: mathStart, to: stop }); }
@@ -177,8 +195,8 @@ export function mask(body: string): { masked: string; spans: Span[] } {
     const m = FENCE.exec(line);
     if (m && !(m[2][0] === '`' && m[3].includes('`'))) {
       flush(start);
-      fence = [m[2][0], m[2].length];
-      fenceStart = start;
+      if (GALLERY_INFO.test(strip(m[3]))) { gallery = [m[2][0], m[2].length]; galleryStart = start; }
+      else { fence = [m[2][0], m[2].length]; fenceStart = start; }
       blank(units, start, stop);
       return;
     }
@@ -196,6 +214,7 @@ export function mask(body: string): { masked: string; spans: Span[] } {
   flush(body.length);
   if (fence) spans.push({ kind: 'fence', from: fenceStart, to: body.length, open: true });
   if (mathBlock) spans.push({ kind: 'mathblock', display: true, from: mathStart, to: body.length, open: true });
+  if (gallery) spans.push({ kind: 'gallery', from: galleryStart, to: body.length, open: true });
   return { masked: units.join(''), spans };
 }
 

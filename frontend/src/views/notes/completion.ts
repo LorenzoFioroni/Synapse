@@ -7,6 +7,7 @@ import type { EditorState } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
 import type { SyntaxNode } from '@lezer/common';
 import type { CiteEntry, NoteInfo } from '../../types.js';
+import { galleryInfo } from './gallery.js';
 import { completionContext, noteChoices, searchItems, searchNotes, shortAuthors } from './library.js';
 
 type CM = typeof import('../../../vendor/cm6/cm6.js');
@@ -48,9 +49,15 @@ export function searchTasks(tasks: TaskChoice[], query: string, limit = 30): Tas
 /** The autocompletion extension; ``data`` gives the cite index, the notes overview and the tasks. */
 export function completions(cm: CM, data: CompletionData) {
   const taskOf = new WeakMap<Completion, string>();   // the task an option stands for
+  // a ```gallery block is a fenced block to CodeMirror, but its captions are text (gallery.ts)
   const inCode = (state: EditorState, pos: number) => {
-    for (let n: SyntaxNode | null = cm.syntaxTree(state).resolveInner(pos, -1); n; n = n.parent) if (NO_COMPLETE.test(n.name)) return true;
-    return false;
+    const names: string[] = [];
+    let gallery = false;
+    for (let n: SyntaxNode | null = cm.syntaxTree(state).resolveInner(pos, -1); n; n = n.parent) {
+      names.push(n.name);
+      if (n.name === 'FencedCode') { const info = n.getChild('CodeInfo'); gallery = !!info && !!galleryInfo(state.sliceDoc(info.from, info.to)); }
+    }
+    return names.some((name) => NO_COMPLETE.test(name) && !(gallery && (name === 'CodeText' || name === 'FencedCode')));
   };
 
   /** "{{task query": the tasks that match, and a new task named "query". Picking one writes its {{task:id}}. */

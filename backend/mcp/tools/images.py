@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import struct
 
-from ...notes import parser
+from ...notes import gallery, parser
 from ...notes.attachments import attachment_name
 from ...notes.service import sniff_image
 from ...notes.vault import ATTACHMENTS, InvalidPath
@@ -21,17 +21,30 @@ class ImageToolsMixin(ToolsBase):
     """view_image (images of the notes folder)."""
 
     def _note_images(self, text: str) -> list[dict]:
-        """The images a note shows, in order: {line, path (as written), alt, caption}."""
-        lines = text.split("\n")
+        """The images a note shows, in order: {line, path (as written), alt, caption}, and for a
+        panel of a gallery its label and the gallery's line and caption."""
+        lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        panels: dict[tuple[int, str], list[tuple[dict, dict]]] = {}
+        for g in gallery.galleries(text):
+            for p in g["panels"]:
+                panels.setdefault((p["line"], p["src"]), []).append((p, g))
         out = []
         for l in parser.parse(text).links:
             if l.kind != "image":
                 continue
             caption = None
-            nxt = lines[l.line] if l.line < len(lines) else ""  # the line below (l.line is 1-based)
-            m = re.fullmatch(r"\s*\*(.+)\*\s*", nxt)
-            if m:
-                caption = m.group(1).strip()
+            in_gallery = None
+            if panels.get((l.line, l.target)):
+                p, g = panels[(l.line, l.target)].pop(0)
+                caption = p["caption"] or None
+                in_gallery = drop_empty(
+                    {"line": g["line"], "panel": f"({p['label']})", "caption": g["caption"] or None}
+                )
+            else:
+                nxt = lines[l.line] if l.line < len(lines) else ""  # the line below (l.line is 1-based)
+                m = re.fullmatch(r"\s*\*(.+)\*\s*", nxt)
+                if m:
+                    caption = m.group(1).strip()
             out.append(
                 drop_empty(
                     {
@@ -39,6 +52,7 @@ class ImageToolsMixin(ToolsBase):
                         "path": l.target,
                         "alt": l.alias or None,
                         "caption": caption,
+                        "gallery": in_gallery,
                         "url": True if re.match(r"^(https?:)?//|^data:", l.target, re.I) else None,
                     }
                 )
@@ -153,7 +167,7 @@ class ImageToolsMixin(ToolsBase):
                 continue
             rel, p = self._image_file(img["path"])
             block, info = self._image_block(rel, p)
-            meta = drop_empty({**{k: img.get(k) for k in ("line", "alt", "caption")}, **info})
+            meta = drop_empty({**{k: img.get(k) for k in ("line", "alt", "caption", "gallery")}, **info})
             parts += [meta, block]
         if skipped:
             parts.append(

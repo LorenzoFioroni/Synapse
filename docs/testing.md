@@ -53,7 +53,7 @@ well (`test_remote_pdf.py`).
 | Library | `test_api.py` (create, edit, trash, settings, import and export, attachments, schema), `test_list_payload.py` (lean lists, items by id), `test_organize.py` (folders, tags, smart folders, their migrations), `test_citekeys.py`, `test_search.py` (query syntax, accents, filters, notes in search), `test_identifiers.py` (DOI and arXiv ids), `test_annotations.py` (annotation records, conversion of old ones) |
 | Formats | `test_formats.py`: BibTeX, RIS, EndNote and CSL-JSON round trips |
 | Online and references | `test_metadata.py` (lookups), `test_pdf_finder.py` (Find Available PDF), `test_remote_pdf.py` (PDFs behind a web link: public addresses only, PDFs only, size cap), `test_references.py` (reference lists), `test_graph.py` (`/api/graph`) |
-| Notes | `tests/notes/`: `test_vault.py` (safe paths, save conflicts, trash, move), `test_index.py`, `test_parser.py` (golden tests on the fixtures), `test_frontmatter.py`, `test_rewrite.py`, `test_rekey.py`, `test_attachments.py`, `test_api_notes.py`, `test_scanner_parity.py` |
+| Notes | `tests/notes/`: `test_vault.py` (safe paths, save conflicts, trash, move), `test_index.py`, `test_parser.py` (golden tests on the fixtures), `test_frontmatter.py`, `test_gallery.py` (gallery blocks for the MCP tools), `test_rewrite.py`, `test_rekey.py`, `test_attachments.py`, `test_api_notes.py`, `test_scanner_parity.py` |
 | Access and sync | `test_guard.py` (other websites and extensions refused), `test_devices.py` (pairing, who manages devices, `--debug` refused on the network), `test_changes.py` (change feed), `test_connector.py` (browser extension API), `test_backup.py` |
 | MCP | `test_mcp.py`: the protocol and every tool, in-process and over stdio |
 | Frontend | `test_frontend_build.py` (`needs_build` and `ensure_built`), `test_frontend_js.py` (runs the JavaScript tests) |
@@ -92,6 +92,9 @@ These check rules of the code base rather than behaviour:
 | `diff.test.mjs` | `views/notes/diff.js` |
 | `embed.test.mjs` | `views/notes/embed.js` and `linkData.js`: what an embedded note shows, with its own link data |
 | `equations.test.mjs` | `equations.js`, `mathClick.js`, `macros.js` and math in `render.js` |
+| `figures.test.mjs` | `views/notes/figures.js`: which images are figures, numbering, labels; figures in `render.js` and the Markdown export |
+| `crossref.test.mjs` | `views/notes/crossref.js`: `\ref`, `\eqref`, `\cref`, `\Cref`: kinds, plurals, ranges, unknown names |
+| `gallery.test.mjs` | `views/notes/gallery.js`: reading gallery blocks, the figure caption, Markdown export; galleries in `render.js` |
 | `extract.test.mjs` | `extractCitation` in `browser_extension/extract.js`, with a faked `document` and `location` |
 | `graph.test.mjs` | `views/graph/model.js` |
 | `library.test.mjs` | `views/notes/library.js`: autocomplete ranking |
@@ -101,7 +104,7 @@ These check rules of the code base rather than behaviour:
 | `render.test.mjs` | `views/notes/render.js` |
 | `store.test.mjs` | `sortedItems` in `store.js`, `hitBadge` in `util.js` |
 
-`embed.test.mjs`, `equations.test.mjs` and `render.test.mjs` load the real markdown-it and KaTeX from
+`embed.test.mjs`, `equations.test.mjs`, `figures.test.mjs`, `gallery.test.mjs` and `render.test.mjs` load the real markdown-it and KaTeX from
 `frontend/vendor/md/md.js`.
 
 **How pytest runs them.** `tests/test_frontend_js.py` has one test, `test_js_units`. It takes the
@@ -170,6 +173,7 @@ looking for a bug.
 | `equations` | 8786 | Editing notes with equations |
 | `export` | 8792 | Exporting a note: a self-contained HTML page that works offline, portable Markdown, PDF through the print dialog |
 | `extension` | 8789, 8790 | The browser extension: options page connects, the popup reads an article's citation tags and saves it with a tag |
+| `gallery` | 8794 | Figure numbers and `\cref` (read mode, live preview, exports); galleries: the carousel in read mode and the live preview, editing its source, autocomplete in captions, exported as one figure with panels (HTML, PDF, Markdown) |
 | `graph` | 8787 | Local and global graph in Notes, Show in Graph, Cmd/Ctrl+Shift+G, Back/Forward |
 | `lazy_viewer` | 8778 | A 300-page PDF: pages drawn only near the viewport, fast jumps and zoom, annotations on far pages |
 | `library` | 8768 | Citation key rename with preview, notes in search, trashed items, Quote and Snapshot to note |

@@ -137,7 +137,9 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   its mouse, keyboard and drag and drop; `fileOps.ts` creates, renames, moves and trashes notes;
   `readView.ts` is read mode and link following; `sidePanel.ts` the status, breadcrumbs and
   details panel; `aiBar.ts` Claude's edits; `ghost.ts` and `assist.ts` autocompletion's ghost text and where it comes from; `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
-  exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`). `settingsView.ts` is the Settings page; its markup
+  exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`); `gallery.ts`
+  and `galleryView.ts` read ` ```gallery ` blocks and turn their carousels; `figures.ts` numbers
+  figures. `settingsView.ts` is the Settings page; its markup
   is in `views/settings/page.ts`, and Autocompletion, Backups and Devices have their own modules there.
   `views/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
   the notes workspace only through `taskHooks` in `views/notes/workspace.ts`.
