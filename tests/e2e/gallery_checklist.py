@@ -73,10 +73,11 @@ def seed(s):
         paths.append(r.json()["path"])
     a, b, c, d = paths
     text = (
-        "---\ntitle: Figures\n---\n# Figures\n\nSome text before.\n\n"
+        "---\ntitle: Figures\n---\n# Figures\n\nSome text before, see Fig. \\ref{fig:speckle} and Fig. \\ref{fig:single}.\n\n"
+        f"![grey|200]({d})\n*A single figure. \\label{{fig:single}}*\n\n![]({d})\n\n"
         f"```gallery|600\n![red]({a})\n*Clean system, $\\xi\\to\\infty$.*\n"
         f"![green]({b}) With speckle [@smith2021, p. 3]\n![|200]({c})\nNo period here\n\n"
-        "Photon number versus $N$, see \\eqref{eq:n}\n```\n\n"
+        "Photon number versus $N$, see \\eqref{eq:n} \\label{fig:speckle}\n```\n\n"
         "$$\nN = 1 \\label{eq:n}\n$$\n\n"
         f"```gallery\n![]({a}) One\n![]({b}) Two\n![]({c}) Three\n![]({d}) Four\n```\n\nThe end.\n"
     )
@@ -158,7 +159,7 @@ async def main():
             )
             check(
                 "three panels, three dots",
-                await page.locator(f"{G}:first-of-type .gallery-panel").count() == 3
+                await page.locator(G).first.locator(".gallery-panel").count() == 3
                 and await page.locator(".note-read .gallery").first.locator(".gallery-dot").count() == 3,
             )
             width = await page.locator(g).evaluate("(e) => e.getBoundingClientRect().width")
@@ -178,6 +179,24 @@ async def main():
                 cap,
             )
             check("the italic caption is unwrapped", await first.locator(".gallery-panel-caption em").count() == 0)
+            nums = await page.locator(".note-read .fig-num").all_text_contents()
+            check(
+                "figures numbered: the image Fig. 1, the galleries Fig. 2 (its caption) and Fig. 3 (on each panel)",
+                nums == ["Fig. 1.", "Fig. 2.", "Fig. 3", "Fig. 3", "Fig. 3", "Fig. 3"],
+                nums,
+            )
+            check(
+                "an image without a caption is not a figure",
+                await page.locator(".note-read figure.figure").count() == 1,
+            )
+            refs = await page.locator(".note-read p .eqref").all_text_contents()
+            check("\\ref gives a figure's number", refs[:2] == ["2", "1"], refs)
+            await page.locator(".note-read p .eqref").nth(1).click()
+            await page.wait_for_timeout(500)
+            check(
+                "clicking it goes to the figure",
+                await page.evaluate("document.querySelector('.note-read figure.figure').classList.contains('flash')"),
+            )
             # the label hangs to the left: the caption's text is centred under its image
             centred = await page.evaluate(
                 """() => [...document.querySelectorAll('.note-read .gallery .gallery-panel')].slice(0, 1).map((p) => {
@@ -239,6 +258,17 @@ async def main():
                 await page.locator(".cm-content .cm-lp-gallery .gallery").count() == 2
                 and await page.locator(".cm-lp-gallerysrc").count() == 0,
             )
+            check(
+                "live: Fig. 1. in front of the image's caption, its \\label hidden",
+                await page.locator(".cm-lp-chip.fignum").all_text_contents() == ["Fig. 1."]
+                and re.sub(r"\s+", "", await page.locator(".cm-line.cm-lp-figcaption").inner_text())
+                == "Fig.1.Asinglefigure.",
+                await page.locator(".cm-line.cm-lp-figcaption").inner_text(),
+            )
+            live_nums = await page.locator(".cm-content .cm-lp-gallery .fig-num").all_text_contents()
+            check("live: the galleries carry Fig. 2 and Fig. 3", live_nums[:2] == ["Fig. 2.", "Fig. 3"], live_nums)
+            live_refs = await page.locator(".cm-content .cm-lp-chip.eqref").all_text_contents()
+            check("live: \\ref chips show the figures' numbers", live_refs[:2] == ["2", "1"], live_refs)
             lg = page.locator(".cm-content .cm-lp-gallery .gallery").first
             await lg.hover()
             await lg.locator(".gallery-next").click()
@@ -264,7 +294,9 @@ async def main():
                 if here == "No period here":
                     break
                 await page.keyboard.press(
-                    "ArrowUp" if here in ("", "Photon number versus $N$, see \\eqref{eq:n}", "```") else "ArrowDown"
+                    "ArrowUp"
+                    if here in ("", "Photon number versus $N$, see \\eqref{eq:n} \\label{fig:speckle}", "```")
+                    else "ArrowDown"
                 )
             # to the end of the line (End is not used: in headless Chromium it can step onto the next line)
             for _ in range(40):
@@ -307,7 +339,7 @@ async def main():
             check(
                 "HTML: caption = the gallery's, then (a) …. (b) …. (c) ….",
                 re.fullmatch(
-                    r"Photon number versus .*?, see \(1\)\. \(a\) Clean system, .*?\. "
+                    r"Fig\. 2\. Photon number versus .*?, see \(1\)\. \(a\) Clean system, .*?\. "
                     r"\(b\) With speckle \(Smith 2021, p\. 3\)\. \(c\) No period here \(Smith 2021\)\.",
                     plain,
                 )
@@ -316,7 +348,7 @@ async def main():
             )
             check(
                 "HTML: four panels' caption",
-                len(figs) == 2 and re.sub(r"<[^>]+>", "", figs[1]) == "(a) One. (b) Two. (c) Three. (d) Four.",
+                len(figs) == 2 and re.sub(r"<[^>]+>", "", figs[1]) == "Fig. 3. (a) One. (b) Two. (c) Three. (d) Four.",
                 figs[1:],
             )
             check(
@@ -324,7 +356,25 @@ async def main():
                 re.findall(r'<span class="gallery-cell-label">([a-z])</span>', article) == list("abcabcd")
                 and "gallery-label" not in article,
             )
-            check("HTML: images inlined", article.count("data:image/png;base64,") == 7)
+            check("HTML: images inlined", article.count("data:image/png;base64,") == 9)
+            single = re.search(r'<figcaption class="figure-caption">(.*?)</figcaption>', article, re.S)
+            check(
+                "HTML: the captioned image is Fig. 1, the other no figure",
+                single is not None
+                and re.sub(r"<[^>]+>", "", single.group(1)).strip() == "Fig. 1. A single figure."
+                and article.count('class="figure"') == 1,
+                single.group(1) if single else None,
+            )
+            check(
+                "HTML: \\ref gives the numbers and links to the figures",
+                re.search(
+                    r'see Fig\. <a class="eqref" href="#eq-fig-speckle"[^>]*>2</a> and Fig\. <a class="eqref" href="#eq-fig-single"[^>]*>1</a>',
+                    article,
+                )
+                is not None
+                and 'id="eq-fig-speckle"' in article
+                and 'id="eq-fig-single"' in article,
+            )
             view = await ctx.new_page()
             await view.set_content(html)
             await view.wait_for_timeout(500)
@@ -381,7 +431,17 @@ async def main():
             )
             check(
                 "Markdown: the figure caption",
-                "(a) Clean system, $\\xi\\to\\infty$. (b) With speckle (Smith 2021, p. 3)." in md,
+                "**Fig. 2.** *Photon number versus $N$, see \\eqref{eq:n}. (a) Clean system, $\\xi\\to\\infty$. (b) With speckle (Smith 2021, p. 3)."
+                in md,
+                md[:900],
+            )
+            check(
+                "Markdown: numbered captions and references",
+                "see Fig. 2 and Fig. 1." in md
+                and f"![grey]({paths[3]})\n**Fig. 1.** *A single figure.*\n" in md
+                and "**Fig. 3.** *(a) One. (b) Two. (c) Three. (d) Four.*" in md
+                and "\\label{fig" not in md,
+                md[:300],
             )
 
             # ---- PDF goes through the same page

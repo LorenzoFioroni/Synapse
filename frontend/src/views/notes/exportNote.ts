@@ -12,6 +12,7 @@ import { toast, toastError } from '../../ui/toast.js';
 import { downloadBlob, escapeHtml as esc } from '../../util.js';
 import { loadMD } from './editor.js';
 import { embedHtml, section } from './embed.js';
+import { figureLabel } from './figures.js';
 import { endsSentence, figureColumns, panelLabel } from './gallery.js';
 import { linkDataOf } from './linkData.js';
 import { splitFrontmatter } from './mdscan.js';
@@ -192,6 +193,12 @@ function staticGalleries(root: HTMLElement): void {
     const el = (tag: string, cls: string) => { const e = document.createElement(tag); e.className = cls; return e; };
     const fig = el('figure', `gallery-figure cols-${figureColumns(panels.length)}`);
     if (g.style.maxWidth) fig.style.maxWidth = g.style.maxWidth;
+    // the figure's number goes once in front of the whole caption, not on each panel
+    g.querySelectorAll('.fig-num').forEach((n) => {
+      if (n.nextSibling?.nodeType === Node.TEXT_NODE) n.nextSibling.textContent = n.nextSibling.textContent!.replace(/^\s+/, '');
+      n.remove();
+    });
+    fig.append(...g.querySelectorAll(':scope > .eq-anchor'));   // the targets of \ref
     const grid = el('div', 'gallery-grid');
     const caption = el('figcaption', 'gallery-figcaption');
     // a part of the caption: its rendered content, ending as a sentence
@@ -220,7 +227,10 @@ function staticGalleries(root: HTMLElement): void {
       addPart(text, single ? null : panelLabel(i));
     });
     fig.append(grid);
-    if (caption.childNodes.length) fig.append(caption);
+    if (caption.childNodes.length) {
+      if (g.dataset.fig) { const num = el('span', 'fig-num'); num.textContent = `${figureLabel(Number(g.dataset.fig))}.`; caption.prepend(num, ' '); }
+      fig.append(caption);
+    }
     g.replaceWith(fig);
   }
 }

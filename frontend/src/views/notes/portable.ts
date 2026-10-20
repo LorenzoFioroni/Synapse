@@ -1,7 +1,9 @@
 // A note as other programs can show it (exportNote.ts): Markdown without the notes' own syntax,
 // citations written out with a list of references, and the reference entries HTML and PDF
 // exports use. No DOM (tests/js/portable.test.mjs).
-import { galleryMarkdown, parseGallery } from './gallery.js';
+import { textRefs } from './equations.js';
+import { figureLabel, figuresOf } from './figures.js';
+import { galleryMarkdown, italic } from './gallery.js';
 import { mask, scan, splitFrontmatter } from './mdscan.js';
 import { type CiteInfo, citeLabel } from './render.js';
 
@@ -168,18 +170,33 @@ export function portableBody(text: string, opts: PortableOptions): Portable {
     }
     at = l.to;
   }
-  return { markdown: portableGalleries(out + text.slice(at)), keys };
+  return { markdown: portableFigures(out + text.slice(at)), keys };
 }
 
-/** ```gallery blocks (after their citations were written out) as their images on one line and the
- *  figure's caption below (galleryMarkdown). */
-export function portableGalleries(md: string): string {
-  const blocks = mask(md).spans.filter((sp) => sp.kind === 'gallery');
-  for (const sp of blocks.reverse()) {
-    const lines = md.slice(sp.from, sp.to).split('\n');
-    const open = /^\s*(?:`{3,}|~{3,})(.*)$/.exec(lines[0]);
-    const content = (sp.open ? lines.slice(1) : lines.slice(1, -1)).join('\n');
-    md = md.slice(0, sp.from) + galleryMarkdown(parseGallery(content, open ? open[1] : 'gallery')) + md.slice(sp.to);
+/**
+ * Figures (figures.ts), after their citations were written out: a gallery becomes its images on one
+ * line and the figure's caption below (galleryMarkdown), an image's caption line gets its number,
+ * "**Fig. 2.** *Caption.*", \label{…} is dropped from captions, and \ref{…} to a figure becomes
+ * its number (references to equations stay as they are, like the formulas).
+ */
+export function portableFigures(md: string): string {
+  const { figures, labels } = figuresOf(md);
+  for (const f of [...figures].reverse()) {
+    if (f.kind === 'gallery') md = md.slice(0, f.from) + galleryMarkdown(f.gallery!, f.number) + md.slice(f.to);
+    else {
+      const c = f.image!.caption;
+      md = md.slice(0, f.captionFrom!) + `**${figureLabel(f.number!)}.** ${italic(c)}` + md.slice(f.to);
+    }
+  }
+  if (!labels.size) return md;
+  const { spans } = mask(md);
+  // equations win a name both use, as in the app
+  const inMath = new Set(spans.filter((sp) => sp.kind === 'math' || sp.kind === 'mathblock')
+    .flatMap((sp) => [...md.slice(sp.from, sp.to).matchAll(/\\label\s*\{([^{}]*)\}/g)].map((m) => m[1].trim())));
+  for (const r of textRefs(md).reverse()) {
+    const n = inMath.has(r.name) ? null : labels.get(r.name);
+    if (n == null || spans.some((sp) => sp.kind !== 'gallery' && r.from >= sp.from && r.from < sp.to)) continue;
+    md = md.slice(0, r.from) + (r.kind === 'eqref' ? `(${n})` : n) + md.slice(r.to);
   }
   return md;
 }

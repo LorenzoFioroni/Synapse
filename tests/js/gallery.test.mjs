@@ -70,18 +70,18 @@ test('portable Markdown: images on one line, the caption below', () => {
   const out = portableBody('Text.\n\n```gallery|500\n![](a.png)\n*Cited [@k, p. 2]*\n![](b.png)\n```\nAfter.\n', {
     citeInfo: (k) => (k === 'k' ? { authors: 'Smith, A', year: 2021 } : null),
   });
-  assert.equal(out.markdown, 'Text.\n\n![](a.png) ![](b.png)\n\n*(a) Cited (Smith 2021, p. 2).*\nAfter.\n');
+  assert.equal(out.markdown, 'Text.\n\n![](a.png) ![](b.png)\n\n**Fig. 1.** *(a) Cited (Smith 2021, p. 2).*\nAfter.\n');
   assert.deepEqual(out.keys, ['k']);
 });
 
 test('rendered as a carousel, captions parsed as Markdown', () => {
   const r = createRenderer(lib, { citeInfo: (k) => (k === 'k' ? { authors: 'Smith, A', year: 2021 } : null) });
   const html = r.render('```gallery|600\n![a|300](attachments/a.png)\n*Panel $x$ [@k]*\n![](b.png)\n\nMain \\eqref{eq:1}.\n```\n\n$$y \\label{eq:1}$$\n');
-  assert.match(html, /<figure class="gallery" data-line="0" data-count="2" style="max-width:600px">/);
+  assert.match(html, /<figure class="gallery" data-line="0" data-count="2" data-fig="1" style="max-width:600px">/);
   assert.match(html, /<div class="gallery-panel" data-line="1" data-index="0"><div class="gallery-image"><img src="\/api\/notes\/attachments\/a.png" alt="a" loading="lazy" width="300">/);
   assert.match(html, /<span class="gallery-label">\(a\)<\/span> Panel <span class="math">/);
   assert.match(html, /class="cite"[^>]*data-key="k"[^>]*>Smith 2021</);
-  assert.match(html, /<figcaption class="gallery-caption" data-line="5">Main <a class="eqref"[^>]*>\(1\)<\/a>\.<\/figcaption><\/figure>/);
+  assert.match(html, /<figcaption class="gallery-caption" data-line="5"><span class="fig-num">Fig. 1.<\/span> Main <a class="eqref"[^>]*>\(1\)<\/a>\.<\/figcaption><\/figure>/);
   assert.equal((html.match(/class="gallery-dot[ "]/g) || []).length, 2);
   assert.match(html, /gallery-prev" aria-label="Previous image" disabled/);
   assert.ok(!html.includes('<pre'), 'not a code block');

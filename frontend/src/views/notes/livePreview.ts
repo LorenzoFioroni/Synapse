@@ -29,6 +29,7 @@ import { clickOffset } from './mathClick.js';
 import { type Definition, HAS_DEFINITIONS, type Macros, parseDefinitions, withDefinitions } from './macros.js';
 import { type Equations, previewWidgets } from './previewWidgets.js';
 import { galleryInfo } from './gallery.js';
+import { type Figures, figureLabel, figuresOf } from './figures.js';
 
 /** A DOM text node (``Text`` is CodeMirror's document here). */
 type Text_ = globalThis.Text;
@@ -67,11 +68,22 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
   });
 
   /* ------------------------------------------------------- per-document data */
-  let cache: { doc: Text | null; scan: Scan | null; refs: TextRef[] | null; eq: Equations | null; mode: string | null; base: Macros | null } = { doc: null, scan: null, refs: null, eq: null, mode: null, base: null };
+  let cache: { doc: Text | null; scan: Scan | null; refs: TextRef[] | null; eq: Equations | null; mode: string | null; base: Macros | null; figs: Figures | null } = { doc: null, scan: null, refs: null, eq: null, mode: null, base: null, figs: null };
   let lastBase: Macros | null = null, baseVersion = 0;
   const scanOf = (state: EditorState): Scan => {
-    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), refs: null, eq: null, mode: null, base: null };
+    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), refs: null, eq: null, mode: null, base: null, figs: null };
     return cache.scan!;
+  };
+  // the note's figures and their numbers (figures.ts), found with the same rule as the renderer's
+  const figuresOfDoc = (state: EditorState): Figures => {
+    const s = scanOf(state);
+    cache.figs ||= figuresOf(state.doc.toString(), s);
+    return cache.figs;
+  };
+  // what \ref / \eqref may name: an equation's label, else a figure's
+  const refLabels = (state: EditorState, eq: Equations): Map<string, string | null> => {
+    const figs = figuresOfDoc(state).labels;
+    return figs.size ? new Map<string, string | null>([...figs, ...eq.labels]) : eq.labels;
   };
   // \eqref{label} / \ref{label} in the text (not in code or math), as document offsets
   const refsOf = (state: EditorState): TextRef[] => {
@@ -207,13 +219,15 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
             // a gallery is one unit: drawn as its carousel, or, while the cursor is in it, its
             // source with the carousel below it (nothing inside the source is rendered)
             const src = doc.sliceString(from, to);
-            // \eqref in a caption is numbered from the note's equations: redraw when they change
-            const key = `${version}:${eq.sig}${/\\(eq)?ref\{/.test(src) ? `:${[...eq.labels].join(';')}` : ''}`;
+            // its figure number, and \ref in its captions, come from the whole note: redraw when they change
+            const fig = figuresOfDoc(state).figures.find((f) => f.kind === 'gallery' && f.from === from)?.number ?? null;
+            const labels = refLabels(state, eq);
+            const key = `${version}:${eq.sig}:${fig}${/\\(eq)?ref\{/.test(src) ? `:${[...labels].join(';')}` : ''}`;
             taken.push([from, to]);
             if (blockActive(from, to)) {
               lineDecos(from, to, (first, last) => `cm-lp-gallerysrc${first ? ' first' : ''}${last ? ' last' : ''}`);
-              out.push(Decoration.widget({ widget: W.gallery(src, eq, key, true), block: true, side: 1 }).range(to));
-            } else out.push(Decoration.replace({ widget: W.gallery(src, eq, key, false), block: true }).range(from, to));
+              out.push(Decoration.widget({ widget: W.gallery(src, labels, fig, key, true), block: true, side: 1 }).range(to));
+            } else out.push(Decoration.replace({ widget: W.gallery(src, labels, fig, key, false), block: true }).range(from, to));
             return false;
           }
           if (lang === 'mermaid' && !blockActive(from, to)) {
@@ -270,13 +284,27 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
       else replace(sp.from, sp.to, Decoration.replace({ widget: mathWidget(doc, eq, sp, false) }));
     }
 
-    // \eqref{label} / \ref{label} in the text: the equation's number
+    // \eqref{label} / \ref{label} in the text: the equation's (or figure's) number
+    const labels = refLabels(state, eq);
     for (const r of refsOf(state)) {
       if (!shown(r.from, r.to)) continue;
       taken.push([r.from, r.to]);
       if (touches(r.from, r.to)) { add(r.from, r.to, Decoration.mark({ class: 'cm-lp-linksrc eqref' })); continue; }
-      const text = refText(r.kind, r.name, eq.labels);
+      const text = refText(r.kind, r.name, labels);
       replace(r.from, r.to, Decoration.replace({ widget: W.chip(`e:${r.from}:${text}`, `eqref${text == null ? ' missing' : ''}`, text ?? '(??)', { label: r.name }) }));
+    }
+
+    // an image's caption line: its figure number in front, its \label hidden, until you edit it
+    for (const f of figuresOfDoc(state).figures) {
+      if (f.kind !== 'image' || !shown(f.captionFrom!, f.to)) continue;
+      lineDeco(f.captionFrom!, 'cm-lp-figcaption');
+      if (lineActive(f.captionFrom!)) continue;
+      out.push(Decoration.widget({ widget: W.chip(`fig:${f.number}`, 'fignum', `${figureLabel(f.number!)}.`, {}), side: -1 }).range(f.captionFrom!));
+      const line = doc.sliceString(f.captionFrom!, f.to);
+      for (const m of line.matchAll(/\s*\\label\{[^{}\n]*\}/g)) {
+        const a = f.captionFrom! + m.index!, b = a + m[0].length;
+        if (!s.spans.some((sp) => a >= sp.from && a < sp.to)) replace(a, b, hide);   // not "taken": the *…* around it still hide
+      }
     }
 
     // [[links]], ![[embeds]], [@citations] (one chip per group), images
@@ -478,7 +506,9 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
         const s = scanOf(view.state);
         const sp = s.spans.find((x) => (x.kind === 'mathblock' || (x.kind === 'math' && x.display))
           && new RegExp(`\\\\label\\s*\\{\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\}`).test(view.state.doc.sliceString(x.from, x.to)));
-        if (sp) view.dispatch({ effects: EditorView.scrollIntoView(sp.from, { y: 'center' }) });
+        // else a figure with that label
+        const at = sp ? sp.from : figuresOfDoc(view.state).figures.find((f) => f.labels.includes(label))?.from;
+        if (at != null) view.dispatch({ effects: EditorView.scrollIntoView(at, { y: 'center' }) });
         return true;
       }
       const c = target.closest?.<HTMLElement>('.cm-lp-chip.wikilink, .cm-lp-chip.embed');

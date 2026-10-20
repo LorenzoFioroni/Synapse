@@ -45,5 +45,5 @@ body { margin: 0; font-family: var(--font); color: var(--text); background: var(
   display: grid; place-items: center; border: 1.5px solid #000; border-radius: 50%; background: #fff; color: #000;
   font-size: .8em; font-weight: 650; line-height: 1; -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
-.prose .gallery-figcaption { margin-top: .7em; font-size: .92em; line-height: 1.5; color: var(--text-2); }
+.prose .gallery-figcaption { display: table; margin: .7em auto 0; font-size: .92em; line-height: 1.5; color: var(--text-2); }
 .prose .gallery-ref { font-weight: 650; color: var(--text); }

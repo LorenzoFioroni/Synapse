@@ -465,3 +465,15 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .cm-live .cm-line.cm-lp-gallerysrc.last { border-bottom: 1px solid var(--border); border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; padding-bottom: 3px; color: var(--text-3); }
 /* its lines are Markdown text, not code: no code font or shading */
 .cm-live .cm-line.cm-lp-gallerysrc .cmt-code { font-family: inherit; font-size: inherit; background: none; color: inherit; border-radius: 0; }
+
+/* ---------------------------------------------------------- figures (figures.ts): an image with its
+   caption, numbered Fig. 1, 2, … like galleries with a caption */
+.figure { margin: 0 0 .9em; padding: 0; }
+.figure-image { display: flex; justify-content: center; }
+.figure-image img { display: block; max-width: 100%; height: auto; border-radius: 6px; }
+.figure-caption { margin-top: .5em; font-size: .92em; line-height: 1.55; color: var(--text-2); }
+/* as in LaTeX: a short caption is centred, a long one fills the width and reads from the left */
+.figure-caption, .gallery-caption { display: table; margin-left: auto; margin-right: auto; text-align: left; }
+.fig-num { font-weight: 650; color: var(--text); white-space: nowrap; }
+.cm-live .cm-line.cm-lp-figcaption { color: var(--text-2); }
+.cm-lp-chip.fignum { font-weight: 650; color: var(--text); margin-right: .35em; font-style: normal; }

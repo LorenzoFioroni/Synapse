@@ -72,7 +72,7 @@ export function citeTargetInDom(el: Element): CiteTarget | null {
     const quote = quoteText(copy.textContent || '');
     return quote ? { quote } : null;
   }
-  const img = el.closest?.('p, figure, li')?.querySelector('img');
+  const img = el.closest?.('.gallery-panel, p, figure, li')?.querySelector('img');
   return img ? { imageSrc: img.getAttribute('src') } : null;
 }
 

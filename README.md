@@ -157,7 +157,11 @@ never mix.
   Arrows, dots or a swipe turn it; exported, it becomes one figure with the panels side by side
   (at most three to a row), each marked a, b, … in a white circle on its upper left corner, under
   one caption: the gallery's, then
-  "(a) first panel's. (b) second panel's." Switch with the
+  "(a) first panel's. (b) second panel's." **Figures** are numbered Fig. 1, 2, … like equations: an
+  image with a caption (the line right below it in `*italics*`, with blank lines around the two)
+  or a gallery with a caption. `\label{fig:name}` in a caption names the figure and
+  `Fig. \ref{fig:name}` in the text gives its number; images without a caption are not numbered
+  (see [Figures](docs/notes.md#figures-and-their-numbers)). Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
   Cmd+[ / Alt+←) go back to the note or library selection you came from.
   Images pasted into notes are kept in the notes' attachments folder; one that no note uses any more

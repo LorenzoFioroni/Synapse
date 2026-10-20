@@ -300,6 +300,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
 | `exportNote.ts`, `portable.ts` | Exporting a note as PDF, HTML or Markdown; the Markdown conversion and reference entries (no DOM). |
 | `gallery.ts`, `galleryView.ts` | Galleries: reading a ` ```gallery ` block and its figure caption (no DOM); turning the carousel. |
+| `figures.ts` | Which images and galleries are figures, their numbers and `\label`s (no DOM). |
 
 ### The editor and read mode
 
@@ -384,7 +385,7 @@ carousel becomes a `figure.gallery-figure` whose panels sit in a grid of `figure
 columns (as many as there are panels up to three, two for four, else three), each with its letter
 in a white, black-bordered circle on the image's upper left corner (`.gallery-cell-label` inside
 `.gallery-cell-image`, a frame that hugs the image), and one caption: the gallery's own, then each panel's as "(a) First. (b) Second.",
-every part ending as a sentence (`endsSentence`). Markdown (`portableGalleries` in `portable.ts`):
+every part ending as a sentence (`endsSentence`). Markdown (`portableFigures` in `portable.ts`):
 the images on one line, which most viewers set side by side, and that caption in italics below.
 
 **Backend.** The parser counts the images and citations in a gallery, so the attachment sweep
@@ -392,6 +393,48 @@ keeps its images and the citation graph and backlinks include its captions.
 `backend/notes/gallery.py` reads the blocks the same way as `gallery.ts` for the MCP tools:
 `get_note` and `view_image` give an image in a gallery its panel's caption and
 `gallery: {line, panel: "(b)", caption}`.
+
+### Figures and their numbers
+
+Images with a caption and galleries with a caption are **figures**, numbered Fig. 1, Fig. 2, … in
+the order they appear in the note (`figures.ts`). An image or gallery without any caption is not a
+figure and gets no number.
+
+````markdown
+![](attachments/plot.png)
+*Photon number versus $N$. \label{fig:photons}*
+
+As Fig. \ref{fig:photons} shows, …
+````
+
+- **An image's caption** is the line right below it, wholly in `*…*` or `_…_` (emphasis markers
+  inside math such as `$\alpha^*$` do not count). The image must be alone on its line, at most
+  three spaces in, and the pair must have blank lines (or the start or end of the note) around it;
+  `imageFigureAt` decides this. This is how snapshots from the PDF viewer and Claude's `snapshot`
+  have always been captioned, so those become numbered figures too.
+- **A gallery** is a figure when it has a caption of its own or on any panel.
+- **Labels.** `\label{name}` anywhere in a figure's captions (outside math) names it and is not
+  shown. `\ref{name}` in the text gives its number and `\eqref{name}` the number in parentheses,
+  as for equations; when an equation and a figure share a name, the equation wins.
+- **Where the number goes.** Before the figure's caption: "**Fig. 2.** Caption". A gallery without
+  a caption of its own puts it before its panels' labels in the app, "**Fig. 2**(a) First panel",
+  and before the combined caption in exports.
+
+**Two paths, one rule.** The renderer (`figureRule` in `render.ts`, after `galleryRule`) turns a
+top-level paragraph that `imageFigureAt` accepts into `figure_open`/`figure_close` tokens with
+the caption as an inline token (markers and labels taken out), numbers figures and captioned
+galleries in token order and puts the labels in `env.figLabels`, where `R.eq_ref` looks after the
+equations' labels. A figure is `figure.figure` with an `.eq-anchor` per label (so read mode's
+click on a `\ref` and the exported links go there), the image centred and
+`figcaption.figure-caption` below it. Captions are centred while short and fill the width when
+long (`display: table`), as in LaTeX. The live preview (`figuresOfDoc` in `livePreview.ts`) and
+the Markdown export use `figuresOf`, which applies the same `imageFigureAt` to the note's lines
+and finds galleries through `mdscan`, so the numbers agree. In the live preview an image's
+caption line gets a "Fig. N." chip and its `\label` is hidden until the cursor is on it; a gallery's
+widget is rendered on its own, so its number and its `\ref`s are put right afterwards from the
+whole note; `\ref` chips and Cmd/Ctrl+click on them know figure labels too. The Markdown export
+(`portableFigures`) writes "**Fig. 2.** *Caption*", drops `\label`s and writes `\ref`s to figures as
+their numbers (those to equations stay, like the formulas). Embedded notes number their own figures.
 
 ### Embedded notes
 
@@ -507,6 +550,7 @@ else the item's URL. `referenceHtml` makes it a link, and `referenceMarkdown` wr
 | How notes look when rendered | `render.ts` (tested in `tests/js/render.test.mjs`), `equations.ts`, `macros.ts`, `livePreview.ts`. |
 | Claude's note tools | `backend/mcp/tools/notes.py`; see [mcp.md](mcp.md). |
 | What an exported note looks like | `exportNote.ts` (HTML, PDF), `portable.ts` (Markdown, reference entries), `frontend/css/export.css`. |
+| Which images are figures, and how they are numbered | `figures.ts` (`imageFigureAt`, `figuresOf`) for the rule and the text; `figureRule` in `render.ts`; `livePreview.ts` for the chips. |
 | How galleries are written, drawn or exported | `gallery.ts` (the block, the figure caption), `render.ts` (`galleryRule`), `galleryView.ts` (the carousel), `staticGalleries` in `exportNote.ts`, `portable.ts`, and `backend/notes/gallery.py` for the MCP tools. What counts inside one is the parser's (above). |
 
 The notes format, the `data/notes/` layout and these endpoints are contracts used by the MCP

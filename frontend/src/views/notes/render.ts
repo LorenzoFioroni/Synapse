@@ -8,6 +8,8 @@
 //  * $…$ closes on the same line (Pandoc rules), $$…$$ inline or as a block;
 //  * [[Note|alias]], ![[Note]], [@key, p. 4], [see @a; @b], > [!note] callouts, - [ ] tasks;
 //  * ```gallery blocks: images with captions, drawn as a carousel (gallery.ts, galleryView.ts);
+//  * figures (an image with a caption line, or a captioned gallery) numbered Fig. 1, 2, … with
+//    \label / \ref (figures.ts);
 //  * display equations are numbered through the note and \eqref{label} resolved (equations.ts);
 //  * math macros: the physics package, Settings, and \newcommand in the note (macros.ts).
 
@@ -15,7 +17,8 @@ import type MarkdownIt from 'markdown-it';
 import type { RendererRule as MdRenderRule, StateBlock, StateCore, StateInline, Token as MdToken } from 'markdown-it';
 
 export type MdLib = typeof import('../../../vendor/md/md.js');
-import { galleryInfo, panelLabel, parseGallery } from './gallery.js';
+import { figureLabel, imageFigureAt } from './figures.js';
+import { galleryCaptioned, galleryInfo, panelLabel, parseGallery } from './gallery.js';
 import { labelId, layoutTag, numberEquations, refText, resolveRefs } from './equations.js';
 import { type Cite, attachmentOf, parseCites, referenceDefinition, splitWiki } from './mdscan.js';
 import { type Definition, HAS_DEFINITIONS, type Macro, type Macros, baseMacros, macroSource, parseDefinitions, withDefinitions } from './macros.js';
@@ -247,20 +250,68 @@ function galleryRule(state: StateCore): void {
       t.content = content; t.map = [line, line + 1]; t.children = []; t.level = tok.level + 1;
       return t;
     };
-    const open = block('gallery_open', 1, { width: g.width, count: g.panels.length });
+    // ``fig`` (the figure's number) is filled in by figureRule
+    const open = block('gallery_open', 1, { width: g.width, count: g.panels.length, captioned: galleryCaptioned(g), labels: g.labels, fig: null });
     open.map = tok.map;
     out.push(open);
     g.panels.forEach((p, i) => {
-      out.push(block('gallery_panel_open', 1, { ...p, index: i, count: g.panels.length }, first + p.line), inline(p.caption, first + p.line), block('gallery_panel_close', -1));
+      const meta = { ...p, index: i, count: g.panels.length, mainCaption: !!g.caption, fig: null };
+      out.push(block('gallery_panel_open', 1, meta, first + p.line), inline(p.caption, first + p.line), block('gallery_panel_close', -1));
     });
     out.push(block('gallery_nav', 0, { count: g.panels.length }));
     if (g.caption) {
       const line = first + (g.captionLine ?? 0);
-      out.push(block('gallery_caption_open', 1, null, line), inline(g.caption, line), block('gallery_caption_close', -1));
+      out.push(block('gallery_caption_open', 1, { fig: null }, line), inline(g.caption, line), block('gallery_caption_close', -1));
     }
     out.push(block('gallery_close', -1));
   }
   state.tokens = out;
+}
+
+/**
+ * Figures: a top-level paragraph that is an image and its caption line (imageFigureAt, the rule the
+ * live preview and the Markdown export apply to the text) becomes figure tokens, its caption an
+ * inline token without the emphasis markers and \label. Then every figure, and every gallery with
+ * a caption, gets its number in order, and env.figLabels maps labels to numbers for \ref.
+ * Runs after galleryRule, before inline parsing.
+ */
+function figureRule(state: StateCore): void {
+  const toks = state.tokens;
+  let lines: string[] | null = null;
+  const out: MdToken[] = [];
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    if (t.type === 'paragraph_open' && t.level === 0 && t.map && t.map[1] - t.map[0] === 2
+        && toks[i + 1]?.type === 'inline' && toks[i + 2]?.type === 'paragraph_close') {
+      lines ||= state.src.split('\n');
+      const fig = imageFigureAt(lines, t.map[0]);
+      if (fig) {
+        const open = new state.Token('figure_open', 'figure', 1);
+        open.block = true; open.map = t.map; open.meta = { ...fig, fig: null };
+        const caption = toks[i + 1];
+        caption.content = fig.caption;
+        caption.map = [t.map[0] + 1, t.map[0] + 2];
+        const close = new state.Token('figure_close', 'figure', -1);
+        close.block = true;
+        out.push(open, caption, close);
+        i += 2;
+        continue;
+      }
+    }
+    out.push(t);
+  }
+  state.tokens = out;
+  const labels = new Map<string, string>();
+  let n = 0, inGallery: number | null = null;
+  for (const t of out) {
+    if (t.type === 'figure_open' || (t.type === 'gallery_open' && t.meta.captioned)) {
+      t.meta.fig = ++n;
+      for (const name of t.meta.labels) if (!labels.has(name)) labels.set(name, String(n));
+      if (t.type === 'gallery_open') inGallery = n;
+    } else if (t.type === 'gallery_close') inGallery = null;
+    else if (inGallery != null && (t.type === 'gallery_panel_open' || t.type === 'gallery_caption_open')) t.meta.fig = inGallery;
+  }
+  state.env.figLabels = labels;
 }
 
 /** data-line on block tokens, so a click in read mode can find the source line. */
@@ -355,6 +406,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
   md.core.ruler.after('inline', 'equations', equationsRule(o.equations ?? renderDefaults.equations, o.macros ?? renderDefaults.macros));
   md.core.ruler.after('block', 'callout', calloutRule);
   md.core.ruler.after('block', 'gallery', galleryRule);
+  md.core.ruler.after('gallery', 'figures', figureRule);
   md.core.ruler.after('inline', 'task', taskRule);
   md.core.ruler.push('line_attrs', lineAttrs);
 
@@ -386,9 +438,10 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
     : `<div class="math-block" data-line="${(t[i].map?.[0] ?? 0) + (o.lineOffset || 0)}">${anchors(t[i].meta?.labels)}${katex(t[i].content, true, env.macros)}</div>\n`);
   R.eq_ref = (t, i, opts, env) => {
     const { kind, name } = t[i].meta;
-    const text = refText(kind, name, env.eqLabels || new Map());
-    return text == null ? `<span class="eqref missing" data-kind="${esc(kind)}" data-label="${esc(name)}" title="${esc(`No numbered equation has \\label{${name}}`)}">(??)</span>`
-      : `<a class="eqref" href="#${esc(labelId(name))}" data-label="${esc(name)}">${esc(text)}</a>`;
+    // an equation's label, else a figure's (figureRule)
+    const text = refText(kind, name, env.eqLabels || new Map()) ?? refText(kind, name, env.figLabels || new Map());
+    return text == null ? `<span class="eqref missing" data-kind="${esc(kind)}" data-label="${esc(name)}" title="${esc(`No numbered equation or figure has \\label{${name}}`)}">(??)</span>`
+      : `<a class="eqref" href="#${esc(labelId(name))}" data-kind="${esc(kind)}" data-label="${esc(name)}">${esc(text)}</a>`;
   };
   R.note_link = (t, i) => {
     const w = t[i].meta;
@@ -426,10 +479,18 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
   };
   // a gallery: a carousel in the app (galleryView.ts moves it), panels (a), (b), … in exports (exportNote.ts)
   const lineAttr = (t: MdToken) => { const v = t.attrGet('data-line'); return v != null ? ` data-line="${esc(v)}"` : ''; };
+  const figNum = (n: number, stop = '.') => `<span class="fig-num">${figureLabel(n)}${stop}</span>`;
+  R.figure_open = (t, i) => {
+    const f = t[i].meta;
+    return `<figure class="figure"${lineAttr(t[i])} data-fig="${f.fig}">${anchors(f.labels)}<div class="figure-image">`
+      + `<img src="${esc(imageSrc(f.src))}" alt="${esc(f.alt)}" loading="lazy"${f.width ? ` width="${Number(f.width)}"` : ''}></div>`
+      + `<figcaption class="figure-caption">${figNum(f.fig)} `;
+  };
+  R.figure_close = () => '</figcaption></figure>\n';
   R.gallery_open = (t, i) => {
-    const { width, count } = t[i].meta;
-    return `<figure class="gallery"${lineAttr(t[i])} data-count="${count}"${width ? ` style="max-width:${Number(width)}px"` : ''}>`
-      + `<div class="gallery-view"><div class="gallery-track">${count ? '' : '<div class="gallery-empty">Empty gallery: write one image per line, e.g. ![](attachments/x.png)</div>'}`;
+    const { width, count, fig, labels } = t[i].meta;
+    return `<figure class="gallery"${lineAttr(t[i])} data-count="${count}"${fig ? ` data-fig="${fig}"` : ''}${width ? ` style="max-width:${Number(width)}px"` : ''}>`
+      + `${fig ? anchors(labels) : ''}<div class="gallery-view"><div class="gallery-track">${count ? '' : '<div class="gallery-empty">Empty gallery: write one image per line, e.g. ![](attachments/x.png)</div>'}`;
   };
   R.gallery_panel_open = (t, i) => {
     const p = t[i].meta;
@@ -437,9 +498,16 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
       + `<img src="${esc(imageSrc(p.src))}" alt="${esc(p.alt)}" loading="lazy"${p.width ? ` width="${Number(p.width)}"` : ''}></div>`
       // the label hangs to the left of the caption, so the caption's text itself is centred
       + `<div class="gallery-panel-caption"><span class="gallery-caption-text${p.caption.trim() ? '' : ' empty'}">`
-      + `${p.count > 1 ? `<span class="gallery-label">(${panelLabel(p.index)})</span> ` : ''}`;
+      + panelHead(p);
   };
   R.gallery_panel_close = () => '</span></div></div>';
+  // what goes before a panel's caption: its label, "(b)"; when the gallery is a figure with no
+  // caption of its own, the panels' captions carry its number: "Fig. 2(b)", or "Fig. 2." alone
+  function panelHead(p: { index: number; count: number; caption: string; mainCaption: boolean; fig: number | null }): string {
+    const num = p.fig && !p.mainCaption && p.caption.trim();
+    if (p.count > 1) return `<span class="gallery-label">${num ? figNum(p.fig!, '') : ''}(${panelLabel(p.index)})</span> `;
+    return num ? `${figNum(p.fig!)} ` : '';
+  }
   R.gallery_nav = (t, i) => {
     const { count } = t[i].meta;
     if (count < 2) return '</div></div>';
@@ -448,7 +516,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
       + '<button type="button" class="gallery-btn gallery-next" aria-label="Next image">›</button></div>'
       + `<div class="gallery-dots">${dots}</div>`;
   };
-  R.gallery_caption_open = (t, i) => `<figcaption class="gallery-caption"${lineAttr(t[i])}>`;
+  R.gallery_caption_open = (t, i) => `<figcaption class="gallery-caption"${lineAttr(t[i])}>${t[i].meta?.fig ? `${figNum(t[i].meta.fig)} ` : ''}`;
   R.gallery_caption_close = () => '</figcaption>';
   R.gallery_close = () => '</figure>\n';
   const defaultFence = R.fence!;

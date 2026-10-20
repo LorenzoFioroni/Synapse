@@ -29,9 +29,10 @@ def panel_label(i: int) -> str:
 
 
 def _unwrap(caption: str) -> str:
+    """A caption wrapped as a whole in *…* or _…_ without the markers (markers in math don't count)."""
     c = caption.strip()
-    m = _WRAPPED.match(c)
-    return m.group(2) if m and m.group(1) not in m.group(2) else c
+    m = _WRAPPED.match(parser.mask(c))
+    return c[1:-1] if m and m.group(1) not in m.group(2) else c
 
 
 def parse_block(lines: list[str], info: str = "gallery") -> dict:

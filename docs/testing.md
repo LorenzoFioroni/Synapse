@@ -92,6 +92,7 @@ These check rules of the code base rather than behaviour:
 | `diff.test.mjs` | `views/notes/diff.js` |
 | `embed.test.mjs` | `views/notes/embed.js` and `linkData.js`: what an embedded note shows, with its own link data |
 | `equations.test.mjs` | `equations.js`, `mathClick.js`, `macros.js` and math in `render.js` |
+| `figures.test.mjs` | `views/notes/figures.js`: which images are figures, numbering, labels; figures in `render.js` and the Markdown export |
 | `gallery.test.mjs` | `views/notes/gallery.js`: reading gallery blocks, the figure caption, Markdown export; galleries in `render.js` |
 | `extract.test.mjs` | `extractCitation` in `browser_extension/extract.js`, with a faked `document` and `location` |
 | `graph.test.mjs` | `views/graph/model.js` |
@@ -102,7 +103,7 @@ These check rules of the code base rather than behaviour:
 | `render.test.mjs` | `views/notes/render.js` |
 | `store.test.mjs` | `sortedItems` in `store.js`, `hitBadge` in `util.js` |
 
-`embed.test.mjs`, `equations.test.mjs`, `gallery.test.mjs` and `render.test.mjs` load the real markdown-it and KaTeX from
+`embed.test.mjs`, `equations.test.mjs`, `figures.test.mjs`, `gallery.test.mjs` and `render.test.mjs` load the real markdown-it and KaTeX from
 `frontend/vendor/md/md.js`.
 
 **How pytest runs them.** `tests/test_frontend_js.py` has one test, `test_js_units`. It takes the
@@ -171,7 +172,7 @@ looking for a bug.
 | `equations` | 8786 | Editing notes with equations |
 | `export` | 8792 | Exporting a note: a self-contained HTML page that works offline, portable Markdown, PDF through the print dialog |
 | `extension` | 8789, 8790 | The browser extension: options page connects, the popup reads an article's citation tags and saves it with a tag |
-| `gallery` | 8794 | Galleries: the carousel in read mode and the live preview, editing its source, autocomplete in captions, exported as one figure with panels (HTML, PDF, Markdown) |
+| `gallery` | 8794 | Figure numbers and `\ref` (read mode, live preview, exports); galleries: the carousel in read mode and the live preview, editing its source, autocomplete in captions, exported as one figure with panels (HTML, PDF, Markdown) |
 | `graph` | 8787 | Local and global graph in Notes, Show in Graph, Cmd/Ctrl+Shift+G, Back/Forward |
 | `lazy_viewer` | 8778 | A 300-page PDF: pages drawn only near the viewport, fast jumps and zoom, annotations on far pages |
 | `library` | 8768 | Citation key rename with preview, notes in search, trashed items, Quote and Snapshot to note |

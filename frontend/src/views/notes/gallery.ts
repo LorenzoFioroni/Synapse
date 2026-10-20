@@ -11,9 +11,10 @@
 //
 // A blank line ends a panel's caption. Captions are Markdown (math, citations, links), and a
 // caption wrapped as a whole in *…* or _…_ (the usual way to caption an image) is unwrapped.
+// \label{fig:…} in any caption names the gallery's figure for \ref (figures.ts).
 // The block is not code: the parser and mdscan.ts read its lines like any paragraph, so its images
 // and citations count. No DOM here (tests/js/gallery.test.mjs).
-import { GALLERY_INFO } from './mdscan.js';
+import { GALLERY_INFO, mask } from './mdscan.js';
 
 export interface GalleryPanel {
   src: string;           // the image path (or URL) as written
@@ -28,6 +29,7 @@ export interface Gallery {
   caption: string;       // Markdown
   captionLine: number | null;
   panels: GalleryPanel[];
+  labels: string[];      // \label{…} written in its captions (taken out of them)
 }
 
 const IMAGE = /^!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/;
@@ -42,11 +44,32 @@ export function galleryInfo(info: string | null | undefined): { width: number | 
   return { width: width && width > 0 ? width : null };
 }
 
-/** A caption written as one emphasised span, *…* or _…_, without the markers. */
-function unwrap(caption: string): string {
+/** The text of a caption written as one emphasised span, *…* or _…_, without the markers; null
+ *  when it is not one. Markers inside math or code ($a^*$) do not count. */
+export function wholeEmphasis(caption: string): string | null {
   const c = caption.trim();
-  const m = /^([*_])(?!\1)([\s\S]*[^\s\\])\1$/.exec(c);
-  return m && !m[2].includes(m[1]) ? m[2] : c;
+  const masked = mask(c).masked;
+  const m = /^([*_])(?!\1)([\s\S]*[^\s\\])\1$/.exec(masked);
+  return m && !m[2].includes(m[1]) ? c.slice(1, -1) : null;
+}
+
+/** A caption without its emphasis markers when it is wrapped in them as a whole. */
+export const unwrapCaption = (caption: string): string => wholeEmphasis(caption) ?? caption.trim();
+
+/** \label{…} written in a caption (outside math and code): the caption without them, and the names. */
+export function takeLabels(caption: string): { text: string; labels: string[] } {
+  if (!caption.includes('\\label')) return { text: caption, labels: [] };
+  const { spans } = mask(caption);   // math and code (escapes are not spans)
+  const labels: string[] = [];
+  let text = '', at = 0;
+  for (const m of caption.matchAll(/\\label\{([^{}\n]*)\}/g)) {
+    if (spans.some((sp) => m.index! >= sp.from && m.index! < sp.to)) continue;
+    text += caption.slice(at, m.index);
+    labels.push(caption.slice(m.index! + 7, m.index! + m[0].length - 1).trim());
+    at = m.index! + m[0].length;
+  }
+  text += caption.slice(at);
+  return { text: text.replace(/[ \t]{2,}/g, ' ').trim(), labels: labels.filter(Boolean) };
 }
 
 /** Read the content of a gallery block (the lines between its fences). */
@@ -55,8 +78,10 @@ export function parseGallery(content: string, info = 'gallery'): Gallery {
   const captionLines: string[] = [];
   let captionLine: number | null = null;
   let current: { panel: GalleryPanel; lines: string[] } | null = null;
+  const labels: string[] = [];
+  const caption = (lines: string[]) => { const t = takeLabels(unwrapCaption(lines.join('\n'))); labels.push(...t.labels); return t.text; };
   const close = () => {
-    if (current) current.panel.caption = unwrap(current.lines.join('\n'));
+    if (current) current.panel.caption = caption(current.lines);
     current = null;
   };
   content.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n').forEach((raw, n) => {
@@ -84,7 +109,8 @@ export function parseGallery(content: string, info = 'gallery'): Gallery {
     }
   });
   close();
-  return { width: galleryInfo(info)?.width ?? null, caption: unwrap(captionLines.join('\n')), captionLine, panels };
+  const main = caption(captionLines);
+  return { width: galleryInfo(info)?.width ?? null, caption: main, captionLine, panels, labels };
 }
 
 /** "a", "b", … "z", then "27", "28", …: the label of the i-th panel (0-based), shown as "(a)". */
@@ -108,13 +134,19 @@ export function figureCaption(caption: string, panels: string[]): string {
   return parts.join(' ');
 }
 
+/** Whether a gallery has a caption of its own or on any panel: only then is it a numbered figure. */
+export const galleryCaptioned = (g: Gallery): boolean => !!g.caption || g.panels.some((p) => !!p.caption);
+
 /**
  * A gallery as plain Markdown for other programs (portable.ts): its images on one line, so most
- * renderers set them side by side, then the figure caption in italics.
+ * renderers set them side by side, then the figure caption in italics, after its number.
  */
-export function galleryMarkdown(g: Gallery): string {
+export function galleryMarkdown(g: Gallery, number: number | null = null): string {
   const images = g.panels.map((p) => `![${p.alt}](${p.src})`).join(' ');
   const caption = figureCaption(g.caption, g.panels.map((p) => p.caption));
   if (!caption) return images;
-  return `${images}\n\n${caption.includes('*') ? caption : `*${caption}*`}`;
+  return `${images}\n\n${number ? `**Fig. ${number}.** ` : ''}${italic(caption)}`;
 }
+
+/** A caption in *italics*, unless an asterisk of its own (outside math and code) would break them. */
+export const italic = (text: string): string => (mask(text).masked.includes('*') ? text : `*${text}*`);

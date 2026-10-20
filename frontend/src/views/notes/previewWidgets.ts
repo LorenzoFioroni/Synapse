@@ -118,13 +118,17 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     }, { block: true, cls: 'cm-lp-table' }),
 
     /** A gallery's carousel, drawn by the renderer; ``preview``: shown below its source while it is edited. */
-    gallery: (src: string, eq: Equations, version: string, preview: boolean) => new GalleryWidget(`g:${version}:${preview}:${src}`, (el) => {
+    /** A gallery's carousel, drawn by the renderer; ``preview``: shown below its source while it is
+     *  edited. Its figure number and \ref numbers come from the whole note (``fig``, ``labels``). */
+    gallery: (src: string, labels: Map<string, string | null>, fig: number | null, version: string, preview: boolean) => new GalleryWidget(`g:${version}:${preview}:${src}`, (el) => {
       const r = deps.renderer();
       el.innerHTML = r ? r.render(src) : '';
-      // \eqref in a caption: the equations are elsewhere in the note
-      for (const ref of el.querySelectorAll<HTMLElement>('.eqref.missing[data-label]')) {
-        const text = refText(ref.dataset.kind || 'eqref', ref.dataset.label!, eq.labels);
-        if (text != null) { ref.textContent = text; ref.classList.remove('missing'); ref.removeAttribute('title'); }
+      if (fig != null) el.querySelectorAll('.fig-num').forEach((n) => { n.textContent = n.textContent!.replace(/\d+/, String(fig)); });
+      for (const ref of el.querySelectorAll<HTMLElement>('.eqref[data-label]')) {
+        const text = refText(ref.dataset.kind || 'eqref', ref.dataset.label!, labels);
+        ref.textContent = text ?? '(??)';
+        ref.classList.toggle('missing', text == null);
+        if (text != null) ref.removeAttribute('title');
       }
     }, { block: true, cls: `cm-lp-gallery${preview ? ' cm-lp-gallerypreview' : ''}` }),
 
