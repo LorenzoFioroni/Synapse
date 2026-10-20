@@ -206,7 +206,8 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 /* task boxes, in read mode and the live preview: a rounded square, filled and ticked when done */
 .prose .task-box, .cm-lp-task {
   appearance: none; display: inline-grid; place-content: center; box-sizing: border-box;
-  width: 1.05em; height: 1.05em; margin: 0 .5em 0 0; vertical-align: -.17em;
+  /* centred on the line (as a task's box, css/tasks.css), not on the baseline */
+  width: 1.05em; height: 1.05em; margin: .3em .5em 0 0; margin-top: calc((1lh - 1.05em) / 2); vertical-align: top;
   border: 1.5px solid var(--text-3); border-radius: 4px; background: var(--bg); cursor: pointer;
   transition: background-color .12s, border-color .12s;
 }

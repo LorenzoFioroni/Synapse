@@ -203,7 +203,8 @@ interface Spot { line: number; text: string; lead: string; replace: boolean; tit
 function spotAt(view: EditorView, pos: number): Spot {
   const line = view.state.doc.lineAt(pos);
   const m = LINE.exec(line.text)!;
-  const lead = m[1] + (m[2] || '');
+  // a checkbox item becomes the task: its "- [ ]" goes, only the indentation (and quote marks) stay
+  const lead = m[1] + (m[3] ? '' : m[2] || '');
   const rest = m[4].trim();
   if (HEADING.test(line.text) || /^(```|~~~|\$\$|\|)/.test(rest)) return { line: line.number, text: line.text, lead: '', replace: false, title: '' };
   return { line: line.number, text: line.text, lead, replace: true, title: rest };

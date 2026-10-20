@@ -230,6 +230,24 @@ async def main():
                 new and f"{{{{task:{new[0]['id']}}}}}" in ed and "Write the outlook section" not in ed,
             )
 
+            # ---- a checkbox line becomes a task line without its "- [ ]"
+            await page.locator(".cm-line", has_text="a plain checkbox").click()
+            await page.keyboard.press("End")
+            await page.keyboard.press(f"{MOD}+Enter")
+            await page.wait_for_selector(".task-popup-new")
+            title = await page.locator(".tn-title-input").input_value()
+            check("A checkbox line's text is the title", title == "a plain checkbox", title)
+            await page.keyboard.press("Enter")
+            made3 = until(lambda: [t for t in all_tasks()["tasks"] if t["title"] == "a plain checkbox"])
+            ed = await page.evaluate("window.zcNotes.text()")
+            line = next((x for x in ed.split("\n") if made3 and f"{{{{task:{made3[0]['id']}}}}}" in x), None)
+            check(
+                "…and its line is the task alone, without the list marker",
+                line == f"{{{{task:{made3[0]['id']}}}}}" if made3 else False,
+                repr(line),
+            )
+            await page.keyboard.press(f"{MOD}+End")
+
             # ---- …or one you already have
             await page.keyboard.press("End")
             await page.keyboard.press("Enter")
