@@ -434,6 +434,9 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .gallery-image { flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; }
 .gallery-image img { display: block; max-width: 100%; max-height: 70vh; height: auto; object-fit: contain; border-radius: 6px; }
 .gallery-panel-caption { max-width: 92%; margin-top: .4em; text-align: center; font-size: .9em; line-height: 1.5; color: var(--text-2); }
+/* the label hangs to the left of the text, which stays centred (in flow when there is no caption) */
+.gallery-caption-text { position: relative; display: inline-block; }
+.gallery-caption-text:not(.empty) > .gallery-label { position: absolute; right: 100%; top: 0; margin-right: .3em; white-space: nowrap; }
 .gallery-label { font-weight: 650; color: var(--text); }
 .gallery-caption { margin-top: .5em; font-size: .92em; line-height: 1.55; color: var(--text-2); }
 .gallery-empty { padding: 18px; width: 100%; text-align: center; color: var(--text-3); font-size: var(--fs-sm); border: 1px dashed var(--border-strong); border-radius: 8px; }

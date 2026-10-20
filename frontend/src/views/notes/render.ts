@@ -435,9 +435,11 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
     const p = t[i].meta;
     return `<div class="gallery-panel"${lineAttr(t[i])} data-index="${p.index}"><div class="gallery-image">`
       + `<img src="${esc(imageSrc(p.src))}" alt="${esc(p.alt)}" loading="lazy"${p.width ? ` width="${Number(p.width)}"` : ''}></div>`
-      + `<div class="gallery-panel-caption">${p.count > 1 ? `<span class="gallery-label">(${panelLabel(p.index)})</span> ` : ''}`;
+      // the label hangs to the left of the caption, so the caption's text itself is centred
+      + `<div class="gallery-panel-caption"><span class="gallery-caption-text${p.caption.trim() ? '' : ' empty'}">`
+      + `${p.count > 1 ? `<span class="gallery-label">(${panelLabel(p.index)})</span> ` : ''}`;
   };
-  R.gallery_panel_close = () => '</div></div>';
+  R.gallery_panel_close = () => '</span></div></div>';
   R.gallery_nav = (t, i) => {
     const { count } = t[i].meta;
     if (count < 2) return '</div></div>';

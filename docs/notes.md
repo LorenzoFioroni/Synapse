@@ -360,7 +360,8 @@ Photon number versus $N$ at equal reduced drive.
 token by tokens of its own (`gallery_open`, `gallery_panel_open`, …), each caption an `inline`
 token. Captions are therefore parsed with the rest of the note: equation numbering, the note's
 macros and `\eqref` work in them. The HTML is a `figure.gallery` with a `.gallery-track` of
-`.gallery-panel`s (each image above its caption, labelled "(a)", "(b)", … when there are several),
+`.gallery-panel`s (each image above its caption, labelled "(a)", "(b)", … when there are several;
+the label hangs to the left of `.gallery-caption-text`, so the caption's text is centred),
 arrows, dots and a `figcaption.gallery-caption`. A gallery of one image has no labels or controls;
 an empty one shows a hint.
 
@@ -380,8 +381,9 @@ is numbered from the whole note's equations. Citation and link autocomplete work
 
 **Exports.** HTML and PDF (`staticGalleries` in `exportNote.ts`, CSS in `export.css`): each
 carousel becomes a `figure.gallery-figure` whose panels sit in a grid of `figureColumns(n)`
-columns (as many as there are panels up to three, two for four, else three), each labelled
-(a), (b), … below, and one caption: the gallery's own, then each panel's as "(a) First. (b) Second.",
+columns (as many as there are panels up to three, two for four, else three), each with its letter
+in a white, black-bordered circle on the image's upper left corner (`.gallery-cell-label` inside
+`.gallery-cell-image`, a frame that hugs the image), and one caption: the gallery's own, then each panel's as "(a) First. (b) Second.",
 every part ending as a sentence (`endsSentence`). Markdown (`portableGalleries` in `portable.ts`):
 the images on one line, which most viewers set side by side, and that caption in italics below.
 

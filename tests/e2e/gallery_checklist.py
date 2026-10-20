@@ -178,6 +178,19 @@ async def main():
                 cap,
             )
             check("the italic caption is unwrapped", await first.locator(".gallery-panel-caption em").count() == 0)
+            # the label hangs to the left: the caption's text is centred under its image
+            centred = await page.evaluate(
+                """() => [...document.querySelectorAll('.note-read .gallery .gallery-panel')].slice(0, 1).map((p) => {
+                  const t = p.querySelector('.gallery-caption-text').getBoundingClientRect();
+                  const i = p.querySelector('.gallery-image img').getBoundingClientRect();
+                  const l = p.querySelector('.gallery-label').getBoundingClientRect();
+                  return [Math.round(t.left + t.width / 2 - (i.left + i.width / 2)), l.right <= t.left + 1, Math.round(l.top - t.top)]; })[0]"""
+            )
+            check(
+                "panel caption centred, its label to the left",
+                abs(centred[0]) <= 1 and centred[1] and abs(centred[2]) <= 2,
+                centred,
+            )
             vis = await page.evaluate(
                 """() => { const g = document.querySelector('.note-read .gallery'); const t = g.querySelector('.gallery-track');
                   const r = t.getBoundingClientRect();
@@ -306,7 +319,11 @@ async def main():
                 len(figs) == 2 and re.sub(r"<[^>]+>", "", figs[1]) == "(a) One. (b) Two. (c) Three. (d) Four.",
                 figs[1:],
             )
-            check("HTML: labels under the panels", article.count('class="gallery-cell-label"') == 7)
+            check(
+                "HTML: a letter on each panel, nothing under it",
+                re.findall(r'<span class="gallery-cell-label">([a-z])</span>', article) == list("abcabcd")
+                and "gallery-label" not in article,
+            )
             check("HTML: images inlined", article.count("data:image/png;base64,") == 7)
             view = await ctx.new_page()
             await view.set_content(html)
@@ -323,6 +340,28 @@ async def main():
                 and rows[1][2] == rows[1][3]
                 and rows[1][2] > rows[1][0],
                 rows,
+            )
+            badges = await view.evaluate(
+                """() => [...document.querySelectorAll('.gallery-cell')].map((c) => {
+                  const b = c.querySelector('.gallery-cell-label'), i = c.querySelector('img').getBoundingClientRect();
+                  const r = b.getBoundingClientRect(), st = getComputedStyle(b);
+                  return [Math.round(r.left - i.left), Math.round(r.top - i.top), Math.round(r.width) === Math.round(r.height),
+                          st.backgroundColor, st.borderTopColor, st.borderRadius, Math.round(r.bottom - i.bottom) < 0]; })"""
+            )
+            check(
+                "HTML: the letter in a white circle with a black border, on the image's upper left corner",
+                len(badges) == 7
+                and all(
+                    0 <= x <= 12
+                    and 0 <= y <= 12
+                    and sq
+                    and bg == "rgb(255, 255, 255)"
+                    and bc == "rgb(0, 0, 0)"
+                    and rad == "50%"
+                    and inside
+                    for x, y, sq, bg, bc, rad, inside in badges
+                ),
+                badges[:2],
             )
             fw = await view.evaluate("document.querySelector('.gallery-figure').getBoundingClientRect().width")
             check("HTML: the figure keeps the gallery's width", fw <= 600, fw)

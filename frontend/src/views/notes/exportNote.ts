@@ -182,7 +182,7 @@ function staticCopy(root: HTMLElement, listed: Set<string>): void {
 
 /**
  * Each gallery's carousel becomes a figure: the panels in rows of at most three (figureColumns),
- * each labelled (a), (b), …, and one caption, the gallery's own followed by the panels':
+ * each labelled a, b, … in a circle on its upper left corner, and one caption, the gallery's own followed by the panels':
  * "Caption. (a) First panel. (b) Second panel." A gallery of one image has no labels.
  */
 function staticGalleries(root: HTMLElement): void {
@@ -206,11 +206,14 @@ function staticGalleries(root: HTMLElement): void {
     const single = panels.length === 1;
     panels.forEach((p, i) => {
       const cell = el('div', 'gallery-cell');
+      // the image in a frame that hugs it, so the label sits on its upper left corner
+      const frame = el('div', 'gallery-cell-image');
       const image = p.querySelector('.gallery-image');
-      if (image) cell.append(...image.childNodes);
-      if (!single) { const label = el('div', 'gallery-cell-label'); label.textContent = `(${panelLabel(i)})`; cell.append(label); }
+      if (image) frame.append(...image.childNodes);
+      if (!single) { const badge = el('span', 'gallery-cell-label'); badge.textContent = panelLabel(i); frame.append(badge); }
+      cell.append(frame);
       grid.append(cell);
-      const text = p.querySelector('.gallery-panel-caption');
+      const text = p.querySelector('.gallery-caption-text') || p.querySelector('.gallery-panel-caption');
       const label = text?.querySelector('.gallery-label');
       if (label?.nextSibling?.nodeType === Node.TEXT_NODE) label.nextSibling.textContent = label.nextSibling.textContent!.replace(/^\s+/, '');
       label?.remove();

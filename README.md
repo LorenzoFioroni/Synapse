@@ -155,7 +155,8 @@ never mix.
   (` ```gallery|600 ` sets its width) with one image per line, each followed by its caption, then
   after a blank line the caption of the whole gallery (see [Galleries](docs/notes.md#galleries)).
   Arrows, dots or a swipe turn it; exported, it becomes one figure with the panels side by side
-  (at most three to a row), labelled (a), (b), …, under one caption: the gallery's, then
+  (at most three to a row), each marked a, b, … in a white circle on its upper left corner, under
+  one caption: the gallery's, then
   "(a) first panel's. (b) second panel's." Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
   Cmd+[ / Alt+←) go back to the note or library selection you came from.
