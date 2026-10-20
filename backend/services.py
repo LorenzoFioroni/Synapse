@@ -59,8 +59,13 @@ class Services:
         self.attachments.on_maintain = self.purge_task_trash
         # Backups of library.db, settings and notes; the scheduler is started by create_app only.
         from .access.devices import Devices
+        from .access.passkeys import Passkeys
+        from .access.tokens import AccessTokens
 
         self.devices = Devices(config.auth_db_path)  # paired iPads/phones (--lan)
+        self.passkeys = Passkeys(config.auth_db_path, self.devices)  # sign a device in without pairing
+        self.tokens = AccessTokens(config.auth_db_path)  # AI apps on other computers (/mcp)
+        self._mcp_http = None
         from .backup import Backups
 
         self.backups = Backups(self)
@@ -74,6 +79,23 @@ class Services:
             self.notes.sync()
         except Exception:  # notes must never stop the library from starting
             logging.getLogger(__name__).exception("Notes index sync failed")
+
+    def mcp_http(self):
+        """The MCP server over HTTP (``/mcp``), built on first use. It shares these services with
+        the web app, so its writes reach the change feed like the app's own."""
+        with self._mcp_lock:
+            if self._mcp_http is None:
+                from .mcp import build_server
+                from .mcp.http import HttpTransport
+
+                # Notes and tasks written by a tool show up in the open windows. The request itself
+                # counts only as a library write (kind_of), which would hide a task change.
+                self._mcp_http = HttpTransport(
+                    lambda: build_server(self), lambda: self.changes.record({"notes", "tasks"})
+                )
+            return self._mcp_http
+
+    _mcp_lock = threading.Lock()
 
     def purge_task_trash(self) -> int:
         """Empty the tasks trash after the same retention as the notes trash."""

@@ -24,7 +24,7 @@ export function cancelPairing(): void {
   api.cancelPairing().catch(toastError);
 }
 
-function relTime(iso: string | null): string {
+export function relTime(iso: string | null): string {
   if (!iso) return 'never';
   const s = (Date.now() - Date.parse(iso)) / 1000;
   if (s < 90) return 'just now';

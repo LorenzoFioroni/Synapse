@@ -21,6 +21,7 @@ const SECTIONS: [string, string, string][] = [
   ['online', 'Online Services', 'globe'],
   ['backups', 'Backups', 'restore'],
   ['devices', 'Devices', 'tablet'],
+  ['ai', 'AI Access', 'sparkle'],
   ['library', 'Library & Shortcuts', 'database'],
 ];
 
@@ -206,6 +207,21 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
           <div class="setting stack"><div class="s-text"><div class="s-title">Paired devices</div>
             <div class="s-desc" data-devices-desc></div></div>
             <div class="backup-list" data-device-list></div></div>
+          <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Passkeys</div>
+            <div class="s-desc" data-passkeys-desc>Loading…</div></div>
+            <div class="s-control" data-passkey-control></div></div>
+            <div class="backup-list" data-passkey-list></div></div>
+        </div></section>
+
+      <section class="settings-section" id="set-ai"><h2>AI Access</h2>
+        <p class="lead">Let Claude Code on another computer use the library over the network (MCP). On this computer, Claude can start
+          Synapse's MCP server itself instead: run <span class="mono">python mcp_server.py --config</span> for the setup.</p>
+        <div class="card">
+          <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Access tokens</div>
+            <div class="s-desc" data-ai-desc>Loading…</div></div>
+            <div class="s-control" data-ai-control></div></div>
+            <div data-ai-fresh></div>
+            <div class="backup-list" data-ai-list></div></div>
         </div></section>
 
       <section class="settings-section" id="set-library"><h2>Library &amp; Shortcuts</h2><p class="lead" data-data-dir></p>

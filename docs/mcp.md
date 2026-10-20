@@ -5,6 +5,9 @@ Model Context Protocol. The app starts the script itself and talks to it over st
 It reads the same `data/` folder as the web app, which does not need to be running. It can read
 items, PDFs, notes and reference lists, and it can write notes under strict rules.
 
+The same tools are also served by the web app at `/mcp`, over HTTP, for an AI app on another
+computer (see [Over HTTP](#over-http-mcp)). That needs the web app running and an access token.
+
 [Architecture](architecture.md) shows where it sits. This page covers the code in `mcp_server.py`
 and `backend/mcp/`.
 
@@ -12,6 +15,9 @@ and `backend/mcp/`.
 |---|---|
 | `mcp_server.py` | The script: parses the flags, builds a `Services` for the data folder and serves over stdio. |
 | `backend/mcp/protocol.py` | The JSON-RPC 2.0 message layer: `Server`, `Tool`, `ToolError`, argument checks, `serve_stdio`. |
+| `backend/mcp/http.py` | `HttpTransport`: the same server over HTTP, for the web app's `/mcp` endpoint. |
+| `backend/api/mcp.py` | The `/mcp` endpoint and the access-token endpoints of Settings → AI Access. |
+| `backend/access/tokens.py` | `AccessTokens`: the tokens an AI app sends to `/mcp`, hashed in `auth.db`. |
 | `backend/mcp/server.py` | `build_server()`: registers every tool with its title, description and argument schema. |
 | `backend/mcp/instructions.py` | `INSTRUCTIONS` (how to use the tools) and `WRITING_RULES` (the note syntax). |
 | `backend/mcp/tools/` | The tools themselves, one mixin per family, combined in `LibraryTools`. |
@@ -39,8 +45,8 @@ the script prints a message to stderr and exits with status 1, without creating 
 
 `backend/mcp/protocol.py` implements only what a tools-only server needs. It does not depend on
 the transport: `Server.handle(message)` takes one decoded JSON-RPC message (or a batch) and
-returns the reply, or `None` for a notification. A Streamable HTTP endpoint could call `handle`
-from a Flask route in the same way.
+returns the reply, or `None` for a notification. `serve_stdio` and `HttpTransport` are the two
+transports that call it.
 
 | Method | Answer |
 |---|---|
@@ -173,8 +179,8 @@ The MCP server is a separate process with its own `Services` over the same folde
 connection between the two processes; they share files and SQLite databases.
 
 **Start-up.** `Services(config)` opens the databases and runs the library migrations, as the web
-app does. `ToolsBase` then sets `note_service.on_change` to `None`, so the MCP process never runs
-the app's background jobs such as the sweep of unused attachments. Settings are read from
+app does. `mcp_server.py` then sets `note_service.on_change` to `None`, so the MCP process never
+runs the app's background jobs such as the sweep of unused attachments. Settings are read from
 `settings.json` once, when the server starts.
 
 **Seeing the app's changes.** `build_server` sets `before_call=t.refresh`. Before a tool runs,
@@ -193,6 +199,58 @@ unless the user has unsaved changes. If the user is typing, the editor's own sav
 and the conflict dialog takes over. The bar over the note that shows the latest AI edit is
 `frontend/src/views/notes/aiBar.ts`. See [sync and devices](sync-and-devices.md) for the change
 feed.
+
+## Over HTTP (`/mcp`)
+
+Claude Code on another computer cannot start `mcp_server.py` here, so the web app serves the same
+tools at `/mcp` (the "Streamable HTTP" transport, in its simplest form). It needs `--lan` to be
+reachable from the network; on this computer it works without.
+
+```
+Claude Code ──POST /mcp, Authorization: Bearer syn_…──► guard: host, Origin, token (access/guard.py)
+                                                           └ api/mcp.py → Services.mcp_http()
+                                                               └ HttpTransport.handle(body) → Server.handle
+```
+
+**Requests.** Each POST carries one JSON-RPC message or a batch, and the answer is the reply as
+`application/json` (200), or an empty 202 when the body held only notifications. A body that is
+not JSON answers 400 with a parse error. A `MCP-Protocol-Version` header naming a version not in
+`PROTOCOL_VERSIONS` answers 400. GET and DELETE answer 405: there is no event stream (every tool
+answers at once) and no session, because the server keeps no state between requests.
+
+**One at a time.** `HttpTransport` holds a lock around `Server.handle`, so tool calls run one after
+another as they do over stdio; the tools' caches are not made for several threads. The server is
+built on the first request, with the web app's own `Services`, so its writes go through the same
+components as the app's.
+
+**Change feed.** A library write made during a `/mcp` request is recorded like any other request
+without a client id, so every window refreshes. After a tool with `read_only=False`, `HttpTransport`
+calls the `wrote` callback, which `Services` points at `changes.record({"notes", "tasks"})`: notes
+and tasks written in-process are reported at once. Without it a task change would go unseen: the
+request's own record says `library` (`kind_of("/mcp")`), and that also explains the new file time of
+`library.db`, so the file-time check finds nothing.
+
+**Access tokens.** The guard lets a request to `/mcp` through only with
+`Authorization: Bearer <token>` naming a token in `auth.db` (`AccessTokens.check`), from this
+computer too; device cookies do not count. Otherwise it answers 401 with
+`WWW-Authenticate: Bearer`. A request with an `Origin` other than the server's own answers 403,
+so a web page cannot use a token the browser does not have anyway, and the Host check still stops
+DNS rebinding. Tokens (`syn_` and 43 random characters) are made in **Settings → AI Access**
+(`frontend/src/views/settings/aiAccess.ts`), only on the computer running Synapse, shown once with
+the `claude mcp add --transport http … --header "Authorization: Bearer …"` command, and stored as
+SHA-256 hashes. `last_used` and `last_addr` are updated at most once a minute. Removing a token
+locks its app out at the next request.
+
+| Endpoint | Who | What |
+|---|---|---|
+| `POST /mcp` | a valid token | One JSON-RPC message or batch. |
+| `GET /api/mcp/tokens` | this computer or a signed-in device | `this_computer`, `lan`, `endpoints` (the `/mcp` URLs, one per address under `--lan`), `tokens`. |
+| `POST /api/mcp/tokens` | this computer | `{name}` → 201 `{token, entry, tokens}`; the token is not kept. |
+| `DELETE /api/mcp/tokens/<id>` | this computer | Removes the token. |
+
+Over plain HTTP the token crosses the network in the clear, like a device cookie: use `--lan` on a
+trusted network, or HTTPS (`--cert`/`--key`; Claude Code must then trust the certificate, for
+example with `NODE_EXTRA_CA_CERTS`). See [sync and devices](sync-and-devices.md#security-model).
 
 ## Adding a tool
 
@@ -234,5 +292,10 @@ notes, a stored reference list, and a server from `build_server`. Most tests cal
 - the whole script: `mcp_server.py --data …` run as a subprocess with an `initialize`,
   `tools/list` and `tools/call` exchange, plus `--config` and a missing library;
 - notes edited on disk being seen by the next tool call.
+
+`tests/test_mcp_http.py` covers `/mcp`: the tools from another computer with a token, 401 without
+one (also from this computer and with a device cookie), foreign origins and hosts, bad bodies and
+versions, making, listing and removing tokens, and a note written over HTTP reaching the change
+feed. The browser checklist `passkeys` makes a token in Settings and uses it.
 
 Tests that render pages are skipped when `pypdfium2` is not installed. See [testing](testing.md).

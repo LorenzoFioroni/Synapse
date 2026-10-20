@@ -473,10 +473,17 @@ async def main():
             await page.keyboard.press("Delete")
             gone = until(lambda: not any(t["id"] == made[0]["id"] for t in all_tasks()["tasks"]))
             check("Delete moves it to the trash", gone)
-            undo = await wait_for(page, "!!document.querySelector('.toast')")
+            # its own toast: one from earlier (a task gone with its line) may still be showing
+            undo = await wait_for(
+                page, "[...document.querySelectorAll('.toast')].some(t => t.innerText.includes('Deleted 1 task'))"
+            )
             if undo:
-                await page.locator(".toast button", has_text="Undo").last.click()
-            check("Undo brings it back", until(lambda: any(t["id"] == made[0]["id"] for t in all_tasks()["tasks"])))
+                await page.locator(".toast", has_text="Deleted 1 task").locator(".toast-action").click()
+            check(
+                "Undo brings it back",
+                until(lambda: any(t["id"] == made[0]["id"] for t in all_tasks()["tasks"])),
+                await page.evaluate("[...document.querySelectorAll('.toast')].map(t => t.innerText).join(' | ')"),
+            )
 
             # a change made elsewhere (another window, or Claude) shows up
             other = task("Made in another window")

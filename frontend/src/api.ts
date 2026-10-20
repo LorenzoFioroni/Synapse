@@ -1,9 +1,10 @@
 // Thin client for the JSON API. Every call throws an Error with a readable
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
-  AssistCompletion, AssistStatus, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
+  AccessToken, AccessTokensOverview, AssistCompletion, AssistStatus, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
   ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
-  PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task, TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview,
+  Passkey, PasskeysOverview, PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
+  TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview,
 } from './types.js';
 
 export class ApiError extends Error {
@@ -86,6 +87,15 @@ export const api = {
   cancelPairing: () => request('DELETE', '/api/devices/pairing'),
   renameDevice: (id: string, name: string) => request('PATCH', `/api/devices/${encodeURIComponent(id)}`, { name }),
   removeDevice: (id: string) => request('DELETE', `/api/devices/${encodeURIComponent(id)}`),
+
+  passkeys: () => request<PasskeysOverview>('GET', '/api/passkeys'),
+  passkeyOptions: (name: string) => request<Record<string, any>>('POST', '/api/passkeys/register/options', { name }),
+  addPasskey: (credential: Record<string, unknown>) => request<{ passkey: Passkey }>('POST', '/api/passkeys/register', { credential }),
+  removePasskey: (id: string) => request('DELETE', `/api/passkeys/${encodeURIComponent(id)}`),
+
+  accessTokens: () => request<AccessTokensOverview>('GET', '/api/mcp/tokens'),
+  newAccessToken: (name: string) => request<{ token: string; entry: AccessToken }>('POST', '/api/mcp/tokens', { name }),
+  removeAccessToken: (id: string) => request('DELETE', `/api/mcp/tokens/${encodeURIComponent(id)}`),
   backups: () => request<BackupStatus>('GET', '/api/backups'),
   backupNow: () => request('POST', '/api/backups'),
   restoreBackup: (name: string) => request<BackupStatus & { restored: string; safety_backup: string }>('POST', '/api/backups/restore', { name }),

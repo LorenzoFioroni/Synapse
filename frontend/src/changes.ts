@@ -33,14 +33,9 @@ function editing() {
 
 async function apply() {
   if (editing()) return;   // tried again at the next poll
-  if (pending.has('notes')) {
-    pending.delete('notes');
-    notesChanged();
-  }
-  if (pending.has('tasks') || pending.has('notes')) {
-    pending.delete('tasks');
-    tasksChanged();   // a note's {{task:…}} lines may have changed too
-  }
+  const notes = pending.delete('notes');
+  if (notes) notesChanged();
+  if (pending.delete('tasks') || notes) tasksChanged();   // a note's {{task:…}} lines may have changed too
   if (pending.has('library')) {
     if (Date.now() - lastLibrary < MIN_GAP) return;   // tried again at the next poll
     pending.delete('library');

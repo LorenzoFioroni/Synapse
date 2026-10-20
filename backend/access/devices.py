@@ -4,7 +4,9 @@ There is one user, so there are no accounts: a device is added by **pairing**. O
 Settings → Devices makes a one-time code (valid for a few minutes, and only the newest one; Cancel
 voids it) and shows it as a QR code;
 opening that link on the other device exchanges the code for a long-lived **device token**,
-which the browser keeps in a cookie. Requests from this computer itself need no token.
+which the browser keeps in a cookie. A device can also sign in with a passkey instead
+(``passkeys.py``), which needs no code from this computer. Requests from this computer itself need
+no token.
 
 Only SHA-256 hashes of codes and tokens are stored (both are long random strings, so a plain
 hash is enough). The tokens live in ``auth.db`` in the data folder — not in settings.json and
@@ -14,13 +16,12 @@ not in backups, so restoring a backup never brings back a device that was signed
 from __future__ import annotations
 
 import builtins
-import hashlib
 import secrets
-import sqlite3
-import threading
 import time
-from datetime import datetime, timezone
 from pathlib import Path
+
+from .authdb import AuthTable, now_iso
+from .authdb import hash_secret as _hash
 
 COOKIE = "synapse_device"
 COOKIE_MAX_AGE = 400 * 24 * 3600  # the longest browsers keep a cookie
@@ -49,14 +50,6 @@ class PairingError(Exception):
         self.status = status
 
 
-def _hash(secret: str) -> str:
-    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
 def guess_name(user_agent: str) -> str:
     ua = user_agent or ""
     for key, name in (("iPad", "iPad"), ("iPhone", "iPhone"), ("Android", "Android device")):
@@ -71,30 +64,15 @@ def guess_name(user_agent: str) -> str:
     return "Device"
 
 
-class Devices:
+class Devices(AuthTable):
+    SCHEMA = SCHEMA
+
     def __init__(self, path: Path, clock=time.time):
-        self.path = Path(path)
+        super().__init__(path)
         self.clock = clock
-        self._lock = threading.Lock()
         self._code: tuple[str, float] | None = None  # (hash, expiry) of the one code (a restart voids it)
         self._failed: dict[str, list[float]] = {}  # address → times of failed pairing attempts
         self._touched: dict[str, float] = {}  # device id → last "last seen" write
-        self._db: sqlite3.Connection | None = None
-
-    # -- storage -------------------------------------------------------------
-    def _conn(self) -> sqlite3.Connection:
-        if self._db is None:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self._db = sqlite3.connect(self.path, check_same_thread=False)
-            self._db.row_factory = sqlite3.Row
-            self._db.executescript(SCHEMA)
-        return self._db
-
-    def close(self) -> None:
-        with self._lock:
-            if self._db is not None:
-                self._db.close()
-                self._db = None
 
     # -- pairing -------------------------------------------------------------
     def new_pairing_code(self) -> tuple[str, float]:
@@ -135,21 +113,29 @@ class Devices:
                     401,
                 )
             self._code = None  # it works once
-            token = secrets.token_urlsafe(32)
-            dev_id = secrets.token_hex(8)
-            name = (name or "").strip()[:NAME_MAX] or guess_name(user_agent)
-            now = _now_iso()
-            db = self._conn()
-            db.execute(
-                "INSERT INTO devices (id, name, token_hash, user_agent, created, last_seen, last_addr) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (dev_id, name, _hash(token), (user_agent or "")[:300], now, now, addr),
-            )
-            db.commit()
-            self._touched[dev_id] = self.clock()
-            device = self._get(dev_id)
-            assert device is not None  # just inserted
-            return device, token
+            return self._insert(name, user_agent, addr)
+
+    def add(self, name: str, user_agent: str, addr: str) -> tuple[dict, str]:
+        """A new device that proved itself another way (a passkey). Returns (device, token)."""
+        with self._lock:
+            return self._insert(name, user_agent, addr)
+
+    def _insert(self, name: str, user_agent: str, addr: str) -> tuple[dict, str]:
+        token = secrets.token_urlsafe(32)
+        dev_id = secrets.token_hex(8)
+        name = (name or "").strip()[:NAME_MAX] or guess_name(user_agent)
+        now = now_iso()
+        db = self._conn()
+        db.execute(
+            "INSERT INTO devices (id, name, token_hash, user_agent, created, last_seen, last_addr) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (dev_id, name, _hash(token), (user_agent or "")[:300], now, now, addr),
+        )
+        db.commit()
+        self._touched[dev_id] = self.clock()
+        device = self._get(dev_id)
+        assert device is not None  # just inserted
+        return device, token
 
     # -- checking ------------------------------------------------------------
     def check(self, token: str | None, addr: str | None = None) -> dict | None:
@@ -167,7 +153,7 @@ class Devices:
                 self._touched[row["id"]] = now
                 self._conn().execute(
                     "UPDATE devices SET last_seen = ?, last_addr = ? WHERE id = ?",
-                    (_now_iso(), addr or row["last_addr"], row["id"]),
+                    (now_iso(), addr or row["last_addr"], row["id"]),
                 )
                 self._conn().commit()
             return dev

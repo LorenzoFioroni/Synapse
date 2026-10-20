@@ -1,5 +1,5 @@
 // Settings page (full-screen view). Changes save immediately. The page's markup is in
-// settings/page.ts; Backups and Devices have modules of their own in settings/.
+// settings/page.ts; Backups, Devices, Passkeys and AI Access have modules of their own in settings/.
 import * as A from '../actions.js';
 import { api } from '../api.js';
 import { emit, state } from '../store.js';
@@ -10,7 +10,9 @@ import { debounce, escapeHtml, formatBytes, formatDate, plural, store } from '..
 import { baseMacros } from './notes/macros.js';
 import { bindAssist, refreshAssist } from './settings/assist.js';
 import { bindBackups, refreshBackups } from './settings/backups.js';
+import { bindAiAccess, forgetFreshToken, refreshAiAccess } from './settings/aiAccess.js';
 import { bindDevices, cancelPairing, refreshDevices } from './settings/devices.js';
+import { bindPasskeys, refreshPasskeys } from './settings/passkeys.js';
 import { TOKENS, flashSaved, settingsHtml } from './settings/page.js';
 
 let view: HTMLElement | null = null;
@@ -52,6 +54,8 @@ export function openSettings(sectionId: string | null = null): void {
   refreshStats();
   refreshBackups(page);
   refreshDevices(page);
+  refreshPasskeys(page);
+  refreshAiAccess(page);
   refreshAssist(page, { fresh: false });
   statsTimer = setInterval(refreshStats, 2000);
   const sel = page.querySelector<HTMLSelectElement>('[data-key="_preset"]')!;
@@ -63,6 +67,7 @@ export function closeSettings(): void {
   if (!view) return;
   clearInterval(statsTimer);
   cancelPairing();
+  forgetFreshToken();
   view.remove();
   view = null;
   emit('focus-list');
@@ -203,6 +208,8 @@ function bind(view: HTMLElement): void {
   view.querySelectorAll<HTMLInputElement>('[data-apikey]').forEach((inp) => inp.addEventListener('change', () => save({ [inp.dataset.apikey!]: inp.value.trim() }, inp)));
 
   bindDevices(view);
+  bindPasskeys(view);
+  bindAiAccess(view);
   bindBackups(view);
   bindAssist(view);
 
