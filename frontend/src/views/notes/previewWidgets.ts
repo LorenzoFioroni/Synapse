@@ -7,7 +7,8 @@
 import type { EditorView as EditorViewT } from '@codemirror/view';
 import type { CM } from './editor.js';
 import type { Macros } from './macros.js';
-import { refText } from './equations.js';
+import type { Lookup, RefKind } from './crossref.js';
+import { refHtml } from './render.js';
 import { fitSoon } from './mathFit.js';
 import type { PreviewDeps } from './livePreview.js';
 
@@ -120,15 +121,16 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     /** A gallery's carousel, drawn by the renderer; ``preview``: shown below its source while it is edited. */
     /** A gallery's carousel, drawn by the renderer; ``preview``: shown below its source while it is
      *  edited. Its figure number and \ref numbers come from the whole note (``fig``, ``labels``). */
-    gallery: (src: string, labels: Map<string, string | null>, fig: number | null, version: string, preview: boolean) => new GalleryWidget(`g:${version}:${preview}:${src}`, (el) => {
+    gallery: (src: string, lookup: Lookup, fig: number | null, version: string, preview: boolean) => new GalleryWidget(`g:${version}:${preview}:${src}`, (el) => {
       const r = deps.renderer();
       el.innerHTML = r ? r.render(src) : '';
       if (fig != null) el.querySelectorAll('.fig-num').forEach((n) => { n.textContent = n.textContent!.replace(/\d+/, String(fig)); });
+      // written again with the whole note's labels (the renderer saw only this block)
+      for (const ref of el.querySelectorAll<HTMLElement>('.cref[data-names]')) {
+        ref.outerHTML = refHtml(ref.dataset.kind as RefKind, (ref.dataset.names || '').split(','), lookup);
+      }
       for (const ref of el.querySelectorAll<HTMLElement>('.eqref[data-label]')) {
-        const text = refText(ref.dataset.kind || 'eqref', ref.dataset.label!, labels);
-        ref.textContent = text ?? '(??)';
-        ref.classList.toggle('missing', text == null);
-        if (text != null) ref.removeAttribute('title');
+        if (!ref.closest('.cref')) ref.outerHTML = refHtml((ref.dataset.kind || 'eqref') as RefKind, [ref.dataset.label!], lookup);
       }
     }, { block: true, cls: `cm-lp-gallery${preview ? ' cm-lp-gallerypreview' : ''}` }),
 

@@ -213,6 +213,7 @@ function staticGalleries(root: HTMLElement): void {
     const single = panels.length === 1;
     panels.forEach((p, i) => {
       const cell = el('div', 'gallery-cell');
+      cell.append(...p.querySelectorAll(':scope > .eq-anchor'));   // a panel's \label
       // the image in a frame that hugs it, so the label sits on its upper left corner
       const frame = el('div', 'gallery-cell-image');
       const image = p.querySelector('.gallery-image');

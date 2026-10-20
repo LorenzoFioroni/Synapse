@@ -24,7 +24,8 @@ import type { CM } from './editor.js';
 import { type Scan, type Span, attachmentOf, scan, splitFrontmatter } from './mdscan.js';
 import { type CiteTarget, citeTargetInText } from './citeTarget.js';
 import { type CiteInfo, type Renderer, citeLabel, imageSrc } from './render.js';
-import { type TextRef, numberEquations, refText, resolveRefs, textRefs } from './equations.js';
+import { type TextRef, numberEquations, resolveRefs, textRefs } from './equations.js';
+import { type Lookup, type RefKind, lookupIn, refMissing, refNames, refParts, refPlain } from './crossref.js';
 import { clickOffset } from './mathClick.js';
 import { type Definition, HAS_DEFINITIONS, type Macros, parseDefinitions, withDefinitions } from './macros.js';
 import { type Equations, previewWidgets } from './previewWidgets.js';
@@ -80,11 +81,8 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     cache.figs ||= figuresOf(state.doc.toString(), s);
     return cache.figs;
   };
-  // what \ref / \eqref may name: an equation's label, else a figure's
-  const refLabels = (state: EditorState, eq: Equations): Map<string, string | null> => {
-    const figs = figuresOfDoc(state).labels;
-    return figs.size ? new Map<string, string | null>([...figs, ...eq.labels]) : eq.labels;
-  };
+  // what a reference may name: an equation's label, else a figure's or a gallery panel's
+  const refLookup = (state: EditorState, eq: Equations): Lookup => lookupIn(eq.labels, figuresOfDoc(state).labels);
   // \eqref{label} / \ref{label} in the text (not in code or math), as document offsets
   const refsOf = (state: EditorState): TextRef[] => {
     const s = scanOf(state);
@@ -221,13 +219,13 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
             const src = doc.sliceString(from, to);
             // its figure number, and \ref in its captions, come from the whole note: redraw when they change
             const fig = figuresOfDoc(state).figures.find((f) => f.kind === 'gallery' && f.from === from)?.number ?? null;
-            const labels = refLabels(state, eq);
-            const key = `${version}:${eq.sig}:${fig}${/\\(eq)?ref\{/.test(src) ? `:${[...labels].join(';')}` : ''}`;
+            const lookup = refLookup(state, eq);
+            const key = `${version}:${eq.sig}:${fig}${/\\(eq|c|C)?ref\{/.test(src) ? `:${[...eq.labels].join(';')}|${[...figuresOfDoc(state).labels].join(';')}` : ''}`;
             taken.push([from, to]);
             if (blockActive(from, to)) {
               lineDecos(from, to, (first, last) => `cm-lp-gallerysrc${first ? ' first' : ''}${last ? ' last' : ''}`);
-              out.push(Decoration.widget({ widget: W.gallery(src, labels, fig, key, true), block: true, side: 1 }).range(to));
-            } else out.push(Decoration.replace({ widget: W.gallery(src, labels, fig, key, false), block: true }).range(from, to));
+              out.push(Decoration.widget({ widget: W.gallery(src, lookup, fig, key, true), block: true, side: 1 }).range(to));
+            } else out.push(Decoration.replace({ widget: W.gallery(src, lookup, fig, key, false), block: true }).range(from, to));
             return false;
           }
           if (lang === 'mermaid' && !blockActive(from, to)) {
@@ -284,14 +282,16 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
       else replace(sp.from, sp.to, Decoration.replace({ widget: mathWidget(doc, eq, sp, false) }));
     }
 
-    // \eqref{label} / \ref{label} in the text: the equation's (or figure's) number
-    const labels = refLabels(state, eq);
+    // \eqref, \ref, \cref, \Cref in the text: the equations' or figures' numbers (crossref.ts)
+    const lookup = refLookup(state, eq);
     for (const r of refsOf(state)) {
       if (!shown(r.from, r.to)) continue;
       taken.push([r.from, r.to]);
       if (touches(r.from, r.to)) { add(r.from, r.to, Decoration.mark({ class: 'cm-lp-linksrc eqref' })); continue; }
-      const text = refText(r.kind, r.name, labels);
-      replace(r.from, r.to, Decoration.replace({ widget: W.chip(`e:${r.from}:${text}`, `eqref${text == null ? ' missing' : ''}`, text ?? '(??)', { label: r.name }) }));
+      const names = refNames(r.kind, r.name);
+      const parts = refParts(r.kind as RefKind, names, lookup);
+      const text = refPlain(parts), missing = refMissing(parts);
+      replace(r.from, r.to, Decoration.replace({ widget: W.chip(`e:${r.from}:${text}:${missing}`, `eqref${missing ? ' missing' : ''}`, text, { label: names[0] || '' }) }));
     }
 
     // an image's caption line: its figure number in front, its \label hidden, until you edit it
@@ -507,7 +507,8 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
         const sp = s.spans.find((x) => (x.kind === 'mathblock' || (x.kind === 'math' && x.display))
           && new RegExp(`\\\\label\\s*\\{\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\}`).test(view.state.doc.sliceString(x.from, x.to)));
         // else a figure with that label
-        const at = sp ? sp.from : figuresOfDoc(view.state).figures.find((f) => f.labels.includes(label))?.from;
+        const at = sp ? sp.from : figuresOfDoc(view.state).figures
+          .find((f) => f.labels.includes(label) || f.gallery?.panels.some((p) => p.labels.includes(label)))?.from;
         if (at != null) view.dispatch({ effects: EditorView.scrollIntoView(at, { y: 'center' }) });
         return true;
       }

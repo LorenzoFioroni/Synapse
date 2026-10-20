@@ -147,12 +147,13 @@ export function resolveRefs(tex: string, labels: Map<string, string | null>): st
   });
 }
 
-/** \eqref{…} / \ref{…} written in the text (outside math): {from, to, kind, name}. */
+/** \eqref{…}, \ref{…}, \cref{…}, \Cref{…} written in the text (outside math): {from, to, kind, name};
+ *  for \cref, ``name`` is the whole comma-separated list (crossref.ts refNames splits it). */
 export interface TextRef { from: number; to: number; kind: string; name: string }
 
 export function textRefs(text: string): TextRef[] {
   const out: TextRef[] = [];
-  for (const m of text.matchAll(/\\(eqref|ref)\{([^{}\n]*)\}/g)) out.push({ from: m.index!, to: m.index! + m[0].length, kind: m[1], name: m[2].trim() });
+  for (const m of text.matchAll(/\\(eqref|ref|cref|Cref)\{([^{}\n]*)\}/g)) out.push({ from: m.index!, to: m.index! + m[0].length, kind: m[1], name: m[2].trim() });
   return out;
 }
 

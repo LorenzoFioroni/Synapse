@@ -73,7 +73,7 @@ def seed(s):
         paths.append(r.json()["path"])
     a, b, c, d = paths
     text = (
-        "---\ntitle: Figures\n---\n# Figures\n\nSome text before, see Fig. \\ref{fig:speckle} and Fig. \\ref{fig:single}.\n\n"
+        "---\ntitle: Figures\n---\n# Figures\n\nSome text before, see \\cref{fig:speckle} and \\cref{fig:speckle,fig:single}; \\Cref{eq:n} is below.\n\n"
         f"![grey|200]({d})\n*A single figure. \\label{{fig:single}}*\n\n![]({d})\n\n"
         f"```gallery|600\n![red]({a})\n*Clean system, $\\xi\\to\\infty$.*\n"
         f"![green]({b}) With speckle [@smith2021, p. 3]\n![|200]({c})\nNo period here\n\n"
@@ -189,8 +189,12 @@ async def main():
                 "an image without a caption is not a figure",
                 await page.locator(".note-read figure.figure").count() == 1,
             )
-            refs = await page.locator(".note-read p .eqref").all_text_contents()
-            check("\\ref gives a figure's number", refs[:2] == ["2", "1"], refs)
+            refs = await page.locator(".note-read p").first.inner_text()
+            check(
+                "\\cref names figures and equations with their numbers",
+                "see Fig. 2 and Figs. 1 and 2; Equation (1) is below." in refs.replace("\u00a0", " "),
+                refs,
+            )
             await page.locator(".note-read p .eqref").nth(1).click()
             await page.wait_for_timeout(500)
             check(
@@ -268,7 +272,11 @@ async def main():
             live_nums = await page.locator(".cm-content .cm-lp-gallery .fig-num").all_text_contents()
             check("live: the galleries carry Fig. 2 and Fig. 3", live_nums[:2] == ["Fig. 2.", "Fig. 3"], live_nums)
             live_refs = await page.locator(".cm-content .cm-lp-chip.eqref").all_text_contents()
-            check("live: \\ref chips show the figures' numbers", live_refs[:2] == ["2", "1"], live_refs)
+            check(
+                "live: \\cref chips show the names and numbers",
+                [t.replace("\u00a0", " ") for t in live_refs[:3]] == ["Fig. 2", "Figs. 1 and 2", "Equation (1)"],
+                live_refs,
+            )
             lg = page.locator(".cm-content .cm-lp-gallery .gallery").first
             await lg.hover()
             await lg.locator(".gallery-next").click()
@@ -366,9 +374,10 @@ async def main():
                 single.group(1) if single else None,
             )
             check(
-                "HTML: \\ref gives the numbers and links to the figures",
+                "HTML: \\cref gives names and numbers, linked to the figures",
                 re.search(
-                    r'see Fig\. <a class="eqref" href="#eq-fig-speckle"[^>]*>2</a> and Fig\. <a class="eqref" href="#eq-fig-single"[^>]*>1</a>',
+                    r'see <span class="cref"[^>]*>Fig\.(?:\u00a0|&nbsp;)<a class="eqref" href="#eq-fig-speckle"[^>]*>2</a></span> and '
+                    r'<span class="cref"[^>]*>Figs\.(?:\u00a0|&nbsp;)<a class="eqref" href="#eq-fig-single"[^>]*>1</a> and <a class="eqref" href="#eq-fig-speckle"[^>]*>2</a></span>',
                     article,
                 )
                 is not None
@@ -437,7 +446,7 @@ async def main():
             )
             check(
                 "Markdown: numbered captions and references",
-                "see Fig. 2 and Fig. 1." in md
+                "see Fig.\u00a02 and Figs.\u00a01 and 2; \\Cref{eq:n} is below." in md
                 and f"![grey]({paths[3]})\n**Fig. 1.** *A single figure.*\n" in md
                 and "**Fig. 3.** *(a) One. (b) Two. (c) Three. (d) Four.*" in md
                 and "\\label{fig" not in md,

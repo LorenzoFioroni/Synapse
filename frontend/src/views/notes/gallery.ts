@@ -11,7 +11,8 @@
 //
 // A blank line ends a panel's caption. Captions are Markdown (math, citations, links), and a
 // caption wrapped as a whole in *…* or _…_ (the usual way to caption an image) is unwrapped.
-// \label{fig:…} in any caption names the gallery's figure for \ref (figures.ts).
+// \label{fig:…} in the gallery's caption names its figure, in a panel's caption that panel ("Fig. 2(b)"),
+// for \ref and \cref (figures.ts, crossref.ts).
 // The block is not code: the parser and mdscan.ts read its lines like any paragraph, so its images
 // and citations count. No DOM here (tests/js/gallery.test.mjs).
 import { GALLERY_INFO, mask } from './mdscan.js';
@@ -22,6 +23,7 @@ export interface GalleryPanel {
   width: number | null;  // ![alt|300](…)
   caption: string;       // Markdown
   line: number;          // 0-based line of its image within the block's content
+  labels: string[];      // \label{…} written in its caption (taken out of it)
 }
 
 export interface Gallery {
@@ -29,7 +31,7 @@ export interface Gallery {
   caption: string;       // Markdown
   captionLine: number | null;
   panels: GalleryPanel[];
-  labels: string[];      // \label{…} written in its captions (taken out of them)
+  labels: string[];      // \label{…} written in the gallery's own caption (taken out of it)
 }
 
 const IMAGE = /^!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/;
@@ -78,10 +80,9 @@ export function parseGallery(content: string, info = 'gallery'): Gallery {
   const captionLines: string[] = [];
   let captionLine: number | null = null;
   let current: { panel: GalleryPanel; lines: string[] } | null = null;
-  const labels: string[] = [];
-  const caption = (lines: string[]) => { const t = takeLabels(unwrapCaption(lines.join('\n'))); labels.push(...t.labels); return t.text; };
+  const caption = (lines: string[]) => takeLabels(unwrapCaption(lines.join('\n')));
   const close = () => {
-    if (current) current.panel.caption = caption(current.lines);
+    if (current) { const t = caption(current.lines); current.panel.caption = t.text; current.panel.labels = t.labels; }
     current = null;
   };
   content.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n').forEach((raw, n) => {
@@ -94,7 +95,7 @@ export function parseGallery(content: string, info = 'gallery'): Gallery {
       for (let m = IMAGE.exec(rest); m; m = IMAGE.exec(rest)) {
         close();
         const [alt, width] = m[1].split('|');
-        const panel: GalleryPanel = { src: m[2], alt: alt.trim(), width: Number((width || '').trim()) || null, caption: '', line: n };
+        const panel: GalleryPanel = { src: m[2], alt: alt.trim(), width: Number((width || '').trim()) || null, caption: '', line: n, labels: [] };
         panels.push(panel);
         current = { panel, lines: [] };
         rest = rest.slice(m[0].length).trim();
@@ -110,7 +111,7 @@ export function parseGallery(content: string, info = 'gallery'): Gallery {
   });
   close();
   const main = caption(captionLines);
-  return { width: galleryInfo(info)?.width ?? null, caption: main, captionLine, panels, labels };
+  return { width: galleryInfo(info)?.width ?? null, caption: main.text, captionLine, panels, labels: main.labels };
 }
 
 /** "a", "b", … "z", then "27", "28", …: the label of the i-th panel (0-based), shown as "(a)". */

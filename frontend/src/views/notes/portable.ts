@@ -1,6 +1,7 @@
 // A note as other programs can show it (exportNote.ts): Markdown without the notes' own syntax,
 // citations written out with a list of references, and the reference entries HTML and PDF
 // exports use. No DOM (tests/js/portable.test.mjs).
+import { type Lookup, type RefKind, refNames, refParts, refPlain } from './crossref.js';
 import { textRefs } from './equations.js';
 import { figureLabel, figuresOf } from './figures.js';
 import { galleryMarkdown, italic } from './gallery.js';
@@ -190,13 +191,15 @@ export function portableFigures(md: string): string {
   }
   if (!labels.size) return md;
   const { spans } = mask(md);
-  // equations win a name both use, as in the app
+  // equations win a name both use, as in the app; a reference that names an equation stays as it is
   const inMath = new Set(spans.filter((sp) => sp.kind === 'math' || sp.kind === 'mathblock')
     .flatMap((sp) => [...md.slice(sp.from, sp.to).matchAll(/\\label\s*\{([^{}]*)\}/g)].map((m) => m[1].trim())));
+  const lookup: Lookup = (name) => { const n = inMath.has(name.trim()) ? null : labels.get(name.trim()); return n == null ? null : { type: 'fig', num: n }; };
   for (const r of textRefs(md).reverse()) {
-    const n = inMath.has(r.name) ? null : labels.get(r.name);
-    if (n == null || spans.some((sp) => sp.kind !== 'gallery' && r.from >= sp.from && r.from < sp.to)) continue;
-    md = md.slice(0, r.from) + (r.kind === 'eqref' ? `(${n})` : n) + md.slice(r.to);
+    if (spans.some((sp) => sp.kind !== 'gallery' && r.from >= sp.from && r.from < sp.to)) continue;
+    const names = refNames(r.kind, r.name);
+    if (!names.length || names.some((n) => !lookup(n))) continue;
+    md = md.slice(0, r.from) + refPlain(refParts(r.kind as RefKind, names, lookup)) + md.slice(r.to);
   }
   return md;
 }

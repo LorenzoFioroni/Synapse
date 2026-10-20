@@ -300,7 +300,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
 | `exportNote.ts`, `portable.ts` | Exporting a note as PDF, HTML or Markdown; the Markdown conversion and reference entries (no DOM). |
 | `gallery.ts`, `galleryView.ts` | Galleries: reading a ` ```gallery ` block and its figure caption (no DOM); turning the carousel. |
-| `figures.ts` | Which images and galleries are figures, their numbers and `\label`s (no DOM). |
+| `figures.ts`, `crossref.ts` | Which images and galleries are figures, their numbers and `\label`s; references written out as cleveref does (no DOM). |
 
 ### The editor and read mode
 
@@ -404,7 +404,7 @@ figure and gets no number.
 ![](attachments/plot.png)
 *Photon number versus $N$. \label{fig:photons}*
 
-As Fig. \ref{fig:photons} shows, …
+As \cref{fig:photons} shows, …   ← "As Fig. 3 shows"
 ````
 
 - **An image's caption** is the line right below it, wholly in `*…*` or `_…_` (emphasis markers
@@ -413,9 +413,22 @@ As Fig. \ref{fig:photons} shows, …
   `imageFigureAt` decides this. This is how snapshots from the PDF viewer and Claude's `snapshot`
   have always been captioned, so those become numbered figures too.
 - **A gallery** is a figure when it has a caption of its own or on any panel.
-- **Labels.** `\label{name}` anywhere in a figure's captions (outside math) names it and is not
-  shown. `\ref{name}` in the text gives its number and `\eqref{name}` the number in parentheses,
-  as for equations; when an equation and a figure share a name, the equation wins.
+- **Labels.** `\label{name}` in a figure's caption (outside math) names it and is not shown; in a
+  gallery panel's caption it names that panel, numbered "2(b)" as with subfigures. When an
+  equation and a figure share a name, the equation wins.
+- **References** (`crossref.ts`), as LaTeX's cleveref writes them, so the kind is never typed:
+
+  | Written | Shows |
+  |---|---|
+  | `\cref{fig:a}`, `\cref{eq:x}`, `\cref{fig:p}` (a panel) | Fig. 2, Eq. (3), Fig. 2(b) |
+  | `\Cref{fig:a}`, `\Cref{eq:x}` (start of a sentence) | Figure 2, Equation (3) |
+  | `\cref{fig:b,fig:a}`, `\cref{eq:x,eq:y,eq:z}` | Figs. 1 and 2, Eqs. (1)–(3) |
+  | `\cref{fig:a,eq:x}` | Fig. 2 and Eq. (3) |
+  | `\ref{fig:a}`, `\eqref{eq:x}` | 2, (3) |
+
+  Numbers of one kind are sorted, repeats dropped and three or more in a row written as a range;
+  a name the note does not define shows as ?? in red. The name and number are joined by a
+  non-breaking space, and every number links to its figure or equation.
 - **Where the number goes.** Before the figure's caption: "**Fig. 2.** Caption". A gallery without
   a caption of its own puts it before its panels' labels in the app, "**Fig. 2**(a) First panel",
   and before the combined caption in exports.
@@ -424,17 +437,19 @@ As Fig. \ref{fig:photons} shows, …
 top-level paragraph that `imageFigureAt` accepts into `figure_open`/`figure_close` tokens with
 the caption as an inline token (markers and labels taken out), numbers figures and captioned
 galleries in token order and puts the labels in `env.figLabels`, where `R.eq_ref` looks after the
-equations' labels. A figure is `figure.figure` with an `.eq-anchor` per label (so read mode's
-click on a `\ref` and the exported links go there), the image centred and
+equations' labels (`lookupIn`, then `refHtml`, which wraps a `\cref` in `span.cref`). A figure is
+`figure.figure` with an `.eq-anchor` per label, a panel's in its `.gallery-panel` (so read mode's
+click on a reference and the exported links go there), the image centred and
 `figcaption.figure-caption` below it. Captions are centred while short and fill the width when
 long (`display: table`), as in LaTeX. The live preview (`figuresOfDoc` in `livePreview.ts`) and
 the Markdown export use `figuresOf`, which applies the same `imageFigureAt` to the note's lines
 and finds galleries through `mdscan`, so the numbers agree. In the live preview an image's
 caption line gets a "Fig. N." chip and its `\label` is hidden until the cursor is on it; a gallery's
 widget is rendered on its own, so its number and its `\ref`s are put right afterwards from the
-whole note; `\ref` chips and Cmd/Ctrl+click on them know figure labels too. The Markdown export
-(`portableFigures`) writes "**Fig. 2.** *Caption*", drops `\label`s and writes `\ref`s to figures as
-their numbers (those to equations stay, like the formulas). Embedded notes number their own figures.
+whole note; reference chips show the written-out text ("Figs. 1 and 2") and Cmd/Ctrl+click on
+them goes to the first. The Markdown export (`portableFigures`) writes "**Fig. 2.** *Caption*",
+drops `\label`s and writes references that name only figures as text ("Fig. 2"); a reference that
+names an equation stays as written, like the formulas. Embedded notes number their own figures.
 
 ### Embedded notes
 

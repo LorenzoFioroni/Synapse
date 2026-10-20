@@ -17,9 +17,10 @@ import type MarkdownIt from 'markdown-it';
 import type { RendererRule as MdRenderRule, StateBlock, StateCore, StateInline, Token as MdToken } from 'markdown-it';
 
 export type MdLib = typeof import('../../../vendor/md/md.js');
+import { type RefKind, type Lookup, lookupIn, refNames, refParts } from './crossref.js';
 import { figureLabel, imageFigureAt } from './figures.js';
 import { galleryCaptioned, galleryInfo, panelLabel, parseGallery } from './gallery.js';
-import { labelId, layoutTag, numberEquations, refText, resolveRefs } from './equations.js';
+import { labelId, layoutTag, numberEquations, resolveRefs } from './equations.js';
 import { type Cite, attachmentOf, parseCites, referenceDefinition, splitWiki } from './mdscan.js';
 import { type Definition, HAS_DEFINITIONS, type Macro, type Macros, baseMacros, macroSource, parseDefinitions, withDefinitions } from './macros.js';
 
@@ -51,6 +52,15 @@ const CALLOUTS: Record<string, string> = {
 };
 const ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ESCAPES[c]);
+
+/** A reference (\ref, \eqref, \cref, \Cref) as HTML: each number links to its label's anchor, an
+ *  unknown name shows as ?? in red. Also used by the live preview to number a gallery widget's. */
+export function refHtml(kind: RefKind, names: string[], lookup: Lookup): string {
+  const parts = refParts(kind, names, lookup).map((p) => (typeof p === 'string' ? esc(p)
+    : p.missing ? `<span class="eqref missing" data-kind="${esc(kind)}" data-label="${esc(p.name)}" title="${esc(`No numbered equation or figure has \\label{${p.name}}`)}">${esc(p.text)}</span>`
+      : `<a class="eqref" href="#${esc(labelId(p.name))}" data-kind="${esc(kind)}" data-label="${esc(p.name)}">${esc(p.text)}</a>`)).join('');
+  return kind === 'cref' || kind === 'Cref' ? `<span class="cref" data-kind="${kind}" data-names="${esc(names.join(','))}">${parts}</span>` : parts;
+}
 
 export function slugHeading(text: string): string {
   return String(text).toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').trim().replace(/\s+/g, '-');
@@ -309,7 +319,11 @@ function figureRule(state: StateCore): void {
       for (const name of t.meta.labels) if (!labels.has(name)) labels.set(name, String(n));
       if (t.type === 'gallery_open') inGallery = n;
     } else if (t.type === 'gallery_close') inGallery = null;
-    else if (inGallery != null && (t.type === 'gallery_panel_open' || t.type === 'gallery_caption_open')) t.meta.fig = inGallery;
+    else if (inGallery != null && (t.type === 'gallery_panel_open' || t.type === 'gallery_caption_open')) {
+      t.meta.fig = inGallery;
+      // a label in a panel's caption names that panel: "2(b)"
+      if (t.type === 'gallery_panel_open') for (const name of t.meta.labels) if (!labels.has(name)) labels.set(name, `${inGallery}(${panelLabel(t.meta.index)})`);
+    }
   }
   state.env.figLabels = labels;
 }
@@ -321,13 +335,14 @@ function lineAttrs(state: StateCore): void {
   }
 }
 
-/** \eqref{label} / \ref{label} written in the text (outside math): numbered in the core rule below. */
+/** \eqref{label}, \ref{label}, \cref{a,b}, \Cref{a} written in the text (outside math): written out
+ *  by R.eq_ref (crossref.ts) once equations and figures are numbered. */
 function eqRefRule(state: StateInline, silent: boolean): boolean {
   const src = state.src, pos = state.pos;
   if (src.charCodeAt(pos) !== 0x5C /* \ */) return false;
-  const m = /^\\(eqref|ref)\{([^{}\n]*)\}/.exec(src.slice(pos, pos + 200));
+  const m = /^\\(eqref|ref|cref|Cref)\{([^{}\n]*)\}/.exec(src.slice(pos, pos + 400));
   if (!m) return false;
-  if (!silent) { const t = state.push('eq_ref', '', 0); t.meta = { kind: m[1], name: m[2].trim() }; }
+  if (!silent) { const t = state.push('eq_ref', '', 0); t.meta = { kind: m[1], name: m[2].trim(), names: refNames(m[1], m[2]) }; }
   state.pos = pos + m[0].length;
   return true;
 }
@@ -436,12 +451,10 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
       : `<span class="math">${katex(t[i].content, false, env.macros)}</span>`);
   R.math_block = (t, i, opts, env) => (onlyDefines(t[i]) ? ''
     : `<div class="math-block" data-line="${(t[i].map?.[0] ?? 0) + (o.lineOffset || 0)}">${anchors(t[i].meta?.labels)}${katex(t[i].content, true, env.macros)}</div>\n`);
+  // an equation's label, else a figure's (figureRule); \cref writes the kind too (crossref.ts)
   R.eq_ref = (t, i, opts, env) => {
-    const { kind, name } = t[i].meta;
-    // an equation's label, else a figure's (figureRule)
-    const text = refText(kind, name, env.eqLabels || new Map()) ?? refText(kind, name, env.figLabels || new Map());
-    return text == null ? `<span class="eqref missing" data-kind="${esc(kind)}" data-label="${esc(name)}" title="${esc(`No numbered equation or figure has \\label{${name}}`)}">(??)</span>`
-      : `<a class="eqref" href="#${esc(labelId(name))}" data-kind="${esc(kind)}" data-label="${esc(name)}">${esc(text)}</a>`;
+    const { kind, names } = t[i].meta;
+    return refHtml(kind, names, lookupIn(env.eqLabels, env.figLabels));
   };
   R.note_link = (t, i) => {
     const w = t[i].meta;
@@ -494,7 +507,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
   };
   R.gallery_panel_open = (t, i) => {
     const p = t[i].meta;
-    return `<div class="gallery-panel"${lineAttr(t[i])} data-index="${p.index}"><div class="gallery-image">`
+    return `<div class="gallery-panel"${lineAttr(t[i])} data-index="${p.index}">${p.fig ? anchors(p.labels) : ''}<div class="gallery-image">`
       + `<img src="${esc(imageSrc(p.src))}" alt="${esc(p.alt)}" loading="lazy"${p.width ? ` width="${Number(p.width)}"` : ''}></div>`
       // the label hangs to the left of the caption, so the caption's text itself is centred
       + `<div class="gallery-panel-caption"><span class="gallery-caption-text${p.caption.trim() ? '' : ' empty'}">`

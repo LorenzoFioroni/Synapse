@@ -15,7 +15,7 @@
 // The renderer (render.ts) finds figures in its tokens, the live preview and the Markdown export
 // in the text (figuresOf): both apply imageFigureAt to the note's lines, so they agree.
 // No DOM here (tests/js/figures.test.mjs).
-import { type Gallery, galleryCaptioned, parseGallery, takeLabels, wholeEmphasis } from './gallery.js';
+import { type Gallery, galleryCaptioned, panelLabel, parseGallery, takeLabels, wholeEmphasis } from './gallery.js';
 import { type Scan, scan } from './mdscan.js';
 
 const IMAGE_LINE = /^ {0,3}!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)\s*$/;
@@ -47,7 +47,7 @@ export interface FigureInText {
   to: number;                // end of the caption line, or of the closing fence
   captionFrom?: number;      // an image's caption line
   number: number | null;     // null: no caption, not numbered (galleries only)
-  labels: string[];
+  labels: string[];          // the figure's own (a gallery's panels have theirs)
   gallery?: Gallery;
   image?: ImageFigure;
 }
@@ -92,6 +92,8 @@ export function figuresOf(text: string, scanned?: Scan): Figures {
     if (f.number === null) continue;
     f.number = ++n;
     for (const name of f.labels) if (!labels.has(name)) labels.set(name, String(n));
+    // a label in a panel's caption names that panel: "2(b)"
+    f.gallery?.panels.forEach((p, i) => { for (const name of p.labels) if (!labels.has(name)) labels.set(name, `${n}(${panelLabel(i)})`); });
   }
   return { figures: found, labels };
 }
