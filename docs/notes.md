@@ -112,7 +112,7 @@ changes what it finds, so notes indexed by the old rules are read again.
 | Table | Rows |
 |---|---|
 | `notes` | One per note: path, lower-case `stem`, the front-matter fields, `hash`, `mtime`, `size`. |
-| `links` | Every link, with `kind` (`note`, `embed`, `cite`, `image`), `target`, `target_norm`, heading, alias, locator, page, prefix, `suppress_author`, `grp`, line and context. |
+| `links` | Every link, with `kind` (`note`, `embed`, `cite`, `image`, `task`), `target`, `target_norm`, heading, alias, locator, page, prefix, `suppress_author`, `grp`, line and context. |
 | `tags` | Inline and front-matter tags. |
 | `headings` | ATX headings with level and line. |
 | `notes_fts` | FTS5 table of title and body (`unicode61 remove_diacritics 2`). |
@@ -132,7 +132,8 @@ What it answers:
   fewest folders, then the shortest path, then comes first alphabetically.
 - `outgoing(path)` (with `resolved` and `ambiguous`), `backlinks(path)` (only links that really
   resolve here), `citing(key)`, `paper_notes(key)`, `cited_keys`, `key_summary`.
-- `link_graph()` for the Graph view and `image_links()` for the attachment sweep.
+- `link_graph()` for the Graph view, `image_links()` for the attachment sweep, and `task_refs()`
+  (every `{{task:id}}` with its note, line and the heading above it) for the Tasks page.
 - `search(q)`: FTS with every word as a prefix, snippets HTML-escaped with `<mark>`.
 - `texts_by_key()`: what notes say about each key, which `NoteTextMatcher` in `service.py` feeds
   to the library search (see [fulltext-search.md](fulltext-search.md)).
@@ -148,6 +149,7 @@ The parser is the only code that decides what a note links to or cites. `parse()
 | `![[Note]]` | `embed` |
 | `[@key]`, `[see @a, p. 4; -@b]` | `cite`, one per key, sharing a `group` |
 | `![alt](path)` | `image` (alias is the alt text before any `\|`) |
+| `{{task:k7f3q2mx}}` | `task`: the note shows that task (a record in `library.db`, see [tasks](tasks.md)) |
 | ` ```gallery ` … ` ``` ` | not code: its images and the citations and links in its captions count (see [Galleries](#galleries)) |
 | `# Heading` | heading (ATX only, at most three spaces of indent) |
 | `#tag`, `#nested/tag` | tag (starts with a letter; not after a word character, `/`, `&`, `#`, brackets or parentheses) |
@@ -285,7 +287,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `tree.ts`, `treeInput.ts` | The notes list and filter; mouse, keyboard, context menu, drag and drop. |
 | `fileOps.ts` | New, rename, move, trash with Undo, the trash dialog, rescan. |
 | `editor.ts`, `livePreview.ts`, `previewWidgets.ts` | CodeMirror 6 (`vendor/cm6/`), the live preview decorations (built on `mdscan.ts`) and the widgets they draw. |
-| `completion.ts`, `library.ts` | `[@` and `[[` autocomplete and its ranking. |
+| `completion.ts`, `library.ts` | `[@`, `[[` and `{{task` autocomplete and their ranking (tasks come from the Tasks module through `taskHooks`). |
 | `ghost.ts`, `ghostLogic.ts`, `assist.ts` | Autocompletion: suggestions from a local model as ghost text, and the status checks before any request (see [autocompletion](autocompletion.md)). |
 | `render.ts` | Markdown to HTML with markdown-it and KaTeX (`vendor/md/`): math, links, citations, callouts, tasks. Raw HTML is never rendered. No DOM. |
 | `richRender.ts` | Mermaid (loaded on demand from `vendor/mermaid/`), code highlighting, filling embedded notes into the page. |
@@ -329,7 +331,11 @@ The work done per keystroke is kept small, so long notes stay quick to edit:
   shared by every renderer.
 
 Task boxes are drawn the same way in both modes (a rounded square, ticked and filled when done),
-and a done task is greyed and struck through.
+and a done task is greyed and struck through. A `{{task:id}}` line is different: it shows a task record (see
+[tasks](tasks.md)). The live preview always draws it as the task's checkbox, title and labels
+(`TaskWidget`, through `taskHooks.preview`) and never as source: it is an atomic range, so the
+cursor steps over it and Backspace deletes it whole. Read mode draws it with
+`renderDefaults.taskHtml`. A list item whose only content is a task line shows no bullet.
 
 ### Galleries
 

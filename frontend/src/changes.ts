@@ -4,6 +4,7 @@
 import * as A from './actions.js';
 import { api } from './api.js';
 import { notesChanged } from './views/notes/notesView.js';
+import { tasksChanged } from './views/tasks/tasksView.js';
 
 const EVERY = 4000;          // ms between polls while the page is visible
 const MIN_GAP = 2500;        // at most one library refresh this often (background fetching can be busy)
@@ -35,6 +36,10 @@ async function apply() {
   if (pending.has('notes')) {
     pending.delete('notes');
     notesChanged();
+  }
+  if (pending.has('tasks') || pending.has('notes')) {
+    pending.delete('tasks');
+    tasksChanged();   // a note's {{task:…}} lines may have changed too
   }
   if (pending.has('library')) {
     if (Date.now() - lastLibrary < MIN_GAP) return;   // tried again at the next poll

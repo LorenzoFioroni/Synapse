@@ -190,6 +190,21 @@ never mix.
   In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
   drag to move; folders can be renamed, moved and deleted the same way.
+- **Tasks**: to-dos with a title, a due date, details written in Markdown like a note, and
+  sub-tasks to any depth. In a note, Cmd/Ctrl+Enter (or **Task** in the note's header) opens a
+  small popup: name the task (the line's text, if any), give it a date in words ("fri", "27 oct",
+  "in 3 days") and details, or pick a task you already have — or type `{{task` and a few words of
+  its title to pick one from a list, as `[@` does for papers. The note then shows the task as one
+  line with its checkbox; ticking it or clicking it to edit changes the task, not the note (the note
+  only holds `{{task:id}}`). Plain `- [ ]` checkboxes stay checkboxes; select some and press
+  Cmd/Ctrl+Enter to turn them into tasks. The **Tasks** page (Cmd/Ctrl+Shift+K) lists the tasks of
+  all notes, with views (Open, Today, Next 7 days, No date, Not in a note, Done, each note), search
+  with filters (`due:week`, `is:done`, `note:"…"`, `has:body`), sorting, grouping, quick add, a
+  details pane, keyboard editing, drag and drop, and Undo. Ticking a task whose sub-tasks are open
+  asks whether to tick them too. A task you just made from a note and whose line you then delete
+  goes to the trash with it (Undo, or Cmd/Ctrl+Z in the note, brings it back); older tasks stay in
+  Tasks. Tasks are kept in the library database, so backups include them; deleted tasks can be
+  restored. See [`docs/tasks.md`](docs/tasks.md).
 - **Autocompletion** in notes (Settings → Autocompletion; off by default): after a short pause a
   model running on this computer in [Ollama](https://ollama.com) suggests how the text goes on, in
   grey after the cursor. Tab accepts, Esc dismisses, Cmd/Ctrl+→ takes one word, Alt/⌥+\ asks for
@@ -257,6 +272,8 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 | `write_note` | saves a new note in `notes/ai/` (`author: ai`), never overwriting anything — after checking it |
 | `edit_note` | changes an existing note (replace passages, append, or new text) — checked the same way; the version before is kept |
 | `undo_note_edit` | puts a note back as it was before Claude's last edit (if you did not change it since) |
+| `list_tasks`, `get_task` | your tasks (open ones unless asked), filtered like the Tasks page; one task with its details, sub-tasks and the notes that show it |
+| `create_task`, `update_task`, `delete_task` | make, change (title, details, open/done, due date, parent) or delete tasks, and put a new task's line in a note — marked as Claude's, undoable in the app |
 
 Page numbers are PDF pages counted from 1, so Claude can cite `[@key, p. N]` and the citation opens
 the right page in the app. Claude is told the notes syntax (KaTeX math, quotes as `> words [@key, p. N]`,

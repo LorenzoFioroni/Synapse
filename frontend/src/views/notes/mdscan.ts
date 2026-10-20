@@ -19,6 +19,8 @@ const HEADING = /^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*(?:#+[ \t]*)?$/;
 const WIKI = /(!?)\[\[([^[\]\n]+?)\]\]/g;
 const BRACKET = /(?<![![\]\\])\[([^[\]\n]*@[^[\]\n]*)\](?![([\]])/g;
 const IMAGE = /!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/gd;
+// {{task:id}}: a task (a record in library.db) shown in the note; _TASK in parser.py.
+const TASK = /\{\{task:([a-z0-9]{4,32})\}\}/g;
 const TAG = /(?<![\p{L}\p{N}_/&#\])([])#([A-Za-z][\p{L}\p{N}_\-/]*)/gu;
 const DIGITS = '0123456789';
 
@@ -34,7 +36,7 @@ export interface Span {
 
 /** A link, embed, citation or image, as backend/notes/parser.py reports it. */
 export interface ScanLink {
-  kind: 'note' | 'embed' | 'cite' | 'image';
+  kind: 'note' | 'embed' | 'cite' | 'image' | 'task';
   from: number;
   to: number;
   target: string;
@@ -298,10 +300,17 @@ export function scan(text: string): Scan {
   }
   for (const m of masked.matchAll(IMAGE)) {
     const at = m.index!;
-    const alt = m[1];
+    // the text as written (the masked copy blanks escapes, as parser.py reads from the body)
+    const [a1, b1] = m.indices![1], [a2, b2] = m.indices![2];
+    const alt = body.slice(a1, b1);
     found.push([at, { kind: 'image', from: at + off, to: at + m[0].length + off,
-      target: m[2], heading: '', alias: strip(alt.split('|')[0]),
+      target: body.slice(a2, b2), heading: '', alias: strip(alt.split('|')[0]),
       width: Number((alt.split('|')[1] || '').trim()) || null,
+      locator: '', page: null, prefix: '', suppress_author: false, group: 0, line: lineOf(at) }]);
+  }
+  for (const m of masked.matchAll(TASK)) {
+    const at = m.index!;
+    found.push([at, { kind: 'task', from: at + off, to: at + m[0].length + off, target: m[1], heading: '', alias: '',
       locator: '', page: null, prefix: '', suppress_author: false, group: 0, line: lineOf(at) }]);
   }
   found.sort((a, b) => a[0] - b[0]);

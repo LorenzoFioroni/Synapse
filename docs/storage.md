@@ -14,7 +14,7 @@ repository. It is git-ignored.
 
 ```
 data/
-├── library.db          items, attachments, folders, tags, smart folders, PDF annotations
+├── library.db          items, attachments, folders, tags, smart folders, PDF annotations, tasks
 ├── fulltext.db         text extracted from the PDFs (derived)
 ├── pdfs/               the attached files
 ├── notes/              Markdown notes, the source of truth for notes
@@ -42,7 +42,7 @@ Each file has one owner. Other code goes through that owner, with the few except
 
 | File | Owner | Schema code | Kind |
 |---|---|---|---|
-| `library.db` | `Database` in `backend/library/db.py`, used by `PaperRepository`, `AnnotationStore` and the repositories in `library/organize.py` | `Database.migrate`, plus `SCHEMA` in `backend/library/annotations.py` | source of truth |
+| `library.db` | `Database` in `backend/library/db.py`, used by `PaperRepository`, `AnnotationStore`, the repositories in `library/organize.py` and `TaskStore` (`backend/tasks/store.py`) | `Database.migrate`, plus `SCHEMA` in `backend/library/annotations.py` and in `backend/tasks/store.py` | source of truth |
 | `pdfs/` | `PaperRepository` (`attachment_path`, `_remove_file`) and the upload code in `backend/api/attachments.py` | none | source of truth |
 | `notes/` | `Vault` in `backend/notes/vault.py` | none (see [notes](notes.md)) | source of truth |
 | `settings.json` | `SettingsStore` in `backend/settings.py` | `DEFAULTS`, `_migrate` | source of truth |
@@ -97,6 +97,8 @@ All SQL for items lives in the `library/` package. HTTP endpoints never build qu
 | `smart_folders` | saved search | `query` and `mode` (`basic`, `all` or `fulltext`, default `all`). |
 | `annotations` | PDF annotation | Tied to an attachment and a page; see `backend/library/annotations.py`. |
 | `annotation_migration` | converted legacy item | Marks items whose old annotation blob was converted. |
+| `tasks` | task | A tree through `parent_id`, ordered by `position`; title, Markdown body, `open`/`done`, due date; `deleted_at`/`deleted_batch` while in the trash. See [tasks](tasks.md). |
+| `task_history` | change to a task | Who (`human`/`ai`), what (`create`, `update`, `move`, `delete`, `restore`), the values before and after (JSON). |
 
 Details worth knowing:
 
@@ -144,6 +146,8 @@ In one transaction, `migrate()`:
 5. Backfills values older versions never stored: `date_added`, `date_modified`, `item_type`
    and `attachments.date_added`.
 6. Deletes orphaned rows in `attachments`, `paper_tags` and `paper_folders`.
+7. Runs the schemas other packages registered with `Database.add_schema` (the tasks tables), so
+   a restored backup from before they existed gets them.
 
 One conversion is too large and too risky for `migrate()`: turning the old SVG blobs in
 `papers.annotations` into rows of `annotations`. `migrate_legacy` in

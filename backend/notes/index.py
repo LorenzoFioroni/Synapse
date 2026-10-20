@@ -23,7 +23,7 @@ from .vault import NoteMissing, Vault, content_hash
 log = logging.getLogger(__name__)
 
 # Also bumped when parser.py changes what it finds, so every note is read again.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -38,7 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_notes_stem ON notes(stem);
 CREATE INDEX IF NOT EXISTS idx_notes_paper ON notes(paper);
 CREATE TABLE IF NOT EXISTS links (
     path TEXT NOT NULL,           -- the note containing the link
-    kind TEXT NOT NULL,           -- note | embed | cite | image
+    kind TEXT NOT NULL,           -- note | embed | cite | image | task
     target TEXT NOT NULL,
     target_norm TEXT NOT NULL,    -- lower-case target for case-insensitive lookup
     heading TEXT, alias TEXT, locator TEXT, page INTEGER, prefix TEXT,
@@ -424,6 +424,20 @@ class NotesIndex:
                 seen.add(edge)
                 out.append({"source": edge[0], "kind": edge[1], "target": edge[2]})
         return out
+
+    def task_refs(self) -> builtins.list[dict]:
+        """Every {{task:id}} in a note: task id, note path and title, line, and the heading above it."""
+        with self._session() as c:
+            rows = [
+                dict(r)
+                for r in c.execute(
+                    "SELECT l.target AS task, l.path, l.line, n.title AS note_title, "
+                    "(SELECT h.text FROM headings h WHERE h.path = l.path AND h.line <= l.line "
+                    " ORDER BY h.line DESC LIMIT 1) AS heading "
+                    "FROM links l JOIN notes n ON n.path = l.path WHERE l.kind = 'task' ORDER BY l.path, l.line"
+                )
+            ]
+        return rows
 
     def image_links(self) -> builtins.list[tuple[str, str]]:
         """(note path, image target) for every image shown by a note."""

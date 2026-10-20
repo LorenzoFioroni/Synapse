@@ -277,6 +277,12 @@ math; `tree.ts`, `treeInput.ts` and `fileOps.ts` are the notes list; `readView.t
 `conflict.ts`, `diff.ts`, `rekeyDialog.ts` and `attachmentsDialog.ts` are dialogs; `exportNote.ts`
 and `portable.ts` export a note as PDF, HTML or Markdown.
 
+**`views/tasks/`: tasks.** [Tasks](tasks.md#frontend-frontendsrcviewstasks) covers it. In short:
+`taskData.ts` holds the tasks and makes the changes; `taskQuery.ts` and `dates.ts` are the logic
+without a DOM (views, search, sorting, groups; reading dates); `taskRender.ts` draws a task;
+`taskForm.ts` is the form of the detail pane and the popup; `tasksView.ts`, `taskList.ts` and
+`tasksState.ts` the Tasks page; `noteTasks.ts` tasks inside notes; `notePicker.ts` chooses a note.
+
 **`views/graph/`: the graph in Notes.** `model.ts` turns `/api/graph` into what is shown (no
 DOM, unit-tested); `forceGraph.ts` draws it with force-graph; `notesGraph.ts` is the local graph
 beside a note and the global graph in place of the editor. Both show a neighbourhood through
@@ -341,6 +347,9 @@ state and call each other without import cycles. Three patterns are used:
   editor, listing, link data) and `hooks` (`openNote`, `doOpen`, `closeCurrent`, `setMode`,
   `openNotesGraph`) with do-nothing defaults. `notesView.ts` fills them with
   `Object.assign(hooks, …)`. The other parts import `workspace.ts`, never `notesView.ts`.
+  `taskHooks` in the same file works the other way round: the tasks code
+  (`views/tasks/noteTasks.ts`) fills it in, and the notes code calls it to draw and add tasks
+  without importing the tasks code.
   `viewer/annotations/model.ts` does the same with `hooks.onSelect`, which
   `annotations/input.ts` sets to show its selection controls.
 - **Dependency objects.** A module that needs a few things from its caller takes them as an
@@ -364,8 +373,8 @@ state and call each other without import cycles. Three patterns are used:
 | `components.css` | Buttons, inputs, menus, dialogs, toasts, empty states, chips. |
 | `layout.css` | The shell: toolbar, sidebar, panes, resizers, status bar, narrow screens. |
 | `items.css`, `itempane.css` | The items table; the item pane and the metadata review. |
-| `settings.css`, `notes.css`, `graph.css` | Settings, the notes workspace, the graph. |
-| `export.css` | Not loaded by the app: the page and print rules of an exported note, added after `tokens.css` and `notes.css` (`views/notes/exportNote.ts`). |
+| `settings.css`, `notes.css`, `tasks.css`, `graph.css` | Settings, the notes workspace, tasks (the Tasks page, the task form and popups, task lines in notes), the graph. |
+| `export.css` | Not loaded by the app: the page and print rules of an exported note, added after `tokens.css`, `notes.css` and `tasks.css` (`views/notes/exportNote.ts`). |
 
 **Themes.** Every colour is a variable in `tokens.css`. Light is the default; dark applies under
 `@media (prefers-color-scheme: dark)` unless `<html data-theme="light">`, and always with

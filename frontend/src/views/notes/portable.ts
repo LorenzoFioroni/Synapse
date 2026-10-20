@@ -20,10 +20,41 @@ export interface RefInfo extends CiteInfo {
 /** A note converted to portable Markdown, and the keys it cites (in order, embeds included). */
 export interface Portable { markdown: string; keys: string[] }
 
+/** A task a note shows ({{task:id}}), with its sub-tasks: written as a checkbox list. */
+export interface PortableTask { title: string; done: boolean; subtasks: PortableTask[] }
+
 export interface PortableOptions {
   citeInfo: (key: string) => RefInfo | null;
   /** The converted text of an embedded note (or one of its sections), null when it is not available. */
   embed?: (target: string, heading: string) => Portable | null;
+  /** The task a {{task:id}} line shows (null: deleted or unknown). */
+  task?: (id: string) => PortableTask | null;
+}
+
+const LIST_LEAD = /^(\s*(?:>\s*)*)((?:[-*+]|\d+[.)])\s+)?$/;
+
+/** A task line as a Markdown checkbox list item (its sub-tasks nested below it), or, inside a
+ *  sentence, just its title. Titles are converted like the note (citations written out). */
+function taskMarkdown(task: PortableTask | null, before: string, alone: boolean, opts: PortableOptions, keys: string[]): string {
+  const title = (t: PortableTask) => {
+    const p = portableBody(t.title, { ...opts, task: undefined });
+    keys.push(...p.keys);
+    return p.markdown.trim();
+  };
+  if (!task) return alone ? `${LIST_LEAD.exec(before)?.[2] ? '' : '- '}[ ] *(deleted task)*` : '*(deleted task)*';
+  if (!alone) return title(task);
+  const m = LIST_LEAD.exec(before)!;
+  const marker = m[2] ? '' : '- ';
+  const indent = m[1] + ' '.repeat(m[2] ? m[2].length : 2);
+  const lines = [`${marker}[${task.done ? 'x' : ' '}] ${title(task)}`];
+  const walk = (subs: PortableTask[], depth: number) => {
+    for (const s of subs) {
+      lines.push(`${indent}${'  '.repeat(depth)}- [${s.done ? 'x' : ' '}] ${title(s)}`);
+      walk(s.subtasks, depth + 1);
+    }
+  };
+  walk(task.subtasks, 0);
+  return lines.join('\n');
 }
 
 /** "Smith, A. M., Doe, J. & Roe, R." from "Smith, Anna Maria; Doe, John; Roe, R." */
@@ -160,6 +191,12 @@ export function portableBody(text: string, opts: PortableOptions): Portable {
       }).join('; ')})`;
     } else if (l.kind === 'note') {
       out += l.alias || (l.target ? l.target + (l.heading ? ` › ${l.heading}` : '') : l.heading);
+    } else if (l.kind === 'task') {
+      const start = text.lastIndexOf('\n', l.from - 1) + 1;
+      const end = text.indexOf('\n', l.to);
+      const before = text.slice(start, l.from);
+      const alone = LIST_LEAD.test(before) && !text.slice(l.to, end < 0 ? text.length : end).trim();
+      out += taskMarkdown(opts.task?.(l.target) ?? null, before, alone, opts, keys);
     } else if (l.kind === 'embed') {
       const inner = opts.embed?.(l.target, l.heading);
       if (inner) { out += inner.markdown.trim(); keys.push(...inner.keys); }

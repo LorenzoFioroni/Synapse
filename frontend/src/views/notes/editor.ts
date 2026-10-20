@@ -3,8 +3,7 @@
 import type { HighlightStyle } from '@codemirror/language';
 import type { EditorView } from '@codemirror/view';
 import type { MarkdownConfig } from '@lezer/markdown';
-import type { CiteEntry, NoteInfo } from '../../types.js';
-import { completions } from './completion.js';
+import { type CompletionData, completions } from './completion.js';
 import { changedSpan } from './diff.js';
 import { type GhostSource, ghostText } from './ghost.js';
 import { type PreviewDeps, livePreview } from './livePreview.js';
@@ -22,6 +21,8 @@ export interface EditorHandlers {
   /** A pasted or dropped image: store it and return the Markdown that shows it (null: nothing to insert). */
   onImage?(file: File): Promise<string | null> | string | null;
   onToggleRead?(): void;
+  /** Cmd/Ctrl+Enter (the notes add a task with it); false lets the editor do its own thing. */
+  onModEnter?(view: EditorView): boolean;
 }
 
 export interface NoteEditor {
@@ -121,7 +122,7 @@ export async function createEditor(
   handlers: EditorHandlers,
   preview: PreviewDeps,
   mode: 'live' | 'source' = 'live',
-  data: { items(): CiteEntry[]; notes(): NoteInfo[]; assist?: GhostSource } = { items: () => [], notes: () => [] },
+  data: CompletionData & { assist?: GhostSource } = { items: () => [], notes: () => [] },
 ): Promise<NoteEditor> {
   const cm = await loadCM();
   const lp = livePreview(cm, preview);
@@ -133,6 +134,7 @@ export async function createEditor(
   const keys = [
     { key: 'Mod-s', preventDefault: true, run: () => { handlers.onSave?.(); return true; } },
     { key: 'Mod-e', preventDefault: true, run: () => { handlers.onToggleRead?.(); return true; } },
+    { key: 'Mod-Enter', run: (v: EditorView) => handlers.onModEnter?.(v) ?? false },
   ];
 
   const insertImages = async (view: EditorView, files: File[], pos?: number) => {

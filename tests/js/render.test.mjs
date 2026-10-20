@@ -91,3 +91,16 @@ test('att:<id> names the PDF of a citation; the reader never sees it', () => {
   assert.match(out, /data-key="smith2021" data-page="9"[^>]*>/);
   assert.doesNotMatch(out, /data-page="9" data-att/);
 });
+
+test('task lines: drawn by renderDefaults.taskHtml, never in code or math', async () => {
+  const { renderDefaults } = await import('../../frontend/js/views/notes/render.js');
+  const before = renderDefaults.taskHtml;
+  renderDefaults.taskHtml = (id) => `<span class="task-ref" data-task="${id}">T</span>`;
+  try {
+    assert.match(html('{{task:k3f9a2mx}}'), /<p[^>]*><span class="task-ref" data-task="k3f9a2mx">T<\/span><\/p>/);
+    assert.match(html('- {{task:k3f9a2mx}}'), /<li[^>]*><span class="task-ref"/);
+    const code = html('`{{task:k3f9a2mx}}` and $\\{\\{task:x\\}\\}$\n\n```\n{{task:k3f9a2mx}}\n```');
+    assert.ok(!code.includes('task-ref'));
+    assert.ok(!html('{{task:ab}}').includes('task-ref'));   // ids have 4 to 32 characters
+  } finally { renderDefaults.taskHtml = before; }
+});

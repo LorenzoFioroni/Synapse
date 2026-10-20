@@ -44,7 +44,12 @@ export interface Renderer {
 
 /** What renderers use when not told otherwise (set by the notes view from Settings), so note
  *  embeds and other renderers number equations and know the macros the same way. */
-export const renderDefaults: { equations: () => string; macros: () => Macros } = { equations: () => 'labelled', macros: () => baseMacros().macros };
+export const renderDefaults: { equations: () => string; macros: () => Macros; taskHtml: (id: string) => string } = {
+  equations: () => 'labelled',
+  macros: () => baseMacros().macros,
+  // what a {{task:id}} shows; the Tasks module (views/tasks/taskRender.ts) draws the task itself
+  taskHtml: (id) => `<span class="task-ref" data-task="${esc(id)}">{{task:${esc(id)}}}</span>`,
+};
 
 const CALLOUTS: Record<string, string> = {
   note: 'Note', tip: 'Tip', warning: 'Warning', question: 'Question', quote: 'Quote',
@@ -187,6 +192,17 @@ function citeRule(state: StateInline, silent: boolean): boolean {
 const TAG_START = /[A-Za-z]/;
 const TAG_BODY = /^[\p{L}\p{N}_\-/]*/u;
 const NOT_BEFORE_TAG = /[\p{L}\p{N}_/&#\])([]/u;
+
+/** {{task:id}}: a task (a record in library.db) shown in the note; _TASK in parser.py. */
+const TASK_REF = /^\{\{task:([a-z0-9]{4,32})\}\}/;
+function taskRefRule(state: StateInline, silent: boolean): boolean {
+  if (state.src.charCodeAt(state.pos) !== 0x7b) return false;
+  const m = TASK_REF.exec(state.src.slice(state.pos));
+  if (!m) return false;
+  if (!silent) { const t = state.push('task_ref', '', 0); t.meta = { id: m[1] }; }
+  state.pos += m[0].length;
+  return true;
+}
 
 /** #tag (same rule as the backend: not after a word character, a slash, a bracket…). */
 function tagRule(state: StateInline, silent: boolean): boolean {
@@ -417,6 +433,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
   md.inline.ruler.before('image', 'wiki_embed', wikiRule);
   md.inline.ruler.before('link', 'cite', citeRule);
   md.inline.ruler.push('tag', tagRule);
+  md.inline.ruler.before('emphasis', 'task_ref', taskRefRule);
   md.inline.ruler.before('escape', 'eq_ref', eqRefRule);
   md.core.ruler.after('inline', 'equations', equationsRule(o.equations ?? renderDefaults.equations, o.macros ?? renderDefaults.macros));
   md.core.ruler.after('block', 'callout', calloutRule);
@@ -477,6 +494,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
     return `<span class="cite-group">(${parts.join('; ')})</span>`;
   };
   R.tag = (t, i) => `<span class="tag">#${esc(t[i].content)}</span>`;
+  R.task_ref = (t, i) => renderDefaults.taskHtml(t[i].meta.id);
   R.task_box = (t, i) => `<input type="checkbox" class="task-box"${t[i].meta.checked ? ' checked' : ''}${t[i].meta.line != null ? ` data-task-line="${t[i].meta.line + (o.lineOffset || 0)}"` : ''}>`;
   const defaultImage = R.image!;
   R.image = (t, i, opts, env, self) => {

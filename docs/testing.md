@@ -184,6 +184,7 @@ looking for a bug.
 | `pdf_tabs` | 8773 | One viewer tab per PDF; Cmd/Ctrl+click or middle click opens a new one |
 | `remote_pdf` | 8774 | Attachments stored as web links open through `/api/attachments/<id>/remote`; local-network links refused |
 | `render` | 8766 | Note rendering (uses `tests/e2e/kitchen-sink.md`) |
+| `tasks` | 8795 | Tasks: task lines in a note (ticking, the task popup, the New task popup with a new or existing task, the `{{task` autocomplete, a wrapped task on an indented line, ticking a parent, Backspace), read mode, the side panel, the Tasks page (views, search, quick add, keyboard, delete and Undo, changes from elsewhere) |
 | `touch_app` | 8783 | The library on an iPad profile: drawer, long press for menus and cards, hover tools shown, resizing, Home Screen |
 | `touch` | 8782 | The PDF viewer on an iPad profile: pen tools, finger scrolling, pinch zoom, snapshots |
 | `usability` | 8769 | Several notes selected, delete with Undo, folder operations, Back/Forward, the Library/Notes switch, note markers |

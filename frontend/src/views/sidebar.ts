@@ -11,7 +11,7 @@ import { currentFolderId, emit, folderById, folderTotal, folderTree, on, saveOpe
 import { promptDialog } from '../ui/dialog.js';
 import { openMenu } from '../ui/menu.js';
 import type { Counts, Tag } from '../types.js';
-import { escapeHtml, plural, storage, store } from '../util.js';
+import { escapeHtml, modLabel, plural, storage, store } from '../util.js';
 import { openExport } from './exportDialog.js';
 import { smartFolderDialog } from './organizeDialogs.js';
 
@@ -37,6 +37,7 @@ export function initSidebar(): void {
 
       <div class="side-section" data-notes-only>Notes</div>
       <button class="side-item" data-act="open-notes" data-notes-only title="Markdown notes for papers and ideas">${icon('edit')}<span class="nm">All Notes</span><span class="count" data-count="notes"></span></button>
+      <button class="side-item" data-act="open-tasks" data-notes-only title="Tasks from all your notes (${modLabel}⇧K)">${icon('tasks')}<span class="nm">Tasks</span><span class="count" data-count="tasks"></span></button>
 
       <div class="side-section with-action" data-drop="folder-root">Folders
         <button class="icon-btn side-add" data-act="new-folder" title="New folder">${icon('plus', 'icon-sm')}</button></div>
@@ -72,22 +73,28 @@ export function initSidebar(): void {
   on('workspace', paint);
   on('settings', paint);
   on('notes-count', (n) => { notesCount = n; paintNotes(); });
+  on('tasks-count', (c) => { tasksCount = c; paintNotes(); });
   paint();
 }
 
 let notesCount: number | null = null;
+let tasksCount: { open: number; overdue: number } | null = null;
 const inNotes = () => document.body.dataset.workspace === 'notes';
+const inLibrary = () => !document.body.dataset.workspace;
 
 function paintNotes() {
   const enabled = state.settings.notes_enabled !== false;
   root.querySelectorAll<HTMLElement>('[data-notes-only]').forEach((el) => { el.hidden = !enabled; });
   root.querySelector('[data-act="open-notes"]')!.classList.toggle('active', inNotes());
   root.querySelector('[data-count="notes"]')!.textContent = notesCount ? String(notesCount) : '';
+  root.querySelector('[data-act="open-tasks"]')!.classList.toggle('active', document.body.dataset.workspace === 'tasks');
+  root.querySelector('[data-count="tasks"]')!.innerHTML = tasksCount?.open
+    ? `${tasksCount.overdue ? `<b class="overdue" title="${tasksCount.overdue} overdue">${tasksCount.overdue}</b> ` : ''}${tasksCount.open}` : '';
 }
 
 /* ================================================================= paint */
 function paint() {
-  root.querySelectorAll<HTMLElement>('[data-view]').forEach((b) => b.classList.toggle('active', !inNotes() && b.dataset.view === state.view));
+  root.querySelectorAll<HTMLElement>('[data-view]').forEach((b) => b.classList.toggle('active', inLibrary() && b.dataset.view === state.view));
   paintNotes();
   for (const k of ['library', 'trash', 'duplicates'] as (keyof Counts)[]) {
     root.querySelector(`[data-count="${k}"]`)!.textContent = state.counts[k] ? String(state.counts[k]) : '';
@@ -107,7 +114,7 @@ function paintFolders() {
     return true;
   });
   tree.innerHTML = visible.map((f) => `
-    <div class="side-item folder ${!inNotes() && state.view === `folder:${f.id}` ? 'active' : ''}" role="treeitem" tabindex="-1"
+    <div class="side-item folder ${inLibrary() && state.view === `folder:${f.id}` ? 'active' : ''}" role="treeitem" tabindex="-1"
          data-view="folder:${f.id}" data-folder="${f.id}" data-drop="folder" draggable="true" style="padding-left:${f.depth * 12}px">
       <span class="twisty ${f.hasChildren ? '' : 'none'} ${state.openFolders.has(f.id) ? 'open' : ''}" data-act="toggle">${icon('chevron', 'icon-sm')}</span>
       ${icon('folder')}<span class="nm">${escapeHtml(f.name)}</span><span class="count">${folderTotal(f.id) || ''}</span>
@@ -116,7 +123,7 @@ function paintFolders() {
 
 function paintSmart() {
   smartList.innerHTML = state.sidebar.smart.map((s) => `
-    <div class="side-item ${!inNotes() && state.view === `smart:${s.id}` ? 'active' : ''}" data-view="smart:${s.id}" data-smart="${s.id}" title="${escapeHtml(s.query)}">
+    <div class="side-item ${inLibrary() && state.view === `smart:${s.id}` ? 'active' : ''}" data-view="smart:${s.id}" data-smart="${s.id}" title="${escapeHtml(s.query)}">
       ${icon('smartFolder')}<span class="nm">${escapeHtml(s.name)}</span></div>`).join('')
     || '<div class="side-empty">Save a search as a smart folder with <b>+</b>.</div>';
 }
@@ -167,6 +174,7 @@ function onClick(e: MouseEvent): void {
     return;
   }
   if (act === 'open-notes') { emit('open-notes'); return; }
+  if (act === 'open-tasks') { emit('open-tasks'); return; }
   if (act === 'new-folder') { newFolder(null); return; }
   if (act === 'new-smart') { smartFolderDialog(null, state.query ? { query: state.query, mode: state.mode } : {}); return; }
   if (act === 'clear-tags') { A.clearTagFilter(); return; }
@@ -185,7 +193,7 @@ function onClick(e: MouseEvent): void {
   }
   const v = target.closest<HTMLElement>('[data-view]');
   if (v && !target.closest('input')) {
-    if (inNotes()) emit('close-notes');
+    if (!inLibrary()) emit('close-notes');
     A.setView(v.dataset.view!);
   }
 }

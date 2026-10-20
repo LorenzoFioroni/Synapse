@@ -21,7 +21,10 @@ export interface AppEvents {
   columns: void;
   settings: void;
   indexer: void;                    // new full-text indexer status in state.indexer
-  workspace: void;                  // Notes opened or closed
+  workspace: void;                  // Notes or Tasks opened or closed
+  tasks: void;                      // tasks were loaded or changed (views/tasks/taskData.ts)
+  'tasks-count': { open: number; overdue: number } | null;   // for the sidebar; null: turned off
+  'open-tasks': { task?: string | null; note?: string | null } | undefined;   // the Tasks page, a task selected or a note's tasks shown
   'notes-count': number | null;     // null: notes are turned off
   'focus-list': void;
   'open-note': { path: string; line?: number | null };
@@ -43,6 +46,12 @@ const listeners: { [K in AppEvent]?: ((payload: AppEvents[K]) => void)[] } = {};
 /** Subscribe for the life of the page (views subscribe once, in their init… function). */
 export function on<K extends AppEvent>(event: K, fn: (payload: AppEvents[K]) => void): void {
   ((listeners[event] ||= []) as ((payload: AppEvents[K]) => void)[]).push(fn);
+}
+/** Stop listening (for views that come and go, like a popup). */
+export function off<K extends AppEvent>(event: K, fn: (payload: AppEvents[K]) => void): void {
+  const list = listeners[event] as ((payload: AppEvents[K]) => void)[] | undefined;
+  const i = list ? list.indexOf(fn) : -1;
+  if (i >= 0) list!.splice(i, 1);
 }
 export function emit<K extends AppEvent>(event: K, ...payload: Payload<K>): void {
   for (const fn of (listeners[event] || []) as ((payload: AppEvents[K]) => void)[]) fn(payload[0] as AppEvents[K]);

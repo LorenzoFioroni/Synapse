@@ -11,6 +11,7 @@ import type { Lookup, RefKind } from './crossref.js';
 import { refHtml } from './render.js';
 import { fitSoon } from './mathFit.js';
 import type { PreviewDeps } from './livePreview.js';
+import type { TaskPreview } from './workspace.js';
 
 /** The note's formulas, prepared once per version of the document (livePreview.ts, equationsOf). */
 export interface Equations {
@@ -66,6 +67,29 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     ignoreEvent() { return true; }
   }
 
+  // a task shown in the note ({{task:id}}): drawn by the Tasks module, never shown as source; a
+  // click ticks it or opens it (the key is what it shows, so a changed task is drawn again)
+  class TaskWidget extends WidgetType {
+    id: string;
+    sig: string;
+    hooks: TaskPreview;
+    constructor(id: string, hooks: TaskPreview) { super(); this.id = id; this.hooks = hooks; this.sig = hooks.sig(id); }
+    eq(o: TaskWidget) { return o.sig === this.sig; }
+    toDOM(view: EditorViewT) {
+      const el = document.createElement('span');
+      el.className = 'cm-lp-widget cm-lp-taskref';
+      this.hooks.fill(el, this.id);
+      el.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const act = (e.target as Element).closest<HTMLElement>('[data-task-act]')?.dataset.taskAct || 'open';
+        this.hooks.act(this.id, act, el, view);
+      });
+      return el;
+    }
+    ignoreEvent() { return true; }
+  }
+
   // a formula; ``eq`` (equationsOf) brings the note's macros, whose signature is part of the key,
   // so a changed \newcommand redraws the formulas that may use it
   class MathWidget extends HtmlWidget {
@@ -89,6 +113,7 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     bullet: new HtmlWidget('bullet', (el) => { el.textContent = '•'; }, { cls: 'cm-lp-bullet' }),
     hr: new HtmlWidget('hr', () => {}, { cls: 'cm-lp-hr' }),
     checkbox: (checked: boolean, pos: number) => new CheckboxWidget(checked, pos),
+    task: (id: string, hooks: TaskPreview) => new TaskWidget(id, hooks),
     katex: (eq: Equations, tex: string, display: boolean, block = false, preview = false) => new MathWidget(tex, display, block, preview, eq),
 
     /** A formula that only defines macros: a small label (click it to edit the definitions). */

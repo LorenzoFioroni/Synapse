@@ -29,6 +29,7 @@ import { type Lookup, type RefKind, lookupIn, refMissing, refNames, refParts, re
 import { clickOffset } from './mathClick.js';
 import { type Definition, HAS_DEFINITIONS, type Macros, parseDefinitions, withDefinitions } from './macros.js';
 import { type Equations, previewWidgets } from './previewWidgets.js';
+import type { TaskPreview } from './workspace.js';
 import { galleryInfo } from './gallery.js';
 import { type Figures, figureLabel, figuresOf } from './figures.js';
 
@@ -52,7 +53,14 @@ export interface PreviewDeps {
   equations?(): string;
   /** The KaTeX macros every note starts from (macros.ts). */
   macros?(): Macros;
+  /** How {{task:id}} lines are drawn (the Tasks module); without it they show as their id. */
+  task?(): TaskPreview | null;
 }
+
+/** A list item whose only content is a task line: its bullet is not drawn (the checkbox is enough). */
+const TASK_ITEM = /^\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+\{\{task:[a-z0-9]{4,32}\}\}\s*$/;
+/** A line that only shows a task (perhaps indented, quoted or in a list item). */
+const TASK_LINE = /^\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s+)?\{\{task:[a-z0-9]{4,32}\}\}\s*$/;
 
 /** The block-level decorations, and the ranges they draw (nothing inline is added inside those). */
 interface Blocks { deco: DecorationSet; taken: [number, number][]; version: number }
@@ -69,10 +77,10 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
   });
 
   /* ------------------------------------------------------- per-document data */
-  let cache: { doc: Text | null; scan: Scan | null; refs: TextRef[] | null; eq: Equations | null; mode: string | null; base: Macros | null; figs: Figures | null } = { doc: null, scan: null, refs: null, eq: null, mode: null, base: null, figs: null };
+  let cache: { doc: Text | null; scan: Scan | null; refs: TextRef[] | null; eq: Equations | null; mode: string | null; base: Macros | null; figs: Figures | null; atomic: DecorationSet | null } = { doc: null, scan: null, refs: null, eq: null, mode: null, base: null, figs: null, atomic: null };
   let lastBase: Macros | null = null, baseVersion = 0;
   const scanOf = (state: EditorState): Scan => {
-    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), refs: null, eq: null, mode: null, base: null, figs: null };
+    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), refs: null, eq: null, mode: null, base: null, figs: null, atomic: null };
     return cache.scan!;
   };
   // the note's figures and their numbers (figures.ts), found with the same rule as the renderer's
@@ -336,6 +344,22 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
         if (!touches(l.from, l.to)) replace(l.from, l.to, Decoration.replace({ widget: W.image(imageSrc(l.target), l.alias, l.width, l.target) }));
         continue;
       }
+      if (l.kind === 'task') {
+        // a task never shows its {{task:…}} source in the live preview: the cursor steps over it
+        const hooks = deps.task?.();
+        // a line of its own is laid out as a row, so the task takes the width left after any indentation
+        const tline = doc.lineAt(l.from);
+        if (hooks && TASK_LINE.test(tline.text)) {
+          lineDeco(l.from, 'cm-lp-taskline');
+          // up to three spaces before it mean nothing in Markdown (read mode ignores them): not drawn,
+          // so its box lines up with the others
+          const pad = /^ {1,3}(?=\{\{task:)/.exec(tline.text);
+          if (pad) replace(tline.from, tline.from + pad[0].length, hide);
+        }
+        if (hooks) replace(l.from, l.to, Decoration.replace({ widget: W.task(l.target, hooks) }));
+        else if (!touches(l.from, l.to)) replace(l.from, l.to, Decoration.replace({ widget: W.chip(`k:${l.from}:${l.target}`, 'taskref', `Task ${l.target}`, { task: l.target }) }));
+        continue;
+      }
       const path = deps.resolveNote(l.target);
       const cls = `${l.kind === 'embed' ? 'embed' : 'wikilink'}${path === null && l.target ? ' unresolved' : ''}`;
       if (touches(l.from, l.to)) { add(l.from, l.to, Decoration.mark({ class: `cm-lp-linksrc ${cls}` })); continue; }
@@ -387,6 +411,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
         if (name === 'ListMark') {
           const item = node.node.parent;
           if (!item || item.parent?.name !== 'BulletList' || lineActive(node.from)) return false;
+          if (TASK_ITEM.test(doc.lineAt(node.from).text)) { replace(node.from, Math.min(node.to + 1, doc.lineAt(node.from).to), hide); return false; }
           if (item.getChild('Task')) replace(node.from, Math.min(node.to + 1, doc.lineAt(node.from).to), hide);   // the checkbox is enough
           else replace(node.from, node.to, Decoration.replace({ widget: W.bullet }));
           return false;
@@ -548,5 +573,16 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     },
   });
 
-  return { extension: [focusField, blocks, inline, clicks, focusEvents], refresh };
+  // task lines are one unit for the cursor: arrows step over them, Backspace deletes the whole line's token
+  const atomic = EditorView.atomicRanges.of((view) => {
+    const st = view.state;
+    scanOf(st);
+    if (!cache.atomic) {
+      const s = cache.scan!;
+      cache.atomic = Decoration.set(s.links.filter((l) => l.kind === 'task').map((l) => Decoration.mark({}).range(l.from, l.to)), true);
+    }
+    return cache.atomic;
+  });
+
+  return { extension: [focusField, blocks, inline, clicks, focusEvents, atomic], refresh };
 }

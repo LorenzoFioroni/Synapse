@@ -9,6 +9,7 @@ Syntax (see docs/notes.md):
     ![[Note]]                                                    embeds
     [@key]  [@key, p. 4]  [see @a; @b, ch. 2]  [-@key]             citations (Pandoc)
     ![alt](attachments/x.png)                                     images
+    {{task:k7f3q2mx}}                                             tasks (records in library.db)
     ```gallery … ```                                              a gallery of images (not code)
     # Heading                                                     headings (ATX)
     #tag  #nested/tag                                             tags (+ front-matter tags)
@@ -54,13 +55,15 @@ _HEADING = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*(?:#+[ \t]*)?$")
 _WIKI = re.compile(r"(!?)\[\[([^\[\]\n]+?)\]\]")
 _BRACKET = re.compile(r"(?<![!\[\]\\])\[([^\[\]\n]*@[^\[\]\n]*)\](?![(\[\]])")
 _IMAGE = re.compile(r"!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
+# A task shown in the note. The id is the task's id in library.db (backend/tasks/store.py).
+_TASK = re.compile(r"\{\{task:([a-z0-9]{4,32})\}\}")
 _TAG = re.compile(r"(?<![\w/&#\]\)(\[])#([A-Za-z][\w\-/]*)")
 
 
 @dataclass
 class Link:
-    kind: str  # "note" | "embed" | "cite" | "image"
-    target: str  # note name, citekey or image path
+    kind: str  # "note" | "embed" | "cite" | "image" | "task"
+    target: str  # note name, citekey, image path or task id
     line: int  # 1-based line in the whole file
     context: str  # the surrounding line (trimmed), for "cited in …" panels
     heading: str = ""  # [[Note#Heading]]
@@ -419,6 +422,15 @@ def parse(text: str, *, fallback_title: str = "") -> ParsedNote:
                     line=idx + 1 + offset,
                     context=_context(lines, idx, col),
                 ),
+            )
+        )
+
+    for m in _TASK.finditer(masked):
+        idx, col = locate(m.start())
+        found.append(
+            (
+                m.start(),
+                Link(kind="task", target=m.group(1), line=idx + 1 + offset, context=_context(lines, idx, col)),
             )
         )
 
