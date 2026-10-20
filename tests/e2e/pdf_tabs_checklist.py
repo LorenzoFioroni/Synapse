@@ -71,6 +71,8 @@ async def settle(ctx, ms=900):
 async def main():
     guard(PORT)
     env = dict(os.environ, SYNAPSE_DATA_DIR=DATA)
+    # PDFs open in browser tabs here, as these checks expect; tabs_checklist.py covers the app's own tabs
+    (Path(DATA) / "settings.json").write_text('{"pdf_open_in": "browser"}', encoding="utf-8")
     srv = subprocess.Popen(
         [sys.executable, "server.py", "--port", str(PORT), "--no-browser"],
         cwd=APP,

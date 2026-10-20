@@ -26,6 +26,7 @@ ALLOWED = {
     "backup": BASE,
     "access": BASE,
     "assist": BASE,
+    "desktop": set(),
     # the composition layer: wires and exposes everything
     "services": None,
     "connector": None,

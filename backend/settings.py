@@ -63,6 +63,9 @@ DEFAULTS: dict = {
     "notes_ai_model": "qwen2.5-coder:1.5b",  # small and fills in the middle (it sees the text after the cursor)
     "notes_ai_url": "http://127.0.0.1:11434",  # Ollama's default address; only this computer is accepted
     "notes_ai_length": "line",  # line (the rest of the line) | paragraph
+    # PDF viewer: where PDFs open. "tabs": the app's own tabs, beside the Synapse tab (also in the
+    # app window, python server.py --window); "browser": a browser tab (or window) of their own.
+    "pdf_open_in": "tabs",
     # PDF viewer: the colour each annotation tool starts with. A tool keeps the colour it was last
     # used with on a device until its default here changes (frontend/src/viewer/annotations/prefs.ts).
     "annotation_color_highlight": "#ffff00",  # also the area highlight
@@ -94,6 +97,7 @@ CHOICES = {
     "notes_width": {"readable", "full"},
     "notes_equation_numbers": {"labelled", "all"},
     "notes_ai_length": {"line", "paragraph"},
+    "pdf_open_in": {"tabs", "browser"},
     "backup_interval": {"off", "daily", "weekly"},
 }
 

@@ -176,6 +176,7 @@ export interface Settings {
   annotation_fill_box: string;
   annotation_color_draw: string;
   annotation_snap_words: boolean;
+  pdf_open_in: 'tabs' | 'browser';
   backup_interval: 'off' | 'daily' | 'weekly';
   backup_keep: number;
   backup_dir: string;

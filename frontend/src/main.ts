@@ -11,6 +11,8 @@ import type { Counts, SearchMode } from './types.js';
 import { debounce, modKey, modLabel, plural, storage, store } from './util.js';
 import { type NavEntry, initNav, navSnapshot, navUpdate } from './nav.js';
 import { initChanges } from './changes.js';
+import { startPresence } from './presence.js';
+import { initTabs, setHomeLabel, showHome, tabShortcut } from './tabs/tabs.js';
 import { openExport } from './views/exportDialog.js';
 import { smartFolderDialog } from './views/organizeDialogs.js';
 import { openIdentifierDialog } from './views/identifierDialog.js';
@@ -48,6 +50,8 @@ async function boot() {
   initStatusBar();
   initShortcuts();
   if (storage('zc.itemPaneHidden', false)) toggleItemPane(false);
+  initTabs({ onHome: () => { if (!notesOpen() && !tasksOpen() && !settingsOpen()) focusList(); } });
+  startPresence();
 
   on('open-import', (file) => openImport(file instanceof File ? file : null));
   on('open-identifier', () => openIdentifierDialog());
@@ -56,7 +60,7 @@ async function boot() {
   on('open-notes', () => openNotes());
   on('close-notes', () => { closeNotes(); closeTasks(); });
   on('open-tasks', (o) => goToTasks(o || {}));
-  on('open-note', ({ path, line }) => openNotes(path, line ?? null));
+  on('open-note', ({ path, line }) => { showHome(); openNotes(path, line ?? null); });
   on('show-graph', (focus) => { if (settingsOpen()) closeSettings(); openNotesGraph(focus); });
   on('show-item', (id) => showItem(id));
   on('workspace', paintWorkspace);
@@ -92,6 +96,7 @@ async function goToTasks(o: { task?: string | null; note?: string | null } = {})
 
 /** Show one item in the library (leaving Notes, Tasks or Settings), selected and scrolled to. */
 async function showItem(id: string): Promise<void> {
+  showHome();
   if (settingsOpen()) closeSettings();
   if (notesOpen()) await closeNotes();
   closeTasks();
@@ -109,6 +114,7 @@ async function showItem(id: string): Promise<void> {
 
 /** Back/Forward: go to a note or to the library view and selection stored in the history entry. */
 async function navigate(entry: NavEntry): Promise<void> {
+  showHome();
   if (settingsOpen()) closeSettings();
   if (entry.ws === 'tasks') { await goToTasks({ task: entry.task || null }); return; }
   if (entry.ws === 'notes') { await openNotes(entry.path || null, null, { graph: !!entry.graph, focus: entry.focus || null }); return; }
@@ -134,6 +140,7 @@ function paintWorkspace() {
   sw.hidden = state.settings.notes_enabled === false;
   const ws = notesOpen() ? 'notes' : tasksOpen() ? 'tasks' : 'library';
   sw.querySelectorAll<HTMLElement>('[data-ws]').forEach((b) => b.classList.toggle('active', b.dataset.ws === ws));
+  setHomeLabel(({ notes: 'Notes', tasks: 'Tasks', library: 'Library' } as const)[ws]);
 }
 
 /* ---------------------------------------------------------------- toolbar */
@@ -346,6 +353,7 @@ on('items', () => { if (state.indexer && !state.indexer.indexer.running) setTime
 function initShortcuts() {
   document.addEventListener('keydown', (e) => {
     if (document.querySelector('.dialog-backdrop')) return;
+    if (tabShortcut(e)) { e.preventDefault(); return; }
     const target = e.target as HTMLElement;
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
     const k = e.key.toLowerCase();

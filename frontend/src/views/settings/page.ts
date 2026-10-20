@@ -6,6 +6,7 @@ import type { Settings, SettingsResponse } from '../../types.js';
 import { escapeHtml, isMac, modLabel } from '../../util.js';
 
 const altLabel = isMac ? '⌥' : 'Alt+';
+const tabMod = isMac ? '⌃' : 'Alt+';   // the tab keys (tabs/tabs.ts)
 
 const PHYSICS_SHOWN = ['\\vb', '\\dv', '\\pdv', '\\qty', '\\abs', '\\norm', '\\expval', '\\mel', '\\comm', '\\dd', '\\grad', '\\mqty']
   .map((c) => `<span class="mono">${c}</span>`).join(', ');
@@ -139,7 +140,10 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
         </div></section>
 
       <section class="settings-section" id="set-viewer"><h2>PDF Viewer</h2>
-        <p class="lead">The colour each annotation tool starts with. A tool keeps the colour you last used it with on a device, until you change its colour here.
+        <div class="card">
+          ${segmentedRow('pdf_open_in', 'Open PDFs in', `Tabs inside Synapse, next to the Synapse tab (they also work in the app window, and come back when you return), or a browser tab of their own. Switch tabs with <kbd>Ctrl</kbd><kbd>Tab</kbd>, close one with <kbd>${tabMod}W</kbd> or a middle click.`, [['tabs', 'Synapse Tabs'], ['browser', 'Browser Tabs']])}
+        </div>
+        <p class="lead" style="margin-top:18px">The colour each annotation tool starts with. A tool keeps the colour you last used it with on a device, until you change its colour here.
           To change the colour of an annotation, select it in the viewer.</p>
         <div class="card">
           ${colorRow('annotation_color_highlight', 'Highlight', 'Highlighting text.')}
@@ -249,6 +253,14 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
           <dt><kbd>Esc</kbd></dt><dd>Clear search / close dialogs</dd>
           <dt><kbd>${modLabel}⇧L</kbd></dt><dd>Switch between Library and Notes</dd>
           <dt>Back / Forward</dt><dd>Return to the previous note or library view (mouse buttons, <kbd>${modLabel}[</kbd> / <kbd>Alt←</kbd>)</dd>
+        </dl></div>
+        <h2 style="margin-top:22px;font-size:15px">Tabs</h2>
+        <div class="card"><dl class="shortcuts">
+          <dt><kbd>Ctrl Tab</kbd> <kbd>Ctrl ⇧Tab</kbd></dt><dd>Next / previous tab (in the app window; a browser keeps these for its own tabs)</dd>
+          <dt><kbd>${tabMod}1</kbd> … <kbd>${tabMod}9</kbd></dt><dd>Go to a tab (1: the Synapse tab, 9: the last one)</dd>
+          <dt><kbd>${tabMod}W</kbd>, middle click</dt><dd>Close the PDF tab</dd>
+          <dt><kbd>${tabMod}⇧T</kbd></dt><dd>Reopen the last closed tab</dd>
+          <dt>Drag a tab</dt><dd>Change the order; right-click for more</dd>
         </dl></div>
         <h2 style="margin-top:22px;font-size:15px">In the notes list</h2>
         <div class="card"><dl class="shortcuts">

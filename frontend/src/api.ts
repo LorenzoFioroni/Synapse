@@ -200,11 +200,34 @@ export interface ViewerSpot { q?: string; rect?: string }
 /** A viewer tab; viewer.html defines zcViewerGoto so other tabs can point it somewhere else. */
 type ViewerWindow = Window & { zcViewerGoto?: (to: { page?: number | null; q?: string; rect?: string }) => void };
 
-export interface PdfTab { win: Window | null; reuse: boolean }
+/** A PDF to open in one of the app's own tabs (tabs/tabs.ts). */
+export interface InAppPdf {
+  key: string;
+  url: string;
+  title: string;
+  spot: { page?: number | null; q?: string; rect?: string };
+  newTab: boolean;
+}
+
+/** Opens PDFs in the app's own tabs; `open` answers false when PDFs open in browser tabs instead
+ *  (Settings → PDF Viewer). Set by tabs/tabs.ts, so this module does not import the tabs. */
+export interface PdfTabOpener { enabled(): boolean; open(pdf: InAppPdf): void }
+let appTabs: PdfTabOpener | null = null;
+export function setPdfTabOpener(o: PdfTabOpener | null): void { appTabs = o; }
+
+function openInApp(item: Pick<Item, 'id' | 'title'>, att: Pick<Attachment, 'id' | 'url'>, page: number | null | undefined, at: ViewerSpot, newTab: boolean): boolean {
+  if (!appTabs?.enabled()) return false;
+  appTabs.open({ key: fileUrl(att), url: viewerUrl(item, att, page, at), title: item.title || 'PDF', spot: { page, q: at.q, rect: at.rect }, newTab });
+  return true;
+}
+
+/** Where a PDF will be opened: a browser tab (`win`), or one of the app's own tabs (`inApp`). */
+export interface PdfTab { win: Window | null; reuse: boolean; inApp?: boolean; newTab?: boolean }
 
 /* One viewer tab per PDF: opening a PDF that already has a tab (opened from this app tab) scrolls
  * that tab to the new spot and brings it forward instead of opening another one. `newTab` (Cmd/
- * Ctrl+click on a citation) always opens a fresh tab, which then becomes the one reused. */
+ * Ctrl+click on a citation) always opens a fresh tab, which then becomes the one reused. The same
+ * holds for the app's own tabs, which tabs/tabs.ts keeps. */
 const pdfTabs = new Map<string, Window>();   // fileUrl → window
 
 const tabName = (att: Pick<Attachment, 'id' | 'url'>) => `zc-pdf:${fileUrl(att)}`;
@@ -231,12 +254,14 @@ function reuseTab(w: ViewerWindow, page: number | null | undefined, at: ViewerSp
  * that only know where to go after an await; finish with `pointPdfTab`.
  */
 export function pdfTabFor(att: Pick<Attachment, 'id' | 'url'>, { newTab = false } = {}): PdfTab {
+  if (appTabs?.enabled()) return { win: null, reuse: false, inApp: true, newTab };   // no popup to take
   const w = !newTab && viewerTab(att);
   if (w) return { win: w, reuse: true };
   return { win: window.open('about:blank', newTab ? '_blank' : tabName(att)), reuse: false };
 }
 
 export function pointPdfTab(tab: PdfTab, item: Pick<Item, 'id' | 'title'>, att: Pick<Attachment, 'id' | 'url'>, page?: number | null, at: ViewerSpot = {}): void {
+  if (tab.inApp && openInApp(item, att, page, at, !!tab.newTab)) return;
   if (tab.reuse) {
     const w = viewerTab(att);
     if (w && w === tab.win) return reuseTab(w, page, at);
@@ -249,6 +274,7 @@ export function pointPdfTab(tab: PdfTab, item: Pick<Item, 'id' | 'title'>, att: 
 
 /** Open a PDF in the viewer, reusing its tab when it has one (see above). */
 export function openAttachment(item: Pick<Item, 'id' | 'title'>, att: Pick<Attachment, 'id' | 'url'>, page?: number | null, at: ViewerSpot = {}, { newTab = false } = {}): void {
+  if (openInApp(item, att, page, at, newTab)) return;
   const w = !newTab && viewerTab(att);
   if (w) return reuseTab(w, page, at);
   const win = window.open(viewerUrl(item, att, page, at), newTab ? '_blank' : tabName(att));

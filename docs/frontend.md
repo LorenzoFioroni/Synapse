@@ -103,7 +103,7 @@ When a library is updated, change its version in the `tools/*/package.json` and 
 | Page | Loads | Notes |
 |---|---|---|
 | `index.html` | the CSS files, `vendor/md/katex/katex.min.css`, then `js/main.js` as a module | An inline script applies the cached theme (`zc.themeHint` in `localStorage`) before the first paint, to avoid a white flash. |
-| `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, the classic script `vendor/pdfjs/pdf.min.js`, then the modules `js/viewer/viewer.js`, `notesBridge.js`, `links.js`, `annotations.js` | The PDF viewer, one tab per PDF. Its own styles and toolbar markup are inline. |
+| `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, the classic script `vendor/pdfjs/pdf.min.js`, then the modules `js/viewer/viewer.js`, `notesBridge.js`, `links.js`, `annotations.js` | The PDF viewer, one tab per PDF: a frame in one of the app's tabs (`tabs/tabs.ts`), or a browser tab of its own (Settings → PDF Viewer). Its own styles and toolbar markup are inline. |
 | `pair.html` | nothing else | Opened from the pairing QR code under `--lan`. Self-contained (inline style and script, no build) because the guard lets an unpaired device fetch only `PAIRING_PATHS` (`backend/access/guard.py`). |
 | `signin.html` | nothing else | Sent by the guard, with status 401, instead of any page a device that is not signed in asks for: how to pair, and **Sign In with a Passkey** where passkeys can work. Self-contained for the same reason. |
 
@@ -113,7 +113,10 @@ The add-ons import nothing from `viewer.ts` at run time (only its types). They h
 `window.zcViewer` and the `zc:pagecreated` / `zc:pagerendered` events, so each can change
 without touching the others. `viewer.ts` owns the toolbar and shows the colour and size inputs a
 tool has; it fires `zc:toolchange`, and `annotations/prefs.ts` then sets their values. `notesBridge.ts` also defines `window.zcViewerGoto`, which other app
-tabs call to point an open viewer tab at a new spot (`api.ts`, `openAttachment`).
+tabs call to point an open viewer tab at a new spot (`api.ts`, `openAttachment`; `tabs.ts` for a viewer in
+one of the app's tabs). Inside the app's tabs, `links.ts` keeps the viewer's Back/Forward in memory
+(`jumpHistory.ts`) instead of the browser history the page around shares, and `inTab.ts` passes
+the tab keys to the page around (`window.zcTabs`); see [the app window](desktop.md).
 
 The viewer modules do not use `api.ts`: `viewer/annotations/model.ts` has a small `api()` of its
 own (with its own `X-Synapse-Client` id), and `notesBridge.ts` calls `fetch` directly.
@@ -221,7 +224,9 @@ uses it to leave a page's own edits out of what it reports back to that page.
 
 `api.ts` also opens PDFs: `fileUrl`, `viewerUrl` and `openAttachment` keep one viewer tab per PDF
 and reuse it through its `zcViewerGoto`; `pdfTabFor` and `pointPdfTab` take the tab inside the
-click (popup blockers require that) for callers that know the page only after an `await`.
+click (popup blockers require that) for callers that know the page only after an `await`. When
+PDFs open in the app's own tabs (the default), all three hand the PDF to `tabs/tabs.ts`, which
+registers itself with `setPdfTabOpener` so that `api.ts` does not import it.
 
 ### `nav.ts` and `changes.ts`
 
@@ -243,6 +248,8 @@ them. It waits while a field, a dialog or the editor is in use. See
 |---|---|
 | `main.ts` | Entry point: loads the schema and settings, calls each view's `init…`, the toolbar, search, status bar, resizer, drawer, shortcuts, and the handlers for the events above. |
 | `afterAdd.ts` | What runs after items are added (metadata, PDF, references, tags), per the never / always / ask settings. |
+| `tabs/model.ts`, `tabs/tabs.ts` | The app's own tabs: the Synapse tab and a tab per open PDF. `model.ts` has the tabs without a DOM (opening, closing and where it goes, reopening, order, saving); `tabs.ts` draws the bar (`#tabbar`), holds a viewer frame per tab (`#tab-views`), the tab keys (`tabShortcut`) and the menu. See [the app window](desktop.md). |
+| `presence.ts` | Says hello to the server while the page is open, for a server that stops with its last window. |
 | `icons.ts` | Inline SVG icons: `icon(name, cls)` and `typeIcon(itemType)`. |
 | `util.ts` | Small helpers: `escapeHtml`, `h`, `debounce`, dates and sizes, `storage` / `store` (`localStorage` that never throws), `modKey`, `copyText`, `diffWords`, `hitBadge` (the "full text" or "note" badge of a search match). |
 
@@ -308,7 +315,8 @@ boxes, the eraser) and the controls of a selected annotation (its colours, Delet
 `annotations/colorMenu.ts` is choosing a colour (swatches, None, any other colour), in the toolbar
 and for a selected annotation; `annotations/textMarks.ts` highlights and underlines selected text;
 `annotations/pointer.ts` tells mouse, Pencil and finger apart; `annotations/prefs.ts` keeps each
-tool's colours and size.
+tool's colours and size. `inTab.ts` and `jumpHistory.ts` are for a viewer inside one of the app's
+tabs (see [the app window](desktop.md)).
 
 How the annotation tools behave:
 
@@ -374,7 +382,7 @@ state and call each other without import cycles. Three patterns are used:
 | `tokens.css` | The design tokens as CSS variables: colours, spacing, radii, shadows, fonts and sizes. |
 | `base.css` | Reset and base elements. |
 | `components.css` | Buttons, inputs, menus, dialogs, toasts, empty states, chips. |
-| `layout.css` | The shell: toolbar, sidebar, panes, resizers, status bar, narrow screens. |
+| `layout.css` | The shell: the tab bar, toolbar, sidebar, panes, resizers, status bar, narrow screens. |
 | `items.css`, `itempane.css` | The items table; the item pane and the metadata review. |
 | `settings.css`, `notes.css`, `tasks.css`, `graph.css` | Settings, the notes workspace, tasks (the Tasks page, the task form and popups, task lines in notes), the graph. |
 | `export.css` | Not loaded by the app: the page and print rules of an exported note, added after `tokens.css`, `notes.css` and `tasks.css` (`views/notes/exportNote.ts`). |

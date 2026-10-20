@@ -6,6 +6,8 @@ Run:   python server.py                 (http://127.0.0.1:8000, opens your brows
        python server.py --lan            (also reachable from your iPad/phone; pair them in Settings → Devices)
        python server.py --lan --cert mac.local.pem --key mac.local-key.pem
                                          (HTTPS, needed to sign devices in with passkeys)
+       python server.py --window         (in a window of its own, like a program, not a browser tab)
+       python server.py --make-shortcut  (an icon on the Desktop that does that; see docs/desktop.md)
 
 Your library (database, PDFs, full-text index, settings) lives in ./data
 unless --data-dir or the SYNAPSE_DATA_DIR environment variable say otherwise.
@@ -13,10 +15,12 @@ unless --data-dir or the SYNAPSE_DATA_DIR environment variable say otherwise.
 
 from __future__ import annotations
 
+import _thread
 import argparse
 import logging
 import threading
 import webbrowser
+from pathlib import Path
 
 from backend import create_app
 from backend.config import Config
@@ -42,6 +46,23 @@ def main() -> None:
     ap.add_argument("--key", metavar="FILE", help="the certificate's private key (PEM)")
     ap.add_argument("--data-dir", default=None, help="folder for the library data (default: ./data)")
     ap.add_argument("--no-browser", action="store_true", help="don't open a browser tab")
+    ap.add_argument(
+        "--window",
+        action="store_true",
+        help="open the app in a window of its own, like a program (Synapse installed as an app by "
+        "Chrome, else a Chrome/Edge/Brave app window); if Synapse runs already, just open the window",
+    )
+    ap.add_argument(
+        "--quit-when-closed",
+        action="store_true",
+        help="stop the server once no Synapse window is open any more (the desktop shortcut uses this)",
+    )
+    ap.add_argument(
+        "--make-shortcut",
+        action="store_true",
+        help="make a desktop shortcut that starts Synapse in its own window (with the other options "
+        "given here, such as --port or --data-dir), then exit",
+    )
     ap.add_argument(
         "--debug", action="store_true", help="Flask debug mode with auto-reload (this computer only: not with --lan)"
     )
@@ -77,6 +98,20 @@ def main() -> None:
         raise SystemExit("--cert and --key go together: give both, or neither.")
     tls = (a.cert, a.key) if a.cert and a.key else None
     scheme = "https" if tls else "http"
+    url = f"{scheme}://{'127.0.0.1' if wildcard else a.host}:{a.port}/"
+
+    if a.make_shortcut:
+        make_shortcut(a)
+        return
+    if a.window:
+        from backend.desktop.window import open_window, synapse_at
+
+        running = synapse_at(url)
+        if running:
+            print(f"Synapse is already running at {url}: {open_window(url)}")
+            return
+        if running is False:
+            raise SystemExit(f"Port {a.port} is used by another program. Choose another one with --port.")
 
     config = Config.from_env(a.data_dir)
     config.allowed_hosts = set(a.allow_host)
@@ -88,8 +123,11 @@ def main() -> None:
     except BuildError as e:
         raise SystemExit(str(e)) from e
     app = create_app(config)
-    url = f"{scheme}://{'127.0.0.1' if wildcard else a.host}:{a.port}/"
-    print(f"Synapse running at {url}  (library: {config.data_dir})  — Ctrl+C to stop")
+    print(f"Synapse running at {url}  (library: {config.data_dir})  — Ctrl+C to stop", flush=True)
+    if a.quit_when_closed:
+        # Like Ctrl+C: the server finishes the requests it is answering and stops.
+        app.extensions["synapse"].presence.watch(on_idle=_thread.interrupt_main)
+        print("It stops by itself once no Synapse window is open any more.", flush=True)
     if config.lan:
         from backend.access import lan
 
@@ -101,11 +139,43 @@ def main() -> None:
             import segno  # noqa: F401
         except ImportError:
             print("Tip: pip install segno  (shows the pairing QR code; without it only the link works)")
-    if not a.no_browser:
+    if a.window:
+        from backend.desktop.window import open_window
+
+        threading.Timer(1.0, lambda: print(f"Window: {open_window(url)}", flush=True)).start()
+    elif not a.no_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     # Werkzeug's threaded server (one thread per connection) is plenty for one person's devices,
     # and it serves HTTPS too.
     app.run(host=a.host, port=a.port, debug=a.debug, threaded=True, use_reloader=a.debug, ssl_context=tls)
+
+
+def make_shortcut(a: argparse.Namespace) -> None:
+    """``--make-shortcut``: the shortcut starts the server with the options given with it."""
+    import os
+
+    from backend.desktop.shortcut import ShortcutError
+    from backend.desktop.shortcut import make_shortcut as make
+
+    args: list[str] = []
+    if a.port != 8000:
+        args += ["--port", str(a.port)]
+    if a.data_dir:
+        args += ["--data-dir", str(Path(a.data_dir).expanduser().resolve())]
+    if a.lan:
+        args.append("--lan")
+    elif a.host != "127.0.0.1":
+        args += ["--host", a.host]
+    if a.cert and a.key:
+        args += ["--cert", str(Path(a.cert).resolve()), "--key", str(Path(a.key).resolve())]
+    for h in a.allow_host:
+        args += ["--allow-host", h]
+    try:
+        made = make(Path(__file__).resolve().parent, args, path_env=os.environ.get("PATH", ""))
+    except ShortcutError as e:
+        raise SystemExit(str(e)) from e
+    print("Made the Synapse shortcut:\n" + "\n".join(f"  {p}" for p in made))
+    print("Double-click it to open Synapse in its own window; closing the window stops the server.")
 
 
 if __name__ == "__main__":

@@ -15,6 +15,8 @@ pip install -r requirements.txt
 python server.py                  # http://127.0.0.1:8000 opens in your browser
 python server.py --port 5050 --no-browser
 python server.py --data-dir ~/MyLibrary
+python server.py --window         # in a window of its own, like a program
+python server.py --make-shortcut  # an icon on the Desktop that does that (see below)
 ```
 
 `server.py` compiles the web app's scripts (`frontend/src` → `frontend/js`) whenever they changed,
@@ -22,6 +24,24 @@ for example after a `git pull`.
 
 The server only answers to `127.0.0.1` / `localhost`, and only the app's own pages and the
 browser button can change the library: other websites open in your browser cannot.
+
+### As a program of its own
+
+`python server.py --window` opens Synapse in a window of its own instead of a tab of your
+browser: Synapse installed as an app by Chrome or Edge if you did that (it then has the Synapse
+icon in the Dock: open `http://127.0.0.1:8000` in Chrome, **⋮ → Cast, Save and Share → Install
+Page as App…**), else a Chrome/Edge/Brave window without tabs or address bar.
+
+`python server.py --make-shortcut` (macOS and Linux) puts a **Synapse** icon on the Desktop and,
+on a Mac, in `~/Applications` (Spotlight, Launchpad, the Dock). Double-clicking it starts the
+server in the background and opens the window; closing the window stops the server. Options given
+with it (`--data-dir`, `--port`…) are used by the shortcut. Make it again after moving the folder.
+Details: [docs/desktop.md](docs/desktop.md).
+
+PDFs open in tabs inside Synapse, next to the library (in a browser tab too): one tab per PDF,
+Ctrl+Tab to switch, ⌃W (Alt+W elsewhere) or a middle click to close, ⌃⇧T to reopen, and they come
+back at the page you left them. Settings → PDF Viewer → Open PDFs in → Browser Tabs keeps PDFs in
+browser tabs of their own.
 
 ### From an iPad or phone
 
@@ -343,7 +363,7 @@ For how the code fits together and where new code goes, see
 ├── backend/               Flask + SQLite backend (packages described in docs/architecture.md)
 ├── frontend/              the web app: index.html, viewer.html, src/ (TypeScript; built to js/), css/, vendor/ (third-party libraries)
 ├── browser_extension/     Chrome extension (Manifest V3) – load unpacked
-├── tools/                 build scripts for the vendored libraries
+├── tools/                 build scripts for the vendored libraries and the macOS icon
 ├── tests/                 pytest suite, js/ unit tests, e2e/ browser checklists
 ├── docs/                  technical documentation
 └── data/                  your library (git-ignored)
@@ -385,6 +405,7 @@ python tests/e2e/library_checklist.py    # key rename, notes in search, quote/sn
 python tests/e2e/citation_spot_checklist.py  # a quote's / snapshot's citation opens the PDF at that spot and flashes it
 python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders, Back/Forward, item-list markers
 python tests/e2e/viewer_links_checklist.py  # PDF links: jump, hover preview, Back/Forward in the viewer
+python tests/e2e/tabs_checklist.py       # PDFs in the app's own tabs; a --quit-when-closed server stops with its window
 python tests/e2e/export_checklist.py     # Export: HTML (self-contained, offline), Markdown, PDF via the print dialog
 python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, levels, filters, paper card, Show in Graph, Back/Forward
 python tests/e2e/attachments_checklist.py  # note attachments: unused ones to the trash, Attachments dialog, retention

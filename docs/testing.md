@@ -103,6 +103,7 @@ These check rules of the code base rather than behaviour:
 | `noteSession.test.mjs` | `views/notes/noteSession.js`: saving, conflicts, drafts |
 | `render.test.mjs` | `views/notes/render.js` |
 | `store.test.mjs` | `sortedItems` in `store.js`, `hitBadge` in `util.js` |
+| `tabs.test.mjs` | `tabs/model.js`: the app's tabs (opening, reuse, closing and where it goes, reopening, order, saving and restoring); `viewer/jumpHistory.js` |
 
 `embed.test.mjs`, `equations.test.mjs`, `figures.test.mjs`, `gallery.test.mjs` and `render.test.mjs` load the real markdown-it and KaTeX from
 `frontend/vendor/md/md.js`.
@@ -185,12 +186,17 @@ looking for a bug.
 | `pdf_tabs` | 8773 | One viewer tab per PDF; Cmd/Ctrl+click or middle click opens a new one |
 | `remote_pdf` | 8774 | Attachments stored as web links open through `/api/attachments/<id>/remote`; local-network links refused |
 | `render` | 8766 | Note rendering (uses `tests/e2e/kitchen-sink.md`) |
+| `tabs` | 8796, 8797 | The app's own tabs: a PDF opens in a tab, one per PDF, pointed at a cited page; Ctrl+Tab and Alt+W/1–9/⇧T from inside a PDF; closing goes back to where it was opened; middle click, dragging, the tab menu; Back/Forward inside a PDF tab stay inside it; tabs come back after a reload at their page; Settings → Open PDFs in → Browser Tabs. Then a `--quit-when-closed` server stops once its page closes |
 | `tasks` | 8795 | Tasks: task lines in a note (ticking, the task popup, the New task popup with a new or existing task, the `{{task` autocomplete, a wrapped task on an indented line, ticking a parent, Backspace), read mode, the side panel, the Tasks page (views, search, quick add, keyboard, delete and Undo, changes from elsewhere) |
 | `touch_app` | 8783 | The library on an iPad profile: drawer, long press for menus and cards, hover tools shown, resizing, Home Screen |
 | `touch` | 8782 | The PDF viewer on an iPad profile: pen tools, finger scrolling, pinch zoom, snapshots |
 | `usability` | 8769 | Several notes selected, delete with Undo, folder operations, Back/Forward, the Library/Notes switch, note markers |
 | `viewer_links` | 8770 | Links in the PDF viewer: jumps, external links, hover previews, Back/Forward |
 | `zoom` | 8780 | Zoom keeps the spot under the pointer in place; +/- keep the middle |
+
+`citation_spot`, `links`, `multipdf` and `pdf_tabs` check PDFs opening in browser tabs, so they
+write `{"pdf_open_in": "browser"}` into their data folder's `settings.json` before starting;
+`tabs` covers the app's own tabs.
 
 Each checklist has a port of its own, so a new one needs an unused port. The touch checklists
 simulate Pencil, palm and pinch input; the real behaviour still needs a try on an iPad.
