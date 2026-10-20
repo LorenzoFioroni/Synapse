@@ -89,6 +89,7 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                 "links_to_notes": notes_out,
                 "linked_from": backlinks,
                 "images": self._note_images(got["text"]) or None,
+                "tasks": self._note_tasks(links["outgoing"]) or None,
                 "math_macros": self._math_macros() or None,
             }
         )
@@ -98,6 +99,28 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
         if len(text) > MAX_NOTE_CHARS:
             text = text[:MAX_NOTE_CHARS] + f"\n\n[… note cut at {MAX_NOTE_CHARS} characters of {len(got['text'])}]"
         return Parts([summary, f"Text of {path}:\n\n{text}"])
+
+    def _note_tasks(self, outgoing: list[dict]) -> list[dict]:
+        """The tasks the note shows ({{task:ID}} lines), with what the line displays."""
+        refs = [l for l in outgoing if l["kind"] == "task"]
+        known = self.s.task_store.get_many({l["target"] for l in refs})
+        out = []
+        for l in refs:
+            t = known.get(l["target"])
+            out.append(
+                drop_empty(
+                    {
+                        "line": l["line"],
+                        "id": l["target"],
+                        "title": t["title"] if t else None,
+                        "status": t["status"] if t else None,
+                        "due": t.get("due") if t else None,
+                        "missing": None if t else True,
+                        "in_trash": True if t and t.get("deleted_at") else None,
+                    }
+                )
+            )
+        return out
 
     def _math_macros(self) -> str:
         """The user's own math commands (Settings → Math macros), which every note may use."""

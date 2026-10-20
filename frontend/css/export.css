@@ -31,3 +31,19 @@ body { margin: 0; font-family: var(--font); color: var(--text); background: var(
   .prose .code-block, .prose .math-block, .prose figure, .prose img, .prose .callout, .mermaid-block, .prose tr { break-inside: avoid; }
   .prose .callout, .prose .task-box:checked, .prose th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* a gallery (exportNote.ts, staticGalleries): one figure, its panels in rows, labelled (a), (b), … */
+.prose .gallery-figure { margin: 0 auto 1.1em; }
+.prose .gallery-grid { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 12px 14px; align-items: end; }
+.prose .gallery-figure.cols-1 { --cols: 1; } .prose .gallery-figure.cols-2 { --cols: 2; } .prose .gallery-figure.cols-3 { --cols: 3; }
+.prose .gallery-cell { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.prose .gallery-cell-image { position: relative; display: inline-block; max-width: 100%; }
+.prose .gallery-cell img { display: block; max-width: 100%; height: auto; border-radius: 4px; }
+/* the panel's letter in a white circle with a black border, on the image's upper left corner */
+.prose .gallery-cell-label {
+  position: absolute; top: 6px; left: 6px; box-sizing: border-box; width: 1.7em; height: 1.7em;
+  display: grid; place-items: center; border: 1.5px solid #000; border-radius: 50%; background: #fff; color: #000;
+  font-size: .8em; font-weight: 650; line-height: 1; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.prose .gallery-figcaption { display: table; margin: .7em auto 0; font-size: .92em; line-height: 1.5; color: var(--text-2); }
+.prose .gallery-ref { font-weight: 650; color: var(--text); }

@@ -58,6 +58,7 @@ Two objects tie the backend together:
 |---|---|---|
 | `library/` | Items, attachments, folders, tags, smart folders, PDF annotations, citation keys and search. `fields.py` is the single source of truth for item fields and types, and `identifiers.py` for DOIs and arXiv ids (cleaning, normalising, matching). | `library.db` (schema and migrations in `library/db.py`) |
 | `notes/` | Markdown notes. The files are the source of truth; the index is disposable. | `notes/`, `notes_index.db` |
+| `tasks/` | Tasks (to-dos with a body and sub-tasks) and the `{{task:id}}` lines that show them in notes (see [tasks](tasks.md)). | `library.db` (`tasks`, `task_history`) |
 | `formats/` | Import and export for BibTeX, RIS, EndNote and CSL-JSON, behind one registry. | none |
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
 | `mcp/` | The MCP server: the JSON-RPC layer (`protocol.py`), its HTTP transport (`http.py`), the library tools (`tools/`, one mixin per family), their schemas (`server.py`) and the instructions given to the AI app (`instructions.py`). | none (it uses the other packages) |
@@ -81,8 +82,9 @@ never from those above:
 ```
   app · frontend · api                   composition: wires and exposes everything
   services · connector
-  mcp                                    (library, notes, pdf, references)
+  mcp                                    (library, notes, pdf, references, tasks)
   references                             (library, formats, online)
+  tasks                                  (library, notes)
   online                                 (library, formats, pdf)
   formats · notes · pdf                  (library)
   library · backup · access · assist     (base only)
@@ -139,8 +141,12 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   its mouse, keyboard and drag and drop; `fileOps.ts` creates, renames, moves and trashes notes;
   `readView.ts` is read mode and link following; `sidePanel.ts` the status, breadcrumbs and
   details panel; `aiBar.ts` Claude's edits; `ghost.ts` and `assist.ts` autocompletion's ghost text and where it comes from; `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
-  exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`). `settingsView.ts` is the Settings page; its markup
+  exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`); `gallery.ts`
+  and `galleryView.ts` read ` ```gallery ` blocks and turn their carousels; `figures.ts` numbers
+  figures. `settingsView.ts` is the Settings page; its markup
   is in `views/settings/page.ts`, and Autocompletion, Backups and Devices have their own modules there.
+  `views/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
+  the notes workspace only through `taskHooks` in `views/notes/workspace.ts`.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
   header is `views/itemlist/columns.ts`, its virtualised rows `rows.ts` (only the rows near the
   viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`.
@@ -212,6 +218,7 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
 |---|---|
 | [Adding a feature](adding-a-feature.md) | Where the pieces of a new feature go, in the order you write them. |
 | [Storage](storage.md) | The data folder, who owns each file, the `library.db` schema and its migrations, settings and backups. |
+| [Tasks](tasks.md) | Tasks: the records, the `{{task:id}}` lines in notes, the Tasks page and Claude's task tools. |
 | [Notes](notes.md) | The notes format, the vault, the index, the parser and its frontend port, rekeying, Claude's edits, and the notes workspace. |
 | [Full-text search](fulltext-search.md) | PDF text extraction, the full-text index and the library search with its query syntax. |
 | [References](references.md) | Metadata lookup, finding PDFs, the citation graph, and what the Adding Items settings trigger. |

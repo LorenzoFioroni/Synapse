@@ -1,7 +1,11 @@
 // A note as other programs can show it (exportNote.ts): Markdown without the notes' own syntax,
 // citations written out with a list of references, and the reference entries HTML and PDF
 // exports use. No DOM (tests/js/portable.test.mjs).
-import { scan, splitFrontmatter } from './mdscan.js';
+import { type Lookup, type RefKind, refNames, refParts, refPlain } from './crossref.js';
+import { textRefs } from './equations.js';
+import { figureLabel, figuresOf } from './figures.js';
+import { galleryMarkdown, italic } from './gallery.js';
+import { mask, scan, splitFrontmatter } from './mdscan.js';
 import { type CiteInfo, citeLabel } from './render.js';
 
 /** What a reference entry is made from: a library item (GET /api/items?ids=), or at least the
@@ -16,10 +20,41 @@ export interface RefInfo extends CiteInfo {
 /** A note converted to portable Markdown, and the keys it cites (in order, embeds included). */
 export interface Portable { markdown: string; keys: string[] }
 
+/** A task a note shows ({{task:id}}), with its sub-tasks: written as a checkbox list. */
+export interface PortableTask { title: string; done: boolean; subtasks: PortableTask[] }
+
 export interface PortableOptions {
   citeInfo: (key: string) => RefInfo | null;
   /** The converted text of an embedded note (or one of its sections), null when it is not available. */
   embed?: (target: string, heading: string) => Portable | null;
+  /** The task a {{task:id}} line shows (null: deleted or unknown). */
+  task?: (id: string) => PortableTask | null;
+}
+
+const LIST_LEAD = /^(\s*(?:>\s*)*)((?:[-*+]|\d+[.)])\s+)?$/;
+
+/** A task line as a Markdown checkbox list item (its sub-tasks nested below it), or, inside a
+ *  sentence, just its title. Titles are converted like the note (citations written out). */
+function taskMarkdown(task: PortableTask | null, before: string, alone: boolean, opts: PortableOptions, keys: string[]): string {
+  const title = (t: PortableTask) => {
+    const p = portableBody(t.title, { ...opts, task: undefined });
+    keys.push(...p.keys);
+    return p.markdown.trim();
+  };
+  if (!task) return alone ? `${LIST_LEAD.exec(before)?.[2] ? '' : '- '}[ ] *(deleted task)*` : '*(deleted task)*';
+  if (!alone) return title(task);
+  const m = LIST_LEAD.exec(before)!;
+  const marker = m[2] ? '' : '- ';
+  const indent = m[1] + ' '.repeat(m[2] ? m[2].length : 2);
+  const lines = [`${marker}[${task.done ? 'x' : ' '}] ${title(task)}`];
+  const walk = (subs: PortableTask[], depth: number) => {
+    for (const s of subs) {
+      lines.push(`${indent}${'  '.repeat(depth)}- [${s.done ? 'x' : ' '}] ${title(s)}`);
+      walk(s.subtasks, depth + 1);
+    }
+  };
+  walk(task.subtasks, 0);
+  return lines.join('\n');
 }
 
 /** "Smith, A. M., Doe, J. & Roe, R." from "Smith, Anna Maria; Doe, John; Roe, R." */
@@ -156,6 +191,12 @@ export function portableBody(text: string, opts: PortableOptions): Portable {
       }).join('; ')})`;
     } else if (l.kind === 'note') {
       out += l.alias || (l.target ? l.target + (l.heading ? ` › ${l.heading}` : '') : l.heading);
+    } else if (l.kind === 'task') {
+      const start = text.lastIndexOf('\n', l.from - 1) + 1;
+      const end = text.indexOf('\n', l.to);
+      const before = text.slice(start, l.from);
+      const alone = LIST_LEAD.test(before) && !text.slice(l.to, end < 0 ? text.length : end).trim();
+      out += taskMarkdown(opts.task?.(l.target) ?? null, before, alone, opts, keys);
     } else if (l.kind === 'embed') {
       const inner = opts.embed?.(l.target, l.heading);
       if (inner) { out += inner.markdown.trim(); keys.push(...inner.keys); }
@@ -167,7 +208,37 @@ export function portableBody(text: string, opts: PortableOptions): Portable {
     }
     at = l.to;
   }
-  return { markdown: out + text.slice(at), keys };
+  return { markdown: portableFigures(out + text.slice(at)), keys };
+}
+
+/**
+ * Figures (figures.ts), after their citations were written out: a gallery becomes its images on one
+ * line and the figure's caption below (galleryMarkdown), an image's caption line gets its number,
+ * "**Fig. 2.** *Caption.*", \label{…} is dropped from captions, and \ref{…} to a figure becomes
+ * its number (references to equations stay as they are, like the formulas).
+ */
+export function portableFigures(md: string): string {
+  const { figures, labels } = figuresOf(md);
+  for (const f of [...figures].reverse()) {
+    if (f.kind === 'gallery') md = md.slice(0, f.from) + galleryMarkdown(f.gallery!, f.number) + md.slice(f.to);
+    else {
+      const c = f.image!.caption;
+      md = md.slice(0, f.captionFrom!) + `**${figureLabel(f.number!)}.** ${italic(c)}` + md.slice(f.to);
+    }
+  }
+  if (!labels.size) return md;
+  const { spans } = mask(md);
+  // equations win a name both use, as in the app; a reference that names an equation stays as it is
+  const inMath = new Set(spans.filter((sp) => sp.kind === 'math' || sp.kind === 'mathblock')
+    .flatMap((sp) => [...md.slice(sp.from, sp.to).matchAll(/\\label\s*\{([^{}]*)\}/g)].map((m) => m[1].trim())));
+  const lookup: Lookup = (name) => { const n = inMath.has(name.trim()) ? null : labels.get(name.trim()); return n == null ? null : { type: 'fig', num: n }; };
+  for (const r of textRefs(md).reverse()) {
+    if (spans.some((sp) => sp.kind !== 'gallery' && r.from >= sp.from && r.from < sp.to)) continue;
+    const names = refNames(r.kind, r.name);
+    if (!names.length || names.some((n) => !lookup(n))) continue;
+    md = md.slice(0, r.from) + refPlain(refParts(r.kind as RefKind, names, lookup)) + md.slice(r.to);
+  }
+  return md;
 }
 
 /** The whole export: a title (unless the note starts with one), the body (portableBody) and the

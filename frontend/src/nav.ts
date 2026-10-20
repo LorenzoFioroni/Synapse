@@ -6,10 +6,12 @@
 //   { ws: 'notes', path }                     a note (path null = Notes with nothing open)
 //   { ws: 'notes', path, graph: true, focus }  the graph in Notes (focus: the node it is centred on)
 //   { ws: 'library', view, sel: [ids] }       the library (kept up to date while you work there)
+//   { ws: 'tasks', task }                     the Tasks page (task: the selected one)
 
 /** A place in the app, kept in history.state.zc (see above). */
 export interface NavEntry {
-  ws: 'notes' | 'library';
+  ws: 'notes' | 'library' | 'tasks';
+  task?: string | null;
   path?: string | null;
   graph?: boolean;
   focus?: string | null;
@@ -21,7 +23,7 @@ let restoring = 0;        // >0 while going Back/Forward (those must not add ent
 let snapshot: ((cur: NavEntry) => Partial<Omit<NavEntry, 'ws'>> | null | undefined) | null = null;   // fresh data for the current entry, taken before leaving it
 
 const same = (a: NavEntry | null, b: NavEntry | null) => !!a && !!b && a.ws === b.ws
-  && (a.ws === 'library' || (a.path === b.path && !!a.graph === !!b.graph && (a.focus || null) === (b.focus || null)));
+  && (a.ws === 'library' || a.ws === 'tasks' || (a.path === b.path && !!a.graph === !!b.graph && (a.focus || null) === (b.focus || null)));
 
 export const navCurrent = (): NavEntry | null => history.state?.zc || null;
 

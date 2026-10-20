@@ -89,7 +89,7 @@ use it), an input schema and `read_only`. `read_only` sets the `readOnlyHint` an
 | `search_library` | `library.py` | Searches items (metadata, PDF full text, what notes say) and notes, with the search box's filters. | no |
 | `list_collections` | `library.py` | Folders with counts, tags, smart folders, notes folders and overall counts. | no |
 | `get_note` | `notes.py` | A note's text and outline, the papers it cites (line and page), its links, backlinks and images, and the user's math macros. | no |
-| `view_image` | `images.py` | Images stored with the notes: one by path, or all of a note's (at most 6 per call). | no |
+| `view_image` | `images.py` | Images stored with the notes: one by path, or all of a note's (at most 6 per call); an image in a gallery comes with its panel label and the gallery's caption. | no |
 | `get_paper` | `papers.py` | Metadata, abstract, PDFs with page counts, the paper note, notes citing it, a summary of its reference list. | no |
 | `search_in_paper` | `papers.py` | The pages of a PDF that contain some words, best first, with snippets. | no |
 | `read_paper` | `papers.py` | The text of some PDF pages, marked by page (at most 10 pages or 80,000 characters). | no |
@@ -100,6 +100,11 @@ use it), an input schema and `read_only`. `read_only` sets the `readOnlyHint` an
 | `write_note` | `notes.py` | Saves a new note under `notes/ai/`. | yes |
 | `edit_note` | `notes.py` | Changes an existing note: exact replacements, an append, or the whole text. | yes |
 | `undo_note_edit` | `notes.py` | Puts a note back as it was before the last AI edit, if it was not changed since. | yes |
+| `list_tasks` | `tasks.py` | The user's tasks, open ones by default, filtered with the Tasks page's search syntax (`backend/tasks/query.py`). | no |
+| `get_task` | `tasks.py` | One task with its details, sub-tasks, parents and the notes that show it. | no |
+| `create_task` | `tasks.py` | Creates a task (optionally a sub-task), and with `note` adds its `{{task:ID}}` line to that note through the note's history. | yes |
+| `update_task` | `tasks.py` | Changes title, details, status (optionally with the sub-tasks), due date or parent. | yes |
+| `delete_task` | `tasks.py` | Moves a task and its sub-tasks to the tasks trash. | yes |
 
 `ToolsBase` in `backend/mcp/tools/common.py` has what the families share:
 
@@ -121,6 +126,10 @@ notes, so the model's citations open the right page in the app. `view_page` and 
 note or a search, find pages before reading them) and `WRITING_RULES`, the note syntax. The
 descriptions of `write_note` and `edit_note` repeat `WRITING_RULES`, because the model reads tool
 descriptions when it decides how to call them. See [notes](notes.md) for the syntax itself.
+
+Claude's task changes are recorded with `by: "ai"` in `task_history`, so the app shows them as
+Claude's and can undo them; `get_note` lists the tasks a note shows, and `NoteChecker` refuses a
+note that shows a task id that does not exist (see [tasks](tasks.md)).
 
 ## The rules it enforces
 
@@ -216,8 +225,10 @@ components as the app's.
 
 **Change feed.** A library write made during a `/mcp` request is recorded like any other request
 without a client id, so every window refreshes. After a tool with `read_only=False`, `HttpTransport`
-calls the `wrote` callback, which `Services` points at `changes.record({"notes"})`: the notes
-written in-process are reported at once instead of waiting for the file-time check.
+calls the `wrote` callback, which `Services` points at `changes.record({"notes", "tasks"})`: notes
+and tasks written in-process are reported at once. Without it a task change would go unseen: the
+request's own record says `library` (`kind_of("/mcp")`), and that also explains the new file time of
+`library.db`, so the file-time check finds nothing.
 
 **Access tokens.** The guard lets a request to `/mcp` through only with
 `Authorization: Bearer <token>` naming a token in `auth.db` (`AccessTokens.check`), from this

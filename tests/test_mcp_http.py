@@ -169,6 +169,27 @@ def test_a_note_written_over_http_reaches_the_open_windows(mac, token, lan_app):
     assert svc.note_service.on_change == poke and poke is not None
 
 
+def test_a_task_made_over_http_reaches_the_open_windows(mac, token, lan_app):
+    svc = lan_app.extensions["synapse"]
+    first = mac.get("/api/changes", headers={"X-Synapse-Client": "page"}).get_json()
+    r = from_other_pc(
+        mac,
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "create_task", "arguments": {"title": "Ask the referee"}},
+        },
+        token,
+    )
+    assert r.status_code == 200 and r.get_json()["result"]["isError"] is False, r.get_json()
+    assert [t["title"] for t in svc.task_store.list()] == ["Ask the referee"]
+    later = mac.get(
+        f"/api/changes?since={first['seq']}&epoch={first['epoch']}", headers={"X-Synapse-Client": "page"}
+    ).get_json()
+    assert "tasks" in later["changes"]
+
+
 @pytest.mark.parametrize(
     "header,token",
     [("Bearer abc", "abc"), ("bearer  abc ", "abc"), ("Basic abc", None), ("Bearer", None), (None, None)],

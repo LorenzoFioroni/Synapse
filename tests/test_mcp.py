@@ -206,12 +206,16 @@ def test_initialize_and_list(lib):
         "write_note",
         "edit_note",
         "undo_note_edit",
+        "list_tasks",
+        "get_task",
+        "create_task",
+        "update_task",
+        "delete_task",
     ]
+    writes = ("write_note", "snapshot", "edit_note", "undo_note_edit", "create_task", "update_task", "delete_task")
     for t in tools:
         assert t["inputSchema"]["type"] == "object" and t["description"]
-        assert t["annotations"]["readOnlyHint"] == (
-            t["name"] not in ("write_note", "snapshot", "edit_note", "undo_note_edit")
-        )
+        assert t["annotations"]["readOnlyHint"] == (t["name"] not in writes)
     assert "KaTeX" in res["instructions"] and "by file name" in res["instructions"]
 
 
@@ -741,6 +745,29 @@ def test_view_image(lib, svc):
     assert err and "not a PNG" in content[0]["text"]
 
 
+def test_images_in_a_gallery(lib, svc):
+    server = lib["server"]
+    small = pdfpng.png_encode(bytes([30, 200, 30]) * (8 * 8), 8, 8)
+    a = svc.note_service.add_image("a.png", small)["path"]
+    b = svc.note_service.add_image("b.png", small)["path"]
+    text = (
+        f"# Panels\n\n```gallery|600\n![first]({a})\n*Clean, [@fig2024, p. 2].*\n![]({b}) With speckle.\n\n"
+        f"Both together.\n```\n\n![]({a})\n*Alone.*\n"
+    )
+    svc.note_service.create(path="panels.md", title="Panels", text=text)
+    summary = call_json(server, "get_note", note="panels")
+    imgs = summary["images"]
+    assert [i["path"] for i in imgs] == [a, b, a]
+    assert imgs[0]["caption"] == "Clean, [@fig2024, p. 2]." and imgs[1]["caption"] == "With speckle."
+    assert imgs[0]["gallery"] == {"line": imgs[0]["line"] - 1, "panel": "(a)", "caption": "Both together."}
+    assert imgs[1]["gallery"]["panel"] == "(b)"
+    assert "gallery" not in imgs[2] and imgs[2]["caption"] == "Alone."
+    # the citation in a panel's caption counts
+    assert any(c["key"] == "fig2024" for c in summary["cited_papers"])
+    err, content = _blocks(server, note="Panels")
+    assert not err and json.loads(content[2]["text"])["gallery"]["panel"] == "(b)"
+
+
 def test_view_image_scales_big_images(lib, svc, monkeypatch):
     PIL = pytest.importorskip("PIL.Image")
     import io
@@ -888,7 +915,7 @@ def test_stdio_server_end_to_end(lib, svc):
     assert p.returncode == 0, p.stderr
     replies = [json.loads(l) for l in p.stdout.splitlines()]
     assert [r["id"] for r in replies] == [1, 2, 3]
-    assert len(replies[1]["result"]["tools"]) == 14
+    assert len(replies[1]["result"]["tools"]) == 19
     assert "tensor networks" in replies[2]["result"]["content"][0]["text"]
 
 
@@ -907,3 +934,47 @@ def test_script_config_and_missing_library(tmp_path):
     )
     assert p.returncode == 1 and "No library found" in p.stderr and p.stdout == ""
     assert not (tmp_path / "nothing").exists()
+
+
+# ======================================================================== tasks
+from backend.tasks.service import token  # noqa: E402
+
+
+def test_task_tools(lib, svc):
+    server = lib["server"]
+    made = call_json(server, "create_task", title="Plot $\\chi$ vs $\\varepsilon$", due="2026-10-27", note="crispr")
+    tid = made["created"]
+    assert made["line"] == token(tid) and made["in_note"]["path"] == "projects/crispr.md"
+    t = svc.task_store.get(tid)
+    assert t["created_by"] == "ai" and t["due"] == "2026-10-27"
+    # the note's change is Claude's, so the app can show it and undo it
+    assert svc.note_service.history_of("projects/crispr.md")["entries"][0]["by"] == "ai"
+    sub = call_json(server, "create_task", title="Check convergence", parent=tid, details="Up to $N=100$.")["created"]
+    listed = call_json(server, "list_tasks")
+    row = next(x for x in listed["tasks"] if x["id"] == tid)
+    assert row["subtasks"] == "0/1 done" and row["in_notes"][0]["note"] == "projects/crispr.md"
+    assert [x["id"] for x in call_json(server, "list_tasks", query="has:body")["tasks"]] == [sub]
+    assert [x["id"] for x in call_json(server, "list_tasks", query="due:<2026-11-01")["tasks"]] == [tid]
+    got = call_json(server, "get_task", task=token(tid))
+    assert got["subtasks"][0]["title"] == "Check convergence" and got["in_notes"]
+    up = call_json(server, "update_task", task=tid, status="done", with_subtasks=True, due="")
+    assert up["status"] == "done" and up["also_changed"] == [sub]
+    assert svc.task_store.get(tid)["due"] is None
+    assert call_json(server, "list_tasks")["count"] == 0
+    assert call_json(server, "list_tasks", include_done=True)["count"] == 2
+    summary = json.loads(call(server, "get_note", note="crispr")[1][0])
+    assert summary["tasks"][0]["id"] == tid and summary["tasks"][0]["status"] == "done"
+    err, texts = call(server, "update_task", task=tid, due="soon")
+    assert err and "not a date" in texts[0]
+    assert call_json(server, "delete_task", task=tid)["deleted"] == [tid, sub]
+    err, texts = call(server, "get_task", task="nope2345")
+    assert err
+
+
+def test_notes_cannot_show_tasks_that_do_not_exist(lib, svc):
+    server = lib["server"]
+    err, texts = call(server, "edit_note", note="crispr", append="\n{{task:zzzz9999}}\n")
+    assert err and "is not a task" in texts[0]
+    tid = svc.task_store.create("Real")["id"]
+    err, texts = call(server, "edit_note", note="crispr", append=f"\n{token(tid)}\n")
+    assert not err, texts

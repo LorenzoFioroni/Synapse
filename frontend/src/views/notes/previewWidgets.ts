@@ -1,5 +1,5 @@
 // The widgets the live preview (livePreview.ts) draws in place of Markdown source: formulas,
-// chips for links and citations, task boxes, the front-matter box, tables and diagrams.
+// chips for links and citations, task boxes, the front-matter box, tables, diagrams and galleries.
 //
 // CodeMirror keeps a widget's DOM as long as a new widget at the same place is `eq` to it, so each
 // widget's key holds everything it draws from, and nothing else: a widget whose key did not
@@ -7,8 +7,11 @@
 import type { EditorView as EditorViewT } from '@codemirror/view';
 import type { CM } from './editor.js';
 import type { Macros } from './macros.js';
+import type { Lookup, RefKind } from './crossref.js';
+import { refHtml } from './render.js';
 import { fitSoon } from './mathFit.js';
 import type { PreviewDeps } from './livePreview.js';
+import type { TaskPreview } from './workspace.js';
 
 /** The note's formulas, prepared once per version of the document (livePreview.ts, equationsOf). */
 export interface Equations {
@@ -40,6 +43,11 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     ignoreEvent(e: Event) { return e.type !== 'mousedown'; }   // a click places the cursor (and reveals the source)
   }
 
+  // the carousel's arrows and dots turn it (galleryView.ts); a click anywhere else opens the source
+  class GalleryWidget extends HtmlWidget {
+    ignoreEvent(e: Event) { return !!(e.target as Element | null)?.closest?.('.gallery-btn, .gallery-dot') || super.ignoreEvent(e); }
+  }
+
   class CheckboxWidget extends WidgetType {
     checked: boolean;
     pos: number;
@@ -55,6 +63,29 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
         view.dispatch({ changes: { from: this.pos + 1, to: this.pos + 2, insert: this.checked ? ' ' : 'x' } });
       });
       return box;
+    }
+    ignoreEvent() { return true; }
+  }
+
+  // a task shown in the note ({{task:id}}): drawn by the Tasks module, never shown as source; a
+  // click ticks it or opens it (the key is what it shows, so a changed task is drawn again)
+  class TaskWidget extends WidgetType {
+    id: string;
+    sig: string;
+    hooks: TaskPreview;
+    constructor(id: string, hooks: TaskPreview) { super(); this.id = id; this.hooks = hooks; this.sig = hooks.sig(id); }
+    eq(o: TaskWidget) { return o.sig === this.sig; }
+    toDOM(view: EditorViewT) {
+      const el = document.createElement('span');
+      el.className = 'cm-lp-widget cm-lp-taskref';
+      this.hooks.fill(el, this.id);
+      el.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const act = (e.target as Element).closest<HTMLElement>('[data-task-act]')?.dataset.taskAct || 'open';
+        this.hooks.act(this.id, act, el, view);
+      });
+      return el;
     }
     ignoreEvent() { return true; }
   }
@@ -82,6 +113,7 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     bullet: new HtmlWidget('bullet', (el) => { el.textContent = '•'; }, { cls: 'cm-lp-bullet' }),
     hr: new HtmlWidget('hr', () => {}, { cls: 'cm-lp-hr' }),
     checkbox: (checked: boolean, pos: number) => new CheckboxWidget(checked, pos),
+    task: (id: string, hooks: TaskPreview) => new TaskWidget(id, hooks),
     katex: (eq: Equations, tex: string, display: boolean, block = false, preview = false) => new MathWidget(tex, display, block, preview, eq),
 
     /** A formula that only defines macros: a small label (click it to edit the definitions). */
@@ -110,6 +142,22 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
       const r = deps.renderer();
       el.innerHTML = r ? r.render(src) : '';
     }, { block: true, cls: 'cm-lp-table' }),
+
+    /** A gallery's carousel, drawn by the renderer; ``preview``: shown below its source while it is edited. */
+    /** A gallery's carousel, drawn by the renderer; ``preview``: shown below its source while it is
+     *  edited. Its figure number and \ref numbers come from the whole note (``fig``, ``labels``). */
+    gallery: (src: string, lookup: Lookup, fig: number | null, version: string, preview: boolean) => new GalleryWidget(`g:${version}:${preview}:${src}`, (el) => {
+      const r = deps.renderer();
+      el.innerHTML = r ? r.render(src) : '';
+      if (fig != null) el.querySelectorAll('.fig-num').forEach((n) => { n.textContent = n.textContent!.replace(/\d+/, String(fig)); });
+      // written again with the whole note's labels (the renderer saw only this block)
+      for (const ref of el.querySelectorAll<HTMLElement>('.cref[data-names]')) {
+        ref.outerHTML = refHtml(ref.dataset.kind as RefKind, (ref.dataset.names || '').split(','), lookup);
+      }
+      for (const ref of el.querySelectorAll<HTMLElement>('.eqref[data-label]')) {
+        if (!ref.closest('.cref')) ref.outerHTML = refHtml((ref.dataset.kind || 'eqref') as RefKind, [ref.dataset.label!], lookup);
+      }
+    }, { block: true, cls: `cm-lp-gallery${preview ? ' cm-lp-gallerypreview' : ''}` }),
 
     mermaid: (code: string) => new HtmlWidget(`mm:${code}:${document.documentElement.dataset.theme}`, (el) => deps.mermaid(el, code), { block: true, cls: 'cm-lp-mermaid' }),
 

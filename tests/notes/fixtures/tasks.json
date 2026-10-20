@@ -1,0 +1,9 @@
+{"title": "Tasks in a note", "tags": [],
+ "headings": [[1, "Tasks in a note", 1], [2, "TODOs", 3]],
+ "links": [
+  {"kind": "task", "target": "k7f3q2mx", "line": 4, "context": "{{task:k7f3q2mx}}"},
+  {"kind": "task", "target": "ab12cd34", "line": 5},
+  {"kind": "task", "target": "nest0001", "line": 6},
+  {"kind": "task", "target": "inquote1", "line": 7},
+  {"kind": "task", "target": "inline01", "line": 9}
+ ]}

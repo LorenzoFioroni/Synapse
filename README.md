@@ -178,7 +178,20 @@ never mix.
   link to their entry in a References list at the end. Each entry has what is needed to find the
   work (journal, volume, issue and pages; publisher and edition for books; the arXiv id of a
   preprint) and its DOI as a link (else its arXiv page or URL). `[[links]]` become their text, embedded notes are included, and formulas, diagrams, code and
-  images are kept. Switch with the
+  images are kept. **Galleries** put several images in one carousel: a ` ```gallery ` block
+  (` ```gallery|600 ` sets its width) with one image per line, each followed by its caption, then
+  after a blank line the caption of the whole gallery (see [Galleries](docs/notes.md#galleries)).
+  Arrows, dots or a swipe turn it; exported, it becomes one figure with the panels side by side
+  (at most three to a row), each marked a, b, … in a white circle on its upper left corner, under
+  one caption: the gallery's, then
+  "(a) first panel's. (b) second panel's." **Figures** are numbered Fig. 1, 2, … like equations: an
+  image with a caption (the line right below it in `*italics*`, with blank lines around the two)
+  or a gallery with a caption; images without a caption are not numbered. `\label{fig:name}` in a
+  caption names the figure (in a panel's caption, that panel). References work like LaTeX's
+  cleveref: `\cref{fig:name}` writes "Fig. 2", `\cref{eq:name}` "Eq. (3)", `\cref{a,b,c}` "Figs. 1
+  and 2 and Eq. (3)" (ranges as "Eqs. (1)–(3)"), `\Cref` the full word for the start of a
+  sentence ("Figure 2"), and `\ref` / `\eqref` the bare number (see
+  [Figures](docs/notes.md#figures-and-their-numbers)). Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
   Cmd+[ / Alt+←) go back to the note or library selection you came from.
   Images pasted into notes are kept in the notes' attachments folder; one that no note uses any more
@@ -204,6 +217,21 @@ never mix.
   In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
   drag to move; folders can be renamed, moved and deleted the same way.
+- **Tasks**: to-dos with a title, a due date, details written in Markdown like a note, and
+  sub-tasks to any depth. In a note, Cmd/Ctrl+Enter (or **Task** in the note's header) opens a
+  small popup: name the task (the line's text, if any), give it a date in words ("fri", "27 oct",
+  "in 3 days") and details, or pick a task you already have — or type `{{task` and a few words of
+  its title to pick one from a list, as `[@` does for papers. The note then shows the task as one
+  line with its checkbox; ticking it or clicking it to edit changes the task, not the note (the note
+  only holds `{{task:id}}`). Plain `- [ ]` checkboxes stay checkboxes; select some and press
+  Cmd/Ctrl+Enter to turn them into tasks. The **Tasks** page (Cmd/Ctrl+Shift+K) lists the tasks of
+  all notes, with views (Open, Today, Next 7 days, No date, Not in a note, Done, each note), search
+  with filters (`due:week`, `is:done`, `note:"…"`, `has:body`), sorting, grouping, quick add, a
+  details pane, keyboard editing, drag and drop, and Undo. Ticking a task whose sub-tasks are open
+  asks whether to tick them too. A task you just made from a note and whose line you then delete
+  goes to the trash with it (Undo, or Cmd/Ctrl+Z in the note, brings it back); older tasks stay in
+  Tasks. Tasks are kept in the library database, so backups include them; deleted tasks can be
+  restored. See [`docs/tasks.md`](docs/tasks.md).
 - **Autocompletion** in notes (Settings → Autocompletion; off by default): after a short pause a
   model running on this computer in [Ollama](https://ollama.com) suggests how the text goes on, in
   grey after the cursor. Tab accepts, Esc dismisses, Cmd/Ctrl+→ takes one word, Alt/⌥+\ asks for
@@ -285,6 +313,8 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 | `write_note` | saves a new note in `notes/ai/` (`author: ai`), never overwriting anything — after checking it |
 | `edit_note` | changes an existing note (replace passages, append, or new text) — checked the same way; the version before is kept |
 | `undo_note_edit` | puts a note back as it was before Claude's last edit (if you did not change it since) |
+| `list_tasks`, `get_task` | your tasks (open ones unless asked), filtered like the Tasks page; one task with its details, sub-tasks and the notes that show it |
+| `create_task`, `update_task`, `delete_task` | make, change (title, details, open/done, due date, parent) or delete tasks, and put a new task's line in a note — marked as Claude's, undoable in the app |
 
 Page numbers are PDF pages counted from 1, so Claude can cite `[@key, p. N]` and the citation opens
 the right page in the app. Claude is told the notes syntax (KaTeX math, quotes as `> words [@key, p. N]`,

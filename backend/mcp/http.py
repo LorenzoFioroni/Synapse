@@ -22,7 +22,7 @@ from .protocol import INVALID_REQUEST, PARSE_ERROR, PROTOCOL_VERSIONS, Server, e
 class HttpTransport:
     def __init__(self, build: Callable[[], Server], wrote: Callable[[], None] | None = None):
         self._build = build  # the server is made on the first request
-        self._wrote = wrote  # called after a tool that may write (a note) has run
+        self._wrote = wrote  # called after a tool that may write (a note, a task) has run
         self._server: Server | None = None
         self._lock = threading.Lock()
 

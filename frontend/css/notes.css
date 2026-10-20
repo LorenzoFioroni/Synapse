@@ -90,33 +90,33 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 #notes-view.has-note .note-empty { display: none; }
 
 /* ------------------------------------------------------------ CodeMirror */
-.note-editor .cm-editor { height: 100%; background: var(--bg); color: var(--text); font-size: calc(var(--fs) + 2px); }
-.note-editor .cm-editor.cm-focused { outline: none; }
-.note-editor .cm-scroller { font-family: var(--font); line-height: 1.65; padding: 28px 0 40vh; }
-.note-editor .cm-scroller { container-type: inline-size; }
-.note-editor .cm-content { max-width: var(--note-col); margin: 0 auto; padding: 0 var(--note-pad); caret-color: var(--accent); }
-.note-editor .cm-line { padding: 0; }
-.note-editor .cm-cursor { border-left-color: var(--accent); border-left-width: 2px; }
+:is(.note-editor, .tf-editor) .cm-editor { height: 100%; background: var(--bg); color: var(--text); font-size: calc(var(--fs) + 2px); }
+:is(.note-editor, .tf-editor) .cm-editor.cm-focused { outline: none; }
+:is(.note-editor, .tf-editor) .cm-scroller { font-family: var(--font); line-height: 1.65; padding: 28px 0 40vh; }
+:is(.note-editor, .tf-editor) .cm-scroller { container-type: inline-size; }
+:is(.note-editor, .tf-editor) .cm-content { max-width: var(--note-col); margin: 0 auto; padding: 0 var(--note-pad); caret-color: var(--accent); }
+:is(.note-editor, .tf-editor) .cm-line { padding: 0; }
+:is(.note-editor, .tf-editor) .cm-cursor { border-left-color: var(--accent); border-left-width: 2px; }
 /* autocompletion's suggestion (ghost.ts): grey, in the text's own font, accepted by Tab or a click */
-.note-editor .cm-ghost { color: var(--text-3); opacity: .75; white-space: pre-wrap; cursor: pointer; }
-.note-editor .cm-selectionBackground, .note-editor .cm-editor ::selection { background: var(--accent-soft-2) !important; }
-.note-editor .cm-focused .cm-selectionBackground { background: var(--accent-soft-2) !important; }
-.note-editor .cm-selectionMatch { background: color-mix(in srgb, var(--mark) 60%, transparent); }
-.note-editor .cm-matchingBracket { background: var(--bg-active); outline: none; }
-.note-editor .cm-panels { background: var(--bg-elev); color: var(--text); border-color: var(--border) !important; }
-.note-editor .cm-panels.cm-panels-top { border-bottom: 1px solid var(--border); }
-.note-editor .cm-search { padding: 8px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-sm); }
-.note-editor .cm-search input.cm-textfield { height: 26px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg-input); color: var(--text); font: inherit; }
-.note-editor .cm-search button.cm-button { height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); background-image: none; font: inherit; }
-.note-editor .cm-search label { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
-.note-editor .cm-search button[name="close"] { border: none; background: none; font-size: 16px; color: var(--text-3); margin-left: auto; }
-.note-editor .cm-searchMatch { background: color-mix(in srgb, var(--mark) 70%, transparent); border-radius: 2px; }
-.note-editor .cm-searchMatch-selected { background: var(--mark); }
+:is(.note-editor, .tf-editor) .cm-ghost { color: var(--text-3); opacity: .75; white-space: pre-wrap; cursor: pointer; }
+:is(.note-editor, .tf-editor) .cm-selectionBackground, :is(.note-editor, .tf-editor) .cm-editor ::selection { background: var(--accent-soft-2) !important; }
+:is(.note-editor, .tf-editor) .cm-focused .cm-selectionBackground { background: var(--accent-soft-2) !important; }
+:is(.note-editor, .tf-editor) .cm-selectionMatch { background: color-mix(in srgb, var(--mark) 60%, transparent); }
+:is(.note-editor, .tf-editor) .cm-matchingBracket { background: var(--bg-active); outline: none; }
+:is(.note-editor, .tf-editor) .cm-panels { background: var(--bg-elev); color: var(--text); border-color: var(--border) !important; }
+:is(.note-editor, .tf-editor) .cm-panels.cm-panels-top { border-bottom: 1px solid var(--border); }
+:is(.note-editor, .tf-editor) .cm-search { padding: 8px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-sm); }
+:is(.note-editor, .tf-editor) .cm-search input.cm-textfield { height: 26px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg-input); color: var(--text); font: inherit; }
+:is(.note-editor, .tf-editor) .cm-search button.cm-button { height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); background-image: none; font: inherit; }
+:is(.note-editor, .tf-editor) .cm-search label { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
+:is(.note-editor, .tf-editor) .cm-search button[name="close"] { border: none; background: none; font-size: 16px; color: var(--text-3); margin-left: auto; }
+:is(.note-editor, .tf-editor) .cm-searchMatch { background: color-mix(in srgb, var(--mark) 70%, transparent); border-radius: 2px; }
+:is(.note-editor, .tf-editor) .cm-searchMatch-selected { background: var(--mark); }
 
 /* source mode: the Markdown as code, in one monospaced size (headings only bold) so columns line up */
-.note-editor .cm-editor:not(.cm-live) .cm-scroller { font-family: var(--font-mono); font-size: .88em; line-height: 1.6; }
-.note-editor .cm-editor:not(.cm-live) .cm-content :is(.cmt-h, .cmt-code, .cmt-meta) { font-size: 1em; line-height: inherit; }
-.note-editor .cm-editor:not(.cm-live) .cm-content .cmt-quote { font-style: normal; }
+:is(.note-editor, .tf-editor) .cm-editor:not(.cm-live) .cm-scroller { font-family: var(--font-mono); font-size: .88em; line-height: 1.6; }
+:is(.note-editor, .tf-editor) .cm-editor:not(.cm-live) .cm-content :is(.cmt-h, .cmt-code, .cmt-meta) { font-size: 1em; line-height: inherit; }
+:is(.note-editor, .tf-editor) .cm-editor:not(.cm-live) .cm-content .cmt-quote { font-style: normal; }
 
 /* syntax (markdown) */
 .cmt-h { font-weight: 700; color: var(--text); }
@@ -201,12 +201,13 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .prose p, .prose ul, .prose ol, .prose blockquote, .prose table, .prose .code-block, .prose .math-block, .prose figure { margin: 0 0 .9em; }
 .prose ul, .prose ol { padding-left: 1.5em; }
 .prose li { margin: .15em 0; }
-.prose li.task { list-style: none; margin-left: -1.3em; }
+.prose li.task { list-style: none; margin-left: -1.5em; }   /* the box where the bullet would be: in line with task lines */
 .prose li.task.done { color: var(--text-3); text-decoration: line-through; }
 /* task boxes, in read mode and the live preview: a rounded square, filled and ticked when done */
 .prose .task-box, .cm-lp-task {
   appearance: none; display: inline-grid; place-content: center; box-sizing: border-box;
-  width: 1.05em; height: 1.05em; margin: 0 .5em 0 0; vertical-align: -.17em;
+  /* centred on the line (as a task's box, css/tasks.css), not on the baseline */
+  width: 1.05em; height: 1.05em; margin: .3em .5em 0 0; margin-top: calc((1lh - 1.05em) / 2); vertical-align: top;
   border: 1.5px solid var(--text-3); border-radius: 4px; background: var(--bg); cursor: pointer;
   transition: background-color .12s, border-color .12s;
 }
@@ -240,7 +241,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 
 /* ===================================================== equations */
 /* Display equations may use the whole width of the pane, beyond the text column (centred on it). */
-.note-read .prose > .math-block, .note-read .prose > p > .math.display:only-child, .note-editor .cm-lp-widget.cm-lp-mathblock {
+.note-read .prose > .math-block, .note-read .prose > p > .math.display:only-child, :is(.note-editor, .tf-editor) .cm-lp-widget.cm-lp-mathblock {
   --eqw: max(100%, min(100cqw - 2 * var(--note-pad), 1400px));
   width: var(--eqw); margin-left: calc((100% - var(--eqw)) / 2); box-sizing: border-box;
 }
@@ -253,8 +254,8 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 /* wider than the room: a little smaller first (mathFit.js), then a scroll bar */
 .katex-display > .katex { font-size: calc(1.21em * var(--eq-scale, 1)); }
 .eq-anchor { display: block; height: 0; }
-.prose .eqref, .cm-lp-chip.eqref { color: var(--accent); text-decoration: none; cursor: pointer; }
-.prose .eqref.missing, .cm-lp-chip.eqref.missing { color: var(--danger); cursor: help; }
+.prose .eqref, .cm-lp-gallery .eqref, .cm-lp-chip.eqref { color: var(--accent); text-decoration: none; cursor: pointer; }
+.prose .eqref.missing, .cm-lp-gallery .eqref.missing, .cm-lp-chip.eqref.missing { color: var(--danger); cursor: help; }
 .prose .flash { animation: eq-flash 1.2s ease-out; border-radius: 6px; }
 @keyframes eq-flash { from { background: var(--accent-soft-2); } to { background: transparent; } }
 .math-error { color: var(--danger); font-family: var(--font-mono); font-size: .9em; }
@@ -265,14 +266,14 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .properties dd { margin: 0; font-family: var(--font-mono); overflow-wrap: anywhere; }
 
 /* links, citations, tags (a table in the live preview is drawn by the renderer, as in read mode) */
-:is(.prose, .cm-lp-table) .wikilink, .cm-lp-chip.wikilink, .cm-lp-chip.embed { color: var(--accent); cursor: pointer; }
-:is(.prose, .cm-lp-table) .wikilink.unresolved, .cm-lp-chip.unresolved { color: var(--text-3); text-decoration: underline dashed; text-underline-offset: 3px; }
-:is(.prose, .cm-lp-table) .cite-group { color: var(--text-2); }
-:is(.prose, .cm-lp-table) .cite, .cm-lp-chip.cite {
+:is(.prose, .cm-lp-table, .cm-lp-gallery) .wikilink, .cm-lp-chip.wikilink, .cm-lp-chip.embed { color: var(--accent); cursor: pointer; }
+:is(.prose, .cm-lp-table, .cm-lp-gallery) .wikilink.unresolved, .cm-lp-chip.unresolved { color: var(--text-3); text-decoration: underline dashed; text-underline-offset: 3px; }
+:is(.prose, .cm-lp-table, .cm-lp-gallery) .cite-group { color: var(--text-2); }
+:is(.prose, .cm-lp-table, .cm-lp-gallery) .cite, .cm-lp-chip.cite {
   color: var(--text); background: var(--accent-soft); border-radius: 4px; padding: 0 .3em; font-size: .92em; text-decoration: none !important; cursor: pointer;
 }
-:is(.prose, .cm-lp-table) .cite.missing, .cm-lp-chip.cite.missing { background: var(--danger-soft); color: var(--danger); }
-:is(.prose, .cm-lp-table) .cite.trashed { text-decoration: line-through !important; opacity: .7; }
+:is(.prose, .cm-lp-table, .cm-lp-gallery) .cite.missing, .cm-lp-chip.cite.missing { background: var(--danger-soft); color: var(--danger); }
+:is(.prose, .cm-lp-table, .cm-lp-gallery) .cite.trashed { text-decoration: line-through !important; opacity: .7; }
 .cm-lp-tag { color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 0 .2em; }
 
 /* embeds */
@@ -370,14 +371,14 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .ns-row.missing .ns-main, .ns-row.warn .ns-main { color: var(--danger); }
 
 /* autocomplete popup */
-.note-editor .cm-tooltip { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-md); color: var(--text); }
-.note-editor .cm-tooltip-autocomplete > ul { font-family: var(--font); font-size: var(--fs-sm); max-height: 18em; }
-.note-editor .cm-tooltip-autocomplete > ul > li { padding: 4px 10px !important; display: flex; gap: 10px; align-items: baseline; }
-.note-editor .cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--accent-soft); color: var(--text); }
-.note-editor .cm-completionLabel { font-family: var(--font-mono); font-size: .95em; }
-.note-editor .cm-completionDetail { color: var(--text-3); font-style: normal; margin-left: auto; white-space: nowrap; }
-.note-editor .cm-completionMatchedText { text-decoration: none; font-weight: 700; }
-.note-editor .cm-tooltip.cm-completionInfo { padding: 6px 10px; max-width: 320px; font-size: var(--fs-sm); }
+:is(.note-editor, .tf-editor) .cm-tooltip { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-md); color: var(--text); }
+:is(.note-editor, .tf-editor) .cm-tooltip-autocomplete > ul { font-family: var(--font); font-size: var(--fs-sm); max-height: 18em; }
+:is(.note-editor, .tf-editor) .cm-tooltip-autocomplete > ul > li { padding: 4px 10px !important; display: flex; gap: 10px; align-items: baseline; }
+:is(.note-editor, .tf-editor) .cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--accent-soft); color: var(--text); }
+:is(.note-editor, .tf-editor) .cm-completionLabel { font-family: var(--font-mono); font-size: .95em; }
+:is(.note-editor, .tf-editor) .cm-completionDetail { color: var(--text-3); font-style: normal; margin-left: auto; white-space: nowrap; }
+:is(.note-editor, .tf-editor) .cm-completionMatchedText { text-decoration: none; font-weight: 700; }
+:is(.note-editor, .tf-editor) .cm-tooltip.cm-completionInfo { padding: 6px 10px; max-width: 320px; font-size: var(--fs-sm); }
 
 /* ===================================================== M6 */
 .rekey-list { display: flex; flex-direction: column; gap: 12px; max-height: 50vh; overflow: auto; }
@@ -422,3 +423,58 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .att-card .btn-link:hover { text-decoration: underline; }
 
 @media (hover: none) { .prose .code-block .copy-code { opacity: 1; } }   /* touch screens */
+
+/* ---------------------------------------------------------- galleries (gallery.ts, galleryView.ts)
+   The panels sit side by side in a track that scrolls with snapping; one panel shows at a time. */
+.gallery { margin: 0 auto .9em; padding: 0; }
+.gallery-view { position: relative; }
+.gallery-track { display: flex; align-items: stretch; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; border-radius: 8px; }
+.gallery-track::-webkit-scrollbar { display: none; }
+.gallery-panel { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; scroll-snap-stop: always; display: flex; flex-direction: column; align-items: center; }
+/* panels are as tall as the tallest: a shorter image is centred above its caption */
+.gallery-image { flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; }
+.gallery-image img { display: block; max-width: 100%; max-height: 70vh; height: auto; object-fit: contain; border-radius: 6px; }
+.gallery-panel-caption { max-width: 92%; margin-top: .4em; text-align: center; font-size: .9em; line-height: 1.5; color: var(--text-2); }
+/* the label hangs to the left of the text, which stays centred (in flow when there is no caption) */
+.gallery-caption-text { position: relative; display: inline-block; }
+.gallery-caption-text:not(.empty) > .gallery-label { position: absolute; right: 100%; top: 0; margin-right: .3em; white-space: nowrap; }
+.gallery-label { font-weight: 650; color: var(--text); }
+.gallery-caption { margin-top: .5em; font-size: .92em; line-height: 1.55; color: var(--text-2); }
+.gallery-empty { padding: 18px; width: 100%; text-align: center; color: var(--text-3); font-size: var(--fs-sm); border: 1px dashed var(--border-strong); border-radius: 8px; }
+.gallery-btn {
+  position: absolute; top: calc(50% - 16px); width: 32px; height: 32px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 88%, transparent); color: var(--text);
+  font: 600 20px/1 var(--font); display: grid; place-items: center; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .12); opacity: 0; transition: opacity .15s;
+}
+.gallery-prev { left: 8px; } .gallery-next { right: 8px; }
+.gallery-view:hover .gallery-btn, .gallery-btn:focus-visible { opacity: 1; }
+.gallery-view:hover .gallery-btn:disabled { opacity: .3; cursor: default; }
+.gallery-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.gallery-dots { display: flex; justify-content: center; gap: 7px; margin-top: .45em; }
+.gallery-dot { width: 8px; height: 8px; padding: 0; border: none; border-radius: 50%; background: var(--border-strong); cursor: pointer; }
+.gallery-dot.active { background: var(--accent); }
+.gallery-dot:focus-visible, .gallery-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (hover: none) { .gallery-btn { opacity: 1; } .gallery-btn:disabled { opacity: .3; } }   /* touch screens */
+/* in the live preview: the carousel in place of the block, or below its source while it is edited */
+.cm-lp-widget.cm-lp-gallery { padding: .4em 0; cursor: text; }
+.cm-lp-widget.cm-lp-gallery .gallery { margin-bottom: 0; }
+.cm-lp-widget.cm-lp-gallery p { margin: 0; }
+.cm-lp-widget.cm-lp-gallerypreview { opacity: .85; padding-top: .2em; }
+.cm-live .cm-line.cm-lp-gallerysrc { background: var(--bg-app); padding-left: 12px; padding-right: 12px; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+.cm-live .cm-line.cm-lp-gallerysrc.first { border-top: 1px solid var(--border); border-top-left-radius: 8px; border-top-right-radius: 8px; padding-top: 3px; color: var(--text-3); }
+.cm-live .cm-line.cm-lp-gallerysrc.last { border-bottom: 1px solid var(--border); border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; padding-bottom: 3px; color: var(--text-3); }
+/* its lines are Markdown text, not code: no code font or shading */
+.cm-live .cm-line.cm-lp-gallerysrc .cmt-code { font-family: inherit; font-size: inherit; background: none; color: inherit; border-radius: 0; }
+
+/* ---------------------------------------------------------- figures (figures.ts): an image with its
+   caption, numbered Fig. 1, 2, … like galleries with a caption */
+.figure { margin: 0 0 .9em; padding: 0; }
+.figure-image { display: flex; justify-content: center; }
+.figure-image img { display: block; max-width: 100%; height: auto; border-radius: 6px; }
+.figure-caption { margin-top: .5em; font-size: .92em; line-height: 1.55; color: var(--text-2); }
+/* as in LaTeX: a short caption is centred, a long one fills the width and reads from the left */
+.figure-caption, .gallery-caption { display: table; margin-left: auto; margin-right: auto; text-align: left; }
+.fig-num { font-weight: 650; color: var(--text); white-space: nowrap; }
+.cm-live .cm-line.cm-lp-figcaption { color: var(--text-2); }
+.cm-lp-chip.fignum { font-weight: 650; color: var(--text); margin-right: .35em; font-style: normal; }

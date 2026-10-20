@@ -45,6 +45,7 @@ def register_blueprints(app: Flask) -> None:
         pdf_annotations,
         references,
         settings,
+        tasks,
     )
 
     for module in (
@@ -64,5 +65,6 @@ def register_blueprints(app: Flask) -> None:
         mcp,
         changes,
         assist,
+        tasks,
     ):
         app.register_blueprint(module.bp)

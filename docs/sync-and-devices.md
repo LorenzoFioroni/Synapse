@@ -47,6 +47,7 @@ page, and a page that cannot know what it missed simply refreshes everything.
 | `library` | A write to `library.db` commits (items, folders, tags, attachments, smart folders). |
 | `annotations` | A write to `library.db` commits during a request to `/api/annotations…` or `/api/attachments/<id>/annotations` (`kind_of`). |
 | `notes` | A notes endpoint (`backend/api/notes.py`) answers a POST, PUT, PATCH or DELETE with a status below 400. |
+| `tasks` | A write to `library.db` commits during a request to `/api/tasks…` (`kind_of`), or a tool that can write runs over `/mcp`. A page reloads its tasks on `tasks` and on `notes` (a note's task lines may have changed). |
 
 Writes to `library.db` reach the feed through `Database.on_write`, which `Services` points at
 `_library_written`. `Database.session` calls it after each commit that changed rows. A failure
@@ -54,7 +55,7 @@ there is swallowed, because telling others must never undo a saved change.
 
 Writes made outside this server are noticed too. At each poll `_notice_outside_writes` compares
 the modification time and size of `library.db`, `notes_index.db` and their `-wal` files with what
-it saw last. A difference it cannot explain counts as `library` and `annotations`, or `notes`.
+it saw last. A difference it cannot explain counts as `library`, `annotations` and `tasks`, or `notes`.
 This is how a note written by the MCP server shows up (see [`mcp.md`](mcp.md)). A note file
 edited by hand is only noticed once something updates `notes_index.db`, such as a rescan
 (`POST /api/notes/rescan`) or the next start (see [`notes.md`](notes.md)).

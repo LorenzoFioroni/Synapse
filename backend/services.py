@@ -50,6 +50,13 @@ class Services:
         # Attachments no note uses go to their own trash; both trashes are emptied after a while.
         self.attachments = Attachments(self.vault, self.notes, self.settings)
         self.note_service.on_change = self.attachments.poke
+        # Tasks: records in library.db that notes show as {{task:id}} lines.
+        from .tasks import TaskService, TaskStore
+
+        self.task_store = TaskStore(self.db)
+        self.tasks = TaskService(self.task_store, self.note_service)
+        self.attachments.extra_texts = lambda: [(f"task:{i}", b) for i, b in self.task_store.bodies()]
+        self.attachments.on_maintain = self.purge_task_trash
         # Backups of library.db, settings and notes; the scheduler is started by create_app only.
         from .access.devices import Devices
         from .access.passkeys import Passkeys
@@ -67,6 +74,7 @@ class Services:
         self.assist = Completer(self.settings)  # autocompletion in notes, from Ollama on this computer
         # A changed citation key is rewritten in every note (with a backup first).
         self.papers.on_citekey_change(lambda _id, old, new: self.note_service.rename_key(old, new) if new else None)
+        self.papers.on_citekey_change(lambda _id, old, new: self.tasks.rename_key(old, new) if new and old else None)
         try:
             self.notes.sync()
         except Exception:  # notes must never stop the library from starting
@@ -80,11 +88,26 @@ class Services:
                 from .mcp import build_server
                 from .mcp.http import HttpTransport
 
-                # Notes written by a tool show up in the open windows (no request credits them).
-                self._mcp_http = HttpTransport(lambda: build_server(self), lambda: self.changes.record({"notes"}))
+                # Notes and tasks written by a tool show up in the open windows. The request itself
+                # counts only as a library write (kind_of), which would hide a task change.
+                self._mcp_http = HttpTransport(
+                    lambda: build_server(self), lambda: self.changes.record({"notes", "tasks"})
+                )
             return self._mcp_http
 
     _mcp_lock = threading.Lock()
+
+    def purge_task_trash(self) -> int:
+        """Empty the tasks trash after the same retention as the notes trash."""
+        from datetime import datetime, timedelta, timezone
+
+        from .notes.attachments import RETENTION
+
+        secs = RETENTION.get(self.settings.get("notes_trash_retention"))
+        if not secs:
+            return 0
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=secs)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return self.task_store.purge(cutoff)
 
     def _backup_dir(self) -> Path:
         return self.backups.dir

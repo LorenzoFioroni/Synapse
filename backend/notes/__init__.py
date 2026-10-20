@@ -8,6 +8,7 @@ Modules:
     vault        safe file access (path checks, atomic writes, conflict detection, trash)
     frontmatter  read and minimally edit the YAML-like header of a note
     parser       the ONLY place that decides what a note links to or cites
+    gallery      reading ```gallery blocks (images and captions), for the MCP tools
     index        SQLite index of notes, links and tags, plus full-text search
 """
 

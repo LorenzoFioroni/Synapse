@@ -18,6 +18,7 @@ import re
 import shutil
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 
@@ -76,6 +77,10 @@ class Attachments:
         self._timer: threading.Timer | None = None
         self._soon: threading.Timer | None = None
         self._started = False
+        # Other places that show images (task bodies): [(label, markdown)]; and work to run with
+        # each hourly maintenance (emptying the tasks trash). Set by Services.
+        self.extra_texts: Callable[[], list[tuple[str, str]]] | None = None
+        self.on_maintain: Callable[[], object] | None = None
 
     @property
     def dir(self) -> Path:
@@ -124,6 +129,12 @@ class Attachments:
                         name = attachment_name(link.target)
                         if name:
                             out.setdefault(name, []).append(rel)
+        for label, text in self.extra_texts() if self.extra_texts else []:
+            for link in parse(text).links:
+                if link.kind == "image":
+                    name = attachment_name(link.target)
+                    if name:
+                        out.setdefault(name, []).append(label)
         return out
 
     def files(self) -> list[str]:
@@ -273,6 +284,8 @@ class Attachments:
     def maintain(self) -> dict:
         """Sweep, then purge. Never raises (it runs in the background)."""
         try:
+            if self.on_maintain:
+                self.on_maintain()
             return {**self.sweep(), "purged": self.purge()}
         except Exception:
             log.exception("Attachment maintenance failed")
