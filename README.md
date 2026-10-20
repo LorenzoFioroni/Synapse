@@ -188,8 +188,10 @@ never mix.
   all notes, with views (Open, Today, Next 7 days, No date, Not in a note, Done, each note), search
   with filters (`due:week`, `is:done`, `note:"…"`, `has:body`), sorting, grouping, quick add, a
   details pane, keyboard editing, drag and drop, and Undo. Ticking a task whose sub-tasks are open
-  asks whether to tick them too. Tasks are kept in the library database, so backups include them;
-  deleted tasks can be restored. See [`docs/tasks.md`](docs/tasks.md).
+  asks whether to tick them too. A task you just made from a note and whose line you then delete
+  goes to the trash with it (Undo, or Cmd/Ctrl+Z in the note, brings it back); older tasks stay in
+  Tasks. Tasks are kept in the library database, so backups include them; deleted tasks can be
+  restored. See [`docs/tasks.md`](docs/tasks.md).
 - **Autocompletion** in notes (Settings → Autocompletion; off by default): after a short pause a
   model running on this computer in [Ollama](https://ollama.com) suggests how the text goes on, in
   grey after the cursor. Tab accepts, Esc dismisses, Cmd/Ctrl+→ takes one word, Alt/⌥+\ asks for

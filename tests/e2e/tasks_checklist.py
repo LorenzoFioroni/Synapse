@@ -29,6 +29,7 @@ BASE = f"http://127.0.0.1:{PORT}"
 DATA = tempfile.mkdtemp(prefix="zc-tasks-e2e-")
 MOD = "Meta" if sys.platform == "darwin" else "Control"
 PATH = "Notes/Plan.md"
+OTHER = "Notes/Other.md"
 results = []
 
 
@@ -102,6 +103,7 @@ async def main():
             "## Plain\n- [ ] a plain checkbox\n\nWrite the outlook section\n"
         )
         s.post(BASE + "/api/notes/note", json={"path": PATH, "text": text})
+        s.post(BASE + "/api/notes/note", json={"path": OTHER, "text": "# Other\n\nSome words.\n"})
 
         async with async_playwright() as p:
             browser = await p.chromium.launch()
@@ -325,12 +327,23 @@ async def main():
             )
             check("The side panel lists the note's tasks", side)
 
-            # ---- the cursor steps over a task line; Backspace takes it out of the note (the task stays)
-            await page.locator(".note-editor .cm-content").press(f"{MOD}+End")
-            before = await page.evaluate("window.zcNotes.text()")
-            for _ in range(len(before) - len(before.rstrip("\n"))):
-                await page.keyboard.press("ArrowLeft")  # to the end of the last task's line
-            last = re.findall(r"\{\{task:([a-z0-9]+)\}\}", before)[-1]
+            # ---- the cursor steps over a task line; Backspace takes it out in one go
+            content = page.locator(".note-editor .cm-content")
+
+            async def to_last_task():
+                await content.press(f"{MOD}+End")
+                t = await page.evaluate("window.zcNotes.text()")
+                for _ in range(len(t) - len(t.rstrip("\n"))):
+                    await page.keyboard.press("ArrowLeft")  # to the end of the last task's line
+                return t, re.findall(r"\{\{task:([a-z0-9]+)\}\}", t)[-1]
+
+            def exists(tid):
+                return any(t["id"] == tid for t in all_tasks()["tasks"])
+
+            def toast_says(words):
+                return f"[...document.querySelectorAll('.toast')].some(t => t.innerText.includes('{words}'))"
+
+            before, last = await to_last_task()  # "Email the referee", made here a moment ago
             await page.keyboard.press("Backspace")
             await page.wait_for_timeout(300)
             ed = await page.evaluate("window.zcNotes.text()")
@@ -340,8 +353,67 @@ async def main():
                 and len(before) - len(ed) == len(f"{{{{task:{last}}}}}"),
                 f"{ed[-60:]!r}",
             )
-            check("…and the task itself stays", any(t["id"] == last for t in all_tasks()["tasks"]))
-            await page.keyboard.press(f"{MOD}+z")
+
+            # ---- a task made here whose line goes was a slip: to the trash, and back with its line
+            check("A task just made in the note goes to the trash with its line", until(lambda: not exists(last), 8))
+            check("…saying so, with Undo", await wait_for(page, toast_says("with its line")))
+            await content.press(f"{MOD}+z")
+            check("…and comes back with its line (Undo in the note)", until(lambda: exists(last)))
+            await page.wait_for_timeout(2500)  # saved with the line back
+            check("…and stays", exists(last) and f"{{{{task:{last}}}}}" in note_text())
+
+            await to_last_task()
+            await page.keyboard.press("Backspace")
+            until(lambda: not exists(last), 8)
+            await page.locator(".toast", has_text="with its line").last.locator(".toast-action").click()
+            check("The toast's Undo keeps the task, out of the note", until(lambda: exists(last)))
+            await content.press(f"{MOD}+End")
+            await page.keyboard.type("\nzz")
+            until(lambda: "zz" in note_text(), 8)
+            await page.wait_for_timeout(800)
+            check("…for good: the next save leaves it alone", exists(last))
+            for _ in range(3):
+                await page.keyboard.press("Backspace")
+
+            # ---- a task that was there before stays when its line goes
+            _, shown_twice = await to_last_task()  # the Ising task, also on an earlier line
+            await page.keyboard.press("Backspace")
+            _, older = await to_last_task()  # "Send the plots", made before the note was opened
+            await page.keyboard.press("Backspace")
+            until(lambda: f"{{{{task:{older}}}}}" not in note_text(), 8)
+            await page.wait_for_timeout(800)
+            check("A task made before stays when its line goes", exists(older) and exists(shown_twice))
+            await content.press(f"{MOD}+z")
+            await content.press(f"{MOD}+z")
+            until(lambda: f"{{{{task:{older}}}}}" in note_text(), 8)
+
+            # ---- moving a new task to another note: take its line out here, put it there
+            await content.press(f"{MOD}+End")
+            await page.keyboard.press("Enter")
+            await page.keyboard.type("Ask about the cluster")
+            await page.keyboard.press(f"{MOD}+Enter")
+            await page.wait_for_selector(".task-popup-new")
+            await page.keyboard.press("Enter")
+            moved = until(lambda: [t["id"] for t in all_tasks()["tasks"] if t["title"] == "Ask about the cluster"])
+            moved = moved[0] if moved else "none"
+            await wait_for(page, f"window.zcNotes.text().includes('{{{{task:{moved}}}}}')")
+            await to_last_task()
+            await page.keyboard.press("Backspace")
+            await page.locator(".notes-tree >> text=Other").first.click()
+            await wait_for(page, f"window.zcNotes.path() === '{OTHER}'")
+            check("Leaving the note saves it, and the task goes with its line", until(lambda: not exists(moved), 8))
+            await content.press(f"{MOD}+End")
+            await page.keyboard.press("Enter")
+            await page.keyboard.insert_text(f"{{{{task:{moved}}}}}")
+            await page.keyboard.press("Escape")
+            check("Putting its line in another note brings it back", until(lambda: exists(moved), 8))
+            check(
+                "…shown in that note",
+                until(lambda: any(r["path"] == OTHER for r in all_tasks()["refs"].get(moved, [])), 8),
+            )
+            await page.locator(".notes-tree >> text=Plan").first.click()
+            await wait_for(page, f"window.zcNotes.path() === '{PATH}'")
+            await page.wait_for_timeout(400)
 
             # ---- read mode
             await page.locator("[data-mode=read]").click()
@@ -403,7 +475,7 @@ async def main():
             check("Delete moves it to the trash", gone)
             undo = await wait_for(page, "!!document.querySelector('.toast')")
             if undo:
-                await page.locator(".toast button", has_text="Undo").click()
+                await page.locator(".toast button", has_text="Undo").last.click()
             check("Undo brings it back", until(lambda: any(t["id"] == made[0]["id"] for t in all_tasks()["tasks"])))
 
             # a change made elsewhere (another window, or Claude) shows up

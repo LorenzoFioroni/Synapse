@@ -31,9 +31,18 @@ parser and the editor), [storage](storage.md) (the tables and backups), [mcp](mc
 - **A task line** shows the checkbox, the title (math, citations and links rendered) and small
   labels: the due date (red when overdue, amber today), sub-task progress ("1/2") and a mark when
   it has details. The box ticks it; the title opens the task in a popup (title, status, date,
-  details with the notes editor, sub-tasks, the notes that show it, Open in Tasks, Remove from
-  note, Delete). In the live preview a task line never shows its `{{task:…}}` source: the cursor
-  steps over it, and <kbd>Backspace</kbd> after it takes it out of the note (the task stays).
+  details with the notes editor, sub-tasks, the notes that show it, Open in Tasks, Delete). In the
+  live preview a task line never shows its `{{task:…}}` source: the cursor steps over it, and
+  <kbd>Backspace</kbd> after it takes it out of the note in one go.
+- **Taking a task's line out of a note** leaves the task in Tasks (under *Not in a note* if no
+  other note shows it), except for a task made by mistake: one made from this note since the app
+  was opened (New task popup, *New task “…”* in the `{{task` list, or turned from checkboxes),
+  that is not a sub-task and that no other note shows. When the note is saved without its line,
+  such a task goes to the trash, with a toast and Undo (Undo keeps the task, outside the note).
+  If its line comes back (Cmd/Ctrl+Z in the note, or the line put into another note), the task
+  is restored, so moving a new task to another note by cutting and pasting its line works. This
+  bookkeeping lives in the page (`fresh` and `binned` in `noteTasks.ts`) and is lost on reload,
+  which is the point: older tasks never go away because a line did.
 - **The side panel** of a note lists its tasks with a progress bar, **Add a task** and **Show in
   Tasks**.
 - **The Tasks page** (**Tasks** in the toolbar switch or the sidebar, <kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd>):
@@ -209,5 +218,6 @@ checkbox lists, the API, the change feed and the attachment sweep. `tests/test_m
 tools, and the parser fixture `tests/notes/fixtures/tasks.md` (with the parity test) what counts as
 a task line. `tests/js/tasks.test.mjs` covers dates, views, search, sorting, groups and the
 Markdown export; `tests/js/render.test.mjs` the rendering of task lines. The browser checklist
-`tests/e2e/tasks_checklist.py` (port 8795) goes through tasks in a note, the popups, read mode, the
-side panel and the Tasks page.
+`tests/e2e/tasks_checklist.py` (port 8795) goes through tasks in a note, the popups, a task made by
+mistake going to the trash with its line (and back with Cmd/Ctrl+Z or in another note), read
+mode, the side panel and the Tasks page.

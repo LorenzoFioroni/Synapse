@@ -23,8 +23,6 @@ export interface TaskFormOptions {
   onOpenTask(id: string): void;
   /** The form sits in a popup in a note (more compact; offers "Open in Tasks"). */
   popup?: boolean;
-  /** The note the popup was opened from: "Remove from this note" takes it out of it. */
-  fromNote?: string | null;
   onOpenInTasks?(id: string): void;
   onClose?(): void;
 }
@@ -107,7 +105,6 @@ export function mountTaskForm(root: HTMLElement, opts: TaskFormOptions): TaskFor
     $('.tf-meta').textContent = `Created ${formatDate(t.created_at)}${t.done_at ? ` · done ${formatDate(t.done_at)}` : ''}`;
     $('.tf-foot').innerHTML = `${opts.popup ? `<button type="button" class="btn" data-tf="in-tasks">${icon('tasks')} Open in Tasks</button>` : ''}
       ${!opts.popup && refs.length ? `<button type="button" class="btn" data-tf="open-note">${icon('open')} Open in note</button>` : ''}
-      ${opts.popup && opts.fromNote ? `<button type="button" class="btn" data-tf="remove-here" title="The task stays in Tasks">Remove from note</button>` : ''}
       <span class="spacer"></span><button type="button" class="btn btn-ghost btn-danger" data-tf="delete">${icon('trash')} Delete</button>`;
     paintBody(t);
   }
@@ -286,8 +283,6 @@ export function mountTaskForm(root: HTMLElement, opts: TaskFormOptions): TaskFor
       const refs = td.refs[id] || [];
       if (refs.length === 1) { opts.onClose?.(); openNoteAt(refs[0].path, refs[0].line); }
       else openMenu(refs.map((r) => ({ label: r.title || r.path, icon: 'doc', run: () => { opts.onClose?.(); openNoteAt(r.path, r.line); } })), a);
-    } else if (d.tf === 'remove-here' && opts.fromNote) {
-      try { await api.removeTaskFromNote(id, opts.fromNote); opts.onClose?.(); await loadTasks(true); } catch (err) { toastError(err); }
     } else if (d.tf === 'delete') {
       const del = id;
       opts.onClose?.();

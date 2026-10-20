@@ -13,9 +13,9 @@ import { escapeHtml, modLabel, plural } from '../../util.js';
 import { scan } from '../notes/mdscan.js';
 import type { PortableTask } from '../notes/portable.js';
 import type { TaskChoice } from '../notes/completion.js';
-import { notesOpen, taskHooks, ws } from '../notes/workspace.js';
+import { taskHooks, ws } from '../notes/workspace.js';
 import { dueLabel, dueState, parseDue } from './dates.js';
-import { childrenOf, createTask, loadTasks, plainTitle, progress, restoreTask, td, toggleTask } from './taskData.js';
+import { childrenOf, createTask, deleteTasks, loadTasks, plainTitle, progress, restoreTask, td, toggleTask } from './taskData.js';
 import { type TaskForm, mountTaskForm } from './taskForm.js';
 import { boxHtml, chipsHtml, ensureRenderer, installTaskRendering, refInnerHtml, refSig, titleHtml } from './taskRender.js';
 
@@ -36,6 +36,8 @@ export function initNoteTasks(): void {
       el.classList.toggle('done', td.tasks.get(id)?.status === 'done');
       el.classList.toggle('missing', td.loaded && !td.tasks.has(id));
       el.innerHTML = refInnerHtml(id);
+      // the line of a task that went to the trash with it is back (Cmd/Ctrl+Z, a paste)
+      if (binned.has(id)) setTimeout(() => bringBack(id, el.closest('.note-editor') ? ws.session?.path ?? null : null), 0);
     },
     act: (id, act, el, view) => taskAct(id, act, el, view),
   };
@@ -47,7 +49,11 @@ export function initNoteTasks(): void {
   taskHooks.portable = portableTask;
   taskHooks.choices = taskChoices;
   taskHooks.titleHtml = (id) => { const t = td.tasks.get(id); return t ? `${boxHtml(t)} ${titleHtml(t.title)}` : ''; };
-  taskHooks.create = async (title) => (await createTask({ title }))?.id ?? null;
+  taskHooks.create = async (title) => {
+    const made = await createTask({ title });
+    if (made && ws.session) fresh.set(made.id, ws.session.path);
+    return made?.id ?? null;
+  };
   if (state.settings.notes_enabled !== false) loadTasks().catch(() => {});
   ensureRenderer().then(() => ws.editor?.refresh());
   on('tasks', () => {
@@ -79,6 +85,49 @@ function noteSaved(path: string, text: string): void {
   shown.set(path, ids);
   const known = Object.entries(td.refs).filter(([, rs]) => rs.some((r) => r.path === path)).map(([id]) => id).sort().join(',');
   if (before !== undefined ? before !== ids : known !== ids) setTimeout(() => loadTasks(true).catch(() => {}), 300);   // after the index has the save
+  const here = new Set(ids ? ids.split(',') : []);
+  for (const id of here) if (binned.has(id)) bringBack(id, path);
+  binIfGone(path, here);
+}
+
+/*
+ * A task made from a note and whose line then leaves it was most likely made by mistake: it goes
+ * to the trash (with Undo) rather than staying behind under "Not in a note". This holds only for
+ * tasks made from that note since the app was opened and shown in no other note; older tasks are
+ * never deleted because a line went away. When the line comes back (Cmd/Ctrl+Z, a paste into
+ * another note), so does the task, which is how cutting a task from one note to another works.
+ */
+const fresh = new Map<string, string>();    // task made from a note → the note
+const binned = new Map<string, Promise<void>>();   // a fresh task that went to the trash with its line → that deletion
+
+function binIfGone(path: string, here: Set<string>): void {
+  const gone: string[] = [];
+  for (const [id, p] of fresh) {
+    if (p !== path || here.has(id)) continue;
+    const t = td.tasks.get(id);
+    if (!t) { fresh.delete(id); continue; }   // deleted by hand meanwhile
+    // a sub-task now, or shown in another note: it has a place, so it stays
+    if (t.parent_id || (td.refs[id] || []).some((r) => r.path !== path)) { fresh.delete(id); continue; }
+    gone.push(id);
+  }
+  if (!gone.length) return;
+  const name = gone.length === 1 ? `“${plainTitle(td.tasks.get(gone[0])!.title)}”` : plural(gone.length, 'task');
+  const done = deleteTasks(gone, {
+    message: `Deleted ${name} with ${gone.length === 1 ? 'its line' : 'their lines'}.`,
+    onUndo: () => gone.forEach((id) => binned.delete(id)),
+  });
+  for (const id of gone) { fresh.delete(id); binned.set(id, done); }
+}
+
+/** Out of the trash again, since its line is back; in `path` (the open note), it counts as fresh again. */
+async function bringBack(id: string, path: string | null): Promise<void> {
+  const deleting = binned.get(id);
+  if (!deleting) return;
+  binned.delete(id);
+  await deleting;   // the line may come back before the deletion is through
+  if (td.tasks.has(id)) return;   // restored some other way meanwhile
+  if (path) fresh.set(id, path);
+  await restoreTask(id);
 }
 
 /** What "{{" offers in the editor: every task, with its date or state, and where it is shown. */
@@ -184,7 +233,6 @@ export function openTaskPopup(id: string, anchor: Element): void {
   const p = openPanel('task-popup-edit', 'Task', anchor, () => form?.destroy());
   form = mountTaskForm(p.body, {
     popup: true,
-    fromNote: notesOpen() ? ws.session?.path || null : null,
     onOpenTask: (next) => form!.show(next),
     onOpenInTasks: (tid) => emit('open-tasks', { task: tid }),
     onClose: p.close,
@@ -300,6 +348,7 @@ export function openNewTask(view: EditorView, { anchor = null as Element | null,
     const made = await createTask({ title: t, due: d, body: bodyEl.value });
     busy = false;
     if (!made) return;
+    if (view === ws.editor?.view && ws.session) fresh.set(made.id, ws.session.path);
     p.close();
     insertLine(view, spot, made.id, spot.replace && !!spot.title && t === spot.title.replace(/\s+/g, ' ').trim());
   };
@@ -360,6 +409,9 @@ async function convertRange(view: EditorView, from: number, to: number): Promise
       return;
     }
     view.dispatch({ changes: { from, to, insert: res.text } });
+    if (view === ws.editor?.view && ws.session) {
+      for (const m of res.text.matchAll(TOKEN_RE)) fresh.set(m[1], ws.session.path);
+    }
     await loadTasks(true);
     toast(`Made ${plural(res.tasks.length, 'task')} from the checkboxes.`, { type: 'success' });
   } catch (e) { toastError(e); }

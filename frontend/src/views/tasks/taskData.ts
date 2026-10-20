@@ -110,7 +110,8 @@ export async function createTask(data: TaskChanges): Promise<Task | null> {
 }
 
 /** Trash tasks (with their sub-tasks); the toast offers Undo. */
-export async function deleteTasks(ids: string[]): Promise<void> {
+/** To the trash, with an Undo toast (`message` instead of the usual one; `onUndo` after Undo). */
+export async function deleteTasks(ids: string[], o: { message?: string; onUndo?: () => void } = {}): Promise<void> {
   if (!ids.length) return;
   const name = ids.length === 1 ? td.tasks.get(ids[0])?.title : null;
   try {
@@ -120,8 +121,8 @@ export async function deleteTasks(ids: string[]): Promise<void> {
     changed();
     const first = name ? `“${plainTitle(name)}”` : plural(ids.length, 'task');
     const extra = res.ids.length - ids.length;
-    toast(`Deleted ${first}${extra > 0 ? ` and ${plural(extra, 'sub-task')}` : ''}.`, {
-      action: { label: 'Undo', run: () => restoreBatch(res.batch) }, timeout: 8000,
+    toast(o.message ?? `Deleted ${first}${extra > 0 ? ` and ${plural(extra, 'sub-task')}` : ''}.`, {
+      action: { label: 'Undo', run: () => { o.onUndo?.(); return restoreBatch(res.batch); } }, timeout: 8000,
     });
   } catch (e) { toastError(e); }
 }
