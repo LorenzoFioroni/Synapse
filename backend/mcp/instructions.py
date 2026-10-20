@@ -21,6 +21,7 @@ always means such a quote.
 - Figures, tables and equations: use snapshot (figure="Figure 2", equation="3", or a rect read off view_page) and \
 paste the Markdown it returns: the image line, then on the next line *Figure 2: … [@key, p. N]* (you may write a \
 caption before the citation). Clicking it flashes that region.
+- Several images shown together (a carousel in the app, one figure with panels (a), (b)… when exported) go in a gallery block: a line ```gallery (or ```gallery|600 for a width in pixels), then each image on its own line followed by its caption (on the same line or the lines right below), a blank line, the caption of the whole gallery, and a closing ```. Captions may hold math and citations.
 - Also available: GFM tables, task lists, footnotes [^1], callouts "> [!note] Title" (types note, tip, \
 warning, question, quote, info, important, caution, example, todo), ```mermaid diagrams, #tags."""
 

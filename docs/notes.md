@@ -148,6 +148,7 @@ The parser is the only code that decides what a note links to or cites. `parse()
 | `![[Note]]` | `embed` |
 | `[@key]`, `[see @a, p. 4; -@b]` | `cite`, one per key, sharing a `group` |
 | `![alt](path)` | `image` (alias is the alt text before any `\|`) |
+| ` ```gallery ` … ` ``` ` | not code: its images and the citations and links in its captions count (see [Galleries](#galleries)) |
 | `# Heading` | heading (ATX only, at most three spaces of indent) |
 | `#tag`, `#nested/tag` | tag (starts with a letter; not after a word character, `/`, `&`, `#`, brackets or parentheses) |
 
@@ -162,7 +163,10 @@ trailing `.`, `:`, `/` or `-` is punctuation. A bare `@key` is not a citation. T
 the PDF attachment the citation means (`attachment_of`); without it the item's first PDF is meant.
 
 Nothing inside fenced code, inline code, math, HTML comments or the front matter counts, and a
-backslash escapes the next character. `mask()` builds a copy of the body in which those
+backslash escapes the next character. A fenced block whose info string starts with the word
+`gallery` is the exception: only its fence lines are blanked, and its lines are read like a
+paragraph (no code, `$$` blocks or other fences inside it). `mask(body, galleries)` also reports
+where each gallery block is, which `backend/notes/gallery.py` uses. `mask()` builds a copy of the body in which those
 characters are blanked, keeping length and line breaks, and the regexes run on that copy. That
 keeps offsets valid for line numbers, context and rewriting. Inline constructs are masked one
 paragraph at a time, so a stray backtick or `$` cannot swallow the rest of the note. Inline
@@ -295,6 +299,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | `conflict.ts` | The dialog for a note changed or deleted elsewhere. |
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
 | `exportNote.ts`, `portable.ts` | Exporting a note as PDF, HTML or Markdown; the Markdown conversion and reference entries (no DOM). |
+| `gallery.ts`, `galleryView.ts` | Galleries: reading a ` ```gallery ` block and its figure caption (no DOM); turning the carousel. |
 
 ### The editor and read mode
 
@@ -324,6 +329,67 @@ The work done per keystroke is kept small, so long notes stay quick to edit:
 
 Task boxes are drawn the same way in both modes (a rounded square, ticked and filled when done),
 and a done task is greyed and struck through.
+
+### Galleries
+
+A gallery shows several images as one carousel, and exports as one figure with panels.
+
+````markdown
+```gallery|600
+![](attachments/clean.png)
+*Clean system.*
+![](attachments/speckle.png) With speckle, $\xi=1\,\mu$m [@key, p. 3].
+
+Photon number versus $N$ at equal reduced drive.
+```
+````
+
+- **The block.** A fenced block (backticks or tildes) whose info string starts with `gallery`.
+  A width in pixels may follow, as for images: `gallery|600`, `gallery 600`, `gallery 600px` or
+  `gallery width=600`. Without one the gallery takes the width of the note.
+- **Panels.** Each line that starts with an image starts a panel; several images at the start of
+  one line are several panels. The rest of the image's line and the lines right below it are the
+  panel's caption, up to a blank line or the next image. An image's own `|300` width still applies.
+- **The gallery's caption.** Lines that belong to no panel: after a blank line, or before the
+  first image.
+- **Captions** are Markdown on a line, so math, citations, `[[links]]`, `\eqref` and emphasis work.
+  A caption wrapped as a whole in `*…*` or `_…_` (the way an image is usually captioned) is
+  unwrapped, so an image and its caption can be moved into a gallery as they are.
+
+**Rendering** (`render.ts`). A core rule (`galleryRule`, after block parsing) replaces the fence
+token by tokens of its own (`gallery_open`, `gallery_panel_open`, …), each caption an `inline`
+token. Captions are therefore parsed with the rest of the note: equation numbering, the note's
+macros and `\eqref` work in them. The HTML is a `figure.gallery` with a `.gallery-track` of
+`.gallery-panel`s (each image above its caption, labelled "(a)", "(b)", … when there are several),
+arrows, dots and a `figcaption.gallery-caption`. A gallery of one image has no labels or controls;
+an empty one shows a hint.
+
+**The carousel** (`galleryView.ts`, CSS in `notes.css`). The panels sit side by side in a track
+that scrolls horizontally with snapping, one panel wide, so a swipe or a trackpad turns it
+without code. Listeners on the document (installed once by `notesView.ts`) serve every gallery,
+however often it is redrawn: the arrows and dots scroll the track, ←/→ do while a dot or arrow
+has focus, and a scroll from anywhere updates the dots and disables the arrow at either end.
+A press on the controls is stopped before the editor sees it, so turning a gallery in the live
+preview does not open its source.
+
+**Live preview.** The block is one unit (`livePreview.ts`): drawn as the carousel (`W.gallery`,
+rendered by the renderer like a table) until the cursor enters it; then its source shows, as
+text rather than code, with the carousel below it updating as you type. `\eqref` in its captions
+is numbered from the whole note's equations. Citation and link autocomplete work in it
+(`completion.ts` treats a gallery's lines as text).
+
+**Exports.** HTML and PDF (`staticGalleries` in `exportNote.ts`, CSS in `export.css`): each
+carousel becomes a `figure.gallery-figure` whose panels sit in a grid of `figureColumns(n)`
+columns (as many as there are panels up to three, two for four, else three), each labelled
+(a), (b), … below, and one caption: the gallery's own, then each panel's as "(a) First. (b) Second.",
+every part ending as a sentence (`endsSentence`). Markdown (`portableGalleries` in `portable.ts`):
+the images on one line, which most viewers set side by side, and that caption in italics below.
+
+**Backend.** The parser counts the images and citations in a gallery, so the attachment sweep
+keeps its images and the citation graph and backlinks include its captions.
+`backend/notes/gallery.py` reads the blocks the same way as `gallery.ts` for the MCP tools:
+`get_note` and `view_image` give an image in a gallery its panel's caption and
+`gallery: {line, panel: "(b)", caption}`.
 
 ### Embedded notes
 
@@ -439,9 +505,10 @@ else the item's URL. `referenceHtml` makes it a link, and `referenceMarkdown` wr
 | How notes look when rendered | `render.ts` (tested in `tests/js/render.test.mjs`), `equations.ts`, `macros.ts`, `livePreview.ts`. |
 | Claude's note tools | `backend/mcp/tools/notes.py`; see [mcp.md](mcp.md). |
 | What an exported note looks like | `exportNote.ts` (HTML, PDF), `portable.ts` (Markdown, reference entries), `frontend/css/export.css`. |
+| How galleries are written, drawn or exported | `gallery.ts` (the block, the figure caption), `render.ts` (`galleryRule`), `galleryView.ts` (the carousel), `staticGalleries` in `exportNote.ts`, `portable.ts`, and `backend/notes/gallery.py` for the MCP tools. What counts inside one is the parser's (above). |
 
 The notes format, the `data/notes/` layout and these endpoints are contracts used by the MCP
 server and older data. Change them only deliberately. Tests live in `tests/notes/` and
 `tests/js/`; the browser checklists `notes_checklist.py`, `links_checklist.py`,
 `claude_edits_checklist.py`, `render_checklist.py`, `equations_checklist.py`,
-`attachments_checklist.py` and `export_checklist.py` in `tests/e2e/` cover the workspace (see [testing.md](testing.md)).
+`attachments_checklist.py`, `export_checklist.py` and `gallery_checklist.py` in `tests/e2e/` cover the workspace (see [testing.md](testing.md)).

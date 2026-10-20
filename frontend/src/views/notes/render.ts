@@ -7,6 +7,7 @@
 //  * indented code blocks are off; fenced code only;
 //  * $…$ closes on the same line (Pandoc rules), $$…$$ inline or as a block;
 //  * [[Note|alias]], ![[Note]], [@key, p. 4], [see @a; @b], > [!note] callouts, - [ ] tasks;
+//  * ```gallery blocks: images with captions, drawn as a carousel (gallery.ts, galleryView.ts);
 //  * display equations are numbered through the note and \eqref{label} resolved (equations.ts);
 //  * math macros: the physics package, Settings, and \newcommand in the note (macros.ts).
 
@@ -14,6 +15,7 @@ import type MarkdownIt from 'markdown-it';
 import type { RendererRule as MdRenderRule, StateBlock, StateCore, StateInline, Token as MdToken } from 'markdown-it';
 
 export type MdLib = typeof import('../../../vendor/md/md.js');
+import { galleryInfo, panelLabel, parseGallery } from './gallery.js';
 import { labelId, layoutTag, numberEquations, refText, resolveRefs } from './equations.js';
 import { type Cite, attachmentOf, parseCites, referenceDefinition, splitWiki } from './mdscan.js';
 import { type Definition, HAS_DEFINITIONS, type Macro, type Macros, baseMacros, macroSource, parseDefinitions, withDefinitions } from './macros.js';
@@ -222,6 +224,45 @@ function taskRule(state: StateCore): void {
   }
 }
 
+/**
+ * ```gallery blocks become tokens of their own, with each caption an inline token, so captions are
+ * parsed like any text: math (numbered and with the note's macros), citations, links, \eqref.
+ * Runs after block parsing, before inline parsing.
+ */
+function galleryRule(state: StateCore): void {
+  if (!state.tokens.some((t) => t.type === 'fence' && galleryInfo(t.info))) return;
+  const out: MdToken[] = [];
+  for (const tok of state.tokens) {
+    if (tok.type !== 'fence' || !galleryInfo(tok.info)) { out.push(tok); continue; }
+    const g = parseGallery(tok.content, tok.info);
+    const first = (tok.map?.[0] ?? 0) + 1;   // the line after the opening fence
+    const block = (type: string, nesting: 1 | 0 | -1, meta: unknown = null, line: number | null = null) => {
+      const t = new state.Token(type, '', nesting);
+      t.block = true; t.level = tok.level; t.meta = meta;
+      if (line != null) t.map = [line, line + 1];
+      return t;
+    };
+    const inline = (content: string, line: number) => {
+      const t = new state.Token('inline', '', 0);
+      t.content = content; t.map = [line, line + 1]; t.children = []; t.level = tok.level + 1;
+      return t;
+    };
+    const open = block('gallery_open', 1, { width: g.width, count: g.panels.length });
+    open.map = tok.map;
+    out.push(open);
+    g.panels.forEach((p, i) => {
+      out.push(block('gallery_panel_open', 1, { ...p, index: i, count: g.panels.length }, first + p.line), inline(p.caption, first + p.line), block('gallery_panel_close', -1));
+    });
+    out.push(block('gallery_nav', 0, { count: g.panels.length }));
+    if (g.caption) {
+      const line = first + (g.captionLine ?? 0);
+      out.push(block('gallery_caption_open', 1, null, line), inline(g.caption, line), block('gallery_caption_close', -1));
+    }
+    out.push(block('gallery_close', -1));
+  }
+  state.tokens = out;
+}
+
 /** data-line on block tokens, so a click in read mode can find the source line. */
 function lineAttrs(state: StateCore): void {
   for (const t of state.tokens) {
@@ -313,6 +354,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
   md.inline.ruler.before('escape', 'eq_ref', eqRefRule);
   md.core.ruler.after('inline', 'equations', equationsRule(o.equations ?? renderDefaults.equations, o.macros ?? renderDefaults.macros));
   md.core.ruler.after('block', 'callout', calloutRule);
+  md.core.ruler.after('block', 'gallery', galleryRule);
   md.core.ruler.after('inline', 'task', taskRule);
   md.core.ruler.push('line_attrs', lineAttrs);
 
@@ -345,7 +387,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
   R.eq_ref = (t, i, opts, env) => {
     const { kind, name } = t[i].meta;
     const text = refText(kind, name, env.eqLabels || new Map());
-    return text == null ? `<span class="eqref missing" title="${esc(`No numbered equation has \\label{${name}}`)}">(??)</span>`
+    return text == null ? `<span class="eqref missing" data-kind="${esc(kind)}" data-label="${esc(name)}" title="${esc(`No numbered equation has \\label{${name}}`)}">(??)</span>`
       : `<a class="eqref" href="#${esc(labelId(name))}" data-label="${esc(name)}">${esc(text)}</a>`;
   };
   R.note_link = (t, i) => {
@@ -382,6 +424,31 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
     tok.content = label.trim();
     return defaultImage(t, i, opts, env, self);
   };
+  // a gallery: a carousel in the app (galleryView.ts moves it), panels (a), (b), … in exports (exportNote.ts)
+  const lineAttr = (t: MdToken) => { const v = t.attrGet('data-line'); return v != null ? ` data-line="${esc(v)}"` : ''; };
+  R.gallery_open = (t, i) => {
+    const { width, count } = t[i].meta;
+    return `<figure class="gallery"${lineAttr(t[i])} data-count="${count}"${width ? ` style="max-width:${Number(width)}px"` : ''}>`
+      + `<div class="gallery-view"><div class="gallery-track">${count ? '' : '<div class="gallery-empty">Empty gallery: write one image per line, e.g. ![](attachments/x.png)</div>'}`;
+  };
+  R.gallery_panel_open = (t, i) => {
+    const p = t[i].meta;
+    return `<div class="gallery-panel"${lineAttr(t[i])} data-index="${p.index}"><div class="gallery-image">`
+      + `<img src="${esc(imageSrc(p.src))}" alt="${esc(p.alt)}" loading="lazy"${p.width ? ` width="${Number(p.width)}"` : ''}></div>`
+      + `<div class="gallery-panel-caption">${p.count > 1 ? `<span class="gallery-label">(${panelLabel(p.index)})</span> ` : ''}`;
+  };
+  R.gallery_panel_close = () => '</div></div>';
+  R.gallery_nav = (t, i) => {
+    const { count } = t[i].meta;
+    if (count < 2) return '</div></div>';
+    const dots = Array.from({ length: count }, (_, k) => `<button type="button" class="gallery-dot${k ? '' : ' active'}" data-index="${k}" aria-label="Image (${panelLabel(k)})"></button>`).join('');
+    return '</div><button type="button" class="gallery-btn gallery-prev" aria-label="Previous image" disabled>‹</button>'
+      + '<button type="button" class="gallery-btn gallery-next" aria-label="Next image">›</button></div>'
+      + `<div class="gallery-dots">${dots}</div>`;
+  };
+  R.gallery_caption_open = (t, i) => `<figcaption class="gallery-caption"${lineAttr(t[i])}>`;
+  R.gallery_caption_close = () => '</figcaption>';
+  R.gallery_close = () => '</figure>\n';
   const defaultFence = R.fence!;
   R.fence = (t, i, opts, env, self) => {
     const tok = t[i];

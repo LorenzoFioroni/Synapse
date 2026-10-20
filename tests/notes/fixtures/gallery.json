@@ -1,0 +1,11 @@
+{"title": "Galleries", "tags": ["galtag"], "headings": [[1, "Galleries", 1]],
+ "links": [
+  {"kind": "image", "target": "attachments/a.png", "alias": "first", "line": 4},
+  {"kind": "cite", "target": "smith2021", "line": 5, "page": 3},
+  {"kind": "image", "target": "attachments/b.png", "alias": "", "line": 6},
+  {"kind": "note", "target": "Other note", "line": 6},
+  {"kind": "cite", "target": "doe2020", "line": 8},
+  {"kind": "image", "target": "c.png", "line": 12},
+  {"kind": "image", "target": "d.png", "line": 12},
+  {"kind": "image", "target": "e.png", "line": 20}
+ ]}

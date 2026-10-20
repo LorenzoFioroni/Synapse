@@ -83,7 +83,7 @@ use it), an input schema and `read_only`. `read_only` sets the `readOnlyHint` an
 | `search_library` | `library.py` | Searches items (metadata, PDF full text, what notes say) and notes, with the search box's filters. | no |
 | `list_collections` | `library.py` | Folders with counts, tags, smart folders, notes folders and overall counts. | no |
 | `get_note` | `notes.py` | A note's text and outline, the papers it cites (line and page), its links, backlinks and images, and the user's math macros. | no |
-| `view_image` | `images.py` | Images stored with the notes: one by path, or all of a note's (at most 6 per call). | no |
+| `view_image` | `images.py` | Images stored with the notes: one by path, or all of a note's (at most 6 per call); an image in a gallery comes with its panel label and the gallery's caption. | no |
 | `get_paper` | `papers.py` | Metadata, abstract, PDFs with page counts, the paper note, notes citing it, a summary of its reference list. | no |
 | `search_in_paper` | `papers.py` | The pages of a PDF that contain some words, best first, with snippets. | no |
 | `read_paper` | `papers.py` | The text of some PDF pages, marked by page (at most 10 pages or 80,000 characters). | no |

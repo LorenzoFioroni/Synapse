@@ -31,3 +31,13 @@ body { margin: 0; font-family: var(--font); color: var(--text); background: var(
   .prose .code-block, .prose .math-block, .prose figure, .prose img, .prose .callout, .mermaid-block, .prose tr { break-inside: avoid; }
   .prose .callout, .prose .task-box:checked, .prose th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* a gallery (exportNote.ts, staticGalleries): one figure, its panels in rows, labelled (a), (b), … */
+.prose .gallery-figure { margin: 0 auto 1.1em; }
+.prose .gallery-grid { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 12px 14px; align-items: end; }
+.prose .gallery-figure.cols-1 { --cols: 1; } .prose .gallery-figure.cols-2 { --cols: 2; } .prose .gallery-figure.cols-3 { --cols: 3; }
+.prose .gallery-cell { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.prose .gallery-cell img { display: block; max-width: 100%; height: auto; border-radius: 4px; }
+.prose .gallery-cell-label { margin-top: .25em; font-size: .9em; font-weight: 650; }
+.prose .gallery-figcaption { margin-top: .7em; font-size: .92em; line-height: 1.5; color: var(--text-2); }
+.prose .gallery-ref { font-weight: 650; color: var(--text); }

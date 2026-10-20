@@ -1,7 +1,8 @@
 // A note as other programs can show it (exportNote.ts): Markdown without the notes' own syntax,
 // citations written out with a list of references, and the reference entries HTML and PDF
 // exports use. No DOM (tests/js/portable.test.mjs).
-import { scan, splitFrontmatter } from './mdscan.js';
+import { galleryMarkdown, parseGallery } from './gallery.js';
+import { mask, scan, splitFrontmatter } from './mdscan.js';
 import { type CiteInfo, citeLabel } from './render.js';
 
 /** What a reference entry is made from: a library item (GET /api/items?ids=), or at least the
@@ -167,7 +168,20 @@ export function portableBody(text: string, opts: PortableOptions): Portable {
     }
     at = l.to;
   }
-  return { markdown: out + text.slice(at), keys };
+  return { markdown: portableGalleries(out + text.slice(at)), keys };
+}
+
+/** ```gallery blocks (after their citations were written out) as their images on one line and the
+ *  figure's caption below (galleryMarkdown). */
+export function portableGalleries(md: string): string {
+  const blocks = mask(md).spans.filter((sp) => sp.kind === 'gallery');
+  for (const sp of blocks.reverse()) {
+    const lines = md.slice(sp.from, sp.to).split('\n');
+    const open = /^\s*(?:`{3,}|~{3,})(.*)$/.exec(lines[0]);
+    const content = (sp.open ? lines.slice(1) : lines.slice(1, -1)).join('\n');
+    md = md.slice(0, sp.from) + galleryMarkdown(parseGallery(content, open ? open[1] : 'gallery')) + md.slice(sp.to);
+  }
+  return md;
 }
 
 /** The whole export: a title (unless the note starts with one), the body (portableBody) and the

@@ -4,8 +4,8 @@
 // Inline things (math, links, citations, emphasis, code) open only when the cursor is in them or
 // next to them, so typing in a long paragraph does not unfold all of its formulas;
 // line marks (headings, lists, quotes) open for the cursor's line; multi-line constructs (tables,
-// $$ blocks, Mermaid diagrams) count as one unit: touching any of their lines reveals all of them,
-// and a $$ block being edited shows its rendering below the source.
+// $$ blocks, Mermaid diagrams, galleries) count as one unit: touching any of their lines reveals
+// all of them, and a $$ block or a gallery being edited shows its rendering below the source.
 //
 // What counts as math, a [[link]] or a [@citation] comes from mdscan.js (the port of the
 // backend parser); everything else from CodeMirror's own Markdown syntax tree.
@@ -28,6 +28,7 @@ import { type TextRef, numberEquations, refText, resolveRefs, textRefs } from '.
 import { clickOffset } from './mathClick.js';
 import { type Definition, HAS_DEFINITIONS, type Macros, parseDefinitions, withDefinitions } from './macros.js';
 import { type Equations, previewWidgets } from './previewWidgets.js';
+import { galleryInfo } from './gallery.js';
 
 /** A DOM text node (``Text`` is CodeMirror's document here). */
 type Text_ = globalThis.Text;
@@ -76,7 +77,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
   const refsOf = (state: EditorState): TextRef[] => {
     const s = scanOf(state);
     if (!cache.refs) {
-      const inCode = (from: number, to: number) => s.spans.some((sp) => from < sp.to && to > sp.from);
+      const inCode = (from: number, to: number) => s.spans.some((sp) => sp.kind !== 'gallery' && from < sp.to && to > sp.from);
       cache.refs = textRefs(state.doc.sliceString(s.bodyStart))
         .map((r) => ({ ...r, from: r.from + s.bodyStart, to: r.to + s.bodyStart }))
         .filter((r) => !inCode(r.from, r.to));
@@ -202,6 +203,19 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
           const from = doc.lineAt(node.from).from, to = doc.lineAt(node.to).to;
           const info = node.node.getChild('CodeInfo');
           const lang = info ? doc.sliceString(info.from, info.to).trim().toLowerCase() : '';
+          if (galleryInfo(lang)) {
+            // a gallery is one unit: drawn as its carousel, or, while the cursor is in it, its
+            // source with the carousel below it (nothing inside the source is rendered)
+            const src = doc.sliceString(from, to);
+            // \eqref in a caption is numbered from the note's equations: redraw when they change
+            const key = `${version}:${eq.sig}${/\\(eq)?ref\{/.test(src) ? `:${[...eq.labels].join(';')}` : ''}`;
+            taken.push([from, to]);
+            if (blockActive(from, to)) {
+              lineDecos(from, to, (first, last) => `cm-lp-gallerysrc${first ? ' first' : ''}${last ? ' last' : ''}`);
+              out.push(Decoration.widget({ widget: W.gallery(src, eq, key, true), block: true, side: 1 }).range(to));
+            } else out.push(Decoration.replace({ widget: W.gallery(src, eq, key, false), block: true }).range(from, to));
+            return false;
+          }
           if (lang === 'mermaid' && !blockActive(from, to)) {
             const textNode = node.node.getChild('CodeText');
             taken.push([from, to]);

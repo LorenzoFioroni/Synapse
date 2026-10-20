@@ -22,6 +22,7 @@ import { conflictDialog } from './conflict.js';
 import { createEditor, loadMD } from './editor.js';
 import { exportMenu } from './exportNote.js';
 import { folderOfSelection, newFolder, newNote, renameNote, rescan, showTrash } from './fileOps.js';
+import { installGalleries } from './galleryView.js';
 import { linkDataOf } from './linkData.js';
 import { refitOnResize } from './mathFit.js';
 import { NoteSession } from './noteSession.js';
@@ -102,6 +103,7 @@ export function initNotes(): void {
     cursor: () => ws.editor?.view.state.selection.main.head ?? null, focused: () => !!ws.editor?.view.hasFocus };
   listenForQuotes();
   initReadView();
+  installGalleries();
   refitOnResize(root.querySelector<HTMLElement>('.note-read')!);
   renderDefaults.equations = equationMode;
   renderDefaults.macros = noteMacros;

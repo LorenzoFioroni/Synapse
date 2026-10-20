@@ -741,6 +741,29 @@ def test_view_image(lib, svc):
     assert err and "not a PNG" in content[0]["text"]
 
 
+def test_images_in_a_gallery(lib, svc):
+    server = lib["server"]
+    small = pdfpng.png_encode(bytes([30, 200, 30]) * (8 * 8), 8, 8)
+    a = svc.note_service.add_image("a.png", small)["path"]
+    b = svc.note_service.add_image("b.png", small)["path"]
+    text = (
+        f"# Panels\n\n```gallery|600\n![first]({a})\n*Clean, [@fig2024, p. 2].*\n![]({b}) With speckle.\n\n"
+        f"Both together.\n```\n\n![]({a})\n*Alone.*\n"
+    )
+    svc.note_service.create(path="panels.md", title="Panels", text=text)
+    summary = call_json(server, "get_note", note="panels")
+    imgs = summary["images"]
+    assert [i["path"] for i in imgs] == [a, b, a]
+    assert imgs[0]["caption"] == "Clean, [@fig2024, p. 2]." and imgs[1]["caption"] == "With speckle."
+    assert imgs[0]["gallery"] == {"line": imgs[0]["line"] - 1, "panel": "(a)", "caption": "Both together."}
+    assert imgs[1]["gallery"]["panel"] == "(b)"
+    assert "gallery" not in imgs[2] and imgs[2]["caption"] == "Alone."
+    # the citation in a panel's caption counts
+    assert any(c["key"] == "fig2024" for c in summary["cited_papers"])
+    err, content = _blocks(server, note="Panels")
+    assert not err and json.loads(content[2]["text"])["gallery"]["panel"] == "(b)"
+
+
 def test_view_image_scales_big_images(lib, svc, monkeypatch):
     PIL = pytest.importorskip("PIL.Image")
     import io

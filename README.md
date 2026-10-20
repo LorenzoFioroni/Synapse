@@ -151,7 +151,12 @@ never mix.
   link to their entry in a References list at the end. Each entry has what is needed to find the
   work (journal, volume, issue and pages; publisher and edition for books; the arXiv id of a
   preprint) and its DOI as a link (else its arXiv page or URL). `[[links]]` become their text, embedded notes are included, and formulas, diagrams, code and
-  images are kept. Switch with the
+  images are kept. **Galleries** put several images in one carousel: a ` ```gallery ` block
+  (` ```gallery|600 ` sets its width) with one image per line, each followed by its caption, then
+  after a blank line the caption of the whole gallery (see [Galleries](docs/notes.md#galleries)).
+  Arrows, dots or a swipe turn it; exported, it becomes one figure with the panels side by side
+  (at most three to a row), labelled (a), (b), …, under one caption: the gallery's, then
+  "(a) first panel's. (b) second panel's." Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
   Cmd+[ / Alt+←) go back to the note or library selection you came from.
   Images pasted into notes are kept in the notes' attachments folder; one that no note uses any more

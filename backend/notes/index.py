@@ -23,7 +23,7 @@ from .vault import NoteMissing, Vault, content_hash
 log = logging.getLogger(__name__)
 
 # Also bumped when parser.py changes what it finds, so every note is read again.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
