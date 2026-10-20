@@ -39,6 +39,36 @@ export const hooks = {
   openNotesGraph: (_focus?: string | null): Promise<void> => Promise.resolve(),
 };
 
+/** How a task line ({{task:id}}) looks and behaves in the live preview (livePreview.ts). */
+export interface TaskPreview {
+  /** Everything the line shows, as a string: the widget is drawn again when it changes. */
+  sig(id: string): string;
+  /** Draw the task into ``el`` (its checkbox, title and chips). */
+  fill(el: HTMLElement, id: string): void;
+  /** A click on the drawn task: ``act`` is "toggle", "open", "restore" or "remove". */
+  act(id: string, act: string, el: HTMLElement, view: import('@codemirror/view').EditorView): void;
+}
+
+/**
+ * What the Tasks module (views/tasks/noteTasks.ts) adds to notes. It fills these in at start-up,
+ * so the notes code never imports the tasks code.
+ */
+export const taskHooks = {
+  preview: null as TaskPreview | null,
+  /** Cmd/Ctrl+Enter in the note editor (true: handled). */
+  key: null as ((view: import('@codemirror/view').EditorView) => boolean) | null,
+  /** The note head's "Add task" button. */
+  add: null as ((anchor: HTMLElement) => void) | null,
+  /** The Tasks section of the side panel (an empty element to fill). */
+  paintSide: null as ((box: HTMLElement) => void) | null,
+  /** A click in the notes workspace (true: handled). */
+  click: null as ((e: MouseEvent) => boolean) | null,
+  /** A note was saved (its task lines may have changed). */
+  saved: null as ((path: string, text: string) => void) | null,
+  /** A task for the Markdown export (portable.ts). */
+  portable: null as ((id: string) => import('./portable.js').PortableTask | null) | null,
+};
+
 export const notesOpen = () => document.body.dataset.workspace === 'notes';
 export const notesEnabled = () => state.settings.notes_enabled !== false;
 

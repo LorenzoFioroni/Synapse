@@ -14,14 +14,14 @@ def store(svc):
 
 # ------------------------------------------------------------------ store
 def test_create_and_update(store):
-    t = store.create("  Write\nthe   intro ", due="2026-10-27", priority="High", tags=["#Ising", "writing", "ising"])
+    t = store.create("  Write\nthe   intro ", due="2026-10-27")
     assert t["title"] == "Write the intro"  # one line
-    assert t["due"] == "2026-10-27" and t["priority"] == "high" and t["tags"] == ["ising", "writing"]
+    assert t["due"] == "2026-10-27"
     assert t["status"] == "open" and t["done_at"] is None and len(t["id"]) == 8
     u = store.update(t["id"], {"status": "done", "body": "Some *details*\r\nwith $x$"})
     assert u["status"] == "done" and u["done_at"] and u["body"] == "Some *details*\nwith $x$"
-    u = store.update(t["id"], {"status": "open", "due": None, "priority": "none"})
-    assert u["done_at"] is None and u["due"] is None and u["priority"] is None
+    u = store.update(t["id"], {"status": "open", "due": None})
+    assert u["done_at"] is None and u["due"] is None
 
 
 @pytest.mark.parametrize(
@@ -30,9 +30,9 @@ def test_create_and_update(store):
         {"title": "  "},
         {"due": "next friday"},
         {"due": "2026-02-30"},
-        {"priority": "urgent"},
+        {"priority": "high"},
         {"status": "doing"},
-        {"tags": ["a b!"]},
+        {"tags": ["ising"]},
         {"colour": "red"},
     ],
 )
@@ -182,6 +182,34 @@ def test_create_in_a_note_that_does_not_exist_leaves_no_task(svc, store):
     with pytest.raises(NoteMissing):
         svc.tasks.create({"title": "x", "note": "Notes/missing.md"})
     assert store.list() == []
+
+
+# ------------------------------------------------------------------ citation keys
+def test_a_new_citation_key_is_written_into_tasks(svc, client):
+    item = svc.papers.create({"authors": "Smith, Anna", "title": "Quantum things", "year": 2021})
+    other = svc.papers.create({"authors": "Smith, Anna", "title": "Quantum things b", "year": 2021})
+    key = item["citation_key"]
+    t = svc.task_store.create(
+        f"Read [@{key}, p. 3]", body=f"See [see @{key}; @{other['citation_key']}].\n`[@{key}]` and $[@{key}]$"
+    )
+    gone = svc.task_store.create(f"Old [@{key}]")
+    svc.task_store.delete([gone["id"]])
+    untouched = svc.task_store.create("Nothing to cite")
+    client.patch(f"/api/items/{item['id']}", json={"citation_key": "smith2021"})
+    got = svc.task_store.get(t["id"])
+    assert got["title"] == "Read [@smith2021, p. 3]"
+    assert (
+        got["body"] == f"See [see @smith2021; @{other['citation_key']}].\n`[@{key}]` and $[@{key}]$"
+    )  # not in code or math
+    assert svc.task_store.get(gone["id"])["title"] == "Old [@smith2021]"  # trashed tasks too
+    assert svc.task_store.get(untouched["id"])["updated_at"] == untouched["updated_at"]
+    assert svc.task_store.history(t["id"])[0]["after"]["title"] == "Read [@smith2021, p. 3]"
+
+
+def test_a_body_starting_with_a_rule_is_not_front_matter():
+    from backend.tasks.service import rewrite_key
+
+    assert rewrite_key("---\n[@a]\n---\n[@a]", "a", "b") == "---\n[@b]\n---\n[@b]"
 
 
 # ------------------------------------------------------------------ converting checkbox lists

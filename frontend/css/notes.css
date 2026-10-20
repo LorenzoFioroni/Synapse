@@ -90,33 +90,33 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 #notes-view.has-note .note-empty { display: none; }
 
 /* ------------------------------------------------------------ CodeMirror */
-.note-editor .cm-editor { height: 100%; background: var(--bg); color: var(--text); font-size: calc(var(--fs) + 2px); }
-.note-editor .cm-editor.cm-focused { outline: none; }
-.note-editor .cm-scroller { font-family: var(--font); line-height: 1.65; padding: 28px 0 40vh; }
-.note-editor .cm-scroller { container-type: inline-size; }
-.note-editor .cm-content { max-width: var(--note-col); margin: 0 auto; padding: 0 var(--note-pad); caret-color: var(--accent); }
-.note-editor .cm-line { padding: 0; }
-.note-editor .cm-cursor { border-left-color: var(--accent); border-left-width: 2px; }
+:is(.note-editor, .tf-editor) .cm-editor { height: 100%; background: var(--bg); color: var(--text); font-size: calc(var(--fs) + 2px); }
+:is(.note-editor, .tf-editor) .cm-editor.cm-focused { outline: none; }
+:is(.note-editor, .tf-editor) .cm-scroller { font-family: var(--font); line-height: 1.65; padding: 28px 0 40vh; }
+:is(.note-editor, .tf-editor) .cm-scroller { container-type: inline-size; }
+:is(.note-editor, .tf-editor) .cm-content { max-width: var(--note-col); margin: 0 auto; padding: 0 var(--note-pad); caret-color: var(--accent); }
+:is(.note-editor, .tf-editor) .cm-line { padding: 0; }
+:is(.note-editor, .tf-editor) .cm-cursor { border-left-color: var(--accent); border-left-width: 2px; }
 /* autocompletion's suggestion (ghost.ts): grey, in the text's own font, accepted by Tab or a click */
-.note-editor .cm-ghost { color: var(--text-3); opacity: .75; white-space: pre-wrap; cursor: pointer; }
-.note-editor .cm-selectionBackground, .note-editor .cm-editor ::selection { background: var(--accent-soft-2) !important; }
-.note-editor .cm-focused .cm-selectionBackground { background: var(--accent-soft-2) !important; }
-.note-editor .cm-selectionMatch { background: color-mix(in srgb, var(--mark) 60%, transparent); }
-.note-editor .cm-matchingBracket { background: var(--bg-active); outline: none; }
-.note-editor .cm-panels { background: var(--bg-elev); color: var(--text); border-color: var(--border) !important; }
-.note-editor .cm-panels.cm-panels-top { border-bottom: 1px solid var(--border); }
-.note-editor .cm-search { padding: 8px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-sm); }
-.note-editor .cm-search input.cm-textfield { height: 26px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg-input); color: var(--text); font: inherit; }
-.note-editor .cm-search button.cm-button { height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); background-image: none; font: inherit; }
-.note-editor .cm-search label { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
-.note-editor .cm-search button[name="close"] { border: none; background: none; font-size: 16px; color: var(--text-3); margin-left: auto; }
-.note-editor .cm-searchMatch { background: color-mix(in srgb, var(--mark) 70%, transparent); border-radius: 2px; }
-.note-editor .cm-searchMatch-selected { background: var(--mark); }
+:is(.note-editor, .tf-editor) .cm-ghost { color: var(--text-3); opacity: .75; white-space: pre-wrap; cursor: pointer; }
+:is(.note-editor, .tf-editor) .cm-selectionBackground, :is(.note-editor, .tf-editor) .cm-editor ::selection { background: var(--accent-soft-2) !important; }
+:is(.note-editor, .tf-editor) .cm-focused .cm-selectionBackground { background: var(--accent-soft-2) !important; }
+:is(.note-editor, .tf-editor) .cm-selectionMatch { background: color-mix(in srgb, var(--mark) 60%, transparent); }
+:is(.note-editor, .tf-editor) .cm-matchingBracket { background: var(--bg-active); outline: none; }
+:is(.note-editor, .tf-editor) .cm-panels { background: var(--bg-elev); color: var(--text); border-color: var(--border) !important; }
+:is(.note-editor, .tf-editor) .cm-panels.cm-panels-top { border-bottom: 1px solid var(--border); }
+:is(.note-editor, .tf-editor) .cm-search { padding: 8px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-sm); }
+:is(.note-editor, .tf-editor) .cm-search input.cm-textfield { height: 26px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg-input); color: var(--text); font: inherit; }
+:is(.note-editor, .tf-editor) .cm-search button.cm-button { height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); background-image: none; font: inherit; }
+:is(.note-editor, .tf-editor) .cm-search label { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
+:is(.note-editor, .tf-editor) .cm-search button[name="close"] { border: none; background: none; font-size: 16px; color: var(--text-3); margin-left: auto; }
+:is(.note-editor, .tf-editor) .cm-searchMatch { background: color-mix(in srgb, var(--mark) 70%, transparent); border-radius: 2px; }
+:is(.note-editor, .tf-editor) .cm-searchMatch-selected { background: var(--mark); }
 
 /* source mode: the Markdown as code, in one monospaced size (headings only bold) so columns line up */
-.note-editor .cm-editor:not(.cm-live) .cm-scroller { font-family: var(--font-mono); font-size: .88em; line-height: 1.6; }
-.note-editor .cm-editor:not(.cm-live) .cm-content :is(.cmt-h, .cmt-code, .cmt-meta) { font-size: 1em; line-height: inherit; }
-.note-editor .cm-editor:not(.cm-live) .cm-content .cmt-quote { font-style: normal; }
+:is(.note-editor, .tf-editor) .cm-editor:not(.cm-live) .cm-scroller { font-family: var(--font-mono); font-size: .88em; line-height: 1.6; }
+:is(.note-editor, .tf-editor) .cm-editor:not(.cm-live) .cm-content :is(.cmt-h, .cmt-code, .cmt-meta) { font-size: 1em; line-height: inherit; }
+:is(.note-editor, .tf-editor) .cm-editor:not(.cm-live) .cm-content .cmt-quote { font-style: normal; }
 
 /* syntax (markdown) */
 .cmt-h { font-weight: 700; color: var(--text); }
@@ -240,7 +240,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 
 /* ===================================================== equations */
 /* Display equations may use the whole width of the pane, beyond the text column (centred on it). */
-.note-read .prose > .math-block, .note-read .prose > p > .math.display:only-child, .note-editor .cm-lp-widget.cm-lp-mathblock {
+.note-read .prose > .math-block, .note-read .prose > p > .math.display:only-child, :is(.note-editor, .tf-editor) .cm-lp-widget.cm-lp-mathblock {
   --eqw: max(100%, min(100cqw - 2 * var(--note-pad), 1400px));
   width: var(--eqw); margin-left: calc((100% - var(--eqw)) / 2); box-sizing: border-box;
 }
@@ -370,14 +370,14 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .ns-row.missing .ns-main, .ns-row.warn .ns-main { color: var(--danger); }
 
 /* autocomplete popup */
-.note-editor .cm-tooltip { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-md); color: var(--text); }
-.note-editor .cm-tooltip-autocomplete > ul { font-family: var(--font); font-size: var(--fs-sm); max-height: 18em; }
-.note-editor .cm-tooltip-autocomplete > ul > li { padding: 4px 10px !important; display: flex; gap: 10px; align-items: baseline; }
-.note-editor .cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--accent-soft); color: var(--text); }
-.note-editor .cm-completionLabel { font-family: var(--font-mono); font-size: .95em; }
-.note-editor .cm-completionDetail { color: var(--text-3); font-style: normal; margin-left: auto; white-space: nowrap; }
-.note-editor .cm-completionMatchedText { text-decoration: none; font-weight: 700; }
-.note-editor .cm-tooltip.cm-completionInfo { padding: 6px 10px; max-width: 320px; font-size: var(--fs-sm); }
+:is(.note-editor, .tf-editor) .cm-tooltip { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-md); color: var(--text); }
+:is(.note-editor, .tf-editor) .cm-tooltip-autocomplete > ul { font-family: var(--font); font-size: var(--fs-sm); max-height: 18em; }
+:is(.note-editor, .tf-editor) .cm-tooltip-autocomplete > ul > li { padding: 4px 10px !important; display: flex; gap: 10px; align-items: baseline; }
+:is(.note-editor, .tf-editor) .cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--accent-soft); color: var(--text); }
+:is(.note-editor, .tf-editor) .cm-completionLabel { font-family: var(--font-mono); font-size: .95em; }
+:is(.note-editor, .tf-editor) .cm-completionDetail { color: var(--text-3); font-style: normal; margin-left: auto; white-space: nowrap; }
+:is(.note-editor, .tf-editor) .cm-completionMatchedText { text-decoration: none; font-weight: 700; }
+:is(.note-editor, .tf-editor) .cm-tooltip.cm-completionInfo { padding: 6px 10px; max-width: 320px; font-size: var(--fs-sm); }
 
 /* ===================================================== M6 */
 .rekey-list { display: flex; flex-direction: column; gap: 12px; max-height: 50vh; overflow: auto; }

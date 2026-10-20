@@ -3,7 +3,7 @@
 import type {
   AssistCompletion, AssistStatus, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
   ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
-  PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag,
+  PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task, TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview,
 } from './types.js';
 
 export class ApiError extends Error {
@@ -151,6 +151,20 @@ export const api = {
   restoreNote: (trashId: string, path: string) => request('POST', '/api/notes/restore', { trash_id: trashId, path }),
   noteLinks: (path: string) => request<NoteLinks>('GET', `/api/notes/links?${qs({ path })}`),
   searchNotes: (q: string) => request<{ results: { path: string; title: string | null; snippet: string }[] }>('GET', `/api/notes/search?${qs({ q })}`),
+  // tasks (records in library.db; a note shows one with a {{task:id}} line)
+  tasks: () => request<TasksOverview>('GET', '/api/tasks'),
+  getTask: (id: string) => request<{ task: Task & { refs: TaskRef[]; subtasks: Task[] } }>('GET', `/api/tasks/${id}`),
+  createTask: (data: TaskChanges) => request<{ task: Task; ref?: { path: string; line: number } }>('POST', '/api/tasks', data),
+  updateTask: (id: string, data: TaskChanges) => request<{ task: Task; changed: Task[] }>('PATCH', `/api/tasks/${id}`, data),
+  deleteTasks: (ids: string[]) => request<{ batch: string; ids: string[] }>('POST', '/api/tasks/delete', { ids }),
+  restoreTasks: (batch: string) => request<{ ids: string[] }>('POST', '/api/tasks/restore', { batch }),
+  restoreTask: (id: string) => request<{ ids: string[] }>('POST', '/api/tasks/restore', { id }),
+  taskTrash: () => request<{ tasks: Task[] }>('GET', '/api/tasks/trash'),
+  addTaskToNote: (id: string, path: string, afterLine: number | null = null) => request<{ ref: { path: string; line: number } }>('POST', `/api/tasks/${id}/notes`, { path, after_line: afterLine }),
+  removeTaskFromNote: (id: string, path: string) => request<{ path: string; removed: number }>('POST', `/api/tasks/${id}/notes/remove`, { path }),
+  convertToTasks: (text: string) => request<{ text: string; tasks: Task[] }>('POST', '/api/tasks/convert', { text }),
+  taskHistory: (id: string) => request<{ history: TaskHistoryEntry[] }>('GET', `/api/tasks/${id}/history`),
+  undoTaskChange: (historyId: number) => request<{ task: Task }>('POST', '/api/tasks/undo', { history_id: historyId }),
   rescanNotes: () => request<{ added: number; changed: number; removed: number }>('POST', '/api/notes/rescan'),
   uploadNoteImage: (file: File) => { const fd = new FormData(); fd.append('file', file); return request<{ path: string; markdown: string }>('POST', '/api/notes/attachments', fd); },
 };

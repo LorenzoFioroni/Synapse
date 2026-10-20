@@ -5,7 +5,7 @@ import { icon } from '../../icons.js';
 import { escapeHtml, formatDate, plural } from '../../util.js';
 import { shortAuthors } from './library.js';
 import type { SaveStatus } from './noteSession.js';
-import { itemInfo, stemOf, ws } from './workspace.js';
+import { itemInfo, stemOf, taskHooks, ws } from './workspace.js';
 
 const STATUS: Record<SaveStatus, [string, string]> = {
   saved: ['Saved', 'ok'],
@@ -63,6 +63,7 @@ export function paintSide(): void {
       <span class="ns-main">${u.kind === 'cite' ? `@${escapeHtml(u.target)}` : `[[${escapeHtml(u.target)}]]`}</span>
       <span class="ns-sub">${u.kind === 'cite' ? 'not in your library' : 'no such note — click to create'}</span></button>`).join('')}</div>` : '';
   side.innerHTML = `
+    <div class="ns-section ns-tasks" hidden></div>
     <div class="ns-section"><div class="ns-title">Cited papers ${cited.length ? `<span class="count">${cited.length}</span>` : ''}</div>${citedHtml}</div>
     <div class="ns-section"><div class="ns-title">Linked from ${back.length ? `<span class="count">${back.length}</span>` : ''}</div>${backHtml}</div>
     ${unresolvedHtml ? `<div class="ns-section"><div class="ns-title">Unresolved <span class="count">${unresolved.length}</span></div>${unresolvedHtml}</div>` : ''}
@@ -80,4 +81,5 @@ export function paintSide(): void {
         <dt>File</dt><dd class="mono path">${escapeHtml(info.path)}</dd>
       </dl>
     </div>`;
+  taskHooks.paintSide?.(side.querySelector<HTMLElement>('.ns-tasks')!);
 }

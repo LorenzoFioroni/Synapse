@@ -1,0 +1,351 @@
+"""Browser checklist for tasks: task lines in a note (drawn as a checkbox and title, ticking, the
+popup to add a new or an existing task, the task popup, ticking a parent), read mode, the side
+panel, and the Tasks page (views, search, quick add, the detail pane, keyboard, delete and Undo,
+changes from elsewhere).
+
+    python tests/e2e/tasks_checklist.py
+
+Starts its own server on port 8795 with a throw-away data folder; your library is not touched.
+"""
+
+import asyncio
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import date, timedelta
+from pathlib import Path
+
+import requests
+from playwright.async_api import async_playwright
+
+APP = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(APP))
+from tests.e2e._guard import guard  # noqa: E402
+
+PORT = 8795
+BASE = f"http://127.0.0.1:{PORT}"
+DATA = tempfile.mkdtemp(prefix="zc-tasks-e2e-")
+MOD = "Meta" if sys.platform == "darwin" else "Control"
+PATH = "Notes/Plan.md"
+results = []
+
+
+def check(name, cond, extra=""):
+    results.append(bool(cond))
+    print(("PASS " if cond else "FAIL ") + name, extra)
+
+
+async def wait_for(page, js, t=6000):
+    end = time.time() + t / 1000
+    while time.time() < end:
+        if await page.evaluate(js):
+            return True
+        await page.wait_for_timeout(100)
+    return False
+
+
+def until(fn, t=6.0):
+    end = time.time() + t
+    while time.time() < end:
+        v = fn()
+        if v:
+            return v
+        time.sleep(0.15)
+    return fn()
+
+
+async def main():
+    guard(PORT)
+    srv = subprocess.Popen(
+        [sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
+        cwd=APP,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        for _ in range(240):
+            try:
+                requests.get(BASE + "/api/settings", timeout=1)
+                break
+            except requests.RequestException:
+                time.sleep(0.25)
+        s = requests.Session()
+        s.headers["Origin"] = BASE
+
+        def task(title, **kw):
+            return s.post(BASE + "/api/tasks", json={"title": title, **kw}).json()["task"]["id"]
+
+        def get(tid):
+            return s.get(f"{BASE}/api/tasks/{tid}").json()["task"]
+
+        def all_tasks():
+            return s.get(BASE + "/api/tasks").json()
+
+        def note_text():
+            return s.get(BASE + "/api/notes/note", params={"path": PATH}).json()["text"]
+
+        soon = (date.today() + timedelta(days=3)).isoformat()
+        plot = task("Plot $\\chi$ vs $\\varepsilon$", due=soon)
+        ising = task("Discuss the Ising model", body="Start from [[Other]].\n\n$$\nJ = \\mu\\eta\n$$")
+        sub1 = task("Reproduce the profile", parent_id=ising)
+        task("Simulate $N = 100$", parent_id=sub1)
+        admin = task("Send the plots to Alex")
+        text = (
+            "# Plan\n\nIntro line.\n\n## TODOs\n"
+            f"{{{{task:{plot}}}}}\n- {{{{task:{ising}}}}}\n\n"
+            "## Plain\n- [ ] a plain checkbox\n\nWrite the outlook section\n"
+        )
+        s.post(BASE + "/api/notes/note", json={"path": PATH, "text": text})
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page(viewport={"width": 1400, "height": 950})
+            errors = []
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            await page.goto(BASE)
+            await page.wait_for_timeout(1200)
+            await page.evaluate("localStorage.clear()")
+
+            # ---- a note shows its tasks
+            await page.keyboard.press(f"{MOD}+Shift+L")
+            await page.wait_for_selector(".notes-tree")
+            await page.locator(".notes-tree >> text=Plan").first.click()
+            drawn = await wait_for(page, "document.querySelectorAll('.cm-lp-taskref').length === 2")
+            check("A note draws its two task lines as tasks", drawn)
+            src = await page.evaluate("document.querySelector('.note-editor .cm-content').innerText")
+            check("No {{task:…}} source shows in the live preview", "{{task:" not in src)
+            check(
+                "Titles are rendered (math)",
+                await page.locator(".cm-lp-taskref .katex").count() >= 1,
+            )
+            check(
+                "A task line in a list has no bullet",
+                await page.evaluate(
+                    "[...document.querySelectorAll('.cm-line')].find(l => l.querySelector('.cm-lp-taskref') && l.textContent.includes('Ising')) ?.querySelector('.cm-lp-bullet') === null"
+                ),
+            )
+            check("Its sub-task progress shows", "0/1" in await page.locator(".cm-lp-taskref").nth(1).inner_text())
+            check(
+                "A plain checkbox stays a checkbox",
+                await page.locator("input.cm-lp-task").count() == 1 and len(all_tasks()["tasks"]) == 5,
+            )
+
+            # ---- ticking from the note changes the task, not the note
+            before = note_text()
+            await page.locator(".cm-lp-taskref .task-check").first.click()
+            done = until(lambda: get(plot)["status"] == "done")
+            check("Clicking the box ticks the task", done)
+            await page.wait_for_timeout(1800)
+            check("…and leaves the note's text as it was", note_text() == before)
+            await page.locator(".cm-lp-taskref .task-check").first.click()
+            check("Clicking again reopens it", until(lambda: get(plot)["status"] == "open"))
+
+            # ---- ticking a parent asks about its open sub-tasks
+            await page.locator(".cm-lp-taskref .task-check").nth(1).click()
+            asked = await wait_for(page, "!!document.querySelector('.dialog')")
+            check("Ticking a parent with open sub-tasks asks first", asked)
+            if asked:
+                check("…naming how many", "2 open sub-tasks" in await page.locator(".dialog").inner_text())
+                await page.locator(".dialog button", has_text="Mark all").click()
+                ok = until(lambda: get(ising)["status"] == "done" and get(sub1)["status"] == "done")
+                check("Mark all closes the sub-tasks too", ok)
+                s.patch(f"{BASE}/api/tasks/{ising}", json={"status": "open", "with_subtasks": True})
+
+            # ---- the popup of a task
+            await page.wait_for_timeout(500)
+            await page.locator(".cm-lp-taskref .task-title").nth(1).click()
+            pop = await wait_for(page, "!!document.querySelector('.task-popup-edit .task-form')")
+            check("Clicking a task's title opens it in a popup", pop)
+            await wait_for(page, "!!document.querySelector('.task-popup .tf-body .cm-content')")
+            body_text = await page.locator(".task-popup .tf-body .cm-content").inner_text()
+            check(
+                "The popup shows its details (rendered math)",
+                await page.locator(".task-popup .tf-body .katex").count() >= 1,
+                body_text[:60],
+            )
+            check(
+                "…and its sub-tasks", "Reproduce the profile" in await page.locator(".task-popup .tf-subs").inner_text()
+            )
+            await page.locator(".task-popup .tf-title").click()
+            await page.locator(".task-popup .tf-title-input").fill("Discuss the Ising model at finite coupling")
+            await page.keyboard.press("Enter")
+            check(
+                "Editing the title in the popup saves the task",
+                until(lambda: get(ising)["title"] == "Discuss the Ising model at finite coupling"),
+            )
+            await page.locator(".task-popup .tf-add-sub input").fill("Check convergence fri")
+            await page.keyboard.press("Enter")
+            made = until(lambda: [t for t in all_tasks()["tasks"] if t["title"] == "Check convergence"])
+            check(
+                "A sub-task added in the popup gets its date from the words",
+                bool(made) and made[0]["due"] and made[0]["parent_id"] == ising,
+            )
+            await page.keyboard.press("Escape")
+            closed = await wait_for(page, "!document.querySelector('.task-popup')")
+            check("Esc closes the popup", closed)
+
+            # ---- adding a task from the note: the line's text becomes the task
+            line = page.locator(".cm-line", has_text="Write the outlook section")
+            await line.click()
+            await page.keyboard.press("End")
+            await page.keyboard.press(f"{MOD}+Enter")
+            ok = await wait_for(page, "!!document.querySelector('.task-popup-new')")
+            check(f"{MOD}+Enter opens the New task popup", ok)
+            title = await page.locator(".tn-title-input").input_value()
+            check("…with the line's text as its title", title == "Write the outlook section", title)
+            await page.locator(".tn-due-input").fill("tomorrow")
+            hint = await page.locator(".tn-due-hint").inner_text()
+            check("The date field reads words", "Tomorrow" in hint, hint)
+            await page.keyboard.press("Enter")
+            await page.wait_for_timeout(800)
+            new = [t for t in all_tasks()["tasks"] if t["title"] == "Write the outlook section"]
+            check(
+                "Enter makes the task, with its date",
+                len(new) == 1 and new[0]["due"] == (date.today() + timedelta(days=1)).isoformat(),
+            )
+            ed = await page.evaluate("window.zcNotes.text()")
+            check(
+                "…and puts its line where the text was",
+                new and f"{{{{task:{new[0]['id']}}}}}" in ed and "Write the outlook section" not in ed,
+            )
+
+            # ---- …or one you already have
+            await page.keyboard.press("End")
+            await page.keyboard.press("Enter")
+            await page.keyboard.press(f"{MOD}+Enter")
+            await page.wait_for_selector(".task-popup-new")
+            await page.keyboard.type("alex")
+            shown = await wait_for(page, "document.querySelectorAll('.tn-match').length === 1")
+            check("Typing offers matching tasks you already have", shown)
+            n = len(all_tasks()["tasks"])
+            await page.keyboard.press("ArrowDown")
+            await page.keyboard.press("Enter")
+            await page.wait_for_timeout(500)
+            ed = await page.evaluate("window.zcNotes.text()")
+            check(
+                "Picking one adds its line, without making a task",
+                f"{{{{task:{admin}}}}}" in ed and len(all_tasks()["tasks"]) == n,
+            )
+            saved = until(lambda: f"{{{{task:{admin}}}}}" in note_text())
+            check("The note is saved with the new lines", saved)
+            listed = until(lambda: any(r["path"] == PATH for r in all_tasks()["refs"].get(admin, [])))
+            check("The index knows which note shows the task", listed)
+
+            # ---- the side panel
+            side = await wait_for(
+                page, "(document.querySelector('.ns-tasks')?.innerText || '').includes('Send the plots')", 8000
+            )
+            check("The side panel lists the note's tasks", side)
+
+            # ---- the cursor steps over a task line; Backspace takes it out of the note (the task stays)
+            await page.locator(".note-editor .cm-content").press(f"{MOD}+End")
+            if (await page.evaluate("window.zcNotes.text()")).endswith("\n"):
+                await page.keyboard.press("ArrowLeft")  # to the end of the task's line
+            await page.keyboard.press("Backspace")
+            await page.wait_for_timeout(300)
+            ed = await page.evaluate("window.zcNotes.text()")
+            where = await page.evaluate(
+                "[window.zcNotes.cursor(), window.zcNotes.text().length, window.zcNotes.focused()]"
+            )
+            check(
+                "Backspace removes a task line in one go",
+                f"{{{{task:{admin}}}}}" not in ed and "{{task:" in ed,
+                f"{ed[-60:]!r} {where}",
+            )
+            check("…and the task itself stays", any(t["id"] == admin for t in all_tasks()["tasks"]))
+            await page.keyboard.press(f"{MOD}+z")
+
+            # ---- read mode
+            await page.locator("[data-mode=read]").click()
+            await page.wait_for_timeout(600)
+            check("Read mode draws tasks too", await page.locator(".note-read .task-ref").count() >= 3)
+            await page.locator(".note-read .task-ref .task-check").first.click()
+            check("…and ticks them", until(lambda: get(plot)["status"] == "done"))
+            await page.locator("[data-mode=live]").click()
+
+            # ---- the Tasks page
+            await page.keyboard.press(f"{MOD}+Shift+K")
+            ok = await wait_for(page, "document.body.dataset.workspace === 'tasks'")
+            check(f"{MOD}+Shift+K opens Tasks", ok)
+            await page.wait_for_selector(".tv-row")
+            rows = await page.locator(".tv-row").count()
+            check("Open tasks are listed, sub-tasks under their parent", rows >= 6, f"({rows} rows)")
+            groups = await page.locator(".tv-group").all_inner_texts()
+            check("Grouped by note", any("Plan" in g for g in groups), str(groups))
+            count = await page.locator(".side-item[data-act=open-tasks] .count").inner_text()
+            check("The sidebar counts open tasks", count.strip().split()[-1].isdigit(), count)
+
+            await page.locator(".tv-search-input").fill("due:week")
+            await page.wait_for_timeout(300)
+            titles = await page.locator(".tv-row .tv-title").all_inner_texts()
+            check(
+                "Search with a filter (due:week)",
+                any("Check convergence" in t for t in titles) and not any("Send the plots" in t for t in titles),
+                str(titles),
+            )
+            await page.locator(".tv-search-input").fill("")
+
+            await page.locator(".tv-quick-input").fill("Book the room next week")
+            await page.keyboard.press("Enter")
+            made = until(lambda: [t for t in all_tasks()["tasks"] if t["title"] == "Book the room"])
+            check("Quick add makes a task, reading the date at the end", bool(made) and made[0]["due"])
+            sel = await wait_for(
+                page, "(document.querySelector('.tv-detail .tf-title')?.innerText || '').includes('Book the room')"
+            )
+            check("…and selects it, with its details on the right", sel)
+
+            # keyboard: Space ticks, Tab makes it a sub-task of the row above, Delete with Undo
+            row = page.locator(".tv-row", has_text="Book the room")
+            await row.click()
+            await page.keyboard.press(" ")
+            check("Space ticks the selected task", until(lambda: get(made[0]["id"])["status"] == "done"))
+            check(
+                "…which stays in the list, struck through",
+                await page.locator(".tv-row.done", has_text="Book the room").count() == 1,
+            )
+            await page.keyboard.press(" ")
+            check("Space again reopens it", until(lambda: get(made[0]["id"])["status"] == "open"))
+            await page.keyboard.press("Delete")
+            gone = until(lambda: not any(t["id"] == made[0]["id"] for t in all_tasks()["tasks"]))
+            check("Delete moves it to the trash", gone)
+            undo = await wait_for(page, "!!document.querySelector('.toast')")
+            if undo:
+                await page.locator(".toast button", has_text="Undo").click()
+            check("Undo brings it back", until(lambda: any(t["id"] == made[0]["id"] for t in all_tasks()["tasks"])))
+
+            # a change made elsewhere (another window, or Claude) shows up
+            other = task("Made in another window")
+            seen = await wait_for(
+                page,
+                "[...document.querySelectorAll('.tv-row .tv-title')].some(e => e.innerText.includes('Made in another window'))",
+                12000,
+            )
+            check("A task made elsewhere appears without a reload", seen)
+
+            # Not in a note view; a note's tasks
+            await page.locator("[data-tv-view=unfiled]").click()
+            titles = await page.locator(".tv-row .tv-title").all_inner_texts()
+            check(
+                "“Not in a note” lists tasks no note shows",
+                any("Made in another window" in t for t in titles) and not any("Ising" in t for t in titles),
+            )
+            await page.locator("[data-tv-note]", has_text="Plan").click()
+            titles = await page.locator(".tv-row .tv-title").all_inner_texts()
+            check(
+                "A note in the views column lists its tasks",
+                any("Ising" in t for t in titles) and not any("another window" in t for t in titles),
+            )
+            s.post(BASE + "/api/tasks/delete", json={"ids": [other]})
+
+            check("No JavaScript errors", not errors, "; ".join(errors[:3]))
+            await browser.close()
+    finally:
+        srv.terminate()
+    print(f"\n{sum(results)}/{len(results)} passed")
+    return all(results)
+
+
+if __name__ == "__main__":
+    sys.exit(0 if asyncio.run(main()) else 1)

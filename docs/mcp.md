@@ -97,7 +97,7 @@ use it), an input schema and `read_only`. `read_only` sets the `readOnlyHint` an
 | `list_tasks` | `tasks.py` | The user's tasks, open ones by default, filtered with the Tasks page's search syntax (`backend/tasks/query.py`). | no |
 | `get_task` | `tasks.py` | One task with its details, sub-tasks, parents and the notes that show it. | no |
 | `create_task` | `tasks.py` | Creates a task (optionally a sub-task), and with `note` adds its `{{task:ID}}` line to that note through the note's history. | yes |
-| `update_task` | `tasks.py` | Changes title, details, status (optionally with the sub-tasks), due date, priority, tags or parent. | yes |
+| `update_task` | `tasks.py` | Changes title, details, status (optionally with the sub-tasks), due date or parent. | yes |
 | `delete_task` | `tasks.py` | Moves a task and its sub-tasks to the tasks trash. | yes |
 
 `ToolsBase` in `backend/mcp/tools/common.py` has what the families share:

@@ -15,7 +15,7 @@ import { splitFrontmatter } from './mdscan.js';
 import { type Portable, type RefInfo, portableBody, portableMarkdown, referenceHtml, referenceId, referenceKeys } from './portable.js';
 import type { RendererOptions } from './render.js';
 import { highlightCodeBlocks, renderEmbeds, renderMermaidBlocks } from './richRender.js';
-import { equationMode, noteMacros, normTarget, stemOf, ws } from './workspace.js';
+import { equationMode, noteMacros, normTarget, stemOf, taskHooks, ws } from './workspace.js';
 
 export type ExportFormat = 'pdf' | 'html' | 'md';
 
@@ -103,7 +103,7 @@ async function portableOptions(path: string, links: Pick<NoteLinks, 'outgoing'> 
     }
     embeds.set(id(l.target, l.heading || ''), out);
   }
-  return { citeInfo, embed: (target: string, heading: string) => embeds.get(id(target, heading)) ?? null };
+  return { citeInfo, embed: (target: string, heading: string) => embeds.get(id(target, heading)) ?? null, task: (tid: string) => taskHooks.portable?.(tid) ?? null };
 }
 
 /* ---------------------------------------------------------------- HTML */
@@ -174,6 +174,9 @@ function staticCopy(root: HTMLElement, listed: Set<string>): void {
     box.toggleAttribute('checked', box.checked);
   });
   root.querySelectorAll('details.properties').forEach((el) => el.remove());
+  // tasks: their checkbox and title as they are now, nothing to click
+  root.querySelectorAll('.task-ref-actions').forEach((el) => el.remove());
+  root.querySelectorAll('.task-ref [data-task-act], .task-ref [role="checkbox"]').forEach((el) => { el.removeAttribute('data-task-act'); el.removeAttribute('role'); });
 }
 
 /** Images served by the app become data: URLs, so the file shows them anywhere. */
@@ -203,7 +206,7 @@ async function fetchText(url: string): Promise<string> {
 
 /** The app's look for rendered notes (tokens, notes, export.css) and, with math, KaTeX with its fonts. */
 async function styles(math: boolean): Promise<string> {
-  const css = await Promise.all(['css/tokens.css', 'css/notes.css', 'css/export.css'].map(fetchText));
+  const css = await Promise.all(['css/tokens.css', 'css/notes.css', 'css/tasks.css', 'css/export.css'].map(fetchText));
   if (math) css.unshift(await katexCss());
   return css.join('\n');
 }

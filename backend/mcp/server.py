@@ -375,17 +375,15 @@ def _add_task_tools(server: Server, t: LibraryTools) -> None:
     task_arg = {"type": "string", "description": 'The task\'s id (as in its {{task:ID}} line, e.g. "k7f3q2mx").'}
     fields = {
         "due": {"type": "string", "description": 'Due date YYYY-MM-DD ("" removes it).'},
-        "priority": {"type": "string", "enum": ["high", "medium", "low", ""], "description": '"" removes it.'},
-        "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags (without #); replaces the list."},
     }
     server.add(
         Tool(
             "list_tasks",
             "List the user's tasks",
-            "The user's tasks (to-dos): title, status, due date, priority, tags, sub-task progress and the notes that "
-            "show them (as {{task:ID}} lines). Open tasks only unless include_done. query filters like the app's Tasks "
-            'page: words, -word, "phrase", #tag, is:open / is:done, due:today / due:overdue / due:week / due:none / '
-            'due:<2026-11-01, priority:high (p:high), note:"title", has:body, has:subtasks.',
+            "The user's tasks (to-dos): title, status, due date, sub-task progress and the notes that show them (as "
+            "{{task:ID}} lines). Open tasks only unless include_done. query filters like the app's Tasks page: words, "
+            '-word, "phrase", is:open / is:done, due:today / due:overdue / due:week / due:none / due:<2026-11-01, '
+            'note:"title", has:body, has:subtasks.',
             {
                 "type": "object",
                 "properties": {
@@ -433,7 +431,7 @@ def _add_task_tools(server: Server, t: LibraryTools) -> None:
         Tool(
             "update_task",
             "Change a task",
-            "Change a task's title, details, status (open/done), due date, priority, tags or parent. Recorded as "
+            "Change a task's title, details, status (open/done), due date or parent. Recorded as "
             "Claude's change; the user can undo it. Use only when the user asks.",
             {
                 "type": "object",

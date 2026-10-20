@@ -1,23 +1,79 @@
 # Tasks
 
-A **task** is a to-do with a title, a status (open or done), an optional due date, priority and
-tags, a Markdown body and sub-tasks to any depth. Tasks are records in `library.db`, not text in a
-note: a note *shows* a task with a `{{task:<id>}}` line, which the editor draws as the task's
-checkbox and title. Ticking the box or editing the body changes the task, never the note. Plain
-Markdown checkboxes (`- [ ] …`) stay checkboxes.
+A **task** is a to-do with a title, a status (open or done), an optional due date, a Markdown body
+and sub-tasks to any depth. Tasks are records in `library.db`, not text in a note: a note *shows*
+a task with a `{{task:<id>}}` line, which the editor draws as the task's checkbox and title.
+Ticking the box or editing the body changes the task, never the note. Plain Markdown checkboxes
+(`- [ ] …`) stay checkboxes.
 
 This page covers the records (`backend/tasks/store.py`), the lines in notes
 (`backend/tasks/service.py` and the notes parser), the HTTP API (`backend/api/tasks.py`), Claude's
-task tools and the frontend. Related pages: [notes](notes.md) (the parser and the editor),
-[storage](storage.md) (the tables and backups), [mcp](mcp.md).
+task tools, and the frontend (`frontend/src/views/tasks/`). Related pages: [notes](notes.md) (the
+parser and the editor), [storage](storage.md) (the tables and backups), [mcp](mcp.md).
+
+## Using tasks
+
+| A new task in a note | A task opened from its line | The Tasks page |
+|---|---|---|
+| ![New task popup](images/tasks-new.png) | ![Task popup](images/tasks-popup.png) | ![Tasks page](images/tasks-page.png) |
+
+- **In a note.** <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd> (or **Task** in the note head) opens the
+  *New task* popup. On a line with text, that text is the title, and the task's line takes the
+  line's place; otherwise the line goes below the cursor. Give a due date in words ("fri", "27 oct",
+  "in 3 days", "next week") and, under **Add details**, a body. As you type a title, tasks you
+  already have and that match are offered (<kbd>↓</kbd> picks one): the note then shows that task.
+  On a line that shows a task, <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd> ticks it. With checkbox lines
+  selected, it turns them into tasks (see [Turning checkboxes into tasks](#turning-checkboxes-into-tasks)).
+- **A task line** shows the checkbox, the title (math, citations and links rendered) and small
+  labels: the due date (red when overdue, amber today), sub-task progress ("1/2") and a mark when
+  it has details. The box ticks it; the title opens the task in a popup (title, status, date,
+  details with the notes editor, sub-tasks, the notes that show it, Open in Tasks, Remove from
+  note, Delete). In the live preview a task line never shows its `{{task:…}}` source: the cursor
+  steps over it, and <kbd>Backspace</kbd> after it takes it out of the note (the task stays).
+- **The side panel** of a note lists its tasks with a progress bar, **Add a task** and **Show in
+  Tasks**.
+- **The Tasks page** (**Tasks** in the toolbar switch or the sidebar, <kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd>):
+  - *Views*: Open, Today (overdue and due today), Next 7 days, No date, Not in a note, Done, All
+    tasks; then each note that shows tasks, and Deleted tasks… at the bottom.
+  - *The list*: sub-tasks under their parent (fold with the arrow). Search with words and filters
+    (below), **Sort** (order in the notes, due date, title, created, changed, done) — sorting orders
+    siblings, sub-tasks stay under their parent, and a parent sorts by its earliest open sub-task —
+    and **Group** (by note, by due date, none). The ✓ button shows done sub-tasks in open views; the
+    list button shows matches without the tree.
+  - *Quick add* at the top: a title with a date at the end ("Book the room next week"), into no
+    note or a note picked from its menu.
+  - *Details* on the right: the same form as the popup. Several selected tasks: mark done, due
+    date, show in a note, delete.
+  - *Keyboard*: <kbd>↑</kbd>/<kbd>↓</kbd> (with <kbd>Shift</kbd> to extend), <kbd>←</kbd>/<kbd>→</kbd> fold,
+    <kbd>Space</kbd> tick, <kbd>Enter</kbd> rename, <kbd>N</kbd>/<kbd>Shift</kbd>+<kbd>N</kbd> new task below / sub-task,
+    <kbd>Tab</kbd>/<kbd>Shift</kbd>+<kbd>Tab</kbd> indent/outdent, <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> reorder,
+    <kbd>D</kbd> due date, <kbd>O</kbd> open in its note, <kbd>Delete</kbd>, <kbd>Cmd/Ctrl</kbd>+<kbd>Z</kbd> undo.
+    Rows can be dragged onto another task (before, after or into it) and onto a note in the views
+    column.
+  - A task ticked on the page stays in the list, struck through, until the view or search changes,
+    so <kbd>Space</kbd> ticks it back.
+- **Ticking a parent** whose sub-tasks are still open asks first: *Mark all* or *Only this one*.
+  Ticking the last open sub-task never ticks the parent.
+
+### Search syntax
+
+The Tasks page and `list_tasks` understand the same filters:
+
+| Filter | Meaning |
+|---|---|
+| words, `"a phrase"`, `-word` | in the title or body; `-` excludes |
+| `is:open`, `is:done` | status |
+| `due:today`, `due:overdue`, `due:week`, `due:none`, `due:<2026-11-01`, `due:>2026-10-25`, `due:2026-10-27` | due date (`week`: within seven days, overdue included) |
+| `note:"Steady-state"` | shown in a note whose title or path contains the words |
+| `has:body`, `has:subtasks` | has details, has sub-tasks |
 
 ## The records (`backend/tasks/store.py`)
 
 `TaskStore` keeps two tables in `library.db`. It registers its `SCHEMA` with
 `Database.add_schema`, so `Database.migrate` (also run after restoring a backup) creates them.
-Tasks are therefore in every library backup, restored together with the items and the notes, and
-other windows and devices hear about changes through the change feed like any other
-`library.db` write.
+Tasks are therefore in every library backup, restored together with the items and the notes that
+show them, and other windows and devices hear about changes through the change feed like any
+other `library.db` write.
 
 | Column | Meaning |
 |---|---|
@@ -27,19 +83,15 @@ other windows and devices hear about changes through the change feed like any ot
 | `body` | Markdown (any length up to 200,000 characters); line endings normalised to `\n`. |
 | `status` | `open` or `done` (`STATUSES`). `done_at` is set when it becomes `done` and cleared when it reopens. |
 | `due` | `YYYY-MM-DD` or `NULL` (`clean_due` refuses anything else). |
-| `priority` | `high`, `medium`, `low` or `NULL`. |
-| `tags` | A JSON list of lower-case tags without `#` (`clean_tags`). |
 | `created_at`, `updated_at`, `created_by`, `updated_by` | UTC times and `human` or `ai`. |
 | `deleted_at`, `deleted_batch` | Set while the task is in the trash. |
 
-Every change goes through `create`, `update`, `set_status`, `move`, `delete` or `restore`, which
-validate the values (raising `TaskError`, or `TaskMissing` for an unknown or trashed task) and
-record a row in `task_history` with the values before and after.
+Every change goes through `create`, `update`, `set_status`, `move`, `delete`, `restore` or
+`rewrite_texts`, which validate the values (raising `TaskError`, or `TaskMissing` for an unknown or
+trashed task) and record a row in `task_history` with the values before and after.
 
 - **Moves** refuse to put a task under itself or one of its sub-tasks.
-- **`set_status(…, with_subtasks=True)`** gives the whole subtree the same status. The app asks
-  before ticking a parent whose sub-tasks are open; ticking the last open sub-task never ticks
-  the parent.
+- **`set_status(…, with_subtasks=True)`** gives the whole subtree the same status.
 - **Deleting** moves a task and its whole subtree to the trash as one batch, so one Undo
   (`restore(batch=…)`) brings it all back. Restoring one task brings back what was deleted with
   it; a task whose parent is gone for good comes back at the top level.
@@ -49,6 +101,9 @@ record a row in `task_history` with the values before and after.
 - **Undo** (`undo(history_id)`) puts back what a change replaced, but only if the task still has
   the values that change left; otherwise it refuses and overwrites nothing. Undoing a creation
   trashes the task, undoing a deletion restores it.
+- **Citation keys.** When an item's key changes, `TaskService.rename_key` rewrites `[@old]` to
+  `[@new]` in every title and body (trashed tasks too), with the same rule as the notes
+  (`parser.link_spans`: never inside code or math), each changed task recorded in its history.
 - **Images in bodies** are stored with the notes' images (`notes/attachments/`). The attachment
   sweep counts them as used (`Attachments.extra_texts`, labelled `task:<id>`), trashed tasks
   included.
@@ -59,7 +114,7 @@ A note shows a task with `{{task:<id>}}`. The notes parser (`_TASK` in `parser.p
 `mdscan.ts`) reports it as a link of kind `task`, so the index knows which notes show which tasks
 (`NotesIndex.task_refs`, with the heading above each line). As with links, nothing inside code,
 math or comments counts. The line may be indented, in a list item (`- {{task:…}}`) or in a quote;
-a token inside a sentence is shown as an inline chip.
+a token inside a sentence is shown inline. A sub-task counts as being in its parent's note.
 
 `TaskService` connects the records and the notes:
 
@@ -72,15 +127,21 @@ a token inside a sentence is shown as an inline chip.
   `NotesService.edit`, so they appear in the note's history and can be undone in the app.
 - `create(data)` creates a task and, with `data["note"]`, shows it in that note; if the note
   cannot take it, the new task is trashed again.
-- `convert(text)` turns a Markdown checkbox list into tasks: every `- [ ]`/`- [x]` item becomes a
-  task (done for `[x]`), nested items become sub-tasks, and the lines indented under an item (text,
-  `$$` blocks, plain bullets) become its body. It returns the text with each top-level item
-  replaced by its `{{task:…}}` line; everything else is kept, including checkboxes inside code.
-  The editor sends the selected lines and puts the result in their place, so the change is one
-  ordinary edit of the open note.
+- `convert(text)`: see below.
 
-A line pointing at a task that is in the trash shows it as deleted, with Restore and Remove. A
-task can be shown by several notes, or by none: it lives on in the Tasks page either way.
+The popup in the editor writes the line itself (it is the open note's own edit, one undo step), so
+it goes through the normal save. A line pointing at a task that is in the trash shows it as
+deleted, with Restore and Remove. A task can be shown by several notes, or by none: it lives on in
+the Tasks page either way.
+
+### Turning checkboxes into tasks
+
+Checkboxes stay checkboxes unless you ask: select checkbox lines and press
+<kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd>. `convert(text)` makes every `- [ ]`/`- [x]` item a task (done
+for `[x]`), nested items sub-tasks, and the lines indented under an item (text, `$$` blocks, plain
+bullets) its body. It returns the text with each top-level item replaced by its `{{task:…}}` line;
+everything else is kept, including checkboxes inside code. The editor puts the result in place of
+the selected lines, as one edit.
 
 ## HTTP API (`backend/api/tasks.py`)
 
@@ -91,7 +152,7 @@ also write a note record `notes`. `TaskMissing` becomes 404, `TaskError` 400.
 |---|---|---|
 | GET | `/api/tasks` | Every task (not trashed), `refs` (task id → notes showing it) and the trash count. |
 | GET | `/api/tasks/<id>` | One task with `refs` and its direct `subtasks`. |
-| POST | `/api/tasks` | Create (`title`, `body`, `parent_id`, `due`, `priority`, `tags`, `status`, `before`/`after` a sibling; `note` and `after_line` to show it in a note). |
+| POST | `/api/tasks` | Create (`title`, `body`, `parent_id`, `due`, `status`, `before`/`after` a sibling; `note` and `after_line` to show it in a note). |
 | PATCH | `/api/tasks/<id>` | Change fields; `status` with `with_subtasks`; move with `parent_id` (null: top level) and `before`/`after`. Returns the task and every task that `changed`. |
 | POST | `/api/tasks/delete` | Trash `ids` (with their sub-tasks); returns the `batch`. |
 | POST | `/api/tasks/restore` | Restore a `batch`, or one task (`id`). |
@@ -106,29 +167,40 @@ also write a note record `notes`. `TaskMissing` becomes 404, `TaskError` 400.
 
 `backend/mcp/tools/tasks.py` adds `list_tasks`, `get_task`, `create_task`, `update_task` and
 `delete_task` (see [mcp](mcp.md)). `list_tasks` filters with the same syntax as the Tasks page
-(`backend/tasks/query.py`). Changes are recorded as `ai`. `get_note` lists the tasks a note shows,
-and `NoteChecker` refuses a note that shows an id that is not a task (Claude must create tasks
-with `create_task` instead of inventing ids). The writing rules tell Claude that `- [ ]` is a
-checkbox and `{{task:ID}}` a task.
+(`backend/tasks/query.py`). Changes are recorded as `ai`; the task form then shows "Claude
+changed this task" with Undo. `get_note` lists the tasks a note shows, and `NoteChecker` refuses a
+note that shows an id that is not a task (Claude must create tasks with `create_task` instead of
+inventing ids). The writing rules tell Claude that `- [ ]` is a checkbox and `{{task:ID}}` a task.
 
-## Search syntax
+## Frontend (`frontend/src/views/tasks/`)
 
-The Tasks page and `list_tasks` understand the same filters:
-
-| Filter | Meaning |
+| Module | Role |
 |---|---|
-| words, `"a phrase"`, `-word` | in the title or body; `-` excludes |
-| `#tag` | has the tag |
-| `is:open`, `is:done` | status |
-| `due:today`, `due:overdue`, `due:week`, `due:none`, `due:<2026-11-01`, `due:>2026-10-25`, `due:2026-10-27` | due date (`week`: within seven days, overdue included) |
-| `priority:high` (`p:high`), `p:none` | priority |
-| `note:"Steady-state"` | shown in a note whose title or path contains the words |
-| `has:body`, `has:subtasks` | has details, has sub-tasks |
+| `taskData.ts` | The tasks the page knows (`td`: loaded once from `/api/tasks`, reloaded on `tasks` and `notes` changes), and the changes: `patchTask` applies a change at once and puts it back if the server refuses; `toggleTask` asks before ticking a parent with open sub-tasks; delete with an Undo toast. Emits `tasks`. |
+| `taskQuery.ts` | Views, the search syntax, sorting and grouping as rows of a tree (`buildRows`). No DOM. |
+| `dates.ts` | Reading typed dates (`parseDue`, `parseQuick`) and showing them ("Today", "Fri", "Tue 27 Oct"); the month grid of the date picker. No DOM. |
+| `taskRender.ts` | How a task looks everywhere: checkbox, title and labels; `refHtml`, installed as `renderDefaults.taskHtml` so read mode, embeds and exports draw `{{task:id}}`; `refSig`, the key of the live-preview widget. |
+| `taskForm.ts` | The task form (detail pane and popup): title, status, date with picker, the body in the notes editor (saved 0.7 s after typing stops), sub-tasks, the notes that show it, Claude's last change. |
+| `taskList.ts`, `tasksView.ts`, `tasksState.ts` | The Tasks page: rows, selection, keyboard, row menu, drag and drop and the page's own Undo; the views column, search, sort, group, quick add, the detail pane; what is remembered in the browser (`zc.tasks.view`). |
+| `noteTasks.ts` | Tasks in notes: the live-preview hooks, the popups (a task; *New task*), <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd>, the side panel, reloading the notes of tasks after a save, and tasks for the Markdown export. |
+| `notePicker.ts` | Choosing a note ("Show in a note…"). |
+
+The notes code never imports the tasks code: `noteTasks.ts` fills in `taskHooks`
+(`views/notes/workspace.ts`) at start-up — `preview` (drawing a task line in the live preview:
+`TaskWidget` in `previewWidgets.ts`, made atomic in `livePreview.ts`), `key` (the editor's
+`onModEnter`), `add` (the note head's button), `paintSide`, `click`, `saved` and `portable` (the
+Markdown export writes a task line as a checkbox list item with its sub-tasks, `portable.ts`). The
+HTML and PDF export draw tasks with `refHtml` and `css/tasks.css`, without anything to click.
+Styles: `frontend/css/tasks.css`.
 
 ## Tests
 
 `tests/test_tasks.py` covers the store (validation, the tree and positions, statuses with
 sub-tasks, the trash, purge, history and undo, the schema after `migrate`), the lines in notes
-(placement, removal, Claude's edits in the note history), converting checkbox lists, the API, the
-change feed and the attachment sweep. `tests/test_mcp.py` covers the tools, and the parser
-fixture `tests/notes/fixtures/tasks.md` (with the parity test) what counts as a task line.
+(placement, removal, Claude's edits in the note history), citation key changes, converting
+checkbox lists, the API, the change feed and the attachment sweep. `tests/test_mcp.py` covers the
+tools, and the parser fixture `tests/notes/fixtures/tasks.md` (with the parity test) what counts as
+a task line. `tests/js/tasks.test.mjs` covers dates, views, search, sorting, groups and the
+Markdown export; `tests/js/render.test.mjs` the rendering of task lines. The browser checklist
+`tests/e2e/tasks_checklist.py` (port 8795) goes through tasks in a note, the popups, read mode, the
+side panel and the Tasks page.

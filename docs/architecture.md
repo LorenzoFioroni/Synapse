@@ -139,6 +139,8 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   details panel; `aiBar.ts` Claude's edits; `ghost.ts` and `assist.ts` autocompletion's ghost text and where it comes from; `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
   exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`). `settingsView.ts` is the Settings page; its markup
   is in `views/settings/page.ts`, and Autocompletion, Backups and Devices have their own modules there.
+  `views/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
+  the notes workspace only through `taskHooks` in `views/notes/workspace.ts`.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
   header is `views/itemlist/columns.ts`, its virtualised rows `rows.ts` (only the rows near the
   viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`.

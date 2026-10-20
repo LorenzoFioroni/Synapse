@@ -22,6 +22,8 @@ export interface EditorHandlers {
   /** A pasted or dropped image: store it and return the Markdown that shows it (null: nothing to insert). */
   onImage?(file: File): Promise<string | null> | string | null;
   onToggleRead?(): void;
+  /** Cmd/Ctrl+Enter (the notes add a task with it); false lets the editor do its own thing. */
+  onModEnter?(view: EditorView): boolean;
 }
 
 export interface NoteEditor {
@@ -133,6 +135,7 @@ export async function createEditor(
   const keys = [
     { key: 'Mod-s', preventDefault: true, run: () => { handlers.onSave?.(); return true; } },
     { key: 'Mod-e', preventDefault: true, run: () => { handlers.onToggleRead?.(); return true; } },
+    { key: 'Mod-Enter', run: (v: EditorView) => handlers.onModEnter?.(v) ?? false },
   ];
 
   const insertImages = async (view: EditorView, files: File[], pos?: number) => {

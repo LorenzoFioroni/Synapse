@@ -86,6 +86,16 @@ def remove_refs(text: str, task_id: str) -> tuple[str, int]:
     return nl.join(lines), removed
 
 
+def rewrite_key(text: str, old: str, new: str) -> str:
+    """``text`` with its citations of ``old`` pointing at ``new``."""
+    if f"@{old}" not in text:
+        return text
+    # a leading newline: a body that starts with --- is not front matter
+    src = "\n" + text
+    edits = [(s["start"], s["end"], new) for s in parser.link_spans(src) if s["kind"] == "cite" and s["target"] == old]
+    return parser.replace_spans(src, edits)[1:] if edits else text
+
+
 def ref_ids(text: str) -> list[str]:
     """The tasks a note shows, in order (each once)."""
     out: list[str] = []
@@ -159,8 +169,6 @@ class TaskService:
             body=data.get("body") or "",
             parent_id=data.get("parent_id"),
             due=data.get("due"),
-            priority=data.get("priority"),
-            tags=data.get("tags"),
             status=data.get("status") or "open",
             before=data.get("before"),
             after=data.get("after"),
@@ -175,6 +183,13 @@ class TaskService:
                 self.store.delete([t["id"]], by=by)  # no stray task when the note could not take it
                 raise
         return out
+
+    # ------------------------------------------------------------------ citation keys
+    def rename_key(self, old: str, new: str) -> int:
+        """A citation key changed: ``[@old]`` becomes ``[@new]`` in every task's title and body
+        (trashed tasks too, so a restored task still cites the right paper). Same rule as the notes
+        (``NotesService.rename_key``): only real citations, never inside code or math."""
+        return self.store.rewrite_texts(lambda text: rewrite_key(text, old, new), by="human")
 
     # ------------------------------------------------------------------ checkbox lists
     def convert(self, text: str, *, by: str = "human") -> dict:

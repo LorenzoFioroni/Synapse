@@ -1,10 +1,9 @@
 """Searching tasks with the same syntax as the Tasks page (frontend/src/views/tasks/taskQuery.ts):
-words, "phrases", -exclusions, #tag, is:open|done, due:today|overdue|week|none|<DATE|>DATE|DATE,
-priority:high (p:high, priority:none), note:"title", has:body|subtasks."""
+words, "phrases", -exclusions, is:open|done, due:today|overdue|week|none|<DATE|>DATE|DATE,
+note:"title", has:body|subtasks."""
 
 from __future__ import annotations
 
-import re
 import shlex
 from collections.abc import Callable
 from datetime import date, timedelta
@@ -46,15 +45,9 @@ def _negate(test: Test) -> Test:
 
 def _test(tok: str, refs: dict[str, list[dict]], today: date) -> Test:
     """The test for one search word or filter (lower case)."""
-    if tok.startswith("#") and len(tok) > 1:
-        tag = tok[1:]
-        return lambda x: tag in (x.get("tags") or [])
     if tok.startswith("is:"):
         status = tok[3:]
         return lambda x: x.get("status") == status
-    if re.match(r"^(p|priority):", tok):
-        prio = tok.split(":", 1)[1]
-        return lambda x: (x.get("priority") or "none") == prio
     if tok.startswith("due:"):
         return _due_test(tok[4:], today)
     if tok.startswith("has:"):

@@ -477,3 +477,54 @@ export interface RenamePlan {
   count: number;
   moves: { from: string; to: string }[];
 }
+
+/* ------------------------------------------------------------------ tasks (docs/tasks.md) */
+export type TaskStatus = 'open' | 'done';
+
+/** A task as /api/tasks returns it (a record in library.db). */
+export interface Task {
+  id: string;
+  parent_id: string | null;
+  position: number;
+  title: string;            // one line of inline Markdown
+  body: string;             // Markdown
+  status: TaskStatus;
+  due: string | null;       // YYYY-MM-DD
+  created_at: string;
+  updated_at: string;
+  done_at: string | null;
+  created_by: 'human' | 'ai';
+  updated_by: 'human' | 'ai';
+  deleted_at: string | null;
+  deleted_batch: string | null;
+}
+
+/** A note that shows a task with a {{task:id}} line. */
+export interface TaskRef { path: string; title: string | null; line: number; heading: string | null }
+
+export interface TasksOverview { tasks: Task[]; refs: Record<string, TaskRef[]>; trash: number }
+
+export interface TaskHistoryEntry {
+  id: number;
+  task_id: string;
+  at: string;
+  by: 'human' | 'ai';
+  action: 'create' | 'update' | 'move' | 'delete' | 'restore';
+  before: Partial<Task> | null;
+  after: Partial<Task> | null;
+  undone: boolean;
+}
+
+/** What may be sent to create or change a task. */
+export interface TaskChanges {
+  title?: string;
+  body?: string;
+  status?: TaskStatus;
+  due?: string | null;
+  parent_id?: string | null;
+  before?: string | null;
+  after?: string | null;
+  with_subtasks?: boolean;
+  note?: string;
+  after_line?: number | null;
+}

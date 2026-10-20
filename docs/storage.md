@@ -97,7 +97,7 @@ All SQL for items lives in the `library/` package. HTTP endpoints never build qu
 | `smart_folders` | saved search | `query` and `mode` (`basic`, `all` or `fulltext`, default `all`). |
 | `annotations` | PDF annotation | Tied to an attachment and a page; see `backend/library/annotations.py`. |
 | `annotation_migration` | converted legacy item | Marks items whose old annotation blob was converted. |
-| `tasks` | task | A tree through `parent_id`, ordered by `position`; `tags` is JSON text; `deleted_at`/`deleted_batch` while in the trash. See [tasks](tasks.md). |
+| `tasks` | task | A tree through `parent_id`, ordered by `position`; title, Markdown body, `open`/`done`, due date; `deleted_at`/`deleted_batch` while in the trash. See [tasks](tasks.md). |
 | `task_history` | change to a task | Who (`human`/`ai`), what (`create`, `update`, `move`, `delete`, `restore`), the values before and after (JSON). |
 
 Details worth knowing:

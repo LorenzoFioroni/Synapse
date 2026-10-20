@@ -203,7 +203,7 @@ function onReadClick(e: MouseEvent): void {
 
 function onReadDblClick(e: MouseEvent): void {
   const t = e.target as Element;
-  if (t.closest('a, input, button')) return;
+  if (t.closest('a, input, button, .task-ref')) return;
   const block = t.closest<HTMLElement>('[data-line]');
   hooks.setMode(ws.editMode);
   if (block) ws.editor?.gotoLine(Number(block.dataset.line) + 1);

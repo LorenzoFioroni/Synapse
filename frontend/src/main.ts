@@ -20,6 +20,8 @@ import { initItemPane, toggleItemPane } from './views/itempane.js';
 import { applyAppearance, closeSettings, openSettings, settingsOpen } from './views/settingsView.js';
 import { initSidebar } from './views/sidebar.js';
 import { closeNotes, initNotes, notesOpen, notesPanelButton, notesShortcut, openNotes, openNotesGraph, toggleNotesGraph } from './views/notes/notesView.js';
+import { initNoteTasks } from './views/tasks/noteTasks.js';
+import { closeTasks, initTasks, openTasks, tasksOpen, tasksPanelButton, tasksShortcut } from './views/tasks/tasksView.js';
 
 async function boot() {
   try {
@@ -40,6 +42,8 @@ async function boot() {
   initItemList();
   initItemPane();
   initNotes();
+  initTasks();
+  initNoteTasks();
   initResizer();
   initStatusBar();
   initShortcuts();
@@ -50,7 +54,8 @@ async function boot() {
   on('set-search-mode', (m) => setMode(m));
   on('clear-search', () => clearSearch());
   on('open-notes', () => openNotes());
-  on('close-notes', () => closeNotes());
+  on('close-notes', () => { closeNotes(); closeTasks(); });
+  on('open-tasks', (o) => goToTasks(o || {}));
   on('open-note', ({ path, line }) => openNotes(path, line ?? null));
   on('show-graph', (focus) => { if (settingsOpen()) closeSettings(); openNotesGraph(focus); });
   on('show-item', (id) => showItem(id));
@@ -78,10 +83,18 @@ function openItemFromHash() {
   return showItem(id);
 }
 
-/** Show one item in the library (leaving Notes or Settings), selected and scrolled to. */
+/** The Tasks page (leaving Notes or Settings), optionally with a task selected or a note's tasks. */
+async function goToTasks(o: { task?: string | null; note?: string | null } = {}): Promise<void> {
+  if (settingsOpen()) closeSettings();
+  if (notesOpen()) await closeNotes({ toLibrary: false });
+  await openTasks(o);
+}
+
+/** Show one item in the library (leaving Notes, Tasks or Settings), selected and scrolled to. */
 async function showItem(id: string): Promise<void> {
   if (settingsOpen()) closeSettings();
   if (notesOpen()) await closeNotes();
+  closeTasks();
   if (!state.items.some((i) => i.id === id)) {
     if (state.query) clearSearch();
     state.tagFilter.clear();
@@ -97,25 +110,29 @@ async function showItem(id: string): Promise<void> {
 /** Back/Forward: go to a note or to the library view and selection stored in the history entry. */
 async function navigate(entry: NavEntry): Promise<void> {
   if (settingsOpen()) closeSettings();
+  if (entry.ws === 'tasks') { await goToTasks({ task: entry.task || null }); return; }
   if (entry.ws === 'notes') { await openNotes(entry.path || null, null, { graph: !!entry.graph, focus: entry.focus || null }); return; }
   if (notesOpen()) await closeNotes();
+  closeTasks();
   if (entry.view && entry.view !== state.view) { A.setView(entry.view); await A.loadItems({ keepSelection: false }); }
   const ids = (entry.sel || []).filter((id) => state.items.some((i) => i.id === id));
   if (ids.length) A.select(ids, { anchor: ids[0], cursor: ids[ids.length - 1] });
   focusList();
 }
 
-/** Library ⇄ Notes (the toolbar switch and ⌘⇧L). */
+/** Library ⇄ Notes (⌘⇧L), or the workspace a toolbar switch button names. */
 function switchWorkspace(to: string = notesOpen() ? 'library' : 'notes'): void {
   if (settingsOpen()) closeSettings();
-  if (to === 'notes') openNotes(); else closeNotes();
+  if (to === 'tasks') { goToTasks(); return; }
+  if (to === 'notes') openNotes();
+  else { closeNotes(); closeTasks(); }
 }
 
 function paintWorkspace() {
   const sw = document.querySelector<HTMLElement>('.ws-switch');
   if (!sw) return;
   sw.hidden = state.settings.notes_enabled === false;
-  const ws = notesOpen() ? 'notes' : 'library';
+  const ws = notesOpen() ? 'notes' : tasksOpen() ? 'tasks' : 'library';
   sw.querySelectorAll<HTMLElement>('[data-ws]').forEach((b) => b.classList.toggle('active', b.dataset.ws === ws));
 }
 
@@ -130,6 +147,7 @@ function initToolbar() {
       <div class="segmented ws-switch" role="group" aria-label="Workspace">
         <button data-ws="library" title="Library (${modLabel}⇧L switches)">Library</button>
         <button data-ws="notes" title="Notes (${modLabel}⇧L switches)">Notes</button>
+        <button data-ws="tasks" title="Tasks (${modLabel}⇧K)">Tasks</button>
       </div></div>
     <button class="icon-btn" data-a="new" title="New Item (${modLabel}N)">${icon('plus')}</button>
     <button class="icon-btn" data-a="identifier" title="Add by DOI, arXiv ID or ISBN (${modLabel}⇧N)">${icon('wand')}</button>
@@ -162,7 +180,9 @@ function initToolbar() {
     if (!b) return;
     const a = b.dataset.a!;
     if (notesOpen() && (a === 'columns' || a === 'pane')) { notesPanelButton(a); return; }   // the notes' own panels
+    if (tasksOpen() && (a === 'columns' || a === 'pane')) { tasksPanelButton(a); return; }
     if (notesOpen() && ['new', 'identifier', 'import', 'export'].includes(a)) closeNotes();   // library actions
+    if (tasksOpen() && ['new', 'identifier', 'import', 'export'].includes(a)) closeTasks();
     if (a === 'new') A.newItem();
     if (a === 'identifier') openIdentifier();
     if (a === 'import') openImport();
@@ -330,7 +350,20 @@ function initShortcuts() {
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
     const k = e.key.toLowerCase();
     if (modKey(e) && e.shiftKey && k === 'l' && state.settings.notes_enabled !== false) { e.preventDefault(); switchWorkspace(); return; }
-    if (modKey(e) && e.shiftKey && k === 'g' && state.settings.notes_enabled !== false) { e.preventDefault(); if (settingsOpen()) closeSettings(); toggleNotesGraph(); return; }
+    if (modKey(e) && e.shiftKey && k === 'g' && state.settings.notes_enabled !== false) { e.preventDefault(); if (settingsOpen()) closeSettings(); closeTasks(); toggleNotesGraph(); return; }
+    if (modKey(e) && e.shiftKey && k === 'k' && state.settings.notes_enabled !== false) {
+      e.preventDefault();
+      if (tasksOpen()) switchWorkspace('library'); else goToTasks();
+      return;
+    }
+    if (tasksOpen() && !settingsOpen()) {
+      if (modKey(e) && k === ',') { e.preventDefault(); openSettings(); return; }
+      if (target.closest?.('.cm-editor')) return;
+      if (tasksShortcut(e, k, modKey(e))) return;
+      if (modKey(e) && ['n', 'i', 'e'].includes(k)) { e.preventDefault(); return; }
+      if (e.key === '/' && !typing) { e.preventDefault(); tasksShortcut(e, 'f', true); return; }
+      if (e.key === '/' || e.key === 'Escape') return;
+    }
     if (notesOpen() && !settingsOpen()) {
       // The note editor owns its keys (search, undo, …); only Settings stays global.
       if (modKey(e) && k === ',') { e.preventDefault(); openSettings(); return; }

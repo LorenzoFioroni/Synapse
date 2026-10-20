@@ -33,7 +33,7 @@ import { paintCrumbs, paintSide, paintStatus } from './sidePanel.js';
 import { nKey, paintTree, refreshTree, saveCollapsed, selectOnly, setFilter, tree, treeEl } from './tree.js';
 import { initTreeInput } from './treeInput.js';
 import {
-  citeInfo, equationMode, hooks, itemInfo, type Mode, noteMacros, notesEnabled, notesOpen, resolveNote, stemOf, ws,
+  citeInfo, equationMode, hooks, itemInfo, type Mode, noteMacros, notesEnabled, notesOpen, resolveNote, stemOf, taskHooks, ws,
 } from './workspace.js';
 
 export { notesOpen } from './workspace.js';
@@ -73,6 +73,7 @@ export function initNotes(): void {
           <button data-mode="source" title="Plain Markdown">Source</button>
           <button data-mode="read" title="Read (${modLabel}E)">Read</button>
         </div>
+        <button class="btn btn-sm note-add-task" data-act="add-task" title="Add a task to this note (${modLabel}↩)">${icon('tasks', 'icon-sm')} Task</button>
         <button class="icon-btn" data-act="export" title="Export as PDF, HTML or Markdown">${icon('export')}</button>
       </div>
       <div class="note-ai-bar" role="status" hidden></div>
@@ -217,12 +218,14 @@ export async function toggleNotesGraph(): Promise<void> {
   if (notesOpen() && globalOpen()) { closeGlobal({ push: true }); ws.editor?.focus(); } else await openNotesGraph(ws.session ? `note:${ws.session.path}` : null);
 }
 
-export async function closeNotes(): Promise<void> {
+/** Leave Notes for the library (or, with ``toLibrary: false``, for another workspace that takes over). */
+export async function closeNotes({ toLibrary = true }: { toLibrary?: boolean } = {}): Promise<void> {
   if (!notesOpen()) return;
   await ws.session?.save();
   delete document.body.dataset.workspace;
   ws.root.hidden = true;
   store('zc.notes.open', false);
+  if (!toLibrary) return;
   emit('workspace');
   emit('focus-list');
   navPush({ ws: 'library', view: state.view, sel: [...state.selection] });
@@ -246,6 +249,7 @@ async function ensureEditor() {
     onSave: () => ws.session?.save(),
     onBlur: () => ws.session?.save(),
     onToggleRead: () => setMode(ws.mode === 'read' ? ws.editMode : 'read'),
+    onModEnter: (view) => taskHooks.key?.(view) ?? false,
     onImage: async (file) => {
       try { return (await api.uploadNoteImage(file)).markdown; } catch (e) { toastError(e); return null; }
     },
@@ -258,6 +262,7 @@ async function ensureEditor() {
     mermaid: renderMermaid,
     equations: equationMode,
     macros: noteMacros,
+    task: () => taskHooks.preview,
   }, ws.mode === 'read' ? ws.editMode : ws.mode, {
     items: () => ws.library.list,
     notes: () => ws.overview.notes,
@@ -381,6 +386,7 @@ async function closeCurrent(): Promise<void> {
 let afterSaveTimer: ReturnType<typeof setTimeout> | undefined;
 function afterSave(): void {
   paintAiBar();
+  if (ws.session) taskHooks.saved?.(ws.session.path, ws.session.text);
   // titles, folders and outline may have changed: refresh lazily
   clearTimeout(afterSaveTimer);
   afterSaveTimer = setTimeout(async () => {
@@ -400,8 +406,10 @@ function afterSave(): void {
 function onClick(e: MouseEvent): void {
   const t = e.target as Element;
   const { session, info } = ws;
+  if (taskHooks.click?.(e)) return;
   const actEl = t.closest<HTMLElement>('[data-act]');
   const act = actEl?.dataset.act;
+  if (act === 'add-task' && session) { taskHooks.add?.(actEl!); return; }
   if (act === 'new-note') { newNote(); return; }
   if (act === 'new-folder') { newFolder(folderOfSelection()); return; }
   if (act === 'graph') { openNotesGraph(session ? `note:${session.path}` : null); return; }

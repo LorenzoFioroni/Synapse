@@ -1,6 +1,6 @@
 """Tools for tasks: list_tasks, get_task, create_task, update_task, delete_task.
 
-Tasks are records (title, status, due date, priority, tags, a Markdown body, sub-tasks); a note
+Tasks are records (title, status, due date, a Markdown body, sub-tasks); a note
 shows one with a ``{{task:<id>}}`` line. Changes made here are marked as Claude's in the task's
 history, and a task added to a note goes through the note's history, so the user can undo both.
 """
@@ -32,8 +32,6 @@ class TaskToolsMixin(ToolsBase):
             "title": t["title"],
             "status": t["status"],
             "due": t.get("due"),
-            "priority": t.get("priority"),
-            "tags": t.get("tags") or None,
             "parent": t.get("parent_id"),
             "subtasks": f"{sum(k['status'] == 'done' for k in kids)}/{len(kids)} done" if kids else None,
             "has_details": bool(t.get("body")) or None,
@@ -108,8 +106,6 @@ class TaskToolsMixin(ToolsBase):
         title: str,
         details: str = "",
         due: str | None = None,
-        priority: str | None = None,
-        tags: list | None = None,
         parent: str | None = None,
         note: str | None = None,
         after_line: int | None = None,
@@ -118,8 +114,6 @@ class TaskToolsMixin(ToolsBase):
             "title": title,
             "body": details or "",
             "due": due,
-            "priority": priority,
-            "tags": tags,
             "parent_id": self._task_ref(parent) if parent else None,
         }
         if note:
@@ -146,17 +140,15 @@ class TaskToolsMixin(ToolsBase):
         details: str | None = None,
         status: str | None = None,
         due: str | None = None,
-        priority: str | None = None,
-        tags: list | None = None,
         parent: str | None = None,
         with_subtasks: bool = False,
     ):
         tid = self._task_ref(task)
         store = self.s.task_store
         fields: dict = {}
-        for k, v in (("title", title), ("body", details), ("due", due), ("priority", priority), ("tags", tags)):
+        for k, v in (("title", title), ("body", details), ("due", due)):
             if v is not None:
-                fields[k] = None if v == "" and k in ("due", "priority") else v
+                fields[k] = None if v == "" and k == "due" else v
         try:
             if parent is not None:
                 store.move(tid, parent_id=self._task_ref(parent) if parent else None, by="ai")

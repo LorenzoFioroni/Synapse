@@ -325,7 +325,11 @@ The work done per keystroke is kept small, so long notes stay quick to edit:
   shared by every renderer.
 
 Task boxes are drawn the same way in both modes (a rounded square, ticked and filled when done),
-and a done task is greyed and struck through.
+and a done task is greyed and struck through. A `{{task:id}}` line is different: it shows a task record (see
+[tasks](tasks.md)). The live preview always draws it as the task's checkbox, title and labels
+(`TaskWidget`, through `taskHooks.preview`) and never as source: it is an atomic range, so the
+cursor steps over it and Backspace deletes it whole. Read mode draws it with
+`renderDefaults.taskHtml`. A list item whose only content is a task line shows no bullet.
 
 ### Embedded notes
 

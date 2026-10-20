@@ -64,14 +64,14 @@ def create():
 @bp.patch("/tasks/<task_id>")
 @guarded
 def update(task_id):
-    """Fields (title, body, status, due, priority, tags); ``with_subtasks`` with a status; a move
+    """Fields (title, body, status, due); ``with_subtasks`` with a status; a move
     with ``parent_id`` (null: top level) and ``before`` or ``after`` a sibling."""
     d = body()
     store = svc().task_store
     changed: list[dict] = []
     if "parent_id" in d or "before" in d or "after" in d:
         changed.append(store.move(task_id, parent_id=d.get("parent_id"), before=d.get("before"), after=d.get("after")))
-    fields = {k: d[k] for k in ("title", "body", "due", "priority", "tags") if k in d}
+    fields = {k: d[k] for k in ("title", "body", "due") if k in d}
     if fields:
         changed.append(store.update(task_id, fields))
     if "status" in d:

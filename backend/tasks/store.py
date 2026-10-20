@@ -1,4 +1,4 @@
-"""Tasks: records in ``library.db``, each with a title, a status, a due date, a priority, tags, a
+"""Tasks: records in ``library.db``, each with a title, a status (open or done), a due date, a
 Markdown body and sub-tasks (a tree through ``parent_id``).
 
 A note shows a task with ``{{task:<id>}}`` (see ``backend/notes/parser.py``); the task itself lives
@@ -20,13 +20,12 @@ from datetime import date, datetime, timezone
 from ..library.db import Database, utcnow
 
 STATUSES = ("open", "done")
-PRIORITIES = ("high", "medium", "low")
 ID_CHARS = "abcdefghjkmnpqrstuvwxyz23456789"  # no 0/o, 1/l/i: ids are read and typed by people
 ID_LEN = 8
 MAX_TITLE = 500
 MAX_BODY = 200_000
 HISTORY_KEPT = 5000
-EDITABLE = ("title", "body", "status", "due", "priority", "tags")
+EDITABLE = ("title", "body", "status", "due")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -37,8 +36,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     body TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'open',
     due TEXT,
-    priority TEXT,
-    tags TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     done_at TEXT,
@@ -83,12 +80,7 @@ def new_id() -> str:
 
 
 def _row(r: sqlite3.Row) -> dict:
-    d = dict(r)
-    try:
-        d["tags"] = json.loads(d.get("tags") or "[]")
-    except ValueError:
-        d["tags"] = []
-    return d
+    return dict(r)
 
 
 def clean_title(v) -> str:
@@ -110,22 +102,6 @@ def clean_due(v) -> str | None:
     raise TaskError(f"'{s}' is not a date. Use YYYY-MM-DD, e.g. 2026-10-27.")
 
 
-def clean_tags(v) -> list[str]:
-    if v in (None, ""):
-        return []
-    items = v if isinstance(v, list) else re.split(r"[,\s]+", str(v))
-    out: list[str] = []
-    for t in items:
-        t = str(t).strip().lstrip("#").strip().lower()
-        if not t:
-            continue
-        if not re.fullmatch(r"[\w\-/]+", t):
-            raise TaskError(f"'{t}' cannot be a tag: use letters, digits, - _ and /.")
-        if t not in out:
-            out.append(t)
-    return out
-
-
 def _clean(field: str, v):
     if field == "title":
         return clean_title(v)
@@ -141,15 +117,6 @@ def _clean(field: str, v):
         return s
     if field == "due":
         return clean_due(v)
-    if field == "priority":
-        if v in (None, "", "none"):
-            return None
-        p = str(v).strip().lower()
-        if p not in PRIORITIES:
-            raise TaskError(f"Unknown priority '{v}': use high, medium or low.")
-        return p
-    if field == "tags":
-        return clean_tags(v)
     raise TaskError(f"Unknown field '{field}'.")
 
 
@@ -298,8 +265,6 @@ class TaskStore:
         body: str = "",
         parent_id: str | None = None,
         due=None,
-        priority=None,
-        tags=None,
         status: str = "open",
         before: str | None = None,
         after: str | None = None,
@@ -311,8 +276,6 @@ class TaskStore:
         values = {
             "body": _clean("body", body),
             "due": clean_due(due),
-            "priority": _clean("priority", priority),
-            "tags": clean_tags(tags),
             "status": _clean("status", status),
         }
         now = utcnow()
@@ -324,8 +287,8 @@ class TaskStore:
                 tid = new_id()
             pos = self._position(c, parent_id, before, after)
             c.execute(
-                "INSERT INTO tasks (id, parent_id, position, title, body, status, due, priority, tags, created_at, "
-                "updated_at, done_at, created_by, updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO tasks (id, parent_id, position, title, body, status, due, created_at, "
+                "updated_at, done_at, created_by, updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     tid,
                     parent_id,
@@ -334,8 +297,6 @@ class TaskStore:
                     values["body"],
                     values["status"],
                     values["due"],
-                    values["priority"],
-                    json.dumps(values["tags"]),
                     now,
                     now,
                     now if values["status"] == "done" else None,
@@ -349,7 +310,7 @@ class TaskStore:
         return task
 
     def update(self, task_id: str, changes: dict, *, by: str = "human") -> dict:
-        """Change any of title, body, status, due, priority, tags. Returns the task."""
+        """Change any of title, body, status, due. Returns the task."""
         unknown = set(changes) - set(EDITABLE)
         if unknown:
             raise TaskError(f"Unknown field(s): {', '.join(sorted(unknown))}.")
@@ -361,7 +322,7 @@ class TaskStore:
             if not r or r["deleted_at"]:
                 raise TaskMissing("This task no longer exists." if not r else "This task is in the trash.")
             before = _row(r)
-            sets = {k: (json.dumps(v) if k == "tags" else v) for k, v in clean.items() if before.get(k) != v}
+            sets = {k: v for k, v in clean.items() if before.get(k) != v}
             if not sets:
                 return before
             if "status" in sets:
@@ -478,6 +439,25 @@ class TaskStore:
                         c.execute("UPDATE tasks SET parent_id = NULL WHERE id = ?", (tid,))
                 self._log(c, tid, by, "restore", None, None)
         return ids
+
+    def rewrite_texts(self, change, *, by: str = "human") -> int:
+        """Apply ``change(text) -> text`` to every task's title and body (trashed ones too), each
+        changed task recorded in its history. Returns how many tasks changed."""
+        n = 0
+        with self.db.session() as c:
+            for r in c.execute("SELECT * FROM tasks").fetchall():
+                before = _row(r)
+                title, body = clean_title(change(before["title"])), change(before["body"])
+                if title == before["title"] and body == before["body"]:
+                    continue
+                c.execute(
+                    "UPDATE tasks SET title = ?, body = ?, updated_at = ?, updated_by = ? WHERE id = ?",
+                    (title, body, utcnow(), by, before["id"]),
+                )
+                after = _row(c.execute("SELECT * FROM tasks WHERE id = ?", (before["id"],)).fetchone())
+                self._log(c, before["id"], by, "update", _snapshot(before), _snapshot(after))
+                n += 1
+        return n
 
     def purge(self, older_than: str) -> int:
         """Delete trashed tasks deleted before ``older_than`` (UTC ISO time) for good."""
