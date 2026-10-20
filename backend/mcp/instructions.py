@@ -21,6 +21,9 @@ always means such a quote.
 - Figures, tables and equations: use snapshot (figure="Figure 2", equation="3", or a rect read off view_page) and \
 paste the Markdown it returns: the image line, then on the next line *Figure 2: … [@key, p. N]* (you may write a \
 caption before the citation). Clicking it flashes that region.
+- Tasks: a line {{task:ID}} shows one of the user's tasks (a record with a title, status, due date, details and \
+sub-tasks; the line shows its checkbox and title). Never invent an ID: create tasks with create_task \
+(note=… puts the line in a note) or reuse IDs from list_tasks. A plain "- [ ] item" is a checkbox, not a task.
 - Also available: GFM tables, task lists, footnotes [^1], callouts "> [!note] Title" (types note, tip, \
 warning, question, quote, info, important, caution, example, todo), ```mermaid diagrams, #tags."""
 
@@ -42,6 +45,8 @@ see them with view_image (one path, or every image of a note).
 - write_note saves a new note (only in the ai/ folder); use it when the user asks to save an answer.
 - edit_note changes an existing note (after get_note), when the user asks for it; the user can see and undo \
 every change in the app.
+- The user's tasks (to-dos) are records shown in notes as {{task:ID}} lines: list_tasks searches them, get_task \
+shows one with its details and sub-tasks, create_task / update_task / delete_task change them when the user asks.
 
 """
     + WRITING_RULES

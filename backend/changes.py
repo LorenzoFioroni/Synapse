@@ -2,7 +2,7 @@
 
 With an iPad and the computer open at the same time, each needs to notice what the other changed.
 Every page polls ``GET /api/changes?since=N`` every few seconds and refreshes what the answer
-names: ``library`` (items, folders, tags, attachments), ``annotations``, ``notes``.
+names: ``library`` (items, folders, tags, attachments), ``annotations``, ``notes``, ``tasks``.
 
 The feed is kept in memory: a restart starts a new ``epoch`` and pages simply refresh everything.
 Changes are recorded
@@ -59,7 +59,7 @@ class ChangeFeed:
             # what is on disk now is explained by this change
             if "notes" in kinds:
                 self._notes_seen = _mtime(*self._notes_paths)
-            if kinds & {"library", "annotations"}:
+            if kinds & {"library", "annotations", "tasks"}:
                 self._lib_seen = _mtime(*self._lib_paths)
             return self.seq
 
@@ -68,7 +68,7 @@ class ChangeFeed:
         notes = _mtime(*self._notes_paths)
         kinds = set()
         if lib != self._lib_seen:
-            kinds |= {"library", "annotations"}
+            kinds |= {"library", "annotations", "tasks"}
         if notes != self._notes_seen:
             kinds.add("notes")
         if kinds:
@@ -86,7 +86,7 @@ class ChangeFeed:
                 return {
                     "epoch": self.epoch,
                     "seq": current,
-                    "changes": ["library", "annotations", "notes"] if full else [],
+                    "changes": ["library", "annotations", "notes", "tasks"] if full else [],
                     "reset": full,
                 }
             oldest = self._log[0][0] if self._log else current + 1
@@ -94,7 +94,7 @@ class ChangeFeed:
                 return {
                     "epoch": self.epoch,
                     "seq": current,
-                    "changes": ["library", "annotations", "notes"],
+                    "changes": ["library", "annotations", "notes", "tasks"],
                     "reset": True,
                 }
             kinds: set[str] = set()
@@ -106,6 +106,8 @@ class ChangeFeed:
 
 def kind_of(path: str) -> str:
     """Which part of the app a library-database write through this API path changes."""
+    if path.startswith("/api/tasks"):
+        return "tasks"
     if path.startswith("/api/annotations") or ("/annotations" in path and path.startswith("/api/attachments/")):
         return "annotations"
     return "library"

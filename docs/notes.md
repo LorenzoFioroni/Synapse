@@ -112,7 +112,7 @@ changes what it finds, so notes indexed by the old rules are read again.
 | Table | Rows |
 |---|---|
 | `notes` | One per note: path, lower-case `stem`, the front-matter fields, `hash`, `mtime`, `size`. |
-| `links` | Every link, with `kind` (`note`, `embed`, `cite`, `image`), `target`, `target_norm`, heading, alias, locator, page, prefix, `suppress_author`, `grp`, line and context. |
+| `links` | Every link, with `kind` (`note`, `embed`, `cite`, `image`, `task`), `target`, `target_norm`, heading, alias, locator, page, prefix, `suppress_author`, `grp`, line and context. |
 | `tags` | Inline and front-matter tags. |
 | `headings` | ATX headings with level and line. |
 | `notes_fts` | FTS5 table of title and body (`unicode61 remove_diacritics 2`). |
@@ -132,7 +132,8 @@ What it answers:
   fewest folders, then the shortest path, then comes first alphabetically.
 - `outgoing(path)` (with `resolved` and `ambiguous`), `backlinks(path)` (only links that really
   resolve here), `citing(key)`, `paper_notes(key)`, `cited_keys`, `key_summary`.
-- `link_graph()` for the Graph view and `image_links()` for the attachment sweep.
+- `link_graph()` for the Graph view, `image_links()` for the attachment sweep, and `task_refs()`
+  (every `{{task:id}}` with its note, line and the heading above it) for the Tasks page.
 - `search(q)`: FTS with every word as a prefix, snippets HTML-escaped with `<mark>`.
 - `texts_by_key()`: what notes say about each key, which `NoteTextMatcher` in `service.py` feeds
   to the library search (see [fulltext-search.md](fulltext-search.md)).
@@ -148,6 +149,7 @@ The parser is the only code that decides what a note links to or cites. `parse()
 | `![[Note]]` | `embed` |
 | `[@key]`, `[see @a, p. 4; -@b]` | `cite`, one per key, sharing a `group` |
 | `![alt](path)` | `image` (alias is the alt text before any `\|`) |
+| `{{task:k7f3q2mx}}` | `task`: the note shows that task (a record in `library.db`, see [tasks](tasks.md)) |
 | `# Heading` | heading (ATX only, at most three spaces of indent) |
 | `#tag`, `#nested/tag` | tag (starts with a letter; not after a word character, `/`, `&`, `#`, brackets or parentheses) |
 

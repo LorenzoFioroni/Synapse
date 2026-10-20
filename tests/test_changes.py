@@ -96,7 +96,7 @@ def test_note_index_changed_outside(client, svc):
 def test_restart_means_refresh_everything(client):
     seq, _ = start(client, MAC)
     r = poll(client, MAC, seq, "old-epoch")
-    assert r["reset"] is True and set(r["changes"]) == {"library", "annotations", "notes"}
+    assert r["reset"] is True and set(r["changes"]) == {"library", "annotations", "notes", "tasks"}
 
 
 def test_far_behind_means_refresh_everything(client, svc, monkeypatch):

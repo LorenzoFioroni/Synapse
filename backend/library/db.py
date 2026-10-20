@@ -22,6 +22,13 @@ class Database:
         self.on_write: Callable[[], None] | None = (
             None  # called after each commit that changed something (the change feed)
         )
+        # Tables other packages keep in this database (tasks): created by them, re-applied by
+        # every migrate() so a restored older backup gets them too.
+        self._schemas: list[Callable[[sqlite3.Connection], None]] = []
+
+    def add_schema(self, apply: Callable[[sqlite3.Connection], None]) -> None:
+        if apply not in self._schemas:
+            self._schemas.append(apply)
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=15)
@@ -146,3 +153,5 @@ class Database:
                 "DELETE FROM paper_folders WHERE paper_id NOT IN (SELECT id FROM papers) "
                 "OR folder_id NOT IN (SELECT id FROM folders)"
             )
+            for apply in self._schemas:
+                apply(c)

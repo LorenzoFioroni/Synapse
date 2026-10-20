@@ -83,6 +83,7 @@ class NoteChecker:
         self._check_cites(parsed, keys, errors, warnings)
         self._check_quotes(text, keys, errors)
         self._check_images(parsed, errors)
+        self._check_tasks(parsed, errors, warnings)
         self._check_math(text, errors)
         return text, errors, warnings
 
@@ -240,6 +241,21 @@ class NoteChecker:
                 p = None
             if not p or not p.is_file():
                 errors.append(f"line {l.line}: image {l.target} does not exist. Use the markdown snapshot returns.")
+
+    def _check_tasks(self, parsed, errors, warnings) -> None:
+        ids = [l for l in parsed.links if l.kind == "task"]
+        if not ids:
+            return
+        known = self.s.task_store.get_many({l.target for l in ids})
+        for l in ids:
+            t = known.get(l.target)
+            if not t:
+                errors.append(
+                    f"line {l.line}: {{{{task:{l.target}}}}} is not a task. Create it with create_task, "
+                    "or take an id from list_tasks."
+                )
+            elif t.get("deleted_at"):
+                warnings.append(f"line {l.line}: the task {l.target} is in the trash.")
 
     def _check_math(self, text: str, errors) -> None:
         """Formulas written with Unicode symbols outside math (block quotes are the PDF's own words)."""

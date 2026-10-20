@@ -54,6 +54,7 @@ Two objects tie the backend together:
 |---|---|---|
 | `library/` | Items, attachments, folders, tags, smart folders, PDF annotations, citation keys and search. `fields.py` is the single source of truth for item fields and types, and `identifiers.py` for DOIs and arXiv ids (cleaning, normalising, matching). | `library.db` (schema and migrations in `library/db.py`) |
 | `notes/` | Markdown notes. The files are the source of truth; the index is disposable. | `notes/`, `notes_index.db` |
+| `tasks/` | Tasks (to-dos with a body and sub-tasks) and the `{{task:id}}` lines that show them in notes (see [tasks](tasks.md)). | `library.db` (`tasks`, `task_history`) |
 | `formats/` | Import and export for BibTeX, RIS, EndNote and CSL-JSON, behind one registry. | none |
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
 | `mcp/` | The MCP server: the JSON-RPC layer (`protocol.py`), the library tools (`tools/`, one mixin per family), their schemas (`server.py`) and the instructions given to the AI app (`instructions.py`). | none (it uses the other packages) |
@@ -77,8 +78,9 @@ never from those above:
 ```
   app · frontend · api                   composition: wires and exposes everything
   services · connector
-  mcp                                    (library, notes, pdf, references)
+  mcp                                    (library, notes, pdf, references, tasks)
   references                             (library, formats, online)
+  tasks                                  (library, notes)
   online                                 (library, formats, pdf)
   formats · notes · pdf                  (library)
   library · backup · access · assist     (base only)
@@ -208,6 +210,7 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
 |---|---|
 | [Adding a feature](adding-a-feature.md) | Where the pieces of a new feature go, in the order you write them. |
 | [Storage](storage.md) | The data folder, who owns each file, the `library.db` schema and its migrations, settings and backups. |
+| [Tasks](tasks.md) | Tasks: the records, the `{{task:id}}` lines in notes, the Tasks page and Claude's task tools. |
 | [Notes](notes.md) | The notes format, the vault, the index, the parser and its frontend port, rekeying, Claude's edits, and the notes workspace. |
 | [Full-text search](fulltext-search.md) | PDF text extraction, the full-text index and the library search with its query syntax. |
 | [References](references.md) | Metadata lookup, finding PDFs, the citation graph, and what the Adding Items settings trigger. |

@@ -94,6 +94,11 @@ use it), an input schema and `read_only`. `read_only` sets the `readOnlyHint` an
 | `write_note` | `notes.py` | Saves a new note under `notes/ai/`. | yes |
 | `edit_note` | `notes.py` | Changes an existing note: exact replacements, an append, or the whole text. | yes |
 | `undo_note_edit` | `notes.py` | Puts a note back as it was before the last AI edit, if it was not changed since. | yes |
+| `list_tasks` | `tasks.py` | The user's tasks, open ones by default, filtered with the Tasks page's search syntax (`backend/tasks/query.py`). | no |
+| `get_task` | `tasks.py` | One task with its details, sub-tasks, parents and the notes that show it. | no |
+| `create_task` | `tasks.py` | Creates a task (optionally a sub-task), and with `note` adds its `{{task:ID}}` line to that note through the note's history. | yes |
+| `update_task` | `tasks.py` | Changes title, details, status (optionally with the sub-tasks), due date, priority, tags or parent. | yes |
+| `delete_task` | `tasks.py` | Moves a task and its sub-tasks to the tasks trash. | yes |
 
 `ToolsBase` in `backend/mcp/tools/common.py` has what the families share:
 
@@ -115,6 +120,10 @@ notes, so the model's citations open the right page in the app. `view_page` and 
 note or a search, find pages before reading them) and `WRITING_RULES`, the note syntax. The
 descriptions of `write_note` and `edit_note` repeat `WRITING_RULES`, because the model reads tool
 descriptions when it decides how to call them. See [notes](notes.md) for the syntax itself.
+
+Claude's task changes are recorded with `by: "ai"` in `task_history`, so the app shows them as
+Claude's and can undo them; `get_note` lists the tasks a note shows, and `NoteChecker` refuses a
+note that shows a task id that does not exist (see [tasks](tasks.md)).
 
 ## The rules it enforces
 

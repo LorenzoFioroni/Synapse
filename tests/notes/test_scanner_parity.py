@@ -117,6 +117,10 @@ def test_random_documents_agree():
         "1. ",
         "```py\n",
         "\n```\n",
+        "{{task:k7f3q2mx}}",
+        "{{",
+        "}}",
+        "task:ab12",
     ]
     texts = ["".join(rnd.choice(pieces) for _ in range(rnd.randint(0, 60))) for _ in range(1500)]
     compare(texts)
