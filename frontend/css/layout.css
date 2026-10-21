@@ -51,6 +51,8 @@ body { display: flex; flex-direction: column; }
 .tab.active { background: var(--bg); color: var(--text); border-color: var(--border); margin-bottom: -1px; height: 31px; }
 .tab .icon { flex: none; color: var(--text-3); }
 .tab.active .icon { color: var(--accent); }
+.tab-color { display: inline-flex; flex: none; }
+.tab .tab-color .icon { color: inherit; }   /* a note in a coloured folder */
 .tab-logo { width: 16px; height: 16px; flex: none; border-radius: 4px; }
 .tab-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab.preview .tab-title { font-style: italic; }   /* replaced by the next note opened, until kept */

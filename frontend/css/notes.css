@@ -49,6 +49,8 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .notes-tree:focus { outline: none; }
 .notes-tree:focus-visible .nt-row.cursor, .notes-tree:focus .nt-row.cursor:not(.selected) { box-shadow: inset 0 0 0 1.5px var(--accent); }
 .nt-row .icon { color: var(--text-2); flex: none; }
+.nt-folder-icon { display: inline-flex; flex: none; }
+.nt-folder-icon[style] .icon { color: inherit; }   /* a coloured folder (folder_colors.py) */
 .nt-row .nm { overflow: hidden; text-overflow: ellipsis; }
 .nt-row.folder .nm { font-weight: 550; }
 .nt-row .twisty { width: 14px; display: grid; place-items: center; flex: none; color: var(--text-3); transition: transform .12s; }

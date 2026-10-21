@@ -21,6 +21,7 @@ change feed), [frontend.md](frontend.md) and [testing.md](testing.md).
 | `.trash/<timestamp>/` | Deleted notes and folders, at their old relative path. |
 | `.trash-attachments/<timestamp>/` | Images no note uses any more. `.since` records when automatic emptying started. |
 | `.history/<id>.json` | The version each of Claude's edits replaced (see [History of Claude's edits](#history-of-claudes-edits-backendnoteshistorypy)). |
+| `.folders.json` | Colours given to folders: `{"folder/path": "#rrggbb"}` (see [Folder colours](#folder-colours)). |
 
 Hidden folders (any name starting with `.`) are never indexed, and a path from outside can never
 point into them: `Vault.clean_rel` rejects every path segment that starts with a dot.
@@ -249,13 +250,14 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 
 | Method | Path | What it does |
 |---|---|---|
-| GET | `/api/notes` | Listing: every note's index entry, the folders, counts. |
+| GET | `/api/notes` | Listing: every note's index entry, the folders, `folder_colors` (only folders that exist), counts. |
 | GET | `/api/notes/note?path=` | Text, hash and index entry of one note. |
 | POST | `/api/notes/note` | Create (`title`, `folder` or `path`, `item_id`, `text`). |
 | PUT | `/api/notes/note` | Save `text` over `hash`; with `create: true`, write a note that must not exist. |
 | POST | `/api/notes/move` | Rename or move a note (`path`, `to`, optional `hash`); returns `broken_links`. |
 | POST | `/api/notes/folder` | Create a folder. |
-| POST | `/api/notes/folder/move` | Rename or move a folder; returns the moved notes and `broken_links`. |
+| POST | `/api/notes/folder/move` | Rename or move a folder; returns the moved notes and `broken_links`. Its colour and its subfolders' go with it. |
+| PUT | `/api/notes/folder/color` | `{path, color}`: give a folder a colour (`#rrggbb`), or none (`null` or `""`); answers `folder_colors`. |
 | POST | `/api/notes/trash` | Trash one note (`path`) or several notes and folders together (`paths`, `folders`). |
 | GET | `/api/notes/trash` | Trashed notes with `trashed_at` and `deletes_at`, and the retention. |
 | POST | `/api/notes/restore` | Restore one note (`trash_id`, `path`) or a whole batch (`trash_id` only). |
@@ -276,6 +278,21 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | GET | `/api/notes/attachments/trash/<id>/<name>` | Serve a trashed image. |
 | GET | `/api/notes/attachments/<name>` | Serve an image. |
 | POST | `/api/notes/rescan` | Sync the index with the files. |
+
+## Folder colours
+
+A folder can be given a colour (right-click it in the notes list → Colour; the palette of tags,
+`ui/colors.ts`; default none). A note takes the colour of the nearest coloured folder above it
+(`folderColor` in `workspace.ts`), and shows it on its tab and in the window's title bar
+([the app window](desktop.md#folder-colours)); a folder icon shows its own colour, or lighter the
+one it has from a folder above.
+
+`backend/notes/folder_colors.py` (`FolderColors`, `NotesService.folder_colors`) keeps them in
+`.folders.json` at the top of the notes folder: hidden like `.history`, so it is never indexed and
+goes into backups with the notes. Renaming or moving a folder in the app moves its colour and
+those of the folders inside (`moved`); a folder renamed outside the app loses its colour; a
+deleted folder keeps it in the file, so it comes back if the folder is restored, but the listing
+only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 
 ## Frontend (`frontend/src/views/notes/`)
 

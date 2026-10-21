@@ -13,6 +13,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from . import frontmatter
+from .folder_colors import FolderColorError, FolderColors
 from .history import NoteHistory
 from .index import NotesIndex
 from .rekey import Rekeyer
@@ -107,6 +108,7 @@ class NotesService:
         self.rekeyer = Rekeyer(vault, index, backups_dir or default, fallback_dir=default)
         self.on_change: Callable[[], None] | None = None  # called after notes are saved, deleted or restored
         self.history = NoteHistory(vault.root)  # earlier versions of notes Claude changed
+        self.folder_colors = FolderColors(vault.root)  # colours given to notes folders
 
     # ------------------------------------------------------------------ citation keys
     def text_matcher(self) -> NoteTextMatcher:
@@ -167,7 +169,18 @@ class NotesService:
 
     # ------------------------------------------------------------------ reads
     def overview(self) -> dict:
-        return {"notes": self.index.list(), "folders": self.vault.folders(), "stats": self.index.stats()}
+        folders = self.vault.folders()
+        shown = set(folders)
+        colors = {f: c for f, c in self.folder_colors.all().items() if f in shown}
+        return {"notes": self.index.list(), "folders": folders, "folder_colors": colors, "stats": self.index.stats()}
+
+    def set_folder_color(self, path: str, color: str | None) -> dict:
+        """Give a notes folder a colour (``#rrggbb``) or none; answers all the folders' colours."""
+        folder = self.vault.clean_rel(path, suffix=None)
+        if folder not in set(self.vault.folders()):
+            raise FolderColorError(f"No folder {folder}")
+        self.folder_colors.set(folder, color)
+        return {"folder_colors": self.overview()["folder_colors"]}
 
     def get(self, path: str) -> dict:
         path = self.vault.clean_rel(path)
@@ -343,6 +356,7 @@ class NotesService:
         before = {n: self.index.backlinks(n) for n in self.vault.notes_in(src)}
         moved = self.vault.move_folder(src, to)
         self.history.moved(moved)
+        self.folder_colors.moved(src, self.vault.clean_rel(to, suffix=None))
         for old, _ in moved:
             self.index.remove(old)
         self._reindex(new for _, new in moved)

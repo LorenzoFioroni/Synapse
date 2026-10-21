@@ -49,6 +49,9 @@ window to move it there, or outside every window for a new one (or right-click i
 Window**); right-click items, PDFs, folders, notes and tasks for **Open in New Window**. Settings →
 PDF Viewer → Open PDFs in → Browser Tabs keeps PDFs in browser tabs of their own.
 
+Give a notes folder a colour (right-click it in the notes list → Colour): its notes show it on
+their tab and in the app window's title bar, which is otherwise neutral like the tab bar.
+
 ### From an iPad or phone
 
 ```bash

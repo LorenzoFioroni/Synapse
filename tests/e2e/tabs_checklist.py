@@ -119,6 +119,8 @@ async def main():
         requests.post(f"{BASE}/api/tasks", json={"title": "Window task"}).raise_for_status()
         for title in ("Alpha", "Beta", "Gamma", "Delta"):
             requests.post(f"{BASE}/api/notes/note", json={"title": title}).raise_for_status()
+        requests.post(f"{BASE}/api/notes/note", json={"title": "In blue", "folder": "Colored"}).raise_for_status()
+        requests.post(f"{BASE}/api/notes/note", json={"title": "Deeper", "folder": "Colored/Deep"}).raise_for_status()
 
         async with async_playwright() as p:
             b = await p.chromium.launch()
@@ -423,6 +425,9 @@ async def main():
             await page.locator(f'.side-item[data-folder="{folder["id"]}"]').click(button="right")
             win = await new_window(lambda: page.locator(".menu-item", has_text="Open in New Window").click())
             ok = await wait_for(lambda: win.locator(f'.side-item.active[data-folder="{folder["id"]}"]').count())
+            await wait_for(
+                lambda: win.evaluate("document.querySelectorAll('.row[data-id]').length === 1")
+            )  # its items loaded
             rows = await win.eval_on_selector_all(".row[data-id]", "rs => rs.map((r) => r.textContent)")
             check(
                 "a folder: Open in New Window shows that folder",
@@ -661,6 +666,74 @@ async def main():
             await page.click(".tab.home")
             await page.wait_for_timeout(400)
 
+            # ---- a folder's colour on its notes' tabs and on the title bar ------------------------------
+            async def bar_color(pg=page):
+                return await pg.evaluate(
+                    "[...document.querySelectorAll('meta[name=theme-color]')].map((m) => m.content)"
+                )
+
+            neutral = await page.evaluate(
+                "getComputedStyle(document.documentElement).getPropertyValue('--bg-sidebar').trim()"
+            )
+            check(
+                "the title bar is neutral by default (the tab bar's colour)",
+                await bar_color() == [neutral],
+                (await bar_color(), neutral),
+            )
+            await page.click('.ws-switch [data-ws="notes"]')
+            await page.wait_for_selector('.nt-row.folder[data-folder="Colored"]')
+            await page.locator('.nt-row.folder[data-folder="Colored"]').click(button="right")
+            await page.locator(".menu-item", has_text="Blue").click()
+            ok = await wait_for(
+                lambda: page.evaluate(
+                    "getComputedStyle(document.querySelector('.nt-row.folder[data-folder=\"Colored\"] .nt-folder-icon .icon')).color === 'rgb(0, 144, 255)'"
+                )
+            )
+            check("a folder's colour is chosen from its menu and shown on its icon", ok)
+            await page.click('.nt-row.note[data-path="Colored/In blue.md"]')
+            await note_path("Colored/In blue.md")
+            tab_icon = await page.evaluate("getComputedStyle(document.querySelector('.tab.note.active .icon')).color")
+            check(
+                "a note in a blue folder: the title bar and its tab's icon are blue",
+                await bar_color() == ["#0090ff"] and tab_icon == "rgb(0, 144, 255)",
+                (await bar_color(), tab_icon),
+            )
+            await page.dblclick('.nt-row.note[data-path="Colored/Deep/Deeper.md"]')
+            await note_path("Colored/Deep/Deeper.md")
+            check(
+                "a note in a subfolder takes the colour from the folder above",
+                await bar_color() == ["#0090ff"],
+                await bar_color(),
+            )
+            await page.click('.nt-row.note[data-path="Alpha.md"]')
+            await note_path("Alpha.md")
+            check("a note in no coloured folder: neutral again", await bar_color() == [neutral], await bar_color())
+            await page.locator(".tab.note", has_text="Deeper").click()
+            await note_path("Colored/Deep/Deeper.md")
+            await page.click(".tab.home")
+            await page.wait_for_timeout(300)
+            check("the first tab: neutral", await bar_color() == [neutral], await bar_color())
+            await page.evaluate("document.documentElement.dataset.theme = 'dark'")
+            await page.wait_for_timeout(200)
+            dark = await page.evaluate(
+                "getComputedStyle(document.documentElement).getPropertyValue('--bg-sidebar').trim()"
+            )
+            check(
+                "neutral follows the theme (dark)",
+                await bar_color() == [dark] and dark != neutral,
+                (await bar_color(), dark),
+            )
+            await page.evaluate("delete document.documentElement.dataset.theme")
+            await page.click('.ws-switch [data-ws="notes"]')
+            await page.locator('.nt-row.folder[data-folder="Colored"]').click(button="right")
+            await page.locator(".menu-item", has_text="No Colour").click()
+            ok = await wait_for(
+                lambda: page.evaluate(f"document.querySelector('meta[name=theme-color]').content === {neutral!r}")
+            )
+            check("No Colour takes it back (the note shown is neutral again)", ok, await bar_color())
+            await page.click(".tab.home")
+            await page.wait_for_timeout(300)
+
             # ---- Settings → PDF Viewer → Browser Tabs ---------------------------------------------------
             await page.keyboard.press("Control+,")
             await page.wait_for_selector('[data-seg="pdf_open_in"]')
@@ -669,13 +742,14 @@ async def main():
             await page.wait_for_timeout(500)
             await page.keyboard.press("Escape")
             await page.wait_for_timeout(300)
+            before = len(await tabs(page))
             async with ctx.expect_page() as popup:
                 await page.locator(".row", has_text="Second paper").first.dblclick()
             pdf_page = await popup.value
             await pdf_page.wait_for_load_state()
             check(
                 "with Browser Tabs a PDF opens in a browser tab, not in a Synapse tab",
-                "/viewer.html" in pdf_page.url and len(await tabs(page)) == 2,
+                "/viewer.html" in pdf_page.url and len(await tabs(page)) == before,
             )
             await pdf_page.close()
             requests.put(f"{BASE}/api/settings", json={"pdf_open_in": "tabs"})

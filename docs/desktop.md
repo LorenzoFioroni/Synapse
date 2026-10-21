@@ -163,6 +163,18 @@ tab whose note was deleted elsewhere closes, with a message, when it is shown.
 - **Back/Forward in the app** (⌘[ / Alt+←, the mouse buttons) go to the note or library view shown
   before, in its tab: a note that has a tab shows that tab, else it opens in the preview tab.
 
+### Folder colours
+
+The window's title bar (the page's `theme-color`, which Chrome and Edge use for an app window and
+Safari for its tab bar; a normal Chrome tab ignores it) is **neutral**: the tab bar's own background
+(`--bg-sidebar`, light or dark with the theme), so the two look like one strip. A note in a
+coloured folder ([folder colours](notes.md#folder-colours)) turns it that colour while its tab is
+shown, and its tab's icon takes the colour too. Library, Tasks, PDF tabs and notes in no coloured
+folder are neutral. `windowColor.ts` keeps one `theme-color` (index.html has one per system theme
+for the first paint and the manifest's `theme_color` is the same neutral, for the window before the
+page loads); `tabs.ts` sets it when a tab is shown (`TabsHost.noteColor`), and again when the notes
+listing comes back (`repaintColors`, on `notes-count`).
+
 ### Between windows
 
 A tab can be dragged out of the bar:
@@ -247,7 +259,7 @@ How it fits together:
   `server.py --make-shortcut` / `--window` run for real.
 - `tests/e2e/tabs_checklist.py` (ports 8796 and 8797): the tabs in the browser; the first tab and
   the switch; note tabs (preview, keeping by double-click on the tab, in the list and by editing,
-  undo kept across tabs, each tab's own mode, switching back without waiting for the server, renamed and deleted notes, a reload); each window with its own tabs; a tab
+  undo kept across tabs, each tab's own mode, switching back without waiting for the server, renamed and deleted notes, a reload); folder colours on a note's tab and the title bar (neutral by default, also in the dark theme); each window with its own tabs; a tab
   dropped on another window and outside every window (with synthetic drag events); Move to New
   Window, New Window and Open in New Window from the item, folder, note and task menus; and a
   `--quit-when-closed` server stopping after its page closes.

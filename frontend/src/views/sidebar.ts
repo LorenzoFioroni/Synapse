@@ -9,6 +9,7 @@ import * as A from '../actions.js';
 import { icon } from '../icons.js';
 import { currentFolderId, emit, folderById, folderTotal, folderTree, on, saveOpenFolders, state } from '../store.js';
 import { promptDialog } from '../ui/dialog.js';
+import { PALETTE, colorName } from '../ui/colors.js';
 import { openMenu } from '../ui/menu.js';
 import type { Counts, Tag } from '../types.js';
 import { escapeHtml, modLabel, plural, storage, store } from '../util.js';
@@ -18,7 +19,7 @@ import { smartFolderDialog } from './organizeDialogs.js';
 
 export const ITEMS_MIME = 'application/x-zc-items';
 const FOLDER_MIME = 'application/x-zc-folder';
-const TAG_COLORS = ['#e5484d', '#f76b15', '#ffc53d', '#30a46c', '#12a594', '#0090ff', '#6e56cf', '#d6409f', '#8d8d86'];
+const TAG_COLORS = PALETTE;
 
 let root: HTMLElement, tree: HTMLElement, smartList: HTMLElement, tagCloud: HTMLElement, tagFilterInput: HTMLInputElement;
 
@@ -250,18 +251,14 @@ function onContextMenu(e: MouseEvent): void {
         if (name && name !== tag.name) A.updateTag(tag, { name });
       } },
       { section: 'Colour' },
-      ...TAG_COLORS.map((c) => ({ label: colorName(c), checked: tag.color === c, run: () => A.updateTag(tag, { color: c }) })),
-      { label: 'No Colour', checked: !tag.color, run: () => A.updateTag(tag, { color: null }) },
+      ...TAG_COLORS.map((c) => ({ label: colorName(c), swatch: c, checked: tag.color === c, run: () => A.updateTag(tag, { color: c }) })),
+      { label: 'No Colour', swatch: '', checked: !tag.color, run: () => A.updateTag(tag, { color: null }) },
       'sep',
       { label: 'Delete Tag…', icon: 'trash', danger: true, run: () => A.deleteTag(tag) },
     ], at);
   } else if (trash) {
     openMenu([{ label: 'Empty Trash…', icon: 'trash', danger: true, disabled: !state.counts.trash, run: A.emptyTrash }], at);
   }
-}
-
-function colorName(c: string): string {
-  return ({ '#e5484d': '● Red', '#f76b15': '● Orange', '#ffc53d': '● Yellow', '#30a46c': '● Green', '#12a594': '● Teal', '#0090ff': '● Blue', '#6e56cf': '● Purple', '#d6409f': '● Pink', '#8d8d86': '● Grey' } as Record<string, string>)[c] || c;
 }
 
 function folderPathString(id: number): string {

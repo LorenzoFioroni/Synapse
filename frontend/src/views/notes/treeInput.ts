@@ -1,7 +1,10 @@
 // Mouse and keyboard in the notes tree: clicks select and open (Shift and Cmd/Ctrl extend the
 // selection), arrows move, Enter opens, F2 renames, Delete trashes; the context menu; and
 // dragging notes and folders onto folders (or as [[links]] into the editor).
+import { api } from '../../api.js';
+import { PALETTE, colorName } from '../../ui/colors.js';
 import { openMenu, type MenuEntry } from '../../ui/menu.js';
+import { toastError } from '../../ui/toast.js';
 import { modKey } from '../../util.js';
 import { openNewWindow } from '../../windows.js';
 import {
@@ -9,7 +12,7 @@ import {
 } from './fileOps.js';
 import { exportMenu } from './exportNote.js';
 import {
-  fKey, keyOf, nKey, paintSelection, selectOnly, selectRange, selected, toggleFolder, toggleSelected, tree, treeEl, visibleKeys,
+  fKey, keyOf, nKey, paintSelection, refreshTree, selectOnly, selectRange, selected, toggleFolder, toggleSelected, tree, treeEl, visibleKeys,
 } from './tree.js';
 import { hooks, parentOf, stemOf, ws } from './workspace.js';
 
@@ -128,10 +131,18 @@ function onContextMenu(e: MouseEvent): void {
     return;
   }
   const fp = folders[0] || '';
+  const own = fp ? ws.overview.folder_colors?.[fp] || null : null;
+  const color = (c: string | null) => async () => {
+    try { ws.overview.folder_colors = (await api.setNoteFolderColor(fp, c)).folder_colors; } catch (e) { toastError(e); }
+    await refreshTree();
+  };
   const folderEntries: MenuEntry[] = fp ? [
     'sep',
     { label: 'Rename…', icon: 'edit', run: () => renameFolder(fp), shortcut: 'F2' },
     { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
+    { section: 'Colour' },
+    ...PALETTE.map((c) => ({ label: colorName(c), swatch: c, checked: own === c, run: color(c) })),
+    { label: 'No Colour', swatch: '', checked: !own, run: color(null) },
     'sep',
     trash,
   ] : [];

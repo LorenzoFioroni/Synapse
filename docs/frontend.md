@@ -250,6 +250,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `afterAdd.ts` | What runs after items are added (metadata, PDF, references, tags), per the never / always / ask settings. |
 | `tabs/model.ts`, `tabs/tabs.ts` | The app's own tabs: the first tab (Library or Tasks), note tabs and PDF tabs. `model.ts` has the tabs without a DOM (opening, the preview tab, closing and where it goes, reopening, renamed and deleted notes, order, saving); `tabs.ts` draws the bar (`#tabbar`), holds a viewer frame per PDF tab (`#tab-views`), has the notes workspace show a note tab's note (`TabsHost`, from `main.ts`), the tab keys (`tabShortcut`), the menus and dragging tabs between windows. See [the app window](desktop.md). |
 | `presence.ts` | Says hello to the server while the page is open, for a server that stops with its last window. |
+| `windowColor.ts` | The window's title bar colour (`theme-color`): neutral, or the shown note's folder colour (see [the app window](desktop.md#folder-colours)). |
 | `windows.ts` | Opening a place of the app in a new window (`openNewWindow`) and the address that names it (`placeHash`, `readPlace`); `main.ts` opens it (`openFromHash`). See [the app window](desktop.md#windows). |
 | `icons.ts` | Inline SVG icons: `icon(name, cls)` and `typeIcon(itemType)`. |
 | `util.ts` | Small helpers: `escapeHtml`, `h`, `debounce`, dates and sizes, `storage` / `store` (`localStorage` that never throws), `modKey`, `copyText`, `diffWords`, `hitBadge` (the "full text" or "note" badge of a search match). |
@@ -302,7 +303,8 @@ graph around the node it was opened for (`globalFocus`, depth 1, 2, 3 or 0 for e
 with the other options in `localStorage` under `zc.graph.global`).
 
 **`ui/`: generic widgets.** `dialog.ts` (`openDialog`, `confirmDialog`, `promptDialog`),
-`menu.ts` (`openMenu`, `closeMenu`, with keyboard navigation), `toast.ts` (`toast`,
+`menu.ts` (`openMenu`, `closeMenu`, with keyboard navigation; an entry may show a colour `swatch`),
+`colors.ts` (the palette of tags and notes folders), `toast.ts` (`toast`,
 `toastError`, `progressToast`), `longpress.ts` (`installLongPress`: a long press sends
 `zc:longpress` and then `contextmenu`, since a tablet has neither right-click nor hover).
 

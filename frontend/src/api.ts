@@ -144,6 +144,7 @@ export const api = {
   newNoteFolder: (path: string) => request<{ path: string }>('POST', '/api/notes/folder', { path }),
   trashNotes: (paths: string[], folders: string[] = []) => request<{ trash_id: string; paths: string[] }>('POST', '/api/notes/trash', { paths, folders }),
   moveNoteFolder: (path: string, to: string) => request<NoteMoved>('POST', '/api/notes/folder/move', { path, to }),
+  setNoteFolderColor: (path: string, color: string | null) => request<{ folder_colors: Record<string, string> }>('PUT', '/api/notes/folder/color', { path, color }),
   restoreNoteBatch: (trashId: string) => request<{ paths: string[]; skipped: string[] }>('POST', '/api/notes/restore', { trash_id: trashId }),
   noteKeys: () => request<{ keys: NoteKeys }>('GET', '/api/notes/keys'),
   // reference lists (citation graph)

@@ -296,6 +296,8 @@ export type NoteKeys = Record<string, { paper: string | null; citing: number }>;
 export interface NotesListing {
   notes: NoteInfo[];
   folders: string[];
+  /** Notes folders given a colour (backend/notes/folder_colors.py): folder path → #rrggbb. */
+  folder_colors?: Record<string, string>;
   stats: { notes: number; links: number };
 }
 

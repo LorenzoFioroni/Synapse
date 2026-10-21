@@ -101,6 +101,14 @@ def move_folder():
     return jsonify(svc().note_service.move_folder(d.get("path") or "", d.get("to") or ""))
 
 
+@bp.put("/notes/folder/color")
+@guarded
+def folder_color():
+    """``{path, color}``: a notes folder's colour (``#rrggbb``; null or "" for none)."""
+    d = body()
+    return jsonify(svc().note_service.set_folder_color(d.get("path") or "", d.get("color")))
+
+
 @bp.post("/notes/trash")
 @guarded
 def trash_note():

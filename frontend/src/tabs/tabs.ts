@@ -21,6 +21,7 @@ import { emit, state } from '../store.js';
 import { closeMenu, openMenu } from '../ui/menu.js';
 import { toast } from '../ui/toast.js';
 import { debounce, escapeHtml, isMac } from '../util.js';
+import { setWindowColor } from '../windowColor.js';
 import { openNewWindow, readPlace } from '../windows.js';
 import { HOME, type Tab, type TabSpec, TabSet, reopenUrl, urlAtSpot, validSpec } from './model.js';
 
@@ -40,6 +41,8 @@ export interface TabsHost {
   noteClosed(path: string): unknown;
   /** A note tab is going to another window: save its note now. */
   flushNote(path: string): unknown;
+  /** The colour of the folder a note is in (#rrggbb), or null: its tab and the title bar show it. */
+  noteColor(path: string): string | null;
 }
 
 /** This window's session storage, which may be missing or full: then the tabs are simply not kept. */
@@ -119,6 +122,7 @@ export function initTabs(h: TabsHost): void {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') save(); });
 
   paint();
+  paintWindowColor();
   if (set.active !== HOME) show(set.active);
 }
 
@@ -256,7 +260,21 @@ function display(id: string): void {
   }
   document.body.classList.toggle('pdf-tab-active', pdf);
   document.title = tab ? `${tab.title} — Synapse` : homeTitle;
+  paintWindowColor();
   closeMenu();
+}
+
+/** The title bar: the colour of the shown note's folder, else neutral. */
+function paintWindowColor(): void {
+  const tab = set.get(onScreen);
+  setWindowColor(tab?.kind === 'note' && tab.key ? host.noteColor(tab.key) : null);
+}
+
+/** Folders were given other colours (or notes moved): the tabs and the title bar follow. */
+export function repaintColors(): void {
+  if (!bar) return;
+  paint();
+  paintWindowColor();
 }
 
 /** Show tab `id` as chosen by the reader (a click, a key, closing the tab before it). */
@@ -349,10 +367,17 @@ function paint(): void {
     ${set.tabs.map((t) => `
     <div class="tab ${t.kind}${t.id === set.active ? ' active' : ''}${t.preview ? ' preview' : ''}" data-id="${t.id}" role="tab"
          aria-selected="${t.id === set.active}" draggable="true" title="${escapeHtml(t.title)}${t.preview ? ' (preview: double-click to keep the tab)' : ''}">
-      ${icon(t.kind === 'pdf' ? 'pdf' : 'doc', 'icon-sm')}<span class="tab-title">${escapeHtml(t.title)}</span>
+      ${tabIcon(t)}<span class="tab-title">${escapeHtml(t.title)}</span>
       <button class="tab-close" title="Close Tab (${tabModLabel}W)" aria-label="Close ${escapeHtml(t.title)}">${icon('close', 'icon-sm')}</button></div>`).join('')}`;
   bar.setAttribute('role', 'tablist');
   bar.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+/** A tab's icon: a PDF, or a note (in its folder's colour). */
+function tabIcon(t: Tab): string {
+  if (t.kind === 'pdf') return icon('pdf', 'icon-sm');
+  const c = t.key ? host.noteColor(t.key) : null;
+  return c ? `<span class="tab-color" style="color:${escapeHtml(c)}">${icon('doc', 'icon-sm')}</span>` : icon('doc', 'icon-sm');
 }
 
 function list() {

@@ -151,6 +151,13 @@ export const nameOf = (p: string) => p.split('/').pop()!;
 export const within = (p: string, folder: string) => p.startsWith(`${folder}/`);
 export { normTarget };
 
+/** The colour of the nearest coloured folder ``path`` (a note or a folder) is in, or null. */
+export function folderColor(path: string): string | null {
+  const colors = ws.overview.folder_colors || {};
+  for (let f = /\.md$/i.test(path) ? parentOf(path) : path; f; f = parentOf(f)) if (colors[f]) return colors[f];
+  return null;
+}
+
 /** Path a [[target]] goes to: a path, null (no such note) or undefined (not known yet). */
 export function resolveNote(target: string): string | null | undefined {
   const t = normTarget(target || '');

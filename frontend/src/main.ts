@@ -13,10 +13,10 @@ import { type NavEntry, initNav, navSnapshot, navUpdate } from './nav.js';
 import { initChanges } from './changes.js';
 import { startPresence } from './presence.js';
 import {
-  closeNoteTabs, homeUnderneath, initTabs, noteEdited, noteModeChanged, notesDeleted as tabsNotesDeleted, notesRenamed as tabsNotesRenamed, openNoteTab, openViewerTab,
+  closeNoteTabs, homeUnderneath, initTabs, repaintColors, noteEdited, noteModeChanged, notesDeleted as tabsNotesDeleted, notesRenamed as tabsNotesRenamed, openNoteTab, openViewerTab,
   setHomeLabel, showHome, tabShortcut,
 } from './tabs/tabs.js';
-import { type Mode, noteTabs } from './views/notes/workspace.js';
+import { type Mode, folderColor, noteTabs } from './views/notes/workspace.js';
 import { readPlace } from './windows.js';
 import { openExport } from './views/exportDialog.js';
 import { smartFolderDialog } from './views/organizeDialogs.js';
@@ -58,7 +58,8 @@ async function boot() {
   initShortcuts();
   if (storage('zc.itemPaneHidden', false)) toggleItemPane(false);
   // Notes open in tabs: the first tab shows the library or Tasks, a note tab its note.
-  initTabs({ home: goHome, note: (path, mode) => showNote(path, mode as Mode | undefined), noteClosed: closeNoteTab, flushNote });
+  initTabs({ home: goHome, note: (path, mode) => showNote(path, mode as Mode | undefined), noteClosed: closeNoteTab, flushNote, noteColor: folderColor });
+  on('notes-count', repaintColors);   // the notes listing came again: folder colours may have changed
   Object.assign(noteTabs, { open: openNoteTab, edited: noteEdited, modeChanged: noteModeChanged, renamed: tabsNotesRenamed, deleted: tabsNotesDeleted });
   on('settings', () => { if (state.settings.notes_enabled === false) closeNoteTabs(); });
   startPresence();

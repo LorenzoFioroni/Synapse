@@ -7,7 +7,14 @@ import { emit } from '../../store.js';
 import { toastError } from '../../ui/toast.js';
 import type { NoteInfo } from '../../types.js';
 import { escapeHtml, storage, store } from '../../util.js';
-import { nameOf, notesOpen, parentOf, stemOf, within, ws } from './workspace.js';
+import { folderColor, nameOf, notesOpen, parentOf, stemOf, within, ws } from './workspace.js';
+
+/** A folder icon's colour: its own (full), or the one it has from a folder above (lighter). */
+function colorStyle(path: string): string {
+  const own = ws.overview.folder_colors?.[path];
+  const c = own || folderColor(path);
+  return c ? ` style="color:${escapeHtml(c)}${own ? '' : ';opacity:.55'}"` : '';
+}
 
 interface FolderNode { path: string; name: string; folders: FolderNode[]; notes: NoteInfo[] }
 
@@ -99,7 +106,7 @@ export function paintTree(): void {
       if (filter && !hasHits) { rows.length = before; continue; }
       const k = fKey(f.path);
       rows[before] = `<div class="nt-row folder${cls(k)}" role="treeitem" aria-expanded="${!!open}" aria-selected="${sel.has(k)}" data-folder="${escapeHtml(f.path)}" data-drop-folder="${escapeHtml(f.path)}" draggable="true" style="--d:${depth}">
-          <span class="twisty ${open ? 'open' : ''}">${icon('chevron', 'icon-sm')}</span>${icon('folder')}<span class="nm">${escapeHtml(f.name)}</span></div>`;
+          <span class="twisty ${open ? 'open' : ''}">${icon('chevron', 'icon-sm')}</span><span class="nt-folder-icon"${colorStyle(f.path)}>${icon('folder')}</span><span class="nm">${escapeHtml(f.name)}</span></div>`;
     }
     for (const n of node.notes) {
       if (!matches(n)) continue;
