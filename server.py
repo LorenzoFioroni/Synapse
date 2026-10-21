@@ -67,6 +67,11 @@ def main() -> None:
         "--debug", action="store_true", help="Flask debug mode with auto-reload (this computer only: not with --lan)"
     )
     ap.add_argument(
+        "--safe-mode",
+        action="store_true",
+        help="start without any plugins, e.g. to turn off one that keeps the app from working (Settings → Plugins)",
+    )
+    ap.add_argument(
         "--allow-host",
         action="append",
         default=[],
@@ -116,6 +121,7 @@ def main() -> None:
     config = Config.from_env(a.data_dir)
     config.allowed_hosts = set(a.allow_host)
     config.lan = not loopback_only
+    config.safe_mode = a.safe_mode
     if not wildcard and not loopback_only:
         config.allowed_hosts.add(a.host)  # started on a specific address: accept requests for it
     try:

@@ -4,6 +4,7 @@
 import * as A from './actions.js';
 import { api } from './api.js';
 import { notesChanged } from './views/notes/notesView.js';
+import { pluginsChanged } from './views/settings/plugins.js';
 import { tasksChanged } from './views/tasks/tasksView.js';
 
 const EVERY = 4000;          // ms between polls while the page is visible
@@ -32,6 +33,7 @@ function editing() {
 }
 
 async function apply() {
+  if (pending.delete('plugins')) pluginsChanged();   // only the Settings page shows them (for now)
   if (editing()) return;   // tried again at the next poll
   const notes = pending.delete('notes');
   if (notes) notesChanged();

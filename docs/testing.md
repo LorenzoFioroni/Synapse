@@ -56,6 +56,7 @@ well (`test_remote_pdf.py`).
 | Notes | `tests/notes/`: `test_vault.py` (safe paths, save conflicts, trash, move), `test_index.py`, `test_parser.py` (golden tests on the fixtures), `test_frontmatter.py`, `test_gallery.py` (gallery blocks for the MCP tools), `test_rewrite.py`, `test_rekey.py`, `test_attachments.py`, `test_api_notes.py`, `test_scanner_parity.py` |
 | Access and sync | `test_guard.py` (other websites and extensions refused), `test_devices.py` (pairing, who manages devices, `--debug` refused on the network), `test_changes.py` (change feed), `test_connector.py` (browser extension API), `test_backup.py` |
 | MCP | `test_mcp.py`: the protocol and every tool, in-process and over stdio |
+| Plugins | `tests/plugins/`: `test_manifest.py` (manifests and settings values), `test_host.py` (turning on and off, routes, events, settings, tools for Claude and `/mcp`, the MCP server following `plugins.json`, failures, safe mode, reloading code), `test_storage.py` (JSON and SQLite stores, migrations, plugin data in backups and restores). The `example` fixture installs `docs/examples/recently-added`; `make_plugin` writes small ones. |
 | Frontend | `test_frontend_build.py` (`needs_build` and `ensure_built`), `test_frontend_js.py` (runs the JavaScript tests) |
 | Architecture | `test_layers.py`, `test_offline.py`, `test_branding.py` (below) |
 
@@ -71,7 +72,8 @@ These check rules of the code base rather than behaviour:
 - **`test_layers.py`** parses every module in `backend/` and fails on an import against the
   layers in [architecture](architecture.md#layers). `ALLOWED` lists what each package may import;
   `test_every_unit_is_listed` fails when a new package is missing from it. Change `ALLOWED` and
-  the diagram in `architecture.md` together.
+  the diagram in `architecture.md` together. `test_plugins_use_only_the_plugin_api` checks that the
+  plugins in `plugins/` and `docs/examples/` import from Synapse only `backend.plugins`.
 - **`test_offline.py`** scans the frontend's own `.html`, `.css`, `.ts` and `.js` files (and the
   vendored `.html` and `.css`) for anything that *loads* from the web: a remote `src` or `href`,
   `url(https://…)`, `@import`, a remote `import`, `importScripts` or worker. Links the user clicks
@@ -182,6 +184,7 @@ looking for a bug.
 | `list_perf` | 8779 | 10,000 items: fast list, few rows in the DOM, quick selection, small changes without a full reload |
 | `multipdf` | 8788 | Items with several PDFs: citations, cards and menus |
 | `notes` | 8765 | The notes editor |
+| `plugins` | 8798 | Settings → Plugins: the example plugin listed off, turning it on asks first and lists its access, settings from its manifest saved (a bad value refused), its route answers, its log, a plugin that cannot start says why, turning one off shows in another window |
 | `passkeys` | 8794 | Over HTTPS: adding a passkey, signing an unpaired iPad in with it (Chromium's virtual authenticator), removing it; Settings → AI Access makes a token that reaches `/mcp` from another computer, and removing it locks the app out |
 | `pdf_tabs` | 8773 | One viewer tab per PDF; Cmd/Ctrl+click or middle click opens a new one |
 | `remote_pdf` | 8774 | Attachments stored as web links open through `/api/attachments/<id>/remote`; local-network links refused |

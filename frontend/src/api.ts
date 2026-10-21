@@ -3,7 +3,7 @@
 import type {
   AccessToken, AccessTokensOverview, AssistCompletion, AssistStatus, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
   ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
-  Passkey, PasskeysOverview, PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
+  Passkey, PasskeysOverview, PdfImport, PluginInfo, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview,
 } from './types.js';
 import { openNewWindow, openPageInNewWindow } from './windows.js';
@@ -97,6 +97,13 @@ export const api = {
   accessTokens: () => request<AccessTokensOverview>('GET', '/api/mcp/tokens'),
   newAccessToken: (name: string) => request<{ token: string; entry: AccessToken }>('POST', '/api/mcp/tokens', { name }),
   removeAccessToken: (id: string) => request('DELETE', `/api/mcp/tokens/${encodeURIComponent(id)}`),
+  plugins: () => request<PluginsOverview>('GET', '/api/plugin-host'),
+  enablePlugin: (id: string) => request<{ plugin: PluginInfo }>('POST', `/api/plugin-host/${encodeURIComponent(id)}/enable`),
+  disablePlugin: (id: string) => request<{ plugin: PluginInfo }>('POST', `/api/plugin-host/${encodeURIComponent(id)}/disable`),
+  restartPlugin: (id: string) => request<{ plugin: PluginInfo }>('POST', `/api/plugin-host/${encodeURIComponent(id)}/restart`),
+  setPluginSettings: (id: string, values: Record<string, unknown>) => request<{ values: Record<string, unknown> }>('PUT', `/api/plugin-host/${encodeURIComponent(id)}/settings`, values),
+  setPluginRemoteMcp: (id: string, on: boolean) => request<{ plugin: PluginInfo }>('PUT', `/api/plugin-host/${encodeURIComponent(id)}/remote-mcp`, { on }),
+  pluginLog: (id: string) => request<{ lines: string[] }>('GET', `/api/plugin-host/${encodeURIComponent(id)}/log`),
   backups: () => request<BackupStatus>('GET', '/api/backups'),
   backupNow: () => request('POST', '/api/backups'),
   restoreBackup: (name: string) => request<BackupStatus & { restored: string; safety_backup: string }>('POST', '/api/backups/restore', { name }),

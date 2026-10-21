@@ -99,9 +99,21 @@ class Server:
     instructions: str = ""
     tools: dict[str, Tool] = field(default_factory=dict)
     before_call: Callable[[], None] | None = None  # e.g. refresh indexes before each tool call
+    # More tools, asked for at each tools/list and tools/call (plugins come and go while it runs)
+    extra: Callable[[], dict[str, Tool]] | None = None
 
     def add(self, tool: Tool) -> None:
         self.tools[tool.name] = tool
+
+    def all_tools(self) -> dict[str, Tool]:
+        if not self.extra:
+            return self.tools
+        try:
+            more = self.extra()
+        except Exception:
+            log.exception("Listing the extra tools failed")
+            more = {}
+        return {**more, **self.tools}  # the built-in tools win a clash
 
     # ------------------------------------------------------------------ dispatch
     def handle(self, message: Any) -> Any:
@@ -153,7 +165,7 @@ class Server:
         return {}
 
     def _m_tools_list(self, params: dict) -> dict:
-        return {"tools": [t.describe() for t in self.tools.values()]}
+        return {"tools": [t.describe() for t in self.all_tools().values()]}
 
     def _m_resources_list(self, params: dict) -> dict:
         return {"resources": []}
@@ -163,7 +175,7 @@ class Server:
 
     def _m_tools_call(self, params: dict) -> dict:
         name = params.get("name")
-        tool = self.tools.get(name) if isinstance(name, str) else None
+        tool = self.all_tools().get(name) if isinstance(name, str) else None
         if tool is None:
             raise _ProtocolError(INVALID_PARAMS, f"Unknown tool: {name}")
         args = params.get("arguments") or {}

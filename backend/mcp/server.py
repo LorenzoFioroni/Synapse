@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from .instructions import INSTRUCTIONS, WRITING_RULES
-from .protocol import Server, Tool
+from .protocol import Server, Tool, ToolError
 from .tools import LibraryTools
 from .tools.common import MAX_IMAGES_PER_VIEW, MAX_PAGES_PER_READ
 
 
-def build_server(services, version: str = "0.1.0") -> Server:
+def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> Server:
+    """The server with every library tool, plus the tools of running plugins (``remote``: for /mcp,
+    where only plugins the user allowed for other computers take part)."""
     t = LibraryTools(services)
     server = Server(name="synapse", version=version, instructions=INSTRUCTIONS, before_call=t.refresh)
+    server.extra = lambda: _plugin_tools(services, remote)
     paper_arg = {
         "type": "string",
         "description": 'Citation key of the item (e.g. "smith2021"; "[@smith2021]" also works) or its item id.',
@@ -460,3 +463,27 @@ def _add_task_tools(server: Server, t: LibraryTools) -> None:
             read_only=False,
         )
     )
+
+
+def _plugin_tools(services, remote: bool) -> dict[str, Tool]:
+    host = getattr(services, "plugins", None)
+    if host is None:
+        return {}
+    return {
+        spec.name: Tool(spec.name, spec.title, spec.description, spec.schema, _readable(spec.fn), spec.read_only)
+        for spec in host.mcp_tools(remote=remote)
+    }
+
+
+def _readable(fn):
+    """A plugin's ``PluginError`` reaches Claude as a tool error it can read and act on."""
+
+    def call(**kwargs):
+        try:
+            return fn(**kwargs)
+        except Exception as e:
+            if getattr(e, "readable", False):
+                raise ToolError(str(e)) from e
+            raise
+
+    return call

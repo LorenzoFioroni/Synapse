@@ -78,6 +78,7 @@ class PaperRepository:
         self.settings = settings
         self.pdf_dir = Path(pdf_dir)
         self._citekey_listeners: list = []
+        self._item_listeners: list = []
 
     # ------------------------------------------------------------------ reads
     def list(self, view: str = "library") -> builtins.list[dict]:
@@ -230,6 +231,7 @@ class PaperRepository:
                 if data.get("tags"):
                     add_tags_conn(c, [new_id], data["tags"])
                 ids.append(new_id)
+        self._notify_items("item.added", ids)
         return ids
 
     def update(self, paper_id: str, data: dict) -> dict:
@@ -264,6 +266,8 @@ class PaperRepository:
                     raise NotFound(paper_id)
         if changed_key:
             self._notify_citekey_change(paper_id, *changed_key)
+        if values:
+            self._notify_items("item.changed", [paper_id], fields=sorted(set(values) - {"date_modified"}))
         return self.get(paper_id)
 
     # Citation keys are stable: nothing in the app changes an existing key on its own
@@ -281,6 +285,21 @@ class PaperRepository:
             except Exception:  # the key is already saved; a listener must not undo that
                 log.exception("citekey listener failed for %s -> %s", old, new)
 
+    def on_items(self, callback) -> None:
+        """Register ``callback(event, ids, **details)``, called after items were added
+        (``item.added``), had fields set (``item.changed``, with ``fields``), went to the Trash
+        (``item.trashed``), came back (``item.restored``) or were deleted for good (``item.deleted``)."""
+        self._item_listeners.append(callback)
+
+    def _notify_items(self, event: str, ids: builtins.list[str], **details) -> None:
+        if not ids:
+            return
+        for cb in list(self._item_listeners):
+            try:
+                cb(event, list(ids), **details)
+            except Exception:  # the change is saved; a listener must not undo that
+                log.exception("item listener failed for %s", event)
+
     def regenerate_citekeys(self, ids: builtins.list[str]) -> dict[str, str]:
         pattern = self.settings.get("citekey_pattern")
         taken = self.all_citation_keys()
@@ -297,10 +316,12 @@ class PaperRepository:
     def trash(self, ids: builtins.list[str]) -> None:
         with self.db.session() as c:
             c.executemany("UPDATE papers SET deleted_at = ? WHERE id = ?", [(utcnow(), i) for i in ids])
+        self._notify_items("item.trashed", ids)
 
     def restore(self, ids: builtins.list[str]) -> None:
         with self.db.session() as c:
             c.executemany("UPDATE papers SET deleted_at = NULL WHERE id = ?", [(i,) for i in ids])
+        self._notify_items("item.restored", ids)
 
     def delete_permanently(self, ids: builtins.list[str]) -> builtins.list[int]:
         """Delete items, their attachment rows and files. Returns removed attachment ids."""
@@ -315,6 +336,7 @@ class PaperRepository:
                 c.execute("DELETE FROM paper_folders WHERE paper_id = ?", (pid,))
                 c.execute("DELETE FROM papers WHERE id = ?", (pid,))
             c.execute("DELETE FROM tags WHERE color IS NULL AND id NOT IN (SELECT DISTINCT tag_id FROM paper_tags)")
+        self._notify_items("item.deleted", ids)
         return removed
 
     def trashed_ids(self) -> builtins.list[str]:

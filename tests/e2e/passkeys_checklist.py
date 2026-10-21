@@ -177,7 +177,7 @@ async def main():
 
             # -- the computer adds a passkey --------------------------------------------------------
             await mac.goto(SITE)
-            await mac.wait_for_selector("[data-id]")
+            await mac.wait_for_selector(".row[data-id]")
             mac_cdp, mac_auth = await authenticator(mac)
             await mac.keyboard.press(f"{mod}+,")
             await mac.wait_for_selector("#set-devices")

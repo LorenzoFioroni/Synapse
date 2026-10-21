@@ -45,11 +45,13 @@ def main(argv=None) -> int:
     ap.add_argument("--data", help="data folder (default: ./data or $SYNAPSE_DATA_DIR)")
     ap.add_argument("--config", action="store_true", help="print the setup for Claude Desktop / Claude Code and exit")
     ap.add_argument("--verbose", action="store_true", help="log more to stderr")
+    ap.add_argument("--safe-mode", action="store_true", help="start no plugins")
     a = ap.parse_args(argv)
 
     from backend.config import Config
 
     config = Config.from_env(a.data)
+    config.safe_mode = a.safe_mode
 
     if a.config:
         print(
@@ -79,6 +81,7 @@ def main(argv=None) -> int:
     services = Services(config)
     # This process never runs the app's background jobs (attachment sweeps etc.).
     services.note_service.on_change = None
+    services.plugins.start("mcp")  # their tools are offered to Claude too
     serve_stdio(build_server(services, VERSION))
     return 0
 

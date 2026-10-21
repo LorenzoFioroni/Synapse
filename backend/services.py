@@ -74,6 +74,21 @@ class Services:
 
         self.assist = Completer(self.settings)  # autocompletion in notes, from Ollama on this computer
         self.presence = Presence()  # the open windows, when the server stops with the last one
+        # Plugins (backend/plugins/), started by create_app (or mcp_server.py), not here. They hear
+        # about changes to items and notes through the listeners below.
+        from .plugins import LibraryReader, PluginHost
+
+        self.plugins = PluginHost(
+            config,
+            library=LibraryReader(self),
+            before_backup=self.backups.before,
+            changed=lambda: self.changes.record({"plugins"}),
+        )
+        self.papers.on_items(lambda event, ids, **details: self.plugins.emit(event, ids=ids, **details))
+        self.papers.on_citekey_change(lambda i, old, new: self.plugins.emit("citekey.changed", id=i, old=old, new=new))
+        self.note_service.saved_listeners.append(
+            lambda path, h, by: self.plugins.emit("note.saved", path=path, hash=h, by=by)
+        )
         # A changed citation key is rewritten in every note (with a backup first).
         self.papers.on_citekey_change(lambda _id, old, new: self.note_service.rename_key(old, new) if new else None)
         self.papers.on_citekey_change(lambda _id, old, new: self.tasks.rename_key(old, new) if new and old else None)
@@ -93,7 +108,7 @@ class Services:
                 # Notes and tasks written by a tool show up in the open windows. The request itself
                 # counts only as a library write (kind_of), which would hide a task change.
                 self._mcp_http = HttpTransport(
-                    lambda: build_server(self), lambda: self.changes.record({"notes", "tasks"})
+                    lambda: build_server(self, remote=True), lambda: self.changes.record({"notes", "tasks"})
                 )
             return self._mcp_http
 

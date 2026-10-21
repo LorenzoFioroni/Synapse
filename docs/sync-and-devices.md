@@ -48,6 +48,7 @@ page, and a page that cannot know what it missed simply refreshes everything.
 | `annotations` | A write to `library.db` commits during a request to `/api/annotations…` or `/api/attachments/<id>/annotations` (`kind_of`). |
 | `notes` | A notes endpoint (`backend/api/notes.py`) answers a POST, PUT, PATCH or DELETE with a status below 400. |
 | `tasks` | A write to `library.db` commits during a request to `/api/tasks…` (`kind_of`), or a tool that can write runs over `/mcp`. A page reloads its tasks on `tasks` and on `notes` (a note's task lines may have changed). |
+| `plugins` | A plugin was turned on or off, restarted or set up, or turned off after failing (`PluginHost.changed`). |
 
 Writes to `library.db` reach the feed through `Database.on_write`, which `Services` points at
 `_library_written`. `Database.session` calls it after each commit that changed rows. A failure
@@ -89,6 +90,7 @@ when it becomes visible again. It skips a poll while one is running or the page 
 | `library` | `A.loadItems()`: the item list, counts and sidebar. At most once every 2.5 s (`MIN_GAP`), because background fetching can write often. |
 | `notes` | `notesChanged()` in `notesView.ts`: the open note checks the server copy, and the notes tree is redrawn. |
 | `annotations` | Ignored: the viewer looks after its own. |
+| `plugins` | `pluginsChanged()` in `views/settings/plugins.ts`: an open Settings page redraws its Plugins section (not while a field in it is being edited). |
 
 A refresh waits while the user is busy (`editing()`): a dialog or autocomplete list is open, a
 form field has focus, or the note editor was typed in during the last 4 seconds. Fields save when

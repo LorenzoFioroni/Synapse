@@ -80,7 +80,7 @@ async def main():
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
             await page.goto(BASE)
-            await page.wait_for_selector("[data-id]")
+            await page.wait_for_selector(".row[data-id]")
 
             ok = await wait_for(
                 lambda: asyncio.to_thread(lambda: len(requests.get(BASE + "/api/backups").json()["backups"]) == 1)
@@ -145,7 +145,7 @@ async def main():
             )
             async with page.expect_navigation(timeout=15000):
                 await page.click(".dialog .btn-danger, .dialog .btn-primary")
-            await page.wait_for_selector("[data-id]")
+            await page.wait_for_selector(".row[data-id]")
             titles = await page.eval_on_selector_all(
                 "[data-id] .cell-title, [data-id]", "els => els.map((e) => e.textContent)"
             )

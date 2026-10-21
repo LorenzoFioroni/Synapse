@@ -291,6 +291,23 @@ never mix.
   saved as an annotation). Quotes are found by their words, so older quotes work too; a snapshot
   remembers its page region inside the PNG, so the note has no extra markup.
 
+## Plugins
+
+Plugins add features without changing Synapse itself. To install one, put its folder in
+`data/plugins/`, open **Settings → Plugins**, press **Look Again** and turn it on. Turning it on
+asks first and lists what the plugin may do (read the library, connect to sites, offer tools to
+Claude). A plugin runs with full access to your library and computer, like any program you
+install, so turn on only plugins you trust. Each plugin's settings, its log and a Restart button
+are under **More**; a plugin that keeps failing is turned off and Settings says why. If one keeps
+the app from working, start it with `python server.py --safe-mode` (no plugin runs) and turn it
+off.
+
+Plugins are written in Python for now: a `manifest.json` and an `activate(plugin)` function that
+registers routes, tools for Claude, listeners for changes in the library, settings and stored
+data. [`docs/plugins.md`](docs/plugins.md) explains how, and
+[`docs/examples/recently-added`](docs/examples/recently-added) is a small example to copy.
+Their tools reach Claude like Synapse's own; restart Claude if they do not show up.
+
 ## AI access (MCP)
 
 `mcp_server.py` lets Claude Desktop and Claude Code read your library through MCP (Model Context
@@ -375,6 +392,7 @@ For how the code fits together and where new code goes, see
 ├── browser_extension/     Chrome extension (Manifest V3) – load unpacked
 ├── tools/                 build scripts for the vendored libraries and the macOS icon
 ├── tests/                 pytest suite, js/ unit tests, e2e/ browser checklists
+├── plugins/               plugins that come with Synapse, off until turned on (none yet)
 ├── docs/                  technical documentation
 └── data/                  your library (git-ignored)
 ```

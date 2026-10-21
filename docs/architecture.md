@@ -25,6 +25,7 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
  (other PC)   │                                                                 │
               │ data/  library.db · fulltext.db · notes/ · notes_index.db ·     │
               │        citations.db · pdfs/ · backups/ · settings.json · auth.db│
+              │        plugins/ · plugin-data/ · plugins.json                   │
               └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -70,6 +71,7 @@ Two objects tie the backend together:
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
 | `assist/` | Autocompletion in notes from a model in Ollama on this computer: the client, the prompt, and checking that Ollama and the model are there (see [autocompletion](autocompletion.md)). | none |
+| `plugins/` | The plugin host: finds the plugins in `data/plugins/` (and those that come with Synapse in `plugins/`), starts and stops them, gives them the `Plugin` object (routes, tools for Claude, events, settings, storage, reading the library), and turns off one that keeps failing (see [plugins](plugins.md)). `backend.plugins` is also the only module plugins import. | `plugins.json`, `plugin-data/` |
 | `desktop/` | Running Synapse like a desktop program: opening its window (`window.py`), the open windows that keep a `--quit-when-closed` server running (`presence.py`), the desktop shortcut (`shortcut.py`). See [the app window](desktop.md). | none |
 
 Only `online/` and `references/` use the network. `assist/` talks only to Ollama on this computer
@@ -87,7 +89,7 @@ never from those above:
   references                             (library, formats, online)
   tasks                                  (library, notes)
   online                                 (library, formats, pdf)
-  formats · notes · pdf                  (library)
+  formats · notes · pdf · plugins        (library)
   library · backup · access · assist     (base only)
   config · settings · changes · desktop   base: no backend imports
 ```
@@ -233,6 +235,7 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
 | [Sync and devices](sync-and-devices.md) | The change feed, the viewer and app tabs, the guard, LAN pairing and the security model. |
 | [The app window](desktop.md) | `--window`, the server that stops with its window, the desktop shortcut, and the app's own tabs for PDFs. |
 | [MCP](mcp.md) | The MCP server, its tools and the rules it enforces. |
+| [Plugins](plugins.md) | Using and writing plugins: the manifest, the `plugin` object, events, storage, and how the host runs them. |
 | [Autocompletion](autocompletion.md) | Ghost-text suggestions in notes from a local model (Ollama), and the checks that guard against a missing Ollama or model. |
 | [Browser extension](browser-extension.md) | The extension and the connector API it uses. |
 | [Frontend](frontend.md) | The build, the type checking, the pages, state and events, and the module map. |

@@ -439,6 +439,52 @@ export interface BackupStatus {
   keep: number;
 }
 
+/** A setting a plugin declares in its manifest (backend/plugins/manifest.py). */
+export interface PluginSetting {
+  key: string;
+  type: 'bool' | 'int' | 'float' | 'text' | 'choice' | 'multi';
+  label: string;
+  default: unknown;
+  description?: string;
+  options?: [string, string][];
+  min?: number;
+  max?: number;
+}
+
+/** A plugin as Settings → Plugins shows it (backend/plugins/host.py, info). */
+export interface PluginInfo {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  source: 'bundled' | 'user';
+  folder: string;
+  replaces_bundled: boolean;
+  enabled: boolean;
+  running: boolean;
+  status: 'on' | 'off' | 'failed' | 'incompatible' | 'invalid' | 'safe-mode';
+  problem: string | null;
+  failed_at: string | null;
+  remote_mcp: boolean;
+  api?: string;
+  permissions?: { network: string[]; library: string[]; mcp: boolean };
+  parts?: string[];
+  settings?: PluginSetting[];
+  values?: Record<string, unknown>;
+  tools?: string[];
+  routes?: { rule: string; methods: string[] }[];
+  events?: string[];
+}
+
+/** GET /api/plugin-host. */
+export interface PluginsOverview {
+  plugins: PluginInfo[];
+  safe_mode: boolean;
+  dir: string;
+  api: string;
+}
+
 /** A paired device (backend/access/devices.py). */
 export interface Device {
   id: string;

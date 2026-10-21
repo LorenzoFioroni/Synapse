@@ -5,6 +5,8 @@ One archive per backup, ``library-YYYYMMDD-HHMMSS.tar.gz``, holding:
 * ``library.db`` — copied with SQLite's online backup API, so it is consistent while the app runs;
 * ``settings.json``;
 * ``notes/`` — every note, the images notes use (``attachments/``) and both notes trashes;
+* ``plugins.json`` and ``plugin-data/`` — which plugins are on, their settings and what they store
+  (their SQLite databases copied consistently, like ``library.db``; their log files left out);
 * ``manifest.json`` — when, why, and how many items and notes it holds.
 
 Left out on purpose: the PDFs of the entries (``pdfs/``, large; the user asked to leave them
@@ -194,6 +196,10 @@ class Backups:
                         tar.add(cfg.settings_path, arcname="settings.json")
                     for p in note_files:
                         tar.add(p, arcname=f"notes/{p.relative_to(cfg.notes_dir).as_posix()}", recursive=False)
+                    if cfg.plugins_state_path.is_file():
+                        tar.add(cfg.plugins_state_path, arcname="plugins.json")
+                    for p, arc in self._plugin_files(Path(tmp)):
+                        tar.add(p, arcname=arc, recursive=False)
                 part.replace(dest_dir / name)  # a half-written archive never looks like a backup
             finally:
                 part.unlink(missing_ok=True)
@@ -201,6 +207,38 @@ class Backups:
         self.prune()
         log.info("Backup %s (%s): %s items, %s notes", name, reason, items, notes)
         return {"name": name, "size": size, **manifest}
+
+    def _plugin_files(self, tmp: Path) -> builtins.list[tuple[Path, str]]:
+        """What plugins store, as (file to add, name in the archive). A SQLite database is copied
+        with the backup API first, so a plugin writing to it meanwhile cannot tear it."""
+        root = self.s.config.plugin_data_dir
+        out: builtins.list[tuple[Path, str]] = []
+        if not root.is_dir():
+            return out
+        for p in sorted(root.rglob("*")):
+            rel = p.relative_to(root)
+            if not p.is_file() or any(part.startswith(".") for part in rel.parts):
+                continue  # log files and other dot files
+            if p.name.endswith(("-wal", "-shm", "-journal", ".tmp")):
+                continue
+            arc = f"plugin-data/{rel.as_posix()}"
+            if p.suffix in (".sqlite", ".db"):
+                copy = tmp / "plugin-db" / rel
+                copy.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    src = sqlite3.connect(str(p), timeout=30)
+                    dst = sqlite3.connect(str(copy))
+                    try:
+                        src.backup(dst)
+                    finally:
+                        dst.close()
+                        src.close()
+                    out.append((copy, arc))
+                    continue
+                except sqlite3.Error:
+                    log.warning("Backup: %s is not a SQLite database; copied as it is", p)
+            out.append((p, arc))
+        return out
 
     @staticmethod
     def _count_items(db: Path) -> int | None:
@@ -295,16 +333,27 @@ class Backups:
             self._check_db(db)
             # The current state is kept first: a restore can always be undone.
             safety = self.create(f"before restoring {name}")
-            with self._lock:
-                self._restore_db(db)
-                if (root / "settings.json").is_file():
-                    # The backup settings themselves stay as they are now: restoring must not
-                    # move the backup folder away from the backups just listed.
-                    keep = {k: self.s.settings.get(k) for k in ("backup_interval", "backup_keep", "backup_dir")}
-                    shutil.copyfile(root / "settings.json", self.s.config.settings_path)
-                    self.s.settings.reload()
-                    self.s.settings.update(keep)
-                self._restore_notes(root / "notes")
+            plugins = getattr(self.s, "plugins", None)
+            if plugins:
+                plugins.stop()  # nothing of theirs may be open while their data is replaced
+            try:
+                with self._lock:
+                    self._restore_db(db)
+                    if (root / "settings.json").is_file():
+                        # The backup settings themselves stay as they are now: restoring must not
+                        # move the backup folder away from the backups just listed.
+                        keep = {k: self.s.settings.get(k) for k in ("backup_interval", "backup_keep", "backup_dir")}
+                        shutil.copyfile(root / "settings.json", self.s.config.settings_path)
+                        self.s.settings.reload()
+                        self.s.settings.update(keep)
+                    self._restore_notes(root / "notes")
+                    self._restore_plugins(root)
+            finally:
+                if plugins and plugins.role:
+                    try:
+                        plugins.start(plugins.role, announce=False)
+                    except Exception:
+                        log.exception("After restore: starting the plugins failed")
         self._after_restore()
         return {"restored": name, "safety_backup": safety["name"]}
 
@@ -320,7 +369,8 @@ class Backups:
                         or ".." in parts
                         or not (m.isfile() or m.isdir())
                         or not parts
-                        or parts[0] not in ("manifest.json", "library.db", "settings.json", "notes")
+                        or parts[0]
+                        not in ("manifest.json", "library.db", "settings.json", "notes", "plugins.json", "plugin-data")
                     ):
                         raise BackupError(f"Unexpected entry in the backup: {m.name}")
                 if hasattr(tarfile, "data_filter"):
@@ -374,6 +424,33 @@ class Backups:
             raise
         shutil.rmtree(aside, ignore_errors=True)
         self.s.vault.ensure()
+
+    def _restore_plugins(self, root: Path) -> None:
+        """Which plugins are on and what they store, as in the backup. A backup made before
+        plugins existed leaves today's plugin data alone."""
+        cfg = self.s.config
+        if (root / "plugins.json").is_file():
+            shutil.copyfile(root / "plugins.json", cfg.plugins_state_path)
+        data = root / "plugin-data"
+        if not data.is_dir():
+            return
+        live = cfg.plugin_data_dir
+        logs = {p.relative_to(live): p.read_bytes() for p in live.rglob(".plugin.log*")} if live.is_dir() else {}
+        aside = live.parent / f".plugin-data-before-restore-{int(time.time())}"
+        if live.exists():
+            live.rename(aside)
+        try:
+            shutil.move(str(data), str(live))
+        except Exception:
+            if live.exists():
+                shutil.rmtree(live, ignore_errors=True)
+            if aside.exists():
+                aside.rename(live)
+            raise
+        shutil.rmtree(aside, ignore_errors=True)
+        for rel, content in logs.items():  # the logs are not in backups; keep today's
+            (live / rel).parent.mkdir(parents=True, exist_ok=True)
+            (live / rel).write_bytes(content)
 
     def _after_restore(self) -> None:
         s = self.s

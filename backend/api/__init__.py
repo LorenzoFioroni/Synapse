@@ -43,6 +43,7 @@ def register_blueprints(app: Flask) -> None:
         organize,
         passkeys,
         pdf_annotations,
+        plugins,
         references,
         settings,
         tasks,
@@ -68,5 +69,6 @@ def register_blueprints(app: Flask) -> None:
         assist,
         tasks,
         window,
+        plugins,
     ):
         app.register_blueprint(module.bp)

@@ -57,6 +57,9 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
     except Exception:
         log.exception("Converting old annotations failed; the old data is kept")
 
+    # Plugins that are on start now (none with --safe-mode); see backend/plugins/.
+    services.plugins.start("app")
+
     if start_indexer and services.settings.get("fulltext_auto_index"):
         services.indexer.sync()
     if start_indexer:

@@ -29,7 +29,10 @@ data/
 ├── citations.db        reference lists fetched online (a cache)
 ├── backups/            library-*.tar.gz and notes-*.tar.gz
 ├── settings.json       preferences
-└── auth.db             paired devices (hashed tokens), passkeys (public keys), access tokens (hashed)
+├── auth.db             paired devices (hashed tokens), passkeys (public keys), access tokens (hashed)
+├── plugins/            plugins the user installed, one folder each (code; see plugins.md)
+├── plugin-data/        what each plugin stores, in <id>/ (and its log, .plugin.log)
+└── plugins.json        which plugins are on, their settings, why one was turned off
 ```
 
 `Config.ensure_dirs` creates the folder and `pdfs/`; `Vault.ensure` (`backend/notes/vault.py`)
@@ -51,6 +54,9 @@ Each file has one owner. Other code goes through that owner, with the few except
 | `fulltext.db` | `FulltextIndex` in `backend/pdf/fulltext.py` | `FulltextIndex._init` | derived from `pdfs/` |
 | `notes_index.db` | `NotesIndex` in `backend/notes/index.py` | `SCHEMA`, `SCHEMA_VERSION` | derived from `notes/` |
 | `citations.db` | `CitationStore` in `backend/references/store.py` | `SCHEMA` there | cache of online data |
+| `plugins.json` | `StateFile` in `backend/plugins/state.py` | none (unknown keys are ignored) | source of truth |
+| `plugin-data/<id>/` | each plugin, through `plugin.storage` (`backend/plugins/storage.py`) | the plugin's own `migrations`, in `PRAGMA user_version` | source of truth |
+| `plugins/` | the user (installing a plugin); read by `PluginHost.scan` | `manifest.json`, `backend/plugins/manifest.py` | code, not in backups |
 | `backups/` | `Backups` in `backend/backup.py`; `Rekeyer.backup` in `backend/notes/rekey.py` | none | copies |
 
 The exceptions: `backend/backup.py` copies `library.db` with raw `sqlite3` (the online backup
@@ -73,6 +79,8 @@ notices the other's writes.
 | `fulltext.db` | Rebuilt from the PDFs: by the indexer at startup when `fulltext_auto_index` is on, or with Settings → Rebuild Index. See [full-text search](fulltext-search.md). |
 | `notes_index.db` | Rebuilt at startup: `Services.__init__` calls `NotesIndex.sync()`, which indexes every note it does not know. |
 | `citations.db` | The reference lists are fetched again. See [references](references.md). |
+| `plugins.json`, `plugin-data/` | Restore a backup. |
+| `plugins/` | Not in backups: install the plugins again. |
 
 ## The library database
 
@@ -216,6 +224,8 @@ lower case).
 | `library.db` | Copied with SQLite's online backup API, so the copy is consistent while the app writes. |
 | `settings.json` | As it is on disk, if it exists. |
 | `notes/` | Every file in the notes folder, including `attachments/`, both trashes, `.history/` and `.folders.json`. |
+| `plugins.json` | As it is on disk, if it exists. |
+| `plugin-data/` | What plugins store; SQLite files (`.sqlite`, `.db`) copied with the backup API, `-wal`/`-shm` files and dot files (the plugins' logs) left out. |
 
 Left out on purpose: `pdfs/` (large), `fulltext.db` and `notes_index.db` (rebuilt),
 `citations.db` (fetched again) and `auth.db`.
@@ -241,8 +251,8 @@ change, keeps the newest 20 (`BACKUPS_KEPT`), and
 archive is known to be good:
 
 1. Extract into a temporary folder inside the data folder. `_extract` refuses absolute paths,
-   `..`, links and any top-level entry other than `manifest.json`, `library.db`, `settings.json`
-   and `notes`.
+   `..`, links and any top-level entry other than `manifest.json`, `library.db`, `settings.json`,
+   `notes`, `plugins.json` and `plugin-data`.
 2. Check the database (`PRAGMA integrity_check` and a query on `papers`).
 3. Make a safety backup of the current state (reason `before restoring <name>`). If it fails,
    the restore stops.
@@ -252,6 +262,9 @@ archive is known to be good:
    so the backup folder does not move away from the backups just listed.
 6. Swap `notes/`: the live folder is renamed aside, the restored one moved in (a rename, because
    the temporary folder is on the same disk), and the old one deleted only on success.
+   The plugins are stopped first; `plugins.json` and `plugin-data/` are put back the same way
+   (today's plugin logs are kept; a backup without plugin data leaves today's alone), and the
+   plugins are started again afterwards, also when the restore fails.
 7. Rebuild the notes index, schedule a sweep of note attachments and, when
    `fulltext_auto_index` is on, sync the full-text index.
 

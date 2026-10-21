@@ -23,6 +23,7 @@ const SECTIONS: [string, string, string][] = [
   ['backups', 'Backups', 'restore'],
   ['devices', 'Devices', 'tablet'],
   ['ai', 'AI Access', 'sparkle'],
+  ['plugins', 'Plugins', 'plugin'],
   ['library', 'Library & Shortcuts', 'database'],
 ];
 
@@ -226,6 +227,16 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
             <div class="s-control" data-ai-control></div></div>
             <div data-ai-fresh></div>
             <div class="backup-list" data-ai-list></div></div>
+        </div></section>
+
+      <section class="settings-section" id="set-plugins"><h2>Plugins</h2>
+        <p class="lead">Plugins add features to Synapse. Like any program you install, a plugin runs with full access to your library
+          and this computer: turn on only plugins you trust.</p>
+        <div class="card">
+          <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text">
+            <div class="s-desc" data-plugins-desc>Loading…</div></div>
+            <div class="s-control"><button class="btn" data-plugins-rescan>${icon('refresh')} Look Again</button></div></div>
+            <div class="plugin-list" data-plugin-list></div></div>
         </div></section>
 
       <section class="settings-section" id="set-library"><h2>Library &amp; Shortcuts</h2><p class="lead" data-data-dir></p>
