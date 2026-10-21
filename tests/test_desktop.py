@@ -374,3 +374,15 @@ def test_window_option_with_the_port_taken(tmp_path):
         srv.shutdown()
     assert r.returncode != 0
     assert "used by another program" in r.stderr
+
+
+# ------------------------------------------------------------- the Dock menu
+
+
+def test_the_manifest_offers_a_new_window(client):
+    """Right-clicking the installed app's icon (Dock, taskbar) offers "New Window" (manifest
+    shortcuts); its address opens the library alone in a new window (windows.ts `readPlace`)."""
+    m = client.get("/manifest.webmanifest").get_json(force=True)
+    (sc,) = [s for s in m["shortcuts"] if s["name"] == "New Window"]
+    assert sc["url"] == "/#window=new"
+    assert all(i["src"].startswith("/assets/") for i in sc["icons"])

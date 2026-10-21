@@ -40,6 +40,15 @@ The window is the same web app as in a browser tab, on the same address, so it s
 storage (column widths, settings of the views and so on) with tabs of that browser. The app's own
 tabs belong to each window (see [Windows](#windows)).
 
+### The Dock menu
+
+Right-clicking the installed app's icon (in the Dock, or the taskbar elsewhere) lists its windows
+and, from the web app manifest's `shortcuts` (`frontend/manifest.webmanifest`), **New Window**: it
+opens `/#window=new`, the library alone in a new window (`readPlace` in `windows.ts`). Chrome and
+Edge show up to ten such entries, only for an installed app, and pick up a changed manifest when
+they next check it (after the app has been opened again; reinstalling applies it at once).
+`tests/test_desktop.py` checks the entry.
+
 ## Stopping with the window: `--quit-when-closed`
 
 A server started with `--quit-when-closed` stops by itself, as if Ctrl+C were pressed, once no

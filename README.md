@@ -30,7 +30,8 @@ browser button can change the library: other websites open in your browser canno
 `python server.py --window` opens Synapse in a window of its own instead of a tab of your
 browser: Synapse installed as an app by Chrome or Edge if you did that (it then has the Synapse
 icon in the Dock: open `http://127.0.0.1:8000` in Chrome, **⋮ → Cast, Save and Share → Install
-Page as App…**), else a Chrome/Edge/Brave window without tabs or address bar.
+Page as App…**), else a Chrome/Edge/Brave window without tabs or address bar. Right-click the
+installed app's icon in the Dock for **New Window**.
 
 `python server.py --make-shortcut` (macOS and Linux) puts a **Synapse** icon on the Desktop and,
 on a Mac, in `~/Applications` (Spotlight, Launchpad, the Dock). Double-clicking it starts the
