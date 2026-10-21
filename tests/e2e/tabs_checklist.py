@@ -113,6 +113,10 @@ async def main():
         first, att1 = add_item("Superdiffusive energy transport in kinetically constrained models")
         second, att2 = add_item("Second paper")
         third, att3 = add_item("Third paper")
+        folder = requests.post(f"{BASE}/api/folders", json={"name": "Window folder"}).json()
+        requests.post(f"{BASE}/api/items/folders", json={"ids": [second["id"]], "add": [folder["id"]]})
+        note = requests.post(f"{BASE}/api/notes/note", json={"title": "Window note"}).json()["path"]
+        requests.post(f"{BASE}/api/tasks", json={"title": "Window task"}).raise_for_status()
 
         async with async_playwright() as p:
             b = await p.chromium.launch()
@@ -306,6 +310,128 @@ async def main():
             await page.click('.ws-switch [data-ws="notes"]')
             await page.wait_for_timeout(500)
             check("the Synapse tab says Notes while Notes is open", (await tabs(page))[0]["title"] == "Notes")
+            await page.click('.ws-switch [data-ws="library"]')
+            await page.wait_for_timeout(300)
+
+            # ---- each window has its own tabs ------------------------------------------------------------
+            other = await ctx.new_page()
+            other.on("pageerror", lambda e: errors.append(f"other window: {e}"))
+            await other.goto(BASE)
+            await other.wait_for_selector(".row[data-id]")
+            check(
+                "another window starts with only the Synapse tab",
+                len(await tabs(other)) == 1 and await other.locator("#tabbar").is_hidden(),
+            )
+            await open_pdf(other, second, att2)
+            await other.wait_for_timeout(500)
+            await other.reload()
+            await other.wait_for_selector("#tabbar:not([hidden])")
+            t1 = [x["title"] for x in await tabs(page)]
+            t2 = [x["title"] for x in await tabs(other)]
+            check(
+                "each window keeps its own tabs, also through a reload",
+                t1 == ["Library", "Third paper"] and t2 == ["Library", "Second paper"],
+                (t1, t2),
+            )
+            await other.close()
+
+            async def new_window(click):
+                async with ctx.expect_page() as pop:
+                    await click()
+                w = await pop.value
+                w.on("pageerror", lambda e: errors.append(f"new window: {e}"))
+                await w.wait_for_load_state()
+                await w.wait_for_selector("#toolbar .ws-switch")
+                return w
+
+            # ---- Move to New Window ---------------------------------------------------------------------
+            await page.locator(".tab", has_text="Third paper").click()
+            await viewer_ready(await active_frame(page))
+            await open_pdf(page, third, att3, 2)
+            fr = await active_frame(page)
+            await wait_for(lambda: fr.evaluate("(window.zcLinks.currentPosition() || {}).page === 2"))
+            await page.locator(".tab", has_text="Third paper").click(button="right")
+            win = await new_window(lambda: page.locator(".menu-item", has_text="Move to New Window").click())
+            await win.wait_for_selector("#tabbar:not([hidden]) .tab:not(.home)")
+            wf = await active_frame(win)
+            await viewer_ready(wf)
+            ok = await wait_for(lambda: wf.evaluate("(window.zcLinks.currentPosition() || {}).page === 2"))
+            wt = await tabs(win)
+            check(
+                "Move to New Window: the PDF opens in a new window, at its page, beside a Synapse tab",
+                [x["title"] for x in wt] == ["Library", "Third paper"] and wt[1]["active"] and ok,
+                [(x["title"], x["active"]) for x in wt],
+            )
+            check("… and leaves this window", [x["title"] for x in await tabs(page)] == ["Library"])
+            check("the new window's address keeps no '#…'", "#" not in win.url, win.url)
+            await shot(win, "03-moved-to-new-window")
+            await win.close()
+
+            # ---- New Window from the Synapse tab ---------------------------------------------------------
+            await open_pdf(page, first, att1)
+            await page.wait_for_selector("#tabbar:not([hidden])")
+            await page.locator(".tab.home").click(button="right")
+            win = await new_window(lambda: page.locator(".menu-item", has_text="New Window").click())
+            await win.wait_for_selector(".row[data-id]")
+            check(
+                "New Window opens the library alone",
+                len(await tabs(win)) == 1 and await win.locator("#tabbar").is_hidden(),
+            )
+            await win.close()
+            await page.click(".tab.home")
+
+            # ---- Open in New Window from the menus ------------------------------------------------------
+            await page.locator(".row", has_text="Second paper").first.click(button="right")
+            win = await new_window(lambda: page.locator(".menu-item", has_text="Show in New Window").click())
+            ok = await wait_for(
+                lambda: win.evaluate(
+                    "[...document.querySelectorAll('.row.selected')].some((r) => r.textContent.includes('Second paper'))"
+                )
+            )
+            check("an item: Show in New Window selects it in the new window's library", ok)
+            await win.close()
+
+            await page.locator(".row", has_text="Second paper").first.click(button="right")
+            win = await new_window(lambda: page.locator(".menu-item", has_text="Open PDF in New Window").click())
+            await win.wait_for_selector("#tabbar:not([hidden])")
+            wt = await tabs(win)
+            check(
+                "an item: Open PDF in New Window opens its PDF in a tab of a new window",
+                [x["title"] for x in wt] == ["Library", "Second paper"] and wt[1]["active"],
+                [x["title"] for x in wt],
+            )
+            await win.close()
+
+            await page.locator(f'.side-item[data-folder="{folder["id"]}"]').click(button="right")
+            win = await new_window(lambda: page.locator(".menu-item", has_text="Open in New Window").click())
+            ok = await wait_for(lambda: win.locator(f'.side-item.active[data-folder="{folder["id"]}"]').count())
+            rows = await win.eval_on_selector_all(".row[data-id]", "rs => rs.map((r) => r.textContent)")
+            check(
+                "a folder: Open in New Window shows that folder",
+                ok and len(rows) == 1 and "Second paper" in rows[0],
+                rows,
+            )
+            await win.close()
+
+            await page.click('.ws-switch [data-ws="notes"]')
+            await page.wait_for_selector(f'.nt-row.note[data-path="{note}"]')
+            await page.locator(f'.nt-row.note[data-path="{note}"]').click(button="right")
+            win = await new_window(lambda: page.locator(".menu-item", has_text="Open in New Window").click())
+            ok = await wait_for(lambda: win.evaluate(f"window.zcNotes?.path() === {note!r}"))
+            check("a note: Open in New Window opens it in a new window", ok)
+            await win.close()
+
+            await page.click('.ws-switch [data-ws="tasks"]')
+            await page.wait_for_selector(".tv-row")
+            await page.locator(".tv-row", has_text="Window task").click(button="right")
+            win = await new_window(lambda: page.locator(".menu-item", has_text="Open in New Window").click())
+            ok = await wait_for(
+                lambda: win.evaluate(
+                    "document.body.dataset.workspace === 'tasks' && !!document.querySelector('.tv-row.selected')?.textContent.includes('Window task')"
+                )
+            )
+            check("a task: Open in New Window opens the Tasks page with it selected", ok)
+            await win.close()
             await page.click('.ws-switch [data-ws="library"]')
             await page.wait_for_timeout(300)
 

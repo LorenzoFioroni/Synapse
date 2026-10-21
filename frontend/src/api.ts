@@ -6,6 +6,7 @@ import type {
   Passkey, PasskeysOverview, PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview,
 } from './types.js';
+import { openNewWindow, openPageInNewWindow } from './windows.js';
 
 export class ApiError extends Error {
   status: number;
@@ -270,6 +271,14 @@ export function pointPdfTab(tab: PdfTab, item: Pick<Item, 'id' | 'title'>, att: 
   if (!tab.win) { window.open(url, '_blank'); return; }
   tab.win.location.href = url;
   pdfTabs.set(fileUrl(att), tab.win);
+}
+
+/** Open a PDF in a new window: in a tab of a new app window, or in a viewer window of its own
+ *  when PDFs open in browser tabs. */
+export function openPdfInNewWindow(item: Pick<Item, 'id' | 'title'>, att: Pick<Attachment, 'id' | 'url'>, page?: number | null): void {
+  const url = viewerUrl(item, att, page);
+  if (appTabs?.enabled()) openNewWindow({ pdf: url });
+  else openPageInNewWindow(url);
 }
 
 /** Open a PDF in the viewer, reusing its tab when it has one (see above). */

@@ -141,7 +141,7 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
 
       <section class="settings-section" id="set-viewer"><h2>PDF Viewer</h2>
         <div class="card">
-          ${segmentedRow('pdf_open_in', 'Open PDFs in', `Tabs inside Synapse, next to the Synapse tab (they also work in the app window, and come back when you return), or a browser tab of their own. Switch tabs with <kbd>Ctrl</kbd><kbd>Tab</kbd>, close one with <kbd>${tabMod}W</kbd> or a middle click.`, [['tabs', 'Synapse Tabs'], ['browser', 'Browser Tabs']])}
+          ${segmentedRow('pdf_open_in', 'Open PDFs in', `Tabs inside Synapse, next to the Synapse tab (each window has its own, and a reload brings them back), or a browser tab of their own. Switch tabs with <kbd>Ctrl</kbd><kbd>Tab</kbd>, close one with <kbd>${tabMod}W</kbd> or a middle click.`, [['tabs', 'Synapse Tabs'], ['browser', 'Browser Tabs']])}
         </div>
         <p class="lead" style="margin-top:18px">The colour each annotation tool starts with. A tool keeps the colour you last used it with on a device, until you change its colour here.
           To change the colour of an annotation, select it in the viewer.</p>

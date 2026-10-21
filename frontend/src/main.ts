@@ -12,7 +12,8 @@ import { debounce, modKey, modLabel, plural, storage, store } from './util.js';
 import { type NavEntry, initNav, navSnapshot, navUpdate } from './nav.js';
 import { initChanges } from './changes.js';
 import { startPresence } from './presence.js';
-import { initTabs, setHomeLabel, showHome, tabShortcut } from './tabs/tabs.js';
+import { initTabs, openViewerTab, setHomeLabel, showHome, tabShortcut } from './tabs/tabs.js';
+import { readPlace } from './windows.js';
 import { openExport } from './views/exportDialog.js';
 import { smartFolderDialog } from './views/organizeDialogs.js';
 import { openIdentifierDialog } from './views/identifierDialog.js';
@@ -75,16 +76,23 @@ async function boot() {
   initChanges();   // show what other windows and devices change
   focusList();
   pollStats();
-  openItemFromHash();
-  window.addEventListener('hashchange', openItemFromHash);
+  openFromHash();
+  window.addEventListener('hashchange', openFromHash);
 }
 
-/** #item=<id> (used by the browser extension's "Open in Library") selects that item. */
-function openItemFromHash() {
-  const id = new URLSearchParams(location.hash.slice(1)).get('item');
-  if (!id) return;
+/** The place named after '#' (windows.ts): an item (the browser extension's "Open in Library"),
+ *  a folder, a note, a task, and a PDF in a tab — where a new window was asked to open. */
+async function openFromHash(): Promise<void> {
+  const place = readPlace(location.hash);
+  if (!place) return;
   history.replaceState(history.state, '', location.pathname + location.search);
-  return showItem(id);
+  if (place.note && state.settings.notes_enabled !== false) await openNotes(place.note, place.line ?? null);
+  else if (place.task) await goToTasks({ task: place.task });
+  else {
+    if (place.view) { A.setView(place.view); await A.loadItems({ keepSelection: false }); }
+    if (place.item) await showItem(place.item);   // in that folder when it is there
+  }
+  if (place.pdf) openViewerTab(place.pdf);
 }
 
 /** The Tasks page (leaving Notes or Settings), optionally with a task selected or a note's tasks. */

@@ -250,6 +250,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `afterAdd.ts` | What runs after items are added (metadata, PDF, references, tags), per the never / always / ask settings. |
 | `tabs/model.ts`, `tabs/tabs.ts` | The app's own tabs: the Synapse tab and a tab per open PDF. `model.ts` has the tabs without a DOM (opening, closing and where it goes, reopening, order, saving); `tabs.ts` draws the bar (`#tabbar`), holds a viewer frame per tab (`#tab-views`), the tab keys (`tabShortcut`) and the menu. See [the app window](desktop.md). |
 | `presence.ts` | Says hello to the server while the page is open, for a server that stops with its last window. |
+| `windows.ts` | Opening a place of the app in a new window (`openNewWindow`) and the address that names it (`placeHash`, `readPlace`); `main.ts` opens it (`openFromHash`). See [the app window](desktop.md#windows). |
 | `icons.ts` | Inline SVG icons: `icon(name, cls)` and `typeIcon(itemType)`. |
 | `util.ts` | Small helpers: `escapeHtml`, `h`, `debounce`, dates and sizes, `storage` / `store` (`localStorage` that never throws), `modKey`, `copyText`, `diffWords`, `hitBadge` (the "full text" or "note" badge of a search match). |
 

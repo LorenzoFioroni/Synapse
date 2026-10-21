@@ -37,7 +37,8 @@ If Synapse already runs on that port, `--window` only opens the window and exits
 can be clicked again at any time. If another program has the port, it says so and exits.
 
 The window is the same web app as in a browser tab, on the same address, so it shares the browser's
-storage (the remembered tabs, column widths and so on) with tabs of that browser.
+storage (column widths, settings of the views and so on) with tabs of that browser. The app's own
+tabs belong to each window (see [Windows](#windows)).
 
 ## Stopping with the window: `--quit-when-closed`
 
@@ -107,10 +108,10 @@ viewer page (`viewer.html`) in a frame. The bar appears once a PDF is open in a 
   Ctrl+Tab (and, outside macOS, Alt+digits) for its own tabs; in the app window they reach the app.
   The keys work while a PDF has the keyboard too: `viewer/inTab.ts` passes them to the page around.
 - **Order**: drag a tab. **Right-click** a tab for Close Other Tabs, Close Tabs to the Right, Reopen
-  Closed Tab, Show in Library, Reload, and Open in a Browser Tab.
-- **Coming back**: the tabs, their order and the shown one are kept in `localStorage`
-  (`zc.tabs`), each at the page it was left on, and come back after a reload or the next start.
-  A tab's viewer is loaded only when the tab is first shown.
+  Closed Tab, Move to New Window, Open in a Browser Tab, Show in Library and Reload; right-click the
+  Synapse tab for New Window and Close All PDF Tabs.
+- **A reload** brings the window's tabs back, their order and the shown one, each at the page it
+  was left on. A tab's viewer is loaded only when the tab is first shown.
 - **Back/Forward inside a PDF.** In a browser tab of its own the viewer's jumps (links, citations)
   are browser history entries. Inside the app's tabs they cannot be, because the page around shares
   that history: the app's Back would step through the PDF's jumps out of sight. So there they are
@@ -119,6 +120,40 @@ viewer page (`viewer.html`) in a frame. The bar appears once a PDF is open in a 
   Forward in the app, showing an item or opening a note shows the Synapse tab first.
 - **Settings → PDF Viewer → Open PDFs in** (`pdf_open_in`: `tabs` or `browser`) sends PDFs back to
   browser tabs of their own, as before.
+
+### Windows
+
+Each window has its own tabs. They are kept in the window's `sessionStorage` (`zc.tabs`), which
+belongs to that window alone and lasts as long as the window: a reload brings them back, a new
+window starts with only the Synapse tab, and a window opened after the app was closed (the desktop
+shortcut, the next morning) starts afresh with the library. No list of windows is kept.
+
+New windows are opened from the menus, at a place of the app named after `#` in their address
+(`windows.ts`, read once by `openFromHash` in `main.ts`):
+
+| Menu | Entry | Opens |
+|---|---|---|
+| A PDF tab | Move to New Window | that PDF, at its page, in a tab of a new window (and closes it here) |
+| The Synapse tab | New Window | the library |
+| An item | Show in New Window, Open PDF in New Window (one PDF) | the library with the item selected (in the folder shown); its PDF in a tab |
+| An attachment row, the item pane's attachment menu | Open in New Window | that PDF in a tab |
+| A folder, a smart folder (sidebar) | Open in New Window | the library at that folder |
+| A note (notes list) | Open in New Window | the note in Notes |
+| A task (Tasks page) | Open in New Window | the Tasks page with the task selected |
+
+The address is `/#item=…`, `#view=folder:<id>`, `#note=<path>&line=…`, `#task=<id>`,
+`#pdf=<viewer address>`, each with `window=new`. `readPlace` leaves out anything that does not look
+like a place (a view that is not a folder, a PDF address that is not `/viewer.html?…`). `#item=`
+alone is also what the browser extension's "Open in Library" uses. `window=new` makes `tabs.ts`
+start without tabs even where a browser copied the opener's session storage into the new window.
+The window is opened with `window.open(…, 'popup,noopener,…')` at the size of the current one, a
+little offset: `popup` asks for a window rather than a browser tab, and `noopener` keeps the two
+apart. When PDFs open in browser tabs (Settings), a PDF's "Open in New Window" opens the viewer page
+itself in a window.
+
+How the new window looks depends on where Synapse runs: from Synapse installed as an app it should
+be another app window; from Chrome's app mode or a browser tab, a window without tabs and with a
+read-only address bar. Neither could be checked on a Mac here.
 
 How it fits together: `tabs.ts` registers itself in `api.ts` (`setPdfTabOpener`), so
 `openAttachment`, `pdfTabFor` and `pointPdfTab` open a Synapse tab when the setting says so, and
@@ -132,13 +167,15 @@ a tab calls (`shortcut`, `touched`) and what the browser checklist reads (`list`
 ## Tests
 
 - `tests/js/tabs.test.mjs`: the tab model (opening, reuse, closing and where it goes, reopening,
-  moving, the n-th tab, saving and restoring, addresses) and `JumpHistory`.
+  moving, the n-th tab, saving and restoring, addresses), `JumpHistory`, and the address of a new
+  window (`placeHash`, `readPlace`).
 - `tests/test_desktop.py`: `Presence` with a fake clock, the endpoints and the guard, the setting,
   finding the installed app and the browser, `synapse_at`, the shortcut on macOS (bundle, script
   checked with `bash -n`, icon, Desktop link, another app of the same name) and Linux, and
   `server.py --make-shortcut` / `--window` run for real.
-- `tests/e2e/tabs_checklist.py` (ports 8796 and 8797): the tabs in the browser, and a
-  `--quit-when-closed` server stopping after its page closes.
+- `tests/e2e/tabs_checklist.py` (ports 8796 and 8797): the tabs in the browser, each window with
+  its own tabs, Move to New Window, New Window and Open in New Window from the item, folder, note
+  and task menus, and a `--quit-when-closed` server stopping after its page closes.
 
 Not verifiable in the test container: a real Mac (the app bundle, the Dock, Chrome's installed app),
 Chrome's app mode, and the tab keys in a real app window.

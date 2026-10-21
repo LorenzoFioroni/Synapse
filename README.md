@@ -39,9 +39,11 @@ with it (`--data-dir`, `--port`…) are used by the shortcut. Make it again afte
 Details: [docs/desktop.md](docs/desktop.md).
 
 PDFs open in tabs inside Synapse, next to the library (in a browser tab too): one tab per PDF,
-Ctrl+Tab to switch, ⌃W (Alt+W elsewhere) or a middle click to close, ⌃⇧T to reopen, and they come
-back at the page you left them. Settings → PDF Viewer → Open PDFs in → Browser Tabs keeps PDFs in
-browser tabs of their own.
+Ctrl+Tab to switch, ⌃W (Alt+W elsewhere) or a middle click to close, ⌃⇧T to reopen. Each window
+has its own tabs, which a reload brings back at the page you left them; a new window, or the app
+started again, opens on the library alone. Right-click a tab for **Move to New Window**, and items,
+PDFs, folders, notes and tasks for **Open in New Window**. Settings → PDF Viewer → Open PDFs in →
+Browser Tabs keeps PDFs in browser tabs of their own.
 
 ### From an iPad or phone
 

@@ -12,6 +12,7 @@ import { promptDialog } from '../ui/dialog.js';
 import { openMenu } from '../ui/menu.js';
 import type { Counts, Tag } from '../types.js';
 import { escapeHtml, modLabel, plural, storage, store } from '../util.js';
+import { openNewWindow } from '../windows.js';
 import { openExport } from './exportDialog.js';
 import { smartFolderDialog } from './organizeDialogs.js';
 
@@ -218,6 +219,8 @@ function onContextMenu(e: MouseEvent): void {
   if (f) {
     const folder = folderById(f.dataset.folder)!;
     openMenu([
+      { label: 'Open in New Window', icon: 'newWindow', run: () => openNewWindow({ view: `folder:${folder.id}` }) },
+      'sep',
       { label: 'New Subfolder', icon: 'folderPlus', run: () => newFolder(folder.id) },
       { label: 'Rename…', icon: 'edit', run: () => startRename(folder.id) },
       folder.parent_id ? { label: 'Move to Top Level', icon: 'arrowLeft', run: () => A.moveFolder(folder.id, null) } : null,
@@ -230,6 +233,8 @@ function onContextMenu(e: MouseEvent): void {
   } else if (s) {
     const sf = state.sidebar.smart.find((x) => x.id === Number(s.dataset.smart))!;
     openMenu([
+      { label: 'Open in New Window', icon: 'newWindow', run: () => openNewWindow({ view: `smart:${sf.id}` }) },
+      'sep',
       { label: 'Edit Smart Folder…', icon: 'edit', run: () => smartFolderDialog(sf) },
       'sep',
       { label: 'Delete Smart Folder…', icon: 'trash', danger: true, run: () => A.deleteSmart(sf) },

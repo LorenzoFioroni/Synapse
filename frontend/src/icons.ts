@@ -27,6 +27,7 @@ const P: Record<string, string> = {
   info: '<circle cx="8" cy="8" r="6"/><path d="M8 7v4M8 5v.01"/>',
   alert: '<path d="M8 2l6.5 11.5h-13z"/><path d="M8 6.5v3M8 11.5v.01"/>',
   edit: '<path d="M10.5 2.5l3 3L6 13H3v-3z"/>',
+  newWindow: '<rect x="1.8" y="4.5" width="9.5" height="8.5" rx="1.2"/><path d="M1.8 7h9.5"/><path d="M5 2.5h8.2a1 1 0 0 1 1 1V10"/>',
   copy: '<rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.5A1 1 0 0 1 4 2.5h6.5"/>',
   link: '<path d="M7 9a3 3 0 0 0 4.2 0l2-2a3 3 0 0 0-4.2-4.2l-.8.8"/><path d="M9 7a3 3 0 0 0-4.2 0l-2 2a3 3 0 0 0 4.2 4.2l.8-.8"/>',
   download: '<path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/>',

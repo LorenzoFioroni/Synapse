@@ -1,10 +1,11 @@
 // Run with: node --test tests/js   (also run by tests/test_frontend_js.py)
 // The app's own tabs without a DOM (tabs/model.ts) and the viewer's Back/Forward inside a tab
-// (viewer/jumpHistory.ts).
+// (viewer/jumpHistory.ts), and the place a new window opens at (windows.ts).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { HOME, TabSet, reopenUrl, urlAtSpot } from '../../frontend/js/tabs/model.js';
 import { JumpHistory } from '../../frontend/js/viewer/jumpHistory.js';
+import { placeHash, readPlace } from '../../frontend/js/windows.js';
 
 const pdf = (n) => ({ key: `/pdfs/${n}.pdf`, url: `/viewer.html?file=%2Fpdfs%2F${n}.pdf&title=${n}`, title: n });
 const titles = (s) => s.tabs.map((t) => t.title);
@@ -184,4 +185,30 @@ test('Back/Forward inside a PDF tab', () => {
   assert.deepEqual(h.entries.map((e) => e.pos?.page), [1, 2]);
   h.record(null);                        // no position yet: nothing changes
   assert.deepEqual(h.entries[1].pos, { page: 2 });
+});
+
+test('the place a new window opens at: written and read back', () => {
+  const pdf = '/viewer.html?file=%2Fpdfs%2Fa+b.pdf&title=A+%26+B&page=3';
+  const round = (p) => readPlace(placeHash(p));
+  assert.deepEqual(round({ pdf }), { pdf, fresh: true });
+  assert.deepEqual(round({ note: 'Notes/Ideas & más.md', line: 12 }), { note: 'Notes/Ideas & más.md', line: 12, fresh: true });
+  assert.deepEqual(round({ task: 'abc23456' }), { task: 'abc23456', fresh: true });
+  assert.deepEqual(round({ item: 'x1', view: 'folder:4' }), { item: 'x1', view: 'folder:4', fresh: true });
+  assert.deepEqual(round({}), { fresh: true }, 'New Window: just the library');
+  assert.equal(placeHash({ note: 'a.md', line: null }), '#note=a.md&window=new');
+});
+
+test('reading a place leaves out what does not look like one', () => {
+  assert.equal(readPlace(''), null);
+  assert.equal(readPlace('#'), null);
+  assert.equal(readPlace('#something=else'), null);
+  assert.deepEqual(readPlace('#item=abc'), { item: 'abc' }, 'the browser extension: not a new window');
+  assert.deepEqual(readPlace('#view=trash'), null);
+  assert.deepEqual(readPlace('#view=folder:x'), null);
+  assert.deepEqual(readPlace('#view=smart:7'), { view: 'smart:7' });
+  assert.deepEqual(readPlace(`#pdf=${encodeURIComponent('https://evil.example/viewer.html?x')}`), null);
+  assert.deepEqual(readPlace(`#pdf=${encodeURIComponent('javascript:alert(1)')}&window=new`), { fresh: true });
+  assert.deepEqual(readPlace('#note=a.md&line=0'), { note: 'a.md' });
+  assert.deepEqual(readPlace('#note=a.md&line=x'), { note: 'a.md' });
+  assert.equal(placeHash({ view: 'trash', pdf: 'https://evil.example/' }), '#window=new');
 });

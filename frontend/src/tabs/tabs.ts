@@ -2,17 +2,35 @@
 // holding a viewer page (viewer.html) in a frame. They work the same in a browser tab, in the app
 // window (python server.py --window) and on an iPad. The bar appears once a PDF is open in a tab.
 //
+// Each window has its own tabs. They are kept in the window's session storage, so a reload of the
+// window brings them back, a new window starts with only the Synapse tab, and a window opened after
+// the app was closed starts afresh with the library. A tab can move to a new window of its own.
+//
 // The tabs and their order live in model.ts (no DOM). A tab's viewer is loaded when the tab is
-// first shown, so tabs restored from the last visit cost nothing until they are looked at. A hidden
+// first shown, so tabs brought back by a reload cost nothing until they are looked at. A hidden
 // tab's frame keeps its size (visibility, not display), so its viewer keeps its layout and place.
 import { type InAppPdf, setPdfTabOpener } from '../api.js';
 import { icon } from '../icons.js';
 import { emit, state } from '../store.js';
 import { closeMenu, openMenu } from '../ui/menu.js';
-import { debounce, escapeHtml, isMac, storage, store } from '../util.js';
+import { debounce, escapeHtml, isMac } from '../util.js';
+import { openNewWindow, readPlace } from '../windows.js';
 import { HOME, type PdfTab, TabSet, reopenUrl, urlAtSpot } from './model.js';
 
 const SAVE_KEY = 'zc.tabs';
+
+/** This window's session storage, which may be missing or full: then the tabs are simply not kept. */
+const session = {
+  get(): unknown {
+    try { return JSON.parse(sessionStorage.getItem(SAVE_KEY) || 'null'); } catch { return null; }
+  },
+  set(v: unknown): void {
+    try { sessionStorage.setItem(SAVE_KEY, JSON.stringify(v)); } catch { /* not kept */ }
+  },
+  clear(): void {
+    try { sessionStorage.removeItem(SAVE_KEY); } catch { /* nothing kept */ }
+  },
+};
 
 let set = new TabSet();
 let bar: HTMLElement;
@@ -33,7 +51,11 @@ export function initTabs(o: { onHome?: () => void } = {}): void {
   onHome = o.onHome || onHome;
   bar = document.getElementById('tabbar')!;
   views = document.getElementById('tab-views')!;
-  set = TabSet.restore(storage<unknown>(SAVE_KEY, null));
+  // A window opened by "New Window" starts with no tabs, even where the browser copied this
+  // window's session storage into it.
+  if (readPlace(location.hash)?.fresh) session.clear();
+  set = TabSet.restore(session.get());
+  try { localStorage.removeItem(SAVE_KEY); } catch { /* the tabs of all windows were once kept here */ }
   setPdfTabOpener({ enabled: () => state.settings.pdf_open_in !== 'browser', open });
   window.zcTabs = { shortcut: tabShortcut, touched: () => closeMenu(), list };
 
@@ -78,6 +100,16 @@ export function showHome(): void {
 }
 
 export const pdfTabActive = (): boolean => set.active !== HOME;
+
+/** Open the viewer at `url` (a `/viewer.html?…` address) in a tab: a PDF moved from another window. */
+export function openViewerTab(url: string): void {
+  if (!url.startsWith('/viewer.html?')) return;
+  const q = new URLSearchParams(url.split('?')[1]);
+  const key = q.get('file');
+  if (!key) return;
+  set.add({ key, url, title: q.get('title') || 'PDF' });
+  show(set.active);
+}
 
 /* ------------------------------------------------------------- opening */
 function open(pdf: InAppPdf): void {
@@ -195,11 +227,20 @@ function tabMenu(id: string, at: { x: number; y: number }): void {
     tab && { label: 'Close Tabs to the Right', disabled: !right, run: () => closeMany(() => set.closeRight(id)) },
     !tab && { label: 'Close All PDF Tabs', disabled: !set.tabs.length, run: () => closeMany(() => set.closeAll()) },
     { label: 'Reopen Closed Tab', icon: 'restore', shortcut: `${tabModLabel}⇧T`, disabled: !set.closed.length, run: reopen },
+    'sep',
+    tab && { label: 'Move to New Window', icon: 'newWindow', run: () => moveToNewWindow(tab) },
+    !tab && { label: 'New Window', icon: 'newWindow', run: () => openNewWindow() },
+    tab && { label: 'Open in a Browser Tab', icon: 'open', run: () => { window.open(currentUrl(tab), '_blank'); closeTab(id); } },
     tab && 'sep',
     tab && { label: 'Show in Library', icon: 'library', run: () => showInLibrary(tab) },
-    tab && { label: 'Reload', run: () => reload(tab) },
-    tab && { label: 'Open in a Browser Tab', icon: 'open', run: () => { window.open(currentUrl(tab), '_blank'); closeTab(id); } },
+    tab && { label: 'Reload', icon: 'refresh', run: () => reload(tab) },
   ].filter((e) => !!e) as Parameters<typeof openMenu>[0], at);
+}
+
+/** The tab goes to a new window of its own (with a Synapse tab), at the page it is on. */
+function moveToNewWindow(tab: PdfTab): void {
+  openNewWindow({ pdf: currentUrl(tab) });
+  closeTab(tab.id);
 }
 
 function reopen(): void {
@@ -294,7 +335,7 @@ function initDragging(): void {
   });
 }
 
-/* -------------------------------------------- remembered between visits */
+/* -------------------------------------------- kept for a reload of the window */
 /** A tab's address as it is now: the page being read, so it reopens there. */
 function currentUrl(tab: PdfTab): string {
   const f = frames.get(tab.id);
@@ -309,7 +350,7 @@ function currentUrl(tab: PdfTab): string {
 }
 
 function save(): void {
-  store(SAVE_KEY, set.save(currentUrl));
+  session.set(set.save(currentUrl));
 }
 const saveSoon = debounce(save, 400);
 

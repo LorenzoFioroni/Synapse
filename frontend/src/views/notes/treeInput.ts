@@ -3,6 +3,7 @@
 // dragging notes and folders onto folders (or as [[links]] into the editor).
 import { openMenu, type MenuEntry } from '../../ui/menu.js';
 import { modKey } from '../../util.js';
+import { openNewWindow } from '../../windows.js';
 import {
   copyLinks, deleteSelection, describe, moveItems, newFolder, newNote, pickFolder, renameFolder, renameNote, type Selection,
 } from './fileOps.js';
@@ -112,6 +113,7 @@ function onContextMenu(e: MouseEvent): void {
     const p = notes[0];
     openMenu([
       { label: 'Open', icon: 'open', run: () => hooks.openNote(p), shortcut: '↵' },
+      { label: 'Open in New Window', icon: 'newWindow', run: () => openNewWindow({ note: p }) },
       { label: 'Rename…', icon: 'edit', run: () => renameNote(p), shortcut: 'F2' },
       { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
       { label: 'Copy link', icon: 'link', run: () => copyLinks([p]) },
