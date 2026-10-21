@@ -341,3 +341,22 @@ test('what a tab dragged from another window may be', () => {
   assert.ok(!validSpec({ kind: 'note', key: 3 }));
   assert.ok(!validSpec(null));
 });
+
+test('a note tab keeps its mode through a reload; the preview tab keeps it for the next note', () => {
+  const s = new TabSet();
+  const t = s.openNote('A.md');
+  t.mode = 'read';
+  s.openNote('B.md');
+  assert.equal(s.get(s.active).mode, 'read', 'the mode is the tab\'s');
+  const r = TabSet.restore(JSON.parse(JSON.stringify(s.save())));
+  assert.equal(r.get(r.active).mode, 'read');
+  const bad = TabSet.restore({ v: 1, active: 0, tabs: [{ kind: 'note', key: 'A.md', mode: 'weird' }] });
+  assert.equal(bad.tabs[0].mode, undefined);
+});
+
+test('a note opened kept from an empty Notes tab fills it (no empty tab left behind)', () => {
+  const s = new TabSet();
+  s.openNote(null, { last: true });
+  s.openNote('New.md', { keep: true });
+  assert.deepEqual(notes(s), ['New']);
+});

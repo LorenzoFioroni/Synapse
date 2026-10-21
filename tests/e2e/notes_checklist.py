@@ -155,11 +155,20 @@ async def main():
         a_text = await A.evaluate("document.querySelector('.cm-content').innerText")
         check("tab A picks up the change when focused", "BBB from tab B" in a_text and "AAA" not in a_text)
 
-        # 3b. conflict -> take theirs
+        # 3b. conflict -> take theirs. A must not pick up B's change before typing (its checks for
+        # changes made elsewhere, every few seconds, would race the typing): they fail meanwhile.
+        async def no_reads(route):
+            if route.request.method == "GET":
+                await route.abort()
+            else:
+                await route.continue_()
+
+        await A.route("**/api/notes/note?*", no_reads)
         await type_end(B, " +B2")
         await wait_status(B, "Saved")
         await type_end(A, " +A2")
         await A.wait_for_selector(".dialog", timeout=6000)
+        await A.unroute("**/api/notes/note?*")
         await A.click('.dialog button:has-text("Use the saved file")')
         await A.wait_for_timeout(500)
         a_text = await A.evaluate("document.querySelector('.cm-content').innerText")

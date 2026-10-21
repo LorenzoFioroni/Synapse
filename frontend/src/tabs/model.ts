@@ -22,6 +22,8 @@ export interface Tab {
   title: string;
   /** A note tab the next note opened replaces (see the top of this file). */
   preview: boolean;
+  /** A note tab's mode (live, source, read); undefined: the mode last chosen anywhere. */
+  mode?: string;
   /** The tab that was active when this one was opened, until either is left for another: closing
    *  this one goes back there, as in a browser. */
   opener: string | null;
@@ -30,12 +32,12 @@ export interface Tab {
 }
 
 /** What a tab is made from (and what is kept of it). */
-export interface TabSpec { kind?: TabKind; key: string; url?: string; title?: string; preview?: boolean }
+export interface TabSpec { kind?: TabKind; key: string; url?: string; title?: string; preview?: boolean; mode?: string }
 
 /** What a window keeps for a reload (its session storage). */
 export interface SavedTabs {
   v: 1;
-  tabs: { kind: TabKind; key: string; url: string; title: string; preview: boolean }[];
+  tabs: { kind: TabKind; key: string; url: string; title: string; preview: boolean; mode?: string }[];
   /** Index into `tabs`, or -1 for the first tab. */
   active: number;
 }
@@ -43,6 +45,7 @@ export interface SavedTabs {
 export const HOME = 'home';
 const MAX_CLOSED = 10;
 const VIEWER = '/viewer.html?';
+const MODES = new Set(['live', 'source', 'read']);
 
 /** A note tab's title: the note's name, or "Notes" with none. */
 export const noteTitle = (path: string): string => (path ? path.split('/').pop()!.replace(/\.md$/i, '') : 'Notes');
@@ -86,6 +89,7 @@ export class TabSet {
       title: o.title || (kind === 'note' ? noteTitle(o.key) : 'PDF'), preview: kind === 'note' && !!o.preview,
       opener: activate ? this.active : null, used: 0,
     };
+    if (kind === 'note' && typeof o.mode === 'string' && MODES.has(o.mode)) tab.mode = o.mode;
     if (tab.preview) { const p = this.previewTab(); if (p) p.preview = false; }   // only one
     const i = at === undefined ? this.tabs.length : Math.max(0, Math.min(at, this.tabs.length));
     this.tabs.splice(i, 0, tab);
@@ -113,9 +117,10 @@ export class TabSet {
     const own = this.byKey(key, 'note');
     if (own) { if (keep) own.preview = false; this.activate(own.id); return own; }
     const p = this.previewTab();
-    if (p && !keep) {
+    if (p && (!keep || !p.key)) {   // an empty Notes tab is filled even with a kept note
       p.key = key;
       p.title = noteTitle(key);
+      if (keep) p.preview = false;
       this.activate(p.id);
       return p;
     }
@@ -238,7 +243,7 @@ export class TabSet {
   save(urlOf: (t: Tab) => string = (t) => t.url): SavedTabs {
     return {
       v: 1,
-      tabs: this.tabs.map((t) => ({ kind: t.kind, key: t.key, url: t.kind === 'pdf' ? urlOf(t) : '', title: t.title, preview: t.preview })),
+      tabs: this.tabs.map((t) => ({ kind: t.kind, key: t.key, url: t.kind === 'pdf' ? urlOf(t) : '', title: t.title, preview: t.preview, ...(t.mode ? { mode: t.mode } : {}) })),
       active: this.tabs.findIndex((t) => t.id === this.active),
     };
   }

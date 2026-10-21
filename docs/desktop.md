@@ -117,10 +117,17 @@ new note opens in a kept tab.
 an empty *Notes* tab (the notes list, no note), which the first note opened fills, and which goes
 away once Notes is left. Choosing the first tab goes back to the library or Tasks.
 
-**Each note tab keeps its place.** Leaving a note for another tab keeps its editor state (`park` in
-`editor.ts`: the text, cursor and **undo history**) and the line at the top (`ws.parked`, the 20
-notes left last); coming back to the tab restores them if the note was not changed elsewhere
-meanwhile. Moving or renaming a note renames its tab (`notesRenamed` in `notes/workspace.ts`,
+**Each note tab is its own editor.** Every note open in a tab has a view (`NoteView` in
+`notes/workspace.ts`): its saving session, its CodeMirror editor, what it links to, its Claude
+edits, its **mode** (Live, Source or Read: each tab has its own; a new tab starts in the mode chosen
+last) and the line at the top. The shown view is in `ws` (`ws.session`, `ws.editor`…); the others
+are kept out of the page. Going back to a tab puts its editor back, with its cursor, scroll position
+and **undo history**, without fetching or drawing anything (a check for changes made elsewhere runs
+in the background); a tab in Read mode gets back the page it had, unless its text or links changed
+meanwhile. Only the 8 views used last stay alive: an older one is saved and put away
+(`ws.parked`: its editor state, for the undo history, up to 20 notes) and made again when its tab is
+shown. The tab keeps its mode (`Tab.mode`) through a reload. Notes in background tabs are saved on
+leaving them, when the page is hidden and before notes are moved. Moving or renaming a note renames its tab (`notesRenamed` in `notes/workspace.ts`,
 called by `fileOps.ts`); deleting it closes its tab, or empties the tab shown (`notesDeleted`). A
 tab whose note was deleted elsewhere closes, with a message, when it is shown.
 
@@ -240,7 +247,7 @@ How it fits together:
   `server.py --make-shortcut` / `--window` run for real.
 - `tests/e2e/tabs_checklist.py` (ports 8796 and 8797): the tabs in the browser; the first tab and
   the switch; note tabs (preview, keeping by double-click on the tab, in the list and by editing,
-  undo kept across tabs, renamed and deleted notes, a reload); each window with its own tabs; a tab
+  undo kept across tabs, each tab's own mode, switching back without waiting for the server, renamed and deleted notes, a reload); each window with its own tabs; a tab
   dropped on another window and outside every window (with synthetic drag events); Move to New
   Window, New Window and Open in New Window from the item, folder, note and task menus; and a
   `--quit-when-closed` server stopping after its page closes.

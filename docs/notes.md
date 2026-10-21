@@ -281,8 +281,8 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 
 | Module | Role |
 |---|---|
-| `notesView.ts` | Builds the workspace, opens and closes notes, wires `NoteSession` to the UI. Notes open in tabs ([the app's tabs](desktop.md#the-apps-tabs)): `openNote` and `openNotes` go through `noteTabs.open`, and the tab shown has `showNote` show its note here (opens are serialised); leaving a note keeps its editor state (`parkCurrent`, `ws.parked`) for when its tab comes back. |
-| `workspace.ts` | Shared state `ws` (open note, editor, listing, link data, cite index, parked editor states), `hooks` back into `notesView.ts`, and `noteTabs` with `notesRenamed`/`notesDeleted`, through which the notes code reaches the tabs without importing them. |
+| `notesView.ts` | Builds the workspace, opens and closes notes, wires `NoteSession` to the UI. Notes open in tabs ([the app's tabs](desktop.md#the-apps-tabs)): `openNote` and `openNotes` go through `noteTabs.open`, and the tab shown has `showNote` show its note here (opens are serialised). Each note tab has a view (`createView`, `showView`, `hideView`: its session, editor, link data and mode); hidden views are kept out of the page and come back as they were, the 8 used last (older ones are put away in `ws.parked`). |
+| `workspace.ts` | Shared state `ws` (the note views and the one shown, its editor and session, listing, link data, cite index, parked editor states), `hooks` back into `notesView.ts`, and `noteTabs` with `notesRenamed`/`notesDeleted`, through which the notes code reaches the tabs without importing them. |
 | `noteSession.ts` | Saving one note: autosave, drafts, retries, conflicts. No DOM. |
 | `tree.ts`, `treeInput.ts` | The notes list and filter; mouse, keyboard, context menu, drag and drop. A click opens a note in the preview tab, a double-click keeps its tab (F2 renames). |
 | `fileOps.ts` | New, rename, move, trash with Undo, the trash dialog, rescan. |

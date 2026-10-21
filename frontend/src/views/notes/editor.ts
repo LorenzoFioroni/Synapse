@@ -214,8 +214,9 @@ export async function createEditor(
     park: () => view.state,
     resume(parked, text) {
       if (!(parked instanceof cm.EditorState) || parked.doc.toString() !== text) return false;
-      view.setState(parked);
-      view.dispatch({ effects: modeSlot.reconfigure(modeExt(currentMode)) });   // the mode may have changed since
+      // The state may come from another editor: take its text, cursor and undo history (the
+      // history field is the same in every editor) with this editor's extensions and mode.
+      view.setState(parked.update({ effects: cm.StateEffect.reconfigure.of(extensions()) }).state);
       return true;
     },
     /**

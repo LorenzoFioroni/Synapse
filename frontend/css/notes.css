@@ -86,6 +86,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 
 .note-body { flex: 1; min-height: 0; position: relative; }
 .note-editor { position: absolute; inset: 0; display: none; }
+.note-editor-view { height: 100%; }   /* the shown note tab's editor (notesView.ts) */
 #notes-view.has-note .note-editor { display: block; }
 #notes-view.has-note .note-empty { display: none; }
 

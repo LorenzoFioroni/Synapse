@@ -523,6 +523,45 @@ async def main():
                 typed and "undo me" not in await page.evaluate("window.zcNotes.text()"),
             )
 
+            # each tab has its own mode
+            await page.locator(".tab.note", has_text="Gamma").click()
+            await note_path("Gamma.md")
+            await page.click('.note-modes [data-mode="read"]')
+            await page.wait_for_selector(".note-read:not([hidden]) .prose *")
+            await page.locator(".tab.note", has_text="Beta").click()
+            await note_path("Beta.md")
+            beta_mode = await page.evaluate("document.querySelector('.note-modes .active')?.dataset.mode")
+            await page.locator(".tab.note", has_text="Gamma").click()
+            await note_path("Gamma.md")
+            gamma_mode = await page.evaluate("document.querySelector('.note-modes .active')?.dataset.mode")
+            reading = await page.evaluate("!document.querySelector('.note-read').hidden")
+            check(
+                "each note tab keeps its own mode (Read in one does not change the others)",
+                beta_mode == "live" and gamma_mode == "read" and reading,
+                (beta_mode, gamma_mode),
+            )
+
+            # going back to an open tab waits for nothing: the server's answers are slowed down here
+            async def slow(route):
+                await asyncio.sleep(2)
+                try:
+                    await route.continue_()
+                except Exception:
+                    pass  # unrouted meanwhile
+
+            await page.route("**/api/notes/note?*", slow)
+            t0 = time.time()
+            await page.locator(".tab.note", has_text="Beta").click()
+            ok = await note_path("Beta.md")
+            took = time.time() - t0
+            await page.wait_for_timeout(2300)  # the check for changes made elsewhere, in the background
+            await page.unroute("**/api/notes/note?*")
+            check(
+                "switching to an open note tab shows it at once (nothing fetched first)",
+                ok and took < 1.0 and await page.evaluate("document.querySelectorAll('.cm-editor').length") == 1,
+                f"{took:.2f} s",
+            )
+
             # the first tab and back to Notes
             await page.click(".tab.home")
             await page.wait_for_timeout(400)

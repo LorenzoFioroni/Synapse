@@ -40,8 +40,9 @@ Details: [docs/desktop.md](docs/desktop.md).
 
 Notes and PDFs open in tabs inside Synapse (in a browser tab too), after the first tab, which shows
 the library or Tasks. Notes open as in VS Code: in a preview tab (italic title) that the next note
-replaces, until you double-click the tab, double-click the note in the notes list, or edit it; each
-note tab keeps its undo history. PDFs get a tab each. Ctrl+Tab switches, ⌃W (Alt+W elsewhere) or a
+replaces, until you double-click the tab, double-click the note in the notes list, or edit it. Each
+note tab is its own editor, with its own mode (Live, Source, Read), place and undo history, so
+going back to it is instant. PDFs get a tab each. Ctrl+Tab switches, ⌃W (Alt+W elsewhere) or a
 middle click closes, ⌃⇧T reopens. Each window has its own tabs, which a reload brings back; a new
 window, or the app started again, opens on the library alone. Drag a tab onto another Synapse
 window to move it there, or outside every window for a new one (or right-click it: **Move to New

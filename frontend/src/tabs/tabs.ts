@@ -33,10 +33,10 @@ const WIN = Math.random().toString(36).slice(2);
 export interface TabsHost {
   /** The first tab was chosen: show the library or Tasks, whichever it shows. */
   home(): unknown;
-  /** A note tab was chosen: show its note (null: Notes with nothing open). Resolves false when
-   *  the note is gone (moved or deleted elsewhere); its tab then closes. */
-  note(path: string | null): Promise<boolean>;
-  /** A note tab closed: save its note and stop showing it, if it is the one shown. */
+  /** A note tab was chosen: show its note (null: Notes with nothing open) in the tab's mode.
+   *  Resolves false when the note is gone (moved or deleted elsewhere); its tab then closes. */
+  note(path: string | null, mode?: string): Promise<boolean>;
+  /** No tab shows this note any more: save it and close it. */
   noteClosed(path: string): unknown;
   /** A note tab is going to another window: save its note now. */
   flushNote(path: string): unknown;
@@ -198,8 +198,18 @@ function goto(frame: HTMLIFrameElement, spot: InAppPdf['spot']): void {
  * note tab used last, if there is one. Resolves when the note is on screen.
  */
 export async function openNoteTab(path: string | null, o: { keep?: boolean; last?: boolean } = {}): Promise<void> {
+  const preview = set.previewTab();
+  const replaced = preview?.key;
   const tab = set.openNote(path, o);
   await showNote(tab);
+  // the preview tab now shows another note: the one it showed is closed (unless another tab has it)
+  if (replaced && tab === preview && tab.key !== replaced && !set.byKey(replaced, 'note')) host.noteClosed(replaced);
+}
+
+/** The note shown was put in another mode: it is the tab's. */
+export function noteModeChanged(mode: string): void {
+  const t = set.get(set.active);
+  if (t?.kind === 'note') { t.mode = mode; saveSoon(); }
 }
 
 /** The note shown was edited: a preview tab is kept from now on. */
@@ -282,7 +292,7 @@ async function showNote(tab: Tab): Promise<void> {
   underneath = tab.id;
   paint();
   saveSoon();
-  const ok = await host.note(tab.key || null);
+  const ok = await host.note(tab.key || null, tab.mode);
   if (!ok && set.get(tab.id)) closeTab(tab.id);
 }
 
@@ -302,10 +312,9 @@ function frameFor(tab: Tab): HTMLIFrameElement {
 function dropped(tab: Tab): void {
   frames.get(tab.id)?.remove();
   frames.delete(tab.id);
-  if (tab.kind === 'note' && underneath === tab.id) {
-    underneath = null;
-    if (tab.key) host.noteClosed(tab.key);
-  }
+  if (tab.kind !== 'note') return;
+  if (underneath === tab.id) underneath = null;
+  if (tab.key && !set.byKey(tab.key, 'note')) host.noteClosed(tab.key);
 }
 
 function closeTab(id: string): void {

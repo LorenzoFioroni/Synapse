@@ -6,15 +6,45 @@ import type { CiteEntry, NoteDetails, NoteHistory, NoteLinks, NotesListing } fro
 import type { MD, NoteEditor } from './editor.js';
 import { type LinkData, normTarget } from './linkData.js';
 import { baseMacros, type Macros } from './macros.js';
-import type { NoteSession } from './noteSession.js';
+import type { Conflict, NoteSession } from './noteSession.js';
 import type { Renderer } from './render.js';
 
 export type Mode = 'live' | 'source' | 'read';
 
+/** A note open in a tab: its session, editor and what it shows (notesView.ts). The one shown is
+ *  `ws.view`, and its parts are also ws.session, ws.editor, ws.info…; the others are hidden. */
+export interface NoteView {
+  path: string;
+  el: HTMLElement;
+  session: NoteSession;
+  editor: NoteEditor;
+  info: NoteDetails | null;
+  linkData: LinkData;
+  linkResp: (NoteLinks & { path_for: string }) | null;
+  aiHist: NoteHistory | null;
+  /** The tab's mode, and the editing mode Cmd+E goes back to from Read. */
+  mode: Mode;
+  editMode: Exclude<Mode, 'read'>;
+  /** The mode the editor is set to now. */
+  editorMode: Exclude<Mode, 'read'>;
+  /** The line at the top when it was last shown. */
+  top: number;
+  /** Its read view as it was left (put back when nothing changed since). */
+  read: { nodes: DocumentFragment; text: string; links: unknown } | null;
+  /** Its preview was drawn with what another note knew: draw it again when shown. */
+  stale: boolean;
+  /** A conflict found while it was hidden, to show when it is shown. */
+  conflict: Conflict | null;
+  pendingStart?: 'conflict' | 'restored';
+  used: number;
+}
+
 export const ws = {
   root: null as unknown as HTMLElement,          // #notes-view (set by initNotes)
-  editor: null as NoteEditor | null,             // created once, on first use
-  session: null as NoteSession | null,           // the open note
+  views: new Map<string, NoteView>(),            // the notes open in tabs, by path
+  view: null as NoteView | null,                 // the one shown
+  editor: null as NoteEditor | null,             // its editor
+  session: null as NoteSession | null,           // its session
   info: null as NoteDetails | null,              // its index entry (title, headings, tags…)
   overview: { notes: [], folders: [], stats: { notes: 0, links: 0 } } as NotesListing,
   mode: 'live' as Mode,
@@ -27,8 +57,8 @@ export const ws = {
   // Citable library items (for autocomplete and citation cards), keyed by citation key.
   library: { list: [] as CiteEntry[], byKey: new Map<string, CiteEntry>() },
   aiHist: null as NoteHistory | null,            // GET /api/notes/history of the open note
-  /** Notes left for another tab: their editor state (undo history, cursor) and the line at the
-   *  top, to come back to (notesView.ts). The most recently left last. */
+  /** Notes put away (their view closed to save memory, or renamed): their editor state (undo
+   *  history, cursor) and the line at the top, to come back to (notesView.ts). Most recent last. */
   parked: new Map<string, { state: unknown; top: number }>(),
 };
 
@@ -41,6 +71,8 @@ export const noteTabs = {
   open: null as ((path: string | null, options?: { keep?: boolean; last?: boolean }) => Promise<void>) | null,
   /** The reader edited the note shown. */
   edited: null as (() => void) | null,
+  /** The note shown was put in another mode (each tab has its own). */
+  modeChanged: null as ((mode: Mode) => void) | null,
   renamed: null as ((rename: (path: string) => string) => void) | null,
   deleted: null as ((gone: (path: string) => boolean) => void) | null,
 };
@@ -48,12 +80,14 @@ export const noteTabs = {
 /** Notes were moved or renamed (``rename``: old path → new path): their tabs and parked states follow. */
 export function notesRenamed(rename: (path: string) => string): void {
   ws.parked = new Map([...ws.parked].map(([p, v]) => [rename(p), v]));
+  hooks.renameViews(rename);
   noteTabs.renamed?.(rename);
 }
 
 /** Notes went to the trash: their tabs close. */
 export function notesDeleted(gone: (path: string) => boolean): void {
   for (const p of [...ws.parked.keys()]) if (gone(p)) ws.parked.delete(p);
+  hooks.dropViews(gone);
   noteTabs.deleted?.(gone);
 }
 
@@ -62,10 +96,16 @@ export const hooks = {
   /** Open a note (in a tab: the preview tab unless ``keep``). */
   openNote: (_path: string, _options?: { keep?: boolean }): Promise<void> => Promise.resolve(),
   /** Open ``path`` now (not queued behind other opens): for code that is already inside an open. */
-  doOpen: (_path: string): Promise<void> => Promise.resolve(),
+  doOpen: (_path: string, _mode?: Mode): Promise<void> => Promise.resolve(),
   closeCurrent: (): Promise<void> => Promise.resolve(),
   setMode: (_mode: Mode, _options?: { focus?: boolean }): void => {},
   openNotesGraph: (_focus?: string | null): Promise<void> => Promise.resolve(),
+  /** Save every open note (the shown one and those in other tabs). */
+  saveAll: (): Promise<void> => Promise.resolve(),
+  /** Notes were renamed: their hidden views follow. */
+  renameViews: (_rename: (path: string) => string): void => {},
+  /** Notes were deleted: their hidden views close. */
+  dropViews: (_gone: (path: string) => boolean): void => {},
 };
 
 /** How a task line ({{task:id}}) looks and behaves in the live preview (livePreview.ts). */

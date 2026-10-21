@@ -61,6 +61,7 @@ async function moveNote(path: string, to: string, { quiet = false } = {}): Promi
     const session = ws.session;
     const isOpen = session?.path === path;
     if (session && isOpen) { await session.save(); if (session.dirty) throw new Error('Save the note before moving it.'); }
+    await hooks.saveAll();   // notes in other tabs
     const res = await api.moveNote(path, to, isOpen ? session!.saved.hash : undefined);
     notesRenamed((p) => (p === path ? res.path : p));
     if (isOpen) await reopenAs(res.path);
@@ -77,13 +78,14 @@ function keepTreeFocus(): () => void {
   return () => { if (was) treeEl().focus({ preventScroll: true }); };
 }
 
-/** The open note was moved: keep editing it under its new path, with anything typed meanwhile. */
+/** The open note was moved: keep editing it under its new path, with anything typed meanwhile, its
+ *  undo history and its tab's mode. */
 async function reopenAs(path: string): Promise<void> {
-  const old = ws.session!;
-  const typed = old.text;
-  old.dispose();
-  ws.session = null;
-  await hooks.doOpen(path);
+  const typed = ws.session!.text;
+  const mode = ws.mode;
+  if (ws.editor) ws.parked.set(path, { state: ws.editor.park(), top: ws.editor.topLine() });
+  await hooks.closeCurrent();
+  await hooks.doOpen(path, mode);
   const reopened = ws.session as NoteSession | null;   // set by doOpen
   if (reopened && typed !== reopened.text) ws.editor!.replace(typed);   // saved by the new session
 }
@@ -107,6 +109,7 @@ async function moveFolder(path: string, to: string, { quiet = false } = {}): Pro
     const open = session?.path;
     const inside = !!open && within(open, path);
     if (session && inside) { await session.save(); if (session.dirty) throw new Error('Save the open note before moving its folder.'); }
+    await hooks.saveAll();   // notes in other tabs
     const res = await api.moveNoteFolder(path, to);
     const moved = (p: string) => (p === path || within(p, path) ? res.path + p.slice(path.length) : p);
     notesRenamed(moved);
