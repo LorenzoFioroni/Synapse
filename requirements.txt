@@ -1,11 +1,11 @@
-flask>=3.0
-requests>=2.31
-pypdf>=4.0
+flask>=3.1.3
+requests>=2.33
+pypdf>=6.19
 pypdfium2>=4.30   # renders PDF pages for the AI tools (view_page, snapshot)
 segno>=1.6        # QR codes for pairing devices (Settings → Devices)
-cryptography>=42  # passkeys: checks the signature when a device signs in with one
+cryptography>=50  # passkeys: checks the signature when a device signs in with one
 # optional, recommended:
 rapidfuzz>=3.0      # better fuzzy title check when verifying downloaded PDFs
-# pillow>=10       # lets the MCP tool view_image scale down large note images
+# pillow>=13       # lets the MCP tool view_image scale down large note images
 # pymupdf>=1.24     # faster, more accurate PDF text extraction for the full-text index
 # for development: requirements-dev.txt

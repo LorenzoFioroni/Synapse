@@ -39,7 +39,7 @@ if (!pdfUrl) {
 
 function initPdf(pdfUrl: string): void {
   const pdfjsLib = window.pdfjsLib!;
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs/pdf.worker.min.js';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs/pdf.worker.min.mjs';
 
   let pdfDoc: PDFDocumentProxy | null = null,
     scale = 1.5;
@@ -172,7 +172,7 @@ function initPdf(pdfUrl: string): void {
         const vp = page.getViewport({ scale: 120 / page.getViewport({ scale: 1 }).width });
         canvas.width = vp.width;
         canvas.height = vp.height;
-        page.render({ canvasContext: canvas.getContext('2d')!, viewport: vp });
+        page.render({ canvas, viewport: vp });
       }
     }, { root: sidebar, rootMargin: '200px 0px' });
     for (let i = 1; i <= pdfDoc!.numPages; i++) {
@@ -444,7 +444,7 @@ function initPdf(pdfUrl: string): void {
         const pct = (v: number, of: number) => `${(v / of) * 100}%`;
         Object.assign(canvas.style, { left: pct(bx, r.width), top: pct(by, r.height), width: pct(bw, r.width), height: pct(bh, r.height) });
         const s = scale;
-        const task = w.zcPage.render({ canvasContext: canvas.getContext('2d')!, viewport: w.zcPage.getViewport({ scale: s }),
+        const task = w.zcPage.render({ canvas, viewport: w.zcPage.getViewport({ scale: s }),
                        transform: [os, 0, 0, os, -bx * os, -by * os] });
         try { await task.promise; } catch (e) { canvas.width = canvas.height = 0; continue; }
         const now = live.get(num);
@@ -493,7 +493,7 @@ function initPdf(pdfUrl: string): void {
     canvas.height = Math.floor(viewport.height * outputScale);
     canvas.style.width = Math.floor(viewport.width) + "px";
     canvas.style.height = Math.floor(viewport.height) + "px";
-    const task = page.render({ canvasContext: canvas.getContext('2d')!, viewport,
+    const task = page.render({ canvas, viewport,
       transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined });
     const prev = live.get(num);
     live.set(num, { ...(prev || {}), task, pending: true });
@@ -520,13 +520,15 @@ function initPdf(pdfUrl: string): void {
     Object.assign(text.style, { width: Math.floor(viewport.width) + 'px', height: Math.floor(viewport.height) + 'px',
                   position: 'absolute', left: '0', top: '0', opacity: '1',
                   pointerEvents: drawingTool() ? 'none' : 'auto' });
-    text.style.setProperty('--scale-factor', String(viewport.scale));
+    // pdf.js sizes the layer and its text from these (pdf_viewer.css sets them on its own page divs)
+    for (const [k, v] of [['--scale-factor', String(viewport.scale)], ['--total-scale-factor', String(viewport.scale)],
+      ['--scale-round-x', '1px'], ['--scale-round-y', '1px']]) text.style.setProperty(k, v);
     // swap in one go (no blank flash while zooming); canvas and text stay under the other layers
     if (prev?.canvas) { prev.canvas.width = 0; prev.canvas.height = 0; prev.canvas.remove(); }
     prev?.text?.remove();
     wrapper.insertBefore(canvas, wrapper.firstChild);
     canvas.after(text);
-    pdfjsLib.renderTextLayer({ textContentSource: textContent, container: text, viewport, textDivs: [] });
+    new pdfjsLib.TextLayer({ textContentSource: textContent, container: text, viewport }).render().catch(() => {});
     live.set(num, { scale: s, canvas, text, task: null, outputScale });
     wrapper.dataset.rendered = String(s);
     document.dispatchEvent(new CustomEvent('zc:pagerendered', { detail: { wrapper, page, num } }));
@@ -573,7 +575,11 @@ function initPdf(pdfUrl: string): void {
   // for the add-ons and the browser checklists
   Object.assign(window.zcViewer!, { renderedPages: () => [...live.entries()].filter(([, l]) => l.canvas).map(([n]) => n).sort((a, b) => a - b) });
 
-  pdfjsLib.getDocument(pdfUrl).promise.then(async function(pdfDoc_) {
+  // The image decoders (JPEG 2000, JBIG2, colour profiles) and the standard fonts are served from
+  // vendor/, so PDFs render the same offline.
+  const base = new URL('vendor/pdfjs/', document.baseURI).href;
+  pdfjsLib.getDocument({ url: pdfUrl, wasmUrl: base + 'wasm/', iccUrl: base + 'iccs/',
+    standardFontDataUrl: base + 'standard_fonts/' }).promise.then(async function(pdfDoc_) {
     pdfDoc = pdfDoc_;
     await layoutPages();
     pump();

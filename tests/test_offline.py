@@ -61,3 +61,16 @@ def test_the_check_catches_remote_loads(tmp_path):
         assert any(re.search(p, text, flags=re.IGNORECASE) for p in LOADS[suffix]), suffix
     # a link the user clicks is fine
     assert not any(re.search(p, "a.href = `https://doi.org/${doi}`") for p in LOADS[".js"])
+
+
+def test_vendored_modules_and_wasm_are_served_with_their_types(client):
+    # browsers refuse to run an ES module sent with a non-JavaScript type (pdf.js is one)
+    for path, mimetype in [
+        ("/vendor/pdfjs/pdf.min.mjs", "text/javascript"),
+        ("/vendor/pdfjs/pdf.worker.min.mjs", "text/javascript"),
+        ("/vendor/pdfjs/wasm/openjpeg.wasm", "application/wasm"),
+    ]:
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert r.mimetype == mimetype, path
+        r.close()

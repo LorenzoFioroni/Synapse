@@ -90,7 +90,7 @@ devDependencies at the same versions as the vendored builds. They are never bund
 |---|---|
 | `vendor/cm6/cm6.js` | `vendor/cm6/cm6.d.ts`, which repeats the re-exports of `tools/cm6/entry.js`; the types resolve to the `@codemirror/*` and `@lezer/*` packages. |
 | `vendor/md/md.js` | `vendor/md/md.d.ts` (`MarkdownIt`, `katex`, `footnote`), resolving to `katex` and `@types/markdown-it`. |
-| `vendor/pdfjs/pdf.min.js` | `pdfjs-dist` 3.4.120, through `window.pdfjsLib` in `globals.d.ts`. |
+| `vendor/pdfjs/pdf.min.mjs` | `vendor/pdfjs/pdf.min.d.mts`, resolving to `pdfjs-dist` 6.4.299; the viewer's modules reach it through `window.pdfjsLib` (`globals.d.ts`), set by `viewer/pdfjs.ts`. |
 | `vendor/force-graph/` | `force-graph` 1.51.4, through `window.ForceGraph`. |
 | `vendor/mermaid/` | No package: `globals.d.ts` declares the two calls the app makes (`Mermaid`). |
 
@@ -103,7 +103,7 @@ When a library is updated, change its version in the `tools/*/package.json` and 
 | Page | Loads | Notes |
 |---|---|---|
 | `index.html` | the CSS files, `vendor/md/katex/katex.min.css`, then `js/main.js` as a module | An inline script applies the cached theme (`zc.themeHint` in `localStorage`) before the first paint, to avoid a white flash. |
-| `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, the classic script `vendor/pdfjs/pdf.min.js`, then the modules `js/viewer/viewer.js`, `notesBridge.js`, `links.js`, `annotations.js` | The PDF viewer, one tab per PDF: a frame in one of the app's tabs (`tabs/tabs.ts`), or a browser tab of its own (Settings → PDF Viewer). Its own styles and toolbar markup are inline. |
+| `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, then the modules `js/viewer/pdfjs.js` (loads pdf.js, an ES module), `viewer.js`, `notesBridge.js`, `links.js`, `annotations.js` | The PDF viewer, one tab per PDF: a frame in one of the app's tabs (`tabs/tabs.ts`), or a browser tab of its own (Settings → PDF Viewer). Its own styles and toolbar markup are inline. |
 | `pair.html` | nothing else | Opened from the pairing QR code under `--lan`. Self-contained (inline style and script, no build) because the guard lets an unpaired device fetch only `PAIRING_PATHS` (`backend/access/guard.py`). |
 | `signin.html` | nothing else | Sent by the guard, with status 401, instead of any page a device that is not signed in asks for: how to pair, and **Sign In with a Passkey** where passkeys can work. Self-contained for the same reason. |
 

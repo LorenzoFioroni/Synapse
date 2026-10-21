@@ -77,7 +77,7 @@ async def main():
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
             await page.goto(BASE)
-            await page.wait_for_selector("[data-id]")
+            await page.wait_for_selector(".row[data-id]")
             urls = await page.evaluate(
                 """async (items) => {
                 const { viewerUrl } = await import('/js/api.js');

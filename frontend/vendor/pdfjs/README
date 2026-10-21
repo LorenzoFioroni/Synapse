@@ -1,2 +1,14 @@
-pdf.js 3.4.120 (Mozilla, Apache-2.0), vendored from the pdfjs-dist npm package so the
-PDF viewer works offline.
+pdf.js 6.4.299 (Mozilla, Apache-2.0), vendored from the pdfjs-dist npm package so the PDF viewer
+works offline. From the package:
+
+  legacy/build/pdf.min.mjs, legacy/build/pdf.worker.min.mjs
+      the legacy build, which also runs in older Safari / iPadOS versions
+  web/pdf_viewer.css, and the web/images/ files it refers to
+  wasm/      the JPEG 2000, JBIG2 and colour-profile decoders with their licences
+             (openjpeg, jbig2 and qcms .wasm, the *_nowasm_fallback.js files, LICENSE_*);
+             not quickjs-eval, which only runs a PDF's own JavaScript (the viewer never does)
+  standard_fonts/, iccs/
+
+pdf.min.d.mts is ours: it gives pdf.min.mjs the package's types (frontend/package.json installs
+pdfjs-dist at the same version). The viewer passes wasm/, iccs/ and standard_fonts/ to getDocument
+(frontend/src/viewer/viewer.ts).

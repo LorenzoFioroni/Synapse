@@ -162,10 +162,12 @@ const meet = (a: Box | null, b: Box | null): Box | null => (a && b ? [Math.max(a
  * the paths it paints (fills and strokes, not clips), from pdf.js's operator list
  * (page.getOperatorList(): fnArray, argsArray) and its OPS table. Text is not included.
  * Boxes are cut to the clipping in force (clip paths, form bounding boxes) and to `view` (the page).
+ * A path is one constructPath operation, [paint op, [path data], [minX, minY, maxX, maxY]]; a clip
+ * operation comes just before the path it clips with (pdf.js ≥ 5).
  */
 export function graphicsBoxes(fnArray: number[], argsArray: any[], OPS: Record<string, number>, view: Box | null = null): Box[] {
   const PAINT = new Set([OPS.stroke, OPS.closeStroke, OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke,
-    OPS.closeFillStroke, OPS.closeEOFillStroke, OPS.shadingFill]);
+    OPS.closeFillStroke, OPS.closeEOFillStroke]);
   const IMAGE = new Set([OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject,
     OPS.paintImageXObjectRepeat, OPS.paintImageMaskXObjectRepeat, OPS.paintSolidColorImageMask, OPS.paintInlineImageXObjectGroup,
     OPS.paintImageMaskXObjectGroup]);
@@ -174,7 +176,7 @@ export function graphicsBoxes(fnArray: number[], argsArray: any[], OPS: Record<s
   const stack: [Matrix, Box | null][] = [];
   const out: Box[] = [];
   const add = (b: Box) => { const c = meet(b, clip); if (c && c[2] >= c[0] && c[3] >= c[1]) out.push(c); };
-  let pending: Box | null = null;   // the box of the last constructed path, until we know whether it is painted or clips
+  let clips = false;   // a clip operation was seen: the next path clips (and may also be painted: W f)
   for (let i = 0; i < fnArray.length; i++) {
     const fn = fnArray[i], args = argsArray[i];
     if (fn === OPS.save) stack.push([m, clip]);
@@ -186,16 +188,15 @@ export function graphicsBoxes(fnArray: number[], argsArray: any[], OPS: Record<s
       const bb = args?.[1];
       if (bb && bb.length === 4) clip = meet(clip, boxOf(m, bb[0], bb[1], bb[2], bb[3]));
     } else if (fn === OPS.paintFormXObjectEnd) [m, clip] = stack.pop() || [m, clip];
+    else if (fn === OPS.clip || fn === OPS.eoClip) { clips = true; continue; }
     else if (fn === OPS.constructPath) {
-      const mm = args?.[2] as ArrayLike<number> | undefined;   // the path's bounding box: minX, maxX, minY, maxY
-      pending = Array.isArray(mm) || ArrayBuffer.isView(mm) ? boxOf(m, mm[0], mm[2], mm[1], mm[3]) : null;
-      continue;
-    } else if (fn === OPS.clip || fn === OPS.eoClip) {
-      if (pending) clip = meet(clip, pending);
-      continue;                     // the path may still be painted (W n, or W f)
-    } else if (PAINT.has(fn)) { if (pending) add(pending); }
-    else if (IMAGE.has(fn)) add(boxOf(m, 0, 0, 1, 1));
-    pending = null;
+      const mm = args?.[2] as ArrayLike<number> | null | undefined;
+      const box = (Array.isArray(mm) || ArrayBuffer.isView(mm)) && mm.length === 4 && Number.isFinite(mm[0])
+        ? boxOf(m, mm[0], mm[1], mm[2], mm[3]) : null;
+      if (box && clips) clip = meet(clip, box);
+      if (box && PAINT.has(args[0])) add(box);
+    } else if (IMAGE.has(fn)) add(boxOf(m, 0, 0, 1, 1));
+    clips = false;
   }
   return out.filter((b) => Number.isFinite(b[0]) && b[2] - b[0] + (b[3] - b[1]) > 0.5);
 }
