@@ -15,6 +15,10 @@ from .services import Services
 
 log = logging.getLogger(__name__)
 mimetypes.add_type("application/manifest+json", ".webmanifest")
+# pdf.js is served as ES modules and WebAssembly; browsers refuse modules sent as text/plain, and
+# older Pythons do not know these types
+mimetypes.add_type("text/javascript", ".mjs")
+mimetypes.add_type("application/wasm", ".wasm")
 
 
 def create_app(config: Config | None = None, *, start_indexer: bool = True) -> Flask:

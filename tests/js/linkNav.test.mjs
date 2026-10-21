@@ -98,7 +98,7 @@ test('previewOrigin centres the window on the destination\'s column', () => {
 
 // pdf.js operator codes used by graphicsBoxes (pdfjsLib.OPS)
 const OPS = { save: 10, restore: 11, transform: 12, stroke: 20, closeStroke: 21, fill: 22, eoFill: 23, fillStroke: 24, eoFillStroke: 25,
-  closeFillStroke: 26, closeEOFillStroke: 27, endPath: 28, clip: 29, shadingFill: 62, paintFormXObjectBegin: 74, paintFormXObjectEnd: 75,
+  closeFillStroke: 26, closeEOFillStroke: 27, endPath: 28, clip: 29, eoClip: 30, shadingFill: 62, paintFormXObjectBegin: 74, paintFormXObjectEnd: 75,
   paintImageMaskXObject: 83, paintImageMaskXObjectGroup: 84, paintImageXObject: 85, paintInlineImageXObject: 86,
   paintInlineImageXObjectGroup: 87, paintImageXObjectRepeat: 88, paintImageMaskXObjectRepeat: 89, paintSolidColorImageMask: 90, constructPath: 91 };
 
@@ -106,12 +106,22 @@ test('graphicsBoxes: images under the current transform, painted paths, not clip
   const fn = [], args = [];
   const op = (f, a = null) => { fn.push(f); args.push(a); };
   op(OPS.save); op(OPS.transform, [200, 0, 0, 100, 50, 400]); op(OPS.paintImageXObject, ['img1']); op(OPS.restore);
-  op(OPS.constructPath, [[], [], [0, 612, 0, 792]]); op(OPS.clip); op(OPS.endPath);                  // a clip: no box
+  // paths as pdf.js ≥ 5 lists them: [paint op, [path data], [minX, minY, maxX, maxY]], a clip just before
+  const path = (paint, minX, minY, maxX, maxY) => op(OPS.constructPath, [paint, [new Float32Array(0)], new Float32Array([minX, minY, maxX, maxY])]);
+  op(OPS.clip); path(OPS.endPath, 0, 0, 612, 792);                                                  // a clip: no box
   op(OPS.paintFormXObjectBegin, [[1, 0, 0, 1, 300, 100], [0, 0, 100, 100]]);
-  op(OPS.constructPath, [[], [], [10, 60, 0, 80]]); op(OPS.fill);                                   // inside a form
+  path(OPS.fill, 10, 0, 60, 80);                                                                     // inside a form
   op(OPS.paintFormXObjectEnd);
-  op(OPS.constructPath, [[], [], [0, 5, 0, 5]]); op(OPS.stroke);
+  path(OPS.stroke, 0, 0, 5, 5);
+  op(OPS.constructPath, [OPS.fill, [null], null]);                                                   // an empty path
   assert.deepEqual(graphicsBoxes(fn, args, OPS), [[50, 400, 250, 500], [310, 100, 360, 180], [0, 0, 5, 5]]);
+  // a clip cuts what is painted after it, until the restore
+  const fn2 = [], args2 = [];
+  const op2 = (f, a = null) => { fn2.push(f); args2.push(a); };
+  op2(OPS.save); op2(OPS.clip); op2(OPS.constructPath, [OPS.endPath, [null], [0, 0, 100, 100]]);
+  op2(OPS.constructPath, [OPS.fill, [null], [50, 50, 200, 200]]); op2(OPS.restore);
+  op2(OPS.constructPath, [OPS.fill, [null], [150, 150, 200, 200]]);
+  assert.deepEqual(graphicsBoxes(fn2, args2, OPS), [[50, 50, 100, 100], [150, 150, 200, 200]]);
 });
 
 test('figureRegion: the drawing above a caption, grown upwards, in its column, with its labels', () => {

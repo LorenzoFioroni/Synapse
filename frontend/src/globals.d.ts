@@ -47,7 +47,7 @@ declare global {
   interface Window {
     /** Mermaid (vendor/mermaid/mermaid.min.js), loaded when a note has a diagram (richRender.ts). */
     mermaid?: Mermaid;
-    /** pdf.js (vendor/pdfjs/pdf.min.js, a classic script in viewer.html). */
+    /** pdf.js (vendor/pdfjs/pdf.min.mjs), set by viewer/pdfjs.ts before the viewer's other modules run. */
     pdfjsLib?: typeof import('pdfjs-dist');
     zcViewer?: ZcViewer;
     /** Points this viewer tab at another spot (notesBridge.ts); other app tabs call it (api.ts). */

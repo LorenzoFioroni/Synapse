@@ -32,6 +32,10 @@ interface LinkTarget { dest?: unknown; url?: string; action?: string }
 /** A destination resolved to a page, with x/y in page CSS pixels at scale 1 (null = free). */
 interface Resolved { pageNum: number; x: number | null; y: number | null; page?: PDFPageProxy; vp?: PageViewport }
 type LinkEl = HTMLAnchorElement & { zcTarget: LinkTarget };
+
+/** A PDF rectangle [x0, y0, x1, y1] in viewport pixels (corners not reordered). */
+const viewportRect = (vp: PageViewport, r: ArrayLike<number>): number[] =>
+  [...vp.convertToViewportPoint(r[0], r[1]), ...vp.convertToViewportPoint(r[2], r[3])];
 /** A reading position, plus the horizontal scroll when the page is wider than the view. */
 type Position = ReadingPosition & { sx?: number };
 interface PageBox { num: number; top: number; height: number; el: HTMLElement }
@@ -88,7 +92,7 @@ async function addLinks(wrapper: HTMLElement, page: PDFPageProxy): Promise<void>
     if (!target) continue;
     const el = document.createElement('a') as LinkEl;
     el.className = 'zc-link';
-    Object.assign(el.style, rectPercent(vp.convertToViewportRectangle(a.rect), vp.width, vp.height));
+    Object.assign(el.style, rectPercent(viewportRect(vp, a.rect), vp.width, vp.height));
     if (target.url) { el.href = target.url; el.target = '_blank'; el.rel = 'noopener noreferrer'; }
     el.zcTarget = target;
     layer.appendChild(el);
@@ -394,7 +398,7 @@ async function showPopup(link: LinkEl): Promise<void> {
       const fresh = document.createElement('canvas');
       fresh.width = Math.round(pw * dpr);
       fresh.height = Math.round(ph * dpr);
-      const task = page.render({ canvasContext: fresh.getContext('2d')!, viewport: page.getViewport({ scale }),
+      const task = page.render({ canvas: fresh, viewport: page.getViewport({ scale }),
         transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined });
       renderTask = task;
       try {
@@ -461,7 +465,7 @@ async function figureAt(page: PDFPageProxy, vp: PageViewport, t: Resolved):
   }
   const box = figureRegion(await pageGraphics.get(n)!, c, width, page.view[1] + page.view[3], items);
   if (box) {
-    const r = vp.convertToViewportRectangle(box);
+    const r = viewportRect(vp, box);
     const x = Math.min(r[0], r[2]), y = Math.min(r[1], r[3]);
     out.region = { x, y, w: Math.abs(r[2] - r[0]), h: Math.abs(r[3] - r[1]) };
   }
