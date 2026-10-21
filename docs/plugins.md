@@ -1,13 +1,17 @@
 # Plugins
 
 A plugin adds a feature to Synapse without changing Synapse's own code: a folder with a
-`manifest.json` and some Python, which gets a `plugin` object to register what it offers. This page
-is both the guide for writing one and the description of how the host runs them.
+`manifest.json`, some Python for the server and some JavaScript for the app. Each part gets an
+object to register what it offers. This page is both the guide for writing one and the description
+of how Synapse runs them.
 
-The design and the plan for the rest of the plugin API (the frontend side, background jobs, per-item
-fields, paper feeds) are in the design doc "Synapse plugin API v1". What exists today is the
-**backend host**: plugins can serve routes, offer tools to Claude, hear what happens in the library,
-read it, have settings and store data.
+The design and the plan for the rest of the plugin API (background jobs, per-item fields, paper
+feeds) are in the design doc "Synapse plugin API v1". What exists today:
+
+- **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
+  library, settings, stored data, a log.
+- **Frontend** (JavaScript): pages with a sidebar entry, commands in the command palette (with keys),
+  sections in the item pane, actions in the item menu, notifications, calls to its own routes.
 
 ## Using plugins
 
@@ -25,6 +29,8 @@ read it, have settings and store data.
   `mcp_server.py --safe-mode` does the same for the MCP server Claude starts.
 - Restart Claude after turning on a plugin with tools if they do not show up: some AI apps read the
   list of tools only once.
+- A plugin's pages are listed under **Plugins** in the sidebar; its commands are in the **command
+  palette** (⌘⇧P, Ctrl+Shift+P or F1), together with Synapse's own.
 
 Plugins that come with Synapse live in the repository's `plugins/` folder and are off until turned
 on. A plugin in `data/plugins/` with the same id replaces the one that comes with Synapse.
@@ -40,6 +46,9 @@ data/plugins/recently-added/      the folder's name is the plugin's id
   backend/                        a package (or a single .py file)
     __init__.py                   def activate(plugin): ...
     store.py
+  frontend/
+    main.js                       export function activate(p) { ... }
+    style.css
 ```
 
 ### The manifest
@@ -67,7 +76,8 @@ data/plugins/recently-added/      the folder's name is the plugin's id
 | `name`, `version` | Shown in Settings. Required. |
 | `api` | The plugin API it was written for: `"^1.0"` runs on any 1.x from 1.0 on. A plugin needing a newer minor version, or another major version, is listed but cannot be turned on. |
 | `backend` | Its Python code: a package folder (with `__init__.py`) or a `.py` file, inside the plugin's folder. |
-| `frontend`, `styles` | Accepted and listed; the app does not load them yet (planned for the frontend part of the API). |
+| `frontend` | Its JavaScript: an ES module inside the plugin's folder (see [The frontend](#the-frontend)). |
+| `styles` | A stylesheet the app loads while the plugin runs. |
 | `permissions` | `network`: host names it will connect to (shown to the user; enforced once plugins get the shared HTTP client). `library`: `read` (and later `add`, `edit`). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
 | `settings` | What the user can set, see below. |
 
@@ -160,6 +170,58 @@ rather than damaged.
 Edit the code, then **Restart** in Settings → Plugins (or turn the plugin off and on): the host
 loads the code again. Watch the plugin's **Log** for errors.
 
+### The frontend
+
+The `frontend` module is loaded by the app (every window) while the plugin runs. It exports
+`activate(p)`, and optionally `deactivate(p)`; `p` is a `PluginContext`, declared in
+[`frontend/src/plugins/api.ts`](../frontend/src/plugins/api.ts). That file has only types, so it can
+be copied next to a plugin's code as its declaration file (in JavaScript:
+`/** @param {import('./api').PluginContext} p */`).
+
+```js
+export function activate(p) {
+  p.pages.register({
+    id: 'recent', title: 'Recently Added', icon: 'calendar',
+    mount(el) {
+      el.innerHTML = '…';
+      return p.onChange((kinds) => { if (kinds.includes('library')) redraw(el); });   // cleaned up when the page goes
+    },
+  });
+  p.commands.register({ id: 'show', title: 'Show Recently Added', key: 'Mod-Alt-r', run: () => p.pages.open('recent') });
+  p.itemPane.register({ id: 'added', title: 'Added', mount(el, item) { … } });
+  p.itemActions.register({ id: 'forget', title: 'Forget When It Was Added', run: async (items) => { await p.backend.post('/forget', { ids: items.map((i) => i.id) }); } });
+}
+```
+
+| Member | What it does |
+|---|---|
+| `p.pages.register({id, title, icon, mount})` | A page: an entry under **Plugins** in the sidebar; when chosen, the page takes the place of the library (as Tasks does) and `mount(el)` draws it. `p.pages.setBadge(id, value)` puts a count on the entry, `p.pages.open(id)` shows it. |
+| `p.commands.register({id, title, key, when, run})` | A command in the palette, named after the plugin. `key` like `Mod-Alt-r` (Mod: ⌘ on a Mac, Ctrl elsewhere) needs Mod or Alt and cannot be one of Synapse's keys; a key that cannot be used is left out (the console says why). |
+| `p.itemPane.register({id, title, when, mount})` | A section at the end of the item pane, for the items `when(item)` accepts; `mount(el, item)` runs once the selection rests. |
+| `p.itemActions.register({id, title, icon, when, run})` | An entry in the item menu for the selected items, also in the palette. |
+| `p.notify(message, {type, action, timeout})` | A notification, named after the plugin. |
+| `p.backend.get/post/put/delete(path, …)` | The plugin's own routes (`/api/plugins/<id><path>`), with the page's sign-in; resolves to the JSON answer. |
+| `p.library.selected()`, `.item(id)`, `.show(id)` | The selected items, one whole item, showing an item in the library. |
+| `p.onChange(fn)` | `fn(kinds)` when something changed: what the change feed reports (`library`, `notes`, `tasks`, `annotations`, `plugins`), and `library` when this window's item list reloads. |
+| `p.settings()` | The settings' values (a promise). |
+| `p.ui` | `icon(name)`, `escapeHtml(text)`, `confirm(…)`, `prompt(…)`, `formatDate(iso, withTime)`: the app's own. |
+| `p.onUnload(fn)` | Runs when the plugin stops. |
+
+Rules for a plugin's frontend:
+
+- Draw only inside the element a mount function gets: the rest of the app's markup is not part of the
+  API. Return a function from `mount` to clean up (stop timers, remove listeners).
+- The element sits inside one with `data-plugin="<id>"`: start the stylesheet's rules with
+  `[data-plugin="<id>"]` and use the colour tokens (`var(--text)`, `var(--accent)` …) so light and
+  dark themes work.
+- Everything registered through `p` is taken away when the plugin stops; errors in its functions
+  are reported (a notification and the browser console) instead of breaking the app.
+- The app loads the module again when the plugin restarts (its URL carries the start time). Modules
+  it imports keep their URL, so the browser may keep the old ones until the page reloads: a single
+  file (or a bundle) is the simplest.
+- TypeScript is welcome: compile it to one ES module (esbuild, `tsc`) and point `frontend` at the
+  result.
+
 ## How the host works
 
 `backend/plugins/` sits just above `library` in the layers (it imports only `config`, `settings`,
@@ -199,12 +261,25 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
   stores plus its log `.plugin.log` (dot files are left out of backups), `data/plugins.json` their
   state. Backups hold `plugins.json` and `plugin-data/` (SQLite files copied with the backup API);
   restoring stops the plugins, puts both back (keeping today's logs) and starts them again.
-- **Trust.** Plugins are not sandboxed: Python plugins run inside the server with its access.
+- **The frontend** (`frontend/src/plugins/host.ts`) asks `/api/plugin-host` which plugins run, then
+  `import()`s each one's module from `/api/plugin-files/<id>/<path>?v=<started>` and loads its
+  styles. It syncs at start, when the change feed names `plugins`, and after Settings turns one on
+  or off (that window's own change is not in the feed). `PluginHost.asset` serves only the styles
+  file and files in the folder of the frontend module, never Python files or the manifest.
+- **Extension points** (`frontend/src/extend.ts`) are registries the app's views read: `commands`
+  (the palette, `views/palette.ts`; `main.ts` registers Synapse's own and runs plugins' keys),
+  `pages` (`views/pages.ts`, the sidebar's Plugins section), `itemSections` (the item pane) and
+  `itemActions` (the item menu). The plugin host prefixes ids with the plugin's id, wraps every
+  function so its errors are reported, and passes copies of items.
+- **Trust.** Plugins are not sandboxed: Python plugins run inside the server with its access, and a
+  plugin's frontend runs in the app's page, with its access.
   Permissions are shown before turning a plugin on and checked where the API can check them
   (`plugin.library`, `plugin.mcp_tool`), but they do not contain a plugin that ignores the API.
 
 ## Tests
 
-`tests/plugins/` (manifests, the host, storage and backups; the example plugin is installed by the
-`example` fixture and `make_plugin` writes small ones), the import rule in `tests/test_layers.py`,
-and the browser checklist `plugins` (Settings → Plugins).
+`tests/plugins/` (manifests, the host, storage and backups, the files of a frontend; the example
+plugin is installed by the `example` fixture and `make_plugin` writes small ones), the import rule
+in `tests/test_layers.py`, `tests/js/extend.test.mjs` (registries, keys, the palette's ranking), and
+the browser checklist `plugins` (Settings → Plugins and the example plugin's page, command, section
+and action).

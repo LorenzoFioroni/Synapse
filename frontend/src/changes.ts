@@ -5,6 +5,7 @@ import * as A from './actions.js';
 import { api } from './api.js';
 import { notesChanged } from './views/notes/notesView.js';
 import { pluginsChanged } from './views/settings/plugins.js';
+import { pluginChanges } from './plugins/host.js';
 import { tasksChanged } from './views/tasks/tasksView.js';
 
 const EVERY = 4000;          // ms between polls while the page is visible
@@ -54,6 +55,7 @@ async function poll() {
     seq = res.seq;
     epoch = res.epoch;
     for (const k of res.changes || []) pending.add(k);
+    if (res.changes?.length) pluginChanges(res.changes);   // plugins hear what changed (and reload on 'plugins')
     pending.delete('annotations');   // the PDF viewer looks after its own
     if (pending.size) await apply();
   } catch { /* server away for a moment: try again next time */ }

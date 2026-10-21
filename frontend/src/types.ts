@@ -475,6 +475,11 @@ export interface PluginInfo {
   tools?: string[];
   routes?: { rule: string; methods: string[] }[];
   events?: string[];
+  /** Paths in the plugin's folder (from the manifest). */
+  frontend?: string | null;
+  styles?: string | null;
+  /** When it started (while running): the app loads its frontend again when this changes. */
+  started?: string;
 }
 
 /** GET /api/plugin-host. */

@@ -21,7 +21,7 @@ export interface AppEvents {
   columns: void;
   settings: void;
   indexer: void;                    // new full-text indexer status in state.indexer
-  workspace: void;                  // Notes or Tasks opened or closed
+  workspace: void;                  // Notes, Tasks or a plugin's page opened or closed
   tasks: void;                      // tasks were loaded or changed (views/tasks/taskData.ts)
   'tasks-count': { open: number; overdue: number } | null;   // for the sidebar; null: turned off
   'open-tasks': { task?: string | null; note?: string | null } | undefined;   // the Tasks page, a task selected or a note's tasks shown
@@ -36,6 +36,7 @@ export interface AppEvents {
   'open-identifier': void;
   'clear-search': void;
   'set-search-mode': SearchMode;
+  'open-page': string;              // a page a plugin added (its id)
 }
 export type AppEvent = keyof AppEvents;
 /** The arguments after the event name: none for a `void` event, else the payload. */

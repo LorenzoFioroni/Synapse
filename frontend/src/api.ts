@@ -98,6 +98,11 @@ export const api = {
   newAccessToken: (name: string) => request<{ token: string; entry: AccessToken }>('POST', '/api/mcp/tokens', { name }),
   removeAccessToken: (id: string) => request('DELETE', `/api/mcp/tokens/${encodeURIComponent(id)}`),
   plugins: () => request<PluginsOverview>('GET', '/api/plugin-host'),
+  /** A plugin's own route (/api/plugins/<id><path>), for its frontend (plugins/host.ts). */
+  pluginRoute: <T = unknown>(id: string, method: Method, path: string, body?: unknown, query?: Record<string, unknown>) => {
+    const q = query ? qs(query) : '';
+    return request<T>(method, `/api/plugins/${encodeURIComponent(id)}${path.startsWith('/') ? path : `/${path}`}${q ? `?${q}` : ''}`, body);
+  },
   enablePlugin: (id: string) => request<{ plugin: PluginInfo }>('POST', `/api/plugin-host/${encodeURIComponent(id)}/enable`),
   disablePlugin: (id: string) => request<{ plugin: PluginInfo }>('POST', `/api/plugin-host/${encodeURIComponent(id)}/disable`),
   restartPlugin: (id: string) => request<{ plugin: PluginInfo }>('POST', `/api/plugin-host/${encodeURIComponent(id)}/restart`),

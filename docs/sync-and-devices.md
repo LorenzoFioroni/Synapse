@@ -90,7 +90,7 @@ when it becomes visible again. It skips a poll while one is running or the page 
 | `library` | `A.loadItems()`: the item list, counts and sidebar. At most once every 2.5 s (`MIN_GAP`), because background fetching can write often. |
 | `notes` | `notesChanged()` in `notesView.ts`: the open note checks the server copy, and the notes tree is redrawn. |
 | `annotations` | Ignored: the viewer looks after its own. |
-| `plugins` | `pluginsChanged()` in `views/settings/plugins.ts`: an open Settings page redraws its Plugins section (not while a field in it is being edited). |
+| `plugins` | `syncPlugins()` in `plugins/host.ts` loads or unloads plugins' frontends; `pluginsChanged()` in `views/settings/plugins.ts` redraws an open Settings page's Plugins section (not while a field in it is being edited). Every kind is also passed to plugins' `onChange` listeners. |
 
 A refresh waits while the user is busy (`editing()`): a dialog or autocomplete list is open, a
 form field has focus, or the note editor was typed in during the last 4 seconds. Fields save when

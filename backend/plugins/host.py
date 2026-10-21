@@ -62,6 +62,7 @@ class Active:
     modname: str | None = None
     handler: logging.Handler | None = None
     urls: Map | None = None
+    started: str = ""  # when it started: the app loads its frontend again when this changes
 
 
 class PluginHost:
@@ -202,6 +203,7 @@ class PluginHost:
             before_upgrade=before_upgrade,
         )
         act = Active(entry, plugin, Worker(pid, plog, lambda what, e: self.fault(pid, what, e)), handler=handler)
+        act.started = datetime.now().isoformat(timespec="microseconds")
         try:
             path = man.backend_path()
             if path:
@@ -419,10 +421,13 @@ class PluginHost:
                 api=f"{man.api[0]}.{man.api[1]}",
                 permissions=man.permissions(),
                 parts=[p for p in ("backend", "frontend", "styles") if getattr(man, p)],
+                frontend=man.frontend,
+                styles=man.styles,
                 settings=[s.describe() for s in man.settings],
                 values=self.values(pid),
             )
         if act:
+            out["started"] = act.started
             out["tools"] = [t.name for t in act.plugin.tools]
             out["routes"] = [{"rule": r.rule, "methods": list(r.methods)} for r in act.plugin.routes]
             out["events"] = sorted(e for e, fns in act.plugin.listeners.items() if fns)
@@ -457,6 +462,25 @@ class PluginHost:
         """Wait until the listeners called so far have run (for tests)."""
         acts = [self._active[pid]] if pid else list(self._active.values())
         return all(a.worker.drain(timeout) for a in acts)
+
+    def asset(self, pid: str, rel: str) -> Path:
+        """A file of a running plugin's frontend: its styles file, or a file in the folder of its
+        frontend module (so the module can import its own modules). Raises NotFound otherwise; the
+        backend's code and anything else in the plugin's folder are never served."""
+        act = self._active.get(pid)
+        man = act.entry.manifest if act else None
+        if not man or not (man.frontend or man.styles):
+            raise NotFound()
+        folder = man.folder.resolve()
+        wanted = (folder / rel).resolve()
+        allowed = [((folder / man.frontend).resolve().parent, True)] if man.frontend else []
+        if man.styles:
+            allowed.append(((folder / man.styles).resolve(), False))
+        for root, is_dir in allowed:
+            inside = wanted == root or (is_dir and root in wanted.parents)
+            if inside and wanted.is_file() and not (is_dir and root == folder and _is_backend(man, wanted)):
+                return wanted
+        raise NotFound()
 
     def route(self, pid: str, path: str, method: str) -> tuple[Callable, Mapping]:
         """The function serving ``path`` of plugin ``pid``, and its arguments from the path.
@@ -499,6 +523,15 @@ def _guarded(host: PluginHost, pid: str, tool: ToolSpec) -> Callable:
         return host.run(pid, f"tool {tool.name}", tool.fn, **kwargs)
 
     return call
+
+
+def _is_backend(man: Manifest, path: Path) -> bool:
+    """Whether ``path`` is the plugin's backend code (or its manifest): a frontend module kept at
+    the top of the plugin's folder must not make the Python code readable."""
+    if path.name == "manifest.json" or path.suffix == ".py":
+        return True
+    backend = man.backend_path()
+    return bool(backend and (path == backend or backend in path.parents))
 
 
 def _forget_modules(modname: str) -> None:

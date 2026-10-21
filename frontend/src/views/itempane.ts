@@ -1,5 +1,6 @@
 // Right-hand item pane: editable metadata, authors, abstract, attachments.
 import * as A from '../actions.js';
+import { itemSections } from '../extend.js';
 import { type ApiError, api, openAttachment, openPdfInNewWindow } from '../api.js';
 import { icon, typeIcon } from '../icons.js';
 import { byId, emit, folderById, folderPath, itemTypeLabel, on, selectedItems, state } from '../store.js';
@@ -23,6 +24,14 @@ const sectionState: Record<string, boolean> = storage<Record<string, boolean> | 
   || Object.fromEntries(storage<string[]>('zc.collapsedSections', []).map((id) => [id, true]));   // older setting
 const isCollapsed = (id: string) => (id in sectionState ? sectionState[id] : DEFAULT_COLLAPSED.has(id));
 let showAllFields = storage('zc.showAllFields', false);
+// Sections plugins add (extend.ts): mounted once the selection rests, cleaned up before the pane
+// is drawn again.
+let sectionCleanups: (() => void)[] = [];
+function cleanupSections(): void {
+  for (const fn of sectionCleanups.splice(0)) {
+    try { fn(); } catch (e) { console.error(e); }
+  }
+}
 
 export function initItemPane(): void {
   root = document.getElementById('item-pane')!;
@@ -34,6 +43,7 @@ export function initItemPane(): void {
   on('selection', () => render());
   on('items', () => render());
   on('item-updated', (id) => { if (id === shownId) refreshHeader(); });
+  itemSections.subscribe(() => render(true));
   on('focus-field', ({ id, field }) => {
     if (shownId !== id) render(true);
     setTimeout(() => {
@@ -100,6 +110,7 @@ async function loadWhole(id: string): Promise<void> {
 }
 
 function renderEmpty(): void {
+  cleanupSections();
   const n = state.counts[state.view as keyof typeof state.counts] || 0;
   const where = ({ trash: 'in the Trash', duplicates: 'look like duplicates' } as Record<string, string>)[state.view] || 'in your library';
   const tip = state.view === 'duplicates' && n ? '<p class="subtle">Select one item of a group and choose “Keep This One” to trash the others.</p>' : '';
@@ -109,6 +120,7 @@ function renderEmpty(): void {
 }
 
 function renderMulti(items: Item[]): void {
+  cleanupSections();
   const ids = items.map((i) => i.id);
   const trash = state.view === 'trash';
   root.innerHTML = `<div class="multi"><div class="count">${items.length}</div><div class="muted">items selected</div>
@@ -178,6 +190,7 @@ function section(id: string, title: string, bodyHtml: string, { count = '' as st
 }
 
 function renderItem(it: Item): void {
+  cleanupSections();
   shownId = it.id;
   const type = it.item_type || 'journalArticle';
   const trash = state.view === 'trash';
@@ -249,6 +262,7 @@ function renderItem(it: Item): void {
         <div class="field-row"><label>Tags</label><div class="ip-tags"></div></div>`, { count: (it.tags || []).length || '' })}
       ${section('references', 'References', '<div class="ip-refs" data-ip-refs><span class="muted">Loading…</span></div>')}
       ${section('attachments', 'Attachments', attHtml, { count: atts.length })}
+      ${extraSections(it)}
     </div>`;
   bindItem(it);
   // Notes and references take a request each: wait until the selection rests, so holding an
@@ -258,9 +272,28 @@ function renderItem(it: Item): void {
     if (shownId !== it.id) return;
     fillNotes(it);
     fillReferences(root.querySelector<HTMLElement>('[data-ip-refs]')!, it, () => shownId === it.id);
+    mountSections(it);
   };
   if (Date.now() - lastFill > FILL_SETTLE_MS) { lastFill = Date.now(); fill(); }
   else fillTimer = setTimeout(() => { lastFill = Date.now(); fill(); }, FILL_SETTLE_MS);
+}
+/** The sections plugins add for this item (their bodies are filled by mountSections). */
+function extraSections(it: Item): string {
+  return itemSections.all().filter((sec) => { try { return !sec.when || sec.when(it); } catch { return false; } })
+    .map((sec) => section(`x:${sec.id}`, `${escapeHtml(sec.title)}${sec.source ? ` <span class="ip-source">${escapeHtml(sec.source)}</span>` : ''}`,
+      `<div class="ip-ext" data-ext="${escapeHtml(sec.id)}"${sec.owner ? ` data-plugin="${escapeHtml(sec.owner)}"` : ''}></div>`)).join('');
+}
+
+function mountSections(it: Item): void {
+  root.querySelectorAll<HTMLElement>('[data-ext]').forEach((el) => {
+    const sec = itemSections.get(el.dataset.ext!);
+    if (!sec || el.dataset.mounted) return;
+    el.dataset.mounted = '1';
+    try {
+      const r = sec.mount(el, it);
+      if (typeof r === 'function') sectionCleanups.push(r);
+    } catch (e) { el.innerHTML = `<span class="muted">${escapeHtml((e as Error).message)}</span>`; }
+  });
 }
 const FILL_SETTLE_MS = 180;
 let fillTimer: ReturnType<typeof setTimeout> | undefined, lastFill = 0;

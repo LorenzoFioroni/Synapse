@@ -6,6 +6,8 @@
   "author": "Synapse",
   "description": "Remembers when each item was added, and tells Claude what arrived in the last days. An example of a plugin.",
   "backend": "backend",
+  "frontend": "frontend/main.js",
+  "styles": "frontend/style.css",
   "permissions": {
     "library": ["read"],
     "mcp": true

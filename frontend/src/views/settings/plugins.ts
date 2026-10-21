@@ -1,6 +1,7 @@
 // Settings → Plugins: the plugins found in the plugins folder, turning them on and off, their
 // settings (drawn from what each manifest declares), and their log. See docs/plugins.md.
 import { api } from '../../api.js';
+import { syncPlugins } from '../../plugins/host.js';
 import { icon } from '../../icons.js';
 import { confirmDialog, openDialog } from '../../ui/dialog.js';
 import { toast, toastError } from '../../ui/toast.js';
@@ -147,6 +148,7 @@ async function toggle(view: HTMLElement, p: PluginInfo, input: HTMLInputElement)
     if (res.plugin.status === 'failed') toast(`${p.name}: ${res.plugin.problem}`, { type: 'error', timeout: 8000 });
   } catch (e) { toastError(e); }
   await refreshPlugins(view);
+  syncPlugins();   // this window's own change is not in the change feed
 }
 
 async function saveSetting(view: HTMLElement, id: string, el: HTMLElement): Promise<void> {
@@ -213,6 +215,7 @@ export function bindPlugins(view: HTMLElement): void {
         toast(res.plugin.running ? `${p.name} restarted` : `${p.name}: ${res.plugin.problem}`, { type: res.plugin.running ? 'success' : 'error' });
       } catch (err) { toastError(err); }
       refreshPlugins(view);
+      syncPlugins();
     }
   });
 }

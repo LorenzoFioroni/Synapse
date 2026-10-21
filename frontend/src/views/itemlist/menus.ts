@@ -1,11 +1,12 @@
 // The item list's context menus (items and attachments) and the actions they share with the item
 // pane: renaming and deleting attachments, copying citation keys, picking files.
 import * as A from '../../actions.js';
+import { itemActions } from '../../extend.js';
 import { type ApiError, api, openAttachment, openPdfInNewWindow } from '../../api.js';
 import { openNewWindow } from '../../windows.js';
 import { currentFolderId, emit, folderById, selectedItems, state } from '../../store.js';
 import { promptDialog } from '../../ui/dialog.js';
-import { openMenu } from '../../ui/menu.js';
+import { type MenuEntry, openMenu } from '../../ui/menu.js';
 import { toast, toastError } from '../../ui/toast.js';
 import type { Attachment, Item } from '../../types.js';
 import { copyText, modLabel, plural } from '../../util.js';
@@ -86,9 +87,16 @@ export function itemMenu(at: At): void {
     { label: 'Copy as BibTeX', icon: 'copy', run: () => copyBibtex(ids), shortcut: `${modLabel}C` },
     { label: one ? 'Export Item…' : `Export ${items.length} Items…`, icon: 'export', run: () => openExport(ids) },
     { label: one ? 'Regenerate Citation Key' : 'Regenerate Citation Keys', icon: 'refresh', run: () => A.regenerateCitekeys(ids) },
+    ...pluginActions(items),
     'sep',
     { label: one ? 'Move Item to Trash' : `Move ${items.length} Items to Trash`, icon: 'trash', danger: true, run: A.trashSelected, shortcut: folder ? `${modLabel}⌫` : '⌫' },
   ], at);
+}
+
+/** What plugins offer for these items (extend.ts), after a separator. */
+function pluginActions(items: Item[]): MenuEntry[] {
+  const usable = itemActions.all().filter((a) => { try { return !a.when || a.when(items); } catch { return false; } });
+  return usable.length ? ['sep', ...usable.map((a) => ({ label: a.title, icon: a.icon || 'plugin', run: () => a.run(items) }))] : [];
 }
 
 /** The menu for an attachment row. */

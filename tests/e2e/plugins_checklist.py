@@ -1,7 +1,8 @@
-"""Browser checklist for Settings → Plugins: the example plugin is listed off, turning it on asks
-first and lists what it may do, its settings are drawn from its manifest and saved, its route
-answers, its log opens, a plugin that cannot start shows why, and turning a plugin on in one
-window shows in another.
+"""Browser checklist for plugins: in Settings → Plugins the example plugin is listed off, turning it
+on asks first and lists what it may do, its settings are drawn from its manifest and saved, its
+route answers, its log opens, a plugin that cannot start shows why; its frontend adds a page with a
+sidebar entry and a count, an item-pane section, an item action, a command in the command palette
+and a key; turning a plugin off in one window shows in another and takes its page away.
 
     python tests/e2e/plugins_checklist.py              (SHOTS=/some/dir to save screenshots)
 
@@ -193,6 +194,63 @@ async def main():
             check("and stays off", not await page.is_checked(f"{brow} [data-ptoggle]"))
             await shot(page, "p5-broken")
 
+            # its frontend: a page in the sidebar, a command, a section in the item pane, an item action
+            await page.click("[data-close]")  # Settings → back to the library
+            entry = '#sidebar [data-page="recently-added.recent"]'
+            check("its page has an entry in the sidebar", await wait_for(lambda: page.is_visible(entry)))
+            ok = await wait_for(
+                lambda: page.eval_on_selector(entry, "e => e.querySelector('.count').textContent === '1'")
+            )
+            check("with the number added today", ok)
+            await page.click(entry)
+            await page.wait_for_selector("#page-view .ra-item")
+            titles = await page.eval_on_selector_all("#page-view .ra-item", "els => els.map(e => e.textContent)")
+            check("the page lists what was added", titles == ["Seen by the plugin"], titles)
+            check("the page takes the library's place", not await page.is_visible("#items-pane"))
+            await shot(page, "p6-page")
+            await page.click("#page-view .ra-item")
+            ok = await wait_for(
+                lambda: page.evaluate("!document.body.dataset.workspace && !!document.querySelector('.row.selected')")
+            )
+            check("an item on the page opens in the library", ok)
+            sec = '[data-section="x:recently-added.added"] .ip-ext'
+            ok = await wait_for(
+                lambda: page.evaluate(f"(document.querySelector('{sec}')?.textContent || '').startsWith('Added ')")
+            )
+            check("the item pane has its section", ok)
+            await shot(page, "p7-section")
+            await page.click(".row.selected", button="right")
+            await page.click(".menu-item:has-text('Forget When It Was Added')")
+            ok = await wait_for(
+                lambda: page.evaluate(
+                    "[...document.querySelectorAll('.toast')].some(t => t.textContent.includes('Forgotten'))"
+                )
+            )
+            check("its item action runs", ok and api("/api/plugins/recently-added/recent")["items"] == [])
+
+            await page.keyboard.press(f"{mod}+Shift+KeyP")
+            await page.wait_for_selector(".palette-input")
+            await page.keyboard.type("recent")
+            first = await page.text_content(".palette-item.active")
+            check("the command palette finds its command", "Show Recently Added" in first, first)
+            await shot(page, "p8-palette")
+            await page.keyboard.press("Enter")
+            check("Enter runs it", await wait_for(lambda: page.evaluate("document.body.dataset.workspace === 'page'")))
+            await page.click('#sidebar [data-view="library"]')
+            check("the library comes back", await wait_for(lambda: page.evaluate("!document.body.dataset.workspace")))
+            await page.keyboard.press(f"{mod}+Alt+KeyR")
+            check(
+                "its key opens the page",
+                await wait_for(lambda: page.evaluate("document.body.dataset.workspace === 'page'")),
+            )
+            await page.keyboard.press(f"{mod}+Shift+KeyP")
+            await page.keyboard.type("new item")
+            first = await page.text_content(".palette-item.active")
+            check("Synapse's own commands are in the palette", "New Item" in first, first)
+            await page.keyboard.press("Escape")
+            check("Escape closes it", await wait_for(lambda: page.evaluate("!document.querySelector('.palette')")))
+            await open_plugins(page)
+
             # another window hears about it
             other = await browser.new_page(viewport={"width": 1300, "height": 950})
             await other.goto(BASE)
@@ -203,6 +261,13 @@ async def main():
                 lambda: other.evaluate(f"!document.querySelector('{ROW} [data-ptoggle]').checked"), timeout=12
             )
             check("turning it off shows in another window", ok)
+            await page.click("[data-close]")
+            ok = await wait_for(
+                lambda: page.evaluate(
+                    "!document.querySelector('#sidebar [data-page]') && document.body.dataset.workspace !== 'page'"
+                )
+            )
+            check("turned off, its page and sidebar entry are gone", ok)
             check(
                 "off: its route is gone", requests.get(BASE + "/api/plugins/recently-added/recent").status_code == 404
             )

@@ -1,0 +1,32 @@
+/* What plugins add to the app (docs/plugins.md): their pages, the command palette, their sections in
+   the item pane. A plugin's own markup sits inside an element with data-plugin="<id>"; its styles
+   should start with [data-plugin="<id>"] and use the colour tokens (tokens.css). */
+
+/* a plugin's page, in place of the library */
+body[data-workspace="page"] #items-pane,
+body[data-workspace="page"] #resizer-right,
+body[data-workspace="page"] #item-pane { display: none !important; }
+#page-view { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
+#page-view[hidden] { display: none; }
+#page-view .page-head { flex: none; height: 46px; display: flex; align-items: center; gap: 8px; padding: 0 18px; border-bottom: 1px solid var(--border); }
+#page-view .page-head h2 { margin: 0; font-size: 15px; font-weight: 650; }
+#page-view .page-head .icon { color: var(--text-2); }
+#page-view .page-source { color: var(--text-3); font-size: var(--fs-xs); margin-left: 4px; }
+#page-view .page-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px 40px; }
+
+/* the command palette */
+.palette-backdrop { align-items: flex-start; padding-top: 12vh; }
+.palette { width: 560px; max-width: 100%; display: flex; flex-direction: column; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); animation: pop .12s var(--ease); overflow: hidden; }
+.palette-input { border: none; border-bottom: 1px solid var(--border); background: transparent; color: var(--text); font: inherit; font-size: 15px; padding: 14px 16px; outline: none; }
+.palette-list { max-height: 50vh; overflow: auto; padding: 6px; display: flex; flex-direction: column; }
+.palette-item { display: flex; align-items: center; gap: 10px; border: none; background: none; color: var(--text); text-align: left; padding: 7px 10px; border-radius: 6px; font: inherit; cursor: pointer; }
+.palette-item .p-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-item .p-source { color: var(--text-3); }
+.palette-item .shortcut { flex: none; color: var(--text-3); font-size: var(--fs-xs); }
+.palette-item.active { background: var(--accent-soft); color: var(--accent); }
+.palette-item.active .p-source, .palette-item.active .shortcut { color: inherit; opacity: .75; }
+.palette-empty { padding: 12px 10px; color: var(--text-3); }
+
+/* sections plugins add to the item pane */
+.ip-source { color: var(--text-3); font-weight: 400; font-size: var(--fs-xs); margin-left: 4px; }
+.ip-ext:empty::before { content: "…"; color: var(--text-3); }

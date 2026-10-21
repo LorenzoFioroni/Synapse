@@ -63,6 +63,8 @@ declare global {
     zcGraph?: unknown;
     /** The change feed's poll and state (changes.ts), for the browser tests. */
     zcChanges?: { poll(): Promise<void>; state(): { seq: number | null; epoch: string | null; pending: string[] } };
+    /** The plugins whose frontend is loaded (plugins/host.ts), for the browser tests. */
+    zcPlugins?: { loaded(): string[]; sync(): Promise<void> };
     /** The app's tabs (tabs/tabs.ts). */
     zcTabs?: ZcTabs;
     /** The open PDF's annotations (viewer/annotations.ts), read-only, for the browser tests. */

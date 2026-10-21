@@ -70,7 +70,12 @@ def test_turning_on_and_off(client, svc, example):
     p = client.post("/api/plugin-host/recently-added/enable").get_json()["plugin"]
     assert p["status"] == "on" and p["running"]
     assert p["tools"] == ["recently-added__recently_added"]
-    assert p["routes"] == [{"rule": "/recent", "methods": ["GET"]}]
+    assert p["routes"] == [
+        {"rule": "/recent", "methods": ["GET"]},
+        {"rule": "/item/<item_id>", "methods": ["GET"]},
+        {"rule": "/forget", "methods": ["POST"]},
+    ]
+    assert p["frontend"] == "frontend/main.js" and p["styles"] == "frontend/style.css" and p["started"]
     assert p["events"] == ["item.added", "item.deleted"]
     assert "plugins" in svc.changes.since(since, svc.changes.epoch, None)["changes"]
     assert json.loads(svc.config.plugins_state_path.read_text())["plugins"]["recently-added"]["enabled"] is True
@@ -340,3 +345,27 @@ def test_packages_with_submodules_load_and_unload(client, svc, example):
     assert len(names) == 2 and any(n.endswith(".store") for n in names)
     client.post("/api/plugin-host/recently-added/disable")
     assert not names & set(sys.modules)
+
+
+# ------------------------------------------------------------------ frontend files
+def test_frontend_files_are_served_while_running(client, svc, example, make_plugin):
+    assert client.get("/api/plugin-files/recently-added/frontend/main.js").status_code == 404  # off
+    client.post("/api/plugin-host/recently-added/enable")
+    r = client.get("/api/plugin-files/recently-added/frontend/main.js")
+    assert r.status_code == 200 and r.mimetype == "text/javascript" and b"export function activate" in r.data
+    assert client.get("/api/plugin-files/recently-added/frontend/style.css").mimetype == "text/css"
+    for path in ("backend/__init__.py", "manifest.json", "frontend/../backend/store.py", "frontend/nothing.js"):
+        assert client.get(f"/api/plugin-files/recently-added/{path}").status_code == 404, path
+    # a frontend at the top of the folder still does not make the Python code readable
+    make_plugin("flat", "def activate(plugin):\n    pass\n", frontend="main.js")
+    (svc.config.plugins_dir / "flat" / "main.js").write_text("export function activate() {}")
+    client.post("/api/plugin-host/flat/enable")
+    assert client.get("/api/plugin-files/flat/main.js").status_code == 200
+    assert client.get("/api/plugin-files/flat/plugin.py").status_code == 404
+    assert client.get("/api/plugin-files/flat/manifest.json").status_code == 404
+
+
+def test_a_restart_gives_a_new_start_time(client, svc, example):
+    first = client.post("/api/plugin-host/recently-added/enable").get_json()["plugin"]["started"]
+    again = client.post("/api/plugin-host/recently-added/restart").get_json()["plugin"]["started"]
+    assert first and again and first != again

@@ -252,6 +252,9 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `presence.ts` | Says hello to the server while the page is open, for a server that stops with its last window. |
 | `windowColor.ts` | The window's title bar colour (`theme-color`): neutral, or the shown note's folder colour (see [the app window](desktop.md#folder-colours)). |
 | `windows.ts` | Opening a place of the app in a new window (`openNewWindow`) and the address that names it (`placeHash`, `readPlace`); `main.ts` opens it (`openFromHash`). See [the app window](desktop.md#windows). |
+| `extend.ts` | The extension points: registries of commands, pages, item-pane sections and item actions that the views read and plugins (and `main.ts`, for Synapse's own commands) register into; keys (`parseKey`, `keyMatches`, `keyLabel`, `keyProblem`) and the palette's ranking. No DOM, unit-tested. |
+| `plugins/host.ts` | Plugins' frontends: loads each running plugin's module and styles, gives it its `PluginContext`, takes everything back when it stops (see [plugins](plugins.md#the-frontend)). |
+| `plugins/api.ts` | The `PluginContext` and the other types promised to plugins (types only; plugin authors copy it). |
 | `icons.ts` | Inline SVG icons: `icon(name, cls)` and `typeIcon(itemType)`. |
 | `util.ts` | Small helpers: `escapeHtml`, `h`, `debounce`, dates and sizes, `storage` / `store` (`localStorage` that never throws), `modKey`, `copyText`, `diffWords`, `hitBadge` (the "full text" or "note" badge of a search match). |
 
@@ -266,7 +269,9 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `itemlist/menus.ts` | Context menus for items and attachments, shared with the item pane. |
 | `itempane.ts` | The right-hand pane: editable fields, authors, abstract, attachments. |
 | `referencesSection.ts` | The item pane's References section (see [references](references.md)). |
-| `sidebar.ts` | Library views, folder tree, smart folders, tag pane, and drag and drop onto them. |
+| `sidebar.ts` | Library views, folder tree, smart folders, tag pane, the pages plugins add, and drag and drop onto them. |
+| `pages.ts` | A plugin's page in place of the library (`openPage`, `closePage`; `body[data-workspace="page"]`). |
+| `palette.ts` | The command palette (⌘⇧P / Ctrl+Shift+P, F1): every command in `extend.ts`, best match first. |
 | `organizeDialogs.ts` | Folder picker, tag editor and input, smart folder dialog. |
 | `importDialog.ts`, `exportDialog.ts` | Import with preview and duplicate flags; export to the formats. |
 | `identifierDialog.ts` | Add items by DOI, arXiv id or ISBN. |

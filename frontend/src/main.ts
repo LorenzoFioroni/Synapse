@@ -8,7 +8,9 @@ import { installLongPress } from './ui/longpress.js';
 import { closeMenu, openMenu } from './ui/menu.js';
 import { toastError } from './ui/toast.js';
 import type { Counts, SearchMode } from './types.js';
-import { debounce, modKey, modLabel, plural, storage, store } from './util.js';
+import { debounce, isMac, modKey, modLabel, plural, storage, store } from './util.js';
+import { commands, keyMatches, pages } from './extend.js';
+import { initPluginHost } from './plugins/host.js';
 import { type NavEntry, initNav, navSnapshot, navUpdate } from './nav.js';
 import { initChanges } from './changes.js';
 import { startPresence } from './presence.js';
@@ -17,7 +19,9 @@ import {
   setHomeLabel, showHome, tabShortcut,
 } from './tabs/tabs.js';
 import { type Mode, folderColor, noteTabs } from './views/notes/workspace.js';
-import { readPlace } from './windows.js';
+import { openNewWindow, readPlace } from './windows.js';
+import { closePage, currentPageId, initPages, openPage, pageOpen } from './views/pages.js';
+import { openPalette } from './views/palette.js';
 import { openExport } from './views/exportDialog.js';
 import { smartFolderDialog } from './views/organizeDialogs.js';
 import { openIdentifierDialog } from './views/identifierDialog.js';
@@ -53,6 +57,8 @@ async function boot() {
   initNotes();
   initTasks();
   initNoteTasks();
+  initPages();
+  registerCoreCommands();
   initResizer();
   initStatusBar();
   initShortcuts();
@@ -69,7 +75,7 @@ async function boot() {
   on('set-search-mode', (m) => setMode(m));
   on('clear-search', () => clearSearch());
   on('open-notes', () => openNotes());
-  on('close-notes', () => { closeNotes(); closeTasks(); });
+  on('close-notes', () => { closeNotes(); closeTasks(); closePage(); });
   on('open-tasks', (o) => goToTasks(o || {}));
   on('open-note', ({ path, line }) => { showHome(); openNotes(path, line ?? null); });
   on('show-graph', (focus) => { if (settingsOpen()) closeSettings(); openNotesGraph(focus); });
@@ -84,6 +90,7 @@ async function boot() {
 
   await A.loadItems();
   initChanges();   // show what other windows and devices change
+  initPluginHost();   // plugins' frontends: their pages, commands, item sections and actions
   focusList();
   pollStats();
   openFromHash();
@@ -108,6 +115,7 @@ async function openFromHash(): Promise<void> {
 /** The Tasks page (leaving Notes or Settings), optionally with a task selected or a note's tasks. */
 async function goToTasks(o: { task?: string | null; note?: string | null } = {}): Promise<void> {
   if (settingsOpen()) closeSettings();
+  closePage();
   if (notesOpen()) await closeNotes({ toLibrary: false });
   await openTasks(o);
 }
@@ -118,6 +126,7 @@ async function showItem(id: string): Promise<void> {
   if (settingsOpen()) closeSettings();
   if (notesOpen()) await closeNotes();
   closeTasks();
+  closePage();
   if (!state.items.some((i) => i.id === id)) {
     if (state.query) clearSearch();
     state.tagFilter.clear();
@@ -135,9 +144,16 @@ async function navigate(entry: NavEntry): Promise<void> {
   showHome();
   if (settingsOpen()) closeSettings();
   if (entry.ws === 'tasks') { await goToTasks({ task: entry.task || null }); return; }
+  if (entry.ws === 'page' && entry.page) {
+    if (notesOpen()) await closeNotes({ toLibrary: false });
+    closeTasks();
+    openPage(entry.page, { push: false });
+    return;
+  }
   if (entry.ws === 'notes') { await openNotes(entry.path || null, null, { graph: !!entry.graph, focus: entry.focus || null }); return; }
   if (notesOpen()) await closeNotes();
   closeTasks();
+  closePage();
   if (entry.view && entry.view !== state.view) { A.setView(entry.view); await A.loadItems({ keepSelection: false }); }
   const ids = (entry.sel || []).filter((id) => state.items.some((i) => i.id === id));
   if (ids.length) A.select(ids, { anchor: ids[0], cursor: ids[ids.length - 1] });
@@ -149,21 +165,22 @@ function switchWorkspace(to: string = notesOpen() ? 'library' : 'notes'): void {
   if (settingsOpen()) closeSettings();
   if (to === 'tasks') { goToTasks(); return; }
   if (to === 'notes') openNotes();
-  else { closeNotes(); closeTasks(); }
+  else { closeNotes(); closeTasks(); closePage(); }
 }
 
-/** What the first tab shows: the library or Tasks, whichever was shown last. */
-let homeWs: 'library' | 'tasks' = 'library';
+/** What the first tab shows: the library, Tasks or a plugin's page, whichever was shown last. */
+let homeWs: 'library' | 'tasks' | 'page' = 'library';
 
 function paintWorkspace() {
   const sw = document.querySelector<HTMLElement>('.ws-switch');
   if (!sw) return;
   sw.hidden = state.settings.notes_enabled === false;
-  const ws = notesOpen() ? 'notes' : tasksOpen() ? 'tasks' : 'library';
+  const ws = notesOpen() ? 'notes' : tasksOpen() ? 'tasks' : pageOpen() ? 'page' : 'library';
   sw.querySelectorAll<HTMLElement>('[data-ws]').forEach((b) => b.classList.toggle('active', b.dataset.ws === ws));
   if (ws === 'notes') return;
   homeWs = ws;
-  setHomeLabel(ws === 'tasks' ? 'Tasks' : 'Library');
+  const page = ws === 'page' ? pages.get(currentPageId() || '')?.title || 'Library' : '';
+  setHomeLabel(ws === 'tasks' ? 'Tasks' : ws === 'page' ? page : 'Library');
   homeUnderneath();
 }
 
@@ -171,6 +188,12 @@ function paintWorkspace() {
 async function goHome(): Promise<void> {
   if (settingsOpen()) closeSettings();
   if (homeWs === 'tasks') { await goToTasks(); return; }
+  const page = homeWs === 'page' ? currentPageId() : null;
+  if (page) {
+    if (notesOpen()) await closeNotes({ toLibrary: false });
+    openPage(page);
+    return;
+  }
   if (notesOpen()) await closeNotes();
   closeTasks();
   focusList();
@@ -221,6 +244,8 @@ function initToolbar() {
     const a = b.dataset.a!;
     if (notesOpen() && (a === 'columns' || a === 'pane')) { notesPanelButton(a); return; }   // the notes' own panels
     if (tasksOpen() && (a === 'columns' || a === 'pane')) { tasksPanelButton(a); return; }
+    if (pageOpen() && (a === 'columns' || a === 'pane')) return;   // a page has no list or item pane
+    if (pageOpen() && ['new', 'identifier', 'import', 'export'].includes(a)) closePage();
     if (notesOpen() && ['new', 'identifier', 'import', 'export'].includes(a)) closeNotes();   // library actions
     if (tasksOpen() && ['new', 'identifier', 'import', 'export'].includes(a)) closeTasks();
     if (a === 'new') A.newItem();
@@ -388,8 +413,11 @@ function initShortcuts() {
     if (document.querySelector('.dialog-backdrop')) return;
     if (tabShortcut(e)) { e.preventDefault(); return; }
     const target = e.target as HTMLElement;
-    const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
+    const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable || !!target.closest?.('.cm-editor');
     const k = e.key.toLowerCase();
+    if ((modKey(e) && e.shiftKey && k === 'p') || (e.key === 'F1' && !modKey(e))) { e.preventDefault(); if (settingsOpen()) closeSettings(); openPalette(); return; }
+    if (pluginKey(e, typing)) { e.preventDefault(); return; }
+    if (pageOpen() && !settingsOpen() && ((modKey(e) && ['n', 'i', 'e', 'f'].includes(k)) || (e.key === '/' && !typing))) closePage();   // library actions leave the page
     if (modKey(e) && e.shiftKey && k === 'l' && state.settings.notes_enabled !== false) { e.preventDefault(); switchWorkspace(); return; }
     if (modKey(e) && e.shiftKey && k === 'g' && state.settings.notes_enabled !== false) { e.preventDefault(); if (settingsOpen()) closeSettings(); closeTasks(); toggleNotesGraph(); return; }
     if (modKey(e) && e.shiftKey && k === 'k' && state.settings.notes_enabled !== false) {
@@ -427,6 +455,39 @@ function initShortcuts() {
   window.addEventListener('dragover', (e) => e.preventDefault());
   window.addEventListener('drop', (e) => e.preventDefault());
   window.addEventListener('unhandledrejection', (e) => { if (e.reason?.message) toastError(e.reason); });
+}
+
+/** A plugin's command whose key this is (keys without ⌘/Ctrl wait while typing). */
+function pluginKey(e: KeyboardEvent, typing: boolean): boolean {
+  if (typing && !modKey(e)) return false;
+  for (const c of commands.all()) {
+    if (!c.owner || !c.key || !keyMatches(c.key, e, isMac)) continue;
+    try { if (c.when && !c.when()) continue; } catch { continue; }
+    if (settingsOpen()) closeSettings();
+    c.run();
+    return true;
+  }
+  return false;
+}
+
+/** Synapse's own commands, for the command palette (their keys are handled above, not from here). */
+function registerCoreCommands(): void {
+  const notesOn = () => state.settings.notes_enabled !== false;
+  const add = (id: string, title: string, run: () => unknown, key?: string, when?: () => boolean) => commands.register({ id: `core.${id}`, title, run, key, when });
+  add('new-item', 'New Item', () => { closeNotes(); closeTasks(); closePage(); A.newItem(); }, 'Mod-n');
+  add('add-identifier', 'Add by DOI, arXiv ID or ISBN…', () => { closeNotes(); closeTasks(); closePage(); openIdentifier(); }, 'Mod-Shift-n');
+  add('import', 'Import…', () => { closeNotes(); closeTasks(); closePage(); openImport(); }, 'Mod-i');
+  add('export', 'Export…', () => exportSelectionOrAll(), 'Mod-e');
+  add('search', 'Search the Library', () => { switchWorkspace('library'); searchInput.focus(); searchInput.select(); }, 'Mod-f');
+  add('library', 'Show the Library', () => switchWorkspace('library'));
+  add('notes', 'Show Notes', () => switchWorkspace('notes'), undefined, notesOn);
+  add('tasks', 'Show Tasks', () => goToTasks(), 'Mod-Shift-k', notesOn);
+  add('graph', 'Show the Graph', () => { if (settingsOpen()) closeSettings(); closeTasks(); closePage(); toggleNotesGraph(); }, 'Mod-Shift-g', notesOn);
+  add('item-pane', 'Show or Hide the Item Pane', () => toggleItemPane(), undefined, () => !notesOpen() && !tasksOpen() && !pageOpen());
+  add('settings', 'Settings', () => openSettings(), 'Mod-,');
+  add('settings-plugins', 'Settings: Plugins', () => openSettings('plugins'));
+  add('settings-backups', 'Settings: Backups', () => openSettings('backups'));
+  add('new-window', 'New Window', () => openNewWindow());
 }
 
 boot();

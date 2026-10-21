@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, jsonify, request, send_file
 from werkzeug.exceptions import HTTPException
 
 from ..plugins import PluginError
@@ -68,6 +68,17 @@ def plugin_log(pid: str):
         return jsonify(lines=_host().log_lines(pid, lines))
     except (PluginError, ValueError) as e:
         return error(str(e))
+
+
+@bp.get("/plugin-files/<pid>/<path:rest>")
+def plugin_file(pid: str, rest: str):
+    """A running plugin's frontend files (its module, what it imports, its styles)."""
+    try:
+        path = _host().asset(pid, rest)
+    except HTTPException as e:
+        return error("Not found", e.code or 404)
+    # never cached: the app asks for the module with ?v=<when it started>, and its imports must follow
+    return send_file(path, max_age=0, etag=True, conditional=True)
 
 
 @bp.route("/plugins/<pid>/", defaults={"rest": ""}, methods=["GET", "POST", "PUT", "PATCH", "DELETE"])

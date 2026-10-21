@@ -1,7 +1,8 @@
 """Recently Added: an example of a Synapse plugin (docs/plugins.md).
 
 It shows each part of the plugin API once: settings from the manifest, a SQLite store with a
-migration, an event listener, reading the library, a route and a tool for Claude.
+migration, an event listener, reading the library, routes and a tool for Claude. Its frontend
+(frontend/main.js) adds a page, a command, an item-pane section and an item action.
 """
 
 from __future__ import annotations
@@ -62,6 +63,22 @@ def activate(plugin: Plugin) -> None:
         except ValueError as e:
             raise PluginError("days must be a number") from e
         return {"items": recent(days)}
+
+    @plugin.route("/item/<item_id>")
+    def item_route(item_id: str):
+        rows = db.query("SELECT added_at FROM added WHERE item_id = ?", (item_id,))
+        return {"added_at": rows[0]["added_at"] if rows else None}
+
+    @plugin.route("/forget", methods=["POST"])
+    def forget_route():
+        from flask import request
+
+        ids = (request.get_json(silent=True) or {}).get("ids") or []
+        if not isinstance(ids, list):
+            raise PluginError("ids: a list of item ids")
+        with db.session() as c:
+            c.executemany("DELETE FROM added WHERE item_id = ?", [(str(i),) for i in ids])
+        return {"forgotten": len(ids)}
 
     @plugin.mcp_tool("Items added to the library in the last days, newest first, with when each arrived.")
     def recently_added(days: int = 7) -> dict:

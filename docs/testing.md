@@ -105,6 +105,7 @@ These check rules of the code base rather than behaviour:
 | `noteSession.test.mjs` | `views/notes/noteSession.js`: saving, conflicts, drafts |
 | `render.test.mjs` | `views/notes/render.js` |
 | `store.test.mjs` | `sortedItems` in `store.js`, `hitBadge` in `util.js` |
+| `extend.test.mjs` | `extend.js`: the registries of the extension points, parsing, matching and showing keys, which keys a plugin may take, the command palette's ranking |
 | `tabs.test.mjs` | `tabs/model.js`: the app's tabs (opening, reuse, closing and where it goes, reopening, order, saving and restoring; note tabs: the preview tab, keeping, renamed and deleted notes, what a dragged tab may be); `viewer/jumpHistory.js`; `windows.js`: the address of a new window |
 
 `embed.test.mjs`, `equations.test.mjs`, `figures.test.mjs`, `gallery.test.mjs` and `render.test.mjs` load the real markdown-it and KaTeX from
@@ -184,7 +185,7 @@ looking for a bug.
 | `list_perf` | 8779 | 10,000 items: fast list, few rows in the DOM, quick selection, small changes without a full reload |
 | `multipdf` | 8788 | Items with several PDFs: citations, cards and menus |
 | `notes` | 8765 | The notes editor |
-| `plugins` | 8798 | Settings → Plugins: the example plugin listed off, turning it on asks first and lists its access, settings from its manifest saved (a bad value refused), its route answers, its log, a plugin that cannot start says why, turning one off shows in another window |
+| `plugins` | 8798 | Settings → Plugins: the example plugin listed off, turning it on asks first and lists its access, settings from its manifest saved (a bad value refused), its route answers, its log, a plugin that cannot start says why; its frontend: a page with a sidebar entry and a count, opening an item from it, its item-pane section, its item action, its command in the command palette and its key, Synapse's own commands in the palette; turning it off shows in another window and takes its page away |
 | `passkeys` | 8794 | Over HTTPS: adding a passkey, signing an unpaired iPad in with it (Chromium's virtual authenticator), removing it; Settings → AI Access makes a token that reaches `/mcp` from another computer, and removing it locks the app out |
 | `pdf_tabs` | 8773 | One viewer tab per PDF; Cmd/Ctrl+click or middle click opens a new one |
 | `remote_pdf` | 8774 | Attachments stored as web links open through `/api/attachments/<id>/remote`; local-network links refused |

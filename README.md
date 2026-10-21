@@ -291,6 +291,11 @@ never mix.
   saved as an annotation). Quotes are found by their words, so older quotes work too; a snapshot
   remembers its page region inside the PNG, so the note has no extra markup.
 
+## Command palette
+
+**⌘⇧P** (Ctrl+Shift+P, or F1) opens the command palette: type a few letters of a command (New Item,
+Show Tasks, Settings: Backups …) and press Enter. Commands of plugins are there too, with their keys.
+
 ## Plugins
 
 Plugins add features without changing Synapse itself. To install one, put its folder in
@@ -302,9 +307,9 @@ are under **More**; a plugin that keeps failing is turned off and Settings says 
 the app from working, start it with `python server.py --safe-mode` (no plugin runs) and turn it
 off.
 
-Plugins are written in Python for now: a `manifest.json` and an `activate(plugin)` function that
-registers routes, tools for Claude, listeners for changes in the library, settings and stored
-data. [`docs/plugins.md`](docs/plugins.md) explains how, and
+A plugin has a `manifest.json`, Python for the server (routes, tools for Claude, listeners for
+changes in the library, settings and stored data) and JavaScript for the app (pages listed under
+**Plugins** in the sidebar, sections in the item pane, actions in the item menu, commands). [`docs/plugins.md`](docs/plugins.md) explains how, and
 [`docs/examples/recently-added`](docs/examples/recently-added) is a small example to copy.
 Their tools reach Claude like Synapse's own; restart Claude if they do not show up.
 

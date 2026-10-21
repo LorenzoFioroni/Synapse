@@ -159,6 +159,10 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
   header is `views/itemlist/columns.ts`, its virtualised rows `rows.ts` (only the rows near the
   viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`.
+- `extend.ts` holds the extension points the views read: commands (the command palette,
+  `views/palette.ts`), pages (`views/pages.ts`, listed in the sidebar), item-pane sections and item
+  actions. `plugins/host.ts` loads plugins' frontends and registers what they add there; the types
+  promised to plugins are in `plugins/api.ts` (see [plugins](plugins.md#the-frontend)).
 - `ui/*` holds the generic widgets (dialogs, menus, toasts, long press).
 - `viewer/*` holds the PDF viewer (`viewer.html`): `viewer.ts` lays out, draws and zooms the pages
   and publishes `window.zcViewer`; `notesBridge.ts`, `links.ts` and `annotations.ts` add to it
