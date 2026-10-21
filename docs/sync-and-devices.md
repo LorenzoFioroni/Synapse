@@ -104,7 +104,10 @@ format is in [`storage.md`](storage.md).
 
 ## Viewer tab and app tab
 
-The viewer runs in its own tab (`viewer.html`). Two small mechanisms connect it to the app.
+The viewer (`viewer.html`) runs in one of the app's own tabs, as a frame of the app's page (the
+default; see [the app window](desktop.md)), or in a browser tab of its own (Settings → PDF Viewer →
+Open PDFs in → Browser Tabs). Two small mechanisms connect it to the app; for the app's own tabs
+`tabs/tabs.ts` does the first one, with the same `zcViewerGoto`.
 
 **One tab per PDF** (`frontend/src/api.ts`). `openAttachment` opens the viewer in a window named
 `zc-pdf:<file url>` and remembers it in `pdfTabs`. A second click on a citation of the same PDF

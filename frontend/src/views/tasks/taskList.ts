@@ -6,6 +6,7 @@ import type { Task, TaskChanges } from '../../types.js';
 import { openMenu } from '../../ui/menu.js';
 import { toast, toastError } from '../../ui/toast.js';
 import { escapeHtml, modKey, modLabel, plural } from '../../util.js';
+import { openNewWindow } from '../../windows.js';
 import { parseDue, parseQuick } from './dates.js';
 import { openNoteAt, pickNote } from './notePicker.js';
 import { type Row, type TaskRow, buildRows } from './taskQuery.js';
@@ -293,6 +294,7 @@ export function createTaskList(host: ListHost) {
       one && one.parent_id ? { label: 'Outdent', icon: 'outdent', shortcut: '⇧Tab', run: () => indent(-1) } : null,
       'sep',
       one ? { label: 'Open in note', icon: 'open', shortcut: 'O', run: () => openInNote(one.id) } : null,
+      one ? { label: 'Open in New Window', icon: 'newWindow', run: () => openNewWindow({ task: one.id }) } : null,
       { label: 'Show in a note…', icon: 'doc', run: () => showInNote(ids) },
       'sep',
       { label: ids.length > 1 ? `Delete ${ids.length} tasks` : 'Delete', icon: 'trash', danger: true, shortcut: '⌫', run: removeSelected },

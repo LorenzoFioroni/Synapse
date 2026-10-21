@@ -13,7 +13,7 @@ import type { NoteSession } from './noteSession.js';
 import {
   fKey, nKey, refreshTree, saveCollapsed, selectOnly, selected, tree, treeEl, visibleKeys,
 } from './tree.js';
-import { hooks, nameOf, parentOf, stemOf, within, ws } from './workspace.js';
+import { hooks, nameOf, notesDeleted, notesRenamed, parentOf, stemOf, within, ws } from './workspace.js';
 
 /** Notes and folders to act on together. */
 export interface Selection { notes: string[]; folders: string[] }
@@ -32,7 +32,7 @@ export async function newNote(folder = folderOfSelection()): Promise<void> {
     const res = await api.createNote({ title: title || 'Untitled', folder });
     if (folder) tree.collapsed.delete(folder);
     await refreshTree();
-    await hooks.openNote(res.path);
+    await hooks.openNote(res.path, { keep: true });
   } catch (e) { toastError(e); }
 }
 
@@ -61,7 +61,9 @@ async function moveNote(path: string, to: string, { quiet = false } = {}): Promi
     const session = ws.session;
     const isOpen = session?.path === path;
     if (session && isOpen) { await session.save(); if (session.dirty) throw new Error('Save the note before moving it.'); }
+    await hooks.saveAll();   // notes in other tabs
     const res = await api.moveNote(path, to, isOpen ? session!.saved.hash : undefined);
+    notesRenamed((p) => (p === path ? res.path : p));
     if (isOpen) await reopenAs(res.path);
     if (tree.sel.delete(nKey(path))) tree.sel.add(nKey(res.path));
     if (tree.cursor === nKey(path)) tree.anchor = tree.cursor = nKey(res.path);
@@ -76,13 +78,14 @@ function keepTreeFocus(): () => void {
   return () => { if (was) treeEl().focus({ preventScroll: true }); };
 }
 
-/** The open note was moved: keep editing it under its new path, with anything typed meanwhile. */
+/** The open note was moved: keep editing it under its new path, with anything typed meanwhile, its
+ *  undo history and its tab's mode. */
 async function reopenAs(path: string): Promise<void> {
-  const old = ws.session!;
-  const typed = old.text;
-  old.dispose();
-  ws.session = null;
-  await hooks.doOpen(path);
+  const typed = ws.session!.text;
+  const mode = ws.mode;
+  if (ws.editor) ws.parked.set(path, { state: ws.editor.park(), top: ws.editor.topLine() });
+  await hooks.closeCurrent();
+  await hooks.doOpen(path, mode);
   const reopened = ws.session as NoteSession | null;   // set by doOpen
   if (reopened && typed !== reopened.text) ws.editor!.replace(typed);   // saved by the new session
 }
@@ -106,8 +109,10 @@ async function moveFolder(path: string, to: string, { quiet = false } = {}): Pro
     const open = session?.path;
     const inside = !!open && within(open, path);
     if (session && inside) { await session.save(); if (session.dirty) throw new Error('Save the open note before moving its folder.'); }
+    await hooks.saveAll();   // notes in other tabs
     const res = await api.moveNoteFolder(path, to);
     const moved = (p: string) => (p === path || within(p, path) ? res.path + p.slice(path.length) : p);
+    notesRenamed(moved);
     tree.collapsed = new Set([...tree.collapsed].map(moved));
     saveCollapsed();
     const keep = { sel: [...tree.sel], cursor: tree.cursor };   // reopening the note would move the selection to it
@@ -191,6 +196,7 @@ export async function deleteSelection(): Promise<void> {
     const closing = !!open && (notes.includes(open) || folders.some((f) => within(open, f)));
     if (closing) { await ws.session!.save(); await hooks.closeCurrent(); }
     const res = await api.trashNotes(notes, folders);
+    notesDeleted((p) => notes.includes(p) || folders.some((f) => within(p, f)));
     selectOnly(next);
     await refreshTree();
     treeEl().focus({ preventScroll: true });

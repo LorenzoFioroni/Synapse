@@ -11,6 +11,8 @@ export interface MenuItem {
   danger?: boolean;
   disabled?: boolean;
   checked?: boolean;     // shows a check column; with keepOpen the menu toggles it
+  /** A colour swatch before the label (#rrggbb; '' for an empty one: no colour). */
+  swatch?: string;
   keepOpen?: boolean;
   run?: (button: HTMLElement) => void;
 }
@@ -48,7 +50,7 @@ export function openMenu(entries: MenuEntry[], at: { x: number; y: number } | El
     if ('section' in e) { el.appendChild(h(`<div class="menu-label">${escapeHtml(e.section)}</div>`)); continue; }
     const b = h(`<button class="menu-item ${e.danger ? 'danger' : ''}" role="menuitem" ${e.disabled ? 'disabled' : ''}>
         ${e.checked !== undefined ? `<span class="check">${e.checked ? '✓' : ''}</span>` : (e.icon ? icon(e.icon) : '')}
-        <span>${escapeHtml(e.label)}</span>${e.shortcut ? `<span class="shortcut">${escapeHtml(e.shortcut)}</span>` : ''}</button>`);
+        ${e.swatch !== undefined ? `<span class="menu-swatch${e.swatch ? '' : ' none'}"${e.swatch ? ` style="background:${escapeHtml(e.swatch)}"` : ''}></span>` : ''}<span>${escapeHtml(e.label)}</span>${e.shortcut ? `<span class="shortcut">${escapeHtml(e.shortcut)}</span>` : ''}</button>`);
     b.addEventListener('click', (ev) => {
       ev.stopPropagation();
       if (!e.keepOpen) closeMenu();

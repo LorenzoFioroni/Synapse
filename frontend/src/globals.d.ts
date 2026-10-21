@@ -12,6 +12,19 @@ export interface ZcViewer {
   renderedPages?(): number[];
 }
 
+/** The app's tabs (tabs/tabs.ts), called by a viewer inside one of them (viewer/inTab.ts) and
+ *  read by the browser tests. */
+export interface ZcTabs {
+  /** Handles a tab key (next tab, close tab…); true when it did. */
+  shortcut(e: KeyboardEvent): boolean;
+  /** The pointer went down inside a tab's viewer. */
+  touched(): void;
+  /** This window, among those a tab can be dragged between (for the browser tests). */
+  win: string;
+  /** The tabs as shown, for the browser tests. */
+  list(): { id: string; kind: string; title: string; url: string; key: string; active: boolean; loaded: boolean; preview: boolean }[];
+}
+
 /** The part of Mermaid we call. */
 export interface Mermaid {
   initialize(options: { startOnLoad: boolean; securityLevel: string; theme: string }): void;
@@ -50,6 +63,8 @@ declare global {
     zcGraph?: unknown;
     /** The change feed's poll and state (changes.ts), for the browser tests. */
     zcChanges?: { poll(): Promise<void>; state(): { seq: number | null; epoch: string | null; pending: string[] } };
+    /** The app's tabs (tabs/tabs.ts). */
+    zcTabs?: ZcTabs;
     /** The open PDF's annotations (viewer/annotations.ts), read-only, for the browser tests. */
     zcAnnotations?: { ready: Promise<void>; list(): unknown[]; attachment(): number | null; refresh(): Promise<void> };
   }

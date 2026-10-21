@@ -3,6 +3,7 @@
 // switches the annotation tools. The add-ons in this folder (annotations, links, notesBridge)
 // hook in through window.zcViewer and the zc:pagecreated / zc:pagerendered events.
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
+import { startPresence } from '../presence.js';
 
 /** A page's box in the viewer; pdf.js's page object is kept on it. */
 export type PageWrapper = HTMLDivElement & { zcPage: PDFPageProxy };
@@ -581,3 +582,5 @@ function initPdf(pdfUrl: string): void {
     container.innerHTML = `<h2 style="color:white;">Error loading PDF: ${err.message}</h2>`;
   });
 }
+
+startPresence();   // a viewer in a browser tab of its own counts as an open window

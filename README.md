@@ -15,6 +15,8 @@ pip install -r requirements.txt
 python server.py                  # http://127.0.0.1:8000 opens in your browser
 python server.py --port 5050 --no-browser
 python server.py --data-dir ~/MyLibrary
+python server.py --window         # in a window of its own, like a program
+python server.py --make-shortcut  # an icon on the Desktop that does that (see below)
 ```
 
 `server.py` compiles the web app's scripts (`frontend/src` → `frontend/js`) whenever they changed,
@@ -22,6 +24,34 @@ for example after a `git pull`.
 
 The server only answers to `127.0.0.1` / `localhost`, and only the app's own pages and the
 browser button can change the library: other websites open in your browser cannot.
+
+### As a program of its own
+
+`python server.py --window` opens Synapse in a window of its own instead of a tab of your
+browser: Synapse installed as an app by Chrome or Edge if you did that (it then has the Synapse
+icon in the Dock: open `http://127.0.0.1:8000` in Chrome, **⋮ → Cast, Save and Share → Install
+Page as App…**), else a Chrome/Edge/Brave window without tabs or address bar. Right-click the
+installed app's icon in the Dock for **New Window**.
+
+`python server.py --make-shortcut` (macOS and Linux) puts a **Synapse** icon on the Desktop and,
+on a Mac, in `~/Applications` (Spotlight, Launchpad, the Dock). Double-clicking it starts the
+server in the background and opens the window; closing the window stops the server. Options given
+with it (`--data-dir`, `--port`…) are used by the shortcut. Make it again after moving the folder.
+Details: [docs/desktop.md](docs/desktop.md).
+
+Notes and PDFs open in tabs inside Synapse (in a browser tab too), after the first tab, which shows
+the library or Tasks. Notes open as in VS Code: in a preview tab (italic title) that the next note
+replaces, until you double-click the tab, double-click the note in the notes list, or edit it. Each
+note tab is its own editor, with its own mode (Live, Source, Read), place and undo history, so
+going back to it is instant. PDFs get a tab each. Ctrl+Tab switches, ⌃W (Alt+W elsewhere) or a
+middle click closes, ⌃⇧T reopens. Each window has its own tabs, which a reload brings back; a new
+window, or the app started again, opens on the library alone. Drag a tab onto another Synapse
+window to move it there, or outside every window for a new one (or right-click it: **Move to New
+Window**); right-click items, PDFs, folders, notes and tasks for **Open in New Window**. Settings →
+PDF Viewer → Open PDFs in → Browser Tabs keeps PDFs in browser tabs of their own.
+
+Give a notes folder a colour (right-click it in the notes list → Colour): its notes show it on
+their tab and in the app window's title bar, which is otherwise neutral like the tab bar.
 
 ### From an iPad or phone
 
@@ -343,7 +373,7 @@ For how the code fits together and where new code goes, see
 ├── backend/               Flask + SQLite backend (packages described in docs/architecture.md)
 ├── frontend/              the web app: index.html, viewer.html, src/ (TypeScript; built to js/), css/, vendor/ (third-party libraries)
 ├── browser_extension/     Chrome extension (Manifest V3) – load unpacked
-├── tools/                 build scripts for the vendored libraries
+├── tools/                 build scripts for the vendored libraries and the macOS icon
 ├── tests/                 pytest suite, js/ unit tests, e2e/ browser checklists
 ├── docs/                  technical documentation
 └── data/                  your library (git-ignored)
@@ -385,6 +415,7 @@ python tests/e2e/library_checklist.py    # key rename, notes in search, quote/sn
 python tests/e2e/citation_spot_checklist.py  # a quote's / snapshot's citation opens the PDF at that spot and flashes it
 python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders, Back/Forward, item-list markers
 python tests/e2e/viewer_links_checklist.py  # PDF links: jump, hover preview, Back/Forward in the viewer
+python tests/e2e/tabs_checklist.py       # PDFs in the app's own tabs; a --quit-when-closed server stops with its window
 python tests/e2e/export_checklist.py     # Export: HTML (self-contained, offline), Markdown, PDF via the print dialog
 python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, levels, filters, paper card, Show in Graph, Back/Forward
 python tests/e2e/attachments_checklist.py  # note attachments: unused ones to the trash, Attachments dialog, retention

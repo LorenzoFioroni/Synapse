@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 
 from .config import Config
+from .desktop import Presence
 from .library.db import Database
 from .library.organize import FolderRepository, SmartFolderRepository, TagRepository
 from .library.repository import PaperRepository
@@ -72,6 +73,7 @@ class Services:
         from .assist import Completer
 
         self.assist = Completer(self.settings)  # autocompletion in notes, from Ollama on this computer
+        self.presence = Presence()  # the open windows, when the server stops with the last one
         # A changed citation key is rewritten in every note (with a backup first).
         self.papers.on_citekey_change(lambda _id, old, new: self.note_service.rename_key(old, new) if new else None)
         self.papers.on_citekey_change(lambda _id, old, new: self.tasks.rename_key(old, new) if new and old else None)

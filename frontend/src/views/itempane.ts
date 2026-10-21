@@ -1,6 +1,6 @@
 // Right-hand item pane: editable metadata, authors, abstract, attachments.
 import * as A from '../actions.js';
-import { type ApiError, api, openAttachment } from '../api.js';
+import { type ApiError, api, openAttachment, openPdfInNewWindow } from '../api.js';
 import { icon, typeIcon } from '../icons.js';
 import { byId, emit, folderById, folderPath, itemTypeLabel, on, selectedItems, state } from '../store.js';
 import { openMenu } from '../ui/menu.js';
@@ -465,6 +465,7 @@ async function handleClick(e: MouseEvent): Promise<void> {
       if (!a) return;
       openMenu([
         { label: 'Open', icon: 'open', run: () => openAttachment(it2, a) },
+        { label: 'Open in New Window', icon: 'newWindow', run: () => openPdfInNewWindow(it2, a) },
         { label: 'Rename…', icon: 'edit', run: () => renameAttachment(a) },
         'sep',
         { label: 'Delete Attachment', icon: 'trash', danger: true, run: () => deleteAttachment(a) },

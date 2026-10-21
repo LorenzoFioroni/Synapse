@@ -1,7 +1,8 @@
 // The item list's context menus (items and attachments) and the actions they share with the item
 // pane: renaming and deleting attachments, copying citation keys, picking files.
 import * as A from '../../actions.js';
-import { type ApiError, api, openAttachment } from '../../api.js';
+import { type ApiError, api, openAttachment, openPdfInNewWindow } from '../../api.js';
+import { openNewWindow } from '../../windows.js';
 import { currentFolderId, emit, folderById, selectedItems, state } from '../../store.js';
 import { promptDialog } from '../../ui/dialog.js';
 import { openMenu } from '../../ui/menu.js';
@@ -64,6 +65,8 @@ export function itemMenu(at: At): void {
     ...(one && atts.length > 1
       ? atts.map((a) => ({ label: `Open “${a.name || 'PDF'}”`, icon: 'pdf', run: () => openAttachment(one, a) }))
       : [one && { label: hasPdf ? 'Open PDF' : 'Open PDF (none attached)', icon: 'pdf', disabled: !hasPdf, run: () => A.openPdf(one), shortcut: '↵' }]),
+    one && atts.length === 1 && { label: 'Open PDF in New Window', icon: 'newWindow', run: () => openPdfInNewWindow(one, atts[0]) },
+    one && { label: 'Show in New Window', icon: 'newWindow', run: () => openNewWindow({ item: one.id, view: state.view.startsWith('folder:') ? state.view : undefined }) },
     one && { label: 'View Online', icon: 'globe', disabled: !onlineUrl, run: () => window.open(onlineUrl || '', '_blank') },
     one && notesOn && (noteInfo ? { label: noteInfo.paper ? 'Open Paper Note' : 'Open Notes Citing This', icon: 'edit', run: () => openItemNote(one) }
       : { label: 'New Paper Note', icon: 'edit', disabled: !one.citation_key, run: () => newPaperNote(one) }),
@@ -94,6 +97,7 @@ export function attachmentMenu(it: Item | undefined, attId: string | undefined, 
   if (!it || !att) return;
   openMenu([
     { label: 'Open', icon: 'open', run: () => openAttachment(it, att) },
+    { label: 'Open in New Window', icon: 'newWindow', run: () => openPdfInNewWindow(it, att) },
     { label: 'Rename…', icon: 'edit', run: () => renameAttachment(att) },
     { label: 'Download', icon: 'download', run: () => { const a = document.createElement('a'); a.href = `/pdfs/${encodeURIComponent(att.url)}`; a.download = att.name || 'file.pdf'; a.click(); } },
     'sep',

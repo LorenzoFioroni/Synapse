@@ -176,6 +176,7 @@ export interface Settings {
   annotation_fill_box: string;
   annotation_color_draw: string;
   annotation_snap_words: boolean;
+  pdf_open_in: 'tabs' | 'browser';
   backup_interval: 'off' | 'daily' | 'weekly';
   backup_keep: number;
   backup_dir: string;
@@ -295,6 +296,8 @@ export type NoteKeys = Record<string, { paper: string | null; citing: number }>;
 export interface NotesListing {
   notes: NoteInfo[];
   folders: string[];
+  /** Notes folders given a colour (backend/notes/folder_colors.py): folder path → #rrggbb. */
+  folder_colors?: Record<string, string>;
   stats: { notes: number; links: number };
 }
 

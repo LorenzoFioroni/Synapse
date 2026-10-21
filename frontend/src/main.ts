@@ -11,6 +11,13 @@ import type { Counts, SearchMode } from './types.js';
 import { debounce, modKey, modLabel, plural, storage, store } from './util.js';
 import { type NavEntry, initNav, navSnapshot, navUpdate } from './nav.js';
 import { initChanges } from './changes.js';
+import { startPresence } from './presence.js';
+import {
+  closeNoteTabs, homeUnderneath, initTabs, repaintColors, noteEdited, noteModeChanged, notesDeleted as tabsNotesDeleted, notesRenamed as tabsNotesRenamed, openNoteTab, openViewerTab,
+  setHomeLabel, showHome, tabShortcut,
+} from './tabs/tabs.js';
+import { type Mode, folderColor, noteTabs } from './views/notes/workspace.js';
+import { readPlace } from './windows.js';
 import { openExport } from './views/exportDialog.js';
 import { smartFolderDialog } from './views/organizeDialogs.js';
 import { openIdentifierDialog } from './views/identifierDialog.js';
@@ -19,7 +26,9 @@ import { focusList, initItemList, openColumnPicker } from './views/itemlist.js';
 import { initItemPane, toggleItemPane } from './views/itempane.js';
 import { applyAppearance, closeSettings, openSettings, settingsOpen } from './views/settingsView.js';
 import { initSidebar } from './views/sidebar.js';
-import { closeNotes, initNotes, notesOpen, notesPanelButton, notesShortcut, openNotes, openNotesGraph, toggleNotesGraph } from './views/notes/notesView.js';
+import {
+  closeNoteTab, closeNotes, flushNote, initNotes, notesOpen, notesPanelButton, notesShortcut, openNotes, openNotesGraph, showNote, toggleNotesGraph,
+} from './views/notes/notesView.js';
 import { initNoteTasks } from './views/tasks/noteTasks.js';
 import { closeTasks, initTasks, openTasks, tasksOpen, tasksPanelButton, tasksShortcut } from './views/tasks/tasksView.js';
 
@@ -48,6 +57,12 @@ async function boot() {
   initStatusBar();
   initShortcuts();
   if (storage('zc.itemPaneHidden', false)) toggleItemPane(false);
+  // Notes open in tabs: the first tab shows the library or Tasks, a note tab its note.
+  initTabs({ home: goHome, note: (path, mode) => showNote(path, mode as Mode | undefined), noteClosed: closeNoteTab, flushNote, noteColor: folderColor });
+  on('notes-count', repaintColors);   // the notes listing came again: folder colours may have changed
+  Object.assign(noteTabs, { open: openNoteTab, edited: noteEdited, modeChanged: noteModeChanged, renamed: tabsNotesRenamed, deleted: tabsNotesDeleted });
+  on('settings', () => { if (state.settings.notes_enabled === false) closeNoteTabs(); });
+  startPresence();
 
   on('open-import', (file) => openImport(file instanceof File ? file : null));
   on('open-identifier', () => openIdentifierDialog());
@@ -56,7 +71,7 @@ async function boot() {
   on('open-notes', () => openNotes());
   on('close-notes', () => { closeNotes(); closeTasks(); });
   on('open-tasks', (o) => goToTasks(o || {}));
-  on('open-note', ({ path, line }) => openNotes(path, line ?? null));
+  on('open-note', ({ path, line }) => { showHome(); openNotes(path, line ?? null); });
   on('show-graph', (focus) => { if (settingsOpen()) closeSettings(); openNotesGraph(focus); });
   on('show-item', (id) => showItem(id));
   on('workspace', paintWorkspace);
@@ -71,16 +86,23 @@ async function boot() {
   initChanges();   // show what other windows and devices change
   focusList();
   pollStats();
-  openItemFromHash();
-  window.addEventListener('hashchange', openItemFromHash);
+  openFromHash();
+  window.addEventListener('hashchange', openFromHash);
 }
 
-/** #item=<id> (used by the browser extension's "Open in Library") selects that item. */
-function openItemFromHash() {
-  const id = new URLSearchParams(location.hash.slice(1)).get('item');
-  if (!id) return;
-  history.replaceState(history.state, '', location.pathname + location.search);
-  return showItem(id);
+/** The place named after '#' (windows.ts): an item (the browser extension's "Open in Library"),
+ *  a folder, a note, a task, and a PDF in a tab — where a new window was asked to open. */
+async function openFromHash(): Promise<void> {
+  const place = readPlace(location.hash);
+  if (!place) return;
+  history.replaceState(history.state, '', location.href.split('#')[0]);
+  if (place.note && state.settings.notes_enabled !== false) await openNotes(place.note, place.line ?? null, { keep: true });
+  else if (place.task) await goToTasks({ task: place.task });
+  else {
+    if (place.view) { A.setView(place.view); await A.loadItems({ keepSelection: false }); }
+    if (place.item) await showItem(place.item);   // in that folder when it is there
+  }
+  if (place.pdf) openViewerTab(place.pdf);
 }
 
 /** The Tasks page (leaving Notes or Settings), optionally with a task selected or a note's tasks. */
@@ -92,6 +114,7 @@ async function goToTasks(o: { task?: string | null; note?: string | null } = {})
 
 /** Show one item in the library (leaving Notes, Tasks or Settings), selected and scrolled to. */
 async function showItem(id: string): Promise<void> {
+  showHome();
   if (settingsOpen()) closeSettings();
   if (notesOpen()) await closeNotes();
   closeTasks();
@@ -109,6 +132,7 @@ async function showItem(id: string): Promise<void> {
 
 /** Back/Forward: go to a note or to the library view and selection stored in the history entry. */
 async function navigate(entry: NavEntry): Promise<void> {
+  showHome();
   if (settingsOpen()) closeSettings();
   if (entry.ws === 'tasks') { await goToTasks({ task: entry.task || null }); return; }
   if (entry.ws === 'notes') { await openNotes(entry.path || null, null, { graph: !!entry.graph, focus: entry.focus || null }); return; }
@@ -128,12 +152,28 @@ function switchWorkspace(to: string = notesOpen() ? 'library' : 'notes'): void {
   else { closeNotes(); closeTasks(); }
 }
 
+/** What the first tab shows: the library or Tasks, whichever was shown last. */
+let homeWs: 'library' | 'tasks' = 'library';
+
 function paintWorkspace() {
   const sw = document.querySelector<HTMLElement>('.ws-switch');
   if (!sw) return;
   sw.hidden = state.settings.notes_enabled === false;
   const ws = notesOpen() ? 'notes' : tasksOpen() ? 'tasks' : 'library';
   sw.querySelectorAll<HTMLElement>('[data-ws]').forEach((b) => b.classList.toggle('active', b.dataset.ws === ws));
+  if (ws === 'notes') return;
+  homeWs = ws;
+  setHomeLabel(ws === 'tasks' ? 'Tasks' : 'Library');
+  homeUnderneath();
+}
+
+/** The first tab was chosen: back to the library or Tasks. */
+async function goHome(): Promise<void> {
+  if (settingsOpen()) closeSettings();
+  if (homeWs === 'tasks') { await goToTasks(); return; }
+  if (notesOpen()) await closeNotes();
+  closeTasks();
+  focusList();
 }
 
 /* ---------------------------------------------------------------- toolbar */
@@ -346,6 +386,7 @@ on('items', () => { if (state.indexer && !state.indexer.indexer.running) setTime
 function initShortcuts() {
   document.addEventListener('keydown', (e) => {
     if (document.querySelector('.dialog-backdrop')) return;
+    if (tabShortcut(e)) { e.preventDefault(); return; }
     const target = e.target as HTMLElement;
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
     const k = e.key.toLowerCase();

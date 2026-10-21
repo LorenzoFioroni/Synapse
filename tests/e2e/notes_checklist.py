@@ -125,8 +125,9 @@ async def main():
         # 3. two tabs, conflict -> keep mine
         B = await ctx.new_page()
         watch(B, "B")
-        await B.goto(BASE)
-        await B.wait_for_timeout(1200)
+        await B.goto(BASE + "#note=First%20idea.md")  # a new window starts on the library
+        await B.wait_for_selector(".cm-content")
+        await B.wait_for_timeout(600)
         await type_end(A, "AAA from tab A")
         check("tab A saves", "Saved" in await wait_status(A, "Saved"))
         await type_end(B, "BBB from tab B")
@@ -154,11 +155,20 @@ async def main():
         a_text = await A.evaluate("document.querySelector('.cm-content').innerText")
         check("tab A picks up the change when focused", "BBB from tab B" in a_text and "AAA" not in a_text)
 
-        # 3b. conflict -> take theirs
+        # 3b. conflict -> take theirs. A must not pick up B's change before typing (its checks for
+        # changes made elsewhere, every few seconds, would race the typing): they fail meanwhile.
+        async def no_reads(route):
+            if route.request.method == "GET":
+                await route.abort()
+            else:
+                await route.continue_()
+
+        await A.route("**/api/notes/note?*", no_reads)
         await type_end(B, " +B2")
         await wait_status(B, "Saved")
         await type_end(A, " +A2")
         await A.wait_for_selector(".dialog", timeout=6000)
+        await A.unroute("**/api/notes/note?*")
         await A.click('.dialog button:has-text("Use the saved file")')
         await A.wait_for_timeout(500)
         a_text = await A.evaluate("document.querySelector('.cm-content').innerText")
@@ -169,8 +179,9 @@ async def main():
         check("status back to saved", "Saved" in await status(A))
         await B.close()
 
-        # 4. rename via double-click
-        await A.dblclick('.nt-row.note[data-path="First idea.md"]')
+        # 4. rename with F2 (a double-click keeps the note's tab: tabs_checklist.py)
+        await A.click('.nt-row.note[data-path="First idea.md"]')
+        await A.keyboard.press("F2")
         await A.fill(".dialog input", "Renamed idea")
         await A.keyboard.press("Enter")
         await A.wait_for_timeout(800)
@@ -230,7 +241,7 @@ async def main():
         time.sleep(1.5)
         C = await ctx.new_page()
         watch(C, "C")
-        await C.goto(BASE)
+        await C.goto(BASE + "#note=Projects/Renamed%20idea.md")  # a new window starts on the library
         await C.wait_for_timeout(1500)
         c_text = await C.evaluate("document.querySelector('.cm-content')?.innerText || ''")
         await wait_status(C, "Saved", 6000)

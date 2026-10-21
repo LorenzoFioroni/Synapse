@@ -12,7 +12,9 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-title" content="Synapse">
-  <meta name="theme-color" content="#cc2936">
+  <!-- The title bar: neutral like the tab bar; a note in a coloured folder sets its colour (windowColor.ts). -->
+  <meta name="theme-color" content="#f1f3f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1f232a" media="(prefers-color-scheme: dark)">
   <title>Library — Synapse</title>
 
   <link rel="stylesheet" href="css/tokens.css">
@@ -35,6 +37,7 @@
   </script>
 </head>
 <body>
+  <div id="tabbar" hidden></div>
   <header id="toolbar"></header>
   <div id="app">
     <nav id="sidebar" aria-label="Collections"></nav>
@@ -43,6 +46,7 @@
     <aside id="item-pane" aria-label="Item details"></aside>
   </div>
   <footer id="statusbar"></footer>
+  <div id="tab-views" hidden></div>
   <div id="toasts" aria-live="polite"></div>
   <script type="module" src="js/main.js"></script>
 </body>

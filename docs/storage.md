@@ -23,7 +23,8 @@ data/
 │   ├── attachments/    images used by notes
 │   ├── .trash/         deleted notes, in <timestamp>/ folders
 │   ├── .trash-attachments/   images no note uses any more (and the .since marker)
-│   └── .history/       earlier versions of notes changed through the MCP server
+│   ├── .history/       earlier versions of notes changed through the MCP server
+│   └── .folders.json   colours given to notes folders (folder path → #rrggbb)
 ├── notes_index.db      links, tags, headings and search index of the notes (derived)
 ├── citations.db        reference lists fetched online (a cache)
 ├── backups/            library-*.tar.gz and notes-*.tar.gz
@@ -214,7 +215,7 @@ lower case).
 | `manifest.json` | Written first, so listing reads only the start of each archive: `created`, `reason`, `items`, `notes` and `format`. |
 | `library.db` | Copied with SQLite's online backup API, so the copy is consistent while the app writes. |
 | `settings.json` | As it is on disk, if it exists. |
-| `notes/` | Every file in the notes folder, including `attachments/`, both trashes and `.history/`. |
+| `notes/` | Every file in the notes folder, including `attachments/`, both trashes, `.history/` and `.folders.json`. |
 
 Left out on purpose: `pdfs/` (large), `fulltext.db` and `notes_index.db` (rebuilt),
 `citations.db` (fetched again) and `auth.db`.

@@ -30,10 +30,10 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
 
 | Entry point | What it is |
 |---|---|
-| `server.py` | Starts the web app: parses the flags, builds a `Config`, calls `backend.create_app`, and serves it with Werkzeug's threaded server, over HTTPS with `--cert`/`--key`. |
+| `server.py` | Starts the web app: parses the flags, builds a `Config`, calls `backend.create_app`, and serves it with Werkzeug's threaded server, over HTTPS with `--cert`/`--key`. `--window` opens it in a window of its own, `--quit-when-closed` stops it with its last window and `--make-shortcut` makes a desktop icon that does both (see [the app window](desktop.md)). |
 | `mcp_server.py` | The MCP server that Claude Desktop and Claude Code start themselves. It reads the same `data/` folder. New notes it writes go into `notes/ai/`; changes it makes to existing notes are hash-checked and recorded so they can be undone (see [MCP](mcp.md)). |
 | `frontend/index.html` | The single-page app. It loads `js/main.js` as an ES module. |
-| `frontend/viewer.html` | The PDF viewer, opened in its own tab. It loads pdf.js and `js/viewer/viewer.js` (the viewer), then its add-ons `notesBridge`, `links` and `annotations`. |
+| `frontend/viewer.html` | The PDF viewer, opened in one of the app's own tabs (a frame in `index.html`) or in a browser tab of its own. It loads pdf.js and `js/viewer/viewer.js` (the viewer), then its add-ons `notesBridge`, `links` and `annotations`. |
 | `frontend/pair.html` | The page the pairing QR code opens on another device. |
 | `frontend/signin.html` | What a device that is not signed in sees instead of any page: how to pair, and **Sign In with a Passkey**. |
 | `/mcp` | The MCP tools over HTTP, served by the web app, for an AI app on another computer with an access token (`api/mcp.py`, `mcp/http.py`). |
@@ -70,6 +70,7 @@ Two objects tie the backend together:
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
 | `assist/` | Autocompletion in notes from a model in Ollama on this computer: the client, the prompt, and checking that Ollama and the model are there (see [autocompletion](autocompletion.md)). | none |
+| `desktop/` | Running Synapse like a desktop program: opening its window (`window.py`), the open windows that keep a `--quit-when-closed` server running (`presence.py`), the desktop shortcut (`shortcut.py`). See [the app window](desktop.md). | none |
 
 Only `online/` and `references/` use the network. `assist/` talks only to Ollama on this computer
 (its address must be a loopback one).
@@ -88,7 +89,7 @@ never from those above:
   online                                 (library, formats, pdf)
   formats · notes · pdf                  (library)
   library · backup · access · assist     (base only)
-  config · settings · changes            base: no backend imports
+  config · settings · changes · desktop   base: no backend imports
 ```
 
 `tests/test_layers.py` checks this. When a change needs an import against the layers, the code
@@ -134,6 +135,12 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   modules. Everything is type-checked in strict mode; there is no `@ts-nocheck` left.
 - `changes.ts` polls `/api/changes` and refreshes whatever another window, device or background
   job changed.
+- `tabs/*` are the app's own tabs: the first tab (Library or Tasks), note tabs (VS Code-style
+  preview tabs, shown by the notes workspace) and PDF tabs (a frame with the viewer each);
+  `model.ts` without a DOM, `tabs.ts` the bar, the frames and dragging tabs between windows. See
+  [the app window](desktop.md).
+  Each window has its own tabs; `windows.ts` opens an item, a folder, a note, a task or a PDF in a
+  new window. `presence.ts` tells a `--quit-when-closed` server that a window is open.
 - `views/*` holds the screens and dialogs, and `views/notes/*` the notes workspace (a CodeMirror 6
   editor, live preview and Markdown rendering). In the workspace, `notesView.ts` sets things up and
   opens and closes notes; the parts share the open note through `workspace.ts` (its `hooks` are how
@@ -160,7 +167,8 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   `annotations/textMarks.ts` (highlighting and underlining text) with its geometry in
   `annotations/lines.ts`, `annotations/pointer.ts` (mouse, Pencil or finger),
   `annotations/prefs.ts` (each tool's colour and size) and the entry `annotations.ts` (a layer
-  on each page, loading, and changes made elsewhere).
+  on each page, loading, and changes made elsewhere). `inTab.ts` connects a viewer inside one of
+  the app's tabs to the page around it, and `jumpHistory.ts` keeps its Back/Forward there.
 - `vendor/` holds third-party libraries, committed as built files and loaded from disk. See
   [`frontend/vendor/README.md`](../frontend/vendor/README.md).
 
@@ -223,6 +231,7 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
 | [Full-text search](fulltext-search.md) | PDF text extraction, the full-text index and the library search with its query syntax. |
 | [References](references.md) | Metadata lookup, finding PDFs, the citation graph, and what the Adding Items settings trigger. |
 | [Sync and devices](sync-and-devices.md) | The change feed, the viewer and app tabs, the guard, LAN pairing and the security model. |
+| [The app window](desktop.md) | `--window`, the server that stops with its window, the desktop shortcut, and the app's own tabs for PDFs. |
 | [MCP](mcp.md) | The MCP server, its tools and the rules it enforces. |
 | [Autocompletion](autocompletion.md) | Ghost-text suggestions in notes from a local model (Ollama), and the checks that guard against a missing Ollama or model. |
 | [Browser extension](browser-extension.md) | The extension and the connector API it uses. |

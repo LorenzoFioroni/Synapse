@@ -13,10 +13,14 @@
 //   or a LaTeX name like figure.3) the popup is taller and ends with the caption, the figure above it.
 // - Every jump is a browser history entry holding the reading position, so Back (toolbar arrow,
 //   Alt+←, Cmd+[, the mouse's back button) returns to where you were before following the link.
+//   Inside one of the app's tabs the jumps are kept in memory instead (jumpHistory.ts), with the
+//   same keys and buttons.
 
 import type { PageViewport, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api.js';
 import { installLongPress } from '../ui/longpress.js';
+import { inAppTab } from './inTab.js';
+import { JumpHistory } from './jumpHistory.js';
 import {
   type Box, type PageText, type ReadingPosition, destTarget, figureRegion, findCaption, fitRegion, graphicsBoxes, isFloatDest,
   popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor,
@@ -178,14 +182,18 @@ async function scrollToTarget(t: Resolved): Promise<void> {
 
 /* -------------------------------------------------------------------- history */
 // Each history entry's state is {zcIdx, zcPos}; the current entry's position is kept up to date
-// while scrolling, so Back/Forward return exactly to where you left each place.
-let navIdx = history.state?.zcIdx ?? 0;
+// while scrolling, so Back/Forward return exactly to where you left each place. In one of the
+// app's tabs the same is kept in `jumps` (see the top of this file).
+const jumps: JumpHistory<Position> | null = inAppTab() ? new JumpHistory<Position>() : null;
+if (jumps) jumps.entries[0].url = location.href;
+let navIdx = jumps ? 0 : history.state?.zcIdx ?? 0;
 let navMax = navIdx;
-history.replaceState({ ...(history.state || {}), zcIdx: navIdx }, '');
+if (!jumps) history.replaceState({ ...(history.state || {}), zcIdx: navIdx }, '');
 
 function recordPosition() {
   const pos = currentPosition();
-  if (pos) history.replaceState({ ...(history.state || {}), zcIdx: navIdx, zcPos: pos }, '');
+  if (jumps) jumps.record(pos);
+  else if (pos) history.replaceState({ ...(history.state || {}), zcIdx: navIdx, zcPos: pos }, '');
 }
 
 let scrollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -206,20 +214,61 @@ async function jumpRecorded(scroll: () => unknown, url?: string): Promise<void> 
   clearTimeout(scrollTimer);
   recordPosition();                         // where to come back to
   await scroll();
-  navIdx += 1;
-  navMax = navIdx;
-  history.pushState({ zcIdx: navIdx, zcPos: currentPosition() }, '', url);
+  if (jumps) {
+    jumps.push(currentPosition(), url);
+    if (url) history.replaceState(history.state, '', url);   // never a new entry: the page around shares the history
+    navIdx = jumps.idx;
+    navMax = jumps.entries.length - 1;
+  } else {
+    navIdx += 1;
+    navMax = navIdx;
+    history.pushState({ zcIdx: navIdx, zcPos: currentPosition() }, '', url);
+  }
   updateNavButtons();
 }
 
 window.addEventListener('popstate', (e) => {
-  if (e.state?.zcIdx == null) return;
+  if (jumps || e.state?.zcIdx == null) return;
   navIdx = e.state.zcIdx;
   navMax = Math.max(navMax, navIdx);
   hidePopup();
   if (e.state.zcPos) scrollToPosition(e.state.zcPos);
   updateNavButtons();
 });
+
+/** Back (-1) or Forward (+1). */
+function go(dir: number): void {
+  if (!jumps) { if (dir < 0) history.back(); else history.forward(); return; }
+  clearTimeout(scrollTimer);
+  recordPosition();
+  const to = dir < 0 ? jumps.back() : jumps.forward();
+  if (!to) return;
+  navIdx = jumps.idx;
+  hidePopup();
+  if (to.url) history.replaceState(history.state, '', to.url);
+  if (to.pos) scrollToPosition(to.pos);
+  updateNavButtons();
+}
+
+if (jumps) {
+  // What the browser would do with these, done here so they stay inside this PDF.
+  document.addEventListener('keydown', (e) => {
+    const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+    const arrow = e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight');
+    const bracket = mac && e.metaKey && !e.altKey && !e.ctrlKey && (e.key === '[' || e.key === ']');
+    if (!arrow && !bracket) return;
+    const t = e.target as HTMLElement;
+    if (arrow && (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || t.isContentEditable)) return;
+    e.preventDefault();
+    go(e.key === 'ArrowLeft' || e.key === '[' ? -1 : 1);
+  });
+  // The mouse's back and forward buttons (Chrome acts on the button's release).
+  document.addEventListener('mouseup', (e) => {
+    if (e.button !== 3 && e.button !== 4) return;
+    e.preventDefault();
+    go(e.button === 3 ? -1 : 1);
+  });
+}
 
 let backBtn: HTMLButtonElement | null = null, fwdBtn: HTMLButtonElement | null = null;
 function addNavButtons() {
@@ -233,8 +282,8 @@ function addNavButtons() {
   center.prepend(nav);
   backBtn = nav.querySelector<HTMLButtonElement>('#zc-back')!;
   fwdBtn = nav.querySelector<HTMLButtonElement>('#zc-forward')!;
-  backBtn.addEventListener('click', () => history.back());
-  fwdBtn.addEventListener('click', () => history.forward());
+  backBtn.addEventListener('click', () => go(-1));
+  fwdBtn.addEventListener('click', () => go(1));
   updateNavButtons();
 }
 
@@ -470,4 +519,4 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hidePopup(
 document.addEventListener('zc:pagecreated', (e) => addLinks(e.detail.wrapper, e.detail.page));
 for (const w of container.querySelectorAll<PageWrapper>('.page-wrapper')) if (w.zcPage) addLinks(w, w.zcPage);
 addNavButtons();
-window.zcLinks = { currentPosition, followInternal, jumpRecorded, ready: true };   // jumpRecorded: notesBridge.ts; the rest for tests
+window.zcLinks = { currentPosition, followInternal, jumpRecorded, go, ready: true };   // jumpRecorded: notesBridge.ts; the rest for tests
