@@ -30,6 +30,7 @@ from tests.e2e._guard import guard  # noqa: E402
 PORT = 8798
 BASE = f"http://127.0.0.1:{PORT}"
 DATA = Path(tempfile.mkdtemp(prefix="zc-plugins-e2e-"))
+DEV = Path(tempfile.mkdtemp(prefix="zc-plugins-dev-"))
 SHOTS = os.environ.get("SHOTS")
 results = []
 mod = "Meta" if sys.platform == "darwin" else "Control"
@@ -85,7 +86,17 @@ async def main():
     )
     (broken / "p.py").write_text("def activate(plugin):\n    raise RuntimeError('needs a key')\n")
     srv = subprocess.Popen(
-        [sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", str(DATA)],
+        [
+            sys.executable,
+            "server.py",
+            "--port",
+            str(PORT),
+            "--no-browser",
+            "--data-dir",
+            str(DATA),
+            "--dev-plugins",
+            str(DEV),
+        ],
         cwd=APP,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -272,12 +283,42 @@ async def main():
                 "off: its route is gone", requests.get(BASE + "/api/plugins/recently-added/recent").status_code == 404
             )
 
+            # a plugin being written: --dev-plugins restarts it when a file changes, and the window follows
+            live = DEV / "live-page"
+            live.mkdir()
+            (live / "manifest.json").write_text(
+                json.dumps(
+                    {"id": "live-page", "name": "Live Page", "version": "0.1", "api": "^1.0", "frontend": "main.ts"}
+                )
+            )
+            source = (
+                "export function activate(p: any): void {\n"
+                "  p.pages.register({ id: 'main', title: 'Live Page', mount(el: HTMLElement) { el.textContent = 'Version %s'; } });\n"
+                "}\n"
+            )
+            (live / "main.ts").write_text(source % 1)
+            requests.post(BASE + "/api/plugin-host/live-page/enable", timeout=60)
+            await page.evaluate("window.zcPlugins.sync()")
+            entry = '#sidebar [data-page="live-page.main"]'
+            await page.wait_for_selector(entry, timeout=15000)
+            await page.click(entry)
+            body = "(document.querySelector('#page-view .page-body')?.textContent || '')"
+            check(
+                "a TypeScript plugin's page shows",
+                await wait_for(lambda: page.evaluate(f"{body}.includes('Version 1')")),
+            )
+            (live / "main.ts").write_text(source % 2)
+            ok = await wait_for(lambda: page.evaluate(f"{body}.includes('Version 2')"), timeout=20)
+            check("saving its file reloads it in the open window, on the same page", ok)
+            await shot(page, "p9-dev")
+
             check("no JavaScript errors", not errors, errors[:3])
             await browser.close()
     finally:
         srv.terminate()
         srv.wait()
         shutil.rmtree(DATA, ignore_errors=True)
+        shutil.rmtree(DEV, ignore_errors=True)
     print(f"{sum(results)}/{len(results)} checks passed")
     sys.exit(0 if all(results) else 1)
 

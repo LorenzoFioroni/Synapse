@@ -66,10 +66,21 @@ export function initPages(): void {
     if (!pageOpen() && current) { teardown(); store(OPEN_KEY, null); }
   });
   on('open-page', (id) => openPage(id));
+  let waiting: { id: string; timer: ReturnType<typeof setTimeout> } | null = null;
   pages.subscribe(() => {
-    if (current && !pages.get(current.id)) {
-      // its plugin stopped: back to the library
-      if (pageOpen()) closePage(); else teardown();
+    if (waiting && pages.get(waiting.id)) {
+      // its plugin restarted (a new version, or a dev plugin whose file changed): show it again
+      const { id, timer } = waiting;
+      waiting = null;
+      clearTimeout(timer);
+      if (pageOpen()) openPage(id, { push: false });
+    } else if (current && !pages.get(current.id)) {
+      // its plugin stopped: wait a moment in case it comes back, else back to the library
+      const id = current.id;
+      if (!pageOpen()) { teardown(); return; }
+      if (current.cleanup) { try { current.cleanup(); } catch (e) { console.error(e); } current.cleanup = null; }
+      root.querySelector('.page-body')?.replaceChildren();
+      waiting = { id, timer: setTimeout(() => { waiting = null; if (pageOpen() && current?.id === id) closePage(); }, 4000) };
     } else if (!current && !document.body.dataset.workspace) {
       // the page that was open before a reload, once its plugin has registered it again
       const wanted = storage<string | null>(OPEN_KEY, null);

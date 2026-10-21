@@ -311,6 +311,10 @@ A plugin has a `manifest.json`, Python for the server (routes, tools for Claude,
 changes in the library, settings and stored data) and JavaScript for the app (pages listed under
 **Plugins** in the sidebar, sections in the item pane, actions in the item menu, commands). [`docs/plugins.md`](docs/plugins.md) explains how, and
 [`docs/examples/recently-added`](docs/examples/recently-added) is a small example to copy.
+To write one, `python server.py --new-plugin my-plugin --dev-plugins ~/synapse-plugins` makes a
+plugin to start from, and `python server.py --dev-plugins ~/synapse-plugins` restarts it whenever
+you save a file. Plugins can also run work on a schedule, reach the sites their manifest names and
+bring Python packages of their own; their frontend may be TypeScript.
 Their tools reach Claude like Synapse's own; restart Claude if they do not show up.
 
 ## AI access (MCP)

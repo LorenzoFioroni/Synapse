@@ -14,55 +14,31 @@ shown in Settings → Plugins. ``--safe-mode`` starts none.
 
 from __future__ import annotations
 
-import importlib.util
 import itertools
 import logging
 import sys
 import threading
+import time
 import traceback
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from types import ModuleType
 
 from werkzeug.exceptions import HTTPException, MethodNotAllowed, NotFound
 from werkzeug.routing import Map, Rule
 
+from . import build, deps
 from .context import Plugin, PluginError, ToolSpec
-from .manifest import Manifest, ManifestError, read
-from .runtime import Faults, Worker, make_logger, tail
+from .http import PluginHttp
+from .jobs import Runner
+from .loading import Active, Entry, asset_path, forget_modules, load_module, newest
+from .manifest import ManifestError, read
+from .report import describe
+from .runtime import Worker, make_logger, tail
 from .state import StateFile
 
 log = logging.getLogger(__name__)
 _LOADS = itertools.count(1)  # each load gets its own module name, also with two hosts in one process
-
-
-@dataclass
-class Entry:
-    """A plugin found on disk."""
-
-    id: str
-    folder: Path
-    source: str  # "bundled" | "user"
-    manifest: Manifest | None = None
-    problem: str | None = None  # why the manifest cannot be used
-    replaces_bundled: bool = False
-
-
-@dataclass
-class Active:
-    """A plugin that is running."""
-
-    entry: Entry
-    plugin: Plugin
-    worker: Worker
-    faults: Faults = field(default_factory=Faults)
-    module: ModuleType | None = None
-    modname: str | None = None
-    handler: logging.Handler | None = None
-    urls: Map | None = None
-    started: str = ""  # when it started: the app loads its frontend again when this changes
 
 
 class PluginHost:
@@ -73,6 +49,7 @@ class PluginHost:
         library=None,
         before_backup: Callable[[str], object] | None = None,
         changed: Callable[[], object] | None = None,
+        settings=None,
     ):
         self.config = config
         self.safe_mode = bool(getattr(config, "safe_mode", False))
@@ -80,6 +57,10 @@ class PluginHost:
         self.before_backup = before_backup  # a backup before a plugin migrates its stored data
         self.changed = changed  # tells open pages that the plugins changed (change feed)
         self.role: str | None = None
+        self.settings = settings  # the app's SettingsStore (the contact address in the User-Agent)
+        self.private_network = False  # tests: let plugin.http reach a server on this computer
+        self.installer = deps.pip_install  # tests replace it
+        self._watcher: threading.Thread | None = None
         self._entries: dict[str, Entry] = {}
         self._active: dict[str, Active] = {}
         self._lock = threading.RLock()
@@ -88,7 +69,11 @@ class PluginHost:
 
     # ------------------------------------------------------------------ discovery
     def roots(self) -> list[tuple[Path, str]]:
-        return [(self.config.bundled_plugins_dir, "bundled"), (self.config.plugins_dir, "user")]
+        out = [(self.config.bundled_plugins_dir, "bundled"), (self.config.plugins_dir, "user")]
+        dev = getattr(self.config, "dev_plugins_dir", None)
+        if dev:
+            out.append((Path(dev), "dev"))  # --dev-plugins: reloaded whenever a file changes
+        return out
 
     def scan(self) -> dict[str, Entry]:
         """Look at the plugin folders again (new plugins are listed, never turned on by this)."""
@@ -102,7 +87,7 @@ class PluginHost:
                     entry.manifest = read(folder)
                 except ManifestError as e:
                     entry.problem = str(e)
-                if source == "user" and folder.name in found:
+                if source in ("user", "dev") and folder.name in found:
                     entry.replaces_bundled = True
                 found[folder.name] = entry
         with self._lock:
@@ -155,6 +140,29 @@ class PluginHost:
         self._sync()
         if role == "app" and announce:
             self.emit("app.started")
+        if role == "app" and getattr(self.config, "dev_plugins_dir", None) and not self._watcher:
+            self._watcher = threading.Thread(target=self._watch, name="plugins-dev", daemon=True)
+            self._watcher.start()
+
+    def check_changes(self) -> list[str]:
+        """Restart the running dev plugins (--dev-plugins) whose files changed; returns their ids."""
+        restarted = []
+        for pid, act in list(self._active.items()):
+            if act.entry.source != "dev":
+                continue
+            if newest(act.entry.folder) > act.stamp:
+                act.plugin.log.info("Files changed: restarting")
+                self.restart(pid)
+                restarted.append(pid)
+        return restarted
+
+    def _watch(self) -> None:
+        while True:
+            time.sleep(1.0)
+            try:
+                self.check_changes()
+            except Exception:
+                log.exception("Watching the dev plugins failed")
 
     def stop(self) -> None:
         for pid in list(self._active):
@@ -201,18 +209,33 @@ class PluginHost:
             settings=lambda: self.values(pid),
             library=self.library,
             before_upgrade=before_upgrade,
+            http=PluginHttp(pid, man.network, lambda: self._user_agent(pid), private=self.private_network),
         )
         act = Active(entry, plugin, Worker(pid, plog, lambda what, e: self.fault(pid, what, e)), handler=handler)
         act.started = datetime.now().isoformat(timespec="microseconds")
         try:
+            act.stamp = newest(man.folder)
+            target = deps.ensure(man.python, data_dir, self.installer)
+            if target:
+                act.pypath = str(target)
+                sys.path.insert(0, act.pypath)
+            if build.needs_build(man.frontend):
+                source = (man.folder / (man.frontend or "")).resolve()
+                act.bundle = build.bundle(source, data_dir / build.BUILD_DIR, self.config.frontend_dir)
             path = man.backend_path()
             if path:
-                act.module, act.modname = self._load(pid, path)
+                act.module, act.modname = load_module(pid, path)
                 start = getattr(act.module, "activate", None)
                 if not callable(start):
                     raise PluginError("its backend has no activate(plugin) function")
                 start(plugin)
             act.urls = Map([Rule(r.rule, methods=list(r.methods), endpoint=i) for i, r in enumerate(plugin.routes)])
+            if self.role == "app" and (plugin.schedules or plugin.handlers):
+                act.runner = Runner(
+                    pid, data_dir, plog, plugin.handlers, plugin.schedules, lambda what, e: self.fault(pid, what, e)
+                )
+                plugin.wake = act.runner.wake
+                act.runner.start()
         except BaseException as e:
             plog.error("Could not start:\n%s", traceback.format_exc())
             self._teardown(act, run_unload=True)
@@ -223,24 +246,15 @@ class PluginHost:
         plog.info("Started (%s, version %s)", self.role, man.version)
         return True
 
-    def _load(self, pid: str, path: Path) -> tuple[ModuleType, str]:
-        modname = f"_synapse_plugin_{pid.replace('-', '_')}_{next(_LOADS)}"
-        if path.is_dir():
-            spec = importlib.util.spec_from_file_location(
-                modname, path / "__init__.py", submodule_search_locations=[str(path)]
-            )
-        else:
-            spec = importlib.util.spec_from_file_location(modname, path)
-        if spec is None or spec.loader is None:
-            raise PluginError(f"cannot load {path.name}")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[modname] = module
-        try:
-            spec.loader.exec_module(module)
-        except BaseException:
-            _forget_modules(modname)
-            raise
-        return module, modname
+    def asset(self, pid: str, rel: str) -> Path:
+        """A file of a running plugin's frontend (``loading.asset_path``); NotFound otherwise."""
+        act = self._active.get(pid)
+        if not act or not act.entry.manifest:
+            raise NotFound()
+        found = asset_path(act.entry.manifest, act.bundle, rel)
+        if not found:
+            raise NotFound()
+        return found
 
     def _deactivate(self, pid: str) -> None:
         with self._lock:
@@ -251,6 +265,9 @@ class PluginHost:
 
     def _teardown(self, act: Active, *, run_unload: bool) -> None:
         act.worker.stop()
+        if act.runner:
+            act.runner.stop()
+            act.plugin.wake = lambda: None
         if run_unload:
             stop = getattr(act.module, "deactivate", None) if act.module else None
             for fn in ([lambda: stop(act.plugin)] if callable(stop) else []) + list(reversed(act.plugin.unload)):
@@ -262,7 +279,9 @@ class PluginHost:
         act.plugin.tools.clear()
         act.plugin.listeners.clear()
         if act.modname:
-            _forget_modules(act.modname)
+            forget_modules(act.modname)
+        if act.pypath and act.pypath in sys.path:
+            sys.path.remove(act.pypath)
         if act.handler:
             act.plugin.log.removeHandler(act.handler)
             act.handler.close()
@@ -383,60 +402,18 @@ class PluginHost:
 
     # ------------------------------------------------------------------ what the app shows
     def info(self, pid: str) -> dict:
+        """What Settings → Plugins shows about one plugin (report.describe)."""
         entry = self._entries.get(pid) or self._entry(pid)
-        st = self._state_of(pid)
-        man = entry.manifest
-        act = self._active.get(pid)
-        enabled = bool(st.get("enabled"))
-        if entry.problem or not man:
-            status, problem = "invalid", entry.problem
-        elif man.compatible():
-            status, problem = "incompatible", man.compatible()
-        elif act:
-            status, problem = "on", None
-        elif st.get("failed"):
-            status, problem = "failed", st["failed"]
-        elif enabled and self.safe_mode:
-            status, problem = "safe-mode", "Synapse was started in safe mode"
-        else:
-            status, problem = ("on" if enabled else "off"), None
-        out: dict = {
-            "id": pid,
-            "name": man.name if man else pid,
-            "version": man.version if man else "",
-            "description": man.description if man else "",
-            "author": man.author if man else "",
-            "source": entry.source,
-            "folder": str(entry.folder),
-            "replaces_bundled": entry.replaces_bundled,
-            "enabled": enabled,
-            "running": bool(act),
-            "status": status,
-            "problem": problem,
-            "failed_at": st.get("failed_at") if status == "failed" else None,
-            "remote_mcp": bool(st.get("remote_mcp")),
-        }
-        if man:
-            out.update(
-                api=f"{man.api[0]}.{man.api[1]}",
-                permissions=man.permissions(),
-                parts=[p for p in ("backend", "frontend", "styles") if getattr(man, p)],
-                frontend=man.frontend,
-                styles=man.styles,
-                settings=[s.describe() for s in man.settings],
-                values=self.values(pid),
-            )
-        if act:
-            out["started"] = act.started
-            out["tools"] = [t.name for t in act.plugin.tools]
-            out["routes"] = [{"rule": r.rule, "methods": list(r.methods)} for r in act.plugin.routes]
-            out["events"] = sorted(e for e, fns in act.plugin.listeners.items() if fns)
-        return out
+        return describe(entry, self._state_of(pid), self._active.get(pid), self.values(pid), self.safe_mode)
 
     def listing(self) -> list[dict]:
         self.refresh()
         entries = self.scan()
         return sorted((self.info(pid) for pid in entries), key=lambda p: p["name"].lower())
+
+    def _user_agent(self, pid: str) -> str:
+        email = (self.settings.get("contact_email") if self.settings else "") or "synapse@example.com"
+        return f"Synapse/2.0 (plugin {pid}; https://github.com/LorenzoFioroni/Synapse; mailto:{email})"
 
     def overview(self) -> dict:
         from .manifest import API_VERSION
@@ -462,25 +439,6 @@ class PluginHost:
         """Wait until the listeners called so far have run (for tests)."""
         acts = [self._active[pid]] if pid else list(self._active.values())
         return all(a.worker.drain(timeout) for a in acts)
-
-    def asset(self, pid: str, rel: str) -> Path:
-        """A file of a running plugin's frontend: its styles file, or a file in the folder of its
-        frontend module (so the module can import its own modules). Raises NotFound otherwise; the
-        backend's code and anything else in the plugin's folder are never served."""
-        act = self._active.get(pid)
-        man = act.entry.manifest if act else None
-        if not man or not (man.frontend or man.styles):
-            raise NotFound()
-        folder = man.folder.resolve()
-        wanted = (folder / rel).resolve()
-        allowed = [((folder / man.frontend).resolve().parent, True)] if man.frontend else []
-        if man.styles:
-            allowed.append(((folder / man.styles).resolve(), False))
-        for root, is_dir in allowed:
-            inside = wanted == root or (is_dir and root in wanted.parents)
-            if inside and wanted.is_file() and not (is_dir and root == folder and _is_backend(man, wanted)):
-                return wanted
-        raise NotFound()
 
     def route(self, pid: str, path: str, method: str) -> tuple[Callable, Mapping]:
         """The function serving ``path`` of plugin ``pid``, and its arguments from the path.
@@ -523,20 +481,6 @@ def _guarded(host: PluginHost, pid: str, tool: ToolSpec) -> Callable:
         return host.run(pid, f"tool {tool.name}", tool.fn, **kwargs)
 
     return call
-
-
-def _is_backend(man: Manifest, path: Path) -> bool:
-    """Whether ``path`` is the plugin's backend code (or its manifest): a frontend module kept at
-    the top of the plugin's folder must not make the Python code readable."""
-    if path.name == "manifest.json" or path.suffix == ".py":
-        return True
-    backend = man.backend_path()
-    return bool(backend and (path == backend or backend in path.parents))
-
-
-def _forget_modules(modname: str) -> None:
-    for name in [n for n in sys.modules if n == modname or n.startswith(modname + ".")]:
-        del sys.modules[name]
 
 
 def _describe(e: BaseException) -> str:

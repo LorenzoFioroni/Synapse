@@ -5,11 +5,12 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-The design and the plan for the rest of the plugin API (background jobs, per-item fields, paper
-feeds) are in the design doc "Synapse plugin API v1". What exists today:
+The design and the plan for the rest of the plugin API (per-item fields, paper feeds) are in the
+design doc "Synapse plugin API v1". What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
-  library, settings, stored data, a log.
+  library, settings, stored data, schedules and background jobs, the web (within the hosts its
+  manifest names), Python packages of its own, a log.
 - **Frontend** (JavaScript): pages with a sidebar entry, commands in the command palette (with keys),
   sections in the item pane, actions in the item menu, notifications, calls to its own routes.
 
@@ -37,8 +38,24 @@ on. A plugin in `data/plugins/` with the same id replaces the one that comes wit
 
 ## Writing a plugin
 
+Start from a working one:
+
+```bash
+python server.py --new-plugin my-plugin --dev-plugins ~/synapse-plugins   # makes ~/synapse-plugins/my-plugin
+python server.py --dev-plugins ~/synapse-plugins                          # then turn it on in Settings
+```
+
+`--dev-plugins DIR` loads the plugins in `DIR` besides the installed ones and **restarts one
+whenever one of its files changes** (Python, TypeScript, the manifest): the open windows load its
+new frontend by themselves. `--new-plugin` (without `--dev-plugins`, into `data/plugins/`) makes a
+plugin with a Python backend (a route, a tool for Claude, an event listener, a schedule), a
+TypeScript frontend (a page and a command), the frontend's type declarations (`frontend/api.ts`)
+and a README. The MCP server takes `--dev-plugins` too (it does not watch for changes: restart
+Claude).
+
 The example in [`docs/examples/recently-added/`](examples/recently-added/) uses every part of the
-API once; copy it into `data/plugins/` to try it. A plugin folder looks like this:
+API once, with a JavaScript frontend; copy it into `data/plugins/` to try it. A plugin folder looks
+like this:
 
 ```
 data/plugins/recently-added/      the folder's name is the plugin's id
@@ -76,9 +93,10 @@ data/plugins/recently-added/      the folder's name is the plugin's id
 | `name`, `version` | Shown in Settings. Required. |
 | `api` | The plugin API it was written for: `"^1.0"` runs on any 1.x from 1.0 on. A plugin needing a newer minor version, or another major version, is listed but cannot be turned on. |
 | `backend` | Its Python code: a package folder (with `__init__.py`) or a `.py` file, inside the plugin's folder. |
-| `frontend` | Its JavaScript: an ES module inside the plugin's folder (see [The frontend](#the-frontend)). |
+| `frontend` | Its part in the app: an ES module (`.js`), or TypeScript (`.ts`, `.tsx`) that Synapse bundles with esbuild when the plugin starts (see [The frontend](#the-frontend)). |
 | `styles` | A stylesheet the app loads while the plugin runs. |
-| `permissions` | `network`: host names it will connect to (shown to the user; enforced once plugins get the shared HTTP client). `library`: `read` (and later `add`, `edit`). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
+| `permissions` | `network`: the hosts `plugin.http` may reach (`"export.arxiv.org"`, or `"*.example.org"` for a domain and its subdomains). `library`: `read` (and later `add`, `edit`). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
+| `python` | Python packages it needs, as requirements (`["scirate>=0.0.7"]`): installed with pip when it first starts (see [Python packages](#python-packages)). |
 | `settings` | What the user can set, see below. |
 
 Each setting has a `key` (lowercase, `_`), a `type`, a `label`, an optional `description` and
@@ -135,6 +153,9 @@ def activate(plugin: Plugin) -> None:
 | `@plugin.mcp_tool(description, name=None, title=None, schema=None, read_only=True)` | Offers the function to Claude as `<id>__<name>` (needs `"mcp": true`). The argument schema comes from the type hints (`str`, `int`, `float`, `bool`, `list[str]`, `Literal[…]`, optional with a default) unless `schema` is given. |
 | `plugin.on(event, fn)` / `@plugin.on(event)` | Calls `fn(payload)` after the event, on the plugin's own thread. Called directly it returns a function that removes the listener. |
 | `plugin.on_unload(fn)` | Calls `fn()` when the plugin is turned off (to stop a thread it started, say). |
+| `@plugin.schedule(name, cron=…, every=…, tz=None, catch_up=True)` | Runs the function on a cron rule or every so often, in the web app (see [Background work](#background-work)). Also `plugin.schedule(name, fn, …)`. |
+| `@plugin.job(name, retries=3)` / `plugin.jobs.enqueue(name, *args, key=None, delay=0)` | A job handler, and queuing work for it; `plugin.jobs.pending()` lists what waits. |
+| `plugin.http` | `get(url, params=…)`, `post(url, json=…)`, `request(method, url, …)`, `limit(host, seconds)`: the web, within the manifest's `network` (see [Reaching the web](#reaching-the-web)). |
 
 Raise **`PluginError("…")`** for a problem the user or Claude should read: a route answers 400 with
 it as the error, a tool returns it as an error Claude can act on, and it does not count as the
@@ -165,10 +186,67 @@ can be updated. Before migrating a database that already holds data, Synapse mak
 before other risky operations). A database written by a newer version of the plugin is refused
 rather than damaged.
 
+### Background work
+
+```python
+@plugin.schedule("daily", cron="30 2 * * 1-5", tz="Europe/Rome")  # minute hour day month weekday
+def fetch_listing() -> None:
+    for entry in today():
+        plugin.jobs.enqueue("references", entry["id"], key=f"refs:{entry['id']}")
+
+
+@plugin.job("references")
+def references(arxiv_id: str) -> None:
+    page = plugin.http.get(f"https://arxiv.org/html/{arxiv_id}")
+    ...
+```
+
+- **Schedules** run in the web app only (not in the MCP server), on one thread per plugin that
+  also runs its jobs, one thing at a time. `cron` takes the usual five fields (`*`, ranges, lists,
+  `*/n`, `mon`–`sun`, `jan`–`dec`) in `tz` (this computer's zone by default); `every` takes
+  seconds or `"30m"`, `"6h"`, `"1d"` (at least a minute). With `catch_up` (the default) a run
+  missed while the computer slept or the app was closed happens once at the next start, and the
+  very first time the work runs at once; without it, missed runs are skipped. When each schedule
+  last ran is kept in the plugin's data folder (`.schedules.json`).
+- **Jobs** are kept in a small database in the plugin's data folder (`.jobs.sqlite`), so they
+  survive a restart, and the MCP server can queue work that the web app then does. Arguments are
+  JSON values. With a `key`, a job is not queued again while one with that key waits. A job that
+  fails is tried again after 30 s, 2 min and 10 min (`retries` times); failing to reach the web
+  (`HttpError`) does not count against the plugin, any other error does.
+- Settings → Plugins → More lists a running plugin's schedules and how many jobs wait.
+
+### Reaching the web
+
+`plugin.http` is the only way a plugin should reach the web (`requests` would work, but skips all
+of this):
+
+- Only the hosts its manifest's `network` names, and only public addresses (not this computer or
+  the local network), also after redirects.
+- Requests to one host are spaced (0.5 s, 3 s for arXiv; more with `plugin.http.limit(host,
+  seconds)`), across all plugins, so two plugins cannot overload one service.
+- A User-Agent naming Synapse, the plugin and the contact address from Settings → Online
+  Services, as scholarly APIs ask.
+- GET answers with an ETag or Last-Modified are cached and asked for again conditionally.
+- Errors are `HttpError` (an error status, `e.status`; a refused redirect; an answer over 50 MB)
+  and `Offline` (no network, a timeout): both readable, so a route or tool passes them on as they
+  are. `raise_for_status=False` returns error answers instead.
+- The answer is a `Response`: `status`, `url`, `headers`, `content`, `text`, `json()`,
+  `from_cache`.
+
+### Python packages
+
+`"python": ["scirate>=0.0.7", "feedparser"]` in the manifest makes Synapse install them with pip
+(the Python that runs Synapse) into the plugin's data folder (`.python/`, not in backups) the first
+time the plugin starts, and again when the list changes; they are on the import path while it
+runs. That first start needs the network; when pip fails, the plugin is turned off with pip's
+message. Requirements are names with versions only (no URLs, paths or pip options), and packages
+Synapse itself uses (Flask, requests, pypdf …) are refused: the plugin gets the versions Synapse
+has.
+
 ### Trying a change
 
-Edit the code, then **Restart** in Settings → Plugins (or turn the plugin off and on): the host
-loads the code again. Watch the plugin's **Log** for errors.
+With `--dev-plugins`, saving a file restarts the plugin. Otherwise **Restart** in Settings →
+Plugins (or turn it off and on) loads the code again. Watch the plugin's **Log** for errors.
 
 ### The frontend
 
@@ -219,8 +297,11 @@ Rules for a plugin's frontend:
 - The app loads the module again when the plugin restarts (its URL carries the start time). Modules
   it imports keep their URL, so the browser may keep the old ones until the page reloads: a single
   file (or a bundle) is the simplest.
-- TypeScript is welcome: compile it to one ES module (esbuild, `tsc`) and point `frontend` at the
-  result.
+- TypeScript: point `frontend` at the `.ts` file. Synapse bundles it (with what it imports) into
+  one module with esbuild when the plugin starts: the copy Synapse builds its own frontend with
+  (`frontend/node_modules`, after `npm ci`), else one on the PATH. A build error turns the plugin
+  off with esbuild's message. Bundling also avoids the cache problem above. The bundle is in the
+  plugin's data folder (`.build/`).
 
 ## How the host works
 
@@ -238,6 +319,14 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
 | `state.py` | `data/plugins.json`: which plugins are on, their settings, `remote_mcp`, why one was turned off. |
 | `storage.py` | `plugin.storage`: JSON and SQLite stores. |
 | `library.py` | `plugin.library`: what plugins may read. |
+| `http.py` | `plugin.http`: allowed hosts, public addresses, spacing, caching, errors. |
+| `jobs.py`, `schedule.py` | The job queue and the runner thread that runs jobs and schedules (web app only); cron rules and intervals. |
+| `deps.py` | Python packages from the manifest, installed with pip into `.python/`. |
+| `build.py` | TypeScript frontends bundled with esbuild into `.build/`. |
+| `loading.py` | Importing a plugin's backend, the files of its frontend the app may fetch, when its files last changed. |
+| `report.py` | What Settings shows about a plugin (`describe`). |
+| `scaffold.py` | `--new-plugin`. |
+| `errors.py` | `PluginError`. |
 | `runtime.py` | A plugin's log file, its worker thread and its failure count. |
 
 - **Loading.** A plugin's backend is imported under a fresh module name each time it starts
@@ -257,9 +346,13 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
 - **Tools** are asked for at each `tools/list` and `tools/call` (`Server.extra` in
   `mcp/protocol.py`); `build_server(..., remote=True)` (the `/mcp` endpoint) offers only those of
   plugins with `remote_mcp` on. A `PluginError` reaches Claude as a tool error.
+- **Dev plugins.** With `--dev-plugins`, `roots()` adds that folder (source `dev`, replacing a
+  plugin of the same id), and a thread compares the newest modification time of each running dev
+  plugin's files (`loading.newest`) every second; a newer one restarts it (`check_changes`), which
+  the change feed tells the open windows.
 - **Data.** `data/plugins/` holds plugins (code, not in backups), `data/plugin-data/<id>/` what each
-  stores plus its log `.plugin.log` (dot files are left out of backups), `data/plugins.json` their
-  state. Backups hold `plugins.json` and `plugin-data/` (SQLite files copied with the backup API);
+  stores plus dot files that are left out of backups: its log `.plugin.log`, `.python/`, `.build/`,
+  `.jobs.sqlite`, `.schedules.json`. `data/plugins.json` is their state. Backups hold `plugins.json` and `plugin-data/` (SQLite files copied with the backup API);
   restoring stops the plugins, puts both back (keeping today's logs) and starts them again.
 - **The frontend** (`frontend/src/plugins/host.ts`) asks `/api/plugin-host` which plugins run, then
   `import()`s each one's module from `/api/plugin-files/<id>/<path>?v=<started>` and loads its
@@ -278,8 +371,11 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
 
 ## Tests
 
-`tests/plugins/` (manifests, the host, storage and backups, the files of a frontend; the example
-plugin is installed by the `example` fixture and `make_plugin` writes small ones), the import rule
+`tests/plugins/` (manifests, the host, storage and backups, the files of a frontend; `test_http.py`
+against a local server, `test_jobs.py` for cron rules, schedules and jobs, `test_tooling.py` for
+background work in the app and the MCP server, packages with a stand-in for pip, TypeScript builds,
+the scaffold and dev plugins; the example plugin is installed by the `example` fixture and
+`make_plugin` writes small ones), the import rule
 in `tests/test_layers.py`, `tests/js/extend.test.mjs` (registries, keys, the palette's ranking), and
 the browser checklist `plugins` (Settings → Plugins and the example plugin's page, command, section
 and action).

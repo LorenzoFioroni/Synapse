@@ -1,7 +1,7 @@
 """Recently Added: an example of a Synapse plugin (docs/plugins.md).
 
 It shows each part of the plugin API once: settings from the manifest, a SQLite store with a
-migration, an event listener, reading the library, routes and a tool for Claude. Its frontend
+migration, an event listener, a schedule, reading the library, routes and a tool for Claude. Its frontend
 (frontend/main.js) adds a page, a command, an item-pane section and an item action.
 """
 
@@ -35,6 +35,9 @@ def activate(plugin: Plugin) -> None:
                     (item_id, item.get("title") or "", _now()),
                 )
         forget_old()
+
+    # once a day (and at the first start), in the web app
+    plugin.schedule("prune", forget_old, every="1d")
 
     @plugin.on("item.deleted")
     def forget(event: dict) -> None:

@@ -117,6 +117,7 @@ class Manifest:
     library: list[str] = field(default_factory=list)
     mcp: bool = False
     settings: list[Setting] = field(default_factory=list)
+    python: list[str] = field(default_factory=list)  # packages it needs (deps.py)
 
     def compatible(self) -> str | None:
         """Why this Synapse cannot run the plugin, or None if it can."""
@@ -127,7 +128,12 @@ class Manifest:
         return None
 
     def permissions(self) -> dict:
-        return {"network": list(self.network), "library": list(self.library), "mcp": self.mcp}
+        return {
+            "network": list(self.network),
+            "library": list(self.library),
+            "mcp": self.mcp,
+            "python": list(self.python),
+        }
 
     def setting(self, key: str) -> Setting | None:
         return next((s for s in self.settings if s.key == key), None)
@@ -247,6 +253,17 @@ def parse(data: object, folder: Path) -> Manifest:
     if (perms.get("mcp") or False) not in (True, False):
         raise ManifestError('"mcp" is true or false')
     man.mcp = bool(perms.get("mcp"))
+    python = data.get("python") or []
+    if not isinstance(python, list) or not all(isinstance(r, str) for r in python):
+        raise ManifestError('"python" is a list of package requirements, e.g. ["scirate>=0.0.7"]')
+    from ..config import APP_ROOT
+    from .deps import check, core_packages
+    from .errors import PluginError
+
+    try:
+        man.python = check(python, core_packages(APP_ROOT))
+    except PluginError as e:
+        raise ManifestError(str(e)) from e
     raw_settings = data.get("settings") or []
     if not isinstance(raw_settings, list):
         raise ManifestError('"settings" must be a list')

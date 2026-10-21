@@ -13,7 +13,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .errors import PluginError
+from .jobs import Handler, Jobs
 from .manifest import Manifest
+from .schedule import Schedule, make
 from .storage import Storage
 
 EVENTS = (
@@ -28,13 +31,6 @@ EVENTS = (
 )
 TOOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
-
-
-class PluginError(Exception):
-    """A problem to show as it is: to the user (as the error of a route) or to Claude (as the
-    result of a tool). It does not count as the plugin failing."""
-
-    readable = True  # shown as it is (the MCP layer checks this, without importing plugins)
 
 
 @dataclass
@@ -94,6 +90,7 @@ class Plugin:
         settings: Callable[[], dict],
         library=None,
         before_upgrade: Callable[[str], None] | None = None,
+        http=None,
     ):
         self.manifest = manifest
         self.id = manifest.id
@@ -106,6 +103,11 @@ class Plugin:
         self.tools: list[ToolSpec] = []
         self.listeners: dict[str, list[Callable]] = {}
         self.unload: list[Callable[[], None]] = []
+        self.http = http  # PluginHttp (http.py): the web, within the manifest's "network" permission
+        self.handlers: dict[str, Handler] = {}
+        self.schedules: list[Schedule] = []
+        self.wake: Callable[[], None] = lambda: None  # set by the host: wakes the background runner
+        self.jobs = Jobs(data_dir, self.handlers, lambda: self.wake())
 
     @property
     def library(self):
@@ -189,6 +191,44 @@ class Plugin:
                 lst.remove(fn)
 
         return remove
+
+    # ------------------------------------------------------------------ background work
+    def schedule(
+        self,
+        name: str,
+        run: Callable[[], object] | None = None,
+        *,
+        cron: str | None = None,
+        every: float | str | None = None,
+        tz: str | None = None,
+        catch_up: bool = True,
+    ):
+        """Run ``run()`` on a cron rule (``cron="30 2 * * 1-5"``, in ``tz`` such as "Europe/Rome",
+        else this computer's zone) or every so often (``every="6h"``), in the web app only. With
+        ``catch_up``, a run missed while the computer slept or the app was closed happens once at the
+        next start (and the very first time, at once). Usable as a decorator."""
+        if any(s.name == name for s in self.schedules):
+            raise PluginError(f"Schedule {name!r} is registered twice")
+
+        def register(fn: Callable[[], object]) -> Callable[[], object]:
+            self.schedules.append(make(name, fn, cron=cron, every=every, tz=tz, catch_up=catch_up))
+            return fn
+
+        if run is None:
+            return register
+        return register(run)
+
+    def job(self, name: str, *, retries: int = 3):
+        """Register ``fn`` as the handler of jobs called ``name``; queue them with
+        ``plugin.jobs.enqueue(name, *args, key=…)``."""
+        if not TOOL_NAME_RE.match(name):
+            raise PluginError(f"Job name {name!r}: lowercase letters, digits and _")
+
+        def register(fn: Callable) -> Callable:
+            self.handlers[name] = Handler(fn, max(0, int(retries)))
+            return fn
+
+        return register
 
     def on_unload(self, fn: Callable[[], None]) -> Callable[[], None]:
         """Call ``fn()`` when the plugin is turned off (to stop a thread it started, say)."""

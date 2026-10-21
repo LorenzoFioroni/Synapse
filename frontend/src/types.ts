@@ -458,7 +458,7 @@ export interface PluginInfo {
   version: string;
   description: string;
   author: string;
-  source: 'bundled' | 'user';
+  source: 'bundled' | 'user' | 'dev';
   folder: string;
   replaces_bundled: boolean;
   enabled: boolean;
@@ -468,13 +468,16 @@ export interface PluginInfo {
   failed_at: string | null;
   remote_mcp: boolean;
   api?: string;
-  permissions?: { network: string[]; library: string[]; mcp: boolean };
+  permissions?: { network: string[]; library: string[]; mcp: boolean; python?: string[] };
   parts?: string[];
   settings?: PluginSetting[];
   values?: Record<string, unknown>;
   tools?: string[];
   routes?: { rule: string; methods: string[] }[];
   events?: string[];
+  /** Its scheduled work (while running) and the jobs waiting. */
+  schedules?: { name: string; rule: string }[];
+  jobs?: number;
   /** Paths in the plugin's folder (from the manifest). */
   frontend?: string | null;
   styles?: string | null;

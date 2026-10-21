@@ -25,6 +25,8 @@ class Config:
     lan: bool = False
     # ``--safe-mode``: no plugin is started, so a plugin that breaks the app can be turned off.
     safe_mode: bool = False
+    # ``--dev-plugins DIR``: plugins being written, loaded from DIR and reloaded when a file changes.
+    dev_plugins_dir: Path | None = None
 
     @classmethod
     def from_env(cls, data_dir: str | os.PathLike | None = None) -> Config:

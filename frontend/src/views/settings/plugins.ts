@@ -30,6 +30,7 @@ export function permissionWords(p: PluginInfo): string[] {
   }
   if (perms.network.length) out.push(`Connects to ${perms.network.join(', ')}`);
   if (perms.mcp) out.push('Offers tools to Claude');
+  if (perms.python?.length) out.push(`Installs Python packages: ${perms.python.join(', ')}`);
   return out;
 }
 
@@ -62,6 +63,8 @@ function detailsHtml(p: PluginInfo, safeMode: boolean): string {
     p.tools?.length ? `Tools for Claude: ${p.tools.map((t) => `<span class="mono">${escapeHtml(t)}</span>`).join(', ')}` : '',
     p.routes?.length ? `Serves ${p.routes.map((r) => `<span class="mono">/api/plugins/${escapeHtml(p.id)}${escapeHtml(r.rule)}</span>`).join(', ')}` : '',
     p.events?.length ? `Listens to ${p.events.map((e) => `<span class="mono">${escapeHtml(e)}</span>`).join(', ')}` : '',
+    p.schedules?.length ? `Runs ${p.schedules.map((x) => `<span class="mono">${escapeHtml(x.name)}</span> (${escapeHtml(x.rule)})`).join(', ')}` : '',
+    p.jobs ? `${p.jobs} job${p.jobs === 1 ? '' : 's'} waiting` : '',
   ].filter(Boolean);
   const remote = p.permissions?.mcp ? `<div class="p-setting">
       <div class="s-text"><div class="s-title">Tools for Claude on other computers</div>
@@ -80,7 +83,7 @@ function rowHtml(p: PluginInfo, safeMode: boolean): string {
   const usable = p.status !== 'invalid' && p.status !== 'incompatible' && !safeMode;
   const perms = permissionWords(p);
   const meta = [p.author && `by ${escapeHtml(p.author)}`, p.version && `version ${escapeHtml(p.version)}`,
-    p.source === 'bundled' ? 'comes with Synapse' : p.replaces_bundled ? 'replaces the one that comes with Synapse' : ''].filter(Boolean).join(' · ');
+    p.source === 'bundled' ? 'comes with Synapse' : p.source === 'dev' ? 'being written (restarts when its files change)' : p.replaces_bundled ? 'replaces the one that comes with Synapse' : ''].filter(Boolean).join(' · ');
   const problem = p.problem ? `<div class="form-error">${escapeHtml(STATUS[p.status])}: ${escapeHtml(p.problem)}${p.failed_at ? ` (${escapeHtml(formatDate(p.failed_at, true))})` : ''}</div>` : '';
   const open = expanded.has(p.id) && p.status !== 'invalid';
   return `<div class="plugin-row ${open ? 'open' : ''}" data-plugin="${escapeHtml(p.id)}">

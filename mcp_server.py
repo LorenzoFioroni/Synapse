@@ -46,12 +46,14 @@ def main(argv=None) -> int:
     ap.add_argument("--config", action="store_true", help="print the setup for Claude Desktop / Claude Code and exit")
     ap.add_argument("--verbose", action="store_true", help="log more to stderr")
     ap.add_argument("--safe-mode", action="store_true", help="start no plugins")
+    ap.add_argument("--dev-plugins", metavar="DIR", help="also load the plugins in DIR (as server.py does)")
     a = ap.parse_args(argv)
 
     from backend.config import Config
 
     config = Config.from_env(a.data)
     config.safe_mode = a.safe_mode
+    config.dev_plugins_dir = Path(a.dev_plugins).expanduser().resolve() if a.dev_plugins else None
 
     if a.config:
         print(

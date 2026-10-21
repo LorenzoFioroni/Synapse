@@ -31,7 +31,8 @@ data/
 ├── settings.json       preferences
 ├── auth.db             paired devices (hashed tokens), passkeys (public keys), access tokens (hashed)
 ├── plugins/            plugins the user installed, one folder each (code; see plugins.md)
-├── plugin-data/        what each plugin stores, in <id>/ (and its log, .plugin.log)
+├── plugin-data/        what each plugin stores, in <id>/ (and, not in backups: its log .plugin.log,
+│                       its Python packages .python/, its built frontend .build/, .jobs.sqlite, .schedules.json)
 └── plugins.json        which plugins are on, their settings, why one was turned off
 ```
 

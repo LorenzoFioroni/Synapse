@@ -8,6 +8,8 @@ Run:   python server.py                 (http://127.0.0.1:8000, opens your brows
                                          (HTTPS, needed to sign devices in with passkeys)
        python server.py --window         (in a window of its own, like a program, not a browser tab)
        python server.py --make-shortcut  (an icon on the Desktop that does that; see docs/desktop.md)
+       python server.py --new-plugin my-plugin --dev-plugins ~/plugins
+                                         (a plugin to start from; then run with --dev-plugins ~/plugins)
 
 Your library (database, PDFs, full-text index, settings) lives in ./data
 unless --data-dir or the SYNAPSE_DATA_DIR environment variable say otherwise.
@@ -67,6 +69,17 @@ def main() -> None:
         "--debug", action="store_true", help="Flask debug mode with auto-reload (this computer only: not with --lan)"
     )
     ap.add_argument(
+        "--dev-plugins",
+        metavar="DIR",
+        help="also load the plugins in DIR (one folder each) and restart one whenever a file of it changes "
+        "(for writing plugins; see docs/plugins.md)",
+    )
+    ap.add_argument(
+        "--new-plugin",
+        metavar="ID",
+        help="make a new plugin to start from (in --dev-plugins DIR if given, else in data/plugins), then exit",
+    )
+    ap.add_argument(
         "--safe-mode",
         action="store_true",
         help="start without any plugins, e.g. to turn off one that keeps the app from working (Settings → Plugins)",
@@ -105,6 +118,17 @@ def main() -> None:
     scheme = "https" if tls else "http"
     url = f"{scheme}://{'127.0.0.1' if wildcard else a.host}:{a.port}/"
 
+    if a.new_plugin:
+        from backend.plugins import PluginError
+        from backend.plugins.scaffold import create
+
+        parent = Path(a.dev_plugins).expanduser() if a.dev_plugins else Config.from_env(a.data_dir).plugins_dir
+        try:
+            folder = create(a.new_plugin, parent.resolve())
+        except PluginError as e:
+            raise SystemExit(str(e)) from e
+        print(f"Made {folder}. Start Synapse with --dev-plugins {folder.parent} and turn it on in Settings → Plugins.")
+        return
     if a.make_shortcut:
         make_shortcut(a)
         return
@@ -122,6 +146,7 @@ def main() -> None:
     config.allowed_hosts = set(a.allow_host)
     config.lan = not loopback_only
     config.safe_mode = a.safe_mode
+    config.dev_plugins_dir = Path(a.dev_plugins).expanduser().resolve() if a.dev_plugins else None
     if not wildcard and not loopback_only:
         config.allowed_hosts.add(a.host)  # started on a specific address: accept requests for it
     try:
