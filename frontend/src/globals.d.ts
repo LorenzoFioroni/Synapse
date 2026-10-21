@@ -19,8 +19,10 @@ export interface ZcTabs {
   shortcut(e: KeyboardEvent): boolean;
   /** The pointer went down inside a tab's viewer. */
   touched(): void;
+  /** This window, among those a tab can be dragged between (for the browser tests). */
+  win: string;
   /** The tabs as shown, for the browser tests. */
-  list(): { id: string; title: string; url: string; active: boolean; loaded: boolean }[];
+  list(): { id: string; kind: string; title: string; url: string; key: string; active: boolean; loaded: boolean; preview: boolean }[];
 }
 
 /** The part of Mermaid we call. */

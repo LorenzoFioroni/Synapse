@@ -57,10 +57,12 @@ export function readPlace(hash: string): Place | null {
   return Object.keys(p).length ? p : null;
 }
 
-/** The size and place of a new window: like this one, a little further down and right. */
-function features(): string {
+/** The size and place of a new window: like this one, a little further down and right, or at
+ *  `at` (screen pixels, where a tab was dropped). */
+function features(at?: { left: number; top: number }): string {
   const w = Math.max(800, window.outerWidth || 1280), h = Math.max(600, window.outerHeight || 800);
-  const left = (window.screenX || 0) + 32, top = (window.screenY || 0) + 32;
+  const left = Math.round(at ? Math.max(0, at.left) : (window.screenX || 0) + 32);
+  const top = Math.round(at ? Math.max(0, at.top) : (window.screenY || 0) + 32);
   // `popup` asks for a window rather than a browser tab; `noopener` keeps it apart from this one
   // (its own tabs, and nothing copied from this window's session storage).
   return `popup,noopener,width=${w},height=${h},left=${left},top=${top}`;
@@ -68,8 +70,8 @@ function features(): string {
 
 /** Open the app at `p` in a new window. Call it inside a click: browsers block windows opened
  *  later. */
-export function openNewWindow(p: Place = {}): void {
-  window.open(`${location.origin}/${placeHash(p)}`, '_blank', features());
+export function openNewWindow(p: Place = {}, at?: { left: number; top: number }): void {
+  window.open(`${location.origin}/${placeHash(p)}`, '_blank', features(at));
 }
 
 /** Open a page of its own (the viewer, when PDFs open in browser tabs) in a new window. */

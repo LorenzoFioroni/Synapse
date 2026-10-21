@@ -141,7 +141,7 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
 
       <section class="settings-section" id="set-viewer"><h2>PDF Viewer</h2>
         <div class="card">
-          ${segmentedRow('pdf_open_in', 'Open PDFs in', `Tabs inside Synapse, next to the Synapse tab (each window has its own, and a reload brings them back), or a browser tab of their own. Switch tabs with <kbd>Ctrl</kbd><kbd>Tab</kbd>, close one with <kbd>${tabMod}W</kbd> or a middle click.`, [['tabs', 'Synapse Tabs'], ['browser', 'Browser Tabs']])}
+          ${segmentedRow('pdf_open_in', 'Open PDFs in', `Tabs inside Synapse, beside the note tabs (each window has its own, and a reload brings them back), or a browser tab of their own. Switch tabs with <kbd>Ctrl</kbd><kbd>Tab</kbd>, close one with <kbd>${tabMod}W</kbd> or a middle click.`, [['tabs', 'Synapse Tabs'], ['browser', 'Browser Tabs']])}
         </div>
         <p class="lead" style="margin-top:18px">The colour each annotation tool starts with. A tool keeps the colour you last used it with on a device, until you change its colour here.
           To change the colour of an annotation, select it in the viewer.</p>
@@ -257,16 +257,18 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
         <h2 style="margin-top:22px;font-size:15px">Tabs</h2>
         <div class="card"><dl class="shortcuts">
           <dt><kbd>Ctrl Tab</kbd> <kbd>Ctrl ⇧Tab</kbd></dt><dd>Next / previous tab (in the app window; a browser keeps these for its own tabs)</dd>
-          <dt><kbd>${tabMod}1</kbd> … <kbd>${tabMod}9</kbd></dt><dd>Go to a tab (1: the Synapse tab, 9: the last one)</dd>
-          <dt><kbd>${tabMod}W</kbd>, middle click</dt><dd>Close the PDF tab</dd>
+          <dt><kbd>${tabMod}1</kbd> … <kbd>${tabMod}9</kbd></dt><dd>Go to a tab (1: Library or Tasks, 9: the last one)</dd>
+          <dt><kbd>${tabMod}W</kbd>, middle click</dt><dd>Close the tab</dd>
           <dt><kbd>${tabMod}⇧T</kbd></dt><dd>Reopen the last closed tab</dd>
-          <dt>Drag a tab</dt><dd>Change the order; right-click for more</dd>
+          <dt>Double-click a tab</dt><dd>Keep a note's preview tab (italic title): the next note opens in a tab of its own (typing in the note keeps it too)</dd>
+          <dt>Drag a tab</dt><dd>Change the order; onto another Synapse window to move it there, outside every window for a new one; right-click for more</dd>
         </dl></div>
         <h2 style="margin-top:22px;font-size:15px">In the notes list</h2>
         <div class="card"><dl class="shortcuts">
           <dt>${modLabel}-click, ⇧-click</dt><dd>Select several notes and folders (or <kbd>⇧↑</kbd> <kbd>⇧↓</kbd>)</dd>
           <dt><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></dt><dd>Move; fold and unfold folders</dd>
-          <dt><kbd>↵</kbd></dt><dd>Open the note</dd>
+          <dt><kbd>↵</kbd>, click</dt><dd>Open the note (in the preview tab)</dd>
+          <dt>Double-click</dt><dd>Open the note in a tab that stays</dd>
           <dt><kbd>F2</kbd></dt><dd>Rename the note or folder</dd>
           <dt><kbd>⌫</kbd></dt><dd>Move the selection to the notes trash (with Undo)</dd>
           <dt><kbd>${modLabel}N</kbd></dt><dd>New note</dd>

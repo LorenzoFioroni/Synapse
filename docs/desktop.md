@@ -92,40 +92,93 @@ Desktop, with the icon `frontend/assets/icon-512.png`.
 
 ## The app's tabs
 
-The Synapse tab (the library, Notes and Tasks; it is named after the one shown) always comes first.
-Each PDF opened from the library, a citation, a card or a menu gets a tab after it, holding the
-viewer page (`viewer.html`) in a frame. The bar appears once a PDF is open in a tab.
+The bar holds, in this order:
+
+- **The first tab**: the library or Tasks, whichever the switch in the toolbar (Library | Notes |
+  Tasks) last showed; it is named after it and cannot be closed.
+- **Note tabs**: Notes has tabs. A note tab shows its note in the notes workspace (the notes list,
+  the note, its side panel), which is part of the page.
+- **PDF tabs**: each PDF opened from the library, a citation, a card or a menu, holding the viewer
+  page (`viewer.html`) in a frame over the page.
+
+The bar appears once a note or a PDF is open in a tab. Note and PDF tabs mix, in the order they were
+opened.
+
+**Notes open VS Code's way.** Opening a note (a click in the notes list, a `[[link]]`, the graph, a
+card, a search result) shows it in the *preview tab*, whose title is in italics: the next note
+opened replaces it there. The preview tab is kept, and its title turns upright, by double-clicking
+the tab, by editing the note, or by double-clicking the note in the notes list (so a double-click
+in the list no longer renames: that is F2 or the menu). A note that has a tab of its own just shows
+that tab. A new tab goes right after the one shown. There is at most one preview tab. Right-click a
+note in the list for **Open in New Tab** (a kept tab), and a preview tab for **Keep Tab Open**. A
+new note opens in a kept tab.
+
+**The switch.** Library and Tasks show the first tab. Notes shows the note tab used last; with none,
+an empty *Notes* tab (the notes list, no note), which the first note opened fills, and which goes
+away once Notes is left. Choosing the first tab goes back to the library or Tasks.
+
+**Each note tab keeps its place.** Leaving a note for another tab keeps its editor state (`park` in
+`editor.ts`: the text, cursor and **undo history**) and the line at the top (`ws.parked`, the 20
+notes left last); coming back to the tab restores them if the note was not changed elsewhere
+meanwhile. Moving or renaming a note renames its tab (`notesRenamed` in `notes/workspace.ts`,
+called by `fileOps.ts`); deleting it closes its tab, or empties the tab shown (`notesDeleted`). A
+tab whose note was deleted elsewhere closes, with a message, when it is shown.
+
+**PDF tabs.**
 
 - **One tab per PDF.** Opening a PDF that has a tab shows that tab, scrolled to the cited spot
-  (`zcViewerGoto`, as for browser tabs before). Cmd/Ctrl+click (or a middle click on a citation)
-  opens another tab of it; of two tabs of one PDF, the one shown last is reused.
-- **Closing** (the ×, a middle click, ⌃W on a Mac or Alt+W elsewhere) shows the tab the PDF was
-  opened from if the reader has not switched tabs since, else the tab to its right, else the one to
-  its left, as browsers do. ⌃⇧T / Alt+Shift+T reopens the last closed tab (up to ten are kept).
-  Cmd+W stays the browser's: it closes the window.
-- **Switching**: click, Ctrl+Tab and Ctrl+Shift+Tab (also Ctrl+PageDown/PageUp), ⌃1…⌃9 or
-  Alt+1…Alt+9 (1 is the Synapse tab, 9 the last tab). In a browser tab the browser keeps
-  Ctrl+Tab (and, outside macOS, Alt+digits) for its own tabs; in the app window they reach the app.
-  The keys work while a PDF has the keyboard too: `viewer/inTab.ts` passes them to the page around.
-- **Order**: drag a tab. **Right-click** a tab for Close Other Tabs, Close Tabs to the Right, Reopen
-  Closed Tab, Move to New Window, Open in a Browser Tab, Show in Library and Reload; right-click the
-  Synapse tab for New Window and Close All PDF Tabs.
-- **A reload** brings the window's tabs back, their order and the shown one, each at the page it
-  was left on. A tab's viewer is loaded only when the tab is first shown.
+  (`zcViewerGoto`, as for browser tabs). Cmd/Ctrl+click (or a middle click on a citation) opens
+  another tab of it; of two tabs of one PDF, the one shown last is reused. PDF tabs are never
+  previews.
 - **Back/Forward inside a PDF.** In a browser tab of its own the viewer's jumps (links, citations)
   are browser history entries. Inside the app's tabs they cannot be, because the page around shares
   that history: the app's Back would step through the PDF's jumps out of sight. So there they are
   kept in memory (`JumpHistory`), with the same toolbar arrows, Alt+←/→, ⌘[ / ⌘] and the mouse's
-  back and forward buttons, and the frame's address is only replaced, never pushed. Going Back or
-  Forward in the app, showing an item or opening a note shows the Synapse tab first.
-- **Settings → PDF Viewer → Open PDFs in** (`pdf_open_in`: `tabs` or `browser`) sends PDFs back to
-  browser tabs of their own, as before.
+  back and forward buttons, and the frame's address is only replaced, never pushed.
+- **Settings → PDF Viewer → Open PDFs in** (`pdf_open_in`: `tabs` or `browser`) sends PDFs to
+  browser tabs of their own. Notes always open in tabs.
+
+**For all tabs.**
+
+- **Closing** (the ×, a middle click, ⌃W on a Mac or Alt+W elsewhere) shows the tab it was opened
+  from if the reader has not switched tabs since, else the tab to its right, else the one to its
+  left, as browsers do. ⌃⇧T / Alt+Shift+T reopens the last closed tab, kept (up to ten are
+  remembered). Cmd+W stays the browser's: it closes the window.
+- **Switching**: click, Ctrl+Tab and Ctrl+Shift+Tab (also Ctrl+PageDown/PageUp), ⌃1…⌃9 or
+  Alt+1…Alt+9 (1 is the first tab, 9 the last tab). In a browser tab the browser keeps Ctrl+Tab
+  (and, outside macOS, Alt+digits) for its own tabs; in the app window they reach the app. The keys
+  work while a PDF has the keyboard too: `viewer/inTab.ts` passes them to the page around.
+- **Order**: drag a tab along the bar. **Right-click** a tab for Close Other Tabs, Close Tabs to the
+  Right, Reopen Closed Tab, Move to New Window, and for a PDF Open in a Browser Tab, Show in Library
+  and Reload; right-click the first tab for New Window and Close All Tabs.
+- **A reload** brings the window's tabs back, their order and the shown one, each PDF at the page it
+  was left on. A PDF tab's viewer is loaded only when the tab is first shown.
+- **Back/Forward in the app** (⌘[ / Alt+←, the mouse buttons) go to the note or library view shown
+  before, in its tab: a note that has a tab shows that tab, else it opens in the preview tab.
+
+### Between windows
+
+A tab can be dragged out of the bar:
+
+- **onto another Synapse window** (its bar, where it then goes, or anywhere on its page): it moves
+  there. The dragged tab carries its description (`application/x-synapse-tab`: the note's path or
+  the PDF's viewer address at its page, checked by `validSpec`). The window that takes it says so on
+  the `BroadcastChannel('zc-tabs')`, and the window it came from closes it. A note is saved before
+  it goes, so the other window loads what was typed.
+- **outside every window**: it moves to a new window there (`openNewWindow` at the drop point).
+  Browsers allow a page to open a window only shortly after a click, and here that click is the
+  press that started the drag (`navigator.userActivation`): after a drag of more than a few seconds
+  a message says to use Move to New Window instead.
+
+A drop on a window that is showing a PDF lands in the viewer's frame and is not taken: drop on the
+bar there. Dragging between windows needs them to be of the same browser (the installed app and
+Chrome are; Safari and Chrome are not).
 
 ### Windows
 
 Each window has its own tabs. They are kept in the window's `sessionStorage` (`zc.tabs`), which
 belongs to that window alone and lasts as long as the window: a reload brings them back, a new
-window starts with only the Synapse tab, and a window opened after the app was closed (the desktop
+window starts with only the first tab, and a window opened after the app was closed (the desktop
 shortcut, the next morning) starts afresh with the library. No list of windows is kept.
 
 New windows are opened from the menus, at a place of the app named after `#` in their address
@@ -134,10 +187,11 @@ New windows are opened from the menus, at a place of the app named after `#` in 
 | Menu | Entry | Opens |
 |---|---|---|
 | A PDF tab | Move to New Window | that PDF, at its page, in a tab of a new window (and closes it here) |
-| The Synapse tab | New Window | the library |
+| The first tab | New Window | the library |
 | An item | Show in New Window, Open PDF in New Window (one PDF) | the library with the item selected (in the folder shown); its PDF in a tab |
 | An attachment row, the item pane's attachment menu | Open in New Window | that PDF in a tab |
 | A folder, a smart folder (sidebar) | Open in New Window | the library at that folder |
+| A note tab | Move to New Window | that note in a tab of a new window (and closes it here) |
 | A note (notes list) | Open in New Window | the note in Notes |
 | A task (Tasks page) | Open in New Window | the Tasks page with the task selected |
 
@@ -155,27 +209,42 @@ How the new window looks depends on where Synapse runs: from Synapse installed a
 be another app window; from Chrome's app mode or a browser tab, a window without tabs and with a
 read-only address bar. Neither could be checked on a Mac here.
 
-How it fits together: `tabs.ts` registers itself in `api.ts` (`setPdfTabOpener`), so
-`openAttachment`, `pdfTabFor` and `pointPdfTab` open a Synapse tab when the setting says so, and
-`api.ts` does not import the tabs. `main.ts` names the Synapse tab after the workspace
-(`setHomeLabel`), calls `showHome()` before navigating, and gives `tabShortcut` the keys first. While
-a PDF tab is shown, the toolbar, the panes and the status bar behind it are `inert`. Hidden tabs'
-frames keep their size (`visibility`, not `display`), so their viewers keep their layout and their
-place; the Synapse tab gets the keyboard back where it had it. `window.zcTabs` is what a viewer in
-a tab calls (`shortcut`, `touched`) and what the browser checklist reads (`list`).
+How it fits together:
+
+- `tabs/model.ts` is the tabs without a DOM: `openNote` (preview rules), `keep`, `renameNotes`,
+  `notesGone`, closing, reopening, order, saving. `tabs/tabs.ts` draws the bar, holds the PDF frames,
+  the keys, the menus and the dragging.
+- `tabs.ts` registers itself in `api.ts` (`setPdfTabOpener`), so `openAttachment`, `pdfTabFor` and
+  `pointPdfTab` open a PDF tab when the setting says so, and `api.ts` does not import the tabs.
+- `main.ts` passes `initTabs` a `TabsHost`: `home` (back to the library or Tasks), `note` (have the
+  notes workspace show a note: `showNote` in `notesView.ts`), `noteClosed` and `flushNote`. It fills
+  in `noteTabs` in `notes/workspace.ts` (`open`, `edited`, `renamed`, `deleted`), through which the
+  notes code opens notes in tabs without importing them: `hooks.openNote(path, { keep })` and
+  `openNotes(path, line, { keep })` go there. `main.ts` names the first tab after the workspace
+  (`setHomeLabel`), tells the tabs when the page left Notes (`homeUnderneath`), calls `showHome()`
+  before navigating, and gives `tabShortcut` the keys first.
+- While a PDF tab is shown, the toolbar, the panes and the status bar behind it are `inert`. Hidden
+  tabs' frames keep their size (`visibility`, not `display`), so their viewers keep their layout and
+  place; coming back from a PDF tab gives the keyboard back where it was. `window.zcTabs` is what a
+  viewer in a tab calls (`shortcut`, `touched`) and what the browser checklist reads (`list`, `win`).
 
 ## Tests
 
 - `tests/js/tabs.test.mjs`: the tab model (opening, reuse, closing and where it goes, reopening,
-  moving, the n-th tab, saving and restoring, addresses), `JumpHistory`, and the address of a new
-  window (`placeHash`, `readPlace`).
+  moving, the n-th tab, saving and restoring, addresses), note tabs (preview tab, keeping, where a
+  new tab goes, the empty Notes tab, renamed and deleted notes, what a dragged tab may be),
+  `JumpHistory`, and the address of a new window (`placeHash`, `readPlace`).
 - `tests/test_desktop.py`: `Presence` with a fake clock, the endpoints and the guard, the setting,
   finding the installed app and the browser, `synapse_at`, the shortcut on macOS (bundle, script
   checked with `bash -n`, icon, Desktop link, another app of the same name) and Linux, and
   `server.py --make-shortcut` / `--window` run for real.
-- `tests/e2e/tabs_checklist.py` (ports 8796 and 8797): the tabs in the browser, each window with
-  its own tabs, Move to New Window, New Window and Open in New Window from the item, folder, note
-  and task menus, and a `--quit-when-closed` server stopping after its page closes.
+- `tests/e2e/tabs_checklist.py` (ports 8796 and 8797): the tabs in the browser; the first tab and
+  the switch; note tabs (preview, keeping by double-click on the tab, in the list and by editing,
+  undo kept across tabs, renamed and deleted notes, a reload); each window with its own tabs; a tab
+  dropped on another window and outside every window (with synthetic drag events); Move to New
+  Window, New Window and Open in New Window from the item, folder, note and task menus; and a
+  `--quit-when-closed` server stopping after its page closes.
 
 Not verifiable in the test container: a real Mac (the app bundle, the Dock, Chrome's installed app),
-Chrome's app mode, and the tab keys in a real app window.
+Chrome's app mode, the tab keys in a real app window, and a real drag between two windows (the
+checklist sends the drag events itself).

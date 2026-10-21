@@ -3,7 +3,7 @@
 // (viewer/jumpHistory.ts), and the place a new window opens at (windows.ts).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { HOME, TabSet, reopenUrl, urlAtSpot } from '../../frontend/js/tabs/model.js';
+import { HOME, TabSet, noteTitle, reopenUrl, urlAtSpot, validSpec } from '../../frontend/js/tabs/model.js';
 import { JumpHistory } from '../../frontend/js/viewer/jumpHistory.js';
 import { placeHash, readPlace } from '../../frontend/js/windows.js';
 
@@ -211,4 +211,133 @@ test('reading a place leaves out what does not look like one', () => {
   assert.deepEqual(readPlace('#note=a.md&line=0'), { note: 'a.md' });
   assert.deepEqual(readPlace('#note=a.md&line=x'), { note: 'a.md' });
   assert.equal(placeHash({ view: 'trash', pdf: 'https://evil.example/' }), '#window=new');
+});
+
+const notes = (s) => s.tabs.filter((t) => t.kind === 'note').map((t) => `${t.preview ? '~' : ''}${t.title}`);
+
+test('notes open VS Code\'s way: a preview tab the next note replaces', () => {
+  const s = new TabSet();
+  const a = s.openNote('Notes/A.md');
+  assert.deepEqual(notes(s), ['~A']);
+  assert.equal(s.active, a.id);
+  const b = s.openNote('B.md');
+  assert.equal(b, a, 'the same tab, now B');
+  assert.deepEqual(notes(s), ['~B']);
+  assert.equal(s.keep(b.id), true);
+  assert.equal(s.keep(b.id), false, 'already kept');
+  s.openNote('C.md');
+  assert.deepEqual(notes(s), ['B', '~C'], 'a new preview tab once the old one is kept');
+  s.openNote('B.md');
+  assert.equal(activeTitle(s), 'B', 'a note with its own tab: that tab');
+  assert.deepEqual(notes(s), ['B', '~C']);
+  s.openNote('C.md', { keep: true });
+  assert.deepEqual(notes(s), ['B', 'C'], 'keep: the tab it ends up in is kept');
+  s.openNote('D.md', { keep: true });
+  assert.deepEqual(notes(s), ['B', 'C', 'D'], 'keep with no preview tab: a new kept tab');
+});
+
+test('a new note tab goes right after the active tab', () => {
+  const s = new TabSet();
+  s.add(pdf('p1'));
+  s.add(pdf('p2'));
+  s.activate(s.tabs[0].id);
+  s.openNote('A.md');
+  assert.deepEqual(s.tabs.map((t) => t.title), ['p1', 'A', 'p2']);
+  s.activate(HOME);
+  s.openNote('B.md');
+  assert.deepEqual(s.tabs.map((t) => t.title), ['p1', 'B', 'p2'], 'the preview tab keeps its place');
+});
+
+test('only one preview tab', () => {
+  const s = new TabSet();
+  s.add({ kind: 'note', key: 'A.md', preview: true });
+  s.add({ kind: 'note', key: 'B.md', preview: true });
+  assert.deepEqual(notes(s), ['A', '~B']);
+});
+
+test('Notes with nothing open, and the note tab used last', () => {
+  const s = new TabSet();
+  const empty = s.openNote(null, { last: true });
+  assert.equal(empty.key, '');
+  assert.equal(empty.title, 'Notes');
+  assert.equal(empty.preview, true);
+  s.openNote('A.md');
+  assert.equal(s.tabs.length, 1, 'the first note fills the empty tab');
+  s.keep(s.active);
+  s.openNote('B.md', { keep: true });
+  s.activate(s.tabs[0].id);
+  s.activate(HOME);
+  assert.equal(s.openNote(null, { last: true }).title, 'A');
+  assert.equal(noteTitle(''), 'Notes');
+  assert.equal(noteTitle('a/b/Café.MD'), 'Café');
+});
+
+test('PDF tabs are never previews, and keep a tab of their own per PDF', () => {
+  const s = new TabSet();
+  s.openNote('A.md');
+  const p = s.add({ ...pdf('x'), preview: true });
+  assert.equal(p.preview, false);
+  assert.equal(s.byKey('/pdfs/x.pdf'), p);
+  assert.equal(s.byKey('/pdfs/x.pdf', 'note'), null);
+});
+
+test('renamed notes: their tabs (and closed tabs) follow', () => {
+  const s = new TabSet();
+  s.openNote('Old/A.md', { keep: true });
+  s.openNote('Old/B.md', { keep: true });
+  s.close(s.tabs[1].id);
+  s.renameNotes((p) => p.replace(/^Old\//, 'New/'));
+  assert.deepEqual(s.tabs.map((t) => t.key), ['New/A.md']);
+  assert.equal(s.closed[0].key, 'New/B.md');
+  assert.equal(s.reopen().title, 'B');
+});
+
+test('deleted notes: their tabs close; the one shown becomes Notes with nothing open', () => {
+  const s = new TabSet();
+  s.openNote('A.md', { keep: true });
+  s.openNote('B.md', { keep: true });
+  s.openNote('C.md');                          // preview, shown
+  s.activate(s.tabs[1].id);                    // B shown
+  const closed = s.notesGone((p) => p === 'A.md' || p === 'B.md');
+  assert.deepEqual(notes(s), ['~Notes'], 'B empty (and the preview now); A and the old preview C closed');
+  assert.equal(closed.length, 2);
+  assert.equal(s.get(s.active).key, '');
+  s.openNote('D.md');
+  assert.deepEqual(notes(s), ['~D'], 'the next note fills it');
+});
+
+test('reopening a closed note tab: kept, or its tab if open again', () => {
+  const s = new TabSet();
+  const a = s.openNote('A.md');                // preview
+  s.close(a.id);
+  const r = s.reopen();
+  assert.deepEqual(notes(s), ['A'], 'kept');
+  s.close(r.id);
+  s.openNote('A.md', { keep: true });
+  s.reopen();
+  assert.deepEqual(notes(s), ['A'], 'not twice');
+  const e = s.openNote(null);
+  s.close(e.id);
+  assert.equal(s.closed.length, 0, 'an empty Notes tab is not worth reopening');
+});
+
+test('note tabs are saved and restored with the PDF tabs', () => {
+  const s = new TabSet();
+  s.add(pdf('x'));
+  s.openNote('A.md');
+  const r = TabSet.restore(JSON.parse(JSON.stringify(s.save())));
+  assert.deepEqual(r.tabs.map((t) => [t.kind, t.title, t.preview]), [['pdf', 'x', false], ['note', 'A', true]]);
+  assert.equal(r.get(r.active).title, 'A');
+});
+
+test('what a tab dragged from another window may be', () => {
+  assert.ok(validSpec({ kind: 'note', key: 'a/b.md', title: 'b' }));
+  assert.ok(validSpec({ kind: 'note', key: '' }));
+  assert.ok(validSpec({ kind: 'pdf', key: 'k', url: '/viewer.html?file=k' }));
+  assert.ok(validSpec({ key: 'k', url: '/viewer.html?file=k', title: 'x' }), 'no kind: a PDF tab');
+  assert.ok(!validSpec({ kind: 'note', key: 'evil.html' }));
+  assert.ok(!validSpec({ kind: 'pdf', key: 'k', url: 'https://evil.example/' }));
+  assert.ok(!validSpec({ kind: 'window', key: 'x' }));
+  assert.ok(!validSpec({ kind: 'note', key: 3 }));
+  assert.ok(!validSpec(null));
 });

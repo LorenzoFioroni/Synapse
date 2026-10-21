@@ -281,10 +281,10 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 
 | Module | Role |
 |---|---|
-| `notesView.ts` | Builds the workspace, opens and closes notes (`openNote` serialises opens), wires `NoteSession` to the UI. |
-| `workspace.ts` | Shared state `ws` (open note, editor, listing, link data, cite index) and `hooks` back into `notesView.ts`. |
+| `notesView.ts` | Builds the workspace, opens and closes notes, wires `NoteSession` to the UI. Notes open in tabs ([the app's tabs](desktop.md#the-apps-tabs)): `openNote` and `openNotes` go through `noteTabs.open`, and the tab shown has `showNote` show its note here (opens are serialised); leaving a note keeps its editor state (`parkCurrent`, `ws.parked`) for when its tab comes back. |
+| `workspace.ts` | Shared state `ws` (open note, editor, listing, link data, cite index, parked editor states), `hooks` back into `notesView.ts`, and `noteTabs` with `notesRenamed`/`notesDeleted`, through which the notes code reaches the tabs without importing them. |
 | `noteSession.ts` | Saving one note: autosave, drafts, retries, conflicts. No DOM. |
-| `tree.ts`, `treeInput.ts` | The notes list and filter; mouse, keyboard, context menu, drag and drop. |
+| `tree.ts`, `treeInput.ts` | The notes list and filter; mouse, keyboard, context menu, drag and drop. A click opens a note in the preview tab, a double-click keeps its tab (F2 renames). |
 | `fileOps.ts` | New, rename, move, trash with Undo, the trash dialog, rescan. |
 | `editor.ts`, `livePreview.ts`, `previewWidgets.ts` | CodeMirror 6 (`vendor/cm6/`), the live preview decorations (built on `mdscan.ts`) and the widgets they draw. |
 | `completion.ts`, `library.ts` | `[@`, `[[` and `{{task` autocomplete and their ranking (tasks come from the Tasks module through `taskHooks`). |

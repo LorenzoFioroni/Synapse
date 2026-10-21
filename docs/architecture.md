@@ -135,8 +135,10 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   modules. Everything is type-checked in strict mode; there is no `@ts-nocheck` left.
 - `changes.ts` polls `/api/changes` and refreshes whatever another window, device or background
   job changed.
-- `tabs/*` are the app's own tabs: the Synapse tab and a tab per open PDF, each a frame with the
-  viewer (`model.ts` without a DOM, `tabs.ts` the bar and the frames; see [the app window](desktop.md)).
+- `tabs/*` are the app's own tabs: the first tab (Library or Tasks), note tabs (VS Code-style
+  preview tabs, shown by the notes workspace) and PDF tabs (a frame with the viewer each);
+  `model.ts` without a DOM, `tabs.ts` the bar, the frames and dragging tabs between windows. See
+  [the app window](desktop.md).
   Each window has its own tabs; `windows.ts` opens an item, a folder, a note, a task or a PDF in a
   new window. `presence.ts` tells a `--quit-when-closed` server that a window is open.
 - `views/*` holds the screens and dialogs, and `views/notes/*` the notes workspace (a CodeMirror 6

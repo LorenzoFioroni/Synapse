@@ -16,6 +16,8 @@ export type MD = typeof import('../../../vendor/md/md.js');
 /** What the editor reports to the notes view. */
 export interface EditorHandlers {
   onChange?(text: string): void;
+  /** The text changed by the reader (typing, pasting, undo…), not by a version saved elsewhere. */
+  onEdit?(): void;
   onSave?(): void;
   onBlur?(): void;
   /** A pasted or dropped image: store it and return the Markdown that shows it (null: nothing to insert). */
@@ -28,6 +30,10 @@ export interface EditorHandlers {
 export interface NoteEditor {
   view: EditorView;
   load(text: string): void;
+  /** The note's state (text, cursor, undo history) to come back to later with `resume`. */
+  park(): unknown;
+  /** Come back to a state `park` gave, if its text is still `text`; false (nothing done) if not. */
+  resume(parked: unknown, text: string): boolean;
   replace(text: string, options?: { userEvent?: string }): void;
   setMode(mode: 'live' | 'source'): void;
   refresh(): void;
@@ -171,6 +177,7 @@ export async function createEditor(
       ...cm.searchKeymap, ...cm.historyKeymap, cm.indentWithTab]),
     cm.EditorView.updateListener.of((u) => {
       if (u.docChanged) handlers.onChange?.(u.state.doc.toString());
+      if (u.transactions.some((tr) => tr.docChanged && !tr.isUserEvent('remote'))) handlers.onEdit?.();
       if (u.focusChanged && !u.view.hasFocus) handlers.onBlur?.();
     }),
     cm.EditorView.domEventHandlers({
@@ -203,6 +210,13 @@ export async function createEditor(
       // start below the front matter, so it shows as properties rather than as source
       const start = Math.min(splitFrontmatter(text).bodyStart, text.length);
       view.setState(cm.EditorState.create({ doc: text, extensions: extensions(), selection: { anchor: start } }));
+    },
+    park: () => view.state,
+    resume(parked, text) {
+      if (!(parked instanceof cm.EditorState) || parked.doc.toString() !== text) return false;
+      view.setState(parked);
+      view.dispatch({ effects: modeSlot.reconfigure(modeExt(currentMode)) });   // the mode may have changed since
+      return true;
     },
     /**
      * Replace the content of the current note (a version saved elsewhere, e.g. by Claude or another

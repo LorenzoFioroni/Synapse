@@ -27,11 +27,40 @@ export const ws = {
   // Citable library items (for autocomplete and citation cards), keyed by citation key.
   library: { list: [] as CiteEntry[], byKey: new Map<string, CiteEntry>() },
   aiHist: null as NoteHistory | null,            // GET /api/notes/history of the open note
+  /** Notes left for another tab: their editor state (undo history, cursor) and the line at the
+   *  top, to come back to (notesView.ts). The most recently left last. */
+  parked: new Map<string, { state: unknown; top: number }>(),
 };
+
+/**
+ * The note tabs (tabs/tabs.ts; main.ts fills these in, so the notes code never imports the tabs).
+ * Without them (before the tabs are set up) a note opens in the workspace directly.
+ */
+export const noteTabs = {
+  /** Show ``path`` in a tab (null: Notes with nothing open; ``last``: the note tab used last). */
+  open: null as ((path: string | null, options?: { keep?: boolean; last?: boolean }) => Promise<void>) | null,
+  /** The reader edited the note shown. */
+  edited: null as (() => void) | null,
+  renamed: null as ((rename: (path: string) => string) => void) | null,
+  deleted: null as ((gone: (path: string) => boolean) => void) | null,
+};
+
+/** Notes were moved or renamed (``rename``: old path → new path): their tabs and parked states follow. */
+export function notesRenamed(rename: (path: string) => string): void {
+  ws.parked = new Map([...ws.parked].map(([p, v]) => [rename(p), v]));
+  noteTabs.renamed?.(rename);
+}
+
+/** Notes went to the trash: their tabs close. */
+export function notesDeleted(gone: (path: string) => boolean): void {
+  for (const p of [...ws.parked.keys()]) if (gone(p)) ws.parked.delete(p);
+  noteTabs.deleted?.(gone);
+}
 
 /** Set by notesView.ts: what the other parts call back into. */
 export const hooks = {
-  openNote: (_path: string): Promise<void> => Promise.resolve(),
+  /** Open a note (in a tab: the preview tab unless ``keep``). */
+  openNote: (_path: string, _options?: { keep?: boolean }): Promise<void> => Promise.resolve(),
   /** Open ``path`` now (not queued behind other opens): for code that is already inside an open. */
   doOpen: (_path: string): Promise<void> => Promise.resolve(),
   closeCurrent: (): Promise<void> => Promise.resolve(),

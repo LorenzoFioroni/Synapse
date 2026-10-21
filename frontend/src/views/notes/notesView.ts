@@ -34,7 +34,7 @@ import { paintCrumbs, paintSide, paintStatus } from './sidePanel.js';
 import { nKey, paintTree, refreshTree, saveCollapsed, selectOnly, setFilter, tree, treeEl } from './tree.js';
 import { initTreeInput } from './treeInput.js';
 import {
-  citeInfo, equationMode, hooks, itemInfo, type Mode, noteMacros, notesEnabled, notesOpen, resolveNote, stemOf, taskHooks, ws,
+  citeInfo, equationMode, hooks, itemInfo, type Mode, noteMacros, noteTabs, notesEnabled, notesOpen, resolveNote, stemOf, taskHooks, ws,
 } from './workspace.js';
 
 export { notesOpen } from './workspace.js';
@@ -44,6 +44,8 @@ ws.editMode = ws.mode === 'read' ? 'live' : ws.mode;
 
 let opening = Promise.resolve();
 let lastMathKey: string | null = null;
+
+const PARKED_MAX = 20;   // notes whose undo history is kept while another tab is shown
 
 const drafts = {
   get: (k: string) => storage(k, null),
@@ -136,7 +138,8 @@ export function initNotes(): void {
     if (key !== lastMathKey) { lastMathKey = key; ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); }
   });
 
-  if (notesEnabled()) refreshTree().then(() => { if (storage('zc.notes.open', false)) openNotes(); });
+  // Which note is shown comes from the tabs (a reload shows the window's note tab again).
+  if (notesEnabled()) refreshTree();
 }
 
 /**
@@ -186,25 +189,64 @@ export function notesChanged(): void {
   refreshTree();   // also the notes count in the sidebar and the pencil column
 }
 
+/**
+ * Notes, at ``path`` (and ``line``) in a note tab: its own tab, else the preview tab, else a new one
+ * (``keep``: a kept tab). Without a path: the note tab used last, else Notes with nothing open.
+ */
 export async function openNotes(path: string | null = null, line: number | null = null,
-  { graph = false, focus = null }: { graph?: boolean; focus?: string | null } = {}): Promise<void> {
+  { graph = false, focus = null, keep = false }: { graph?: boolean; focus?: string | null; keep?: boolean } = {}): Promise<void> {
   if (!notesEnabled()) return;
-  document.body.dataset.workspace = 'notes';
-  ws.root.hidden = false;
-  store('zc.notes.open', true);
-  emit('workspace');
-  await Promise.all([refreshTree(), loadLibrary()]);
-  const target = path || ws.session?.path || storage<string | null>('zc.notes.active', null);
-  if (target && ws.overview.notes.some((n) => n.path === target)) {
-    await openNote(target);
-    if (line) gotoLine(line);
-  } else {
-    if (path) toast(`“${stemOf(path)}” no longer exists (moved or deleted).`);
-    if (!ws.session) paintEmpty();
-  }
+  if (path && !ws.overview.notes.some((n) => n.path === path)) await refreshTree();
+  if (noteTabs.open) await noteTabs.open(path, { keep, last: !path });
+  else await showNote(path);
+  if (line && path && ws.session?.path === path) gotoLine(line);
   if (graph) await openGlobal(focus); else closeGlobal();
   const at = ws.session?.path || null;
   navPush(graph ? { ws: 'notes', path: at, graph: true, focus } : { ws: 'notes', path: at });
+}
+
+/** Into the notes workspace (from the library or Tasks). */
+async function enterNotes(): Promise<void> {
+  const entering = !notesOpen();
+  document.body.dataset.workspace = 'notes';
+  ws.root.hidden = false;
+  if (entering) emit('workspace');
+  await Promise.all([refreshTree(), entering ? loadLibrary() : null]);
+}
+
+/**
+ * What a note tab shows (tabs/tabs.ts through main.ts): ``path`` in the notes workspace, or Notes
+ * with nothing open (null). Resolves false when the note no longer exists.
+ */
+export async function showNote(path: string | null): Promise<boolean> {
+  if (!notesEnabled()) return false;
+  await enterNotes();
+  if (path && !ws.overview.notes.some((n) => n.path === path)) {
+    toast(`“${stemOf(path)}” no longer exists (moved or deleted).`);
+    if (ws.session?.path === path) await closeCurrent();
+    return false;
+  }
+  closeGlobal();
+  if (path) await openInPlace(path);
+  else {
+    await opening;
+    if (ws.session) { parkCurrent(); await ws.session.save(); await closeCurrent(); }
+    paintEmpty();
+  }
+  return true;
+}
+
+/** A note tab closed (tabs/tabs.ts): save its note and stop showing it. */
+export async function closeNoteTab(path: string): Promise<void> {
+  await opening;
+  if (ws.session?.path !== path) return;
+  await ws.session.save();
+  await closeCurrent();
+}
+
+/** A note tab is going to another window: save what was typed, so that window loads it. */
+export function flushNote(path: string): void {
+  if (ws.session?.path === path) ws.session.save();
 }
 
 /** The full graph in Notes, optionally centred on a node ("note:<path>", "item:<id>"). */
@@ -226,7 +268,6 @@ export async function closeNotes({ toLibrary = true }: { toLibrary?: boolean } =
   await ws.session?.save();
   delete document.body.dataset.workspace;
   ws.root.hidden = true;
-  store('zc.notes.open', false);
   if (!toLibrary) return;
   emit('workspace');
   emit('focus-list');
@@ -248,6 +289,7 @@ async function ensureEditor() {
   ws.renderer = createRenderer(lib, { citeInfo, resolveNote, equations: equationMode, macros: noteMacros });
   ws.editor = await createEditor(ws.root.querySelector<HTMLElement>('.note-editor')!, {
     onChange: (text) => { ws.session?.update(text); if (ws.mode === 'read') scheduleRead(); },
+    onEdit: () => noteTabs.edited?.(),
     onSave: () => ws.session?.save(),
     onBlur: () => ws.session?.save(),
     onToggleRead: () => setMode(ws.mode === 'read' ? ws.editMode : 'read'),
@@ -319,16 +361,32 @@ function setMode(m: Mode, { focus = true, keepPlace = true } = {}): void {
   if (focus) ws.editor?.focus();
 }
 
-/** Open a note (saving the current one first). Calls are serialised. */
-function openNote(path: string): Promise<void> {
+/** Open a note: in a tab (the preview tab unless ``keep``), which shows it here. */
+function openNote(path: string, { keep = false }: { keep?: boolean } = {}): Promise<void> {
+  if (noteTabs.open) return noteTabs.open(path, { keep });
+  return openInPlace(path);
+}
+
+/** Show a note in the workspace (saving the current one first). Calls are serialised. */
+function openInPlace(path: string): Promise<void> {
   closeGlobal();
   opening = opening.then(() => doOpen(path)).catch((e) => { toastError(e); });
   return opening;
 }
 
+/** Keep the open note's editor state (undo history, cursor) and place, for when its tab is shown again. */
+function parkCurrent(): void {
+  const { session, editor } = ws;
+  if (!session || !editor) return;
+  ws.parked.delete(session.path);
+  ws.parked.set(session.path, { state: editor.park(), top: ws.mode === 'read' ? readTopLine() : editor.topLine() });
+  while (ws.parked.size > PARKED_MAX) ws.parked.delete(ws.parked.keys().next().value!);
+}
+
 async function doOpen(path: string): Promise<void> {
   if (ws.session && ws.session.path === path) { if (!treeEl().contains(document.activeElement)) ws.editor?.focus(); return; }
   if (ws.session) {
+    parkCurrent();
     await ws.session.save();
     ws.session.dispose();
     ws.session = null;
@@ -338,7 +396,10 @@ async function doOpen(path: string): Promise<void> {
   const start = NoteSession.open(path, res, drafts);
   ws.linkData = { notes: new Map(), cites: new Map() };
   ws.linkResp = null;
-  ed.load(start.text);
+  const parked = ws.parked.get(path);
+  ws.parked.delete(path);
+  const resumed = !!parked && ed.resume(parked.state, start.text);
+  if (!resumed) ed.load(start.text);
   ws.info = res.info;
   const session = new NoteSession({
     path, text: start.text, serverText: res.text, hash: res.hash, drafts,
@@ -361,6 +422,7 @@ async function doOpen(path: string): Promise<void> {
   paintTree();
   // opened from the file list: the keyboard stays there (arrows, Delete) until you click the note
   setMode(ws.mode, { focus: !treeEl().contains(document.activeElement), keepPlace: false });
+  if (resumed) { if (ws.mode === 'read') scrollReadTo(parked!.top); else ed.scrollToLine(parked!.top); }
   loadLinks();
   loadAiEdits();
   if (start.conflict) await session.startConflict();

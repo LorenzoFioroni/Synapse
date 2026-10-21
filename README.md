@@ -38,12 +38,15 @@ server in the background and opens the window; closing the window stops the serv
 with it (`--data-dir`, `--port`…) are used by the shortcut. Make it again after moving the folder.
 Details: [docs/desktop.md](docs/desktop.md).
 
-PDFs open in tabs inside Synapse, next to the library (in a browser tab too): one tab per PDF,
-Ctrl+Tab to switch, ⌃W (Alt+W elsewhere) or a middle click to close, ⌃⇧T to reopen. Each window
-has its own tabs, which a reload brings back at the page you left them; a new window, or the app
-started again, opens on the library alone. Right-click a tab for **Move to New Window**, and items,
-PDFs, folders, notes and tasks for **Open in New Window**. Settings → PDF Viewer → Open PDFs in →
-Browser Tabs keeps PDFs in browser tabs of their own.
+Notes and PDFs open in tabs inside Synapse (in a browser tab too), after the first tab, which shows
+the library or Tasks. Notes open as in VS Code: in a preview tab (italic title) that the next note
+replaces, until you double-click the tab, double-click the note in the notes list, or edit it; each
+note tab keeps its undo history. PDFs get a tab each. Ctrl+Tab switches, ⌃W (Alt+W elsewhere) or a
+middle click closes, ⌃⇧T reopens. Each window has its own tabs, which a reload brings back; a new
+window, or the app started again, opens on the library alone. Drag a tab onto another Synapse
+window to move it there, or outside every window for a new one (or right-click it: **Move to New
+Window**); right-click items, PDFs, folders, notes and tasks for **Open in New Window**. Settings →
+PDF Viewer → Open PDFs in → Browser Tabs keeps PDFs in browser tabs of their own.
 
 ### From an iPad or phone
 

@@ -117,6 +117,8 @@ async def main():
         requests.post(f"{BASE}/api/items/folders", json={"ids": [second["id"]], "add": [folder["id"]]})
         note = requests.post(f"{BASE}/api/notes/note", json={"title": "Window note"}).json()["path"]
         requests.post(f"{BASE}/api/tasks", json={"title": "Window task"}).raise_for_status()
+        for title in ("Alpha", "Beta", "Gamma", "Delta"):
+            requests.post(f"{BASE}/api/notes/note", json={"title": title}).raise_for_status()
 
         async with async_playwright() as p:
             b = await p.chromium.launch()
@@ -305,13 +307,29 @@ async def main():
             titles = [x["title"] for x in await tabs(page)]
             check("Close Other Tabs leaves that one", titles == ["Library", "Third paper"], titles)
 
-            # ---- the Synapse tab is named after the workspace -------------------------------------------
+            # ---- the first tab: Library or Tasks; Notes has tabs of its own ------------------------------
             await page.click(".tab.home")
+            await page.click('.ws-switch [data-ws="tasks"]')
+            await page.wait_for_timeout(500)
+            check("the first tab says Tasks while Tasks is shown", (await tabs(page))[0]["title"] == "Tasks")
             await page.click('.ws-switch [data-ws="notes"]')
             await page.wait_for_timeout(500)
-            check("the Synapse tab says Notes while Notes is open", (await tabs(page))[0]["title"] == "Notes")
+            t = await tabs(page)
+            check(
+                "Notes with no note tab opens an empty Notes tab; the first tab still says Tasks",
+                t[0]["title"] == "Tasks" and t[-1]["kind"] == "note" and t[-1]["key"] == "" and t[-1]["active"],
+                [(x["title"], x["kind"], x["active"]) for x in t],
+            )
+            await page.click(".tab.home")
+            await page.wait_for_timeout(500)
+            check("the first tab goes back to Tasks", await page.evaluate("document.body.dataset.workspace") == "tasks")
             await page.click('.ws-switch [data-ws="library"]')
             await page.wait_for_timeout(300)
+            check(
+                "the empty Notes tab goes once Notes is left",
+                [x["title"] for x in await tabs(page)] == ["Library", "Third paper"],
+                [x["title"] for x in await tabs(page)],
+            )
 
             # ---- each window has its own tabs ------------------------------------------------------------
             other = await ctx.new_page()
@@ -434,6 +452,175 @@ async def main():
             await win.close()
             await page.click('.ws-switch [data-ws="library"]')
             await page.wait_for_timeout(300)
+
+            # ---- notes in tabs, VS Code's way ------------------------------------------------------------
+            async def note_tabs(pg=page):
+                return [(x["title"], x["preview"], x["active"]) for x in await tabs(pg) if x["kind"] == "note"]
+
+            async def note_path(path, pg=page):
+                return await wait_for(lambda: pg.evaluate(f"window.zcNotes?.path() === {path!r}"))
+
+            await page.click('.ws-switch [data-ws="notes"]')
+            await page.wait_for_selector('.nt-row.note[data-path="Alpha.md"]')
+            await page.click('.nt-row.note[data-path="Alpha.md"]')
+            await note_path("Alpha.md")
+            italic = await page.locator(".tab.note.preview .tab-title").evaluate("(e) => getComputedStyle(e).fontStyle")
+            check(
+                "a note opens in a preview tab, its title in italics",
+                await note_tabs() == [("Alpha", True, True)] and italic == "italic",
+                (await note_tabs(), italic),
+            )
+            await page.click('.nt-row.note[data-path="Beta.md"]')
+            await note_path("Beta.md")
+            check(
+                "the next note opened replaces the preview",
+                await note_tabs() == [("Beta", True, True)],
+                await note_tabs(),
+            )
+            await page.locator(".tab.note.preview").dblclick()
+            check("double-clicking the tab keeps it", await note_tabs() == [("Beta", False, True)], await note_tabs())
+            await page.click('.nt-row.note[data-path="Gamma.md"]')
+            await note_path("Gamma.md")
+            check(
+                "then the next note opens in a new preview tab beside it",
+                await note_tabs() == [("Beta", False, False), ("Gamma", True, True)],
+                await note_tabs(),
+            )
+            await page.dblclick('.nt-row.note[data-path="Gamma.md"]')
+            await page.wait_for_timeout(300)
+            check(
+                "double-clicking a note in the list keeps its tab (no rename dialog)",
+                await note_tabs() == [("Beta", False, False), ("Gamma", False, True)]
+                and not await page.locator(".dialog").count(),
+                await note_tabs(),
+            )
+            await page.click('.nt-row.note[data-path="Delta.md"]')
+            await note_path("Delta.md")
+            await page.click(".cm-content")
+            await page.keyboard.press("Control+End")
+            await page.keyboard.type(" typed in Delta")
+            await page.wait_for_timeout(300)
+            check(
+                "editing a preview note keeps its tab", ("Delta", False, True) in await note_tabs(), await note_tabs()
+            )
+
+            # each tab keeps its note's undo history
+            await page.locator(".tab.note", has_text="Beta").click()
+            await note_path("Beta.md")
+            await page.click(".cm-content")
+            await page.keyboard.press("Control+End")
+            await page.keyboard.type(" undo me")
+            typed = "undo me" in await page.evaluate("window.zcNotes.text()")
+            await page.locator(".tab.note", has_text="Gamma").click()
+            await note_path("Gamma.md")
+            await page.locator(".tab.note", has_text="Beta").click()
+            await note_path("Beta.md")
+            await page.wait_for_timeout(300)
+            await page.keyboard.press("Control+z")
+            await page.wait_for_timeout(300)
+            check(
+                "undo still works after switching tabs and back",
+                typed and "undo me" not in await page.evaluate("window.zcNotes.text()"),
+            )
+
+            # the first tab and back to Notes
+            await page.click(".tab.home")
+            await page.wait_for_timeout(400)
+            check("the first tab shows the library", await page.evaluate("document.body.dataset.workspace") is None)
+            await page.click('.ws-switch [data-ws="notes"]')
+            await note_path("Beta.md")
+            check(
+                "Notes goes back to the note tab used last",
+                ("Beta", False, True) in await note_tabs(),
+                await note_tabs(),
+            )
+
+            # tabs follow renamed and deleted notes
+            await page.click('.nt-row.note[data-path="Gamma.md"]')
+            await note_path("Gamma.md")
+            await page.keyboard.press("F2")
+            await page.fill(".dialog input", "Gamma two")
+            await page.keyboard.press("Enter")
+            await note_path("Gamma two.md")
+            check(
+                "renaming a note renames its tab",
+                [t[0] for t in await note_tabs()] == ["Beta", "Gamma two", "Delta"],
+                await note_tabs(),
+            )
+            await page.locator(".tab.note", has_text="Beta").click()
+            await note_path("Beta.md")
+            await page.locator('.nt-row.note[data-path="Delta.md"]').click(button="right")
+            await page.locator(".menu-item", has_text="Move to Trash").click()
+            ok = await wait_for(lambda: page.evaluate("!window.zcTabs.list().some((t) => t.title === 'Delta')"))
+            check(
+                "deleting a note closes its tab",
+                ok and await note_tabs() == [("Beta", False, True), ("Gamma two", False, False)],
+                await note_tabs(),
+            )
+
+            # a reload brings them back, the note shown again
+            await page.reload()
+            await page.wait_for_selector("#tabbar:not([hidden])")
+            ok = await note_path("Beta.md")
+            check(
+                "a reload brings the note tabs back, the active note shown",
+                ok and await note_tabs() == [("Beta", False, True), ("Gamma two", False, False)],
+                await note_tabs(),
+            )
+
+            # dragging a tab to another window moves it there
+            other = await ctx.new_page()
+            other.on("pageerror", lambda e: errors.append(f"other window: {e}"))
+            await other.goto(BASE)
+            await other.wait_for_selector(".row[data-id]")
+            src = await page.evaluate("window.zcTabs.win")
+            beta = next(x for x in await tabs(page) if x["title"] == "Beta")
+            await other.evaluate(
+                """(d) => {
+                    const dt = new DataTransfer();
+                    dt.setData('application/x-synapse-tab', JSON.stringify(d));
+                    document.querySelector('#items-pane').dispatchEvent(
+                        new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true, clientX: 400, clientY: 300 }));
+                }""",
+                {"win": src, "id": beta["id"], "spec": {"kind": "note", "key": "Beta.md", "title": "Beta"}},
+            )
+            ok = await note_path("Beta.md", other)
+            gone = await wait_for(lambda: page.evaluate("!window.zcTabs.list().some((t) => t.title === 'Beta')"))
+            check(
+                "a tab dropped on another window opens there and leaves this one",
+                ok and await note_tabs(other) == [("Beta", False, True)] and gone,
+                (await note_tabs(other), await note_tabs()),
+            )
+            await shot(other, "04-note-tab-dragged-in")
+            await other.close()
+
+            # dropped outside every window: a new window
+            box = await page.locator(".tab.note", has_text="Gamma two").bounding_box()
+            await page.mouse.move(box["x"] + 20, box["y"] + 10)
+            await page.mouse.down()  # the press that starts the drag lets the page open a window
+            win = await new_window(
+                lambda: page.evaluate(
+                    """() => {
+                        const el = [...document.querySelectorAll('.tab.note')].find((t) => t.textContent.includes('Gamma two'));
+                        const dt = new DataTransfer();
+                        el.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }));
+                        el.dispatchEvent(new DragEvent('dragend', { dataTransfer: dt, bubbles: true, clientX: -40, clientY: 10, screenX: 60, screenY: 60 }));
+                    }"""
+                )
+            )
+            await page.mouse.up()
+            ok = await note_path("Gamma two.md", win)
+            gone = await wait_for(
+                lambda: page.evaluate("!window.zcTabs.list().some((t) => t.kind === 'note' && t.key)")
+            )
+            check(
+                "a tab dropped outside every window moves to a new window",
+                ok and await note_tabs(win) == [("Gamma two", False, True)] and gone,
+                await note_tabs(win),
+            )
+            await win.close()
+            await page.click(".tab.home")
+            await page.wait_for_timeout(400)
 
             # ---- Settings → PDF Viewer → Browser Tabs ---------------------------------------------------
             await page.keyboard.press("Control+,")

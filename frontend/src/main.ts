@@ -12,7 +12,11 @@ import { debounce, modKey, modLabel, plural, storage, store } from './util.js';
 import { type NavEntry, initNav, navSnapshot, navUpdate } from './nav.js';
 import { initChanges } from './changes.js';
 import { startPresence } from './presence.js';
-import { initTabs, openViewerTab, setHomeLabel, showHome, tabShortcut } from './tabs/tabs.js';
+import {
+  closeNoteTabs, homeUnderneath, initTabs, noteEdited, notesDeleted as tabsNotesDeleted, notesRenamed as tabsNotesRenamed, openNoteTab, openViewerTab,
+  setHomeLabel, showHome, tabShortcut,
+} from './tabs/tabs.js';
+import { noteTabs } from './views/notes/workspace.js';
 import { readPlace } from './windows.js';
 import { openExport } from './views/exportDialog.js';
 import { smartFolderDialog } from './views/organizeDialogs.js';
@@ -22,7 +26,9 @@ import { focusList, initItemList, openColumnPicker } from './views/itemlist.js';
 import { initItemPane, toggleItemPane } from './views/itempane.js';
 import { applyAppearance, closeSettings, openSettings, settingsOpen } from './views/settingsView.js';
 import { initSidebar } from './views/sidebar.js';
-import { closeNotes, initNotes, notesOpen, notesPanelButton, notesShortcut, openNotes, openNotesGraph, toggleNotesGraph } from './views/notes/notesView.js';
+import {
+  closeNoteTab, closeNotes, flushNote, initNotes, notesOpen, notesPanelButton, notesShortcut, openNotes, openNotesGraph, showNote, toggleNotesGraph,
+} from './views/notes/notesView.js';
 import { initNoteTasks } from './views/tasks/noteTasks.js';
 import { closeTasks, initTasks, openTasks, tasksOpen, tasksPanelButton, tasksShortcut } from './views/tasks/tasksView.js';
 
@@ -51,7 +57,10 @@ async function boot() {
   initStatusBar();
   initShortcuts();
   if (storage('zc.itemPaneHidden', false)) toggleItemPane(false);
-  initTabs({ onHome: () => { if (!notesOpen() && !tasksOpen() && !settingsOpen()) focusList(); } });
+  // Notes open in tabs: the first tab shows the library or Tasks, a note tab its note.
+  initTabs({ home: goHome, note: showNote, noteClosed: closeNoteTab, flushNote });
+  Object.assign(noteTabs, { open: openNoteTab, edited: noteEdited, renamed: tabsNotesRenamed, deleted: tabsNotesDeleted });
+  on('settings', () => { if (state.settings.notes_enabled === false) closeNoteTabs(); });
   startPresence();
 
   on('open-import', (file) => openImport(file instanceof File ? file : null));
@@ -85,8 +94,8 @@ async function boot() {
 async function openFromHash(): Promise<void> {
   const place = readPlace(location.hash);
   if (!place) return;
-  history.replaceState(history.state, '', location.pathname + location.search);
-  if (place.note && state.settings.notes_enabled !== false) await openNotes(place.note, place.line ?? null);
+  history.replaceState(history.state, '', location.href.split('#')[0]);
+  if (place.note && state.settings.notes_enabled !== false) await openNotes(place.note, place.line ?? null, { keep: true });
   else if (place.task) await goToTasks({ task: place.task });
   else {
     if (place.view) { A.setView(place.view); await A.loadItems({ keepSelection: false }); }
@@ -142,13 +151,28 @@ function switchWorkspace(to: string = notesOpen() ? 'library' : 'notes'): void {
   else { closeNotes(); closeTasks(); }
 }
 
+/** What the first tab shows: the library or Tasks, whichever was shown last. */
+let homeWs: 'library' | 'tasks' = 'library';
+
 function paintWorkspace() {
   const sw = document.querySelector<HTMLElement>('.ws-switch');
   if (!sw) return;
   sw.hidden = state.settings.notes_enabled === false;
   const ws = notesOpen() ? 'notes' : tasksOpen() ? 'tasks' : 'library';
   sw.querySelectorAll<HTMLElement>('[data-ws]').forEach((b) => b.classList.toggle('active', b.dataset.ws === ws));
-  setHomeLabel(({ notes: 'Notes', tasks: 'Tasks', library: 'Library' } as const)[ws]);
+  if (ws === 'notes') return;
+  homeWs = ws;
+  setHomeLabel(ws === 'tasks' ? 'Tasks' : 'Library');
+  homeUnderneath();
+}
+
+/** The first tab was chosen: back to the library or Tasks. */
+async function goHome(): Promise<void> {
+  if (settingsOpen()) closeSettings();
+  if (homeWs === 'tasks') { await goToTasks(); return; }
+  if (notesOpen()) await closeNotes();
+  closeTasks();
+  focusList();
 }
 
 /* ---------------------------------------------------------------- toolbar */

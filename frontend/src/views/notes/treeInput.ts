@@ -32,10 +32,12 @@ function onClick(e: MouseEvent): void {
   hooks.openNote(row.dataset.path!);
 }
 
+/** A double-click keeps the note's tab, as in VS Code (the first click opened it in the preview
+ *  tab). Renaming is F2 or the menu. */
 function onDblClick(e: MouseEvent): void {
   if (e.shiftKey || modKey(e)) return;
-  const note = (e.target as Element).closest<HTMLElement>('.nt-row.note');
-  if (note) renameNote(note.dataset.path!);
+  const note = (e.target as Element).closest<HTMLElement>('.nt-row.note, .nt-hit');
+  if (note) hooks.openNote(note.dataset.path!, { keep: true });
 }
 
 /** Keys in the file tree: arrows move (Shift extends), Enter opens, F2 renames, Delete trashes. */
@@ -113,6 +115,7 @@ function onContextMenu(e: MouseEvent): void {
     const p = notes[0];
     openMenu([
       { label: 'Open', icon: 'open', run: () => hooks.openNote(p), shortcut: '↵' },
+      { label: 'Open in New Tab', icon: 'doc', run: () => hooks.openNote(p, { keep: true }) },
       { label: 'Open in New Window', icon: 'newWindow', run: () => openNewWindow({ note: p }) },
       { label: 'Rename…', icon: 'edit', run: () => renameNote(p), shortcut: 'F2' },
       { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
