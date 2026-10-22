@@ -28,7 +28,7 @@ features fail with a message and the rest of the app works as before.
 `backend/online/http.py` holds what the lookups share:
 
 - `TIMEOUT` (15 s) for API requests. The PDF code uses its own limits: `pdf_finder.py` waits 10 s
-  for Unpaywall, Google Scholar and arXiv searches and 20 s per download; `remote_pdf.py` has
+  for Unpaywall and arXiv searches and 20 s per download; `remote_pdf.py` has
   `TIMEOUT = 30`.
 - `api_headers(email)` returns a User-Agent of the form
   `Synapse/2.0 (https://github.com/…; mailto:<email>)`. Crossref and OpenAlex ask clients to name
@@ -153,9 +153,9 @@ It then calls `attachments_changed()` so the full-text index picks the file up.
    requests carry the contact e-mail (Settings → Online Services, else `FALLBACK_EMAIL`),
    URL-encoded.
 3. For a published paper that also has an arXiv id: the arXiv PDF, after Unpaywall.
-4. Searches by title: Unpaywall's search (first two results), the PDF link of Google Scholar's
-   first result (scraped, with the browser User-Agent), and an arXiv title search (the arXiv
-   API over https, after `arxiv_wait()`, with `TIMEOUT`).
+4. Searches by title: Unpaywall's search (first two results) and an arXiv title search (the
+   arXiv API over https, after `arxiv_wait()`, with `TIMEOUT`). Google Scholar is not asked: it
+   has no API, and its robots.txt forbids programs to read its result pages.
 
 When the item has an arXiv id, `find_and_download` tries steps 1–3 first and runs the title
 searches only if none of those was the paper.

@@ -64,7 +64,7 @@ def candidate_urls(
 ) -> list[str]:
     """Where to look, best first. With a known arXiv id its PDF comes first for a preprint; for a
     published paper the publisher's open-access copy (Unpaywall) comes first and arXiv second.
-    ``title_search=False`` skips the searches by title (Unpaywall, Scholar, arXiv)."""
+    ``title_search=False`` skips the searches by title (Unpaywall, arXiv)."""
     out: list[str | None] = []  # _unique drops the empty ones
     email = urllib.parse.quote(email or FALLBACK_EMAIL, safe="@")  # a "+" would read as a space
     preprint = bool(arxiv_id) and (not doi or doi.lower().startswith("10.48550/"))
@@ -91,22 +91,6 @@ def candidate_urls(
                     out.append(loc.get("url_for_pdf"))
         except Exception as e:
             log.info("Unpaywall search failed: %s", e)
-        try:
-            gs = f"https://scholar.google.com/scholar?q=%22{urllib.parse.quote(title)}%22"
-            r = requests.get(gs, headers={"User-Agent": BROWSER_UA}, timeout=10)
-            if r.ok:
-                m = re.search(
-                    r'<div class="gs_r gs_or gs_scl".*?(?=<div class="gs_r gs_or gs_scl"|id="gs_bdy_ft"|$)',
-                    r.text,
-                    re.DOTALL,
-                )
-                if m:
-                    pm = re.search(r'<div class="gs_or_ggsm"[^>]*>.*?<a[^>]+href="([^"]+)"', m.group(0), re.DOTALL)
-                    if pm:
-                        u = pm.group(1)
-                        out.append("https://scholar.google.com" + u if u.startswith("/") else u)
-        except Exception as e:
-            log.info("Scholar lookup failed: %s", e)
         try:
             arxiv_wait()
             r = requests.get(
