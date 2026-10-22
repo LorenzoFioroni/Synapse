@@ -197,3 +197,12 @@ details.mr-same > .mr-group-items { margin-top: 12px; }
   .field-row .field-tools .icon-btn, .ip-ref .r-add { opacity: 1; }
   .author-row .icon-btn { width: 22px; opacity: 1; }
 }
+
+/* "Why It Is Here": the reasons a plugin gives for listing a paper */
+.ip-reasons { display: flex; flex-direction: column; gap: 8px; }
+.ip-reason { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-sm); }
+.ip-reason > .icon { color: var(--accent); flex: none; margin-top: 2px; }
+.ip-reason > div { min-width: 0; flex: 1; }
+.ip-reason-items { margin: 2px 0 0 -6px; }
+.ip-abstract { white-space: pre-wrap; }
+.ip-type .badge { margin-left: 6px; }

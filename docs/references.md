@@ -16,7 +16,9 @@ features fail with a message and the rest of the app works as before.
 | `backend/online/pdf_finder.py` | Finds an open-access PDF, downloads it and checks it is the right paper. |
 | `backend/online/remote_pdf.py` | Downloads the PDF behind an attachment that is stored as a web link. |
 | `backend/library/identifiers.py` | DOIs and arXiv ids: cleaning, normalising, finding them in an item. Offline. |
-| `backend/references/sources.py` | Reference lists from Semantic Scholar, OpenAlex and Crossref. |
+| `backend/references/sources.py` | Reference lists from Semantic Scholar, OpenAlex, Crossref and arXiv's HTML version. |
+| `backend/references/arxiv_html.py` | Reading the bibliography of an arXiv paper's HTML version. |
+| `backend/references/connections.py` | How a paper outside the library connects to it (for plugins' lists). |
 | `backend/references/store.py` | `data/citations.db`, where the fetched lists are kept. |
 | `backend/references/service.py` | `Citations`: fetching now or in a background queue, matching references to library items. |
 | `backend/references/graph.py` | The network shown in the Graph view (papers, cited works, notes). |
@@ -203,6 +205,16 @@ address, 413 too large, 415 not a PDF, 502 for network trouble).
    filter). The original order is kept, and works without details stay as bare OpenAlex ids.
 3. **Crossref** (`crossref`). The publisher's reference list, often with DOIs only. Skipped for
    arXiv DOIs.
+4. **arXiv's HTML version** (`arxiv-html`, `arxiv_html.py`), for papers with an arXiv id: the
+   other services usually know a paper's references only days after it is announced, the HTML
+   version (made with LaTeXML for most LaTeX submissions, at `arxiv.org/html/<id>`) from the first
+   day. Each `li.ltx_bibitem` of the `ltx_bibliography` section becomes a reference: its text
+   (`raw`, without the `[12]` label), a DOI or arXiv id from its text or links (an arXiv DOI,
+   `10.48550/arXiv.…`, counts as the arXiv id), the title from quotes or else the longest
+   italic stretch, and the year. A paper without an HTML version (404) has no references here.
+   It goes through `arxiv_wait()` like every arXiv request. `python tools/arxiv_refs.py quant-ph`
+   measures, for a day's new papers, how many have references there and how many of those carry
+   identifiers, next to what Semantic Scholar knows that day.
 
 Each request goes through `_get`: a 404 means "nothing here", and a 429 or 5xx is retried once
 after `Retry-After` (at most 10 s; 2 s when the header is a date). A source that fails is logged
@@ -218,7 +230,7 @@ each reference (identifiers through `identifiers.py`, integer year, collapsed wh
 
 | Table | Columns |
 |---|---|
-| `fetches` | `item_id` (key), `source` (`semanticscholar`, `openalex`, `crossref` or `none`), `fetched_at`, `doi` and `arxiv_id` used, `count`, `error` |
+| `fetches` | `item_id` (key), `source` (`semanticscholar`, `openalex`, `crossref`, `arxiv-html` or `none`), `fetched_at`, `doi` and `arxiv_id` used, `count`, `error` |
 | `refs` | `item_id`, `position` (key together), `doi`, `arxiv_id`, `openalex_id`, `s2_id`, `title`, `authors`, `year`, `venue`, `raw` (the citation as printed) |
 
 `save` replaces an item's list. `save_error` records a failure without losing a list fetched
@@ -247,6 +259,26 @@ is in the library), the library items citing this one, the fetch info, `can_fetc
 The pane (`frontend/src/views/referencesSection.ts`) polls every 2 s while the item is queued.
 `graph()` returns every library item and every work they cite, with ids `item:<id>`, `doi:…`,
 `arxiv:…`, `openalex:…` or `ref:<item>:<position>`, and `cited_by_library` counts.
+
+`match_refs(refs)`, `citing_ids(doi, arxiv_id)` (the library items whose stored lists cite a
+work, `CitationStore.citing`) and `library_signature()` are what `connections.py` uses.
+
+### How a paper connects to the library
+
+`Connections` (`backend/references/connections.py`, created in `Services`) scores papers outside
+the library for plugins (`plugin.services.connections`, see [plugins](plugins.md#papers-outside-the-library)).
+For each paper it gives `{"score", "reasons"}`, each reason `{kind, text, items}` with the library
+items involved:
+
+| Kind | Found by | Score |
+|---|---|---|
+| `cites` | its reference list (given by the caller) matched with `match_refs` | 3 per library paper |
+| `cited_by` | library papers whose stored reference lists contain its DOI or arXiv id | 3 per library paper |
+| `authors` | family name and first initial, normalised, shared with library papers | 2 per library paper, at most 5 |
+| `similar` | cosine similarity of title and abstract (TF-IDF over the library; words in more than a quarter of the library and stop words left out), from 0.15 | 10 × the best similarity |
+
+The library side (author index, word weights and postings) is built once and again only when
+`library_signature()` changes. `folders` limits all of it to papers in those folders.
 
 `build_graph()` in `backend/references/graph.py` adds the notes for the Graph view
 (`frontend/src/views/graph/`): `paper`, `work` and `note` nodes, and `cites`, `cite` (a note's
@@ -284,6 +316,7 @@ checkboxes; see [browser extension](browser-extension.md).
 | `GET /api/graph/citations` | `api/references.py` | The whole citation graph (`Citations.graph()`). |
 | `GET /api/graph` | `api/references.py` | The Graph view's network (`build_graph()`). |
 | `POST /api/connector/save` | `api/connector.py`, `backend/connector.py` | The browser button; looks up metadata when the page has a DOI or arXiv id. |
+| `POST /api/outside/add` | `api/plugins.py`, `Services.add_paper` | Adds `{paper, folder_id, tags}` from a plugin's list: looked up by DOI or arXiv id (the paper's fields when that fails), duplicates checked. 201 `{item, duplicate: false}`, or 200 with the existing item and `duplicate: true`. |
 
 ## How tests fake the network
 
@@ -304,6 +337,8 @@ canned data, using pytest's `monkeypatch`. They patch it through the module unde
   public or private addresses.
 - `tests/test_connector.py`: patches `connector.lookup`, `pdf_finder.find_and_download` or
   `Services.find_pdf_later` directly.
+- `tests/plugins/test_outside.py`: patches `metadata.lookup` and `sources.fetch` (the `no_web`
+  fixture); parses a LaTeXML bibliography written in the test.
 
 `tests/conftest.py` sets `ARXIV_SPACING` to 0 for every test, and the `app` fixture turns off
 background reference fetching and PDF finding, which would outlive the test. The frontend job is

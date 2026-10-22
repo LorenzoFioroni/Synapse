@@ -1,6 +1,6 @@
 // Application state with a tiny pub/sub. Views subscribe to the slices they
 // render; actions (in actions.ts) mutate state and emit events.
-import type { Counts, Folder, Hits, Item, NoteKeys, PluginField, Schema, SearchMode, Settings, SettingsResponse, Sidebar, Stats } from './types.js';
+import type { Counts, Folder, Hits, Item, NoteKeys, PluginField, PluginSource, Schema, SearchMode, Settings, SettingsResponse, Sidebar, Stats } from './types.js';
 import { storage, store as persist } from './util.js';
 
 /**
@@ -38,6 +38,7 @@ export interface AppEvents {
   'set-search-mode': SearchMode;
   'open-page': string;              // a page a plugin added (its id)
   'item-fields': void;               // plugins' fields (or their values) changed: the item pane redraws its section
+  sources: void;                    // the lists plugins offer (state.sources) or their badges changed
 }
 export type AppEvent = keyof AppEvents;
 /** The arguments after the event name: none for a `void` event, else the payload. */
@@ -150,6 +151,10 @@ export interface AppState {
   anchor: string | null;
   cursor: string | null;
   sort: { col: string; dir: 'asc' | 'desc' };
+  /** The sort of a plugin's list (view "source:…"); null: the plugin's own order. */
+  sourceSort: { col: string; dir: 'asc' | 'desc' } | null;
+  /** The lists of papers running plugins offer (plugins/host.ts loads them). */
+  sources: PluginSource[];
   /** The per-item fields running plugins declare (plugins/host.ts loads them). */
   fieldDefs: PluginField[];
   columns: Column[];
@@ -178,6 +183,8 @@ export const state: AppState = {
   cursor: null,             // keyboard focus row
   sort: storage<AppState['sort']>('zc.sort', { col: 'date_added', dir: 'desc' }),
   columns: loadColumns(),
+  sourceSort: null,
+  sources: [],
   fieldDefs: [],
   expanded: new Set(),
   indexer: null,
@@ -275,6 +282,32 @@ export function itemFolderPaths(it: Item): string[] {
 export const tagColor = (name: string): string | null => state.sidebar.tags.find((t) => t.name.toLowerCase() === String(name).toLowerCase())?.color || null;
 export function saveSort() { persist('zc.sort', state.sort); }
 
+/** The plugin list the view shows, or undefined. */
+export const currentSource = (): PluginSource | undefined =>
+  state.view.startsWith('source:') ? state.sources.find((s) => `source:${s.id}` === state.view) : undefined;
+/** A paper from a plugin's list that is not in the library. */
+export const isOutside = (it: Item | undefined): boolean => !!it?._outside;
+
+/** The sort the list uses in this view: a plugin's list has its own, which starts in the
+    plugin's order (null). */
+export function viewSort(): { col: string; dir: 'asc' | 'desc' } | null {
+  return state.view.startsWith('source:') ? state.sourceSort : state.sort;
+}
+
+/** A click on a column's head: sort by it, or turn the direction round. In a plugin's list a
+    third click goes back to the plugin's order. */
+export function sortBy(col: string): void {
+  const first: 'asc' | 'desc' = ['date_added', 'date_modified', 'year'].includes(col) || col.startsWith(FIELD_COL) ? 'desc' : 'asc';
+  if (state.view.startsWith('source:')) {
+    const s = state.sourceSort;
+    state.sourceSort = !s || s.col !== col ? { col, dir: first } : s.dir === first ? { col, dir: first === 'asc' ? 'desc' : 'asc' } : null;
+    return;
+  }
+  if (state.sort.col === col) state.sort.dir = state.sort.dir === 'asc' ? 'desc' : 'asc';
+  else state.sort = { col, dir: first };
+  saveSort();
+}
+
 export const byId = (id: string | null | undefined): Item | undefined => state.items.find((i) => i.id === id);
 export const selectedItems = (): Item[] => state.items.filter((i) => state.selection.has(i.id));
 
@@ -284,7 +317,9 @@ export function itemTypeLabel(key: string | null | undefined): string {
 }
 
 export function sortedItems(): Item[] {
-  const { col, dir } = state.sort;
+  const sort = viewSort();
+  if (!sort) return [...state.items].sort((a, b) => (a._rank ?? 0) - (b._rank ?? 0));   // the plugin's order
+  const { col, dir } = sort;
   const def = colDef(col) || COLUMNS.find((c) => c.id === 'title')!;
   const key = def.sortKey;
   const mul = dir === 'asc' ? 1 : -1;

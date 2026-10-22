@@ -44,6 +44,7 @@ export function initSidebar(): void {
       <button class="side-item" data-act="open-tasks" data-notes-only title="Tasks from all your notes (${modLabel}⇧K)">${icon('tasks')}<span class="nm">Tasks</span><span class="count" data-count="tasks"></span></button>
 
       <div class="side-section" data-pages-head hidden>Plugins</div>
+      <div class="page-list" data-sources></div>
       <div class="page-list" data-pages></div>
 
       <div class="side-section with-action" data-drop="folder-root">Folders
@@ -82,6 +83,7 @@ export function initSidebar(): void {
   on('notes-count', (n) => { notesCount = n; paintNotes(); });
   on('tasks-count', (c) => { tasksCount = c; paintNotes(); });
   pages.subscribe(paintPages);
+  on('sources', paintPages);
   paint();
 }
 
@@ -100,10 +102,12 @@ function paintNotes() {
     ? `${tasksCount.overdue ? `<b class="overdue" title="${tasksCount.overdue} overdue">${tasksCount.overdue}</b> ` : ''}${tasksCount.open}` : '';
 }
 
-/** The pages plugins added, with their badges. */
+/** The lists of papers and the pages plugins added, with their badges. */
 function paintPages() {
   const list = pages.all();
-  root.querySelector<HTMLElement>('[data-pages-head]')!.hidden = !list.length;
+  root.querySelector<HTMLElement>('[data-pages-head]')!.hidden = !list.length && !state.sources.length;
+  root.querySelector<HTMLElement>('[data-sources]')!.innerHTML = state.sources.map((s) => `
+    <button class="side-item ${inLibrary() && state.view === `source:${s.id}` ? 'active' : ''}" data-view="source:${escapeHtml(s.id)}" title="${escapeHtml(`${s.description ? `${s.description}\n` : ''}(${s.plugin_name})`)}">${icon(s.icon || 'list')}<span class="nm">${escapeHtml(s.title)}</span><span class="count">${escapeHtml(s.badge || '')}</span></button>`).join('');
   const shown = pageOpen() ? currentPageId() : null;
   root.querySelector<HTMLElement>('[data-pages]')!.innerHTML = list.map((p) => `
     <button class="side-item ${shown === p.id ? 'active' : ''}" data-page="${escapeHtml(p.id)}" title="${escapeHtml(p.source ? `${p.title} (${p.source})` : p.title)}">${icon(p.icon || 'plugin')}<span class="nm">${escapeHtml(p.title)}</span><span class="count">${escapeHtml(badges.get(p.id) || '')}</span></button>`).join('');

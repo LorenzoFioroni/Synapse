@@ -54,6 +54,11 @@ function cellHtml(colId: string, it: Item): string {
       const n = (it.attachments || []).length;
       const open = state.expanded.has(it.id);
       const hit = hitBadge(state.hits[it.id]?.fulltext);
+      if (it._outside) {
+        // a paper from a plugin's list, not in the library: "+" adds it where the twisty would be
+        return `<button class="row-add" data-act="add" title="Add to My Library">${icon('plus', 'icon-sm')}</button>`
+          + `${typeIcon(it.item_type || '', 'icon-sm type-icon')}<span class="t">${escapeHtml(it.title || 'Untitled')}</span>${hit}`;
+      }
       return `<span class="twisty ${n ? '' : 'none'} ${open ? 'open' : ''}" data-act="toggle">${icon('chevron', 'icon-sm')}</span>`
         + `${typeIcon(it.item_type || '', 'icon-sm type-icon')}<span class="t">${escapeHtml(it.title || 'Untitled')}</span>${hit}${colourDots(it)}`;
     }
@@ -83,7 +88,8 @@ function rowHtml(it: Item, index = 0): string {
     const title = c.id === 'creator' ? ` title="${escapeHtml(it.authors || '')}"` : (c.id === 'title' ? ` title="${escapeHtml(it.title || '')}"` : '');
     return `<div class="cell c-${c.id}" data-col="${c.id}"${title}>${cellHtml(c.id, it)}</div>`;
   }).join('');
-  let html = `<div class="row ${index % 2 ? 'alt' : ''} ${state.selection.has(it.id) ? 'selected' : ''}" role="row" data-id="${it.id}" data-index="${index}" draggable="${state.view === 'trash' ? 'false' : 'true'}">${cells}</div>`;
+  const drag = state.view !== 'trash' && !it._outside;
+  let html = `<div class="row ${index % 2 ? 'alt' : ''} ${it._outside ? 'outside' : ''} ${state.selection.has(it.id) ? 'selected' : ''}" role="row" data-id="${escapeHtml(it.id)}" data-index="${index}" draggable="${drag}">${cells}</div>`;
   if (state.expanded.has(it.id)) {
     for (const a of it.attachments || []) {
       html += `<div class="row child" data-parent="${it.id}" data-att="${a.id}"><div class="cell">${icon('pdf', 'icon-sm')}<span>${escapeHtml(a.name || 'Attachment')}</span></div></div>`;

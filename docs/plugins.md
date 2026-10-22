@@ -5,13 +5,16 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-The design and the plan for the rest of the plugin API (paper feeds, adding to the library) are in
-the design doc "Synapse plugin API v1". What exists today:
+The design and the plan for the rest of the plugin API are in the design doc "Synapse plugin API
+v1". What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
   library, settings, stored data, **per-item fields** (values attached to papers that become list
   columns, search filters, item-pane rows and data for Claude), schedules and background jobs, the
-  web (within the hosts its manifest names), Python packages of its own, a log.
+  web (within the hosts its manifest names), Python packages of its own, a log, **lists of papers
+  outside the library** (shown like folders, with a "+" that adds a paper), and Synapse's own
+  machinery: looking papers up, their reference lists, **how a paper connects to the library**,
+  adding papers.
 - **Frontend** (JavaScript): pages with a sidebar entry, commands in the command palette (with keys),
   sections in the item pane, actions in the item menu, notifications, calls to its own routes.
 
@@ -31,8 +34,14 @@ the design doc "Synapse plugin API v1". What exists today:
   `mcp_server.py --safe-mode` does the same for the MCP server Claude starts.
 - Restart Claude after turning on a plugin with tools if they do not show up: some AI apps read the
   list of tools only once.
-- A plugin's pages are listed under **Plugins** in the sidebar; its commands are in the **command
-  palette** (⌘⇧P, Ctrl+Shift+P or F1), together with Synapse's own.
+- A plugin's pages and lists of papers are listed under **Plugins** in the sidebar; its commands
+  are in the **command palette** (⌘⇧P, Ctrl+Shift+P or F1), together with Synapse's own.
+- A plugin's **list of papers** (today's arXiv papers, say) shows like a folder, in the order the
+  plugin gives (click a column to sort, a third click goes back). Papers already in the library are
+  the library items; the others have a **+** that adds them (looked up online by DOI or arXiv id,
+  with a toast to undo), and the item pane says why the plugin lists them, linking the library
+  papers involved. Right-click (or select several) to add them to a folder. Adding runs what
+  Settings → Adding Items says ("Ask" counts as yes: there is no dialog to ask in).
 
 Plugins that come with Synapse live in the repository's `plugins/` folder and are off until turned
 on. A plugin in `data/plugins/` with the same id replaces the one that comes with Synapse.
@@ -55,7 +64,9 @@ and a README. The MCP server takes `--dev-plugins` too (it does not watch for ch
 Claude).
 
 The example in [`docs/examples/recently-added/`](examples/recently-added/) uses every part of the
-API once, with a JavaScript frontend; copy it into `data/plugins/` to try it. A plugin folder looks
+API once, with a JavaScript frontend; copy it into `data/plugins/` to try it.
+[`docs/examples/suggested-reading/`](examples/suggested-reading/) offers a list of papers from
+outside the library (see [Papers outside the library](#papers-outside-the-library)). A plugin folder looks
 like this:
 
 ```
@@ -96,7 +107,7 @@ data/plugins/recently-added/      the folder's name is the plugin's id
 | `backend` | Its Python code: a package folder (with `__init__.py`) or a `.py` file, inside the plugin's folder. |
 | `frontend` | Its part in the app: an ES module (`.js`), or TypeScript (`.ts`, `.tsx`) that Synapse bundles with esbuild when the plugin starts (see [The frontend](#the-frontend)). |
 | `styles` | A stylesheet the app loads while the plugin runs. |
-| `permissions` | `network`: the hosts `plugin.http` may reach (`"export.arxiv.org"`, or `"*.example.org"` for a domain and its subdomains). `library`: `read` (and later `add`, `edit`). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
+| `permissions` | `network`: the hosts `plugin.http` may reach (`"export.arxiv.org"`, or `"*.example.org"` for a domain and its subdomains). `library`: `read` (`plugin.library`), `add` (`plugin.actions.add`; `edit` is reserved). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
 | `python` | Python packages it needs, as requirements (`["scirate>=0.0.7"]`): installed with pip when it first starts (see [Python packages](#python-packages)). |
 | `settings` | What the user can set, see below. |
 
@@ -158,6 +169,9 @@ def activate(plugin: Plugin) -> None:
 | `@plugin.job(name, retries=3)` / `plugin.jobs.enqueue(name, *args, key=None, delay=0)` | A job handler, and queuing work for it; `plugin.jobs.pending()` lists what waits. |
 | `plugin.fields` | `declare(name, type=…, label=…, refresher=…, refresh=…)`, `set(paper, name, value)`, `set_many(name, {paper: value})`, `get(paper, name)`, `key(paper)`, `clear(name)`: values attached to papers (see [Per-item fields](#per-item-fields)). |
 | `plugin.http` | `get(url, params=…)`, `post(url, json=…)`, `request(method, url, …)`, `limit(host, seconds)`: the web, within the manifest's `network` (see [Reaching the web](#reaching-the-web)). |
+| `@plugin.item_source(id, title=…, icon="list", description="", badge=None)`, `plugin.refresh_sources()` | A list of papers in the sidebar, and saying it changed (see [Papers outside the library](#papers-outside-the-library)). |
+| `plugin.services` | `lookup(identifier)`, `references(paper)`, `match(refs)`, `connections(papers, refs=None, folders=None)`: Synapse's own lookups, reference lists and scoring. |
+| `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). |
 
 Raise **`PluginError("…")`** for a problem the user or Claude should read: a route answers 400 with
 it as the error, a tool returns it as an error Claude can act on, and it does not count as the
@@ -226,6 +240,57 @@ plugin.fields.set({"arxiv": "2610.01234"}, "citations", 0)  # also for a paper n
   stored as not found. An `HttpError` leaves them unasked, to try again later.
 - Values live in `data/fields.db` (in backups), apart from the library. A plugin turned off takes
   its columns and filters with it; its values stay for when it is turned on again.
+
+### Papers outside the library
+
+A plugin can offer a **list of papers** (an arXiv listing, search results, suggestions). The app
+shows it under Plugins in the sidebar like a folder: the columns, the search, sorting and the
+fields all work on it, papers already in the library show as the library items, and the others
+get a **+**.
+
+```python
+@plugin.item_source("today", title="arXiv Today", icon="calendar", badge=lambda: len(unseen()))
+def today() -> list[dict]:
+    # called each time the list is shown: return what you have, fetch in jobs
+    return [
+        {"arxiv": "2610.01234", "title": "…", "authors": ["Jane Doe", "Roe, Rick"], "year": 2026,
+         "abstract": "…", "categories": ["quant-ph"], "reasons": scores[key]["reasons"]},
+        …
+    ]
+```
+
+- **A paper** is a dict with a `doi` or an `arxiv` id (a `PluginError` otherwise) and any of
+  `title`, `authors` (a list of names or "Family, Given; …"), `year`, `date`, `abstract`, `journal`,
+  `volume`, `pages`, `publisher`, `url`, `item_type`, `categories`, `reasons`, `extra` (a dict).
+  Synapse gives it the id `x:<key>` (`x:arxiv:2610.01234`) and a `url` (arXiv's or doi.org's).
+  `plugin.services.lookup` returns papers in this shape. The list keeps the plugin's order (at most
+  2000 papers), shows each paper once, and the badge is the short text or count `badge()` returns.
+- **Reasons** say why the paper is listed, shown in the item pane under *Why It Is Here*: lines of
+  text, or `{"kind", "text", "items"}` where `items` are library item ids (shown as links), as
+  `plugin.services.connections` gives them.
+- **Changes.** The list function runs when a window shows the list; call `plugin.refresh_sources()`
+  when the papers change (a job fetched new ones), and the open windows ask again (change kind
+  `sources`). Keep the function fast: fetch in [jobs](#background-work) and return what is stored.
+- **Fields** (`plugin.fields.set({"arxiv": …}, …)`) show on outside papers as on library items,
+  and stay with a paper once it is added.
+- **Item-pane sections** of plugins' frontends are shown for outside papers too
+  (`item._outside` is true, `item.id` starts with `x:`); item actions are not.
+
+`plugin.services` reaches the web the way Synapse does (the scholarly services it already uses,
+with the contact address and keys from Settings), not through `plugin.http`, so it needs no
+`network` permission:
+
+| Service | What it returns |
+|---|---|
+| `lookup(identifier)` | A paper's metadata by DOI, arXiv id (`arXiv:2610.01234`) or ISBN, as a paper in the shape above. `PluginError` when nothing is found, `Offline` without network. |
+| `references(paper)` | The works a paper (`{"doi"}` or `{"arxiv"}`) cites: `[{doi, arxiv_id, title, year, authors, venue, raw}]`, from Semantic Scholar, OpenAlex or Crossref, else from **arXiv's HTML version**, which has them on the day a paper is announced (see [references](references.md)). `[]` when none is known, `Offline` when the services cannot be reached. |
+| `match(refs)` | For each reference, the id of the library item it is (by DOI, arXiv id, or title and year), or `None`. |
+| `connections(papers, refs=None, folders=None)` | For each paper, `{"score", "reasons"}`: the library papers it cites (`refs`: `{paper key: its references}`), those whose reference lists cite it, shared authors (family name and first initial) and how close its title and abstract are to the library's (TF-IDF). `folders`: only papers in these folders count. Sort by `score`; show `reasons`. |
+
+`plugin.actions.add(paper, folder_id=None, tags=None)` adds a paper as the "+" does: looked up
+by its DOI or arXiv id (the paper's own fields when that fails), the duplicate check, a citation
+key, `item.added` for the plugins, and then a reference list and a PDF when Settings → Adding
+Items says *Always*. It returns the library item, with `"duplicate": True` when it was there already.
 
 ### Background work
 
@@ -316,12 +381,12 @@ export function activate(p) {
 |---|---|
 | `p.pages.register({id, title, icon, mount})` | A page: an entry under **Plugins** in the sidebar; when chosen, the page takes the place of the library (as Tasks does) and `mount(el)` draws it. `p.pages.setBadge(id, value)` puts a count on the entry, `p.pages.open(id)` shows it. |
 | `p.commands.register({id, title, key, when, run})` | A command in the palette, named after the plugin. `key` like `Mod-Alt-r` (Mod: ⌘ on a Mac, Ctrl elsewhere) needs Mod or Alt and cannot be one of Synapse's keys; a key that cannot be used is left out (the console says why). |
-| `p.itemPane.register({id, title, when, mount})` | A section at the end of the item pane, for the items `when(item)` accepts; `mount(el, item)` runs once the selection rests. |
+| `p.itemPane.register({id, title, when, mount})` | A section at the end of the item pane, for the items `when(item)` accepts; `mount(el, item)` runs once the selection rests. Papers from a list (`item._outside`) get sections too. |
 | `p.itemActions.register({id, title, icon, when, run})` | An entry in the item menu for the selected items, also in the palette. |
 | `p.notify(message, {type, action, timeout})` | A notification, named after the plugin. |
 | `p.backend.get/post/put/delete(path, …)` | The plugin's own routes (`/api/plugins/<id><path>`), with the page's sign-in; resolves to the JSON answer. |
 | `p.library.selected()`, `.item(id)`, `.show(id)` | The selected items, one whole item, showing an item in the library. |
-| `p.onChange(fn)` | `fn(kinds)` when something changed: what the change feed reports (`library`, `notes`, `tasks`, `annotations`, `plugins`), and `library` when this window's item list reloads. |
+| `p.onChange(fn)` | `fn(kinds)` when something changed: what the change feed reports (`library`, `notes`, `tasks`, `annotations`, `plugins`, `fields`, `sources`), and `library` when this window's item list reloads. |
 | `p.settings()` | The settings' values (a promise). |
 | `p.ui` | `icon(name)`, `escapeHtml(text)`, `confirm(…)`, `prompt(…)`, `formatDate(iso, withTime)`: the app's own. |
 | `p.onUnload(fn)` | Runs when the plugin stops. |
@@ -346,8 +411,9 @@ Rules for a plugin's frontend:
 
 ## How the host works
 
-`backend/plugins/` sits just above `library` in the layers (it imports only `config`, `settings`,
-`changes` and `library`; see [architecture](architecture.md#layers)). `Services` creates the `PluginHost` and connects it to the library: item changes
+`backend/plugins/` sits above `library`, `online` and `references` in the layers (it imports
+`config`, `settings`, `changes`, `library`, and for `plugin.services` `online` and `references`; see
+[architecture](architecture.md#layers)). `Services` creates the `PluginHost` and connects it to the library: item changes
 from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved notes from
 `NotesService.saved_listeners`. `create_app` starts it with `role="app"`, `mcp_server.py` with
 `role="mcp"`.
@@ -367,6 +433,7 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
 | `loading.py` | Importing a plugin's backend, the files of its frontend the app may fetch, when its files last changed. |
 | `report.py` | What Settings shows about a plugin (`describe`). |
 | `fields.py`, `itemfields.py` | Per-item fields: keys, types, the store (`data/fields.db`) and filters; `plugin.fields` and `FieldIndex` (values for the list and the item pane, search filters, refreshing). |
+| `outside.py`, `sources.py`, `services.py` | Papers outside the library: the shape of one (`record`), the lists running plugins offer (`SourceList`: the sidebar's entries, a list's papers with library items in their place), `plugin.services` and `plugin.actions`. |
 | `scaffold.py` | `--new-plugin`. |
 | `errors.py` | `PluginError`. |
 | `runtime.py` | A plugin's log file, its worker thread and its failure count. |
@@ -416,6 +483,12 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
   `fields` in the change feed; the open windows reload the list. A plugin with a refresher gets a
   background runner that calls `FieldIndex.refresh` (`Runner.refresher`), woken on `item.added`
   and `item.changed`.
+- **Outside papers.** `PluginHost.sources` (a `SourceList`) answers `/api/plugin-sources` (the
+  sidebar) and the item list's view `source:<plugin>.<list>` (`api/items.py`): it runs the plugin's
+  function, turns each paper into an outside record and puts the library item in place of those
+  already in the library. Records are sent whole (the item pane has nothing else to ask).
+  `POST /api/outside/add` adds one (`Services.add_paper`). `plugin.refresh_sources()` records
+  `sources` in the change feed. `plugin.services.connections` is `references/connections.py`.
 - **Trust.** Plugins are not sandboxed: Python plugins run inside the server with its access, and a
   plugin's frontend runs in the app's page, with its access.
   Permissions are shown before turning a plugin on and checked where the API can check them
@@ -430,6 +503,8 @@ against a local server, `test_jobs.py` for cron rules, schedules and jobs, `test
 background work in the app and the MCP server, packages with a stand-in for pip, TypeScript builds,
 the scaffold and dev plugins; the example plugin is installed by the `example` fixture and
 `make_plugin` writes small ones), the import rule
-in `tests/test_layers.py`, `tests/js/extend.test.mjs` (registries, keys, the palette's ranking), and
-the browser checklist `plugins` (Settings → Plugins and the example plugin's page, command, fields, section
-and action).
+in `tests/test_layers.py`, `tests/js/extend.test.mjs` (registries, keys, the palette's ranking),
+`test_outside.py` (outside records, lists, adding, the services, arXiv's HTML references, the
+Suggested Reading example), and the browser checklists `plugins` (Settings → Plugins and the
+example plugin's page, command, fields, section and action) and `outside` (a plugin's list in the
+sidebar and the list, sorting, the pane, adding, Undo, a folder, changes, turning it off).

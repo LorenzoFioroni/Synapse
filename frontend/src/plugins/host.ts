@@ -7,7 +7,7 @@ import { type ApiError, api } from '../api.js';
 import { type Dispose, badges, commands, itemActions, itemSections, keyProblem, pages } from '../extend.js';
 import { icon } from '../icons.js';
 import * as A from '../actions.js';
-import { emit, on, selectedItems, syncFieldColumns } from '../store.js';
+import { currentSource, emit, on, selectedItems, state, syncFieldColumns } from '../store.js';
 import { confirmDialog, promptDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
 import type { Item, PluginInfo } from '../types.js';
@@ -205,8 +205,20 @@ async function syncFields(): Promise<void> {
   await A.loadItems();   // the items' values (_f) of fields that just appeared
 }
 
+/** The lists of papers running plugins offer, with their badges (the sidebar). */
+export async function syncSources(): Promise<void> {
+  let list;
+  try { list = (await api.pluginSources()).sources; } catch { return; }
+  if (JSON.stringify(list) === JSON.stringify(state.sources)) return;
+  state.sources = list;
+  emit('sources');
+  // the list shown went away with its plugin
+  if (state.view.startsWith('source:') && !currentSource()) A.setView('library');
+}
+
 async function doSync(): Promise<void> {
   await syncFields();
+  await syncSources();
   let list: PluginInfo[];
   try { list = (await api.plugins()).plugins; } catch { return; }
   const want = new Map(list.filter((p) => p.running && (p.frontend || p.styles)).map((p) => [p.id, p]));
@@ -231,13 +243,20 @@ export function syncPlugins(): Promise<void> {
 export async function pluginChanges(kinds: string[]): Promise<void> {
   // plugins turned off hear nothing more (their routes are gone): sync first
   if (kinds.includes('plugins')) await syncPlugins();
+  else if (kinds.includes('sources') || kinds.includes('library')) void syncSources();   // badges
   for (const rec of loaded.values()) for (const fn of rec.listeners) fn(kinds as ChangeKind[]);
 }
 
 export function initPluginHost(): void {
   // the item list reloaded in this window: its own changes are not in the change feed
   let t: ReturnType<typeof setTimeout> | undefined;
-  on('items', () => { clearTimeout(t); t = setTimeout(() => { for (const rec of loaded.values()) for (const fn of rec.listeners) fn(['library']); }, 300); });
+  on('items', () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      for (const rec of loaded.values()) for (const fn of rec.listeners) fn(['library']);
+      if (state.sources.length) void syncSources();   // badges may count what is not in the library yet
+    }, 300);
+  });
   syncPlugins();
   window.zcPlugins = { loaded: () => [...loaded.keys()], sync: syncPlugins };   // for tests
 }

@@ -50,6 +50,7 @@ page, and a page that cannot know what it missed simply refreshes everything.
 | `tasks` | A write to `library.db` commits during a request to `/api/tasks…` (`kind_of`), or a tool that can write runs over `/mcp`. A page reloads its tasks on `tasks` and on `notes` (a note's task lines may have changed). |
 | `plugins` | A plugin was turned on or off, restarted or set up, or turned off after failing (`PluginHost.changed`). |
 | `fields` | A plugin set values of its per-item fields, or its refresher fetched some (`FieldIndex.changed`). |
+| `sources` | A plugin said its lists of papers changed (`plugin.refresh_sources()`). |
 
 Writes to `library.db` reach the feed through `Database.on_write`, which `Services` points at
 `_library_written`. `Database.session` calls it after each commit that changed rows. A failure
@@ -92,6 +93,7 @@ when it becomes visible again. It skips a poll while one is running or the page 
 | `notes` | `notesChanged()` in `notesView.ts`: the open note checks the server copy, and the notes tree is redrawn. |
 | `annotations` | Ignored: the viewer looks after its own. |
 | `fields` | Handled like `library` (the list reloads, with the values as `_f`); the item pane redraws its *From Plugins* section. |
+| `sources` | The sidebar's entries for plugins' lists are asked for again (their badges); the list reloads when it shows one of them. |
 | `plugins` | `syncPlugins()` in `plugins/host.ts` loads or unloads plugins' frontends; `pluginsChanged()` in `views/settings/plugins.ts` redraws an open Settings page's Plugins section (not while a field in it is being edited). Every kind is also passed to plugins' `onChange` listeners. |
 
 A refresh waits while the user is busy (`editing()`): a dialog or autocomplete list is open, a

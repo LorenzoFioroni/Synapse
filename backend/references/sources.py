@@ -5,6 +5,7 @@ Sources, tried in order until one returns references:
   1. Semantic Scholar  (DOI or arXiv id; one request, titles included; good for arXiv)
   2. OpenAlex          (DOI; referenced works + their details; an API key raises the daily quota)
   3. Crossref          (DOI; the publisher's reference list, often with DOIs only)
+  4. arXiv HTML        (arXiv id; the bibliography of the paper's HTML version, see arxiv_html.py)
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import requests
 from ..formats.common import join_authors, parse_display_name
 from ..library.identifiers import ARXIV_DOI, ARXIV_ID, identifiers, norm_arxiv, norm_doi
 from ..online.http import TIMEOUT, LookupFailed, api_headers
+from . import arxiv_html
 from .store import REF_FIELDS
 
 log = logging.getLogger(__name__)
@@ -208,6 +210,10 @@ def fetch(item: dict, *, email: str = "", openalex_key: str = "", s2_key: str = 
         ),
         ("crossref", lambda: crossref(doi, email=email)),
     ]
+    if arx:
+        # arXiv's HTML version lists the references from the day a paper is announced, before the
+        # other services know them
+        attempts.append(("arxiv-html", lambda: arxiv_html.fetch(arx)))
     errors = []
     for name, run in attempts:
         try:

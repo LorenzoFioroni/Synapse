@@ -54,6 +54,14 @@ export interface Item {
   tags?: string[];
   folder_ids?: number[];
   dup_group?: number;      // in the Duplicates view: items of one group share it
+  /** A paper outside the library, from a plugin's list (backend/plugins/outside.py); its id is "x:<key>". */
+  _outside?: boolean;
+  key?: string;            // outside papers: "doi:…" or "arxiv:…"
+  arxiv?: string;          // outside papers: the arXiv id
+  categories?: string;     // outside papers: arXiv categories, "quant-ph, cond-mat.str-el"
+  _source?: string;        // in a plugin's list: its id ("<plugin>.<source>")
+  _rank?: number;          // in a plugin's list: the position the plugin gave it
+  reasons?: Reason[];      // in a plugin's list: why it is there
   _lean?: boolean;         // set by the frontend: a list entry without the abstract (the pane fetches it)
   [field: string]: unknown;
 }
@@ -506,6 +514,24 @@ export interface ItemFieldValue extends PluginField {
   checked: boolean;        // the plugin looked (a None value then means: nothing found)
   updated: number | null;  // seconds since the epoch
   source_url: string | null;
+}
+
+/** A list of papers a running plugin offers, shown in the sidebar (backend/plugins/sources.py). */
+export interface PluginSource {
+  id: string;              // "<plugin>.<source>"; its view is "source:<id>"
+  title: string;
+  icon: string;
+  description: string;
+  plugin: string;
+  plugin_name: string;
+  badge: string | null;
+}
+
+/** Why a plugin lists a paper; ``items``: the library papers involved (those it cites, say). */
+export interface Reason {
+  text: string;
+  kind: string;            // 'cites' | 'cited_by' | 'authors' | 'similar' | '' (the plugin's own words)
+  items: string[];
 }
 
 /** GET /api/plugin-host. */

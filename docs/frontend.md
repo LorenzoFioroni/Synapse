@@ -131,19 +131,21 @@ own (with its own `X-Synapse-Client` id), and `notesBridge.ts` calls `fetch` dir
 |---|---|
 | `schema` | `GET /api/schema`: item types and fields. |
 | `settings`, `settingsMeta` | The user's settings and the rest of the `GET /api/settings` answer. |
-| `view` | `'library'`, `'trash'`, `'duplicates'`, `'unfiled'`, `'folder:<id>'`, `'smart:<id>'`. |
+| `view` | `'library'`, `'trash'`, `'duplicates'`, `'unfiled'`, `'folder:<id>'`, `'smart:<id>'`, `'source:<plugin>.<list>'` (a plugin's list of papers). |
 | `query`, `mode` | The search text and scope (`SearchMode`). |
 | `items`, `hits`, `counts`, `sidebar` | The current list (already filtered by the server), full-text snippets by id, the counts per view, and folders, tags and smart folders. |
 | `tagFilter` | Tag names; items must have all of them. |
 | `selection`, `anchor`, `cursor` | Selected ids, the anchor for Shift+click ranges, the keyboard row. |
 | `sort`, `columns`, `openFolders` | Saved in `localStorage` (`zc.sort`, `zc.columns`, `zc.openFolders`). |
+| `sourceSort` | The sort of a plugin's list; `null` (the start) is the plugin's own order (`_rank`). Not saved. `viewSort()` gives the one the view uses, `sortBy(col)` is a click on a column. |
+| `fieldDefs`, `sources` | The per-item fields and the lists of papers running plugins offer (`plugins/host.ts` loads both). |
 | `expanded` | Items whose attachment rows are shown. |
 | `loading`, `indexer` | A list request is running; the last `/api/stats` answer. |
 | `noteKeys` | Citation key → its paper note and how many notes cite it. |
 | `order` | The list's display order, set by `views/itemlist/rows.ts` (only the rows on screen are in the DOM). |
 
 `store.ts` also has the helpers that derive from the state: `byId`, `selectedItems`,
-`sortedItems`, `folderTree`, `folderPath`, `folderTotal`, `folderDescendants`, `tagColor` and the
+`currentSource`, `isOutside`, `sortedItems`, `folderTree`, `folderPath`, `folderTotal`, `folderDescendants`, `tagColor` and the
 column definitions `COLUMNS`.
 
 The list, the view, the search and the selection change through `actions.ts`. A few slices
@@ -184,6 +186,7 @@ expects something else. To add an event, add it to `AppEvents` and to the table 
 | `open-import` | optional `File` | `itemlist/empty.ts`, `itemlist.ts`, `settingsView.ts` | `main.ts` |
 | `open-identifier`, `clear-search` | none | `itemlist/empty.ts` | `main.ts` |
 | `set-search-mode` | `SearchMode` | `itemlist/empty.ts`, `settingsView.ts` | `main.ts` |
+| `sources` | none | `plugins/host.ts` (`syncSources`) | sidebar (the Plugins section) |
 
 The events `main.ts` hears are how a view reaches code it must not import (opening Notes from the
 item pane, for example), which keeps the views free of import cycles.
@@ -202,6 +205,12 @@ and emits the events above; failures become a toast (`toastError`). The groups:
   `restoreSelected`, `deleteForever`, `emptyTrash`, `regenerateCitekeys`.
 - **PDFs.** `openPdf`, `findPdf`, `findPdfs` (one at a time, cancellable), `uploadAttachments`,
   `addPdfsAsItems`.
+- **Papers from a plugin's list.** `addOutside(items, folderId)` adds those not in the library
+  (one request each, with a toast to undo), reloads the list (they come back as library items) and
+  runs what Settings → Adding Items says. Items with `_outside` (id `x:…`) are not in the
+  library: trashing, tags, dragging and copying BibTeX leave them out, and the item pane and the
+  item menu have their own versions for them (`views/itempane/outside.ts`, `outsideMenu` in
+  `itemlist/menus.ts`).
 - **Folders and tags.** `createFolder`, `renameFolder`, `moveFolder`, `deleteFolder`,
   `addToFolder`, `removeFromFolder`, `moveBetweenFolders`, `removeFolderMembership`, `addTags`,
   `removeTags`, `toggleTagFilter`, `clearTagFilter`, `updateTag`, `deleteTag`, `deleteSmart`.

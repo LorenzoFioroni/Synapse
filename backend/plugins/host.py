@@ -36,6 +36,8 @@ from .loading import Active, Entry, asset_path, forget_modules, load_module, new
 from .manifest import ManifestError, read
 from .report import describe
 from .runtime import Worker, make_logger, tail
+from .services import PluginActions, PluginServices
+from .sources import SourceList
 from .state import StateFile
 
 log = logging.getLogger(__name__)
@@ -52,6 +54,8 @@ class PluginHost:
         changed: Callable[[], object] | None = None,
         settings=None,
         fields_changed: Callable[[], object] | None = None,
+        services=None,
+        sources_changed: Callable[[], object] | None = None,
     ):
         self.config = config
         self.safe_mode = bool(getattr(config, "safe_mode", False))
@@ -60,9 +64,13 @@ class PluginHost:
         self.changed = changed  # tells open pages that the plugins changed (change feed)
         self.role: str | None = None
         self.settings = settings  # the app's SettingsStore (the contact address in the User-Agent)
+        self.services = services  # the app's Services: what plugin.services and plugin.actions use
         self.private_network = False  # tests: let plugin.http reach a server on this computer
         self.installer = deps.pip_install  # tests replace it
         self._watcher: threading.Thread | None = None
+        # lists of outside papers the running plugins offer (sources.py)
+        self.sources = SourceList(self)
+        self.sources_changed = sources_changed  # tells open pages to show a source's list again
         # per-item fields of the running plugins (itemfields.py), stored in data/fields.db
         self.fields = FieldIndex(
             config.fields_db_path,
@@ -218,6 +226,8 @@ class PluginHost:
             library=self.library,
             before_upgrade=before_upgrade,
             http=PluginHttp(pid, man.network, lambda: self._user_agent(pid), private=self.private_network),
+            services=PluginServices(self.services) if self.services else None,
+            actions=PluginActions(self.services, man) if self.services else None,
             fields=PluginFields(
                 pid,
                 man.name,
@@ -225,6 +235,7 @@ class PluginHost:
                 self.library.get if self.library else None,
                 self.fields.changed,
             ),
+            sources_changed=lambda: self.sources_changed() if self.sources_changed else None,
         )
         act = Active(entry, plugin, Worker(pid, plog, lambda what, e: self.fault(pid, what, e)), handler=handler)
         act.started = datetime.now().isoformat(timespec="microseconds")

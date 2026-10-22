@@ -307,11 +307,18 @@ are under **More**; a plugin that keeps failing is turned off and Settings says 
 the app from working, start it with `python server.py --safe-mode` (no plugin runs) and turn it
 off.
 
+A plugin can offer a **list of papers** that are not in your library yet (today's arXiv papers,
+say), under **Plugins** in the sidebar. It shows like a folder, ranked by the plugin (often by how
+each paper connects to your library: papers it cites or that cite it, shared authors, similar
+topics); the item pane says why each one is listed. Click **+** on a row, or **Add to My
+Library** in the item pane, to add a paper; right-click or select several to add them to a folder.
+
 A plugin has a `manifest.json`, Python for the server (routes, tools for Claude, listeners for
 changes in the library, settings and stored data, and per-item fields: values such as a citation
 count that appear as list columns, search filters like `citations:>100` and rows in the item pane) and JavaScript for the app (pages listed under
 **Plugins** in the sidebar, sections in the item pane, actions in the item menu, commands). [`docs/plugins.md`](docs/plugins.md) explains how, and
-[`docs/examples/recently-added`](docs/examples/recently-added) is a small example to copy.
+[`docs/examples/recently-added`](docs/examples/recently-added) is a small example to copy
+([`suggested-reading`](docs/examples/suggested-reading) offers a list of papers).
 To write one, `python server.py --new-plugin my-plugin --dev-plugins ~/synapse-plugins` makes a
 plugin to start from, and `python server.py --dev-plugins ~/synapse-plugins` restarts it whenever
 you save a file. Plugins can also run work on a schedule, reach the sites their manifest names and

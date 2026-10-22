@@ -166,6 +166,19 @@ class Citations:
                 return pid
         return None
 
+    def match_refs(self, refs: list[dict]) -> list[str | None]:
+        """The library item each reference is (or None), as the References section matches them."""
+        index, _ = self._library_index()
+        return [self._match(r, index) for r in refs]
+
+    def library_signature(self) -> tuple:
+        """Changes whenever the library does (for indexes built from it)."""
+        return self._library_signature()
+
+    def citing_ids(self, doi: str | None, arxiv_id: str | None) -> set[str]:
+        """Library items whose stored reference lists cite this work."""
+        return self.store.citing(doi, arxiv_id)
+
     def item_view(self, item_id: str) -> dict:
         """References of an item (marked when they are in the library) and the library items citing it."""
         item = self.papers.get(item_id)

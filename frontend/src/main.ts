@@ -3,7 +3,7 @@
 import * as A from './actions.js';
 import { api } from './api.js';
 import { icon } from './icons.js';
-import { emit, folderById, on, state } from './store.js';
+import { currentSource, emit, folderById, on, state } from './store.js';
 import { installLongPress } from './ui/longpress.js';
 import { closeMenu, openMenu } from './ui/menu.js';
 import { toastError } from './ui/toast.js';
@@ -383,10 +383,12 @@ function initStatusBar() {
     let where = ({ trash: ' in Trash', duplicates: ' that look like duplicates' } as Record<string, string>)[state.view] || '';
     if (state.view.startsWith('folder:')) where = ` in ${folderById(state.view.slice(7))?.name || 'folder'}`;
     if (state.view.startsWith('smart:')) where = ` in ${state.sidebar.smart.find((s) => `smart:${s.id}` === state.view)?.name || 'smart folder'}`;
+    if (state.view.startsWith('source:')) where = ` in ${currentSource()?.title || 'list'}`;
+    const outside = state.view.startsWith('source:') ? state.items.filter((i) => i._outside).length : 0;
     const total = state.counts[state.view as keyof Counts] ?? state.items.length;
     bar.querySelector('[data-s="count"]')!.textContent = filtered
       ? `${plural(state.items.length, 'item')}${where} matching${state.query ? ` “${state.query}”` : ''}${state.tagFilter.size ? ` · tags: ${[...state.tagFilter].join(' + ')}` : ''}`
-      : `${plural(state.view in state.counts ? total : state.items.length, 'item')}${where}`;
+      : `${plural(state.view in state.counts ? total : state.items.length, 'item')}${where}${outside ? ` · ${outside} not in your library` : ''}`;
     bar.querySelector('[data-s="sel"]')!.textContent = state.selection.size > 1 ? `${state.selection.size} selected` : '';
   };
   on('items', paint);

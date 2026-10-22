@@ -1,0 +1,21 @@
+{
+  "id": "suggested-reading",
+  "name": "Suggested Reading",
+  "version": "1.0.0",
+  "api": "^1.0",
+  "author": "Synapse",
+  "description": "A list of papers you want to read, ranked by how they connect to your library, each a click away from being added. An example of a plugin that offers papers from outside the library.",
+  "backend": "backend",
+  "permissions": {
+    "library": ["read", "add"]
+  },
+  "settings": [
+    {
+      "key": "papers",
+      "type": "multi",
+      "label": "Papers",
+      "description": "arXiv ids or DOIs, comma-separated (2310.01234, 10.1103/PhysRevLett.130.010601).",
+      "default": []
+    }
+  ]
+}

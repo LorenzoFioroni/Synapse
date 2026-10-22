@@ -65,13 +65,13 @@ Two objects tie the backend together:
 | `mcp/` | The MCP server: the JSON-RPC layer (`protocol.py`), its HTTP transport (`http.py`), the library tools (`tools/`, one mixin per family), their schemas (`server.py`) and the instructions given to the AI app (`instructions.py`). | none (it uses the other packages) |
 | `pdf/` | PDF files on disk: text extraction (`text.py`), the full-text index (`fulltext.py`), and for the MCP tools page rendering (`render.py`), finding figures and equations (`regions.py`) and PNG encoding (`png.py`). | `fulltext.db` |
 | `online/` | Lookups on the web: item metadata (`metadata.py`), open-access PDFs (`pdf_finder.py`) and PDFs behind an attachment's web link (`remote_pdf.py`). `http.py` has what they share: timeout, User-Agent, the error type and the arXiv request spacing. | none |
-| `references/` | The citation graph: reference lists fetched from Semantic Scholar, OpenAlex or Crossref (`sources.py`), stored (`store.py`), fetched in the background and matched to library items (`service.py`), and the Graph view's network (`graph.py`). | `citations.db` |
+| `references/` | The citation graph: reference lists fetched from Semantic Scholar, OpenAlex, Crossref or arXiv's HTML version (`sources.py`, `arxiv_html.py`), stored (`store.py`), fetched in the background and matched to library items (`service.py`), the Graph view's network (`graph.py`), and how a paper outside the library connects to it (`connections.py`). | `citations.db` |
 | `access/` | Who may use the server: other websites never (`guard.py`), other devices only once paired (`devices.py`) or signed in with a passkey (`passkeys.py`, checked by `webauthn.py`), AI apps at `/mcp` only with an access token (`tokens.py`); `authdb.py` is what the `auth.db` tables share; `lan.py` finds this computer's network addresses and names. | `auth.db` |
 | `config.py`, `settings.py` | Paths of the data folder, and the user's preferences. | `settings.json` |
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
 | `assist/` | Autocompletion in notes from a model in Ollama on this computer: the client, the prompt, and checking that Ollama and the model are there (see [autocompletion](autocompletion.md)). | none |
-| `plugins/` | The plugin host: finds the plugins in `data/plugins/` (and those that come with Synapse in `plugins/`), starts and stops them, gives them the `Plugin` object (routes, tools for Claude, events, settings, storage, reading the library), and turns off one that keeps failing (see [plugins](plugins.md)). `backend.plugins` is also the only module plugins import. | `plugins.json`, `plugin-data/`, `fields.db` |
+| `plugins/` | The plugin host: finds the plugins in `data/plugins/` (and those that come with Synapse in `plugins/`), starts and stops them, gives them the `Plugin` object (routes, tools for Claude, events, settings, storage, reading the library, per-item fields, lists of papers outside the library, Synapse's lookups and adding papers), and turns off one that keeps failing (see [plugins](plugins.md)). `backend.plugins` is also the only module plugins import. | `plugins.json`, `plugin-data/`, `fields.db` |
 | `desktop/` | Running Synapse like a desktop program: opening its window (`window.py`), the open windows that keep a `--quit-when-closed` server running (`presence.py`), the desktop shortcut (`shortcut.py`). See [the app window](desktop.md). | none |
 
 Only `online/` and `references/` use the network. `assist/` talks only to Ollama on this computer
@@ -86,10 +86,11 @@ never from those above:
   app · frontend · api                   composition: wires and exposes everything
   services · connector
   mcp                                    (library, notes, pdf, references, tasks)
+  plugins                                (library, online, references)
   references                             (library, formats, online)
   tasks                                  (library, notes)
   online                                 (library, formats, pdf)
-  formats · notes · pdf · plugins        (library)
+  formats · notes · pdf                  (library)
   library · backup · access · assist     (base only)
   config · settings · changes · desktop   base: no backend imports
 ```
@@ -158,7 +159,9 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   the notes workspace only through `taskHooks` in `views/notes/workspace.ts`.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
   header is `views/itemlist/columns.ts`, its virtualised rows `rows.ts` (only the rows near the
-  viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`.
+  viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`. The
+  item pane (`itempane.ts`) draws papers from a plugin's list that are not in the library, and
+  why a plugin lists a paper, with `views/itempane/outside.ts`.
 - `extend.ts` holds the extension points the views read: commands (the command palette,
   `views/palette.ts`), pages (`views/pages.ts`, listed in the sidebar), item-pane sections and item
   actions. `plugins/host.ts` loads plugins' frontends and registers what they add there; the types

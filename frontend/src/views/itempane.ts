@@ -3,7 +3,7 @@ import * as A from '../actions.js';
 import { itemSections } from '../extend.js';
 import { type ApiError, api, openAttachment, openPdfInNewWindow } from '../api.js';
 import { icon, typeIcon } from '../icons.js';
-import { byId, emit, fieldText, folderById, folderPath, itemTypeLabel, on, selectedItems, state } from '../store.js';
+import { byId, currentSource, emit, fieldText, folderById, folderPath, itemTypeLabel, on, selectedItems, state } from '../store.js';
 import { openMenu } from '../ui/menu.js';
 import { toast, toastError } from '../ui/toast.js';
 import { copyText, debounce, escapeHtml, formatDate, plural, shortAuthors, storage, store } from '../util.js';
@@ -12,7 +12,8 @@ import { copyKeys, deleteAttachment, pickFiles, renameAttachment } from './iteml
 import { openMetadataReview } from './metadataReview.js';
 import { confirmKeyChange } from './notes/rekeyDialog.js';
 import { fetchReferencesBulk, fillReferences } from './referencesSection.js';
-import { addSelectionToFolder, editTagsDialog, tagInput } from './organizeDialogs.js';
+import { addSelectionToFolder, editTagsDialog, pickFolder, tagInput } from './organizeDialogs.js';
+import { fillReasons, outsideFields, outsideHeader, outsideInfo, reasonsBody } from './itempane/outside.js';
 import type { Item, ItemFieldValue, ItemNotes } from '../types.js';
 
 let root: HTMLElement;
@@ -72,6 +73,10 @@ function render(force = false): void {
   const items = selectedItems();
   if (items.length === 1) {
     const it = items[0];
+    if (it._outside) {   // a paper from a plugin's list, not in the library
+      if (it.id !== shownId || force) renderOutside(it);
+      return;
+    }
     // don't clobber a field the user is typing in
     if (!force && it.id === shownId && root.contains(document.activeElement) && document.activeElement !== document.body) return;
     const cached = it._lean && whole.get(it.id);
@@ -118,8 +123,9 @@ async function loadWhole(id: string): Promise<void> {
 
 function renderEmpty(): void {
   cleanupSections();
-  const n = state.counts[state.view as keyof typeof state.counts] || 0;
-  const where = ({ trash: 'in the Trash', duplicates: 'look like duplicates' } as Record<string, string>)[state.view] || 'in your library';
+  const n = state.view.startsWith('source:') ? state.items.length : state.counts[state.view as keyof typeof state.counts] || 0;
+  const src = currentSource();
+  const where = ({ trash: 'in the Trash', duplicates: 'look like duplicates' } as Record<string, string>)[state.view] || (src ? `in ${src.title}` : 'in your library');
   const tip = state.view === 'duplicates' && n ? '<p class="subtle">Select one item of a group and choose “Keep This One” to trash the others.</p>' : '';
   root.innerHTML = `<div class="empty-state">${icon(state.view === 'trash' ? 'trash' : 'doc')}
     <h3>${state.view === 'trash' ? 'Trash' : 'No item selected'}</h3>
@@ -128,6 +134,19 @@ function renderEmpty(): void {
 
 function renderMulti(items: Item[]): void {
   cleanupSections();
+  const outside = items.filter((i) => i._outside);
+  if (outside.length) {   // papers from a plugin's list: all they offer is being added
+    const inLib = items.length - outside.length;
+    root.innerHTML = `<div class="multi"><div class="count">${outside.length}</div><div class="muted">${outside.length === 1 ? 'paper' : 'papers'} not in your library${inLib ? ` (and ${inLib} that are)` : ''}</div>
+      <div class="actions"><button class="btn btn-primary" data-a="add">${icon('plus')} Add to My Library</button>
+        <button class="btn" data-a="add-folder">${icon('folderPlus')} Add to Folder…</button></div></div>`;
+    root.querySelector('.actions')!.addEventListener('click', async (e) => {
+      const a = (e.target as Element).closest<HTMLElement>('[data-a]')?.dataset.a;
+      if (a === 'add') A.addOutside(outside);
+      if (a === 'add-folder') { const fid = await pickFolder({ title: `Add ${outside.length} Papers to Folder` }); if (fid !== undefined) A.addOutside(outside, fid); }
+    });
+    return;
+  }
   const ids = items.map((i) => i.id);
   const trash = state.view === 'trash';
   root.innerHTML = `<div class="multi"><div class="count">${items.length}</div><div class="muted">items selected</div>
@@ -254,6 +273,7 @@ function renderItem(it: Item): void {
     </div>
     <div class="ip-body">
       ${snippet && state.query ? section('fulltext', 'Full-text match', `<div class="ft-snippet">${snippet}</div>`) : ''}
+      ${it.reasons?.length && state.view.startsWith('source:') ? section('why', 'Why It Is Here', reasonsBody(it.reasons)) : ''}
       ${section('info', 'Info', info)}
       ${section('abstract', 'Abstract', it._lean   // the list has no abstracts: shown once the whole item is here (not editable before, so it is never overwritten)
     ? '<div class="muted" data-abstract-loading>Loading…</div>'
@@ -281,6 +301,8 @@ function renderItem(it: Item): void {
     fillNotes(it);
     fillReferences(root.querySelector<HTMLElement>('[data-ip-refs]')!, it, () => shownId === it.id);
     fillPluginFields(it);
+    const why = root.querySelector<HTMLElement>('.ip-reasons');
+    if (why && it.reasons) fillReasons(why, it.reasons, () => shownId === it.id);
     mountSections(it);
   };
   if (Date.now() - lastFill > FILL_SETTLE_MS) { lastFill = Date.now(); fill(); }
@@ -334,6 +356,30 @@ function mountSections(it: Item): void {
 }
 const FILL_SETTLE_MS = 180;
 let fillTimer: ReturnType<typeof setTimeout> | undefined, lastFill = 0;
+
+/** A paper outside the library (from a plugin's list): what is known about it, why it is listed,
+    and buttons to add it. Nothing here is editable: the paper is not stored anywhere yet. */
+function renderOutside(it: Item): void {
+  cleanupSections();
+  shownId = it.id;
+  const pluginFields = outsideFields(it);
+  root.innerHTML = `${outsideHeader(it)}
+    <div class="ip-body">
+      ${it.reasons?.length ? section('why', 'Why It Is Here', reasonsBody(it.reasons)) : ''}
+      ${section('info', 'Info', outsideInfo(it))}
+      ${it.abstract ? section('outside-abstract', 'Abstract', `<div class="fv readonly ip-abstract">${escapeHtml(it.abstract)}</div>`) : ''}
+      ${pluginFields ? section('plugin-fields', 'From Plugins', pluginFields) : ''}
+      ${extraSections(it)}
+    </div>`;
+  bindSections();
+  clearTimeout(fillTimer);
+  fillTimer = setTimeout(() => {
+    if (shownId !== it.id) return;
+    const why = root.querySelector<HTMLElement>('.ip-reasons');
+    if (why && it.reasons) fillReasons(why, it.reasons, () => shownId === it.id);
+    mountSections(it);
+  }, FILL_SETTLE_MS);
+}
 
 /* ---------------------------------------------------------------- notes */
 async function fillNotes(it: Item): Promise<void> {
@@ -393,6 +439,16 @@ function authorRow(a: string): string {
     <button class="icon-btn" data-author="add" title="Add author below" tabindex="-1">${icon('plus', 'icon-sm')}</button></div>`;
 }
 
+/** Sections open and close on a click on their heading (remembered per section). */
+function bindSections(): void {
+  root.querySelectorAll('.section-head').forEach((b) => b.addEventListener('click', (e) => {
+    if ((e.target as Element).closest('.act')) return;
+    const sec = b.parentElement!;
+    sectionState[sec.dataset.section!] = sec.classList.toggle('collapsed');
+    store('zc.sectionState', sectionState);
+  }));
+}
+
 function bindItem(it: Item): void {
   const id = it.id;
 
@@ -407,13 +463,7 @@ function bindItem(it: Item): void {
     });
   }
 
-  // sections collapse
-  root.querySelectorAll('.section-head').forEach((b) => b.addEventListener('click', (e) => {
-    if ((e.target as Element).closest('.act')) return;
-    const sec = b.parentElement!;
-    sectionState[sec.dataset.section!] = sec.classList.toggle('collapsed');
-    store('zc.sectionState', sectionState);
-  }));
+  bindSections();
 
   // text fields
   root.querySelectorAll<HTMLElement>('.fv[contenteditable]').forEach((el) => {
@@ -508,6 +558,13 @@ async function handleClick(e: MouseEvent): Promise<void> {
   const it = byId(id);
   if (!it) return;
   const target = e.target as Element;
+  const lib = target.closest<HTMLElement>('.ip-reasons [data-show-item]');
+  if (lib) { emit('show-item', lib.dataset.showItem!); return; }
+  const out = target.closest<HTMLElement>('[data-out]')?.dataset.out;
+  if (out === 'add') { A.addOutside([it]); return; }
+  if (out === 'add-folder') { const fid = await pickFolder({ title: 'Add to Folder' }); if (fid !== undefined) A.addOutside([it], fid); return; }
+  if (out === 'online') { window.open(it.url || '', '_blank'); return; }
+  if (it._outside) return;
   const rm = target.closest<HTMLElement>('[data-remove-folder]');
   if (rm) { e.stopPropagation(); A.removeFolderMembership(id, Number(rm.dataset.removeFolder)); return; }
   const open = target.closest<HTMLElement>('[data-open-folder]');

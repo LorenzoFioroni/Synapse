@@ -61,4 +61,5 @@ def describe(entry: Entry, st: dict, act: Active | None, values: dict, safe_mode
         out["routes"] = [{"rule": r.rule, "methods": list(r.methods)} for r in act.plugin.routes]
         out["events"] = sorted(e for e, fns in act.plugin.listeners.items() if fns)
         out["fields"] = [d.describe() for d in act.plugin.fields.defs.values()]
+        out["sources"] = [{"id": f"{pid}.{s.id}", "title": s.title} for s in act.plugin.sources.values()]
     return out

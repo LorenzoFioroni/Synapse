@@ -1,7 +1,7 @@
 // The item list's header: which columns show, their order and widths (drag to reorder, drag the
 // grip to resize, double-click it to fit), and sorting by a click on a column.
 import { icon } from '../../icons.js';
-import { COLUMNS, FIELD_COL, type ColumnDef, colDef, emit, saveColumns, saveSort, state } from '../../store.js';
+import { COLUMNS, FIELD_COL, type ColumnDef, colDef, emit, saveColumns, sortBy, state, viewSort } from '../../store.js';
 import { openMenu, type MenuEntry } from '../../ui/menu.js';
 import { escapeHtml } from '../../util.js';
 
@@ -30,7 +30,7 @@ function applyGrid(): void {
 }
 
 export function renderHead(): void {
-  const { col, dir } = state.sort;
+  const { col, dir } = viewSort() || { col: '', dir: 'asc' };
   head.innerHTML = visibleCols().map((c) => {
     const d = def(c.id);
     const sorted = col === c.id;
@@ -52,9 +52,7 @@ function bindHead(): void {
     const cell = cellOf(e);
     if (!cell) return;
     const id = cell.dataset.col!;
-    if (state.sort.col === id) state.sort.dir = state.sort.dir === 'asc' ? 'desc' : 'asc';
-    else state.sort = { col: id, dir: ['date_added', 'date_modified', 'year'].includes(id) || id.startsWith(FIELD_COL) ? 'desc' : 'asc' };
-    saveSort();
+    sortBy(id);
     renderHead();
     resorted();
   });

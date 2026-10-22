@@ -13,7 +13,7 @@ import { copyText, modLabel, plural } from '../../util.js';
 import { openExport } from '../exportDialog.js';
 import { openMetadataReview } from '../metadataReview.js';
 import { fetchReferencesBulk } from '../referencesSection.js';
-import { addSelectionToFolder, editTagsDialog, moveSelectionToFolder } from '../organizeDialogs.js';
+import { addSelectionToFolder, editTagsDialog, moveSelectionToFolder, pickFolder } from '../organizeDialogs.js';
 
 type At = { x: number; y: number } | Element;
 
@@ -44,6 +44,7 @@ async function newPaperNote(it: Item): Promise<void> {
 export function itemMenu(at: At): void {
   const items = selectedItems();
   if (!items.length) return;
+  if (items.some((i) => i._outside)) { outsideMenu(items.filter((i) => i._outside), at); return; }
   const one = items.length === 1 ? items[0] : null;
   const ids = items.map((i) => i.id);
   if (state.view === 'trash') {
@@ -90,6 +91,26 @@ export function itemMenu(at: At): void {
     ...pluginActions(items),
     'sep',
     { label: one ? 'Move Item to Trash' : `Move ${items.length} Items to Trash`, icon: 'trash', danger: true, run: A.trashSelected, shortcut: folder ? `${modLabel}⌫` : '⌫' },
+  ], at);
+}
+
+/** The menu for papers from a plugin's list that are not in the library. */
+function outsideMenu(items: Item[], at: At): void {
+  const one = items.length === 1 ? items[0] : null;
+  const n = one ? '' : ` ${items.length} Papers`;
+  const ident = (i: Item) => (i.arxiv ? `arXiv:${i.arxiv}` : i.doi || '');
+  openMenu([
+    { label: `Add${n} to My Library`, icon: 'plus', run: () => A.addOutside(items) },
+    { label: `Add${n} to Folder…`, icon: 'folderPlus', run: async () => {
+      const fid = await pickFolder({ title: one ? 'Add to Folder' : `Add ${items.length} Papers to Folder` });
+      if (fid !== undefined) await A.addOutside(items, fid);
+    } },
+    'sep',
+    one && { label: 'View Online', icon: 'globe', disabled: !one.url, run: () => window.open(one.url || '', '_blank') },
+    { label: one ? 'Copy Identifier' : 'Copy Identifiers', icon: 'copy', run: async () => {
+      await copyText(items.map(ident).filter(Boolean).join('\n'));
+      toast(one ? `Copied ${ident(one)}` : `Copied ${plural(items.length, 'identifier')}`, { type: 'success', timeout: 2500 });
+    } },
   ], at);
 }
 

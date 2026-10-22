@@ -12,7 +12,7 @@ from ..library.db import utcnow
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS fetches (
     item_id TEXT PRIMARY KEY,
-    source TEXT,              -- semanticscholar | openalex | crossref | none
+    source TEXT,              -- semanticscholar | openalex | crossref | arxiv-html | none
     fetched_at TEXT,
     doi TEXT, arxiv_id TEXT,  -- what the lookup used
     count INTEGER,
@@ -92,6 +92,16 @@ class CitationStore:
     def all_refs(self) -> list[dict]:
         with self._session() as c:
             return [dict(r) for r in c.execute("SELECT * FROM refs ORDER BY item_id, position")]
+
+    def citing(self, doi: str | None, arxiv_id: str | None) -> set[str]:
+        """The items whose references include this DOI or arXiv id (normalised forms)."""
+        out: set[str] = set()
+        with self._session() as c:
+            if doi:
+                out |= {r[0] for r in c.execute("SELECT DISTINCT item_id FROM refs WHERE doi = ?", (doi,))}
+            if arxiv_id:
+                out |= {r[0] for r in c.execute("SELECT DISTINCT item_id FROM refs WHERE arxiv_id = ?", (arxiv_id,))}
+        return out
 
     def remove(self, item_ids) -> None:
         with self._session() as c:

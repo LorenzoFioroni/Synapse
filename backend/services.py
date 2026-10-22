@@ -43,6 +43,9 @@ class Services:
         self.fulltext = FulltextIndex(config.fulltext_db_path)
         self.indexer = Indexer(self.papers, self.fulltext)
         self.citations = Citations(CitationStore(config.citations_db_path), self.papers, self.settings)
+        from .references.connections import Connections
+
+        self.connections = Connections(self.citations, self.papers)  # how outside papers connect to the library
         self.vault = Vault(config.notes_dir)
         self.vault.ensure()
         self.notes = NotesIndex(config.notes_index_path, self.vault)
@@ -85,6 +88,8 @@ class Services:
             changed=lambda: self.changes.record({"plugins"}),
             settings=self.settings,
             fields_changed=lambda: self.changes.record({"fields"}),
+            sources_changed=lambda: self.changes.record({"sources"}),
+            services=self,
         )
         self.papers.on_items(lambda event, ids, **details: self.plugins.emit(event, ids=ids, **details))
         self.papers.on_citekey_change(lambda i, old, new: self.plugins.emit("citekey.changed", id=i, old=old, new=new))
@@ -165,6 +170,52 @@ class Services:
                     logging.getLogger(__name__).exception("Background PDF search failed for %s", item_id)
 
         threading.Thread(target=run, name="find-pdf", daemon=True).start()
+
+    def add_paper(
+        self, paper: dict, *, folder_id: int | None = None, tags=(), lookup: bool = True
+    ) -> tuple[dict, bool]:
+        """Add a paper from outside the library (an outside record: title, authors, doi, arxiv …),
+        as Add by Identifier does: its metadata looked up online by DOI or arXiv id (the record's
+        own fields when that fails, offline say), the duplicate check, a citation key. Returns
+        (item, False), or (the library item it already is, True)."""
+        from .library.identifiers import norm_arxiv, norm_doi
+        from .online.http import LookupFailed
+        from .online.metadata import known_authors
+        from .online.metadata import lookup as lookup_meta
+
+        arx = norm_arxiv(paper.get("arxiv")) or norm_arxiv(paper.get("archive_id"))
+        doi = norm_doi(paper.get("doi"))
+        meta = {
+            k: paper[k]
+            for k in ("title", "authors", "year", "abstract", "journal", "item_type", "url", "volume", "pages", "date")
+            if paper.get(k)
+        }
+        if doi:
+            meta["doi"] = paper.get("doi")
+        if arx:
+            meta.setdefault("archive_id", f"arXiv:{arx}")
+            meta.setdefault("url", f"https://arxiv.org/abs/{arx}")
+            meta.setdefault("item_type", "preprint")
+        dup = self.papers.find_duplicate(meta)
+        if dup:
+            return self.papers.get(dup), True
+        if lookup and (arx or doi):
+            try:
+                fetched = lookup_meta(
+                    identifier=f"arXiv:{arx}" if arx else doi,
+                    known=known_authors(self.papers.list()),
+                    email=self.settings.get("contact_email"),
+                )
+                meta.update({k: v for k, v in fetched.items() if v})
+            except (LookupFailed, OSError) as e:
+                logging.getLogger(__name__).info("Adding %s without looking it up: %s", arx or doi, e)
+            except Exception:  # requests errors and the like: the record is enough
+                logging.getLogger(__name__).exception("Looking up %s failed", arx or doi)
+            dup = self.papers.find_duplicate(meta)
+            if dup:
+                return self.papers.get(dup), True
+        item = self.papers.create({**meta, "folder_id": folder_id, "tags": list(tags or [])})
+        return item, False
 
     def attachments_changed(self) -> None:
         """Call after adding/removing files so the full-text index catches up."""

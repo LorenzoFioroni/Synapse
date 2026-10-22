@@ -21,6 +21,9 @@ export interface PluginItem {
   item_type?: string;
   tags?: string[];
   folder_ids?: number[];
+  /** A paper from a plugin's list that is not in the library (its id is "x:<key>"): item-pane
+      sections are shown for it too. */
+  _outside?: boolean;
   [field: string]: unknown;
 }
 
@@ -74,7 +77,7 @@ export interface NotifyOptions {
 
 /** What changed, as the change feed names it: something in this or another window, on another
     device, by Claude or by background work. */
-export type ChangeKind = 'library' | 'notes' | 'tasks' | 'annotations' | 'plugins';
+export type ChangeKind = 'library' | 'notes' | 'tasks' | 'annotations' | 'plugins' | 'fields' | 'sources';
 
 export interface PluginContext {
   /** The plugin's id and what its manifest says. */

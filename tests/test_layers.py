@@ -26,7 +26,7 @@ ALLOWED = {
     "backup": BASE,
     "access": BASE,
     "assist": BASE,
-    "plugins": BASE | {"library"},
+    "plugins": BASE | {"library", "online", "references"},
     "desktop": set(),
     # the composition layer: wires and exposes everything
     "services": None,

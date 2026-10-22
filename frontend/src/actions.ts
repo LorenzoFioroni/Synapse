@@ -145,7 +145,7 @@ export async function newItem(data: Partial<Item> = {}): Promise<Item | undefine
 }
 
 export async function trashSelected(): Promise<void> {
-  const items = selectedItems();
+  const items = selectedItems().filter((i) => !i._outside);   // papers from a plugin's list are not in the library
   if (!items.length) return;
   const ids = items.map((i) => i.id);
   if (state.view === 'trash') return deleteForever(ids);
@@ -493,4 +493,43 @@ export async function deleteSmart(sf: SmartFolder): Promise<void> {
     if (state.view === `smart:${sf.id}`) setView('library');
     await loadItems();
   } catch (e) { toastError(e); }
+}
+
+/**
+ * Add papers from a plugin's list (outside the library) to the library, into `folderId` when
+ * given: the server looks each up by its DOI or arXiv id. In the list they become the library
+ * items. What Settings → Adding Items says to do afterwards runs too ("ask" counts as yes: the
+ * "+" is one click, with nowhere to ask).
+ */
+export async function addOutside(items: Item[], folderId: number | null = null): Promise<void> {
+  const papers = items.filter((i) => i._outside);
+  if (!papers.length) return;
+  const pt = papers.length > 1 ? progressToast(`Adding ${plural(papers.length, 'paper')}…`) : null;
+  const close = pt ? null : toast(`Adding “${(papers[0].title || 'paper').slice(0, 60)}”…`, { timeout: 0 });
+  const added: string[] = [];
+  let already = 0;
+  for (const [n, p] of papers.entries()) {
+    pt?.set(`Adding ${n + 1}/${papers.length}: ${(p.title || 'Untitled').slice(0, 60)}`, n, papers.length);
+    try {
+      const res = await api.addOutside(p, folderId);
+      if (res.duplicate) already++; else added.push(res.item.id);
+    } catch (e) {
+      toastError(e);
+      if ((e as ApiError).status === 0) break;      // server gone
+    }
+  }
+  pt?.close();
+  close?.();
+  await loadItems();
+  if (added.length) select(added, { anchor: added[0], cursor: added[0] });
+  const { mode, runAfterAdd } = await import('./afterAdd.js');
+  runAfterAdd(added, { pdf: mode('pdf') !== 'never', references: mode('references') !== 'never' });
+  const where = folderId ? `“${folderById(folderId)?.name || 'folder'}”` : 'My Library';
+  const parts = added.length ? [added.length === 1 && papers.length === 1 ? `Added to ${where}` : `Added ${plural(added.length, 'paper')} to ${where}`] : [];
+  if (already) parts.push(papers.length === 1 ? 'Already in your library' : `${already} already in your library`);
+  if (!parts.length) return;
+  toast(parts.join(' · '), {
+    type: added.length ? 'success' : 'info',
+    action: added.length ? { label: 'Undo', run: async () => { await api.trash(added); await loadItems(); } } : null,
+  });
 }

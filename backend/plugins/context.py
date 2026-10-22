@@ -41,6 +41,18 @@ class Route:
 
 
 @dataclass
+class ItemSource:
+    """A list of papers a plugin offers (``@plugin.item_source``), shown like a folder."""
+
+    id: str
+    title: str
+    fn: Callable[[], list]
+    icon: str = "list"
+    description: str = ""
+    badge: Callable[[], object] | None = None
+
+
+@dataclass
 class ToolSpec:
     """An MCP tool offered by a plugin. ``name`` is already prefixed with the plugin id."""
 
@@ -92,6 +104,9 @@ class Plugin:
         before_upgrade: Callable[[str], None] | None = None,
         http=None,
         fields=None,
+        services=None,
+        actions=None,
+        sources_changed: Callable[[], object] | None = None,
     ):
         self.manifest = manifest
         self.id = manifest.id
@@ -106,6 +121,10 @@ class Plugin:
         self.unload: list[Callable[[], None]] = []
         self.http = http  # PluginHttp (http.py): the web, within the manifest's "network" permission
         self.fields = fields  # PluginFields (itemfields.py): values attached to papers
+        self.services = services  # PluginServices (services.py): lookups, references, connections
+        self.actions = actions  # PluginActions (services.py): adding papers to the library
+        self.sources: dict[str, ItemSource] = {}
+        self._sources_changed = sources_changed or (lambda: None)
         self.handlers: dict[str, Handler] = {}
         self.schedules: list[Schedule] = []
         self.wake: Callable[[], None] = lambda: None  # set by the host: wakes the background runner
@@ -193,6 +212,34 @@ class Plugin:
                 lst.remove(fn)
 
         return remove
+
+    # ------------------------------------------------------------------ item sources
+    def item_source(
+        self,
+        id: str,  # noqa: A002 - the word plugins write
+        *,
+        title: str,
+        icon: str = "list",
+        description: str = "",
+        badge: Callable[[], object] | None = None,
+    ):
+        """Offer the papers ``fn()`` returns (dicts with a ``doi`` or an ``arxiv`` id, see
+        outside.py) as a list in the sidebar, under Plugins: the app shows them like a folder, with
+        its sorting, search, columns and fields, and a "+" on those not in the library. ``badge()``
+        may return a count or short text for the sidebar entry. Usable as a decorator."""
+        if not TOOL_NAME_RE.match(id or ""):
+            raise PluginError(f"Item source id {id!r}: lowercase letters, digits and _")
+
+        def register(fn: Callable[[], list]) -> Callable[[], list]:
+            self.sources[id] = ItemSource(id, str(title)[:60], fn, icon, str(description)[:300], badge)
+            return fn
+
+        return register
+
+    def refresh_sources(self) -> None:
+        """Say that this plugin's lists changed (a job fetched new papers, say): open pages showing
+        one ask for it again, and the sidebar's badges are updated."""
+        self._sources_changed()
 
     # ------------------------------------------------------------------ background work
     def schedule(

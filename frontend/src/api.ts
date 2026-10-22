@@ -3,7 +3,7 @@
 import type {
   AccessToken, AccessTokensOverview, AssistCompletion, AssistStatus, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
   ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
-  ItemFieldValue, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
+  ItemFieldValue, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginSource, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview,
 } from './types.js';
 import { openNewWindow, openPageInNewWindow } from './windows.js';
@@ -99,6 +99,10 @@ export const api = {
   removeAccessToken: (id: string) => request('DELETE', `/api/mcp/tokens/${encodeURIComponent(id)}`),
   plugins: () => request<PluginsOverview>('GET', '/api/plugin-host'),
   pluginFields: () => request<{ fields: PluginField[] }>('GET', '/api/plugin-fields'),
+  pluginSources: () => request<{ sources: PluginSource[] }>('GET', '/api/plugin-sources'),
+  /** Add a paper from a plugin's list to the library (201; 200 with duplicate: true when it is there already). */
+  addOutside: (paper: Item, folderId: number | null = null) =>
+    request<{ item: Item; duplicate: boolean }>('POST', '/api/outside/add', { paper, folder_id: folderId }),
   itemFields: (id: string) => request<{ fields: ItemFieldValue[] }>('GET', `/api/items/${encodeURIComponent(id)}/fields`),
   /** A plugin's own route (/api/plugins/<id><path>), for its frontend (plugins/host.ts). */
   pluginRoute: <T = unknown>(id: string, method: Method, path: string, body?: unknown, query?: Record<string, unknown>) => {

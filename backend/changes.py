@@ -27,7 +27,15 @@ from pathlib import Path
 
 KEEP = 2000  # entries remembered; a page further behind refreshes everything
 CLIENT_HEADER = "X-Synapse-Client"
-ALL = ("library", "annotations", "notes", "tasks", "plugins", "fields")  # what a page refreshes after a reset
+ALL = (
+    "library",
+    "annotations",
+    "notes",
+    "tasks",
+    "plugins",
+    "fields",
+    "sources",
+)  # what a page refreshes after a reset
 
 
 def _mtime(*paths: Path) -> tuple:

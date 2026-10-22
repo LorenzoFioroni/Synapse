@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, request
 from ..library import search as search_mod
 from ..library.fields import schema_payload
 from ..library.repository import NotFound
+from ..plugins import PluginError
 from . import body, error, ids_from_body, svc
 
 bp = Blueprint("items", __name__, url_prefix="/api")
@@ -41,6 +42,8 @@ def items_for_view(s, view: str, library: list[dict]) -> tuple[list[dict], str |
         s.folders.get(fid)
         ids = s.folders.descendants(fid) if s.settings.get("show_subfolder_items") else {fid}
         return [p for p in library if ids & set(p.get("folder_ids") or [])], None, None
+    if view.startswith("source:"):  # a list of outside papers a plugin offers
+        return s.plugins.sources.items(view[len("source:") :]), None, None
     if view.startswith("smart:"):
         sf = s.smart.get(int(view.split(":", 1)[1]))
         return library, sf["query"], sf["mode"]
@@ -57,6 +60,8 @@ LEAN_DROP = {"abstract"}
 
 
 def lean(p: dict) -> dict:
+    if p.get("_outside"):  # a paper outside the library: the item pane has only what the list sends
+        return {k: v for k, v in p.items() if v is not None and v != ""}
     return {k: v for k, v in p.items() if k not in LEAN_DROP and v is not None and v != ""}
 
 
@@ -70,7 +75,10 @@ def list_items():
     mode = request.args.get("mode") or s.settings.get("default_search_mode")
     tag_filter = [t for t in request.args.get("tags", "").split(",") if t.strip()]
     library = s.papers.list()
-    items, smart_q, smart_mode = items_for_view(s, view, library)
+    try:
+        items, smart_q, smart_mode = items_for_view(s, view, library)
+    except PluginError as e:  # a plugin's list failed: say why, the page keeps what it shows
+        return error(str(e), 502)
     ctx = search_context(s)
     hits = {}
     notes = notes_matcher(s) if q or smart_q else None

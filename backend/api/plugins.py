@@ -7,6 +7,7 @@ from flask import Blueprint, Response, jsonify, request, send_file
 from werkzeug.exceptions import HTTPException
 
 from ..plugins import PluginError
+from ..plugins.outside import record as outside_record
 from . import body, error, svc
 
 bp = Blueprint("plugins", __name__, url_prefix="/api")
@@ -74,6 +75,28 @@ def plugin_log(pid: str):
 def plugin_fields():
     """The fields running plugins declare (list columns, search filters)."""
     return jsonify(fields=_host().fields.describe())
+
+
+@bp.get("/plugin-sources")
+def plugin_sources():
+    """The lists of outside papers running plugins offer (the sidebar)."""
+    return jsonify(sources=_host().sources.describe())
+
+
+@bp.post("/outside/add")
+def add_outside():
+    """Add a paper from outside the library (the "+" of a plugin's list): looked up online by its
+    DOI or arXiv id, else as listed."""
+    data = body()
+    paper = data.get("paper")
+    if not isinstance(paper, dict):
+        return error("Which paper? Send it as paper: {doi | arxiv, title, …}")
+    try:
+        rec = paper if paper.get("_outside") else outside_record(paper)
+        item, dup = svc().add_paper(rec, folder_id=data.get("folder_id"), tags=data.get("tags") or [])
+    except PluginError as e:
+        return error(str(e))
+    return jsonify(item=item, duplicate=dup), (200 if dup else 201)
 
 
 @bp.get("/items/<item_id>/fields")

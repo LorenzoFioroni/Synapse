@@ -10,7 +10,7 @@ import type { ApiError } from '../api.js';
 import type { Item, ItemReferences } from '../types.js';
 import { escapeHtml, formatDate, plural, shortAuthors } from '../util.js';
 
-const SOURCES: Record<string, string> = { semanticscholar: 'Semantic Scholar', openalex: 'OpenAlex', crossref: 'Crossref', none: 'no service' };
+const SOURCES: Record<string, string> = { semanticscholar: 'Semantic Scholar', openalex: 'OpenAlex', crossref: 'Crossref', 'arxiv-html': 'arXiv (HTML version)', none: 'no service' };
 const SHOW = 8;
 const expanded = new Set<string>();   // items whose full list is open
 let pollTimer: ReturnType<typeof setTimeout> | undefined;
