@@ -53,6 +53,18 @@ class ItemSource:
 
 
 @dataclass
+class PdfSource:
+    """Where to look for an open-access PDF of a paper (``@plugin.pdf_source``), for Find
+    Available PDF: ``fn(paper)`` returns candidate URLs, best first."""
+
+    id: str
+    title: str
+    fn: Callable[[dict], list]
+    by_title: bool = False
+    order: int = 100
+
+
+@dataclass
 class ToolSpec:
     """An MCP tool offered by a plugin. ``name`` is already prefixed with the plugin id."""
 
@@ -125,6 +137,7 @@ class Plugin:
         self.services = services  # PluginServices (services.py): lookups, references, connections
         self.actions = actions  # PluginActions (services.py): adding papers to the library
         self.sources: dict[str, ItemSource] = {}
+        self.pdf_sources: dict[str, PdfSource] = {}
         self._sources_changed = sources_changed or (lambda: None)
         # a core plugin's tools keep the names they had when they were part of Synapse
         self._tool_prefix = tool_prefix
@@ -235,6 +248,22 @@ class Plugin:
 
         def register(fn: Callable[[], list]) -> Callable[[], list]:
             self.sources[id] = ItemSource(id, str(title)[:60], fn, icon, str(description)[:300], badge)
+            return fn
+
+        return register
+
+    def pdf_source(self, id: str, *, title: str, by_title: bool = False, order: int = 100):  # noqa: A002
+        """Offer candidate URLs for Find Available PDF: ``fn(paper)`` gets ``{"title", "doi",
+        "arxiv"}`` and returns URLs of PDFs, best first; Synapse downloads them in turn and keeps
+        the first that is the paper (it checks the title, DOI or arXiv id in the text). With
+        ``by_title``, the source searches by title: it is asked only when the sources that go by
+        identifier found nothing for a paper with an arXiv id. Lower ``order`` is asked first.
+        Usable as a decorator."""
+        if not TOOL_NAME_RE.match(id or ""):
+            raise PluginError(f"PDF source id {id!r}: lowercase letters, digits and _")
+
+        def register(fn: Callable[[dict], list]) -> Callable[[dict], list]:
+            self.pdf_sources[id] = PdfSource(id, str(title)[:80], fn, bool(by_title), int(order))
             return fn
 
         return register

@@ -142,12 +142,16 @@ class Services:
         _, arxiv_id = identifiers(item)  # from archive_id, an arXiv DOI, the URL, Extra …
         if not item.get("title") and not item.get("doi") and not arxiv_id:
             return {"status": "error", "message": "The item needs a title, DOI or arXiv ID to search for a PDF."}
+        paper = {"title": item.get("title"), "doi": item.get("doi"), "arxiv": arxiv_id}
+        sources = self.plugins.has_pdf_sources() if self.plugins else False
         result = pdf_finder.find_and_download(
             item.get("title"),
             item.get("doi"),
             self.config.pdf_dir,
             self.settings.get("contact_email"),
             arxiv_id=arxiv_id,
+            # where to look: the plugins' PDF sources (Unpaywall and arXiv: plugins/open-access-pdfs)
+            candidates=(lambda by_title: self.plugins.pdf_candidates(paper, by_title=by_title)) if sources else None,
         )
         if result["status"] == "success":
             result["attachment"] = self.papers.add_attachment(item_id, "Full Text PDF", result["filename"], "pdf")

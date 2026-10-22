@@ -146,7 +146,12 @@ The review is `frontend/src/views/metadataReview.ts`:
 `identifiers()`, calls `pdf_finder.find_and_download`, and attaches a found file as "Full Text PDF".
 It then calls `attachments_changed()` so the full-text index picks the file up.
 
-`candidate_urls()` lists where to look, best first:
+Where to look comes from the plugins' **PDF sources** (`@plugin.pdf_source`, see
+[plugins](plugins.md#the-plugin-object)), gathered by `PluginHost.pdf_candidates(paper,
+by_title=…)`: sources by identifier and sources searching by title, lower `order` first, each URL
+once. With no source running (the core plugin below turned off, and no other), Find Available PDF
+says so. The core plugin **Open-Access PDFs** (`plugins/open-access-pdfs/server/finder.py`) has
+Synapse's two sources, best first:
 
 1. For a preprint (an arXiv id, and no DOI or only an arXiv DOI): `arxiv.org/pdf/<id>`.
 2. For a DOI that is not an arXiv DOI: Unpaywall's `best_oa_location.url_for_pdf`. Unpaywall
@@ -157,8 +162,9 @@ It then calls `attachments_changed()` so the full-text index picks the file up.
    arXiv API over https, after `arxiv_wait()`, with `TIMEOUT`). Google Scholar is not asked: it
    has no API, and its robots.txt forbids programs to read its result pages.
 
-When the item has an arXiv id, `find_and_download` tries steps 1–3 first and runs the title
-searches only if none of those was the paper.
+When the item has an arXiv id, `find_and_download` tries the sources by identifier (steps 1–3)
+first and asks the title searches only if none of those was the paper; otherwise it tries them all
+in one go.
 
 `_download_first` downloads the candidates in order. A response counts only if it is a PDF (by
 `Content-Type` or the `%PDF` header). `verify_pdf` then reads the first two pages and accepts the

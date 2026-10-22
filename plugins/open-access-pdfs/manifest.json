@@ -1,0 +1,10 @@
+{
+  "id": "open-access-pdfs",
+  "name": "Open-Access PDFs",
+  "version": "1.0.0",
+  "api": "^1.0",
+  "author": "Synapse",
+  "description": "Where Find Available PDF looks: Unpaywall (the publisher's or a repository's open-access copy, by DOI and by title) and arXiv (by arXiv id and by title). Synapse downloads the candidates and keeps the first that is the paper.",
+  "core": true,
+  "backend": "server"
+}

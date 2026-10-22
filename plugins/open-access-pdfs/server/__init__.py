@@ -1,0 +1,23 @@
+"""Open-Access PDFs: the PDF sources of Find Available PDF (a core plugin).
+
+Two sources: one by identifier (arXiv for a preprint, Unpaywall's best open-access copy for a
+DOI, then arXiv for a published paper that has an arXiv id) and one by title (Unpaywall's search
+and arXiv's), which Synapse asks only when the first found nothing for a paper with an arXiv id.
+Synapse itself downloads the candidates and checks each is the paper (backend/online/pdf_finder.py).
+"""
+
+from __future__ import annotations
+
+from backend.plugins import Plugin
+
+from .finder import by_identifier, by_title
+
+
+def activate(plugin: Plugin) -> None:
+    @plugin.pdf_source("identifiers", title="Unpaywall and arXiv, by DOI and arXiv id", order=10)
+    def identifiers(paper: dict) -> list[str]:
+        return by_identifier(paper.get("doi"), paper.get("arxiv"), plugin.services.contact_email())
+
+    @plugin.pdf_source("titles", title="Unpaywall and arXiv, by title", by_title=True, order=10)
+    def titles(paper: dict) -> list[str]:
+        return by_title(paper.get("title"), plugin.services.contact_email())

@@ -55,6 +55,10 @@ mode, and their settings are in their own section or under **More**:
 
 - **Autocompletion** (`plugins/autocompletion`, off by default): suggestions from a model in
   Ollama on this computer as you write a note; see [autocompletion](autocompletion.md).
+- **Open-Access PDFs** (`plugins/open-access-pdfs`): where Find Available PDF looks, Unpaywall and
+  arXiv by identifier and by title (its two PDF sources, see
+  [references](references.md#open-access-pdfs)). Turned off, Find Available PDF has nowhere to
+  look unless another plugin offers a source.
 
 A core plugin is a plugin like any other (manifest, `activate(plugin)`, routes, tools, settings),
 with these differences, all from `"core": true` in its manifest and honoured only in `plugins/`:
@@ -221,7 +225,8 @@ def activate(plugin: Plugin) -> None:
 | `plugin.fields` | `declare(name, type=…, label=…, refresher=…, refresh=…)`, `set(paper, name, value)`, `set_many(name, {paper: value})`, `get(paper, name)`, `key(paper)`, `clear(name, papers=None)`: values attached to papers (see [Per-item fields](#per-item-fields)). |
 | `plugin.http` | `get(url, params=…)`, `post(url, json=…)`, `request(method, url, …)`, `limit(host, seconds)`: the web, within the manifest's `network` (see [Reaching the web](#reaching-the-web)). |
 | `@plugin.item_source(id, title=…, icon="list", description="", badge=None)`, `plugin.refresh_sources()` | A list of papers in the sidebar, and saying it changed (see [Papers outside the library](#papers-outside-the-library)). |
-| `plugin.services` | `lookup(identifier)`, `references(paper, new=False)`, `match(refs)`, `connections(papers, refs=None, folders=None)`: Synapse's own lookups, reference lists and scoring. |
+| `@plugin.pdf_source(id, title=…, by_title=False, order=100)` | Where Find Available PDF may look: `fn(paper)` gets `{"title", "doi", "arxiv"}` and returns PDF URLs, best first; Synapse downloads them in turn and keeps the first that is the paper (it checks the DOI, the arXiv stamp or the title in its text). Sources `by_title` are asked only when those going by identifier found nothing for a paper with an arXiv id. Lower `order` first (Open-Access PDFs uses 10). For an institutional repository or a proxy, say. |
+| `plugin.services` | `contact_email()`, `lookup(identifier)`, `references(paper, new=False)`, `match(refs)`, `connections(papers, refs=None, folders=None)`: Synapse's own lookups, reference lists and scoring. |
 | `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). |
 
 Raise **`PluginError("…")`** for a problem the user or Claude should read: a route answers 400 with

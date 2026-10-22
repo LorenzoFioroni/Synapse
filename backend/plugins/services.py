@@ -24,6 +24,11 @@ class PluginServices:
     def __init__(self, services):
         self._s = services
 
+    def contact_email(self) -> str:
+        """The contact address from Settings → Online Services ('' when not set): scholarly
+        services ask for one (Unpaywall requires it)."""
+        return str(self._s.settings.get("contact_email") or "")
+
     def lookup(self, identifier: str) -> dict:
         """A paper's metadata by DOI, arXiv id (``arXiv:2610.01234``) or ISBN, as an outside record
         (not added to the library)."""

@@ -548,6 +548,32 @@ class PluginHost:
             self.fault(pid, what, e)
             raise
 
+    def pdf_candidates(self, paper: dict, *, by_title: bool) -> list[str]:
+        """Candidate PDF URLs for ``paper`` ({title, doi, arxiv}) from the running plugins' PDF
+        sources (those searching by title, or those going by identifier), best first, each URL
+        once. A source that fails is left out (and counts against its plugin unless it is a
+        PluginError, such as no network)."""
+        sources = []
+        with self._lock:
+            acts = list(self._active.items())
+        for pid, act in acts:
+            sources += [(s.order, pid, s) for s in act.plugin.pdf_sources.values() if s.by_title == by_title]
+        out: list[str] = []
+        for _, pid, s in sorted(sources, key=lambda x: (x[0], x[1], x[2].id)):
+            try:
+                got = self.run(pid, f"PDF source {s.id}", s.fn, dict(paper)) or []
+            except Exception as e:
+                log.info("PDF source %s.%s failed: %s", pid, s.id, e)
+                continue
+            for u in got if isinstance(got, list | tuple) else []:
+                if isinstance(u, str) and u.startswith(("https://", "http://")) and u not in out:
+                    out.append(u)
+        return out
+
+    def has_pdf_sources(self) -> bool:
+        with self._lock:
+            return any(act.plugin.pdf_sources for act in self._active.values())
+
     def mcp_tools(self, *, remote: bool = False) -> list[ToolSpec]:
         """The tools running plugins offer to Claude. ``remote``: for /mcp (another computer), where
         only plugins the user allowed for it take part."""

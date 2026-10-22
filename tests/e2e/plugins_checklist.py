@@ -122,7 +122,15 @@ async def main():
             names = await page.eval_on_selector_all("#set-plugins .p-name", "els => els.map(e => e.textContent)")
             check(
                 "the plugins are listed",
-                names == ["arXiv Today", "Autocompletion", "Broken One", "Citation Counts", "Recently Added"],
+                names
+                == [
+                    "arXiv Today",
+                    "Autocompletion",
+                    "Broken One",
+                    "Citation Counts",
+                    "Open-Access PDFs",
+                    "Recently Added",
+                ],
                 names,
             )
             bundled = await page.text_content('[data-plugin="citation-counts"]')

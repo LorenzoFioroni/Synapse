@@ -1,4 +1,6 @@
-"""Find an open-access PDF for an item and verify it is the right paper."""
+"""Download an open-access PDF of an item and verify it is the right paper. Where to look comes
+from the plugins' PDF sources (``@plugin.pdf_source``; Unpaywall and arXiv are the core plugin
+plugins/open-access-pdfs)."""
 
 from __future__ import annotations
 
@@ -9,14 +11,14 @@ import shutil
 import tempfile
 import urllib.parse
 import uuid
-import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from pathlib import Path
 
 import requests
 
 from ..library.identifiers import clean_doi
 from ..pdf.text import extract_text
-from .http import BROWSER_UA, TIMEOUT, arxiv_wait
+from .http import BROWSER_UA, arxiv_wait
 
 log = logging.getLogger(__name__)
 
@@ -59,55 +61,6 @@ def arxiv_pdf_url(arxiv_id: str) -> str:
     return f"https://arxiv.org/pdf/{arxiv_id}"
 
 
-def candidate_urls(
-    title: str | None, doi: str | None, email: str, arxiv_id: str | None = None, title_search: bool = True
-) -> list[str]:
-    """Where to look, best first. With a known arXiv id its PDF comes first for a preprint; for a
-    published paper the publisher's open-access copy (Unpaywall) comes first and arXiv second.
-    ``title_search=False`` skips the searches by title (Unpaywall, arXiv)."""
-    out: list[str | None] = []  # _unique drops the empty ones
-    email = urllib.parse.quote(email or FALLBACK_EMAIL, safe="@")  # a "+" would read as a space
-    preprint = bool(arxiv_id) and (not doi or doi.lower().startswith("10.48550/"))
-    if arxiv_id and preprint:
-        out.append(arxiv_pdf_url(arxiv_id))
-    if doi and not doi.lower().startswith("10.48550/"):
-        try:
-            r = requests.get(f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi)}?email={email}", timeout=10)
-            if r.ok:
-                loc = r.json().get("best_oa_location") or {}
-                out.append(loc.get("url_for_pdf"))
-        except Exception as e:
-            log.info("Unpaywall DOI lookup failed: %s", e)
-    if arxiv_id and not preprint:
-        out.append(arxiv_pdf_url(arxiv_id))
-    if title and title_search:
-        try:
-            r = requests.get(
-                f"https://api.unpaywall.org/v2/search?query={urllib.parse.quote(title)}&email={email}", timeout=10
-            )
-            if r.ok:
-                for res in r.json().get("results", [])[:2]:
-                    loc = (res.get("response") or {}).get("best_oa_location") or {}
-                    out.append(loc.get("url_for_pdf"))
-        except Exception as e:
-            log.info("Unpaywall search failed: %s", e)
-        try:
-            arxiv_wait()
-            r = requests.get(
-                f"https://export.arxiv.org/api/query?search_query=ti:%22{urllib.parse.quote(title)}%22&max_results=1",
-                timeout=TIMEOUT,
-            )
-            if r.ok:
-                ns = "{http://www.w3.org/2005/Atom}"
-                for entry in ET.fromstring(r.content).findall(f"{ns}entry"):
-                    for link in entry.findall(f"{ns}link"):
-                        if link.attrib.get("title") == "pdf":
-                            out.append(link.attrib.get("href"))
-        except Exception as e:
-            log.info("arXiv lookup failed: %s", e)
-    return _unique(out)
-
-
 def _unique(urls: list) -> list[str]:
     seen, uniq = set(), []
     for u in urls:
@@ -117,18 +70,30 @@ def _unique(urls: list) -> list[str]:
     return uniq
 
 
+NO_SOURCES = "No PDF sources are on: turn on Open-Access PDFs in Settings → Plugins."
+
+
 def find_and_download(
-    title: str | None, doi: str | None, pdf_dir: Path, email: str = "", arxiv_id: str | None = None
+    title: str | None,
+    doi: str | None,
+    pdf_dir: Path,
+    email: str = "",
+    arxiv_id: str | None = None,
+    candidates: Callable[[bool], list[str]] | None = None,
 ) -> dict:
-    """Returns {"status": "success", "filename": ...} or {"status": "not_found", "message": ...}."""
+    """Returns {"status": "success", "filename": ...} or {"status": "not_found", "message": ...}.
+    ``candidates(by_title)`` gives the URLs to try (the plugins' PDF sources). ``email`` is kept
+    for callers that pass it; the sources read the contact address themselves."""
     doi = clean_doi(doi)
+    if candidates is None:
+        return {"status": "not_found", "message": NO_SOURCES}
     if arxiv_id:
-        # The arXiv copy is known: try it (and Unpaywall first for a published paper); the
-        # searches by title only run if none of those is the paper.
-        first = candidate_urls(title, doi, email, arxiv_id, title_search=False)
-        later = lambda: [u for u in candidate_urls(title, None, email) if u not in first]  # noqa: E731
+        # The arXiv copy is known: try the sources that go by identifier first; the searches by
+        # title only run if none of those is the paper.
+        first = candidates(False)
+        later = lambda: [u for u in candidates(True) if u not in first]  # noqa: E731
     else:
-        first, later = candidate_urls(title, doi, email), list
+        first, later = _unique(candidates(False) + candidates(True)), list
     found = _download_first(first, title, doi, arxiv_id, pdf_dir)
     rest = [] if found else later()
     found = found or _download_first(rest, title, doi, arxiv_id, pdf_dir)

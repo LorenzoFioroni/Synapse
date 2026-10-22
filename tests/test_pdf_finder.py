@@ -161,21 +161,59 @@ def test_an_arxiv_id_alone_is_enough(svc, web, tmp_path):
 
 def test_title_search_requests(monkeypatch):
     """The contact e-mail is URL-encoded, and the arXiv search is https, spaced and on TIMEOUT."""
+    from backend.config import APP_ROOT
+    from backend.plugins.loading import load_module
+
     calls, waits = [], []
 
     def get(url, **kw):
         calls.append((url, kw.get("timeout")))
         return Resp(404, ctype="text/html")
 
-    monkeypatch.setattr(pdf_finder.requests, "get", get)
-    monkeypatch.setattr(pdf_finder, "arxiv_wait", lambda: waits.append(len(calls)))
-    assert pdf_finder.candidate_urls("A title", "10.1/abc", "me+lib@example.org") == []
+    module, _ = load_module("open-access-pdfs", APP_ROOT / "plugins" / "open-access-pdfs" / "server")
+    finder = module.finder
+    monkeypatch.setattr(finder.requests, "get", get)
+    monkeypatch.setattr(finder, "arxiv_wait", lambda: waits.append(len(calls)))
+    assert finder.by_identifier("10.1/abc", None, "me+lib@example.org") == []
+    assert finder.by_title("A title", "me+lib@example.org") == []
     urls = [u for u, _ in calls]
     assert urls[0] == "https://api.unpaywall.org/v2/10.1/abc?email=me%2Blib@example.org"
     assert urls[1].endswith("&email=me%2Blib@example.org")
     url, timeout = calls[-1]
     assert url.startswith("https://export.arxiv.org/api/query?") and timeout == http.TIMEOUT
     assert waits == [len(calls) - 1]  # right before the arXiv request
+
+
+def test_sources_come_from_plugins(client, svc, web, tmp_path):
+    """Find Available PDF asks the plugins' PDF sources: a plugin can add one, and with the core
+    plugin off and no other source it says so."""
+    routes, calls = web
+    folder = svc.config.plugins_dir / "my-proxy"
+    folder.mkdir(parents=True)
+    (folder / "manifest.json").write_text(
+        '{"id": "my-proxy", "name": "My Proxy", "version": "1", "api": "^1.0", "backend": "p.py"}'
+    )
+    (folder / "p.py").write_text(
+        "def activate(plugin):\n"
+        "    @plugin.pdf_source('mine', title='My library', order=1)\n"
+        "    def mine(paper):\n"
+        "        return ['https://proxy.example/' + (paper['doi'] or 'none'), 'not a url']\n"
+    )
+    client.post("/api/plugin-host/my-proxy/enable")
+    routes["https://proxy.example/10.1/mine"] = Resp(content=pdf_bytes(tmp_path, "A Paper Found Through The Proxy"))
+    item = svc.papers.create({"title": "A Paper Found Through The Proxy", "doi": "10.1/mine"})
+    res = svc.find_pdf(item["id"])
+    assert res["status"] == "success" and res["source"] == "https://proxy.example/10.1/mine"
+    downloads = [c for c in calls if not c.startswith(("https://api.unpaywall.org", "https://export.arxiv.org"))]
+    assert downloads[0] == "https://proxy.example/10.1/mine"  # order 1: tried before Unpaywall's copy
+    info = next(p for p in client.get("/api/plugin-host").get_json()["plugins"] if p["id"] == "my-proxy")
+    assert info["pdf_sources"] == [{"id": "mine", "title": "My library", "by_title": False}]
+    client.post("/api/plugin-host/my-proxy/disable")
+    client.post("/api/plugin-host/open-access-pdfs/disable")
+    calls.clear()
+    other = svc.papers.create({"title": "Another", "doi": "10.1/other"})
+    res = svc.find_pdf(other["id"])
+    assert res["status"] == "not_found" and "Open-Access PDFs" in res["message"] and calls == []
 
 
 def test_find_pdf_endpoint_accepts_an_arxiv_id_alone(client, svc, web, tmp_path):
