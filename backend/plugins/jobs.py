@@ -61,14 +61,20 @@ class JobQueue:
         return c
 
     def add(self, name: str, args: list, key: str | None = None, delay: float = 0) -> bool:
-        """Queue ``name(*args)``; with ``key``, not again while one with that key waits. True if added."""
+        """Queue ``name(*args)``; with ``key``, not again while one with that key waits (but that
+        one is brought forward when it would run later than this one). True if added."""
         payload = json.dumps(args)
+        at = time.time() + max(0.0, delay)
         with self._connect() as c:
             cur = c.execute(
                 "INSERT OR IGNORE INTO jobs (name, key, args, run_after, created) VALUES (?, ?, ?, ?, ?)",
-                (name, key, payload, time.time() + max(0.0, delay), datetime.now(timezone.utc).isoformat()),
+                (name, key, payload, at, datetime.now(timezone.utc).isoformat()),
             )
-            return cur.rowcount > 0
+            if cur.rowcount > 0:
+                return True
+            if key is not None:
+                c.execute("UPDATE jobs SET run_after = ? WHERE key = ? AND run_after > ?", (at, key, at))
+            return False
 
     def next_due(self, now: float | None = None) -> dict | None:
         with self._connect() as c:
@@ -114,7 +120,8 @@ class Jobs:
 
     def enqueue(self, name: str, *args, key: str | None = None, delay: float = 0) -> bool:
         """Run handler ``name`` with ``args`` (JSON values) in the background. ``key``: skip it
-        while a job with the same key waits (say "refs:2610.01234"). True if it was queued."""
+        while a job with the same key waits (say "refs:2610.01234"), bringing that one forward if
+        it would run later. True if it was queued."""
         if name not in self._handlers:
             raise PluginError(f"No job handler {name!r}; register one with @plugin.job({name!r})")
         try:

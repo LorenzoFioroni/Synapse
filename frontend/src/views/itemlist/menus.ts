@@ -111,6 +111,7 @@ function outsideMenu(items: Item[], at: At): void {
       await copyText(items.map(ident).filter(Boolean).join('\n'));
       toast(one ? `Copied ${ident(one)}` : `Copied ${plural(items.length, 'identifier')}`, { type: 'success', timeout: 2500 });
     } },
+    ...pluginActions(items),   // those that take outside papers (the others' when() says no)
   ], at);
 }
 

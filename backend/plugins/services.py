@@ -42,11 +42,13 @@ class PluginServices:
         arx = norm_arxiv(meta.get("archive_id")) or norm_arxiv(identifier if "arxiv" in identifier.lower() else None)
         return record({**meta, "arxiv": arx})
 
-    def references(self, paper: dict) -> list[dict]:
+    def references(self, paper: dict, *, new: bool = False) -> list[dict]:
         """The works ``paper`` cites (each with ``doi``, ``arxiv_id``, ``title``, ``year``, ``raw``
         when known): from Semantic Scholar, OpenAlex or Crossref, else from arXiv's HTML version,
-        which has them from the day a paper is announced. ``[]`` when none is known; ``Offline``
-        when the services cannot be reached (try again later)."""
+        which has them from the day a paper is announced (and is preferred for recent arXiv
+        papers when it lists more). ``new``: a paper announced in the last days, whose HTML
+        version is asked first (the others rarely know it yet). ``[]`` when none is known;
+        ``Offline`` when the services cannot be reached (try again later)."""
         from ..references.sources import FetchFailed, fetch
 
         item = {"doi": paper.get("doi"), "archive_id": f"arXiv:{paper['arxiv']}" if paper.get("arxiv") else None}
@@ -57,6 +59,7 @@ class PluginServices:
                 email=s.get("contact_email"),
                 openalex_key=s.get("openalex_api_key"),
                 s2_key=s.get("semantic_scholar_api_key"),
+                fresh=new,
             )
         except FetchFailed as e:
             raise Offline(str(e)) from e

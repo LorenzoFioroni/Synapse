@@ -108,19 +108,27 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     itemActions: {
       register: (spec) => {
         const id = full(spec.id);
+        const fits = (items: Item[]) => !!spec.outside || !items.some((i) => i._outside);
         const action = {
-          id, title: spec.title, icon: spec.icon, source: info.name, owner: pid,
-          when: spec.when ? (items: Item[]) => !!guarded(info, `action ${spec.id}`, spec.when!)(copy(items) as PluginItem[]) : undefined,
+          id, title: spec.title, icon: spec.icon, source: info.name, owner: pid, outside: !!spec.outside,
+          when: (items: Item[]) => fits(items) && (!spec.when || !!guarded(info, `action ${spec.id}`, spec.when)(copy(items) as PluginItem[])),
           run: (items: Item[]) => guarded(info, `action ${spec.id}`, spec.run)(copy(items) as PluginItem[]),
         };
         const offAction = itemActions.register(action);
         // also in the command palette, for the selection
         const offCommand = commands.register({
           id: `${id}#selection`, title: spec.title, source: info.name, owner: pid,
-          when: () => { const items = selectedItems(); return items.length > 0 && (!action.when || action.when(items)); },
+          when: () => { const items = selectedItems(); return items.length > 0 && action.when(items); },
           run: () => action.run(selectedItems()),
         });
         return keep(() => { offAction(); offCommand(); });
+      },
+    },
+    sources: {
+      open: (sourceId) => emit('open-view', `source:${full(sourceId)}`),
+      refresh: async () => {
+        await syncSources();
+        if (state.view.startsWith(`source:${pid}.`)) await A.loadItems();
       },
     },
     notify: (message, options = {}) => {

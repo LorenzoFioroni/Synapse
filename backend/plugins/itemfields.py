@@ -101,12 +101,15 @@ class PluginFields:
         row = pick(self._store().rows(self._pid, name), keys)
         return row["value"] if row else None
 
-    def clear(self, name: str | None = None) -> int:
-        """Forget the stored values of one field (or of all of this plugin's)."""
+    def clear(self, name: str | None = None, papers=None) -> int:
+        """Forget the stored values of one field (or of all of this plugin's); with ``papers``
+        (refs as for ``set``), only theirs: papers that left a list, say."""
         if name:
             self._def(name)
-        n = self._store().delete(self._pid, name)
-        self._changed()
+        keys = None if papers is None else [self.key(r) for r in papers]
+        n = self._store().delete(self._pid, name, keys)
+        if n:
+            self._changed()
         return n
 
 

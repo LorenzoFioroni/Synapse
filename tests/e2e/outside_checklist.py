@@ -33,6 +33,7 @@ BASE = f"http://127.0.0.1:{PORT}"
 DATA = Path(tempfile.mkdtemp(prefix="zc-outside-e2e-"))
 SHOTS = os.environ.get("SHOTS")
 results = []
+mod = "Meta" if sys.platform == "darwin" else "Control"
 
 PLUGIN = """
 from backend.plugins import Plugin
@@ -53,6 +54,27 @@ def activate(plugin: Plugin):
         store.update(request.get_json())
         plugin.refresh_sources()
         return {}
+
+    @plugin.route("/drop", methods=["POST"])
+    def drop():
+        from flask import request
+        ids = set(request.get_json()["ids"])
+        keep = [p for p in store.get("papers", []) if f"x:arxiv:{p.get('arxiv')}" not in ids and f"x:doi:{p.get('doi')}" not in ids]
+        store.set("papers", keep)
+        plugin.refresh_sources()
+        return {}
+"""
+
+FRONTEND = """
+export function activate(p) {
+  p.itemActions.register({
+    id: 'drop', title: 'Drop From the List', outside: true,
+    when: (items) => items.every((i) => i._outside),
+    run: async (items) => { await p.backend.post('/drop', { ids: items.map((i) => i.id) }); await p.sources.refresh(); },
+  });
+  p.itemActions.register({ id: 'lib', title: 'Only For Library Items', run: () => {} });
+  p.commands.register({ id: 'open', title: 'Open the Demo List', run: () => p.sources.open('today') });
+}
 """
 
 
@@ -101,11 +123,13 @@ async def main():
                 "version": "0.1",
                 "api": "^1.0",
                 "backend": "p.py",
+                "frontend": "main.js",
                 "permissions": {"library": ["read"]},
             }
         )
     )
     (folder / "p.py").write_text(PLUGIN)
+    (folder / "main.js").write_text(FRONTEND)
     srv = subprocess.Popen(
         [sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", str(DATA)],
         cwd=APP,
@@ -238,6 +262,11 @@ async def main():
                 menu,
             )
             check("and nothing that needs a library item", "Move Item to Trash" not in menu and "Edit Tags" not in menu)
+            check(
+                "a plugin's action for outside papers is there, the others are not",
+                "Drop From the List" in menu and "Only For Library Items" not in menu,
+                menu,
+            )
             await page.keyboard.press("Escape")
 
             # ---------------------------------------------------------- adding
@@ -302,6 +331,26 @@ async def main():
                 15,
             )
             check("a changed list is shown again by itself", ok)
+
+            # ---------------------------------------------------------- a plugin's frontend and its list
+            await page.click('.items-body .row[data-id="x:arxiv:2610.00004"] .c-title .t', button="right")
+            await page.click('.menu :text("Drop From the List")')
+            ok = await wait_for(
+                lambda: page.evaluate("!document.querySelector('.items-body .row[data-id=\"x:arxiv:2610.00004\"]')"), 2
+            )
+            check("its action changes the list, shown again at once", ok)
+            await page.click('#sidebar [data-act="open-notes"]')
+            await wait_for(lambda: page.evaluate("document.body.dataset.workspace === 'notes'"))
+            await page.keyboard.press(f"{mod}+Shift+KeyP")
+            await page.wait_for_selector(".palette-input")
+            await page.keyboard.type("demo list")
+            await page.keyboard.press("Enter")
+            ok = await wait_for(
+                lambda: page.evaluate(
+                    f"!document.body.dataset.workspace && document.querySelector('{ENTRY}').classList.contains('active')"
+                )
+            )
+            check("it can open its list from Notes", ok)
 
             # ---------------------------------------------------------- turned off
             api("/api/plugin-host/lists-demo/disable", "POST")

@@ -187,6 +187,7 @@ expects something else. To add an event, add it to `AppEvents` and to the table 
 | `open-identifier`, `clear-search` | none | `itemlist/empty.ts` | `main.ts` |
 | `set-search-mode` | `SearchMode` | `itemlist/empty.ts`, `settingsView.ts` | `main.ts` |
 | `sources` | none | `plugins/host.ts` (`syncSources`) | sidebar (the Plugins section) |
+| `open-view` | a view (`source:<id>`, `folder:<id>` …) | `plugins/host.ts` (`p.sources.open`) | `main.ts` (leaves Notes, Tasks, Settings or a page) |
 
 The events `main.ts` hears are how a view reaches code it must not import (opening Notes from the
 item pane, for example), which keeps the views free of import cycles.
@@ -197,7 +198,8 @@ Views call these for anything that changes the item list. Each one calls `api`, 
 and emits the events above; failures become a toast (`toastError`). The groups:
 
 - **The list.** `loadItems` (a sequence number drops answers that a newer request superseded; a
-  404 for a deleted folder falls back to the library), `setView`, `setSearch`, `select`.
+  404 for a deleted folder falls back to the library; when every selected item left the list, the
+  one after them is selected, as trashing does), `setView`, `setSearch`, `select`.
 - **Small updates without a reload.** `patchLocal` replaces one item; `refreshItems(ids)` fetches
   only those items, and reloads the list instead when the view is filtered, because then items
   may leave or join it.

@@ -24,12 +24,20 @@ def write_plugin(root: Path, pid: str, code: str | None = None, **manifest) -> P
 @pytest.fixture(autouse=True)
 def _no_bundled_plugins(monkeypatch, tmp_path):
     """The plugins that come with Synapse (plugins/) are left out, so each test sees only the ones it
-    installs; test_citation_counts.py brings its own back."""
+    installs; the tests of those plugins bring them back with the ``bundled`` fixture."""
     empty = tmp_path / "no-bundled-plugins"
     empty.mkdir()
     from backend.config import Config
 
     monkeypatch.setattr(Config, "bundled_plugins_dir", property(lambda self: empty))
+
+
+@pytest.fixture
+def bundled(monkeypatch):
+    """The plugins that come with Synapse (plugins/), for the tests of those plugins."""
+    from backend.config import APP_ROOT, Config
+
+    monkeypatch.setattr(Config, "bundled_plugins_dir", property(lambda self: APP_ROOT / "plugins"))
 
 
 @pytest.fixture

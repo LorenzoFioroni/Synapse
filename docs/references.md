@@ -212,7 +212,14 @@ address, 413 too large, 415 not a PDF, 502 for network trouble).
    (`raw`, without the `[12]` label), a DOI or arXiv id from its text or links (an arXiv DOI,
    `10.48550/arXiv.…`, counts as the arXiv id), the title from quotes or else the longest
    italic stretch, and the year. A paper without an HTML version (404) has no references here.
-   It goes through `arxiv_wait()` like every arXiv request. `python tools/arxiv_refs.py quant-ph`
+   It goes through `arxiv_wait()` like every arXiv request.
+
+   On announcement day the other services often know only part of a paper's references, or none
+   (measured on a day of quant-ph: Semantic Scholar had 13 of 119, 13 of 57, none of 478). So for
+   an arXiv id from this month or the last (`recent_arxiv`), the HTML list is asked even when
+   another service answered, and kept when it is longer. `fetch(item, fresh=True)` (a paper
+   announced in the last days, as arXiv Today asks) puts the HTML version first and asks the others
+   only when it has no list. `python tools/arxiv_refs.py quant-ph`
    measures, for a day's new papers, how many have references there and how many of those carry
    identifiers, next to what Semantic Scholar knows that day.
 

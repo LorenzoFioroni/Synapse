@@ -46,6 +46,8 @@ export interface ItemAction {
   icon?: string;
   source?: string;
   owner?: string;
+  /** Also for papers from a plugin's list that are not in the library. */
+  outside?: boolean;
   when?: (items: Item[]) => boolean;
   run: (items: Item[]) => unknown;
 }

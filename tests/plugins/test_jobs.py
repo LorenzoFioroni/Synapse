@@ -83,6 +83,15 @@ def test_queue_dedupes_by_key(tmp_path):
     assert [json.loads(j["args"]) for j in q.pending()] == [["again"], ["d"], ["c"]]  # c tried again later
 
 
+def test_a_waiting_key_is_brought_forward(tmp_path):
+    q = JobQueue(tmp_path)
+    assert q.add("score", [], key="score", delay=3600)
+    assert not q.add("score", [], key="score", delay=7200)  # later: left as it is
+    assert q.next_due() is None
+    assert not q.add("score", [], key="score")  # sooner: it runs now
+    assert q.next_due() is not None and len(q.pending()) == 1
+
+
 def runner(tmp_path, handlers, schedules=(), faults=None):
     faults = [] if faults is None else faults
     return Runner(

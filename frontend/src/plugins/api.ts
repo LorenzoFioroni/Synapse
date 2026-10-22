@@ -64,6 +64,9 @@ export interface ItemActionSpec {
   /** In the item menu (right-click) and in the command palette, for the selected items. */
   title: string;
   icon?: string;
+  /** Also offered for papers from a list that are not in the library (`item._outside`); without
+      it, the action is left out whenever such a paper is selected. */
+  outside?: boolean;
   when?: (items: PluginItem[]) => boolean;
   run: (items: PluginItem[]) => unknown;
 }
@@ -97,6 +100,14 @@ export interface PluginContext {
   };
   itemPane: { register(spec: ItemSectionSpec): Dispose };
   itemActions: { register(spec: ItemActionSpec): Dispose };
+  /** The plugin's lists of papers (`@plugin.item_source` in its backend). */
+  sources: {
+    /** Show the list `sourceId` (leaving Notes, Tasks or a page). */
+    open(sourceId: string): void;
+    /** Ask for the lists again now (their badges, and the one shown), after the plugin changed
+        them from this window: other windows hear it through the change feed. */
+    refresh(): Promise<void>;
+  };
 
   /** A notification at the bottom of the window. */
   notify(message: string, options?: NotifyOptions): void;

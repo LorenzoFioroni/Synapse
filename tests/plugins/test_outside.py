@@ -351,6 +351,31 @@ def test_arxiv_html_is_the_last_source(monkeypatch):
     assert not any(c.startswith("html") for c in calls)
 
 
+def test_recent_arxiv_papers_get_the_longer_list(monkeypatch):
+    from datetime import date
+
+    assert ref_sources.recent_arxiv("2610.01234", date(2026, 10, 22))
+    assert ref_sources.recent_arxiv("2609.01234", date(2026, 10, 22))
+    assert ref_sources.recent_arxiv("2612.01234", date(2027, 1, 5))
+    assert not ref_sources.recent_arxiv("2608.01234", date(2026, 10, 22))
+    assert not ref_sources.recent_arxiv("quant-ph/0101001", date(2026, 10, 22))
+    monkeypatch.setattr(ref_sources, "recent_arxiv", lambda aid, today=None: aid.startswith("26"))
+    s2 = [{"doi": "10.1/a"}]
+    html = [{"doi": f"10.1/{i}"} for i in range(5)]
+    calls = []
+    monkeypatch.setattr(ref_sources, "semantic_scholar", lambda *a, **k: calls.append("s2") or s2)
+    monkeypatch.setattr(arxiv_html, "fetch", lambda aid: calls.append("html") or html)
+    # a recent paper: the HTML list is longer, so it wins
+    name, refs = ref_sources.fetch({"archive_id": "arXiv:2610.00003"})
+    assert name == "arxiv-html" and len(refs) == 5 and calls == ["s2", "html"]
+    # an older one: the first list is kept
+    calls.clear()
+    assert ref_sources.fetch({"archive_id": "arXiv:2101.00003"})[0] == "semanticscholar" and calls == ["s2"]
+    # fresh: the HTML version first, alone when it has a list
+    calls.clear()
+    assert ref_sources.fetch({"archive_id": "arXiv:2610.00003"}, fresh=True)[0] == "arxiv-html" and calls == ["html"]
+
+
 # ------------------------------------------------------------------ the example
 def test_the_suggested_reading_example(client, svc, no_web):
     shutil.copytree(EXAMPLE, svc.config.plugins_dir / "suggested-reading", ignore=shutil.ignore_patterns("__pycache__"))

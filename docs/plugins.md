@@ -52,6 +52,20 @@ on. A plugin in `data/plugins/` with the same id replaces the one that comes wit
   are added; counts are refreshed weekly. Papers with a DOI are asked of OpenAlex first, arXiv
   preprints of Semantic Scholar first (it counts a preprint and its journal version together); its
   setting turns Semantic Scholar off. It uses the keys in Settings → Online Services, if any.
+- **arXiv Today** (`plugins/arxiv-today`): the papers announced on arXiv in the categories you
+  choose in its settings, as two lists under Plugins: **arXiv Today** (the latest announcement,
+  with a badge of papers not looked at yet) and **arXiv: Past Days** (every day kept, 30 by
+  default). They are ranked by how they connect to your library (`plugin.services.connections`),
+  with the reasons in the item pane; each paper's reference list is read from its HTML version on
+  arXiv in the background (one request every 3 seconds), so papers citing yours rise to the top
+  as the morning goes on. A notification says "12 new papers, 3 connected to your library" once a
+  day is scored. Right-click a paper to **Dismiss** it (⌘⌥D / Ctrl+Alt+D) or open its PDF on
+  arXiv; ⌘⌥T / Ctrl+Alt+T shows the list, and the palette has **arXiv: Fetch Today's Papers
+  Now**. Its fields *arXiv Score*, *Announced* and *arXiv Categories* are columns and filters
+  (`categories:quant-ph`, `score:>3`) and stay with a paper you add. Claude can ask for a day's
+  papers with its tool `arxiv-today__today`. The feed (rss.arxiv.org) is read after each
+  announcement (Monday to Friday, 00:30 US Eastern), at the next start when the computer was off,
+  and when the categories change. Cross-lists are in by default, replacements not.
 
 ## Writing a plugin
 
@@ -174,10 +188,10 @@ def activate(plugin: Plugin) -> None:
 | `plugin.on_unload(fn)` | Calls `fn()` when the plugin is turned off (to stop a thread it started, say). |
 | `@plugin.schedule(name, cron=…, every=…, tz=None, catch_up=True)` | Runs the function on a cron rule or every so often, in the web app (see [Background work](#background-work)). Also `plugin.schedule(name, fn, …)`. |
 | `@plugin.job(name, retries=3)` / `plugin.jobs.enqueue(name, *args, key=None, delay=0)` | A job handler, and queuing work for it; `plugin.jobs.pending()` lists what waits. |
-| `plugin.fields` | `declare(name, type=…, label=…, refresher=…, refresh=…)`, `set(paper, name, value)`, `set_many(name, {paper: value})`, `get(paper, name)`, `key(paper)`, `clear(name)`: values attached to papers (see [Per-item fields](#per-item-fields)). |
+| `plugin.fields` | `declare(name, type=…, label=…, refresher=…, refresh=…)`, `set(paper, name, value)`, `set_many(name, {paper: value})`, `get(paper, name)`, `key(paper)`, `clear(name, papers=None)`: values attached to papers (see [Per-item fields](#per-item-fields)). |
 | `plugin.http` | `get(url, params=…)`, `post(url, json=…)`, `request(method, url, …)`, `limit(host, seconds)`: the web, within the manifest's `network` (see [Reaching the web](#reaching-the-web)). |
 | `@plugin.item_source(id, title=…, icon="list", description="", badge=None)`, `plugin.refresh_sources()` | A list of papers in the sidebar, and saying it changed (see [Papers outside the library](#papers-outside-the-library)). |
-| `plugin.services` | `lookup(identifier)`, `references(paper)`, `match(refs)`, `connections(papers, refs=None, folders=None)`: Synapse's own lookups, reference lists and scoring. |
+| `plugin.services` | `lookup(identifier)`, `references(paper, new=False)`, `match(refs)`, `connections(papers, refs=None, folders=None)`: Synapse's own lookups, reference lists and scoring. |
 | `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). |
 
 Raise **`PluginError("…")`** for a problem the user or Claude should read: a route answers 400 with
@@ -293,7 +307,7 @@ with the contact address and keys from Settings), not through `plugin.http`, so 
 | Service | What it returns |
 |---|---|
 | `lookup(identifier)` | A paper's metadata by DOI, arXiv id (`arXiv:2610.01234`) or ISBN, as a paper in the shape above. `PluginError` when nothing is found, `Offline` without network. |
-| `references(paper)` | The works a paper (`{"doi"}` or `{"arxiv"}`) cites: `[{doi, arxiv_id, title, year, authors, venue, raw}]`, from Semantic Scholar, OpenAlex or Crossref, else from **arXiv's HTML version**, which has them on the day a paper is announced (see [references](references.md)). `[]` when none is known, `Offline` when the services cannot be reached. |
+| `references(paper, new=False)` | The works a paper (`{"doi"}` or `{"arxiv"}`) cites: `[{doi, arxiv_id, title, year, authors, venue, raw}]`, from Semantic Scholar, OpenAlex or Crossref, else from **arXiv's HTML version**, which has them on the day a paper is announced; for arXiv papers of this month or the last, the HTML list wins when it is longer (see [references](references.md)). `new=True`, for a paper announced in the last days, asks the HTML version first and the others only when it has no list. `[]` when none is known, `Offline` when the services cannot be reached. |
 | `match(refs)` | For each reference, the id of the library item it is (by DOI, arXiv id, or title and year), or `None`. |
 | `connections(papers, refs=None, folders=None)` | For each paper, `{"score", "reasons"}`: the library papers it cites (`refs`: `{paper key: its references}`), those whose reference lists cite it, shared authors (family name and first initial) and how close its title and abstract are to the library's (TF-IDF). `folders`: only papers in these folders count. Sort by `score`; show `reasons`. |
 
@@ -326,7 +340,9 @@ def references(arxiv_id: str) -> None:
   last ran is kept in the plugin's data folder (`.schedules.json`).
 - **Jobs** are kept in a small database in the plugin's data folder (`.jobs.sqlite`), so they
   survive a restart, and the MCP server can queue work that the web app then does. Arguments are
-  JSON values. With a `key`, a job is not queued again while one with that key waits. A job that
+  JSON values. With a `key`, a job is not queued again while one with that key waits; that one is
+  brought forward when the new one would run sooner (`enqueue("score", key="score", delay=30)`
+  while lists come in, then `delay=0` after the last). A job that
   fails is tried again after 30 s, 2 min and 10 min (`retries` times); failing to reach the web
   (`HttpError`) does not count against the plugin, any other error does.
 - Settings → Plugins → More lists a running plugin's schedules and how many jobs wait.
@@ -397,7 +413,8 @@ export function activate(p) {
 | `p.pages.register({id, title, icon, mount})` | A page: an entry under **Plugins** in the sidebar; when chosen, the page takes the place of the library (as Tasks does) and `mount(el)` draws it. `p.pages.setBadge(id, value)` puts a count on the entry, `p.pages.open(id)` shows it. |
 | `p.commands.register({id, title, key, when, run})` | A command in the palette, named after the plugin. `key` like `Mod-Alt-r` (Mod: ⌘ on a Mac, Ctrl elsewhere) needs Mod or Alt and cannot be one of Synapse's keys; a key that cannot be used is left out (the console says why). |
 | `p.itemPane.register({id, title, when, mount})` | A section at the end of the item pane, for the items `when(item)` accepts; `mount(el, item)` runs once the selection rests. Papers from a list (`item._outside`) get sections too. |
-| `p.itemActions.register({id, title, icon, when, run})` | An entry in the item menu for the selected items, also in the palette. |
+| `p.itemActions.register({id, title, icon, outside, when, run})` | An entry in the item menu for the selected items, also in the palette. With `outside: true` it is also offered for papers from a list that are not in the library (`item._outside`); without it, it is left out while one is selected. |
+| `p.sources.open(id)`, `p.sources.refresh()` | Show one of the plugin's lists (leaving Notes, Tasks or a page); ask for the lists again at once after changing them from this window (other windows hear it through the change feed). |
 | `p.notify(message, {type, action, timeout})` | A notification, named after the plugin. |
 | `p.backend.get/post/put/delete(path, …)` | The plugin's own routes (`/api/plugins/<id><path>`), with the page's sign-in; resolves to the JSON answer. |
 | `p.library.selected()`, `.item(id)`, `.show(id)` | The selected items, one whole item, showing an item in the library. |
@@ -522,6 +539,8 @@ in `tests/test_layers.py`, `tests/js/extend.test.mjs` (registries, keys, the pal
 `test_outside.py` (outside records, lists, adding, the services, arXiv's HTML references, the
 Suggested Reading example), `test_citation_counts.py` (the Citation Counts plugin against faked
 OpenAlex and Semantic Scholar answers, the services' keys, `LATER`; `conftest.py` leaves the
-plugins in `plugins/` out of the other tests), and the browser checklists `plugins` (Settings → Plugins and the
+plugins in `plugins/` out of the other tests, the `bundled` fixture brings them back),
+`test_arxiv_today.py` (arXiv Today with a faked feed and reference lists: the listing, scoring,
+both lists, dismissing, the news, Claude's tool, forgetting old days, the RSS parser), and the browser checklists `plugins` (Settings → Plugins and the
 example plugin's page, command, fields, section and action) and `outside` (a plugin's list in the
 sidebar and the list, sorting, the pane, adding, Undo, a folder, changes, turning it off).

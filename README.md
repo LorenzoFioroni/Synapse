@@ -307,8 +307,14 @@ are under **More**; a plugin that keeps failing is turned off and Settings says 
 the app from working, start it with `python server.py --safe-mode` (no plugin runs) and turn it
 off.
 
-**Citation Counts** comes with Synapse (off until you turn it on): it adds a *Citations* column
-from OpenAlex and Semantic Scholar, refreshed weekly, and lets you search for `citations:>100`.
+Two plugins come with Synapse, off until you turn them on:
+
+- **Citation Counts** adds a *Citations* column from OpenAlex and Semantic Scholar, refreshed
+  weekly, and lets you search for `citations:>100`.
+- **arXiv Today** lists each morning's arXiv papers in the categories you choose, ranked by how
+  they connect to your library (papers of yours they cite, shared authors, similar topics), with
+  a notification ("12 new papers, 3 connected to your library"), a **+** to add a paper and
+  Dismiss for the rest. Earlier days stay for a month, and Claude can ask for them.
 
 A plugin can offer a **list of papers** that are not in your library yet (today's arXiv papers,
 say), under **Plugins** in the sidebar. It shows like a folder, ranked by the plugin (often by how
@@ -412,7 +418,7 @@ For how the code fits together and where new code goes, see
 ├── browser_extension/     Chrome extension (Manifest V3) – load unpacked
 ├── tools/                 build scripts for the vendored libraries and the macOS icon
 ├── tests/                 pytest suite, js/ unit tests, e2e/ browser checklists
-├── plugins/               plugins that come with Synapse, off until turned on (Citation Counts)
+├── plugins/               plugins that come with Synapse, off until turned on (Citation Counts, arXiv Today)
 ├── docs/                  technical documentation
 └── data/                  your library (git-ignored)
 ```

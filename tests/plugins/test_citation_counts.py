@@ -69,11 +69,8 @@ class Web:
 
 
 @pytest.fixture(autouse=True)
-def _bundled(monkeypatch):
-    """This plugin comes with Synapse: in plugins/ (conftest.py leaves those out for other tests)."""
-    from backend.config import APP_ROOT, Config
-
-    monkeypatch.setattr(Config, "bundled_plugins_dir", property(lambda self: APP_ROOT / "plugins"))
+def _bundled(bundled):
+    """This plugin comes with Synapse (plugins/)."""
 
 
 @pytest.fixture

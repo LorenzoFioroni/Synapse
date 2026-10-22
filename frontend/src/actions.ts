@@ -34,7 +34,16 @@ export async function loadItems({ keepSelection = true } = {}): Promise<void> {
     emit('sidebar');
     if (keepSelection) {
       const ids = new Set(state.items.map((i) => i.id));
-      state.selection = new Set([...state.selection].filter((id) => ids.has(id)));
+      const before = [...state.selection];
+      state.selection = new Set(before.filter((id) => ids.has(id)));
+      if (before.length && !state.selection.size) {
+        // the selected items left the list (dismissed from a plugin's list, trashed elsewhere):
+        // select the one after them, as trashing here does
+        const order = state.order || [];
+        const last = Math.max(...before.map((id) => order.indexOf(id)));
+        const next = last >= 0 ? order.slice(last + 1).find((id) => ids.has(id)) || order.slice(0, last).reverse().find((id) => ids.has(id)) : undefined;
+        if (next) { state.selection.add(next); state.anchor = next; state.cursor = next; }
+      }
     } else state.selection.clear();
     emit('items');
     emit('selection');

@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from datetime import date
 
 import requests
 
@@ -196,9 +197,31 @@ def crossref(doi: str | None, *, email: str = "") -> list[dict]:
     return out
 
 
-def fetch(item: dict, *, email: str = "", openalex_key: str = "", s2_key: str = "") -> tuple[str, list[dict]]:
+def recent_arxiv(arxiv_id: str | None, today: date | None = None) -> bool:
+    """An arXiv id from this month or the last (new-style ids start with the year and month)."""
+    m = re.match(r"^(\d{2})(\d{2})\.\d{4,5}", arxiv_id or "")
+    if not m:
+        return False
+    today = today or date.today()
+    months = (today.year - 2000 - int(m.group(1))) * 12 + today.month - int(m.group(2))
+    return 0 <= months <= 1
+
+
+def _usable(refs: list[dict]) -> list[dict]:
+    refs = [_clean_ref(r) for r in refs]
+    return [r for r in refs if any(r[k] for k in ("doi", "arxiv_id", "openalex_id", "s2_id", "title", "raw"))]
+
+
+def fetch(
+    item: dict, *, email: str = "", openalex_key: str = "", s2_key: str = "", fresh: bool = False
+) -> tuple[str, list[dict]]:
     """The reference list of ``item``: (source name, references). Raises LookupFailed when the
-    item has no DOI or arXiv id; returns ("none", []) when no source knows its references."""
+    item has no DOI or arXiv id; returns ("none", []) when no source knows its references.
+
+    The other services often know only part of a new arXiv paper's references in its first days
+    (or none), while its HTML version has them all. So for an arXiv paper from this month or the
+    last, the HTML list is asked too and kept when it is longer; with ``fresh`` (a paper announced
+    in the last days) it is asked first, and the others only when it has none."""
     doi, arx = identifiers(item)
     if not doi and not arx:
         raise LookupFailed("This item has no DOI or arXiv ID to look up its references with.")
@@ -211,20 +234,27 @@ def fetch(item: dict, *, email: str = "", openalex_key: str = "", s2_key: str = 
         ("crossref", lambda: crossref(doi, email=email)),
     ]
     if arx:
-        # arXiv's HTML version lists the references from the day a paper is announced, before the
-        # other services know them
-        attempts.append(("arxiv-html", lambda: arxiv_html.fetch(arx)))
+        html = ("arxiv-html", lambda: arxiv_html.fetch(arx))
+        attempts = [html, *attempts] if fresh else [*attempts, html]
     errors = []
     for name, run in attempts:
         try:
-            refs = [_clean_ref(r) for r in run()]
+            refs = _usable(run())
         except Exception as e:  # a failing service must not hide the next one
             log.info("References from %s failed: %s", name, e)
             errors.append(f"{name}: {e}")
             continue
-        refs = [r for r in refs if any(r[k] for k in ("doi", "arxiv_id", "openalex_id", "s2_id", "title", "raw"))]
-        if refs:
-            return name, refs
+        if not refs:
+            continue
+        if arx and name != "arxiv-html" and not fresh and recent_arxiv(arx):
+            try:
+                longer = _usable(arxiv_html.fetch(arx))
+            except Exception as e:  # the list in hand is still good
+                log.info("References from arxiv-html failed: %s", e)
+                longer = []
+            if len(longer) > len(refs):
+                return "arxiv-html", longer
+        return name, refs
     if errors:  # an answer of "no references" only counts when every service answered
         raise FetchFailed("Could not get the references (" + "; ".join(errors) + ").")
     return "none", []

@@ -1,0 +1,69 @@
+{
+  "id": "arxiv-today",
+  "name": "arXiv Today",
+  "version": "1.0.0",
+  "api": "^1.0",
+  "author": "Synapse",
+  "description": "Each morning, the papers announced on arXiv in your categories, ranked by how they connect to your library (the papers they cite, shared authors, similar topics), with a + to add one. Earlier days stay for a month, and Claude can ask for them too.",
+  "backend": "backend",
+  "frontend": "frontend/main.js",
+  "permissions": {
+    "network": ["rss.arxiv.org"],
+    "library": ["read"],
+    "mcp": true
+  },
+  "settings": [
+    {
+      "key": "categories",
+      "type": "multi",
+      "label": "Categories",
+      "description": "arXiv categories or archives, comma-separated: quant-ph, cond-mat.str-el, hep-th, cs.LG …",
+      "default": []
+    },
+    {
+      "key": "cross_lists",
+      "type": "bool",
+      "label": "Include cross-lists",
+      "description": "Papers from other categories that are also listed in yours.",
+      "default": true
+    },
+    {
+      "key": "replacements",
+      "type": "bool",
+      "label": "Include replacements",
+      "description": "New versions of earlier papers.",
+      "default": false
+    },
+    {
+      "key": "references",
+      "type": "bool",
+      "label": "Read reference lists",
+      "description": "From each paper's HTML version on arXiv, to see which of your papers it cites (one request every 3 seconds, in the background).",
+      "default": true
+    },
+    {
+      "key": "min_score",
+      "type": "float",
+      "label": "Connected from score",
+      "description": "Papers scoring at least this count as connected to your library in the morning's notification (citing one of your papers scores 3, sharing an author with one 2).",
+      "default": 3,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "key": "notify",
+      "type": "bool",
+      "label": "Tell me when new papers arrive",
+      "default": true
+    },
+    {
+      "key": "keep_days",
+      "type": "int",
+      "label": "Keep for",
+      "description": "Days after which a listing is forgotten (papers you added stay in your library).",
+      "default": 30,
+      "min": 1,
+      "max": 365
+    }
+  ]
+}

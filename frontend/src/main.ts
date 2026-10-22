@@ -80,6 +80,7 @@ async function boot() {
   on('open-note', ({ path, line }) => { showHome(); openNotes(path, line ?? null); });
   on('show-graph', (focus) => { if (settingsOpen()) closeSettings(); openNotesGraph(focus); });
   on('show-item', (id) => showItem(id));
+  on('open-view', (view) => openView(view));
   on('workspace', paintWorkspace);
   // Back/Forward move between notes and the library view you came from.
   initNav({ ws: 'library', view: state.view, sel: [] }, navigate);
@@ -137,6 +138,18 @@ async function showItem(id: string): Promise<void> {
     A.select([id], { anchor: id, cursor: id });
     focusList();
   }
+}
+
+/** Show a view of the library (a folder, a plugin's list …), leaving Notes, Tasks, Settings or a page. */
+async function openView(view: string): Promise<void> {
+  showHome();
+  if (settingsOpen()) closeSettings();
+  if (notesOpen()) await closeNotes();
+  closeTasks();
+  closePage();
+  if (state.query) clearSearch();
+  A.setView(view);
+  focusList();
 }
 
 /** Back/Forward: go to a note or to the library view and selection stored in the history entry. */
