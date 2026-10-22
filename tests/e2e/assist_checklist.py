@@ -92,8 +92,9 @@ async def main():
         s.post(
             BASE + "/api/notes/note", json={"path": "other.md", "title": "Other", "text": "# Other\n"}
         ).raise_for_status()
-        # on, but no Ollama at the address
-        s.put(BASE + "/api/settings", json={"notes_ai_complete": True, "notes_ai_url": dead}).raise_for_status()
+        # the plugin on, but no Ollama at the address
+        s.post(BASE + "/api/plugin-host/autocompletion/enable").raise_for_status()
+        s.put(BASE + "/api/plugin-host/autocompletion/settings", json={"url": dead}).raise_for_status()
 
         async with async_playwright() as pw:
             b = await pw.chromium.launch()
@@ -103,7 +104,10 @@ async def main():
             page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
             completes = []
             page.on(
-                "request", lambda r: completes.append(r.post_data) if r.url.endswith("/api/assist/complete") else None
+                "request",
+                lambda r: (
+                    completes.append(r.post_data) if r.url.endswith("/api/plugins/autocompletion/complete") else None
+                ),
             )
 
             await page.goto(BASE + "/")
@@ -120,7 +124,7 @@ async def main():
             await page.keyboard.type(" thing", delay=30)
             await page.wait_for_timeout(1200)
             notices = await page.evaluate(
-                "[...document.querySelectorAll('.toast')].filter(t => t.textContent.includes('Autocompletion is on')).length"
+                "[...document.querySelectorAll('.toast')].filter(t => t.textContent.includes('cannot make suggestions')).length"
             )
             check("Ollama missing: one notice says why", notices == 1, f"({notices})")
             check("Ollama missing: no suggestion is asked for", not completes, f"({len(completes)})")
@@ -128,8 +132,8 @@ async def main():
 
             # ---- Settings → Autocompletion
             await page.keyboard.press(f"{MOD}+,")
-            await page.wait_for_selector("#set-assist")
-            await page.click('[data-nav="assist"]')
+            await page.wait_for_selector("#set-x-autocompletion-ollama")
+            await page.click('[data-nav="x-autocompletion-ollama"]')
             ok = await wait_for(page, "document.querySelector('[data-ai-state]').textContent.includes('not running')")
             steps = await page.evaluate("document.querySelector('.ai-steps')?.textContent || ''")
             check(
@@ -138,7 +142,9 @@ async def main():
             await page.fill("[data-ai-url]", "http://192.168.1.5:11434")
             await page.press("[data-ai-url]", "Enter")
             await page.locator("[data-ai-url]").blur()
-            refused = await wait_for(page, "!document.querySelector('[data-ai-error]').hidden")
+            refused = await wait_for(
+                page, "document.querySelector('[data-ai-state]').textContent.includes('only a model on this computer')"
+            )
             check("Settings: an address on another computer is refused", refused)
 
             await page.fill("[data-ai-url]", fake.url.replace("http://", ""))
@@ -148,8 +154,14 @@ async def main():
             )
             installed = await page.evaluate("document.querySelector('[data-ai-installed]').textContent")
             check("Settings: model not installed, installed models listed", missing and "llama3.2:3b" in installed)
-            stored = s.get(BASE + "/api/settings").json()["settings"]["notes_ai_url"]
-            check("Settings: the address is stored cleaned", stored == fake.url, stored)
+            values = next(p for p in s.get(BASE + "/api/plugin-host").json()["plugins"] if p["id"] == "autocompletion")[
+                "values"
+            ]
+            check(
+                "Settings: the address is the plugin's setting",
+                values["url"] == fake.url.replace("http://", ""),
+                values["url"],
+            )
 
             fake.models.append("qwen2.5-coder:1.5b")
             await page.click("[data-ai-check]")
@@ -273,7 +285,7 @@ async def main():
             check("Model removed: requests stop", len(fake.generated()) == n and await ghost(page) == "")
 
             # ---- off
-            s.put(BASE + "/api/settings", json={"notes_ai_complete": False}).raise_for_status()
+            s.post(BASE + "/api/plugin-host/autocompletion/disable").raise_for_status()
             fake.models.append("qwen2.5-coder:1.5b")
             await page.reload()
             await page.wait_for_selector(".cm-content")

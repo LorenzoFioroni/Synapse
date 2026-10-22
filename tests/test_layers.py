@@ -5,6 +5,7 @@ the layering in docs/architecture.md and ALLOWED below change together, on purpo
 """
 
 import ast
+import json
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parent.parent / "backend"
@@ -25,7 +26,6 @@ ALLOWED = {
     "mcp": BASE | {"library", "notes", "pdf", "references", "tasks"},
     "backup": BASE,
     "access": BASE,
-    "assist": BASE,
     "plugins": BASE | {"library", "online", "references"},
     "desktop": set(),
     # the composition layer: wires and exposes everything
@@ -84,10 +84,18 @@ def test_imports_follow_the_layers():
 
 def test_plugins_use_only_the_plugin_api():
     """Plugins (bundled in plugins/, examples in docs/examples/) import from Synapse only
-    backend.plugins: the rest of backend may change between versions (docs/plugins.md)."""
+    backend.plugins: the rest of backend may change between versions (docs/plugins.md). Core
+    plugins ("core": true in their manifest) are part of Synapse and may use its modules."""
     root = BACKEND.parent
+    core = {
+        m.parent
+        for m in (root / "plugins").glob("*/manifest.json")
+        if json.loads(m.read_text(encoding="utf-8")).get("core") is True
+    }
     wrong = []
     for path in sorted([*(root / "plugins").rglob("*.py"), *(root / "docs" / "examples").rglob("*.py")]):
+        if any(c in path.parents for c in core):
+            continue
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             names = []
             if isinstance(node, ast.ImportFrom) and not node.level:

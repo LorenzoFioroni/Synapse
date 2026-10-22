@@ -149,10 +149,10 @@ class PluginHost:
             except OSError:
                 pass
         self.scan()
+        self._turn_on_core()
         self._state_seen = self.state.stamp()
         if self.safe_mode:
-            log.warning("Safe mode: plugins are off")
-            return
+            log.warning("Safe mode: plugins are off (except the core plugins, which are part of Synapse)")
         self._sync()
         if role == "app" and announce:
             self.emit("app.started")
@@ -195,8 +195,46 @@ class PluginHost:
             if not self.safe_mode:
                 self._sync()
 
+    def is_core(self, pid: str) -> bool:
+        """A core plugin: part of Synapse (its plugins/ folder) and marked so in its manifest."""
+        entry = self._entries.get(pid)
+        return bool(entry and entry.source == "bundled" and entry.manifest and entry.manifest.core)
+
+    def _turn_on_core(self) -> None:
+        """Core plugins nobody has turned on or off yet start as their manifest says: on, or as
+        the Synapse setting that used to switch the feature was. Their settings take over the
+        values of the Synapse settings they replace."""
+        if not self.settings:
+            legacy = lambda key: None  # noqa: E731
+        else:
+            legacy = getattr(self.settings, "legacy", lambda key: None)
+        states = self.state.read()
+        for pid, entry in list(self._entries.items()):
+            if not self.is_core(pid) or "enabled" in states.get(pid, {}):
+                continue
+            man = entry.manifest
+            assert man is not None
+            on = man.enabled_by_default
+            if man.enabled_from_setting and legacy(man.enabled_from_setting) is not None:
+                on = bool(legacy(man.enabled_from_setting))
+            values: dict = {}
+            for s in man.settings:
+                old = legacy(s.from_setting) if s.from_setting else None
+                if old is not None:
+                    try:
+                        values[s.key] = s.clean(old)
+                    except ManifestError:
+                        pass
+            changes: dict = {"enabled": on}
+            if values:
+                changes["settings"] = {**(states.get(pid, {}).get("settings") or {}), **values}
+            self._update_state(pid, **changes)
+            log.info("Core plugin %s: %s", pid, "on" if on else "off")
+
     def _sync(self) -> None:
         on = {pid for pid, st in self.state.read().items() if st.get("enabled")}
+        if self.safe_mode:
+            on = {pid for pid in on if self.is_core(pid)}
         for pid in list(self._active):
             if pid not in on:
                 self._deactivate(pid)
@@ -242,6 +280,7 @@ class PluginHost:
                 self.fields.changed,
             ),
             sources_changed=lambda: self.sources_changed() if self.sources_changed else None,
+            tool_prefix=not self.is_core(pid),
         )
         act = Active(entry, plugin, Worker(pid, plog, lambda what, e: self.fault(pid, what, e)), handler=handler)
         act.started = datetime.now().isoformat(timespec="microseconds")
@@ -358,7 +397,7 @@ class PluginHost:
             raise PluginError(f"{entry.manifest.name} cannot be turned on: {why}")
         with self._lock:
             self._update_state(pid, enabled=True, failed=None, failed_at=None)
-            if not self.safe_mode and self.role and pid not in self._active:
+            if (not self.safe_mode or self.is_core(pid)) and self.role and pid not in self._active:
                 self._activate(entry)
         if self.changed:
             self.changed()
@@ -383,7 +422,7 @@ class PluginHost:
                 and entry.manifest
                 and not entry.problem
                 and not entry.manifest.compatible()
-                and not self.safe_mode
+                and (not self.safe_mode or self.is_core(pid))
                 and self.role
             ):
                 self._activate(entry)
@@ -439,7 +478,9 @@ class PluginHost:
     def info(self, pid: str) -> dict:
         """What Settings → Plugins shows about one plugin (report.describe)."""
         entry = self._entries.get(pid) or self._entry(pid)
-        return describe(entry, self._state_of(pid), self._active.get(pid), self.values(pid), self.safe_mode)
+        return describe(
+            entry, self._state_of(pid), self._active.get(pid), self.values(pid), self.safe_mode, self.is_core(pid)
+        )
 
     def listing(self) -> list[dict]:
         self.refresh()

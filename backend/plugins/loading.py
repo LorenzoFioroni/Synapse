@@ -91,7 +91,9 @@ def asset_path(man: Manifest, bundle: Path | None, rel: str) -> Path | None:
         return bundle
     folder = man.folder.resolve()
     wanted = (folder / rel).resolve()
-    allowed = [((folder / man.frontend).resolve().parent, True)] if man.frontend else []
+    # a core plugin's frontend is part of the app's own bundle: nothing of its folder is served
+    own = man.frontend if man.frontend and not man.frontend.startswith("core:") else None
+    allowed = [((folder / own).resolve().parent, True)] if own else []
     if man.styles:
         allowed.append(((folder / man.styles).resolve(), False))
     for root, is_dir in allowed:

@@ -1,4 +1,4 @@
-"""Autocompletion for the notes editor: the component behind /api/assist.
+"""Autocompletion for the notes editor: the component behind the plugin's routes.
 
 Most computers have no Ollama, or not the chosen model, so nothing is asked of the model before
 `status` has found both. The status is remembered for a short while (shorter when something is
@@ -13,9 +13,8 @@ import threading
 import time
 from collections.abc import Callable
 
-from ..settings import SettingsStore
 from . import prompt
-from .ollama import GENERATE_TIMEOUT, Ollama, Unavailable, same_model
+from .ollama import GENERATE_TIMEOUT, Ollama, Unavailable, local_url, same_model
 
 log = logging.getLogger(__name__)
 
@@ -25,8 +24,8 @@ WARM_EVERY = 300.0  # at most one "load the model now" request per this many sec
 
 
 class Completer:
-    def __init__(self, settings: SettingsStore, client: Callable[[str], Ollama] = Ollama):
-        self.settings = settings
+    def __init__(self, values: Callable[[], dict], client: Callable[[str], Ollama] = Ollama):
+        self.values = values  # the plugin's settings: model, length, url
         self._client = client
         self._run = threading.Lock()  # one generation at a time
         self._lock = threading.Lock()  # guards the fields below
@@ -37,13 +36,13 @@ class Completer:
         self._warmed_at = 0.0
 
     def _config(self) -> tuple[bool, str, str, str]:
-        s = self.settings
-        return (
-            bool(s.get("notes_ai_complete")),
-            str(s.get("notes_ai_url")),
-            str(s.get("notes_ai_model")),
-            str(s.get("notes_ai_length")),
-        )
+        """(on, Ollama's address, the model, the length). The plugin running means it is on."""
+        v = self.values()
+        return True, str(v.get("url") or ""), str(v.get("model") or ""), str(v.get("length") or "line")
+
+    def forget(self) -> None:
+        """The settings changed: ask Ollama again before the next suggestion."""
+        self._forget_status()
 
     # ------------------------------------------------------------------ status
     def status(self, *, fresh: bool = False, warm: bool = False) -> dict:
@@ -72,8 +71,14 @@ class Completer:
             self._status = None
 
     def _probe(self, url: str, model: str) -> dict:
-        client = self._client(url)
         out = {"ok": False, "reason": "", "message": "", "models": [], "version": "", "fim": False, "thinking": False}
+        try:
+            url = local_url(url)
+        except ValueError as e:
+            return {**out, "reason": "bad_url", "message": str(e)}
+        if not model or len(model) > 200 or any(c.isspace() for c in model):
+            return {**out, "reason": "unsupported", "message": "Model: a name such as qwen2.5-coder:1.5b"}
+        client = self._client(url)
         try:
             models = client.models()
         except Unavailable as e:
@@ -112,7 +117,7 @@ class Completer:
 
         def run() -> None:
             try:
-                self._client(url).load(model)
+                self._client(local_url(url)).load(model)
             except Unavailable as e:
                 log.info("Could not load %s in Ollama: %s", model, e)
 
@@ -140,7 +145,7 @@ class Completer:
             fim = bool(st["fim"])
             payload = prompt.build(model, prefix, suffix, fim=fim, thinking=bool(st["thinking"]), length=length)
             try:
-                raw = self._client(url).generate(payload)
+                raw = self._client(local_url(url)).generate(payload)
             except Unavailable as e:
                 self._forget_status()  # look again before the next request
                 return {"text": "", "reason": e.reason, "message": str(e)}

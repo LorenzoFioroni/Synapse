@@ -15,7 +15,7 @@ import { toast, toastError } from '../../ui/toast.js';
 import { h, modLabel, storage, store } from '../../util.js';
 import { closeGlobal, globalOpen, graphChanged, initNotesGraph, localSection, openGlobal, showLocal } from '../graph/notesGraph.js';
 import { loadAiEdits, onAiAction, paintAiBar, remoteArrived } from './aiBar.js';
-import { assistSettingsChanged, assistSource, checkAssist } from './assist.js';
+import { ghostSource, noteHooks } from './hooks.js';
 import { openAttachments } from './attachmentsDialog.js';
 import { attachCiteCards, openCitation, pdfsOf, showCard } from './citeCard.js';
 import { conflictDialog } from './conflict.js';
@@ -133,7 +133,6 @@ export function initNotes(): void {
     if (!notesEnabled() && notesOpen()) closeNotes();
     emit('notes-count', notesEnabled() ? ws.overview.notes.length : null);
     applyLayout();
-    assistSettingsChanged();
     const key = `${equationMode()}|${state.settings.notes_math_physics}|${state.settings.notes_math_macros}`;
     if (key !== lastMathKey) { lastMathKey = key; staleOthers(); ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); }
   });
@@ -330,9 +329,9 @@ async function newEditor(view: NoteView, mode: 'live' | 'source'): Promise<NoteE
     tasks: () => taskHooks.choices?.() ?? [],
     newTask: (title) => taskHooks.create?.(title) ?? Promise.resolve(null),
     taskHtml: (id) => taskHooks.titleHtml?.(id) ?? '',
-    assist: assistSource,
+    assist: ghostSource,
   });
-  checkAssist();   // and load the model, so the first suggestion does not wait for it
+  for (const fn of noteHooks.editorOpened) { try { fn(); } catch (e) { console.error(e); } }
   return ed;
 }
 

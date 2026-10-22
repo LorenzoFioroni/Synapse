@@ -70,11 +70,10 @@ Two objects tie the backend together:
 | `config.py`, `settings.py` | Paths of the data folder, and the user's preferences. | `settings.json` |
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
-| `assist/` | Autocompletion in notes from a model in Ollama on this computer: the client, the prompt, and checking that Ollama and the model are there (see [autocompletion](autocompletion.md)). | none |
 | `plugins/` | The plugin host: finds the plugins in `data/plugins/` (and those that come with Synapse in `plugins/`), starts and stops them, gives them the `Plugin` object (routes, tools for Claude, events, settings, storage, reading the library, per-item fields, lists of papers outside the library, Synapse's lookups and adding papers), and turns off one that keeps failing (see [plugins](plugins.md)). `backend.plugins` is also the only module plugins import. | `plugins.json`, `plugin-data/`, `fields.db` |
 | `desktop/` | Running Synapse like a desktop program: opening its window (`window.py`), the open windows that keep a `--quit-when-closed` server running (`presence.py`), the desktop shortcut (`shortcut.py`). See [the app window](desktop.md). | none |
 
-Only `online/` and `references/` use the network. `assist/` talks only to Ollama on this computer
+Only `online/` and `references/` use the network. The Autocompletion core plugin talks only to Ollama on this computer
 (its address must be a loopback one).
 
 ### Layers
@@ -91,7 +90,7 @@ never from those above:
   tasks                                  (library, notes)
   online                                 (library, formats, pdf)
   formats · notes · pdf                  (library)
-  library · backup · access · assist     (base only)
+  library · backup · access              (base only)
   config · settings · changes · desktop   base: no backend imports
 ```
 
@@ -150,7 +149,7 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   they call back into `notesView.ts`). `tree.ts` draws the notes list and `treeInput.ts` handles
   its mouse, keyboard and drag and drop; `fileOps.ts` creates, renames, moves and trashes notes;
   `readView.ts` is read mode and link following; `sidePanel.ts` the status, breadcrumbs and
-  details panel; `aiBar.ts` Claude's edits; `ghost.ts` and `assist.ts` autocompletion's ghost text and where it comes from; `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
+  details panel; `aiBar.ts` Claude's edits; `ghost.ts` autocompletion's ghost text (its source comes from the Autocompletion plugin through `hooks.ts`); `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
   exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`); `gallery.ts`
   and `galleryView.ts` read ` ```gallery ` blocks and turn their carousels; `figures.ts` numbers
   figures. `settingsView.ts` is the Settings page; its markup

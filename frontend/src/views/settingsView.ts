@@ -2,13 +2,14 @@
 // settings/page.ts; Backups, Devices, Passkeys, AI Access and Plugins have modules of their own in settings/.
 import * as A from '../actions.js';
 import { api } from '../api.js';
+import { settingsSections } from '../extend.js';
+import { icon } from '../icons.js';
 import { emit, state } from '../store.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast, toastError } from '../ui/toast.js';
 import type { SearchMode, Settings } from '../types.js';
 import { debounce, escapeHtml, formatBytes, formatDate, plural, store } from '../util.js';
 import { baseMacros } from './notes/macros.js';
-import { bindAssist, refreshAssist } from './settings/assist.js';
 import { bindBackups, refreshBackups } from './settings/backups.js';
 import { bindAiAccess, forgetFreshToken, refreshAiAccess } from './settings/aiAccess.js';
 import { bindDevices, cancelPairing, refreshDevices } from './settings/devices.js';
@@ -58,15 +59,41 @@ export function openSettings(sectionId: string | null = null): void {
   refreshPasskeys(page);
   refreshAiAccess(page);
   refreshPlugins(page);
-  refreshAssist(page, { fresh: false });
+  mountPluginSections(page);
   statsTimer = setInterval(refreshStats, 2000);
   const sel = page.querySelector<HTMLSelectElement>('[data-key="_preset"]')!;
   sel.value = presetMatch ? presetMatch.pattern : 'custom';
   setNav(sectionId || 'general', !!sectionId);
 }
 
+/** The sections plugins add (extend.ts), each placed after the section it names (else before
+    Plugins), with an entry in the page's navigation. */
+let sectionCleanups: (() => void)[] = [];
+function mountPluginSections(page: HTMLElement): void {
+  for (const sec of settingsSections.all()) {
+    const id = `x-${sec.id.replace(/[^a-z0-9-]/gi, '-')}`;
+    const after = sec.after ? page.querySelector(`#set-${sec.after}`) : null;
+    const el = document.createElement('section');
+    el.className = 'settings-section';
+    el.id = `set-${id}`;
+    el.innerHTML = `<h2>${escapeHtml(sec.title)}${sec.source ? ` <span class="ip-source">${escapeHtml(sec.source)}</span>` : ''}</h2><div class="plugin-section"${sec.owner ? ` data-plugin="${escapeHtml(sec.owner)}"` : ''}></div>`;
+    if (after) after.after(el); else page.querySelector('#set-plugins')!.before(el);
+    const nav = document.createElement('button');
+    nav.className = 'side-item';
+    nav.dataset.nav = id;
+    nav.innerHTML = `${icon(sec.icon || 'plugin')}<span>${escapeHtml(sec.title)}</span>`;
+    const navAfter = page.querySelector(`.settings-nav [data-nav="${sec.after || ''}"]`);
+    if (navAfter) navAfter.after(nav); else page.querySelector('.settings-nav [data-nav="plugins"]')!.before(nav);
+    try {
+      const r = sec.mount(el.querySelector<HTMLElement>('.plugin-section')!);
+      if (typeof r === 'function') sectionCleanups.push(r);
+    } catch (e) { el.querySelector('.plugin-section')!.textContent = (e as Error).message; }
+  }
+}
+
 export function closeSettings(): void {
   if (!view) return;
+  for (const fn of sectionCleanups.splice(0)) { try { fn(); } catch (e) { console.error(e); } }
   clearInterval(statsTimer);
   cancelPairing();
   forgetFreshToken();
@@ -144,7 +171,6 @@ function bind(view: HTMLElement): void {
     }
     const value = el.type === 'checkbox' ? (el as HTMLInputElement).checked : (el.type === 'range' ? Number(el.value) : el.value);
     if (!(await save({ [key]: value }, el))) return;
-    if (key === 'notes_ai_complete') refreshAssist(view, { fresh: false });
     if (key === 'default_search_mode') emit('set-search-mode', value as SearchMode);
     if (key === 'fulltext_auto_index' && value) {
       // index the PDFs that arrived while it was off, now rather than at the next start
@@ -213,7 +239,6 @@ function bind(view: HTMLElement): void {
   bindPasskeys(view);
   bindAiAccess(view);
   bindBackups(view);
-  bindAssist(view);
   bindPlugins(view);
 
   view.querySelector<HTMLElement>('[data-rebuild]')!.onclick = async () => {

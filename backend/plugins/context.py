@@ -107,6 +107,7 @@ class Plugin:
         services=None,
         actions=None,
         sources_changed: Callable[[], object] | None = None,
+        tool_prefix: bool = True,
     ):
         self.manifest = manifest
         self.id = manifest.id
@@ -125,6 +126,8 @@ class Plugin:
         self.actions = actions  # PluginActions (services.py): adding papers to the library
         self.sources: dict[str, ItemSource] = {}
         self._sources_changed = sources_changed or (lambda: None)
+        # a core plugin's tools keep the names they had when they were part of Synapse
+        self._tool_prefix = tool_prefix
         self.handlers: dict[str, Handler] = {}
         self.schedules: list[Schedule] = []
         self.wake: Callable[[], None] = lambda: None  # set by the host: wakes the background runner
@@ -174,14 +177,14 @@ class Plugin:
             tool = name or fn.__name__
             if not TOOL_NAME_RE.match(tool):
                 raise PluginError(f"Tool name {tool!r}: lowercase letters, digits and _")
-            full = f"{self.id}__{tool}"
+            full = f"{self.id}__{tool}" if self._tool_prefix else tool
             if any(t.name == full for t in self.tools):
                 raise PluginError(f"Tool {tool} is registered twice")
             self.tools.append(
                 ToolSpec(
                     full,
                     title or tool.replace("_", " ").capitalize(),
-                    f"[{self.manifest.name}] {description}",
+                    f"[{self.manifest.name}] {description}" if self._tool_prefix else description,
                     schema if schema is not None else schema_of(fn),
                     fn,
                     read_only,

@@ -64,7 +64,8 @@ def test_archive_holds_exactly_the_library_settings_and_notes(svc, library):
         "notes/.trash/20261010-120000/old.md",
     } <= set(names)
     for n in names:
-        assert n in ("manifest.json", "library.db", "settings.json") or n.startswith("notes/"), n
+        # plugins.json: which plugins are on (the core plugins' first state is written at start)
+        assert n in ("manifest.json", "library.db", "settings.json", "plugins.json") or n.startswith("notes/"), n
         assert not n.startswith(("pdfs", "notes_index", "fulltext", "citations", "backups")), n
     assert entry["items"] == 2 and entry["notes"] == 1 and entry["reason"] == "manual"
 

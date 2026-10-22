@@ -1,0 +1,39 @@
+{
+  "id": "autocompletion",
+  "name": "Autocompletion",
+  "version": "1.0.0",
+  "api": "^1.0",
+  "author": "Synapse",
+  "description": "Suggestions as you write a note, in grey after the cursor (Tab accepts), from a model running on this computer in Ollama: your notes are not sent anywhere else.",
+  "core": true,
+  "enabled_by_default": false,
+  "enabled_from_setting": "notes_ai_complete",
+  "backend": "server",
+  "frontend": "core:autocompletion",
+  "settings": [
+    {
+      "key": "model",
+      "type": "text",
+      "label": "Model",
+      "description": "A model installed in Ollama; one that fills in the middle (qwen2.5-coder:1.5b, small and fast; qwen2.5-coder:7b, better, needs about 8 GB of memory) also sees the text after the cursor.",
+      "default": "qwen2.5-coder:1.5b",
+      "from_setting": "notes_ai_model"
+    },
+    {
+      "key": "length",
+      "type": "choice",
+      "label": "Suggestion length",
+      "options": [["line", "Rest of the line"], ["paragraph", "Paragraph"]],
+      "default": "line",
+      "from_setting": "notes_ai_length"
+    },
+    {
+      "key": "url",
+      "type": "text",
+      "label": "Ollama address",
+      "description": "Where Ollama listens; only addresses on this computer are accepted.",
+      "default": "http://127.0.0.1:11434",
+      "from_setting": "notes_ai_url"
+    }
+  ]
+}

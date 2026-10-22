@@ -262,7 +262,7 @@ never mix.
   goes to the trash with it (Undo, or Cmd/Ctrl+Z in the note, brings it back); older tasks stay in
   Tasks. Tasks are kept in the library database, so backups include them; deleted tasks can be
   restored. See [`docs/tasks.md`](docs/tasks.md).
-- **Autocompletion** in notes (Settings → Autocompletion; off by default): after a short pause a
+- **Autocompletion** in notes (a core plugin, off by default: turn it on in Settings → Plugins): after a short pause a
   model running on this computer in [Ollama](https://ollama.com) suggests how the text goes on, in
   grey after the cursor. Tab accepts, Esc dismisses, Cmd/Ctrl+→ takes one word, Alt/⌥+\ asks for
   one now, clicking it accepts it. Only local models are supported: install Ollama and a model

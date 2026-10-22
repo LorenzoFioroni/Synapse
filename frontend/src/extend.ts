@@ -82,10 +82,23 @@ export class Registry<T extends { id: string }> {
   }
 }
 
+/** A section of the Settings page a plugin adds (its own controls, beside the settings its
+    manifest declares). ``after``: the id of the section it follows (default: before Plugins). */
+export interface SettingsSection {
+  id: string;
+  title: string;
+  icon?: string;
+  after?: string;
+  source?: string;
+  owner?: string;
+  mount: (el: HTMLElement) => Cleanup;
+}
+
 export const commands = new Registry<Command>();
 export const pages = new Registry<Page>();
 export const itemSections = new Registry<ItemSection>();
 export const itemActions = new Registry<ItemAction>();
+export const settingsSections = new Registry<SettingsSection>();
 /** Badges on pages' sidebar entries (a count or a short text), by page id. */
 export const badges = new Map<string, string>();
 

@@ -71,6 +71,16 @@ export interface ItemActionSpec {
   run: (items: PluginItem[]) => unknown;
 }
 
+export interface SettingsSectionSpec {
+  id: string;
+  title: string;
+  icon?: string;
+  /** The id of the Settings section it follows ('general', 'online', 'plugins' …); default: just before Plugins. */
+  after?: string;
+  /** Draw the section into `el` each time Settings opens; return a function to clean up. */
+  mount: (el: HTMLElement) => Cleanup;
+}
+
 export interface NotifyOptions {
   type?: 'info' | 'success' | 'error';
   action?: { label: string; run: () => void };
@@ -90,6 +100,9 @@ export interface PluginContext {
   /** The user's values of the settings the manifest declares (as they were when the plugin started;
       a change of settings restarts nothing, so read them when needed via `settings()`). */
   settings(): Promise<Record<string, unknown>>;
+  /** Change some of those values (checked against the manifest); resolves to all of them. The
+      plugin's backend hears the change (`@plugin.settings.on_change`). */
+  saveSettings(changes: Record<string, unknown>): Promise<Record<string, unknown>>;
 
   commands: { register(spec: CommandSpec): Dispose };
   pages: {
@@ -100,6 +113,9 @@ export interface PluginContext {
   };
   itemPane: { register(spec: ItemSectionSpec): Dispose };
   itemActions: { register(spec: ItemActionSpec): Dispose };
+  /** A section of its own in the Settings page, for what the manifest's settings cannot show
+      (a status, a test button, a list to pick from). */
+  settingsPage: { register(spec: SettingsSectionSpec): Dispose };
   /** The plugin's lists of papers (`@plugin.item_source` in its backend). */
   sources: {
     /** Show the list `sourceId` (leaving Notes, Tasks or a page). */

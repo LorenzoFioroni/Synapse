@@ -33,6 +33,9 @@ class Setting:
     options: list[tuple[str, str]] = field(default_factory=list)  # (value, label), for choice and multi
     min: float | None = None
     max: float | None = None
+    # a core plugin's setting that used to be one of Synapse's own (settings.json): its value
+    # carries over when the plugin first starts
+    from_setting: str | None = None
 
     def describe(self) -> dict:
         out: dict = {"key": self.key, "type": self.type, "label": self.label, "default": self.default}
@@ -118,6 +121,13 @@ class Manifest:
     mcp: bool = False
     settings: list[Setting] = field(default_factory=list)
     python: list[str] = field(default_factory=list)  # packages it needs (deps.py)
+    # A core plugin: part of Synapse, in its plugins/ folder (honoured only there). It starts on
+    # (or as the Synapse setting ``enabled_from_setting`` was, for a feature that had a switch),
+    # may use Synapse's own modules, keeps its tools' names unprefixed, and its frontend
+    # ("core:<name>") is built into the app (frontend/src/plugins/core/).
+    core: bool = False
+    enabled_by_default: bool = False
+    enabled_from_setting: str | None = None
 
     def compatible(self) -> str | None:
         """Why this Synapse cannot run the plugin, or None if it can."""
@@ -191,6 +201,7 @@ def _setting(raw) -> Setting:
         raise ManifestError(f'setting "{key}": type is one of {", ".join(SETTING_TYPES)}')
     s = Setting(key=key, type=t, label=_text(raw, "label") or key, default=None)
     s.description = _text(raw, "description", limit=500)
+    s.from_setting = _text(raw, "from_setting", limit=80) or None
     if t in ("choice", "multi") and ("options" in raw or t == "choice"):
         s.options = _options(raw.get("options"), key)
     for bound in ("min", "max"):
@@ -229,8 +240,20 @@ def parse(data: object, folder: Path) -> Manifest:
         description=_text(data, "description", limit=500),
         author=_text(data, "author", limit=120),
     )
+    if data.get("core", False) not in (True, False):
+        raise ManifestError('"core" is true or false')
+    man.core = bool(data.get("core"))
+    if data.get("enabled_by_default", man.core) not in (True, False):
+        raise ManifestError('"enabled_by_default" is true or false')
+    man.enabled_by_default = bool(data.get("enabled_by_default", man.core))
+    man.enabled_from_setting = _text(data, "enabled_from_setting", limit=80) or None
     for part in ("backend", "frontend", "styles"):
         rel = _text(data, part, limit=200)
+        if part == "frontend" and rel.startswith("core:"):
+            if not man.core:
+                raise ManifestError('"frontend": "core:…" is only for the core plugins that come with Synapse')
+            man.frontend = rel
+            continue
         if rel:
             path = _inside(folder, rel)
             if not path.exists():

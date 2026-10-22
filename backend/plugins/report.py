@@ -7,7 +7,7 @@ from . import build
 from .loading import Active, Entry
 
 
-def describe(entry: Entry, st: dict, act: Active | None, values: dict, safe_mode: bool) -> dict:
+def describe(entry: Entry, st: dict, act: Active | None, values: dict, safe_mode: bool, core: bool = False) -> dict:
     """``st``: its entry in plugins.json; ``act``: it running; ``values``: its settings."""
     pid = entry.id
     man = entry.manifest
@@ -20,7 +20,7 @@ def describe(entry: Entry, st: dict, act: Active | None, values: dict, safe_mode
         status, problem = "on", None
     elif st.get("failed"):
         status, problem = "failed", st["failed"]
-    elif enabled and safe_mode:
+    elif enabled and safe_mode and not core:
         status, problem = "safe-mode", "Synapse was started in safe mode"
     else:
         status, problem = ("on" if enabled else "off"), None
@@ -33,6 +33,7 @@ def describe(entry: Entry, st: dict, act: Active | None, values: dict, safe_mode
         "source": entry.source,
         "folder": str(entry.folder),
         "replaces_bundled": entry.replaces_bundled,
+        "core": core,
         "enabled": enabled,
         "running": bool(act),
         "status": status,

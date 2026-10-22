@@ -6,7 +6,9 @@ Every failure becomes `Unavailable` with a reason code and a message that can be
 
 from __future__ import annotations
 
+import re
 from typing import Any
+from urllib.parse import urlsplit
 
 import requests
 
@@ -96,3 +98,27 @@ class Ollama:
             "POST", "/api/generate", GENERATE_TIMEOUT, {**payload, "stream": False, "keep_alive": KEEP_ALIVE}
         )
         return str(data.get("response") or "")
+
+
+DEFAULT_URL = "http://127.0.0.1:11434"  # Ollama's own default
+
+
+def local_url(value: str) -> str:
+    """The Ollama address, cleaned: http(s) on this computer only (localhost, 127.x.x.x, ::1),
+    so a note's text is never sent elsewhere and the server cannot be pointed at other hosts.
+    Empty means the default. Raises ValueError for any other address."""
+    v = (value or "").strip().rstrip("/") or DEFAULT_URL
+    if "://" not in v:
+        v = "http://" + v
+    try:
+        u = urlsplit(v)
+        host = (u.hostname or "").lower()
+        u.port  # noqa: B018 - raises ValueError on a port that is not a number
+    except ValueError as e:
+        raise ValueError("Ollama address: something like http://127.0.0.1:11434") from e
+    loopback = host == "localhost" or host == "::1" or re.fullmatch(r"127(\.\d{1,3}){3}", host)
+    if u.scheme not in ("http", "https") or not loopback or u.username or u.password:
+        raise ValueError("Ollama address: only a model on this computer is supported (localhost or 127.0.0.1)")
+    if u.path not in ("", "/") or u.query or u.fragment:
+        raise ValueError("Ollama address: just the address and port, e.g. http://127.0.0.1:11434")
+    return f"{u.scheme}://{u.netloc}"

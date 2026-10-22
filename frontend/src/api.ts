@@ -1,7 +1,7 @@
 // Thin client for the JSON API. Every call throws an Error with a readable
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
-  AccessToken, AccessTokensOverview, AssistCompletion, AssistStatus, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
+  AccessToken, AccessTokensOverview, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
   ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
   ItemFieldValue, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginSource, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview,
@@ -105,9 +105,9 @@ export const api = {
     request<{ item: Item; duplicate: boolean }>('POST', '/api/outside/add', { paper, folder_id: folderId }),
   itemFields: (id: string) => request<{ fields: ItemFieldValue[] }>('GET', `/api/items/${encodeURIComponent(id)}/fields`),
   /** A plugin's own route (/api/plugins/<id><path>), for its frontend (plugins/host.ts). */
-  pluginRoute: <T = unknown>(id: string, method: Method, path: string, body?: unknown, query?: Record<string, unknown>) => {
+  pluginRoute: <T = unknown>(id: string, method: Method, path: string, body?: unknown, query?: Record<string, unknown>, signal?: AbortSignal) => {
     const q = query ? qs(query) : '';
-    return request<T>(method, `/api/plugins/${encodeURIComponent(id)}${path.startsWith('/') ? path : `/${path}`}${q ? `?${q}` : ''}`, body);
+    return request<T>(method, `/api/plugins/${encodeURIComponent(id)}${path.startsWith('/') ? path : `/${path}`}${q ? `?${q}` : ''}`, body, signal);
   },
   enablePlugin: (id: string) => request<{ plugin: PluginInfo }>('POST', `/api/plugin-host/${encodeURIComponent(id)}/enable`),
   disablePlugin: (id: string) => request<{ plugin: PluginInfo }>('POST', `/api/plugin-host/${encodeURIComponent(id)}/disable`),
@@ -119,8 +119,6 @@ export const api = {
   backupNow: () => request('POST', '/api/backups'),
   restoreBackup: (name: string) => request<BackupStatus & { restored: string; safety_backup: string }>('POST', '/api/backups/restore', { name }),
   // autocompletion in notes (a model in Ollama on this computer)
-  assistStatus: ({ fresh = false, warm = false } = {}) => request<AssistStatus>('GET', `/api/assist/status?${qs({ fresh: fresh ? 1 : '', warm: warm ? 1 : '' })}`),
-  assistComplete: (prefix: string, suffix: string, signal?: AbortSignal) => request<AssistCompletion>('POST', '/api/assist/complete', { prefix, suffix }, signal),
   citekeyPreview: (pattern: string) => request<{ pattern: string; examples: string[] }>('GET', `/api/settings/citekey_preview?${qs({ pattern })}`),
 
   formats: () => request<{ formats: Format[] }>('GET', '/api/formats'),

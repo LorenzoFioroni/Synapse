@@ -293,7 +293,6 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `settings/passkeys.ts` | Settings → Devices → Passkeys: adding one with `navigator.credentials.create`, removing one. |
 | `settings/aiAccess.ts` | Settings → AI Access: access tokens for `/mcp`, with the `claude mcp add` command shown once. |
 | `settings/plugins.ts` | Settings → Plugins: the plugins found, turning them on (after a confirmation listing their access) and off, their settings drawn from each manifest, tools for other computers, Restart and the log. `pluginsChanged()` redraws it when the change feed names `plugins`. See [plugins](plugins.md). |
-| `settings/assist.ts` | Settings → Autocompletion: the status of Ollama and the model, with what to do when one is missing. |
 
 **`views/notes/`: the notes workspace.** [Notes](notes.md) covers it in depth. In short:
 `notesView.ts` sets the workspace up and opens and closes notes; `workspace.ts` is the shared

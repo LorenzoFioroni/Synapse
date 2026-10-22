@@ -43,8 +43,38 @@ v1". What exists today:
   papers involved. Right-click (or select several) to add them to a folder. Adding runs what
   Settings → Adding Items says ("Ask" counts as yes: there is no dialog to ask in).
 
-Plugins that come with Synapse live in the repository's `plugins/` folder and are off until turned
-on. A plugin in `data/plugins/` with the same id replaces the one that comes with Synapse. They are:
+Plugins that come with Synapse live in the repository's `plugins/` folder. A plugin in
+`data/plugins/` with the same id replaces the one that comes with Synapse.
+
+### Core plugins
+
+Some of Synapse's own features are **core plugins**: they come with Synapse and are part of it,
+but each can be turned off in Settings → Plugins (as Obsidian's core plugins can), and its code
+lives in its own folder. They start on (or as the switch they replace was), keep running in safe
+mode, and their settings are in their own section or under **More**:
+
+- **Autocompletion** (`plugins/autocompletion`, off by default): suggestions from a model in
+  Ollama on this computer as you write a note; see [autocompletion](autocompletion.md).
+
+A core plugin is a plugin like any other (manifest, `activate(plugin)`, routes, tools, settings),
+with these differences, all from `"core": true` in its manifest and honoured only in `plugins/`:
+
+- It may import Synapse's own modules (`backend.…`, and in the frontend the app's modules), since
+  it ships and changes with Synapse; `tests/test_layers.py` leaves it out of the import rule.
+- Its frontend is part of the app's own build: `"frontend": "core:<name>"` names
+  `frontend/src/plugins/core/<name>/index.ts` (listed in `frontend/src/plugins/core/index.ts`),
+  which exports `activate(p)` like any plugin frontend and gets the same `PluginContext`.
+- It starts on the first time Synapse sees it, unless its manifest says `"enabled_by_default":
+  false`; `"enabled_from_setting": "<a former Synapse setting>"` starts it as that switch was
+  instead. A setting with `"from_setting"` takes over the value of the Synapse setting it replaces
+  (`settings.json` keeps such values, `SettingsStore.legacy`). After that, turning it on and off is
+  the user's choice, as for any plugin.
+- Its tools for Claude keep the names they had in Synapse (no `<plugin>__` prefix).
+- It keeps running in safe mode (`--safe-mode` stops the other plugins only).
+
+### Other plugins that come with Synapse
+
+These are off until turned on:
 
 - **Citation Counts** (`plugins/citation-counts`): how often each paper is cited, from OpenAlex
   and Semantic Scholar, as a *Citations* column, a search filter (`citations:>100`, also in smart
@@ -419,7 +449,8 @@ export function activate(p) {
 | `p.backend.get/post/put/delete(path, …)` | The plugin's own routes (`/api/plugins/<id><path>`), with the page's sign-in; resolves to the JSON answer. |
 | `p.library.selected()`, `.item(id)`, `.show(id)` | The selected items, one whole item, showing an item in the library. |
 | `p.onChange(fn)` | `fn(kinds)` when something changed: what the change feed reports (`library`, `notes`, `tasks`, `annotations`, `plugins`, `fields`, `sources`), and `library` when this window's item list reloads. |
-| `p.settings()` | The settings' values (a promise). |
+| `p.settings()`, `p.saveSettings(changes)` | The settings' values (a promise); changing some of them (checked against the manifest, heard by `@plugin.settings.on_change`). |
+| `p.settingsPage.register({id, title, icon, after, mount})` | A section of its own in Settings (with an entry in its navigation, after the section `after` names, else before Plugins), for what the manifest's settings cannot show: a status, a test button, a list to pick from. `mount(el)` runs each time Settings opens. |
 | `p.ui` | `icon(name)`, `escapeHtml(text)`, `confirm(…)`, `prompt(…)`, `formatDate(iso, withTime)`: the app's own. |
 | `p.onUnload(fn)` | Runs when the plugin stops. |
 

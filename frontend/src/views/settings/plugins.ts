@@ -83,7 +83,7 @@ function rowHtml(p: PluginInfo, safeMode: boolean): string {
   const usable = p.status !== 'invalid' && p.status !== 'incompatible' && !safeMode;
   const perms = permissionWords(p);
   const meta = [p.author && `by ${escapeHtml(p.author)}`, p.version && `version ${escapeHtml(p.version)}`,
-    p.source === 'bundled' ? 'comes with Synapse' : p.source === 'dev' ? 'being written (restarts when its files change)' : p.replaces_bundled ? 'replaces the one that comes with Synapse' : ''].filter(Boolean).join(' · ');
+    p.core ? 'core plugin: part of Synapse' : p.source === 'bundled' ? 'comes with Synapse' : p.source === 'dev' ? 'being written (restarts when its files change)' : p.replaces_bundled ? 'replaces the one that comes with Synapse' : ''].filter(Boolean).join(' · ');
   const problem = p.problem ? `<div class="form-error">${escapeHtml(STATUS[p.status])}: ${escapeHtml(p.problem)}${p.failed_at ? ` (${escapeHtml(formatDate(p.failed_at, true))})` : ''}</div>` : '';
   const open = expanded.has(p.id) && p.status !== 'invalid';
   return `<div class="plugin-row ${open ? 'open' : ''}" data-plugin="${escapeHtml(p.id)}">

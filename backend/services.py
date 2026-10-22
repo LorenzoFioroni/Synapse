@@ -73,9 +73,6 @@ class Services:
         from .backup import Backups
 
         self.backups = Backups(self)
-        from .assist import Completer
-
-        self.assist = Completer(self.settings)  # autocompletion in notes, from Ollama on this computer
         self.presence = Presence()  # the open windows, when the server stops with the last one
         # Plugins (backend/plugins/), started by create_app (or mcp_server.py), not here. They hear
         # about changes to items and notes through the listeners below.

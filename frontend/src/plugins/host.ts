@@ -4,7 +4,7 @@
 // turned one on or off. A plugin's module is loaded again when the plugin restarts (its start time
 // is part of the URL). See docs/plugins.md.
 import { type ApiError, api } from '../api.js';
-import { type Dispose, badges, commands, itemActions, itemSections, keyProblem, pages } from '../extend.js';
+import { type Dispose, badges, commands, itemActions, itemSections, keyProblem, pages, settingsSections } from '../extend.js';
 import { icon } from '../icons.js';
 import * as A from '../actions.js';
 import { currentSource, emit, on, selectedItems, state, syncFieldColumns } from '../store.js';
@@ -13,6 +13,7 @@ import { toast } from '../ui/toast.js';
 import type { Item, PluginInfo } from '../types.js';
 import { escapeHtml, formatDate } from '../util.js';
 import type { ChangeKind, PluginContext, PluginItem, PluginModule } from './api.js';
+import { CORE } from './core/index.js';
 
 interface Loaded {
   info: PluginInfo;
@@ -73,6 +74,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     name: info.name,
     version: info.version,
     settings: async () => (await api.plugins()).plugins.find((x) => x.id === pid)?.values || {},
+    saveSettings: async (changes) => (await api.setPluginSettings(pid, changes)).values,
     commands: {
       register: (spec) => {
         let key = spec.key;
@@ -123,6 +125,12 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
         });
         return keep(() => { offAction(); offCommand(); });
       },
+    },
+    settingsPage: {
+      register: (spec) => keep(settingsSections.register({
+        id: full(spec.id), title: spec.title, icon: spec.icon, after: spec.after, source: info.core ? undefined : info.name, owner: pid,
+        mount: (el) => guarded(info, `settings section ${spec.id}`, spec.mount)(el),
+      })),
     },
     sources: {
       open: (sourceId) => emit('open-view', `source:${full(sourceId)}`),
@@ -179,7 +187,9 @@ async function load(info: PluginInfo): Promise<void> {
   }
   if (!info.frontend) return;
   try {
-    const mod = (await import(fileUrl(info, info.frontend))) as Partial<PluginModule> & { default?: unknown };
+    const core = info.frontend.startsWith('core:') ? CORE[info.frontend.slice(5)] : null;
+    if (info.frontend.startsWith('core:') && !core) throw new Error(`no core frontend called ${info.frontend.slice(5)}`);
+    const mod = (core ? await core() : await import(fileUrl(info, info.frontend))) as Partial<PluginModule> & { default?: unknown };
     rec.module = mod;
     const activate = mod.activate || (typeof mod.default === 'function' ? (mod.default as PluginModule['activate']) : null);
     if (!activate) throw new Error('its module exports no activate(p) function');
