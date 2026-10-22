@@ -55,7 +55,7 @@ def test_preprint_with_archive_id_gets_the_arxiv_pdf_first(svc, web, tmp_path):
     )
     res = svc.find_pdf(item["id"])
     assert res["status"] == "success" and res["source"] == "https://arxiv.org/pdf/1412.6980"
-    assert calls == ["https://arxiv.org/pdf/1412.6980"]  # no Unpaywall, Scholar or title search
+    assert calls == ["https://arxiv.org/pdf/1412.6980"]  # no Unpaywall or title search
     assert svc.papers.get(item["id"])["attachments"][0]["name"] == "Full Text PDF"
 
 
@@ -131,7 +131,8 @@ def test_items_without_arxiv_id_behave_as_before(svc, web, tmp_path):
     res = svc.find_pdf(item["id"])
     assert res["status"] == "not_found"
     assert calls[0].startswith("https://api.unpaywall.org/v2/10.1/abc")
-    assert any("scholar.google" in c for c in calls)
+    assert any("unpaywall.org/v2/search" in c for c in calls)
+    assert not any("scholar.google" in c for c in calls)  # never asked
 
 
 def test_arxiv_downloads_are_spaced(svc, web, tmp_path, monkeypatch):
