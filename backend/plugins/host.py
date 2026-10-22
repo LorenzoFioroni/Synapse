@@ -281,6 +281,7 @@ class PluginHost:
             ),
             sources_changed=lambda: self.sources_changed() if self.sources_changed else None,
             tool_prefix=not self.is_core(pid),
+            synapse=self.services if self.is_core(pid) else None,
         )
         act = Active(entry, plugin, Worker(pid, plog, lambda what, e: self.fault(pid, what, e)), handler=handler)
         act.started = datetime.now().isoformat(timespec="microseconds")

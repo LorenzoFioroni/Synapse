@@ -52,7 +52,7 @@ well (`test_remote_pdf.py`).
 |---|---|
 | Library | `test_api.py` (create, edit, trash, settings, import and export, attachments, schema), `test_list_payload.py` (lean lists, items by id), `test_organize.py` (folders, tags, smart folders, their migrations), `test_citekeys.py`, `test_search.py` (query syntax, accents, filters, notes in search), `test_identifiers.py` (DOI and arXiv ids), `test_annotations.py` (annotation records, conversion of old ones) |
 | Formats | `test_formats.py`: BibTeX, RIS, EndNote and CSL-JSON round trips |
-| Online and references | `test_metadata.py` (lookups), `test_pdf_finder.py` (Find Available PDF through the plugins' PDF sources, the Open-Access PDFs core plugin), `test_remote_pdf.py` (PDFs behind a web link: public addresses only, PDFs only, size cap), `test_references.py` (reference lists), `test_graph.py` (`/api/graph`) |
+| Online and references | `test_metadata.py` (lookups), `test_pdf_finder.py` (Find Available PDF through the plugins' PDF sources, the Open-Access PDFs core plugin), `test_remote_pdf.py` (PDFs behind a web link: public addresses only, PDFs only, size cap), `test_references.py` (reference lists), `test_graph.py` (the Graph plugin's data) |
 | Notes | `tests/notes/`: `test_vault.py` (safe paths, save conflicts, trash, move), `test_index.py`, `test_parser.py` (golden tests on the fixtures), `test_frontmatter.py`, `test_gallery.py` (gallery blocks for the MCP tools), `test_rewrite.py`, `test_rekey.py`, `test_attachments.py`, `test_api_notes.py`, `test_scanner_parity.py` |
 | Access and sync | `test_guard.py` (other websites and extensions refused), `test_devices.py` (pairing, who manages devices, `--debug` refused on the network), `test_changes.py` (change feed), `test_connector.py` (browser extension API), `test_backup.py` |
 | MCP | `test_mcp.py`: the protocol and every tool, in-process and over stdio |
@@ -98,7 +98,7 @@ These check rules of the code base rather than behaviour:
 | `crossref.test.mjs` | `views/notes/crossref.js`: `\ref`, `\eqref`, `\cref`, `\Cref`: kinds, plurals, ranges, unknown names |
 | `gallery.test.mjs` | `views/notes/gallery.js`: reading gallery blocks, the figure caption, Markdown export; galleries in `render.js` |
 | `extract.test.mjs` | `extractCitation` in `browser_extension/extract.js`, with a faked `document` and `location` |
-| `graph.test.mjs` | `views/graph/model.js` |
+| `graph.test.mjs` | `plugins/core/graph/model.js` |
 | `library.test.mjs` | `views/notes/library.js`: autocomplete ranking |
 | `linkNav.test.mjs` | `viewer/linkNav.js`: link targets and previews in the PDF viewer |
 | `lookupJob.test.mjs` | `LookupJob` in `views/metadataReview.js` |

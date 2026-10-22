@@ -4,7 +4,7 @@
 // turned one on or off. A plugin's module is loaded again when the plugin restarts (its start time
 // is part of the URL). See docs/plugins.md.
 import { type ApiError, api } from '../api.js';
-import { type Dispose, badges, commands, itemActions, itemSections, keyProblem, pages, settingsSections } from '../extend.js';
+import { type Dispose, badges, commands, itemActions, itemSections, keyProblem, pages, parseKey, settingsSections } from '../extend.js';
 import { icon } from '../icons.js';
 import * as A from '../actions.js';
 import { currentSource, emit, on, selectedItems, state, syncFieldColumns } from '../store.js';
@@ -59,6 +59,7 @@ const copy = <T>(x: T): T => { try { return structuredClone(x); } catch { return
 function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
   const pid = info.id;
   const full = (id: string) => `${pid}.${id}`;
+  const src = info.core ? undefined : info.name;   // a core plugin's parts are Synapse's own: not labelled
   const keep = (d: Dispose): Dispose => { rec.disposers.push(d); return d; };
   // A call that reaches the server after the plugin stopped (turned off in another window, say)
   // never settles: the plugin's code is being taken down, and an error would only be noise.
@@ -78,10 +79,11 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     commands: {
       register: (spec) => {
         let key = spec.key;
-        const problem = key ? keyProblem(key) : null;
+        // a core plugin's key is Synapse's own (it stays reserved for other plugins while it is off)
+        const problem = key && !(info.core && parseKey(key)) ? keyProblem(key) : null;
         if (problem) { console.warn(`Plugin ${pid}: command ${spec.id}: ${problem}; it gets no key`); key = undefined; }
         return keep(commands.register({
-          id: full(spec.id), title: spec.title, key, source: info.name, owner: pid,
+          id: full(spec.id), title: spec.title, key, source: src, owner: pid,
           when: spec.when ? () => !!guarded(info, `command ${spec.id}`, spec.when!)() : undefined,
           run: guarded(info, `command ${spec.id}`, spec.run),
         }));
@@ -89,7 +91,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     },
     pages: {
       register: (spec) => keep(pages.register({
-        id: full(spec.id), title: spec.title, icon: spec.icon, source: info.name, owner: pid,
+        id: full(spec.id), title: spec.title, icon: spec.icon, source: src, owner: pid,
         mount: (el) => guarded(info, `page ${spec.id}`, spec.mount)(el),
       })),
       setBadge: (pageId, value) => {
@@ -102,7 +104,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     },
     itemPane: {
       register: (spec) => keep(itemSections.register({
-        id: full(spec.id), title: spec.title, source: info.name, owner: pid,
+        id: full(spec.id), title: spec.title, source: src, owner: pid,
         when: spec.when ? (item: Item) => !!guarded(info, `section ${spec.id}`, spec.when!)(copy(item) as PluginItem) : undefined,
         mount: (el, item) => guarded(info, `section ${spec.id}`, spec.mount)(el, copy(item) as PluginItem),
       })),
@@ -112,14 +114,14 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
         const id = full(spec.id);
         const fits = (items: Item[]) => !!spec.outside || !items.some((i) => i._outside);
         const action = {
-          id, title: spec.title, icon: spec.icon, source: info.name, owner: pid, outside: !!spec.outside,
+          id, title: spec.title, icon: spec.icon, source: src, owner: pid, outside: !!spec.outside,
           when: (items: Item[]) => fits(items) && (!spec.when || !!guarded(info, `action ${spec.id}`, spec.when)(copy(items) as PluginItem[])),
           run: (items: Item[]) => guarded(info, `action ${spec.id}`, spec.run)(copy(items) as PluginItem[]),
         };
         const offAction = itemActions.register(action);
         // also in the command palette, for the selection
         const offCommand = commands.register({
-          id: `${id}#selection`, title: spec.title, source: info.name, owner: pid,
+          id: `${id}#selection`, title: spec.title, source: src, owner: pid,
           when: () => { const items = selectedItems(); return items.length > 0 && action.when(items); },
           run: () => action.run(selectedItems()),
         });
@@ -128,7 +130,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     },
     settingsPage: {
       register: (spec) => keep(settingsSections.register({
-        id: full(spec.id), title: spec.title, icon: spec.icon, after: spec.after, source: info.core ? undefined : info.name, owner: pid,
+        id: full(spec.id), title: spec.title, icon: spec.icon, after: spec.after, source: src, owner: pid,
         mount: (el) => guarded(info, `settings section ${spec.id}`, spec.mount)(el),
       })),
     },

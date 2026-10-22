@@ -1,7 +1,7 @@
 // Thin client for the JSON API. Every call throws an Error with a readable
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
-  AccessToken, AccessTokensOverview, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
+  AccessToken, AccessTokensOverview, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, HistoryEntry, ImportEntry, ImportPreview, Item,
   ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
   ItemFieldValue, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginSource, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview,
@@ -168,7 +168,6 @@ export const api = {
   fetchReferences: (id: string) => request<ItemReferences>('POST', `/api/items/${id}/references`),
   queueReferences: (ids: string[]) => request('POST', '/api/references/queue', { ids }),
   citationGraph: () => request('GET', '/api/graph/citations'),
-  graph: () => request<GraphData>('GET', '/api/graph'),
   noteTrash: () => request<{ trash: { trash_id: string; path: string; trashed_at?: string; deletes_at?: string }[]; retention: Settings['notes_trash_retention'] }>('GET', '/api/notes/trash'),
   noteAttachments: () => request<NoteAttachments>('GET', '/api/notes/attachments'),
   restoreNoteAttachment: (trashId: string, name: string) => request('POST', '/api/notes/attachments/restore', { trash_id: trashId, name }),

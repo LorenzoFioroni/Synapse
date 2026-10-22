@@ -31,7 +31,7 @@ import { initItemPane, toggleItemPane } from './views/itempane.js';
 import { applyAppearance, closeSettings, openSettings, settingsOpen } from './views/settingsView.js';
 import { initSidebar } from './views/sidebar.js';
 import {
-  closeNoteTab, closeNotes, flushNote, initNotes, notesOpen, notesPanelButton, notesShortcut, openNotes, openNotesGraph, showNote, toggleNotesGraph,
+  closeNoteTab, closeNotes, flushNote, initNotes, notesOpen, notesPanelButton, notesShortcut, openNotes, showNote,
 } from './views/notes/notesView.js';
 import { initNoteTasks } from './views/tasks/noteTasks.js';
 import { closeTasks, initTasks, openTasks, tasksOpen, tasksPanelButton, tasksShortcut } from './views/tasks/tasksView.js';
@@ -78,7 +78,6 @@ async function boot() {
   on('close-notes', () => { closeNotes(); closeTasks(); closePage(); });
   on('open-tasks', (o) => goToTasks(o || {}));
   on('open-note', ({ path, line }) => { showHome(); openNotes(path, line ?? null); });
-  on('show-graph', (focus) => { if (settingsOpen()) closeSettings(); openNotesGraph(focus); });
   on('show-item', (id) => showItem(id));
   on('open-view', (view) => openView(view));
   on('workspace', paintWorkspace);
@@ -443,7 +442,6 @@ function initShortcuts() {
     if (pluginKey(e, typing)) { e.preventDefault(); return; }
     if (pageOpen() && !settingsOpen() && ((modKey(e) && ['n', 'i', 'e', 'f'].includes(k)) || (e.key === '/' && !typing))) closePage();   // library actions leave the page
     if (modKey(e) && e.shiftKey && k === 'l' && state.settings.notes_enabled !== false) { e.preventDefault(); switchWorkspace(); return; }
-    if (modKey(e) && e.shiftKey && k === 'g' && state.settings.notes_enabled !== false) { e.preventDefault(); if (settingsOpen()) closeSettings(); closeTasks(); toggleNotesGraph(); return; }
     if (modKey(e) && e.shiftKey && k === 'k' && state.settings.notes_enabled !== false) {
       e.preventDefault();
       if (tasksOpen()) switchWorkspace('library'); else goToTasks();
@@ -506,7 +504,6 @@ function registerCoreCommands(): void {
   add('library', 'Show the Library', () => switchWorkspace('library'));
   add('notes', 'Show Notes', () => switchWorkspace('notes'), undefined, notesOn);
   add('tasks', 'Show Tasks', () => goToTasks(), 'Mod-Shift-k', notesOn);
-  add('graph', 'Show the Graph', () => { if (settingsOpen()) closeSettings(); closeTasks(); closePage(); toggleNotesGraph(); }, 'Mod-Shift-g', notesOn);
   add('item-pane', 'Show or Hide the Item Pane', () => toggleItemPane(), undefined, () => !notesOpen() && !tasksOpen() && !pageOpen());
   add('settings', 'Settings', () => openSettings(), 'Mod-,');
   add('settings-plugins', 'Settings: Plugins', () => openSettings('plugins'));

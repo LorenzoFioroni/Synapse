@@ -6,7 +6,7 @@ Nodes (``kind``):
   note    a Markdown note                   id "note:<path>"
 
 Edges (``kind``), source → target:
-  cites   paper → paper | work   (from the fetched reference lists, see service.py)
+  cites   paper → paper | work   (from the fetched reference lists, backend/references/service.py)
   cite    note → paper           ([@key] in the note)
   link    note → note            ([[link]] or ![[embed]])
   about   note → paper           (the paper note of an item: ``paper: key`` in its front matter)

@@ -120,19 +120,10 @@ async def main():
             desc = await page.text_content("[data-plugins-desc]")
             check("the section says where plugins go", str(plugins) in desc, desc)
             names = await page.eval_on_selector_all("#set-plugins .p-name", "els => els.map(e => e.textContent)")
-            check(
-                "the plugins are listed",
-                names
-                == [
-                    "arXiv Today",
-                    "Autocompletion",
-                    "Broken One",
-                    "Citation Counts",
-                    "Open-Access PDFs",
-                    "Recently Added",
-                ],
-                names,
-            )
+            # the two installed here, and those that come with Synapse (plugins/)
+            bundled = [json.loads(m.read_text())["name"] for m in (APP / "plugins").glob("*/manifest.json")]
+            want = sorted(["Broken One", "Recently Added", *bundled], key=str.lower)
+            check("the plugins are listed", names == want, names)
             bundled = await page.text_content('[data-plugin="citation-counts"]')
             check("one comes with Synapse", "comes with Synapse" in bundled, bundled[:200])
             toggle = f"{ROW} [data-ptoggle]"

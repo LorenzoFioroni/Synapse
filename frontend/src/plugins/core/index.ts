@@ -6,4 +6,5 @@ import type { PluginModule } from '../api.js';
 
 export const CORE: Record<string, () => Promise<Partial<PluginModule>>> = {
   autocompletion: () => import('./autocompletion/index.js'),
+  graph: () => import('./graph/index.js'),
 };

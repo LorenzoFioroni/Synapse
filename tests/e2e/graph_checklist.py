@@ -141,7 +141,7 @@ async def main():
     time.sleep(1.5)
     try:
         papers, keys, review, pnote, idea = seed()
-        g = requests.get(f"{BASE}/api/graph").json()
+        g = requests.get(f"{BASE}/api/plugins/graph/data").json()
         check("API: papers, works and notes", g["stats"]["papers"] == 10 and g["stats"]["notes"] == 4, g["stats"])
         P = lambda i: f"item:{papers[i]['id']}"  # noqa: E731
         async with async_playwright() as p:
@@ -157,8 +157,8 @@ async def main():
                 "['zc.graph.local','zc.graph.global','zc.graph.localOpen'].forEach((k) => localStorage.removeItem(k))"
             )
 
-            # ---- toolbar: two workspaces, the logo keeps its size
-            check("toolbar has Library | Notes only", await page.locator(".ws-switch [data-ws]").count() == 2)
+            # ---- toolbar: three workspaces, the logo keeps its size
+            check("toolbar has Library | Notes | Tasks", await page.locator(".ws-switch [data-ws]").count() == 3)
             w = await page.evaluate("document.querySelector('.brand-logo').getBoundingClientRect().width")
             check("logo is not squeezed", abs(w - 24) < 0.5, w)
 

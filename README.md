@@ -172,8 +172,8 @@ never mix.
   between papers, cited works not in your library and orphans. It is centred on the note or paper
   you opened it from and shows only what is 1, 2 (the default) or 3 links away, or **All** of it;
   Shift-click a node, or **Centre graph here** on a paper's card, to move the centre. Clicking a
-  paper shows a card (paper note, Show in Library, PDF, Add to Library). The data is at
-  `GET /api/graph`.
+  paper shows a card (paper note, Show in Library, PDF, Add to Library). It is a core plugin
+  (**Graph**): turn it off in Settings → Plugins if you don't use it.
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
   arXiv: the core plugin Open-Access PDFs; other plugins can add places to look) and checks the file is really the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.

@@ -31,7 +31,6 @@ export interface AppEvents {
   'open-notes': void;
   'close-notes': void;
   'show-item': string;              // an item id
-  'show-graph': string;             // the node to centre on, e.g. "item:<id>"
   'open-import': File | undefined;  // optionally a file to import
   'open-identifier': void;
   'clear-search': void;

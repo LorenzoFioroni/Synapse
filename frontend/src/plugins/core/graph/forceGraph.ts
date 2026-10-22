@@ -10,8 +10,8 @@
 
 import type ForceGraphClass from 'force-graph';
 import type { LinkObject, NodeObject } from 'force-graph';
-import type { EdgeKind, GraphNode } from '../../types.js';
-import { escapeHtml as esc } from '../../util.js';
+import type { EdgeKind, GraphNode } from '../../../types.js';
+import { escapeHtml as esc } from '../../../util.js';
 import { type GraphView, label } from './model.js';
 
 /** A node as force-graph keeps it: our node plus its position and velocity. */

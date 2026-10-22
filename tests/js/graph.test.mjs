@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildView, label, matchNodes, neighbourhood, relations } from '../../frontend/js/views/graph/model.js';
+import { buildView, label, matchNodes, neighbourhood, relations } from '../../frontend/js/plugins/core/graph/model.js';
 
 const P = (id, extra = {}) => ({ id: `item:${id}`, kind: 'paper', title: `Paper ${id}`, authors: 'Doe, Jane', year: 2020, folder_ids: [], ...extra });
 const W = (id) => ({ id: `doi:${id}`, kind: 'work', title: `Work ${id}`, authors: 'Ext, Ernie', year: 1999 });

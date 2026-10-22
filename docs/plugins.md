@@ -55,6 +55,11 @@ mode, and their settings are in their own section or under **More**:
 
 - **Autocompletion** (`plugins/autocompletion`, off by default): suggestions from a model in
   Ollama on this computer as you write a note; see [autocompletion](autocompletion.md).
+- **Graph** (`plugins/graph`): the graph of notes and the papers they cite: the local graph
+  beside a note, the full graph (Cmd/Ctrl+Shift+G), Show in Graph; its data at
+  `/api/plugins/graph/data`. A core plugin's frontend reaches into the notes view through
+  `frontend/src/views/notes/hooks.ts` (`setGraph`); a core plugin's server part gets the app's
+  `Services` as `plugin.synapse`.
 - **Open-Access PDFs** (`plugins/open-access-pdfs`): where Find Available PDF looks, Unpaywall and
   arXiv by identifier and by title (its two PDF sources, see
   [references](references.md#open-access-pdfs)). Turned off, Find Available PDF has nowhere to
@@ -73,7 +78,10 @@ with these differences, all from `"core": true` in its manifest and honoured onl
   instead. A setting with `"from_setting"` takes over the value of the Synapse setting it replaces
   (`settings.json` keeps such values, `SettingsStore.legacy`). After that, turning it on and off is
   the user's choice, as for any plugin.
-- Its tools for Claude keep the names they had in Synapse (no `<plugin>__` prefix).
+- Its tools for Claude keep the names they had in Synapse (no `<plugin>__` prefix), its commands
+  may use Synapse's own keys (which other plugins cannot take, even while it is off), and its
+  commands and actions are not labelled with a plugin name.
+- Its server part gets the app's `Services` object as `plugin.synapse` (None for other plugins).
 - It keeps running in safe mode (`--safe-mode` stops the other plugins only).
 
 ### Other plugins that come with Synapse

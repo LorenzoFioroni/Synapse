@@ -10,27 +10,21 @@
 //   it (or All): the whole library at once is a tangle nobody can read.
 //
 // Clicking a note opens it. Clicking a paper shows a small card (paper note, library, PDF).
-// Data: /api/graph (backend/references/graph.py), filtered with model.ts, drawn with forceGraph.ts.
+// Data: the plugin's /data route (plugins/graph/server/build.py), filtered with model.ts, drawn
+// with forceGraph.ts. The notes view reaches this through views/notes/hooks.ts (index.ts sets it).
 
-import * as A from '../../actions.js';
-import { api } from '../../api.js';
-import { icon } from '../../icons.js';
-import { emit } from '../../store.js';
-import { toast, toastError } from '../../ui/toast.js';
-import { escapeHtml as esc, h, shortAuthors, storage, store } from '../../util.js';
-import type { ApiError } from '../../api.js';
-import type { GraphData } from '../../types.js';
+import * as A from '../../../actions.js';
+import { api } from '../../../api.js';
+import { icon } from '../../../icons.js';
+import { emit } from '../../../store.js';
+import { toast, toastError } from '../../../ui/toast.js';
+import { escapeHtml as esc, h, shortAuthors, storage, store } from '../../../util.js';
+import type { ApiError } from '../../../api.js';
+import type { GraphData } from '../../../types.js';
+import type { NotesGraphContext } from '../../../views/notes/hooks.js';
 import { type GNode, type GraphCanvas, createGraph } from './forceGraph.js';
 import { buildView, label, matchNodes, relations } from './model.js';
 
-/** What the graphs need from the notes view. */
-export interface NotesGraphContext {
-  root: HTMLElement;
-  openNote(path: string): void;
-  currentPath(): string | null;
-  openGraph(focus: string | null): void;   // the full graph, with a history entry
-  onGlobalClosed?(): void;
-}
 
 type LocalOptions = { depth: number; papers: boolean };
 type GlobalOptions = { papers: boolean; citations: boolean; works: boolean; orphans: boolean; depth: number };   // depth 0: all
@@ -47,7 +41,7 @@ const globalOpts: GlobalOptions = { papers: true, citations: false, works: false
 /** Graph data, fetched again when it may have changed (after a save) or is older than a minute. */
 async function getData(fresh = false): Promise<GraphData> {
   if (!fresh && data && Date.now() - dataAt < 60000) return data;
-  fetching ||= api.graph().then((d) => { data = d; dataAt = Date.now(); return d; }).finally(() => { fetching = null; });
+  fetching ||= api.pluginRoute<GraphData>('graph', 'GET', '/data').then((d) => { data = d; dataAt = Date.now(); return d; }).finally(() => { fetching = null; });
   return fetching;
 }
 
@@ -58,16 +52,38 @@ export function graphChanged(): void {
   changedTimer = setTimeout(() => { if (localPath) paintLocal(); if (global) paintGlobal(); }, 400);
 }
 
+let themeObserver: MutationObserver | null = null;
+const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && card) closeCard(); };
+const onDown = (e: MouseEvent) => { if (card && !card.contains(e.target as Node)) closeCard(); };
+
 export function initNotesGraph(c: NotesGraphContext): void {
   ctx = c;
-  new MutationObserver(() => { local?.refreshColors(); global?.refreshColors(); })
-    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && card) closeCard(); });
-  document.addEventListener('mousedown', (e) => { if (card && !card.contains(e.target as Node)) closeCard(); });
+  themeObserver?.disconnect();
+  themeObserver = new MutationObserver(() => { local?.refreshColors(); global?.refreshColors(); });
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  window.addEventListener('keydown', onKey);
+  document.addEventListener('mousedown', onDown);
   window.zcGraph = {   // for tests
     local: () => local, global: () => global, localPath: () => localPath, globalFocus: () => globalFocus,
     get data() { return data; },
   };
+}
+
+/** The plugin stops: take the graphs away. */
+export function teardownNotesGraph(): void {
+  closeGlobal();
+  themeObserver?.disconnect();
+  themeObserver = null;
+  window.removeEventListener('keydown', onKey);
+  document.removeEventListener('mousedown', onDown);
+  local?.destroy();
+  global?.destroy();
+  localHost?.closest('.ns-graph')?.remove();
+  globalEl?.remove();
+  local = global = null;
+  localHost = globalEl = null;
+  localPath = null;
+  data = null;
 }
 
 /* ================================================================ local */

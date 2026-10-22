@@ -120,6 +120,7 @@ class Plugin:
         actions=None,
         sources_changed: Callable[[], object] | None = None,
         tool_prefix: bool = True,
+        synapse=None,
     ):
         self.manifest = manifest
         self.id = manifest.id
@@ -141,6 +142,8 @@ class Plugin:
         self._sources_changed = sources_changed or (lambda: None)
         # a core plugin's tools keep the names they had when they were part of Synapse
         self._tool_prefix = tool_prefix
+        # a core plugin (part of Synapse) gets the app's Services object; other plugins None
+        self.synapse = synapse
         self.handlers: dict[str, Handler] = {}
         self.schedules: list[Schedule] = []
         self.wake: Callable[[], None] = lambda: None  # set by the host: wakes the background runner

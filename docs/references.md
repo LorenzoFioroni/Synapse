@@ -21,7 +21,6 @@ features fail with a message and the rest of the app works as before.
 | `backend/references/connections.py` | How a paper outside the library connects to it (for plugins' lists). |
 | `backend/references/store.py` | `data/citations.db`, where the fetched lists are kept. |
 | `backend/references/service.py` | `Citations`: fetching now or in a background queue, matching references to library items. |
-| `backend/references/graph.py` | The network shown in the Graph view (papers, cited works, notes). |
 
 ## Shared HTTP helpers
 
@@ -293,8 +292,8 @@ items involved:
 The library side (author index, word weights and postings) is built once and again only when
 `library_signature()` changes. `folders` limits all of it to papers in those folders.
 
-`build_graph()` in `backend/references/graph.py` adds the notes for the Graph view
-(`frontend/src/views/graph/`): `paper`, `work` and `note` nodes, and `cites`, `cite` (a note's
+`build_graph()` in the Graph core plugin (`plugins/graph/server/build.py`, served at
+`GET /api/plugins/graph/data`) adds the notes for the Graph view (`frontend/src/plugins/core/graph/`): `paper`, `work` and `note` nodes, and `cites`, `cite` (a note's
 `[@key]`), `link` (a note's `[[link]]`) and `about` (a paper note) edges. Everything is derived;
 nothing is stored. See [notes](notes.md) for the links it reads.
 
@@ -327,7 +326,6 @@ checkboxes; see [browser extension](browser-extension.md).
 | `POST /api/references/queue` | `api/references.py` | Queues `{ids}` for background fetching. |
 | `GET /api/references/status` | `api/references.py` | `{queued, running, last_error}`. |
 | `GET /api/graph/citations` | `api/references.py` | The whole citation graph (`Citations.graph()`). |
-| `GET /api/graph` | `api/references.py` | The Graph view's network (`build_graph()`). |
 | `POST /api/connector/save` | `api/connector.py`, `backend/connector.py` | The browser button; looks up metadata when the page has a DOI or arXiv id. |
 | `POST /api/outside/add` | `api/plugins.py`, `Services.add_paper` | Adds `{paper, folder_id, tags}` from a plugin's list: looked up by DOI or arXiv id (the paper's fields when that fails), duplicates checked. 201 `{item, duplicate: false}`, or 200 with the existing item and `duplicate: true`. |
 

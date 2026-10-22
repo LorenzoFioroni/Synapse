@@ -34,7 +34,7 @@ steps through the TypeScript.
   `views/notes/editor.ts`, only when Notes is opened;
 - `views/metadataReview.ts` from `afterAdd.ts`, `views/exportDialog.ts` from `settingsView.ts`;
 - the classic UMD scripts Mermaid (`views/notes/richRender.ts`) and force-graph
-  (`views/graph/forceGraph.ts`) by adding a `<script>` tag; they put `window.mermaid` and
+  (`plugins/core/graph/forceGraph.ts`) by adding a `<script>` tag; they put `window.mermaid` and
   `window.ForceGraph` on the page.
 
 ### Why `js/` is not committed
@@ -181,8 +181,7 @@ expects something else. To add an event, add it to `AppEvents` and to the table 
 | `focus-list` | none | `notesView.ts`, `settingsView.ts` | `itemlist.ts` |
 | `open-note` | `{ path, line? }` | item pane, `itemlist/menus.ts` | `main.ts` |
 | `open-notes`, `close-notes` | none | sidebar | `main.ts` |
-| `show-item` | item id | `notesGraph.ts`, `citeCard.ts`, `notesView.ts`, `referencesSection.ts` | `main.ts` |
-| `show-graph` | focus (`item:<id>`) | `itemlist/menus.ts` | `main.ts` |
+| `show-item` | item id | `plugins/core/graph/notesGraph.ts`, `citeCard.ts`, `notesView.ts`, `referencesSection.ts` | `main.ts` |
 | `open-import` | optional `File` | `itemlist/empty.ts`, `itemlist.ts`, `settingsView.ts` | `main.ts` |
 | `open-identifier`, `clear-search` | none | `itemlist/empty.ts` | `main.ts` |
 | `set-search-mode` | `SearchMode` | `itemlist/empty.ts`, `settingsView.ts` | `main.ts` |
@@ -311,8 +310,11 @@ without a DOM (views, search, sorting, groups; reading dates); `taskRender.ts` d
 `taskForm.ts` is the form of the detail pane and the popup; `tasksView.ts`, `taskList.ts` and
 `tasksState.ts` the Tasks page; `noteTasks.ts` tasks inside notes; `notePicker.ts` chooses a note.
 
-**`views/graph/`: the graph in Notes.** `model.ts` turns `/api/graph` into what is shown (no
-DOM, unit-tested); `forceGraph.ts` draws it with force-graph; `notesGraph.ts` is the local graph
+**`plugins/core/graph/`: the graph in Notes** (the Graph core plugin, `plugins/graph`). `index.ts`
+gives the notes view the graph through `views/notes/hooks.ts` (`setGraph`: the notes view puts the
+local graph in its side panel and shows the graph button only while it is set) and adds the
+command (Cmd/Ctrl+Shift+G) and Show in Graph for items. `model.ts` turns the plugin's `/data` into
+what is shown (no DOM, unit-tested); `forceGraph.ts` draws it with force-graph; `notesGraph.ts` is the local graph
 beside a note and the global graph in place of the editor. Both show a neighbourhood through
 `buildView`'s `focus` and `depth`: the local graph around the open note (depth 1 or 2), the global
 graph around the node it was opened for (`globalFocus`, depth 1, 2, 3 or 0 for everything, kept
@@ -384,8 +386,8 @@ state and call each other without import cycles. Three patterns are used:
   `annotations/input.ts` sets to show its selection controls.
 - **Dependency objects.** A module that needs a few things from its caller takes them as an
   argument: `attachCiteCards(container, deps: CiteCardDeps)` in `citeCard.ts`,
-  `livePreview(cm, deps: PreviewDeps)` in `livePreview.ts`, `initNotesGraph(ctx:
-  NotesGraphContext)` in `notesGraph.ts`. The module then does not import the notes view at all.
+  `livePreview(cm, deps: PreviewDeps)` in `livePreview.ts`, `GraphHook.attach(ctx:
+  NotesGraphContext)` (`views/notes/hooks.ts`). The module then does not import the notes view at all.
   `livePreview` also takes the CodeMirror library `cm` as an argument, because it is loaded
   lazily.
 - **ES module live bindings.** `annotations/model.ts` exports `let` variables (`attId`,
