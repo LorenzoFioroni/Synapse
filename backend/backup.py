@@ -5,6 +5,7 @@ One archive per backup, ``library-YYYYMMDD-HHMMSS.tar.gz``, holding:
 * ``library.db`` — copied with SQLite's online backup API, so it is consistent while the app runs;
 * ``settings.json``;
 * ``notes/`` — every note, the images notes use (``attachments/``) and both notes trashes;
+* ``fields.db`` — the values plugins attach to papers (copied like ``library.db``);
 * ``plugins.json`` and ``plugin-data/`` — which plugins are on, their settings and what they store
   (their SQLite databases copied consistently, like ``library.db``; their log files left out);
 * ``manifest.json`` — when, why, and how many items and notes it holds.
@@ -198,6 +199,10 @@ class Backups:
                         tar.add(p, arcname=f"notes/{p.relative_to(cfg.notes_dir).as_posix()}", recursive=False)
                     if cfg.plugins_state_path.is_file():
                         tar.add(cfg.plugins_state_path, arcname="plugins.json")
+                    if cfg.fields_db_path.is_file():
+                        fields_copy = Path(tmp) / "fields.db"
+                        self._sqlite_copy(cfg.fields_db_path, fields_copy)
+                        tar.add(fields_copy, arcname="fields.db")
                     for p, arc in self._plugin_files(Path(tmp)):
                         tar.add(p, arcname=arc, recursive=False)
                 part.replace(dest_dir / name)  # a half-written archive never looks like a backup
@@ -207,6 +212,16 @@ class Backups:
         self.prune()
         log.info("Backup %s (%s): %s items, %s notes", name, reason, items, notes)
         return {"name": name, "size": size, **manifest}
+
+    @staticmethod
+    def _sqlite_copy(src_path: Path, dst_path: Path) -> None:
+        src = sqlite3.connect(str(src_path), timeout=30)
+        dst = sqlite3.connect(str(dst_path))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
 
     def _plugin_files(self, tmp: Path) -> builtins.list[tuple[Path, str]]:
         """What plugins store, as (file to add, name in the archive). A SQLite database is copied
@@ -370,7 +385,15 @@ class Backups:
                         or not (m.isfile() or m.isdir())
                         or not parts
                         or parts[0]
-                        not in ("manifest.json", "library.db", "settings.json", "notes", "plugins.json", "plugin-data")
+                        not in (
+                            "manifest.json",
+                            "library.db",
+                            "settings.json",
+                            "notes",
+                            "plugins.json",
+                            "plugin-data",
+                            "fields.db",
+                        )
                     ):
                         raise BackupError(f"Unexpected entry in the backup: {m.name}")
                 if hasattr(tarfile, "data_filter"):
@@ -431,6 +454,10 @@ class Backups:
         cfg = self.s.config
         if (root / "plugins.json").is_file():
             shutil.copyfile(root / "plugins.json", cfg.plugins_state_path)
+        if (root / "fields.db").is_file():
+            self._sqlite_copy(
+                root / "fields.db", cfg.fields_db_path
+            )  # through the backup API: open connections stay valid
         data = root / "plugin-data"
         if not data.is_dir():
             return

@@ -3,7 +3,7 @@ import * as A from '../actions.js';
 import { itemSections } from '../extend.js';
 import { type ApiError, api, openAttachment, openPdfInNewWindow } from '../api.js';
 import { icon, typeIcon } from '../icons.js';
-import { byId, emit, folderById, folderPath, itemTypeLabel, on, selectedItems, state } from '../store.js';
+import { byId, emit, fieldText, folderById, folderPath, itemTypeLabel, on, selectedItems, state } from '../store.js';
 import { openMenu } from '../ui/menu.js';
 import { toast, toastError } from '../ui/toast.js';
 import { copyText, debounce, escapeHtml, formatDate, plural, shortAuthors, storage, store } from '../util.js';
@@ -13,7 +13,7 @@ import { openMetadataReview } from './metadataReview.js';
 import { confirmKeyChange } from './notes/rekeyDialog.js';
 import { fetchReferencesBulk, fillReferences } from './referencesSection.js';
 import { addSelectionToFolder, editTagsDialog, tagInput } from './organizeDialogs.js';
-import type { Item, ItemNotes } from '../types.js';
+import type { Item, ItemFieldValue, ItemNotes } from '../types.js';
 
 let root: HTMLElement;
 let shownId: string | null = null;
@@ -44,6 +44,13 @@ export function initItemPane(): void {
   on('items', () => render());
   on('item-updated', (id) => { if (id === shownId) refreshHeader(); });
   itemSections.subscribe(() => render(true));
+  on('item-fields', () => {
+    // plugins' fields appeared or their values changed: the section, without redrawing the pane
+    const it = shownId ? byId(shownId) : undefined;
+    const has = !!root.querySelector('[data-ip-pfields]');
+    if (!it) return;
+    if (has !== !!state.fieldDefs.length) render(true); else if (has) fillPluginFields(it);
+  });
   on('focus-field', ({ id, field }) => {
     if (shownId !== id) render(true);
     setTimeout(() => {
@@ -262,6 +269,7 @@ function renderItem(it: Item): void {
         <div class="field-row"><label>Tags</label><div class="ip-tags"></div></div>`, { count: (it.tags || []).length || '' })}
       ${section('references', 'References', '<div class="ip-refs" data-ip-refs><span class="muted">Loading…</span></div>')}
       ${section('attachments', 'Attachments', attHtml, { count: atts.length })}
+      ${state.fieldDefs.length ? section('plugin-fields', 'From Plugins', '<div class="ip-pfields" data-ip-pfields><span class="muted">Loading…</span></div>') : ''}
       ${extraSections(it)}
     </div>`;
   bindItem(it);
@@ -272,11 +280,40 @@ function renderItem(it: Item): void {
     if (shownId !== it.id) return;
     fillNotes(it);
     fillReferences(root.querySelector<HTMLElement>('[data-ip-refs]')!, it, () => shownId === it.id);
+    fillPluginFields(it);
     mountSections(it);
   };
   if (Date.now() - lastFill > FILL_SETTLE_MS) { lastFill = Date.now(); fill(); }
   else fillTimer = setTimeout(() => { lastFill = Date.now(); fill(); }, FILL_SETTLE_MS);
 }
+/** "From Plugins": the values plugins attach to this item (per-item fields), with where and when
+    each was fetched. */
+async function fillPluginFields(it: Item): Promise<void> {
+  const el = root.querySelector<HTMLElement>('[data-ip-pfields]');
+  if (!el) return;
+  let fields: ItemFieldValue[];
+  try { fields = (await api.itemFields(it.id)).fields; } catch (e) { el.innerHTML = `<span class="muted">${escapeHtml((e as Error).message)}</span>`; return; }
+  if (shownId !== it.id || !el.isConnected) return;
+  el.innerHTML = fields.map((f) => {
+    const value = f.value !== null && f.value !== undefined
+      ? (f.type === 'url' ? `<a href="${escapeHtml(String(f.value))}" target="_blank" rel="noopener">${escapeHtml(String(f.value))}</a>` : escapeHtml(fieldText(f, f.value)))
+      : `<span class="muted">${f.checked ? 'Not found' : 'Not fetched yet'}</span>`;
+    const from = [f.source && (f.source_url ? `<a href="${escapeHtml(f.source_url)}" target="_blank" rel="noopener">${escapeHtml(f.source)}</a>` : escapeHtml(f.source)),
+      f.updated && escapeHtml(ago(f.updated))].filter(Boolean).join(' · ');
+    return `<div class="field-row" data-pfield="${escapeHtml(f.id)}"><label title="${escapeHtml(`${f.label} (${f.plugin_name})${f.description ? `: ${f.description}` : ''}`)}">${escapeHtml(f.label)}</label>
+      <div class="fv readonly">${value}${from ? ` <span class="pf-from">${from}</span>` : ''}</div></div>`;
+  }).join('') || '<span class="muted">No plugin adds fields.</span>';
+}
+
+/** "3 days ago" for a time in seconds since the epoch. */
+function ago(secs: number): string {
+  const d = (Date.now() / 1000 - secs) / 86400;
+  if (d < 1 / 24) return 'just now';
+  if (d < 1) return `${Math.round(d * 24)} h ago`;
+  if (d < 60) return `${plural(Math.round(d), 'day')} ago`;
+  return formatDate(new Date(secs * 1000).toISOString());
+}
+
 /** The sections plugins add for this item (their bodies are filled by mountSections). */
 function extraSections(it: Item): string {
   return itemSections.all().filter((sec) => { try { return !sec.when || sec.when(it); } catch { return false; } })

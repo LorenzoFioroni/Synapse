@@ -20,7 +20,11 @@ def schema():
 def search_context(s) -> dict:
     from ..library.fields import ITEM_TYPE_LABELS
 
-    return {"folder_paths": s.folders.paths(), "type_labels": ITEM_TYPE_LABELS}
+    return {
+        "folder_paths": s.folders.paths(),
+        "type_labels": ITEM_TYPE_LABELS,
+        "field_filters": s.plugins.fields.search_filters(),  # plugins' fields: citations:>100
+    }
 
 
 def notes_matcher(s):
@@ -79,7 +83,7 @@ def list_items():
         items, more = search_mod.search(items, q, mode, s.fulltext, ctx, notes=notes)
         hits = {**{k: v for k, v in hits.items() if k in {p["id"] for p in items}}, **more}
     if request.args.get("lean") in ("1", "true"):
-        items = [lean(p) for p in items]
+        items = s.plugins.fields.attach([lean(p) for p in items])  # plugins' fields as _f, for columns
     return jsonify(items=items, hits=hits, counts=s.papers.counts(library), mode=mode, query=q, sidebar=sidebar(s))
 
 
@@ -94,7 +98,7 @@ def items_by_ids():
             items.append(lean(s.papers.get(i)))
         except NotFound:
             missing.append(i)
-    return jsonify(items=items, missing=missing, counts=s.papers.counts(), sidebar=sidebar(s))
+    return jsonify(items=s.plugins.fields.attach(items), missing=missing, counts=s.papers.counts(), sidebar=sidebar(s))
 
 
 @bp.get("/search/preview")
@@ -126,7 +130,8 @@ def create_item():
 
 @bp.get("/items/<item_id>")
 def get_item(item_id):
-    return jsonify(svc().papers.get(item_id))
+    s = svc()
+    return jsonify(s.plugins.fields.attach([s.papers.get(item_id)])[0])
 
 
 @bp.patch("/items/<item_id>")

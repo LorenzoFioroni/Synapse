@@ -30,6 +30,7 @@ from werkzeug.routing import Map, Rule
 from . import build, deps
 from .context import Plugin, PluginError, ToolSpec
 from .http import PluginHttp
+from .itemfields import FieldIndex, PluginFields
 from .jobs import Runner
 from .loading import Active, Entry, asset_path, forget_modules, load_module, newest
 from .manifest import ManifestError, read
@@ -50,6 +51,7 @@ class PluginHost:
         before_backup: Callable[[str], object] | None = None,
         changed: Callable[[], object] | None = None,
         settings=None,
+        fields_changed: Callable[[], object] | None = None,
     ):
         self.config = config
         self.safe_mode = bool(getattr(config, "safe_mode", False))
@@ -61,6 +63,12 @@ class PluginHost:
         self.private_network = False  # tests: let plugin.http reach a server on this computer
         self.installer = deps.pip_install  # tests replace it
         self._watcher: threading.Thread | None = None
+        # per-item fields of the running plugins (itemfields.py), stored in data/fields.db
+        self.fields = FieldIndex(
+            config.fields_db_path,
+            lambda: [d for a in list(self._active.values()) for d in a.plugin.fields.defs.values()],
+            fields_changed,
+        )
         self._entries: dict[str, Entry] = {}
         self._active: dict[str, Active] = {}
         self._lock = threading.RLock()
@@ -210,6 +218,13 @@ class PluginHost:
             library=self.library,
             before_upgrade=before_upgrade,
             http=PluginHttp(pid, man.network, lambda: self._user_agent(pid), private=self.private_network),
+            fields=PluginFields(
+                pid,
+                man.name,
+                lambda: self.fields.store,
+                self.library.get if self.library else None,
+                self.fields.changed,
+            ),
         )
         act = Active(entry, plugin, Worker(pid, plog, lambda what, e: self.fault(pid, what, e)), handler=handler)
         act.started = datetime.now().isoformat(timespec="microseconds")
@@ -230,10 +245,13 @@ class PluginHost:
                     raise PluginError("its backend has no activate(plugin) function")
                 start(plugin)
             act.urls = Map([Rule(r.rule, methods=list(r.methods), endpoint=i) for i, r in enumerate(plugin.routes)])
-            if self.role == "app" and (plugin.schedules or plugin.handlers):
+            refreshed = [d for d in plugin.fields.defs.values() if d.refresher]
+            if self.role == "app" and (plugin.schedules or plugin.handlers or refreshed):
                 act.runner = Runner(
                     pid, data_dir, plog, plugin.handlers, plugin.schedules, lambda what, e: self.fault(pid, what, e)
                 )
+                if refreshed:
+                    act.runner.refresher = lambda: self._refresh_fields(refreshed, plog)
                 plugin.wake = act.runner.wake
                 act.runner.start()
         except BaseException as e:
@@ -426,11 +444,22 @@ class PluginHost:
         }
 
     # ------------------------------------------------------------------ what plugins hear and serve
+    def _refresh_fields(self, defs: list, plog) -> int:
+        """One batch of each field's due values (on the plugin's runner thread)."""
+        if not self.library:
+            return 0
+        items = self.library.items()
+        return sum(self.fields.refresh(d, items, plog) for d in defs)
+
     def emit(self, event: str, **payload) -> None:
         """Tell the running plugins that ``event`` happened. Returns at once: listeners run on each
         plugin's worker thread."""
         with self._lock:
             targets = [(a, list(a.plugin.listeners.get(event, ()))) for a in self._active.values()]
+        if event in ("item.added", "item.changed"):
+            for act, _ in targets:
+                if act.runner:
+                    act.runner.refresh_soon()  # a new DOI may have new values to fetch
         for act, fns in targets:
             for fn in fns:
                 act.worker.submit(f"{event} listener", fn, dict(payload, event=event))

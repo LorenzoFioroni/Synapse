@@ -1,11 +1,13 @@
 // The item list's header: which columns show, their order and widths (drag to reorder, drag the
 // grip to resize, double-click it to fit), and sorting by a click on a column.
 import { icon } from '../../icons.js';
-import { COLUMNS, type ColumnDef, emit, saveColumns, saveSort, state } from '../../store.js';
+import { COLUMNS, FIELD_COL, type ColumnDef, colDef, emit, saveColumns, saveSort, state } from '../../store.js';
 import { openMenu, type MenuEntry } from '../../ui/menu.js';
 import { escapeHtml } from '../../util.js';
 
-export const COLDEF: Record<string, ColumnDef> = Object.fromEntries(COLUMNS.map((c) => [c.id, c]));
+const TITLE: ColumnDef = COLUMNS.find((c) => c.id === 'title')!;
+/** A column's definition (a field's column has none while its plugin is off). */
+const def = (id: string): ColumnDef => colDef(id) || TITLE;
 
 let table: HTMLElement, head: HTMLElement, body: HTMLElement;
 let resorted: () => void = () => {};
@@ -18,7 +20,8 @@ export function initColumns(els: { table: HTMLElement; head: HTMLElement; body: 
   bindHead();
 }
 
-export function visibleCols() { return state.columns.filter((c) => c.visible); }
+/** The columns shown: those turned on, except a plugin field's while its plugin is off. */
+export function visibleCols() { return state.columns.filter((c) => c.visible && colDef(c.id)); }
 
 function applyGrid(): void {
   const tpl = visibleCols().map((c) => (c.id === 'title' ? `minmax(${c.width}px, 1fr)` : `${c.width}px`)).join(' ');
@@ -29,13 +32,13 @@ function applyGrid(): void {
 export function renderHead(): void {
   const { col, dir } = state.sort;
   head.innerHTML = visibleCols().map((c) => {
-    const def = COLDEF[c.id];
+    const d = def(c.id);
     const sorted = col === c.id;
     const label = c.id === 'attachments' ? icon('paperclip', 'icon-sm')
-      : c.id === 'notes' ? icon('edit', 'icon-sm') : `<span class="label">${escapeHtml(def.label)}</span>`;
-    return `<div class="head-cell ${sorted ? 'sorted' : ''}" data-col="${c.id}" draggable="${def.fixed ? 'false' : 'true'}" title="${escapeHtml(def.label)}">
+      : c.id === 'notes' ? icon('edit', 'icon-sm') : `<span class="label">${escapeHtml(d.short || d.label)}</span>`;
+    return `<div class="head-cell ${sorted ? 'sorted' : ''}" data-col="${escapeHtml(c.id)}" draggable="${d.fixed ? 'false' : 'true'}" title="${escapeHtml(d.label)}">
       ${label}${sorted ? `<span class="sort">${dir === 'asc' ? '▲' : '▼'}</span>` : ''}
-      ${def.fixed ? '' : '<span class="grip" data-grip></span>'}</div>`;
+      ${d.fixed ? '' : '<span class="grip" data-grip></span>'}</div>`;
   }).join('');
   applyGrid();
 }
@@ -50,7 +53,7 @@ function bindHead(): void {
     if (!cell) return;
     const id = cell.dataset.col!;
     if (state.sort.col === id) state.sort.dir = state.sort.dir === 'asc' ? 'desc' : 'asc';
-    else state.sort = { col: id, dir: ['date_added', 'date_modified', 'year'].includes(id) ? 'desc' : 'asc' };
+    else state.sort = { col: id, dir: ['date_added', 'date_modified', 'year'].includes(id) || id.startsWith(FIELD_COL) ? 'desc' : 'asc' };
     saveSort();
     renderHead();
     resorted();
@@ -65,7 +68,7 @@ function bindHead(): void {
     const id = grip.parentElement!.dataset.col!;
     const col = state.columns.find((c) => c.id === id);
     if (!col) return;
-    const startX = e.clientX, startW = col.width, min = COLDEF[id].min || 40;
+    const startX = e.clientX, startW = col.width, min = def(id).min || 40;
     document.body.style.cursor = 'col-resize';
     const move = (ev: MouseEvent) => { col.width = Math.max(min, Math.round(startW + ev.clientX - startX)); applyGrid(); };
     const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); document.body.style.cursor = ''; saveColumns(); };
@@ -125,17 +128,21 @@ function autoFit(id: string): void {
 
 export function openColumnPicker(at: { x: number; y: number } | Element): void {
   const entries: MenuEntry[] = [{ section: 'Columns' }];
+  const toggle = (c: (typeof state.columns)[number]) => ({
+    label: def(c.id).label, checked: c.visible, keepOpen: true,
+    run: () => { c.visible = !c.visible; saveColumns(); emit('columns'); },
+  });
   for (const c of state.columns) {
-    if (c.id === 'title') continue;
-    entries.push({
-      label: COLDEF[c.id].label, checked: c.visible, keepOpen: true,
-      run: () => { c.visible = !c.visible; saveColumns(); emit('columns'); },
-    });
+    if (c.id === 'title' || c.id.startsWith(FIELD_COL)) continue;
+    entries.push(toggle(c));
   }
+  const fields = state.columns.filter((c) => c.id.startsWith(FIELD_COL) && colDef(c.id));
+  if (fields.length) entries.push({ section: 'From plugins' }, ...fields.map(toggle));
   entries.push('sep', {
     label: 'Reset Columns', icon: 'refresh', run: () => {
       localStorage.removeItem('zc.columns');
-      const fresh = COLUMNS.map((c) => ({ id: c.id, width: c.width, visible: ['attachments', 'title', 'creator', 'year', 'journal', 'date_added'].includes(c.id) }));
+      const fresh = [...COLUMNS.map((c) => ({ id: c.id, width: c.width, visible: ['attachments', 'title', 'creator', 'year', 'journal', 'date_added'].includes(c.id) })),
+        ...state.columns.filter((c) => c.id.startsWith(FIELD_COL)).map((c) => ({ ...c, visible: false }))];
       state.columns.splice(0, state.columns.length, ...fresh);
       saveColumns(); emit('columns');
     },

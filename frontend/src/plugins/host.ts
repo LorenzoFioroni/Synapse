@@ -3,10 +3,11 @@
 // Syncs with the server at start, when the change feed says plugins changed, and after Settings
 // turned one on or off. A plugin's module is loaded again when the plugin restarts (its start time
 // is part of the URL). See docs/plugins.md.
-import { api } from '../api.js';
+import { type ApiError, api } from '../api.js';
 import { type Dispose, badges, commands, itemActions, itemSections, keyProblem, pages } from '../extend.js';
 import { icon } from '../icons.js';
-import { emit, on, selectedItems } from '../store.js';
+import * as A from '../actions.js';
+import { emit, on, selectedItems, syncFieldColumns } from '../store.js';
 import { confirmDialog, promptDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
 import type { Item, PluginInfo } from '../types.js';
@@ -58,8 +59,15 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
   const pid = info.id;
   const full = (id: string) => `${pid}.${id}`;
   const keep = (d: Dispose): Dispose => { rec.disposers.push(d); return d; };
-  const call = <T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, query?: Record<string, unknown>) =>
-    api.pluginRoute<T>(pid, method, path, body, query);
+  // A call that reaches the server after the plugin stopped (turned off in another window, say)
+  // never settles: the plugin's code is being taken down, and an error would only be noise.
+  const call = <T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, query?: Record<string, unknown>): Promise<T> =>
+    api.pluginRoute<T>(pid, method, path, body, query).catch((e: unknown) => {
+      const stopped = loaded.get(pid) !== rec || ((e as ApiError).status === 404 && /^No plugin /.test((e as Error).message));
+      if (!stopped) throw e;
+      syncPlugins();
+      return new Promise<T>(() => {});
+    });
   return {
     id: pid,
     name: info.name,
@@ -187,7 +195,18 @@ function unload(id: string): void {
   rec.style?.remove();
 }
 
+/** The fields running plugins declare: their columns, and values in the list once they change. */
+async function syncFields(): Promise<void> {
+  let defs;
+  try { defs = (await api.pluginFields()).fields; } catch { return; }
+  if (!syncFieldColumns(defs)) return;
+  emit('columns');
+  emit('item-fields');
+  await A.loadItems();   // the items' values (_f) of fields that just appeared
+}
+
 async function doSync(): Promise<void> {
+  await syncFields();
   let list: PluginInfo[];
   try { list = (await api.plugins()).plugins; } catch { return; }
   const want = new Map(list.filter((p) => p.running && (p.frontend || p.styles)).map((p) => [p.id, p]));
@@ -209,8 +228,9 @@ export function syncPlugins(): Promise<void> {
 }
 
 /** The change feed named these kinds (changes.ts). */
-export function pluginChanges(kinds: string[]): void {
-  if (kinds.includes('plugins')) syncPlugins();
+export async function pluginChanges(kinds: string[]): Promise<void> {
+  // plugins turned off hear nothing more (their routes are gone): sync first
+  if (kinds.includes('plugins')) await syncPlugins();
   for (const rec of loaded.values()) for (const fn of rec.listeners) fn(kinds as ChangeKind[]);
 }
 

@@ -133,6 +133,8 @@ which `tools/list` and `tools/call` ask each time, so a plugin turned on in the 
 restarting the server (the MCP server follows `plugins.json`). Over `/mcp` (`remote=True`) only
 plugins whose tools the user allowed for other computers take part. A plugin's `PluginError`
 reaches the model as a tool error (`_readable`); anything else counts as the plugin failing.
+Plugins' per-item fields reach the model too: `get_paper` lists their known values as
+`plugin_fields`, and `search_library` takes them as filters (`citations:>100`).
 
 Claude's task changes are recorded with `by: "ai"` in `task_history`, so the app shows them as
 Claude's and can undo them; `get_note` lists the tasks a note shows, and `NoteChecker` refuses a

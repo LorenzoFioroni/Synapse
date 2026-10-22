@@ -263,11 +263,11 @@ them. It waits while a field, a dialog or the editor is in use. See
 | Module | Role |
 |---|---|
 | `itemlist.ts` | The items table: selection, keyboard, dragging items out, file drops, copying BibTeX. |
-| `itemlist/columns.ts` | The header: visible columns, order, widths, sorting. |
+| `itemlist/columns.ts` | The header: visible columns, order, widths, sorting. Plugins' per-item fields are columns `f:<plugin>.<name>` (`colDef`, `syncFieldColumns` and `fieldText` in `store.ts`), kept in the saved columns while their plugin is off. |
 | `itemlist/rows.ts` | The virtualised rows: only rows near the viewport are in the DOM, between two spacers. |
 | `itemlist/empty.ts` | What an empty list says, with buttons for what to do. |
 | `itemlist/menus.ts` | Context menus for items and attachments, shared with the item pane. |
-| `itempane.ts` | The right-hand pane: editable fields, authors, abstract, attachments. |
+| `itempane.ts` | The right-hand pane: editable fields, authors, abstract, attachments; *From Plugins* (values plugins attach, from `/api/items/<id>/fields`) and the sections plugins add. |
 | `referencesSection.ts` | The item pane's References section (see [references](references.md)). |
 | `sidebar.ts` | Library views, folder tree, smart folders, tag pane, the pages plugins add, and drag and drop onto them. |
 | `pages.ts` | A plugin's page in place of the library (`openPage`, `closePage`; `body[data-workspace="page"]`). |

@@ -1,7 +1,8 @@
 """Recently Added: an example of a Synapse plugin (docs/plugins.md).
 
 It shows each part of the plugin API once: settings from the manifest, a SQLite store with a
-migration, an event listener, a schedule, reading the library, routes and a tool for Claude. Its frontend
+migration, an event listener, a schedule, reading the library, routes, a tool for Claude and two
+per-item fields (one it sets itself, one Synapse asks it to fill). Its frontend
 (frontend/main.js) adds a page, a command, an item-pane section and an item action.
 """
 
@@ -16,6 +17,22 @@ from .store import SCHEMA
 
 def activate(plugin: Plugin) -> None:
     db = plugin.storage.sqlite("added", migrations=SCHEMA)
+
+    # Per-item fields: each is a list column, a search filter (added_on:>2026-10-01,
+    # author_count:>100), a row in the item pane and data Claude sees.
+    plugin.fields.declare("added_on", type="date", label="Added On", description="When this plugin saw it added")
+
+    def count_authors(papers: list[dict]) -> dict:
+        # Synapse hands over the library items with no value yet (or older than `refresh`), in
+        # batches; what comes back is stored. Citation counts work the same way, from the web.
+        out = {}
+        for p in papers:
+            item = plugin.library.get(p["item_id"])
+            names = [a for a in ((item or {}).get("authors") or "").split(";") if a.strip()]
+            out[p["key"]] = len(names) if names else None
+        return out
+
+    plugin.fields.declare("author_count", type="int", label="Authors", refresh="1d", refresher=count_authors)
 
     def forget_old() -> None:
         cutoff = _ago(plugin.settings["keep_days"])
@@ -34,6 +51,7 @@ def activate(plugin: Plugin) -> None:
                     "INSERT OR REPLACE INTO added (item_id, title, added_at) VALUES (?, ?, ?)",
                     (item_id, item.get("title") or "", _now()),
                 )
+                plugin.fields.set(item, "added_on", _now()[:10])
         forget_old()
 
     # once a day (and at the first start), in the web app
@@ -81,6 +99,8 @@ def activate(plugin: Plugin) -> None:
             raise PluginError("ids: a list of item ids")
         with db.session() as c:
             c.executemany("DELETE FROM added WHERE item_id = ?", [(str(i),) for i in ids])
+        for i in ids:
+            plugin.fields.set(str(i), "added_on", None)
         return {"forgotten": len(ids)}
 
     @plugin.mcp_tool("Items added to the library in the last days, newest first, with when each arrived.")

@@ -230,6 +230,33 @@ async def main():
             )
             check("the item pane has its section", ok)
             await shot(page, "p7-section")
+
+            # its per-item fields: the item pane, a column, the search
+            today = time.strftime("%Y-%m-%d", time.gmtime())
+            pf = '[data-pfield="recently-added.added_on"]'
+            ok = await wait_for(
+                lambda: page.evaluate(f"(document.querySelector('{pf}')?.textContent || '').includes('{today}')")
+            )
+            check("the item pane shows its field's value", ok)
+            await page.click('[data-a="columns"]')
+            await page.click(".menu-item:has-text('Added On (Recently Added)')")
+            await page.keyboard.press("Escape")
+            col = '.head-cell[data-col="f:recently-added.added_on"]'
+            check("its field is a column", await wait_for(lambda: page.is_visible(col)))
+            cell = '.row.selected .cell[data-col="f:recently-added.added_on"]'
+            ok = await wait_for(
+                lambda: page.evaluate(f"(document.querySelector('{cell}')?.textContent || '') === '{today}'")
+            )
+            check("the column shows the value", ok)
+            await shot(page, "p7b-column")
+            await page.fill("#search-input", "added_on:>2000-01-01")
+            ok = await wait_for(lambda: page.evaluate("document.querySelectorAll('.row[data-id]').length === 1"))
+            await page.fill("#search-input", "added_on:none")
+            ok2 = await wait_for(lambda: page.evaluate("document.querySelectorAll('.row[data-id]').length === 0"))
+            check("the search filters by it", ok and ok2)
+            await page.press("#search-input", "Escape")
+            await page.wait_for_selector(".row[data-id]")
+            await page.click(".row[data-id]")
             await page.click(".row.selected", button="right")
             await page.click(".menu-item:has-text('Forget When It Was Added')")
             ok = await wait_for(

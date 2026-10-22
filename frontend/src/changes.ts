@@ -2,6 +2,7 @@
 // show up here without a reload. The page asks /api/changes every few seconds while it is
 // visible (and at once when it becomes visible again); the server leaves out this page's own edits.
 import * as A from './actions.js';
+import { emit } from './store.js';
 import { api } from './api.js';
 import { notesChanged } from './views/notes/notesView.js';
 import { pluginsChanged } from './views/settings/plugins.js';
@@ -39,6 +40,11 @@ async function apply() {
   const notes = pending.delete('notes');
   if (notes) notesChanged();
   if (pending.delete('tasks') || notes) tasksChanged();   // a note's {{task:…}} lines may have changed too
+  if (pending.delete('fields')) {
+    // values plugins attach changed (background refreshes): the list's columns and the item pane
+    pending.add('library');
+    emit('item-fields');
+  }
   if (pending.has('library')) {
     if (Date.now() - lastLibrary < MIN_GAP) return;   // tried again at the next poll
     pending.delete('library');
@@ -55,7 +61,7 @@ async function poll() {
     seq = res.seq;
     epoch = res.epoch;
     for (const k of res.changes || []) pending.add(k);
-    if (res.changes?.length) pluginChanges(res.changes);   // plugins hear what changed (and reload on 'plugins')
+    if (res.changes?.length) void pluginChanges(res.changes);   // plugins hear what changed (and reload on 'plugins')
     pending.delete('annotations');   // the PDF viewer looks after its own
     if (pending.size) await apply();
   } catch { /* server away for a moment: try again next time */ }

@@ -3,7 +3,7 @@
 import type {
   AccessToken, AccessTokensOverview, AssistCompletion, AssistStatus, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
   ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
-  Passkey, PasskeysOverview, PdfImport, PluginInfo, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
+  ItemFieldValue, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview,
 } from './types.js';
 import { openNewWindow, openPageInNewWindow } from './windows.js';
@@ -98,6 +98,8 @@ export const api = {
   newAccessToken: (name: string) => request<{ token: string; entry: AccessToken }>('POST', '/api/mcp/tokens', { name }),
   removeAccessToken: (id: string) => request('DELETE', `/api/mcp/tokens/${encodeURIComponent(id)}`),
   plugins: () => request<PluginsOverview>('GET', '/api/plugin-host'),
+  pluginFields: () => request<{ fields: PluginField[] }>('GET', '/api/plugin-fields'),
+  itemFields: (id: string) => request<{ fields: ItemFieldValue[] }>('GET', `/api/items/${encodeURIComponent(id)}/fields`),
   /** A plugin's own route (/api/plugins/<id><path>), for its frontend (plugins/host.ts). */
   pluginRoute: <T = unknown>(id: string, method: Method, path: string, body?: unknown, query?: Record<string, unknown>) => {
     const q = query ? qs(query) : '';

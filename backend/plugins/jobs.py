@@ -25,6 +25,7 @@ from .schedule import Schedule
 
 BACKOFF = (30, 120, 600)  # seconds before the 1st, 2nd, 3rd … retry
 POLL_S = 2.0  # how often the queue is looked at when nothing woke the runner
+REFRESH_EVERY_S = 600  # how often fields are checked for values to fetch (and soon after items are added)
 QUEUE_FILE = ".jobs.sqlite"  # a dot file: not in backups (work to do, not data)
 STATE_FILE = ".schedules.json"
 
@@ -151,6 +152,9 @@ class Runner:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
+        # fetches one batch of field values; returns how many papers it asked about (0: none due)
+        self.refresher: Callable[[], int] | None = None
+        self._refresh_soon = True  # also at start
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._loop, name=f"plugin-jobs-{self.pid}", daemon=True)
@@ -158,6 +162,22 @@ class Runner:
 
     def wake(self) -> None:
         self._wake.set()
+
+    def refresh_soon(self) -> None:
+        """Look for field values to fetch at once (items were added)."""
+        if self.refresher:
+            self._refresh_soon = True
+            self._wake.set()
+
+    def run_refresh(self) -> int:
+        """One batch of field values; a failure counts against the plugin."""
+        if not self.refresher:
+            return 0
+        try:
+            return self.refresher()
+        except Exception as e:
+            self.fault("refreshing fields", e)
+            return 0
 
     def stop(self, timeout: float = 5.0) -> None:
         self._stop.set()
@@ -241,7 +261,8 @@ class Runner:
         return True
 
     def _loop(self) -> None:
-        last_sched = 0.0
+        last_sched = last_refresh = 0.0
+        more = False
         while not self._stop.is_set():
             try:
                 if time.monotonic() - last_sched >= 20:
@@ -249,7 +270,14 @@ class Runner:
                     self.run_schedules()
                 while not self._stop.is_set() and self.run_one():
                     pass
+                due = self._refresh_soon or more or time.monotonic() - last_refresh >= REFRESH_EVERY_S
+                if self.refresher and due and not self._stop.is_set():
+                    self._refresh_soon = False
+                    last_refresh = time.monotonic()
+                    more = self.run_refresh() > 0  # a full batch may leave more: go on, jobs first
             except Exception:  # the queue itself failed (disk full …): keep the thread alive
                 self.log.error("Background work failed:\n%s", traceback.format_exc())
+            if more:
+                continue
             self._wake.wait(POLL_S)
             self._wake.clear()

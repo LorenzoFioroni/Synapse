@@ -29,6 +29,7 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "Search the library",
             "Search the user's library: items (metadata, PDF full text and what notes say about them) and notes. "
             'Supports filters: folder:"Physics/Transport" tag:x year:2018-2022 author:name has:pdf type:book, '
+            "the fields plugins add (e.g. citations:>100, citations:none), "
             '-term to exclude, "quoted phrases"; all terms must match. Returns items with citation keys and '
             "a matching snippet, and notes with paths. Use list_collections to see folder and tag names.",
             {
@@ -110,7 +111,8 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "get_paper",
             "Get a paper's details",
             "Metadata and abstract of a library item, its PDFs (with page counts), the user's paper note about it, "
-            "the lines of other notes that cite it, and a summary of its stored reference list.",
+            "the lines of other notes that cite it, a summary of its stored reference list, and values plugins "
+            "attach to it (plugin_fields, e.g. a citation count).",
             {"type": "object", "properties": {"paper": paper_arg}, "required": ["paper"]},
             t.get_paper,
         )

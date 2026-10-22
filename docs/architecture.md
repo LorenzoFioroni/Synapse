@@ -25,7 +25,7 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
  (other PC)   │                                                                 │
               │ data/  library.db · fulltext.db · notes/ · notes_index.db ·     │
               │        citations.db · pdfs/ · backups/ · settings.json · auth.db│
-              │        plugins/ · plugin-data/ · plugins.json                   │
+              │        plugins/ · plugin-data/ · plugins.json · fields.db       │
               └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,7 +71,7 @@ Two objects tie the backend together:
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
 | `assist/` | Autocompletion in notes from a model in Ollama on this computer: the client, the prompt, and checking that Ollama and the model are there (see [autocompletion](autocompletion.md)). | none |
-| `plugins/` | The plugin host: finds the plugins in `data/plugins/` (and those that come with Synapse in `plugins/`), starts and stops them, gives them the `Plugin` object (routes, tools for Claude, events, settings, storage, reading the library), and turns off one that keeps failing (see [plugins](plugins.md)). `backend.plugins` is also the only module plugins import. | `plugins.json`, `plugin-data/` |
+| `plugins/` | The plugin host: finds the plugins in `data/plugins/` (and those that come with Synapse in `plugins/`), starts and stops them, gives them the `Plugin` object (routes, tools for Claude, events, settings, storage, reading the library), and turns off one that keeps failing (see [plugins](plugins.md)). `backend.plugins` is also the only module plugins import. | `plugins.json`, `plugin-data/`, `fields.db` |
 | `desktop/` | Running Synapse like a desktop program: opening its window (`window.py`), the open windows that keep a `--quit-when-closed` server running (`presence.py`), the desktop shortcut (`shortcut.py`). See [the app window](desktop.md). | none |
 
 Only `online/` and `references/` use the network. `assist/` talks only to Ollama on this computer

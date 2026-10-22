@@ -33,7 +33,11 @@ class LibraryReader:
     def search(self, query: str, *, limit: int = 50, fulltext: bool = False) -> list[dict]:
         """Items matching ``query`` in the library's search syntax (words, "phrases", -word,
         tag:, folder:, year:, author:, has:pdf …); with ``fulltext`` also the text of PDFs."""
-        ctx = {"folder_paths": self._s.folders.paths(), "type_labels": ITEM_TYPE_LABELS}
+        ctx = {
+            "folder_paths": self._s.folders.paths(),
+            "type_labels": ITEM_TYPE_LABELS,
+            "field_filters": self._s.plugins.fields.search_filters(),
+        }
         found, _ = search_mod.search(
             self._s.papers.list(), query, "fulltext" if fulltext else "all", self._s.fulltext, ctx
         )

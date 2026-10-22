@@ -92,6 +92,11 @@ class Config:
         return self.data_dir / "plugin-data"
 
     @property
+    def fields_db_path(self) -> Path:
+        # Values plugins attach to papers (backend/plugins/fields.py); in backups.
+        return self.data_dir / "fields.db"
+
+    @property
     def plugins_state_path(self) -> Path:
         # Which plugins are on, and their settings.
         return self.data_dir / "plugins.json"

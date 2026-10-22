@@ -30,3 +30,6 @@ body[data-workspace="page"] #item-pane { display: none !important; }
 /* sections plugins add to the item pane */
 .ip-source { color: var(--text-3); font-weight: 400; font-size: var(--fs-xs); margin-left: 4px; }
 .ip-ext:empty::before { content: "…"; color: var(--text-3); }
+.ip-pfields .pf-from { color: var(--text-3); font-size: var(--fs-xs); margin-left: 4px; }
+.ip-pfields .pf-from a { color: inherit; }
+.cell[data-col^="f:"] { font-variant-numeric: tabular-nums; }

@@ -3,7 +3,7 @@
 // attachment rows when expanded, its full-text snippet), whose height is estimated and then
 // measured.
 import { icon, typeIcon } from '../../icons.js';
-import { byId, itemFolderPaths, itemTypeLabel, on, sortedItems, state, tagColor } from '../../store.js';
+import { FIELD_COL, byId, fieldText, itemFolderPaths, itemTypeLabel, on, sortedItems, state, tagColor } from '../../store.js';
 import type { Item } from '../../types.js';
 import { escapeHtml, formatDate, hitBadge, plural, shortAuthors } from '../../util.js';
 import { visibleCols } from './columns.js';
@@ -62,7 +62,12 @@ function cellHtml(colId: string, it: Item): string {
     case 'creator': return escapeHtml(shortAuthors(it.authors));
     case 'item_type': return escapeHtml(itemTypeLabel(it.item_type || ''));
     case 'date_added': case 'date_modified': return escapeHtml(formatDate(it[colId]));
-    default: return escapeHtml(String(it[colId] ?? ''));
+    default:
+      if (colId.startsWith(FIELD_COL)) {
+        const fid = colId.slice(FIELD_COL.length);
+        return escapeHtml(fieldText(state.fieldDefs.find((f) => f.id === fid), it._f?.[fid]));
+      }
+      return escapeHtml(String(it[colId] ?? ''));
   }
 }
 

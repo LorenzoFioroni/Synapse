@@ -84,6 +84,7 @@ class Services:
             before_backup=self.backups.before,
             changed=lambda: self.changes.record({"plugins"}),
             settings=self.settings,
+            fields_changed=lambda: self.changes.record({"fields"}),
         )
         self.papers.on_items(lambda event, ids, **details: self.plugins.emit(event, ids=ids, **details))
         self.papers.on_citekey_change(lambda i, old, new: self.plugins.emit("citekey.changed", id=i, old=old, new=new))

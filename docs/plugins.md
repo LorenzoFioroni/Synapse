@@ -5,12 +5,13 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-The design and the plan for the rest of the plugin API (per-item fields, paper feeds) are in the
-design doc "Synapse plugin API v1". What exists today:
+The design and the plan for the rest of the plugin API (paper feeds, adding to the library) are in
+the design doc "Synapse plugin API v1". What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
-  library, settings, stored data, schedules and background jobs, the web (within the hosts its
-  manifest names), Python packages of its own, a log.
+  library, settings, stored data, **per-item fields** (values attached to papers that become list
+  columns, search filters, item-pane rows and data for Claude), schedules and background jobs, the
+  web (within the hosts its manifest names), Python packages of its own, a log.
 - **Frontend** (JavaScript): pages with a sidebar entry, commands in the command palette (with keys),
   sections in the item pane, actions in the item menu, notifications, calls to its own routes.
 
@@ -155,6 +156,7 @@ def activate(plugin: Plugin) -> None:
 | `plugin.on_unload(fn)` | Calls `fn()` when the plugin is turned off (to stop a thread it started, say). |
 | `@plugin.schedule(name, cron=…, every=…, tz=None, catch_up=True)` | Runs the function on a cron rule or every so often, in the web app (see [Background work](#background-work)). Also `plugin.schedule(name, fn, …)`. |
 | `@plugin.job(name, retries=3)` / `plugin.jobs.enqueue(name, *args, key=None, delay=0)` | A job handler, and queuing work for it; `plugin.jobs.pending()` lists what waits. |
+| `plugin.fields` | `declare(name, type=…, label=…, refresher=…, refresh=…)`, `set(paper, name, value)`, `set_many(name, {paper: value})`, `get(paper, name)`, `key(paper)`, `clear(name)`: values attached to papers (see [Per-item fields](#per-item-fields)). |
 | `plugin.http` | `get(url, params=…)`, `post(url, json=…)`, `request(method, url, …)`, `limit(host, seconds)`: the web, within the manifest's `network` (see [Reaching the web](#reaching-the-web)). |
 
 Raise **`PluginError("…")`** for a problem the user or Claude should read: a route answers 400 with
@@ -185,6 +187,45 @@ Prefer `plugin.storage.sqlite` for records. Its `migrations` list brings the sch
 can be updated. Before migrating a database that already holds data, Synapse makes a backup (as
 before other risky operations). A database written by a newer version of the plugin is refused
 rather than damaged.
+
+### Per-item fields
+
+A field is a typed value a plugin attaches to papers: a citation count, a score, a status. Declare
+it once and Synapse does the rest:
+
+```python
+def counts(papers: list[dict]) -> dict:
+    # papers: [{"key", "item_id", "doi", "arxiv", "title", "year"}, …], at most 50 at a time
+    found = lookup([p["doi"] for p in papers if p["doi"]])  # your code, with plugin.http
+    return {p["key"]: found.get(p["doi"]) for p in papers}  # missing ones: "not found"
+
+
+plugin.fields.declare("citations", type="int", label="Citations", source="OpenAlex", refresher=counts, refresh="7d")
+plugin.fields.set(item, "citations", 152)  # or set values yourself
+plugin.fields.set({"arxiv": "2610.01234"}, "citations", 0)  # also for a paper not in the library
+```
+
+- **Where it shows.** In the list's column chooser under *From plugins* ("Citations (Citation
+  Counts)", sortable, empty values last); as a search filter, also in smart folders and Claude's
+  `search_library` (`citations:>100`, `citations:10-50`, `citations:none` for no known value,
+  `citations:any`, a word for text, `true`/`false`, dates like `>2026-01-01`; when two plugins
+  use one name, or the search has a filter of that name, write `<plugin id>.<name>:`); in the
+  item pane under *From Plugins*, with its source and when it was fetched; and in Claude's
+  `get_paper` as `plugin_fields`.
+- **Types**: `int`, `float`, `text`, `date`, `bool`, `url`, `enum` (with `options`). A value that
+  does not fit is refused with a `PluginError`. `None` means the plugin looked and found nothing
+  ("Not found"), which is kept apart from never having looked ("Not fetched yet") and from 0.
+- **Whose value.** Values are stored by the paper's DOI, else its arXiv id, else the library
+  item's id, so a value set for a paper not in the library (`{"doi": …}`, `{"arxiv": …}`) is
+  there when the paper is added, and an item keeps its values when it gains a DOI. A paper is
+  named by the item (its dict or id), `{"doi": …}`, `{"arxiv": …}`, or a key (`"doi:10.…"`).
+- **Refreshing.** With a `refresher`, Synapse hands it the library items that have no value yet,
+  then (with `refresh`, e.g. `"7d"`) those whose value is older, 50 at a time, on the plugin's
+  background thread in the web app: soon after items are added or changed, and every ten
+  minutes. It returns `{key: value}` (or `{key: (value, source_url)}`); keys it leaves out are
+  stored as not found. An `HttpError` leaves them unasked, to try again later.
+- Values live in `data/fields.db` (in backups), apart from the library. A plugin turned off takes
+  its columns and filters with it; its values stay for when it is turned on again.
 
 ### Background work
 
@@ -325,6 +366,7 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
 | `build.py` | TypeScript frontends bundled with esbuild into `.build/`. |
 | `loading.py` | Importing a plugin's backend, the files of its frontend the app may fetch, when its files last changed. |
 | `report.py` | What Settings shows about a plugin (`describe`). |
+| `fields.py`, `itemfields.py` | Per-item fields: keys, types, the store (`data/fields.db`) and filters; `plugin.fields` and `FieldIndex` (values for the list and the item pane, search filters, refreshing). |
 | `scaffold.py` | `--new-plugin`. |
 | `errors.py` | `PluginError`. |
 | `runtime.py` | A plugin's log file, its worker thread and its failure count. |
@@ -352,7 +394,9 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
   the change feed tells the open windows.
 - **Data.** `data/plugins/` holds plugins (code, not in backups), `data/plugin-data/<id>/` what each
   stores plus dot files that are left out of backups: its log `.plugin.log`, `.python/`, `.build/`,
-  `.jobs.sqlite`, `.schedules.json`. `data/plugins.json` is their state. Backups hold `plugins.json` and `plugin-data/` (SQLite files copied with the backup API);
+  `.jobs.sqlite`, `.schedules.json`. `data/plugins.json` is their state, `data/fields.db` the values
+  of their fields. Backups hold `plugins.json`, `fields.db` and `plugin-data/` (SQLite files copied
+  with the backup API);
   restoring stops the plugins, puts both back (keeping today's logs) and starts them again.
 - **The frontend** (`frontend/src/plugins/host.ts`) asks `/api/plugin-host` which plugins run, then
   `import()`s each one's module from `/api/plugin-files/<id>/<path>?v=<started>` and loads its
@@ -364,6 +408,14 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
   `pages` (`views/pages.ts`, the sidebar's Plugins section), `itemSections` (the item pane) and
   `itemActions` (the item menu). The plugin host prefixes ids with the plugin's id, wraps every
   function so its errors are reported, and passes copies of items.
+- **Fields.** `PluginHost.fields` (a `FieldIndex`) reads the declarations of the running plugins.
+  `api/items.py` attaches known values to the items it lists as `_f` (`{"<plugin>.<name>": value}`)
+  and passes `search_filters()` to the search as `ctx["field_filters"]` (`library/search.py` only
+  knows them as functions); the MCP tools do the same. The item pane asks
+  `/api/items/<id>/fields`, the column chooser `/api/plugin-fields`. A change of values records
+  `fields` in the change feed; the open windows reload the list. A plugin with a refresher gets a
+  background runner that calls `FieldIndex.refresh` (`Runner.refresher`), woken on `item.added`
+  and `item.changed`.
 - **Trust.** Plugins are not sandboxed: Python plugins run inside the server with its access, and a
   plugin's frontend runs in the app's page, with its access.
   Permissions are shown before turning a plugin on and checked where the API can check them
@@ -371,11 +423,13 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
 
 ## Tests
 
-`tests/plugins/` (manifests, the host, storage and backups, the files of a frontend; `test_http.py`
+`tests/plugins/` (manifests, the host, storage and backups, the files of a frontend; `test_fields.py`
+for per-item fields (keys, types, filters, the list, the item pane, the refresher, outside papers,
+Claude, backups); `test_http.py`
 against a local server, `test_jobs.py` for cron rules, schedules and jobs, `test_tooling.py` for
 background work in the app and the MCP server, packages with a stand-in for pip, TypeScript builds,
 the scaffold and dev plugins; the example plugin is installed by the `example` fixture and
 `make_plugin` writes small ones), the import rule
 in `tests/test_layers.py`, `tests/js/extend.test.mjs` (registries, keys, the palette's ranking), and
-the browser checklist `plugins` (Settings → Plugins and the example plugin's page, command, section
+the browser checklist `plugins` (Settings → Plugins and the example plugin's page, command, fields, section
 and action).

@@ -304,7 +304,9 @@ function openModeMenu(anchor: HTMLElement): void {
     'sep',
     { section: 'Filters (combine with text)' },
     ...[['tag:name', 'Tagged with…'], ['folder:name', 'In folder (or subfolder)…'], ['year:2018-2022', 'Year or range (also >2015)'],
-      ['type:book', 'Item type…'], ['has:pdf', 'Has a PDF'], ['author:name', 'Author…']].map(([f, label]) => ({
+      ['type:book', 'Item type…'], ['has:pdf', 'Has a PDF'], ['author:name', 'Author…'],
+      ...state.fieldDefs.map((f) => [`${fieldFilterName(f)}:${['int', 'float'].includes(f.type) ? '>10' : 'value'}`, `${f.label} (${f.plugin_name})`]),
+    ].map(([f, label]) => ({
       label: `${f}  —  ${label}`, run: () => {
         const v = searchInput.value.trim();
         searchInput.value = `${v ? `${v} ` : ''}${f.split(':')[0]}:`;
@@ -314,6 +316,13 @@ function openModeMenu(anchor: HTMLElement): void {
     })),
     { label: 'Tip: "exact phrase", -exclude, -tag:read', disabled: true },
   ], anchor);
+}
+
+/** The name a plugin's field is filtered by: its own, unless another plugin or the search itself
+    uses it (backend/library/search.py FILTER_KEYS). */
+const CORE_FILTERS = new Set(['tag', 'tags', 'folder', 'type', 'year', 'has', 'author', 'title', 'journal', 'doi', 'key']);
+function fieldFilterName(f: { id: string; name: string }): string {
+  return CORE_FILTERS.has(f.name) || state.fieldDefs.filter((x) => x.name === f.name).length > 1 ? f.id : f.name;
 }
 
 function clearSearch() {

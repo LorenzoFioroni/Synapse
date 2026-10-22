@@ -70,6 +70,18 @@ def plugin_log(pid: str):
         return error(str(e))
 
 
+@bp.get("/plugin-fields")
+def plugin_fields():
+    """The fields running plugins declare (list columns, search filters)."""
+    return jsonify(fields=_host().fields.describe())
+
+
+@bp.get("/items/<item_id>/fields")
+def item_fields(item_id: str):
+    """Each field with this item's value, when it was fetched and from where (the item pane)."""
+    return jsonify(fields=_host().fields.for_item(svc().papers.get(item_id)))
+
+
 @bp.get("/plugin-files/<pid>/<path:rest>")
 def plugin_file(pid: str, rest: str):
     """A running plugin's frontend files (its module, what it imports, its styles)."""

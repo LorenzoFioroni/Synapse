@@ -10,9 +10,13 @@ export function activate(p) {
   const today = () => new Date().toISOString().slice(0, 10);
 
   async function recent() {
-    const { items } = await p.backend.get('/recent', { days: 30 });
-    p.pages.setBadge('recent', items.filter((i) => i.added_at.startsWith(today())).length || null);
-    return items;
+    try {
+      const { items } = await p.backend.get('/recent', { days: 30 });
+      p.pages.setBadge('recent', items.filter((i) => i.added_at.startsWith(today())).length || null);
+      return items;
+    } catch {
+      return [];   // the server is away for a moment, or the plugin was just turned off
+    }
   }
 
   async function draw(el) {
@@ -46,7 +50,7 @@ export function activate(p) {
     mount(el, item) {
       p.backend.get(`/item/${encodeURIComponent(item.id)}`).then((r) => {
         el.textContent = r.added_at ? `Added ${formatDate(r.added_at, true)}.` : 'Added before Recently Added was turned on.';
-      });
+      }, (e) => { el.textContent = e.message; });
     },
   });
 

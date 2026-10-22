@@ -16,6 +16,8 @@ export interface Attachment {
 /** A library item. Lists are "lean": empty fields and the abstract are left out. */
 export interface Item {
   id: string;
+  /** Values plugins attach (per-item fields), by field id ("<plugin>.<name>"); only known ones. */
+  _f?: Record<string, unknown>;
   item_type?: string;
   title?: string;
   authors?: string;        // "Family, Given; Family, Given"
@@ -483,6 +485,27 @@ export interface PluginInfo {
   styles?: string | null;
   /** When it started (while running): the app loads its frontend again when this changes. */
   started?: string;
+}
+
+/** A per-item field a running plugin declares (backend/plugins/fields.py). */
+export interface PluginField {
+  id: string;              // "<plugin>.<name>"
+  plugin: string;
+  plugin_name: string;
+  name: string;
+  type: 'int' | 'float' | 'text' | 'date' | 'bool' | 'url' | 'enum';
+  label: string;
+  description: string;
+  source: string;
+  options?: string[];
+}
+
+/** GET /api/items/<id>/fields: each field with this item's value. */
+export interface ItemFieldValue extends PluginField {
+  value: unknown;
+  checked: boolean;        // the plugin looked (a None value then means: nothing found)
+  updated: number | null;  // seconds since the epoch
+  source_url: string | null;
 }
 
 /** GET /api/plugin-host. */

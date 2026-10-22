@@ -91,6 +91,7 @@ class Plugin:
         library=None,
         before_upgrade: Callable[[str], None] | None = None,
         http=None,
+        fields=None,
     ):
         self.manifest = manifest
         self.id = manifest.id
@@ -104,6 +105,7 @@ class Plugin:
         self.listeners: dict[str, list[Callable]] = {}
         self.unload: list[Callable[[], None]] = []
         self.http = http  # PluginHttp (http.py): the web, within the manifest's "network" permission
+        self.fields = fields  # PluginFields (itemfields.py): values attached to papers
         self.handlers: dict[str, Handler] = {}
         self.schedules: list[Schedule] = []
         self.wake: Callable[[], None] = lambda: None  # set by the host: wakes the background runner

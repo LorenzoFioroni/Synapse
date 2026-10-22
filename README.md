@@ -308,7 +308,8 @@ the app from working, start it with `python server.py --safe-mode` (no plugin ru
 off.
 
 A plugin has a `manifest.json`, Python for the server (routes, tools for Claude, listeners for
-changes in the library, settings and stored data) and JavaScript for the app (pages listed under
+changes in the library, settings and stored data, and per-item fields: values such as a citation
+count that appear as list columns, search filters like `citations:>100` and rows in the item pane) and JavaScript for the app (pages listed under
 **Plugins** in the sidebar, sections in the item pane, actions in the item menu, commands). [`docs/plugins.md`](docs/plugins.md) explains how, and
 [`docs/examples/recently-added`](docs/examples/recently-added) is a small example to copy.
 To write one, `python server.py --new-plugin my-plugin --dev-plugins ~/synapse-plugins` makes a
