@@ -29,7 +29,7 @@ from werkzeug.routing import Map, Rule
 
 from . import build, deps
 from .context import Plugin, PluginError, ToolSpec
-from .http import PluginHttp
+from .http import PluginHttp, service_credentials
 from .itemfields import FieldIndex, PluginFields
 from .jobs import Runner
 from .loading import Active, Entry, asset_path, forget_modules, load_module, newest
@@ -225,7 +225,13 @@ class PluginHost:
             settings=lambda: self.values(pid),
             library=self.library,
             before_upgrade=before_upgrade,
-            http=PluginHttp(pid, man.network, lambda: self._user_agent(pid), private=self.private_network),
+            http=PluginHttp(
+                pid,
+                man.network,
+                lambda: self._user_agent(pid),
+                private=self.private_network,
+                credentials=lambda host: service_credentials(host, self.settings),
+            ),
             services=PluginServices(self.services) if self.services else None,
             actions=PluginActions(self.services, man) if self.services else None,
             fields=PluginFields(

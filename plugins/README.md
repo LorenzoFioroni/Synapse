@@ -4,4 +4,7 @@ Each folder here is a plugin (see [docs/plugins.md](../docs/plugins.md)). They a
 Settings → Plugins and stay off until turned on. A plugin with the same id in `data/plugins/`
 replaces the one here.
 
-None yet; the example to copy is [docs/examples/recently-added](../docs/examples/recently-added).
+- [`citation-counts`](citation-counts): how often each paper is cited (OpenAlex, Semantic
+  Scholar), as a column, a search filter and a row in the item pane.
+
+Examples to copy are in [docs/examples](../docs/examples).

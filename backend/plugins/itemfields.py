@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable
 
 from .errors import PluginError
-from .fields import BATCH, FieldDef, FieldStore, declare, key_of, keys_of, matches, pick
+from .fields import BATCH, LATER, LATER_WAIT, FieldDef, FieldStore, declare, key_of, keys_of, matches, pick
 from .http import HttpError
 
 log = logging.getLogger(__name__)
@@ -17,6 +17,8 @@ log = logging.getLogger(__name__)
 
 class PluginFields:
     """``plugin.fields``."""
+
+    LATER = LATER  # a refresher's answer for a paper it could not ask about: try again later
 
     def __init__(
         self,
@@ -116,6 +118,8 @@ class FieldIndex:
         self._store: FieldStore | None = None
         self._defs = defs
         self._on_change = changed  # tells the open pages (the change feed's "fields")
+        # papers a refresher answered LATER for: (plugin, field, key) -> when to hand them over again
+        self._later: dict[tuple[str, str, str], float] = {}
 
     def changed(self) -> None:
         if self._on_change:
@@ -221,6 +225,8 @@ class FieldIndex:
         missing, stale = [], []
         for p in items:
             ks = keys_of(p)
+            if self._later.get((d.plugin, d.name, ks[0]), 0) > now:
+                continue
             row = pick(rows, ks)
             if row is None:
                 missing.append(p)
@@ -231,8 +237,9 @@ class FieldIndex:
     def refresh(self, d: FieldDef, items: list[dict], plog: logging.Logger, limit: int = BATCH) -> int:
         """Ask the field's refresher for one batch of due items; returns how many it was asked
         about (0: nothing due). Values it does not return are stored as None (looked, nothing
-        found), so they are asked about again only after ``refresh``. An unreachable web leaves
-        them as they were."""
+        found), so they are asked about again only after ``refresh``; those it answers ``LATER``
+        are left as they were and handed over again in an hour. An unreachable web (``HttpError``)
+        leaves the whole batch as it was."""
         if not d.refresher:
             return 0
         batch = self.due(d, items)[:limit]
@@ -259,17 +266,27 @@ class FieldIndex:
         if not isinstance(got, dict):
             raise PluginError(f"The refresher of {d.name} must return a dict {{key: value}}")
         clean: dict[str, tuple[object, str | None]] = {}
+        later = 0
         for p in papers:
             k = p["key"]
             v = got.get(k)
+            if v is LATER:
+                self._later[(d.plugin, d.name, k)] = time.time() + LATER_WAIT
+                later += 1
+                continue
             if isinstance(v, tuple) and len(v) == 2:  # (value, source_url)
                 clean[k] = (d.clean(v[0]), v[1])
             else:
                 clean[k] = (d.clean(v), None)
-        self.store.put(d.plugin, d.name, clean)
-        self.changed()
+        if clean:
+            self.store.put(d.plugin, d.name, clean)
+            self.changed()
         plog.info(
-            "Refreshed %s for %d items (%d found)", d.name, len(papers), sum(v is not None for v, _ in clean.values())
+            "Refreshed %s for %d items (%d found%s)",
+            d.name,
+            len(papers),
+            sum(v is not None for v, _ in clean.values()),
+            f", {later} for later" if later else "",
         )
         return len(papers)
 

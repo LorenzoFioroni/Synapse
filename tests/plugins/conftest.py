@@ -21,6 +21,17 @@ def write_plugin(root: Path, pid: str, code: str | None = None, **manifest) -> P
     return folder
 
 
+@pytest.fixture(autouse=True)
+def _no_bundled_plugins(monkeypatch, tmp_path):
+    """The plugins that come with Synapse (plugins/) are left out, so each test sees only the ones it
+    installs; test_citation_counts.py brings its own back."""
+    empty = tmp_path / "no-bundled-plugins"
+    empty.mkdir()
+    from backend.config import Config
+
+    monkeypatch.setattr(Config, "bundled_plugins_dir", property(lambda self: empty))
+
+
 @pytest.fixture
 def make_plugin(svc):
     """Write a plugin into the library's plugins folder: ``make_plugin("x", code, **manifest)``."""

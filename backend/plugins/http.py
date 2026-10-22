@@ -1,6 +1,7 @@
 """``plugin.http``: how plugins reach the web. Only the hosts a plugin's manifest names, only public
 addresses, spaced requests per host (shared by every plugin, so two plugins cannot flood one
-service), a polite User-Agent, answers cached by ETag / Last-Modified, and readable errors."""
+service), a polite User-Agent, the user's keys for the scholarly services Synapse itself uses,
+answers cached by ETag / Last-Modified, and readable errors."""
 
 from __future__ import annotations
 
@@ -110,6 +111,25 @@ def public(host: str) -> bool:
     return bool(infos)
 
 
+def service_credentials(host: str, settings) -> tuple[dict, dict]:
+    """(query parameters, headers) for a request to one of the scholarly services Synapse itself
+    uses, from Settings → Online Services: OpenAlex's key and polite-pool address, Semantic
+    Scholar's key. A plugin asking those services then gets the user's quota without a key of its
+    own, as Synapse's own lookups do."""
+    if settings is None:
+        return {}, {}
+    if host == "api.openalex.org":
+        params = {}
+        if settings.get("openalex_api_key"):
+            params["api_key"] = settings.get("openalex_api_key")
+        if settings.get("contact_email"):
+            params["mailto"] = settings.get("contact_email")
+        return params, {}
+    if host == "api.semanticscholar.org" and settings.get("semantic_scholar_api_key"):
+        return {}, {"x-api-key": settings.get("semantic_scholar_api_key")}
+    return {}, {}
+
+
 @dataclass
 class _Cached:
     etag: str | None
@@ -119,13 +139,15 @@ class _Cached:
 
 @dataclass
 class PluginHttp:
-    """What ``plugin.http`` is. ``user_agent()`` is asked at each request (the contact address in
-    Settings may change). ``private`` lets tests reach a server on this computer."""
+    """What ``plugin.http`` is. ``user_agent()`` and ``credentials(host)`` (the services' keys, see
+    ``service_credentials``) are asked at each request: Settings may change. ``private`` lets tests
+    reach a server on this computer."""
 
     pid: str
     hosts: list[str]
     user_agent: Callable[[], str]
     private: bool = False
+    credentials: Callable[[str], tuple[dict, dict]] | None = None
     _gaps: dict[str, float] = field(default_factory=dict)
     _cache: OrderedDict = field(default_factory=OrderedDict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -155,9 +177,13 @@ class PluginHttp:
         raise_for_status: bool = True,
     ) -> Response:
         method = method.upper()
+        first = (urlsplit(url).hostname or "").lower()
+        cred_params, cred_headers = self.credentials(first) if self.credentials else ({}, {})
+        if cred_params:
+            params = {**cred_params, **(params or {})}  # the plugin's own values win
         if params:
             url = requests.Request("GET", url, params=params).prepare().url or url
-        hdrs = {"User-Agent": self.user_agent(), **(headers or {})}
+        hdrs = {"User-Agent": self.user_agent(), **cred_headers, **(headers or {})}
         cached = self._cache.get(url) if method == "GET" and cache else None
         if cached:
             if cached.etag:
@@ -166,6 +192,10 @@ class PluginHttp:
                 hdrs.setdefault("If-Modified-Since", cached.modified)
         for _ in range(MAX_REDIRECTS + 1):
             host = self._check(url)
+            if host != first:  # redirected elsewhere: the service's key stays with the service
+                for k in cred_headers:
+                    if k not in (headers or {}):
+                        hdrs.pop(k, None)
             GAPS_STATE.wait(host, max(_gap_for(host), self._gaps.get(host, 0.0)))
             try:
                 r = requests.request(

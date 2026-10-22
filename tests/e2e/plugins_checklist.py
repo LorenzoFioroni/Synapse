@@ -120,7 +120,9 @@ async def main():
             desc = await page.text_content("[data-plugins-desc]")
             check("the section says where plugins go", str(plugins) in desc, desc)
             names = await page.eval_on_selector_all("#set-plugins .p-name", "els => els.map(e => e.textContent)")
-            check("both plugins are listed", names == ["Broken One", "Recently Added"], names)
+            check("the plugins are listed", names == ["Broken One", "Citation Counts", "Recently Added"], names)
+            bundled = await page.text_content('[data-plugin="citation-counts"]')
+            check("one comes with Synapse", "comes with Synapse" in bundled, bundled[:200])
             toggle = f"{ROW} [data-ptoggle]"
             check("a new plugin is off", not await page.is_checked(toggle))
             perms = await page.text_content(f"{ROW} .p-perms")

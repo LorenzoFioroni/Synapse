@@ -44,7 +44,14 @@ v1". What exists today:
   Settings → Adding Items says ("Ask" counts as yes: there is no dialog to ask in).
 
 Plugins that come with Synapse live in the repository's `plugins/` folder and are off until turned
-on. A plugin in `data/plugins/` with the same id replaces the one that comes with Synapse.
+on. A plugin in `data/plugins/` with the same id replaces the one that comes with Synapse. They are:
+
+- **Citation Counts** (`plugins/citation-counts`): how often each paper is cited, from OpenAlex
+  and Semantic Scholar, as a *Citations* column, a search filter (`citations:>100`, also in smart
+  folders and for Claude) and a row in the item pane. New papers get their count soon after they
+  are added; counts are refreshed weekly. Papers with a DOI are asked of OpenAlex first, arXiv
+  preprints of Semantic Scholar first (it counts a preprint and its journal version together); its
+  setting turns Semantic Scholar off. It uses the keys in Settings → Online Services, if any.
 
 ## Writing a plugin
 
@@ -237,7 +244,10 @@ plugin.fields.set({"arxiv": "2610.01234"}, "citations", 0)  # also for a paper n
   then (with `refresh`, e.g. `"7d"`) those whose value is older, 50 at a time, on the plugin's
   background thread in the web app: soon after items are added or changed, and every ten
   minutes. It returns `{key: value}` (or `{key: (value, source_url)}`); keys it leaves out are
-  stored as not found. An `HttpError` leaves them unasked, to try again later.
+  stored as not found. An `HttpError` leaves the whole batch unasked, to try again later; a
+  refresher that reached some services but not others answers **`plugin.fields.LATER`** for the
+  papers it could not ask about: nothing is stored for them and they are handed over again in an
+  hour (not at once, so they do not hold up the rest).
 - Values live in `data/fields.db` (in backups), apart from the library. A plugin turned off takes
   its columns and filters with it; its values stay for when it is turned on again.
 
@@ -332,6 +342,11 @@ of this):
   seconds)`), across all plugins, so two plugins cannot overload one service.
 - A User-Agent naming Synapse, the plugin and the contact address from Settings → Online
   Services, as scholarly APIs ask.
+- For the scholarly services Synapse itself uses, the user's keys from Settings → Online Services,
+  as Synapse's own lookups send them: OpenAlex (`api.openalex.org`) gets `api_key` and `mailto`,
+  Semantic Scholar (`api.semanticscholar.org`) the `x-api-key` header
+  (`http.service_credentials`). The plugin's own parameters and headers win, and a redirect to
+  another host drops them.
 - GET answers with an ETag or Last-Modified are cached and asked for again conditionally.
 - Errors are `HttpError` (an error status, `e.status`; a refused redirect; an answer over 50 MB)
   and `Offline` (no network, a timeout): both readable, so a route or tool passes them on as they
@@ -505,6 +520,8 @@ the scaffold and dev plugins; the example plugin is installed by the `example` f
 `make_plugin` writes small ones), the import rule
 in `tests/test_layers.py`, `tests/js/extend.test.mjs` (registries, keys, the palette's ranking),
 `test_outside.py` (outside records, lists, adding, the services, arXiv's HTML references, the
-Suggested Reading example), and the browser checklists `plugins` (Settings → Plugins and the
+Suggested Reading example), `test_citation_counts.py` (the Citation Counts plugin against faked
+OpenAlex and Semantic Scholar answers, the services' keys, `LATER`; `conftest.py` leaves the
+plugins in `plugins/` out of the other tests), and the browser checklists `plugins` (Settings → Plugins and the
 example plugin's page, command, fields, section and action) and `outside` (a plugin's list in the
 sidebar and the list, sorting, the pane, adding, Undo, a folder, changes, turning it off).

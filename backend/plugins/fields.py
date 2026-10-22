@@ -29,6 +29,20 @@ from .schedule import every_seconds
 TYPES = ("int", "float", "text", "date", "bool", "url", "enum")
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
 BATCH = 50  # papers handed to a refresher at a time
+LATER_WAIT = 3600  # seconds before a paper a refresher could not ask about (LATER) is handed over again
+
+
+class _Later:
+    """What a refresher returns for a paper it could not ask about (one of its services was down):
+    nothing is stored, and the paper is handed over again in an hour, not at once."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "plugin.fields.LATER"
+
+
+LATER = _Later()
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS field_values (
     plugin TEXT NOT NULL,
