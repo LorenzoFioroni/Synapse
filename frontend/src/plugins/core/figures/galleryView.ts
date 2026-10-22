@@ -1,4 +1,4 @@
-// The carousel of a ```gallery block (render.ts draws it, gallery.ts reads the block). The panels
+// The carousel of a ```gallery block (markdown.ts draws it, gallery.ts reads the block). The panels
 // sit side by side in a track that scrolls horizontally with snapping, so a swipe or a trackpad
 // moves it without any code; the arrows, the dots and the arrow keys scroll it, and the dots and
 // arrows follow whatever moved it. One set of listeners on the document serves every gallery:
@@ -75,20 +75,31 @@ function onScroll(e: Event): void {
   if (gallery) sync(gallery, currentPanel(t));
 }
 
-/** Install the listeners (once). */
-export function installGalleries(): void {
-  if (installed || typeof document === 'undefined') return;
+const onControl = (e: Event) => !!(e.target as Element | null)?.closest?.('.gallery-btn, .gallery-dot');
+// the editor must not see a press on the arrows as a click into the note (which would open its source)
+function onPress(e: MouseEvent): void {
+  if (!onControl(e)) return;
+  e.stopPropagation();
+  // in the editor, keep its focus and cursor; elsewhere the control takes focus (for the arrow keys)
+  if ((e.target as Element).closest('.cm-editor')) e.preventDefault();
+}
+function onTouch(e: TouchEvent): void { if (onControl(e)) e.stopPropagation(); }
+
+/** Install the listeners (once); the function returned takes them away. */
+export function installGalleries(): () => void {
+  if (installed || typeof document === 'undefined') return () => {};
   installed = true;
   document.addEventListener('click', onClick, true);
-  // the editor must not see a press on the arrows as a click into the note (which would open its source)
-  const onControl = (e: Event) => !!(e.target as Element | null)?.closest?.('.gallery-btn, .gallery-dot');
-  document.addEventListener('mousedown', (e) => {
-    if (!onControl(e)) return;
-    e.stopPropagation();
-    // in the editor, keep its focus and cursor; elsewhere the control takes focus (for the arrow keys)
-    if ((e.target as Element).closest('.cm-editor')) e.preventDefault();
-  }, true);
-  document.addEventListener('touchstart', (e) => { if (onControl(e)) e.stopPropagation(); }, { capture: true, passive: true });
+  document.addEventListener('mousedown', onPress, true);
+  document.addEventListener('touchstart', onTouch, { capture: true, passive: true });
   document.addEventListener('keydown', onKey, true);
   document.addEventListener('scroll', onScroll, true);   // scroll does not bubble: listen while capturing
+  return () => {
+    installed = false;
+    document.removeEventListener('click', onClick, true);
+    document.removeEventListener('mousedown', onPress, true);
+    document.removeEventListener('touchstart', onTouch, true);
+    document.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('scroll', onScroll, true);
+  };
 }

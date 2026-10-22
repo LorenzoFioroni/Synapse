@@ -43,7 +43,8 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     ignoreEvent(e: Event) { return e.type !== 'mousedown'; }   // a click places the cursor (and reveals the source)
   }
 
-  // the carousel's arrows and dots turn it (galleryView.ts); a click anywhere else opens the source
+  // the carousel's arrows and dots turn it (the Figures plugin's galleryView.ts); a click anywhere
+  // else opens the source
   class GalleryWidget extends HtmlWidget {
     ignoreEvent(e: Event) { return !!(e.target as Element | null)?.closest?.('.gallery-btn, .gallery-dot') || super.ignoreEvent(e); }
   }
@@ -143,7 +144,6 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
       el.innerHTML = r ? r.render(src) : '';
     }, { block: true, cls: 'cm-lp-table' }),
 
-    /** A gallery's carousel, drawn by the renderer; ``preview``: shown below its source while it is edited. */
     /** A gallery's carousel, drawn by the renderer; ``preview``: shown below its source while it is
      *  edited. Its figure number and \ref numbers come from the whole note (``fig``, ``labels``). */
     gallery: (src: string, lookup: Lookup, fig: number | null, version: string, preview: boolean) => new GalleryWidget(`g:${version}:${preview}:${src}`, (el) => {

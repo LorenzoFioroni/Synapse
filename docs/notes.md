@@ -318,8 +318,18 @@ only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 | `conflict.ts` | The dialog for a note changed or deleted elsewhere. |
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
 | `exportNote.ts`, `portable.ts` | Exporting a note as PDF, HTML or Markdown; the Markdown conversion and reference entries (no DOM). |
-| `gallery.ts`, `galleryView.ts` | Galleries: reading a ` ```gallery ` block and its figure caption (no DOM); turning the carousel. |
-| `figures.ts`, `crossref.ts` | Which images and galleries are figures, their numbers and `\label`s; references written out as cleveref does (no DOM). |
+| `crossref.ts` | References (`\ref`, `\eqref`, `\cref`, `\Cref`) written out as cleveref does, from the equations' and figures' labels (no DOM). |
+| `hooks.ts` | What core plugins add to the editor: ghost text, the graph, galleries and figures (`setNoteHook`). |
+
+Galleries and figures are the **Figures** core plugin's, in `frontend/src/plugins/core/figures/`:
+
+| Module | What it does |
+|---|---|
+| `gallery.ts`, `galleryView.ts` | Reading a ` ```gallery ` block and its figure caption (no DOM); turning the carousel. |
+| `figures.ts` | Which images and galleries are figures, their numbers and `\label`s (no DOM). |
+| `markdown.ts` | The renderer's rules: `galleryRule`, `figureRule` and their HTML. |
+| `portable.ts`, `exportStatic.ts` | Figures in the Markdown export (`portableFigures`); carousels as static figures in HTML and PDF (`staticGalleries`). |
+| `hook.ts`, `index.ts` | The `FiguresHook` the notes code asks (`views/notes/hooks.ts`); starting and stopping the plugin. |
 
 ### The editor and read mode
 
@@ -357,6 +367,10 @@ cursor steps over it and Backspace deletes it whole. Read mode draws it with
 ### Galleries
 
 A gallery shows several images as one carousel, and exports as one figure with panels.
+Galleries and figure numbers come from the **Figures** core plugin (on unless turned off in
+Settings → Plugins). Turned off, a gallery reads as the Markdown it holds (its images and
+captions, one after the other), an image's caption line as text, and `\ref` to a figure as ??;
+the note itself does not change, and the parser still counts a gallery's images and citations.
 
 ````markdown
 ```gallery|600
@@ -380,35 +394,38 @@ Photon number versus $N$ at equal reduced drive.
   A caption wrapped as a whole in `*…*` or `_…_` (the way an image is usually captioned) is
   unwrapped, so an image and its caption can be moved into a gallery as they are.
 
-**Rendering** (`render.ts`). A core rule (`galleryRule`, after block parsing) replaces the fence
+**Rendering** (`markdown.ts` in the plugin, added to each renderer through the `figures` hook;
+`render.ts` rebuilds a renderer when a hook changed). A core rule (`galleryRule`, after block
+parsing) replaces the fence
 token by tokens of its own (`gallery_open`, `gallery_panel_open`, …), each caption an `inline`
 token. Captions are therefore parsed with the rest of the note: equation numbering, the note's
 macros and `\eqref` work in them. The HTML is a `figure.gallery` with a `.gallery-track` of
 `.gallery-panel`s (each image above its caption, labelled "(a)", "(b)", … when there are several;
 the label hangs to the left of `.gallery-caption-text`, so the caption's text is centred),
 arrows, dots and a `figcaption.gallery-caption`. A gallery of one image has no labels or controls;
-an empty one shows a hint.
+an empty one shows a hint. Without the plugin, `render.ts`'s own rule (`gallery_plain`) parses
+the block's content as Markdown in its place, keeping the source lines for read mode's clicks.
 
 **The carousel** (`galleryView.ts`, CSS in `notes.css`). The panels sit side by side in a track
 that scrolls horizontally with snapping, one panel wide, so a swipe or a trackpad turns it
-without code. Listeners on the document (installed once by `notesView.ts`) serve every gallery,
+without code. Listeners on the document (installed by the plugin while it runs) serve every gallery,
 however often it is redrawn: the arrows and dots scroll the track, ←/→ do while a dot or arrow
 has focus, and a scroll from anywhere updates the dots and disables the arrow at either end.
 A press on the controls is stopped before the editor sees it, so turning a gallery in the live
 preview does not open its source.
 
-**Live preview.** The block is one unit (`livePreview.ts`): drawn as the carousel (`W.gallery`,
+**Live preview.** With the plugin on, the block is one unit (`livePreview.ts`): drawn as the carousel (`W.gallery`,
 rendered by the renderer like a table) until the cursor enters it; then its source shows, as
 text rather than code, with the carousel below it updating as you type. `\eqref` in its captions
 is numbered from the whole note's equations. Citation and link autocomplete work in it
-(`completion.ts` treats a gallery's lines as text).
+(`completion.ts` treats a gallery's lines as text). Without the plugin its lines show as any text.
 
-**Exports.** HTML and PDF (`staticGalleries` in `exportNote.ts`, CSS in `export.css`): each
+**Exports.** HTML and PDF (`staticGalleries` in the plugin's `exportStatic.ts`, called by `exportNote.ts`; CSS in `export.css`): each
 carousel becomes a `figure.gallery-figure` whose panels sit in a grid of `figureColumns(n)`
 columns (as many as there are panels up to three, two for four, else three), each with its letter
 in a white, black-bordered circle on the image's upper left corner (`.gallery-cell-label` inside
 `.gallery-cell-image`, a frame that hugs the image), and one caption: the gallery's own, then each panel's as "(a) First. (b) Second.",
-every part ending as a sentence (`endsSentence`). Markdown (`portableFigures` in `portable.ts`):
+every part ending as a sentence (`endsSentence`). Markdown (`portableFigures` in the plugin's `portable.ts`, called by `views/notes/portable.ts`):
 the images on one line, which most viewers set side by side, and that caption in italics below.
 
 **Backend.** The parser counts the images and citations in a gallery, so the attachment sweep
@@ -420,7 +437,7 @@ keeps its images and the citation graph and backlinks include its captions.
 ### Figures and their numbers
 
 Images with a caption and galleries with a caption are **figures**, numbered Fig. 1, Fig. 2, … in
-the order they appear in the note (`figures.ts`). An image or gallery without any caption is not a
+the order they appear in the note (`figures.ts`, Figures plugin). An image or gallery without any caption is not a
 figure and gets no number.
 
 ````markdown
@@ -588,8 +605,8 @@ else the item's URL. `referenceHtml` makes it a link, and `referenceMarkdown` wr
 | How notes look when rendered | `render.ts` (tested in `tests/js/render.test.mjs`), `equations.ts`, `macros.ts`, `livePreview.ts`. |
 | Claude's note tools | `backend/mcp/tools/notes.py`; see [mcp.md](mcp.md). |
 | What an exported note looks like | `exportNote.ts` (HTML, PDF), `portable.ts` (Markdown, reference entries), `frontend/css/export.css`. |
-| Which images are figures, and how they are numbered | `figures.ts` (`imageFigureAt`, `figuresOf`) for the rule and the text; `figureRule` in `render.ts`; `livePreview.ts` for the chips. |
-| How galleries are written, drawn or exported | `gallery.ts` (the block, the figure caption), `render.ts` (`galleryRule`), `galleryView.ts` (the carousel), `staticGalleries` in `exportNote.ts`, `portable.ts`, and `backend/notes/gallery.py` for the MCP tools. What counts inside one is the parser's (above). |
+| Which images are figures, and how they are numbered | The Figures plugin (`frontend/src/plugins/core/figures/`): `figures.ts` (`imageFigureAt`, `figuresOf`) for the rule and the text; `figureRule` in `markdown.ts`; `livePreview.ts` for the chips. |
+| How galleries are written, drawn or exported | The Figures plugin: `gallery.ts` (the block, the figure caption), `markdown.ts` (`galleryRule`), `galleryView.ts` (the carousel), `exportStatic.ts`, `portable.ts`; `backend/notes/gallery.py` for the MCP tools. What counts inside one is the parser's (above), plugin or not. |
 
 The notes format, the `data/notes/` layout and these endpoints are contracts used by the MCP
 server and older data. Change them only deliberately. Tests live in `tests/notes/` and

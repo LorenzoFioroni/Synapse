@@ -14,14 +14,13 @@ import { openMenu } from '../../ui/menu.js';
 import { toast, toastError } from '../../ui/toast.js';
 import { h, modLabel, storage, store } from '../../util.js';
 import { loadAiEdits, onAiAction, paintAiBar, remoteArrived } from './aiBar.js';
-import { ghostSource, noteHooks, onGraphChange } from './hooks.js';
+import { ghostSource, noteHooks, onNoteHookChange } from './hooks.js';
 import { openAttachments } from './attachmentsDialog.js';
 import { attachCiteCards, openCitation, pdfsOf, showCard } from './citeCard.js';
 import { conflictDialog } from './conflict.js';
 import { createEditor, loadMD, type NoteEditor } from './editor.js';
 import { exportMenu } from './exportNote.js';
 import { folderOfSelection, newFolder, newNote, renameNote, rescan, showTrash } from './fileOps.js';
-import { installGalleries } from './galleryView.js';
 import { linkDataOf } from './linkData.js';
 import { refitOnResize } from './mathFit.js';
 import { NoteSession } from './noteSession.js';
@@ -92,14 +91,17 @@ export function initNotes(): void {
   Object.assign(hooks, { openNote, doOpen, closeCurrent, setMode, openNotesGraph, saveAll, renameViews, dropViews });
   document.getElementById('app')!.appendChild(root);
   attachGraph();
-  onGraphChange(attachGraph);
+  onNoteHookChange((key) => {
+    if (key === 'graph') attachGraph();
+    // galleries and figures (the Figures plugin) were turned on or off: draw the notes again
+    if (key === 'figures') { staleOthers(); if (!notesOpen() || !ws.session) return; ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); }
+  });
 
   root.addEventListener('click', onClick);
   window.zcNotes = { text: () => ws.session?.text ?? null, path: () => ws.session?.path ?? null,
     cursor: () => ws.editor?.view.state.selection.main.head ?? null, focused: () => !!ws.editor?.view.hasFocus };
   listenForQuotes();
   initReadView();
-  installGalleries();
   refitOnResize(root.querySelector<HTMLElement>('.note-read')!);
   renderDefaults.equations = equationMode;
   renderDefaults.macros = noteMacros;

@@ -311,7 +311,7 @@ without a DOM (views, search, sorting, groups; reading dates); `taskRender.ts` d
 `tasksState.ts` the Tasks page; `noteTasks.ts` tasks inside notes; `notePicker.ts` chooses a note.
 
 **`plugins/core/graph/`: the graph in Notes** (the Graph core plugin, `plugins/graph`). `index.ts`
-gives the notes view the graph through `views/notes/hooks.ts` (`setGraph`: the notes view puts the
+gives the notes view the graph through `views/notes/hooks.ts` (`setNoteHook('graph', …)`: the notes view puts the
 local graph in its side panel and shows the graph button only while it is set) and adds the
 command (Cmd/Ctrl+Shift+G) and Show in Graph for items. `model.ts` turns the plugin's `/data` into
 what is shown (no DOM, unit-tested); `forceGraph.ts` draws it with force-graph; `notesGraph.ts` is the local graph
@@ -319,6 +319,14 @@ beside a note and the global graph in place of the editor. Both show a neighbour
 `buildView`'s `focus` and `depth`: the local graph around the open note (depth 1 or 2), the global
 graph around the node it was opened for (`globalFocus`, depth 1, 2, 3 or 0 for everything, kept
 with the other options in `localStorage` under `zc.graph.global`).
+
+**`plugins/core/figures/`: galleries and figures** (the Figures core plugin, `plugins/figures`).
+`index.ts` installs the carousels' listeners (`galleryView.ts`) and sets the `figures` hook
+(`hook.ts`) in `views/notes/hooks.ts`, which the notes code asks when it needs it: the renderer
+adds `markdown.ts`'s rules (it rebuilds itself when a hook changes, `hooksVersion`), the live
+preview asks `figuresOf` for numbers and labels, and the exports call `portable.ts` (Markdown)
+and `exportStatic.ts` (HTML, PDF). `gallery.ts` reads a block and `figures.ts` finds and numbers
+figures (no DOM, unit-tested). See [notes](notes.md#galleries).
 
 **`ui/`: generic widgets.** `dialog.ts` (`openDialog`, `confirmDialog`, `promptDialog`),
 `menu.ts` (`openMenu`, `closeMenu`, with keyboard navigation; an entry may show a colour `swatch`),

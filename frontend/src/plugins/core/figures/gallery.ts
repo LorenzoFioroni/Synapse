@@ -12,10 +12,10 @@
 // A blank line ends a panel's caption. Captions are Markdown (math, citations, links), and a
 // caption wrapped as a whole in *…* or _…_ (the usual way to caption an image) is unwrapped.
 // \label{fig:…} in the gallery's caption names its figure, in a panel's caption that panel ("Fig. 2(b)"),
-// for \ref and \cref (figures.ts, crossref.ts).
-// The block is not code: the parser and mdscan.ts read its lines like any paragraph, so its images
+// for \ref and \cref (figures.ts, views/notes/crossref.ts).
+// The block is not code: the parser and views/notes/mdscan.ts read its lines like any paragraph, so its images
 // and citations count. No DOM here (tests/js/gallery.test.mjs).
-import { GALLERY_INFO, mask } from './mdscan.js';
+import { GALLERY_INFO, mask } from '../../../views/notes/mdscan.js';
 
 export interface GalleryPanel {
   src: string;           // the image path (or URL) as written

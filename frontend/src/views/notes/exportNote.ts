@@ -3,8 +3,9 @@
 // HTML and PDF show the note as read mode does, in the light theme. Citations become text with a
 // list of references (each citation links to its entry in HTML and PDF, and each entry to the
 // work's DOI), [[links]] become text, and embeds, formulas, diagrams and images are included. A
-// gallery becomes one figure with its panels side by side, (a), (b), …, and one caption. Everything
-// is built here from files the app already serves, so it works offline.
+// gallery becomes one figure with its panels side by side, (a), (b), …, and one caption (the
+// Figures plugin, plugins/core/figures/exportStatic.ts). Everything is built here from files the
+// app already serves, so it works offline.
 import { api } from '../../api.js';
 import type { Item, NoteLinks } from '../../types.js';
 import { openMenu } from '../../ui/menu.js';
@@ -12,8 +13,7 @@ import { toast, toastError } from '../../ui/toast.js';
 import { downloadBlob, escapeHtml as esc } from '../../util.js';
 import { loadMD } from './editor.js';
 import { embedHtml, section } from './embed.js';
-import { figureLabel } from './figures.js';
-import { endsSentence, figureColumns, panelLabel } from './gallery.js';
+import { noteHooks } from './hooks.js';
 import { linkDataOf } from './linkData.js';
 import { splitFrontmatter } from './mdscan.js';
 import { type Portable, type RefInfo, portableBody, portableMarkdown, referenceHtml, referenceId, referenceKeys } from './portable.js';
@@ -162,7 +162,7 @@ ${body}
 /** Remove what only works inside the app: links into it, buttons, ticking tasks. A citation of
  *  a key in ``listed`` links to its entry in the References list instead. */
 function staticCopy(root: HTMLElement, listed: Set<string>): void {
-  staticGalleries(root);
+  noteHooks.figures?.exportStatic(root);   // carousels become figures with panels (a), (b), …
   root.querySelectorAll('.copy-code').forEach((el) => el.remove());
   root.querySelectorAll('[data-line]').forEach((el) => el.removeAttribute('data-line'));
   for (const el of root.querySelectorAll<HTMLElement>('a.wikilink, a.cite, .eqref.missing')) {
@@ -182,61 +182,6 @@ function staticCopy(root: HTMLElement, listed: Set<string>): void {
   // tasks: their checkbox and title as they are now, nothing to click
   root.querySelectorAll('.task-ref-actions').forEach((el) => el.remove());
   root.querySelectorAll('.task-ref [data-task-act], .task-ref [role="checkbox"]').forEach((el) => { el.removeAttribute('data-task-act'); el.removeAttribute('role'); });
-}
-
-/**
- * Each gallery's carousel becomes a figure: the panels in rows of at most three (figureColumns),
- * each labelled a, b, … in a circle on its upper left corner, and one caption, the gallery's own followed by the panels':
- * "Caption. (a) First panel. (b) Second panel." A gallery of one image has no labels.
- */
-function staticGalleries(root: HTMLElement): void {
-  for (const g of root.querySelectorAll<HTMLElement>('figure.gallery')) {
-    const panels = [...g.querySelectorAll<HTMLElement>('.gallery-panel')];
-    if (!panels.length) { g.remove(); continue; }
-    const el = (tag: string, cls: string) => { const e = document.createElement(tag); e.className = cls; return e; };
-    const fig = el('figure', `gallery-figure cols-${figureColumns(panels.length)}`);
-    if (g.style.maxWidth) fig.style.maxWidth = g.style.maxWidth;
-    // the figure's number goes once in front of the whole caption, not on each panel
-    g.querySelectorAll('.fig-num').forEach((n) => {
-      if (n.nextSibling?.nodeType === Node.TEXT_NODE) n.nextSibling.textContent = n.nextSibling.textContent!.replace(/^\s+/, '');
-      n.remove();
-    });
-    fig.append(...g.querySelectorAll(':scope > .eq-anchor'));   // the targets of \ref
-    const grid = el('div', 'gallery-grid');
-    const caption = el('figcaption', 'gallery-figcaption');
-    // a part of the caption: its rendered content, ending as a sentence
-    const addPart = (from: Element | null, label: string | null) => {
-      if (!from || !from.textContent?.trim()) return;
-      if (caption.childNodes.length) caption.append(' ');
-      if (label) { caption.append(el('span', 'gallery-ref')); caption.lastElementChild!.textContent = `(${label})`; caption.append(' '); }
-      caption.append(...from.childNodes);
-      if (!endsSentence(caption.textContent || '')) caption.append('.');
-    };
-    addPart(g.querySelector('.gallery-caption'), null);
-    const single = panels.length === 1;
-    panels.forEach((p, i) => {
-      const cell = el('div', 'gallery-cell');
-      cell.append(...p.querySelectorAll(':scope > .eq-anchor'));   // a panel's \label
-      // the image in a frame that hugs it, so the label sits on its upper left corner
-      const frame = el('div', 'gallery-cell-image');
-      const image = p.querySelector('.gallery-image');
-      if (image) frame.append(...image.childNodes);
-      if (!single) { const badge = el('span', 'gallery-cell-label'); badge.textContent = panelLabel(i); frame.append(badge); }
-      cell.append(frame);
-      grid.append(cell);
-      const text = p.querySelector('.gallery-caption-text') || p.querySelector('.gallery-panel-caption');
-      const label = text?.querySelector('.gallery-label');
-      if (label?.nextSibling?.nodeType === Node.TEXT_NODE) label.nextSibling.textContent = label.nextSibling.textContent!.replace(/^\s+/, '');
-      label?.remove();
-      addPart(text, single ? null : panelLabel(i));
-    });
-    fig.append(grid);
-    if (caption.childNodes.length) {
-      if (g.dataset.fig) { const num = el('span', 'fig-num'); num.textContent = `${figureLabel(Number(g.dataset.fig))}.`; caption.prepend(num, ' '); }
-      fig.append(caption);
-    }
-    g.replaceWith(fig);
-  }
 }
 
 /** Images served by the app become data: URLs, so the file shows them anywhere. */

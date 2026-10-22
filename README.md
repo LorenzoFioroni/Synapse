@@ -221,7 +221,8 @@ never mix.
   cleveref: `\cref{fig:name}` writes "Fig. 2", `\cref{eq:name}` "Eq. (3)", `\cref{a,b,c}` "Figs. 1
   and 2 and Eq. (3)" (ranges as "Eqs. (1)–(3)"), `\Cref` the full word for the start of a
   sentence ("Figure 2"), and `\ref` / `\eqref` the bare number (see
-  [Figures](docs/notes.md#figures-and-their-numbers)). Switch with the
+  [Figures](docs/notes.md#figures-and-their-numbers)); galleries and figure numbers are the core
+  plugin **Figures**, which can be turned off in Settings → Plugins. Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
   Cmd+[ / Alt+←) go back to the note or library selection you came from.
   Images pasted into notes are kept in the notes' attachments folder; one that no note uses any more

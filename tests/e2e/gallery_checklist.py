@@ -2,6 +2,7 @@
 preview (arrows, dots, keys, swipe-free scrolling), editing its source with the carousel below,
 autocomplete in captions, citations and images in galleries counted by the backend, and the
 exports: one figure with panels (a), (b), … and one caption in HTML/PDF, images on a line in Markdown.
+Galleries and figures are the Figures plugin's: turned off, the note reads as the Markdown it holds.
 
     python tests/e2e/gallery_checklist.py               (SHOTS=/some/dir to save screenshots)
 
@@ -464,6 +465,47 @@ async def main():
             check(
                 "PDF: printed with the figures",
                 'class="gallery-figure cols-3"' in printed and 'class="gallery-btn' not in printed,
+            )
+
+            # ---- the Figures plugin off (and on again), in the open note
+            requests.post(f"{BASE}/api/plugin-host/figures/disable", timeout=10).raise_for_status()
+            await page.click('[data-mode="read"]')
+            for _ in range(50):
+                if await page.locator(".note-read .gallery").count() == 0:
+                    break
+                await page.wait_for_timeout(200)
+            read_imgs = await page.locator(".note-read img").count()
+            check(
+                "off: read mode shows the images and captions as Markdown, no carousel, no numbers",
+                await page.locator(".note-read .gallery, .note-read figure, .note-read .fig-num").count() == 0
+                and await page.locator(".note-read .code-block").count() == 0
+                and read_imgs == 9,
+                read_imgs,
+            )
+            await page.click('[data-mode="live"]')
+            await page.wait_for_timeout(500)
+            check(
+                "off: the live preview draws no carousel and no Fig. chips",
+                await page.locator(".cm-lp-gallery, .cm-lp-chip.fignum").count() == 0,
+            )
+            requests.post(f"{BASE}/api/plugin-host/figures/enable", timeout=10).raise_for_status()
+            # (the editor draws only what is near the screen, so at least the first carousel)
+            drawn = ".cm-content .cm-lp-gallery .gallery"
+            for _ in range(50):
+                if await page.locator(drawn).count():
+                    break
+                await page.wait_for_timeout(200)
+            check(
+                "on again: the live preview draws carousels and Fig. 1. at once",
+                await page.locator(drawn).count() >= 1 and await page.locator(".cm-lp-chip.fignum").count() == 1,
+            )
+            await page.click('[data-mode="read"]')
+            await page.wait_for_timeout(300)
+            check(
+                "on again: read mode shows both carousels, numbered",
+                await page.locator(".note-read .gallery").count() == 2
+                and await page.locator(".note-read .fig-num").count() >= 3,
+                await page.locator(".note-read .fig-num").all_text_contents(),
             )
             await page.wait_for_timeout(300)
             check("no console errors", not errors, errors[:5])

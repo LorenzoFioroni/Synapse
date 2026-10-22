@@ -21,7 +21,7 @@
 import type { EditorState, Range as CMRange, Text } from '@codemirror/state';
 import type { Decoration as DecorationT, DecorationSet, EditorView as EditorViewT, ViewUpdate } from '@codemirror/view';
 import type { CM } from './editor.js';
-import { type Scan, type Span, attachmentOf, scan, splitFrontmatter } from './mdscan.js';
+import { GALLERY_INFO, type Scan, type Span, attachmentOf, scan, splitFrontmatter } from './mdscan.js';
 import { type CiteTarget, citeTargetInText } from './citeTarget.js';
 import { type CiteInfo, type Renderer, citeLabel, imageSrc } from './render.js';
 import { type TextRef, numberEquations, resolveRefs, textRefs } from './equations.js';
@@ -30,8 +30,7 @@ import { clickOffset } from './mathClick.js';
 import { type Definition, HAS_DEFINITIONS, type Macros, parseDefinitions, withDefinitions } from './macros.js';
 import { type Equations, previewWidgets } from './previewWidgets.js';
 import type { TaskPreview } from './workspace.js';
-import { galleryInfo } from './gallery.js';
-import { type Figures, figureLabel, figuresOf } from './figures.js';
+import { type Figures, noteHooks } from './hooks.js';
 
 /** A DOM text node (``Text`` is CodeMirror's document here). */
 type Text_ = globalThis.Text;
@@ -83,10 +82,14 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), refs: null, eq: null, mode: null, base: null, figs: null, atomic: null };
     return cache.scan!;
   };
-  // the note's figures and their numbers (figures.ts), found with the same rule as the renderer's
+  // the note's figures and their numbers (the Figures plugin), found with the same rule as the
+  // renderer's; none without the plugin
+  const noFigures: Figures = { figures: [], labels: new Map() };
   const figuresOfDoc = (state: EditorState): Figures => {
     const s = scanOf(state);
-    cache.figs ||= figuresOf(state.doc.toString(), s);
+    const hook = noteHooks.figures;
+    if (!hook) return noFigures;
+    cache.figs ||= hook.figuresOf(state.doc.toString(), s);
     return cache.figs;
   };
   // what a reference may name: an equation's label, else a figure's or a gallery panel's
@@ -221,7 +224,9 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
           const from = doc.lineAt(node.from).from, to = doc.lineAt(node.to).to;
           const info = node.node.getChild('CodeInfo');
           const lang = info ? doc.sliceString(info.from, info.to).trim().toLowerCase() : '';
-          if (galleryInfo(lang)) {
+          if (GALLERY_INFO.test(lang)) {
+            // without the Figures plugin a gallery is its lines, as any text
+            if (!noteHooks.figures) return false;
             // a gallery is one unit: drawn as its carousel, or, while the cursor is in it, its
             // source with the carousel below it (nothing inside the source is rendered)
             const src = doc.sliceString(from, to);
@@ -303,11 +308,12 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     }
 
     // an image's caption line: its figure number in front, its \label hidden, until you edit it
-    for (const f of figuresOfDoc(state).figures) {
+    const figureLabel = noteHooks.figures?.label;
+    for (const f of figureLabel ? figuresOfDoc(state).figures : []) {
       if (f.kind !== 'image' || !shown(f.captionFrom!, f.to)) continue;
       lineDeco(f.captionFrom!, 'cm-lp-figcaption');
       if (lineActive(f.captionFrom!)) continue;
-      out.push(Decoration.widget({ widget: W.chip(`fig:${f.number}`, 'fignum', `${figureLabel(f.number!)}.`, {}), side: -1 }).range(f.captionFrom!));
+      out.push(Decoration.widget({ widget: W.chip(`fig:${f.number}`, 'fignum', `${figureLabel!(f.number!)}.`, {}), side: -1 }).range(f.captionFrom!));
       const line = doc.sliceString(f.captionFrom!, f.to);
       for (const m of line.matchAll(/\s*\\label\{[^{}\n]*\}/g)) {
         const a = f.captionFrom! + m.index!, b = a + m[0].length;

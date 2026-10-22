@@ -55,11 +55,16 @@ mode, and their settings are in their own section or under **More**:
 
 - **Autocompletion** (`plugins/autocompletion`, off by default): suggestions from a model in
   Ollama on this computer as you write a note; see [autocompletion](autocompletion.md).
+- **Figures** (`plugins/figures`, frontend only): ` ```gallery ` blocks drawn as carousels
+  (one figure with panels in exports), figures numbered Fig. 1, 2, … and `\ref` / `\cref` to
+  them; see [notes](notes.md#galleries). Turned off, a gallery reads as the images and captions
+  it holds, an image's caption as the line of text it is, and a reference to a figure as ??. The
+  notes format does not change: the parser and the attachment sweep still read a gallery's lines.
 - **Graph** (`plugins/graph`): the graph of notes and the papers they cite: the local graph
   beside a note, the full graph (Cmd/Ctrl+Shift+G), Show in Graph; its data at
   `/api/plugins/graph/data`. A core plugin's frontend reaches into the notes view through
-  `frontend/src/views/notes/hooks.ts` (`setGraph`); a core plugin's server part gets the app's
-  `Services` as `plugin.synapse`.
+  `frontend/src/views/notes/hooks.ts` (`setNoteHook('graph' | 'figures', …)`, which redraws the
+  open note); a core plugin's server part gets the app's `Services` as `plugin.synapse`.
 - **Open-Access PDFs** (`plugins/open-access-pdfs`): where Find Available PDF looks, Unpaywall and
   arXiv by identifier and by title (its two PDF sources, see
   [references](references.md#open-access-pdfs)). Turned off, Find Available PDF has nowhere to

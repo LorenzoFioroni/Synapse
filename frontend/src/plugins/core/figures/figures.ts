@@ -10,13 +10,14 @@
 // Figures are numbered through the note in order, Fig. 1, Fig. 2, …; an image or gallery without a
 // caption is not a figure and gets no number. \label{name} in a caption names the figure, and
 // \ref{name} in the text gives its number (\eqref{name} the number in parentheses), as for
-// equations (equations.ts); equations win when both use the same name.
+// equations (views/notes/equations.ts, crossref.ts); equations win when both use the same name.
 //
-// The renderer (render.ts) finds figures in its tokens, the live preview and the Markdown export
+// The renderer (markdown.ts) finds figures in its tokens, the live preview and the Markdown export
 // in the text (figuresOf): both apply imageFigureAt to the note's lines, so they agree.
 // No DOM here (tests/js/figures.test.mjs).
 import { type Gallery, galleryCaptioned, panelLabel, parseGallery, takeLabels, wholeEmphasis } from './gallery.js';
-import { type Scan, scan } from './mdscan.js';
+import type { FigureInText as Figure } from '../../../views/notes/hooks.js';
+import { type Scan, scan } from '../../../views/notes/mdscan.js';
 
 const IMAGE_LINE = /^ {0,3}!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)\s*$/;
 const blank = (s: string | undefined) => s === undefined || !s.trim();
@@ -40,14 +41,9 @@ export function imageFigureAt(lines: string[], i: number): ImageFigure | null {
   return { src: m[2], alt: alt.trim(), width: Number((width || '').trim()) || null, caption: text, labels };
 }
 
-/** A figure of a note, found in its text. Offsets are into the text given to figuresOf. */
-export interface FigureInText {
-  kind: 'image' | 'gallery';
-  from: number;              // start of the image line, or of the gallery's opening fence
-  to: number;                // end of the caption line, or of the closing fence
-  captionFrom?: number;      // an image's caption line
-  number: number | null;     // null: no caption, not numbered (galleries only)
-  labels: string[];          // the figure's own (a gallery's panels have theirs)
+/** A figure of a note, found in its text: what the notes editor knows of one (hooks.ts), with the
+ *  gallery or image itself. Offsets are into the text given to figuresOf. */
+export interface FigureInText extends Figure {
   gallery?: Gallery;
   image?: ImageFigure;
 }

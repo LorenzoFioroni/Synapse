@@ -7,9 +7,8 @@
 //  * indented code blocks are off; fenced code only;
 //  * $…$ closes on the same line (Pandoc rules), $$…$$ inline or as a block;
 //  * [[Note|alias]], ![[Note]], [@key, p. 4], [see @a; @b], > [!note] callouts, - [ ] tasks;
-//  * ```gallery blocks: images with captions, drawn as a carousel (gallery.ts, galleryView.ts);
-//  * figures (an image with a caption line, or a captioned gallery) numbered Fig. 1, 2, … with
-//    \label / \ref (figures.ts);
+//  * ```gallery blocks and numbered figures come from the Figures plugin (hooks.ts, FiguresHook;
+//    plugins/core/figures/markdown.ts); without it a gallery reads as the Markdown it holds;
 //  * display equations are numbered through the note and \eqref{label} resolved (equations.ts);
 //  * math macros: the physics package, Settings, and \newcommand in the note (macros.ts).
 
@@ -18,10 +17,9 @@ import type { RendererRule as MdRenderRule, StateBlock, StateCore, StateInline, 
 
 export type MdLib = typeof import('../../../vendor/md/md.js');
 import { type RefKind, type Lookup, lookupIn, refNames, refParts } from './crossref.js';
-import { figureLabel, imageFigureAt } from './figures.js';
-import { galleryCaptioned, galleryInfo, panelLabel, parseGallery } from './gallery.js';
 import { labelId, layoutTag, numberEquations, resolveRefs } from './equations.js';
-import { type Cite, attachmentOf, parseCites, referenceDefinition, splitWiki } from './mdscan.js';
+import { type Cite, GALLERY_INFO, attachmentOf, parseCites, referenceDefinition, splitWiki } from './mdscan.js';
+import { hooksVersion, noteHooks } from './hooks.js';
 import { type Definition, HAS_DEFINITIONS, type Macro, type Macros, baseMacros, macroSource, parseDefinitions, withDefinitions } from './macros.js';
 
 /** What a renderer may know about a cited key (any CiteEntry fits). */
@@ -56,7 +54,14 @@ const CALLOUTS: Record<string, string> = {
   info: 'Info', important: 'Important', caution: 'Caution', example: 'Example', todo: 'To do',
 };
 const ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ESCAPES[c]);
+/** Text as HTML (for text and attribute values). */
+export const esc = (s: unknown): string => String(s ?? '').replace(/[&<>"']/g, (c) => ESCAPES[c]);
+
+/** The anchors that \ref and \eqref links to these labels go to. */
+export const anchorsHtml = (names: string[] | undefined): string => (names || []).map((n) => `<span class="eq-anchor" id="${esc(labelId(n))}"></span>`).join('');
+
+/** ' data-line="…"' of a block token (set by the renderer's line rules), or nothing. */
+export const lineAttr = (t: MdToken): string => { const v = t.attrGet('data-line'); return v != null ? ` data-line="${esc(v)}"` : ''; };
 
 /** A reference (\ref, \eqref, \cref, \Cref) as HTML: each number links to its label's anchor, an
  *  unknown name shows as ?? in red. Also used by the live preview to number a gallery widget's. */
@@ -254,94 +259,26 @@ function taskRule(state: StateCore): void {
 }
 
 /**
- * ```gallery blocks become tokens of their own, with each caption an inline token, so captions are
- * parsed like any text: math (numbered and with the note's macros), citations, links, \eqref.
+ * A ```gallery block when the Figures plugin is off (it turns them into carousels before this
+ * runs): the Markdown it holds, read like the rest of the note (its images, captions, citations).
  * Runs after block parsing, before inline parsing.
  */
-function galleryRule(state: StateCore): void {
-  if (!state.tokens.some((t) => t.type === 'fence' && galleryInfo(t.info))) return;
+function plainGalleries(state: StateCore): void {
+  const isGallery = (t: MdToken) => t.type === 'fence' && GALLERY_INFO.test((t.info || '').trim());
+  if (!state.tokens.some(isGallery)) return;
   const out: MdToken[] = [];
   for (const tok of state.tokens) {
-    if (tok.type !== 'fence' || !galleryInfo(tok.info)) { out.push(tok); continue; }
-    const g = parseGallery(tok.content, tok.info);
-    const first = (tok.map?.[0] ?? 0) + 1;   // the line after the opening fence
-    const block = (type: string, nesting: 1 | 0 | -1, meta: unknown = null, line: number | null = null) => {
-      const t = new state.Token(type, '', nesting);
-      t.block = true; t.level = tok.level; t.meta = meta;
-      if (line != null) t.map = [line, line + 1];
-      return t;
-    };
-    const inline = (content: string, line: number) => {
-      const t = new state.Token('inline', '', 0);
-      t.content = content; t.map = [line, line + 1]; t.children = []; t.level = tok.level + 1;
-      return t;
-    };
-    // ``fig`` (the figure's number) is filled in by figureRule
-    const open = block('gallery_open', 1, { width: g.width, count: g.panels.length, captioned: galleryCaptioned(g), labels: g.labels, fig: null });
-    open.map = tok.map;
-    out.push(open);
-    g.panels.forEach((p, i) => {
-      const meta = { ...p, index: i, count: g.panels.length, mainCaption: !!g.caption, fig: null };
-      out.push(block('gallery_panel_open', 1, meta, first + p.line), inline(p.caption, first + p.line), block('gallery_panel_close', -1));
-    });
-    out.push(block('gallery_nav', 0, { count: g.panels.length }));
-    if (g.caption) {
-      const line = first + (g.captionLine ?? 0);
-      out.push(block('gallery_caption_open', 1, { fig: null }, line), inline(g.caption, line), block('gallery_caption_close', -1));
+    if (!isGallery(tok)) { out.push(tok); continue; }
+    const inner: MdToken[] = [];
+    state.md.block.parse(tok.content, state.md, state.env, inner);
+    const shift = (tok.map?.[0] ?? 0) + 1;   // the line after the opening fence
+    for (const t of inner) {
+      if (t.map) t.map = [t.map[0] + shift, t.map[1] + shift];
+      t.level += tok.level;
     }
-    out.push(block('gallery_close', -1));
+    out.push(...inner);
   }
   state.tokens = out;
-}
-
-/**
- * Figures: a top-level paragraph that is an image and its caption line (imageFigureAt, the rule the
- * live preview and the Markdown export apply to the text) becomes figure tokens, its caption an
- * inline token without the emphasis markers and \label. Then every figure, and every gallery with
- * a caption, gets its number in order, and env.figLabels maps labels to numbers for \ref.
- * Runs after galleryRule, before inline parsing.
- */
-function figureRule(state: StateCore): void {
-  const toks = state.tokens;
-  let lines: string[] | null = null;
-  const out: MdToken[] = [];
-  for (let i = 0; i < toks.length; i++) {
-    const t = toks[i];
-    if (t.type === 'paragraph_open' && t.level === 0 && t.map && t.map[1] - t.map[0] === 2
-        && toks[i + 1]?.type === 'inline' && toks[i + 2]?.type === 'paragraph_close') {
-      lines ||= state.src.split('\n');
-      const fig = imageFigureAt(lines, t.map[0]);
-      if (fig) {
-        const open = new state.Token('figure_open', 'figure', 1);
-        open.block = true; open.map = t.map; open.meta = { ...fig, fig: null };
-        const caption = toks[i + 1];
-        caption.content = fig.caption;
-        caption.map = [t.map[0] + 1, t.map[0] + 2];
-        const close = new state.Token('figure_close', 'figure', -1);
-        close.block = true;
-        out.push(open, caption, close);
-        i += 2;
-        continue;
-      }
-    }
-    out.push(t);
-  }
-  state.tokens = out;
-  const labels = new Map<string, string>();
-  let n = 0, inGallery: number | null = null;
-  for (const t of out) {
-    if (t.type === 'figure_open' || (t.type === 'gallery_open' && t.meta.captioned)) {
-      t.meta.fig = ++n;
-      for (const name of t.meta.labels) if (!labels.has(name)) labels.set(name, String(n));
-      if (t.type === 'gallery_open') inGallery = n;
-    } else if (t.type === 'gallery_close') inGallery = null;
-    else if (inGallery != null && (t.type === 'gallery_panel_open' || t.type === 'gallery_caption_open')) {
-      t.meta.fig = inGallery;
-      // a label in a panel's caption names that panel: "2(b)"
-      if (t.type === 'gallery_panel_open') for (const name of t.meta.labels) if (!labels.has(name)) labels.set(name, `${inGallery}(${panelLabel(t.meta.index)})`);
-    }
-  }
-  state.env.figLabels = labels;
 }
 
 /** data-line on block tokens, so a click in read mode can find the source line. */
@@ -424,24 +361,6 @@ function katexMemo(macros: Macros | undefined): Map<string, string> {
 
 /** A Markdown renderer for notes; ``lib`` is vendor/md/md.js. */
 export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
-  const md = new lib.MarkdownIt({ html: false, linkify: true, typographer: false });
-  md.disable('code');
-  md.use(lib.footnote);
-  md.block.ruler.before('fence', 'math_block', mathBlock, { alt: ['paragraph', 'reference', 'blockquote', 'list'] });
-  md.inline.ruler.before('escape', 'math_inline', mathInline());
-  md.inline.ruler.before('link', 'wiki', wikiRule);
-  md.inline.ruler.before('image', 'wiki_embed', wikiRule);
-  md.inline.ruler.before('link', 'cite', citeRule);
-  md.inline.ruler.push('tag', tagRule);
-  md.inline.ruler.before('emphasis', 'task_ref', taskRefRule);
-  md.inline.ruler.before('escape', 'eq_ref', eqRefRule);
-  md.core.ruler.after('inline', 'equations', equationsRule(o.equations ?? renderDefaults.equations, o.macros ?? renderDefaults.macros));
-  md.core.ruler.after('block', 'callout', calloutRule);
-  md.core.ruler.after('block', 'gallery', galleryRule);
-  md.core.ruler.after('gallery', 'figures', figureRule);
-  md.core.ruler.after('inline', 'task', taskRule);
-  md.core.ruler.push('line_attrs', lineAttrs);
-
   const katex = (tex: string, display: boolean, macros?: Macros) => {
     const memo = katexMemo(macros);
     const key = `${display ? 'D' : 'i'}${tex}`;
@@ -459,127 +378,113 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
     memo.set(key, out);
     return out;
   };
-  const R = md.renderer.rules;
-  const anchors = (names: string[] | undefined) => (names || []).map((n) => `<span class="eq-anchor" id="${esc(labelId(n))}"></span>`).join('');
-  // a formula that only defines macros shows nothing (like a LaTeX preamble)
-  const onlyDefines = (t: MdToken) => t.meta?.defines && !t.content.trim();
-  R.math_inline = (t, i, opts, env) => (onlyDefines(t[i]) ? ''
-    : t[i].meta.display ? `<span class="math display">${anchors(t[i].meta.labels)}${katex(t[i].content, true, env.macros)}</span>`
-      : `<span class="math">${katex(t[i].content, false, env.macros)}</span>`);
-  R.math_block = (t, i, opts, env) => (onlyDefines(t[i]) ? ''
-    : `<div class="math-block" data-line="${(t[i].map?.[0] ?? 0) + (o.lineOffset || 0)}">${anchors(t[i].meta?.labels)}${katex(t[i].content, true, env.macros)}</div>\n`);
-  // an equation's label, else a figure's (figureRule); \cref writes the kind too (crossref.ts)
-  R.eq_ref = (t, i, opts, env) => {
-    const { kind, names } = t[i].meta;
-    return refHtml(kind, names, lookupIn(env.eqLabels, env.figLabels));
+  // Built again when a plugin's hook changed (hooks.ts), so a renderer made before the Figures
+  // plugin started, or after it stopped, draws as it would now.
+  const build = (): MarkdownIt => {
+    const md = new lib.MarkdownIt({ html: false, linkify: true, typographer: false });
+    md.disable('code');
+    md.use(lib.footnote);
+    md.block.ruler.before('fence', 'math_block', mathBlock, { alt: ['paragraph', 'reference', 'blockquote', 'list'] });
+    md.inline.ruler.before('escape', 'math_inline', mathInline());
+    md.inline.ruler.before('link', 'wiki', wikiRule);
+    md.inline.ruler.before('image', 'wiki_embed', wikiRule);
+    md.inline.ruler.before('link', 'cite', citeRule);
+    md.inline.ruler.push('tag', tagRule);
+    md.inline.ruler.before('emphasis', 'task_ref', taskRefRule);
+    md.inline.ruler.before('escape', 'eq_ref', eqRefRule);
+    md.core.ruler.after('inline', 'equations', equationsRule(o.equations ?? renderDefaults.equations, o.macros ?? renderDefaults.macros));
+    md.core.ruler.after('block', 'callout', calloutRule);
+    md.core.ruler.after('block', 'gallery_plain', plainGalleries);
+    md.core.ruler.after('inline', 'task', taskRule);
+    md.core.ruler.push('line_attrs', lineAttrs);
+
+    const R = md.renderer.rules;
+    const anchors = anchorsHtml;
+    // a formula that only defines macros shows nothing (like a LaTeX preamble)
+    const onlyDefines = (t: MdToken) => t.meta?.defines && !t.content.trim();
+    R.math_inline = (t, i, opts, env) => (onlyDefines(t[i]) ? ''
+      : t[i].meta.display ? `<span class="math display">${anchors(t[i].meta.labels)}${katex(t[i].content, true, env.macros)}</span>`
+        : `<span class="math">${katex(t[i].content, false, env.macros)}</span>`);
+    R.math_block = (t, i, opts, env) => (onlyDefines(t[i]) ? ''
+      : `<div class="math-block" data-line="${(t[i].map?.[0] ?? 0) + (o.lineOffset || 0)}">${anchors(t[i].meta?.labels)}${katex(t[i].content, true, env.macros)}</div>\n`);
+    // an equation's label, else a figure's (env.figLabels, from the Figures plugin); \cref writes the kind too (crossref.ts)
+    R.eq_ref = (t, i, opts, env) => {
+      const { kind, names } = t[i].meta;
+      return refHtml(kind, names, lookupIn(env.eqLabels, env.figLabels));
+    };
+    R.note_link = (t, i) => {
+      const w = t[i].meta;
+      const path = o.resolveNote ? o.resolveNote(w.target) : undefined;   // undefined = unknown, null = does not exist
+      const label = w.alias || (w.target ? w.target + (w.heading ? ` › ${w.heading}` : '') : w.heading);
+      return `<a class="wikilink${path === null && w.target ? ' unresolved' : ''}" data-note="${esc(w.target)}" data-heading="${esc(w.heading)}"${path ? ` data-path="${esc(path)}"` : ''} href="#">${esc(label)}</a>`;
+    };
+    R.note_embed = (t, i) => {
+      const w = t[i].meta;
+      const path = o.resolveNote ? o.resolveNote(w.target) : undefined;
+      return `<div class="note-embed${path === null ? ' unresolved' : ''}" data-note="${esc(w.target)}" data-heading="${esc(w.heading)}"${path ? ` data-path="${esc(path)}"` : ''}><div class="embed-title">${esc(w.alias || w.target)}</div><div class="embed-body"></div></div>`;
+    };
+    R.cite_group = (t, i) => {
+      const parts = (t[i].meta as Cite[]).map((c) => {
+        const info = o.citeInfo ? o.citeInfo(c.key) : null;
+        const cls = ['cite', info ? '' : 'missing', info?.trashed ? 'trashed' : ''].filter(Boolean).join(' ');
+        const att = attachmentOf(c.locator);
+        return `<a class="${cls}" href="#" data-key="${esc(c.key)}"${c.page ? ` data-page="${c.page}"` : ''}${att ? ` data-att="${att}"` : ''} title="${esc(info ? `${info.title || ''}` : `@${c.key} is not in your library`)}">${esc(citeLabel(c, info))}</a>`;
+      });
+      return `<span class="cite-group">(${parts.join('; ')})</span>`;
+    };
+    R.tag = (t, i) => `<span class="tag">#${esc(t[i].content)}</span>`;
+    R.task_ref = (t, i) => renderDefaults.taskHtml(t[i].meta.id);
+    R.task_box = (t, i) => `<input type="checkbox" class="task-box"${t[i].meta.checked ? ' checked' : ''}${t[i].meta.line != null ? ` data-task-line="${t[i].meta.line + (o.lineOffset || 0)}"` : ''}>`;
+    const defaultImage = R.image!;
+    R.image = (t, i, opts, env, self) => {
+      const tok = t[i];
+      const alt = tok.children ? self.renderInlineAsText(tok.children, opts, env) : tok.content;
+      const [label, width] = alt.split('|');
+      tok.attrSet('src', imageSrc(tok.attrGet('src') || ''));
+      tok.attrSet('loading', 'lazy');
+      if (width && /^\d+$/.test(width.trim())) tok.attrSet('width', width.trim());
+      if (tok.children) tok.children = [{ type: 'text', content: label.trim() } as MdToken];
+      tok.content = label.trim();
+      return defaultImage(t, i, opts, env, self);
+    };
+    const defaultFence = R.fence!;
+    R.fence = (t, i, opts, env, self) => {
+      const tok = t[i];
+      const lang = (tok.info || '').trim().split(/\s+/)[0].toLowerCase();
+      const line = (tok.map?.[0] ?? 0) + (o.lineOffset || 0);
+      if (lang === 'mermaid') return `<div class="mermaid-block" data-line="${line}"><pre class="mermaid-src">${esc(tok.content)}</pre></div>\n`;
+      const html = defaultFence(t, i, opts, env, self);
+      return `<div class="code-block" data-line="${line}"${lang ? ` data-lang="${esc(lang)}"` : ''}><button class="copy-code" title="Copy" type="button">Copy</button>${html}</div>\n`;
+    };
+    const defaultBQ: MdRenderRule = R.blockquote_open || ((t, i, opts, env, self) => self.renderToken(t, i, opts));
+    R.blockquote_open = (t, i, opts, env, self) => {
+      const m = t[i].meta;
+      const open = defaultBQ(t, i, opts, env, self);
+      return m?.callout ? `${open}<div class="callout-title">${esc(m.title)}</div>\n` : open;
+    };
+    R.heading_open = (t, i, opts, env, self) => {
+      const text = t[i + 1]?.content || '';
+      t[i].attrSet('id', `h-${slugHeading(text)}`);
+      return self.renderToken(t, i, opts);
+    };
+    // data-line values include the front-matter offset
+    if (o.lineOffset) {
+      md.core.ruler.push('line_offset', (state) => {
+        for (const t of state.tokens) { const v = t.attrGet && t.attrGet('data-line'); if (v != null) t.attrSet('data-line', String(Number(v) + o.lineOffset!)); }
+      });
+    }
+    noteHooks.figures?.markdown(md);
+    return md;
   };
-  R.note_link = (t, i) => {
-    const w = t[i].meta;
-    const path = o.resolveNote ? o.resolveNote(w.target) : undefined;   // undefined = unknown, null = does not exist
-    const label = w.alias || (w.target ? w.target + (w.heading ? ` › ${w.heading}` : '') : w.heading);
-    return `<a class="wikilink${path === null && w.target ? ' unresolved' : ''}" data-note="${esc(w.target)}" data-heading="${esc(w.heading)}"${path ? ` data-path="${esc(path)}"` : ''} href="#">${esc(label)}</a>`;
+  let md = build(), built = hooksVersion;
+  const current = () => {
+    if (built !== hooksVersion) { built = hooksVersion; md = build(); }
+    return md;
   };
-  R.note_embed = (t, i) => {
-    const w = t[i].meta;
-    const path = o.resolveNote ? o.resolveNote(w.target) : undefined;
-    return `<div class="note-embed${path === null ? ' unresolved' : ''}" data-note="${esc(w.target)}" data-heading="${esc(w.heading)}"${path ? ` data-path="${esc(path)}"` : ''}><div class="embed-title">${esc(w.alias || w.target)}</div><div class="embed-body"></div></div>`;
-  };
-  R.cite_group = (t, i) => {
-    const parts = (t[i].meta as Cite[]).map((c) => {
-      const info = o.citeInfo ? o.citeInfo(c.key) : null;
-      const cls = ['cite', info ? '' : 'missing', info?.trashed ? 'trashed' : ''].filter(Boolean).join(' ');
-      const att = attachmentOf(c.locator);
-      return `<a class="${cls}" href="#" data-key="${esc(c.key)}"${c.page ? ` data-page="${c.page}"` : ''}${att ? ` data-att="${att}"` : ''} title="${esc(info ? `${info.title || ''}` : `@${c.key} is not in your library`)}">${esc(citeLabel(c, info))}</a>`;
-    });
-    return `<span class="cite-group">(${parts.join('; ')})</span>`;
-  };
-  R.tag = (t, i) => `<span class="tag">#${esc(t[i].content)}</span>`;
-  R.task_ref = (t, i) => renderDefaults.taskHtml(t[i].meta.id);
-  R.task_box = (t, i) => `<input type="checkbox" class="task-box"${t[i].meta.checked ? ' checked' : ''}${t[i].meta.line != null ? ` data-task-line="${t[i].meta.line + (o.lineOffset || 0)}"` : ''}>`;
-  const defaultImage = R.image!;
-  R.image = (t, i, opts, env, self) => {
-    const tok = t[i];
-    const alt = tok.children ? self.renderInlineAsText(tok.children, opts, env) : tok.content;
-    const [label, width] = alt.split('|');
-    tok.attrSet('src', imageSrc(tok.attrGet('src') || ''));
-    tok.attrSet('loading', 'lazy');
-    if (width && /^\d+$/.test(width.trim())) tok.attrSet('width', width.trim());
-    if (tok.children) tok.children = [{ type: 'text', content: label.trim() } as MdToken];
-    tok.content = label.trim();
-    return defaultImage(t, i, opts, env, self);
-  };
-  // a gallery: a carousel in the app (galleryView.ts moves it), panels (a), (b), … in exports (exportNote.ts)
-  const lineAttr = (t: MdToken) => { const v = t.attrGet('data-line'); return v != null ? ` data-line="${esc(v)}"` : ''; };
-  const figNum = (n: number, stop = '.') => `<span class="fig-num">${figureLabel(n)}${stop}</span>`;
-  R.figure_open = (t, i) => {
-    const f = t[i].meta;
-    return `<figure class="figure"${lineAttr(t[i])} data-fig="${f.fig}">${anchors(f.labels)}<div class="figure-image">`
-      + `<img src="${esc(imageSrc(f.src))}" alt="${esc(f.alt)}" loading="lazy"${f.width ? ` width="${Number(f.width)}"` : ''}></div>`
-      + `<figcaption class="figure-caption">${figNum(f.fig)} `;
-  };
-  R.figure_close = () => '</figcaption></figure>\n';
-  R.gallery_open = (t, i) => {
-    const { width, count, fig, labels } = t[i].meta;
-    return `<figure class="gallery"${lineAttr(t[i])} data-count="${count}"${fig ? ` data-fig="${fig}"` : ''}${width ? ` style="max-width:${Number(width)}px"` : ''}>`
-      + `${fig ? anchors(labels) : ''}<div class="gallery-view"><div class="gallery-track">${count ? '' : '<div class="gallery-empty">Empty gallery: write one image per line, e.g. ![](attachments/x.png)</div>'}`;
-  };
-  R.gallery_panel_open = (t, i) => {
-    const p = t[i].meta;
-    return `<div class="gallery-panel"${lineAttr(t[i])} data-index="${p.index}">${p.fig ? anchors(p.labels) : ''}<div class="gallery-image">`
-      + `<img src="${esc(imageSrc(p.src))}" alt="${esc(p.alt)}" loading="lazy"${p.width ? ` width="${Number(p.width)}"` : ''}></div>`
-      // the label hangs to the left of the caption, so the caption's text itself is centred
-      + `<div class="gallery-panel-caption"><span class="gallery-caption-text${p.caption.trim() ? '' : ' empty'}">`
-      + panelHead(p);
-  };
-  R.gallery_panel_close = () => '</span></div></div>';
-  // what goes before a panel's caption: its label, "(b)"; when the gallery is a figure with no
-  // caption of its own, the panels' captions carry its number: "Fig. 2(b)", or "Fig. 2." alone
-  function panelHead(p: { index: number; count: number; caption: string; mainCaption: boolean; fig: number | null }): string {
-    const num = p.fig && !p.mainCaption && p.caption.trim();
-    if (p.count > 1) return `<span class="gallery-label">${num ? figNum(p.fig!, '') : ''}(${panelLabel(p.index)})</span> `;
-    return num ? `${figNum(p.fig!)} ` : '';
-  }
-  R.gallery_nav = (t, i) => {
-    const { count } = t[i].meta;
-    if (count < 2) return '</div></div>';
-    const dots = Array.from({ length: count }, (_, k) => `<button type="button" class="gallery-dot${k ? '' : ' active'}" data-index="${k}" aria-label="Image (${panelLabel(k)})"></button>`).join('');
-    return '</div><button type="button" class="gallery-btn gallery-prev" aria-label="Previous image" disabled>‹</button>'
-      + '<button type="button" class="gallery-btn gallery-next" aria-label="Next image">›</button></div>'
-      + `<div class="gallery-dots">${dots}</div>`;
-  };
-  R.gallery_caption_open = (t, i) => `<figcaption class="gallery-caption"${lineAttr(t[i])}>${t[i].meta?.fig ? `${figNum(t[i].meta.fig)} ` : ''}`;
-  R.gallery_caption_close = () => '</figcaption>';
-  R.gallery_close = () => '</figure>\n';
-  const defaultFence = R.fence!;
-  R.fence = (t, i, opts, env, self) => {
-    const tok = t[i];
-    const lang = (tok.info || '').trim().split(/\s+/)[0].toLowerCase();
-    const line = (tok.map?.[0] ?? 0) + (o.lineOffset || 0);
-    if (lang === 'mermaid') return `<div class="mermaid-block" data-line="${line}"><pre class="mermaid-src">${esc(tok.content)}</pre></div>\n`;
-    const html = defaultFence(t, i, opts, env, self);
-    return `<div class="code-block" data-line="${line}"${lang ? ` data-lang="${esc(lang)}"` : ''}><button class="copy-code" title="Copy" type="button">Copy</button>${html}</div>\n`;
-  };
-  const defaultBQ: MdRenderRule = R.blockquote_open || ((t, i, opts, env, self) => self.renderToken(t, i, opts));
-  R.blockquote_open = (t, i, opts, env, self) => {
-    const m = t[i].meta;
-    const open = defaultBQ(t, i, opts, env, self);
-    return m?.callout ? `${open}<div class="callout-title">${esc(m.title)}</div>\n` : open;
-  };
-  R.heading_open = (t, i, opts, env, self) => {
-    const text = t[i + 1]?.content || '';
-    t[i].attrSet('id', `h-${slugHeading(text)}`);
-    return self.renderToken(t, i, opts);
-  };
-  // data-line values include the front-matter offset
-  if (o.lineOffset) {
-    md.core.ruler.push('line_offset', (state) => {
-      for (const t of state.tokens) { const v = t.attrGet && t.attrGet('data-line'); if (v != null) t.attrSet('data-line', String(Number(v) + o.lineOffset!)); }
-    });
-  }
   return {
-    md,
-    render: (src: string) => md.render(src),
-    renderInline: (src: string) => md.renderInline(src),
+    get md() { return current(); },
+    render: (src: string) => current().render(src),
+    renderInline: (src: string) => current().renderInline(src),
     katex,
   };
 }
