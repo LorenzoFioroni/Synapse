@@ -117,7 +117,7 @@ class ChangeFeed:
 
 def kind_of(path: str) -> str:
     """Which part of the app a library-database write through this API path changes."""
-    if path.startswith("/api/tasks"):
+    if path.startswith(("/api/tasks", "/api/plugins/tasks/")):
         return "tasks"
     if path.startswith("/api/annotations") or ("/annotations" in path and path.startswith("/api/attachments/")):
         return "annotations"

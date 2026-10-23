@@ -8,11 +8,11 @@ import { closeGlobal, globalOpen, graphChanged, initNotesGraph, localSection, op
 
 /** Leave Settings, Tasks or a plugin's page for the graph in Notes. */
 async function leaveOthers(): Promise<void> {
-  const [{ closeSettings, settingsOpen }, { closeTasks }, { closePage }] = await Promise.all([
-    import('../../../views/settingsView.js'), import('../../../views/tasks/tasksView.js'), import('../../../views/pages.js'),
+  const [{ closeSettings, settingsOpen }, { tasksPage }, { closePage }] = await Promise.all([
+    import('../../../views/settingsView.js'), import('../../../tasksPage.js'), import('../../../views/pages.js'),
   ]);
   if (settingsOpen()) closeSettings();
-  closeTasks();
+  tasksPage.close();
   closePage();
 }
 

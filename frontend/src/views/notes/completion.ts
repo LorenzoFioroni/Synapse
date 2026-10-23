@@ -23,7 +23,7 @@ export interface TaskChoice { id: string; title: string; detail: string; info: s
 export interface CompletionData {
   items(): CiteEntry[];
   notes(): NoteInfo[];
-  tasks?(): TaskChoice[];
+  tasks?(): TaskChoice[] | null;
   newTask?(title: string): Promise<string | null>;
   /** A task's title as HTML (math, citations rendered), shown in place of the plain label. */
   taskHtml?(id: string): string;
@@ -63,17 +63,18 @@ export function completions(cm: CM, data: CompletionData) {
   /** "{{task query": the tasks that match, and a new task named "query". Picking one writes its {{task:id}}. */
   function taskSource(ctx: CompletionContext, lineFrom: number, before: string): CompletionResult | null {
     const m = TASK_START.exec(before);
-    if (!m || !data.tasks || inCode(ctx.state, ctx.pos)) return null;
+    const tasks = data.tasks?.();
+    if (!m || !tasks || inCode(ctx.state, ctx.pos)) return null;
     if (((before.slice(0, m.index).match(/(?<!\\)\$/g) || []).length) % 2) return null;   // inside $math$
     const from = lineFrom + m.index;
     const query = m[1].trim();
-    if (/^[a-z0-9]{4,32}$/.test(query) && data.tasks().some((t) => t.id === query)) return null;   // inside a whole {{task:id}}
+    if (/^[a-z0-9]{4,32}$/.test(query) && tasks.some((t) => t.id === query)) return null;   // inside a whole {{task:id}}
     const close = ctx.state.sliceDoc(ctx.pos, ctx.pos + 2) === '}}' ? 2 : 0;   // closeBrackets typed "}}" already
     const put = (view: EditorView, f: number, t: number, id: string) => {
       const insert = `{{task:${id}}}`;
       view.dispatch({ changes: { from: f, to: t, insert }, selection: { anchor: f + insert.length } });
     };
-    const options: Completion[] = searchTasks(data.tasks(), query).map((t) => {
+    const options: Completion[] = searchTasks(tasks, query).map((t) => {
       const o: Completion = {
         label: t.title || '(untitled)',
         detail: t.detail,

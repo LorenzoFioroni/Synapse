@@ -8,4 +8,5 @@ export const CORE: Record<string, () => Promise<Partial<PluginModule>>> = {
   autocompletion: () => import('./autocompletion/index.js'),
   figures: () => import('./figures/index.js'),
   graph: () => import('./graph/index.js'),
+  tasks: () => import('./tasks/index.js'),
 };

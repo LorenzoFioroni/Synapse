@@ -5,15 +5,16 @@
 // Tasks section of the note's side panel. The notes code reaches it only through taskHooks
 // (notes/workspace.ts).
 import type { EditorView } from '@codemirror/view';
-import { api } from '../../api.js';
-import { icon } from '../../icons.js';
-import { emit, on, state } from '../../store.js';
-import { toast, toastError } from '../../ui/toast.js';
-import { escapeHtml, modLabel, plural } from '../../util.js';
-import { scan } from '../notes/mdscan.js';
-import type { PortableTask } from '../notes/portable.js';
-import type { TaskChoice } from '../notes/completion.js';
-import { taskHooks, ws } from '../notes/workspace.js';
+import { api } from '../../../api.js';
+import { icon } from '../../../icons.js';
+import { emit, off, on, state } from '../../../store.js';
+import { toast, toastError } from '../../../ui/toast.js';
+import { escapeHtml, modLabel, plural } from '../../../util.js';
+import { scan } from '../../../views/notes/mdscan.js';
+import type { PortableTask } from '../../../views/notes/portable.js';
+import type { TaskChoice } from '../../../views/notes/completion.js';
+import { renderDefaults } from '../../../views/notes/render.js';
+import { taskHooks, ws } from '../../../views/notes/workspace.js';
 import { dueLabel, dueState, parseDue } from './dates.js';
 import { childrenOf, createTask, deleteTasks, loadTasks, plainTitle, progress, restoreTask, td, toggleTask } from './taskData.js';
 import { type TaskForm, mountTaskForm } from './taskForm.js';
@@ -26,7 +27,22 @@ const LINE = /^(\s*(?:>\s*)*)((?:[-*+]|\d+[.)])\s+)?(\[[ xX]\]\s+)?(.*)$/;
 const HEADING = /^\s{0,3}#{1,6}\s/;
 const TOKEN_LINE = /^\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s+)?\{\{task:[a-z0-9]{4,32}\}\}\s*$/;
 
+const defaultTaskHtml = renderDefaults.taskHtml;
+let tasksListener: (() => void) | null = null;
+let clickListener: ((e: MouseEvent) => void) | null = null;
+let active = false;
+export function teardownNoteTasks(): void {
+  active = false;
+  popup?.close();
+  if (tasksListener) off('tasks', tasksListener);
+  if (clickListener) document.removeEventListener('click', clickListener);
+  tasksListener = null; clickListener = null;
+  for (const key of Object.keys(taskHooks) as (keyof typeof taskHooks)[]) taskHooks[key] = null;
+  renderDefaults.taskHtml = defaultTaskHtml;
+  sideBox = null; shown.clear(); fresh.clear(); binned.clear();
+}
 export function initNoteTasks(): void {
+  active = true;
   installTaskRendering();
   taskHooks.preview = {
     sig: refSig,
@@ -56,7 +72,7 @@ export function initNoteTasks(): void {
   };
   if (state.settings.notes_enabled !== false) loadTasks().catch(() => {});
   ensureRenderer().then(() => ws.editor?.refresh());
-  on('tasks', () => {
+  tasksListener = () => {
     ws.editor?.refresh();
     // tasks drawn outside the editor (read mode, embeds): their content follows the task
     document.querySelectorAll<HTMLElement>('.task-ref[data-task]').forEach((el) => {
@@ -66,15 +82,17 @@ export function initNoteTasks(): void {
       el.classList.toggle('missing', td.loaded && !td.tasks.has(el.dataset.task!));
     });
     repaintSide();
-  });
+  };
+  on('tasks', tasksListener);
   // read mode and embeds: clicks on a drawn task
-  document.addEventListener('click', (e) => {
+  clickListener = (e) => {
     const t = e.target as Element;
     const ref = t.closest?.<HTMLElement>('.task-ref[data-task]');
     if (!ref || ref.closest('.cm-editor')) return;
     e.preventDefault();
     taskAct(ref.dataset.task!, t.closest<HTMLElement>('[data-task-act]')?.dataset.taskAct || 'open', ref, null);
-  });
+  };
+  document.addEventListener('click', clickListener);
 }
 
 /** Which tasks each note shows, as last saved: when that changes, the notes of each task are loaded again. */
@@ -101,6 +119,7 @@ const fresh = new Map<string, string>();    // task made from a note → the not
 const binned = new Map<string, Promise<void>>();   // a fresh task that went to the trash with its line → that deletion
 
 function binIfGone(path: string, here: Set<string>): void {
+  if (!active) return;
   const gone: string[] = [];
   for (const [id, p] of fresh) {
     if (p !== path || here.has(id)) continue;
@@ -125,7 +144,7 @@ async function bringBack(id: string, path: string | null): Promise<void> {
   if (!deleting) return;
   binned.delete(id);
   await deleting;   // the line may come back before the deletion is through
-  if (td.tasks.has(id)) return;   // restored some other way meanwhile
+  if (!active || td.tasks.has(id)) return;   // restored some other way meanwhile
   if (path) fresh.set(id, path);
   await restoreTask(id);
 }
@@ -220,6 +239,7 @@ function openPanel(cls: string, label: string, anchor: Element | { left: number;
   };
   el.querySelector('.task-popup-close')!.addEventListener('click', () => { close(); ws.editor?.focus(); });
   setTimeout(() => {
+    if (!active || !el.isConnected) return;
     document.addEventListener('pointerdown', outside, true);
     document.addEventListener('keydown', onKey, true);
   }, 0);

@@ -1,16 +1,16 @@
 // The Tasks page: the views column (views, notes), the list with its search, sort, group and
 // quick add, and the detail pane of the selected task. It covers the item list and item pane like
 // Notes does (body[data-workspace="tasks"]). See docs/tasks.md.
-import { api } from '../../api.js';
-import { icon } from '../../icons.js';
-import { navPush } from '../../nav.js';
-import { emit, on, state } from '../../store.js';
-import type { Task } from '../../types.js';
-import { openDialog } from '../../ui/dialog.js';
-import { openMenu } from '../../ui/menu.js';
-import { toastError } from '../../ui/toast.js';
-import { escapeHtml, h, modLabel, plural, storage, store } from '../../util.js';
-import { ws } from '../notes/workspace.js';
+import { api } from '../../../api.js';
+import { icon } from '../../../icons.js';
+import { navPush } from '../../../nav.js';
+import { type AppEvent, type AppEvents, emit, off, on, state } from '../../../store.js';
+import type { Task } from '../../../types.js';
+import { openDialog } from '../../../ui/dialog.js';
+import { openMenu } from '../../../ui/menu.js';
+import { toastError } from '../../../ui/toast.js';
+import { escapeHtml, h, modLabel, plural, storage, store } from '../../../util.js';
+import { ws } from '../../../views/notes/workspace.js';
 import { dueLabel, parseQuick } from './dates.js';
 import { pickNote } from './notePicker.js';
 import { GROUPS, SORTS, VIEWS, type GroupId, type SortId, type ViewId, viewCounts } from './taskQuery.js';
@@ -28,6 +28,18 @@ let list: TaskList;
 let form: TaskForm | null = null;
 const st = loadState();
 let quickDest: string | null = null;   // the note quick add puts tasks in (null: none)
+
+const offs: (() => void)[] = [];
+function listen<K extends AppEvent>(event: K, fn: (payload: AppEvents[K]) => void): void {
+  on(event, fn); offs.push(() => off(event, fn));
+}
+export function teardownTasks(): void {
+  closeTasks();
+  form?.destroy(); form = null;
+  offs.splice(0).forEach((off) => off());
+  root.remove();
+  emit('tasks-count', null);
+}
 
 export function initTasks(): void {
   root = h(`<div id="tasks-view" hidden>
@@ -98,13 +110,13 @@ export function initTasks(): void {
     try { await api.addTaskToNote(id, n.dataset.tvNote); await loadTasks(true); } catch (err) { toastError(err); }
   });
 
-  on('tasks', () => { if (tasksOpen()) { list.paint(); paintViews(); paintDetail(); } paintCount(); });
-  on('workspace', () => {
+  listen('tasks', () => { if (tasksOpen()) { list.paint(); paintViews(); paintDetail(); } paintCount(); });
+  listen('workspace', () => {
     // another workspace took over (Notes opened, or back to the library)
     if (!tasksOpen() && !root.hidden) { root.hidden = true; form?.destroy(); form = null; store('zc.tasks.open', false); }
   });
-  on('settings', () => { if (!enabled() && tasksOpen()) closeTasks(); paintCount(); });
-  if (enabled()) loadTasks().then(() => { if (storage('zc.tasks.open', false)) openTasks(); }).catch(() => {});
+  listen('settings', () => { if (!enabled() && tasksOpen()) closeTasks(); paintCount(); });
+  if (enabled()) loadTasks().then(() => { if (root.isConnected && storage('zc.tasks.open', false)) openTasks(); }).catch(() => {});
 }
 
 /** The sidebar's count (open tasks, overdue ones in red). */
@@ -115,13 +127,15 @@ function paintCount(): void {
 }
 
 export async function openTasks({ task = null, note = null }: { task?: string | null; note?: string | null } = {}): Promise<void> {
-  if (!enabled()) return;
+  if (!enabled() || !root.isConnected) return;
+  const opened = root;
   document.body.dataset.workspace = 'tasks';
   root.hidden = false;
   store('zc.tasks.open', true);
   emit('workspace');
   if (note !== null) { st.note = note || null; if (!['open', 'all', 'done'].includes(st.view)) st.view = 'open'; st.save(); }
   await Promise.all([loadTasks(), ensureRenderer(), ws.library.list.length ? null : api.citeIndex().then((r) => { ws.library = { list: r.items, byKey: new Map(r.items.map((i) => [i.key, i])) }; }).catch(() => {})]);
+  if (!opened.isConnected || opened !== root) return;
   if (task && td.tasks.has(task)) {
     const t = td.tasks.get(task)!;
     // make it visible: its view, its parents unfolded

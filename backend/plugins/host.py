@@ -226,6 +226,8 @@ class PluginHost:
                     except ManifestError:
                         pass
             changes: dict = {"enabled": on}
+            if man.mcp:
+                changes["remote_mcp"] = True
             if values:
                 changes["settings"] = {**(states.get(pid, {}).get("settings") or {}), **values}
             self._update_state(pid, **changes)

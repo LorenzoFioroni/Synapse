@@ -59,7 +59,7 @@ Two objects tie the backend together:
 |---|---|---|
 | `library/` | Items, attachments, folders, tags, smart folders, PDF annotations, citation keys and search. `fields.py` is the single source of truth for item fields and types, and `identifiers.py` for DOIs and arXiv ids (cleaning, normalising, matching). | `library.db` (schema and migrations in `library/db.py`) |
 | `notes/` | Markdown notes. The files are the source of truth; the index is disposable. | `notes/`, `notes_index.db` |
-| `tasks/` | Tasks (to-dos with a body and sub-tasks) and the `{{task:id}}` lines that show them in notes (see [tasks](tasks.md)). | `library.db` (`tasks`, `task_history`) |
+| `tasks/` | Task records, history and the integrity of `{{task:id}}` note links. The optional Tasks core plugin owns their UI, HTTP handlers and MCP tools (see [tasks](tasks.md)). | `library.db` (`tasks`, `task_history`) |
 | `formats/` | Import and export for BibTeX, RIS, EndNote and CSL-JSON, behind one registry. | none |
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
 | `mcp/` | The MCP server: the JSON-RPC layer (`protocol.py`), its HTTP transport (`http.py`), the library tools (`tools/`, one mixin per family), their schemas (`server.py`) and the instructions given to the AI app (`instructions.py`). | none (it uses the other packages) |
@@ -153,7 +153,7 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`). Galleries and
   numbered figures are the Figures core plugin's (`plugins/core/figures/`, through `hooks.ts`). `settingsView.ts` is the Settings page; its markup
   is in `views/settings/page.ts`, and Autocompletion, Backups and Devices have their own modules there.
-  `views/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
+  `plugins/core/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
   the notes workspace only through `taskHooks` in `views/notes/workspace.ts`.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
   header is `views/itemlist/columns.ts`, its virtualised rows `rows.ts` (only the rows near the

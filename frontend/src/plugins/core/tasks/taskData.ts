@@ -2,12 +2,12 @@
 // the Tasks page and the notes make to them. Everyone who draws a task listens for the 'tasks'
 // event. A change is applied here first, so a click shows at once; the server's answer then
 // replaces it (and an error puts back what was there).
-import { api } from '../../api.js';
-import { emit } from '../../store.js';
-import type { Task, TaskChanges, TaskRef } from '../../types.js';
-import { openDialog } from '../../ui/dialog.js';
-import { toast, toastError } from '../../ui/toast.js';
-import { escapeHtml, plural } from '../../util.js';
+import { api } from '../../../api.js';
+import { emit } from '../../../store.js';
+import type { Task, TaskChanges, TaskRef } from '../../../types.js';
+import { openDialog } from '../../../ui/dialog.js';
+import { toast, toastError } from '../../../ui/toast.js';
+import { escapeHtml, plural } from '../../../util.js';
 
 export const td = {
   tasks: new Map<string, Task>(),
@@ -18,18 +18,28 @@ export const td = {
 };
 
 let loading: Promise<void> | null = null;
+let active = false;
+let generation = 0;
+export function startTaskData(): void { active = true; generation++; td.loaded = false; }
+export function stopTaskData(): void {
+  active = false; generation++; loading = null;
+  td.tasks.clear(); td.refs = {}; td.loaded = false; td.trash = 0; td.version++;
+}
 
 /** Load all tasks (once; ``force`` loads again, e.g. after another window changed them). */
 export function loadTasks(force = false): Promise<void> {
+  if (!active) return Promise.resolve();
+  const current = generation;
   if (td.loaded && !force) return Promise.resolve();
   if (loading) return loading;
   loading = api.tasks().then((res) => {
+    if (!active || current !== generation) return;
     td.tasks = new Map(res.tasks.map((t) => [t.id, t]));
     td.refs = res.refs;
     td.trash = res.trash;
     td.loaded = true;
     changed();
-  }).finally(() => { loading = null; });
+  }).finally(() => { if (current === generation) loading = null; });
   return loading;
 }
 

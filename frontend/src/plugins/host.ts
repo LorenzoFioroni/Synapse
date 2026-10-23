@@ -267,7 +267,7 @@ export async function pluginChanges(kinds: string[]): Promise<void> {
   for (const rec of loaded.values()) for (const fn of rec.listeners) fn(kinds as ChangeKind[]);
 }
 
-export function initPluginHost(): void {
+export function initPluginHost(): Promise<void> {
   // the item list reloaded in this window: its own changes are not in the change feed
   let t: ReturnType<typeof setTimeout> | undefined;
   on('items', () => {
@@ -277,6 +277,6 @@ export function initPluginHost(): void {
       if (state.sources.length) void syncSources();   // badges may count what is not in the library yet
     }, 300);
   });
-  syncPlugins();
   window.zcPlugins = { loaded: () => [...loaded.keys()], sync: syncPlugins };   // for tests
+  return syncPlugins();
 }

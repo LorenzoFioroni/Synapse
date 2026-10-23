@@ -587,7 +587,7 @@ export interface AccessTokensOverview {
 export interface ChangeFeed {
   epoch: string;
   seq: number;
-  changes: ('library' | 'annotations' | 'notes')[];
+  changes: ('library' | 'annotations' | 'notes' | 'tasks' | 'plugins' | 'fields' | 'sources')[];
   reset: boolean;          // the server restarted: everything counts as changed
 }
 

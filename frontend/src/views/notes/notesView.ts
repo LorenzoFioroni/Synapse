@@ -74,7 +74,7 @@ export function initNotes(): void {
           <button data-mode="source" title="Plain Markdown">Source</button>
           <button data-mode="read" title="Read (${modLabel}E)">Read</button>
         </div>
-        <button class="btn btn-sm note-add-task" data-act="add-task" title="Add a task to this note (${modLabel}↩)">${icon('tasks', 'icon-sm')} Task</button>
+        <button class="btn btn-sm note-add-task" hidden data-act="add-task" title="Add a task to this note (${modLabel}↩)">${icon('tasks', 'icon-sm')} Task</button>
         <button class="icon-btn" data-act="export" title="Export as PDF, HTML or Markdown">${icon('export')}</button>
       </div>
       <div class="note-ai-bar" role="status" hidden></div>
@@ -94,7 +94,11 @@ export function initNotes(): void {
   onNoteHookChange((key) => {
     if (key === 'graph') attachGraph();
     // galleries and figures (the Figures plugin) were turned on or off: draw the notes again
-    if (key === 'figures') { staleOthers(); if (!notesOpen() || !ws.session) return; ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); }
+    if (key === 'tasks') {
+      root.querySelector<HTMLElement>('.note-add-task')!.hidden = !taskHooks.add;
+      if (ws.session) paintSide();
+    }
+    if (key === 'figures' || key === 'tasks') { staleOthers(); if (!notesOpen() || !ws.session) return; ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); }
   });
 
   root.addEventListener('click', onClick);
@@ -339,7 +343,7 @@ async function newEditor(view: NoteView, mode: 'live' | 'source'): Promise<NoteE
   }, mode, {
     items: () => ws.library.list,
     notes: () => ws.overview.notes,
-    tasks: () => taskHooks.choices?.() ?? [],
+    tasks: () => taskHooks.choices?.() ?? null,
     newTask: (title) => taskHooks.create?.(title) ?? Promise.resolve(null),
     taskHtml: (id) => taskHooks.titleHtml?.(id) ?? '',
     assist: ghostSource,

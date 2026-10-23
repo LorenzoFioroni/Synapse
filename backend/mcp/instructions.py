@@ -50,7 +50,8 @@ see them with view_image (one path, or every image of a note).
 - edit_note changes an existing note (after get_note), when the user asks for it; the user can see and undo \
 every change in the app.
 - The user's tasks (to-dos) are records shown in notes as {{task:ID}} lines: list_tasks searches them, get_task \
-shows one with its details and sub-tasks, create_task / update_task / delete_task change them when the user asks.
+shows one with its details and sub-tasks, create_task / update_task / delete_task change them when the user asks \
+(the task tools are absent when the user turns the Tasks plugin off).
 
 """
     + WRITING_RULES

@@ -1,16 +1,16 @@
 // Everything about one task, editable: title, status, due date, the Markdown body
 // (the notes editor, with live preview), sub-tasks and the notes that show it. Used by the Tasks
 // page's detail pane and by the popup that opens from a task in a note.
-import { api } from '../../api.js';
-import { icon } from '../../icons.js';
-import { off, on } from '../../store.js';
-import type { Task } from '../../types.js';
-import { openMenu } from '../../ui/menu.js';
-import { toast, toastError } from '../../ui/toast.js';
-import { escapeHtml, formatDate } from '../../util.js';
-import { type NoteEditor, createEditor } from '../notes/editor.js';
-import { renderMermaid } from '../notes/richRender.js';
-import { citeInfo, equationMode, noteMacros, taskHooks, ws } from '../notes/workspace.js';
+import { api } from '../../../api.js';
+import { icon } from '../../../icons.js';
+import { off, on } from '../../../store.js';
+import type { Task } from '../../../types.js';
+import { openMenu } from '../../../ui/menu.js';
+import { toast, toastError } from '../../../ui/toast.js';
+import { escapeHtml, formatDate } from '../../../util.js';
+import { type NoteEditor, createEditor } from '../../../views/notes/editor.js';
+import { renderMermaid } from '../../../views/notes/richRender.js';
+import { citeInfo, equationMode, noteMacros, taskHooks, ws } from '../../../views/notes/workspace.js';
 import { dueLabel, dueState, isoDate, monthGrid, monthName, parseDue, parseQuick, todayIso } from './dates.js';
 import { openNoteAt, pickNote } from './notePicker.js';
 import {

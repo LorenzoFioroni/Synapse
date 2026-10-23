@@ -196,3 +196,24 @@ def test_a_task_made_over_http_reaches_the_open_windows(mac, token, lan_app):
 )
 def test_bearer(header, token):
     assert bearer(header) == token
+
+
+def test_remote_task_plugin_writes_notify_the_app(mac, token, lan_app):
+    before = mac.get("/api/changes").json
+    result = from_other_pc(
+        mac,
+        {
+            "jsonrpc": "2.0",
+            "id": 20,
+            "method": "tools/call",
+            "params": {"name": "create_task", "arguments": {"title": "Remote task"}},
+        },
+        token,
+    ).json
+    assert not result["result"].get("isError")
+    changes = mac.get("/api/changes", query_string={"since": before["seq"], "epoch": before["epoch"]}).json
+    assert "tasks" in changes["changes"]
+    host = lan_app.extensions["synapse"].plugins
+    host.disable("tasks")
+    tools = from_other_pc(mac, {"jsonrpc": "2.0", "id": 21, "method": "tools/list"}, token).json
+    assert "create_task" not in {tool["name"] for tool in tools["result"]["tools"]}

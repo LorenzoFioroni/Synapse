@@ -1,12 +1,12 @@
 // How a task looks wherever it is drawn: in the Tasks page, in a note (live preview and read
 // mode, through renderDefaults.taskHtml) and in exports. Titles and bodies are Markdown rendered
 // like notes (math, citations, [[links]]).
-import { icon } from '../../icons.js';
-import type { Task } from '../../types.js';
-import { escapeHtml, plural } from '../../util.js';
-import { loadMD } from '../notes/editor.js';
-import { type Renderer, createRenderer, renderDefaults } from '../notes/render.js';
-import { citeInfo, equationMode, noteMacros, normTarget, ws } from '../notes/workspace.js';
+import { icon } from '../../../icons.js';
+import type { Task } from '../../../types.js';
+import { escapeHtml, plural } from '../../../util.js';
+import { loadMD } from '../../../views/notes/editor.js';
+import { type Renderer, createRenderer, renderDefaults } from '../../../views/notes/render.js';
+import { citeInfo, equationMode, noteMacros, normTarget, ws } from '../../../views/notes/workspace.js';
 import { dueLabel, dueState } from './dates.js';
 import { progress, td } from './taskData.js';
 

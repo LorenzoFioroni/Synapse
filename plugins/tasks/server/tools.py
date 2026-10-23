@@ -7,11 +7,11 @@ history, and a task added to a note goes through the note's history, so the user
 
 from __future__ import annotations
 
-from ...tasks import TaskError
-from ...tasks.query import matcher
-from ...tasks.service import token
-from ..protocol import ToolError
-from .common import ToolsBase, drop_empty
+from backend.mcp.protocol import ToolError
+from backend.mcp.tools.common import ToolsBase, drop_empty
+from backend.tasks import TaskError
+from backend.tasks.query import matcher
+from backend.tasks.service import token
 
 MAX_LISTED = 200
 

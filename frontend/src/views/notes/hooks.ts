@@ -77,15 +77,20 @@ export const noteHooks: Hooks = { ghost: null, editorOpened: new Set(), graph: n
 export let hooksVersion = 0;
 
 type Settable = 'graph' | 'figures';
-const listeners = new Set<(key: Settable) => void>();
+type HookKey = Settable | 'tasks';
+const listeners = new Set<(key: HookKey) => void>();
 /** Set (or with null, take away) a hook; the notes view puts it in place or removes it and draws
     the open note again. */
 export function setNoteHook<K extends Settable>(key: K, value: Hooks[K]): void {
   noteHooks[key] = value;
+  noteHooksChanged(key);
+}
+/** Announce changes to hooks supplied by a plugin, including taskHooks in workspace.ts. */
+export function noteHooksChanged(key: HookKey): void {
   hooksVersion++;
   for (const fn of listeners) { try { fn(key); } catch (e) { console.error(e); } }
 }
-export function onNoteHookChange(fn: (key: Settable) => void): void { listeners.add(fn); }
+export function onNoteHookChange(fn: (key: HookKey) => void): void { listeners.add(fn); }
 
 /** The ghost-text source the editor gets: whichever one a plugin set, at the time it asks. */
 export const ghostSource: GhostSource = {

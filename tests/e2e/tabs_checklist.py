@@ -735,7 +735,7 @@ async def main():
             await page.wait_for_timeout(300)
 
             # ---- Settings → PDF Viewer → Browser Tabs ---------------------------------------------------
-            await page.keyboard.press("Control+,")
+            await page.keyboard.press("Meta+," if sys.platform == "darwin" else "Control+,")
             await page.wait_for_selector('[data-seg="pdf_open_in"]')
             check("Settings → PDF Viewer has “Open PDFs in”", True)
             await page.click('[data-seg="pdf_open_in"] [data-v="browser"]')

@@ -1,3 +1,4 @@
+import { tasksPage } from '../tasksPage.js';
 // Left sidebar: library views, folder tree, smart folders and the tag pane.
 //
 // Drag & drop: drop items on a folder to add them to it (an item can be in several
@@ -82,6 +83,7 @@ export function initSidebar(): void {
   on('settings', paint);
   on('notes-count', (n) => { notesCount = n; paintNotes(); });
   on('tasks-count', (c) => { tasksCount = c; paintNotes(); });
+  on('tasks-page', paintNotes);
   pages.subscribe(paintPages);
   on('sources', paintPages);
   paint();
@@ -95,6 +97,7 @@ const inLibrary = () => !document.body.dataset.workspace;
 function paintNotes() {
   const enabled = state.settings.notes_enabled !== false;
   root.querySelectorAll<HTMLElement>('[data-notes-only]').forEach((el) => { el.hidden = !enabled; });
+  root.querySelector<HTMLElement>('[data-act="open-tasks"]')!.hidden ||= !tasksPage.on;
   root.querySelector('[data-act="open-notes"]')!.classList.toggle('active', inNotes());
   root.querySelector('[data-count="notes"]')!.textContent = notesCount ? String(notesCount) : '';
   root.querySelector('[data-act="open-tasks"]')!.classList.toggle('active', document.body.dataset.workspace === 'tasks');

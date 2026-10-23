@@ -7,7 +7,7 @@ import { api } from './api.js';
 import { notesChanged } from './views/notes/notesView.js';
 import { pluginsChanged } from './views/settings/plugins.js';
 import { pluginChanges } from './plugins/host.js';
-import { tasksChanged } from './views/tasks/tasksView.js';
+import { tasksPage } from './tasksPage.js';
 
 const EVERY = 4000;          // ms between polls while the page is visible
 const MIN_GAP = 2500;        // at most one library refresh this often (background fetching can be busy)
@@ -39,7 +39,7 @@ async function apply() {
   if (editing()) return;   // tried again at the next poll
   const notes = pending.delete('notes');
   if (notes) notesChanged();
-  if (pending.delete('tasks') || notes) tasksChanged();   // a note's {{task:…}} lines may have changed too
+  if (pending.delete('tasks') || notes) tasksPage.changed();   // a note's {{task:…}} lines may have changed too
   if (pending.delete('sources') && state.view.startsWith('source:')) pending.add('library');   // a plugin's list changed
   if (pending.delete('fields')) {
     // values plugins attach changed (background refreshes): the list's columns and the item pane
@@ -62,7 +62,11 @@ async function poll() {
     seq = res.seq;
     epoch = res.epoch;
     for (const k of res.changes || []) pending.add(k);
-    if (res.changes?.length) void pluginChanges(res.changes);   // plugins hear what changed (and reload on 'plugins')
+    // Stop a disabled plugin before dispatching changes that would call its removed routes.
+    if (res.changes?.length) {
+      const plugins = pluginChanges(res.changes);
+      if (res.changes.includes('plugins')) await plugins;
+    }
     pending.delete('annotations');   // the PDF viewer looks after its own
     if (pending.size) await apply();
   } catch { /* server away for a moment: try again next time */ }

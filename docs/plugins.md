@@ -60,6 +60,11 @@ mode, and their settings are in their own section or under **More**:
   them; see [notes](notes.md#galleries). Turned off, a gallery reads as the images and captions
   it holds, an image's caption as the line of text it is, and a reference to a figure as ??. The
   notes format does not change: the parser and the attachment sweep still read a gallery's lines.
+- **Tasks** (`plugins/tasks`, on by default): the Tasks workspace, task controls in notes,
+  and the existing `list_tasks`, `get_task`, `create_task`, `update_task`, `delete_task` tools.
+  Records and note links stay in the core for validation, backups and attachment retention.
+  Disabling it removes its controls and tools; reenabling restores them with all tasks intact.
+  Its routes are `/api/plugins/tasks/…`; `/api/tasks` remains a compatibility alias. See [tasks](tasks.md).
 - **Graph** (`plugins/graph`): the graph of notes and the papers they cite: the local graph
   beside a note, the full graph (Cmd/Ctrl+Shift+G), Show in Graph; its data at
   `/api/plugins/graph/data`. A core plugin's frontend reaches into the notes view through

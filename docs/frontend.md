@@ -304,7 +304,7 @@ math; `tree.ts`, `treeInput.ts` and `fileOps.ts` are the notes list; `readView.t
 `conflict.ts`, `diff.ts`, `rekeyDialog.ts` and `attachmentsDialog.ts` are dialogs; `exportNote.ts`
 and `portable.ts` export a note as PDF, HTML or Markdown.
 
-**`views/tasks/`: tasks.** [Tasks](tasks.md#frontend-frontendsrcviewstasks) covers it. In short:
+**`plugins/core/tasks/`: tasks.** [Tasks](tasks.md#frontend-frontendsrcviewstasks) covers it. In short:
 `taskData.ts` holds the tasks and makes the changes; `taskQuery.ts` and `dates.ts` are the logic
 without a DOM (views, search, sorting, groups; reading dates); `taskRender.ts` draws a task;
 `taskForm.ts` is the form of the detail pane and the popup; `tasksView.ts`, `taskList.ts` and
@@ -461,3 +461,8 @@ markup; an unknown name falls back to `doc`. To add one, add its paths to `P`.
    in [architecture](architecture.md#modules).
 6. Cover what you can with a JavaScript unit test (keep the logic in a DOM-free module) and the
    rest with a browser checklist. See [testing](testing.md).
+
+The Tasks core plugin (`plugins/core/tasks/index.ts`) registers its page through `tasksPage.ts`
+and installs the existing note `taskHooks`. On unload it removes its DOM, listeners, popups and
+renderers and invalidates pending loads. Plugin startup completes before task deep links open;
+plugin changes are applied before the change feed dispatches task or note refreshes.

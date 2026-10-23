@@ -294,3 +294,26 @@ def test_task_writes_are_their_own_change_kind(client, svc):
 def test_images_in_task_bodies_stay_in_use(svc, store):
     store.create("With a plot", body="![plot](attachments/20261020-120000-plot.png)")
     assert svc.attachments.usage()["20261020-120000-plot.png"][0].startswith("task:")
+
+
+@pytest.mark.parametrize("url", ["/api/tasks", "/api/plugins/tasks/"])
+def test_tasks_plugin_toggle_preserves_records_and_note_links(client, svc, store, url):
+    task = store.create("Kept", body="![plot](attachments/20261020-120000-plot.png)")
+    assert svc.plugins.info("tasks")["remote_mcp"] is True
+    assert "list_tasks" in {tool.name for tool in svc.plugins.mcp_tools(remote=True)}
+    assert client.get(url).json["tasks"][0]["id"] == task["id"]
+    svc.plugins.disable("tasks")
+    assert client.get(url).status_code == 404
+    assert "list_tasks" not in {tool.name for tool in svc.plugins.mcp_tools()}
+    assert store.get(task["id"])["title"] == "Kept"
+    assert svc.attachments.usage()["20261020-120000-plot.png"][0].startswith("task:")
+    svc.plugins.enable("tasks")
+    assert client.get(url).json["tasks"][0]["id"] == task["id"]
+
+
+def test_plugin_task_writes_notify_other_windows(client, svc):
+    before = client.get("/api/changes").json
+    response = client.post("/api/plugins/tasks/", json={"title": "From plugin"})
+    assert response.status_code == 201
+    changes = client.get("/api/changes", query_string={"since": before["seq"], "epoch": before["epoch"]}).json
+    assert "tasks" in changes["changes"]

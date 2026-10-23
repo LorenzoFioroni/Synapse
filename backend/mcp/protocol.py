@@ -113,7 +113,7 @@ class Server:
         except Exception:
             log.exception("Listing the extra tools failed")
             more = {}
-        return {**more, **self.tools}  # the built-in tools win a clash
+        return {**self.tools, **{name: tool for name, tool in more.items() if name not in self.tools}}
 
     # ------------------------------------------------------------------ dispatch
     def handle(self, message: Any) -> Any:
