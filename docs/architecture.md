@@ -243,6 +243,7 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
 | [The app window](desktop.md) | `--window`, the server that stops with its window, the desktop shortcut, and the app's own tabs for PDFs. |
 | [MCP](mcp.md) | The MCP server, its tools and the rules it enforces. |
 | [Plugins](plugins.md) | Using and writing plugins: the manifest, the `plugin` object, events, storage, and how the host runs them. |
+| [Plugin authoring](plugin-authoring.md) | A runnable minimal plugin, interface choices, settings, storage, lifecycle cleanup and verification. |
 | [Plugin API review](plugin-api-review.md) | Review of the open Plugin API stack, findings, corrections and validation. |
 | [Autocompletion](autocompletion.md) | Ghost-text suggestions in notes from a local model (Ollama), and the checks that guard against a missing Ollama or model. |
 | [Browser extension](browser-extension.md) | The extension and the connector API it uses. |

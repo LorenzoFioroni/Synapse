@@ -147,6 +147,9 @@ These are off until turned on:
 
 ## Writing a plugin
 
+Start with the [plugin authoring quickstart](plugin-authoring.md) and its runnable Hello Library
+example; return here for the complete API reference.
+
 Start from a working one:
 
 ```bash

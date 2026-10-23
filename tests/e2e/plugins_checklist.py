@@ -80,6 +80,7 @@ async def main():
     guard(PORT)
     plugins = DATA / "plugins"
     shutil.copytree(APP / "docs" / "examples" / "recently-added", plugins / "recently-added")
+    shutil.copytree(APP / "docs" / "examples" / "hello-library", plugins / "hello-library")
     broken = plugins / "broken-one"
     broken.mkdir()
     (broken / "manifest.json").write_text(
@@ -123,7 +124,7 @@ async def main():
             names = await page.eval_on_selector_all("#set-plugins .p-name", "els => els.map(e => e.textContent)")
             # the two installed here, and those that come with Synapse (plugins/)
             bundled = [json.loads(m.read_text())["name"] for m in (APP / "plugins").glob("*/manifest.json")]
-            want = sorted(["Broken One", "Recently Added", *bundled], key=str.lower)
+            want = sorted(["Broken One", "Hello Library", "Recently Added", *bundled], key=str.lower)
             check("the plugins are listed", names == want, names)
             bundled = await page.text_content('[data-plugin="citation-counts"]')
             check("one comes with Synapse", "comes with Synapse" in bundled, bundled[:200])
@@ -400,6 +401,48 @@ async def main():
             requests.post(BASE + "/api/plugin-host/pending-frontend/disable").raise_for_status()
             requests.post(BASE + "/api/plugin-host/bad-frontend/disable").raise_for_status()
 
+            # Keep the authoring quickstart's public-API example runnable in the browser.
+            requests.post(BASE + "/api/plugin-host/hello-library/enable").raise_for_status()
+            await page.evaluate("window.zcPlugins.sync()")
+            hello = '#sidebar [data-page="hello-library.main"]'
+            await page.click(hello)
+            check(
+                "authoring example opens its offline page",
+                await wait_for(lambda: page.is_visible('#page-view p:text-is("Hello from your plugin.")')),
+            )
+            requests.put(
+                BASE + "/api/plugin-host/hello-library/settings", json={"message": "<b>A new greeting</b>"}
+            ).raise_for_status()
+            await page.click('#page-view button:text-is("Refresh")')
+            check(
+                "example refresh reads changed settings as text",
+                await wait_for(lambda: page.is_visible('#page-view p:text-is("<b>A new greeting</b>")'))
+                and await page.locator("#page-view .page-body b").count() == 0,
+            )
+            await page.click('#sidebar [data-view="library"]')
+            await page.keyboard.press(f"{mod}+Alt+KeyY")
+            check(
+                "example shortcut opens its page",
+                await wait_for(lambda: page.is_visible('#page-view p:text-is("<b>A new greeting</b>")')),
+            )
+            requests.post(BASE + "/api/plugin-host/hello-library/disable").raise_for_status()
+            await page.evaluate("window.zcPlugins.sync()")
+            check(
+                "example disable removes its open page",
+                await wait_for(
+                    lambda: page.evaluate(
+                        """document.body.dataset.workspace !== 'page' && !document.querySelector('[data-page="hello-library.main"]')"""
+                    )
+                ),
+            )
+            requests.post(BASE + "/api/plugin-host/hello-library/enable").raise_for_status()
+            await page.evaluate("window.zcPlugins.sync()")
+            await page.click(hello)
+            check(
+                "example reactivation restores one page and its setting",
+                await page.locator(hello).count() == 1
+                and await wait_for(lambda: page.is_visible('#page-view p:text-is("<b>A new greeting</b>")')),
+            )
             check("no JavaScript errors", not errors, errors[:3])
             # Safe mode keeps core features usable while suppressing installed plugins.
             requests.post(BASE + "/api/plugin-host/recently-added/enable").raise_for_status()

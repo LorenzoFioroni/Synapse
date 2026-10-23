@@ -341,8 +341,10 @@ Library** in the item pane, to add a paper; right-click or select several to add
 A plugin has a `manifest.json`, Python for the server (routes, tools for Claude, listeners for
 changes in the library, settings and stored data, and per-item fields: values such as a citation
 count that appear as list columns, search filters like `citations:>100` and rows in the item pane) and JavaScript for the app (pages listed under
-**Plugins** in the sidebar, sections in the item pane, actions in the item menu, commands). [`docs/plugins.md`](docs/plugins.md) explains how, and
-[`docs/examples/recently-added`](docs/examples/recently-added) is a small example to copy
+**Plugins** in the sidebar, sections in the item pane, actions in the item menu, commands).
+Start with the [plugin authoring guide](docs/plugin-authoring.md) and its runnable Hello Library
+example. [Plugins](docs/plugins.md) is the API reference;
+[`docs/examples/recently-added`](docs/examples/recently-added) shows a larger plugin to adapt
 ([`suggested-reading`](docs/examples/suggested-reading) offers a list of papers).
 To write one, `python server.py --new-plugin my-plugin --dev-plugins ~/synapse-plugins` makes a
 plugin to start from, and `python server.py --dev-plugins ~/synapse-plugins` restarts it whenever

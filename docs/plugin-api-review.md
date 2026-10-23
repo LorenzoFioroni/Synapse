@@ -155,3 +155,31 @@ JavaScript history tests. Frontend/extension type checks, Ruff lint/format and m
 Usability initially passed 40/41 with one browser 404 whose URL was not recorded. With failed-request
 URLs added to its diagnostics, five consecutive runs passed **41/41**. The initial request's cause
 was not confirmed; this is recorded rather than treating a retry as proof of a fix.
+
+## Final review of PR #84
+
+The final pass reviewed the diff against `codex/core-plugins`: storage and migration coordination,
+core defaults and safe mode, watcher shutdown, frontend activation/cleanup, Settings mounts,
+autocompletion cancellation, and workspace/history behavior. It checked the public API boundary,
+module ownership and matching documentation against the repository conventions.
+
+The pending CI run on `f0591d9` failed on Python 3.13 in
+`test_a_plugin_failing_repeatedly_is_turned_off`; the matrix then cancelled Python 3.10. The test
+polled for failure state and immediately asserted a change-feed notification. `_failed` writes
+state before publishing that notification on the shutdown thread, so the poll could win the race.
+The test now waits on an event set **after** the real notification callback returns, and still
+asserts failed state, disabled/running flags, the failure reason, the notification and reactivation.
+This fixes the test's synchronization without changing the production failure policy.
+
+The new [authoring guide](plugin-authoring.md) and runnable Hello Library example use only public
+plugin interfaces. Their backend smoke test covers settings persistence and disable/reactivation;
+the browser checklist covers the page, shortcut, escaped text and lifecycle. The example's
+JavaScript is also checked against a copy of the current `PluginContext` declarations.
+
+No additional blocking implementation findings were identified in this pass. The unconfirmed
+usability 404 and the native-window/Windows checks remain the limitations described above.
+
+Final local validation: **705 passed, 2 skipped** with coverage (**91%**); the failure-publication
+test passed **20/20** independent runs; the extended plugin browser checklist passed **53/53**.
+Ruff lint/format, mypy, frontend/extension checks, the example's JSDoc type check and its guide's
+local links passed.

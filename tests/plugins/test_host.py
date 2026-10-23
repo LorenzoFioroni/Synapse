@@ -4,7 +4,7 @@ safe mode and the MCP server following plugins.json."""
 import json
 import shutil
 import sys
-import time
+import threading
 
 from backend import create_app
 from backend.config import Config
@@ -249,18 +249,25 @@ def test_a_plugin_that_cannot_start_is_turned_off_with_the_reason(client, svc, m
     )
 
 
-def test_a_plugin_failing_repeatedly_is_turned_off(client, svc, make_plugin):
+def test_a_plugin_failing_repeatedly_is_turned_off(client, svc, make_plugin, monkeypatch):
     make_plugin("flaky", "def activate(plugin):\n    plugin.on('item.added', lambda e: 1 / 0)\n")
     client.post("/api/plugin-host/flaky/enable")
     since = svc.changes.seq
+    published = threading.Event()
+    changed = svc.plugins.changed
+    assert changed is not None
+
+    def notified():
+        changed()
+        published.set()
+
+    monkeypatch.setattr(svc.plugins, "changed", notified)
     for i in range(3):
         client.post("/api/items", json={"title": f"t{i}"})
-    for _ in range(100):
-        if not svc.plugins.info("flaky")["running"] and svc.plugins.info("flaky")["status"] == "failed":
-            break
-        time.sleep(0.05)
+    # Failure state is written before the shutdown thread publishes the change feed.
+    assert published.wait(5), "plugin failure was not published"
     info = svc.plugins.info("flaky")
-    assert info["status"] == "failed" and not info["enabled"]
+    assert info["status"] == "failed" and not info["enabled"] and not info["running"]
     assert "failing repeatedly" in info["problem"] and "ZeroDivisionError" in info["problem"]
     assert "plugins" in svc.changes.since(since, svc.changes.epoch, None)["changes"]
     # turning it on again clears the failure
