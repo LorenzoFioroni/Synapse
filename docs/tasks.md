@@ -54,7 +54,7 @@ parser and the editor), [storage](storage.md) (the tables and backups), [mcp](mc
   which is the point: older tasks never go away because a line did.
 - **The side panel** of a note lists its tasks with a progress bar, **Add a task** and **Show in
   Tasks**.
-- **The Tasks page** (**Tasks** in the toolbar switch or the sidebar, <kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd>):
+- **The Tasks page** (**Tasks** under **Plugins** in the left sidebar, <kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd>):
   - *Views*: Open, Today (overdue and due today), Next 7 days, No date, Not in a note, Done, All
     tasks; then each note that shows tasks, and Deleted tasks… at the bottom.
   - *The list*: sub-tasks under their parent (fold with the arrow). Search with words and filters

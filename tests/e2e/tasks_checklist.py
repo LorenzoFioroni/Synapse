@@ -115,6 +115,26 @@ async def main():
             await page.wait_for_timeout(1200)
             await page.evaluate("localStorage.clear()")
 
+            check(
+                "Tasks is listed under Plugins in the sidebar",
+                await page.evaluate("""() => {
+                const task = document.querySelector('#sidebar [data-navigation=\"tasks.main\"]');
+                return task && !task.hidden && task.parentElement.matches('div[data-navigation]')
+                    && !document.querySelector('[data-pages-head]').hidden;
+            }"""),
+            )
+            check(
+                "Tasks has no toolbar workspace button", await page.locator('.ws-switch [data-ws="tasks"]').count() == 0
+            )
+            await page.click('#sidebar [data-navigation="tasks.main"]')
+            await page.wait_for_selector("#tasks-view:not([hidden])")
+            check(
+                "The sidebar opens Tasks and marks it active",
+                await page.locator('#sidebar [data-navigation="tasks.main"]').evaluate(
+                    "el => el.classList.contains('active')"
+                ),
+            )
+
             # ---- a note shows its tasks
             await page.keyboard.press(f"{MOD}+Shift+L")
             await page.wait_for_selector(".notes-tree")
@@ -437,7 +457,7 @@ async def main():
             check("Open tasks are listed, sub-tasks under their parent", rows >= 6, f"({rows} rows)")
             groups = await page.locator(".tv-group").all_inner_texts()
             check("Grouped by note", any("Plan" in g for g in groups), str(groups))
-            count = await page.locator(".side-item[data-act=open-tasks] .count").inner_text()
+            count = await page.locator('.side-item[data-navigation="tasks.main"] .count').inner_text()
             check("The sidebar counts open tasks", count.strip().split()[-1].isdigit(), count)
 
             await page.locator(".tv-search-input").fill("due:week")
@@ -515,7 +535,7 @@ async def main():
                 s.post(BASE + "/api/plugin-host/tasks/disable").raise_for_status()
                 off = await wait_for(
                     page,
-                    "!document.querySelector('#tasks-view') && document.querySelector('.ws-switch [data-ws=tasks]').hidden",
+                    "!document.querySelector('#tasks-view') && !document.querySelector('#sidebar [data-navigation=\"tasks.main\"]')",
                     12000,
                 )
                 check(f"off ({cycle + 1}): Tasks page and navigation disappear", off)
@@ -537,7 +557,7 @@ async def main():
                 s.post(BASE + "/api/plugin-host/tasks/enable").raise_for_status()
                 on = await wait_for(
                     page,
-                    "!!document.querySelector('#tasks-view') && !document.querySelector('.ws-switch [data-ws=tasks]').hidden"
+                    "!!document.querySelector('#tasks-view') && !!document.querySelector('#sidebar [data-navigation=\"tasks.main\"]')"
                     " && !document.querySelector('.note-add-task').hidden",
                     12000,
                 )

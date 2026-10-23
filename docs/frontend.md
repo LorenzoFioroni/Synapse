@@ -262,7 +262,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `presence.ts` | Says hello to the server while the page is open, for a server that stops with its last window. |
 | `windowColor.ts` | The window's title bar colour (`theme-color`): neutral, or the shown note's folder colour (see [the app window](desktop.md#folder-colours)). |
 | `windows.ts` | Opening a place of the app in a new window (`openNewWindow`) and the address that names it (`placeHash`, `readPlace`); `main.ts` opens it (`openFromHash`). See [the app window](desktop.md#windows). |
-| `extend.ts` | The extension points: registries of commands, pages, item-pane sections and item actions that the views read and plugins (and `main.ts`, for Synapse's own commands) register into; keys (`parseKey`, `keyMatches`, `keyLabel`, `keyProblem`) and the palette's ranking. No DOM, unit-tested. |
+| `extend.ts` | The extension points: registries of core workspace navigation, commands, pages, item-pane sections and item actions that the views read and plugins (and `main.ts`, for Synapse's own commands) register into; keys (`parseKey`, `keyMatches`, `keyLabel`, `keyProblem`) and the palette's ranking. No DOM, unit-tested. |
 | `plugins/host.ts` | Plugins' frontends: loads each running plugin's module and styles, gives it its `PluginContext`, takes everything back when it stops (see [plugins](plugins.md#the-frontend)). |
 | `plugins/api.ts` | The `PluginContext` and the other types promised to plugins (types only; plugin authors copy it). |
 | `icons.ts` | Inline SVG icons: `icon(name, cls)` and `typeIcon(itemType)`. |
@@ -279,7 +279,8 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `itemlist/menus.ts` | Context menus for items and attachments, shared with the item pane. |
 | `itempane.ts` | The right-hand pane: editable fields, authors, abstract, attachments; *From Plugins* (values plugins attach, from `/api/items/<id>/fields`) and the sections plugins add. |
 | `referencesSection.ts` | The item pane's References section (see [references](references.md)). |
-| `sidebar.ts` | Library views, folder tree, smart folders, tag pane, the pages plugins add, and drag and drop onto them. |
+| `settings/pluginSections.ts` | Mounts and disposes plugin Settings sections as their registry changes, preserving unrelated controls and removing stale navigation. |
+| `sidebar.ts` | Plugin-owned workspace navigation (Tasks and Graph), library views, folder tree, smart folders, tag pane, the pages plugins add, and drag and drop onto them. |
 | `pages.ts` | A plugin's page in place of the library (`openPage`, `closePage`; `body[data-workspace="page"]`). |
 | `palette.ts` | The command palette (⌘⇧P / Ctrl+Shift+P, F1): every command in `extend.ts`, best match first. |
 | `organizeDialogs.ts` | Folder picker, tag editor and input, smart folder dialog. |

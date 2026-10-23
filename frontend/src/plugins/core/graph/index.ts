@@ -2,6 +2,7 @@
 // view shows it through views/notes/hooks.ts (a local graph beside the note, the full graph in
 // place of the editor); this adds the command (Cmd/Ctrl+Shift+G) and Show in Graph for items.
 import type { PluginContext } from '../../api.js';
+import { navigation } from '../../../extend.js';
 import { state } from '../../../store.js';
 import { noteHooks, setNoteHook, type GraphHook } from '../../../views/notes/hooks.js';
 import { closeGlobal, globalOpen, graphChanged, initNotesGraph, localSection, openGlobal, showLocal, teardownNotesGraph } from './notesGraph.js';
@@ -22,6 +23,10 @@ export function activate(p: PluginContext): void {
   };
   setNoteHook('graph', hook);
   const notesOn = () => state.settings.notes_enabled !== false;
+  const removeNavigation = navigation.register({
+    id: 'graph.main', title: 'Graph', icon: 'link', when: notesOn, active: globalOpen,
+    open: async () => { await leaveOthers(); await (await import('../../../views/notes/notesView.js')).openNotesGraph(); },
+  });
   p.commands.register({
     id: 'toggle', title: 'Show the Graph', key: 'Mod-Shift-g', when: notesOn,
     run: async () => { await leaveOthers(); (await import('../../../views/notes/notesView.js')).toggleNotesGraph(); },
@@ -32,6 +37,7 @@ export function activate(p: PluginContext): void {
     run: async (items) => { await leaveOthers(); (await import('../../../views/notes/notesView.js')).openNotesGraph(`item:${items[0].id}`); },
   });
   p.onUnload(() => {
+    removeNavigation();
     if (noteHooks.graph === hook) setNoteHook('graph', null);
     teardownNotesGraph();
   });

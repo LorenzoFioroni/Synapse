@@ -176,7 +176,6 @@ async function navigate(entry: NavEntry): Promise<void> {
 /** Library ⇄ Notes (⌘⇧L), or the workspace a toolbar switch button names. */
 function switchWorkspace(to: string = notesOpen() ? 'library' : 'notes'): void {
   if (settingsOpen()) closeSettings();
-  if (to === 'tasks') { goToTasks(); return; }
   if (to === 'notes') openNotes();
   else { closeNotes(); tasksPage.close(); closePage(); }
 }
@@ -188,7 +187,6 @@ function paintWorkspace() {
   const sw = document.querySelector<HTMLElement>('.ws-switch');
   if (!sw) return;
   sw.hidden = state.settings.notes_enabled === false;
-  sw.querySelector<HTMLElement>('[data-ws="tasks"]')!.hidden = !tasksPage.on;
   const ws = notesOpen() ? 'notes' : tasksPage.isOpen() ? 'tasks' : pageOpen() ? 'page' : 'library';
   sw.querySelectorAll<HTMLElement>('[data-ws]').forEach((b) => b.classList.toggle('active', b.dataset.ws === ws));
   if (ws === 'notes') return;
@@ -224,7 +222,6 @@ function initToolbar() {
       <div class="segmented ws-switch" role="group" aria-label="Workspace">
         <button data-ws="library" title="Library (${modLabel}⇧L switches)">Library</button>
         <button data-ws="notes" title="Notes (${modLabel}⇧L switches)">Notes</button>
-        <button data-ws="tasks" title="Tasks (${modLabel}⇧K)">Tasks</button>
       </div></div>
     <button class="icon-btn" data-a="new" title="New Item (${modLabel}N)">${icon('plus')}</button>
     <button class="icon-btn" data-a="identifier" title="Add by DOI, arXiv ID or ISBN (${modLabel}⇧N)">${icon('wand')}</button>

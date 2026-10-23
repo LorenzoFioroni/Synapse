@@ -94,6 +94,19 @@ export interface SettingsSection {
   mount: (el: HTMLElement) => Cleanup;
 }
 
+/** A core plugin's existing workspace, listed under Plugins without mounting a second page.
+ * Third-party plugins use PluginContext.pages or backend item sources for their sidebar entries. */
+export interface NavigationEntry {
+  id: string;
+  title: string;
+  icon: string;
+  when?: () => boolean;
+  active: () => boolean;
+  open: () => unknown;
+  badge?: () => { text: string; warning?: string; warningTitle?: string } | null;
+}
+
+export const navigation = new Registry<NavigationEntry>();
 export const commands = new Registry<Command>();
 export const pages = new Registry<Page>();
 export const itemSections = new Registry<ItemSection>();

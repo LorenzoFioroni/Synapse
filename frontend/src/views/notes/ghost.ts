@@ -17,6 +17,8 @@ export interface GhostSource {
   complete(prefix: string, suffix: string, signal: AbortSignal): Promise<string>;
   /** Pause in typing before asking (ms). */
   delay?: number;
+  /** The provider changed or stopped: clear its pending and visible suggestion. */
+  onChange?(fn: () => void): () => void;
 }
 
 const NO_GHOST = /^(InlineCode|CodeText|FencedCode|CodeBlock|CodeInfo|CodeMark|Frontmatter|URL|HTMLTag|Comment)$/;
@@ -31,7 +33,7 @@ export function ghostText(cm: CM, source: GhostSource) {
   /** Accept ``text`` (all of the suggestion, or its next word). */
   function accept(view: EditorView, part?: string): boolean {
     const g = view.state.field(field, false);
-    if (!g) return false;
+    if (!g || !source.ready()) return false;
     const insert = part ?? g.text;
     view.dispatch({
       changes: { from: g.pos, insert },
@@ -89,7 +91,13 @@ export function ghostText(cm: CM, source: GhostSource) {
   const plugin = ViewPlugin.fromClass(class {
     timer: ReturnType<typeof setTimeout> | undefined;
     ctrl: AbortController | null = null;
-    constructor(readonly view: EditorView) {}
+    unsubscribe?: () => void;
+    constructor(readonly view: EditorView) {
+      this.unsubscribe = source.onChange?.(() => {
+        this.cancel();
+        view.dispatch({ effects: setGhost.of(null) });
+      });
+    }
 
     update(u: ViewUpdate) {
       if (!u.docChanged && !u.selectionSet && !u.focusChanged) return;
@@ -138,7 +146,7 @@ export function ghostText(cm: CM, source: GhostSource) {
       view.dispatch({ effects: setGhost.of({ pos: sel.head, text }) });
     }
 
-    destroy() { this.cancel(); }
+    destroy() { this.unsubscribe?.(); this.cancel(); }
   });
 
   const keys = keymap.of([

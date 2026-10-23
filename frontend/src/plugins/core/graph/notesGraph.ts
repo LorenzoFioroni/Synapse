@@ -15,6 +15,7 @@
 
 import * as A from '../../../actions.js';
 import { api } from '../../../api.js';
+import { navigation } from '../../../extend.js';
 import { icon } from '../../../icons.js';
 import { emit } from '../../../store.js';
 import { toast, toastError } from '../../../ui/toast.js';
@@ -225,14 +226,16 @@ export async function openGlobal(focus: string | null = null): Promise<void> {
   globalFocus = focus;
   ctx.root.classList.add('graph-on');
   globalEl.hidden = false;
+  navigation.changed();
   paintGlobalControls();
   await paintGlobal({ refit: true });
-  globalEl.focus();
+  globalEl?.focus();
 }
 
 export function closeGlobal({ push = false } = {}): void {
   if (!globalOpen()) return;
   globalEl!.hidden = true;
+  navigation.changed();
   ctx.root.classList.remove('graph-on');
   closeCard();
   global?.graph.pauseAnimation();

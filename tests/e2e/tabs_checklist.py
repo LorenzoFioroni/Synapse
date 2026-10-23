@@ -312,7 +312,7 @@ async def main():
 
             # ---- the first tab: Library or Tasks; Notes has tabs of its own ------------------------------
             await page.click(".tab.home")
-            await page.click('.ws-switch [data-ws="tasks"]')
+            await page.click('#sidebar [data-navigation="tasks.main"]')
             await page.wait_for_timeout(500)
             check("the first tab says Tasks while Tasks is shown", (await tabs(page))[0]["title"] == "Tasks")
             await page.click('.ws-switch [data-ws="notes"]')
@@ -445,7 +445,7 @@ async def main():
             check("a note: Open in New Window opens it in a new window", ok)
             await win.close()
 
-            await page.click('.ws-switch [data-ws="tasks"]')
+            await page.click('#sidebar [data-navigation="tasks.main"]')
             await page.wait_for_selector(".tv-row")
             await page.locator(".tv-row", has_text="Window task").click(button="right")
             win = await new_window(lambda: page.locator(".menu-item", has_text="Open in New Window").click())

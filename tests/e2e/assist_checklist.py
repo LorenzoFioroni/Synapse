@@ -145,7 +145,11 @@ async def main():
             refused = await wait_for(
                 page, "document.querySelector('[data-ai-state]').textContent.includes('only a model on this computer')"
             )
-            check("Settings: an address on another computer is refused", refused)
+            check(
+                "Settings: an address on another computer is refused",
+                refused,
+                await page.locator("[data-ai-state]").inner_text(),
+            )
 
             await page.fill("[data-ai-url]", fake.url.replace("http://", ""))
             await page.locator("[data-ai-url]").blur()
@@ -168,6 +172,39 @@ async def main():
             ready = await wait_for(page, "document.querySelector('[data-ai-state] .ai-state.ok') !== null")
             check("Settings: Check Again finds the model (ready)", ready)
             check("Settings: no generation was asked by the checks", fake.generated() == [])
+            # A late response from an earlier status check must not replace a newer answer.
+            started, release, finished = asyncio.Event(), asyncio.Event(), asyncio.Event()
+            intercepted = 0
+
+            async def delayed_status(route):
+                nonlocal intercepted
+                intercepted += 1
+                if intercepted != 1:
+                    await route.continue_()
+                    return
+                response = await route.fetch()
+                stale = await response.json()
+                stale.update(ok=False, reason="unreachable", message="An old status response")
+                started.set()
+                await release.wait()
+                await route.fulfill(response=response, json=stale)
+                finished.set()
+
+            await page.route("**/api/plugins/autocompletion/status?fresh=1", delayed_status)
+            await page.click("[data-ai-check]")
+            await asyncio.wait_for(started.wait(), 5)
+            await page.click("[data-ai-check]")
+            await wait_for(page, "document.querySelector('[data-ai-state] .ai-state.ok') !== null")
+            async with page.expect_response(lambda r: r.url.endswith("/status?fresh=1")) as old_response:
+                release.set()
+            await (await old_response.value).finished()
+            await asyncio.wait_for(finished.wait(), 5)
+            await page.evaluate("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
+            check(
+                "Settings ignores an older status answer",
+                await page.locator("[data-ai-state] .ai-state.ok").count() == 1,
+            )
+            await page.unroute("**/api/plugins/autocompletion/status?fresh=1", delayed_status)
             await page.click("[data-close]")
             await page.wait_for_timeout(400)
 
@@ -283,6 +320,43 @@ async def main():
             await page.keyboard.type(" add more", delay=40)
             await page.wait_for_timeout(1200)
             check("Model removed: requests stop", len(fake.generated()) == n and await ghost(page) == "")
+
+            # Settings stays open while the plugin is stopped and started in another window.
+            fake.models[:] = ["qwen2.5-coder:1.5b"]
+            await page.keyboard.press(f"{MOD}+,")
+            nav = '.settings-nav [data-nav="x-autocompletion-ollama"]'
+            section = "#set-x-autocompletion-ollama"
+            for cycle in range(2):
+                await page.click(nav)
+                s.post(BASE + "/api/plugin-host/autocompletion/disable").raise_for_status()
+                await page.evaluate("window.zcPlugins.sync()")
+                check(
+                    f"Off removes its open Settings controls ({cycle + 1})",
+                    await page.locator(nav).count() == 0
+                    and await page.locator(section).count() == 0
+                    and await page.locator("#settings-view").count() == 1,
+                )
+                check(
+                    "Settings selects General after its current plugin section disappears",
+                    await page.locator('.settings-nav [data-nav="general"]').evaluate(
+                        "el => el.classList.contains('active')"
+                    ),
+                )
+                s.post(BASE + "/api/plugin-host/autocompletion/enable").raise_for_status()
+                await page.evaluate("window.zcPlugins.sync()")
+                check(
+                    f"On restores exactly one Settings section ({cycle + 1})",
+                    await page.locator(nav).count() == 1 and await page.locator(section).count() == 1,
+                )
+            await page.keyboard.press("Escape")
+
+            await to_end(page)
+            await page.keyboard.press("Enter")
+            await page.keyboard.type("The quick", delay=40)
+            await page.wait_for_selector(".cm-ghost")
+            s.post(BASE + "/api/plugin-host/autocompletion/disable").raise_for_status()
+            await page.evaluate("window.zcPlugins.sync()")
+            check("Off removes an already visible suggestion without reloading", await ghost(page) == "")
 
             # ---- off
             s.post(BASE + "/api/plugin-host/autocompletion/disable").raise_for_status()

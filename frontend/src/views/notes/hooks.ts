@@ -76,7 +76,7 @@ export const noteHooks: Hooks = { ghost: null, editorOpened: new Set(), graph: n
 /** Goes up whenever a hook is set or taken away (renderers rebuild when it changed). */
 export let hooksVersion = 0;
 
-type Settable = 'graph' | 'figures';
+type Settable = 'graph' | 'figures' | 'ghost';
 type HookKey = Settable | 'tasks';
 const listeners = new Set<(key: HookKey) => void>();
 /** Set (or with null, take away) a hook; the notes view puts it in place or removes it and draws
@@ -90,10 +90,11 @@ export function noteHooksChanged(key: HookKey): void {
   hooksVersion++;
   for (const fn of listeners) { try { fn(key); } catch (e) { console.error(e); } }
 }
-export function onNoteHookChange(fn: (key: HookKey) => void): void { listeners.add(fn); }
+export function onNoteHookChange(fn: (key: HookKey) => void): () => void { listeners.add(fn); return () => { listeners.delete(fn); }; }
 
 /** The ghost-text source the editor gets: whichever one a plugin set, at the time it asks. */
 export const ghostSource: GhostSource = {
+  onChange: (fn) => onNoteHookChange((key) => { if (key === 'ghost') fn(); }),
   ready: () => !!noteHooks.ghost?.ready(),
   complete: (prefix, suffix, signal) => (noteHooks.ghost ? noteHooks.ghost.complete(prefix, suffix, signal) : Promise.resolve('')),
   get delay() { return noteHooks.ghost?.delay; },

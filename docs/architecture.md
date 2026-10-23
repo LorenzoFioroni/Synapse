@@ -152,7 +152,8 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   details panel; `aiBar.ts` Claude's edits; `ghost.ts` autocompletion's ghost text (its source comes from the Autocompletion plugin through `hooks.ts`); `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
   exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`). Galleries and
   numbered figures are the Figures core plugin's (`plugins/core/figures/`, through `hooks.ts`). `settingsView.ts` is the Settings page; its markup
-  is in `views/settings/page.ts`, and Autocompletion, Backups and Devices have their own modules there.
+  is in `views/settings/page.ts`, and Backups and Devices have their own modules there. `settings/pluginSections.ts` owns the lifecycle
+  of plugin Settings sections; Autocompletion supplies its own section from its plugin.
   `plugins/core/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
   the notes workspace only through `taskHooks` in `views/notes/workspace.ts`.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
@@ -160,7 +161,8 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`. The
   item pane (`itempane.ts`) draws papers from a plugin's list that are not in the library, and
   why a plugin lists a paper, with `views/itempane/outside.ts`.
-- `extend.ts` holds the extension points the views read: commands (the command palette,
+- `extend.ts` holds the extension points the views read: core workspace navigation (Tasks and Graph,
+  registered and disposed by their plugins), commands (the command palette,
   `views/palette.ts`), pages (`views/pages.ts`, listed in the sidebar), item-pane sections and item
   actions. `plugins/host.ts` loads plugins' frontends and registers what they add there; the types
   promised to plugins are in `plugins/api.ts` (see [plugins](plugins.md#the-frontend)).

@@ -103,8 +103,9 @@ Desktop, with the icon `frontend/assets/icon-512.png`.
 
 The bar holds, in this order:
 
-- **The first tab**: the library or Tasks, whichever the switch in the toolbar (Library | Notes |
-  Tasks) last showed; it is named after it and cannot be closed.
+- **The first tab**: the library, Tasks or a plugin page, whichever was last shown; it is named
+  after it and cannot be closed. Tasks opens under **Plugins** in the sidebar; the toolbar switch
+  selects Library or Notes.
 - **Note tabs**: Notes has tabs. A note tab shows its note in the notes workspace (the notes list,
   the note, its side panel), which is part of the page.
 - **PDF tabs**: each PDF opened from the library, a citation, a card or a menu, holding the viewer

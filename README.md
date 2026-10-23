@@ -173,7 +173,7 @@ never mix.
   you opened it from and shows only what is 1, 2 (the default) or 3 links away, or **All** of it;
   Shift-click a node, or **Centre graph here** on a paper's card, to move the centre. Clicking a
   paper shows a card (paper note, Show in Library, PDF, Add to Library). It is a core plugin
-  (**Graph**): turn it off in Settings → Plugins if you don't use it.
+  (**Graph**, also under **Plugins** in the sidebar): turn it off in Settings → Plugins if you don't use it.
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
   arXiv: the core plugin Open-Access PDFs; other plugins can add places to look) and checks the file is really the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.
@@ -248,7 +248,7 @@ never mix.
   In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
   drag to move; folders can be renamed, moved and deleted the same way.
-- **Tasks** (a core plugin, on by default; turn it off in Settings → Plugins without losing tasks): to-dos with a title, a due date, details written in Markdown like a note, and
+- **Tasks** (open it under **Plugins** in the left sidebar; a core plugin, on by default; turn it off in Settings → Plugins without losing tasks): to-dos with a title, a due date, details written in Markdown like a note, and
   sub-tasks to any depth. In a note, Cmd/Ctrl+Enter (or **Task** in the note's header) opens a
   small popup: name the task (the line's text, if any), give it a date in words ("fri", "27 oct",
   "in 3 days") and details, or pick a task you already have — or type `{{task` and a few words of
@@ -312,7 +312,10 @@ Synapse’s own optional features are **core plugins**: Figures, Graph, Metadata
 Open-Access PDFs and Tasks start on, while Autocompletion starts as previously configured.
 Turn them off in Settings → Plugins without losing their data. Core plugins can also be toggled
 and restarted in safe mode; changes are followed by the standalone MCP server. Safe mode keeps core plugins
-running and stops third-party plugins.
+running and stops third-party plugins. Tasks and Graph register their own sidebar entries under
+**Plugins**. Plugin settings sections appear and disappear immediately as their plugin is switched
+on or off, including while Settings stays open. Disabling Autocompletion dismisses visible
+suggestions and cancels pending ones immediately.
 
 The built-in metadata providers (Crossref, OpenAlex, arXiv and Open Library) are the
 **Metadata Sources** core plugin, on by default. Switch it off in Settings → Plugins to stop

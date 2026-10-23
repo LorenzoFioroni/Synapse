@@ -36,6 +36,8 @@ function statusHtml(st: AssistStatus): string {
 /** Draw the section into ``el`` (each time Settings opens). */
 export function mountSettings(p: PluginContext, el: HTMLElement, src: Source): () => void {
   let alive = true;
+  let statusRequest = 0;
+  let saveRequest = 0;
   el.innerHTML = `
     <p class="lead">Suggestions as you write a note, in grey after the cursor: <kbd>Tab</kbd> accepts, <kbd>Esc</kbd> dismisses,
       <kbd>${modLabel}→</kbd> takes one word, <kbd>${altLabel}\\</kbd> asks for one now. They come from a model running on this computer
@@ -65,28 +67,33 @@ export function mountSettings(p: PluginContext, el: HTMLElement, src: Source): (
   };
 
   async function refresh(fresh = true): Promise<void> {
+    const request = ++statusRequest;
     const box = el.querySelector<HTMLElement>('[data-ai-state]')!;
     box.innerHTML = '<div class="s-desc">Checking Ollama…</div>';
     try {
       const st = await p.backend.get<AssistStatus>('/status', { fresh: fresh ? 1 : undefined });
+      if (!alive || request !== statusRequest) return;
       src.known(st);
-      if (!alive) return;
       box.innerHTML = statusHtml(st);
       el.querySelector('#ai-models')!.innerHTML = st.models.map((m) => `<option value="${escapeHtml(m)}"></option>`).join('');
       el.querySelector('[data-ai-installed]')!.innerHTML = st.models.length
         ? `Installed: ${st.models.map((m) => `<button class="link-btn mono" data-ai-pick="${escapeHtml(m)}">${escapeHtml(m)}</button>`).join(', ')}`
         : '';
-    } catch (e) { box.innerHTML = `<div class="form-error">${escapeHtml((e as Error).message)}</div>`; }
+    } catch (e) { if (!alive || request !== statusRequest) return; box.innerHTML = `<div class="form-error">${escapeHtml((e as Error).message)}</div>`; }
   }
 
   async function save(changes: Record<string, unknown>, at: Element): Promise<void> {
+    const request = ++saveRequest;
+    ++statusRequest;   // a probe started with the old settings must not replace the new status
     try {
-      showValues(await p.saveSettings(changes));
+      const values = await p.saveSettings(changes);
+      if (!alive || request !== saveRequest) return;
+      showValues(values);
       const pill = at.closest('.setting')?.querySelector('.saved-pill');
       if (pill) { pill.classList.add('show'); setTimeout(() => pill.classList.remove('show'), 1200); }
       src.reset();
       refresh();
-    } catch (e) { toast((e as Error).message, { type: 'error' }); }
+    } catch (e) { if (alive && request === saveRequest) toast((e as Error).message, { type: 'error' }); }
   }
 
   model.addEventListener('change', () => save({ model: model.value.trim() }, model));
@@ -103,7 +110,7 @@ export function mountSettings(p: PluginContext, el: HTMLElement, src: Source): (
       try { await navigator.clipboard.writeText(copy.dataset.aiCopy!); toast('Copied. Paste it in Terminal.', { type: 'success' }); } catch { /* no clipboard */ }
     }
   });
-  p.settings().then((v) => { if (alive) showValues(v); });
+  p.settings().then((v) => { if (alive && saveRequest === 0) showValues(v); });
   refresh(false);
   return () => { alive = false; };
 }

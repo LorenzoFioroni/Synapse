@@ -92,3 +92,36 @@ inside Synapse, not an isolation boundary; this review does not change that docu
 The process-lock implementation supports POSIX and Windows, but local execution here was on
 macOS. Native window-close behavior and Windows-specific locking still need their platform's
 manual checks; the automated farewell test deliberately states its narrower scope.
+
+## Follow-up: plugin interface consistency
+
+The interface audit covered all eight bundled plugins, including their disabled state. It found
+additional visible leftovers after the initial review:
+
+| Plugin | Placement and lifecycle result |
+|---|---|
+| Tasks | Opens under Plugins in the sidebar; its toolbar workspace button is removed. Its plugin owns the entry, open/overdue badge and disposal through the internal navigation registry. Task deep links, note controls and the keyboard shortcut remain supported. |
+| Graph | Now has its own sidebar entry under Plugins, with active-state highlighting. Contextual local-graph controls and Show in Graph remain alongside notes/items; stopping the plugin removes its entry and graph controls. |
+| Autocompletion | Its Settings section is removed immediately while Settings stays open, and reactivation mounts exactly one section. Removed active sections return Settings to General. Status and save responses that were superseded or belong to a removed section are ignored. Stopping the plugin clears visible ghost text and aborts pending suggestions in retained editors. |
+| Figures | Remains an inline rendering/export integration; disabling it redraws notes as ordinary images and Markdown, and reactivation restores carousels and numbering. No standalone empty page is added. |
+| Citation Counts | Remains item fields, filters and columns. The active field definitions control visibility while stored values and column preferences survive disable/enable. |
+| arXiv Today | Its two paper lists already use plugin sources in the sidebar; disabling it removes those lists and returns an open source view to the library. |
+| Metadata Sources | Supplies lookup providers to library actions; those actions remain shared entry points because other plugins may supply providers too. Disabling the bundled providers preserves records and reports when no matching source remains. |
+| Open-Access PDFs | Supplies PDF candidate sources to the shared library action; disabling it preserves attachments and still permits other plugins' sources. |
+
+`extend.navigation` is an internal registry for existing core workspaces, rather than a new public
+Plugin API. The sidebar renders its entries without importing Tasks or Graph. Third-party plugins
+continue to use `p.pages` and item sources. `views/settings/pluginSections.ts` owns the mounted
+Settings sections and their disposable registry subscription, preserving unrelated controls.
+
+Browser regressions cover repeated off/on cycles for Tasks and Graph, open Settings sections,
+late status responses, and disabling a visible suggestion without reloading. The plugin checklist
+waits for startup before sending its Settings shortcut, including when testing a safe-mode server.
+
+Follow-up browser validation: Autocompletion **37/37**, Graph **44/44**, Tasks **82/82**, plugin
+host **48/48**, Figures/gallery **51/51**, outside papers **34/34**, tabs **74/74**. The selected
+provider/field/JavaScript suite passed **199 tests**. A fixed-sleep autosave unit test exposed by
+the full run now awaits the public saved status, so it does not race the fake server on busy CI.
+
+After those corrections, the full suite passed **704 tests, 2 skipped**; Ruff lint/format, mypy
+and frontend/extension type checks passed.

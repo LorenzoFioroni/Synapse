@@ -335,3 +335,18 @@ The plugin checklist also covers partial frontend activation cleanup and a plugi
 disappearing during async activation; host synchronization must finish in both cases. It also starts a safe-mode server to check core
 plugin switches, Restart, and suppression of installed plugins. Cron regressions cover both DST
 transitions for the default local timezone.
+
+### Plugin interface lifecycle audit
+
+`graph` checks its plugin-owned sidebar entry and repeated off/on cycles, including removal of
+local/global graph controls. `tasks` checks its entry, counts, retained records, shortcuts and
+off/on cycles. `assist` keeps Settings open through two cycles, checks section disposal, selection
+falling back to General, and exactly one section on reactivation. A delayed status response must
+not replace a newer result; disabling the plugin must also clear a visible suggestion without
+reloading. `gallery` verifies Figures falls back to ordinary Markdown while
+disabled; `plugins` and `outside` cover fields, item actions, pages and paper-source navigation.
+Backend provider and field tests cover Citation Counts, arXiv Today, Metadata Sources and
+Open-Access PDFs.
+
+The note-session autosave tests await the public `saved` status rather than sleeping for a
+fixed duration, so a busy machine cannot make the assertion race the fake server's response.

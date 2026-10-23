@@ -120,3 +120,13 @@ counts as typing it, so the rest stays.
   with the link list open, requests stop when the model goes away, off sends nothing).
 
 Not tried here: a real model in Ollama (the tests use the stand-in), Safari, and the iPad.
+
+The Settings section belongs to the plugin: switching Autocompletion off removes its navigation
+and controls immediately, even while Settings is open. Switching it back on mounts one fresh
+section. Status checks and saves ignore superseded responses, so an old request cannot overwrite
+a newer address, model or status, or repaint a section after it has been removed.
+
+Disabling the plugin also clears ghost text already visible in every retained editor and aborts
+pending suggestion requests. `GhostSource.onChange` supplies a disposable lifecycle subscription;
+closing an editor releases it. Tab and clicking a suggestion cannot accept a retired provider's
+text. This preserves the editor and its undo history rather than rebuilding it.

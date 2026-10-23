@@ -68,6 +68,7 @@ ROW = '[data-plugin="recently-added"]'
 
 
 async def open_plugins(page):
+    await page.wait_for_function("!!window.zcPlugins")
     await page.keyboard.press(f"{mod}+,")
     await page.wait_for_selector("#set-plugins")
     await page.click('.settings-nav [data-nav="plugins"]')

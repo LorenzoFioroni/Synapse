@@ -63,12 +63,13 @@ mode, and their settings are in their own section or under **More**:
   ISBN or title from Crossref, OpenAlex, arXiv and Open Library, including the existing title
   fallback and author enrichment. Turning it off keeps library records and lookup URLs; lookups
   report that no source is on unless another plugin supplies one. See [references](references.md).
-- **Tasks** (`plugins/tasks`, on by default): the Tasks workspace, task controls in notes,
+- **Tasks** (`plugins/tasks`, on by default): the Tasks workspace under **Plugins** in the left
+  sidebar, task controls in notes,
   and the existing `list_tasks`, `get_task`, `create_task`, `update_task`, `delete_task` tools.
   Records and note links stay in the core for validation, backups and attachment retention.
   Disabling it removes its controls and tools; reenabling restores them with all tasks intact.
   Its routes are `/api/plugins/tasks/…`; `/api/tasks` remains a compatibility alias. See [tasks](tasks.md).
-- **Graph** (`plugins/graph`): the graph of notes and the papers they cite: the local graph
+- **Graph** (`plugins/graph`, opened under **Plugins** in the left sidebar): the graph of notes and the papers they cite: the local graph
   beside a note, the full graph (Cmd/Ctrl+Shift+G), Show in Graph; its data at
   `/api/plugins/graph/data`. A core plugin's frontend reaches into the notes view through
   `frontend/src/views/notes/hooks.ts` (`setNoteHook('graph' | 'figures', …)`, which redraws the
@@ -96,6 +97,18 @@ with these differences, all from `"core": true` in its manifest and honoured onl
   commands and actions are not labelled with a plugin name.
 - Its server part gets the app's `Services` object as `plugin.synapse` (None for other plugins).
 - It keeps running in safe mode (`--safe-mode` stops the other plugins only).
+
+Core workspaces (Tasks and Graph) register their sidebar entries in the internal `navigation`
+registry in `frontend/src/extend.ts`, and remove them on unload. The sidebar only renders those
+registrations; it does not own plugin-specific buttons or counts. Third-party plugins continue to
+use `p.pages` and backend item sources. Figures and Autocompletion are editor integrations, Citation
+Counts adds item fields, and metadata/PDF plugins supply lookups; those do not create empty pages.
+
+A plugin's custom Settings sections are kept in step with the registry while Settings is open.
+Stopping one disposes and removes its controls; starting it again mounts one fresh section. If the
+selected section disappears, Settings selects General. Unrelated sections keep their mounted state.
+Autocompletion also clears visible and pending suggestions when stopped; an older status request
+cannot overwrite a newer check.
 
 ### Other plugins that come with Synapse
 

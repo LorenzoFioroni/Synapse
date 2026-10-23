@@ -157,8 +157,8 @@ async def main():
                 "['zc.graph.local','zc.graph.global','zc.graph.localOpen'].forEach((k) => localStorage.removeItem(k))"
             )
 
-            # ---- toolbar: three workspaces, the logo keeps its size
-            check("toolbar has Library | Notes | Tasks", await page.locator(".ws-switch [data-ws]").count() == 3)
+            # ---- toolbar: Library and Notes; plugin workspaces live in the sidebar
+            check("toolbar has Library | Notes", await page.locator(".ws-switch [data-ws]").count() == 2)
             w = await page.evaluate("document.querySelector('.brand-logo').getBoundingClientRect().width")
             check("logo is not squeezed", abs(w - 24) < 0.5, w)
 
@@ -369,6 +369,30 @@ async def main():
             await page.keyboard.press(f"{MOD}+Shift+G")
             await settled(page, "global")
             await shot(page, "5-dark")
+            # Plugin navigation and contextual graph controls follow off/on without a reload.
+            graph_link = '#sidebar [data-navigation="graph.main"]'
+            for cycle in range(2):
+                await page.click(graph_link)
+                await settled(page, "global")
+                check(
+                    f"Graph sidebar entry opens its view ({cycle + 1})",
+                    await page.locator(graph_link).evaluate("el => el.classList.contains('active')"),
+                )
+                requests.post(BASE + "/api/plugin-host/graph/disable").raise_for_status()
+                await page.evaluate("window.zcPlugins.sync()")
+                check(
+                    f"Graph off removes navigation and controls ({cycle + 1})",
+                    await page.locator(graph_link).count() == 0
+                    and await page.locator(".ns-graph, .notes-graph").count() == 0
+                    and await page.locator('[data-act="graph"]').is_hidden(),
+                )
+                requests.post(BASE + "/api/plugin-host/graph/enable").raise_for_status()
+                await page.evaluate("window.zcPlugins.sync()")
+                check(
+                    f"Graph on restores one entry and local graph ({cycle + 1})",
+                    await page.locator(graph_link).count() == 1 and await page.locator(".ns-graph").count() == 1,
+                )
+
             check("no console errors", not errors, errors[:5])
             await b.close()
     finally:
