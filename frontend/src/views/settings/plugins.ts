@@ -74,13 +74,13 @@ function detailsHtml(p: PluginInfo, safeMode: boolean): string {
     ${settings}${remote}
     ${offers.length ? `<div class="p-offers">${offers.map((o) => `<div>${o}</div>`).join('')}</div>` : ''}
     <div class="p-foot"><span class="mono p-folder" title="${escapeHtml(p.folder)}">${escapeHtml(p.folder)}</span>
-      ${p.enabled && !safeMode ? `<button class="btn btn-sm" data-prestart>${icon('refresh')} Restart</button>` : ''}
+      ${p.enabled && (!safeMode || p.core) ? `<button class="btn btn-sm" data-prestart>${icon('refresh')} Restart</button>` : ''}
       <button class="btn btn-sm" data-plog>${icon('text')} Log</button></div>
   </div>`;
 }
 
 function rowHtml(p: PluginInfo, safeMode: boolean): string {
-  const usable = p.status !== 'invalid' && p.status !== 'incompatible' && !safeMode;
+  const usable = p.status !== 'invalid' && p.status !== 'incompatible' && (!safeMode || p.core);
   const perms = permissionWords(p);
   const meta = [p.author && `by ${escapeHtml(p.author)}`, p.version && `version ${escapeHtml(p.version)}`,
     p.core ? 'core plugin: part of Synapse' : p.source === 'bundled' ? 'comes with Synapse' : p.source === 'dev' ? 'being written (restarts when its files change)' : p.replaces_bundled ? 'replaces the one that comes with Synapse' : ''].filter(Boolean).join(' · ');
@@ -90,7 +90,7 @@ function rowHtml(p: PluginInfo, safeMode: boolean): string {
     <div class="p-head">
       <span class="p-icon">${icon('plugin')}</span>
       <div class="p-main">
-        <div class="p-name">${escapeHtml(p.name)}${p.running ? '' : p.enabled && safeMode ? ' <span class="badge warn">Safe mode</span>' : ''}</div>
+        <div class="p-name">${escapeHtml(p.name)}${p.running ? '' : p.enabled && safeMode && !p.core ? ' <span class="badge warn">Safe mode</span>' : ''}</div>
         ${p.description ? `<div class="p-desc">${escapeHtml(p.description)}</div>` : ''}
         ${meta ? `<div class="p-meta">${meta}</div>` : ''}
         ${perms.length ? `<div class="p-perms">${perms.map((w) => `<span>${escapeHtml(w)}</span>`).join('')}</div>` : ''}

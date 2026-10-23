@@ -165,3 +165,22 @@ def test_a_failing_schedule_is_a_fault_and_not_retried_at_once(tmp_path):
     r = runner(tmp_path, {}, [s], faults)
     assert r.run_schedules() == 1 and faults and faults[0][0] == "schedule x"
     assert r.run_schedules() == 0
+
+
+@pytest.mark.parametrize(
+    ("last", "expected"),
+    [((2026, 3, 28, 8), (2026, 3, 29, 7)), ((2026, 10, 24, 7), (2026, 10, 25, 8))],
+)
+def test_default_local_cron_keeps_wall_time_across_dst(monkeypatch, last, expected):
+    import time
+
+    if not hasattr(time, "tzset"):
+        pytest.skip("Changing the process timezone requires tzset")
+    try:
+        with monkeypatch.context() as env:
+            env.setenv("TZ", "Europe/Zurich")
+            time.tzset()
+            schedule = make("daily", lambda: None, cron="0 9 * * *", every=None, tz=None, catch_up=True)
+            assert schedule.next_after(datetime(*last, tzinfo=timezone.utc)) == datetime(*expected, tzinfo=timezone.utc)
+    finally:
+        time.tzset()

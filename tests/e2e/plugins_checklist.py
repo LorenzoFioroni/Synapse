@@ -344,7 +344,109 @@ async def main():
             check("saving its file reloads it in the open window, on the same page", ok)
             await shot(page, "p9-dev")
 
+            # Frontend activation can fail after registering UI. It must leave no controls behind.
+            bad_front = plugins / "bad-frontend"
+            bad_front.mkdir()
+            (bad_front / "manifest.json").write_text(
+                json.dumps(
+                    {"id": "bad-frontend", "name": "Bad Frontend", "version": "1", "api": "^1.0", "frontend": "main.js"}
+                )
+            )
+            (bad_front / "main.js").write_text(
+                "export function activate(p) { "
+                "p.pages.register({id:'leftover',title:'Leftover',mount() {}}); "
+                "p.commands.register({id:'leftover',title:'Leftover',run() {}}); "
+                "throw new Error('activation failed on purpose'); }"
+            )
+            requests.post(BASE + "/api/plugin-host/bad-frontend/enable").raise_for_status()
+            await page.evaluate("window.zcPlugins.sync()")
+            check(
+                "failed frontend activation removes its page and command",
+                await page.evaluate("""async () => {
+                const { pages, commands } = await import('/js/extend.js');
+                return !pages.get('bad-frontend.leftover') && !commands.get('bad-frontend.leftover')
+                    && !window.zcPlugins.loaded().includes('bad-frontend');
+            }"""),
+            )
+
+            # A route disappearing during async activation must settle, rather than hang host sync.
+            pending = plugins / "pending-frontend"
+            pending.mkdir()
+            (pending / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "id": "pending-frontend",
+                        "name": "Pending Frontend",
+                        "version": "1",
+                        "api": "^1.0",
+                        "frontend": "main.js",
+                    }
+                )
+            )
+            (pending / "main.js").write_text("export async function activate(p) { await p.backend.get('/gone'); }")
+
+            async def stopped_route(route):
+                requests.post(BASE + "/api/plugin-host/pending-frontend/disable").raise_for_status()
+                await route.continue_()
+
+            await page.route("**/api/plugins/pending-frontend/gone", stopped_route)
+            requests.post(BASE + "/api/plugin-host/pending-frontend/enable").raise_for_status()
+            await page.evaluate("window.zcPlugins.sync()")
+            check(
+                "a stopped route does not hang frontend synchronization",
+                await page.evaluate("!window.zcPlugins.loaded().includes('pending-frontend')"),
+            )
+            requests.post(BASE + "/api/plugin-host/pending-frontend/disable").raise_for_status()
+            requests.post(BASE + "/api/plugin-host/bad-frontend/disable").raise_for_status()
+
             check("no JavaScript errors", not errors, errors[:3])
+            # Safe mode keeps core features usable while suppressing installed plugins.
+            requests.post(BASE + "/api/plugin-host/recently-added/enable").raise_for_status()
+            srv.terminate()
+            srv.wait()
+            srv = subprocess.Popen(
+                [
+                    sys.executable,
+                    "server.py",
+                    "--port",
+                    str(PORT),
+                    "--no-browser",
+                    "--data-dir",
+                    str(DATA),
+                    "--safe-mode",
+                ],
+                cwd=APP,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            for _ in range(100):
+                try:
+                    requests.get(BASE + "/api/settings", timeout=1)
+                    break
+                except requests.RequestException:
+                    await asyncio.sleep(0.2)
+            safe = await browser.new_page(viewport={"width": 1300, "height": 950})
+            await safe.goto(BASE)
+            await open_plugins(safe)
+            graph_row = '[data-plugin="graph"]'
+            check("safe mode leaves core switches usable", await safe.is_enabled(f"{graph_row} [data-ptoggle]"))
+            check(
+                "safe mode suppresses installed plugins",
+                not plugin("recently-added")["running"] and await safe.is_disabled(f"{ROW} [data-ptoggle]"),
+            )
+            await safe.click(f"{graph_row} [data-pmore]")
+            check("safe mode offers restarting a core plugin", await safe.is_visible(f"{graph_row} [data-prestart]"))
+            await safe.click(f"{graph_row} .switch")
+            check(
+                "safe mode can turn a core plugin off",
+                await wait_for(lambda: asyncio.to_thread(lambda: not plugin("graph")["running"])),
+            )
+            await safe.click(f"{graph_row} .switch")
+            await safe.click(".dialog button:has-text('Turn On')")
+            check(
+                "safe mode can turn a core plugin on again",
+                await wait_for(lambda: asyncio.to_thread(lambda: plugin("graph")["running"])),
+            )
             await browser.close()
     finally:
         srv.terminate()

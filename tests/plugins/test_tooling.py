@@ -212,3 +212,24 @@ def test_dev_plugins_restart_when_a_file_changes(tmp_path):
     os.utime(code, (later, later))
     assert svc.plugins.check_changes() == ["live"]
     assert c.get("/api/plugins/live/v").get_json() == {"v": 222}
+
+
+def test_stopping_and_restarting_dev_host_stops_its_watcher(tmp_path):
+    from backend.config import Config
+    from backend.plugins.host import PluginHost
+    from tests.plugins.conftest import write_plugin
+
+    cfg = Config.from_env(tmp_path / "data")
+    cfg.dev_plugins_dir = tmp_path / "dev"
+    write_plugin(cfg.dev_plugins_dir, "live")
+    host = PluginHost(cfg)
+    try:
+        host.start()
+        watcher = host._watcher
+        assert watcher and watcher.is_alive()
+        host.stop()
+        assert not watcher.is_alive()
+        host.start()
+        assert host._watcher is not watcher and host._watcher.is_alive()
+    finally:
+        host.stop()

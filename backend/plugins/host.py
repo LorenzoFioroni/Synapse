@@ -2,23 +2,21 @@
 code, and hands them what happens in the library.
 
 Plugins are folders with a ``manifest.json`` in ``data/plugins/`` (installed by the user) and in
-the repository's ``plugins/`` (they come with Synapse, off until turned on); one in ``data/plugins``
+the repository's ``plugins/`` (core plugins start with their declared defaults); one in ``data/plugins``
 replaces a bundled one with the same id. Both the web app and the MCP server run a host: the
 web app with ``role="app"``, the MCP server Claude starts with ``role="mcp"``. Only the web app
 changes which plugins are on; the MCP server follows ``plugins.json`` (``refresh``).
 
 A plugin that fails while starting, or fails ``FAULTS`` times within ``FAULT_WINDOW_S`` (an event
 listener, a route or a tool raising anything but ``PluginError``), is turned off and its reason
-shown in Settings → Plugins. ``--safe-mode`` starts none.
+shown in Settings → Plugins. ``--safe-mode`` runs only bundled core plugins.
 """
 
 from __future__ import annotations
 
-import itertools
 import logging
 import sys
 import threading
-import time
 import traceback
 from collections.abc import Callable, Mapping
 from datetime import datetime
@@ -28,12 +26,13 @@ from werkzeug.exceptions import HTTPException, MethodNotAllowed, NotFound
 from werkzeug.routing import Map, Rule
 
 from . import build, deps
+from .catalog import discover, initialize_core
 from .context import Plugin, PluginError, ToolSpec
 from .http import PluginHttp, service_credentials
 from .itemfields import FieldIndex, PluginFields
 from .jobs import Runner
 from .loading import Active, Entry, asset_path, forget_modules, load_module, newest
-from .manifest import ManifestError, read
+from .manifest import ManifestError
 from .report import describe
 from .runtime import Worker, make_logger, tail
 from .services import PluginActions, PluginServices
@@ -41,7 +40,6 @@ from .sources import SourceList
 from .state import StateFile
 
 log = logging.getLogger(__name__)
-_LOADS = itertools.count(1)  # each load gets its own module name, also with two hosts in one process
 
 
 class PluginHost:
@@ -68,6 +66,7 @@ class PluginHost:
         self.private_network = False  # tests: let plugin.http reach a server on this computer
         self.installer = deps.pip_install  # tests replace it
         self._watcher: threading.Thread | None = None
+        self._watch_stop = threading.Event()
         # lists of outside papers the running plugins offer (sources.py)
         self.sources = SourceList(self)
         self.sources_changed = sources_changed  # tells open pages to show a source's list again
@@ -84,28 +83,9 @@ class PluginHost:
         self._state_seen: tuple | None = None
 
     # ------------------------------------------------------------------ discovery
-    def roots(self) -> list[tuple[Path, str]]:
-        out = [(self.config.bundled_plugins_dir, "bundled"), (self.config.plugins_dir, "user")]
-        dev = getattr(self.config, "dev_plugins_dir", None)
-        if dev:
-            out.append((Path(dev), "dev"))  # --dev-plugins: reloaded whenever a file changes
-        return out
-
     def scan(self) -> dict[str, Entry]:
-        """Look at the plugin folders again (new plugins are listed, never turned on by this)."""
-        found: dict[str, Entry] = {}
-        for root, source in self.roots():
-            if not root.is_dir():
-                continue
-            for folder in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith((".", "_"))):
-                entry = Entry(folder.name, folder, source)
-                try:
-                    entry.manifest = read(folder)
-                except ManifestError as e:
-                    entry.problem = str(e)
-                if source in ("user", "dev") and folder.name in found:
-                    entry.replaces_bundled = True
-                found[folder.name] = entry
+        """Discover folders, retaining running manifests until their plugin restarts."""
+        found = discover(self.config)
         with self._lock:
             # a running plugin keeps the manifest it was started with until it is restarted
             for pid, act in self._active.items():
@@ -140,9 +120,10 @@ class PluginHost:
 
     # ------------------------------------------------------------------ lifecycle
     def start(self, role: str = "app", *, announce: bool = True) -> None:
-        """Start every plugin that is on (none in safe mode). ``announce``: send ``app.started``
+        """Start every enabled plugin (only bundled core plugins in safe mode). ``announce``: send ``app.started``
         (not when they start again after a backup was restored)."""
         self.role = role
+        self._watch_stop.clear()
         if role == "app":
             try:
                 self.config.plugins_dir.mkdir(parents=True, exist_ok=True)
@@ -157,6 +138,7 @@ class PluginHost:
         if role == "app" and announce:
             self.emit("app.started")
         if role == "app" and getattr(self.config, "dev_plugins_dir", None) and not self._watcher:
+            self._watch_stop.clear()
             self._watcher = threading.Thread(target=self._watch, name="plugins-dev", daemon=True)
             self._watcher.start()
 
@@ -173,27 +155,33 @@ class PluginHost:
         return restarted
 
     def _watch(self) -> None:
-        while True:
-            time.sleep(1.0)
+        while not self._watch_stop.wait(1.0):
             try:
-                self.check_changes()
+                with self._lock:
+                    if not self._watch_stop.is_set():
+                        self.check_changes()
             except Exception:
                 log.exception("Watching the dev plugins failed")
 
     def stop(self) -> None:
-        for pid in list(self._active):
-            self._deactivate(pid)
+        self._watch_stop.set()
+        watcher = self._watcher
+        if watcher and watcher is not threading.current_thread():
+            watcher.join()
+        self._watcher = None
+        with self._lock:
+            for pid in list(self._active):
+                self._deactivate(pid)
 
     def refresh(self) -> None:
         """Follow plugins.json when another process changed it (the MCP server picks up plugins
         turned on or off in the app; the app sees one the MCP server had to turn off)."""
-        if self.role is None or self.state.stamp() == self._state_seen:
+        if self.role is None or self._watch_stop.is_set() or self.state.stamp() == self._state_seen:
             return
         with self._lock:
             self._state_seen = self.state.stamp()
             self.scan()
-            if not self.safe_mode:
-                self._sync()
+            self._sync()
 
     def is_core(self, pid: str) -> bool:
         """A core plugin: part of Synapse (its plugins/ folder) and marked so in its manifest."""
@@ -201,37 +189,7 @@ class PluginHost:
         return bool(entry and entry.source == "bundled" and entry.manifest and entry.manifest.core)
 
     def _turn_on_core(self) -> None:
-        """Core plugins nobody has turned on or off yet start as their manifest says: on, or as
-        the Synapse setting that used to switch the feature was. Their settings take over the
-        values of the Synapse settings they replace."""
-        if not self.settings:
-            legacy = lambda key: None  # noqa: E731
-        else:
-            legacy = getattr(self.settings, "legacy", lambda key: None)
-        states = self.state.read()
-        for pid, entry in list(self._entries.items()):
-            if not self.is_core(pid) or "enabled" in states.get(pid, {}):
-                continue
-            man = entry.manifest
-            assert man is not None
-            on = man.enabled_by_default
-            if man.enabled_from_setting and legacy(man.enabled_from_setting) is not None:
-                on = bool(legacy(man.enabled_from_setting))
-            values: dict = {}
-            for s in man.settings:
-                old = legacy(s.from_setting) if s.from_setting else None
-                if old is not None:
-                    try:
-                        values[s.key] = s.clean(old)
-                    except ManifestError:
-                        pass
-            changes: dict = {"enabled": on}
-            if man.mcp:
-                changes["remote_mcp"] = True
-            if values:
-                changes["settings"] = {**(states.get(pid, {}).get("settings") or {}), **values}
-            self._update_state(pid, **changes)
-            log.info("Core plugin %s: %s", pid, "on" if on else "off")
+        initialize_core(self._entries, self.state, self.settings)
 
     def _sync(self) -> None:
         on = {pid for pid, st in self.state.read().items() if st.get("enabled")}

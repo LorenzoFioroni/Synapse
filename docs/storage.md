@@ -300,3 +300,11 @@ For the derived files: bump `SCHEMA_VERSION` in `backend/notes/index.py` when th
 changes. `fulltext.db` has no version, so a change to its layout needs one added (or the index
 cleared) so old files are rebuilt. For `settings.json`, add the key to `DEFAULTS` (and `CHOICES`
 if it has fixed values), and put renames in `_migrate()`.
+
+### Concurrent plugin storage
+
+`backend/plugins/files.py` serializes JSON changes and SQLite migrations between the web app and
+standalone MCP process. Locks live beside their data as hidden `.lock` files, are reentrant
+within one thread, and are released by the operating system when a process exits. JSON is written
+to a unique temporary file and atomically replaced. The `plugins.json` and plugin store formats
+are unchanged. Lock files are coordination, not data, and backups exclude them.

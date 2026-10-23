@@ -91,7 +91,7 @@ class Cron:
         return dom_ok or dow_ok
 
     def next_after(self, after: datetime) -> datetime:
-        """The first time strictly after ``after`` (an aware datetime, in the rule's zone)."""
+        """The next wall time after ``after`` (in the rule's zone, or naive for system local time)."""
         t = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
         for _ in range(366 * 2):
             if self._day_ok(t):
@@ -117,9 +117,9 @@ def every_seconds(value) -> float:
     return secs
 
 
-def zone(name: str | None) -> tzinfo:
+def zone(name: str | None) -> tzinfo | None:
     if not name:
-        return datetime.now().astimezone().tzinfo or timezone.utc
+        return None  # resolve system-local rules for the scheduled date, not today's UTC offset
     try:
         return ZoneInfo(name)
     except (ZoneInfoNotFoundError, ValueError) as e:
@@ -132,12 +132,17 @@ class Schedule:
     run: Callable[[], object]
     cron: Cron | None = None
     every: float | None = None
-    tz: tzinfo = timezone.utc
+    tz: tzinfo | None = None
     catch_up: bool = True
 
     def next_after(self, last: datetime) -> datetime:
         if self.cron:
-            return self.cron.next_after(last.astimezone(self.tz))
+            if self.tz is not None:
+                return self.cron.next_after(last.astimezone(self.tz))
+            # astimezone() without an argument returns a fixed offset. Strip it before finding
+            # the next wall time, then let the OS resolve that date's local DST rules.
+            wall = last.astimezone().replace(tzinfo=None)
+            return self.cron.next_after(wall).astimezone(timezone.utc)
         return last + timedelta(seconds=self.every or 3600)
 
     def due(self, now: datetime, last: datetime | None) -> tuple[bool, datetime | None]:

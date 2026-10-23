@@ -86,8 +86,8 @@ def setup():
 
 # the number of the first "Paragraph N" at the top of the editor or of the read view
 TOP_PARAGRAPH = """(read) => {
-  const box = document.querySelector(read ? '.note-read' : '.cm-scroller').getBoundingClientRect();
-  const els = document.querySelectorAll(read ? '.note-read .prose p' : '.cm-line');
+  const box = document.querySelector(read ? '.note-read' : '.note-editor-view:not([hidden]) .cm-scroller').getBoundingClientRect();
+  const els = document.querySelectorAll(read ? '.note-read .prose p' : '.note-editor-view:not([hidden]) .cm-line');
   const el = [...els].find((e) => /Paragraph/.test(e.textContent) && e.getBoundingClientRect().bottom > box.top + 1);
   return el ? Number(/Paragraph (\\d+)/.exec(el.textContent)[1]) : null;
 }"""
@@ -126,7 +126,7 @@ async def main():
             check("live: inline and one-line display math rendered", await count(page, ".cm-lp-math .katex") >= 3)
             check("live: $$ block rendered", await count(page, ".cm-lp-mathblock .katex-display") == 1)
             money = await page.evaluate(
-                "[...document.querySelectorAll('.cm-line')].find(l => l.textContent.includes('costs'))?.innerHTML || ''"
+                "[...document.querySelectorAll('.note-editor-view:not([hidden]) .cm-line')].find(l => l.textContent.includes('costs'))?.innerHTML || ''"
             )
             check("live: '$5 and $10' is not math", "$5 and $10" in money and "katex" not in money)
             check("live: table rendered", await count(page, ".cm-lp-table table") == 1)
@@ -142,7 +142,7 @@ async def main():
             check(
                 "live: code stays code",
                 await page.evaluate(
-                    "[...document.querySelectorAll('.cm-line')].some(l => l.textContent.includes('[@notacite]'))"
+                    "[...document.querySelectorAll('.note-editor-view:not([hidden]) .cm-line')].some(l => l.textContent.includes('[@notacite]'))"
                 ),
             )
             await wait_for(lambda: count(page, ".cm-lp-mermaid svg"), 15)
@@ -322,13 +322,17 @@ async def main():
 
             # ---- switching modes keeps the line at the top
             await page.click('.nt-row.note[data-path="Long.md"]')
-            await page.wait_for_selector(".cm-content")
-            await page.evaluate("document.querySelector('.cm-scroller').scrollTop = 6000")
-            await page.wait_for_timeout(300)
+            await page.wait_for_function("window.zcNotes.text().includes('Paragraph 300')")
+            await page.evaluate(
+                "document.querySelector('.note-editor-view:not([hidden]) .cm-scroller').scrollTop = 6000"
+            )
+            await page.wait_for_function(f"() => ({TOP_PARAGRAPH})(false) > 50")
             tops = [await page.evaluate(TOP_PARAGRAPH, False)]
             for mode in ("read", "source", "read", "live"):
                 await page.click(f'[data-mode="{mode}"]')
-                await page.wait_for_timeout(400)
+                await wait_for(
+                    lambda: page.evaluate(f"read => Math.abs(({TOP_PARAGRAPH})(read) - {tops[0]}) <= 1", mode == "read")
+                )
                 tops.append(await page.evaluate(TOP_PARAGRAPH, mode == "read"))
             check(
                 "modes keep the place: live, read, source, read, live",

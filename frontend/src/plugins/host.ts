@@ -16,6 +16,7 @@ import type { ChangeKind, PluginContext, PluginItem, PluginModule } from './api.
 import { CORE } from './core/index.js';
 
 interface Loaded {
+  disposed: boolean;
   info: PluginInfo;
   key: string;
   ctx: PluginContext;
@@ -30,6 +31,7 @@ const loaded = new Map<string, Loaded>();
 let syncing: Promise<void> | null = null;
 let again = false;
 let lastError = 0;
+const failedStarts = new Map<string, string>();
 
 const keyOf = (p: PluginInfo) => `${p.id}@${p.started || ''}`;
 const fileUrl = (p: PluginInfo, rel: string) =>
@@ -37,13 +39,14 @@ const fileUrl = (p: PluginInfo, rel: string) =>
 
 /** Report a plugin's error without letting it break the app (one notification every few seconds). */
 function failed(p: PluginInfo, what: string, e: unknown): void {
+  if ((e as Error)?.name === 'AbortError') return;
   console.error(`Plugin ${p.id}: ${what}`, e);
   if (Date.now() - lastError < 5000) return;
   lastError = Date.now();
   toast(`${p.name}: ${what} failed (${(e as Error)?.message || e})`, { type: 'error' });
 }
 
-/** ``fn`` wrapped so that its errors (also of the promise it returns) are reported, not thrown. */
+/** Report synchronous failures and observe rejected promises returned by plugin callbacks. */
 function guarded<A extends unknown[], R>(p: PluginInfo, what: string, fn: (...args: A) => R): (...args: A) => R | undefined {
   return (...args: A) => {
     try {
@@ -60,16 +63,20 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
   const pid = info.id;
   const full = (id: string) => `${pid}.${id}`;
   const src = info.core ? undefined : info.name;   // a core plugin's parts are Synapse's own: not labelled
-  const keep = (d: Dispose): Dispose => { rec.disposers.push(d); return d; };
-  // A call that reaches the server after the plugin stopped (turned off in another window, say)
-  // never settles: the plugin's code is being taken down, and an error would only be noise.
-  const call = <T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, query?: Record<string, unknown>): Promise<T> =>
-    api.pluginRoute<T>(pid, method, path, body, query).catch((e: unknown) => {
-      const stopped = loaded.get(pid) !== rec || ((e as ApiError).status === 404 && /^No plugin /.test((e as Error).message));
+  const keep = (d: Dispose): Dispose => { if (rec.disposed) d(); else rec.disposers.push(d); return d; };
+  // A retired context must settle its calls, so async activation and synchronization can finish.
+  const call = async <T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, query?: Record<string, unknown>): Promise<T> => {
+    try {
+      const result = await api.pluginRoute<T>(pid, method, path, body, query);
+      if (rec.disposed) throw new DOMException('Plugin stopped', 'AbortError');
+      return result;
+    } catch (e) {
+      const stopped = rec.disposed || ((e as ApiError).status === 404 && /^No plugin /.test((e as Error).message));
       if (!stopped) throw e;
-      syncPlugins();
-      return new Promise<T>(() => {});
-    });
+      void syncPlugins();
+      throw new DOMException('Plugin stopped', 'AbortError');
+    }
+  };
   return {
     id: pid,
     name: info.name,
@@ -95,6 +102,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
         mount: (el) => guarded(info, `page ${spec.id}`, spec.mount)(el),
       })),
       setBadge: (pageId, value) => {
+        if (rec.disposed) return;
         const id = full(pageId);
         if (value === null || value === undefined || value === '' || value === 0) badges.delete(id);
         else badges.set(id, String(value).slice(0, 12));
@@ -142,6 +150,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
       },
     },
     notify: (message, options = {}) => {
+      if (rec.disposed) return;
       toast(`${info.name}: ${message}`, {
         type: options.type || 'info',
         action: options.action ? { label: options.action.label, run: guarded(info, 'notification action', options.action.run) } : null,
@@ -164,7 +173,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
       rec.listeners.push(f);
       return keep(() => { rec.listeners = rec.listeners.filter((x) => x !== f); });
     },
-    onUnload: (fn) => { rec.unload.push(fn); },
+    onUnload: (fn) => { if (rec.disposed) fn(); else rec.unload.push(fn); },
     ui: {
       icon: (name, cls = '') => icon(name, cls),
       escapeHtml,
@@ -176,7 +185,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
 }
 
 async function load(info: PluginInfo): Promise<void> {
-  const rec = { info, key: keyOf(info), module: null, disposers: [], unload: [], listeners: [], style: null } as unknown as Loaded;
+  const rec = { disposed: false, info, key: keyOf(info), module: null, disposers: [], unload: [], listeners: [], style: null } as unknown as Loaded;
   rec.ctx = contextFor(info, rec);
   loaded.set(info.id, rec);
   if (info.styles) {
@@ -198,6 +207,8 @@ async function load(info: PluginInfo): Promise<void> {
     if (loaded.get(info.id) !== rec) return;   // stopped meanwhile
     await activate(rec.ctx);
   } catch (e) {
+    failedStarts.set(info.id, keyOf(info));
+    if (loaded.get(info.id) === rec) unload(info.id);
     failed(info, 'starting', e);
   }
 }
@@ -206,6 +217,7 @@ function unload(id: string): void {
   const rec = loaded.get(id);
   if (!rec) return;
   loaded.delete(id);
+  rec.disposed = true;
   const run = (what: string, fn: () => unknown) => { try { fn(); } catch (e) { console.error(`Plugin ${id}: ${what}`, e); } };
   if (rec.module?.deactivate) run('deactivate', () => rec.module!.deactivate!(rec.ctx));
   for (const fn of rec.unload.reverse()) run('unload', fn);
@@ -237,8 +249,6 @@ export async function syncSources(): Promise<void> {
 }
 
 async function doSync(): Promise<void> {
-  await syncFields();
-  await syncSources();
   let list: PluginInfo[];
   try { list = (await api.plugins()).plugins; } catch { return; }
   const want = new Map(list.filter((p) => p.running && (p.frontend || p.styles)).map((p) => [p.id, p]));
@@ -246,7 +256,10 @@ async function doSync(): Promise<void> {
     const now = want.get(id);
     if (!now || keyOf(now) !== rec.key) unload(id);
   }
-  for (const [id, info] of want) if (!loaded.has(id)) await load(info);
+  for (const id of failedStarts.keys()) if (!want.has(id)) failedStarts.delete(id);
+  await syncSources();
+  await syncFields();
+  for (const [id, info] of want) if (!loaded.has(id) && failedStarts.get(id) !== keyOf(info)) await load(info);
 }
 
 /** Bring the loaded plugins in line with the server (one sync at a time; a request during one

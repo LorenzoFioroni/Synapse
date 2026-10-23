@@ -8,7 +8,8 @@ shown again by itself, and the entry goes when the plugin is turned off.
     python tests/e2e/outside_checklist.py              (SHOTS=/some/dir to save screenshots)
 
 Starts its own server (python server.py) on port 8799 with a throw-away data folder; your
-library is not touched. Adding looks papers up online; without a network they are added as listed.
+library is not touched. Metadata Sources is off in the fixture, so synthetic identifiers are
+added as listed without depending on real papers or a network.
 """
 
 import asyncio
@@ -146,6 +147,7 @@ async def main():
         api(
             "/api/settings", "PUT", {"add_find_pdf": "never", "add_fetch_references": "never", "references_auto": False}
         )
+        api("/api/plugin-host/metadata-sources/disable", "POST")
         mine = api(
             "/api/items", "POST", {"title": "Mine on tensor networks", "doi": "10.5555/mine", "authors": "Doe, Jane"}
         )

@@ -317,3 +317,21 @@ one exists.
 `tests/test_metadata.py` tests query normalization and the Metadata Sources plugin’s providers
 with faked responses. `tests/plugins/test_metadata_sources.py` tests provider priority, fallback,
 turning sources off and on, and preserving library records without network access.
+
+### Reliable tab, scroll and plugin checks
+
+The tab checklist chooses Control on macOS and Alt elsewhere for app tab shortcuts, and uses
+Cmd/Ctrl for editor undo. The render checklist waits for the requested note's text and measures
+only its visible editor; hidden editors retain other tabs' histories and scroll positions.
+
+Playwright closes a headless target without dispatching `pagehide`. The shutdown check therefore
+navigates away before closing its empty target, exercising the real browser farewell. It keeps
+the browser process alive until the keepalive request arrives and the server stops. This covers
+leaving the last page; native window closure still needs the manual check in [desktop](desktop.md).
+
+The outside-paper checklist disables Metadata Sources for its synthetic identifiers. This keeps
+real scholarly metadata from replacing fixture titles and lets the checklist run offline.
+The plugin checklist also covers partial frontend activation cleanup and a plugin route
+disappearing during async activation; host synchronization must finish in both cases. It also starts a safe-mode server to check core
+plugin switches, Restart, and suppression of installed plugins. Cron regressions cover both DST
+transitions for the default local timezone.

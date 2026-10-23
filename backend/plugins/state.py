@@ -5,14 +5,14 @@ fresh before every change, since the other process may have written it."""
 from __future__ import annotations
 
 import json
-import threading
 from pathlib import Path
+
+from .files import save_json, transaction
 
 
 class StateFile:
     def __init__(self, path: Path):
         self.path = path
-        self._lock = threading.Lock()
 
     def read(self) -> dict[str, dict]:
         """Every plugin's entry, by id."""
@@ -38,13 +38,10 @@ class StateFile:
 
     def update(self, pid: str, **changes) -> dict:
         """Change one plugin's entry and return it."""
-        with self._lock:
+        with transaction(self.path):
             plugins = self.read()
             cur = dict(plugins.get(pid, {}))
             cur.update(changes)
             plugins[pid] = cur
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps({"plugins": plugins}, indent=2, ensure_ascii=False), "utf-8")
-            tmp.replace(self.path)
+            save_json(self.path, {"plugins": plugins}, indent=2)
             return cur

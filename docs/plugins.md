@@ -5,8 +5,7 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-The design and the plan for the rest of the plugin API are in the design doc "Synapse plugin API
-v1". What exists today:
+This page documents the API shipped in this checkout. What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
   library, settings, stored data, **per-item fields** (values attached to papers that become list
@@ -30,7 +29,7 @@ v1". What exists today:
   serves and listens to, **Restart** (to load changed code) and its **Log**.
 - A plugin that fails while starting, or fails three times within ten minutes, is turned off and
   Settings says why. Turning it on again tries again.
-- `python server.py --safe-mode` starts no plugin at all, for when one keeps the app from working.
+- `python server.py --safe-mode` runs only bundled core plugins, for when an installed plugin keeps the app from working.
   `mcp_server.py --safe-mode` does the same for the MCP server Claude starts.
 - Restart Claude after turning on a plugin with tools if they do not show up: some AI apps read the
   list of tools only once.
@@ -279,7 +278,11 @@ Prefer `plugin.storage.sqlite` for records. Its `migrations` list brings the sch
 `i` to `i + 1` (kept in `PRAGMA user_version`); only ever append to it, so every user's database
 can be updated. Before migrating a database that already holds data, Synapse makes a backup (as
 before other risky operations). A database written by a newer version of the plugin is refused
-rather than damaged.
+rather than damaged. JSON updates and SQLite migrations are serialized across the web app and
+standalone MCP process. A JSON update merges its keys with the latest document and publishes it
+atomically; a migration rechecks the schema after acquiring the lock. Read/modify/write across
+several calls (`get` followed by `set`, for example) is not a transaction: use a SQLite `session`
+for that. Hidden `.lock` files coordinate processes and are excluded from backups.
 
 ### Per-item fields
 
@@ -405,6 +408,10 @@ def references(arxiv_id: str) -> None:
   (`HttpError`) does not count against the plugin, any other error does.
 - Settings → Plugins → More lists a running plugin's schedules and how many jobs wait.
 
+Schedules without `tz` follow the computer's local wall clock, including daylight-saving changes.
+An explicit IANA zone (`tz="Europe/Zurich"`, for example) follows that zone's rules. Interval
+schedules count elapsed seconds instead.
+
 ### Reaching the web
 
 `plugin.http` is the only way a plugin should reach the web (`requests` would work, but skips all
@@ -489,7 +496,11 @@ Rules for a plugin's frontend:
 - The element sits inside one with `data-plugin="<id>"`: start the stylesheet's rules with
   `[data-plugin="<id>"]` and use the colour tokens (`var(--text)`, `var(--accent)` …) so light and
   dark themes work.
-- Everything registered through `p` is taken away when the plugin stops; errors in its functions
+- Everything registered through `p` is taken away when the plugin stops, including registrations
+  made by an activation that fails. That failed frontend is retried only after the plugin restarts.
+  A backend call whose plugin stopped rejects with `AbortError`; callers may catch it to finish
+  local cleanup. It never stays pending solely to suppress an error. Late registrations from a
+  retired context are disposed immediately. Errors in its functions
   are reported (a notification and the browser console) instead of breaking the app.
 - The app loads the module again when the plugin restarts (its URL carries the start time). Modules
   it imports keep their URL, so the browser may keep the old ones until the page reloads: a single
@@ -512,6 +523,8 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
 | Module | What it does |
 |---|---|
 | `host.py` | `PluginHost`: finds plugins (`scan`), starts and stops them, runs their routes and tools with failure counting (`route`, `run`, `mcp_tools`), sends events (`emit`), and what Settings shows (`info`, `overview`). |
+| `catalog.py` | Discovers manifests without importing code, applies folder precedence and initializes core defaults from legacy preferences once. |
+| `files.py` | Shared file transactions: process and thread locks, atomic JSON replacement. |
 | `manifest.py` | Reads and checks `manifest.json`; `API_VERSION`; settings and their values. |
 | `context.py` | `Plugin`, the object a plugin gets; `PluginError`; `EVENTS`; tool schemas from type hints. |
 | `state.py` | `data/plugins.json`: which plugins are on, their settings, `remote_mcp`, why one was turned off. |
@@ -536,7 +549,7 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
 - **Two processes.** The web app and the MCP server both run the plugins that are on. Only the app
   changes `plugins.json` (the MCP server writes it only to turn off a plugin that failed); each
   process notices the other's changes by the file's time and size (`refresh`, called when Settings
-  lists plugins and when Claude lists tools).
+  lists plugins and when Claude lists tools), including core-plugin changes in safe mode.
 - **Failures.** `fault()` logs the traceback; three within ten minutes turn the plugin off (from a
   separate thread, since the failure may be on the plugin's own worker), record the reason in
   `plugins.json` and tell open pages through the change feed (`plugins`).
@@ -546,10 +559,11 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
 - **Tools** are asked for at each `tools/list` and `tools/call` (`Server.extra` in
   `mcp/protocol.py`); `build_server(..., remote=True)` (the `/mcp` endpoint) offers only those of
   plugins with `remote_mcp` on. A `PluginError` reaches Claude as a tool error.
-- **Dev plugins.** With `--dev-plugins`, `roots()` adds that folder (source `dev`, replacing a
+- **Dev plugins.** With `--dev-plugins`, `catalog.discover` adds that folder (source `dev`, replacing a
   plugin of the same id), and a thread compares the newest modification time of each running dev
   plugin's files (`loading.newest`) every second; a newer one restarts it (`check_changes`), which
-  the change feed tells the open windows.
+  the change feed tells the open windows. Stopping the host joins its watcher before unloading
+  plugins; starting again creates one new watcher.
 - **Data.** `data/plugins/` holds plugins (code, not in backups), `data/plugin-data/<id>/` what each
   stores plus dot files that are left out of backups: its log `.plugin.log`, `.python/`, `.build/`,
   `.jobs.sqlite`, `.schedules.json`. `data/plugins.json` is their state, `data/fields.db` the values

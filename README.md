@@ -310,7 +310,8 @@ off.
 
 Synapse’s own optional features are **core plugins**: Figures, Graph, Metadata Sources,
 Open-Access PDFs and Tasks start on, while Autocompletion starts as previously configured.
-Turn them off in Settings → Plugins without losing their data. Safe mode keeps core plugins
+Turn them off in Settings → Plugins without losing their data. Core plugins can also be toggled
+and restarted in safe mode; changes are followed by the standalone MCP server. Safe mode keeps core plugins
 running and stops third-party plugins.
 
 The built-in metadata providers (Crossref, OpenAlex, arXiv and Open Library) are the
@@ -341,7 +342,8 @@ count that appear as list columns, search filters like `citations:>100` and rows
 To write one, `python server.py --new-plugin my-plugin --dev-plugins ~/synapse-plugins` makes a
 plugin to start from, and `python server.py --dev-plugins ~/synapse-plugins` restarts it whenever
 you save a file. Plugins can also run work on a schedule, reach the sites their manifest names and
-bring Python packages of their own; their frontend may be TypeScript.
+bring Python packages of their own; their frontend may be TypeScript. Daily local schedules keep
+their wall-clock time across daylight-saving changes.
 Their tools reach Claude like Synapse's own; restart Claude if they do not show up.
 
 ## AI access (MCP)

@@ -105,3 +105,34 @@ def test_restoring_an_older_backup_without_plugin_data_keeps_todays(client, svc,
     svc.plugins.drain()
     client.post("/api/backups/restore", json={"name": entry["name"]})
     assert (svc.config.plugin_data_dir / "recently-added" / "added.sqlite").is_file()
+
+
+def _write_shared_files(folder, worker):
+    from pathlib import Path
+
+    from backend.plugins.state import StateFile
+
+    folder = Path(folder)
+    for i in range(40):
+        key = f"{worker}-{i}"
+        JsonStore(folder / "shared.json").set(key, i)
+        StateFile(folder / "plugins.json").update("shared", **{key: i})
+    SqliteStore(folder / "shared.sqlite", ["CREATE TABLE records (value TEXT);"])
+
+
+def test_app_and_mcp_writes_preserve_each_others_data(tmp_path):
+    """Independent hosts may update different keys and initialize the same database at once."""
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+
+    from backend.plugins.state import StateFile
+
+    with ProcessPoolExecutor(max_workers=4, mp_context=multiprocessing.get_context("spawn")) as pool:
+        futures = [pool.submit(_write_shared_files, str(tmp_path), worker) for worker in range(4)]
+        for future in futures:
+            future.result(timeout=30)
+    expected = {f"{worker}-{i}": i for worker in range(4) for i in range(40)}
+    assert JsonStore(tmp_path / "shared.json").all() == expected
+    assert StateFile(tmp_path / "plugins.json").of("shared") == expected
+    assert SqliteStore(tmp_path / "shared.sqlite", ["CREATE TABLE records (value TEXT);"]).version == 1
+    assert not list(tmp_path.glob("*.tmp"))

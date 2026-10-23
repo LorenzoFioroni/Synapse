@@ -6,10 +6,11 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-import threading
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
+
+from .files import save_json, transaction
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
@@ -30,7 +31,6 @@ class JsonStore:
 
     def __init__(self, path: Path):
         self.path = path
-        self._lock = threading.Lock()
 
     def _load(self) -> dict:
         try:
@@ -40,17 +40,14 @@ class JsonStore:
             return {}
 
     def _save(self, data: dict) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=1, ensure_ascii=False), "utf-8")
-        tmp.replace(self.path)
+        save_json(self.path, data)
 
     def all(self) -> dict:
-        with self._lock:
+        with transaction(self.path):
             return self._load()
 
     def get(self, key: str, default=None):
-        with self._lock:
+        with transaction(self.path):
             return self._load().get(key, default)
 
     def set(self, key: str, value) -> None:
@@ -58,13 +55,13 @@ class JsonStore:
 
     def update(self, values: dict) -> None:
         json.dumps(values)  # refuse what cannot be stored before touching the file
-        with self._lock:
+        with transaction(self.path):
             data = self._load()
             data.update(values)
             self._save(data)
 
     def delete(self, key: str) -> None:
-        with self._lock:
+        with transaction(self.path):
             data = self._load()
             if key in data:
                 del data[key]
@@ -82,26 +79,27 @@ class SqliteStore:
         self.path = path
         self.migrations = list(migrations)
         path.parent.mkdir(parents=True, exist_ok=True)
-        c = self._connect()
-        try:
-            c.execute("PRAGMA journal_mode=WAL")
-            have = c.execute("PRAGMA user_version").fetchone()[0]
-            if have > len(self.migrations):
-                raise StorageError(
-                    f"{path.name} was written by a newer version of the plugin (schema {have}); "
-                    f"this one knows {len(self.migrations)}"
-                )
-            if have < len(self.migrations) and have > 0 and before_upgrade:
-                before_upgrade(path.name)
-            for i in range(have, len(self.migrations)):
-                try:
-                    c.executescript("BEGIN;\n" + self.migrations[i] + f"\n;PRAGMA user_version = {i + 1};\nCOMMIT;")
-                except sqlite3.Error as e:
-                    if c.in_transaction:
-                        c.execute("ROLLBACK")
-                    raise StorageError(f"{path.name}: migration {i + 1} failed: {e}") from e
-        finally:
-            c.close()
+        with transaction(path):
+            c = self._connect()
+            try:
+                c.execute("PRAGMA journal_mode=WAL")
+                have = c.execute("PRAGMA user_version").fetchone()[0]
+                if have > len(self.migrations):
+                    raise StorageError(
+                        f"{path.name} was written by a newer version of the plugin (schema {have}); "
+                        f"this one knows {len(self.migrations)}"
+                    )
+                if have < len(self.migrations) and have > 0 and before_upgrade:
+                    before_upgrade(path.name)
+                for i in range(have, len(self.migrations)):
+                    try:
+                        c.executescript("BEGIN;\n" + self.migrations[i] + f"\n;PRAGMA user_version = {i + 1};\nCOMMIT;")
+                    except sqlite3.Error as e:
+                        if c.in_transaction:
+                            c.execute("ROLLBACK")
+                        raise StorageError(f"{path.name}: migration {i + 1} failed: {e}") from e
+            finally:
+                c.close()
 
     @property
     def version(self) -> int:

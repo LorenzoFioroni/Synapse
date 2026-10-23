@@ -369,3 +369,27 @@ def test_a_restart_gives_a_new_start_time(client, svc, example):
     first = client.post("/api/plugin-host/recently-added/enable").get_json()["plugin"]["started"]
     again = client.post("/api/plugin-host/recently-added/restart").get_json()["plugin"]["started"]
     assert first and again and first != again
+
+
+def test_safe_mode_follows_core_plugin_changes(tmp_path):
+    from backend.config import Config
+    from backend.plugins.host import PluginHost
+    from tests.plugins.conftest import write_plugin
+
+    cfg = Config.from_env(tmp_path / "data")
+    write_plugin(cfg.bundled_plugins_dir, "core-test", core=True, enabled_by_default=True)
+    cfg.safe_mode = True
+    app_host, mcp_host = PluginHost(cfg), PluginHost(cfg)
+    try:
+        app_host.start("app")
+        mcp_host.start("mcp")
+        assert mcp_host.info("core-test")["running"]
+        app_host.disable("core-test")
+        mcp_host.refresh()
+        assert not mcp_host.info("core-test")["running"]
+        app_host.enable("core-test")
+        mcp_host.refresh()
+        assert mcp_host.info("core-test")["running"]
+    finally:
+        app_host.stop()
+        mcp_host.stop()

@@ -32,6 +32,7 @@ DATA = tempfile.mkdtemp(prefix="zc-apptabs-e2e-")
 PDF = APP / "tests" / "e2e" / "fixtures" / "twocolumn.pdf"
 SHOTS = os.environ.get("SHOTS")
 results = []
+TAB_MOD = "Control" if sys.platform == "darwin" else "Alt"
 
 
 def check(name, cond, extra=""):
@@ -192,20 +193,20 @@ async def main():
             await page.keyboard.press("Control+Shift+Tab")
             a = await active(page)
             check("Ctrl+Shift+Tab goes back", a["id"] == (await tabs(page))[2]["id"], a["id"])
-            await page.keyboard.press("Alt+w")
+            await page.keyboard.press(f"{TAB_MOD}+w")
             t = await tabs(page)
             check(
                 "Alt+W (⌃W on a Mac) closes the tab; the tab to its left is shown (it was left since it opened)",
                 len(t) == 2 and t[1]["active"],
                 [(x["title"], x["active"]) for x in t],
             )
-            await page.keyboard.press("Alt+Shift+t")
+            await page.keyboard.press(f"{TAB_MOD}+Shift+t")
             t = await tabs(page)
             check("Alt+Shift+T reopens it", len(t) == 3 and t[2]["active"])
             await viewer_ready(await active_frame(page))
-            await page.keyboard.press("Alt+1")
+            await page.keyboard.press(f"{TAB_MOD}+1")
             check("Alt+1 shows the Synapse tab", (await active(page))["id"] == "home")
-            await page.keyboard.press("Alt+9")
+            await page.keyboard.press(f"{TAB_MOD}+9")
             check("Alt+9 shows the last tab", (await active(page))["id"] == (await tabs(page))[2]["id"])
 
             # ---- closing with the mouse ---------------------------------------------------------------
@@ -502,7 +503,7 @@ async def main():
             await page.click('.nt-row.note[data-path="Delta.md"]')
             await note_path("Delta.md")
             await page.click(".cm-content")
-            await page.keyboard.press("Control+End")
+            await page.keyboard.press("Meta+ArrowDown" if sys.platform == "darwin" else "Control+End")
             await page.keyboard.type(" typed in Delta")
             await page.wait_for_timeout(300)
             check(
@@ -513,7 +514,7 @@ async def main():
             await page.locator(".tab.note", has_text="Beta").click()
             await note_path("Beta.md")
             await page.click(".cm-content")
-            await page.keyboard.press("Control+End")
+            await page.keyboard.press("Meta+ArrowDown" if sys.platform == "darwin" else "Control+End")
             await page.keyboard.type(" undo me")
             typed = "undo me" in await page.evaluate("window.zcNotes.text()")
             await page.locator(".tab.note", has_text="Gamma").click()
@@ -521,7 +522,7 @@ async def main():
             await page.locator(".tab.note", has_text="Beta").click()
             await note_path("Beta.md")
             await page.wait_for_timeout(300)
-            await page.keyboard.press("Control+z")
+            await page.keyboard.press("ControlOrMeta+z")
             await page.wait_for_timeout(300)
             check(
                 "undo still works after switching tabs and back",
@@ -769,18 +770,22 @@ async def main():
             page = await b.new_page()
             await page.goto(f"http://127.0.0.1:{QUIT_PORT}/")
             await page.wait_for_selector("#toolbar .ws-switch")
-            await page.wait_for_timeout(1500)
+            await page.wait_for_function("document.readyState === 'complete'")
             check("the server runs while its window is open", srv2.poll() is None)
+            # Playwright closes a headless target without dispatching pagehide. Navigating out
+            # exercises the browser's real farewell, then closes the now-empty target. Keep the
+            # browser alive until its keepalive request has reached the server.
+            await page.goto("about:blank")
             await page.close()
+            t0 = time.monotonic()
+            while srv2.poll() is None and time.monotonic() - t0 < 30:
+                await asyncio.sleep(0.2)
+            check(
+                "leaving the last window stops a --quit-when-closed server (within ~20 s)",
+                srv2.poll() == 0,
+                f"{time.monotonic() - t0:.0f} s",
+            )
             await b.close()
-        t0 = time.time()
-        while srv2.poll() is None and time.time() - t0 < 40:
-            time.sleep(0.5)
-        check(
-            "closing the window stops a --quit-when-closed server (within ~20 s)",
-            srv2.poll() == 0,
-            f"{time.time() - t0:.0f} s",
-        )
     finally:
         if srv2.poll() is None:
             srv2.terminate()
