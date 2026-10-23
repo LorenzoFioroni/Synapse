@@ -24,7 +24,8 @@ export function activate(p: PluginContext): void {
   setNoteHook('graph', hook);
   const notesOn = () => state.settings.notes_enabled !== false;
   const removeNavigation = navigation.register({
-    id: 'graph.main', title: 'Graph', icon: 'link', when: notesOn, active: globalOpen,
+    id: 'graph.main', title: 'Graph', icon: 'link', when: notesOn,
+    active: () => document.body.dataset.workspace === 'notes' && globalOpen(),
     open: async () => { await leaveOthers(); await (await import('../../../views/notes/notesView.js')).openNotesGraph(); },
   });
   p.commands.register({

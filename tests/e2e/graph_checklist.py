@@ -369,8 +369,31 @@ async def main():
             await page.keyboard.press(f"{MOD}+Shift+G")
             await settled(page, "global")
             await shot(page, "5-dark")
-            # Plugin navigation and contextual graph controls follow off/on without a reload.
             graph_link = '#sidebar [data-navigation="graph.main"]'
+            # A retained graph in the hidden Notes workspace must not stay selected.
+            for destination, selector, workspace in (
+                ("Tasks", '#sidebar [data-navigation="tasks.main"]', "tasks"),
+                ("Library", '.ws-switch [data-ws="library"]', None),
+            ):
+                await page.click(graph_link)
+                await settled(page, "global")
+                await page.click(selector)
+                await page.wait_for_function(
+                    "expected => (document.body.dataset.workspace || null) === expected", arg=workspace
+                )
+                check(
+                    f"Graph is not selected after switching to {destination}",
+                    not await page.locator(graph_link).evaluate("el => el.classList.contains('active')"),
+                )
+                if destination == "Tasks":
+                    check(
+                        "Tasks is the only selected plugin navigation entry",
+                        await page.locator("#sidebar button[data-navigation].active").evaluate_all(
+                            "els => els.map(el => el.dataset.navigation)"
+                        )
+                        == ["tasks.main"],
+                    )
+            # Plugin navigation and contextual graph controls follow off/on without a reload.
             for cycle in range(2):
                 await page.click(graph_link)
                 await settled(page, "global")

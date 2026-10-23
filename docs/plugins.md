@@ -100,8 +100,10 @@ with these differences, all from `"core": true` in its manifest and honoured onl
 
 Core workspaces (Tasks and Graph) register their sidebar entries in the internal `navigation`
 registry in `frontend/src/extend.ts`, and remove them on unload. The sidebar only renders those
-registrations; it does not own plugin-specific buttons or counts. Third-party plugins continue to
-use `p.pages` and backend item sources. Figures and Autocompletion are editor integrations, Citation
+registrations; it does not own plugin-specific buttons or counts. Each entry determines its active
+state from the visible workspace as well as its retained view state, so leaving Graph for Tasks or
+the library clears its highlight even though Notes keeps the graph in memory. Third-party plugins
+continue to use `p.pages` and backend item sources. Figures and Autocompletion are editor integrations, Citation
 Counts adds item fields, and metadata/PDF plugins supply lookups; those do not create empty pages.
 
 A plugin's custom Settings sections are kept in step with the registry while Settings is open.

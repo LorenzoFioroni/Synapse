@@ -313,8 +313,9 @@ Open-Access PDFs and Tasks start on, while Autocompletion starts as previously c
 Turn them off in Settings → Plugins without losing their data. Core plugins can also be toggled
 and restarted in safe mode; changes are followed by the standalone MCP server. Safe mode keeps core plugins
 running and stops third-party plugins. Tasks and Graph register their own sidebar entries under
-**Plugins**. Plugin settings sections appear and disappear immediately as their plugin is switched
-on or off, including while Settings stays open. Disabling Autocompletion dismisses visible
+**Plugins**; their selection follows the visible workspace when switching between views. Plugin
+settings sections appear and disappear immediately as their plugin is switched on or off, including
+while Settings stays open. Disabling Autocompletion dismisses visible
 suggestions and cancels pending ones immediately.
 
 The built-in metadata providers (Crossref, OpenAlex, arXiv and Open Library) are the
