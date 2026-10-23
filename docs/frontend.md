@@ -388,7 +388,7 @@ state and call each other without import cycles. Three patterns are used:
   `openNotesGraph`) with do-nothing defaults. `notesView.ts` fills them with
   `Object.assign(hooks, …)`. The other parts import `workspace.ts`, never `notesView.ts`.
   `taskHooks` in the same file works the other way round: the tasks code
-  (`views/tasks/noteTasks.ts`) fills it in, and the notes code calls it to draw and add tasks
+  (`plugins/core/tasks/noteTasks.ts`) fills it in, and the notes code calls it to draw and add tasks
   without importing the tasks code.
   `viewer/annotations/model.ts` does the same with `hooks.onSelect`, which
   `annotations/input.ts` sets to show its selection controls.

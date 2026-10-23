@@ -153,7 +153,10 @@ def save(s: Services, page: dict, pdf_bytes: bytes | None) -> dict:
         try:
             identifier = page.get("doi") or f"arXiv:{page['arxiv']}"
             fetched = lookup(
-                identifier=identifier, known=known_authors(s.papers.list()), email=s.settings.get("contact_email")
+                sources=s.plugins.lookup_metadata,
+                identifier=identifier,
+                known=known_authors(s.papers.list()),
+                email=s.settings.get("contact_email"),
             )
             # online metadata wins; the page fills whatever is missing
             item = {**item, **{k: v for k, v in fetched.items() if v}}

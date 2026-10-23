@@ -60,6 +60,10 @@ mode, and their settings are in their own section or under **More**:
   them; see [notes](notes.md#galleries). Turned off, a gallery reads as the images and captions
   it holds, an image's caption as the line of text it is, and a reference to a figure as ??. The
   notes format does not change: the parser and the attachment sweep still read a gallery's lines.
+- **Metadata Sources** (`plugins/metadata-sources`, on by default): metadata by DOI, arXiv ID,
+  ISBN or title from Crossref, OpenAlex, arXiv and Open Library, including the existing title
+  fallback and author enrichment. Turning it off keeps library records and lookup URLs; lookups
+  report that no source is on unless another plugin supplies one. See [references](references.md).
 - **Tasks** (`plugins/tasks`, on by default): the Tasks workspace, task controls in notes,
   and the existing `list_tasks`, `get_task`, `create_task`, `update_task`, `delete_task` tools.
   Records and note links stay in the core for validation, backups and attachment retention.
@@ -243,6 +247,7 @@ def activate(plugin: Plugin) -> None:
 | `plugin.fields` | `declare(name, type=…, label=…, refresher=…, refresh=…)`, `set(paper, name, value)`, `set_many(name, {paper: value})`, `get(paper, name)`, `key(paper)`, `clear(name, papers=None)`: values attached to papers (see [Per-item fields](#per-item-fields)). |
 | `plugin.http` | `get(url, params=…)`, `post(url, json=…)`, `request(method, url, …)`, `limit(host, seconds)`: the web, within the manifest's `network` (see [Reaching the web](#reaching-the-web)). |
 | `@plugin.item_source(id, title=…, icon="list", description="", badge=None)`, `plugin.refresh_sources()` | A list of papers in the sidebar, and saying it changed (see [Papers outside the library](#papers-outside-the-library)). |
+| `@plugin.metadata_source(id, title=…, kinds=("doi", "arxiv", "isbn", "title", "pmid"), order=100)` | `fn(query)` receives `kind`, normalized `value`, and the contact `email`. Return an item dict in Synapse's field format, or `None` for no match. Lower order runs first; the first nonempty result wins. Raise `PluginError` for an unavailable source or a readable lookup problem; later sources are still tried. The core plugin uses order 100. Sources are removed when their plugin stops and listed as `metadata_sources` in its info. Use `plugin.http` and declare network permission for a third-party provider. |
 | `@plugin.pdf_source(id, title=…, by_title=False, order=100)` | Where Find Available PDF may look: `fn(paper)` gets `{"title", "doi", "arxiv"}` and returns PDF URLs, best first; Synapse downloads them in turn and keeps the first that is the paper (it checks the DOI, the arXiv stamp or the title in its text). Sources `by_title` are asked only when those going by identifier found nothing for a paper with an arXiv id. Lower `order` first (Open-Access PDFs uses 10). For an institutional repository or a proxy, say. |
 | `plugin.services` | `contact_email()`, `lookup(identifier)`, `references(paper, new=False)`, `match(refs)`, `connections(papers, refs=None, folders=None)`: Synapse's own lookups, reference lists and scoring. |
 | `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). |

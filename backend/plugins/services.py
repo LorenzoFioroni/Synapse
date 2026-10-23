@@ -36,6 +36,7 @@ class PluginServices:
 
         try:
             meta = lookup(
+                sources=self._s.plugins.lookup_metadata,
                 identifier=identifier,
                 known=known_authors(self._s.papers.list()),
                 email=self._s.settings.get("contact_email"),

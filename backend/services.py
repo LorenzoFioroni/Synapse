@@ -203,6 +203,7 @@ class Services:
         if lookup and (arx or doi):
             try:
                 fetched = lookup_meta(
+                    sources=self.plugins.lookup_metadata,
                     identifier=f"arXiv:{arx}" if arx else doi,
                     known=known_authors(self.papers.list()),
                     email=self.settings.get("contact_email"),

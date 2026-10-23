@@ -21,6 +21,7 @@ def lookup_for_item(item_id):
     others = [p for p in s.papers.list() if p["id"] != item_id]
     try:
         fetched = lookup(
+            sources=s.plugins.lookup_metadata,
             doi=item.get("doi"),
             title=item.get("title"),
             arxiv_id=arxiv_id_of(item),
@@ -42,7 +43,12 @@ def create_from_identifier():
     if not ident:
         return error("Enter a DOI, arXiv ID or ISBN.")
     try:
-        meta = lookup(identifier=ident, known=known_authors(s.papers.list()), email=s.settings.get("contact_email"))
+        meta = lookup(
+            sources=s.plugins.lookup_metadata,
+            identifier=ident,
+            known=known_authors(s.papers.list()),
+            email=s.settings.get("contact_email"),
+        )
     except LookupFailed as e:
         return error(str(e), 404)
     dup = s.papers.find_duplicate(meta)

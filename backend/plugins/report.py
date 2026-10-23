@@ -63,6 +63,9 @@ def describe(entry: Entry, st: dict, act: Active | None, values: dict, safe_mode
         out["events"] = sorted(e for e, fns in act.plugin.listeners.items() if fns)
         out["fields"] = [d.describe() for d in act.plugin.fields.defs.values()]
         out["sources"] = [{"id": f"{pid}.{s.id}", "title": s.title} for s in act.plugin.sources.values()]
+        out["metadata_sources"] = [
+            {"id": s.id, "title": s.title, "kinds": sorted(s.kinds)} for s in act.plugin.metadata_sources.values()
+        ]
         out["pdf_sources"] = [
             {"id": s.id, "title": s.title, "by_title": s.by_title} for s in act.plugin.pdf_sources.values()
         ]

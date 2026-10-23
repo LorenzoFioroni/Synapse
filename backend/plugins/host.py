@@ -354,6 +354,7 @@ class PluginHost:
                     act.plugin.log.error("Stopping failed:\n%s", traceback.format_exc())
         act.plugin.routes.clear()
         act.plugin.tools.clear()
+        act.plugin.metadata_sources.clear()
         act.plugin.listeners.clear()
         if act.modname:
             forget_modules(act.modname)
@@ -576,6 +577,16 @@ class PluginHost:
     def has_pdf_sources(self) -> bool:
         with self._lock:
             return any(act.plugin.pdf_sources for act in self._active.values())
+
+    def lookup_metadata(self, query: dict) -> dict:
+        """Ask the metadata sources of running plugins for the normalized query."""
+        from .resolvers import lookup
+
+        with self._lock:
+            sources = [
+                (pid, source) for pid, act in self._active.items() for source in act.plugin.metadata_sources.values()
+            ]
+        return lookup(sources, self.run, query)
 
     def mcp_tools(self, *, remote: bool = False) -> list[ToolSpec]:
         """The tools running plugins offer to Claude. ``remote``: for /mcp (another computer), where

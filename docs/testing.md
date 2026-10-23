@@ -313,3 +313,7 @@ pytest picks it up through the `*.test.mjs` glob in `test_frontend_js.py`.
 Name it `<name>_checklist.py` so that `run.py` finds it, and add it to the table above. Read state
 through the `window.zc…` hooks in `frontend/src/globals.d.ts` rather than through the DOM where
 one exists.
+
+`tests/test_metadata.py` tests query normalization and the Metadata Sources plugin’s providers
+with faked responses. `tests/plugins/test_metadata_sources.py` tests provider priority, fallback,
+turning sources off and on, and preserving library records without network access.

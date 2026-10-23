@@ -1,6 +1,28 @@
+import importlib.util
+from pathlib import Path
+
 import pytest
 
 from backend.online import http, metadata
+
+spec = importlib.util.spec_from_file_location(
+    "metadata_providers_test", Path(__file__).resolve().parents[1] / "plugins/metadata-sources/server/providers.py"
+)
+assert spec and spec.loader
+providers = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(providers)
+
+
+@pytest.fixture(autouse=True)
+def _provider_for_direct_queries(monkeypatch):
+    # Standalone core-query tests explicitly supply a source; app calls retain their live host.
+    original = metadata.lookup
+
+    def lookup(**kwargs):
+        kwargs.setdefault("sources", providers.resolve)
+        return original(**kwargs)
+
+    monkeypatch.setattr(metadata, "lookup", lookup)
 
 
 def test_classify_identifier():
@@ -58,7 +80,7 @@ def test_lookup_doi(monkeypatch):
             return FakeResp(CROSSREF)
         return FakeResp({}, 404)  # OpenAlex unavailable
 
-    monkeypatch.setattr(metadata.requests, "get", fake_get)
+    monkeypatch.setattr(providers.requests, "get", fake_get)
     item = metadata.lookup(doi="https://doi.org/10.1103/PhysRevX.13.011033", known=[("Papić", "Zlatko")])
     assert item["title"] == "Superdiffusive Energy Transport"
     assert item["authors"] == "Ljubotina, Marko; Papić, Zlatko"
@@ -68,7 +90,7 @@ def test_lookup_doi(monkeypatch):
 
 def test_api_lookup_and_from_identifier(client, monkeypatch):
     monkeypatch.setattr(
-        metadata.requests, "get", lambda url, **kw: FakeResp(CROSSREF) if "crossref" in url else FakeResp({}, 404)
+        providers.requests, "get", lambda url, **kw: FakeResp(CROSSREF) if "crossref" in url else FakeResp({}, 404)
     )
     r = client.post("/api/items/from_identifier", json={"identifier": "10.1103/PhysRevX.13.011033"})
     assert r.status_code == 201
@@ -140,7 +162,7 @@ def test_title_similarity_tolerates_small_differences():
 
 def test_arxiv_item_is_looked_up_on_arxiv_not_crossref(monkeypatch):
     calls = []
-    monkeypatch.setattr(metadata.requests, "get", fake_net(calls))
+    monkeypatch.setattr(providers.requests, "get", fake_net(calls))
     item = metadata.lookup(title="Variational MPO", arxiv_id="2205.03415")
     assert item["title"].startswith("Variational Matrix Product Operators for the Steady State of Dissipative")
     assert item["item_type"] == "preprint" and item["archive_id"] == "arXiv:2205.03415"
@@ -149,7 +171,7 @@ def test_arxiv_item_is_looked_up_on_arxiv_not_crossref(monkeypatch):
 
 def test_arxiv_doi_goes_to_arxiv(monkeypatch):
     calls = []
-    monkeypatch.setattr(metadata.requests, "get", fake_net(calls))
+    monkeypatch.setattr(providers.requests, "get", fake_net(calls))
     item = metadata.lookup(doi="https://doi.org/10.48550/arXiv.2205.03415")
     assert item["archive_id"] == "arXiv:2205.03415"
     assert calls[0][1] == {"id_list": "2205.03415"}
@@ -159,31 +181,33 @@ def test_arxiv_doi_goes_to_arxiv(monkeypatch):
 
 def test_title_falls_back_to_arxiv_search(monkeypatch):
     calls = []
-    monkeypatch.setattr(metadata.requests, "get", fake_net(calls))
+    monkeypatch.setattr(providers.requests, "get", fake_net(calls))
     item = metadata.lookup(
         title="Variational matrix product operators for the steady state of dissipative quantum systems"
     )
     assert item["archive_id"] == "arXiv:2205.03415"
-    assert [u for u, _ in calls][:2] == ["https://api.crossref.org/works", metadata.ARXIV_API]
+    assert [u for u, _ in calls][:2] == ["https://api.crossref.org/works", providers.ARXIV_API]
     assert calls[1][1]["search_query"].startswith("ti:(Variational AND matrix")
 
 
 def test_no_match_anywhere_has_a_helpful_message(monkeypatch):
-    monkeypatch.setattr(metadata.requests, "get", fake_net([], arxiv_feed=[{"id": "9999.99999", "title": "Unrelated"}]))
+    monkeypatch.setattr(
+        providers.requests, "get", fake_net([], arxiv_feed=[{"id": "9999.99999", "title": "Unrelated"}])
+    )
     with pytest.raises(metadata.LookupFailed, match="Crossref or arXiv"):
         metadata.lookup(title="Variational matrix product operators for the steady state")
 
 
 def test_published_doi_still_uses_crossref(monkeypatch):
     calls = []
-    monkeypatch.setattr(metadata.requests, "get", fake_net(calls, crossref=CROSSREF))
+    monkeypatch.setattr(providers.requests, "get", fake_net(calls, crossref=CROSSREF))
     item = metadata.lookup(doi="10.1103/PhysRevX.13.011033", arxiv_id="2205.03415")
     assert item["title"] == "Superdiffusive Energy Transport"
 
 
 def test_api_lookup_for_arxiv_item(client, svc, monkeypatch):
     calls = []
-    monkeypatch.setattr(metadata.requests, "get", fake_net(calls))
+    monkeypatch.setattr(providers.requests, "get", fake_net(calls))
     it = svc.papers.create({"title": "Variational MPO", "url": "https://arxiv.org/abs/2205.03415"})
     r = client.post(f"/api/items/{it['id']}/lookup")
     assert r.status_code == 200, r.json
@@ -226,7 +250,7 @@ def test_doi_lookup_asks_crossref_and_openalex_side_by_side(monkeypatch):
             },
         )()
 
-    monkeypatch.setattr(metadata.requests, "get", fake_get)
+    monkeypatch.setattr(providers.requests, "get", fake_get)
     t0 = _t.monotonic()
     item = metadata.lookup(doi="10.1/x")
     assert item["authors"] == "Cui, Jian; Cirac, J. Ignacio" and _t.monotonic() - t0 < 2
@@ -239,7 +263,7 @@ def test_arxiv_requests_are_spaced(monkeypatch):
     monkeypatch.setattr(http, "ARXIV_SPACING", 0.3)
     stamps = []
     monkeypatch.setattr(
-        metadata.requests,
+        providers.requests,
         "get",
         lambda *a, **k: (
             stamps.append(_t.monotonic())
@@ -253,6 +277,6 @@ def test_arxiv_requests_are_spaced(monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
 
     with ThreadPoolExecutor(3) as ex:
-        list(ex.map(lambda _: metadata._arxiv_entries({"id_list": "1"}), range(3)))
+        list(ex.map(lambda _: providers._arxiv_entries({"id_list": "1"}), range(3)))
     stamps.sort()
     assert all(b - a >= 0.28 for a, b in zip(stamps, stamps[1:]))

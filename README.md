@@ -305,8 +305,17 @@ asks first and lists what the plugin may do (read the library, connect to sites,
 Claude). A plugin runs with full access to your library and computer, like any program you
 install, so turn on only plugins you trust. Each plugin's settings, its log and a Restart button
 are under **More**; a plugin that keeps failing is turned off and Settings says why. If one keeps
-the app from working, start it with `python server.py --safe-mode` (no plugin runs) and turn it
+the app from working, start it with `python server.py --safe-mode` (only core plugins run) and turn it
 off.
+
+Synapse’s own optional features are **core plugins**: Figures, Graph, Metadata Sources,
+Open-Access PDFs and Tasks start on, while Autocompletion starts as previously configured.
+Turn them off in Settings → Plugins without losing their data. Safe mode keeps core plugins
+running and stops third-party plugins.
+
+The built-in metadata providers (Crossref, OpenAlex, arXiv and Open Library) are the
+**Metadata Sources** core plugin, on by default. Switch it off in Settings → Plugins to stop
+those lookups; all existing metadata stays in the library. Other plugins can supply sources too.
 
 Two plugins come with Synapse, off until you turn them on:
 

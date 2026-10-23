@@ -139,6 +139,7 @@ class Plugin:
         self.actions = actions  # PluginActions (services.py): adding papers to the library
         self.sources: dict[str, ItemSource] = {}
         self.pdf_sources: dict[str, PdfSource] = {}
+        self.metadata_sources: dict = {}
         self._sources_changed = sources_changed or (lambda: None)
         # a core plugin's tools keep the names they had when they were part of Synapse
         self._tool_prefix = tool_prefix
@@ -270,6 +271,15 @@ class Plugin:
             return fn
 
         return register
+
+    def metadata_source(
+        self, id: str, *, title: str, kinds=("doi", "arxiv", "isbn", "title", "pmid"), order: int = 100
+    ):  # noqa: A002
+        """Register fn(query) -> item or None; query has kind, value and contact email.
+        Lower order is tried first; the first nonempty item wins. Usable as a decorator."""
+        from .resolvers import metadata_source
+
+        return metadata_source(self.metadata_sources, id, title=title, kinds=kinds, order=order)
 
     def refresh_sources(self) -> None:
         """Say that this plugin's lists changed (a job fetched new papers, say): open pages showing

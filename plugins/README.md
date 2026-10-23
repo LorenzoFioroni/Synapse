@@ -10,3 +10,6 @@ replaces the one here.
   connect to your library, with a + to add one.
 
 Examples to copy are in [docs/examples](../docs/examples).
+
+`tasks/` and `metadata-sources/` are core plugins (on by default): the optional Tasks interface
+and the online metadata providers. Their records and data integrity remain in the core.

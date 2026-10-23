@@ -12,7 +12,8 @@ features fail with a message and the rest of the app works as before.
 | Module | What it does |
 |---|---|
 | `backend/online/http.py` | What every lookup shares: timeout, User-Agent headers, `LookupFailed`, arXiv request spacing. |
-| `backend/online/metadata.py` | Item metadata from Crossref, OpenAlex, arXiv and Open Library. |
+| `backend/online/metadata.py` | Query classification, author normalization and routing to plugin metadata sources. |
+| `plugins/metadata-sources/server/providers.py` | Crossref, OpenAlex, arXiv and Open Library requests, title fallback and author enrichment. |
 | `backend/online/pdf_finder.py` | Finds an open-access PDF, downloads it and checks it is the right paper. |
 | `backend/online/remote_pdf.py` | Downloads the PDF behind an attachment that is stored as a web link. |
 | `backend/library/identifiers.py` | DOIs and arXiv ids: cleaning, normalising, finding them in an item. Offline. |
@@ -358,14 +359,12 @@ tested in `tests/js/lookupJob.test.mjs` with an injected `lookup` function. See
 
 ## Where to change things
 
-- **A new metadata source.** Add a function in `backend/online/metadata.py` that returns item
-  fields (drop empty values, set `library_catalog`) and raises `LookupFailed` with a readable
-  message. Recognise its identifier in `classify_identifier` if it has one, and route to it in
-  `lookup()`. Use `TIMEOUT` and `api_headers(email)`, and `arxiv_wait()` for anything on arXiv.
-  Add a faked test in `tests/test_metadata.py`. If it returns a field the review should offer,
-  add it to `LOOKUP_FIELDS` in `metadataReview.ts`.
-- **A new PDF source.** Add its candidates in `candidate_urls()` at the right priority; downloads
-  and checks are shared.
+- **A new metadata source.** Register `@plugin.metadata_source` in a plugin (see
+  [plugins](plugins.md)). Return normalized item fields or `None`; a lower `order` takes
+  priority over the core plugin (100). Use `plugin.http` with network permission in a
+  third-party plugin. The existing core providers live in `plugins/metadata-sources/server/`.
+  Add a faked test, and add any new reviewable field to `LOOKUP_FIELDS` in `metadataReview.ts`.
+- **A new PDF source.** Register `@plugin.pdf_source`; the core downloads and checks the candidates.
 - **A new reference source.** Add a function in `backend/references/sources.py` that returns
   dicts with keys from `REF_FIELDS` and add it to `attempts` in `fetch()`. Add its name to the
   `source` comment in `store.py` and to `SOURCES` in `referencesSection.ts`.
@@ -374,3 +373,5 @@ tested in `tests/js/lookupJob.test.mjs` with an injected `lookup` function. See
 - **A new setting** (an e-mail, a key) goes in `DEFAULTS` in `backend/settings.py` and on the
   Online Services page (`frontend/src/views/settings/page.ts`); read it in the caller and pass it
   in.
+
+Metadata providers are the default-on **Metadata Sources** core plugin (`plugins/metadata-sources/server/providers.py`): Crossref, OpenAlex, arXiv and Open Library. `backend/online/metadata.py` keeps query classification, title matching and author normalization; the running plugin sources supply metadata. Existing HTTP endpoints and responses are unchanged. Turning all matching sources off gives a readable error without a network request; library records are kept.
