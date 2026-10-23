@@ -268,7 +268,7 @@ export function flushNote(path: string): void {
 /** The full graph in Notes, optionally centred on a node ("note:<path>", "item:<id>"). */
 export async function openNotesGraph(focus: string | null = null): Promise<void> {
   if (!notesEnabled() || !noteHooks.graph) return;
-  if (!notesOpen()) await openNotes();
+  if (!notesOpen()) { await openNotes(null, null, { graph: true, focus }); return; }
   await noteHooks.graph.openGlobal(focus);
   navPush({ ws: 'notes', path: ws.session?.path || null, graph: true, focus });
 }

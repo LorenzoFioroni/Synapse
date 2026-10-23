@@ -106,6 +106,14 @@ the library clears its highlight even though Notes keeps the graph in memory. Th
 continue to use `p.pages` and backend item sources. Figures and Autocompletion are editor integrations, Citation
 Counts adds item fields, and metadata/PDF plugins supply lookups; those do not create empty pages.
 
+Workspace transitions are coordinated by `main.ts`: opening a plugin page first saves and closes
+Notes and leaves Tasks. `views/pages.ts` owns mounting, cleanup and the short restart grace period;
+choosing another view cancels that wait. Graph and All Notes never highlight simultaneously.
+`nav.ts` records library views, Graph, Tasks and plugin pages without intermediate workspace entries.
+Back/Forward to a stopped page, Tasks or paper list falls back to the library; a stopped Graph
+falls back to Notes. These unavailable history entries are replaced rather than adding a new entry.
+Tasks records its destination before loading, and a delayed load cannot focus or replace a later view.
+
 A plugin's custom Settings sections are kept in step with the registry while Settings is open.
 Stopping one disposes and removes its controls; starting it again mounts one fresh section. If the
 selected section disappears, Settings selects General. Unrelated sections keep their mounted state.

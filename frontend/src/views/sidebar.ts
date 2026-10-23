@@ -83,7 +83,7 @@ export function initSidebar(): void {
   on('settings', paint);
   on('notes-count', (n) => { notesCount = n; paintNotes(); });
   pages.subscribe(paintPages);
-  navigation.subscribe(paintPages);
+  navigation.subscribe(() => { paintNotes(); paintPages(); });
   on('sources', paintPages);
   paint();
 }
@@ -95,7 +95,7 @@ const inLibrary = () => !document.body.dataset.workspace;
 function paintNotes() {
   const enabled = state.settings.notes_enabled !== false;
   root.querySelectorAll<HTMLElement>('[data-notes-only]').forEach((el) => { el.hidden = !enabled; });
-  root.querySelector('[data-act="open-notes"]')!.classList.toggle('active', inNotes());
+  root.querySelector('[data-act="open-notes"]')!.classList.toggle('active', inNotes() && !navigation.all().some((entry) => entry.active()));
   root.querySelector('[data-count="notes"]')!.textContent = notesCount ? String(notesCount) : '';
 
 }

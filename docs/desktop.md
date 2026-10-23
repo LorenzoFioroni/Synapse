@@ -170,8 +170,10 @@ tab whose note was deleted elsewhere closes, with a message, when it is shown.
   and Reload; right-click the first tab for New Window and Close All Tabs.
 - **A reload** brings the window's tabs back, their order and the shown one, each PDF at the page it
   was left on. A PDF tab's viewer is loaded only when the tab is first shown.
-- **Back/Forward in the app** (⌘[ / Alt+←, the mouse buttons) go to the note or library view shown
-  before, in its tab: a note that has a tab shows that tab, else it opens in the preview tab.
+- **Back/Forward in the app** (⌘[ / Alt+←, the mouse buttons) restore library views and selections,
+  notes, Graph, Tasks and plugin pages. A note that has a tab shows that tab, else it opens in the
+  preview tab. A disabled plugin page, Tasks or paper list falls back to the library; a disabled
+  Graph falls back to Notes, without blocking further Back/Forward navigation.
 
 ### Folder colours
 

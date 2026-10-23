@@ -11,7 +11,8 @@ import type { Counts, SearchMode } from './types.js';
 import { debounce, isMac, modKey, modLabel, plural, storage, store } from './util.js';
 import { commands, keyMatches, pages } from './extend.js';
 import { initPluginHost } from './plugins/host.js';
-import { type NavEntry, initNav, navSnapshot, navUpdate } from './nav.js';
+import { noteHooks } from './views/notes/hooks.js';
+import { type NavEntry, initNav, navPush, navReplace, navSnapshot, navUpdate } from './nav.js';
 import { initChanges } from './changes.js';
 import { startPresence } from './presence.js';
 import {
@@ -54,7 +55,12 @@ async function boot() {
   initItemList();
   initItemPane();
   initNotes();
-  initPages();
+  initPages(async () => {
+    showHome();
+    if (settingsOpen()) closeSettings();
+    if (notesOpen()) await closeNotes({ toLibrary: false });
+    tasksPage.close();
+  });
   registerCoreCommands();
   initResizer();
   initStatusBar();
@@ -72,7 +78,7 @@ async function boot() {
   on('set-search-mode', (m) => setMode(m));
   on('clear-search', () => clearSearch());
   on('open-notes', () => openNotes());
-  on('close-notes', () => { closeNotes(); tasksPage.close(); closePage(); });
+  on('close-notes', () => switchWorkspace('library'));
   on('open-tasks', (o) => goToTasks(o || {}));
   on('open-note', ({ path, line }) => { showHome(); openNotes(path, line ?? null); });
   on('show-item', (id) => showItem(id));
@@ -116,18 +122,24 @@ async function openFromHash(): Promise<void> {
 async function goToTasks(o: { task?: string | null; note?: string | null } = {}): Promise<void> {
   if (!tasksPage.on) return;
   if (settingsOpen()) closeSettings();
-  closePage();
+  closePage({ push: false });
   if (notesOpen()) await closeNotes({ toLibrary: false });
   await tasksPage.open(o);
+}
+
+/** Save the note before exposing the library; callers record their final view/selection. */
+async function leaveForLibrary(): Promise<void> {
+  await closeNotes({ toLibrary: false });
+  tasksPage.close();
+  closePage({ push: false });
+  emit('workspace');
 }
 
 /** Show one item in the library (leaving Notes, Tasks or Settings), selected and scrolled to. */
 async function showItem(id: string): Promise<void> {
   showHome();
   if (settingsOpen()) closeSettings();
-  if (notesOpen()) await closeNotes();
-  tasksPage.close();
-  closePage();
+  await leaveForLibrary();
   if (!state.items.some((i) => i.id === id)) {
     if (state.query) clearSearch();
     state.tagFilter.clear();
@@ -138,16 +150,16 @@ async function showItem(id: string): Promise<void> {
     A.select([id], { anchor: id, cursor: id });
     focusList();
   }
+  navPush({ ws: 'library', view: state.view, sel: [...state.selection] });
 }
 
 /** Show a view of the library (a folder, a plugin's list …), leaving Notes, Tasks, Settings or a page. */
 async function openView(view: string): Promise<void> {
   showHome();
   if (settingsOpen()) closeSettings();
-  if (notesOpen()) await closeNotes();
-  tasksPage.close();
-  closePage();
+  await leaveForLibrary();
   if (state.query) clearSearch();
+  navPush({ ws: 'library', view, sel: state.view === view ? [...state.selection] : [] });
   A.setView(view);
   focusList();
 }
@@ -156,28 +168,41 @@ async function openView(view: string): Promise<void> {
 async function navigate(entry: NavEntry): Promise<void> {
   showHome();
   if (settingsOpen()) closeSettings();
+  const unavailable = (entry.ws === 'tasks' && !tasksPage.on)
+    || (entry.ws === 'page' && !pages.get(entry.page || ''))
+    || (entry.ws === 'notes' && state.settings.notes_enabled === false)
+    || (entry.ws === 'library' && entry.view?.startsWith('source:') && !state.sources.some((s) => `source:${s.id}` === entry.view));
+  if (unavailable) {
+    entry = { ws: 'library', view: 'library', sel: [] };
+    navReplace(entry);
+  }
   if (entry.ws === 'tasks') { await goToTasks({ task: entry.task || null }); return; }
   if (entry.ws === 'page' && entry.page) {
     if (notesOpen()) await closeNotes({ toLibrary: false });
     tasksPage.close();
-    openPage(entry.page, { push: false });
+    await openPage(entry.page, { push: false });
     return;
   }
+  if (entry.ws === 'notes' && entry.graph && !noteHooks.graph) {
+    entry = { ...entry, graph: false, focus: null };
+    navReplace(entry);
+  }
   if (entry.ws === 'notes') { await openNotes(entry.path || null, null, { graph: !!entry.graph, focus: entry.focus || null }); return; }
-  if (notesOpen()) await closeNotes();
-  tasksPage.close();
-  closePage();
+  await leaveForLibrary();
   if (entry.view && entry.view !== state.view) { A.setView(entry.view); await A.loadItems({ keepSelection: false }); }
   const ids = (entry.sel || []).filter((id) => state.items.some((i) => i.id === id));
-  if (ids.length) A.select(ids, { anchor: ids[0], cursor: ids[ids.length - 1] });
+  A.select(ids, { anchor: ids[0] || null, cursor: ids[ids.length - 1] || null });
   focusList();
 }
 
 /** Library ⇄ Notes (⌘⇧L), or the workspace a toolbar switch button names. */
-function switchWorkspace(to: string = notesOpen() ? 'library' : 'notes'): void {
+async function switchWorkspace(to: string = notesOpen() ? 'library' : 'notes'): Promise<void> {
   if (settingsOpen()) closeSettings();
-  if (to === 'notes') openNotes();
-  else { closeNotes(); tasksPage.close(); closePage(); }
+  if (to === 'notes') await openNotes();
+  else {
+    await leaveForLibrary();
+    navPush({ ws: 'library', view: state.view, sel: [...state.selection] });
+  }
 }
 
 /** What the first tab shows: the library, Tasks or a plugin's page, whichever was shown last. */
@@ -203,11 +228,11 @@ async function goHome(): Promise<void> {
   const page = homeWs === 'page' ? currentPageId() : null;
   if (page) {
     if (notesOpen()) await closeNotes({ toLibrary: false });
-    openPage(page);
+    await openPage(page);
     return;
   }
-  if (notesOpen()) await closeNotes();
-  tasksPage.close();
+  await leaveForLibrary();
+  navPush({ ws: 'library', view: state.view, sel: [...state.selection] });
   focusList();
 }
 
@@ -490,11 +515,11 @@ function pluginKey(e: KeyboardEvent, typing: boolean): boolean {
 function registerCoreCommands(): void {
   const notesOn = () => state.settings.notes_enabled !== false;
   const add = (id: string, title: string, run: () => unknown, key?: string, when?: () => boolean) => commands.register({ id: `core.${id}`, title, run, key, when });
-  add('new-item', 'New Item', () => { closeNotes(); tasksPage.close(); closePage(); A.newItem(); }, 'Mod-n');
-  add('add-identifier', 'Add by DOI, arXiv ID or ISBN…', () => { closeNotes(); tasksPage.close(); closePage(); openIdentifier(); }, 'Mod-Shift-n');
-  add('import', 'Import…', () => { closeNotes(); tasksPage.close(); closePage(); openImport(); }, 'Mod-i');
+  add('new-item', 'New Item', async () => { await switchWorkspace('library'); A.newItem(); }, 'Mod-n');
+  add('add-identifier', 'Add by DOI, arXiv ID or ISBN…', async () => { await switchWorkspace('library'); openIdentifier(); }, 'Mod-Shift-n');
+  add('import', 'Import…', async () => { await switchWorkspace('library'); openImport(); }, 'Mod-i');
   add('export', 'Export…', () => exportSelectionOrAll(), 'Mod-e');
-  add('search', 'Search the Library', () => { switchWorkspace('library'); searchInput.focus(); searchInput.select(); }, 'Mod-f');
+  add('search', 'Search the Library', async () => { await switchWorkspace('library'); searchInput.focus(); searchInput.select(); }, 'Mod-f');
   add('library', 'Show the Library', () => switchWorkspace('library'));
   add('notes', 'Show Notes', () => switchWorkspace('notes'), undefined, notesOn);
   add('item-pane', 'Show or Hide the Item Pane', () => toggleItemPane(), undefined, () => !notesOpen() && !tasksPage.isOpen() && !pageOpen());

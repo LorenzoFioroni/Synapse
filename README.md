@@ -224,7 +224,8 @@ never mix.
   [Figures](docs/notes.md#figures-and-their-numbers)); galleries and figure numbers are the core
   plugin **Figures**, which can be turned off in Settings → Plugins. Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
-  Cmd+[ / Alt+←) go back to the note or library selection you came from.
+  Cmd+[ / Alt+←) restore notes, Graph, Tasks, plugin pages and library views/selections.
+  If a destination's plugin is off, navigation returns to the library (or Notes for Graph).
   Images pasted into notes are kept in the notes' attachments folder; one that no note uses any more
   moves to an attachment trash by itself (and comes back if a note uses it again). **Attachments…**
   in the notes list menu shows them all — which notes use each, insert one into the open note,
@@ -477,6 +478,7 @@ python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders,
 python tests/e2e/viewer_links_checklist.py  # PDF links: jump, hover preview, Back/Forward in the viewer
 python tests/e2e/tabs_checklist.py       # PDFs in the app's own tabs; a --quit-when-closed server stops with its window
 python tests/e2e/export_checklist.py     # Export: HTML (self-contained, offline), Markdown, PDF via the print dialog
+python tests/e2e/navigation_checklist.py # workspace switches, sidebar selection, history, shortcuts and disabled plugins
 python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, levels, filters, paper card, Show in Graph, Back/Forward
 python tests/e2e/attachments_checklist.py  # note attachments: unused ones to the trash, Attachments dialog, retention
 python tests/e2e/adding_checklist.py     # bulk Retrieve Metadata (parallel, grouped, background), Settings → Adding Items

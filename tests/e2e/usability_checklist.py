@@ -124,6 +124,8 @@ async def main():
             br = await p.chromium.launch()
             page = await (await br.new_context(viewport={"width": 1440, "height": 900})).new_page()
             errors = []
+            failed_requests = []
+            page.on("response", lambda r: failed_requests.append(f"{r.status} {r.url}") if r.status >= 400 else None)
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
             await page.goto(BASE + "/")
@@ -345,7 +347,7 @@ async def main():
             check("Escape goes back to just the open note", n_sel == 1, n_sel)
             await shot(page, "u3-notes")
 
-            check("no console errors", not errors, errors[:3])
+            check("no console errors", not errors, (errors + failed_requests)[:6])
             await br.close()
     finally:
         srv.terminate()

@@ -125,3 +125,33 @@ the full run now awaits the public saved status, so it does not race the fake se
 
 After those corrections, the full suite passed **704 tests, 2 skipped**; Ruff lint/format, mypy
 and frontend/extension type checks passed.
+
+## Follow-up: workspace navigation audit
+
+The navigation checklist uses an offline page and paper-list fixture and a temporary library. It
+covers all 30 directed transitions among Library, Notes, Graph, Tasks, plugin pages and paper lists,
+then checks history, shortcuts, stopping/restarting the active plugin and unavailable history entries.
+The audit found and corrected:
+
+- Notes could remain visible beside a plugin page and after leaving that page. Page entry now
+  awaits the composition layer's save/close step before mounting.
+- Graph and All Notes could both be selected. Navigation registry changes now refresh both groups.
+- Returning from Tasks/pages did not always record the library destination. Distinct library
+  views now keep distinct history entries; direct Graph entry avoids an intermediate Notes entry.
+- Disabled-plugin history entries could leave the previous workspace on screen. Restoration now
+  replaces unavailable destinations with a usable fallback, preserving Back/Forward navigation.
+- A delayed Tasks load could focus a later workspace and overwrite its history. Tasks now records
+  entry immediately and checks that it is still visible before completing.
+- Leaving a stopped page now cancels its restart wait, so restarting it cannot displace a different
+  page the user chose; page cleanup runs once.
+
+`tests/js/nav.test.mjs` checks distinct library destinations, snapshotting the selection, and
+replacement during asynchronous restoration without inserting history entries. The browser
+checklist exercises the actual DOM, plugin lifecycle and delayed task requests.
+
+Navigation validation: **120/120**, Graph **47/47**, Tasks **82/82**, tabs **74/74**, plugin host
+**48/48**, outside papers **34/34**; full suite **704 passed, 2 skipped**, including three new
+JavaScript history tests. Frontend/extension type checks, Ruff lint/format and mypy passed.
+Usability initially passed 40/41 with one browser 404 whose URL was not recorded. With failed-request
+URLs added to its diagnostics, five consecutive runs passed **41/41**. The initial request's cause
+was not confirmed; this is recorded rather than treating a retry as proof of a fix.

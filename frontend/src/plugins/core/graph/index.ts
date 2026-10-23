@@ -3,6 +3,7 @@
 // place of the editor); this adds the command (Cmd/Ctrl+Shift+G) and Show in Graph for items.
 import type { PluginContext } from '../../api.js';
 import { navigation } from '../../../extend.js';
+import { navUpdate } from '../../../nav.js';
 import { state } from '../../../store.js';
 import { noteHooks, setNoteHook, type GraphHook } from '../../../views/notes/hooks.js';
 import { closeGlobal, globalOpen, graphChanged, initNotesGraph, localSection, openGlobal, showLocal, teardownNotesGraph } from './notesGraph.js';
@@ -14,7 +15,7 @@ async function leaveOthers(): Promise<void> {
   ]);
   if (settingsOpen()) closeSettings();
   tasksPage.close();
-  closePage();
+  closePage({ push: false });
 }
 
 export function activate(p: PluginContext): void {
@@ -38,6 +39,7 @@ export function activate(p: PluginContext): void {
     run: async (items) => { await leaveOthers(); (await import('../../../views/notes/notesView.js')).openNotesGraph(`item:${items[0].id}`); },
   });
   p.onUnload(() => {
+    if (document.body.dataset.workspace === 'notes' && globalOpen()) navUpdate('notes', { graph: false, focus: null });
     removeNavigation();
     if (noteHooks.graph === hook) setNoteHook('graph', null);
     teardownNotesGraph();

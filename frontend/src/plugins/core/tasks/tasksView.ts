@@ -3,7 +3,7 @@
 // Notes does (body[data-workspace="tasks"]). See docs/tasks.md.
 import { api } from '../../../api.js';
 import { icon } from '../../../icons.js';
-import { navPush } from '../../../nav.js';
+import { navPush, navReplace, navUpdate } from '../../../nav.js';
 import { type AppEvent, type AppEvents, emit, off, on, state } from '../../../store.js';
 import type { Task } from '../../../types.js';
 import { openDialog } from '../../../ui/dialog.js';
@@ -34,7 +34,9 @@ function listen<K extends AppEvent>(event: K, fn: (payload: AppEvents[K]) => voi
   on(event, fn); offs.push(() => off(event, fn));
 }
 export function teardownTasks(): void {
+  const wasOpen = tasksOpen();
   closeTasks();
+  if (wasOpen) navReplace({ ws: 'library', view: state.view, sel: [...state.selection] });
   form?.destroy(); form = null;
   offs.splice(0).forEach((off) => off());
   root.remove();
@@ -132,10 +134,11 @@ export async function openTasks({ task = null, note = null }: { task?: string | 
   document.body.dataset.workspace = 'tasks';
   root.hidden = false;
   store('zc.tasks.open', true);
+  navPush({ ws: 'tasks', task: task || st.cursor });
   emit('workspace');
   if (note !== null) { st.note = note || null; if (!['open', 'all', 'done'].includes(st.view)) st.view = 'open'; st.save(); }
   await Promise.all([loadTasks(), ensureRenderer(), ws.library.list.length ? null : api.citeIndex().then((r) => { ws.library = { list: r.items, byKey: new Map(r.items.map((i) => [i.key, i])) }; }).catch(() => {})]);
-  if (!opened.isConnected || opened !== root) return;
+  if (!opened.isConnected || opened !== root || !tasksOpen()) return;
   if (task && td.tasks.has(task)) {
     const t = td.tasks.get(task)!;
     // make it visible: its view, its parents unfolded
@@ -155,7 +158,7 @@ export async function openTasks({ task = null, note = null }: { task?: string | 
   }
   list.paintSelection();
   focusList();
-  navPush({ ws: 'tasks', task: st.cursor });
+  navUpdate('tasks', { task: st.cursor });
 }
 
 export function closeTasks(): void {
