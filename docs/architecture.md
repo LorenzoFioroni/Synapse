@@ -125,6 +125,12 @@ once, `npm ci` in `frontend/`.
 
 The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest builds it first.
 
+The shell is responsive down to phone widths. At 700px and below the toolbar wraps, secondary
+actions move to its More menu, configured library columns remain available in the list's own
+horizontal scroller, and item, note and task details use one full-width pane at a time. Settings
+uses a horizontally scrolling section strip.
+Tablet widths keep the richer split panes but move the collections sidebar into a drawer.
+
 ### Modules
 
 - `main.ts` is the entry point. It loads the schema and settings, builds the views and wires the

@@ -112,6 +112,7 @@ function bindBody(): void {
     if (at(e, '[data-act="note"]')) openItemNote(byId(at(e, '.row')!.dataset.id!));
     const snip = at(e, '.row.snippet');
     if (snip) A.openPdf(snip.dataset.parent!);
+    if (matchMedia('(max-width: 700px)').matches && at(e, '.row[data-id]')) document.body.classList.add('mobile-item-open');
   });
   body.addEventListener('dblclick', (e) => {
     const row = at(e, '.row[data-id]');

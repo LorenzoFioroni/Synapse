@@ -1,6 +1,7 @@
 """Notification history, job integration and optional OS delivery. Isolated port 8808."""
 
 import asyncio
+import os
 import subprocess
 import sys
 import tempfile
@@ -57,7 +58,7 @@ async def main():
                     time.sleep(0.2)
             item = requests.post(BASE + "/api/items", json={"title": "A test paper"}, timeout=5).json()
             async with async_playwright() as p:
-                browser = await p.chromium.launch()
+                browser = await p.chromium.launch(channel=os.environ.get("PLAYWRIGHT_CHANNEL") or None)
                 context = await browser.new_context(viewport={"width": 1300, "height": 900})
                 await context.add_init_script(f"({MOCK_OS})()")
                 page = await context.new_page()
@@ -70,13 +71,38 @@ async def main():
                 await bell.click()
                 center = page.locator("#notification-center")
                 check("Bell opens a labeled center beside Settings", await center.is_visible())
-                await page.locator('[data-n="desktop"]').click()
-                check("OS opt-in requests permission only on click", await page.evaluate("permissionRequests === 1"))
+                check(
+                    "Notification center only contains history actions",
+                    await center.locator('[data-n="desktop"]').count() == 0,
+                )
                 await page.keyboard.press("Escape")
                 check(
                     "Escape closes center and returns focus",
                     not await center.is_visible() and await bell.evaluate("e => e === document.activeElement"),
                 )
+                await page.locator('[data-a="settings"]').click()
+                await page.locator('[data-nav="notifications"]').click()
+                os_button = page.locator("[data-desktop-notifications]")
+                await os_button.click()
+                check(
+                    "Settings requests OS permission only after an explicit click",
+                    await page.evaluate("permissionRequests === 1")
+                    and await os_button.inner_text() == "Disable OS notifications",
+                )
+                await os_button.click()
+                check(
+                    "Settings can persistently disable OS delivery",
+                    await os_button.inner_text() == "Enable OS notifications",
+                )
+                await os_button.click()
+                check(
+                    "Re-enabling after permission was granted does not ask again",
+                    await page.evaluate("permissionRequests === 1")
+                    and await os_button.inner_text() == "Disable OS notifications",
+                )
+                await page.locator("[data-close]").click()
+                launcher_icon = page.locator('link[rel="icon"][sizes="192x192"]')
+                launcher_href = await launcher_icon.get_attribute("href")
                 await page.evaluate("""async () => {
                   const m = await import('/js/notifications/center.js');
                   m.notify('<unsafe> ready', {type:'success', desktop:true});
@@ -96,7 +122,10 @@ async def main():
                 await page.wait_for_function(
                     "document.querySelector('link[rel=icon]').href.startsWith('data:image/png')"
                 )
-                check("Browser tab icon also receives a badge", True)
+                check(
+                    "Browser tab icon receives a badge without replacing the launcher icon",
+                    await launcher_icon.get_attribute("href") == launcher_href,
+                )
                 await bell.click()
                 check(
                     "Message text is escaped",

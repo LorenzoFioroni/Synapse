@@ -26,6 +26,7 @@ const enabled = () => state.settings.notes_enabled !== false;
 let root: HTMLElement;
 let list: TaskList;
 let form: TaskForm | null = null;
+const phone = matchMedia('(max-width: 700px)');
 const st = loadState();
 let quickDest: string | null = null;   // the note quick add puts tasks in (null: none)
 
@@ -67,7 +68,7 @@ export function initTasks(): void {
       </div>
       <div class="tv-list" role="tree" aria-multiselectable="true" tabindex="0" aria-label="Tasks"></div>
     </section>
-    <aside class="tv-detail" aria-label="Task details"><div class="tv-detail-empty empty-state">${icon('tasks')}<h3>No task selected</h3><p>Pick a task to see its details and sub-tasks.</p></div><div class="tv-form" hidden></div><div class="tv-multi" hidden></div></aside>
+    <aside class="tv-detail" aria-label="Task details"><button class="tv-mobile-back" data-tv="mobile-back">${icon('arrowLeft')} Back to tasks</button><div class="tv-detail-empty empty-state">${icon('tasks')}<h3>No task selected</h3><p>Pick a task to see its details and sub-tasks.</p></div><div class="tv-form" hidden></div><div class="tv-multi" hidden></div></aside>
   </div>`);
   document.getElementById('app')!.appendChild(root);
   list = createTaskList({
@@ -226,6 +227,7 @@ function openBelow(id: string): number {
 function paintDetail(): void {
   if (!tasksOpen()) return;
   const ids = [...st.sel].filter((id) => td.tasks.has(id));
+  root.classList.toggle('mobile-detail-open', phone.matches && ids.length > 0);
   const empty = root.querySelector<HTMLElement>('.tv-detail-empty')!;
   const box = root.querySelector<HTMLElement>('.tv-form')!;
   const multi = root.querySelector<HTMLElement>('.tv-multi')!;
@@ -292,6 +294,7 @@ async function onClick(e: Event): Promise<void> {
   const b = t.closest<HTMLElement>('[data-tv]');
   if (!b) return;
   const a = b.dataset.tv;
+  if (a === 'mobile-back') { root.classList.remove('mobile-detail-open'); return; }
   if (a === 'clear-search') { const s = root.querySelector<HTMLInputElement>('.tv-search-input')!; s.value = ''; s.dispatchEvent(new Event('input')); s.focus(); }
   if (a === 'new') root.querySelector<HTMLInputElement>('.tv-quick-input')!.focus();
   if (a === 'sort') {

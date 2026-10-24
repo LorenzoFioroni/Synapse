@@ -272,6 +272,19 @@ printed addresses and the pairing links then start with `https://`, and cookies 
 README has the steps with `mkcert`, which makes a local certificate authority to install on each
 device.
 
+### Installation on a phone or tablet
+
+`frontend/manifest.webmanifest` makes Synapse installable: it has a stable app id, standalone
+display mode, a start URL and scope, and 192 px and 512 px PNG icons suitable for Android's
+maskable launcher shape. `frontend/index.html` links the manifest, the 192 px browser icon and the
+Apple touch icon.
+
+Installation from another device has the same secure-context requirement as passkeys. Chrome on
+Android offers **Install app** only when Synapse is opened through HTTPS with a certificate the
+phone trusts. A plain HTTP LAN address, or an untrusted certificate, can only make a browser
+shortcut. The README's mkcert instructions establish the trusted `.local` address; a shortcut
+made before that should be removed and recreated so Chrome reads the app icon and manifest again.
+
 **Adding one.** Settings → Devices → **Add a Passkey…** (`frontend/src/views/settings/passkeys.ts`),
 on this computer or on any device already signed in:
 

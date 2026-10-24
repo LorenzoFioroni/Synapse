@@ -3,6 +3,7 @@
 import * as A from '../actions.js';
 import { api } from '../api.js';
 import { emit, on, state } from '../store.js';
+import { desktopControl, toggleDesktop } from '../notifications/desktop.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast, toastError } from '../ui/toast.js';
 import type { SearchMode, Settings } from '../types.js';
@@ -54,6 +55,7 @@ export function openSettings(sectionId: string | null = null): void {
   page.innerHTML = settingsHtml(s, meta);
   document.body.appendChild(page);
   bind(page);
+  paintDesktopNotifications(page);
   refreshPreview(s.citekey_pattern);
   refreshStats();
   refreshBackups(page);
@@ -125,6 +127,10 @@ async function refreshStats(): Promise<void> {
 
 function bind(view: HTMLElement): void {
   view.querySelector<HTMLElement>('[data-close]')!.onclick = closeSettings;
+  view.querySelector<HTMLButtonElement>('[data-desktop-notifications]')!.onclick = async () => {
+    await toggleDesktop();
+    paintDesktopNotifications(view);
+  };
   view.querySelector('.settings-nav')!.addEventListener('click', (e) => {
     const b = (e.target as Element).closest<HTMLElement>('[data-nav]');
     if (b) setNav(b.dataset.nav!);
@@ -236,4 +242,13 @@ function bind(view: HTMLElement): void {
     openSettings();
     toast('Settings reset', { type: 'success' });
   };
+}
+
+function paintDesktopNotifications(page: HTMLElement): void {
+  const status = desktopControl();
+  const button = page.querySelector<HTMLButtonElement>('[data-desktop-notifications]')!;
+  button.textContent = status.label;
+  button.disabled = status.disabled;
+  button.classList.toggle('btn-primary', status.enabled);
+  page.querySelector<HTMLElement>('[data-desktop-notifications-desc]')!.textContent = status.description;
 }

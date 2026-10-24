@@ -75,3 +75,14 @@
 .row.selected .row-add { border-color: currentColor; }
 .row.outside .c-title .t { color: var(--text-2); }
 .row.outside.selected .c-title .t { color: inherit; }
+
+@media (max-width: 700px) {
+  .items-head { height: 36px; }
+  .row { min-height: 48px; height: 48px; font-size: calc(var(--fs) + 1px); }
+  .cell.c-title { gap: 8px; }
+  .row.child { min-height: 44px; height: 44px; }
+  .row.child .cell { display: flex; padding-left: 42px; }
+  .row.snippet { height: auto; }
+  .row.snippet .cell { display: block; padding: 2px 14px 10px 42px; }
+  .list-empty { inset: 36px 0 0; }
+}

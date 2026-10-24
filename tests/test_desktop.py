@@ -386,3 +386,14 @@ def test_the_manifest_offers_a_new_window(client):
     (sc,) = [s for s in m["shortcuts"] if s["name"] == "New Window"]
     assert sc["url"] == "/#window=new"
     assert all(i["src"].startswith("/assets/") for i in sc["icons"])
+
+
+def test_the_manifest_is_installable(client):
+    """Chromium needs standalone display and suitably sized PNG icons to offer installation."""
+    m = client.get("/manifest.webmanifest").get_json(force=True)
+    assert m["id"] == "/"
+    assert m["start_url"] == "/"
+    assert m["scope"] == "/"
+    assert m["display"] == "standalone"
+    assert {icon["sizes"] for icon in m["icons"]} >= {"192x192", "512x512"}
+    assert all("any" in icon["purpose"] and "maskable" in icon["purpose"] for icon in m["icons"])

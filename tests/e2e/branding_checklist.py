@@ -71,7 +71,7 @@ async def main():
                     check("the tab title says Synapse", "Synapse" in await page.title(), await page.title())
                     icons = await page.eval_on_selector_all('link[rel~="icon"]', "els => els.map((e) => e.href)")
                     ok = all(requests.get(u).status_code == 200 for u in icons)
-                    check("every favicon link loads", ok and len(icons) == 3, str(icons))
+                    check("every favicon and launcher icon loads", ok and len(icons) == 4, str(icons))
                     svg = requests.get(BASE + "/assets/favicon.svg")
                     check("the SVG favicon is served as SVG", svg.headers["Content-Type"].startswith("image/svg+xml"))
                 if SHOTS:

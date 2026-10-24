@@ -266,7 +266,8 @@ function initToolbar() {
     <button class="icon-btn" data-a="columns" title="Choose columns">${icon('columns')}</button>
     <button class="icon-btn" data-a="pane" title="Toggle item pane">${icon('sidebar')}</button>
     <button class="icon-btn notification-bell" data-a="notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notification-center" title="Notifications">${icon('bell')}<span class="notification-badge" hidden></span></button>
-    <button class="icon-btn" data-a="settings" title="Settings (${modLabel},)">${icon('gear')}</button>`;
+    <button class="icon-btn" data-a="settings" title="Settings (${modLabel},)">${icon('gear')}</button>
+    <button class="icon-btn mobile-more" data-a="more" title="More actions" aria-label="More actions">${icon('drag')}</button>`;
   initNotifications(tb.querySelector<HTMLButtonElement>('[data-a="notifications"]')!);
   searchInput = tb.querySelector<HTMLInputElement>('#search-input')!;
   modeBtn = tb.querySelector<HTMLElement>('[data-a="mode"]')!;
@@ -292,6 +293,7 @@ function initToolbar() {
     if (a === 'import') openImport();
     if (a === 'export') exportSelectionOrAll();
     if (a === 'settings') openSettings();
+    if (a === 'more') openMobileMenu(b);
     if (a === 'pane') toggleItemPane();
     if (a === 'sidebar') document.body.classList.toggle('sidebar-open');
     if (a === 'columns') openColumnPicker(b);
@@ -313,6 +315,23 @@ function initToolbar() {
   });
 }
 
+/** Phone toolbars keep frequent actions visible and put the rest in one finger-sized menu. */
+function openMobileMenu(anchor: HTMLElement): void {
+  openMenu([
+    { label: 'New Item', icon: 'plus', run: () => A.newItem() },
+    { label: 'Add by Identifier…', icon: 'wand', run: openIdentifier },
+    { label: 'Import…', icon: 'import', run: () => openImport() },
+    { label: 'Export…', icon: 'export', run: exportSelectionOrAll },
+    'sep',
+    { label: notesOpen() ? 'Notes List' : tasksPage.isOpen() ? 'Task Views' : 'Choose Columns', icon: 'columns',
+      run: () => notesOpen() ? notesPanelButton('columns') : tasksPage.isOpen() ? tasksPage.panelButton('columns') : openColumnPicker(anchor) },
+    { label: notesOpen() ? 'Note Details' : tasksPage.isOpen() ? 'Task Details' : 'Item Details', icon: 'sidebar',
+      run: () => notesOpen() ? notesPanelButton('pane') : tasksPage.isOpen() ? tasksPage.panelButton('pane') : toggleItemPane() },
+    'sep',
+    { label: 'Settings', icon: 'gear', run: () => openSettings() },
+  ], anchor);
+}
+
 function openIdentifier() {
   if (state.view !== 'library' && !state.view.startsWith('folder:')) A.setView('library');
   openIdentifierDialog();
@@ -324,9 +343,12 @@ function exportSelectionOrAll() {
 }
 
 function paintMode() {
-  const short = ({ basic: 'Title, Abstract & Authors', all: 'All Fields', fulltext: 'All Fields & Full Text' } as Record<SearchMode, string>)[state.mode];
+  const phone = matchMedia('(max-width: 700px)').matches;
+  const short = (phone
+    ? { basic: 'Titles', all: 'All fields', fulltext: 'Full text' }
+    : { basic: 'Title, Abstract & Authors', all: 'All Fields', fulltext: 'All Fields & Full Text' } as Record<SearchMode, string>)[state.mode];
   modeBtn.innerHTML = `${short} ${icon('chevronDown', 'icon-sm')}`;
-  searchInput.placeholder = ({ basic: 'Search titles, abstracts and authors', all: 'Search all fields', fulltext: 'Search all fields and PDF text' } as Record<SearchMode, string>)[state.mode];
+  searchInput.placeholder = phone ? 'Search library' : ({ basic: 'Search titles, abstracts and authors', all: 'Search all fields', fulltext: 'Search all fields and PDF text' } as Record<SearchMode, string>)[state.mode];
 }
 
 function setMode(m: SearchMode): void {

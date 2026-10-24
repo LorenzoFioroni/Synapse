@@ -101,6 +101,15 @@ the address they were made on. Remove one in Settings → Devices on the compute
 in stay until you remove them there too. Passkeys need the `cryptography` package (in
 `requirements.txt`).
 
+#### Installing on Android
+
+Open the trusted HTTPS `.local` address above in Chrome, then choose **⋮ → Add to Home screen →
+Install app**. Synapse opens in its own window and uses its red Synapse icon. Chrome deliberately
+does not offer an app installation from a plain `http://` LAN address or from HTTPS whose
+certificate the phone does not trust; in that case it only offers a basic browser shortcut. If an
+old iconless shortcut already exists, remove it and add or install Synapse again after opening the
+HTTPS address.
+
 Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
 
 | File | What |
@@ -120,9 +129,13 @@ never mix.
 
 ## Features
 
+- **Responsive on phones and tablets**: compact, touch-sized navigation keeps the library,
+  item details, notes, tasks and Settings usable one pane at a time on narrow screens.
+
 - **Notification center**: a bell beside Settings keeps unread notices and long-running jobs,
   with a red count on the bell and browser tab icon. Info, Success, Warning and Error are separate
-  from optional OS delivery: arXiv Today's ready notice can reach the OS after you enable it.
+  from optional OS delivery: arXiv Today's ready notice can reach the OS after you grant permission
+  under **Settings → Notifications**, where OS delivery can also be disabled again.
   History stays in this browser. See [notifications](docs/notifications.md).
 
 - **Search** in three scopes, picked from the search box (the default is a setting):

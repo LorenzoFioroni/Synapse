@@ -67,6 +67,7 @@ export function initNotes(): void {
     </section>
     <section class="notes-main">
       <div class="note-head">
+        <button class="icon-btn note-mobile-list" data-act="mobile-list" title="Notes list" aria-label="Show notes list">${icon('arrowLeft')}</button>
         <div class="note-crumbs"></div>
         <span class="note-status" aria-live="polite"></span>
         <div class="segmented note-modes" role="group" aria-label="View">
@@ -269,6 +270,7 @@ export function flushNote(path: string): void {
 export async function openNotesGraph(focus: string | null = null): Promise<void> {
   if (!notesEnabled() || !noteHooks.graph) return;
   if (!notesOpen()) { await openNotes(null, null, { graph: true, focus }); return; }
+  ws.root.classList.remove('mobile-tree-open');
   await noteHooks.graph.openGlobal(focus);
   navPush({ ws: 'notes', path: ws.session?.path || null, graph: true, focus });
 }
@@ -580,6 +582,7 @@ async function doOpen(path: string, mode?: Mode): Promise<void> {
   if (!view) view = await createView(path, mode || defaultMode());
   else view.session.checkRemote();   // changed elsewhere while its tab was in the background?
   showView(view, mode);
+  ws.root.classList.remove('mobile-tree-open');
   if (fresh) {
     loadLinks();
     loadAiEdits();
@@ -649,6 +652,7 @@ function onClick(e: MouseEvent): void {
   const actEl = t.closest<HTMLElement>('[data-act]');
   const act = actEl?.dataset.act;
   if (act === 'add-task' && session) { taskHooks.add?.(actEl!); return; }
+  if (act === 'mobile-list') { ws.root.classList.toggle('mobile-tree-open'); return; }
   if (act === 'new-note') { newNote(); return; }
   if (act === 'new-folder') { newFolder(folderOfSelection()); return; }
   if (act === 'graph') { openNotesGraph(session ? `note:${session.path}` : null); return; }

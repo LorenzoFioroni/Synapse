@@ -558,7 +558,15 @@ function initPdf(pdfUrl: string): void {
 
   async function layoutPages(): Promise<void> {
     const doc = pdfDoc!;
-    layoutPage(await doc.getPage(1));
+    const firstPage = await doc.getPage(1);
+    if (matchMedia('(max-width: 700px)').matches) {
+      const base = firstPage.getViewport({ scale: 1 });
+      // A desktop's comfortable starting zoom is wider than a phone. Start phones at fit-width;
+      // the reader can still pinch or use the zoom buttons from there.
+      scale = Math.min(scale, Math.max(0.2, (container.clientWidth - 16) / base.width));
+      container.style.setProperty('--zc-scale', String(scale));
+    }
+    layoutPage(firstPage);
     pageNumText.textContent = `1 / ${doc.numPages}`;
     // draw page 1 before asking the PDF worker about the other pages (it does one thing at a time)
     if (!new URLSearchParams(location.search).get('page')) {

@@ -12,6 +12,7 @@ const PHYSICS_SHOWN = ['\\vb', '\\dv', '\\pdv', '\\qty', '\\abs', '\\norm', '\\e
 
 const SECTIONS: [string, string, string][] = [
   ['general', 'General', 'palette'],
+  ['notifications', 'Notifications', 'bell'],
   ['citekeys', 'Citation Keys', 'key'],
   ['search', 'Search & Full Text', 'search'],
   ['viewer', 'PDF Viewer', 'pdf'],
@@ -92,6 +93,14 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
           ${switchRow('confirm_trash', 'Ask before moving to the Trash', 'Items in the Trash can always be restored, and an Undo button appears after deleting.')}
           ${switchRow('show_subfolder_items', 'Show items from subfolders', 'A folder also lists the items of the folders inside it.')}
         </div></section>
+
+      <section class="settings-section" id="set-notifications"><h2>Notifications</h2>
+        <p class="lead">Choose whether important Synapse notices may also appear through your operating system.</p>
+        <div class="card"><div class="setting"><div class="s-text"><div class="s-title">OS notifications</div>
+          <div class="s-desc" data-desktop-notifications-desc></div></div>
+          <div class="s-control"><button class="btn" data-desktop-notifications></button></div></div></div>
+        <p class="lead" style="margin-top:12px">This preference belongs to this browser profile. Notification history and every running job remain available from the bell.</p>
+      </section>
 
       <section class="settings-section" id="set-citekeys"><h2>Citation Keys</h2>
         <p class="lead">Keys are used by BibTeX/LaTeX (<span class="mono">\\cite{key}</span>). Duplicates get a, b, c… suffixes automatically.</p>

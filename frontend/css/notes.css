@@ -192,6 +192,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 
 /* ===================================================== M4: modes, preview, read view */
 .note-modes button { padding: 3px 10px; font-size: var(--fs-xs); }
+.note-mobile-list { display: none; }
 .note-read { position: absolute; inset: 0; overflow: auto; outline: none; background: var(--bg); container-type: inline-size; }
 .note-read[hidden] { display: none; }
 #notes-view.reading .note-editor { display: none !important; }
@@ -488,3 +489,26 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .spoiler-block { border: 1px solid var(--border); border-radius: 6px; padding: .5em .8em; margin: .6em 0; }
 .spoiler-block > summary { cursor: pointer; font-weight: 600; }
 .spoiler-block[open] > summary { margin-bottom: .5em; }
+
+@media (max-width: 700px) {
+  #notes-view { position: relative; --note-pad: 14px; }
+  .notes-tree-pane { position: absolute; inset: 0; z-index: 20; width: 100%; border-right: 0; }
+  #notes-view.has-note:not(.mobile-tree-open) .notes-tree-pane { display: none; }
+  #notes-view.mobile-tree-open .notes-tree-pane { display: flex; }
+  #notes-view.graph-on .notes-tree-pane { display: none; }
+  .notes-tree-head { height: 50px; padding-inline: 14px 8px; }
+  .nt-row { min-height: 42px; height: 42px; padding-right: 12px; }
+  .notes-main { width: 100%; }
+  .note-head { min-height: 48px; height: auto; gap: 7px; padding: 5px 8px; }
+  .note-mobile-list { display: inline-flex; }
+  .note-status { display: none; }
+  .note-modes { margin-left: auto; }
+  .note-modes button { padding-inline: 8px; }
+  .note-add-task { display: none !important; }
+  .note-body .cm-content { padding-left: 14px; padding-right: 14px; }
+  .prose { padding: 20px 16px 30vh; font-size: calc(var(--fs) + 2px); }
+  #notes-view.details-shown.has-note .notes-side, #notes-view.graph-on .notes-side { display: none; }
+  .ng-bar { gap: 6px; padding: 5px 8px; height: auto; min-height: 48px; flex-wrap: wrap; }
+  .ng-search { width: min(180px, 48vw); }
+  .graph-card { width: calc(100vw - 24px); }
+}

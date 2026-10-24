@@ -28,6 +28,7 @@ let showAllFields = storage('zc.showAllFields', false);
 // Sections plugins add (extend.ts): mounted once the selection rests, cleaned up before the pane
 // is drawn again.
 let sectionCleanups: (() => void)[] = [];
+const phone = matchMedia('(max-width: 700px)');
 function cleanupSections(): void {
   for (const fn of sectionCleanups.splice(0)) {
     try { fn(); } catch (e) { console.error(e); }
@@ -41,7 +42,13 @@ export function initItemPane(): void {
   root.addEventListener('drop', (e) => {
     if (shownId && e.dataTransfer?.files.length && !e.defaultPrevented) { e.preventDefault(); A.uploadAttachments(shownId, e.dataTransfer.files); }
   });
-  on('selection', () => render());
+  on('selection', () => {
+    render();
+    document.body.classList.toggle('mobile-item-open', phone.matches && selectedItems().length > 0);
+  });
+  on('workspace', () => {
+    if (document.body.dataset.workspace) document.body.classList.remove('mobile-item-open');
+  });
   on('items', () => render());
   on('item-updated', (id) => { if (id === shownId) refreshHeader(); });
   itemSections.subscribe(() => render(true));
@@ -137,7 +144,7 @@ function renderMulti(items: Item[]): void {
   const outside = items.filter((i) => i._outside);
   if (outside.length) {   // papers from a plugin's list: all they offer is being added
     const inLib = items.length - outside.length;
-    root.innerHTML = `<div class="multi"><div class="count">${outside.length}</div><div class="muted">${outside.length === 1 ? 'paper' : 'papers'} not in your library${inLib ? ` (and ${inLib} that are)` : ''}</div>
+    root.innerHTML = `${mobileBack()}<div class="multi"><div class="count">${outside.length}</div><div class="muted">${outside.length === 1 ? 'paper' : 'papers'} not in your library${inLib ? ` (and ${inLib} that are)` : ''}</div>
       <div class="actions"><button class="btn btn-primary" data-a="add">${icon('plus')} Add to My Library</button>
         <button class="btn" data-a="add-folder">${icon('folderPlus')} Add to Folder…</button></div></div>`;
     root.querySelector('.actions')!.addEventListener('click', async (e) => {
@@ -149,7 +156,7 @@ function renderMulti(items: Item[]): void {
   }
   const ids = items.map((i) => i.id);
   const trash = state.view === 'trash';
-  root.innerHTML = `<div class="multi"><div class="count">${items.length}</div><div class="muted">items selected</div>
+  root.innerHTML = `${mobileBack()}<div class="multi"><div class="count">${items.length}</div><div class="muted">items selected</div>
     <div class="actions">
       ${trash ? `<button class="btn" data-a="restore">${icon('restore')} Restore to Library</button>
                  <button class="btn btn-danger" data-a="delete">${icon('trash')} Delete Permanently</button>`
@@ -259,6 +266,7 @@ function renderItem(it: Item): void {
   const snippet = state.hits[it.id]?.fulltext;
   root.innerHTML = `
     <div class="ip-header">
+      ${mobileBack()}
       <div class="ip-type">${typeIcon(type, 'icon-sm')} <span data-h="type">${escapeHtml(itemTypeLabel(type))}</span>${trash ? ' <span class="badge warn">In Trash</span>' : ''}</div>
       <h2 class="ip-title" data-h="title">${escapeHtml(it.title || 'Untitled')}</h2>
       <div class="ip-sub" data-h="sub">${escapeHtml(subline(it))}</div>
@@ -363,7 +371,7 @@ function renderOutside(it: Item): void {
   cleanupSections();
   shownId = it.id;
   const pluginFields = outsideFields(it);
-  root.innerHTML = `${outsideHeader(it)}
+  root.innerHTML = `${mobileBack()}${outsideHeader(it)}
     <div class="ip-body">
       ${it.reasons?.length ? section('why', 'Why It Is Here', reasonsBody(it.reasons)) : ''}
       ${section('info', 'Info', outsideInfo(it))}
@@ -553,6 +561,10 @@ function bindItem(it: Item): void {
 }
 
 async function handleClick(e: MouseEvent): Promise<void> {
+  if ((e.target as Element).closest('[data-tool="mobile-back"]')) {
+    document.body.classList.remove('mobile-item-open');
+    return;
+  }
   const id = shownId;
   if (!id) return;
   const it = byId(id);
@@ -634,8 +646,16 @@ async function handleClick(e: MouseEvent): Promise<void> {
 }
 
 export function toggleItemPane(force?: boolean): void {
+  if (phone.matches) {
+    document.body.classList.toggle('mobile-item-open', force ?? !document.body.classList.contains('mobile-item-open'));
+    return;
+  }
   const hide = force !== undefined ? !force : !root.classList.contains('collapsed');
   root.classList.toggle('collapsed', hide);
   document.getElementById('resizer-right')!.hidden = hide;
   store('zc.itemPaneHidden', hide);
+}
+
+function mobileBack(): string {
+  return `<button class="ip-mobile-back" data-tool="mobile-back">${icon('arrowLeft')} Back to library</button>`;
 }

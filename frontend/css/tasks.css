@@ -288,6 +288,7 @@ button.tv-twisty:hover { background: var(--bg-active); color: var(--text); }
 
 /* detail pane */
 .tv-detail { width: 380px; flex: none; border-left: 1px solid var(--border); background: var(--bg); overflow: auto; }
+.tv-mobile-back { display: none; }
 .tv-detail .task-form { padding: 16px 18px 24px; }
 .tv-detail-empty { height: 100%; }
 .tv-detail-empty[hidden], .tv-form[hidden], .tv-multi[hidden] { display: none; }
@@ -304,6 +305,33 @@ button.tv-twisty:hover { background: var(--bg-active); color: var(--text); }
 
 @media (max-width: 1200px) { .tv-views { width: 190px; } .tv-detail { width: 330px; } }
 @media (max-width: 960px) { .tv-views { display: none; } }
+@media (max-width: 700px) {
+  #tasks-view { position: relative; }
+  .tv-head { padding: 8px 10px; }
+  .tv-row1 { flex-wrap: wrap; gap: 7px; }
+  .tv-heading { flex: 1; }
+  .tv-search { flex: 0 0 100%; max-width: none; order: 2; }
+  .tv-row2 { gap: 4px; }
+  .tv-quick { height: 38px; }
+  .tv-dest { max-width: 35vw; }
+  .tv-row2 .btn-sm { width: 36px; height: 36px; padding: 0; justify-content: center; }
+  .tv-row2 .btn-sm span { display: none; }
+  .tv-toggle { width: 36px; height: 36px; }
+  .tv-group { padding-inline: 12px; }
+  .tv-row { padding-right: 12px; padding-left: calc(6px + var(--depth, 0) * 18px); }
+  .tv-where { display: none; }
+  .tv-detail {
+    display: none; position: absolute; inset: 0; z-index: 20; width: 100%; border-left: 0; background: var(--bg);
+  }
+  #tasks-view.mobile-detail-open .tv-detail:not([hidden]) { display: block; }
+  .tv-mobile-back {
+    display: flex; position: sticky; top: 0; z-index: 2; align-items: center; gap: 7px; width: 100%; min-height: 44px;
+    padding: 0 14px; border: 0; border-bottom: 1px solid var(--border); background: var(--bg); color: var(--accent); font-weight: 600;
+  }
+  .tv-detail .task-form { padding: 14px 16px max(28px, env(safe-area-inset-bottom)); }
+  .tv-trash, .picker-list { min-width: 0; }
+  .task-popup { left: 8px !important; right: 8px !important; bottom: 8px !important; top: auto !important; width: auto; max-width: none; max-height: 82dvh; }
+}
 @media (pointer: coarse) {
   .tv-row { min-height: 40px; }
   .task-check { width: 18px; height: 18px; }

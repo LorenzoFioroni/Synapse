@@ -1,7 +1,7 @@
 import { icon } from '../icons.js';
 import { emit, on, state } from '../store.js';
 import { escapeHtml, formatDate, h } from '../util.js';
-import { badge, faviconBadge, desktopStatus, showDesktop, toggleDesktop } from './desktop.js';
+import { badge, faviconBadge, showDesktop } from './desktop.js';
 import { History, PREFIX, newId, type Level, type Notice } from './model.js';
 export interface NoticeAction { label: string; run: () => unknown }
 export interface NoticeOptions {
@@ -68,7 +68,7 @@ export function initNotifications(button: HTMLButtonElement): void {
   bell = button;
   panel = h(`<section id="notification-center" role="dialog" aria-labelledby="notification-heading" hidden>
     <header><h2 id="notification-heading">Notifications</h2><button class="icon-btn" data-n="close" aria-label="Close notifications">${icon('close')}</button></header>
-    <div class="notification-tools"><button data-n="read">Mark all read</button><button data-n="clear">Clear completed</button><button data-n="desktop"></button></div>
+    <div class="notification-tools"><button data-n="read">Mark all read</button><button data-n="clear">Clear completed</button></div>
     <div class="notification-list" role="list"></div></section>`);
   document.body.append(panel);
   bell.onclick = () => { if (panel!.hidden) openCenter(); else closeCenter(); };
@@ -78,7 +78,6 @@ export function initNotifications(button: HTMLButtonElement): void {
     if (b.dataset.n === 'close') closeCenter();
     if (b.dataset.n === 'read') history.markRead();
     if (b.dataset.n === 'clear') history.clear();
-    if (b.dataset.n === 'desktop') void toggleDesktop().then(render);
     if (!id) return;
     if (b.dataset.n === 'dismiss') history.remove(id);
     if (b.dataset.n === 'seen') history.markRead(id);
@@ -105,7 +104,6 @@ function render(): void {
   bell.querySelector<HTMLElement>('.notification-badge')!.textContent = count > 99 ? '99+' : String(count);
   bell.querySelector<HTMLElement>('.notification-badge')!.hidden = !count;
   badge(count); faviconBadge(count);
-  panel.querySelector('[data-n="desktop"]')!.textContent = desktopStatus();
   panel.querySelector('[data-n="read"]')!.toggleAttribute('disabled', !count);
   const list = panel.querySelector('.notification-list')!;
   const focused = document.activeElement as HTMLElement | null;

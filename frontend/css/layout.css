@@ -1,8 +1,9 @@
 /* ---------------------------------------------------------------- shell */
+:root { --toolbar-h: 50px; --statusbar-h: 26px; }
 body { display: flex; flex-direction: column; }
 
 #toolbar {
-  height: 50px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 12px;
+  height: var(--toolbar-h); flex: none; display: flex; align-items: center; gap: 6px; padding: 0 12px;
   background: var(--bg); border-bottom: 1px solid var(--border);
 }
 .brand { display: flex; align-items: center; gap: 8px; width: 196px; flex: none; padding-left: 4px; font-weight: 650; font-size: 14px; letter-spacing: -.01em; }
@@ -68,7 +69,7 @@ body { display: flex; flex-direction: column; }
 .tab.dragging { opacity: .5; }
 .tab.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
 .tab.drop-after { box-shadow: inset -2px 0 0 var(--accent); }
-#tab-views { position: fixed; left: 0; right: 0; bottom: 0; top: var(--tabbar-h); z-index: 40; background: var(--bg-app); }
+#tab-views { position: fixed; left: 0; right: 0; bottom: 0; top: var(--tabbar-h); z-index: 1000; background: var(--bg-app); }
 #tab-views[hidden] { display: none; }
 /* Hidden tabs keep their size, so their viewer keeps its layout and its place in the PDF. */
 .tab-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: none; visibility: hidden; background: var(--bg-app); }
@@ -112,7 +113,7 @@ body { display: flex; flex-direction: column; }
 
 /* ------------------------------------------------------------ statusbar */
 #statusbar {
-  height: 26px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 14px;
+  height: var(--statusbar-h); flex: none; display: flex; align-items: center; gap: 14px; padding: 0 14px;
   border-top: 1px solid var(--border); background: var(--bg); color: var(--text-3); font-size: var(--fs-xs);
 }
 #statusbar .status-index { display: inline-flex; align-items: center; gap: 6px; }
@@ -154,20 +155,49 @@ body { display: flex; flex-direction: column; }
 
 /* ------------------------------------------- tablets and narrow windows */
 .side-toggle { display: none; }
+.mobile-more { display: none; }
 @media (max-width: 1100px) {
   .side-toggle { display: inline-flex; flex: none; }
   .brand { width: auto; }
   #sidebar {
-    position: fixed; top: 50px; bottom: 0; left: 0; z-index: 900; width: min(300px, 82vw);
+    position: fixed; top: var(--toolbar-h); bottom: var(--statusbar-h); left: 0; z-index: 900; width: min(300px, 82vw);
     transform: translateX(-102%); transition: transform .2s ease; box-shadow: none;
   }
   body.sidebar-open #sidebar { transform: none; box-shadow: var(--shadow-lg); }
-  body.sidebar-open::after { content: ""; position: fixed; inset: 50px 0 0 0; z-index: 899; background: rgba(15, 23, 42, .25); }
+  body.sidebar-open::after { content: ""; position: fixed; inset: var(--toolbar-h) 0 var(--statusbar-h) 0; z-index: 899; background: rgba(15, 23, 42, .25); }
   #item-pane { max-width: 48vw; }
   .search { width: min(420px, 34vw); }
 }
+body.has-tabs #sidebar { top: calc(var(--tabbar-h) + var(--toolbar-h)); }
+body.has-tabs.sidebar-open::after { top: calc(var(--tabbar-h) + var(--toolbar-h)); }
 @media (max-width: 760px) {
   .brand .ws-switch, .toolbar-sep { display: none; }
+}
+@media (max-width: 700px) {
+  :root { --toolbar-h: 94px; --statusbar-h: 28px; }
+  body[data-workspace="notes"], body[data-workspace="tasks"] { --toolbar-h: 50px; }
+  body[data-workspace="notes"] #toolbar .search, body[data-workspace="tasks"] #toolbar .search { display: none; }
+  #toolbar { flex-wrap: wrap; align-content: center; gap: 4px 6px; padding: max(4px, env(safe-area-inset-top)) 8px 6px; }
+  #toolbar > [data-a="new"], #toolbar > [data-a="identifier"], #toolbar > [data-a="import"],
+  #toolbar > [data-a="export"], #toolbar > [data-a="columns"], #toolbar > [data-a="pane"],
+  #toolbar > [data-a="settings"] { display: none; }
+  #toolbar > .search + .spacer { display: none; }
+  #toolbar .mobile-more { display: inline-flex; }
+  .brand { padding-left: 0; }
+  .brand-logo { width: 26px; height: 26px; }
+  .search { order: 2; flex: 0 0 100%; width: 100%; height: 34px; }
+  .search-mode { max-width: min(42vw, 150px); overflow: hidden; text-overflow: ellipsis; }
+  #sidebar { width: min(330px, 88vw); }
+  #item-pane {
+    display: none !important; position: fixed; inset: var(--toolbar-h) 0 var(--statusbar-h); z-index: 820;
+    width: 100% !important; min-width: 0; max-width: none; border: 0; background: var(--bg-app);
+  }
+  body.has-tabs #item-pane { top: calc(var(--tabbar-h) + var(--toolbar-h)); }
+  body.mobile-item-open #item-pane:not(.collapsed) { display: flex !important; }
+  #resizer-right { display: none !important; }
+  #statusbar { gap: 8px; padding: 0 10px max(0px, env(safe-area-inset-bottom)); overflow: hidden; }
+  #statusbar [data-s="count"] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #statusbar [data-s="sel"] { flex: none; }
 }
 /* Touch screens: bigger targets, no long-press callouts on the app's own controls */
 @media (pointer: coarse) {

@@ -3,13 +3,16 @@
 The bell beside Settings opens notification history. Its red badge counts unread entries;
 opening the center does not mark them read. Mark individual notices or all notices read,
 dismiss one, or clear completed entries. Running jobs stay visible until they finish. Escape
-closes the panel and returns focus to the bell. The browser tab favicon also shows the count;
-installed-app icons use the browser's Badging API when available.
+closes the panel and returns focus to the bell. The small browser-tab favicons also show the count,
+while the 192 px install/launcher icon remains stable; installed-app icons use the browser's
+Badging API when available.
 
 Info, Success, Warning and Error describe severity. **OS delivery is separate from severity**:
-arXiv Today's papers-ready notice is Success and requests OS delivery. Enable OS notifications
-from the center to grant browser permission. A denied/unsupported OS capability never prevents
-a notice appearing in the center. Synapse does not request permission on startup. Support depends
+arXiv Today's papers-ready notice is Success and requests OS delivery. OS delivery is considered
+on once browser permission exists; enable or disable it under Settings → Notifications. The
+notification center itself only manages history. A denied/unsupported OS capability never prevents
+a notice appearing in the center. Synapse does not request permission on startup: the Settings
+button is the explicit permission request. Support depends
 on the browser, secure context and OS; mobile browsers and the desktop webview may only support
 the in-app center. No background push service is installed: the app must be open to deliver notices.
 
@@ -21,7 +24,7 @@ Cancel/Review actions. Short confirmations and time-sensitive Undo messages may 
 
 `frontend/src/notifications/model.ts` owns serializable records, unread state and retention.
 `center.ts` owns the bell, panel, live job handles and callbacks; `desktop.ts` isolates optional
-OS notifications, app badging and the favicon overlay. The toolbar mounts the center once.
+OS notifications, their browser-local Settings control, app badging and the favicon overlay. The toolbar mounts the center once.
 `ui/toast.ts` retains `progressToast` as an adapter for existing callers; `finish(message, options)`
 updates the same job entry with its result rather than making a new bottom banner.
 

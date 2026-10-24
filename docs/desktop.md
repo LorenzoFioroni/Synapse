@@ -12,6 +12,7 @@ in tabs inside the app, next to the library, in that window and in a browser tab
 | The desktop shortcut | `backend/desktop/shortcut.py`, the icon `frontend/assets/Synapse.icns` (drawn by `tools/icons/make_icns.py`) |
 | The app's tabs | `frontend/src/tabs/model.ts` (no DOM), `frontend/src/tabs/tabs.ts`, the hook in `frontend/src/api.ts` |
 | The viewer inside a tab | `frontend/src/viewer/inTab.ts`, `frontend/src/viewer/jumpHistory.ts`, `links.ts` |
+| Browser installation | `frontend/manifest.webmanifest`, install and touch icons in `frontend/assets/` |
 
 ## The window: `--window`
 
@@ -48,6 +49,17 @@ opens `/#window=new`, the library alone in a new window (`readPlace` in `windows
 Edge show up to ten such entries, only for an installed app, and pick up a changed manifest when
 they next check it (after the app has been opened again; reinstalling applies it at once).
 `tests/test_desktop.py` checks the entry.
+
+### Browser installation
+
+The manifest uses a stable `/` app id, a `/` start URL and scope, `display: standalone`, and 192 px
+and 512 px PNG icons marked for both ordinary and maskable use. Those fields let Chromium install
+Synapse as an app and give Android launchers an adaptive icon. `index.html` also links the 192 px
+icon explicitly for browser shortcuts and the 180 px Apple touch icon for iOS.
+
+Localhost is a secure browser context, so desktop installation from `http://127.0.0.1` works.
+Another device's LAN address is not: Android installation needs Synapse's trusted HTTPS `.local`
+address. The setup is in [Sync and devices](sync-and-devices.md#installation-on-a-phone-or-tablet).
 
 ## Stopping with the window: `--quit-when-closed`
 
@@ -258,6 +270,9 @@ How it fits together:
   tabs' frames keep their size (`visibility`, not `display`), so their viewers keep their layout and
   place; coming back from a PDF tab gives the keyboard back where it was. `window.zcTabs` is what a
   viewer in a tab calls (`shortcut`, `touched`) and what the browser checklist reads (`list`, `win`).
+- On a phone the active PDF frame also sits above full-screen item details and starts at a
+  fit-to-width zoom. The viewer shell is locked to the viewport (only the PDF container scrolls),
+  so opening or panning a PDF cannot expose an unused strip beside it.
 
 ## Tests
 

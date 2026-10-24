@@ -1,21 +1,50 @@
 /** Optional browser capabilities must never prevent a notice from reaching the center. */
 import type { Notice } from './model.js';
 const KEY = 'synapse.notifications.desktop';
-export function desktopStatus(): string {
-  if (!('Notification' in window) || !window.isSecureContext) return 'OS notifications unavailable';
-  if (Notification.permission === 'denied') return 'OS notifications blocked in browser settings';
-  return enabled() ? 'Disable OS notifications' : 'Enable OS notifications';
+export interface DesktopControl {
+  label: string;
+  description: string;
+  disabled: boolean;
+  enabled: boolean;
 }
-function enabled(): boolean { try { return localStorage.getItem(KEY) === 'on'; } catch { return false; } }
+export function desktopControl(): DesktopControl {
+  const enabled = desktopEnabled();
+  if (!('Notification' in window) || !window.isSecureContext) return {
+    label: 'OS notifications unavailable',
+    description: 'This browser or connection cannot show operating-system notifications. Notices still appear in Synapse.',
+    disabled: true, enabled: false,
+  };
+  if (Notification.permission === 'denied') return {
+    label: 'OS notifications blocked',
+    description: 'Allow notifications for Synapse in your browser settings to use them here.',
+    disabled: true, enabled: false,
+  };
+  if (Notification.permission !== 'granted') return {
+    label: 'Enable OS notifications',
+    description: 'Ask this browser for permission. Synapse only sends OS notifications for notices that request them.',
+    disabled: false, enabled: false,
+  };
+  return {
+    label: enabled ? 'Disable OS notifications' : 'Enable OS notifications',
+    description: enabled ? 'Enabled in this browser profile.' : 'Disabled in this browser profile. Notices still appear in Synapse.',
+    disabled: false, enabled,
+  };
+}
+/** Delivery is on by default once browser permission exists; Settings stores only an explicit opt-out. */
+export function desktopEnabled(): boolean { try { return localStorage.getItem(KEY) !== 'off'; } catch { return true; } }
 export async function toggleDesktop(): Promise<void> {
   if (!('Notification' in window) || !window.isSecureContext) return;
   try {
-    if (enabled()) localStorage.removeItem(KEY);
-    else if (await Notification.requestPermission() === 'granted') localStorage.setItem(KEY, 'on');
+    if (Notification.permission === 'denied') return;
+    if (Notification.permission === 'granted' && desktopEnabled()) localStorage.setItem(KEY, 'off');
+    else {
+      localStorage.removeItem(KEY);
+      if (Notification.permission !== 'granted') await Notification.requestPermission();
+    }
   } catch { /* Center remains available when permission or storage is unavailable. */ }
 }
 export function showDesktop(n: Notice, open: () => void): void {
-  if (!n.desktop || n.status === 'running' || !enabled() || !('Notification' in window) || Notification.permission !== 'granted') return;
+  if (!n.desktop || n.status === 'running' || !desktopEnabled() || !('Notification' in window) || Notification.permission !== 'granted') return;
   try {
     const notice = new Notification('Synapse', { body: n.message, tag: n.id, icon: '/assets/favicon-32.png' });
     notice.onclick = () => { window.focus(); open(); notice.close(); };
@@ -34,7 +63,8 @@ export function faviconBadge(count: number): void {
   if (count === lastCount) return;
   const image = favicon ||= new Image();
   lastCount = count;
-  original ||= [...document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="shortcut icon"]')].map(el => ({ el, href: el.href }));
+  original ||= [...document.querySelectorAll<HTMLLinkElement>('link[rel="icon"]:not([sizes="192x192"]), link[rel="shortcut icon"]')]
+    .map(el => ({ el, href: el.href }));
   if (!count) { for (const { el, href } of original) el.href = href; return; }
   const draw = () => {
     if (lastCount !== count) return;
