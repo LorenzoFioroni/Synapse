@@ -6,6 +6,7 @@ import { icon } from './icons.js';
 import { currentSource, emit, folderById, on, state } from './store.js';
 import { installLongPress } from './ui/longpress.js';
 import { closeMenu, openMenu } from './ui/menu.js';
+import { initNotifications, startJob, type Job } from './notifications/center.js';
 import { toastError } from './ui/toast.js';
 import type { Counts, SearchMode } from './types.js';
 import { debounce, isMac, modKey, modLabel, plural, storage, store } from './util.js';
@@ -264,7 +265,9 @@ function initToolbar() {
     <span class="spacer"></span>
     <button class="icon-btn" data-a="columns" title="Choose columns">${icon('columns')}</button>
     <button class="icon-btn" data-a="pane" title="Toggle item pane">${icon('sidebar')}</button>
+    <button class="icon-btn notification-bell" data-a="notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notification-center" title="Notifications">${icon('bell')}<span class="notification-badge" hidden></span></button>
     <button class="icon-btn" data-a="settings" title="Settings (${modLabel},)">${icon('gear')}</button>`;
+  initNotifications(tb.querySelector<HTMLButtonElement>('[data-a="notifications"]')!);
   searchInput = tb.querySelector<HTMLInputElement>('#search-input')!;
   modeBtn = tb.querySelector<HTMLElement>('[data-a="mode"]')!;
   paintMode();
@@ -429,12 +432,15 @@ function initStatusBar() {
   };
   on('items', paint);
   on('selection', paint);
+  let indexing: Job | null = null;
   on('indexer', () => {
     const ix = state.indexer;
     const el = bar.querySelector('[data-s="index"]')!;
     if (ix?.indexer.running) {
-      el.innerHTML = `<span class="spinner"></span> Indexing full text ${ix.indexer.done}/${ix.indexer.total} <span class="progress"><div style="width:${(ix.indexer.done / Math.max(1, ix.indexer.total)) * 100}%"></div></span>`;
-    } else el.textContent = '';
+      indexing ||= startJob('Indexing full text…');
+      indexing.set(`Indexing full text ${ix.indexer.done}/${ix.indexer.total}`, ix.indexer.done, ix.indexer.total);
+      el.textContent = '';
+    } else { indexing?.finish('Full-text indexing complete'); indexing = null; el.textContent = ''; }
   });
   on('loading', (l: boolean) => bar.classList.toggle('loading', l));
 }

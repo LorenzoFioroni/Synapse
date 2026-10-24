@@ -1,3 +1,4 @@
+import { startJob, type NoticeOptions } from '../notifications/center.js';
 import { icon } from '../icons.js';
 import { escapeHtml, h } from '../util.js';
 
@@ -35,38 +36,15 @@ export function toast(message: string, { type = 'info', action = null, timeout =
 export const toastError = (e: unknown) => toast((e as Error | null)?.message || String(e), { type: 'error' });
 
 /**
- * A persistent notification for long-running jobs: progress bar, live text
- * and an optional Cancel button. Returns {set(text, done, total), close()}.
+ * A notification-center job: progress bar, live text
+ * and an optional Cancel button. finish() retains its result in history.
  */
 export interface ProgressToast {
   set(text: string, done?: number, total?: number): void;
   close(): void;
+  finish(message?: string, options?: NoticeOptions): void;
 }
 
 export function progressToast(text: string, { onCancel = null }: { onCancel?: (() => void) | null } = {}): ProgressToast {
-  root ||= document.getElementById('toasts')!;
-  const el = h(`<div class="toast progress-toast" role="status">
-      <span class="spinner"></span>
-      <div class="msg"><div class="pt-text">${escapeHtml(text)}</div><div class="progress"><div style="width:0"></div></div></div>
-      ${onCancel ? '<button class="toast-action">Cancel</button>' : ''}
-    </div>`);
-  if (onCancel) {
-    el.querySelector<HTMLButtonElement>('.toast-action')!.onclick = (e) => {
-      const b = e.currentTarget as HTMLButtonElement;
-      b.disabled = true;
-      b.textContent = 'Stopping…';
-      onCancel();
-    };
-  }
-  root.appendChild(el);
-  return {
-    set(t, done = 0, total = 0) {
-      el.querySelector('.pt-text')!.textContent = t;
-      el.querySelector<HTMLElement>('.progress > div')!.style.width = total ? `${(done / total) * 100}%` : '0';
-    },
-    close() {
-      el.classList.add('leaving');
-      setTimeout(() => el.remove(), 180);
-    },
-  };
+  return startJob(text, onCancel);
 }

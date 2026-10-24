@@ -120,6 +120,11 @@ never mix.
 
 ## Features
 
+- **Notification center**: a bell beside Settings keeps unread notices and long-running jobs,
+  with a red count on the bell and browser tab icon. Info, Success, Warning and Error are separate
+  from optional OS delivery: arXiv Today's ready notice can reach the OS after you enable it.
+  History stays in this browser. See [notifications](docs/notifications.md).
+
 - **Search** in three scopes, picked from the search box (the default is a setting):
   *Title, Abstract & Authors* · *All Fields* · *All Fields & Full Text*.
   Terms are ANDed, `"exact phrase"` and `-exclude` work, and accents are ignored

@@ -254,7 +254,9 @@ def activate(plugin: Plugin) -> None:
             (plugin.settings["min_score"], day),
         )[0]
         with db.session() as c:
-            c.execute("UPDATE days SET notified = 1 WHERE day = ?", (day,))
+            # Multiple windows may ask together; only the one claiming the day publishes it.
+            if not c.execute("UPDATE days SET notified = 1 WHERE day = ? AND notified = 0", (day,)).rowcount:
+                return {"news": None}
         return {"news": {"day": day, "count": stats["n"] or 0, "connected": stats["connected"] or 0}}
 
     # ------------------------------------------------------------------ Claude

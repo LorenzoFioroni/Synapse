@@ -19,7 +19,7 @@ export function activate(p) {
     await p.sources.refresh();
     if (!undo) {
       p.notify(ids.length === 1 ? 'Dismissed one paper' : `Dismissed ${ids.length} papers`, {
-        action: { label: 'Undo', run: () => dismiss(items, true) },
+        action: { label: 'Undo', run: () => dismiss(items, true) }, transient: true,
       });
     }
   }
@@ -58,7 +58,7 @@ export function activate(p) {
       if (n && n.count) {
         const papers = n.count === 1 ? 'One new paper' : `${n.count} new papers`;
         const connected = n.connected ? `, ${n.connected} connected to your library` : '';
-        p.notify(`${papers}${connected}`, { action: { label: 'Show', run: () => p.sources.open('today') }, timeout: 15000 });
+        p.notify(`${papers}${connected}`, { type: 'success', sourceId: 'today', desktop: true });
       }
     } finally {
       asking = false;

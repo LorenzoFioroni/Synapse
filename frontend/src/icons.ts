@@ -5,6 +5,7 @@ const P: Record<string, string> = {
   wand: '<path d="M3 13l7-7"/><path d="M11 2v2M14 5h-2M13.5 2.5l-1.2 1.2M9 3.2l.6.9M12.8 7l-.9-.6"/>',
   import: '<path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 11v2h10v-2"/>',
   export: '<path d="M8 10V2M5 5l3-3 3 3"/><path d="M3 11v2h10v-2"/>',
+  bell: '<path d="M3 11h10l-1.5-2V6a3.5 3.5 0 0 0-7 0v3zM6.5 13a1.5 1.5 0 0 0 3 0"/>',
   gear: '<circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M1.8 8h1.6M12.6 8h1.6M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/>',
   library: '<path d="M2.5 3h3v10h-3zM6.5 3h3v10h-3z"/><path d="M10.5 3.6l2.8-.8 2.2 9.6-2.8.8z"/>',
   trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/>',

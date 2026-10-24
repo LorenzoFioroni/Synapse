@@ -1,0 +1,22 @@
+.notification-bell { position: relative; overflow: visible; }
+.notification-badge { position: absolute; top: -3px; right: -4px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 9px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+#notification-center { position: fixed; top: calc(var(--tabbar-h, 0px) + 54px); right: 12px; width: min(430px, calc(100vw - 24px)); max-height: calc(100dvh - 100px); overflow: hidden; z-index: 850; display: flex; flex-direction: column; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg-elev); color: var(--text); box-shadow: var(--shadow-lg); }
+#notification-center[hidden] { display: none; }
+#notification-center > header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 6px; }
+#notification-center h2 { margin: 0; font-size: var(--fs-lg); }
+.notification-tools { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--border); }
+.notification-tools button, .notification-actions button { font: inherit; font-size: var(--fs-sm); padding: 4px 7px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--bg); cursor: pointer; }
+.notification-tools button:disabled { opacity: .5; cursor: default; }
+.notification-list { overflow-y: auto; overscroll-behavior: contain; }
+.notification { display: flex; gap: 10px; padding: 13px 14px; border-bottom: 1px solid var(--border); }
+.notification.unread { background: var(--accent-soft); }
+.notification-symbol { padding-top: 2px; color: var(--text-2); }
+.notification.warning .notification-symbol { color: var(--warning); }
+.notification.error .notification-symbol { color: var(--danger); }
+.notification.success .notification-symbol { color: var(--success); }
+.notification-body { flex: 1; min-width: 0; }
+.notification-meta { color: var(--text-2); font-size: var(--fs-xs); text-transform: capitalize; margin-bottom: 4px; }
+.notification-message { overflow-wrap: anywhere; white-space: pre-wrap; }
+.notification progress { width: 100%; height: 7px; accent-color: var(--accent); margin-top: 8px; }
+.notification-actions { display: flex; gap: 6px; margin-top: 8px; }
+.notification-empty { padding: 22px; color: var(--text-2); text-align: center; }

@@ -268,7 +268,7 @@ async def main():
             await page.click(".menu-item:has-text('Forget When It Was Added')")
             ok = await wait_for(
                 lambda: page.evaluate(
-                    "[...document.querySelectorAll('.toast')].some(t => t.textContent.includes('Forgotten'))"
+                    "[...document.querySelectorAll('.notification-message')].some(t => t.textContent.includes('Forgotten'))"
                 )
             )
             check("its item action runs", ok and api("/api/plugins/recently-added/recent")["items"] == [])

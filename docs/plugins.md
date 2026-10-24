@@ -40,7 +40,7 @@ What exists today:
 - A plugin's **list of papers** (today's arXiv papers, say) shows like a folder, in the order the
   plugin gives (click a column to sort, a third click goes back). Papers already in the library are
   the library items; the others have a **+** that adds them (looked up online by DOI or arXiv id,
-  with a toast to undo), and the item pane says why the plugin lists them, linking the library
+  with Undo in the notification center), and the item pane says why the plugin lists them, linking the library
   papers involved. Right-click (or select several) to add them to a folder. Adding runs what
   Settings → Adding Items says ("Ask" counts as yes: there is no dialog to ask in).
 
@@ -521,7 +521,7 @@ export function activate(p) {
 | `p.itemPane.register({id, title, when, mount})` | A section at the end of the item pane, for the items `when(item)` accepts; `mount(el, item)` runs once the selection rests. Papers from a list (`item._outside`) get sections too. |
 | `p.itemActions.register({id, title, icon, outside, when, run})` | An entry in the item menu for the selected items, also in the palette. With `outside: true` it is also offered for papers from a list that are not in the library (`item._outside`); without it, it is left out while one is selected. |
 | `p.sources.open(id)`, `p.sources.refresh()` | Show one of the plugin's lists (leaving Notes, Tasks or a page); ask for the lists again at once after changing them from this window (other windows hear it through the change feed). |
-| `p.notify(message, {type, action, timeout})` | A notification, named after the plugin. |
+| `p.notify(message, {type, desktop, sourceId, action, transient, timeout})` | A notification in the center, named after the plugin; severity and optional OS delivery are independent. |
 | `p.backend.get/post/put/delete(path, …)` | The plugin's own routes (`/api/plugins/<id><path>`), with the page's sign-in; resolves to the JSON answer. |
 | `p.library.selected()`, `.item(id)`, `.show(id)` | The selected items, one whole item, showing an item in the library. |
 | `p.onChange(fn)` | `fn(kinds)` when something changed: what the change feed reports (`library`, `notes`, `tasks`, `annotations`, `plugins`, `fields`, `sources`), and `library` when this window's item list reloads. |
@@ -676,3 +676,10 @@ Item-list Copy as BibTeX (menu and Cmd/Ctrl+C, including selection prefetch) use
 `POST /api/clipboard/bibtex` with selected `ids`, so it remains available with Export Formats off.
 `backend/formats/exporting.py` prepares record copies, selection order and merged keywords for
 both clipboard output and optional writers; endpoints only parse requests and shape responses.
+
+### Notification delivery
+
+`p.notify` now goes to the [notification center](notifications.md) by default. Severity and OS
+delivery are independent: `{type: "success", desktop: true, sourceId: "today"}` offers an OS
+notification when enabled and retains a Show action across reloads. Use `transient: true` for
+brief confirmations/Undo; `timeout` only applies to transient toasts.

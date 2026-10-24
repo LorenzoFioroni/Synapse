@@ -275,7 +275,7 @@ async def main():
             await page.click('.items-body .row[data-id="x:arxiv:2610.00002"] .row-add')
             ok = await wait_for(
                 lambda: page.evaluate(
-                    "[...document.querySelectorAll('.toast')].some(t => t.textContent.includes('Added to My Library'))"
+                    "[...document.querySelectorAll('.notification-message')].some(t => t.textContent.includes('Added to My Library'))"
                 ),
                 40,
             )
@@ -292,7 +292,13 @@ async def main():
             check("the badge counts one fewer", ok)
             check("the library has it", api("/api/items")["counts"]["library"] == 2)
             await shot(page, "o3-added")
-            await page.click(".toast .toast-action")
+            await page.click('[data-a="notifications"]')
+            await (
+                page.locator("#notification-center article")
+                .filter(has_text="Added to My Library")
+                .locator('[data-n="action"]')
+                .click()
+            )
             ok = await wait_for(
                 lambda: page.evaluate("!!document.querySelector('.items-body .row[data-id=\"x:arxiv:2610.00002\"]')")
             )
@@ -311,7 +317,7 @@ async def main():
             await page.click('.dialog button:has-text("Add")')
             ok = await wait_for(
                 lambda: page.evaluate(
-                    "[...document.querySelectorAll('.toast')].some(t => t.textContent.includes('“To read”'))"
+                    "[...document.querySelectorAll('.notification-message')].some(t => t.textContent.includes('“To read”'))"
                 ),
                 60,
             )

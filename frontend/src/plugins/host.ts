@@ -9,6 +9,7 @@ import { icon } from '../icons.js';
 import * as A from '../actions.js';
 import { currentSource, emit, on, selectedItems, state, syncFieldColumns } from '../store.js';
 import { confirmDialog, promptDialog } from '../ui/dialog.js';
+import { notify, releaseSource } from '../notifications/center.js';
 import { toast } from '../ui/toast.js';
 import type { Item, PluginInfo } from '../types.js';
 import { escapeHtml, formatDate } from '../util.js';
@@ -151,11 +152,12 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     },
     notify: (message, options = {}) => {
       if (rec.disposed) return;
-      toast(`${info.name}: ${message}`, {
-        type: options.type || 'info',
-        action: options.action ? { label: options.action.label, run: guarded(info, 'notification action', options.action.run) } : null,
-        timeout: options.timeout ?? 4200,
+      const action = options.action ? { label: options.action.label, run: guarded(info, 'notification action', options.action.run) } : null;
+      if (options.transient) toast(`${info.name}: ${message}`, {
+        type: options.type === 'warning' ? 'error' : options.type || 'info', action, timeout: options.timeout ?? 4200,
       });
+      else notify(`${info.name}: ${message}`, { type: options.type, source: pid, desktop: options.desktop,
+        target: options.sourceId ? `source:${full(options.sourceId)}` : undefined, action });
     },
     backend: {
       get: (path, query) => call('GET', path, undefined, query),
@@ -218,6 +220,7 @@ function unload(id: string): void {
   if (!rec) return;
   loaded.delete(id);
   rec.disposed = true;
+  releaseSource(rec.info.id);
   const run = (what: string, fn: () => unknown) => { try { fn(); } catch (e) { console.error(`Plugin ${id}: ${what}`, e); } };
   if (rec.module?.deactivate) run('deactivate', () => rec.module!.deactivate!(rec.ctx));
   for (const fn of rec.unload.reverse()) run('unload', fn);

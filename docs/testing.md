@@ -370,3 +370,7 @@ For example, Recently Added's `added_on` is written by its item-added listener, 
 `author_count` comes from a field refresher. `svc.plugins.drain("recently-added")` waits for the
 listener; the normal field-refresh wait then covers the computed value. Seeing one field does
 not imply the other has been published.
+
+The `notifications` browser checklist uses an isolated data folder and port 8808; OS APIs are
+stubbed to verify permission, delivery, denied/unsupported fallback and badges without sending
+real desktop alerts. History model tests cover retention and multiple windows.

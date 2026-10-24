@@ -152,6 +152,18 @@ def test_dismiss_and_news(client, svc, plugin):
     assert client.post(f"/api/plugins/{PID}/news").get_json()["news"] is None  # once
 
 
+def test_concurrent_windows_only_claim_daily_news_once(app, plugin):
+    from concurrent.futures import ThreadPoolExecutor
+
+    def claim(_):
+        with app.test_client() as window:
+            return window.post(f"/api/plugins/{PID}/news").get_json()["news"]
+
+    with ThreadPoolExecutor(max_workers=6) as windows:
+        notices = list(windows.map(claim, range(6)))
+    assert sum(n is not None for n in notices) == 1
+
+
 def test_adding_keeps_the_score(client, svc, plugin):
     paper = client.get(TODAY).get_json()["items"][0]
     item = client.post("/api/outside/add", json={"paper": paper}).get_json()["item"]

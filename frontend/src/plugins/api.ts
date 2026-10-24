@@ -82,9 +82,15 @@ export interface SettingsSectionSpec {
 }
 
 export interface NotifyOptions {
-  type?: 'info' | 'success' | 'error';
+  type?: 'info' | 'success' | 'warning' | 'error';
+  /** Persistent navigation after a reload, for one of this plugin’s paper sources. */
+  sourceId?: string;
+  /** Offer OS delivery when enabled by the user, independently of severity. */
+  desktop?: boolean;
+  /** Keep a brief confirmation/Undo at the bottom of the window instead of in history. */
+  transient?: boolean;
   action?: { label: string; run: () => void };
-  /** Milliseconds; 0 keeps it until closed. */
+  /** Milliseconds for a transient toast; ignored by the notification center. */
   timeout?: number;
 }
 
@@ -125,7 +131,7 @@ export interface PluginContext {
     refresh(): Promise<void>;
   };
 
-  /** A notification at the bottom of the window. */
+  /** A persistent notification in the bell center; OS delivery is independent of severity and requires user opt-in. */
   notify(message: string, options?: NotifyOptions): void;
 
   /** The plugin's own routes (`plugin.route` in its backend), under /api/plugins/<id>/. Each resolves

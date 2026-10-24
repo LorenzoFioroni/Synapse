@@ -168,6 +168,8 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   `views/palette.ts`), pages (`views/pages.ts`, listed in the sidebar), item-pane sections and item
   actions. `plugins/host.ts` loads plugins' frontends and registers what they add there; the types
   promised to plugins are in `plugins/api.ts` (see [plugins](plugins.md#the-frontend)).
+- `notifications/*` owns browser-local notification history, the bell/panel and job progress,
+  with optional OS delivery and app/favicon badges (see [notifications](notifications.md)).
 - `ui/*` holds the generic widgets (dialogs, menus, toasts, long press).
 - `viewer/*` holds the PDF viewer (`viewer.html`): `viewer.ts` lays out, draws and zooms the pages
   and publishes `window.zcViewer`; `notesBridge.ts`, `links.ts` and `annotations.ts` add to it
@@ -249,6 +251,7 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
 | [Plugin API review](plugin-api-review.md) | Review of the open Plugin API stack, findings, corrections and validation. |
 | [Autocompletion](autocompletion.md) | Ghost-text suggestions in notes from a local model (Ollama), and the checks that guard against a missing Ollama or model. |
 | [Browser extension](browser-extension.md) | The extension and the connector API it uses. |
+| [Notifications](notifications.md) | The bell, unread history, progress, plugin delivery and OS opt-in. |
 | [Frontend](frontend.md) | The build, the type checking, the pages, state and events, and the module map. |
 | [Testing](testing.md) | pytest, the JavaScript tests, the browser checklists, CI and the tools. |
 
