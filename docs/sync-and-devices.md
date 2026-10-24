@@ -213,6 +213,11 @@ extension. The connector API is described in [`browser-extension.md`](browser-ex
 whenever the host is not a loopback one, so `--host 0.0.0.0` also counts. The server prints the
 `.local` name and IP addresses, and a tip if `segno` is missing.
 
+With `--cert` and `--key`, a wildcard LAN server opens the browser or `--window` at the `.local`
+name it prints. Opening an IP instead would not match the usual hostname certificate and would not
+provide the named secure origin that passkeys require. Plain HTTP still opens at `127.0.0.1` on
+the host computer, where browsers treat localhost as a secure context.
+
 `server.py` refuses `--debug` together with `--lan`, or with any `--host` that is not loopback,
 and exits with a message. Werkzeug's debugger is WSGI middleware that answers before the guard's
 `before_request` hook, and its console runs Python code. On the network it would let anyone who

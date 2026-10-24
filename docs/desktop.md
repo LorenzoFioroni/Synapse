@@ -37,6 +37,11 @@ starts the server as usual and then opens the app in a window of its own. In ord
 If Synapse already runs on that port, `--window` only opens the window and exits, so the shortcut
 can be clicked again at any time. If another program has the port, it says so and exits.
 
+When the server starts with `--lan --cert … --key …`, the window opens at this computer's
+Bonjour `.local` name, not at `127.0.0.1` or a LAN IP. This keeps the opened address consistent
+with the hostname in the HTTPS certificate. An installed Chromium app is reused when it was
+installed from that same `.local` address, scheme and port.
+
 The window is the same web app as in a browser tab, on the same address, so it shares the browser's
 storage (column widths, settings of the views and so on) with tabs of that browser. The app's own
 tabs belong to each window (see [Windows](#windows)).

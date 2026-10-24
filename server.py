@@ -29,6 +29,21 @@ from backend.config import Config
 from backend.frontend import BuildError, ensure_built
 
 
+def app_url(host: str, port: int, *, tls: bool) -> str:
+    """The address opened on this computer for a server listening on ``host``."""
+    wildcard = host in ("0.0.0.0", "::")
+    open_host = "127.0.0.1" if wildcard else host
+    if wildcard and tls:
+        from backend.access import lan
+
+        # A LAN certificate is normally issued for the Bonjour name. Opening an IP would make
+        # that valid certificate look broken and would also prevent passkeys from working.
+        open_host = lan.local_hostname() or open_host
+    if ":" in open_host and not open_host.startswith("["):
+        open_host = f"[{open_host}]"
+    return f"{'https' if tls else 'http'}://{open_host}:{port}/"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=8000)
@@ -116,7 +131,7 @@ def main() -> None:
         raise SystemExit("--cert and --key go together: give both, or neither.")
     tls = (a.cert, a.key) if a.cert and a.key else None
     scheme = "https" if tls else "http"
-    url = f"{scheme}://{'127.0.0.1' if wildcard else a.host}:{a.port}/"
+    url = app_url(a.host, a.port, tls=bool(tls))
 
     if a.new_plugin:
         from backend.plugins import PluginError

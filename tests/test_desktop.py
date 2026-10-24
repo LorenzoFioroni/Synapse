@@ -17,6 +17,7 @@ import pytest
 from backend.desktop import presence as P
 from backend.desktop import shortcut, window
 from backend.desktop.presence import Presence
+from server import app_url
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -162,6 +163,12 @@ def test_finds_synapse_installed_as_an_app(tmp_path):
     assert window.installed_app("http://127.0.0.1:5050/", tmp_path) is None, "another port"
     assert window.installed_app("https://127.0.0.1:8000/", tmp_path) is None
     assert window.installed_app("http://127.0.0.1:8000/", tmp_path / "nobody") is None
+
+
+def test_finds_an_installed_app_for_the_same_local_name(tmp_path):
+    syn = chrome_app(tmp_path, "Chrome Apps.localized", "Synapse", "https://macbook.local:8000/")
+    assert window.installed_app("https://macbook.local:8000/", tmp_path) == syn
+    assert window.installed_app("https://other.local:8000/", tmp_path) is None
 
 
 def test_an_app_for_another_computer_is_not_this_server(tmp_path):
@@ -333,6 +340,16 @@ def test_no_shortcut_on_other_systems(tmp_path):
 
 
 # --------------------------------------------------------------- server.py
+
+
+def test_https_lan_opens_the_certificate_friendly_local_name(monkeypatch):
+    from backend.access import lan
+
+    monkeypatch.setattr(lan, "local_hostname", lambda: "Lorenzos-MacBook.local")
+    assert app_url("0.0.0.0", 8000, tls=True) == "https://Lorenzos-MacBook.local:8000/"
+    assert app_url("::", 8443, tls=True) == "https://Lorenzos-MacBook.local:8443/"
+    assert app_url("0.0.0.0", 8000, tls=False) == "http://127.0.0.1:8000/"
+    assert app_url("::1", 8000, tls=True) == "https://[::1]:8000/"
 
 
 def run_server(*args, home: Path, timeout=60):

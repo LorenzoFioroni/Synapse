@@ -90,6 +90,11 @@ mkcert Lorenzos-MacBook.local                     # your computer's .local name 
 python server.py --lan --cert Lorenzos-MacBook.local.pem --key Lorenzos-MacBook.local-key.pem
 ```
 
+With `--lan` and HTTPS, Synapse opens its browser tab or `--window` at that computer's `.local`
+name rather than at an IP address, so the address matches the certificate. The certificate must
+name the `.local` address Synapse prints; if the Mac's sharing name changes, make a new certificate
+for the new name.
+
 Then install mkcert's authority on each device: `mkcert -CAROOT` shows the folder; send
 `rootCA.pem` to the iPad (AirDrop or mail), install the profile in Settings → General → VPN &
 Device Management, and turn it on in Settings → General → About → Certificate Trust Settings. On
