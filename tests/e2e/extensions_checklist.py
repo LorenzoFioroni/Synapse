@@ -161,6 +161,14 @@ async def main():
                 check("Selected writer supplies the preview", True)
                 await page.click('.dialog button:text-is("Cancel")')
                 await toggle(page, "export-formats", False)
+                await page.evaluate("""async () => {
+                    navigator.clipboard.writeText = async text => { window.copiedReference = text; };
+                    await (await import('/js/actions.js')).loadItems();
+                }""")
+                await page.locator("#items-pane .row").first.click(button="right")
+                await page.click('.menu-item:has-text("Copy as BibTeX")')
+                await page.wait_for_function("window.copiedReference?.includes('export2026')")
+                check("Copy BibTeX works with the export plugin disabled", True)
                 await open_export(page)
                 await page.wait_for_selector('.toast:has-text("No export formats")')
                 check(

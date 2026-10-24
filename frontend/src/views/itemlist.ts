@@ -232,7 +232,7 @@ const prefetchBibtex = debounce(async () => {
   const key = selectionKey();
   if (!key || state.view === 'trash' || key === bibCache.key) return;
   try {
-    const res = await api.exportText('bibtex', selectedLibrary());
+    const res = await api.clipboardBibtex(selectedLibrary());
     if (key === selectionKey()) bibCache = { key, text: res.text };
   } catch { /* copy will fetch on demand */ }
 }, 150);
@@ -252,7 +252,7 @@ function bindCopy(): void {
       e.clipboardData.setData('text/plain', bibCache.text);
       done();
     } else {
-      api.exportText('bibtex', selectedLibrary())
+      api.clipboardBibtex(selectedLibrary())
         .then((res) => copyText(res.text)).then(done).catch(toastError);
     }
   });

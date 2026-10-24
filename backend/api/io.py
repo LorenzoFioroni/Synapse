@@ -8,6 +8,7 @@ from flask import Blueprint, Response, jsonify, request
 
 from .. import formats
 from ..formats.common import split_keywords
+from ..formats.exporting import options, prepare
 from ..library.fields import EDITABLE_KEYS
 from ..library.repository import DuplicateFinder
 from ..plugins import PluginError
@@ -86,25 +87,9 @@ def export():
     ids = args.get("ids")
     if isinstance(ids, str):
         ids = [i for i in ids.split(",") if i]
-    items = s.papers.list()
-    if ids:
-        order = {i: n for n, i in enumerate(ids)}
-        items = sorted((p for p in items if p["id"] in order), key=lambda p: order[p["id"]])
-    else:
-        items.sort(key=lambda p: ((p.get("authors") or "").lower(), str(p.get("year") or "")))
-    for p in items:  # tags travel as keywords in every format
-        kws = split_keywords(p.get("keywords")) + list(p.get("tags") or [])
-        p["keywords"] = "; ".join(dict.fromkeys(kws))
+    items = prepare(s.papers.list(), ids or None)
     try:
-        f, text = s.plugins.export_items(
-            fmt,
-            items,
-            {
-                "unicode": s.settings.get("bibtex_unicode"),
-                "abstract": s.settings.get("export_abstract"),
-                "pattern": s.settings.get("citekey_pattern"),
-            },
-        )
+        f, text = s.plugins.export_items(fmt, items, options(s.settings))
     except PluginError as e:
         return error(str(e))
     if args.get("download", "1") in ("0", "false", False):
@@ -126,3 +111,13 @@ def _decode(raw: bytes) -> str:
         except UnicodeDecodeError:
             continue
     return raw.decode("latin-1")
+
+
+@bp.post("/clipboard/bibtex")
+def clipboard_bibtex():
+    s = svc()
+    ids = body().get("ids")
+    if not isinstance(ids, list):
+        return error("ids must be a list")
+    items = prepare(s.papers.list(), [str(item_id) for item_id in ids])
+    return jsonify(text=formats.dump(items, "bibtex", **options(s.settings)), count=len(items), format="bibtex")

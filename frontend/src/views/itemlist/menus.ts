@@ -155,7 +155,7 @@ export async function copyKeys(items: Item[]): Promise<void> {
 
 async function copyBibtex(ids: string[]): Promise<void> {
   try {
-    const res = await api.exportText('bibtex', ids);
+    const res = await api.clipboardBibtex(ids);
     await copyText(res.text);
     toast(`Copied BibTeX for ${plural(res.count, 'item')}`, { type: 'success' });
   } catch (e) { toastError(e); }

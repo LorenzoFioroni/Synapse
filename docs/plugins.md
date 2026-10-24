@@ -662,7 +662,7 @@ sidebar and the list, sorting, the pane, adding, Undo, a folder, changes, turnin
 ## Provider and writer lifecycle
 
 `GET /api/formats` keeps its existing `formats` import descriptors and adds `exports` containing
-only running writers. Library export previews, copy and download use those writers; the dialog
+only running writers. Library export dialog previews, its copy button and downloads use those writers; the dialog
 reloads the list whenever opened. Default-export choices follow plugin changes while Settings
 is open, preserving an unavailable saved preference for reactivation. Stale preview responses
 cannot replace the newest selected format.
@@ -671,3 +671,8 @@ The app injects reference resolution into `Citations`; `plugin.services.referenc
 providers in both app and standalone MCP hosts. Resolution and export dispatch live in focused
 `backend/plugins/references.py` and `exports.py` modules. Provider registrations are described
 under More in Settings → Plugins, with their normal stop/restart lifecycle.
+
+Item-list Copy as BibTeX (menu and Cmd/Ctrl+C, including selection prefetch) uses
+`POST /api/clipboard/bibtex` with selected `ids`, so it remains available with Export Formats off.
+`backend/formats/exporting.py` prepares record copies, selection order and merged keywords for
+both clipboard output and optional writers; endpoints only parse requests and shape responses.

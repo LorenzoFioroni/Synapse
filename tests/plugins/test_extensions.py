@@ -71,6 +71,11 @@ def test_export_plugin_preserves_existing_output_and_imports(client, svc, fmt):
     assert client.get("/api/formats").json["exports"] == []
     assert client.get("/api/formats").json["formats"] == formats.listing()
     assert client.post("/api/export", json={"format": fmt}).status_code == 400
+    if fmt == "bibtex":
+        copied = client.post("/api/clipboard/bibtex", json={"ids": [paper["id"]]})
+        assert copied.status_code == 200 and copied.json["text"] == expected
+        assert client.post("/api/clipboard/bibtex", json={"ids": []}).json["count"] == 0
+        assert client.post("/api/clipboard/bibtex", json={"ids": "invalid"}).status_code == 400
     assert formats.parse(expected, fmt=fmt)[1][0]["title"] == "A paper"
     svc.plugins.enable("export-formats")
     assert client.post("/api/export", json={"format": fmt, "download": False}).status_code == 200
