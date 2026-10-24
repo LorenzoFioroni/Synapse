@@ -17,7 +17,7 @@ import pytest
 from backend.desktop import presence as P
 from backend.desktop import shortcut, window
 from backend.desktop.presence import Presence
-from server import app_url
+from server import _open_when_ready, app_url
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -350,6 +350,28 @@ def test_https_lan_opens_the_certificate_friendly_local_name(monkeypatch):
     assert app_url("::", 8443, tls=True) == "https://Lorenzos-MacBook.local:8443/"
     assert app_url("0.0.0.0", 8000, tls=False) == "http://127.0.0.1:8000/"
     assert app_url("::1", 8000, tls=True) == "https://[::1]:8000/"
+
+
+def test_browser_or_window_opens_only_after_synapse_is_ready(monkeypatch):
+    answers = iter([None, False, True])
+    checked = []
+    opened = []
+    monkeypatch.setattr("server.time.sleep", lambda seconds: None)
+
+    assert _open_when_ready(
+        "https://mac.local:8000/",
+        opened.append,
+        ready=lambda url: checked.append(url) or next(answers),
+    )
+    assert checked == ["https://mac.local:8000/"] * 3
+    assert opened == ["https://mac.local:8000/"]
+
+
+def test_browser_or_window_is_not_opened_when_the_server_never_starts(monkeypatch):
+    opened = []
+    monkeypatch.setattr("server.time.sleep", lambda seconds: None)
+    assert not _open_when_ready("https://mac.local:8000/", opened.append, ready=lambda url: None, attempts=2)
+    assert opened == []
 
 
 def run_server(*args, home: Path, timeout=60):

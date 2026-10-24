@@ -21,7 +21,9 @@ import _thread
 import argparse
 import logging
 import threading
+import time
 import webbrowser
+from collections.abc import Callable
 from pathlib import Path
 
 from backend import create_app
@@ -42,6 +44,27 @@ def app_url(host: str, port: int, *, tls: bool) -> str:
     if ":" in open_host and not open_host.startswith("["):
         open_host = f"[{open_host}]"
     return f"{'https' if tls else 'http'}://{open_host}:{port}/"
+
+
+def _open_when_ready(
+    url: str,
+    opener: Callable[[str], object],
+    *,
+    ready: Callable[[str], bool | None] | None = None,
+    attempts: int = 150,
+    interval: float = 0.1,
+) -> bool:
+    """Open only after this Synapse server answers, so app mode does not keep a blank first load."""
+    if ready is None:
+        from backend.desktop.window import synapse_at
+
+        ready = synapse_at
+    for _ in range(attempts):
+        if ready(url) is True:
+            opener(url)
+            return True
+        time.sleep(interval)
+    return False
 
 
 def main() -> None:
@@ -188,9 +211,10 @@ def main() -> None:
     if a.window:
         from backend.desktop.window import open_window
 
-        threading.Timer(1.0, lambda: print(f"Window: {open_window(url)}", flush=True)).start()
+        opener = lambda u: print(f"Window: {open_window(u)}", flush=True)  # noqa: E731
+        threading.Thread(target=_open_when_ready, args=(url, opener), daemon=True).start()
     elif not a.no_browser:
-        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+        threading.Thread(target=_open_when_ready, args=(url, webbrowser.open), daemon=True).start()
     # Werkzeug's threaded server (one thread per connection) is plenty for one person's devices,
     # and it serves HTTPS too.
     app.run(host=a.host, port=a.port, debug=a.debug, threaded=True, use_reloader=a.debug, ssl_context=tls)

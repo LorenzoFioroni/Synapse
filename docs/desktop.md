@@ -34,6 +34,10 @@ starts the server as usual and then opens the app in a window of its own. In ord
    which is why the server prints how to install the app (1).
 3. **The default browser**, when no Chromium browser is found.
 
+The launcher waits until the Synapse manifest answers at the selected address before it asks the
+browser to open the page. In particular, HTTPS certificate setup and server binding finish before
+a minimal Chromium app window makes its first request; otherwise that first load can remain blank.
+
 If Synapse already runs on that port, `--window` only opens the window and exits, so the shortcut
 can be clicked again at any time. If another program has the port, it says so and exits.
 
