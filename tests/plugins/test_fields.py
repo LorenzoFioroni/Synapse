@@ -249,6 +249,8 @@ def test_fields_are_in_backups(client, svc, plugin):
 def test_the_example_declares_two_fields(client, svc, example):
     client.post("/api/plugin-host/recently-added/enable")
     item = client.post("/api/items", json={"title": "New", "authors": "A, B; C, D"}).get_json()
+    # The item-added listener and computed-field refresher run on independent workers.
+    assert svc.plugins.drain("recently-added"), "item-added listener did not finish"
     assert wait(
         lambda: (
             (client.get(f"/api/items/{item['id']}").get_json().get("_f") or {}).get("recently-added.author_count") == 2

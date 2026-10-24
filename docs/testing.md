@@ -364,3 +364,9 @@ checks Live/Read controls (mouse and keyboard), note preservation, repeated disa
 HTML/PDF preparation, links inside Live spoilers and export Settings following provider lifecycle.
 The existing `plugins`, `export`, `render`, `graph`, `tasks`, `tabs` and `navigation` checklists cover
 related behavior.
+
+When a test asserts fields written by different workers, wait for each producer independently.
+For example, Recently Added's `added_on` is written by its item-added listener, while
+`author_count` comes from a field refresher. `svc.plugins.drain("recently-added")` waits for the
+listener; the normal field-refresh wait then covers the computed value. Seeing one field does
+not imply the other has been published.
