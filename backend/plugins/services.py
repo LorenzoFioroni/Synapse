@@ -63,8 +63,7 @@ class PluginServices:
             _, refs = fetch(
                 item,
                 email=s.get("contact_email"),
-                openalex_key=s.get("openalex_api_key"),
-                s2_key=s.get("semantic_scholar_api_key"),
+                sources=self._s.plugins.fetch_references,
                 fresh=new,
             )
         except FetchFailed as e:

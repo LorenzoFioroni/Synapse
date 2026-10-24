@@ -176,6 +176,13 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     };
     const overlapsTaken = (from: number, to: number) => taken.some(([a, b]) => from < b && to > a);
 
+    const spoilers = noteHooks.advanced?.spans(doc.toString()) || [];
+    for (const sp of spoilers) {
+      if (!sp.block || blockActive(sp.from, sp.to) || overlapsTaken(sp.from, sp.to)) continue;
+      taken.push([sp.from, sp.to]);
+      out.push(Decoration.replace({ widget: W.spoiler(doc.sliceString(sp.from, sp.to), String(version), true), block: true }).range(sp.from, sp.to));
+    }
+
     // front matter: a compact box of properties until the cursor goes into it
     if (doc.sliceString(0, 4) === '---\n') {
       const fm = splitFrontmatter(doc.sliceString(0, Math.min(doc.length, 50000)));
@@ -188,6 +195,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     // $$ blocks, and the rare formula that runs over several lines (a replacement that hides a
     // line break has to come from here)
     for (const sp of s.spans) {
+      if (overlapsTaken(sp.from, sp.to)) continue;
       if (sp.kind === 'mathblock' && !sp.open) {
         const from = doc.lineAt(sp.from).from, to = doc.lineAt(sp.to).to;
         if (blockActive(from, to)) {
@@ -210,6 +218,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
       from: s.bodyStart,
       enter: (node) => {
         const name = node.name;
+        if (taken.some(([a, b]) => node.from >= a && node.to <= b)) return false;
         if (name === 'Table') {
           const from = doc.lineAt(node.from).from, to = doc.lineAt(node.to).to;
           if (blockActive(from, to) || overlapsTaken(from, to)) lineDecos(from, to, () => 'cm-lp-tablesrc');
@@ -287,9 +296,16 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     const taken: [number, number][] = [];
     const overlapsTaken = (from: number, to: number) => taken.some(([a, b]) => from < b && to > a);
 
+    for (const sp of noteHooks.advanced?.spans(doc.toString()) || []) {
+      if (!sp.block && shown(sp.from, sp.to) && !touches(sp.from, sp.to)) {
+        taken.push([sp.from, sp.to]);
+        replace(sp.from, sp.to, Decoration.replace({ widget: W.spoiler(doc.sliceString(sp.from, sp.to), String(state.field(blocks).version), false) }));
+      }
+    }
+
     // math on one line (from the scanner: same rules as the backend)
     for (const sp of s.spans) {
-      if (sp.kind !== 'math' || !shown(sp.from, sp.to) || multiLine(doc, sp.from, sp.to)) continue;
+      if (sp.kind !== 'math' || overlapsTaken(sp.from, sp.to) || !shown(sp.from, sp.to) || multiLine(doc, sp.from, sp.to)) continue;
       taken.push([sp.from, sp.to]);
       if (touches(sp.from, sp.to)) add(sp.from, sp.to, Decoration.mark({ class: 'cm-lp-mathsrc' }));
       else replace(sp.from, sp.to, Decoration.replace({ widget: mathWidget(doc, eq, sp, false) }));
@@ -298,7 +314,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     // \eqref, \ref, \cref, \Cref in the text: the equations' or figures' numbers (crossref.ts)
     const lookup = refLookup(state, eq);
     for (const r of refsOf(state)) {
-      if (!shown(r.from, r.to)) continue;
+      if (!shown(r.from, r.to) || overlapsTaken(r.from, r.to)) continue;
       taken.push([r.from, r.to]);
       if (touches(r.from, r.to)) { add(r.from, r.to, Decoration.mark({ class: 'cm-lp-linksrc eqref' })); continue; }
       const names = refNames(r.kind, r.name);
@@ -339,7 +355,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
       replace(from, to, Decoration.replace({ widget: W.chip(`c:${from}:${label}:${missing}:${trashed}`, `cite${missing ? ' missing' : ''}${trashed ? ' trashed' : ''}`, label, { keys, pages, atts }) }));
     };
     for (const l of s.links) {
-      if (!shown(l.from, l.to)) continue;
+      if (!shown(l.from, l.to) || overlapsTaken(l.from, l.to)) continue;
       if (l.kind === 'cite') {
         if (cites.length && cites[0].from !== l.from) flushCites();
         cites.push(l);
@@ -528,6 +544,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
   const clicks = EditorView.domEventHandlers({
     mousedown(e, view) {
       const target = e.target as Element;
+      if (target.closest('.cm-lp-spoiler .spoiler-toggle, .cm-lp-spoiler summary')) return false;
       const mw = e.button === 0 && !e.shiftKey && !e.metaKey && !e.ctrlKey && target.closest?.<HTMLElement>('.cm-lp-math, .cm-lp-mathblock');
       if (mw && clickIntoMath(e, view, mw)) return true;
       const ref = target.closest?.<HTMLElement>('.cm-lp-chip.eqref');

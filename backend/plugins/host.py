@@ -313,6 +313,8 @@ class PluginHost:
         act.plugin.routes.clear()
         act.plugin.tools.clear()
         act.plugin.metadata_sources.clear()
+        act.plugin.reference_sources.clear()
+        act.plugin.export_formats.clear()
         act.plugin.listeners.clear()
         if act.modname:
             forget_modules(act.modname)
@@ -535,6 +537,42 @@ class PluginHost:
     def has_pdf_sources(self) -> bool:
         with self._lock:
             return any(act.plugin.pdf_sources for act in self._active.values())
+
+    def _export_formats(self) -> dict:
+        with self._lock:
+            return {
+                (f.id if self.is_core(pid) else f"{pid}.{f.id}"): (pid, f)
+                for pid, act in self._active.items()
+                for f in act.plugin.export_formats.values()
+            }
+
+    def export_formats(self) -> list[dict]:
+        return [
+            {"key": key, "label": f.title, "extension": f.extension} for key, (_, f) in self._export_formats().items()
+        ]
+
+    def export_items(self, key: str, items: list[dict], options: dict) -> tuple:
+        entry = self._export_formats().get(key)
+        if entry is None:
+            raise PluginError(
+                "This export format is not available: turn on Export Formats or its provider in Settings → Plugins."
+            )
+        pid, fmt = entry
+        text = self.run(pid, f"Export {key}", fmt.fn, items, options)
+        if not isinstance(text, str):
+            raise PluginError("An export writer must return text")
+        return fmt, text
+
+    def fetch_references(self, query: dict) -> tuple[str, list[dict]]:
+        from .references import resolve
+
+        with self._lock:
+            sources = [
+                (pid, self.is_core(pid), source)
+                for pid, act in self._active.items()
+                for source in act.plugin.reference_sources.values()
+            ]
+        return resolve(sources, self.run, query)
 
     def lookup_metadata(self, query: dict) -> dict:
         """Ask the metadata sources of running plugins for the normalized query."""

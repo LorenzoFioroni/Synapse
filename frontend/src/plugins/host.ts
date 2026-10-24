@@ -260,6 +260,7 @@ async function doSync(): Promise<void> {
   await syncSources();
   await syncFields();
   for (const [id, info] of want) if (!loaded.has(id) && failedStarts.get(id) !== keyOf(info)) await load(info);
+  emit('export-formats');
 }
 
 /** Bring the loaded plugins in line with the server (one sync at a time; a request during one

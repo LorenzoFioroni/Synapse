@@ -14,8 +14,8 @@ from html.parser import HTMLParser
 
 import requests
 
-from ..library.identifiers import ARXIV_ID, norm_arxiv, norm_doi
-from ..online.http import TIMEOUT, LookupFailed, arxiv_wait
+from backend.library.identifiers import ARXIV_ID, norm_arxiv, norm_doi
+from backend.online.http import TIMEOUT, LookupFailed, arxiv_wait
 
 URL = "https://arxiv.org/html/{}"
 DOI_RE = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>{}|\\^`]+)", re.I)

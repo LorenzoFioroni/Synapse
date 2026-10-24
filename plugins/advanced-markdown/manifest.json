@@ -1,0 +1,5 @@
+{
+  "id": "advanced-markdown", "name": "Advanced Markdown", "version": "1.0.0", "api": "^1.1",
+  "core": true, "frontend": "core:advanced-markdown",
+  "description": "Inline ||spoilers|| and collapsible :::spoiler blocks in notes. Source text is preserved when disabled. HTML/PDF exports reveal spoiler contents."
+}

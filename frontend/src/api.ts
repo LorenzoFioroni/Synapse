@@ -121,7 +121,7 @@ export const api = {
   // autocompletion in notes (a model in Ollama on this computer)
   citekeyPreview: (pattern: string) => request<{ pattern: string; examples: string[] }>('GET', `/api/settings/citekey_preview?${qs({ pattern })}`),
 
-  formats: () => request<{ formats: Format[] }>('GET', '/api/formats'),
+  formats: () => request<{ formats: Format[]; exports: Format[] }>('GET', '/api/formats'),
   importPreview: (fileOrText: string | File, format?: string) => {
     if (typeof fileOrText === 'string') return request<ImportPreview>('POST', '/api/import/preview', { text: fileOrText, format });
     const fd = new FormData(); fd.append('file', fileOrText); if (format) fd.append('format', format);

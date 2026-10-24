@@ -155,7 +155,7 @@ export interface Settings {
   font_size: number;
   confirm_trash: boolean;
   open_pdf_on_double_click: boolean;
-  export_format: 'bibtex' | 'ris' | 'endnote' | 'endnote_xml' | 'csljson';
+  export_format: string;
   bibtex_unicode: boolean;
   export_abstract: boolean;
   import_skip_duplicates: boolean;
@@ -469,6 +469,8 @@ export interface PluginInfo {
   /** Its scheduled work (while running) and the jobs waiting. */
   schedules?: { name: string; rule: string }[];
   jobs?: number;
+  reference_sources?: { id: string; title: string }[];
+  export_formats?: { id: string; title: string }[];
   /** Paths in the plugin's folder (from the manifest). */
   frontend?: string | null;
   styles?: string | null;

@@ -2,8 +2,8 @@
 
 This page covers everything in Synapse that uses the web: item metadata, open-access PDFs, PDFs
 behind an attachment's web link, and the citation graph. [Architecture](architecture.md) has the
-map; this page goes into the two packages that own this work, `backend/online/` and
-`backend/references/`. They are the only parts of the backend that use the network.
+map; this page goes into the core services in `backend/online/` and `backend/references/`, with provider HTTP code in
+bundled plugins. The reference records, matching and graph remain available with providers off.
 
 Nothing here runs on its own schedule. Every request starts from something the user did (a menu
 command, adding items) or from a Settings → Adding Items choice. Without a network, these
@@ -17,8 +17,9 @@ features fail with a message and the rest of the app works as before.
 | `backend/online/pdf_finder.py` | Finds an open-access PDF, downloads it and checks it is the right paper. |
 | `backend/online/remote_pdf.py` | Downloads the PDF behind an attachment that is stored as a web link. |
 | `backend/library/identifiers.py` | DOIs and arXiv ids: cleaning, normalising, finding them in an item. Offline. |
-| `backend/references/sources.py` | Reference lists from Semantic Scholar, OpenAlex, Crossref and arXiv's HTML version. |
-| `backend/references/arxiv_html.py` | Reading the bibliography of an arXiv paper's HTML version. |
+| `backend/references/sources.py` | Validates reference-fetch requests and delegates to injected providers. |
+| `plugins/reference-sources/server/providers.py` | Reference lists from Semantic Scholar, OpenAlex and Crossref, with the existing fallback and recent-arXiv policy. |
+| `plugins/reference-sources/server/arxiv_html.py` | Reading the bibliography of an arXiv paper's HTML version. |
 | `backend/references/connections.py` | How a paper outside the library connects to it (for plugins' lists). |
 | `backend/references/store.py` | `data/citations.db`, where the fetched lists are kept. |
 | `backend/references/service.py` | `Citations`: fetching now or in a background queue, matching references to library items. |
@@ -201,7 +202,10 @@ address, 413 too large, 415 not a PDF, 502 for network trouble).
 ### Fetching reference lists
 
 `fetch(item)` in `backend/references/sources.py` needs a DOI or an arXiv id; without one it raises
-`LookupFailed`. It tries the sources in order and keeps the first non-empty list:
+`LookupFailed`. It delegates to the running reference providers registered with the plugin host.
+**Reference Sources** is a core plugin, on by default; disabling it stops its HTTP requests but
+keeps `citations.db` and saved graph links. Without any provider, fetching reports how to turn one
+on. Its bundled scholarly provider preserves the existing order and first-nonempty policy:
 
 1. **Semantic Scholar** (`semanticscholar`). The DOI first (a journal version), then the arXiv
    id. One request gives titles too, and it is good for arXiv papers. Pages of 1000, following
@@ -365,9 +369,12 @@ tested in `tests/js/lookupJob.test.mjs` with an injected `lookup` function. See
   third-party plugin. The existing core providers live in `plugins/metadata-sources/server/`.
   Add a faked test, and add any new reviewable field to `LOOKUP_FIELDS` in `metadataReview.ts`.
 - **A new PDF source.** Register `@plugin.pdf_source`; the core downloads and checks the candidates.
-- **A new reference source.** Add a function in `backend/references/sources.py` that returns
-  dicts with keys from `REF_FIELDS` and add it to `attempts` in `fetch()`. Add its name to the
-  `source` comment in `store.py` and to `SOURCES` in `referencesSection.ts`.
+- **A new reference source.** Register `@plugin.reference_source` (API 1.1). Return
+  `{"references": [...]}` with reference objects using `doi`, `arxiv_id`, `title`, `authors`,
+  `year`, `venue` and `raw` where known, or `None`/an empty list inside that object for no match.
+  Lower `order` runs first. Third-party source names are qualified by plugin id; the core
+  provider retains historical source names for saved graphs. Use `plugin.http` and fake its
+  responses in tests. See [Plugins](plugins.md).
 - **A new identifier rule** shared by several packages goes in `backend/library/identifiers.py`,
   with a test in `tests/test_identifiers.py`.
 - **A new setting** (an e-mail, a key) goes in `DEFAULTS` in `backend/settings.py` and on the

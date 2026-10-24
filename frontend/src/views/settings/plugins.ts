@@ -60,6 +60,8 @@ function detailsHtml(p: PluginInfo, safeMode: boolean): string {
       <div class="s-text"><div class="s-title">${escapeHtml(s.label)} <span class="saved-pill">${icon('check', 'icon-sm')} Saved</span></div>${s.description ? `<div class="s-desc">${escapeHtml(s.description)}</div>` : ''}</div>
       <div class="p-control">${settingControl(p, s)}</div></div>`).join('');
   const offers = [
+    p.reference_sources?.length ? `Reference sources: ${p.reference_sources.map((s) => escapeHtml(s.title)).join(", ")}` : "",
+    p.export_formats?.length ? `Export formats: ${p.export_formats.map((f) => escapeHtml(f.title)).join(", ")}` : "",
     p.tools?.length ? `Tools for Claude: ${p.tools.map((t) => `<span class="mono">${escapeHtml(t)}</span>`).join(', ')}` : '',
     p.routes?.length ? `Serves ${p.routes.map((r) => `<span class="mono">/api/plugins/${escapeHtml(p.id)}${escapeHtml(r.rule)}</span>`).join(', ')}` : '',
     p.events?.length ? `Listens to ${p.events.map((e) => `<span class="mono">${escapeHtml(e)}</span>`).join(', ')}` : '',

@@ -613,3 +613,32 @@ server and older data. Change them only deliberately. Tests live in `tests/notes
 `tests/js/`; the browser checklists `notes_checklist.py`, `links_checklist.py`,
 `claude_edits_checklist.py`, `render_checklist.py`, `equations_checklist.py`,
 `attachments_checklist.py`, `export_checklist.py` and `gallery_checklist.py` in `tests/e2e/` cover the workspace (see [testing.md](testing.md)).
+
+## Spoilers (Advanced Markdown core plugin)
+
+Enable/disable **Advanced Markdown** in Settings → Plugins. It starts on and adds no standalone
+page. Use `Before ||**hidden words**|| after` for an inline spoiler. Its Show/Hide button works
+with mouse, Enter and Space. For a collapsible block:
+
+```markdown
+:::spoiler Optional summary
+Hidden **Markdown**, citations, links and $math$.
+
+:::spoiler Nested summary
+Nested content.
+:::
+:::
+```
+
+An omitted summary reads “Spoiler”. Blocks may nest and include fenced code; a `:::` inside a
+code fence does not close a block. Unclosed blocks and inline markers remain literal; inline
+spoilers must close on the same line. Escape an opening pipe with `\|` or use inline/fenced code
+to show literal syntax. Live preview shows source when editing that range and otherwise uses
+the same renderer as Read mode. Disabling redraws current/retained notes as ordinary Markdown
+and preserves every source character. Existing Mermaid handling is unchanged.
+
+Spoilers conceal presentation, not the stored text. Markdown export retains the markers;
+HTML/PDF export reveals the contents and opens blocks so printed/exported text is complete.
+Raw note HTML is still escaped. The optional renderer lives in
+`frontend/src/plugins/core/advanced-markdown/`; `hooks.ts` exposes its renderer, source ranges
+and static-export cleanup to core views.

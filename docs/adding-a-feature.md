@@ -27,7 +27,7 @@ Put the logic in a component class in its package, for example a method on `Pape
   can be tested without Flask;
 - raises its own exception type with a message that can be shown to the user (`NotFound`,
   `AnnotationError`, `VaultError`, `LookupFailed` …), chained with `raise … from e`;
-- talks to the web only from `backend/online/` or `backend/references/sources.py`, through
+- talks to the web only from `backend/online/` or a scholarly core plugin, through
   `backend/online/http.py` (timeout, User-Agent, contact e-mail).
 
 If a module grows a second responsibility, split it rather than adding to it.

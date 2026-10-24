@@ -1,4 +1,4 @@
-"""Import/export format registry.
+"""Import format registry and shared codecs; plugins register the library export writers.
 
 Each format provides ``parse(text) -> list[dict]`` and
 ``dump(items, **options) -> str`` working on the shared item dict

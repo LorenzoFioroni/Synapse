@@ -140,6 +140,8 @@ class Plugin:
         self.sources: dict[str, ItemSource] = {}
         self.pdf_sources: dict[str, PdfSource] = {}
         self.metadata_sources: dict = {}
+        self.reference_sources: dict = {}
+        self.export_formats: dict = {}
         self._sources_changed = sources_changed or (lambda: None)
         # a core plugin's tools keep the names they had when they were part of Synapse
         self._tool_prefix = tool_prefix
@@ -280,6 +282,25 @@ class Plugin:
         from .resolvers import metadata_source
 
         return metadata_source(self.metadata_sources, id, title=title, kinds=kinds, order=order)
+
+    def export_format(self, id: str, *, title: str, extension: str, mimetype: str):
+        """Register fn(items, options) -> text. Import parsers are independent."""
+        from .exports import register
+
+        return register(self.export_formats, id, title=title, extension=extension, mimetype=mimetype)
+
+    def reference_source(self, id: str, *, title: str, order: int = 100):
+        """Register fn({item, email, fresh}) -> {references: [...], source?: str} or None."""
+        from .references import ReferenceSource
+
+        if not TOOL_NAME_RE.fullmatch(id or "") or id in self.reference_sources:
+            raise PluginError("Reference source id must be unique, with lowercase letters, digits and _")
+
+        def register(fn):
+            self.reference_sources[id] = ReferenceSource(id, str(title)[:80], fn, int(order))
+            return fn
+
+        return register
 
     def refresh_sources(self) -> None:
         """Say that this plugin's lists changed (a job fetched new papers, say): open pages showing

@@ -1,6 +1,6 @@
 """The knowledge graph (the Graph core plugin's /data route): papers, cited works, notes and their links."""
 
-from backend.references import sources as R
+import requests
 
 from .test_references import S2_PAGE1, S2_PAGE2, Resp, router
 
@@ -11,7 +11,7 @@ def test_graph_combines_citations_and_notes(client, svc, monkeypatch):
         {"title": "Matrix product states", "doi": "10.1080/14789940801912366", "year": 2008, "citation_key": "mps2008"}
     )
     monkeypatch.setattr(
-        R.requests,
+        requests,
         "get",
         router([("semanticscholar", lambda url, p: Resp(S2_PAGE1 if not p.get("offset") else S2_PAGE2))]),
     )

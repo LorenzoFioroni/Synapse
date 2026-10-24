@@ -2,7 +2,7 @@
 // settings/page.ts; Backups, Devices, Passkeys, AI Access and Plugins have modules of their own in settings/.
 import * as A from '../actions.js';
 import { api } from '../api.js';
-import { emit, state } from '../store.js';
+import { emit, on, state } from '../store.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast, toastError } from '../ui/toast.js';
 import type { SearchMode, Settings } from '../types.js';
@@ -13,10 +13,12 @@ import { bindAiAccess, forgetFreshToken, refreshAiAccess } from './settings/aiAc
 import { bindDevices, cancelPairing, refreshDevices } from './settings/devices.js';
 import { bindPasskeys, refreshPasskeys } from './settings/passkeys.js';
 import { bindPlugins, refreshPlugins } from './settings/plugins.js';
+import { refreshExportFormats } from './settings/exportFormats.js';
 import { mountPluginSections } from './settings/pluginSections.js';
 import { TOKENS, flashSaved, settingsHtml } from './settings/page.js';
 
 let view: HTMLElement | null = null;
+on('export-formats', () => { if (view) refreshExportFormats(view); });
 let unmountPluginSections: (() => void) | null = null;
 let statsTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -59,6 +61,7 @@ export function openSettings(sectionId: string | null = null): void {
   refreshPasskeys(page);
   refreshAiAccess(page);
   refreshPlugins(page);
+  refreshExportFormats(page);
   unmountPluginSections = mountPluginSections(page, () => setNav('general'));
   statsTimer = setInterval(refreshStats, 2000);
   const sel = page.querySelector<HTMLSelectElement>('[data-key="_preset"]')!;

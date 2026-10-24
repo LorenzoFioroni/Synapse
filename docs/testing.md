@@ -350,3 +350,17 @@ Open-Access PDFs.
 
 The note-session autosave tests await the public `saved` status rather than sleeping for a
 fixed duration, so a busy machine cannot make the assertion race the fake server's response.
+
+## Optional reference/export and Markdown extensions
+
+`tests/plugins/test_extensions.py` checks reference-provider priority/fallback and disablement
+without losing saved graph records; existing export output, independent import parsing and writer
+disposal; and third-party registration through API 1.1. Provider HTTP responses are faked in the
+existing reference tests, which target `plugins/reference-sources/server/`.
+
+`tests/js/spoilers.test.mjs` covers delimiters, escapes, code exclusions, nested blocks, hostile
+HTML and renderer invalidation. `python tests/e2e/run.py extensions` uses a temporary library and
+checks Live/Read controls (mouse and keyboard), note preservation, repeated disable/enable, static
+HTML/PDF preparation, links inside Live spoilers and export Settings following provider lifecycle.
+The existing `plugins`, `export`, `render`, `graph`, `tasks`, `tabs` and `navigation` checklists cover
+related behavior.

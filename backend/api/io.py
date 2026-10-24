@@ -10,6 +10,7 @@ from .. import formats
 from ..formats.common import split_keywords
 from ..library.fields import EDITABLE_KEYS
 from ..library.repository import DuplicateFinder
+from ..plugins import PluginError
 from . import body, error, svc
 
 bp = Blueprint("io", __name__, url_prefix="/api")
@@ -17,7 +18,7 @@ bp = Blueprint("io", __name__, url_prefix="/api")
 
 @bp.get("/formats")
 def list_formats():
-    return jsonify(formats=formats.listing())
+    return jsonify(formats=formats.listing(), exports=svc().plugins.export_formats())
 
 
 @bp.post("/import/preview")
@@ -82,8 +83,6 @@ def export():
     s = svc()
     args = request.values if request.method == "GET" else {**request.values, **body()}
     fmt = args.get("format") or s.settings.get("export_format")
-    if fmt not in formats.FORMATS:
-        return error(f"Unknown format: {fmt}")
     ids = args.get("ids")
     if isinstance(ids, str):
         ids = [i for i in ids.split(",") if i]
@@ -96,14 +95,18 @@ def export():
     for p in items:  # tags travel as keywords in every format
         kws = split_keywords(p.get("keywords")) + list(p.get("tags") or [])
         p["keywords"] = "; ".join(dict.fromkeys(kws))
-    text = formats.dump(
-        items,
-        fmt,
-        unicode=s.settings.get("bibtex_unicode"),
-        abstract=s.settings.get("export_abstract"),
-        pattern=s.settings.get("citekey_pattern"),
-    )
-    f = formats.FORMATS[fmt]
+    try:
+        f, text = s.plugins.export_items(
+            fmt,
+            items,
+            {
+                "unicode": s.settings.get("bibtex_unicode"),
+                "abstract": s.settings.get("export_abstract"),
+                "pattern": s.settings.get("citekey_pattern"),
+            },
+        )
+    except PluginError as e:
+        return error(str(e))
     if args.get("download", "1") in ("0", "false", False):
         return jsonify(text=text, format=fmt, count=len(items))
     name = (

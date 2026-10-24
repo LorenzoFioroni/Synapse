@@ -1,0 +1,9 @@
+{
+  "id": "reference-sources",
+  "name": "Reference Sources",
+  "version": "1.0.0",
+  "api": "^1.1",
+  "core": true,
+  "backend": "server",
+  "description": "Reference lists from Semantic Scholar, OpenAlex, Crossref and arXiv HTML. Turning this off preserves saved references and citation links."
+}

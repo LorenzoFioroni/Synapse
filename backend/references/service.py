@@ -16,6 +16,7 @@ import logging
 import queue
 import threading
 import time
+from collections.abc import Callable
 
 from ..library.identifiers import identifiers, title_key
 from .sources import fetch
@@ -38,6 +39,7 @@ class Citations:
         self.store = store
         self.papers = papers
         self.settings = settings
+        self.reference_sources: Callable | None = None
         self._queue: queue.Queue[str] = queue.Queue()
         self._pending: set[str] = set()
         self._lock = threading.Lock()
@@ -53,8 +55,7 @@ class Citations:
             source, refs = fetch(
                 item,
                 email=self.settings.get("contact_email") or "",
-                openalex_key=self.settings.get("openalex_api_key") or "",
-                s2_key=self.settings.get("semantic_scholar_api_key") or "",
+                sources=self.reference_sources,
             )
         except Exception as e:
             self.store.save_error(item_id, str(e))

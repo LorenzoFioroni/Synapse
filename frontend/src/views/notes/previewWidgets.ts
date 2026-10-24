@@ -45,6 +45,25 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
 
   // the carousel's arrows and dots turn it (the Figures plugin's galleryView.ts); a click anywhere
   // else opens the source
+  class SpoilerWidget extends HtmlWidget {
+    ignoreEvent(e: Event) { return !!(e.target as Element | null)?.closest?.('.spoiler-toggle, summary, a') || super.ignoreEvent(e); }
+    toDOM(view?: EditorViewT): HTMLElement {
+      const el = super.toDOM(view);
+      el.addEventListener('click', (event) => {
+        const target = event.target as Element;
+        const wiki = target.closest<HTMLElement>('a.wikilink');
+        if (wiki) { event.preventDefault(); deps.openNote(wiki.dataset.note || '', wiki.dataset.heading || ''); return; }
+        const cite = target.closest<HTMLElement>('a.cite');
+        if (cite) {
+          event.preventDefault();
+          if (event.metaKey || event.ctrlKey || event.detail === 0) deps.openCite?.(cite.dataset.key || '',
+            cite.dataset.page ? Number(cite.dataset.page) : null, null, { newTab: event.shiftKey, att: cite.dataset.att ? Number(cite.dataset.att) : null });
+        }
+      });
+      return el;
+    }
+  }
+
   class GalleryWidget extends HtmlWidget {
     ignoreEvent(e: Event) { return !!(e.target as Element | null)?.closest?.('.gallery-btn, .gallery-dot') || super.ignoreEvent(e); }
   }
@@ -137,6 +156,11 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     }, { cls: 'cm-lp-image' }),
 
     calloutTitle: (type: string, title: string) => new HtmlWidget(`co:${type}:${title}`, (el) => { el.textContent = title; }, { cls: `cm-lp-callout-icon ${type}` }),
+
+    spoiler: (src: string, version: string, block: boolean) => new SpoilerWidget(`s:${version}:${block}:${src}`, (el) => {
+      const r = deps.renderer();
+      el.innerHTML = r ? (block ? r.render(src) : r.renderInline(src)) : '';
+    }, { block, cls: 'cm-lp-spoiler' }),
 
     /** A table rendered as in read mode. ``version`` changes when link or library data did. */
     table: (src: string, version: string) => new HtmlWidget(`t:${version}:${src}`, (el) => {

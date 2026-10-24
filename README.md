@@ -127,7 +127,9 @@ never mix.
 - **Full-text index** of attached PDFs, kept in its own database so the library
   stays small. New attachments are indexed in the background; progress is shown
   in the sidebar and Settings, which can also rebuild it.
-- **Import / export**: BibTeX, RIS, EndNote (tagged `.enw` and XML) and CSL JSON.
+- **Import / export**: BibTeX, RIS, EndNote (tagged `.enw` and XML) and CSL JSON. Library export
+  writers are the **Export Formats** core plugin; turning it off preserves imports and clipboard
+  citation copying.
   Imports are previewed first with duplicates flagged. Export the whole library,
   a selection, or copy BibTeX / citation keys from the context menu.
 - **Citation keys** from a configurable pattern (Settings → Citation Keys), with a
@@ -157,7 +159,8 @@ never mix.
   an available PDF, fetch reference lists, and turn imported keywords into tags — each *Never*,
   *Always* or *Ask* (a ticked checkbox where you add the items: the import dialog, Add by
   Identifier, the browser button). They all run in the background.
-- **References / citation graph**: for new items (see Adding Items) and after Retrieve Metadata
+- **References / citation graph** (online fetching is the **Reference Sources** core plugin;
+  turning it off keeps saved references and citation links): for new items (see Adding Items) and after Retrieve Metadata
   the list of papers the item cites is fetched too, in the background (Semantic Scholar, then
   OpenAlex, then Crossref; optional API keys in Settings → Online Services). The item pane shows *References* — cited works that are
   in your library link to them (matched by DOI, arXiv ID, or else title and year), the others
@@ -249,6 +252,10 @@ never mix.
   In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
   drag to move; folders can be renamed, moved and deleted the same way.
+- **Advanced Markdown** (core plugin, on by default): `||inline spoilers||` with a keyboard-accessible
+  Show/Hide button, and collapsible `:::spoiler Optional summary` blocks closed by `:::`. Blocks
+  support nested Markdown and spoilers. Source text stays intact when disabled; HTML/PDF exports
+  reveal spoiler contents. See [spoilers](docs/notes.md#spoilers-advanced-markdown-core-plugin).
 - **Tasks** (open it under **Plugins** in the left sidebar; a core plugin, on by default; turn it off in Settings → Plugins without losing tasks): to-dos with a title, a due date, details written in Markdown like a note, and
   sub-tasks to any depth. In a note, Cmd/Ctrl+Enter (or **Task** in the note's header) opens a
   small popup: name the task (the line's text, if any), give it a date in words ("fri", "27 oct",
@@ -310,7 +317,8 @@ the app from working, start it with `python server.py --safe-mode` (only core pl
 off.
 
 Synapse’s own optional features are **core plugins**: Figures, Graph, Metadata Sources,
-Open-Access PDFs and Tasks start on, while Autocompletion starts as previously configured.
+Reference Sources, Export Formats, Advanced Markdown, Open-Access PDFs and Tasks start on,
+while Autocompletion starts as previously configured.
 Turn them off in Settings → Plugins without losing their data. Core plugins can also be toggled
 and restarted in safe mode; changes are followed by the standalone MCP server. Safe mode keeps core plugins
 running and stops third-party plugins. Tasks and Graph register their own sidebar entries under
@@ -480,6 +488,7 @@ python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders,
 python tests/e2e/viewer_links_checklist.py  # PDF links: jump, hover preview, Back/Forward in the viewer
 python tests/e2e/tabs_checklist.py       # PDFs in the app's own tabs; a --quit-when-closed server stops with its window
 python tests/e2e/export_checklist.py     # Export: HTML (self-contained, offline), Markdown, PDF via the print dialog
+python tests/e2e/extensions_checklist.py # provider/export lifecycle, spoilers in Live/Read, static export
 python tests/e2e/navigation_checklist.py # workspace switches, sidebar selection, history, shortcuts and disabled plugins
 python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, levels, filters, paper card, Show in Graph, Back/Forward
 python tests/e2e/attachments_checklist.py  # note attachments: unused ones to the trash, Attachments dialog, retention

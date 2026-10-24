@@ -62,6 +62,8 @@ and MCP tools call the same domain functions. Return JSON from routes and call t
 | Simple preferences | Manifest `settings`; standard controls appear under More |
 | A status panel or richer preferences | `p.settingsPage.register` |
 | Lookup providers | Backend `@plugin.metadata_source` / `@plugin.pdf_source` |
+| Reference lists (API 1.1) | Backend `@plugin.reference_source` |
+| Text exports (API 1.1) | Backend `@plugin.export_format` |
 
 Do not add a standalone page just to expose a provider or item field. A page belongs to the host:
 it handles workspace switches and browser history. Use `p.library.show` to open an item instead of

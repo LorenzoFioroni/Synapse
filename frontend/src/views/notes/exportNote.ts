@@ -162,6 +162,7 @@ ${body}
 /** Remove what only works inside the app: links into it, buttons, ticking tasks. A citation of
  *  a key in ``listed`` links to its entry in the References list instead. */
 function staticCopy(root: HTMLElement, listed: Set<string>): void {
+  noteHooks.advanced?.exportStatic(root);
   noteHooks.figures?.exportStatic(root);   // carousels become figures with panels (a), (b), …
   root.querySelectorAll('.copy-code').forEach((el) => el.remove());
   root.querySelectorAll('[data-line]').forEach((el) => el.removeAttribute('data-line'));

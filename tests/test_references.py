@@ -1,9 +1,12 @@
 """Reference lists / citation graph (network mocked)."""
 
+import importlib
+
 import pytest
 
 from backend.online.http import LookupFailed
-from backend.references import sources as R
+
+R = importlib.import_module("plugins.reference-sources.server.providers")
 
 
 class Resp:

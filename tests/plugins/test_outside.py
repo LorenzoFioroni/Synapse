@@ -2,6 +2,7 @@
 adding a paper with its "+", the services plugins use (lookups, references, how a paper connects to
 the library), arXiv's HTML reference lists, and the Suggested Reading example."""
 
+import importlib
 import shutil
 import time
 from pathlib import Path
@@ -11,8 +12,10 @@ import pytest
 from backend.online.http import LookupFailed
 from backend.plugins import Offline, PluginError
 from backend.plugins.outside import record
-from backend.references import arxiv_html
-from backend.references import sources as ref_sources
+from backend.references import sources as reference_entry
+
+arxiv_html = importlib.import_module("plugins.reference-sources.server.arxiv_html")
+ref_sources = importlib.import_module("plugins.reference-sources.server.providers")
 
 EXAMPLE = Path(__file__).resolve().parents[2] / "docs" / "examples" / "suggested-reading"
 
@@ -101,7 +104,7 @@ def no_web(monkeypatch):
         return "test", refs.get(key, [])
 
     monkeypatch.setattr(metadata, "lookup", lookup)
-    monkeypatch.setattr(ref_sources, "fetch", fetch)
+    monkeypatch.setattr(reference_entry, "fetch", fetch)
     return {"known": known, "refs": refs}
 
 

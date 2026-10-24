@@ -81,7 +81,6 @@ CHOICES = {
     "default_search_mode": set(SEARCH_MODES),
     "theme": {"system", "light", "dark"},
     "density": {"comfortable", "compact"},
-    "export_format": {"bibtex", "ris", "endnote", "endnote_xml", "csljson"},
     "import_tags": set(ASK_CHOICES),
     "add_fetch_metadata": set(ASK_CHOICES),
     "add_find_pdf": set(ASK_CHOICES),
@@ -178,6 +177,8 @@ class SettingsStore:
                     raise SettingsError("Keep between 1 and 365 backups")
             else:
                 v = "" if v is None else str(v).strip()
+            if k == "export_format" and not re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}", v):
+                raise SettingsError("Invalid export format id")
             if k in CHOICES and v not in CHOICES[k]:
                 raise SettingsError(f"Invalid value for {k}: {v}")
             if k.startswith(("annotation_color_", "annotation_fill_")):
