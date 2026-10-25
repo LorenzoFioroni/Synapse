@@ -268,7 +268,8 @@ async def main():
             # ---- panels: the toolbar's panel buttons act on the notes; the hidden list peeks in from the left edge
             check(
                 "no panel buttons in the note header any more",
-                await page.locator('.note-head .icon-btn:not([data-act="export"])').count() == 0,
+                # (the notes-list button there is for phones only)
+                await page.locator('.note-head .icon-btn:not([data-act="export"]):visible').count() == 0,
             )
             cols = page.locator('#toolbar [data-a="columns"]')
             check(

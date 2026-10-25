@@ -123,10 +123,12 @@ async def main():
             await page.wait_for_timeout(1200)
             await page.keyboard.type(" thing", delay=30)
             await page.wait_for_timeout(1200)
+            # plugin notices go to the notification center (the bell), with their actions
             notices = await page.evaluate(
-                "[...document.querySelectorAll('.toast')].filter(t => t.textContent.includes('cannot make suggestions')).length"
+                "[...document.querySelectorAll('#notification-center .notification')]"
+                ".filter(n => n.textContent.includes('cannot make suggestions') && n.querySelector('[data-n=\"action\"]')).length"
             )
-            check("Ollama missing: one notice says why", notices == 1, f"({notices})")
+            check("Ollama missing: one notice says why, with a way to Settings", notices == 1, f"({notices})")
             check("Ollama missing: no suggestion is asked for", not completes, f"({len(completes)})")
             check("Ollama missing: no ghost text", await ghost(page) == "")
 
