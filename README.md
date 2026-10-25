@@ -43,7 +43,8 @@ Notes and PDFs open in tabs inside Synapse (in a browser tab too), after the fir
 the library or Tasks. Notes open as in VS Code: in a preview tab (italic title) that the next note
 replaces, until you double-click the tab, double-click the note in the notes list, or edit it. Each
 note tab is its own editor, with its own mode (Live, Source, Read), place and undo history, so
-going back to it is instant. PDFs get a tab each. Ctrl+Tab switches, ⌃W (Alt+W elsewhere) or a
+going back to it is instant; when several notes are selected quickly, the last click always wins.
+PDFs get a tab each. Ctrl+Tab switches, ⌃W (Alt+W elsewhere) or a
 middle click closes, ⌃⇧T reopens. Each window has its own tabs, which a reload brings back; a new
 window, or the app started again, opens on the library alone. Drag a tab onto another Synapse
 window to move it there, or outside every window for a new one (or right-click it: **Move to New
@@ -133,6 +134,9 @@ Back up the `data/` folder to keep everything. It is git-ignored: code and data
 never mix.
 
 ## Features
+
+- **Clear startup**: while settings and the library are being prepared, a branded screen says
+  what Synapse is loading instead of leaving an empty app shell on screen.
 
 - **Responsive on phones and tablets**: compact, touch-sized navigation keeps the library,
   item details, notes, tasks and Settings usable one pane at a time on narrow screens.

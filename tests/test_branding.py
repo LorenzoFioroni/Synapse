@@ -93,6 +93,14 @@ def test_toolbar_shows_the_icon_not_a_letter():
     assert '<div class="brand-logo">Z</div>' not in js
 
 
+def test_startup_screen_names_what_is_loading():
+    html = (ROOT / "frontend/index.html").read_text("utf-8")
+    assert 'id="startup-screen"' in html
+    assert 'src="/assets/favicon.svg?v=3"' in html
+    assert '<div class="startup-name">Synapse</div>' in html
+    assert '<div class="startup-status">Loading settings…</div>' in html
+
+
 def test_page_links_a_large_android_icon():
     html = (ROOT / "frontend/index.html").read_text("utf-8")
     assert 'rel="icon" type="image/png" sizes="192x192" href="/assets/icon-192.png?v=3"' in html

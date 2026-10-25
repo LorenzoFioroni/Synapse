@@ -1,9 +1,11 @@
 // Line diff for the conflict dialog (LCS after trimming the common start and end).
+import { diffWords, escapeHtml } from '../../util.js';
 
 const MAX_CELLS = 4_000_000;
 
 export interface DiffRow { op: ' ' | '-' | '+'; text: string }
 export type CompactRow = DiffRow | { op: '…'; count: number };
+export type DisplayRow = CompactRow & { html?: string };
 
 /** Returns [{op: ' ' | '-' | '+', text}] turning `a` into `b`; null when too large to diff. */
 export function lineDiff(a: string, b: string): DiffRow[] | null {
@@ -49,6 +51,28 @@ export function compactDiff(rows: DiffRow[], context = 2): CompactRow[] {
     if (keep[k]) { if (gap) out.push({ op: '…', count: gap }); gap = 0; out.push(r); } else gap++;
   });
   if (gap) out.push({ op: '…', count: gap });
+  return out;
+}
+
+/** Add escaped HTML and word-level marks to adjacent removed/added line pairs. */
+export function markInlineChanges(rows: CompactRow[]): DisplayRow[] {
+  const out: DisplayRow[] = rows.map((r) => (r.op === '…' ? { ...r } : { ...r, html: escapeHtml(r.text) || ' ' }));
+  for (let i = 0; i < out.length;) {
+    if (out[i].op !== '-') { i++; continue; }
+    let adds = i;
+    while (adds < out.length && out[adds].op === '-') adds++;
+    let end = adds;
+    while (end < out.length && out[end].op === '+') end++;
+    const pairs = Math.min(adds - i, end - adds);
+    for (let k = 0; k < pairs; k++) {
+      const old = out[i + k] as DisplayRow & DiffRow;
+      const fresh = out[adds + k] as DisplayRow & DiffRow;
+      const d = diffWords(old.text, fresh.text);
+      old.html = d.old || ' ';
+      fresh.html = d.new || ' ';
+    }
+    i = Math.max(end, adds);
+  }
   return out;
 }
 

@@ -2,6 +2,15 @@
 :root { --toolbar-h: 50px; --statusbar-h: 26px; }
 body { display: flex; flex-direction: column; }
 
+#startup-screen {
+  position: fixed; inset: 0; z-index: 10000; display: grid; place-content: center; justify-items: center;
+  gap: 12px; color: #fff; background: #b62332; transition: opacity .16s ease;
+}
+#startup-screen img { border-radius: 20px; box-shadow: 0 10px 30px rgb(68 0 8 / 25%); }
+.startup-name { font-size: 30px; line-height: 1; font-weight: 700; letter-spacing: -.03em; }
+.startup-status { min-height: 18px; font-size: var(--fs-sm); color: rgb(255 255 255 / 82%); }
+#startup-screen.ready { opacity: 0; pointer-events: none; }
+
 #toolbar {
   height: var(--toolbar-h); flex: none; display: flex; align-items: center; gap: 6px; padding: 0 12px;
   background: var(--bg); border-bottom: 1px solid var(--border);

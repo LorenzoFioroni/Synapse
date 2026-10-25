@@ -85,10 +85,10 @@
 .diff-new::before { content: "+"; }
 :root[data-theme="dark"] .diff-old { background: #3a2224; color: #ffb3b3; }
 :root[data-theme="dark"] .diff-new { background: #1f3529; color: #a6f0c0; }
-.diff-old del { background: #ffc9c9; text-decoration: line-through; border-radius: 3px; }
-.diff-new ins { background: #b7f0c8; text-decoration: none; border-radius: 3px; }
-:root[data-theme="dark"] .diff-old del { background: #6b2b2f; }
-:root[data-theme="dark"] .diff-new ins { background: #2a6640; }
+.diff-old del { background: #f3a5a5; text-decoration: line-through; border-radius: 3px; }
+.diff-new ins { background: #86dda1; text-decoration: none; border-radius: 3px; }
+:root[data-theme="dark"] .diff-old del { background: #8a343b; }
+:root[data-theme="dark"] .diff-new ins { background: #287b48; }
 .diff-edit { padding: 8px 12px; }
 .fv[data-field="citation_key"]:not(:focus), .fv[data-field="doi"]:not(:focus), .fv[data-field="url"]:not(:focus),
 .fv[data-field="license"]:not(:focus) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

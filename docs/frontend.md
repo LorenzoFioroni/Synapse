@@ -256,7 +256,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 
 | Module | Role |
 |---|---|
-| `main.ts` | Entry point: loads the schema and settings, calls each view's `init…`, the toolbar, search, status bar, resizer, drawer, shortcuts, and the handlers for the events above. |
+| `main.ts` | Entry point: updates and dismisses `#startup-screen` while it loads the schema, settings and library, then calls each view's `init…`, the toolbar, search, status bar, resizer, drawer, shortcuts, and the handlers for the events above. |
 | `afterAdd.ts` | What runs after items are added (metadata, PDF, references, tags), per the never / always / ask settings. |
 | `tabs/model.ts`, `tabs/tabs.ts` | The app's own tabs: the first tab (Library or Tasks), note tabs and PDF tabs. `model.ts` has the tabs without a DOM (opening, the preview tab, closing and where it goes, reopening, renamed and deleted notes, order, saving); `tabs.ts` draws the bar (`#tabbar`), holds a viewer frame per PDF tab (`#tab-views`), has the notes workspace show a note tab's note (`TabsHost`, from `main.ts`), the tab keys (`tabShortcut`), the menus and dragging tabs between windows. See [the app window](desktop.md). |
 | `presence.ts` | Says hello to the server while the page is open, for a server that stops with its last window. |
@@ -302,7 +302,8 @@ state; `noteSession.ts` saves (hash-checked, with drafts and retries); `editor.t
 math; `tree.ts`, `treeInput.ts` and `fileOps.ts` are the notes list; `readView.ts`,
 `sidePanel.ts` and `panels.ts` the views around a note; `citeCard.ts`, `citeTarget.ts` and
 `library.ts` connect citations to the library; `aiBar.ts` and `aiEdits.ts` show Claude's edits;
-`conflict.ts`, `diff.ts`, `rekeyDialog.ts` and `attachmentsDialog.ts` are dialogs; `exportNote.ts`
+`conflict.ts`, `diff.ts`, `rekeyDialog.ts` and `attachmentsDialog.ts` are dialogs; note diffs pair
+adjacent removed and added lines and use `util.diffWords` for the darker changed spans; `exportNote.ts`
 and `portable.ts` export a note as PDF, HTML or Markdown.
 
 **`plugins/core/tasks/`: tasks.** [Tasks](tasks.md#frontend-frontendsrcviewstasks) covers it. In short:

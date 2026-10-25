@@ -351,7 +351,10 @@ The work done per keystroke is kept small, so long notes stay quick to edit:
   works only on the part of the note on screen. `mdscan.scan` runs once per version of the text.
   Widgets (`previewWidgets.ts`) keep their DOM while their key stays the same, so a formula,
   table or diagram is drawn again only when its own source changed. A table is drawn by the
-  renderer, so math, citations and links in its cells are rendered as in read mode.
+  renderer, then its equation, figure and section references are resolved again with the whole
+  note's label lookup, so math, citations, links and cross-references in its cells match Read mode. While a
+  `$$` block is being edited, its whole source is protected from CodeMirror's Markdown escape and
+  emphasis decorations: TeX such as `\,` and `_` therefore stays literal, as it does in Read mode.
 - **Read mode.** `renderRead` keeps every top-level block whose HTML did not change, and changes
   the DOM in place: ticking a task redraws only its list, and formulas, diagrams and embedded
   notes elsewhere are not drawn or loaded again. Opening read mode, the theme and the math
