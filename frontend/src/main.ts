@@ -107,7 +107,7 @@ async function boot() {
   on('view', remember);
 
   startupStatus('Loading your library…');
-  try { await A.loadItems(); } finally { finishStartup(); }
+  try { await Promise.all([A.loadItems(), new Promise(resolve => setTimeout(resolve, 1000))]); } finally { finishStartup(); }
   initChanges();   // show what other windows and devices change
   pluginsStarted = initPluginHost();   // task deep links wait for the plugin's page
   focusList();
