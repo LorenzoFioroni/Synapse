@@ -175,6 +175,8 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .diff .d-op { width: 12px; flex: none; text-align: center; color: var(--text-3); }
 .d-add { background: var(--success-soft); }
 .d-del { background: var(--danger-soft); }
+.diff .d-del del { background: color-mix(in srgb, var(--danger) 24%, transparent); text-decoration: none; border-radius: 2px; }
+.diff .d-add ins { background: color-mix(in srgb, var(--success) 28%, transparent); text-decoration: none; border-radius: 2px; }
 .diff-legend .d-add, .diff-legend .d-del { padding: 1px 6px; border-radius: 4px; }
 .d-gap { color: var(--text-3); font-style: italic; justify-content: center; }
 
@@ -318,6 +320,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .cm-live .cm-line.cm-lp-code-first { border-top: 1px solid var(--border); border-top-left-radius: 8px; border-top-right-radius: 8px; padding-top: 4px; color: var(--text-3); }
 .cm-live .cm-line.cm-lp-code-last { border-bottom: 1px solid var(--border); border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; padding-bottom: 4px; color: var(--text-3); }
 .cm-live .cm-line.cm-lp-mathsrc, .cm-live .cm-lp-mathsrc { font-family: var(--font-mono); font-size: .9em; color: var(--text-2); }
+.cm-live .cm-lp-mathsrc .cmt-em, .cm-live .cm-line.cm-lp-mathsrc-block .cmt-em { font-style: normal; }
 .cm-live .cm-line.cm-lp-tablesrc { font-family: var(--font-mono); font-size: .9em; }
 .cm-live .cm-lp-link { color: var(--accent); }
 .cm-live .cm-lp-linksrc, .cm-live .cm-lp-citesrc { color: var(--accent); }

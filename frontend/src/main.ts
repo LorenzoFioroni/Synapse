@@ -37,6 +37,18 @@ import {
 } from './views/notes/notesView.js';
 import { tasksPage } from './tasksPage.js';
 
+function startupStatus(text: string): void {
+  const el = document.querySelector<HTMLElement>('#startup-screen .startup-status');
+  if (el) el.textContent = text;
+}
+
+function finishStartup(): void {
+  const el = document.getElementById('startup-screen');
+  if (!el) return;
+  el.classList.add('ready');
+  setTimeout(() => el.remove(), 180);
+}
+
 async function boot() {
   try {
     const [schema, settings] = await Promise.all([api.schema(), api.getSettings()]);
@@ -46,6 +58,7 @@ async function boot() {
     state.mode = settings.settings.default_search_mode;
   } catch (e) {
     document.getElementById('items-pane')!.innerHTML = `<div class="empty-state">${icon('alert')}<h3>Cannot reach the server</h3><p>${(e as Error).message}</p><p class="muted">Start it with <span class="mono">python server.py</span> and reload.</p></div>`;
+    finishStartup();
     return;
   }
   applyAppearance();
@@ -93,7 +106,8 @@ async function boot() {
   on('selection', remember);
   on('view', remember);
 
-  await A.loadItems();
+  startupStatus('Loading your library…');
+  try { await Promise.all([A.loadItems(), new Promise(resolve => setTimeout(resolve, 1000))]); } finally { finishStartup(); }
   initChanges();   // show what other windows and devices change
   pluginsStarted = initPluginHost();   // task deep links wait for the plugin's page
   focusList();

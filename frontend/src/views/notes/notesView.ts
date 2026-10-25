@@ -41,6 +41,7 @@ ws.mode = storage<Mode>('zc.notes.mode', 'live');   // the mode new tabs start w
 ws.editMode = ws.mode === 'read' ? 'live' : ws.mode;
 
 let opening = Promise.resolve();
+let openRequest = 0;
 let lastMathKey: string | null = null;
 
 const PARKED_MAX = 20;   // notes put away (no view) whose undo history is kept
@@ -238,16 +239,21 @@ async function enterNotes(): Promise<void> {
  */
 export async function showNote(path: string | null, mode?: Mode): Promise<boolean> {
   if (!notesEnabled()) return false;
+  const request = ++openRequest;
   await enterNotes();
   const exists = () => ws.overview.notes.some((n) => n.path === path);
   if (path && !ws.views.has(path) && !exists()) await refreshTree();
+  if (request !== openRequest) return true;
   if (path && !ws.views.has(path) && !exists()) {
     toast(`“${stemOf(path)}” no longer exists (moved or deleted).`);
     return false;
   }
   noteHooks.graph?.closeGlobal();
-  if (path) await openInPlace(path, mode);
-  else { await opening; showNothing(); }
+  if (path) await openInPlace(path, mode, request);
+  else {
+    await opening;
+    if (request === openRequest) showNothing();
+  }
   return true;
 }
 
@@ -563,24 +569,27 @@ function openNote(path: string, { keep = false }: { keep?: boolean } = {}): Prom
 }
 
 /** Show a note in the workspace. Calls are serialised. */
-function openInPlace(path: string, mode?: Mode): Promise<void> {
+function openInPlace(path: string, mode?: Mode, request = ++openRequest): Promise<void> {
   noteHooks.graph?.closeGlobal();
-  opening = opening.then(() => doOpen(path, mode)).catch((e) => { toastError(e); });
+  opening = opening.then(() => doOpen(path, mode, request)).catch((e) => { toastError(e); });
   return opening;
 }
 
-async function doOpen(path: string, mode?: Mode): Promise<void> {
+async function doOpen(path: string, mode: Mode | undefined, request = ++openRequest): Promise<void> {
   const cur = ws.view;
   if (cur && cur.path === path) {
+    if (request !== openRequest) return;
     if (mode && mode !== ws.mode) setMode(mode, { focus: false });
     if (!treeEl().contains(document.activeElement)) ws.editor?.focus();
     return;
   }
+  if (request !== openRequest) return;
   if (cur) hideView(cur);
   let view = ws.views.get(path);
   const fresh = !view;
   if (!view) view = await createView(path, mode || defaultMode());
-  else view.session.checkRemote();   // changed elsewhere while its tab was in the background?
+  if (request !== openRequest) return;   // a later tab click wins, even if this fetch finished last
+  view.session.checkRemote();   // changed elsewhere while its tab was in the background?
   showView(view, mode);
   ws.root.classList.remove('mobile-tree-open');
   if (fresh) {

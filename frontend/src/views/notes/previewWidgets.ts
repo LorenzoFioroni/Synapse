@@ -93,6 +93,17 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     ignoreEvent() { return true; }
   }
 
+  /** A renderer used on a fragment cannot see labels elsewhere in the note. Rewrite its
+   *  references with the whole document's lookup, as Read mode's full render would. */
+  const resolveFragmentRefs = (el: HTMLElement, lookup: Lookup): void => {
+    for (const ref of el.querySelectorAll<HTMLElement>('.cref[data-names]')) {
+      ref.outerHTML = refHtml(ref.dataset.kind as RefKind, (ref.dataset.names || '').split(','), lookup);
+    }
+    for (const ref of el.querySelectorAll<HTMLElement>('.eqref[data-label]')) {
+      if (!ref.closest('.cref')) ref.outerHTML = refHtml((ref.dataset.kind || 'eqref') as RefKind, [ref.dataset.label!], lookup);
+    }
+  };
+
   // a task shown in the note ({{task:id}}): drawn by the Tasks module, never shown as source; a
   // click ticks it or opens it (the key is what it shows, so a changed task is drawn again)
   class TaskWidget extends WidgetType {
@@ -169,9 +180,10 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     }, { block, cls: 'cm-lp-spoiler' }),
 
     /** A table rendered as in read mode. ``version`` changes when link or library data did. */
-    table: (src: string, version: string) => new HtmlWidget(`t:${version}:${src}`, (el) => {
+    table: (src: string, lookup: Lookup, version: string) => new HtmlWidget(`t:${version}:${src}`, (el) => {
       const r = deps.renderer();
       el.innerHTML = r ? r.render(src) : '';
+      resolveFragmentRefs(el, lookup);
     }, { block: true, cls: 'cm-lp-table' }),
 
     markdownBlock: (src: string, version: string) => new MarkdownBlockWidget(`b:${version}:${src}`, (el) => {
@@ -185,13 +197,7 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
       const r = deps.renderer();
       el.innerHTML = r ? r.render(src) : '';
       if (fig != null) el.querySelectorAll('.fig-num').forEach((n) => { n.textContent = n.textContent!.replace(/\d+/, String(fig)); });
-      // written again with the whole note's labels (the renderer saw only this block)
-      for (const ref of el.querySelectorAll<HTMLElement>('.cref[data-names]')) {
-        ref.outerHTML = refHtml(ref.dataset.kind as RefKind, (ref.dataset.names || '').split(','), lookup);
-      }
-      for (const ref of el.querySelectorAll<HTMLElement>('.eqref[data-label]')) {
-        if (!ref.closest('.cref')) ref.outerHTML = refHtml((ref.dataset.kind || 'eqref') as RefKind, [ref.dataset.label!], lookup);
-      }
+      resolveFragmentRefs(el, lookup);
     }, { block: true, cls: `cm-lp-gallery${preview ? ' cm-lp-gallerypreview' : ''}` }),
 
     mermaid: (code: string) => new HtmlWidget(`mm:${code}:${document.documentElement.dataset.theme}`, (el) => deps.mermaid(el, code), { block: true, cls: 'cm-lp-mermaid' }),

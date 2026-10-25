@@ -75,8 +75,10 @@ def setup():
     body = text.split("---\n", 2)[2]  # drop the fixture's front-matter; the app writes its own
     requests.post(f"{BASE}/api/notes/note", json={"path": "Kitchen sink.md", "title": "Kitchen sink", "text": body})
     table = (
-        "# Tables\n\nIn the convention of [@cuiVariational2015, p. 1]:\n\n"
-        "| Regime | Ref |\n|---|---|\n| small $\\mu$ | [@cuiVariational2015] |\n\nEnd.\n"
+        "# Tables\n\n## Method \\label{sec:method}\n\n"
+        "$$E = mc^2 \\label{eq:energy}$$\n\nIn the convention of [@cuiVariational2015, p. 1]:\n\n"
+        "| Regime | Ref |\n|---|---|\n"
+        "| small $\\mu$ | [@cuiVariational2015]; \\cref{eq:energy} and \\cref{sec:method} |\n\nEnd.\n"
     )
     requests.post(f"{BASE}/api/notes/note", json={"path": "Table math.md", "title": "Table math", "text": table})
     long = "# Long\n\n" + "\n\n".join(f"Paragraph {i} of a long note." for i in range(1, 301)) + "\n"
@@ -254,6 +256,14 @@ async def main():
                 "Cmd/Ctrl+E returns to the editor",
                 await page.is_hidden(".note-read") and await count(page, ".cm-lp-widget") > 0,
             )
+            await page.locator(".cm-lp-mathblock").first.click()
+            await page.wait_for_timeout(200)
+            math_source = "\n".join(await page.locator(".cm-line.cm-lp-mathsrc-block").all_text_contents())
+            check(
+                "live: editing display math keeps TeX escapes literal",
+                r"\," in math_source,
+                math_source,
+            )
             await shot(page, "live-dark")
 
             # ---- source mode shows plain Markdown
@@ -270,7 +280,16 @@ async def main():
             await page.wait_for_timeout(700)
             check("clicking [[Other]] opens it", "Other" in await page.text_content(".note-crumbs"))
             await page.click('.nt-row.note[data-path="Kitchen sink.md"]')
-            await wait_for(lambda: count(page, ".cm-lp-chip.unresolved"))
+            returned = await wait_for(lambda: count(page, ".cm-lp-chip.unresolved"))
+            tab_state = await page.evaluate("""({
+                path: window.zcNotes.path(), tabs: window.zcTabs.list(),
+                mode: [...document.querySelectorAll('.note-modes button')].find(b => b.classList.contains('active'))?.dataset.mode,
+                links: [...document.querySelectorAll('.cm-lp-chip.wikilink')].map(e => [e.textContent, e.className]),
+                widgets: document.querySelectorAll('.cm-lp-widget').length
+            })""")
+            check("one tree click returns to the note", returned, tab_state)
+            if not returned:
+                raise RuntimeError(f"note switch did not finish: {tab_state}")
             await page.locator(".cm-lp-chip.unresolved").click()
             await page.wait_for_selector(".dialog")
             await page.click('.dialog button:has-text("Create")')
@@ -316,6 +335,12 @@ async def main():
             check(
                 "live: a table with math and a citation is rendered",
                 await count(page, ".cm-lp-table .katex") == 1 and await count(page, ".cm-lp-table .cite") == 1,
+            )
+            table_text = (await page.locator(".cm-lp-table").inner_text()).replace("\u00a0", " ")
+            check(
+                "live: table references use labels from the whole note",
+                "Eq. (1) and Sec. 1.1" in table_text and "??" not in table_text,
+                table_text,
             )
             labels = await page.locator(".cm-lp-chip.cite").all_text_contents()
             check("live: [@key, p. 1]: is a citation", any("Cui & Cirac 2015, p. 1" in l for l in labels), labels)

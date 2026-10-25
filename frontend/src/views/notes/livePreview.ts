@@ -236,8 +236,9 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
           if (blockActive(from, to) || overlapsTaken(from, to)) lineDecos(from, to, () => 'cm-lp-tablesrc');
           else {
             // drawn by the renderer, so math, citations and links in its cells are rendered too
+            const lookup = refLookup(state, eq);
             taken.push([from, to]);
-            out.push(Decoration.replace({ widget: W.table(doc.sliceString(from, to), `${version}:${eq.sig}`), block: true }).range(from, to));
+            out.push(Decoration.replace({ widget: W.table(doc.sliceString(from, to), lookup, `${version}:${eq.sig}`), block: true }).range(from, to));
           }
           return false;
         }
@@ -425,6 +426,11 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
         const name = node.name;
         // tables and code are the field's; nothing is added inside what a block widget draws
         if (name === 'Table' || name === 'FencedCode' || blockTaken.some(([a, b]) => node.from >= a && node.to <= b)) return false;
+        // An active display-math block deliberately shows its source. CodeMirror still parses
+        // Markdown inside that source (for example ``\,`` as an escape and ``_x_`` as emphasis),
+        // but the note renderer treats every character between the $$ marks as TeX. Do not let
+        // live-preview Markdown decorations hide or restyle those TeX commands.
+        if (s.spans.some((sp) => sp.kind === 'mathblock' && node.from >= sp.from && node.to <= sp.to)) return false;
         if (/^ATXHeading[1-6]$/.test(name)) {
           lineDeco(node.from, `cm-lp-h cm-lp-h${name.slice(-1)}`);
           if (!lineActive(node.from)) {

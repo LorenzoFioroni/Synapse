@@ -13,7 +13,7 @@ Money is not math: it costs $5 and $10.
 Inline math $E = mc^2$ and $\alpha_i \leq \beta$; display on one line $$\int_0^1 x\,dx$$. Escaped: \$5 and $x$.
 
 $$
-\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}
+\sum_{n=1}^{\infty} \, \frac{1}{n^2} = \frac{\pi^2}{6}
 $$
 
 ## Lists and tasks

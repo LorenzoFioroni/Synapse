@@ -11,7 +11,7 @@ import { icon } from '../../icons.js';
 import { openDialog } from '../../ui/dialog.js';
 import type { HistoryEntry, NoteHistory } from '../../types.js';
 import { escapeHtml, formatDate, modLabel, plural, storage, store } from '../../util.js';
-import { compactDiff, lineDiff } from './diff.js';
+import { compactDiff, lineDiff, markInlineChanges } from './diff.js';
 
 const SEEN = 'zc.notes.aiSeen';
 
@@ -54,9 +54,9 @@ export function barHtml(e: HistoryEntry): string {
 export function diffHtml(a: string, b: string): string {
   const rows = lineDiff(a, b);
   if (rows === null) return '<p class="muted">The notes are too long to compare here.</p>';
-  return `<div class="diff">${compactDiff(rows).map((r) => (r.op === '…'
+  return `<div class="diff">${markInlineChanges(compactDiff(rows)).map((r) => (r.op === '…'
     ? `<div class="d-gap">… ${plural(r.count, 'unchanged line')} …</div>`
-    : `<div class="d-${r.op === '+' ? 'add' : r.op === '-' ? 'del' : 'same'}"><span class="d-op">${r.op === ' ' ? '' : r.op}</span>${escapeHtml(r.text) || ' '}</div>`)).join('')}</div>`;
+    : `<div class="d-${r.op === '+' ? 'add' : r.op === '-' ? 'del' : 'same'}"><span class="d-op">${r.op === ' ' ? '' : r.op}</span>${r.html}</div>`)).join('')}</div>`;
 }
 
 /**

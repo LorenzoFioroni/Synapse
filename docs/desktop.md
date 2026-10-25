@@ -185,7 +185,8 @@ tab whose note was deleted elsewhere closes, with a message, when it is shown.
 - **Switching**: click, Ctrl+Tab and Ctrl+Shift+Tab (also Ctrl+PageDown/PageUp), ⌃1…⌃9 or
   Alt+1…Alt+9 (1 is the first tab, 9 the last tab). In a browser tab the browser keeps Ctrl+Tab
   (and, outside macOS, Alt+digits) for its own tabs; in the app window they reach the app. The keys
-  work while a PDF has the keyboard too: `viewer/inTab.ts` passes them to the page around.
+  work while a PDF has the keyboard too: `viewer/inTab.ts` passes them to the page around. Note
+  loading is latest-wins: a slower earlier request cannot replace a tab selected afterwards.
 - **Order**: drag a tab along the bar. **Right-click** a tab for Close Other Tabs, Close Tabs to the
   Right, Reopen Closed Tab, Move to New Window, and for a PDF Open in a Browser Tab, Show in Library
   and Reload; right-click the first tab for New Window and Close All Tabs.

@@ -310,8 +310,11 @@ async function showNote(tab: Tab): Promise<void> {
   underneath = tab.id;
   paint();
   saveSoon();
-  const ok = await host.note(tab.key || null, tab.mode);
-  if (!ok && set.get(tab.id)) closeTab(tab.id);
+  const key = tab.key;
+  const ok = await host.note(key || null, tab.mode);
+  // A preview tab can have been reused for another note while this one was loading.
+  // Never let the older request close the newly selected note.
+  if (!ok && set.get(tab.id)?.key === key) closeTab(tab.id);
 }
 
 function frameFor(tab: Tab): HTMLIFrameElement {
