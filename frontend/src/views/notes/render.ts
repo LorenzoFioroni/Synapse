@@ -474,7 +474,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
       });
     }
     noteHooks.figures?.markdown(md);
-    noteHooks.advanced?.markdown(md);
+    noteHooks.extended?.markdown(md);
     return md;
   };
   let md = build(), built = hooksVersion;

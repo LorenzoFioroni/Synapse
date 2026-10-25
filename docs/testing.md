@@ -359,7 +359,9 @@ disposal; and third-party registration through API 1.1. Provider HTTP responses 
 existing reference tests, which target `plugins/reference-sources/server/`.
 
 `tests/js/spoilers.test.mjs` covers delimiters, escapes, code exclusions, nested blocks, hostile
-HTML and renderer invalidation. `python tests/e2e/run.py extensions` uses a temporary library and
+HTML and renderer invalidation. It also compares the spoiler ranges with the rules applied position
+by position on 3000 random notes, and fails if finding them in a 300 KB note full of formulas takes
+250 ms or more (live preview does it on every keystroke). `python tests/e2e/run.py extensions` uses a temporary library and
 checks Live/Read controls (mouse and keyboard), note preservation, repeated disable/enable, static
 HTML/PDF preparation, links inside Live spoilers and export Settings following provider lifecycle.
 The existing `plugins`, `export`, `render`, `graph`, `tasks`, `tabs` and `navigation` checklists cover

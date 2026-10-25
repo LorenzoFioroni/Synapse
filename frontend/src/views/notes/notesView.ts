@@ -98,7 +98,7 @@ export function initNotes(): void {
       root.querySelector<HTMLElement>('.note-add-task')!.hidden = !taskHooks.add;
       if (ws.session) paintSide();
     }
-    if (key === 'advanced' || key === 'figures' || key === 'tasks') { staleOthers(); if (!notesOpen() || !ws.session) return; ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); }
+    if (key === 'extended' || key === 'figures' || key === 'tasks') { staleOthers(); if (!notesOpen() || !ws.session) return; ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); }
   });
 
   root.addEventListener('click', onClick);

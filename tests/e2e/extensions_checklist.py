@@ -77,7 +77,7 @@ async def main():
                 errors = []
                 page.on("pageerror", lambda e: errors.append(str(e)))
                 await page.goto(BASE)
-                await page.wait_for_function("window.zcPlugins?.loaded().includes('advanced-markdown')")
+                await page.wait_for_function("window.zcPlugins?.loaded().includes('extended-markdown')")
                 await page.evaluate(
                     """async path => { (await import('/js/store.js')).emit('open-note',{path}); }""", path
                 )
@@ -121,13 +121,13 @@ async def main():
                     "||literal code||" in await page.locator(".note-read code").last.text_content(),
                 )
                 for cycle in range(2):
-                    await toggle(page, "advanced-markdown", False)
+                    await toggle(page, "extended-markdown", False)
                     await page.wait_for_function("!document.querySelector('.note-read .spoiler-toggle')")
                     check(
                         f"Spoilers off exposes readable source ({cycle + 1})",
                         "||inline secret" in await page.locator(".note-read").inner_text(),
                     )
-                    await toggle(page, "advanced-markdown", True)
+                    await toggle(page, "extended-markdown", True)
                     await page.wait_for_selector(".note-read .spoiler-toggle")
                     check(
                         f"Spoilers on restores one inline control ({cycle + 1})",

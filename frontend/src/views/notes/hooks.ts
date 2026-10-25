@@ -60,14 +60,21 @@ export interface FiguresHook {
   exportStatic(root: HTMLElement): void;
 }
 
-export interface AdvancedMarkdownHook {
+/** A spoiler's source range; `block` for a :::spoiler block, else inline ||…||. */
+export interface Spoiler { from: number; to: number; block: boolean }
+
+export interface ExtendedMarkdownHook {
+  /** Adds the package's markdown-it rules (render.ts). */
   markdown(md: MarkdownIt): void;
-  spans(src: string): { from: number; to: number; block: boolean }[];
+  /** The note's spoilers, for live preview; `scanned` is the note's mdscan result. */
+  spoilers(src: string, scanned: Pick<Scan, 'spans'>): Spoiler[];
+  /** An exported copy of a rendered note: interactive parts opened up (exportNote.ts). */
   exportStatic(root: HTMLElement): void;
 }
 
 interface Hooks {
-  advanced: AdvancedMarkdownHook | null;
+  /** Extra Markdown syntax such as spoilers (Extended Markdown), or null. */
+  extended: ExtendedMarkdownHook | null;
   /** Where ghost-text suggestions come from (Autocompletion), or null for none. */
   ghost: GhostSource | null;
   /** Called after a note's editor was made (to load a model before the first suggestion, say). */
@@ -78,12 +85,12 @@ interface Hooks {
   figures: FiguresHook | null;
 }
 
-export const noteHooks: Hooks = { advanced: null, ghost: null, editorOpened: new Set(), graph: null, figures: null };
+export const noteHooks: Hooks = { extended: null, ghost: null, editorOpened: new Set(), graph: null, figures: null };
 
 /** Goes up whenever a hook is set or taken away (renderers rebuild when it changed). */
 export let hooksVersion = 0;
 
-type Settable = 'advanced' | 'graph' | 'figures' | 'ghost';
+type Settable = 'extended' | 'graph' | 'figures' | 'ghost';
 type HookKey = Settable | 'tasks';
 const listeners = new Set<(key: HookKey) => void>();
 /** Set (or with null, take away) a hook; the notes view puts it in place or removes it and draws

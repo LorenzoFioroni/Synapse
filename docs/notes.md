@@ -614,10 +614,16 @@ server and older data. Change them only deliberately. Tests live in `tests/notes
 `claude_edits_checklist.py`, `render_checklist.py`, `equations_checklist.py`,
 `attachments_checklist.py`, `export_checklist.py` and `gallery_checklist.py` in `tests/e2e/` cover the workspace (see [testing.md](testing.md)).
 
-## Spoilers (Advanced Markdown core plugin)
+## Extended Markdown (core plugin)
 
-Enable/disable **Advanced Markdown** in Settings → Plugins. It starts on and adds no standalone
-page. Use `Before ||**hidden words**|| after` for an inline spoiler. Its Show/Hide button works
+**Extended Markdown** collects Markdown syntax beyond Synapse's own (math, citations, links,
+callouts, footnotes and the rest stay in the core renderer). Turn it on or off in Settings →
+Plugins; it starts on and adds no page of its own. With it off, notes render as ordinary Markdown
+and their text is unchanged. Spoilers are its first extension.
+
+### Spoilers
+
+Use `Before ||**hidden words**|| after` for an inline spoiler. Its Show/Hide button works
 with mouse, Enter and Space. For a collapsible block:
 
 ```markdown
@@ -639,6 +645,16 @@ and preserves every source character. Existing Mermaid handling is unchanged.
 
 Spoilers conceal presentation, not the stored text. Markdown export retains the markers;
 HTML/PDF export reveals the contents and opens blocks so printed/exported text is complete.
-Raw note HTML is still escaped. The optional renderer lives in
-`frontend/src/plugins/core/advanced-markdown/`; `hooks.ts` exposes its renderer, source ranges
-and static-export cleanup to core views.
+Raw note HTML is still escaped.
+
+### Where the code is
+
+`frontend/src/plugins/core/extended-markdown/` holds one folder per extension (`spoilers/`), each a
+`MarkdownExtension` (`extension.ts`): its markdown-it rules, what HTML/PDF export must open up and
+any page-wide listeners. `index.ts` lists the extensions and installs them through the `extended`
+hook in `views/notes/hooks.ts`. A new syntax is a new folder plus a line in that list.
+
+Live preview asks for the spoiler ranges on every keystroke, so finding them is one pass over the
+note: only positions holding `||` are examined, and code/math ranges are looked up by binary
+search; the result is kept until the text changes. `tests/js/spoilers.test.mjs` checks the ranges
+against the rules applied position by position and keeps a 300 KB note under 250 ms.

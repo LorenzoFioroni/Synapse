@@ -482,7 +482,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .cm-live .cm-line.cm-lp-figcaption { color: var(--text-2); }
 .cm-lp-chip.fignum { font-weight: 650; color: var(--text); margin-right: .35em; font-style: normal; }
 
-/* Optional Advanced Markdown markup; generated spoilers never execute note HTML. */
+/* Extended Markdown: spoilers. Their markup is generated, never the note's own HTML. */
 .spoiler-inline .spoiler-toggle { font: inherit; color: var(--muted); background: var(--bg-alt, transparent); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; cursor: pointer; }
 .spoiler-content:not([hidden]) { margin-left: .35em; }
 .spoiler-block { border: 1px solid var(--border); border-radius: 6px; padding: .5em .8em; margin: .6em 0; }

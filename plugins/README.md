@@ -15,5 +15,6 @@ Examples to copy are in [docs/examples](../docs/examples).
 and the online metadata providers. Their records and data integrity remain in the core.
 
 `reference-sources/` and `export-formats/` supply the existing scholarly reference providers and
-library export writers. `advanced-markdown/` adds inline and collapsible spoilers. All three are
+library export writers. `extended-markdown/` holds extra Markdown syntax, starting with inline
+and collapsible spoilers. All three are
 core plugins, on by default, and can be disabled without rewriting user data.

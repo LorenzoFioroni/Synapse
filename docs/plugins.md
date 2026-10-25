@@ -73,8 +73,9 @@ mode, and their settings are in their own section or under **More**:
   Markdown exports remain in core. The canonical codecs in `backend/formats/` are shared; this
   plugin owns which writers the library export dialog/API exposes. With it off, imports still
   work, stored export preferences survive and the dialog explains how to enable a writer.
-- **Advanced Markdown** (`plugins/advanced-markdown`, on by default): inline `||spoilers||` and
-  collapsible `:::spoiler` blocks in Live/Read modes. Disabling it renders ordinary Markdown
+- **Extended Markdown** (`plugins/extended-markdown`, on by default): Markdown syntax beyond the
+  basics, one extension per folder in `frontend/src/plugins/core/extended-markdown/`. Its first
+  extension is spoilers: inline `||spoilers||` and collapsible `:::spoiler` blocks in Live/Read modes. Disabling it renders ordinary Markdown
   without changing note files. HTML/PDF export reveals spoiler contents; Markdown keeps the source.
 - **Tasks** (`plugins/tasks`, on by default): the Tasks workspace under **Plugins** in the left
   sidebar, task controls in notes,

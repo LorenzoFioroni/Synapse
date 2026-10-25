@@ -154,8 +154,11 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   numbered figures are the Figures core plugin's (`plugins/core/figures/`, through `hooks.ts`). `settingsView.ts` is the Settings page; its markup
   is in `views/settings/page.ts`, and Backups and Devices have their own modules there. `settings/pluginSections.ts` owns the lifecycle
   of plugin Settings sections; `settings/exportFormats.ts` follows active export providers; Autocompletion supplies its own section from its plugin.
-  `plugins/core/advanced-markdown/*` supplies spoiler syntax/rendering and source ranges through
-  the internal `advanced` note hook. Live preview renders those ranges with shared Markdown widgets.
+  `plugins/core/extended-markdown/` is the Extended Markdown package: one folder per syntax
+  extension (`spoilers/` first), each a `MarkdownExtension` (`extension.ts`) adding markdown-it rules
+  and export preparation; `index.ts` installs them all through the internal `extended` note hook.
+  Live preview asks that hook for spoiler ranges once per document version and draws them with
+  shared Markdown widgets.
   `plugins/core/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
   the notes workspace only through `taskHooks` in `views/notes/workspace.ts`.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its

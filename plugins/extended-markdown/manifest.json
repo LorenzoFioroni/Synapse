@@ -1,0 +1,5 @@
+{
+  "id": "extended-markdown", "name": "Extended Markdown", "version": "1.0.0", "api": "^1.1",
+  "core": true, "frontend": "core:extended-markdown",
+  "description": "Markdown syntax beyond the basics, in Live and Read modes and exports. Spoilers: inline ||hidden text|| and collapsible :::spoiler blocks. Notes keep their text when it is off."
+}
