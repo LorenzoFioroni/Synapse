@@ -151,8 +151,9 @@ The parser is the only code that decides what a note links to or cites. `parse()
 | `[@key]`, `[see @a, p. 4; -@b]` | `cite`, one per key, sharing a `group` |
 | `![alt](path)` | `image` (alias is the alt text before any `\|`) |
 | `{{task:k7f3q2mx}}` | `task`: the note shows that task (a record in `library.db`, see [tasks](tasks.md)) |
+| ` ```tasks ` … ` ``` ` | each valid ID line is a `task` link; the whole block is otherwise masked (see [task blocks](tasks.md#task-blocks-in-notes)) |
 | ` ```gallery ` … ` ``` ` | not code: its images and the citations and links in its captions count (see [Galleries](#galleries)) |
-| `# Heading` | heading (ATX only, at most three spaces of indent) |
+| `# Heading`, `## Method \label{sec:method}` | heading (ATX only, at most three spaces of indent); a trailing section label is omitted from its indexed title |
 | `#tag`, `#nested/tag` | tag (starts with a letter; not after a word character, `/`, `&`, `#`, brackets or parentheses) |
 
 Citations follow Pandoc. The brackets must contain `@` and must not be a Markdown link or
@@ -318,7 +319,7 @@ only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 | `conflict.ts` | The dialog for a note changed or deleted elsewhere. |
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
 | `exportNote.ts`, `portable.ts` | Exporting a note as PDF, HTML or Markdown; the Markdown conversion and reference entries (no DOM). |
-| `crossref.ts` | References (`\ref`, `\eqref`, `\cref`, `\Cref`) written out as cleveref does, from the equations' and figures' labels (no DOM). |
+| `crossref.ts`, `sections.ts` | References (`\ref`, `\eqref`, `\cref`, `\Cref`) written out as cleveref does, from equations, figures and labelled Markdown headings; hierarchical section numbering (no DOM). |
 | `hooks.ts` | What core plugins add to the editor: ghost text, the graph, galleries and figures (`setNoteHook`). |
 
 Galleries and figures are an extension of the **Extended Markdown** core plugin, in
@@ -625,9 +626,29 @@ switch among its settings:
 
 - **Galleries and numbered figures**: see [Galleries](#galleries) and
   [Figures](#figures-and-their-numbers);
+- **Task blocks**: a compact fenced collection of task IDs, described in
+  [tasks](tasks.md#task-blocks-in-notes);
 - **Spoilers**: below.
 
 Off, notes render as ordinary Markdown and their text is unchanged.
+
+### Sections and internal references
+
+Section references are part of the core renderer because the same `\ref`/`\cref` engine already
+numbers equations. End a Markdown heading with `\label{name}`; the label is hidden and the heading
+receives its hierarchical number. `\ref{name}` shows the bare number, `\cref{name}` shows
+“Sec. 2.1”, and `\Cref{name}` shows “Section 2.1”. The number is an internal link to the heading.
+
+```markdown
+## Experimental method \label{sec:method}
+
+The calibration is described in \cref{sec:method}.
+```
+
+Heading levels determine the hierarchy, and numbering starts at the shallowest heading level in
+the note. Labels in inline code or math are left alone. Read mode, standalone HTML, and exported
+PDFs all retain the anchors and internal links. Equation labels win a duplicate name, then figure
+labels, then section labels.
 
 ### Spoilers
 
@@ -658,7 +679,7 @@ Raw note HTML is still escaped.
 ### Where the code is
 
 `frontend/src/plugins/core/extended-markdown/` holds one folder per extension (`figures/`,
-`spoilers/`), each a `MarkdownExtension` (`extension.ts`): its markdown-it rules, what HTML/PDF
+`tasks/`, `spoilers/`), each a `MarkdownExtension` (`extension.ts`): its markdown-it rules, what HTML/PDF
 export must open up, and what it starts while on (listeners, a note hook). `index.ts` lists the
 extensions, reads the package's settings (one boolean per extension, keyed by its id, in
 `plugins/extended-markdown/manifest.json`) and follows them through the change feed: a switch

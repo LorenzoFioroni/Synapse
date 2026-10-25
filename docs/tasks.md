@@ -15,6 +15,29 @@ a task with a `{{task:<id>}}` line, which the editor draws as the task's checkbo
 Ticking the box or editing the body changes the task, never the note. Plain Markdown checkboxes
 (`- [ ] …`) stay checkboxes.
 
+### Task blocks in notes
+
+The **Task blocks** extension in Extended Markdown shows several existing tasks without repeating
+`{{task:…}}`. Put one task ID on each line of a `tasks` fence:
+
+````markdown
+```tasks table group=deadline completed=bottom
+k7f3q2mx
+m4n8p1rs
+```
+````
+
+The first option is `list` (default) or `table`. `group=deadline` groups dated tasks and leaves
+undated ones last (`group=none` is the default). `completed=bottom` is the default;
+`completed=inline` keeps source order and `completed=hide` omits completed tasks. A leading `- `
+before an ID is accepted. Unknown options and invalid lines are ignored.
+
+The block is live in the editor and Read mode: boxes tick tasks and titles open them. It is static
+but fully rendered in HTML/PDF export. Portable Markdown export expands it to ordinary checkbox
+items. The notes parser always indexes the IDs inside the fence, even when Extended Markdown is
+off, so the Tasks page and note/task relationships remain correct. With the extension off the
+fence is ordinary code and no task data changes.
+
 This page covers the records (`backend/tasks/store.py`), the lines in notes
 (`backend/tasks/service.py` and the notes parser), the HTTP API (`plugins/tasks/server/routes.py`), Claude's
 task tools, and the frontend (`frontend/src/plugins/core/tasks/`). Related pages: [notes](notes.md) (the
@@ -132,8 +155,8 @@ trashed task) and record a row in `task_history` with the values before and afte
 
 ## Tasks in notes (`backend/tasks/service.py`)
 
-A note shows a task with `{{task:<id>}}`. The notes parser (`_TASK` in `parser.py`, ported to
-`mdscan.ts`) reports it as a link of kind `task`, so the index knows which notes show which tasks
+A note shows a task with `{{task:<id>}}`, or several IDs in a `tasks` block. The notes parser
+(`_TASK`/`_TASKS` in `parser.py`, ported to `mdscan.ts`) reports each as a link of kind `task`, so the index knows which notes show which tasks
 (`NotesIndex.task_refs`, with the heading above each line). As with links, nothing inside code,
 math or comments counts. The line may be indented, in a list item (`- {{task:…}}`) or in a quote;
 a token inside a sentence is shown inline. A sub-task counts as being in its parent's note.

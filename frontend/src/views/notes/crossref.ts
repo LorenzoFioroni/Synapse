@@ -13,18 +13,21 @@
 // (tests/js/crossref.test.mjs); the renderer, the live preview and the Markdown export use it.
 
 export type RefKind = 'ref' | 'eqref' | 'cref' | 'Cref';
-export type TargetType = 'eq' | 'fig';
+export type TargetType = 'eq' | 'fig' | 'sec';
 
 /** What a label stands for: an equation's or a figure's number ("3", "2(b)"), or null when unknown. */
 export type Lookup = (name: string) => { type: TargetType; num: string } | null;
 
 /** The labels of a note's equations (null: labelled but not numbered) and of its figures. */
-export function lookupIn(eqLabels: Map<string, string | null> | undefined, figLabels: Map<string, string> | undefined): Lookup {
+export function lookupIn(eqLabels: Map<string, string | null> | undefined, figLabels: Map<string, string> | undefined,
+  sectionLabels?: Map<string, string>): Lookup {
   return (name) => {
     const n = name.trim();
     if (eqLabels?.has(n)) { const num = eqLabels.get(n); return num == null ? null : { type: 'eq', num }; }
     const f = figLabels?.get(n);
-    return f == null ? null : { type: 'fig', num: f };
+    if (f != null) return { type: 'fig', num: f };
+    const s = sectionLabels?.get(n);
+    return s == null ? null : { type: 'sec', num: s };
   };
 }
 
@@ -34,6 +37,7 @@ export type RefPart = string | { name: string; text: string; missing?: boolean }
 const WORDS: Record<TargetType, [string, string, string, string]> = {
   eq: ['Eq.', 'Eqs.', 'Equation', 'Equations'],
   fig: ['Fig.', 'Figs.', 'Figure', 'Figures'],
+  sec: ['Sec.', 'Secs.', 'Section', 'Sections'],
 };
 
 /** The names a reference holds: \cref takes a comma-separated list, the others one name. */

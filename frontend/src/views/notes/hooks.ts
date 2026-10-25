@@ -70,6 +70,10 @@ export interface ExtendedMarkdownHook {
   spoilers(src: string, scanned: Pick<Scan, 'spans'>): Spoiler[];
   /** An exported copy of a rendered note: interactive parts opened up (exportNote.ts). */
   exportStatic(root: HTMLElement): void;
+  /** A plugin-owned fence drawn by the renderer in live preview instead of as code. */
+  fence(info: string): boolean;
+  /** Convert plugin syntax to ordinary Markdown for .md export. */
+  portable(markdown: string): string;
 }
 
 interface Hooks {

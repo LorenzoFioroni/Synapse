@@ -68,6 +68,12 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     ignoreEvent(e: Event) { return !!(e.target as Element | null)?.closest?.('.gallery-btn, .gallery-dot') || super.ignoreEvent(e); }
   }
 
+  class MarkdownBlockWidget extends HtmlWidget {
+    ignoreEvent(e: Event) {
+      return !!(e.target as Element | null)?.closest?.('[data-task-act], a, button, input') || super.ignoreEvent(e);
+    }
+  }
+
   class CheckboxWidget extends WidgetType {
     checked: boolean;
     pos: number;
@@ -167,6 +173,11 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
       const r = deps.renderer();
       el.innerHTML = r ? r.render(src) : '';
     }, { block: true, cls: 'cm-lp-table' }),
+
+    markdownBlock: (src: string, version: string) => new MarkdownBlockWidget(`b:${version}:${src}`, (el) => {
+      const r = deps.renderer();
+      el.innerHTML = r ? r.render(src) : '';
+    }, { block: true, cls: 'cm-lp-taskblock' }),
 
     /** A gallery's carousel, drawn by the renderer; ``preview``: shown below its source while it is
      *  edited. Its figure number and \ref numbers come from the whole note (``fig``, ``labels``). */

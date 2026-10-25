@@ -31,6 +31,7 @@ import { type Definition, HAS_DEFINITIONS, type Macros, parseDefinitions, withDe
 import { type Equations, previewWidgets } from './previewWidgets.js';
 import type { TaskPreview } from './workspace.js';
 import { type Figures, type Spoiler, noteHooks } from './hooks.js';
+import { sectionsOf } from './sections.js';
 
 /** A DOM text node (``Text`` is CodeMirror's document here). */
 type Text_ = globalThis.Text;
@@ -76,10 +77,10 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
   });
 
   /* ------------------------------------------------------- per-document data */
-  let cache: { doc: Text | null; scan: Scan | null; refs: TextRef[] | null; eq: Equations | null; mode: string | null; base: Macros | null; figs: Figures | null; spoilers: { of: unknown; spans: Spoiler[] } | null; atomic: DecorationSet | null } = { doc: null, scan: null, refs: null, eq: null, mode: null, base: null, figs: null, spoilers: null, atomic: null };
+  let cache: { doc: Text | null; scan: Scan | null; refs: TextRef[] | null; eq: Equations | null; mode: string | null; base: Macros | null; figs: Figures | null; sections: ReturnType<typeof sectionsOf> | null; spoilers: { of: unknown; spans: Spoiler[] } | null; atomic: DecorationSet | null } = { doc: null, scan: null, refs: null, eq: null, mode: null, base: null, figs: null, sections: null, spoilers: null, atomic: null };
   let lastBase: Macros | null = null, baseVersion = 0;
   const scanOf = (state: EditorState): Scan => {
-    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), refs: null, eq: null, mode: null, base: null, figs: null, spoilers: null, atomic: null };
+    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), refs: null, eq: null, mode: null, base: null, figs: null, sections: null, spoilers: null, atomic: null };
     return cache.scan!;
   };
   // the note's figures and their numbers (Extended Markdown), found with the same rule as the
@@ -103,7 +104,8 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     return cache.spoilers.spans;
   };
   // what a reference may name: an equation's label, else a figure's or a gallery panel's
-  const refLookup = (state: EditorState, eq: Equations): Lookup => lookupIn(eq.labels, figuresOfDoc(state).labels);
+  const sectionsOfDoc = (state: EditorState) => (cache.sections ||= sectionsOf(state.doc.toString(), scanOf(state)));
+  const refLookup = (state: EditorState, eq: Equations): Lookup => lookupIn(eq.labels, figuresOfDoc(state).labels, sectionsOfDoc(state).labels);
   // \eqref{label} / \ref{label} in the text (not in code or math), as document offsets
   const refsOf = (state: EditorState): TextRef[] => {
     const s = scanOf(state);
@@ -243,6 +245,13 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
           const from = doc.lineAt(node.from).from, to = doc.lineAt(node.to).to;
           const info = node.node.getChild('CodeInfo');
           const lang = info ? doc.sliceString(info.from, info.to).trim().toLowerCase() : '';
+          if (noteHooks.extended?.fence(lang)) {
+            const src = doc.sliceString(from, to);
+            taken.push([from, to]);
+            if (blockActive(from, to)) lineDecos(from, to, (first, last) => `cm-lp-code${first ? ' cm-lp-code-first' : ''}${last ? ' cm-lp-code-last' : ''}`);
+            else out.push(Decoration.replace({ widget: W.markdownBlock(src, String(version)), block: true }).range(from, to));
+            return false;
+          }
           if (GALLERY_INFO.test(lang)) {
             // with galleries off a gallery is its lines, as any text
             if (!noteHooks.figures) return false;
@@ -331,6 +340,13 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
       const parts = refParts(r.kind as RefKind, names, lookup);
       const text = refPlain(parts), missing = refMissing(parts);
       replace(r.from, r.to, Decoration.replace({ widget: W.chip(`e:${r.from}:${text}:${missing}`, `eqref${missing ? ' missing' : ''}`, text, { label: names[0] || '' }) }));
+    }
+
+    // Labels on headings are hidden until that line is edited; labelled headings show their section number.
+    for (const section of sectionsOfDoc(state).sections) {
+      if (!section.labels.length || !shown(section.from, section.from) || lineActive(section.from)) continue;
+      out.push(Decoration.widget({ widget: W.chip(`sec:${section.from}:${section.number}`, 'section-num', section.number, {}), side: 1 }).range(section.from));
+      for (const label of section.labels) replace(label.from, label.to, hide);
     }
 
     // an image's caption line: its figure number in front, its \label hidden, until you edit it

@@ -258,6 +258,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 /* wider than the room: a little smaller first (mathFit.js), then a scroll bar */
 .katex-display > .katex { font-size: calc(1.21em * var(--eq-scale, 1)); }
 .eq-anchor { display: block; height: 0; }
+.section-num { color: var(--text-2); font-variant-numeric: tabular-nums; }
 .prose .eqref, .cm-lp-gallery .eqref, .cm-lp-chip.eqref { color: var(--accent); text-decoration: none; cursor: pointer; }
 .prose .eqref.missing, .cm-lp-gallery .eqref.missing, .cm-lp-chip.eqref.missing { color: var(--danger); cursor: help; }
 .prose .flash { animation: eq-flash 1.2s ease-out; border-radius: 6px; }

@@ -19,6 +19,7 @@ _TOKEN_RE = re.compile(r"\{\{task:([a-z0-9]{4,32})\}\}")
 _REF_LINE = re.compile(
     r"^(?P<prefix>(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?)\{\{task:(?P<id>[a-z0-9]{4,32})\}\}[ \t]*$"
 )
+_BLOCK_REF_LINE = re.compile(r"^[ \t]*(?:[-*+][ \t]+)?(?P<id>[a-z0-9]{4,32})[ \t]*$")
 _CHECKBOX = re.compile(r"^(?P<indent>[ \t]*)(?P<marker>[-*+]|\d+[.)])[ \t]+\[(?P<box>[ xX])\](?:[ \t]+(?P<text>.*))?$")
 _ITEM = re.compile(r"^(?P<indent>[ \t]*)(?P<marker>[-*+]|\d+[.)])[ \t]+")
 SAVE_TRIES = 3
@@ -77,6 +78,11 @@ def remove_refs(text: str, task_id: str) -> tuple[str, int]:
         i = n - 1
         m = _REF_LINE.match(lines[i])
         if m and m.group("id") == task_id:
+            del lines[i]
+            removed += 1
+        elif (m := _BLOCK_REF_LINE.match(lines[i])) and m.group("id") == task_id:
+            # A bare id inside an Extended Markdown ```tasks block. ``hits`` came from the
+            # parser, so an identical-looking line in ordinary prose or code is never removed.
             del lines[i]
             removed += 1
         else:

@@ -51,6 +51,8 @@ _ATT = re.compile(r"(?:^|[\s,])att:([0-9]+)(?=$|[\s,])", re.I)
 _FENCE = re.compile(r"^([ \t]*)(`{3,}|~{3,})(.*)$")
 # ```gallery, ```gallery|600, ~~~gallery 600: images and captions, not code
 _GALLERY = re.compile(r"^gallery(?![^\s|])", re.I)
+_TASKS = re.compile(r"^tasks(?:\s|$)", re.I)
+_TASK_BLOCK_ID = re.compile(r"^\s*(?:[-*+]\s+)?([a-z0-9]{4,32})\s*$")
 _HEADING = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*(?:#+[ \t]*)?$")
 _WIKI = re.compile(r"(!?)\[\[([^\[\]\n]+?)\]\]")
 _BRACKET = re.compile(r"(?<![!\[\]\\])\[([^\[\]\n]*@[^\[\]\n]*)\](?![(\[\]])")
@@ -191,7 +193,11 @@ def _mask_inline(text: str, chars: list[str], start: int, end: int) -> None:
         i += 1
 
 
-def mask(body: str, galleries: list[tuple[int, int | None, str]] | None = None) -> str:
+def mask(
+    body: str,
+    galleries: list[tuple[int, int | None, str]] | None = None,
+    task_blocks: list[tuple[int, int, str]] | None = None,
+) -> str:
     """Return ``body`` with code, math, comments and escaped characters blanked out.
 
     ``galleries``, when given, receives each ```gallery block as (opening line, closing line or
@@ -206,6 +212,7 @@ def mask(body: str, galleries: list[tuple[int, int | None, str]] | None = None) 
     para_start = None  # offset where the current paragraph began
     fence = None  # (char, length) while inside a fenced block
     gallery = None  # (char, length) while inside a ```gallery block
+    tasks = None  # (char, length) while inside a ```tasks block
     gallery_open = (0, "")  # where the current gallery began, and its info string
     display_math = False
 
@@ -238,6 +245,17 @@ def mask(body: str, galleries: list[tuple[int, int | None, str]] | None = None) 
             elif para_start is None:
                 para_start = start
             continue
+        if tasks:
+            m = _FENCE.match(line)
+            if m and m.group(2)[0] == tasks[0] and len(m.group(2)) >= tasks[1] and not m.group(3).strip():
+                _blank(chars, start, stop)
+                tasks = None
+                continue
+            match = _TASK_BLOCK_ID.match(line)
+            if match and task_blocks is not None:
+                task_blocks.append((n, start + match.start(1), match.group(1)))
+            _blank(chars, start, stop)
+            continue
         if display_math:
             _blank(chars, start, stop)
             if line.strip().endswith("$$"):
@@ -249,6 +267,8 @@ def mask(body: str, galleries: list[tuple[int, int | None, str]] | None = None) 
             if _GALLERY.match(m.group(3).strip()):
                 gallery = (m.group(2)[0], len(m.group(2)))
                 gallery_open = (n, m.group(3).strip())
+            elif _TASKS.match(m.group(3).strip()):
+                tasks = (m.group(2)[0], len(m.group(2)))
             else:
                 fence = (m.group(2)[0], len(m.group(2)))
             _blank(chars, start, stop)
@@ -338,12 +358,45 @@ def _fm_list(v) -> list[str]:
     return [s.strip() for s in str(v).split(",") if s.strip()]
 
 
+def _heading_text(text: str) -> str:
+    """A heading without section labels outside its inline code and math."""
+    out: list[str] = []
+    tick = 0
+    math = False
+    i = 0
+    while i < len(text):
+        if not tick and text[i : i + 2] == "\\\\":
+            out.append("\\\\")
+            i += 2
+            continue
+        if text[i] == "`":
+            j = i
+            while j < len(text) and text[j] == "`":
+                j += 1
+            run = j - i
+            tick = run if not tick else (0 if tick == run else tick)
+            out.append(text[i:j])
+            i = j
+            continue
+        if not tick and text[i] == "$":
+            math = not math
+        if not tick and not math and text.startswith("\\label", i):
+            m = re.match(r"\\label\s*\{[^{}\n]*\}", text[i:])
+            if m:
+                i += len(m.group(0))
+                continue
+        out.append(text[i])
+        i += 1
+    return "".join(out).rstrip()
+
+
 # --------------------------------------------------------------------------- main
 def parse(text: str, *, fallback_title: str = "") -> ParsedNote:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     header, body, offset = frontmatter.split(text)
     meta = frontmatter.parse(header)
-    masked = mask(body)
+    task_blocks: list[tuple[int, int, str]] = []
+    masked = mask(body, task_blocks=task_blocks)
     lines = body.split("\n")
     mlines = masked.split("\n")
 
@@ -434,6 +487,15 @@ def parse(text: str, *, fallback_title: str = "") -> ParsedNote:
             )
         )
 
+    for idx, at, task_id in task_blocks:
+        col = at - line_starts[idx]
+        found.append(
+            (
+                at,
+                Link(kind="task", target=task_id, line=idx + 1 + offset, context=_context(lines, idx, col)),
+            )
+        )
+
     found.sort(key=lambda t: t[0])
 
     headings = []
@@ -443,7 +505,8 @@ def parse(text: str, *, fallback_title: str = "") -> ParsedNote:
         if hm:
             # Text comes from the original line (inline code/math inside headings is kept).
             raw = _HEADING.match(lines[idx])
-            headings.append(Heading(level=len(hm.group(1)), text=(raw or hm).group(2).strip(), line=idx + 1 + offset))
+            heading = _heading_text((raw or hm).group(2)).strip()
+            headings.append(Heading(level=len(hm.group(1)), text=heading, line=idx + 1 + offset))
         for tm in _TAG.finditer(ml):
             t = tm.group(1).rstrip("/-")
             if t and not t.isdigit() and t not in tags:

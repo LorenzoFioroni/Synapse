@@ -18,7 +18,8 @@ import { taskHooks, ws } from '../../../views/notes/workspace.js';
 import { dueLabel, dueState, parseDue } from './dates.js';
 import { childrenOf, createTask, deleteTasks, loadTasks, plainTitle, progress, restoreTask, td, toggleTask } from './taskData.js';
 import { type TaskForm, mountTaskForm } from './taskForm.js';
-import { boxHtml, chipsHtml, ensureRenderer, installTaskRendering, refInnerHtml, refSig, titleHtml } from './taskRender.js';
+import { boxHtml, chipsHtml, ensureRenderer, installTaskRendering, refInnerHtml, refSig, taskBlockHtml, titleHtml } from './taskRender.js';
+import type { TaskBlockOptions } from '../../../views/notes/render.js';
 
 const TOKEN = (id: string) => `{{task:${id}}}`;
 const TOKEN_RE = /\{\{task:([a-z0-9]{4,32})\}\}/g;
@@ -28,6 +29,7 @@ const HEADING = /^\s{0,3}#{1,6}\s/;
 const TOKEN_LINE = /^\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s+)?\{\{task:[a-z0-9]{4,32}\}\}\s*$/;
 
 const defaultTaskHtml = renderDefaults.taskHtml;
+const defaultTaskBlockHtml = renderDefaults.taskBlockHtml;
 let tasksListener: (() => void) | null = null;
 let clickListener: ((e: MouseEvent) => void) | null = null;
 let active = false;
@@ -39,6 +41,7 @@ export function teardownNoteTasks(): void {
   tasksListener = null; clickListener = null;
   for (const key of Object.keys(taskHooks) as (keyof typeof taskHooks)[]) taskHooks[key] = null;
   renderDefaults.taskHtml = defaultTaskHtml;
+  renderDefaults.taskBlockHtml = defaultTaskBlockHtml;
   sideBox = null; shown.clear(); fresh.clear(); binned.clear();
 }
 export function initNoteTasks(): void {
@@ -74,6 +77,16 @@ export function initNoteTasks(): void {
   ensureRenderer().then(() => ws.editor?.refresh());
   tasksListener = () => {
     ws.editor?.refresh();
+    // Read mode and embeds: grouping, ordering and hidden completed rows may all have changed.
+    document.querySelectorAll<HTMLElement>('.task-block-wrap[data-task-ids]').forEach((el) => {
+      if (el.closest('.cm-editor')) return;
+      const options: TaskBlockOptions = {
+        view: el.dataset.taskView === 'table' ? 'table' : 'list',
+        group: el.dataset.taskGroup === 'deadline' ? 'deadline' : 'none',
+        completed: el.dataset.taskCompleted === 'hide' ? 'hide' : el.dataset.taskCompleted === 'inline' ? 'inline' : 'bottom',
+      };
+      el.innerHTML = taskBlockHtml((el.dataset.taskIds || '').split(',').filter(Boolean), options);
+    });
     // tasks drawn outside the editor (read mode, embeds): their content follows the task
     document.querySelectorAll<HTMLElement>('.task-ref[data-task]').forEach((el) => {
       if (el.closest('.cm-editor')) return;
@@ -88,7 +101,7 @@ export function initNoteTasks(): void {
   clickListener = (e) => {
     const t = e.target as Element;
     const ref = t.closest?.<HTMLElement>('.task-ref[data-task]');
-    if (!ref || ref.closest('.cm-editor')) return;
+    if (!ref || (ref.closest('.cm-editor') && !ref.closest('[data-task-block]'))) return;
     e.preventDefault();
     taskAct(ref.dataset.task!, t.closest<HTMLElement>('[data-task-act]')?.dataset.taskAct || 'open', ref, null);
   };
@@ -98,7 +111,7 @@ export function initNoteTasks(): void {
 /** Which tasks each note shows, as last saved: when that changes, the notes of each task are loaded again. */
 const shown = new Map<string, string>();
 function noteSaved(path: string, text: string): void {
-  const ids = [...new Set([...text.matchAll(TOKEN_RE)].map((m) => m[1]))].sort().join(',');
+  const ids = [...new Set(scan(text).links.filter((l) => l.kind === 'task').map((l) => l.target))].sort().join(',');
   const before = shown.get(path);
   shown.set(path, ids);
   const known = Object.entries(td.refs).filter(([, rs]) => rs.some((r) => r.path === path)).map(([id]) => id).sort().join(',');
@@ -190,6 +203,11 @@ function removeRef(id: string, el: HTMLElement, view: EditorView | null): void {
   const tok = TOKEN(id);
   const text = doc.toString();
   const at = pos >= 0 ? text.indexOf(tok, Math.max(0, pos - tok.length)) : text.indexOf(tok);
+  if (at < 0 && el.closest('[data-task-block]')) {
+    const line = Array.from({ length: doc.lines }, (_, i) => doc.line(i + 1)).find((l) => new RegExp(`^\\s*(?:[-*+]\\s+)?${id}\\s*$`).test(l.text));
+    if (line) v.dispatch({ changes: { from: line.from, to: Math.min(doc.length, line.to + 1), insert: '' } });
+    return;
+  }
   if (at < 0) return;
   const line = doc.lineAt(at);
   const alone = LINE.exec(line.text)![4].trim() === tok;

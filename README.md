@@ -248,7 +248,9 @@ never mix.
   and 2 and Eq. (3)" (ranges as "Eqs. (1)–(3)"), `\Cref` the full word for the start of a
   sentence ("Figure 2"), and `\ref` / `\eqref` the bare number (see
   [Figures](docs/notes.md#figures-and-their-numbers)); galleries and figure numbers are part of the core
-  plugin **Extended Markdown**, with a switch of their own in its settings. Switch with the
+  plugin **Extended Markdown**, with a switch of their own in its settings. A Markdown heading can
+  similarly end in `\label{sec:name}`; `\ref`, `\cref` and `\Cref` produce linked section numbers
+  in Read mode and HTML/PDF exports. Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
   Cmd+[ / Alt+←) restore notes, Graph, Tasks, plugin pages and library views/selections.
   If a destination's plugin is off, navigation returns to the library (or Notes for Graph).
@@ -276,7 +278,8 @@ never mix.
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
   drag to move; folders can be renamed, moved and deleted the same way.
 - **Extended Markdown** (core plugin, on by default) is where Markdown syntax beyond the basics
-  lives, each part with its own switch in its settings: **galleries and numbered figures** (above)
+  lives, each part with its own switch in its settings: **galleries and numbered figures** (above),
+  **task blocks** (` ```tasks table group=deadline completed=bottom ` with one task ID per line),
   and **spoilers**: `||inline spoilers||` with a keyboard-accessible
   Show/Hide button, and collapsible `:::spoiler Optional summary` blocks closed by `:::`. Blocks
   support nested Markdown and spoilers. Source text stays intact when the plugin is off; HTML/PDF

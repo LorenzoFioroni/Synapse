@@ -1,0 +1,10 @@
+{
+  "title": "Report",
+  "tags": [],
+  "headings": [
+    [1, "Report", 1],
+    [2, "Method", 3],
+    [3, "`$x \\label{math}$` and `\\label{code}`", 5]
+  ],
+  "links": []
+}
