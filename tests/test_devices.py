@@ -99,8 +99,8 @@ def test_home_screen_icon_and_manifest_need_no_cookie(ipad):
     # the exact addresses the app's page links to, version tags included
     page = (ROOT / "frontend" / "index.html").read_text()
     links = re.findall(r'<link rel="(?:apple-touch-icon|icon|manifest)"[^>]*href="([^"]+)"', page)
-    assert any("apple-touch-icon" in href for href in links)
-    for href in links:
+    assert 'rel="apple-touch-icon"' in page  # in the page itself (tests/test_branding.py)
+    for href in (h for h in links if not h.startswith("data:")):
         r = remote(ipad, "GET", href)
         assert r.status_code == 200 and r.mimetype != "text/html", (href, r.status_code)
     # nothing else of the app's files
