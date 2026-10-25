@@ -321,8 +321,9 @@ beside a note and the global graph in place of the editor. Both show a neighbour
 graph around the node it was opened for (`globalFocus`, depth 1, 2, 3 or 0 for everything, kept
 with the other options in `localStorage` under `zc.graph.global`).
 
-**`plugins/core/figures/`: galleries and figures** (the Figures core plugin, `plugins/figures`).
-`index.ts` installs the carousels' listeners (`galleryView.ts`) and sets the `figures` hook
+**`plugins/core/extended-markdown/figures/`: galleries and figures** (an extension of the Extended
+Markdown core plugin, `plugins/extended-markdown`, with its own switch there). Its `index.ts`
+installs the carousels' listeners (`galleryView.ts`) and sets the `figures` hook
 (`hook.ts`) in `views/notes/hooks.ts`, which the notes code asks when it needs it: the renderer
 adds `markdown.ts`'s rules (it rebuilds itself when a hook changes, `hooksVersion`), the live
 preview asks `figuresOf` for numbers and labels, and the exports call `portable.ts` (Markdown)

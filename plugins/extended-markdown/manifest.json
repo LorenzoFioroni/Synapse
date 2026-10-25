@@ -1,0 +1,26 @@
+{
+  "id": "extended-markdown",
+  "name": "Extended Markdown",
+  "version": "1.0.0",
+  "api": "^1.1",
+  "author": "Synapse",
+  "description": "Markdown syntax beyond the basics, in Live and Read modes and exports, each part with its own switch below. Notes keep their text when it is off.",
+  "core": true,
+  "frontend": "core:extended-markdown",
+  "settings": [
+    {
+      "key": "figures",
+      "type": "bool",
+      "label": "Galleries and numbered figures",
+      "description": "A ```gallery block of images and captions shown as a carousel (one figure with panels (a), (b), … in exports), an image with a caption line numbered Fig. 1, 2, …, and \\label / \\ref / \\cref to them. Off, a gallery reads as the images and text it holds.",
+      "default": true
+    },
+    {
+      "key": "spoilers",
+      "type": "bool",
+      "label": "Spoilers",
+      "description": "Inline ||hidden text|| and collapsible :::spoiler blocks closed by :::. HTML/PDF exports show their contents.",
+      "default": true
+    }
+  ]
+}

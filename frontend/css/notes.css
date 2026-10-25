@@ -428,7 +428,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 
 @media (hover: none) { .prose .code-block .copy-code { opacity: 1; } }   /* touch screens */
 
-/* ---------------------------------------------------------- galleries (the Figures plugin: plugins/core/figures/)
+/* ---------------------------------------------------------- galleries (Extended Markdown: plugins/core/extended-markdown/figures/)
    The panels sit side by side in a track that scrolls with snapping; one panel shows at a time. */
 .gallery { margin: 0 auto .9em; padding: 0; }
 .gallery-view { position: relative; }
@@ -471,7 +471,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 /* its lines are Markdown text, not code: no code font or shading */
 .cm-live .cm-line.cm-lp-gallerysrc .cmt-code { font-family: inherit; font-size: inherit; background: none; color: inherit; border-radius: 0; }
 
-/* ---------------------------------------------------------- figures (the Figures plugin, figures.ts): an image with its
+/* ---------------------------------------------------------- figures (Extended Markdown, figures/figures.ts): an image with its
    caption, numbered Fig. 1, 2, … like galleries with a caption */
 .figure { margin: 0 0 .9em; padding: 0; }
 .figure-image { display: flex; justify-content: center; }
@@ -483,7 +483,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .cm-live .cm-line.cm-lp-figcaption { color: var(--text-2); }
 .cm-lp-chip.fignum { font-weight: 650; color: var(--text); margin-right: .35em; font-style: normal; }
 
-/* Optional Advanced Markdown markup; generated spoilers never execute note HTML. */
+/* Extended Markdown: spoilers. Their markup is generated, never the note's own HTML. */
 .spoiler-inline .spoiler-toggle { font: inherit; color: var(--muted); background: var(--bg-alt, transparent); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; cursor: pointer; }
 .spoiler-content:not([hidden]) { margin-left: .35em; }
 .spoiler-block { border: 1px solid var(--border); border-radius: 6px; padding: .5em .8em; margin: .6em 0; }

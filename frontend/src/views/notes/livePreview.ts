@@ -30,7 +30,7 @@ import { clickOffset } from './mathClick.js';
 import { type Definition, HAS_DEFINITIONS, type Macros, parseDefinitions, withDefinitions } from './macros.js';
 import { type Equations, previewWidgets } from './previewWidgets.js';
 import type { TaskPreview } from './workspace.js';
-import { type Figures, noteHooks } from './hooks.js';
+import { type Figures, type Spoiler, noteHooks } from './hooks.js';
 
 /** A DOM text node (``Text`` is CodeMirror's document here). */
 type Text_ = globalThis.Text;
@@ -76,14 +76,14 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
   });
 
   /* ------------------------------------------------------- per-document data */
-  let cache: { doc: Text | null; scan: Scan | null; refs: TextRef[] | null; eq: Equations | null; mode: string | null; base: Macros | null; figs: Figures | null; atomic: DecorationSet | null } = { doc: null, scan: null, refs: null, eq: null, mode: null, base: null, figs: null, atomic: null };
+  let cache: { doc: Text | null; scan: Scan | null; refs: TextRef[] | null; eq: Equations | null; mode: string | null; base: Macros | null; figs: Figures | null; spoilers: { of: unknown; spans: Spoiler[] } | null; atomic: DecorationSet | null } = { doc: null, scan: null, refs: null, eq: null, mode: null, base: null, figs: null, spoilers: null, atomic: null };
   let lastBase: Macros | null = null, baseVersion = 0;
   const scanOf = (state: EditorState): Scan => {
-    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), refs: null, eq: null, mode: null, base: null, figs: null, atomic: null };
+    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), refs: null, eq: null, mode: null, base: null, figs: null, spoilers: null, atomic: null };
     return cache.scan!;
   };
-  // the note's figures and their numbers (the Figures plugin), found with the same rule as the
-  // renderer's; none without the plugin
+  // the note's figures and their numbers (Extended Markdown), found with the same rule as the
+  // renderer's; none while galleries and figures are off
   const noFigures: Figures = { figures: [], labels: new Map() };
   const figuresOfDoc = (state: EditorState): Figures => {
     const s = scanOf(state);
@@ -91,6 +91,16 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     if (!hook) return noFigures;
     cache.figs ||= hook.figuresOf(state.doc.toString(), s);
     return cache.figs;
+  };
+  // the note's spoilers (Extended Markdown), found once per document version: both decoration
+  // passes ask on every keystroke
+  const spoilersOfDoc = (state: EditorState): Spoiler[] => {
+    const s = scanOf(state);
+    const hook = noteHooks.extended;
+    if (!hook) return [];
+    // keyed on the hook too: switching spoilers on or off in Settings gives a new hook, same text
+    if (cache.spoilers?.of !== hook) cache.spoilers = { of: hook, spans: hook.spoilers(state.doc.toString(), s) };
+    return cache.spoilers.spans;
   };
   // what a reference may name: an equation's label, else a figure's or a gallery panel's
   const refLookup = (state: EditorState, eq: Equations): Lookup => lookupIn(eq.labels, figuresOfDoc(state).labels);
@@ -176,7 +186,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     };
     const overlapsTaken = (from: number, to: number) => taken.some(([a, b]) => from < b && to > a);
 
-    const spoilers = noteHooks.advanced?.spans(doc.toString()) || [];
+    const spoilers = spoilersOfDoc(state);
     for (const sp of spoilers) {
       if (!sp.block || blockActive(sp.from, sp.to) || overlapsTaken(sp.from, sp.to)) continue;
       taken.push([sp.from, sp.to]);
@@ -234,7 +244,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
           const info = node.node.getChild('CodeInfo');
           const lang = info ? doc.sliceString(info.from, info.to).trim().toLowerCase() : '';
           if (GALLERY_INFO.test(lang)) {
-            // without the Figures plugin a gallery is its lines, as any text
+            // with galleries off a gallery is its lines, as any text
             if (!noteHooks.figures) return false;
             // a gallery is one unit: drawn as its carousel, or, while the cursor is in it, its
             // source with the carousel below it (nothing inside the source is rendered)
@@ -296,7 +306,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     const taken: [number, number][] = [];
     const overlapsTaken = (from: number, to: number) => taken.some(([a, b]) => from < b && to > a);
 
-    for (const sp of noteHooks.advanced?.spans(doc.toString()) || []) {
+    for (const sp of spoilersOfDoc(state)) {
       if (!sp.block && shown(sp.from, sp.to) && !touches(sp.from, sp.to)) {
         taken.push([sp.from, sp.to]);
         replace(sp.from, sp.to, Decoration.replace({ widget: W.spoiler(doc.sliceString(sp.from, sp.to), String(state.field(blocks).version), false) }));

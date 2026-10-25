@@ -157,11 +157,15 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   `readView.ts` is read mode and link following; `sidePanel.ts` the status, breadcrumbs and
   details panel; `aiBar.ts` Claude's edits; `ghost.ts` autocompletion's ghost text (its source comes from the Autocompletion plugin through `hooks.ts`); `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
   exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`). Galleries and
-  numbered figures are the Figures core plugin's (`plugins/core/figures/`, through `hooks.ts`). `settingsView.ts` is the Settings page; its markup
+  numbered figures are part of Extended Markdown (`plugins/core/extended-markdown/figures/`, through `hooks.ts`). `settingsView.ts` is the Settings page; its markup
   is in `views/settings/page.ts`, and Backups and Devices have their own modules there. `settings/pluginSections.ts` owns the lifecycle
   of plugin Settings sections; `settings/exportFormats.ts` follows active export providers; Autocompletion supplies its own section from its plugin.
-  `plugins/core/advanced-markdown/*` supplies spoiler syntax/rendering and source ranges through
-  the internal `advanced` note hook. Live preview renders those ranges with shared Markdown widgets.
+  `plugins/core/extended-markdown/` is the Extended Markdown package: one folder per syntax
+  extension (`figures/`, `spoilers/`), each a `MarkdownExtension` (`extension.ts`) adding markdown-it
+  rules, export preparation and what it starts while on; `index.ts` turns each on or off from the
+  package's settings and reaches the notes code through the `extended` and `figures` note hooks.
+  Live preview asks that hook for spoiler ranges once per document version and draws them with
+  shared Markdown widgets.
   `plugins/core/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
   the notes workspace only through `taskHooks` in `views/notes/workspace.ts`.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its

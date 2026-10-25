@@ -44,7 +44,7 @@ export interface FigureInText {
 /** A note's figures in order, and what each \label stands for ("2", "2(b)"). */
 export interface Figures { figures: FigureInText[]; labels: Map<string, string> }
 
-/** Galleries and numbered figures (the Figures plugin). Without it a ```gallery block reads as
+/** Galleries and numbered figures (the figures extension of Extended Markdown). Without it a ```gallery block reads as
     the Markdown it holds, and an image's caption line as the text it is. */
 export interface FiguresHook {
   /** Add the rules and renderers to a Markdown renderer (render.ts). They run before the
@@ -60,30 +60,37 @@ export interface FiguresHook {
   exportStatic(root: HTMLElement): void;
 }
 
-export interface AdvancedMarkdownHook {
+/** A spoiler's source range; `block` for a :::spoiler block, else inline ||…||. */
+export interface Spoiler { from: number; to: number; block: boolean }
+
+export interface ExtendedMarkdownHook {
+  /** Adds the package's markdown-it rules (render.ts). */
   markdown(md: MarkdownIt): void;
-  spans(src: string): { from: number; to: number; block: boolean }[];
+  /** The note's spoilers, for live preview; `scanned` is the note's mdscan result. */
+  spoilers(src: string, scanned: Pick<Scan, 'spans'>): Spoiler[];
+  /** An exported copy of a rendered note: interactive parts opened up (exportNote.ts). */
   exportStatic(root: HTMLElement): void;
 }
 
 interface Hooks {
-  advanced: AdvancedMarkdownHook | null;
+  /** Extra Markdown syntax such as spoilers (Extended Markdown), or null. */
+  extended: ExtendedMarkdownHook | null;
   /** Where ghost-text suggestions come from (Autocompletion), or null for none. */
   ghost: GhostSource | null;
   /** Called after a note's editor was made (to load a model before the first suggestion, say). */
   editorOpened: Set<() => void>;
   /** The graph (Graph), or null. Set it with setNoteHook, so the notes view hears of it. */
   graph: GraphHook | null;
-  /** Galleries and figures (Figures), or null. Set it with setNoteHook. */
+  /** Galleries and figures (Extended Markdown), or null. Set it with setNoteHook. */
   figures: FiguresHook | null;
 }
 
-export const noteHooks: Hooks = { advanced: null, ghost: null, editorOpened: new Set(), graph: null, figures: null };
+export const noteHooks: Hooks = { extended: null, ghost: null, editorOpened: new Set(), graph: null, figures: null };
 
 /** Goes up whenever a hook is set or taken away (renderers rebuild when it changed). */
 export let hooksVersion = 0;
 
-type Settable = 'advanced' | 'graph' | 'figures' | 'ghost';
+type Settable = 'extended' | 'graph' | 'figures' | 'ghost';
 type HookKey = Settable | 'tasks';
 const listeners = new Set<(key: HookKey) => void>();
 /** Set (or with null, take away) a hook; the notes view puts it in place or removes it and draws

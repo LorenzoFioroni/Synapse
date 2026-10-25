@@ -56,11 +56,6 @@ mode, and their settings are in their own section or under **More**:
 
 - **Autocompletion** (`plugins/autocompletion`, off by default): suggestions from a model in
   Ollama on this computer as you write a note; see [autocompletion](autocompletion.md).
-- **Figures** (`plugins/figures`, frontend only): ` ```gallery ` blocks drawn as carousels
-  (one figure with panels in exports), figures numbered Fig. 1, 2, … and `\ref` / `\cref` to
-  them; see [notes](notes.md#galleries). Turned off, a gallery reads as the images and captions
-  it holds, an image's caption as the line of text it is, and a reference to a figure as ??. The
-  notes format does not change: the parser and the attachment sweep still read a gallery's lines.
 - **Metadata Sources** (`plugins/metadata-sources`, on by default): metadata by DOI, arXiv ID,
   ISBN or title from Crossref, OpenAlex, arXiv and Open Library, including the existing title
   fallback and author enrichment. Turning it off keeps library records and lookup URLs; lookups
@@ -73,8 +68,16 @@ mode, and their settings are in their own section or under **More**:
   Markdown exports remain in core. The canonical codecs in `backend/formats/` are shared; this
   plugin owns which writers the library export dialog/API exposes. With it off, imports still
   work, stored export preferences survive and the dialog explains how to enable a writer.
-- **Advanced Markdown** (`plugins/advanced-markdown`, on by default): inline `||spoilers||` and
-  collapsible `:::spoiler` blocks in Live/Read modes. Disabling it renders ordinary Markdown
+- **Extended Markdown** (`plugins/extended-markdown`, frontend only, on by default): Markdown
+  syntax beyond the basics, one extension per folder in
+  `frontend/src/plugins/core/extended-markdown/`, each with a boolean setting of its own:
+  - **Galleries and numbered figures** (`figures`): ` ```gallery ` blocks drawn as carousels (one
+    figure with panels in exports), figures numbered Fig. 1, 2, … and `\ref` / `\cref` to them;
+    see [notes](notes.md#galleries). Off, a gallery reads as the images and captions it holds, an
+    image's caption as the line of text it is, and a reference to a figure as ??. The notes format
+    does not change: the parser and the attachment sweep still read a gallery's lines.
+  - **Spoilers** (`spoilers`): inline `||spoilers||` and collapsible `:::spoiler` blocks in
+    Live/Read modes. Disabling it renders ordinary Markdown
   without changing note files. HTML/PDF export reveals spoiler contents; Markdown keeps the source.
 - **Tasks** (`plugins/tasks`, on by default): the Tasks workspace under **Plugins** in the left
   sidebar, task controls in notes,
@@ -85,7 +88,7 @@ mode, and their settings are in their own section or under **More**:
 - **Graph** (`plugins/graph`, opened under **Plugins** in the left sidebar): the graph of notes and the papers they cite: the local graph
   beside a note, the full graph (Cmd/Ctrl+Shift+G), Show in Graph; its data at
   `/api/plugins/graph/data`. A core plugin's frontend reaches into the notes view through
-  `frontend/src/views/notes/hooks.ts` (`setNoteHook('graph' | 'figures', …)`, which redraws the
+  `frontend/src/views/notes/hooks.ts` (`setNoteHook('graph' | 'figures' | 'extended', …)`, which redraws the
   open note); a core plugin's server part gets the app's `Services` as `plugin.synapse`.
 - **Open-Access PDFs** (`plugins/open-access-pdfs`): where Find Available PDF looks, Unpaywall and
   arXiv by identifier and by title (its two PDF sources, see
@@ -116,7 +119,7 @@ registry in `frontend/src/extend.ts`, and remove them on unload. The sidebar onl
 registrations; it does not own plugin-specific buttons or counts. Each entry determines its active
 state from the visible workspace as well as its retained view state, so leaving Graph for Tasks or
 the library clears its highlight even though Notes keeps the graph in memory. Third-party plugins
-continue to use `p.pages` and backend item sources. Figures and Autocompletion are editor integrations, Citation
+continue to use `p.pages` and backend item sources. Extended Markdown and Autocompletion are editor integrations, Citation
 Counts adds item fields, and metadata/PDF plugins supply lookups; those do not create empty pages.
 
 Workspace transitions are coordinated by `main.ts`: opening a plugin page first saves and closes
