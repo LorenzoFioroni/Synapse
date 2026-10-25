@@ -9,7 +9,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <!-- Install metadata for Chromium and Add to Home Screen metadata for Safari. -->
   <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <!-- versioned like the other icons: Safari keeps a touch icon per address, a failed one too -->
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=4">
   <meta name="apple-mobile-web-app-title" content="Synapse">
   <!-- The title bar: neutral like the tab bar; a note in a coloured folder sets its colour (windowColor.ts). -->
   <meta name="theme-color" content="#f1f3f6" media="(prefers-color-scheme: light)">

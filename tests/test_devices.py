@@ -1,5 +1,6 @@
 """Other devices on the network must be paired. See backend/access/devices.py and backend/access/guard.py."""
 
+import re
 import sqlite3
 import subprocess
 import sys
@@ -11,6 +12,8 @@ import pytest
 from backend import create_app
 from backend.access import devices as devmod
 from backend.config import Config
+
+ROOT = Path(__file__).resolve().parents[1]
 
 IPAD = "192.0.2.10"  # TEST-NET: never one of this computer's own addresses
 LAN_HOST = "192.168.1.5:8000"
@@ -93,6 +96,13 @@ def test_home_screen_icon_and_manifest_need_no_cookie(ipad):
         assert r.status_code == 200 and r.mimetype == kind, (path, r.status_code, r.mimetype)
     icons = [i["src"] for i in remote(ipad, "GET", "/manifest.webmanifest").get_json()["icons"]]
     assert all(remote(ipad, "GET", src).status_code == 200 for src in icons)
+    # the exact addresses the app's page links to, version tags included
+    page = (ROOT / "frontend" / "index.html").read_text()
+    links = re.findall(r'<link rel="(?:apple-touch-icon|icon|manifest)"[^>]*href="([^"]+)"', page)
+    assert any("apple-touch-icon" in href for href in links)
+    for href in links:
+        r = remote(ipad, "GET", href)
+        assert r.status_code == 200 and r.mimetype != "text/html", (href, r.status_code)
     # nothing else of the app's files
     assert remote(ipad, "GET", "/assets/../index.html").status_code in (401, 404)
     assert remote(ipad, "GET", "/js/main.js").status_code == 401
