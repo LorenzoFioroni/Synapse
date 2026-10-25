@@ -164,6 +164,13 @@ def test_remove_refs():
     assert ref_ids(text) == ["aaaa1111", "bbbb2222"]
 
 
+def test_task_block_refs_and_removal():
+    text = "```tasks table\naaaa1111\n- bbbb2222\n```\n\nplain aaaa1111\n"
+    assert ref_ids(text) == ["aaaa1111", "bbbb2222"]
+    out, n = remove_refs(text, "aaaa1111")
+    assert n == 1 and out == "```tasks table\n- bbbb2222\n```\n\nplain aaaa1111\n"
+
+
 def test_add_and_remove_in_a_note(svc, store):
     svc.note_service.create(path="Notes/a.md", text="# A\n\n## TODOs\n")
     t = store.create("Plot chi")

@@ -59,6 +59,16 @@ button.link:hover { text-decoration: underline; }
 .prose .task-ref { display: flex; margin: 3px 0; }
 /* (a line right below a task's list item belongs to that item: it may hold several task lines) */
 .prose li:has(> .task-ref:first-child), .prose li:has(> p:first-child > .task-ref:first-child) { list-style: none; margin-left: -1.5em; }
+.task-block-wrap { margin: 1em 0; }
+.task-block { display: flex; flex-direction: column; gap: 5px; }
+.task-block-list { display: flex; flex-direction: column; gap: 3px; }
+.task-block-group { margin: 10px 0 3px; color: var(--text-3); font-size: var(--fs-xs); font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
+.task-block-group:first-child { margin-top: 0; }
+.task-block-table { width: 100%; margin: 3px 0 10px; }
+.task-block-table td:first-child { width: 100%; }
+.task-block-table td:nth-child(n+2), .task-block-table th:nth-child(n+2) { white-space: nowrap; }
+.task-block.empty, .task-block-empty { color: var(--text-3); font-style: italic; }
+.cm-lp-taskblock { padding: 2px 0; }
 
 /* "{{" autocomplete: the task's rendered title in place of the plain label */
 .cm-task-option .cm-completionLabel { display: none; }

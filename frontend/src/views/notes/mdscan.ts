@@ -15,6 +15,8 @@ const ATT = /(?:^|[\s,])att:(\d+)(?=$|[\s,])/i;
 const FENCE = /^([ \t]*)(`{3,}|~{3,})(.*)$/;
 // ```gallery, ```gallery|600, ~~~gallery 600: images and captions, not code (_GALLERY in parser.py)
 export const GALLERY_INFO = /^gallery(?![^\s|])/i;
+export const TASKS_INFO = /^tasks(?:\s|$)/i;
+const TASK_BLOCK_ID = /^\s*(?:[-*+]\s+)?([a-z0-9]{4,32})\s*$/;
 const HEADING = /^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*(?:#+[ \t]*)?$/;
 const WIKI = /(!?)\[\[([^[\]\n]+?)\]\]/g;
 const BRACKET = /(?<![![\]\\])\[([^[\]\n]*@[^[\]\n]*)\](?![([\]])/g;
@@ -27,7 +29,7 @@ const DIGITS = '0123456789';
 /** A region the scanner blanked (code, math, comments, fenced blocks), or a gallery block (whose
  *  fence lines only are blanked: its images and captions are read like any paragraph). */
 export interface Span {
-  kind: 'code' | 'math' | 'comment' | 'fence' | 'mathblock' | 'gallery';
+  kind: 'code' | 'math' | 'comment' | 'fence' | 'mathblock' | 'gallery' | 'taskblock';
   from: number;
   to: number;
   display?: boolean;
@@ -89,6 +91,27 @@ export function splitFrontmatter(text: string): { header: string | null; bodySta
 
 function blank(chars: string[], a: number, b: number): void {
   for (let i = a; i < b; i++) if (chars[i] !== '\n') chars[i] = ' ';
+}
+
+function headingText(text: string): string {
+  const out: string[] = [];
+  let tick = 0, math = false;
+  for (let i = 0; i < text.length;) {
+    if (!tick && text[i] === '\\' && text[i + 1] === '\\') { out.push('\\\\'); i += 2; continue; }
+    if (text[i] === '`') {
+      let j = i; while (text[j] === '`') j++;
+      const run = j - i;
+      tick = !tick ? run : tick === run ? 0 : tick;
+      out.push(text.slice(i, j)); i = j; continue;
+    }
+    if (!tick && text[i] === '$') math = !math;
+    if (!tick && !math && text.startsWith('\\label', i)) {
+      const m = /^\\label\s*\{[^{}\n]*\}/.exec(text.slice(i));
+      if (m) { i += m[0].length; continue; }
+    }
+    out.push(text[i]); i++;
+  }
+  return out.join('').trimEnd();
 }
 
 function maskInline(text: string, chars: string[], start: number, end: number, spans: Span[]): void {
@@ -161,6 +184,7 @@ export function mask(body: string): { masked: string; spans: Span[] } {
   for (const l of lines) { offsets.push(pos); pos += l.length + 1; }
   let paraStart: number | null = null, fence: [string, number] | null = null, fenceStart = 0, mathBlock = false, mathStart = 0;
   let gallery: [string, number] | null = null, galleryStart = 0;
+  let tasks: [string, number] | null = null, tasksStart = 0;
   const flush = (upto: number) => { if (paraStart !== null) { maskInline(body, units, paraStart, upto, spans); paraStart = null; } };
   lines.forEach((line, n) => {
     const start = offsets[n], stop = start + line.length;
@@ -187,6 +211,15 @@ export function mask(body: string): { masked: string; spans: Span[] } {
       else if (paraStart === null) paraStart = start;
       return;
     }
+    if (tasks) {
+      const m = FENCE.exec(line);
+      blank(units, start, stop);
+      if (m && m[2][0] === tasks[0] && m[2].length >= tasks[1] && !strip(m[3])) {
+        tasks = null;
+        spans.push({ kind: 'taskblock', from: tasksStart, to: stop });
+      }
+      return;
+    }
     if (mathBlock) {
       blank(units, start, stop);
       if (strip(line).endsWith('$$')) { mathBlock = false; spans.push({ kind: 'mathblock', display: true, from: mathStart, to: stop }); }
@@ -196,6 +229,7 @@ export function mask(body: string): { masked: string; spans: Span[] } {
     if (m && !(m[2][0] === '`' && m[3].includes('`'))) {
       flush(start);
       if (GALLERY_INFO.test(strip(m[3]))) { gallery = [m[2][0], m[2].length]; galleryStart = start; }
+      else if (TASKS_INFO.test(strip(m[3]))) { tasks = [m[2][0], m[2].length]; tasksStart = start; }
       else { fence = [m[2][0], m[2].length]; fenceStart = start; }
       blank(units, start, stop);
       return;
@@ -215,6 +249,7 @@ export function mask(body: string): { masked: string; spans: Span[] } {
   if (fence) spans.push({ kind: 'fence', from: fenceStart, to: body.length, open: true });
   if (mathBlock) spans.push({ kind: 'mathblock', display: true, from: mathStart, to: body.length, open: true });
   if (gallery) spans.push({ kind: 'gallery', from: galleryStart, to: body.length, open: true });
+  if (tasks) spans.push({ kind: 'taskblock', from: tasksStart, to: body.length, open: true });
   return { masked: units.join(''), spans };
 }
 
@@ -313,6 +348,20 @@ export function scan(text: string): Scan {
     found.push([at, { kind: 'task', from: at + off, to: at + m[0].length + off, target: m[1], heading: '', alias: '',
       locator: '', page: null, prefix: '', suppress_author: false, group: 0, line: lineOf(at) }]);
   }
+  for (const sp of spans.filter((s) => s.kind === 'taskblock')) {
+    const block = body.slice(sp.from, sp.to);
+    let blockAt = sp.from;
+    block.split('\n').forEach((line, i) => {
+      if (i === 0 || /^\s*(`{3,}|~{3,})\s*$/.test(line)) { blockAt += line.length + 1; return; }
+      const m = TASK_BLOCK_ID.exec(line);
+      if (m) {
+        const at = blockAt + m.index + m[0].indexOf(m[1]);
+        found.push([at, { kind: 'task', from: at + off, to: at + m[1].length + off, target: m[1], heading: '', alias: '',
+          locator: '', page: null, prefix: '', suppress_author: false, group: 0, line: lineOf(at) }]);
+      }
+      blockAt += line.length + 1;
+    });
+  }
   found.sort((a, b) => a[0] - b[0]);
 
   const headings: Heading[] = [];
@@ -322,7 +371,7 @@ export function scan(text: string): Scan {
     const hm = HEADING.exec(ml);
     if (hm) {
       const raw = HEADING.exec(bodyLines[idx]) || hm;
-      headings.push({ level: hm[1].length, text: strip(raw[2]), line: idx + 1 + fm.bodyLine, from: lineStarts[idx] + off });
+      headings.push({ level: hm[1].length, text: strip(headingText(raw[2])), line: idx + 1 + fm.bodyLine, from: lineStarts[idx] + off });
     }
     for (const tm of ml.matchAll(TAG)) {
       const t = tm[1].replace(/[/-]+$/, '');

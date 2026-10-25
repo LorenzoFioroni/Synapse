@@ -173,6 +173,7 @@ export function referenceKeys(keys: string[], citeInfo: (key: string) => RefInfo
  *  replaced by what they embed, citations as "(Smith et al. 2021, p. 4)". */
 export function portableBody(text: string, opts: PortableOptions): Portable {
   text = text.replace(/\r\n?/g, '\n');
+  text = noteHooks.extended?.portable(text) ?? text;
   const { links } = scan(text);
   const keys: string[] = [];
   let out = '', at = splitFrontmatter(text).bodyStart;

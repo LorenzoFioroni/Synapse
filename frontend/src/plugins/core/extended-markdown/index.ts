@@ -7,8 +7,9 @@ import type { MarkdownExtension } from './extension.js';
 import { figures } from './figures/index.js';
 import { spoilers } from './spoilers/index.js';
 import { spoilerSpans } from './spoilers/syntax.js';
+import { taskBlocks } from './tasks/index.js';
 
-export const EXTENSIONS: MarkdownExtension[] = [figures, spoilers];
+export const EXTENSIONS: MarkdownExtension[] = [figures, spoilers, taskBlocks];
 
 const noSpoilers = () => [];
 
@@ -31,6 +32,8 @@ export async function activate(p: PluginContext): Promise<void> {
       markdown(md) { for (const ext of wanted) ext.markdown?.(md); },
       spoilers: running.has(spoilers.id) ? spoilerSpans : noSpoilers,
       exportStatic(root) { for (const ext of wanted) ext.exportStatic?.(root); },
+      fence(info) { return wanted.some((ext) => ext.fence?.(info)); },
+      portable(markdown) { return wanted.reduce((text, ext) => ext.portable?.(text) ?? text, markdown); },
     };
     setNoteHook('extended', hook);
   };

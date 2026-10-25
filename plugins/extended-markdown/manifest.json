@@ -16,6 +16,13 @@
       "default": true
     },
     {
+      "key": "task_blocks",
+      "type": "bool",
+      "label": "Task blocks",
+      "description": "A ```tasks block lists task IDs one per line, with list or table views, optional deadline grouping, and completed tasks inline, at the bottom, or hidden.",
+      "default": true
+    },
+    {
       "key": "spoilers",
       "type": "bool",
       "label": "Spoilers",

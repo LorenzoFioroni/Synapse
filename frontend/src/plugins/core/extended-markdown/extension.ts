@@ -8,6 +8,10 @@ export interface MarkdownExtension {
   markdown?(md: MarkdownIt): void;
   /** Prepares a rendered copy for HTML/PDF export (reveal what is interactive, say). */
   exportStatic?(root: HTMLElement): void;
+  /** Whether this fenced block is rendered as Markdown in the live editor. */
+  fence?(info: string): boolean;
+  /** Rewrite plugin syntax for portable Markdown export. */
+  portable?(markdown: string): string;
   /** Starts what it needs while on (page-wide listeners, a note hook); returns what undoes it. */
   attach?(): () => void;
 }

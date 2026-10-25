@@ -9,6 +9,7 @@ import { type Renderer, createRenderer, renderDefaults } from '../../../views/no
 import { citeInfo, equationMode, noteMacros, normTarget, ws } from '../../../views/notes/workspace.js';
 import { dueLabel, dueState } from './dates.js';
 import { progress, td } from './taskData.js';
+import type { TaskBlockOptions } from '../../../views/notes/render.js';
 
 let renderer: Renderer | null = null;
 let loading: Promise<Renderer> | null = null;
@@ -85,9 +86,47 @@ export function refHtml(id: string): string {
   return `<span class="task-ref${t?.status === 'done' ? ' done' : ''}${t ? '' : ' missing'}" data-task="${escapeHtml(id)}">${refInnerHtml(id)}</span>`;
 }
 
+function taskBlockRows(ids: string[], options: TaskBlockOptions): { label: string; ids: string[] }[] {
+  let rows = ids.filter((id) => options.completed !== 'hide' || td.tasks.get(id)?.status !== 'done');
+  if (options.completed === 'bottom') rows = [...rows.filter((id) => td.tasks.get(id)?.status !== 'done'), ...rows.filter((id) => td.tasks.get(id)?.status === 'done')];
+  if (options.group !== 'deadline') return [{ label: '', ids: rows }];
+  const groups = new Map<string, string[]>();
+  for (const id of rows) {
+    const t = td.tasks.get(id);
+    const key = t?.status === 'done' && options.completed === 'bottom' ? 'Completed' : t?.due || 'No deadline';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(id);
+  }
+  return [...groups].sort(([a], [b]) => {
+    if (a === 'Completed') return 1; if (b === 'Completed') return -1;
+    if (a === 'No deadline') return 1; if (b === 'No deadline') return -1;
+    return a.localeCompare(b);
+  }).map(([key, taskIds]) => ({ label: /^\d{4}-\d{2}-\d{2}$/.test(key) ? dueLabel(key) : key, ids: taskIds }));
+}
+
+/** A fenced task block in read/live modes and HTML/PDF exports. */
+export function taskBlockHtml(ids: string[], options: TaskBlockOptions): string {
+  const groups = taskBlockRows(ids, options);
+  if (!groups.some((g) => g.ids.length)) return '<div class="task-block empty">No tasks to show.</div>';
+  const content = groups.map((group) => {
+    const heading = group.label ? `<div class="task-block-group">${escapeHtml(group.label)}</div>` : '';
+    if (options.view === 'table') {
+      const rows = group.ids.map((id) => {
+        const t = td.tasks.get(id);
+        const status = t ? (t.status === 'done' ? 'Done' : 'Open') : 'Missing';
+        return `<tr><td>${refHtml(id)}</td><td>${escapeHtml(t?.due ? dueLabel(t.due) : '—')}</td><td>${status}</td></tr>`;
+      }).join('');
+      return `${heading}<table class="task-block-table"><thead><tr><th>Task</th><th>Deadline</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    return `${heading}<div class="task-block-list">${group.ids.map(refHtml).join('')}</div>`;
+  }).join('');
+  return `<div class="task-block ${options.view}" data-task-block>${content}</div>`;
+}
+
 /** Install the task drawing into every Markdown renderer. */
 export function installTaskRendering(): void {
   renderDefaults.taskHtml = refHtml;
+  renderDefaults.taskBlockHtml = taskBlockHtml;
   ensureRenderer();
 }
 

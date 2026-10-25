@@ -21,6 +21,7 @@ import { labelId, layoutTag, numberEquations, resolveRefs } from './equations.js
 import { type Cite, GALLERY_INFO, attachmentOf, parseCites, referenceDefinition, splitWiki } from './mdscan.js';
 import { hooksVersion, noteHooks } from './hooks.js';
 import { type Definition, HAS_DEFINITIONS, type Macro, type Macros, baseMacros, macroSource, parseDefinitions, withDefinitions } from './macros.js';
+import { takeSectionLabels } from './sections.js';
 
 /** What a renderer may know about a cited key (any CiteEntry fits). */
 export interface CiteInfo { title?: string; authors?: string; year?: number | string | null; trashed?: boolean }
@@ -42,11 +43,16 @@ export interface Renderer {
 
 /** What renderers use when not told otherwise (set by the notes view from Settings), so note
  *  embeds and other renderers number equations and know the macros the same way. */
-export const renderDefaults: { equations: () => string; macros: () => Macros; taskHtml: (id: string) => string } = {
+export interface TaskBlockOptions { view: 'list' | 'table'; group: 'none' | 'deadline'; completed: 'inline' | 'bottom' | 'hide' }
+export const renderDefaults: {
+  equations: () => string; macros: () => Macros; taskHtml: (id: string) => string;
+  taskBlockHtml: (ids: string[], options: TaskBlockOptions) => string;
+} = {
   equations: () => 'labelled',
   macros: () => baseMacros().macros,
   // what a {{task:id}} shows; the Tasks module (views/tasks/taskRender.ts) draws the task itself
   taskHtml: (id) => `<span class="task-ref" data-task="${esc(id)}">{{task:${esc(id)}}}</span>`,
+  taskBlockHtml: (ids) => `<div class="task-block unavailable">${ids.map((id) => `<div>${esc(id)}</div>`).join('')}</div>`,
 };
 
 const CALLOUTS: Record<string, string> = {
@@ -300,6 +306,26 @@ function eqRefRule(state: StateInline, silent: boolean): boolean {
   return true;
 }
 
+/** Number headings and collect their \label targets before their inline content is parsed. */
+function sectionsRule(state: StateCore): void {
+  const headings = state.tokens.filter((t) => t.type === 'heading_open');
+  const base = headings.reduce((n, t) => Math.min(n, Number(t.tag.slice(1))), 6);
+  const counters = [0, 0, 0, 0, 0, 0];
+  const labels = new Map<string, string>();
+  for (let i = 0; i < state.tokens.length - 1; i++) {
+    const open = state.tokens[i], inline = state.tokens[i + 1];
+    if (open.type !== 'heading_open' || inline.type !== 'inline') continue;
+    const level = Number(open.tag.slice(1));
+    counters[level - 1]++; counters.fill(0, level);
+    const number = counters.slice(base - 1, level).map((n) => n || 1).join('.');
+    const p = takeSectionLabels(inline.content);
+    inline.content = p.text;
+    open.meta = { ...(open.meta || {}), sectionNumber: number, sectionLabels: p.labels.map((l) => l.name) };
+    for (const l of p.labels) if (!labels.has(l.name)) labels.set(l.name, number);
+  }
+  state.env.sectionLabels = labels;
+}
+
 /** Collect the note's macro definitions (macros.ts), number its display equations and resolve
  *  \eqref / \ref (equations.ts), in document order. */
 function equationsRule(mode: RendererOptions['equations'], macros: RendererOptions['macros']) {
@@ -392,6 +418,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
     md.inline.ruler.push('tag', tagRule);
     md.inline.ruler.before('emphasis', 'task_ref', taskRefRule);
     md.inline.ruler.before('escape', 'eq_ref', eqRefRule);
+    md.core.ruler.before('inline', 'sections', sectionsRule);
     md.core.ruler.after('inline', 'equations', equationsRule(o.equations ?? renderDefaults.equations, o.macros ?? renderDefaults.macros));
     md.core.ruler.after('block', 'callout', calloutRule);
     md.core.ruler.after('block', 'gallery_plain', plainGalleries);
@@ -410,7 +437,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
     // an equation's label, else a figure's (env.figLabels, from Extended Markdown's figures); \cref writes the kind too (crossref.ts)
     R.eq_ref = (t, i, opts, env) => {
       const { kind, names } = t[i].meta;
-      return refHtml(kind, names, lookupIn(env.eqLabels, env.figLabels));
+      return refHtml(kind, names, lookupIn(env.eqLabels, env.figLabels, env.sectionLabels));
     };
     R.note_link = (t, i) => {
       const w = t[i].meta;
@@ -465,7 +492,9 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
     R.heading_open = (t, i, opts, env, self) => {
       const text = t[i + 1]?.content || '';
       t[i].attrSet('id', `h-${slugHeading(text)}`);
-      return self.renderToken(t, i, opts);
+      const names = t[i].meta?.sectionLabels as string[] | undefined;
+      const prefix = names?.length ? `${anchorsHtml(names)}<span class="section-num">${esc(t[i].meta.sectionNumber)}</span> ` : '';
+      return self.renderToken(t, i, opts) + prefix;
     };
     // data-line values include the front-matter offset
     if (o.lineOffset) {

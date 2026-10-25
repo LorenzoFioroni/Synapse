@@ -161,7 +161,7 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   is in `views/settings/page.ts`, and Backups and Devices have their own modules there. `settings/pluginSections.ts` owns the lifecycle
   of plugin Settings sections; `settings/exportFormats.ts` follows active export providers; Autocompletion supplies its own section from its plugin.
   `plugins/core/extended-markdown/` is the Extended Markdown package: one folder per syntax
-  extension (`figures/`, `spoilers/`), each a `MarkdownExtension` (`extension.ts`) adding markdown-it
+  extension (`figures/`, `tasks/`, `spoilers/`), each a `MarkdownExtension` (`extension.ts`) adding markdown-it
   rules, export preparation and what it starts while on; `index.ts` turns each on or off from the
   package's settings and reaches the notes code through the `extended` and `figures` note hooks.
   Live preview asks that hook for spoiler ranges once per document version and draws them with
