@@ -19,9 +19,9 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
               │                                                                 │
  browser   ──►│ api/connector   "Save to Library" button                        │
  extension    │                                                                 │
- Claude    ──►│ mcp_server.py ─► backend.mcp   same data/, over stdin/stdout    │
- Desktop/Code │                                                                 │
- Claude Code ►│ /mcp (token) ─► backend.mcp   the web app's own Services        │
+ AI apps   ──►│ mcp_server.py ─► backend.mcp   same data/, over stdin/stdout    │
+ Claude, Codex│                                                                 │
+ AI app     ─►│ /mcp (token) ─► backend.mcp   the web app's own Services        │
  (other PC)   │                                                                 │
               │ data/  library.db · fulltext.db · notes/ · notes_index.db ·     │
               │        citations.db · pdfs/ · backups/ · settings.json · auth.db│
@@ -32,7 +32,7 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
 | Entry point | What it is |
 |---|---|
 | `server.py` | Starts the web app: parses the flags, builds a `Config`, calls `backend.create_app`, and serves it with Werkzeug's threaded server, over HTTPS with `--cert`/`--key`. `--window` opens it in a window of its own, `--quit-when-closed` stops it with its last window and `--make-shortcut` makes a desktop icon that does both (see [the app window](desktop.md)). |
-| `mcp_server.py` | The MCP server that Claude Desktop and Claude Code start themselves. It reads the same `data/` folder. New notes it writes go into `notes/ai/`; changes it makes to existing notes are hash-checked and recorded so they can be undone (see [MCP](mcp.md)). |
+| `mcp_server.py` | The MCP server that AI apps (Claude Desktop, Claude Code, Codex …) start themselves. It reads the same `data/` folder. New notes it writes go into `notes/ai/`; changes it makes to existing notes are hash-checked and recorded so they can be undone (see [MCP](mcp.md)). |
 | `frontend/index.html` | The single-page app. It loads `js/main.js` as an ES module. |
 | `frontend/viewer.html` | The PDF viewer, opened in one of the app's own tabs (a frame in `index.html`) or in a browser tab of its own. It loads pdf.js and `js/viewer/viewer.js` (the viewer), then its add-ons `notesBridge`, `links` and `annotations`. |
 | `frontend/pair.html` | The page the pairing QR code opens on another device. |
@@ -57,7 +57,7 @@ Two objects tie the backend together:
 
 | Package / module | Responsibility | Storage |
 |---|---|---|
-| `library/` | Items, attachments, folders, tags, smart folders, PDF annotations, citation keys and search. `fields.py` is the single source of truth for item fields and types, and `identifiers.py` for DOIs and arXiv ids (cleaning, normalising, matching). | `library.db` (schema and migrations in `library/db.py`) |
+| `library/` | Items, attachments, folders, tags, smart folders, PDF annotations, citation keys and search. `fields.py` is the single source of truth for item fields and types, and `identifiers.py` for DOIs and arXiv ids (cleaning, normalising, matching). `agent.py` holds which AI app is making the current change (set by the MCP server, read by notes and tasks). | `library.db` (schema and migrations in `library/db.py`) |
 | `notes/` | Markdown notes. The files are the source of truth; the index is disposable. | `notes/`, `notes_index.db` |
 | `tasks/` | Task records, history and the integrity of `{{task:id}}` note links. The optional Tasks core plugin owns their UI, HTTP handlers and MCP tools (see [tasks](tasks.md)). | `library.db` (`tasks`, `task_history`) |
 | `formats/` | Import parsers and shared codecs for BibTeX, RIS, EndNote and CSL-JSON. The Export Formats plugin registers their library-export writers; `exporting.py` prepares records for writers and core clipboard copying. | none |
@@ -155,7 +155,7 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   they call back into `notesView.ts`). `tree.ts` draws the notes list and `treeInput.ts` handles
   its mouse, keyboard and drag and drop; `fileOps.ts` creates, renames, moves and trashes notes;
   `readView.ts` is read mode and link following; `sidePanel.ts` the status, breadcrumbs and
-  details panel; `aiBar.ts` Claude's edits; `ghost.ts` autocompletion's ghost text (its source comes from the Autocompletion plugin through `hooks.ts`); `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
+  details panel; `aiBar.ts` AI apps' edits; `ghost.ts` autocompletion's ghost text (its source comes from the Autocompletion plugin through `hooks.ts`); `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
   exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`). Galleries and
   numbered figures are part of Extended Markdown (`plugins/core/extended-markdown/figures/`, through `hooks.ts`). `settingsView.ts` is the Settings page; its markup
   is in `views/settings/page.ts`, and Backups and Devices have their own modules there. `settings/pluginSections.ts` owns the lifecycle
@@ -249,7 +249,7 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
 |---|---|
 | [Adding a feature](adding-a-feature.md) | Where the pieces of a new feature go, in the order you write them. |
 | [Storage](storage.md) | The data folder, who owns each file, the `library.db` schema and its migrations, settings and backups. |
-| [Tasks](tasks.md) | Tasks: the records, the `{{task:id}}` lines in notes, the Tasks page and Claude's task tools. |
+| [Tasks](tasks.md) | Tasks: the records, the `{{task:id}}` lines in notes, the Tasks page and the task tools for AI apps. |
 | [Notes](notes.md) | The notes format, the vault, the index, the parser and its frontend port, rekeying, Claude's edits, and the notes workspace. |
 | [Full-text search](fulltext-search.md) | PDF text extraction, the full-text index and the library search with its query syntax. |
 | [References](references.md) | Metadata lookup, finding PDFs, the citation graph, and what the Adding Items settings trigger. |

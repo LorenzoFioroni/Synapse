@@ -7,7 +7,7 @@ import { off, on } from '../../../store.js';
 import type { Task } from '../../../types.js';
 import { openMenu } from '../../../ui/menu.js';
 import { toast, toastError } from '../../../ui/toast.js';
-import { escapeHtml, formatDate } from '../../../util.js';
+import { aiName, aiOwner, escapeHtml, formatDate } from '../../../util.js';
 import { type NoteEditor, createEditor } from '../../../views/notes/editor.js';
 import { renderMermaid } from '../../../views/notes/richRender.js';
 import { citeInfo, equationMode, noteMacros, taskHooks, ws } from '../../../views/notes/workspace.js';
@@ -98,10 +98,10 @@ export function mountTaskForm(root: HTMLElement, opts: TaskFormOptions): TaskFor
     $('.tf-refs').innerHTML = refs.map((r) => `<div class="tf-ref"><a href="#" data-tf-note="${escapeHtml(r.path)}" data-tf-line="${r.line}">${icon('doc')}<span>${escapeHtml(r.title || r.path)}${r.heading && r.heading !== r.title ? ` <span class="muted">› ${escapeHtml(r.heading)}</span>` : ''}</span></a>
         <button type="button" class="icon-btn" data-tf-unref="${escapeHtml(r.path)}" title="Take it out of this note (the task stays)">${icon('close', 'icon-sm')}</button></div>`).join('')
       + `<button type="button" class="link tf-add-ref" data-tf="add-ref">${icon('plus', 'icon-sm')} Show in a note…</button>`;
-    // Claude's last change
+    // an AI app's last change
     const ai = t.updated_by === 'ai';
     $('.tf-ai').hidden = !ai;
-    if (ai) $('.tf-ai').innerHTML = `${icon('sparkle')} <span>Claude changed this task.</span> <button type="button" class="link" data-tf="ai-undo">Undo</button>`;
+    if (ai) $('.tf-ai').innerHTML = `${icon('sparkle')} <span>${escapeHtml(aiName(t.updated_agent))} changed this task.</span> <button type="button" class="link" data-tf="ai-undo">Undo</button>`;
     $('.tf-meta').textContent = `Created ${formatDate(t.created_at)}${t.done_at ? ` · done ${formatDate(t.done_at)}` : ''}`;
     $('.tf-foot').innerHTML = `${opts.popup ? `<button type="button" class="btn" data-tf="in-tasks">${icon('tasks')} Open in Tasks</button>` : ''}
       ${!opts.popup && refs.length ? `<button type="button" class="btn" data-tf="open-note">${icon('open')} Open in note</button>` : ''}
@@ -247,10 +247,10 @@ export function mountTaskForm(root: HTMLElement, opts: TaskFormOptions): TaskFor
     if (!id) return;
     try {
       const h = (await api.taskHistory(id)).history.find((x) => x.by === 'ai' && !x.undone && x.action !== 'restore');
-      if (!h) { toast('Nothing of Claude’s left to undo.'); return; }
+      if (!h) { toast('No AI change left to undo.'); return; }
       await api.undoTaskChange(h.id);
       await loadTasks(true);
-      toast('Undid Claude’s change.', { type: 'success' });
+      toast(`Undid ${aiOwner(h.agent)} change.`, { type: 'success' });
     } catch (e) { toastError(e); }
   }
 

@@ -25,9 +25,13 @@ class HttpTransport:
         self._wrote = wrote  # called after a tool that may write (a note, a task) has run
         self._server: Server | None = None
         self._lock = threading.Lock()
+        # The AI app behind each access token, from the last initialize sent with it: one server
+        # answers every app, and apps name themselves only when they connect.
+        self._clients: dict[str, str | None] = {}
 
-    def handle(self, body: bytes, protocol_version: str | None = None) -> tuple[int, Any]:
-        """One POST: returns (HTTP status, JSON reply or None for an empty 202)."""
+    def handle(self, body: bytes, protocol_version: str | None = None, caller: str | None = None) -> tuple[int, Any]:
+        """One POST: returns (HTTP status, JSON reply or None for an empty 202). ``caller``: who sent
+        it (the access token's id), to remember which AI app it is."""
         if protocol_version and protocol_version not in PROTOCOL_VERSIONS:
             return 400, error_reply(None, INVALID_REQUEST, f"Unsupported MCP protocol version: {protocol_version}")
         try:
@@ -37,7 +41,11 @@ class HttpTransport:
         with self._lock:
             if self._server is None:
                 self._server = self._build()
+            key = caller or ""
+            self._server.client = self._clients.get(key)
             reply = self._server.handle(message)
+            if _initializes(message):
+                self._clients[key] = self._server.client
             writes = self._writes(self._server, message)
         if writes and self._wrote:
             self._wrote()
@@ -55,3 +63,8 @@ class HttpTransport:
                 if tool is not None and not tool.read_only:
                     return True
         return False
+
+
+def _initializes(message: Any) -> bool:
+    messages = message if isinstance(message, list) else [message]
+    return any(isinstance(m, dict) and m.get("method") == "initialize" for m in messages)

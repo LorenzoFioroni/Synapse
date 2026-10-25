@@ -64,7 +64,7 @@ def register(plugin: Plugin) -> None:
         Tool(
             "create_task",
             "Create a task",
-            "Create a task (marked as made by Claude; the user can undo it). With note= the task's line {{task:ID}} is "
+            "Create a task (marked as made by you, the AI app; the user can undo it). With note= the task's line {{task:ID}} is "
             "added to that note: after after_line, else after the note's last task, else at the end. With parent= it "
             "becomes a sub-task. Use only when the user asks for tasks to be made.",
             {
@@ -88,7 +88,7 @@ def register(plugin: Plugin) -> None:
             "update_task",
             "Change a task",
             "Change a task's title, details, status (open/done), due date or parent. Recorded as "
-            "Claude's change; the user can undo it. Use only when the user asks.",
+            "your change (the AI app's); the user can undo it. Use only when the user asks.",
             {
                 "type": "object",
                 "properties": {

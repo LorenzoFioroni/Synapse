@@ -195,7 +195,7 @@ looking for a bug.
 | `tasks` | 8795 | Tasks: task lines in a note (ticking, the task popup, the New task popup with a new or existing task, the `{{task` autocomplete, a wrapped task on an indented line, ticking a parent, Backspace), read mode, the side panel, the Tasks page (views, search, quick add, keyboard, delete and Undo, changes from elsewhere) |
 | `touch_app` | 8783 | The library on iPad and phone profiles: responsive panes, configured list columns, details closing across workspaces, Settings, PDF coverage and viewport-locked fit-to-width layout, full-width Graph replacing the notes panes, drawer, long press for menus and cards, hover tools shown, resizing, and the installable Home Screen manifest and icons |
 | `touch` | 8782 | The PDF viewer on an iPad profile: pen tools, finger scrolling, pinch zoom, snapshots |
-| `usability` | 8769 | Several notes selected, delete with Undo, folder operations, Back/Forward, the Library/Notes switch, note markers |
+| `usability` | 8769 | Several notes selected, delete with Undo, folder operations, Back/Forward, switching between Library and Notes, note markers |
 | `viewer_links` | 8770 | Links in the PDF viewer: jumps, external links, hover previews, Back/Forward |
 | `zoom` | 8780 | Zoom keeps the spot under the pointer in place; +/- keep the middle |
 

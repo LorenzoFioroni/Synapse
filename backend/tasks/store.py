@@ -5,7 +5,7 @@ A note shows a task with ``{{task:<id>}}`` (see ``backend/notes/parser.py``); th
 here, so ticking it or editing its body never changes the note. Deleting moves a task (with its
 sub-tasks) to the trash, from which it can be restored until the retention runs out. Every change
 is recorded in ``task_history`` with the values before and after, which gives Undo and tells the
-app which changes Claude made.
+app which changes an AI app made (``by`` "ai", ``agent`` its name: Claude, Codex …).
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import secrets
 import sqlite3
 from datetime import date, datetime, timezone
 
+from ..library.agent import current_agent
 from ..library.db import Database, utcnow
 
 STATUSES = ("open", "done")
@@ -41,6 +42,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     done_at TEXT,
     created_by TEXT NOT NULL DEFAULT 'human',
     updated_by TEXT NOT NULL DEFAULT 'human',
+    updated_agent TEXT,
     deleted_at TEXT,
     deleted_batch TEXT
 );
@@ -54,7 +56,8 @@ CREATE TABLE IF NOT EXISTS task_history (
     action TEXT NOT NULL,
     before TEXT,
     after TEXT,
-    undone INTEGER NOT NULL DEFAULT 0
+    undone INTEGER NOT NULL DEFAULT 0,
+    agent TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id);
 """
@@ -68,10 +71,22 @@ class TaskMissing(TaskError):
     """No task with this id (or it is in the trash when that matters)."""
 
 
+# Columns added after the tables were first made: (table, column, type)
+ADDED_COLUMNS = (("tasks", "updated_agent", "TEXT"), ("task_history", "agent", "TEXT"))
+
+
 def apply_schema(c: sqlite3.Connection) -> None:
     for stmt in SCHEMA.split(";"):
         if stmt.strip():
             c.execute(stmt)
+    for table, column, kind in ADDED_COLUMNS:
+        if column not in {r[1] for r in c.execute(f"PRAGMA table_info({table})")}:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+
+
+def agent_of(by: str) -> str | None:
+    """The AI app making a change by "ai" (None for the user's own)."""
+    return current_agent() if by == "ai" else None
 
 
 def new_id() -> str:
@@ -202,11 +217,12 @@ class TaskStore:
     # ------------------------------------------------------------------ helpers
     def _log(self, c, task_id: str, by: str, action: str, before: dict | None, after: dict | None) -> int:
         cur = c.execute(
-            "INSERT INTO task_history (task_id, at, by, action, before, after) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO task_history (task_id, at, by, agent, action, before, after) VALUES (?,?,?,?,?,?,?)",
             (
                 task_id,
                 utcnow(),
                 by,
+                agent_of(by),
                 action,
                 json.dumps(before) if before is not None else None,
                 json.dumps(after) if after is not None else None,
@@ -288,7 +304,7 @@ class TaskStore:
             pos = self._position(c, parent_id, before, after)
             c.execute(
                 "INSERT INTO tasks (id, parent_id, position, title, body, status, due, created_at, "
-                "updated_at, done_at, created_by, updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "updated_at, done_at, created_by, updated_by, updated_agent) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     tid,
                     parent_id,
@@ -302,6 +318,7 @@ class TaskStore:
                     now if values["status"] == "done" else None,
                     by,
                     by,
+                    agent_of(by),
                 ),
             )
             task = _row(c.execute("SELECT * FROM tasks WHERE id = ?", (tid,)).fetchone())
@@ -329,6 +346,7 @@ class TaskStore:
                 sets["done_at"] = utcnow() if sets["status"] == "done" else None
             sets["updated_at"] = utcnow()
             sets["updated_by"] = by
+            sets["updated_agent"] = agent_of(by)
             c.execute(
                 f"UPDATE tasks SET {', '.join(f'{k} = ?' for k in sets)} WHERE id = ?",
                 (*sets.values(), before["id"]),
@@ -378,8 +396,9 @@ class TaskStore:
                 c, parent_id, before if before != prev["id"] else None, after if after != prev["id"] else None
             )
             c.execute(
-                "UPDATE tasks SET parent_id = ?, position = ?, updated_at = ?, updated_by = ? WHERE id = ?",
-                (parent_id, pos, utcnow(), by, prev["id"]),
+                "UPDATE tasks SET parent_id = ?, position = ?, updated_at = ?, updated_by = ?, updated_agent = ? "
+                "WHERE id = ?",
+                (parent_id, pos, utcnow(), by, agent_of(by), prev["id"]),
             )
             now = _row(c.execute("SELECT * FROM tasks WHERE id = ?", (prev["id"],)).fetchone())
             self._log(c, prev["id"], by, "move", _snapshot(prev), _snapshot(now))
@@ -401,8 +420,9 @@ class TaskStore:
                     if sid in moved:
                         continue
                     c.execute(
-                        "UPDATE tasks SET deleted_at = ?, deleted_batch = ?, updated_at = ?, updated_by = ? WHERE id = ?",
-                        (now, batch, now, by, sid),
+                        "UPDATE tasks SET deleted_at = ?, deleted_batch = ?, updated_at = ?, updated_by = ?, "
+                        "updated_agent = ? WHERE id = ?",
+                        (now, batch, now, by, agent_of(by), sid),
                     )
                     moved.append(sid)
                 self._log(c, tid, by, "delete", None, {"batch": batch})
@@ -428,7 +448,9 @@ class TaskStore:
                 raise TaskError("Nothing to restore.")
             for tid in ids:
                 c.execute(
-                    "UPDATE tasks SET deleted_at = NULL, deleted_batch = NULL, updated_by = ? WHERE id = ?", (by, tid)
+                    "UPDATE tasks SET deleted_at = NULL, deleted_batch = NULL, updated_by = ?, updated_agent = ? "
+                    "WHERE id = ?",
+                    (by, agent_of(by), tid),
                 )
             restored = set(ids)
             for tid in ids:
@@ -451,8 +473,9 @@ class TaskStore:
                 if title == before["title"] and body == before["body"]:
                     continue
                 c.execute(
-                    "UPDATE tasks SET title = ?, body = ?, updated_at = ?, updated_by = ? WHERE id = ?",
-                    (title, body, utcnow(), by, before["id"]),
+                    "UPDATE tasks SET title = ?, body = ?, updated_at = ?, updated_by = ?, updated_agent = ? "
+                    "WHERE id = ?",
+                    (title, body, utcnow(), by, agent_of(by), before["id"]),
                 )
                 after = _row(c.execute("SELECT * FROM tasks WHERE id = ?", (before["id"],)).fetchone())
                 self._log(c, before["id"], by, "update", _snapshot(before), _snapshot(after))

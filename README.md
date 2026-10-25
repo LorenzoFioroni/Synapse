@@ -254,8 +254,8 @@ never mix.
   [Figures](docs/notes.md#figures-and-their-numbers)); galleries and figure numbers are part of the core
   plugin **Extended Markdown**, with a switch of their own in its settings. A Markdown heading can
   similarly end in `\label{sec:name}`; `\ref`, `\cref` and `\Cref` produce linked section numbers
-  in Read mode and HTML/PDF exports. Switch with the
-  *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
+  in Read mode and HTML/PDF exports. Switch with **Library** and **Notes** at the top of the
+  sidebar or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
   Cmd+[ / Alt+←) restore notes, Graph, Tasks, plugin pages and library views/selections.
   If a destination's plugin is off, navigation returns to the library (or Notes for Graph).
   Images pasted into notes are kept in the notes' attachments folder; one that no note uses any more
@@ -335,16 +335,30 @@ never mix.
 ## Command palette
 
 **⌘⇧P** (Ctrl+Shift+P, or F1) opens the command palette: type a few letters of a command (New Item,
-Show Tasks, Settings: Backups …) and press Enter. Commands of plugins are there too, with their keys.
+Show Tasks, Settings: Backups …) and press Enter. What the item menu does to the selected items is
+there too while the library is shown (Add PDF Attachment…, Find Available PDF, Retrieve Metadata…,
+Edit Tags…, Add to Folder…, Copy as BibTeX …), as are New Note…, New Folder, Add PDFs as New
+Items…, Empty Trash…, "Settings: <plugin>" for each plugin that is on, and the plugins' own
+commands, with their keys.
+
+## The sidebar
+
+The sidebar is one list of what Synapse shows: **Library**, **Notes**, and what plugins add
+(**Graph**, **Tasks**, a list such as **arXiv Today**, a plugin's page). What belongs to the
+library alone — Duplicate Items, Trash, folders, smart folders and tags — is shown below it only
+while the library is open. Library stays marked while one of its folders is shown; clicking it
+from Notes or Tasks goes back to the library as you left it, and clicking it in the library shows
+all items.
 
 ## Plugins
 
 Plugins add features without changing Synapse itself. To install one, put its folder in
 `data/plugins/`, open **Settings → Plugins**, press **Look Again** and turn it on. Turning it on
 asks first and lists what the plugin may do (read the library, connect to sites, offer tools to
-Claude). A plugin runs with full access to your library and computer, like any program you
-install, so turn on only plugins you trust. Each plugin's settings, its log and a Restart button
-are under **More**; a plugin that keeps failing is turned off and Settings says why. If one keeps
+AI apps). A plugin runs with full access to your library and computer, like any program you
+install, so turn on only plugins you trust. Each plugin that is on has a section of its own in
+Settings (listed under Plugins, opened by the **Settings** button on its row or "Settings:
+<plugin>" in the command palette) with its settings, its log and a Restart button; a plugin that keeps failing is turned off and Settings says why. If one keeps
 the app from working, start it with `python server.py --safe-mode` (only core plugins run) and turn it
 off.
 
@@ -353,8 +367,8 @@ Reference Sources, Export Formats, Extended Markdown, Open-Access PDFs and Tasks
 while Autocompletion starts as previously configured.
 Turn them off in Settings → Plugins without losing their data. Core plugins can also be toggled
 and restarted in safe mode; changes are followed by the standalone MCP server. Safe mode keeps core plugins
-running and stops third-party plugins. Tasks and Graph register their own sidebar entries under
-**Plugins**; their selection follows the visible workspace when switching between views. Plugin
+running and stops third-party plugins. Tasks and Graph add their own entries to the sidebar's
+list; their selection follows the visible workspace when switching between views. Plugins'
 settings sections appear and disappear immediately as their plugin is switched on or off, including
 while Settings stays open. Disabling Autocompletion dismisses visible
 suggestions and cancels pending ones immediately.
@@ -391,12 +405,13 @@ plugin to start from, and `python server.py --dev-plugins ~/synapse-plugins` res
 you save a file. Plugins can also run work on a schedule, reach the sites their manifest names and
 bring Python packages of their own; their frontend may be TypeScript. Daily local schedules keep
 their wall-clock time across daylight-saving changes.
-Their tools reach Claude like Synapse's own; restart Claude if they do not show up.
+Their tools reach AI apps like Synapse's own; restart the AI app if they do not show up.
 
 ## AI access (MCP)
 
-`mcp_server.py` lets Claude Desktop and Claude Code read your library through MCP (Model Context
-Protocol): ask a question about a project note and Claude can read the note, the papers it cites,
+`mcp_server.py` lets AI apps — Claude Desktop, Claude Code, Codex, or any other app that speaks MCP
+(Model Context Protocol) — read your library: ask a question about a project note and the AI can
+read the note, the papers it cites,
 the relevant pages of their PDFs and their references. It reads the same `data/` folder as the app
 (which does not need to be running); from another computer, see below. When you ask it to save an
 answer it adds a new note in `notes/ai/`; when you ask it to change a note, the edit is checked
@@ -412,20 +427,34 @@ python mcp_server.py --config     # prints the exact entries for your paths
 - **Claude Desktop:** Settings → Developer → Edit Config, merge the printed `mcpServers` entry into
   `claude_desktop_config.json`, and restart Claude. "synapse" then appears in the tools menu of a chat.
 - **Claude Code:** run the printed `claude mcp add …` line.
+- **Codex** (CLI, IDE extension, app): run the printed `codex mcp add …` line, or add the printed
+  `[mcp_servers.synapse]` entry to `~/.codex/config.toml`.
+- **Other apps:** run the same command as a stdio MCP server.
 
-**From another computer.** Claude Code on another computer of your network reaches the library
+Whatever an AI app changes is shown with its name: "Codex edited this note", "Claude changed this
+task", and in each note's list of AI edits, all with Undo.
+
+**From another computer.** An AI app on another computer of your network reaches the library
 through the running app instead (start it with `--lan`). On the computer running Synapse, open
-**Settings → AI Access → New Token…**, name it, and run the command it shows on the other computer:
+**Settings → AI Access → New Token…**, name it, pick the app (Claude Code, Codex or another) and
+run what it shows on the other computer. For Claude Code:
 
 ```bash
 claude mcp add --scope user --transport http synapse http://Lorenzos-MacBook.local:8000/mcp \
   --header "Authorization: Bearer syn_…"
 ```
 
+For Codex, keep the token in an environment variable (put the `export` line in your shell profile):
+
+```bash
+export SYNAPSE_TOKEN=syn_…
+codex mcp add synapse --url http://Lorenzos-MacBook.local:8000/mcp --bearer-token-env-var SYNAPSE_TOKEN
+```
+
 The token is shown once; Settings lists when each token was last used, and **Remove…** locks its
 app out at once. The tools are the same. Over plain HTTP the token crosses the network unencrypted,
-like everything else in `--lan`; with `--cert` the address starts with `https://` (and Claude Code
-must trust the certificate: `NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem"`).
+like everything else in `--lan`; with `--cert` the address starts with `https://` (and the AI app
+must trust the certificate, for Claude Code: `NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem"`).
 
 Add `--data DIR` if your library is not in `./data`. Tools:
 
@@ -444,24 +473,25 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 | `get_citation_graph` | the neighbourhood of some papers, or a library-wide overview of the most cited works you do not have |
 | `write_note` | saves a new note in `notes/ai/` (`author: ai`), never overwriting anything — after checking it |
 | `edit_note` | changes an existing note (replace passages, append, or new text) — checked the same way; the version before is kept |
-| `undo_note_edit` | puts a note back as it was before Claude's last edit (if you did not change it since) |
+| `undo_note_edit` | puts a note back as it was before the last AI edit (if you did not change it since) |
 | `list_tasks`, `get_task` | your tasks (open ones unless asked), filtered like the Tasks page; one task with its details, sub-tasks and the notes that show it |
-| `create_task`, `update_task`, `delete_task` | make, change (title, details, open/done, due date, parent) or delete tasks, and put a new task's line in a note — marked as Claude's, undoable in the app |
+| `create_task`, `update_task`, `delete_task` | make, change (title, details, open/done, due date, parent) or delete tasks, and put a new task's line in a note — marked as the AI app's (with its name), undoable in the app |
 
-Page numbers are PDF pages counted from 1, so Claude can cite `[@key, p. N]` and the citation opens
-the right page in the app. Claude is told the notes syntax (KaTeX math, quotes as `> words [@key, p. N]`,
+Page numbers are PDF pages counted from 1, so the AI can cite `[@key, p. N]` and the citation opens
+the right page in the app. The AI app is told the notes syntax (KaTeX math, quotes as `> words [@key, p. N]`,
 snapshots, callouts…), and `write_note` refuses a note — saving nothing — when a `[[link]]` or `#heading`
 does not resolve, a citation key or page does not exist, a quote's words are not on the cited page, an
-image is missing, or formulas are written in Unicode instead of `$…$`; Claude then corrects it. A link
+image is missing, or formulas are written in Unicode instead of `$…$`; the AI then corrects it. A link
 written with a note's title is fixed to its file name. `edit_note` is checked the same way, but only
-problems the change adds block it. Every change Claude makes to a note keeps the version it replaced
-(`notes/.history/`, in backups): an open note takes the change as one step, so ⌘Z (Ctrl+Z) undoes it;
-a bar over the note says what Claude changed, with Show changes and Undo; and the note's details list
-all of Claude's edits, each with its diff and a way back. Equations are found by the number in
+problems the change adds block it. Every change an AI app makes to a note keeps the version it
+replaced (`notes/.history/`, in backups): an open note takes the change as one step, so ⌘Z (Ctrl+Z)
+undoes it; a bar over the note says which app changed what ("Codex edited this note"), with Show
+changes and Undo; and the note's details list all AI edits, each with the app's name, its diff and a
+way back. Equations are found by the number in
 parentheses at the end of their line, and the snapshot covers all their lines (never half an
 equation). `view_page` and `snapshot` need `pypdfium2`
-(in `requirements.txt`). Note text and PDF passages Claude reads are sent to Anthropic as part of
-the conversation, as if you had pasted them.
+(in `requirements.txt`). Note text and PDF passages the AI reads are sent to the AI app's provider
+(Anthropic for Claude, OpenAI for Codex …) as part of the conversation, as if you had pasted them.
 
 ## Project layout
 
@@ -471,7 +501,7 @@ For how the code fits together and where new code goes, see
 ```
 ./
 ├── server.py              starts the web app
-├── mcp_server.py          MCP server for Claude Desktop / Claude Code (stdio)
+├── mcp_server.py          MCP server for AI apps: Claude, Codex … (stdio)
 ├── backend/               Flask + SQLite backend (packages described in docs/architecture.md)
 ├── frontend/              the web app: index.html, viewer.html, src/ (TypeScript; built to js/), css/, vendor/ (third-party libraries)
 ├── browser_extension/     Chrome extension (Manifest V3) – load unpacked

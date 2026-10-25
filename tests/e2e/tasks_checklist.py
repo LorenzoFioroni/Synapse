@@ -115,17 +115,16 @@ async def main():
             await page.wait_for_timeout(1200)
             await page.evaluate("localStorage.clear()")
 
+            await page.wait_for_selector('#sidebar [data-navigation="tasks.main"]')
             check(
-                "Tasks is listed under Plugins in the sidebar",
+                "Tasks is listed in the sidebar's list, with Library and Notes",
                 await page.evaluate("""() => {
                 const task = document.querySelector('#sidebar [data-navigation=\"tasks.main\"]');
-                return task && !task.hidden && task.parentElement.matches('div[data-navigation]')
-                    && !document.querySelector('[data-pages-head]').hidden;
+                return task && !task.hidden && !!task.closest('.tool-list')
+                    && !!document.querySelector('#sidebar .tool-list [data-view=\"library\"]');
             }"""),
             )
-            check(
-                "Tasks has no toolbar workspace button", await page.locator('.ws-switch [data-ws="tasks"]').count() == 0
-            )
+            check("Tasks has no toolbar workspace button", await page.locator("#toolbar [data-ws]").count() == 0)
             await page.click('#sidebar [data-navigation="tasks.main"]')
             await page.wait_for_selector("#tasks-view:not([hidden])")
             check(
@@ -544,7 +543,7 @@ async def main():
                     s.get(BASE + "/api/tasks").status_code == 404
                     and s.get(BASE + "/api/plugins/tasks/").status_code == 404,
                 )
-                await page.click('.ws-switch [data-ws="notes"]')
+                await page.click('#sidebar [data-act="open-notes"]')
                 await page.locator(".notes-tree >> text=Plan").first.click()
                 await page.click('[data-mode="live"]')
                 await page.wait_for_timeout(400)

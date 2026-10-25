@@ -241,8 +241,13 @@ async def main():
             )
 
             # ---- notes: long press on a note and on a citation ------------------------------------------
-            await page.tap('[data-ws="notes"]')
+            # Notes is in the sidebar, a drawer on this screen
+            await page.tap('[data-a="sidebar"]')
+            await page.wait_for_timeout(300)
+            await page.tap('#sidebar [data-act="open-notes"]')
             await page.wait_for_selector('.nt-row.note[data-path="Reading.md"]')
+            await wait_for(lambda: page.evaluate("!document.body.classList.contains('sidebar-open')"))
+            await page.wait_for_timeout(400)  # the drawer slides away
             x, y = await centre(page, '.nt-row.note[data-path="Reading.md"]')
             await f.long_press(x, y)
             ok = await wait_for(lambda: page.evaluate("!!document.querySelector('.menu .menu-item')"), timeout=3)

@@ -121,7 +121,7 @@ async def main():
             page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
             await page.goto(BASE + "/")
             await page.evaluate("document.documentElement.dataset.theme = 'dark'")
-            await page.click('.ws-switch [data-ws="notes"]')
+            await page.click('#sidebar [data-act="open-notes"]')
             await page.click('.nt-row.note[data-path="report.md"]')
             await page.wait_for_selector(".cm-content")
             await page.wait_for_timeout(600)

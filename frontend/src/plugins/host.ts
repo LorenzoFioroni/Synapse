@@ -58,6 +58,9 @@ function guarded<A extends unknown[], R>(p: PluginInfo, what: string, fn: (...ar
   };
 }
 
+/** The library list is on screen (not Notes, Tasks, a page or Settings): the selection is in view. */
+const libraryShown = () => !document.body.dataset.workspace && !document.getElementById('settings-view');
+
 const copy = <T>(x: T): T => { try { return structuredClone(x); } catch { return JSON.parse(JSON.stringify(x)); } };
 
 function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
@@ -131,7 +134,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
         // also in the command palette, for the selection
         const offCommand = commands.register({
           id: `${id}#selection`, title: spec.title, source: src, owner: pid,
-          when: () => { const items = selectedItems(); return items.length > 0 && action.when(items); },
+          when: () => { const items = selectedItems(); return libraryShown() && items.length > 0 && action.when(items); },
           run: () => action.run(selectedItems()),
         });
         return keep(() => { offAction(); offCommand(); });
@@ -139,7 +142,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     },
     settingsPage: {
       register: (spec) => keep(settingsSections.register({
-        id: full(spec.id), title: spec.title, icon: spec.icon, after: spec.after, source: src, owner: pid,
+        id: full(spec.id), title: spec.title, icon: spec.icon, after: spec.after, shows: Array.isArray(spec.shows) ? spec.shows.map(String) : undefined, source: src, owner: pid,
         mount: (el) => guarded(info, `settings section ${spec.id}`, spec.mount)(el),
       })),
     },
@@ -263,7 +266,19 @@ async function doSync(): Promise<void> {
   await syncSources();
   await syncFields();
   for (const [id, info] of want) if (!loaded.has(id) && failedStarts.get(id) !== keyOf(info)) await load(info);
+  syncSettingsCommands(list);
   emit('export-formats');
+}
+
+/** "Settings: <plugin>" in the command palette for each plugin that has a section in Settings. */
+const settingsCommands = new Map<string, Dispose>();
+function syncSettingsCommands(list: PluginInfo[]): void {
+  const want = new Map(list.filter((p) => p.enabled && p.status !== 'invalid').map((p) => [p.id, p]));
+  for (const [id, off] of settingsCommands) if (!want.has(id)) { off(); settingsCommands.delete(id); }
+  for (const [id, p] of want) {
+    settingsCommands.get(id)?.();
+    settingsCommands.set(id, commands.register({ id: `core.settings-plugin.${id}`, title: `Settings: ${p.name}`, run: () => emit('open-settings', `plugin-${id}`) }));
+  }
 }
 
 /** Bring the loaded plugins in line with the server (one sync at a time; a request during one

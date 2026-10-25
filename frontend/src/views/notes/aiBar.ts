@@ -1,10 +1,10 @@
-// Claude's edits to the open note (made through the MCP server): the bar above the note that
+// AI apps' edits to the open note (made through the MCP server): the bar above the note that
 // offers to show or undo the latest one, and putting an earlier version back. The history itself
 // is read and shown by aiEdits.ts.
 import { api } from '../../api.js';
 import { toast, toastError } from '../../ui/toast.js';
 import type { NoteHistory } from '../../types.js';
-import { modLabel } from '../../util.js';
+import { aiName, modLabel } from '../../util.js';
 import { barHtml, editsDialog, editsOf, markSeen, pendingEdit, showEdit } from './aiEdits.js';
 import { renderRead } from './readView.js';
 import { paintSide } from './sidePanel.js';
@@ -34,7 +34,7 @@ export async function remoteArrived(path: string): Promise<void> {
   const hist = await loadAiEdits();
   const session = ws.session;
   const e = hist && session?.path === path ? pendingEdit(hist, session.saved.hash) : null;
-  if (e) toast(`Claude edited this note. ${modLabel}Z in the note undoes it.`, { timeout: 6000 });
+  if (e) toast(`${aiName(e.agent)} edited this note. ${modLabel}Z in the note undoes it.`, { timeout: 6000 });
   else toast('Updated with changes made in another window.');
 }
 
@@ -46,7 +46,7 @@ async function putBack(text: string): Promise<void> {
   if (ws.mode === 'read') renderRead();
   await session.save();
   paintAiBar();
-  toast(`Restored the version before Claude’s change. ${modLabel}Z in the note brings the change back.`, { type: 'success' });
+  toast(`Restored the earlier version. ${modLabel}Z in the note brings the change back.`, { type: 'success' });
 }
 
 /** A button of the bar or the side panel: 'ai-edits', 'ai-show', 'ai-undo' or 'ai-dismiss'. */

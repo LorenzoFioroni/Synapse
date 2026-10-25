@@ -79,6 +79,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .ai-row:last-child { border-bottom: none; }
 .ai-when { color: var(--text-3); font-size: var(--fs-sm); }
 .ai-when .badge { margin-left: 4px; }
+.ai-who { font-weight: 600; }
 @media (max-width: 600px) { .ai-row { grid-template-columns: 1fr auto; } .ai-when { grid-column: 1 / -1; } }
 .note-status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
 .note-status.ok .icon { color: var(--success); }

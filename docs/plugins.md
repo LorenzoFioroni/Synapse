@@ -24,18 +24,21 @@ What exists today:
 - Put a plugin's folder in **`data/plugins/`** (next to `library.db`), then open
   Settings → Plugins and press **Look Again**. A new plugin is listed but always off.
 - Turning one on asks first and lists what it may do (read the library, connect to sites, offer
-  tools to Claude). A plugin runs with full access to the library and the computer, like any
+  tools to AI apps). A plugin runs with full access to the library and the computer, like any
   program you install: turn on only plugins you trust.
-- **More** shows its settings (drawn from its manifest, saved as you change them), whether its tools
-  for Claude are also offered to AI apps on other computers (`/mcp`, off by default), what it
-  serves and listens to, **Restart** (to load changed code) and its **Log**.
+- A plugin that is on has a **section of its own** in Settings, listed under Plugins in the
+  Settings navigation and opened by the **Settings** button on its row (or "Settings: <name>" in
+  the command palette): its settings (drawn from its manifest, saved as you change them, and
+  whatever its frontend draws there), whether its tools are also offered to AI apps on other
+  computers (`/mcp`, off by default), what it serves and listens to, **Restart** (to load changed
+  code) and its **Log**. A plugin that is off has only its row (and **Log** when it failed).
 - A plugin that fails while starting, or fails three times within ten minutes, is turned off and
   Settings says why. Turning it on again tries again.
 - `python server.py --safe-mode` runs only bundled core plugins, for when an installed plugin keeps the app from working.
-  `mcp_server.py --safe-mode` does the same for the MCP server Claude starts.
-- Restart Claude after turning on a plugin with tools if they do not show up: some AI apps read the
-  list of tools only once.
-- A plugin's pages and lists of papers are listed under **Plugins** in the sidebar; its commands
+  `mcp_server.py --safe-mode` does the same for the MCP server an AI app starts.
+- Restart the AI app after turning on a plugin with tools if they do not show up: some AI apps read
+  the list of tools only once.
+- A plugin's pages and lists of papers are listed in the sidebar with Library and Notes; its commands
   are in the **command palette** (⌘⇧P, Ctrl+Shift+P or F1), together with Synapse's own.
 - A plugin's **list of papers** (today's arXiv papers, say) shows like a folder, in the order the
   plugin gives (click a column to sort, a third click goes back). Papers already in the library are
@@ -52,7 +55,7 @@ Plugins that come with Synapse live in the repository's `plugins/` folder. A plu
 Some of Synapse's own features are **core plugins**: they come with Synapse and are part of it,
 but each can be turned off in Settings → Plugins (as Obsidian's core plugins can), and its code
 lives in its own folder. They start on (or as the switch they replace was), keep running in safe
-mode, and their settings are in their own section or under **More**:
+mode, and their settings are in their own section of Settings:
 
 - **Autocompletion** (`plugins/autocompletion`, off by default): suggestions from a model in
   Ollama on this computer as you write a note; see [autocompletion](autocompletion.md).
@@ -124,7 +127,7 @@ Counts adds item fields, and metadata/PDF plugins supply lookups; those do not c
 
 Workspace transitions are coordinated by `main.ts`: opening a plugin page first saves and closes
 Notes and leaves Tasks. `views/pages.ts` owns mounting, cleanup and the short restart grace period;
-choosing another view cancels that wait. Graph and All Notes never highlight simultaneously.
+choosing another view cancels that wait. Graph and Notes never highlight simultaneously.
 `nav.ts` records library views, Graph, Tasks and plugin pages without intermediate workspace entries.
 Back/Forward to a stopped page, Tasks or paper list falls back to the library; a stopped Graph
 falls back to Notes. These unavailable history entries are replaced rather than adding a new entry.
@@ -373,7 +376,7 @@ plugin.fields.set({"arxiv": "2610.01234"}, "citations", 0)  # also for a paper n
 ### Papers outside the library
 
 A plugin can offer a **list of papers** (an arXiv listing, search results, suggestions). The app
-shows it under Plugins in the sidebar like a folder: the columns, the search, sorting and the
+shows it in the sidebar's list like a folder: the columns, the search, sorting and the
 fields all work on it, papers already in the library show as the library items, and the others
 get a **+**.
 
@@ -450,7 +453,7 @@ def references(arxiv_id: str) -> None:
   while lists come in, then `delay=0` after the last). A job that
   fails is tried again after 30 s, 2 min and 10 min (`retries` times); failing to reach the web
   (`HttpError`) does not count against the plugin, any other error does.
-- Settings → Plugins → More lists a running plugin's schedules and how many jobs wait.
+- A running plugin's section in Settings lists its schedules and how many jobs wait.
 
 Schedules without `tz` follow the computer's local wall clock, including daylight-saving changes.
 An explicit IANA zone (`tz="Europe/Zurich"`, for example) follows that zone's rules. Interval
@@ -529,7 +532,7 @@ export function activate(p) {
 | `p.library.selected()`, `.item(id)`, `.show(id)` | The selected items, one whole item, showing an item in the library. |
 | `p.onChange(fn)` | `fn(kinds)` when something changed: what the change feed reports (`library`, `notes`, `tasks`, `annotations`, `plugins`, `fields`, `sources`), and `library` when this window's item list reloads. |
 | `p.settings()`, `p.saveSettings(changes)` | The settings' values (a promise); changing some of them (checked against the manifest, heard by `@plugin.settings.on_change`). |
-| `p.settingsPage.register({id, title, icon, after, mount})` | A section of its own in Settings (with an entry in its navigation, after the section `after` names, else before Plugins), for what the manifest's settings cannot show: a status, a test button, a list to pick from. `mount(el)` runs each time Settings opens. |
+| `p.settingsPage.register({id, title, icon, shows, mount})` | A part of the plugin's own section in Settings, above the settings drawn from the manifest, for what those cannot show: a status, a test button, a list to pick from. `shows` names manifest settings the part draws itself, which are then not listed again. A title other than the plugin's name is shown as the part's heading. `mount(el)` runs each time Settings opens. (`after`, which placed a section of its own, is still accepted and ignored.) |
 | `p.ui` | `icon(name)`, `escapeHtml(text)`, `confirm(…)`, `prompt(…)`, `formatDate(iso, withTime)`: the app's own. |
 | `p.onUnload(fn)` | Runs when the plugin stops. |
 
@@ -621,7 +624,7 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
   file and files in the folder of the frontend module, never Python files or the manifest.
 - **Extension points** (`frontend/src/extend.ts`) are registries the app's views read: `commands`
   (the palette, `views/palette.ts`; `main.ts` registers Synapse's own and runs plugins' keys),
-  `pages` (`views/pages.ts`, the sidebar's Plugins section), `itemSections` (the item pane) and
+  `pages` (`views/pages.ts`, entries in the sidebar's list), `itemSections` (the item pane) and
   `itemActions` (the item menu). The plugin host prefixes ids with the plugin's id, wraps every
   function so its errors are reported, and passes copies of items.
 - **Fields.** `PluginHost.fields` (a `FieldIndex`) reads the declarations of the running plugins.
@@ -673,7 +676,7 @@ cannot replace the newest selected format.
 The app injects reference resolution into `Citations`; `plugin.services.references` uses the same
 providers in both app and standalone MCP hosts. Resolution and export dispatch live in focused
 `backend/plugins/references.py` and `exports.py` modules. Provider registrations are described
-under More in Settings → Plugins, with their normal stop/restart lifecycle.
+in the plugin's section of Settings, with their normal stop/restart lifecycle.
 
 Item-list Copy as BibTeX (menu and Cmd/Ctrl+C, including selection prefetch) uses
 `POST /api/clipboard/bibtex` with selected `ids`, so it remains available with Export Formats off.

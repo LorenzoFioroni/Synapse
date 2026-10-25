@@ -145,7 +145,7 @@ async def main():
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
             await page.goto(BASE + "/")
-            await page.click('.ws-switch [data-ws="notes"]')
+            await page.click('#sidebar [data-act="open-notes"]')
             await page.click('.nt-row.note[data-path="figures.md"]')
             await page.wait_for_selector(".cm-content")
             await page.wait_for_timeout(600)

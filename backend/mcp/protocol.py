@@ -7,8 +7,10 @@ message per line, which is how Claude Desktop and Claude Code start local
 servers. ``http.py`` runs it over HTTP for apps on another computer.
 
 Only what a tools-only server needs is implemented: ``initialize``, ``ping``,
-``tools/list`` and ``tools/call`` (plus empty ``resources/list`` and
-``prompts/list`` for clients that ask anyway).
+``tools/list`` and ``tools/call`` (plus empty ``resources/list``,
+``resources/templates/list`` and ``prompts/list`` for clients that ask anyway).
+Nothing in it is particular to one AI app: Claude, Codex, Cursor … all speak this.
+The app named in ``initialize`` (``Server.client``) is recorded with what the tools change.
 """
 
 from __future__ import annotations
@@ -21,6 +23,9 @@ import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+
+from ..library.agent import acting_as
+from .clients import client_label
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +106,8 @@ class Server:
     before_call: Callable[[], None] | None = None  # e.g. refresh indexes before each tool call
     # More tools, asked for at each tools/list and tools/call (plugins come and go while it runs)
     extra: Callable[[], dict[str, Tool]] | None = None
+    # The AI app connected (from initialize's clientInfo): notes and tasks record it with each change
+    client: str | None = None
 
     def add(self, tool: Tool) -> None:
         self.tools[tool.name] = tool
@@ -151,6 +158,7 @@ class Server:
     # ------------------------------------------------------------------ methods
     def _m_initialize(self, params: dict) -> dict:
         asked = params.get("protocolVersion")
+        self.client = client_label(params.get("clientInfo"))
         version = asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
         out = {
             "protocolVersion": version,
@@ -170,6 +178,9 @@ class Server:
     def _m_resources_list(self, params: dict) -> dict:
         return {"resources": []}
 
+    def _m_resources_templates_list(self, params: dict) -> dict:
+        return {"resourceTemplates": []}
+
     def _m_prompts_list(self, params: dict) -> dict:
         return {"prompts": []}
 
@@ -185,7 +196,8 @@ class Server:
             args = check_args(tool.input_schema, args)
             if self.before_call:
                 self.before_call()
-            result = tool.fn(**args)
+            with acting_as(self.client):
+                result = tool.fn(**args)
             return {"content": text_content(result), "isError": False}
         except ToolError as e:
             return {"content": [{"type": "text", "text": str(e)}], "isError": True}

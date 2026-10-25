@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "api": "^1.0",
   "author": "Synapse",
-  "description": "To-dos with due dates, details and sub-tasks: the Tasks page, tasks in notes, and Claude\u2019s task tools. Turning this off keeps all tasks and their note links.",
+  "description": "To-dos with due dates, details and sub-tasks: the Tasks page, tasks in notes, and task tools for AI apps. Turning this off keeps all tasks and their note links.",
   "core": true,
   "permissions": {
     "mcp": true

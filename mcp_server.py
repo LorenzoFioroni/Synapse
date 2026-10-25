@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Local MCP server: gives Claude Desktop / Claude Code access to the library.
+"""Local MCP server: gives AI apps (Claude Desktop, Claude Code, Codex, any MCP client) access to the library.
 
 The AI app starts this script itself and talks to it over stdin/stdout; you do
 not run it by hand. It reads the same ``data/`` folder as the web app (which
 does not need to be running). New notes go into ``notes/ai/``; edits of existing notes are
 hash-checked and recorded in ``notes/.history/`` so they can be undone. See docs/mcp.md.
 
-    python mcp_server.py --config     # print the setup for Claude Desktop and Claude Code
+    python mcp_server.py --config     # print the setup for Claude Desktop, Claude Code and Codex
     python mcp_server.py --data DIR   # use another data folder (default: ./data or $SYNAPSE_DATA_DIR)
 
 See the README section "AI access (MCP)".
@@ -31,19 +31,33 @@ def _config(data_dir: Path, explicit: bool) -> str:
     args = [str(ROOT / "mcp_server.py")] + (["--data", str(data_dir)] if explicit else [])
     desktop = {"mcpServers": {"synapse": {"command": sys.executable, "args": args}}}
     code = " ".join(json.dumps(a) if " " in a else a for a in [sys.executable] + args)
+    toml = "\n".join(
+        [
+            "[mcp_servers.synapse]",
+            f"command = {json.dumps(sys.executable)}",
+            f"args = [{', '.join(json.dumps(a) for a in args)}]",
+        ]
+    )
     return (
         "Claude Desktop: Settings → Developer → Edit Config, and merge this into claude_desktop_config.json\n"
         "(on macOS ~/Library/Application Support/Claude/claude_desktop_config.json), then restart Claude:\n\n"
         + json.dumps(desktop, indent=2)
         + "\n\nClaude Code (available in every project):\n\n"
         + f"claude mcp add --scope user synapse -- {code}\n"
+        + "\nCodex (CLI, IDE extension and app):\n\n"
+        + f"codex mcp add synapse -- {code}\n"
+        + "\nor add this to ~/.codex/config.toml:\n\n"
+        + toml
+        + "\n\nAny other MCP client: run the same command over stdio.\n"
     )
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="MCP server for the library (stdio).")
     ap.add_argument("--data", help="data folder (default: ./data or $SYNAPSE_DATA_DIR)")
-    ap.add_argument("--config", action="store_true", help="print the setup for Claude Desktop / Claude Code and exit")
+    ap.add_argument(
+        "--config", action="store_true", help="print the setup for Claude, Codex and other AI apps and exit"
+    )
     ap.add_argument("--verbose", action="store_true", help="log more to stderr")
     ap.add_argument("--safe-mode", action="store_true", help="start no plugins")
     ap.add_argument("--dev-plugins", metavar="DIR", help="also load the plugins in DIR (as server.py does)")
@@ -63,7 +77,7 @@ def main(argv=None) -> int:
         )
         return 0
 
-    # stdout carries the protocol: all logging goes to stderr (Claude shows it in its MCP logs).
+    # stdout carries the protocol: all logging goes to stderr (AI apps show it in their MCP logs).
     logging.basicConfig(
         stream=sys.stderr,
         level=logging.INFO if a.verbose else logging.WARNING,
@@ -83,7 +97,7 @@ def main(argv=None) -> int:
     services = Services(config)
     # This process never runs the app's background jobs (attachment sweeps etc.).
     services.note_service.on_change = None
-    services.plugins.start("mcp")  # their tools are offered to Claude too
+    services.plugins.start("mcp")  # their tools are offered to the AI app too
     serve_stdio(build_server(services, VERSION))
     return 0
 

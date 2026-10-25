@@ -1,8 +1,8 @@
 """Tools for tasks: list_tasks, get_task, create_task, update_task, delete_task.
 
 Tasks are records (title, status, due date, a Markdown body, sub-tasks); a note
-shows one with a ``{{task:<id>}}`` line. Changes made here are marked as Claude's in the task's
-history, and a task added to a note goes through the note's history, so the user can undo both.
+shows one with a ``{{task:<id>}}`` line. Changes made here are marked as the AI app's (with its name) in
+the task's history, and a task added to a note goes through the note's history, so the user can undo both.
 """
 
 from __future__ import annotations

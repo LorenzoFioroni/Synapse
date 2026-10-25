@@ -12,6 +12,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime
 
+from ..library.agent import current_agent
 from . import frontmatter
 from .folder_colors import FolderColorError, FolderColors
 from .history import NoteHistory
@@ -287,21 +288,24 @@ class NotesService:
         return {"path": path, "hash": h, "info": self.index.note(path)}
 
     def edit(self, path: str, text: str, base_hash: str, *, by: str = "ai", summary: str = "") -> dict:
-        """Save a change made for someone else than the editor (Claude), keeping the version it
-        replaces in the history so the app can show the change and undo it."""
+        """Save a change made for someone else than the editor (an AI app), keeping the version it
+        replaces in the history so the app can show the change, who made it, and undo it."""
         path = self.vault.clean_rel(path)
         before, h = self.vault.read(path)
         if h != base_hash:
             raise Conflict(path, h)
         h2 = self.vault.write(path, text, expected_hash=base_hash)
-        entry = self.history.record(path, before=before, before_hash=h, after_hash=h2, by=by, summary=summary)
+        agent = current_agent() if by == "ai" else None
+        entry = self.history.record(
+            path, before=before, before_hash=h, after_hash=h2, by=by, agent=agent, summary=summary
+        )
         self.index.update(path)
         self._changed()
         self._saved(path, h2, by)
         return {"path": path, "hash": h2, "version": entry["id"]}
 
     def history_of(self, path: str) -> dict:
-        """The changes Claude made to a note, newest first; ``current`` marks the one the note is
+        """The changes AI apps made to a note, newest first; ``current`` marks the one the note is
         still exactly the result of."""
         path = self.vault.clean_rel(path)
         h = self.vault.current_hash(path)

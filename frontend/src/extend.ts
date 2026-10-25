@@ -83,12 +83,15 @@ export class Registry<T extends { id: string }> {
 }
 
 /** A section of the Settings page a plugin adds (its own controls, beside the settings its
-    manifest declares). ``after``: the id of the section it follows (default: before Plugins). */
+    manifest declares). A plugin's part goes inside the plugin's own section; ``after`` places a part
+    that has no plugin behind it (default: before Plugins). ``shows``: manifest settings it draws
+    itself, so they are not listed again. */
 export interface SettingsSection {
   id: string;
   title: string;
   icon?: string;
   after?: string;
+  shows?: string[];
   source?: string;
   owner?: string;
   mount: (el: HTMLElement) => Cleanup;

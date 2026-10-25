@@ -1,4 +1,4 @@
-// Autocompletion's section in Settings: whether Ollama and the model are there (and what to do if
+// Autocompletion's part of its section in Settings: whether Ollama and the model are there (and what to do if
 // not), the model (from those installed), the length, Ollama's address. Turning autocompletion on
 // and off is the plugin's switch in Settings → Plugins.
 import type { PluginContext } from '../../api.js';
@@ -39,10 +39,9 @@ export function mountSettings(p: PluginContext, el: HTMLElement, src: Source): (
   let statusRequest = 0;
   let saveRequest = 0;
   el.innerHTML = `
-    <p class="lead">Suggestions as you write a note, in grey after the cursor: <kbd>Tab</kbd> accepts, <kbd>Esc</kbd> dismisses,
-      <kbd>${modLabel}→</kbd> takes one word, <kbd>${altLabel}\\</kbd> asks for one now. They come from a model running on this computer
-      in <a href="https://ollama.com" target="_blank" rel="noopener">Ollama</a>; your notes are not sent anywhere else.
-      Turn autocompletion off in Plugins.</p>
+    <p class="lead"><kbd>Tab</kbd> accepts a suggestion, <kbd>Esc</kbd> dismisses it, <kbd>${modLabel}→</kbd> takes one word,
+      <kbd>${altLabel}\\</kbd> asks for one now. The model runs in <a href="https://ollama.com" target="_blank" rel="noopener">Ollama</a>.
+      Turn autocompletion off with its switch in Plugins.</p>
     <div class="card">
       <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Status</div></div>
         <span class="spacer" style="flex:1"></span><button class="btn btn-sm" data-ai-check>${icon('refresh', 'icon-sm')} Check Again</button></div>

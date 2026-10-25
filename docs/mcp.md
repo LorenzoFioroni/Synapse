@@ -1,7 +1,9 @@
 # The MCP server
 
-`mcp_server.py` gives AI apps (Claude Desktop, Claude Code) access to the library through the
-Model Context Protocol. The app starts the script itself and talks to it over stdin and stdout.
+`mcp_server.py` gives AI apps (Claude Desktop, Claude Code, Codex, any other MCP client) access to
+the library through the Model Context Protocol. Nothing in it is particular to one app: it speaks
+the protocol, and what an app changes is recorded with that app's name
+([Which AI app](#which-ai-app)). The app starts the script itself and talks to it over stdin and stdout.
 It reads the same `data/` folder as the web app, which does not need to be running. It can read
 items, PDFs, notes and reference lists, and it can write notes under strict rules.
 
@@ -15,6 +17,8 @@ and `backend/mcp/`.
 |---|---|
 | `mcp_server.py` | The script: parses the flags, builds a `Services` for the data folder and serves over stdio. |
 | `backend/mcp/protocol.py` | The JSON-RPC 2.0 message layer: `Server`, `Tool`, `ToolError`, argument checks, `serve_stdio`. |
+| `backend/mcp/clients.py` | `client_label()`: the name of the connected AI app (Claude, Codex …) from `initialize`'s `clientInfo`. |
+| `backend/library/agent.py` | `acting_as()` / `current_agent()`: the AI app making the current change, read by notes and tasks. |
 | `backend/mcp/http.py` | `HttpTransport`: the same server over HTTP, for the web app's `/mcp` endpoint. |
 | `backend/api/mcp.py` | The `/mcp` endpoint and the access-token endpoints of Settings → AI Access. |
 | `backend/access/tokens.py` | `AccessTokens`: the tokens an AI app sends to `/mcp`, hashed in `auth.db`. |
@@ -29,12 +33,15 @@ gets everything else through the `Services` object it is given.
 ## Setting it up
 
 The README section [AI access (MCP)](../README.md#ai-access-mcp) has the steps for users.
-In short, `python mcp_server.py --config` prints the entry for `claude_desktop_config.json` and
-the `claude mcp add` line for Claude Code, with the paths of this checkout and Python.
+In short, `python mcp_server.py --config` prints the entry for `claude_desktop_config.json`, the
+`claude mcp add` line for Claude Code, and the `codex mcp add` line and `~/.codex/config.toml`
+entry for Codex, with the paths of this checkout and Python. Any other MCP client runs the same
+command over stdio. Codex starts the server with a reduced environment, so `--data` is written
+into the command whenever the data folder was chosen (by `--data` or `SYNAPSE_DATA_DIR`).
 
 | Flag | Effect |
 |---|---|
-| `--config` | Print the setup for Claude Desktop and Claude Code, then exit. |
+| `--config` | Print the setup for Claude Desktop, Claude Code and Codex, then exit. |
 | `--data DIR` | Use another data folder. The default is `$SYNAPSE_DATA_DIR` or `./data` (`Config.from_env`). |
 | `--verbose` | Log at INFO level instead of WARNING. |
 
@@ -54,7 +61,7 @@ transports that call it.
 | `ping` | `{}` |
 | `tools/list` | Every registered tool, in registration order (`Tool.describe()`). |
 | `tools/call` | Runs the tool and returns its content blocks. |
-| `resources/list`, `prompts/list` | Empty lists, for clients that ask anyway. |
+| `resources/list`, `resources/templates/list`, `prompts/list` | Empty lists, for clients that ask anyway (Codex offers its model resource tools for every server). |
 
 Errors are split in two kinds:
 
@@ -136,9 +143,35 @@ reaches the model as a tool error (`_readable`); anything else counts as the plu
 Plugins' per-item fields reach the model too: `get_paper` lists their known values as
 `plugin_fields`, and `search_library` takes them as filters (`citations:>100`).
 
-Claude's task changes are recorded with `by: "ai"` in `task_history`, so the app shows them as
-Claude's and can undo them; `get_note` lists the tasks a note shows, and `NoteChecker` refuses a
+Task changes made through the tools are recorded with `by: "ai"` and the app's name in
+`task_history` (see below), so the app shows whose they are and can undo them; `get_note` lists the tasks a note shows, and `NoteChecker` refuses a
 note that shows a task id that does not exist (see [tasks](tasks.md)).
+
+## Which AI app
+
+Every MCP client names itself in `initialize` (`clientInfo`: `{"name": "codex-mcp-client",
+"title": "Codex"}`, `{"name": "claude-code"}` …). `Server` keeps `client_label(clientInfo)` in
+`Server.client`: the apps people use are recognised (Claude, Codex, Cursor, Gemini, GitHub Copilot,
+VS Code, Windsurf, Zed, LM Studio, ChatGPT), any other is shown by its `title`, else by its name
+tidied up, and a client that gives no name stays `None`. `tools/call` runs the tool inside
+`acting_as(Server.client)` (a context variable, so a web request handled meanwhile in another thread
+is not affected), and the components that record changes read `current_agent()`:
+
+| Where | What is recorded |
+|---|---|
+| Notes history (`notes/history.py`) | `agent` beside `by: "ai"` in each change's JSON; edit_note's default summary is "Edited by Codex". |
+| New notes (`write_note`) | `agent: Codex` in the front matter, beside `author: ai`. |
+| Tasks (`tasks/store.py`) | `tasks.updated_agent` and `task_history.agent`, beside `updated_by` / `by` = `ai`. |
+
+The app shows the name: "Codex edited this note", "Codex changed this task", and each entry of a
+note's list of AI edits. Changes recorded before the name was kept have no `agent`; the app then
+says "An AI app". Over HTTP one `Server` answers every app, so `HttpTransport` remembers the name
+each access token's `initialize` gave and sets `Server.client` from it for each request; after a
+restart of the web app a client that does not initialize again is unnamed until it does.
+
+Codex (CLI 0.164) was checked against both transports: it lists the tools (as one namespace,
+`mcp__synapse`), calls them, and its changes are recorded as Codex's. The official MCP Python SDK
+client works too.
 
 ## The rules it enforces
 
@@ -211,14 +244,14 @@ feed.
 
 ## Over HTTP (`/mcp`)
 
-Claude Code on another computer cannot start `mcp_server.py` here, so the web app serves the same
+An AI app on another computer cannot start `mcp_server.py` here, so the web app serves the same
 tools at `/mcp` (the "Streamable HTTP" transport, in its simplest form). It needs `--lan` to be
 reachable from the network; on this computer it works without.
 
 ```
-Claude Code ──POST /mcp, Authorization: Bearer syn_…──► guard: host, Origin, token (access/guard.py)
+AI app ──POST /mcp, Authorization: Bearer syn_…──► guard: host, Origin, token (access/guard.py)
                                                            └ api/mcp.py → Services.mcp_http()
-                                                               └ HttpTransport.handle(body) → Server.handle
+                                                               └ HttpTransport.handle(body, caller=token id) → Server.handle
 ```
 
 **Requests.** Each POST carries one JSON-RPC message or a batch, and the answer is the reply as
@@ -246,8 +279,11 @@ computer too; device cookies do not count. Otherwise it answers 401 with
 so a web page cannot use a token the browser does not have anyway, and the Host check still stops
 DNS rebinding. Tokens (`syn_` and 43 random characters) are made in **Settings → AI Access**
 (`frontend/src/views/settings/aiAccess.ts`), only on the computer running Synapse, shown once with
-the `claude mcp add --transport http … --header "Authorization: Bearer …"` command, and stored as
-SHA-256 hashes. `last_used` and `last_addr` are updated at most once a minute. Removing a token
+what to run on the other computer, and stored as SHA-256 hashes. The token box offers three apps:
+Claude Code (`claude mcp add --transport http … --header "Authorization: Bearer …"`), Codex
+(`export SYNAPSE_TOKEN=…` and `codex mcp add synapse --url … --bearer-token-env-var SYNAPSE_TOKEN`,
+since Codex reads the token from an environment variable), and any other app (the URL and the
+header to enter). `last_used` and `last_addr` are updated at most once a minute. Removing a token
 locks its app out at the next request.
 
 | Endpoint | Who | What |
@@ -258,8 +294,8 @@ locks its app out at the next request.
 | `DELETE /api/mcp/tokens/<id>` | this computer | Removes the token. |
 
 Over plain HTTP the token crosses the network in the clear, like a device cookie: use `--lan` on a
-trusted network, or HTTPS (`--cert`/`--key`; Claude Code must then trust the certificate, for
-example with `NODE_EXTRA_CA_CERTS`). See [sync and devices](sync-and-devices.md#security-model).
+trusted network, or HTTPS (`--cert`/`--key`; the AI app must then trust the certificate, for
+example Claude Code with `NODE_EXTRA_CA_CERTS`). See [sync and devices](sync-and-devices.md#security-model).
 
 ## Adding a tool
 

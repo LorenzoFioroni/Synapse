@@ -208,14 +208,15 @@ also write a note record `notes`. `TaskMissing` becomes 404, `TaskError` 400.
 | GET | `/api/tasks/<id>/history` | The task's recorded changes, newest first. |
 | POST | `/api/tasks/undo` | Undo one recorded change (`history_id`). |
 
-## Claude's task tools
+## Task tools for AI apps
 
 `backend/mcp/tools/tasks.py` adds `list_tasks`, `get_task`, `create_task`, `update_task` and
 `delete_task` (see [mcp](mcp.md)). `list_tasks` filters with the same syntax as the Tasks page
-(`backend/tasks/query.py`). Changes are recorded as `ai`; the task form then shows "Claude
-changed this task" with Undo. `get_note` lists the tasks a note shows, and `NoteChecker` refuses a
-note that shows an id that is not a task (Claude must create tasks with `create_task` instead of
-inventing ids). The writing rules tell Claude that `- [ ]` is a checkbox and `{{task:ID}}` a task.
+(`backend/tasks/query.py`). Changes are recorded as `ai` with the AI app's name (`updated_agent`
+on the task, `agent` in its history; see [mcp](mcp.md#which-ai-app)); the task form then shows
+"Codex changed this task" (or "An AI app" for changes recorded before names were kept) with Undo. `get_note` lists the tasks a note shows, and `NoteChecker` refuses a
+note that shows an id that is not a task (the AI must create tasks with `create_task` instead of
+inventing ids). The writing rules tell the AI that `- [ ]` is a checkbox and `{{task:ID}}` a task.
 
 ## Frontend (`frontend/src/plugins/core/tasks/`)
 
@@ -225,7 +226,7 @@ inventing ids). The writing rules tell Claude that `- [ ]` is a checkbox and `{{
 | `taskQuery.ts` | Views, the search syntax, sorting and grouping as rows of a tree (`buildRows`). No DOM. |
 | `dates.ts` | Reading typed dates (`parseDue`, `parseQuick`) and showing them ("Today", "Fri", "Tue 27 Oct"); the month grid of the date picker. No DOM. |
 | `taskRender.ts` | How a task looks everywhere: checkbox, title and labels; `refHtml`, installed as `renderDefaults.taskHtml` so read mode, embeds and exports draw `{{task:id}}`; `refSig`, the key of the live-preview widget. |
-| `taskForm.ts` | The task form (detail pane and popup): title, status, date with picker, the body in the notes editor (saved 0.7 s after typing stops), sub-tasks, the notes that show it, Claude's last change. |
+| `taskForm.ts` | The task form (detail pane and popup): title, status, date with picker, the body in the notes editor (saved 0.7 s after typing stops), sub-tasks, the notes that show it, an AI app's last change (with its name). |
 | `taskList.ts`, `tasksView.ts`, `tasksState.ts` | The Tasks page: rows, selection, keyboard, row menu, drag and drop and the page's own Undo; the views column, search, sort, group, quick add, the detail pane; what is remembered in the browser (`zc.tasks.view`). |
 | `noteTasks.ts` | Tasks in notes: the live-preview hooks, the popups (a task; *New task*), <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd>, the side panel, reloading the notes of tasks after a save, and tasks for the Markdown export. |
 | `notePicker.ts` | Choosing a note ("Show in a note…"). |

@@ -1,12 +1,13 @@
-"""Earlier versions of notes changed by Claude (the MCP server's edit_note), so every such change
+"""Earlier versions of notes changed by an AI app (the MCP server's edit_note), so every such change
 can be seen and undone in the app.
 
 One JSON file per change in ``<vault>/.history/`` (hidden like ``.trash``, included in backups):
 
-    {"id", "path", "at", "by", "summary", "before", "before_hash", "after_hash"}
+    {"id", "path", "at", "by", "agent", "summary", "before", "before_hash", "after_hash"}
 
-``before`` is the whole note as it was; ``after_hash`` identifies the version the change produced,
-so the app can tell whether the note still is exactly what Claude left (then Undo is a plain
+``by`` is "ai"; ``agent`` names the AI app (Claude, Codex …; missing in changes recorded before it
+was kept). ``before`` is the whole note as it was; ``after_hash`` identifies the version the change
+produced, so the app can tell whether the note still is exactly what the AI app left (then Undo is a plain
 switch back) or was edited since. The MCP server and the app run in different processes; each
 change is its own file with a unique name, so neither can overwrite the other's entries.
 """
@@ -37,7 +38,15 @@ class NoteHistory:
 
     # ------------------------------------------------------------------ writing
     def record(
-        self, path: str, *, before: str, before_hash: str, after_hash: str, by: str = "ai", summary: str = ""
+        self,
+        path: str,
+        *,
+        before: str,
+        before_hash: str,
+        after_hash: str,
+        by: str = "ai",
+        agent: str | None = None,
+        summary: str = "",
     ) -> dict:
         from .service import now_iso, ulid
 
@@ -46,6 +55,7 @@ class NoteHistory:
             "path": path,
             "at": now_iso(),
             "by": by,
+            **({"agent": agent} if agent else {}),
             "summary": summary[:300],
             "before": before,
             "before_hash": before_hash,
