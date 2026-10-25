@@ -16,6 +16,7 @@ import logging
 import queue
 import threading
 import time
+from collections.abc import Callable
 
 from ..library.identifiers import identifiers, title_key
 from .sources import fetch
@@ -38,6 +39,7 @@ class Citations:
         self.store = store
         self.papers = papers
         self.settings = settings
+        self.reference_sources: Callable | None = None
         self._queue: queue.Queue[str] = queue.Queue()
         self._pending: set[str] = set()
         self._lock = threading.Lock()
@@ -53,8 +55,7 @@ class Citations:
             source, refs = fetch(
                 item,
                 email=self.settings.get("contact_email") or "",
-                openalex_key=self.settings.get("openalex_api_key") or "",
-                s2_key=self.settings.get("semantic_scholar_api_key") or "",
+                sources=self.reference_sources,
             )
         except Exception as e:
             self.store.save_error(item_id, str(e))
@@ -165,6 +166,19 @@ class Citations:
             if not y or not py or abs(y - py) <= 1:
                 return pid
         return None
+
+    def match_refs(self, refs: list[dict]) -> list[str | None]:
+        """The library item each reference is (or None), as the References section matches them."""
+        index, _ = self._library_index()
+        return [self._match(r, index) for r in refs]
+
+    def library_signature(self) -> tuple:
+        """Changes whenever the library does (for indexes built from it)."""
+        return self._library_signature()
+
+    def citing_ids(self, doi: str | None, arxiv_id: str | None) -> set[str]:
+        """Library items whose stored reference lists cite this work."""
+        return self.store.citing(doi, arxiv_id)
 
     def item_view(self, item_id: str) -> dict:
         """References of an item (marked when they are in the library) and the library items citing it."""

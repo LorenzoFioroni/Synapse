@@ -48,6 +48,9 @@ page, and a page that cannot know what it missed simply refreshes everything.
 | `annotations` | A write to `library.db` commits during a request to `/api/annotations…` or `/api/attachments/<id>/annotations` (`kind_of`). |
 | `notes` | A notes endpoint (`backend/api/notes.py`) answers a POST, PUT, PATCH or DELETE with a status below 400. |
 | `tasks` | A write to `library.db` commits during a request to `/api/tasks…` (`kind_of`), or a tool that can write runs over `/mcp`. A page reloads its tasks on `tasks` and on `notes` (a note's task lines may have changed). |
+| `plugins` | A plugin was turned on or off, restarted or set up, or turned off after failing (`PluginHost.changed`). |
+| `fields` | A plugin set values of its per-item fields, or its refresher fetched some (`FieldIndex.changed`). |
+| `sources` | A plugin said its lists of papers changed (`plugin.refresh_sources()`). |
 
 Writes to `library.db` reach the feed through `Database.on_write`, which `Services` points at
 `_library_written`. `Database.session` calls it after each commit that changed rows. A failure
@@ -89,6 +92,9 @@ when it becomes visible again. It skips a poll while one is running or the page 
 | `library` | `A.loadItems()`: the item list, counts and sidebar. At most once every 2.5 s (`MIN_GAP`), because background fetching can write often. |
 | `notes` | `notesChanged()` in `notesView.ts`: the open note checks the server copy, and the notes tree is redrawn. |
 | `annotations` | Ignored: the viewer looks after its own. |
+| `fields` | Handled like `library` (the list reloads, with the values as `_f`); the item pane redraws its *From Plugins* section. |
+| `sources` | The sidebar's entries for plugins' lists are asked for again (their badges); the list reloads when it shows one of them. |
+| `plugins` | `syncPlugins()` in `plugins/host.ts` loads or unloads plugins' frontends; `pluginsChanged()` in `views/settings/plugins.ts` redraws an open Settings page's Plugins section (not while a field in it is being edited). Every kind is also passed to plugins' `onChange` listeners. |
 
 A refresh waits while the user is busy (`editing()`): a dialog or autocomplete list is open, a
 form field has focus, or the note editor was typed in during the last 4 seconds. Fields save when
@@ -207,6 +213,11 @@ extension. The connector API is described in [`browser-extension.md`](browser-ex
 whenever the host is not a loopback one, so `--host 0.0.0.0` also counts. The server prints the
 `.local` name and IP addresses, and a tip if `segno` is missing.
 
+With `--cert` and `--key`, a wildcard LAN server opens the browser or `--window` at the `.local`
+name it prints. Opening an IP instead would not match the usual hostname certificate and would not
+provide the named secure origin that passkeys require. Plain HTTP still opens at `127.0.0.1` on
+the host computer, where browsers treat localhost as a secure context.
+
 `server.py` refuses `--debug` together with `--lan`, or with any `--host` that is not loopback,
 and exits with a message. Werkzeug's debugger is WSGI middleware that answers before the guard's
 `before_request` hook, and its console runs Python code. On the network it would let anyone who
@@ -265,6 +276,19 @@ shows that instead of the button.
 printed addresses and the pairing links then start with `https://`, and cookies get `Secure`. The
 README has the steps with `mkcert`, which makes a local certificate authority to install on each
 device.
+
+### Installation on a phone or tablet
+
+`frontend/manifest.webmanifest` makes Synapse installable: it has a stable app id, standalone
+display mode, a start URL and scope, and 192 px and 512 px PNG icons suitable for Android's
+maskable launcher shape. `frontend/index.html` links the manifest, the 192 px browser icon and the
+Apple touch icon.
+
+Installation from another device has the same secure-context requirement as passkeys. Chrome on
+Android offers **Install app** only when Synapse is opened through HTTPS with a certificate the
+phone trusts. A plain HTTP LAN address, or an untrusted certificate, can only make a browser
+shortcut. The README's mkcert instructions establish the trusted `.local` address; a shortcut
+made before that should be removed and recreated so Chrome reads the app icon and manifest again.
 
 **Adding one.** Settings → Devices → **Add a Passkey…** (`frontend/src/views/settings/passkeys.ts`),
 on this computer or on any device already signed in:

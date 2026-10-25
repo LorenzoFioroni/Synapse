@@ -2,6 +2,7 @@
 // store and emit events. Keeping them here keeps views free of API details.
 import { byId, currentFolderId, emit, folderById, folderDescendants, selectedItems, state } from './store.js';
 import { confirmDialog } from './ui/dialog.js';
+import { notify } from './notifications/center.js';
 import { progressToast, toast, toastError } from './ui/toast.js';
 import type { Attachment, Counts, Item, Sidebar, SmartFolder, Tag } from './types.js';
 import { plural } from './util.js';
@@ -34,7 +35,16 @@ export async function loadItems({ keepSelection = true } = {}): Promise<void> {
     emit('sidebar');
     if (keepSelection) {
       const ids = new Set(state.items.map((i) => i.id));
-      state.selection = new Set([...state.selection].filter((id) => ids.has(id)));
+      const before = [...state.selection];
+      state.selection = new Set(before.filter((id) => ids.has(id)));
+      if (before.length && !state.selection.size) {
+        // the selected items left the list (dismissed from a plugin's list, trashed elsewhere):
+        // select the one after them, as trashing here does
+        const order = state.order || [];
+        const last = Math.max(...before.map((id) => order.indexOf(id)));
+        const next = last >= 0 ? order.slice(last + 1).find((id) => ids.has(id)) || order.slice(0, last).reverse().find((id) => ids.has(id)) : undefined;
+        if (next) { state.selection.add(next); state.anchor = next; state.cursor = next; }
+      }
     } else state.selection.clear();
     emit('items');
     emit('selection');
@@ -145,7 +155,7 @@ export async function newItem(data: Partial<Item> = {}): Promise<Item | undefine
 }
 
 export async function trashSelected(): Promise<void> {
-  const items = selectedItems();
+  const items = selectedItems().filter((i) => !i._outside);   // papers from a plugin's list are not in the library
   if (!items.length) return;
   const ids = items.map((i) => i.id);
   if (state.view === 'trash') return deleteForever(ids);
@@ -231,17 +241,16 @@ export function openPdf(itemOrId: Item | string | undefined, att?: Attachment): 
 
 export async function findPdf(id: string): Promise<void> {
   const item = byId(id);
-  const close = toast(`Searching for a PDF of “${(item?.title || 'item').slice(0, 60)}”…`, { timeout: 0 });
+  const job = progressToast(`Searching for a PDF of “${(item?.title || 'item').slice(0, 60)}”…`);
   try {
     const res = await api.findPdf(id);
-    close();
     if (res.status === 'success') {
-      toast('PDF found and attached', { type: 'success' });
+      job.finish('PDF found and attached', { type: 'success' });
       state.expanded.add(id);
       await refreshItems([id]);
       emit('items');
-    } else toast(res.message || 'No PDF found', { type: 'error' });
-  } catch (e) { close(); toastError(e); }
+    } else job.finish(res.message || 'No PDF found', { type: 'warning' });
+  } catch (e) { job.finish((e as Error).message, { type: 'error' }); }
 }
 
 /**
@@ -269,15 +278,13 @@ export async function findPdfs(ids: string[], { auto = false } = {}): Promise<vo
     }
     if (n < todo.length - 1) await new Promise((r) => setTimeout(r, 400));
   }
-  pt.close();
   const notFound = [...missing, ...failed];
   const parts = [`Found ${plural(found.length, 'PDF')}`];
   if (notFound.length) parts.push(`${notFound.length} not found`);
   if (skipped) parts.push(`${skipped} already had one`);
   if (cancelled) parts.push('stopped early');
-  toast(parts.join(' · '), {
+  pt.finish(parts.join(' · '), {
     type: found.length ? 'success' : 'error',
-    timeout: 8000,
     action: notFound.length ? { label: 'Select not found', run: () => select(notFound, { anchor: notFound[0] }) } : null,
   });
 }
@@ -296,12 +303,11 @@ export async function uploadAttachments(id: string, files: Iterable<File>): Prom
 export async function addPdfsAsItems(files: Iterable<File>): Promise<void> {
   const pdfs = [...files].filter((f) => /\.pdf$/i.test(f.name));
   if (!pdfs.length) return;
-  const close = toast(`Adding ${plural(pdfs.length, 'PDF')} and looking up metadata…`, { timeout: 0 });
+  const job = progressToast(`Adding ${plural(pdfs.length, 'PDF')} and looking up metadata…`);
   try {
     const folder = currentFolderId();
     if (!folder && state.view !== 'library') setView('library');
     const res = await api.fromPdfs(pdfs, folder);
-    close();
     await loadItems();
     const ids = res.created.map((c) => c.item.id);
     select(ids, { anchor: ids[0] });
@@ -311,12 +317,11 @@ export async function addPdfsAsItems(files: Iterable<File>): Promise<void> {
     // Settings → Adding Items → reference lists: "always" is done by the server, "ask" asks here
     const withId = res.created.filter((c) => !c.note && (c.item.doi || c.item.archive_id)).map((c) => c.item.id);
     const ask = state.settings.add_fetch_references === 'ask' && withId.length;
-    toast(msg, {
+    job.finish(msg, {
       type: 'success',
-      timeout: ask ? 10000 : undefined,
       action: ask ? { label: 'Fetch References', run: () => api.queueReferences(withId).then(() => toast(`Fetching ${plural(withId.length, 'reference list')} in the background`)) } : null,
     });
-  } catch (e) { close(); toastError(e); }
+  } catch (e) { job.finish((e as Error).message, { type: 'error' }); }
 }
 
 export async function regenerateCitekeys(ids: string[]): Promise<void> {
@@ -493,4 +498,41 @@ export async function deleteSmart(sf: SmartFolder): Promise<void> {
     if (state.view === `smart:${sf.id}`) setView('library');
     await loadItems();
   } catch (e) { toastError(e); }
+}
+
+/**
+ * Add papers from a plugin's list (outside the library) to the library, into `folderId` when
+ * given: the server looks each up by its DOI or arXiv id. In the list they become the library
+ * items. What Settings → Adding Items says to do afterwards runs too ("ask" counts as yes: the
+ * "+" is one click, with nowhere to ask).
+ */
+export async function addOutside(items: Item[], folderId: number | null = null): Promise<void> {
+  const papers = items.filter((i) => i._outside);
+  if (!papers.length) return;
+  const pt = progressToast(`Adding ${plural(papers.length, 'paper')}…`);
+  const added: string[] = [];
+  let already = 0;
+  for (const [n, p] of papers.entries()) {
+    pt?.set(`Adding ${n + 1}/${papers.length}: ${(p.title || 'Untitled').slice(0, 60)}`, n, papers.length);
+    try {
+      const res = await api.addOutside(p, folderId);
+      if (res.duplicate) already++; else added.push(res.item.id);
+    } catch (e) {
+      notify((e as Error).message, { type: 'error' });
+      if ((e as ApiError).status === 0) break;      // server gone
+    }
+  }
+
+  await loadItems();
+  if (added.length) select(added, { anchor: added[0], cursor: added[0] });
+  const { mode, runAfterAdd } = await import('./afterAdd.js');
+  runAfterAdd(added, { pdf: mode('pdf') !== 'never', references: mode('references') !== 'never' });
+  const where = folderId ? `“${folderById(folderId)?.name || 'folder'}”` : 'My Library';
+  const parts = added.length ? [added.length === 1 && papers.length === 1 ? `Added to ${where}` : `Added ${plural(added.length, 'paper')} to ${where}`] : [];
+  if (already) parts.push(papers.length === 1 ? 'Already in your library' : `${already} already in your library`);
+  if (!parts.length) { pt.finish('No papers added', { type: 'error' }); return; }
+  pt.finish(parts.join(' · '), {
+    type: added.length ? 'success' : 'info',
+    action: added.length ? { label: 'Undo', run: async () => { await api.trash(added); await loadItems(); } } : null,
+  });
 }

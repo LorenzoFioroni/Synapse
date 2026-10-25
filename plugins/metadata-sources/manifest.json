@@ -1,0 +1,10 @@
+{
+  "id": "metadata-sources",
+  "name": "Metadata Sources",
+  "version": "1.0.0",
+  "api": "^1.0",
+  "author": "Synapse",
+  "description": "Metadata by DOI, arXiv ID, ISBN or title from Crossref, OpenAlex, arXiv and Open Library. Turning this off leaves existing library records unchanged.",
+  "core": true,
+  "backend": "server"
+}

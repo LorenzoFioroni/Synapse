@@ -21,7 +21,7 @@
 import type { EditorState, Range as CMRange, Text } from '@codemirror/state';
 import type { Decoration as DecorationT, DecorationSet, EditorView as EditorViewT, ViewUpdate } from '@codemirror/view';
 import type { CM } from './editor.js';
-import { type Scan, type Span, attachmentOf, scan, splitFrontmatter } from './mdscan.js';
+import { GALLERY_INFO, type Scan, type Span, attachmentOf, scan, splitFrontmatter } from './mdscan.js';
 import { type CiteTarget, citeTargetInText } from './citeTarget.js';
 import { type CiteInfo, type Renderer, citeLabel, imageSrc } from './render.js';
 import { type TextRef, numberEquations, resolveRefs, textRefs } from './equations.js';
@@ -30,8 +30,7 @@ import { clickOffset } from './mathClick.js';
 import { type Definition, HAS_DEFINITIONS, type Macros, parseDefinitions, withDefinitions } from './macros.js';
 import { type Equations, previewWidgets } from './previewWidgets.js';
 import type { TaskPreview } from './workspace.js';
-import { galleryInfo } from './gallery.js';
-import { type Figures, figureLabel, figuresOf } from './figures.js';
+import { type Figures, type Spoiler, noteHooks } from './hooks.js';
 
 /** A DOM text node (``Text`` is CodeMirror's document here). */
 type Text_ = globalThis.Text;
@@ -77,17 +76,31 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
   });
 
   /* ------------------------------------------------------- per-document data */
-  let cache: { doc: Text | null; scan: Scan | null; refs: TextRef[] | null; eq: Equations | null; mode: string | null; base: Macros | null; figs: Figures | null; atomic: DecorationSet | null } = { doc: null, scan: null, refs: null, eq: null, mode: null, base: null, figs: null, atomic: null };
+  let cache: { doc: Text | null; scan: Scan | null; refs: TextRef[] | null; eq: Equations | null; mode: string | null; base: Macros | null; figs: Figures | null; spoilers: { of: unknown; spans: Spoiler[] } | null; atomic: DecorationSet | null } = { doc: null, scan: null, refs: null, eq: null, mode: null, base: null, figs: null, spoilers: null, atomic: null };
   let lastBase: Macros | null = null, baseVersion = 0;
   const scanOf = (state: EditorState): Scan => {
-    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), refs: null, eq: null, mode: null, base: null, figs: null, atomic: null };
+    if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), refs: null, eq: null, mode: null, base: null, figs: null, spoilers: null, atomic: null };
     return cache.scan!;
   };
-  // the note's figures and their numbers (figures.ts), found with the same rule as the renderer's
+  // the note's figures and their numbers (Extended Markdown), found with the same rule as the
+  // renderer's; none while galleries and figures are off
+  const noFigures: Figures = { figures: [], labels: new Map() };
   const figuresOfDoc = (state: EditorState): Figures => {
     const s = scanOf(state);
-    cache.figs ||= figuresOf(state.doc.toString(), s);
+    const hook = noteHooks.figures;
+    if (!hook) return noFigures;
+    cache.figs ||= hook.figuresOf(state.doc.toString(), s);
     return cache.figs;
+  };
+  // the note's spoilers (Extended Markdown), found once per document version: both decoration
+  // passes ask on every keystroke
+  const spoilersOfDoc = (state: EditorState): Spoiler[] => {
+    const s = scanOf(state);
+    const hook = noteHooks.extended;
+    if (!hook) return [];
+    // keyed on the hook too: switching spoilers on or off in Settings gives a new hook, same text
+    if (cache.spoilers?.of !== hook) cache.spoilers = { of: hook, spans: hook.spoilers(state.doc.toString(), s) };
+    return cache.spoilers.spans;
   };
   // what a reference may name: an equation's label, else a figure's or a gallery panel's
   const refLookup = (state: EditorState, eq: Equations): Lookup => lookupIn(eq.labels, figuresOfDoc(state).labels);
@@ -173,6 +186,13 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     };
     const overlapsTaken = (from: number, to: number) => taken.some(([a, b]) => from < b && to > a);
 
+    const spoilers = spoilersOfDoc(state);
+    for (const sp of spoilers) {
+      if (!sp.block || blockActive(sp.from, sp.to) || overlapsTaken(sp.from, sp.to)) continue;
+      taken.push([sp.from, sp.to]);
+      out.push(Decoration.replace({ widget: W.spoiler(doc.sliceString(sp.from, sp.to), String(version), true), block: true }).range(sp.from, sp.to));
+    }
+
     // front matter: a compact box of properties until the cursor goes into it
     if (doc.sliceString(0, 4) === '---\n') {
       const fm = splitFrontmatter(doc.sliceString(0, Math.min(doc.length, 50000)));
@@ -185,6 +205,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     // $$ blocks, and the rare formula that runs over several lines (a replacement that hides a
     // line break has to come from here)
     for (const sp of s.spans) {
+      if (overlapsTaken(sp.from, sp.to)) continue;
       if (sp.kind === 'mathblock' && !sp.open) {
         const from = doc.lineAt(sp.from).from, to = doc.lineAt(sp.to).to;
         if (blockActive(from, to)) {
@@ -207,6 +228,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
       from: s.bodyStart,
       enter: (node) => {
         const name = node.name;
+        if (taken.some(([a, b]) => node.from >= a && node.to <= b)) return false;
         if (name === 'Table') {
           const from = doc.lineAt(node.from).from, to = doc.lineAt(node.to).to;
           if (blockActive(from, to) || overlapsTaken(from, to)) lineDecos(from, to, () => 'cm-lp-tablesrc');
@@ -221,7 +243,9 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
           const from = doc.lineAt(node.from).from, to = doc.lineAt(node.to).to;
           const info = node.node.getChild('CodeInfo');
           const lang = info ? doc.sliceString(info.from, info.to).trim().toLowerCase() : '';
-          if (galleryInfo(lang)) {
+          if (GALLERY_INFO.test(lang)) {
+            // with galleries off a gallery is its lines, as any text
+            if (!noteHooks.figures) return false;
             // a gallery is one unit: drawn as its carousel, or, while the cursor is in it, its
             // source with the carousel below it (nothing inside the source is rendered)
             const src = doc.sliceString(from, to);
@@ -282,9 +306,16 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     const taken: [number, number][] = [];
     const overlapsTaken = (from: number, to: number) => taken.some(([a, b]) => from < b && to > a);
 
+    for (const sp of spoilersOfDoc(state)) {
+      if (!sp.block && shown(sp.from, sp.to) && !touches(sp.from, sp.to)) {
+        taken.push([sp.from, sp.to]);
+        replace(sp.from, sp.to, Decoration.replace({ widget: W.spoiler(doc.sliceString(sp.from, sp.to), String(state.field(blocks).version), false) }));
+      }
+    }
+
     // math on one line (from the scanner: same rules as the backend)
     for (const sp of s.spans) {
-      if (sp.kind !== 'math' || !shown(sp.from, sp.to) || multiLine(doc, sp.from, sp.to)) continue;
+      if (sp.kind !== 'math' || overlapsTaken(sp.from, sp.to) || !shown(sp.from, sp.to) || multiLine(doc, sp.from, sp.to)) continue;
       taken.push([sp.from, sp.to]);
       if (touches(sp.from, sp.to)) add(sp.from, sp.to, Decoration.mark({ class: 'cm-lp-mathsrc' }));
       else replace(sp.from, sp.to, Decoration.replace({ widget: mathWidget(doc, eq, sp, false) }));
@@ -293,7 +324,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     // \eqref, \ref, \cref, \Cref in the text: the equations' or figures' numbers (crossref.ts)
     const lookup = refLookup(state, eq);
     for (const r of refsOf(state)) {
-      if (!shown(r.from, r.to)) continue;
+      if (!shown(r.from, r.to) || overlapsTaken(r.from, r.to)) continue;
       taken.push([r.from, r.to]);
       if (touches(r.from, r.to)) { add(r.from, r.to, Decoration.mark({ class: 'cm-lp-linksrc eqref' })); continue; }
       const names = refNames(r.kind, r.name);
@@ -303,11 +334,12 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     }
 
     // an image's caption line: its figure number in front, its \label hidden, until you edit it
-    for (const f of figuresOfDoc(state).figures) {
+    const figureLabel = noteHooks.figures?.label;
+    for (const f of figureLabel ? figuresOfDoc(state).figures : []) {
       if (f.kind !== 'image' || !shown(f.captionFrom!, f.to)) continue;
       lineDeco(f.captionFrom!, 'cm-lp-figcaption');
       if (lineActive(f.captionFrom!)) continue;
-      out.push(Decoration.widget({ widget: W.chip(`fig:${f.number}`, 'fignum', `${figureLabel(f.number!)}.`, {}), side: -1 }).range(f.captionFrom!));
+      out.push(Decoration.widget({ widget: W.chip(`fig:${f.number}`, 'fignum', `${figureLabel!(f.number!)}.`, {}), side: -1 }).range(f.captionFrom!));
       const line = doc.sliceString(f.captionFrom!, f.to);
       for (const m of line.matchAll(/\s*\\label\{[^{}\n]*\}/g)) {
         const a = f.captionFrom! + m.index!, b = a + m[0].length;
@@ -333,7 +365,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
       replace(from, to, Decoration.replace({ widget: W.chip(`c:${from}:${label}:${missing}:${trashed}`, `cite${missing ? ' missing' : ''}${trashed ? ' trashed' : ''}`, label, { keys, pages, atts }) }));
     };
     for (const l of s.links) {
-      if (!shown(l.from, l.to)) continue;
+      if (!shown(l.from, l.to) || overlapsTaken(l.from, l.to)) continue;
       if (l.kind === 'cite') {
         if (cites.length && cites[0].from !== l.from) flushCites();
         cites.push(l);
@@ -522,6 +554,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
   const clicks = EditorView.domEventHandlers({
     mousedown(e, view) {
       const target = e.target as Element;
+      if (target.closest('.cm-lp-spoiler .spoiler-toggle, .cm-lp-spoiler summary')) return false;
       const mw = e.button === 0 && !e.shiftKey && !e.metaKey && !e.ctrlKey && target.closest?.<HTMLElement>('.cm-lp-math, .cm-lp-mathblock');
       if (mw && clickIntoMath(e, view, mw)) return true;
       const ref = target.closest?.<HTMLElement>('.cm-lp-chip.eqref');

@@ -1,0 +1,12 @@
+{
+  "id": "hello-library",
+  "name": "Hello Library",
+  "version": "0.1.0",
+  "api": "^1.0",
+  "description": "A small offline example of a page, command, setting and backend route.",
+  "backend": "backend",
+  "frontend": "frontend/main.js",
+  "settings": [
+    { "key": "message", "type": "text", "label": "Message", "default": "Hello from your plugin." }
+  ]
+}

@@ -24,3 +24,6 @@ Claude outputs/
 # Frontend build output and tools (cd frontend && npm ci && npm run build)
 frontend/js/
 frontend/node_modules/
+
+# HTTPS certificates and their private keys for --lan --cert/--key (mkcert writes them here)
+*.pem

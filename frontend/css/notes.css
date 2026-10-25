@@ -192,6 +192,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 
 /* ===================================================== M4: modes, preview, read view */
 .note-modes button { padding: 3px 10px; font-size: var(--fs-xs); }
+.note-mobile-list { display: none; }
 .note-read { position: absolute; inset: 0; overflow: auto; outline: none; background: var(--bg); container-type: inline-size; }
 .note-read[hidden] { display: none; }
 #notes-view.reading .note-editor { display: none !important; }
@@ -427,7 +428,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 
 @media (hover: none) { .prose .code-block .copy-code { opacity: 1; } }   /* touch screens */
 
-/* ---------------------------------------------------------- galleries (gallery.ts, galleryView.ts)
+/* ---------------------------------------------------------- galleries (Extended Markdown: plugins/core/extended-markdown/figures/)
    The panels sit side by side in a track that scrolls with snapping; one panel shows at a time. */
 .gallery { margin: 0 auto .9em; padding: 0; }
 .gallery-view { position: relative; }
@@ -470,7 +471,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 /* its lines are Markdown text, not code: no code font or shading */
 .cm-live .cm-line.cm-lp-gallerysrc .cmt-code { font-family: inherit; font-size: inherit; background: none; color: inherit; border-radius: 0; }
 
-/* ---------------------------------------------------------- figures (figures.ts): an image with its
+/* ---------------------------------------------------------- figures (Extended Markdown, figures/figures.ts): an image with its
    caption, numbered Fig. 1, 2, … like galleries with a caption */
 .figure { margin: 0 0 .9em; padding: 0; }
 .figure-image { display: flex; justify-content: center; }
@@ -481,3 +482,33 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .fig-num { font-weight: 650; color: var(--text); white-space: nowrap; }
 .cm-live .cm-line.cm-lp-figcaption { color: var(--text-2); }
 .cm-lp-chip.fignum { font-weight: 650; color: var(--text); margin-right: .35em; font-style: normal; }
+
+/* Extended Markdown: spoilers. Their markup is generated, never the note's own HTML. */
+.spoiler-inline .spoiler-toggle { font: inherit; color: var(--muted); background: var(--bg-alt, transparent); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; cursor: pointer; }
+.spoiler-content:not([hidden]) { margin-left: .35em; }
+.spoiler-block { border: 1px solid var(--border); border-radius: 6px; padding: .5em .8em; margin: .6em 0; }
+.spoiler-block > summary { cursor: pointer; font-weight: 600; }
+.spoiler-block[open] > summary { margin-bottom: .5em; }
+
+@media (max-width: 700px) {
+  #notes-view { position: relative; --note-pad: 14px; }
+  .notes-tree-pane { position: absolute; inset: 0; z-index: 20; width: 100%; border-right: 0; }
+  #notes-view.has-note:not(.mobile-tree-open) .notes-tree-pane { display: none; }
+  #notes-view.mobile-tree-open .notes-tree-pane { display: flex; }
+  #notes-view.graph-on .notes-tree-pane { display: none; }
+  .notes-tree-head { height: 50px; padding-inline: 14px 8px; }
+  .nt-row { min-height: 42px; height: 42px; padding-right: 12px; }
+  .notes-main { width: 100%; }
+  .note-head { min-height: 48px; height: auto; gap: 7px; padding: 5px 8px; }
+  .note-mobile-list { display: inline-flex; }
+  .note-status { display: none; }
+  .note-modes { margin-left: auto; }
+  .note-modes button { padding-inline: 8px; }
+  .note-add-task { display: none !important; }
+  .note-body .cm-content { padding-left: 14px; padding-right: 14px; }
+  .prose { padding: 20px 16px 30vh; font-size: calc(var(--fs) + 2px); }
+  #notes-view.details-shown.has-note .notes-side, #notes-view.graph-on .notes-side { display: none; }
+  .ng-bar { gap: 6px; padding: 5px 8px; height: auto; min-height: 48px; flex-wrap: wrap; }
+  .ng-search { width: min(180px, 48vw); }
+  .graph-card { width: calc(100vw - 24px); }
+}

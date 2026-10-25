@@ -1,18 +1,19 @@
 // The item list's context menus (items and attachments) and the actions they share with the item
 // pane: renaming and deleting attachments, copying citation keys, picking files.
 import * as A from '../../actions.js';
+import { itemActions } from '../../extend.js';
 import { type ApiError, api, openAttachment, openPdfInNewWindow } from '../../api.js';
 import { openNewWindow } from '../../windows.js';
 import { currentFolderId, emit, folderById, selectedItems, state } from '../../store.js';
 import { promptDialog } from '../../ui/dialog.js';
-import { openMenu } from '../../ui/menu.js';
+import { type MenuEntry, openMenu } from '../../ui/menu.js';
 import { toast, toastError } from '../../ui/toast.js';
 import type { Attachment, Item } from '../../types.js';
 import { copyText, modLabel, plural } from '../../util.js';
 import { openExport } from '../exportDialog.js';
 import { openMetadataReview } from '../metadataReview.js';
 import { fetchReferencesBulk } from '../referencesSection.js';
-import { addSelectionToFolder, editTagsDialog, moveSelectionToFolder } from '../organizeDialogs.js';
+import { addSelectionToFolder, editTagsDialog, moveSelectionToFolder, pickFolder } from '../organizeDialogs.js';
 
 type At = { x: number; y: number } | Element;
 
@@ -43,6 +44,7 @@ async function newPaperNote(it: Item): Promise<void> {
 export function itemMenu(at: At): void {
   const items = selectedItems();
   if (!items.length) return;
+  if (items.some((i) => i._outside)) { outsideMenu(items.filter((i) => i._outside), at); return; }
   const one = items.length === 1 ? items[0] : null;
   const ids = items.map((i) => i.id);
   if (state.view === 'trash') {
@@ -74,7 +76,6 @@ export function itemMenu(at: At): void {
     { label: one ? 'Retrieve Metadata…' : `Retrieve Metadata for ${items.length} Items…`, icon: 'sparkle', run: () => openMetadataReview(ids) },
     { label: one ? 'Find Available PDF' : `Find PDFs for ${items.length} Items`, icon: 'find', run: () => (one ? A.findPdf(one.id) : A.findPdfs(ids)) },
     { label: one ? 'Fetch References' : `Fetch References for ${items.length} Items`, icon: 'link', run: () => fetchReferencesBulk(ids) },
-    one && notesOn && { label: 'Show in Graph', icon: 'link', run: () => emit('show-graph', `item:${one.id}`) },
     one && { label: 'Add PDF Attachment…', icon: 'paperclip', run: () => pickFiles((files) => A.uploadAttachments(one.id, files)) },
     'sep',
     { label: one ? 'Add to Folder…' : `Add ${items.length} Items to Folder…`, icon: 'folderPlus', run: () => addSelectionToFolder(ids) },
@@ -86,9 +87,37 @@ export function itemMenu(at: At): void {
     { label: 'Copy as BibTeX', icon: 'copy', run: () => copyBibtex(ids), shortcut: `${modLabel}C` },
     { label: one ? 'Export Item…' : `Export ${items.length} Items…`, icon: 'export', run: () => openExport(ids) },
     { label: one ? 'Regenerate Citation Key' : 'Regenerate Citation Keys', icon: 'refresh', run: () => A.regenerateCitekeys(ids) },
+    ...pluginActions(items),
     'sep',
     { label: one ? 'Move Item to Trash' : `Move ${items.length} Items to Trash`, icon: 'trash', danger: true, run: A.trashSelected, shortcut: folder ? `${modLabel}⌫` : '⌫' },
   ], at);
+}
+
+/** The menu for papers from a plugin's list that are not in the library. */
+function outsideMenu(items: Item[], at: At): void {
+  const one = items.length === 1 ? items[0] : null;
+  const n = one ? '' : ` ${items.length} Papers`;
+  const ident = (i: Item) => (i.arxiv ? `arXiv:${i.arxiv}` : i.doi || '');
+  openMenu([
+    { label: `Add${n} to My Library`, icon: 'plus', run: () => A.addOutside(items) },
+    { label: `Add${n} to Folder…`, icon: 'folderPlus', run: async () => {
+      const fid = await pickFolder({ title: one ? 'Add to Folder' : `Add ${items.length} Papers to Folder` });
+      if (fid !== undefined) await A.addOutside(items, fid);
+    } },
+    'sep',
+    one && { label: 'View Online', icon: 'globe', disabled: !one.url, run: () => window.open(one.url || '', '_blank') },
+    { label: one ? 'Copy Identifier' : 'Copy Identifiers', icon: 'copy', run: async () => {
+      await copyText(items.map(ident).filter(Boolean).join('\n'));
+      toast(one ? `Copied ${ident(one)}` : `Copied ${plural(items.length, 'identifier')}`, { type: 'success', timeout: 2500 });
+    } },
+    ...pluginActions(items),   // those that take outside papers (the others' when() says no)
+  ], at);
+}
+
+/** What plugins offer for these items (extend.ts), after a separator. */
+function pluginActions(items: Item[]): MenuEntry[] {
+  const usable = itemActions.all().filter((a) => { try { return !a.when || a.when(items); } catch { return false; } });
+  return usable.length ? ['sep', ...usable.map((a) => ({ label: a.title, icon: a.icon || 'plugin', run: () => a.run(items) }))] : [];
 }
 
 /** The menu for an attachment row. */
@@ -126,7 +155,7 @@ export async function copyKeys(items: Item[]): Promise<void> {
 
 async function copyBibtex(ids: string[]): Promise<void> {
   try {
-    const res = await api.exportText('bibtex', ids);
+    const res = await api.clipboardBibtex(ids);
     await copyText(res.text);
     toast(`Copied BibTeX for ${plural(res.count, 'item')}`, { type: 'success' });
   } catch (e) { toastError(e); }

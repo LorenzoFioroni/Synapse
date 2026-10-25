@@ -119,7 +119,7 @@ export interface TaskPreview {
 }
 
 /**
- * What the Tasks module (views/tasks/noteTasks.ts) adds to notes. It fills these in at start-up,
+ * What the Tasks module (plugins/core/tasks/noteTasks.ts) adds to notes. It fills these in at start-up,
  * so the notes code never imports the tasks code.
  */
 export const taskHooks = {

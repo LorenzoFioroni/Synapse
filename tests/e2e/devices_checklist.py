@@ -111,7 +111,7 @@ async def main():
 
             # -- the computer: Settings → Devices --------------------------------------
             await mac.goto(BASE)
-            await mac.wait_for_selector("[data-id]")
+            await mac.wait_for_selector(".row[data-id]")
             await mac.keyboard.press(f"{mod}+,")
             await mac.wait_for_selector("#set-devices")
             await mac.click('.settings-nav [data-nav="devices"]')

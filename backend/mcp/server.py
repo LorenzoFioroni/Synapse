@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from .instructions import INSTRUCTIONS, WRITING_RULES
-from .protocol import Server, Tool
+from .protocol import Server, Tool, ToolError
 from .tools import LibraryTools
 from .tools.common import MAX_IMAGES_PER_VIEW, MAX_PAGES_PER_READ
 
 
-def build_server(services, version: str = "0.1.0") -> Server:
+def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> Server:
+    """The server with every library tool, plus the tools of running plugins (``remote``: for /mcp,
+    where only plugins the user allowed for other computers take part)."""
     t = LibraryTools(services)
     server = Server(name="synapse", version=version, instructions=INSTRUCTIONS, before_call=t.refresh)
+    server.extra = lambda: _plugin_tools(services, remote)
     paper_arg = {
         "type": "string",
         "description": 'Citation key of the item (e.g. "smith2021"; "[@smith2021]" also works) or its item id.',
@@ -26,6 +29,7 @@ def build_server(services, version: str = "0.1.0") -> Server:
             "Search the library",
             "Search the user's library: items (metadata, PDF full text and what notes say about them) and notes. "
             'Supports filters: folder:"Physics/Transport" tag:x year:2018-2022 author:name has:pdf type:book, '
+            "the fields plugins add (e.g. citations:>100, citations:none), "
             '-term to exclude, "quoted phrases"; all terms must match. Returns items with citation keys and '
             "a matching snippet, and notes with paths. Use list_collections to see folder and tag names.",
             {
@@ -107,7 +111,8 @@ def build_server(services, version: str = "0.1.0") -> Server:
             "get_paper",
             "Get a paper's details",
             "Metadata and abstract of a library item, its PDFs (with page counts), the user's paper note about it, "
-            "the lines of other notes that cite it, and a summary of its stored reference list.",
+            "the lines of other notes that cite it, a summary of its stored reference list, and values plugins "
+            "attach to it (plugin_fields, e.g. a citation count).",
             {"type": "object", "properties": {"paper": paper_arg}, "required": ["paper"]},
             t.get_paper,
         )
@@ -367,96 +372,28 @@ def build_server(services, version: str = "0.1.0") -> Server:
             read_only=False,
         )
     )
-    _add_task_tools(server, t)
     return server
 
 
-def _add_task_tools(server: Server, t: LibraryTools) -> None:
-    task_arg = {"type": "string", "description": 'The task\'s id (as in its {{task:ID}} line, e.g. "k7f3q2mx").'}
-    fields = {
-        "due": {"type": "string", "description": 'Due date YYYY-MM-DD ("" removes it).'},
+def _plugin_tools(services, remote: bool) -> dict[str, Tool]:
+    host = getattr(services, "plugins", None)
+    if host is None:
+        return {}
+    return {
+        spec.name: Tool(spec.name, spec.title, spec.description, spec.schema, _readable(spec.fn), spec.read_only)
+        for spec in host.mcp_tools(remote=remote)
     }
-    server.add(
-        Tool(
-            "list_tasks",
-            "List the user's tasks",
-            "The user's tasks (to-dos): title, status, due date, sub-task progress and the notes that show them (as "
-            "{{task:ID}} lines). Open tasks only unless include_done. query filters like the app's Tasks page: words, "
-            '-word, "phrase", is:open / is:done, due:today / due:overdue / due:week / due:none / due:<2026-11-01, '
-            'note:"title", has:body, has:subtasks.',
-            {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Words and/or filters (optional)."},
-                    "include_done": {"type": "boolean", "description": "Also list done tasks (default false)."},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Default 100."},
-                },
-            },
-            t.list_tasks,
-        )
-    )
-    server.add(
-        Tool(
-            "get_task",
-            "Read a task",
-            "One task with its details (Markdown), sub-tasks, parent tasks and the notes that show it.",
-            {"type": "object", "properties": {"task": task_arg}, "required": ["task"]},
-            t.get_task,
-        )
-    )
-    server.add(
-        Tool(
-            "create_task",
-            "Create a task",
-            "Create a task (marked as made by Claude; the user can undo it). With note= the task's line {{task:ID}} is "
-            "added to that note: after after_line, else after the note's last task, else at the end. With parent= it "
-            "becomes a sub-task. Use only when the user asks for tasks to be made.",
-            {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "One line; inline Markdown and $math$ work."},
-                    "details": {"type": "string", "description": "Markdown body (optional)."},
-                    **fields,
-                    "parent": {"type": "string", "description": "Id of the parent task, for a sub-task."},
-                    "note": {"type": "string", "description": "Note (path, file name or title) that shows the task."},
-                    "after_line": {"type": "integer", "description": "Line of that note after which it goes."},
-                },
-                "required": ["title"],
-            },
-            t.create_task,
-            read_only=False,
-        )
-    )
-    server.add(
-        Tool(
-            "update_task",
-            "Change a task",
-            "Change a task's title, details, status (open/done), due date or parent. Recorded as "
-            "Claude's change; the user can undo it. Use only when the user asks.",
-            {
-                "type": "object",
-                "properties": {
-                    "task": task_arg,
-                    "title": {"type": "string"},
-                    "details": {"type": "string", "description": "The whole new Markdown body."},
-                    "status": {"type": "string", "enum": ["open", "done"]},
-                    **fields,
-                    "parent": {"type": "string", "description": 'New parent task id ("" for the top level).'},
-                    "with_subtasks": {"type": "boolean", "description": "Give its sub-tasks the same status too."},
-                },
-                "required": ["task"],
-            },
-            t.update_task,
-            read_only=False,
-        )
-    )
-    server.add(
-        Tool(
-            "delete_task",
-            "Delete a task",
-            "Move a task and its sub-tasks to the trash (the user can restore them). Use only when the user asks.",
-            {"type": "object", "properties": {"task": task_arg}, "required": ["task"]},
-            t.delete_task,
-            read_only=False,
-        )
-    )
+
+
+def _readable(fn):
+    """A plugin's ``PluginError`` reaches Claude as a tool error it can read and act on."""
+
+    def call(**kwargs):
+        try:
+            return fn(**kwargs)
+        except Exception as e:
+            if getattr(e, "readable", False):
+                raise ToolError(str(e)) from e
+            raise
+
+    return call

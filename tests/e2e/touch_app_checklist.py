@@ -1,12 +1,12 @@
-"""Browser checklist for the library on a tablet: the collections become a drawer on
+"""Browser checklist for the library on tablets and phones: the collections become a drawer on
 narrow screens, a long press opens the menus a right-click opens (items, folders, notes) and the
 cards a hover opens (citations, PDF link previews), hover-only tools are shown, the item pane can be
-resized with a finger, and the page can be added to the Home Screen.
+resized with a finger, phone panes become full-screen views, and the page can be added to the Home Screen.
 
     python tests/e2e/touch_app_checklist.py              (SHOTS=/some/dir to save screenshots)
 
 Starts its own server on port 8783 with a throw-away data folder; your library is not touched.
-Runs Chromium with the "iPad Pro 11" profiles (portrait and landscape; touch, no hover).
+Runs Chromium with iPad Pro 11 and Pixel 5 profiles (touch, no hover).
 """
 
 import asyncio
@@ -114,8 +114,9 @@ async def main():
             except Exception:
                 time.sleep(0.2)
         item, att, folder, key = setup()
+        requests.post(f"{BASE}/api/plugin-host/tasks/enable", timeout=10).raise_for_status()
         async with async_playwright() as p:
-            browser = await p.chromium.launch()
+            browser = await p.chromium.launch(channel=os.environ.get("PLAYWRIGHT_CHANNEL") or None)
             errors = []
 
             # ---- Home Screen ------------------------------------------------------------------
@@ -123,8 +124,19 @@ async def main():
             man = r.json() if r.ok else {}
             check(
                 "the manifest is served as a web app manifest",
-                r.ok and "manifest+json" in r.headers.get("Content-Type", "") and man.get("name") == "Synapse",
+                r.ok
+                and "manifest+json" in r.headers.get("Content-Type", "")
+                and man.get("name") == "Synapse"
+                and man.get("id") == "/"
+                and man.get("display") == "standalone",
                 r.headers.get("Content-Type"),
+            )
+            sizes = {i.get("sizes") for i in man.get("icons", [])}
+            purposes = {word for i in man.get("icons", []) for word in i.get("purpose", "").split()}
+            check(
+                "… and declares installable Android icons",
+                {"192x192", "512x512"} <= sizes and {"any", "maskable"} <= purposes,
+                f"sizes {sorted(sizes)}, purposes {sorted(purposes)}",
             )
             icons = [requests.get(BASE + i["src"]).status_code for i in man.get("icons", [])] + [
                 requests.get(BASE + "/assets/apple-touch-icon.png").status_code
@@ -138,10 +150,18 @@ async def main():
             await page.goto(BASE)
             await page.wait_for_selector(".row[data-id]")
             f = Finger(await ctx.new_cdp_session(page))
-            html = await page.content()
+            phone_links = await page.locator("link").evaluate_all(
+                "links => links.map(link => ({ rel: link.rel, sizes: link.sizes?.value || '', href: link.getAttribute('href') }))"
+            )
             check(
-                "the page links the manifest and the touch icon",
-                'rel="manifest"' in html and 'rel="apple-touch-icon"' in html,
+                "the page links the manifest and phone icons",
+                any(link["rel"] == "manifest" for link in phone_links)
+                and any(link["rel"] == "apple-touch-icon" for link in phone_links)
+                and any(
+                    link["rel"] == "icon" and link["sizes"] == "192x192" and link["href"] == "/assets/icon-192.png?v=3"
+                    for link in phone_links
+                ),
+                phone_links,
             )
             side = await page.evaluate("document.getElementById('sidebar').getBoundingClientRect().right")
             toggle = await page.locator('[data-a="sidebar"]').is_visible()
@@ -248,6 +268,175 @@ async def main():
             check("a tap elsewhere closes the card", ok)
             await ctx.close()
 
+            # ---- phone: one useful pane at a time -----------------------------------------------
+            ctx = await browser.new_context(**p.devices["Pixel 5"])
+            page = await ctx.new_page()
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            await page.goto(BASE)
+            await page.wait_for_selector(".row[data-id]")
+            viewport = await page.evaluate("({ w: innerWidth, scroll: document.documentElement.scrollWidth })")
+            check("phone: the app has no horizontal page overflow", viewport["scroll"] <= viewport["w"], viewport)
+            toolbar = await page.locator("#toolbar").bounding_box()
+            search = await page.locator("#toolbar .search").bounding_box()
+            check(
+                "phone: the toolbar wraps search onto a full-width second row",
+                toolbar["height"] >= 80 and search["width"] > viewport["w"] * 0.85,
+                f"toolbar {toolbar['height']:.0f}px, search {search['width']:.0f}px",
+            )
+            visible_heads = await page.eval_on_selector_all(
+                ".items-head .head-cell",
+                "es => es.filter(e => getComputedStyle(e).display !== 'none').map(e => e.dataset.col)",
+            )
+            list_scroll = await page.evaluate(
+                "(() => { const e = document.querySelector('.items-scroll'); return { width: e.clientWidth, scroll: e.scrollWidth }; })()"
+            )
+            check(
+                "phone: every configured list column remains available in the list scroller",
+                len(visible_heads) > 1 and list_scroll["scroll"] > list_scroll["width"],
+                f"{visible_heads}, {list_scroll}",
+            )
+            await shot(page, "05-phone-library")
+
+            await page.locator(".row[data-id]", has_text="Touch paper").tap()
+            await page.wait_for_selector("#item-pane .ip-mobile-back", state="visible")
+            pane = await page.locator("#item-pane").bounding_box()
+            check(
+                "phone: tapping an item opens full-width details",
+                pane["width"] >= viewport["w"] - 1 and await page.locator("#item-pane").is_visible(),
+                f"{pane['width']:.0f}px",
+            )
+            await shot(page, "06-phone-details")
+
+            await page.wait_for_selector('#item-pane [data-tool="open-pdf"]')
+            await page.tap('#item-pane [data-tool="open-pdf"]')
+            await page.wait_for_selector("#tab-views .tab-frame.active")
+            frame = page.frame_locator("#tab-views .tab-frame.active")
+            await frame.locator('.page-wrapper[data-page-number="1"]').wait_for(timeout=10000)
+            pdf_layout = await page.evaluate(
+                """(() => {
+                  const frame = document.querySelector('#tab-views .tab-frame.active');
+                  const hit = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+                  return { width: frame.getBoundingClientRect().width, viewport: innerWidth,
+                           viewerOnTop: hit === frame };
+                })()"""
+            )
+            check(
+                "phone: opening a PDF fully covers item details",
+                pdf_layout["viewerOnTop"] and pdf_layout["width"] >= pdf_layout["viewport"] - 1,
+                pdf_layout,
+            )
+            viewer_layout = await frame.locator("body").evaluate(
+                """() => {
+                  const c = document.getElementById('pdf-container');
+                  const p = document.querySelector('.page-wrapper');
+                  return { page: p.getBoundingClientRect().width, container: c.clientWidth,
+                           overflow: c.scrollWidth - c.clientWidth,
+                           shellOverflow: document.documentElement.scrollWidth - innerWidth };
+                }"""
+            )
+            check(
+                "phone: the PDF initially fits the viewer width without a blank right region",
+                viewer_layout["page"] >= viewer_layout["container"] - 18
+                and viewer_layout["overflow"] <= 1
+                and viewer_layout["shellOverflow"] <= 0,
+                viewer_layout,
+            )
+            await shot(page, "07-phone-pdf")
+            await frame.locator("#zoom-in").click()
+            pan_layout = await frame.locator("body").evaluate(
+                """() => {
+                  const c = document.getElementById('pdf-container');
+                  c.scrollLeft = c.scrollWidth;
+                  window.scrollTo(9999, 0);
+                  return { pdfLeft: c.scrollLeft, shellLeft: scrollX,
+                           shellOverflow: document.documentElement.scrollWidth - innerWidth };
+                }"""
+            )
+            check(
+                "phone: horizontal PDF panning stays inside the viewer instead of exposing a black strip",
+                pan_layout["pdfLeft"] > 0 and pan_layout["shellLeft"] == 0 and pan_layout["shellOverflow"] <= 0,
+                pan_layout,
+            )
+            await page.tap("#tabbar .tab.home")
+            await page.wait_for_selector("#item-pane .ip-mobile-back", state="visible")
+            await page.tap("#item-pane .ip-mobile-back")
+            check("phone: Back returns to the library", not await page.locator("#item-pane").is_visible())
+
+            await page.tap('[data-a="more"]')
+            labels = await page.eval_on_selector_all(".menu .menu-item", "es => es.map(e => e.textContent.trim())")
+            check(
+                "phone: less frequent actions remain available in More",
+                any("Import" in label for label in labels) and any("Settings" in label for label in labels),
+                labels,
+            )
+            await page.get_by_role("menuitem", name="Settings").click()
+            await page.wait_for_selector("#settings-view")
+            settings = await page.evaluate(
+                "({ page: document.getElementById('settings-view').scrollWidth, viewport: innerWidth, nav: getComputedStyle(document.querySelector('.settings-nav')).display, control: getComputedStyle(document.querySelector('.setting')).flexDirection })"
+            )
+            check(
+                "phone: Settings uses a horizontal section strip and stacked controls",
+                settings["page"] <= settings["viewport"]
+                and settings["nav"] == "flex"
+                and settings["control"] == "column",
+                settings,
+            )
+            await page.wait_for_timeout(200)
+            await shot(page, "08-phone-settings")
+
+            await page.tap("#settings-view [data-close]")
+            await page.locator(".row[data-id]", has_text="Touch paper").tap()
+            await page.wait_for_selector("#item-pane .ip-mobile-back", state="visible")
+            await page.tap('[data-a="sidebar"]')
+            await page.tap('#sidebar [data-act="open-notes"]')
+            await page.wait_for_selector("#notes-view:not([hidden])")
+            await wait_for(
+                lambda: page.evaluate("document.getElementById('sidebar').getBoundingClientRect().right <= 1")
+            )
+            check("phone: leaving Library closes item details", not await page.locator("#item-pane").is_visible())
+            notes_tree = await page.locator(".notes-tree-pane").bounding_box()
+            check("phone: Notes starts with a full-width note list", notes_tree["width"] >= viewport["w"] - 1)
+            await page.tap('.notes-tree-head [data-act="graph"]')
+            await page.wait_for_selector(".notes-graph:not([hidden])")
+            graph = await page.locator(".notes-graph").bounding_box()
+            check(
+                "phone: Graph replaces the notes panes at full width",
+                not await page.locator(".notes-tree-pane").is_visible()
+                and not await page.locator(".notes-side").is_visible()
+                and graph["width"] >= viewport["w"] - 1,
+                f"{graph['width']:.0f}px",
+            )
+            await shot(page, "09-phone-graph")
+            await page.tap('.notes-graph [data-ng="close"]')
+            await page.tap('.nt-row.note[data-path="Reading.md"]')
+            await page.wait_for_selector(".note-mobile-list", state="visible")
+            await page.wait_for_selector(".notes-tree-pane", state="hidden")
+            check(
+                "phone: opening a note gives the editor the full screen",
+                not await page.locator(".notes-tree-pane").is_visible(),
+            )
+            await shot(page, "10-phone-note")
+            await page.tap(".note-mobile-list")
+            check(
+                "phone: the note header returns to the note list", await page.locator(".notes-tree-pane").is_visible()
+            )
+
+            await page.tap('[data-a="sidebar"]')
+            await page.wait_for_selector('#sidebar [data-navigation="tasks.main"]')
+            await page.tap('#sidebar [data-navigation="tasks.main"]')
+            await page.wait_for_selector("#tasks-view:not([hidden])")
+            await page.wait_for_function("!document.body.classList.contains('sidebar-open')")
+            await page.locator(".tv-quick-input").fill("Phone task")
+            await page.locator(".tv-quick-input").press("Enter")
+            await page.wait_for_selector(".tv-row:has-text('Phone task')")
+            await page.wait_for_selector(".tv-mobile-back", state="visible")
+            task_detail = await page.locator(".tv-detail").bounding_box()
+            check("phone: a selected task opens full-width details", task_detail["width"] >= viewport["w"] - 1)
+            await shot(page, "11-phone-task")
+            await page.tap(".tv-mobile-back")
+            check("phone: Back returns to the task list", not await page.locator(".tv-detail").is_visible())
+            await ctx.close()
+
             # ---- landscape --------------------------------------------------------------------------------
             ctx = await browser.new_context(**p.devices["iPad Pro 11 landscape"])
             page = await ctx.new_page()
@@ -260,7 +449,7 @@ async def main():
                 "landscape: the collections stay in place, no drawer button",
                 left >= 0 and not await page.locator('[data-a="sidebar"]').is_visible(),
             )
-            await shot(page, "05-landscape")
+            await shot(page, "12-landscape")
             w0 = await page.evaluate("document.getElementById('item-pane').offsetWidth")
             x, y = await centre(page, "#resizer-right")
             await f.drag((x, y), (x - 120, y))
@@ -285,7 +474,7 @@ async def main():
             top1 = await v.evaluate("window.zcViewer.container.scrollTop")
             check("viewer: a long press on a link shows its preview", ok)
             check("… without following the link", abs(top1 - top0) < 5, f"scroll {top0} → {top1}")
-            await shot(v, "06-link-preview")
+            await shot(v, "13-link-preview")
             await v.tap("#page-num-text")
             ok = await wait_for(lambda: v.evaluate("!document.querySelector('.zc-link-pop')"), timeout=3)
             check("… and a tap elsewhere closes it", ok)

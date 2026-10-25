@@ -6,7 +6,6 @@ import json
 import re
 import threading
 from pathlib import Path
-from urllib.parse import urlsplit
 
 SEARCH_MODES = {
     "basic": "Title, Abstract & Authors",
@@ -57,12 +56,6 @@ DEFAULTS: dict = {
     "notes_equation_numbers": "labelled",
     "notes_math_physics": True,  # the physics package's commands (\vb, \dv, \qty…) in formulas
     "notes_math_macros": "",  # \newcommand definitions used by every note
-    # Autocompletion in the notes editor (ghost text) from a model served by Ollama on this
-    # computer (backend/assist/). Off until the user turns it on: most computers have no Ollama.
-    "notes_ai_complete": False,
-    "notes_ai_model": "qwen2.5-coder:1.5b",  # small and fills in the middle (it sees the text after the cursor)
-    "notes_ai_url": "http://127.0.0.1:11434",  # Ollama's default address; only this computer is accepted
-    "notes_ai_length": "line",  # line (the rest of the line) | paragraph
     # PDF viewer: where PDFs open. "tabs": the app's own tabs, beside the Synapse tab (also in the
     # app window, python server.py --window); "browser": a browser tab (or window) of their own.
     "pdf_open_in": "tabs",
@@ -88,7 +81,6 @@ CHOICES = {
     "default_search_mode": set(SEARCH_MODES),
     "theme": {"system", "light", "dark"},
     "density": {"comfortable", "compact"},
-    "export_format": {"bibtex", "ris", "endnote", "endnote_xml", "csljson"},
     "import_tags": set(ASK_CHOICES),
     "add_fetch_metadata": set(ASK_CHOICES),
     "add_find_pdf": set(ASK_CHOICES),
@@ -96,7 +88,6 @@ CHOICES = {
     "notes_trash_retention": {"never", "1d", "1w", "2w", "1m", "6m"},
     "notes_width": {"readable", "full"},
     "notes_equation_numbers": {"labelled", "all"},
-    "notes_ai_length": {"line", "paragraph"},
     "pdf_open_in": {"tabs", "browser"},
     "backup_interval": {"off", "daily", "weekly"},
 }
@@ -120,36 +111,19 @@ class SettingsError(ValueError):
     pass
 
 
-def local_url(value: str) -> str:
-    """The Ollama address, cleaned: http(s) on this computer only (localhost, 127.x.x.x, ::1),
-    so a note's text is never sent elsewhere and the server cannot be pointed at other hosts.
-    Empty means the default."""
-    v = value.strip().rstrip("/") or DEFAULTS["notes_ai_url"]
-    if "://" not in v:
-        v = "http://" + v
-    try:
-        u = urlsplit(v)
-        host = (u.hostname or "").lower()
-        u.port  # noqa: B018 - raises ValueError on a port that is not a number
-    except ValueError as e:
-        raise SettingsError("Ollama address: something like http://127.0.0.1:11434") from e
-    loopback = host == "localhost" or host == "::1" or re.fullmatch(r"127(\.\d{1,3}){3}", host)
-    if u.scheme not in ("http", "https") or not loopback or u.username or u.password:
-        raise SettingsError("Ollama address: only a model on this computer is supported (localhost or 127.0.0.1)")
-    if u.path not in ("", "/") or u.query or u.fragment:
-        raise SettingsError("Ollama address: just the address and port, e.g. http://127.0.0.1:11434")
-    return f"{u.scheme}://{u.netloc}"
-
-
 class SettingsStore:
     def __init__(self, path: Path):
         self.path = Path(path)
         self._lock = threading.Lock()
         self._data = dict(DEFAULTS)
+        # settings of features that became core plugins: kept in the file (and readable with
+        # ``legacy``) so a plugin can take its values over when it first starts
+        self._legacy: dict = {}
         if self.path.exists():
             try:
                 stored = _migrate(json.loads(self.path.read_text("utf-8")))
                 self._data.update({k: v for k, v in stored.items() if k in DEFAULTS})
+                self._legacy = {k: v for k, v in stored.items() if k not in DEFAULTS}
             except (OSError, ValueError):
                 pass
 
@@ -160,10 +134,19 @@ class SettingsStore:
             try:
                 stored = _migrate(json.loads(self.path.read_text("utf-8")))
                 data.update({k: v for k, v in stored.items() if k in DEFAULTS})
+                legacy = {k: v for k, v in stored.items() if k not in DEFAULTS}
             except (OSError, ValueError):
-                pass
+                legacy = {}
+        else:
+            legacy = {}
         with self._lock:
             self._data = data
+            self._legacy = legacy
+
+    def legacy(self, key: str):
+        """The stored value of a setting Synapse no longer has (it moved to a core plugin), or None."""
+        with self._lock:
+            return self._legacy.get(key)
 
     def all(self) -> dict:
         with self._lock:
@@ -194,6 +177,8 @@ class SettingsStore:
                     raise SettingsError("Keep between 1 and 365 backups")
             else:
                 v = "" if v is None else str(v).strip()
+            if k == "export_format" and not re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}", v):
+                raise SettingsError("Invalid export format id")
             if k in CHOICES and v not in CHOICES[k]:
                 raise SettingsError(f"Invalid value for {k}: {v}")
             if k.startswith(("annotation_color_", "annotation_fill_")):
@@ -202,10 +187,6 @@ class SettingsStore:
                     raise SettingsError("A colour looks like #ffcc00")
             if k == "notes_math_macros" and len(v) > 20000:
                 raise SettingsError("Math macros: at most 20,000 characters")
-            if k == "notes_ai_url":
-                v = local_url(v)
-            if k == "notes_ai_model" and (not v or len(v) > 200 or any(c.isspace() for c in v)):
-                raise SettingsError("Model: a name such as qwen2.5-coder:1.5b")
             if k == "citekey_pattern" and not v:
                 raise SettingsError("Citation key pattern cannot be empty")
             if k == "backup_dir" and v:
@@ -223,7 +204,7 @@ class SettingsStore:
         with self._lock:
             self._data.update(clean)
             tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(self._data, indent=2, ensure_ascii=False), "utf-8")
+            tmp.write_text(json.dumps({**self._legacy, **self._data}, indent=2, ensure_ascii=False), "utf-8")
             tmp.replace(self.path)
             return dict(self._data)
 

@@ -1,21 +1,26 @@
 // Settings page (full-screen view). Changes save immediately. The page's markup is in
-// settings/page.ts; Backups, Devices, Passkeys and AI Access have modules of their own in settings/.
+// settings/page.ts; Backups, Devices, Passkeys, AI Access and Plugins have modules of their own in settings/.
 import * as A from '../actions.js';
 import { api } from '../api.js';
-import { emit, state } from '../store.js';
+import { emit, on, state } from '../store.js';
+import { desktopControl, toggleDesktop } from '../notifications/desktop.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast, toastError } from '../ui/toast.js';
 import type { SearchMode, Settings } from '../types.js';
 import { debounce, escapeHtml, formatBytes, formatDate, plural, store } from '../util.js';
 import { baseMacros } from './notes/macros.js';
-import { bindAssist, refreshAssist } from './settings/assist.js';
 import { bindBackups, refreshBackups } from './settings/backups.js';
 import { bindAiAccess, forgetFreshToken, refreshAiAccess } from './settings/aiAccess.js';
 import { bindDevices, cancelPairing, refreshDevices } from './settings/devices.js';
 import { bindPasskeys, refreshPasskeys } from './settings/passkeys.js';
+import { bindPlugins, refreshPlugins } from './settings/plugins.js';
+import { refreshExportFormats } from './settings/exportFormats.js';
+import { mountPluginSections } from './settings/pluginSections.js';
 import { TOKENS, flashSaved, settingsHtml } from './settings/page.js';
 
 let view: HTMLElement | null = null;
+on('export-formats', () => { if (view) refreshExportFormats(view); });
+let unmountPluginSections: (() => void) | null = null;
 let statsTimer: ReturnType<typeof setInterval> | undefined;
 
 export function applyAppearance(s: Settings = state.settings): void {
@@ -50,13 +55,16 @@ export function openSettings(sectionId: string | null = null): void {
   page.innerHTML = settingsHtml(s, meta);
   document.body.appendChild(page);
   bind(page);
+  paintDesktopNotifications(page);
   refreshPreview(s.citekey_pattern);
   refreshStats();
   refreshBackups(page);
   refreshDevices(page);
   refreshPasskeys(page);
   refreshAiAccess(page);
-  refreshAssist(page, { fresh: false });
+  refreshPlugins(page);
+  refreshExportFormats(page);
+  unmountPluginSections = mountPluginSections(page, () => setNav('general'));
   statsTimer = setInterval(refreshStats, 2000);
   const sel = page.querySelector<HTMLSelectElement>('[data-key="_preset"]')!;
   sel.value = presetMatch ? presetMatch.pattern : 'custom';
@@ -65,6 +73,8 @@ export function openSettings(sectionId: string | null = null): void {
 
 export function closeSettings(): void {
   if (!view) return;
+  unmountPluginSections?.();
+  unmountPluginSections = null;
   clearInterval(statsTimer);
   cancelPairing();
   forgetFreshToken();
@@ -117,6 +127,10 @@ async function refreshStats(): Promise<void> {
 
 function bind(view: HTMLElement): void {
   view.querySelector<HTMLElement>('[data-close]')!.onclick = closeSettings;
+  view.querySelector<HTMLButtonElement>('[data-desktop-notifications]')!.onclick = async () => {
+    await toggleDesktop();
+    paintDesktopNotifications(view);
+  };
   view.querySelector('.settings-nav')!.addEventListener('click', (e) => {
     const b = (e.target as Element).closest<HTMLElement>('[data-nav]');
     if (b) setNav(b.dataset.nav!);
@@ -142,7 +156,6 @@ function bind(view: HTMLElement): void {
     }
     const value = el.type === 'checkbox' ? (el as HTMLInputElement).checked : (el.type === 'range' ? Number(el.value) : el.value);
     if (!(await save({ [key]: value }, el))) return;
-    if (key === 'notes_ai_complete') refreshAssist(view, { fresh: false });
     if (key === 'default_search_mode') emit('set-search-mode', value as SearchMode);
     if (key === 'fulltext_auto_index' && value) {
       // index the PDFs that arrived while it was off, now rather than at the next start
@@ -211,7 +224,7 @@ function bind(view: HTMLElement): void {
   bindPasskeys(view);
   bindAiAccess(view);
   bindBackups(view);
-  bindAssist(view);
+  bindPlugins(view);
 
   view.querySelector<HTMLElement>('[data-rebuild]')!.onclick = async () => {
     await api.rebuildFulltext();
@@ -229,4 +242,13 @@ function bind(view: HTMLElement): void {
     openSettings();
     toast('Settings reset', { type: 'success' });
   };
+}
+
+function paintDesktopNotifications(page: HTMLElement): void {
+  const status = desktopControl();
+  const button = page.querySelector<HTMLButtonElement>('[data-desktop-notifications]')!;
+  button.textContent = status.label;
+  button.disabled = status.disabled;
+  button.classList.toggle('btn-primary', status.enabled);
+  page.querySelector<HTMLElement>('[data-desktop-notifications-desc]')!.textContent = status.description;
 }

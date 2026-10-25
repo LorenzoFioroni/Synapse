@@ -1,5 +1,5 @@
-// The app's own tabs. The first tab shows the library or Tasks (whichever the switch in the toolbar
-// last chose); after it come note tabs and PDF tabs. They work the same in a browser tab, in the
+// The app's own tabs. The first tab shows the last library, Tasks or plugin page; after it come
+// note tabs and PDF tabs. They work the same in a browser tab, in the
 // app window (python server.py --window) and on an iPad. The bar appears once a note or a PDF is
 // open in a tab.
 //

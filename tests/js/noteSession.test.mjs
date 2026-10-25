@@ -36,24 +36,37 @@ function setup(initial = 'v1', { delay = 20 } = {}) {
   return { server, api, drafts, mem, events, s };
 }
 
-test('autosave after the delay, draft cleared afterwards', async () => {
+// Observe the public state transition: a fixed sleep races the save's nested timer on busy CI.
+function nextStatus(session, wanted) {
+  return new Promise((resolve) => {
+    const previous = session.onStatus;
+    session.onStatus = (status, current) => {
+      previous(status, current);
+      if (status === wanted) { session.onStatus = previous; resolve(); }
+    };
+  });
+}
+
+test('autosave after the delay, draft cleared afterwards', { timeout: 2000 }, async () => {
   const { server, mem, s } = setup();
+  const saved = nextStatus(s, 'saved');
   s.update('v2');
   assert.equal(s.status, 'dirty');
   assert.equal(mem.get(draftStorageKey('a.md')).text, 'v2');
-  await sleep(60);
+  await saved;
   assert.equal(server.text, 'v2');
   assert.equal(s.status, 'saved');
   assert.equal(mem.size, 0);
 });
 
-test('typing during a save is saved too, and the status ends as saved', async () => {
+test('typing during a save is saved too, and the status ends as saved', { timeout: 2000 }, async () => {
   const { server, s, events } = setup('v1', { delay: 5 });
+  const saved = nextStatus(s, 'saved');
   s.update('a');
   const p = s.save();
   s.update('ab');            // while the first save is in flight
   await p;
-  await sleep(60);
+  await saved;
   assert.equal(server.text, 'ab');
   assert.equal(s.status, 'saved');
   assert.equal(events.statuses.at(-1), 'saved');

@@ -1,0 +1,138 @@
+"""Plugins: Settings → Plugins (``/api/plugin-host``) and the routes plugins serve
+(``/api/plugins/<id>/…``)."""
+
+from __future__ import annotations
+
+from flask import Blueprint, Response, jsonify, request, send_file
+from werkzeug.exceptions import HTTPException
+
+from ..plugins import PluginError
+from ..plugins.outside import record as outside_record
+from . import body, error, svc
+
+bp = Blueprint("plugins", __name__, url_prefix="/api")
+
+
+def _host():
+    return svc().plugins
+
+
+@bp.get("/plugin-host")
+def overview():
+    return jsonify(_host().overview())
+
+
+@bp.post("/plugin-host/<pid>/enable")
+def enable(pid: str):
+    try:
+        return jsonify(plugin=_host().enable(pid))
+    except PluginError as e:
+        return error(str(e))
+
+
+@bp.post("/plugin-host/<pid>/disable")
+def disable(pid: str):
+    try:
+        return jsonify(plugin=_host().disable(pid))
+    except PluginError as e:
+        return error(str(e))
+
+
+@bp.post("/plugin-host/<pid>/restart")
+def restart(pid: str):
+    try:
+        return jsonify(plugin=_host().restart(pid))
+    except PluginError as e:
+        return error(str(e))
+
+
+@bp.put("/plugin-host/<pid>/settings")
+def settings(pid: str):
+    try:
+        return jsonify(values=_host().set_settings(pid, body()))
+    except PluginError as e:
+        return error(str(e))
+
+
+@bp.put("/plugin-host/<pid>/remote-mcp")
+def remote_mcp(pid: str):
+    try:
+        return jsonify(plugin=_host().set_remote_mcp(pid, bool(body().get("on"))))
+    except PluginError as e:
+        return error(str(e))
+
+
+@bp.get("/plugin-host/<pid>/log")
+def plugin_log(pid: str):
+    try:
+        lines = max(1, min(int(request.args.get("lines", 500)), 2000))
+        return jsonify(lines=_host().log_lines(pid, lines))
+    except (PluginError, ValueError) as e:
+        return error(str(e))
+
+
+@bp.get("/plugin-fields")
+def plugin_fields():
+    """The fields running plugins declare (list columns, search filters)."""
+    return jsonify(fields=_host().fields.describe())
+
+
+@bp.get("/plugin-sources")
+def plugin_sources():
+    """The lists of outside papers running plugins offer (the sidebar)."""
+    return jsonify(sources=_host().sources.describe())
+
+
+@bp.post("/outside/add")
+def add_outside():
+    """Add a paper from outside the library (the "+" of a plugin's list): looked up online by its
+    DOI or arXiv id, else as listed."""
+    data = body()
+    paper = data.get("paper")
+    if not isinstance(paper, dict):
+        return error("Which paper? Send it as paper: {doi | arxiv, title, …}")
+    try:
+        rec = paper if paper.get("_outside") else outside_record(paper)
+        item, dup = svc().add_paper(rec, folder_id=data.get("folder_id"), tags=data.get("tags") or [])
+    except PluginError as e:
+        return error(str(e))
+    return jsonify(item=item, duplicate=dup), (200 if dup else 201)
+
+
+@bp.get("/items/<item_id>/fields")
+def item_fields(item_id: str):
+    """Each field with this item's value, when it was fetched and from where (the item pane)."""
+    return jsonify(fields=_host().fields.for_item(svc().papers.get(item_id)))
+
+
+@bp.get("/plugin-files/<pid>/<path:rest>")
+def plugin_file(pid: str, rest: str):
+    """A running plugin's frontend files (its module, what it imports, its styles)."""
+    try:
+        path = _host().asset(pid, rest)
+    except HTTPException as e:
+        return error("Not found", e.code or 404)
+    # never cached: the app asks for the module with ?v=<when it started>, and its imports must follow
+    return send_file(path, max_age=0, etag=True, conditional=True)
+
+
+@bp.route("/plugins/<pid>/", defaults={"rest": ""}, methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+@bp.route("/plugins/<pid>/<path:rest>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+def plugin_route(pid: str, rest: str):
+    host = _host()
+    try:
+        fn, args = host.route(pid, "/" + rest, request.method)
+        result = host.run(pid, f"{request.method} /{rest}", fn, **args)
+    except PluginError as e:
+        return error(str(e))
+    except HTTPException as e:
+        return error(e.description or e.name, e.code or 500)
+    except Exception:
+        return error("The plugin failed; see its log in Settings → Plugins.", 500)
+    if isinstance(result, Response | tuple):
+        return result
+    if result is None:
+        return jsonify(ok=True)
+    if isinstance(result, str):
+        return Response(result, mimetype="text/plain")
+    return jsonify(result)

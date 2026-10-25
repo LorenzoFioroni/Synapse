@@ -195,3 +195,20 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .fp-row.active .fp-in { color: inherit; }
 .after-add { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .after-add .field-hint { margin-top: 0; }
+
+@media (max-width: 700px) {
+  .dialog-backdrop { align-items: flex-end; padding: 0; }
+  .dialog, .dialog.wide, .dialog.mr-dialog {
+    width: 100%; max-width: none; max-height: calc(100dvh - max(12px, env(safe-area-inset-top)));
+    border-radius: 14px 14px 0 0; border-bottom: 0;
+  }
+  .dialog-head { padding: 14px 16px 10px; }
+  .dialog-body { padding: 10px 16px 18px; }
+  .dialog-foot { padding: 10px 16px max(12px, env(safe-area-inset-bottom)); flex-wrap: wrap; }
+  .dialog-foot .btn { min-height: 40px; }
+  .menu { max-width: calc(100vw - 16px); }
+  .sf-grid { grid-template-columns: 1fr; }
+  .sf-examples { grid-template-columns: 1fr; }
+  #toasts { left: 8px; right: 8px; bottom: calc(var(--statusbar-h, 28px) + 8px); transform: none; }
+  .toast { min-width: 0; width: 100%; max-width: 100%; }
+}

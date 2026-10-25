@@ -1,9 +1,12 @@
 """Reference lists / citation graph (network mocked)."""
 
+import importlib
+
 import pytest
 
 from backend.online.http import LookupFailed
-from backend.references import sources as R
+
+R = importlib.import_module("plugins.reference-sources.server.providers")
 
 
 class Resp:
@@ -214,7 +217,7 @@ def test_api_graph_and_cleanup(client, svc, monkeypatch):
 
 
 def test_fetched_automatically_after_add_by_identifier(client, svc, monkeypatch):
-    from backend.online import metadata
+    import requests
 
     crossref_item = {
         "message": {
@@ -226,7 +229,7 @@ def test_fetched_automatically_after_add_by_identifier(client, svc, monkeypatch)
         }
     }
     monkeypatch.setattr(
-        metadata.requests,
+        requests,
         "get",
         router([("semanticscholar", lambda url, p: Resp(S2_PAGE2)), ("crossref", Resp(crossref_item))]),
     )

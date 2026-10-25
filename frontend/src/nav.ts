@@ -7,10 +7,12 @@
 //   { ws: 'notes', path, graph: true, focus }  the graph in Notes (focus: the node it is centred on)
 //   { ws: 'library', view, sel: [ids] }       the library (kept up to date while you work there)
 //   { ws: 'tasks', task }                     the Tasks page (task: the selected one)
+//   { ws: 'page', page }                      a page a plugin added (its id)
 
 /** A place in the app, kept in history.state.zc (see above). */
 export interface NavEntry {
-  ws: 'notes' | 'library' | 'tasks';
+  ws: 'notes' | 'library' | 'tasks' | 'page';
+  page?: string;
   task?: string | null;
   path?: string | null;
   graph?: boolean;
@@ -22,8 +24,13 @@ export interface NavEntry {
 let restoring = 0;        // >0 while going Back/Forward (those must not add entries)
 let snapshot: ((cur: NavEntry) => Partial<Omit<NavEntry, 'ws'>> | null | undefined) | null = null;   // fresh data for the current entry, taken before leaving it
 
-const same = (a: NavEntry | null, b: NavEntry | null) => !!a && !!b && a.ws === b.ws
-  && (a.ws === 'library' || a.ws === 'tasks' || (a.path === b.path && !!a.graph === !!b.graph && (a.focus || null) === (b.focus || null)));
+function same(a: NavEntry | null, b: NavEntry | null): boolean {
+  if (!a || !b || a.ws !== b.ws) return false;
+  if (a.ws === 'library') return a.view === b.view;
+  if (a.ws === 'tasks') return true;
+  if (a.ws === 'page') return a.page === b.page;
+  return a.path === b.path && !!a.graph === !!b.graph && (a.focus || null) === (b.focus || null);
+}
 
 export const navCurrent = (): NavEntry | null => history.state?.zc || null;
 
@@ -35,6 +42,11 @@ export function navPush(entry: NavEntry): void {
   if (cur && fresh) { cur = { ...cur, ...fresh }; history.replaceState({ ...history.state, zc: cur }, ''); }
   if (same(cur, entry)) history.replaceState({ ...history.state, zc: { ...cur, ...entry } }, '');
   else history.pushState({ zc: entry }, '');
+}
+
+/** Replace an unavailable destination, including while restoring Back/Forward. */
+export function navReplace(entry: NavEntry): void {
+  history.replaceState({ ...history.state, zc: entry }, '');
 }
 
 /** Update the current entry (e.g. the library selection changed) without adding one. */

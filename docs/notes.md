@@ -305,7 +305,7 @@ only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 | `fileOps.ts` | New, rename, move, trash with Undo, the trash dialog, rescan. |
 | `editor.ts`, `livePreview.ts`, `previewWidgets.ts` | CodeMirror 6 (`vendor/cm6/`), the live preview decorations (built on `mdscan.ts`) and the widgets they draw. |
 | `completion.ts`, `library.ts` | `[@`, `[[` and `{{task` autocomplete and their ranking (tasks come from the Tasks module through `taskHooks`). |
-| `ghost.ts`, `ghostLogic.ts`, `assist.ts` | Autocompletion: suggestions from a local model as ghost text, and the status checks before any request (see [autocompletion](autocompletion.md)). |
+| `ghost.ts`, `ghostLogic.ts`, `hooks.ts` | Autocompletion: suggestions as ghost text, from the source the Autocompletion core plugin sets in `hooks.ts` (see [autocompletion](autocompletion.md)). |
 | `render.ts` | Markdown to HTML with markdown-it and KaTeX (`vendor/md/`): math, links, citations, callouts, tasks. Raw HTML is never rendered. No DOM. |
 | `richRender.ts` | Mermaid (loaded on demand from `vendor/mermaid/`), code highlighting, filling embedded notes into the page. |
 | `embed.ts`, `linkData.ts` | What an embedded note shows; what a note links to (`/api/notes/links` as maps for the renderer). No DOM. |
@@ -318,8 +318,19 @@ only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 | `conflict.ts` | The dialog for a note changed or deleted elsewhere. |
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
 | `exportNote.ts`, `portable.ts` | Exporting a note as PDF, HTML or Markdown; the Markdown conversion and reference entries (no DOM). |
-| `gallery.ts`, `galleryView.ts` | Galleries: reading a ` ```gallery ` block and its figure caption (no DOM); turning the carousel. |
-| `figures.ts`, `crossref.ts` | Which images and galleries are figures, their numbers and `\label`s; references written out as cleveref does (no DOM). |
+| `crossref.ts` | References (`\ref`, `\eqref`, `\cref`, `\Cref`) written out as cleveref does, from the equations' and figures' labels (no DOM). |
+| `hooks.ts` | What core plugins add to the editor: ghost text, the graph, galleries and figures (`setNoteHook`). |
+
+Galleries and figures are an extension of the **Extended Markdown** core plugin, in
+`frontend/src/plugins/core/extended-markdown/figures/`:
+
+| Module | What it does |
+|---|---|
+| `gallery.ts`, `galleryView.ts` | Reading a ` ```gallery ` block and its figure caption (no DOM); turning the carousel. |
+| `figures.ts` | Which images and galleries are figures, their numbers and `\label`s (no DOM). |
+| `markdown.ts` | The renderer's rules: `galleryRule`, `figureRule` and their HTML. |
+| `portable.ts`, `exportStatic.ts` | Figures in the Markdown export (`portableFigures`); carousels as static figures in HTML and PDF (`staticGalleries`). |
+| `hook.ts`, `index.ts` | The `FiguresHook` the notes code asks (`views/notes/hooks.ts`); turning the extension on and off. |
 
 ### The editor and read mode
 
@@ -357,6 +368,11 @@ cursor steps over it and Backspace deletes it whole. Read mode draws it with
 ### Galleries
 
 A gallery shows several images as one carousel, and exports as one figure with panels.
+Galleries and figure numbers come from the **Extended Markdown** core plugin (on unless its
+"Galleries and numbered figures" switch, or the whole plugin, is turned off in Settings → Plugins).
+Turned off, a gallery reads as the Markdown it holds (its images and
+captions, one after the other), an image's caption line as text, and `\ref` to a figure as ??;
+the note itself does not change, and the parser still counts a gallery's images and citations.
 
 ````markdown
 ```gallery|600
@@ -380,35 +396,38 @@ Photon number versus $N$ at equal reduced drive.
   A caption wrapped as a whole in `*…*` or `_…_` (the way an image is usually captioned) is
   unwrapped, so an image and its caption can be moved into a gallery as they are.
 
-**Rendering** (`render.ts`). A core rule (`galleryRule`, after block parsing) replaces the fence
+**Rendering** (`markdown.ts` in the plugin, added to each renderer through the `figures` hook;
+`render.ts` rebuilds a renderer when a hook changed). A core rule (`galleryRule`, after block
+parsing) replaces the fence
 token by tokens of its own (`gallery_open`, `gallery_panel_open`, …), each caption an `inline`
 token. Captions are therefore parsed with the rest of the note: equation numbering, the note's
 macros and `\eqref` work in them. The HTML is a `figure.gallery` with a `.gallery-track` of
 `.gallery-panel`s (each image above its caption, labelled "(a)", "(b)", … when there are several;
 the label hangs to the left of `.gallery-caption-text`, so the caption's text is centred),
 arrows, dots and a `figcaption.gallery-caption`. A gallery of one image has no labels or controls;
-an empty one shows a hint.
+an empty one shows a hint. Without the plugin, `render.ts`'s own rule (`gallery_plain`) parses
+the block's content as Markdown in its place, keeping the source lines for read mode's clicks.
 
 **The carousel** (`galleryView.ts`, CSS in `notes.css`). The panels sit side by side in a track
 that scrolls horizontally with snapping, one panel wide, so a swipe or a trackpad turns it
-without code. Listeners on the document (installed once by `notesView.ts`) serve every gallery,
+without code. Listeners on the document (installed by the plugin while it runs) serve every gallery,
 however often it is redrawn: the arrows and dots scroll the track, ←/→ do while a dot or arrow
 has focus, and a scroll from anywhere updates the dots and disables the arrow at either end.
 A press on the controls is stopped before the editor sees it, so turning a gallery in the live
 preview does not open its source.
 
-**Live preview.** The block is one unit (`livePreview.ts`): drawn as the carousel (`W.gallery`,
+**Live preview.** With the plugin on, the block is one unit (`livePreview.ts`): drawn as the carousel (`W.gallery`,
 rendered by the renderer like a table) until the cursor enters it; then its source shows, as
 text rather than code, with the carousel below it updating as you type. `\eqref` in its captions
 is numbered from the whole note's equations. Citation and link autocomplete work in it
-(`completion.ts` treats a gallery's lines as text).
+(`completion.ts` treats a gallery's lines as text). Without the plugin its lines show as any text.
 
-**Exports.** HTML and PDF (`staticGalleries` in `exportNote.ts`, CSS in `export.css`): each
+**Exports.** HTML and PDF (`staticGalleries` in the plugin's `exportStatic.ts`, called by `exportNote.ts`; CSS in `export.css`): each
 carousel becomes a `figure.gallery-figure` whose panels sit in a grid of `figureColumns(n)`
 columns (as many as there are panels up to three, two for four, else three), each with its letter
 in a white, black-bordered circle on the image's upper left corner (`.gallery-cell-label` inside
 `.gallery-cell-image`, a frame that hugs the image), and one caption: the gallery's own, then each panel's as "(a) First. (b) Second.",
-every part ending as a sentence (`endsSentence`). Markdown (`portableFigures` in `portable.ts`):
+every part ending as a sentence (`endsSentence`). Markdown (`portableFigures` in the plugin's `portable.ts`, called by `views/notes/portable.ts`):
 the images on one line, which most viewers set side by side, and that caption in italics below.
 
 **Backend.** The parser counts the images and citations in a gallery, so the attachment sweep
@@ -420,7 +439,7 @@ keeps its images and the citation graph and backlinks include its captions.
 ### Figures and their numbers
 
 Images with a caption and galleries with a caption are **figures**, numbered Fig. 1, Fig. 2, … in
-the order they appear in the note (`figures.ts`). An image or gallery without any caption is not a
+the order they appear in the note (`figures.ts`, Extended Markdown). An image or gallery without any caption is not a
 figure and gets no number.
 
 ````markdown
@@ -588,11 +607,66 @@ else the item's URL. `referenceHtml` makes it a link, and `referenceMarkdown` wr
 | How notes look when rendered | `render.ts` (tested in `tests/js/render.test.mjs`), `equations.ts`, `macros.ts`, `livePreview.ts`. |
 | Claude's note tools | `backend/mcp/tools/notes.py`; see [mcp.md](mcp.md). |
 | What an exported note looks like | `exportNote.ts` (HTML, PDF), `portable.ts` (Markdown, reference entries), `frontend/css/export.css`. |
-| Which images are figures, and how they are numbered | `figures.ts` (`imageFigureAt`, `figuresOf`) for the rule and the text; `figureRule` in `render.ts`; `livePreview.ts` for the chips. |
-| How galleries are written, drawn or exported | `gallery.ts` (the block, the figure caption), `render.ts` (`galleryRule`), `galleryView.ts` (the carousel), `staticGalleries` in `exportNote.ts`, `portable.ts`, and `backend/notes/gallery.py` for the MCP tools. What counts inside one is the parser's (above). |
+| Which images are figures, and how they are numbered | Extended Markdown's figures (`frontend/src/plugins/core/extended-markdown/figures/`): `figures.ts` (`imageFigureAt`, `figuresOf`) for the rule and the text; `figureRule` in `markdown.ts`; `livePreview.ts` for the chips. |
+| How galleries are written, drawn or exported | Extended Markdown's figures: `gallery.ts` (the block, the figure caption), `markdown.ts` (`galleryRule`), `galleryView.ts` (the carousel), `exportStatic.ts`, `portable.ts`; `backend/notes/gallery.py` for the MCP tools. What counts inside one is the parser's (above), plugin or not. |
 
 The notes format, the `data/notes/` layout and these endpoints are contracts used by the MCP
 server and older data. Change them only deliberately. Tests live in `tests/notes/` and
 `tests/js/`; the browser checklists `notes_checklist.py`, `links_checklist.py`,
 `claude_edits_checklist.py`, `render_checklist.py`, `equations_checklist.py`,
 `attachments_checklist.py`, `export_checklist.py` and `gallery_checklist.py` in `tests/e2e/` cover the workspace (see [testing.md](testing.md)).
+
+## Extended Markdown (core plugin)
+
+**Extended Markdown** collects Markdown syntax beyond Synapse's own (math, citations, links,
+callouts, footnotes and the rest stay in the core renderer). It starts on and adds no page of its
+own. In Settings → Plugins it can be turned off as a whole, and each of its extensions has a
+switch among its settings:
+
+- **Galleries and numbered figures**: see [Galleries](#galleries) and
+  [Figures](#figures-and-their-numbers);
+- **Spoilers**: below.
+
+Off, notes render as ordinary Markdown and their text is unchanged.
+
+### Spoilers
+
+Use `Before ||**hidden words**|| after` for an inline spoiler. Its Show/Hide button works
+with mouse, Enter and Space. For a collapsible block:
+
+```markdown
+:::spoiler Optional summary
+Hidden **Markdown**, citations, links and $math$.
+
+:::spoiler Nested summary
+Nested content.
+:::
+:::
+```
+
+An omitted summary reads “Spoiler”. Blocks may nest and include fenced code; a `:::` inside a
+code fence does not close a block. Unclosed blocks and inline markers remain literal; inline
+spoilers must close on the same line. Escape an opening pipe with `\|` or use inline/fenced code
+to show literal syntax. Live preview shows source when editing that range and otherwise uses
+the same renderer as Read mode. Disabling redraws current/retained notes as ordinary Markdown
+and preserves every source character. Existing Mermaid handling is unchanged.
+
+Spoilers conceal presentation, not the stored text. Markdown export retains the markers;
+HTML/PDF export reveals the contents and opens blocks so printed/exported text is complete.
+Raw note HTML is still escaped.
+
+### Where the code is
+
+`frontend/src/plugins/core/extended-markdown/` holds one folder per extension (`figures/`,
+`spoilers/`), each a `MarkdownExtension` (`extension.ts`): its markdown-it rules, what HTML/PDF
+export must open up, and what it starts while on (listeners, a note hook). `index.ts` lists the
+extensions, reads the package's settings (one boolean per extension, keyed by its id, in
+`plugins/extended-markdown/manifest.json`) and follows them through the change feed: a switch
+takes effect in open notes at once. Spoilers reach the notes code through the `extended` hook in
+`views/notes/hooks.ts`; galleries and figures through the `figures` hook, which they had before
+they joined the package. A new syntax is a new folder, a line in that list and a setting.
+
+Live preview asks for the spoiler ranges on every keystroke, so finding them is one pass over the
+note: only positions holding `||` are examined, and code/math ranges are looked up by binary
+search; the result is kept until the text changes. `tests/js/spoilers.test.mjs` checks the ranges
+against the rules applied position by position and keeps a 300 KB note under 250 ms.

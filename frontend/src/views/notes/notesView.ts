@@ -13,16 +13,14 @@ import { emit, on, state } from '../../store.js';
 import { openMenu } from '../../ui/menu.js';
 import { toast, toastError } from '../../ui/toast.js';
 import { h, modLabel, storage, store } from '../../util.js';
-import { closeGlobal, globalOpen, graphChanged, initNotesGraph, localSection, openGlobal, showLocal } from '../graph/notesGraph.js';
 import { loadAiEdits, onAiAction, paintAiBar, remoteArrived } from './aiBar.js';
-import { assistSettingsChanged, assistSource, checkAssist } from './assist.js';
+import { ghostSource, noteHooks, onNoteHookChange } from './hooks.js';
 import { openAttachments } from './attachmentsDialog.js';
 import { attachCiteCards, openCitation, pdfsOf, showCard } from './citeCard.js';
 import { conflictDialog } from './conflict.js';
 import { createEditor, loadMD, type NoteEditor } from './editor.js';
 import { exportMenu } from './exportNote.js';
 import { folderOfSelection, newFolder, newNote, renameNote, rescan, showTrash } from './fileOps.js';
-import { installGalleries } from './galleryView.js';
 import { linkDataOf } from './linkData.js';
 import { refitOnResize } from './mathFit.js';
 import { NoteSession } from './noteSession.js';
@@ -69,6 +67,7 @@ export function initNotes(): void {
     </section>
     <section class="notes-main">
       <div class="note-head">
+        <button class="icon-btn note-mobile-list" data-act="mobile-list" title="Notes list" aria-label="Show notes list">${icon('arrowLeft')}</button>
         <div class="note-crumbs"></div>
         <span class="note-status" aria-live="polite"></span>
         <div class="segmented note-modes" role="group" aria-label="View">
@@ -76,7 +75,7 @@ export function initNotes(): void {
           <button data-mode="source" title="Plain Markdown">Source</button>
           <button data-mode="read" title="Read (${modLabel}E)">Read</button>
         </div>
-        <button class="btn btn-sm note-add-task" data-act="add-task" title="Add a task to this note (${modLabel}↩)">${icon('tasks', 'icon-sm')} Task</button>
+        <button class="btn btn-sm note-add-task" hidden data-act="add-task" title="Add a task to this note (${modLabel}↩)">${icon('tasks', 'icon-sm')} Task</button>
         <button class="icon-btn" data-act="export" title="Export as PDF, HTML or Markdown">${icon('export')}</button>
       </div>
       <div class="note-ai-bar" role="status" hidden></div>
@@ -92,13 +91,15 @@ export function initNotes(): void {
   ws.root = root;
   Object.assign(hooks, { openNote, doOpen, closeCurrent, setMode, openNotesGraph, saveAll, renameViews, dropViews });
   document.getElementById('app')!.appendChild(root);
-  root.querySelector('.notes-side')!.prepend(localSection());
-  initNotesGraph({
-    root,
-    openNote: (p) => openNote(p),
-    currentPath: () => ws.session?.path || null,
-    openGraph: (focus) => openNotesGraph(focus),
-    onGlobalClosed: () => navPush({ ws: 'notes', path: ws.session?.path || null }),
+  attachGraph();
+  onNoteHookChange((key) => {
+    if (key === 'graph') attachGraph();
+    // Extended Markdown or one of its extensions (galleries and figures, spoilers) was turned on or off: draw the notes again
+    if (key === 'tasks') {
+      root.querySelector<HTMLElement>('.note-add-task')!.hidden = !taskHooks.add;
+      if (ws.session) paintSide();
+    }
+    if (key === 'extended' || key === 'figures' || key === 'tasks') { staleOthers(); if (!notesOpen() || !ws.session) return; ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); }
   });
 
   root.addEventListener('click', onClick);
@@ -106,7 +107,6 @@ export function initNotes(): void {
     cursor: () => ws.editor?.view.state.selection.main.head ?? null, focused: () => !!ws.editor?.view.hasFocus };
   listenForQuotes();
   initReadView();
-  installGalleries();
   refitOnResize(root.querySelector<HTMLElement>('.note-read')!);
   renderDefaults.equations = equationMode;
   renderDefaults.macros = noteMacros;
@@ -133,7 +133,6 @@ export function initNotes(): void {
     if (!notesEnabled() && notesOpen()) closeNotes();
     emit('notes-count', notesEnabled() ? ws.overview.notes.length : null);
     applyLayout();
-    assistSettingsChanged();
     const key = `${equationMode()}|${state.settings.notes_math_physics}|${state.settings.notes_math_macros}`;
     if (key !== lastMathKey) { lastMathKey = key; staleOthers(); ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); }
   });
@@ -190,6 +189,24 @@ export function notesChanged(): void {
   refreshTree();   // also the notes count in the sidebar and the pencil column
 }
 
+/** Put the graph (the Graph plugin, through hooks.ts) into the notes view, or take its button
+    away when the plugin is off. The plugin removes its own parts when it stops. */
+function attachGraph(): void {
+  const g = noteHooks.graph;
+  if (!ws.root) return;   // Notes not built yet: initNotes calls this
+  ws.root.querySelectorAll<HTMLElement>('[data-act="graph"]').forEach((b) => { b.hidden = !g; });
+  if (!g) return;
+  g.attach({
+    root: ws.root,
+    openNote: (p) => openNote(p),
+    currentPath: () => ws.session?.path || null,
+    openGraph: (focus) => openNotesGraph(focus),
+    onGlobalClosed: () => navPush({ ws: 'notes', path: ws.session?.path || null }),
+  });
+  ws.root.querySelector('.notes-side')!.prepend(g.localSection());
+  g.showLocal(ws.session?.path || null);
+}
+
 /**
  * Notes, at ``path`` (and ``line``) in a note tab: its own tab, else the preview tab, else a new one
  * (``keep``: a kept tab). Without a path: the note tab used last, else Notes with nothing open.
@@ -201,9 +218,9 @@ export async function openNotes(path: string | null = null, line: number | null 
   if (noteTabs.open) await noteTabs.open(path, { keep, last: !path });
   else await showNote(path);
   if (line && path && ws.session?.path === path) gotoLine(line);
-  if (graph) await openGlobal(focus); else closeGlobal();
+  if (graph && noteHooks.graph) await noteHooks.graph.openGlobal(focus); else noteHooks.graph?.closeGlobal();
   const at = ws.session?.path || null;
-  navPush(graph ? { ws: 'notes', path: at, graph: true, focus } : { ws: 'notes', path: at });
+  navPush(graph && noteHooks.graph ? { ws: 'notes', path: at, graph: true, focus } : { ws: 'notes', path: at });
 }
 
 /** Into the notes workspace (from the library or Tasks). Already there, the notes list is
@@ -228,7 +245,7 @@ export async function showNote(path: string | null, mode?: Mode): Promise<boolea
     toast(`“${stemOf(path)}” no longer exists (moved or deleted).`);
     return false;
   }
-  closeGlobal();
+  noteHooks.graph?.closeGlobal();
   if (path) await openInPlace(path, mode);
   else { await opening; showNothing(); }
   return true;
@@ -251,15 +268,16 @@ export function flushNote(path: string): void {
 
 /** The full graph in Notes, optionally centred on a node ("note:<path>", "item:<id>"). */
 export async function openNotesGraph(focus: string | null = null): Promise<void> {
-  if (!notesEnabled()) return;
-  if (!notesOpen()) await openNotes();
-  await openGlobal(focus);
+  if (!notesEnabled() || !noteHooks.graph) return;
+  if (!notesOpen()) { await openNotes(null, null, { graph: true, focus }); return; }
+  ws.root.classList.remove('mobile-tree-open');
+  await noteHooks.graph.openGlobal(focus);
   navPush({ ws: 'notes', path: ws.session?.path || null, graph: true, focus });
 }
 
 /** ⌘⇧G: the graph, or back to the note. */
 export async function toggleNotesGraph(): Promise<void> {
-  if (notesOpen() && globalOpen()) { closeGlobal({ push: true }); ws.editor?.focus(); } else await openNotesGraph(ws.session ? `note:${ws.session.path}` : null);
+  if (notesOpen() && noteHooks.graph?.globalOpen()) { noteHooks.graph.closeGlobal({ push: true }); ws.editor?.focus(); } else await openNotesGraph(ws.session ? `note:${ws.session.path}` : null);
 }
 
 /** Leave Notes for the library (or, with ``toLibrary: false``, for another workspace that takes over). */
@@ -327,12 +345,12 @@ async function newEditor(view: NoteView, mode: 'live' | 'source'): Promise<NoteE
   }, mode, {
     items: () => ws.library.list,
     notes: () => ws.overview.notes,
-    tasks: () => taskHooks.choices?.() ?? [],
+    tasks: () => taskHooks.choices?.() ?? null,
     newTask: (title) => taskHooks.create?.(title) ?? Promise.resolve(null),
     taskHtml: (id) => taskHooks.titleHtml?.(id) ?? '',
-    assist: assistSource,
+    assist: ghostSource,
   });
-  checkAssist();   // and load the model, so the first suggestion does not wait for it
+  for (const fn of noteHooks.editorOpened) { try { fn(); } catch (e) { console.error(e); } }
   return ed;
 }
 
@@ -414,7 +432,7 @@ function showView(view: NoteView, mode?: Mode): void {
   if (notesOpen()) navPush({ ws: 'notes', path: view.path });
   if (!tree.sel.has(nKey(view.path))) selectOnly(nKey(view.path));   // opened from elsewhere: the list follows
   ws.root.classList.add('has-note');
-  showLocal(view.path);
+  noteHooks.graph?.showLocal(view.path);
   paintStatus(view.session.status);
   paintCrumbs();
   paintSide();
@@ -546,7 +564,7 @@ function openNote(path: string, { keep = false }: { keep?: boolean } = {}): Prom
 
 /** Show a note in the workspace. Calls are serialised. */
 function openInPlace(path: string, mode?: Mode): Promise<void> {
-  closeGlobal();
+  noteHooks.graph?.closeGlobal();
   opening = opening.then(() => doOpen(path, mode)).catch((e) => { toastError(e); });
   return opening;
 }
@@ -564,6 +582,7 @@ async function doOpen(path: string, mode?: Mode): Promise<void> {
   if (!view) view = await createView(path, mode || defaultMode());
   else view.session.checkRemote();   // changed elsewhere while its tab was in the background?
   showView(view, mode);
+  ws.root.classList.remove('mobile-tree-open');
   if (fresh) {
     loadLinks();
     loadAiEdits();
@@ -578,7 +597,7 @@ function paintEmpty(): void {
   const root = ws.root;
   root.classList.remove('has-note', 'reading');
   root.querySelector<HTMLElement>('.note-read')!.hidden = true;
-  showLocal(null);
+  noteHooks.graph?.showLocal(null);
   root.querySelector('.note-crumbs')!.innerHTML = '';
   root.querySelector('.note-status')!.textContent = '';
   root.querySelector('.notes-side .ns-details')!.innerHTML = '';
@@ -620,7 +639,7 @@ function afterSave(view: NoteView): void {
     } catch { /* next save will try again */ }
     loadLinks();
     refreshTree();
-    graphChanged();
+    noteHooks.graph?.changed();
   }, 400);
 }
 
@@ -633,6 +652,7 @@ function onClick(e: MouseEvent): void {
   const actEl = t.closest<HTMLElement>('[data-act]');
   const act = actEl?.dataset.act;
   if (act === 'add-task' && session) { taskHooks.add?.(actEl!); return; }
+  if (act === 'mobile-list') { ws.root.classList.toggle('mobile-tree-open'); return; }
   if (act === 'new-note') { newNote(); return; }
   if (act === 'new-folder') { newFolder(folderOfSelection()); return; }
   if (act === 'graph') { openNotesGraph(session ? `note:${session.path}` : null); return; }

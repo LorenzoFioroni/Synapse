@@ -64,7 +64,8 @@ def test_archive_holds_exactly_the_library_settings_and_notes(svc, library):
         "notes/.trash/20261010-120000/old.md",
     } <= set(names)
     for n in names:
-        assert n in ("manifest.json", "library.db", "settings.json") or n.startswith("notes/"), n
+        # plugins.json: which plugins are on (the core plugins' first state is written at start)
+        assert n in ("manifest.json", "library.db", "settings.json", "plugins.json") or n.startswith("notes/"), n
         assert not n.startswith(("pdfs", "notes_index", "fulltext", "citations", "backups")), n
     assert entry["items"] == 2 and entry["notes"] == 1 and entry["reason"] == "manual"
 
@@ -94,7 +95,10 @@ def test_backup_during_writes_is_a_valid_database(svc, library, tmp_path):
         t.join()
     for e in entries:
         with tarfile.open(svc.backups.dir / e["name"], "r:gz") as tar:
-            tar.extract("library.db", tmp_path / e["name"], filter="data")
+            dest = tmp_path / e["name"]
+            dest.mkdir()
+            with tar.extractfile("library.db") as library_file:
+                (dest / "library.db").write_bytes(library_file.read())
         c = sqlite3.connect(tmp_path / e["name"] / "library.db")
         assert c.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         c.close()
@@ -217,7 +221,10 @@ def test_backup_before_emptying_the_trash_at_most_every_ten_minutes(client, svc,
     [b] = svc.backups.list()
     assert b["reason"] == "before emptying the Trash" and b["items"] == 1  # the trashed item is in it
     with tarfile.open(svc.backups.dir / b["name"]) as tar:
-        tar.extract("library.db", svc.config.data_dir / "check", filter="data")
+        dest = svc.config.data_dir / "check"
+        dest.mkdir()
+        with tar.extractfile("library.db") as library_file:
+            (dest / "library.db").write_bytes(library_file.read())
     c = sqlite3.connect(svc.config.data_dir / "check" / "library.db")
     assert c.execute("SELECT COUNT(*) FROM papers").fetchone()[0] == 2
     c.close()

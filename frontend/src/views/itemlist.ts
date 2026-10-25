@@ -37,6 +37,7 @@ export function initItemList(): void {
   bindCopy();
 
   on('columns', () => { renderHead(); renderBody(); });
+  on('view', renderHead);   // a plugin's list has its own sort
   on('focus-list', () => scroller.focus());
   // Which items have notes (the pencil column); refreshed whenever the notes change.
   const loadNoteKeys = debounce(async () => {
@@ -58,7 +59,8 @@ function bindBody(): void {
     pendingCollapse = null;
     const id = row.dataset.id!;
     if (!state.selection.has(id)) A.select([id], { anchor: id, cursor: id });
-    const ids = order.filter((x) => state.selection.has(x));
+    const ids = order.filter((x) => state.selection.has(x) && !byId(x)?._outside);   // papers outside the library stay put
+    if (!ids.length) { e.preventDefault(); return; }
     e.dataTransfer.setData(ITEMS_MIME, JSON.stringify(ids));
     e.dataTransfer.setData('text/plain', ids.map((x) => byId(x)?.title || x).join('\n'));
     e.dataTransfer.effectAllowed = 'copyMove';
@@ -76,6 +78,7 @@ function bindBody(): void {
     if (row.dataset.att || row.classList.contains('snippet')) return;
     const id = row.dataset.id!;
     if (at(e, '[data-act="toggle"]')) { toggleExpand(id); return; }
+    if (at(e, '[data-act="add"]')) return;   // the "+" of a paper outside the library: its click adds it
     if (e.shiftKey && state.anchor) {
       const a = order.indexOf(state.anchor), b = order.indexOf(id);
       const [s, t] = a < b ? [a, b] : [b, a];
@@ -103,15 +106,18 @@ function bindBody(): void {
       if (it && att) openAttachment(it, att);
       return;
     }
+    const add = at(e, '[data-act="add"]');
+    if (add) { const it = byId(at(e, '.row')!.dataset.id!); if (it) A.addOutside([it]); return; }
     if (at(e, '[data-act="open"]')) A.openPdf(at(e, '.row')!.dataset.id!);
     if (at(e, '[data-act="note"]')) openItemNote(byId(at(e, '.row')!.dataset.id!));
     const snip = at(e, '.row.snippet');
     if (snip) A.openPdf(snip.dataset.parent!);
+    if (matchMedia('(max-width: 700px)').matches && at(e, '.row[data-id]')) document.body.classList.add('mobile-item-open');
   });
   body.addEventListener('dblclick', (e) => {
     const row = at(e, '.row[data-id]');
     if (!row || at(e, '[data-act]')) return;
-    if (state.settings.open_pdf_on_double_click !== false) A.openPdf(row.dataset.id!);
+    if (state.settings.open_pdf_on_double_click !== false || byId(row.dataset.id!)?._outside) A.openPdf(row.dataset.id!);   // outside: its page online
     else emit('focus-field', { id: row.dataset.id!, field: 'title' });
   });
   body.addEventListener('contextmenu', (e) => {
@@ -169,7 +175,7 @@ function bindKeyboard(): void {
         // Cmd+Shift+C: citation keys. Plain Cmd+C is handled by the 'copy' event (BibTeX), see bindCopy().
         if (modKey(e) && e.shiftKey && state.selection.size) { e.preventDefault(); copyKeys(selectedItems()); }
         break;
-      case 't': case 'T': if (modKey(e) && state.selection.size && state.view !== 'trash') { e.preventDefault(); editTagsDialog(); } break;
+      case 't': case 'T': if (modKey(e) && state.selection.size && state.view !== 'trash' && !selectedItems().some((i) => i._outside)) { e.preventDefault(); editTagsDialog(); } break;
       case 'ContextMenu': {
         e.preventDefault();
         const row = body.querySelector('.row.selected');
@@ -219,13 +225,15 @@ export function focusList(): void { scroller?.focus(); closeMenu(); }
 // synchronously (the most reliable way); if it isn't ready yet we fall back
 // to the async clipboard API.
 let bibCache = { key: '', text: '' };
-const selectionKey = () => [...state.selection].sort().join(',');
+/** The selected library items (BibTeX is only for those; papers from a plugin's list are left out). */
+const selectedLibrary = () => order.filter((x) => state.selection.has(x) && !byId(x)?._outside);
+const selectionKey = () => selectedLibrary().sort().join(',');
 
 const prefetchBibtex = debounce(async () => {
   const key = selectionKey();
   if (!key || state.view === 'trash' || key === bibCache.key) return;
   try {
-    const res = await api.exportText('bibtex', order.filter((x) => state.selection.has(x)));
+    const res = await api.clipboardBibtex(selectedLibrary());
     if (key === selectionKey()) bibCache = { key, text: res.text };
   } catch { /* copy will fetch on demand */ }
 }, 150);
@@ -235,17 +243,17 @@ function bindCopy(): void {
   on('items', () => { bibCache = { key: '', text: '' }; prefetchBibtex(); });   // edits change the BibTeX
   document.addEventListener('copy', (e) => {
     // only when the list has focus and the user isn't copying selected text
-    if (!scroller.contains(document.activeElement) || !state.selection.size || state.view === 'trash') return;
+    if (!scroller.contains(document.activeElement) || !selectedLibrary().length || state.view === 'trash') return;
     const sel = getSelection();
     if (sel && !sel.isCollapsed && String(sel).trim()) return;
     e.preventDefault();
-    const n = state.selection.size;
+    const n = selectedLibrary().length;
     const done = () => toast(`Copied BibTeX for ${plural(n, 'item')}`, { type: 'success', timeout: 2500 });
     if (bibCache.key === selectionKey() && bibCache.text && e.clipboardData) {
       e.clipboardData.setData('text/plain', bibCache.text);
       done();
     } else {
-      api.exportText('bibtex', order.filter((x) => state.selection.has(x)))
+      api.clipboardBibtex(selectedLibrary())
         .then((res) => copyText(res.text)).then(done).catch(toastError);
     }
   });

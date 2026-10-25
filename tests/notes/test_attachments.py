@@ -126,7 +126,11 @@ def test_purge_after_the_retention(client, svc):
     listed = client.get("/api/notes/trash").json
     assert listed["retention"] == "1w" and len(listed["trash"]) == 1
     t = listed["trash"][0]
-    assert datetime.fromisoformat(t["deletes_at"]) - datetime.fromisoformat(t["trashed_at"]) == timedelta(days=7)
+    # Retention is elapsed time; local clocks can change during the week (DST).
+    assert (
+        datetime.fromisoformat(t["deletes_at"]).timestamp() - datetime.fromisoformat(t["trashed_at"]).timestamp()
+        == 7 * 86400
+    )
 
     r = client.post("/api/notes/attachments/clean").json
     assert set(r) == {"trashed", "restored", "purged"}

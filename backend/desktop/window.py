@@ -68,14 +68,14 @@ def synapse_at(url: str, timeout: float = 1.5) -> bool | None:
 
 
 def _same_server(a: str, b: str) -> bool:
-    """Two addresses of this server: the same scheme and port, both on this computer."""
+    """Two addresses of this server: the same scheme, port and local host."""
     ua, ub = urlsplit(a), urlsplit(b)
     port = lambda u: u.port or (443 if u.scheme == "https" else 80)  # noqa: E731
+    hosts = ((ua.hostname or "").lower(), (ub.hostname or "").lower())
     return (
         ua.scheme == ub.scheme
         and port(ua) == port(ub)
-        and (ua.hostname or "") in LOOPBACK
-        and (ub.hostname or "") in LOOPBACK
+        and (hosts[0] == hosts[1] or (hosts[0] in LOOPBACK and hosts[1] in LOOPBACK))
     )
 
 

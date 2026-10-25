@@ -115,6 +115,26 @@ async def main():
             await page.wait_for_timeout(1200)
             await page.evaluate("localStorage.clear()")
 
+            check(
+                "Tasks is listed under Plugins in the sidebar",
+                await page.evaluate("""() => {
+                const task = document.querySelector('#sidebar [data-navigation=\"tasks.main\"]');
+                return task && !task.hidden && task.parentElement.matches('div[data-navigation]')
+                    && !document.querySelector('[data-pages-head]').hidden;
+            }"""),
+            )
+            check(
+                "Tasks has no toolbar workspace button", await page.locator('.ws-switch [data-ws="tasks"]').count() == 0
+            )
+            await page.click('#sidebar [data-navigation="tasks.main"]')
+            await page.wait_for_selector("#tasks-view:not([hidden])")
+            check(
+                "The sidebar opens Tasks and marks it active",
+                await page.locator('#sidebar [data-navigation="tasks.main"]').evaluate(
+                    "el => el.classList.contains('active')"
+                ),
+            )
+
             # ---- a note shows its tasks
             await page.keyboard.press(f"{MOD}+Shift+L")
             await page.wait_for_selector(".notes-tree")
@@ -437,7 +457,7 @@ async def main():
             check("Open tasks are listed, sub-tasks under their parent", rows >= 6, f"({rows} rows)")
             groups = await page.locator(".tv-group").all_inner_texts()
             check("Grouped by note", any("Plan" in g for g in groups), str(groups))
-            count = await page.locator(".side-item[data-act=open-tasks] .count").inner_text()
+            count = await page.locator('.side-item[data-navigation="tasks.main"] .count').inner_text()
             check("The sidebar counts open tasks", count.strip().split()[-1].isdigit(), count)
 
             await page.locator(".tv-search-input").fill("due:week")
@@ -508,6 +528,58 @@ async def main():
                 any("Ising" in t for t in titles) and not any("another window" in t for t in titles),
             )
             s.post(BASE + "/api/tasks/delete", json={"ids": [other]})
+
+            # The plugin can leave and return without changing records or duplicating handlers.
+            before_off = len(all_tasks()["tasks"])
+            for cycle in range(2):
+                s.post(BASE + "/api/plugin-host/tasks/disable").raise_for_status()
+                off = await wait_for(
+                    page,
+                    "!document.querySelector('#tasks-view') && !document.querySelector('#sidebar [data-navigation=\"tasks.main\"]')",
+                    12000,
+                )
+                check(f"off ({cycle + 1}): Tasks page and navigation disappear", off)
+                check(
+                    "off: legacy and plugin task routes are unavailable",
+                    s.get(BASE + "/api/tasks").status_code == 404
+                    and s.get(BASE + "/api/plugins/tasks/").status_code == 404,
+                )
+                await page.click('.ws-switch [data-ws="notes"]')
+                await page.locator(".notes-tree >> text=Plan").first.click()
+                await page.click('[data-mode="live"]')
+                await page.wait_for_timeout(400)
+                check(
+                    "off: task IDs remain in notes, with no task controls",
+                    await page.locator(".cm-content .cm-lp-chip.taskref").count() > 0
+                    and await page.locator(".cm-content .task-ref").count() == 0
+                    and await page.locator(".note-add-task").is_hidden(),
+                )
+                s.post(BASE + "/api/plugin-host/tasks/enable").raise_for_status()
+                on = await wait_for(
+                    page,
+                    "!!document.querySelector('#tasks-view') && !!document.querySelector('#sidebar [data-navigation=\"tasks.main\"]')"
+                    " && !document.querySelector('.note-add-task').hidden",
+                    12000,
+                )
+                check(
+                    f"on ({cycle + 1}): one page and note controls return",
+                    on
+                    and await page.locator("#tasks-view").count() == 1
+                    and await page.locator(".note-add-task").count() == 1,
+                )
+                check("on: all tasks survive", len(all_tasks()["tasks"]) == before_off)
+            await page.click('[data-mode="read"]')
+            await page.wait_for_timeout(400)
+            patches = []
+            page.on(
+                "request",
+                lambda req: patches.append(req.url) if req.method == "PATCH" and "/api/tasks/" in req.url else None,
+            )
+            before_status = get(plot)["status"]
+            await page.locator(f'.note-read .task-ref[data-task="{plot}"] .task-check').click()
+            changed = until(lambda: get(plot)["status"] != before_status)
+            await page.wait_for_timeout(300)
+            check("one click after repeated toggles sends one task change", changed and len(patches) == 1, patches)
 
             check("No JavaScript errors", not errors, "; ".join(errors[:3]))
             await browser.close()

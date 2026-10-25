@@ -34,7 +34,7 @@ steps through the TypeScript.
   `views/notes/editor.ts`, only when Notes is opened;
 - `views/metadataReview.ts` from `afterAdd.ts`, `views/exportDialog.ts` from `settingsView.ts`;
 - the classic UMD scripts Mermaid (`views/notes/richRender.ts`) and force-graph
-  (`views/graph/forceGraph.ts`) by adding a `<script>` tag; they put `window.mermaid` and
+  (`plugins/core/graph/forceGraph.ts`) by adding a `<script>` tag; they put `window.mermaid` and
   `window.ForceGraph` on the page.
 
 ### Why `js/` is not committed
@@ -131,19 +131,21 @@ own (with its own `X-Synapse-Client` id), and `notesBridge.ts` calls `fetch` dir
 |---|---|
 | `schema` | `GET /api/schema`: item types and fields. |
 | `settings`, `settingsMeta` | The user's settings and the rest of the `GET /api/settings` answer. |
-| `view` | `'library'`, `'trash'`, `'duplicates'`, `'unfiled'`, `'folder:<id>'`, `'smart:<id>'`. |
+| `view` | `'library'`, `'trash'`, `'duplicates'`, `'unfiled'`, `'folder:<id>'`, `'smart:<id>'`, `'source:<plugin>.<list>'` (a plugin's list of papers). |
 | `query`, `mode` | The search text and scope (`SearchMode`). |
 | `items`, `hits`, `counts`, `sidebar` | The current list (already filtered by the server), full-text snippets by id, the counts per view, and folders, tags and smart folders. |
 | `tagFilter` | Tag names; items must have all of them. |
 | `selection`, `anchor`, `cursor` | Selected ids, the anchor for Shift+click ranges, the keyboard row. |
 | `sort`, `columns`, `openFolders` | Saved in `localStorage` (`zc.sort`, `zc.columns`, `zc.openFolders`). |
+| `sourceSort` | The sort of a plugin's list; `null` (the start) is the plugin's own order (`_rank`). Not saved. `viewSort()` gives the one the view uses, `sortBy(col)` is a click on a column. |
+| `fieldDefs`, `sources` | The per-item fields and the lists of papers running plugins offer (`plugins/host.ts` loads both). |
 | `expanded` | Items whose attachment rows are shown. |
 | `loading`, `indexer` | A list request is running; the last `/api/stats` answer. |
 | `noteKeys` | Citation key → its paper note and how many notes cite it. |
 | `order` | The list's display order, set by `views/itemlist/rows.ts` (only the rows on screen are in the DOM). |
 
 `store.ts` also has the helpers that derive from the state: `byId`, `selectedItems`,
-`sortedItems`, `folderTree`, `folderPath`, `folderTotal`, `folderDescendants`, `tagColor` and the
+`currentSource`, `isOutside`, `sortedItems`, `folderTree`, `folderPath`, `folderTotal`, `folderDescendants`, `tagColor` and the
 column definitions `COLUMNS`.
 
 The list, the view, the search and the selection change through `actions.ts`. A few slices
@@ -179,11 +181,12 @@ expects something else. To add an event, add it to `AppEvents` and to the table 
 | `focus-list` | none | `notesView.ts`, `settingsView.ts` | `itemlist.ts` |
 | `open-note` | `{ path, line? }` | item pane, `itemlist/menus.ts` | `main.ts` |
 | `open-notes`, `close-notes` | none | sidebar | `main.ts` |
-| `show-item` | item id | `notesGraph.ts`, `citeCard.ts`, `notesView.ts`, `referencesSection.ts` | `main.ts` |
-| `show-graph` | focus (`item:<id>`) | `itemlist/menus.ts` | `main.ts` |
+| `show-item` | item id | `plugins/core/graph/notesGraph.ts`, `citeCard.ts`, `notesView.ts`, `referencesSection.ts` | `main.ts` |
 | `open-import` | optional `File` | `itemlist/empty.ts`, `itemlist.ts`, `settingsView.ts` | `main.ts` |
 | `open-identifier`, `clear-search` | none | `itemlist/empty.ts` | `main.ts` |
 | `set-search-mode` | `SearchMode` | `itemlist/empty.ts`, `settingsView.ts` | `main.ts` |
+| `sources` | none | `plugins/host.ts` (`syncSources`) | sidebar (the Plugins section) |
+| `open-view` | a view (`source:<id>`, `folder:<id>` …) | `plugins/host.ts` (`p.sources.open`) | `main.ts` (leaves Notes, Tasks, Settings or a page) |
 
 The events `main.ts` hears are how a view reaches code it must not import (opening Notes from the
 item pane, for example), which keeps the views free of import cycles.
@@ -194,7 +197,8 @@ Views call these for anything that changes the item list. Each one calls `api`, 
 and emits the events above; failures become a toast (`toastError`). The groups:
 
 - **The list.** `loadItems` (a sequence number drops answers that a newer request superseded; a
-  404 for a deleted folder falls back to the library), `setView`, `setSearch`, `select`.
+  404 for a deleted folder falls back to the library; when every selected item left the list, the
+  one after them is selected, as trashing does), `setView`, `setSearch`, `select`.
 - **Small updates without a reload.** `patchLocal` replaces one item; `refreshItems(ids)` fetches
   only those items, and reloads the list instead when the view is filtered, because then items
   may leave or join it.
@@ -202,6 +206,12 @@ and emits the events above; failures become a toast (`toastError`). The groups:
   `restoreSelected`, `deleteForever`, `emptyTrash`, `regenerateCitekeys`.
 - **PDFs.** `openPdf`, `findPdf`, `findPdfs` (one at a time, cancellable), `uploadAttachments`,
   `addPdfsAsItems`.
+- **Papers from a plugin's list.** `addOutside(items, folderId)` adds those not in the library
+  (one request each, with a toast to undo), reloads the list (they come back as library items) and
+  runs what Settings → Adding Items says. Items with `_outside` (id `x:…`) are not in the
+  library: trashing, tags, dragging and copying BibTeX leave them out, and the item pane and the
+  item menu have their own versions for them (`views/itempane/outside.ts`, `outsideMenu` in
+  `itemlist/menus.ts`).
 - **Folders and tags.** `createFolder`, `renameFolder`, `moveFolder`, `deleteFolder`,
   `addToFolder`, `removeFromFolder`, `moveBetweenFolders`, `removeFolderMembership`, `addTags`,
   `removeTags`, `toggleTagFilter`, `clearTagFilter`, `updateTag`, `deleteTag`, `deleteSmart`.
@@ -252,6 +262,9 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `presence.ts` | Says hello to the server while the page is open, for a server that stops with its last window. |
 | `windowColor.ts` | The window's title bar colour (`theme-color`): neutral, or the shown note's folder colour (see [the app window](desktop.md#folder-colours)). |
 | `windows.ts` | Opening a place of the app in a new window (`openNewWindow`) and the address that names it (`placeHash`, `readPlace`); `main.ts` opens it (`openFromHash`). See [the app window](desktop.md#windows). |
+| `extend.ts` | The extension points: registries of core workspace navigation, commands, pages, item-pane sections and item actions that the views read and plugins (and `main.ts`, for Synapse's own commands) register into; keys (`parseKey`, `keyMatches`, `keyLabel`, `keyProblem`) and the palette's ranking. No DOM, unit-tested. |
+| `plugins/host.ts` | Plugins' frontends: loads each running plugin's module and styles, gives it its `PluginContext`, takes everything back when it stops (see [plugins](plugins.md#the-frontend)). |
+| `plugins/api.ts` | The `PluginContext` and the other types promised to plugins (types only; plugin authors copy it). |
 | `icons.ts` | Inline SVG icons: `icon(name, cls)` and `typeIcon(itemType)`. |
 | `util.ts` | Small helpers: `escapeHtml`, `h`, `debounce`, dates and sizes, `storage` / `store` (`localStorage` that never throws), `modKey`, `copyText`, `diffWords`, `hitBadge` (the "full text" or "note" badge of a search match). |
 
@@ -260,13 +273,16 @@ them. It waits while a field, a dialog or the editor is in use. See
 | Module | Role |
 |---|---|
 | `itemlist.ts` | The items table: selection, keyboard, dragging items out, file drops, copying BibTeX. |
-| `itemlist/columns.ts` | The header: visible columns, order, widths, sorting. |
+| `itemlist/columns.ts` | The header: visible columns, order, widths, sorting. Plugins' per-item fields are columns `f:<plugin>.<name>` (`colDef`, `syncFieldColumns` and `fieldText` in `store.ts`), kept in the saved columns while their plugin is off. |
 | `itemlist/rows.ts` | The virtualised rows: only rows near the viewport are in the DOM, between two spacers. |
 | `itemlist/empty.ts` | What an empty list says, with buttons for what to do. |
 | `itemlist/menus.ts` | Context menus for items and attachments, shared with the item pane. |
-| `itempane.ts` | The right-hand pane: editable fields, authors, abstract, attachments. |
+| `itempane.ts` | The right-hand pane: editable fields, authors, abstract, attachments; *From Plugins* (values plugins attach, from `/api/items/<id>/fields`) and the sections plugins add. |
 | `referencesSection.ts` | The item pane's References section (see [references](references.md)). |
-| `sidebar.ts` | Library views, folder tree, smart folders, tag pane, and drag and drop onto them. |
+| `settings/pluginSections.ts` | Mounts and disposes plugin Settings sections as their registry changes, preserving unrelated controls and removing stale navigation. |
+| `sidebar.ts` | Plugin-owned workspace navigation (Tasks and Graph), library views, folder tree, smart folders, tag pane, the pages plugins add, and drag and drop onto them. |
+| `pages.ts` | A plugin's page in place of the library (`openPage`, `closePage`; `body[data-workspace="page"]`). |
+| `palette.ts` | The command palette (⌘⇧P / Ctrl+Shift+P, F1): every command in `extend.ts`, best match first. |
 | `organizeDialogs.ts` | Folder picker, tag editor and input, smart folder dialog. |
 | `importDialog.ts`, `exportDialog.ts` | Import with preview and duplicate flags; export to the formats. |
 | `identifierDialog.ts` | Add items by DOI, arXiv id or ISBN. |
@@ -276,7 +292,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `settings/backups.ts`, `settings/devices.ts` | Settings → Backups and Settings → Devices (pairing). |
 | `settings/passkeys.ts` | Settings → Devices → Passkeys: adding one with `navigator.credentials.create`, removing one. |
 | `settings/aiAccess.ts` | Settings → AI Access: access tokens for `/mcp`, with the `claude mcp add` command shown once. |
-| `settings/assist.ts` | Settings → Autocompletion: the status of Ollama and the model, with what to do when one is missing. |
+| `settings/plugins.ts` | Settings → Plugins: the plugins found, turning them on (after a confirmation listing their access) and off, their settings drawn from each manifest, tools for other computers, Restart and the log. `pluginsChanged()` redraws it when the change feed names `plugins`. See [plugins](plugins.md). |
 
 **`views/notes/`: the notes workspace.** [Notes](notes.md) covers it in depth. In short:
 `notesView.ts` sets the workspace up and opens and closes notes; `workspace.ts` is the shared
@@ -289,18 +305,30 @@ math; `tree.ts`, `treeInput.ts` and `fileOps.ts` are the notes list; `readView.t
 `conflict.ts`, `diff.ts`, `rekeyDialog.ts` and `attachmentsDialog.ts` are dialogs; `exportNote.ts`
 and `portable.ts` export a note as PDF, HTML or Markdown.
 
-**`views/tasks/`: tasks.** [Tasks](tasks.md#frontend-frontendsrcviewstasks) covers it. In short:
+**`plugins/core/tasks/`: tasks.** [Tasks](tasks.md#frontend-frontendsrcviewstasks) covers it. In short:
 `taskData.ts` holds the tasks and makes the changes; `taskQuery.ts` and `dates.ts` are the logic
 without a DOM (views, search, sorting, groups; reading dates); `taskRender.ts` draws a task;
 `taskForm.ts` is the form of the detail pane and the popup; `tasksView.ts`, `taskList.ts` and
 `tasksState.ts` the Tasks page; `noteTasks.ts` tasks inside notes; `notePicker.ts` chooses a note.
 
-**`views/graph/`: the graph in Notes.** `model.ts` turns `/api/graph` into what is shown (no
-DOM, unit-tested); `forceGraph.ts` draws it with force-graph; `notesGraph.ts` is the local graph
+**`plugins/core/graph/`: the graph in Notes** (the Graph core plugin, `plugins/graph`). `index.ts`
+gives the notes view the graph through `views/notes/hooks.ts` (`setNoteHook('graph', …)`: the notes view puts the
+local graph in its side panel and shows the graph button only while it is set) and adds the
+command (Cmd/Ctrl+Shift+G) and Show in Graph for items. `model.ts` turns the plugin's `/data` into
+what is shown (no DOM, unit-tested); `forceGraph.ts` draws it with force-graph; `notesGraph.ts` is the local graph
 beside a note and the global graph in place of the editor. Both show a neighbourhood through
 `buildView`'s `focus` and `depth`: the local graph around the open note (depth 1 or 2), the global
 graph around the node it was opened for (`globalFocus`, depth 1, 2, 3 or 0 for everything, kept
 with the other options in `localStorage` under `zc.graph.global`).
+
+**`plugins/core/extended-markdown/figures/`: galleries and figures** (an extension of the Extended
+Markdown core plugin, `plugins/extended-markdown`, with its own switch there). Its `index.ts`
+installs the carousels' listeners (`galleryView.ts`) and sets the `figures` hook
+(`hook.ts`) in `views/notes/hooks.ts`, which the notes code asks when it needs it: the renderer
+adds `markdown.ts`'s rules (it rebuilds itself when a hook changes, `hooksVersion`), the live
+preview asks `figuresOf` for numbers and labels, and the exports call `portable.ts` (Markdown)
+and `exportStatic.ts` (HTML, PDF). `gallery.ts` reads a block and `figures.ts` finds and numbers
+figures (no DOM, unit-tested). See [notes](notes.md#galleries).
 
 **`ui/`: generic widgets.** `dialog.ts` (`openDialog`, `confirmDialog`, `promptDialog`),
 `menu.ts` (`openMenu`, `closeMenu`, with keyboard navigation; an entry may show a colour `swatch`),
@@ -362,14 +390,14 @@ state and call each other without import cycles. Three patterns are used:
   `openNotesGraph`) with do-nothing defaults. `notesView.ts` fills them with
   `Object.assign(hooks, …)`. The other parts import `workspace.ts`, never `notesView.ts`.
   `taskHooks` in the same file works the other way round: the tasks code
-  (`views/tasks/noteTasks.ts`) fills it in, and the notes code calls it to draw and add tasks
+  (`plugins/core/tasks/noteTasks.ts`) fills it in, and the notes code calls it to draw and add tasks
   without importing the tasks code.
   `viewer/annotations/model.ts` does the same with `hooks.onSelect`, which
   `annotations/input.ts` sets to show its selection controls.
 - **Dependency objects.** A module that needs a few things from its caller takes them as an
   argument: `attachCiteCards(container, deps: CiteCardDeps)` in `citeCard.ts`,
-  `livePreview(cm, deps: PreviewDeps)` in `livePreview.ts`, `initNotesGraph(ctx:
-  NotesGraphContext)` in `notesGraph.ts`. The module then does not import the notes view at all.
+  `livePreview(cm, deps: PreviewDeps)` in `livePreview.ts`, `GraphHook.attach(ctx:
+  NotesGraphContext)` (`views/notes/hooks.ts`). The module then does not import the notes view at all.
   `livePreview` also takes the CodeMirror library `cm` as an argument, because it is loaded
   lazily.
 - **ES module live bindings.** `annotations/model.ts` exports `let` variables (`attId`,
@@ -435,3 +463,8 @@ markup; an unknown name falls back to `doc`. To add one, add its paths to `P`.
    in [architecture](architecture.md#modules).
 6. Cover what you can with a JavaScript unit test (keep the logic in a DOM-free module) and the
    rest with a browser checklist. See [testing](testing.md).
+
+The Tasks core plugin (`plugins/core/tasks/index.ts`) registers its page through `tasksPage.ts`
+and installs the existing note `taskHooks`. On unload it removes its DOM, listeners, popups and
+renderers and invalidates pending loads. Plugin startup completes before task deep links open;
+plugin changes are applied before the change feed dispatches task or note refreshes.

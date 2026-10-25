@@ -92,8 +92,9 @@ async def main():
         s.post(
             BASE + "/api/notes/note", json={"path": "other.md", "title": "Other", "text": "# Other\n"}
         ).raise_for_status()
-        # on, but no Ollama at the address
-        s.put(BASE + "/api/settings", json={"notes_ai_complete": True, "notes_ai_url": dead}).raise_for_status()
+        # the plugin on, but no Ollama at the address
+        s.post(BASE + "/api/plugin-host/autocompletion/enable").raise_for_status()
+        s.put(BASE + "/api/plugin-host/autocompletion/settings", json={"url": dead}).raise_for_status()
 
         async with async_playwright() as pw:
             b = await pw.chromium.launch()
@@ -103,7 +104,10 @@ async def main():
             page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
             completes = []
             page.on(
-                "request", lambda r: completes.append(r.post_data) if r.url.endswith("/api/assist/complete") else None
+                "request",
+                lambda r: (
+                    completes.append(r.post_data) if r.url.endswith("/api/plugins/autocompletion/complete") else None
+                ),
             )
 
             await page.goto(BASE + "/")
@@ -119,17 +123,19 @@ async def main():
             await page.wait_for_timeout(1200)
             await page.keyboard.type(" thing", delay=30)
             await page.wait_for_timeout(1200)
+            # plugin notices go to the notification center (the bell), with their actions
             notices = await page.evaluate(
-                "[...document.querySelectorAll('.toast')].filter(t => t.textContent.includes('Autocompletion is on')).length"
+                "[...document.querySelectorAll('#notification-center .notification')]"
+                ".filter(n => n.textContent.includes('cannot make suggestions') && n.querySelector('[data-n=\"action\"]')).length"
             )
-            check("Ollama missing: one notice says why", notices == 1, f"({notices})")
+            check("Ollama missing: one notice says why, with a way to Settings", notices == 1, f"({notices})")
             check("Ollama missing: no suggestion is asked for", not completes, f"({len(completes)})")
             check("Ollama missing: no ghost text", await ghost(page) == "")
 
             # ---- Settings → Autocompletion
             await page.keyboard.press(f"{MOD}+,")
-            await page.wait_for_selector("#set-assist")
-            await page.click('[data-nav="assist"]')
+            await page.wait_for_selector("#set-x-autocompletion-ollama")
+            await page.click('[data-nav="x-autocompletion-ollama"]')
             ok = await wait_for(page, "document.querySelector('[data-ai-state]').textContent.includes('not running')")
             steps = await page.evaluate("document.querySelector('.ai-steps')?.textContent || ''")
             check(
@@ -138,8 +144,14 @@ async def main():
             await page.fill("[data-ai-url]", "http://192.168.1.5:11434")
             await page.press("[data-ai-url]", "Enter")
             await page.locator("[data-ai-url]").blur()
-            refused = await wait_for(page, "!document.querySelector('[data-ai-error]').hidden")
-            check("Settings: an address on another computer is refused", refused)
+            refused = await wait_for(
+                page, "document.querySelector('[data-ai-state]').textContent.includes('only a model on this computer')"
+            )
+            check(
+                "Settings: an address on another computer is refused",
+                refused,
+                await page.locator("[data-ai-state]").inner_text(),
+            )
 
             await page.fill("[data-ai-url]", fake.url.replace("http://", ""))
             await page.locator("[data-ai-url]").blur()
@@ -148,14 +160,53 @@ async def main():
             )
             installed = await page.evaluate("document.querySelector('[data-ai-installed]').textContent")
             check("Settings: model not installed, installed models listed", missing and "llama3.2:3b" in installed)
-            stored = s.get(BASE + "/api/settings").json()["settings"]["notes_ai_url"]
-            check("Settings: the address is stored cleaned", stored == fake.url, stored)
+            values = next(p for p in s.get(BASE + "/api/plugin-host").json()["plugins"] if p["id"] == "autocompletion")[
+                "values"
+            ]
+            check(
+                "Settings: the address is the plugin's setting",
+                values["url"] == fake.url.replace("http://", ""),
+                values["url"],
+            )
 
             fake.models.append("qwen2.5-coder:1.5b")
             await page.click("[data-ai-check]")
             ready = await wait_for(page, "document.querySelector('[data-ai-state] .ai-state.ok') !== null")
             check("Settings: Check Again finds the model (ready)", ready)
             check("Settings: no generation was asked by the checks", fake.generated() == [])
+            # A late response from an earlier status check must not replace a newer answer.
+            started, release, finished = asyncio.Event(), asyncio.Event(), asyncio.Event()
+            intercepted = 0
+
+            async def delayed_status(route):
+                nonlocal intercepted
+                intercepted += 1
+                if intercepted != 1:
+                    await route.continue_()
+                    return
+                response = await route.fetch()
+                stale = await response.json()
+                stale.update(ok=False, reason="unreachable", message="An old status response")
+                started.set()
+                await release.wait()
+                await route.fulfill(response=response, json=stale)
+                finished.set()
+
+            await page.route("**/api/plugins/autocompletion/status?fresh=1", delayed_status)
+            await page.click("[data-ai-check]")
+            await asyncio.wait_for(started.wait(), 5)
+            await page.click("[data-ai-check]")
+            await wait_for(page, "document.querySelector('[data-ai-state] .ai-state.ok') !== null")
+            async with page.expect_response(lambda r: r.url.endswith("/status?fresh=1")) as old_response:
+                release.set()
+            await (await old_response.value).finished()
+            await asyncio.wait_for(finished.wait(), 5)
+            await page.evaluate("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
+            check(
+                "Settings ignores an older status answer",
+                await page.locator("[data-ai-state] .ai-state.ok").count() == 1,
+            )
+            await page.unroute("**/api/plugins/autocompletion/status?fresh=1", delayed_status)
             await page.click("[data-close]")
             await page.wait_for_timeout(400)
 
@@ -272,8 +323,45 @@ async def main():
             await page.wait_for_timeout(1200)
             check("Model removed: requests stop", len(fake.generated()) == n and await ghost(page) == "")
 
+            # Settings stays open while the plugin is stopped and started in another window.
+            fake.models[:] = ["qwen2.5-coder:1.5b"]
+            await page.keyboard.press(f"{MOD}+,")
+            nav = '.settings-nav [data-nav="x-autocompletion-ollama"]'
+            section = "#set-x-autocompletion-ollama"
+            for cycle in range(2):
+                await page.click(nav)
+                s.post(BASE + "/api/plugin-host/autocompletion/disable").raise_for_status()
+                await page.evaluate("window.zcPlugins.sync()")
+                check(
+                    f"Off removes its open Settings controls ({cycle + 1})",
+                    await page.locator(nav).count() == 0
+                    and await page.locator(section).count() == 0
+                    and await page.locator("#settings-view").count() == 1,
+                )
+                check(
+                    "Settings selects General after its current plugin section disappears",
+                    await page.locator('.settings-nav [data-nav="general"]').evaluate(
+                        "el => el.classList.contains('active')"
+                    ),
+                )
+                s.post(BASE + "/api/plugin-host/autocompletion/enable").raise_for_status()
+                await page.evaluate("window.zcPlugins.sync()")
+                check(
+                    f"On restores exactly one Settings section ({cycle + 1})",
+                    await page.locator(nav).count() == 1 and await page.locator(section).count() == 1,
+                )
+            await page.keyboard.press("Escape")
+
+            await to_end(page)
+            await page.keyboard.press("Enter")
+            await page.keyboard.type("The quick", delay=40)
+            await page.wait_for_selector(".cm-ghost")
+            s.post(BASE + "/api/plugin-host/autocompletion/disable").raise_for_status()
+            await page.evaluate("window.zcPlugins.sync()")
+            check("Off removes an already visible suggestion without reloading", await ghost(page) == "")
+
             # ---- off
-            s.put(BASE + "/api/settings", json={"notes_ai_complete": False}).raise_for_status()
+            s.post(BASE + "/api/plugin-host/autocompletion/disable").raise_for_status()
             fake.models.append("qwen2.5-coder:1.5b")
             await page.reload()
             await page.wait_for_selector(".cm-content")

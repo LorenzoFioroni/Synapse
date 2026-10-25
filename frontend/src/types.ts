@@ -16,6 +16,8 @@ export interface Attachment {
 /** A library item. Lists are "lean": empty fields and the abstract are left out. */
 export interface Item {
   id: string;
+  /** Values plugins attach (per-item fields), by field id ("<plugin>.<name>"); only known ones. */
+  _f?: Record<string, unknown>;
   item_type?: string;
   title?: string;
   authors?: string;        // "Family, Given; Family, Given"
@@ -52,6 +54,14 @@ export interface Item {
   tags?: string[];
   folder_ids?: number[];
   dup_group?: number;      // in the Duplicates view: items of one group share it
+  /** A paper outside the library, from a plugin's list (backend/plugins/outside.py); its id is "x:<key>". */
+  _outside?: boolean;
+  key?: string;            // outside papers: "doi:…" or "arxiv:…"
+  arxiv?: string;          // outside papers: the arXiv id
+  categories?: string;     // outside papers: arXiv categories, "quant-ph, cond-mat.str-el"
+  _source?: string;        // in a plugin's list: its id ("<plugin>.<source>")
+  _rank?: number;          // in a plugin's list: the position the plugin gave it
+  reasons?: Reason[];      // in a plugin's list: why it is there
   _lean?: boolean;         // set by the frontend: a list entry without the abstract (the pane fetches it)
   [field: string]: unknown;
 }
@@ -145,7 +155,7 @@ export interface Settings {
   font_size: number;
   confirm_trash: boolean;
   open_pdf_on_double_click: boolean;
-  export_format: 'bibtex' | 'ris' | 'endnote' | 'endnote_xml' | 'csljson';
+  export_format: string;
   bibtex_unicode: boolean;
   export_abstract: boolean;
   import_skip_duplicates: boolean;
@@ -165,10 +175,6 @@ export interface Settings {
   notes_equation_numbers: 'labelled' | 'all';
   notes_math_physics: boolean;
   notes_math_macros: string;
-  notes_ai_complete: boolean;
-  notes_ai_model: string;
-  notes_ai_url: string;
-  notes_ai_length: 'line' | 'paragraph';
   annotation_color_highlight: string;
   annotation_color_underline: string;
   annotation_color_text: string;
@@ -181,23 +187,6 @@ export interface Settings {
   backup_keep: number;
   backup_dir: string;
 }
-
-/** Why autocompletion can or cannot make suggestions (GET /api/assist/status, backend/assist). */
-export type AssistReason = '' | 'off' | 'unreachable' | 'no_model' | 'unsupported' | 'timeout' | 'error' | 'superseded';
-export interface AssistStatus {
-  enabled: boolean;
-  ok: boolean;
-  reason: AssistReason;
-  message: string;
-  url: string;
-  model: string;
-  models: string[];      // installed in Ollama
-  version: string;       // Ollama's
-  fim: boolean;          // the model fills in the middle (sees the text after the cursor)
-  thinking: boolean;
-}
-/** POST /api/assist/complete: the suggestion, or why there is none. */
-export interface AssistCompletion { text: string; reason: AssistReason; message?: string }
 
 export interface SettingsResponse {
   settings: Settings;
@@ -439,6 +428,103 @@ export interface BackupStatus {
   keep: number;
 }
 
+/** A setting a plugin declares in its manifest (backend/plugins/manifest.py). */
+export interface PluginSetting {
+  key: string;
+  type: 'bool' | 'int' | 'float' | 'text' | 'choice' | 'multi';
+  label: string;
+  default: unknown;
+  description?: string;
+  options?: [string, string][];
+  min?: number;
+  max?: number;
+}
+
+/** A plugin as Settings → Plugins shows it (backend/plugins/host.py, info). */
+export interface PluginInfo {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  source: 'bundled' | 'user' | 'dev';
+  folder: string;
+  replaces_bundled: boolean;
+  /** A core plugin: part of Synapse (a feature that can be turned off), see plugins.md. */
+  core?: boolean;
+  enabled: boolean;
+  running: boolean;
+  status: 'on' | 'off' | 'failed' | 'incompatible' | 'invalid' | 'safe-mode';
+  problem: string | null;
+  failed_at: string | null;
+  remote_mcp: boolean;
+  api?: string;
+  permissions?: { network: string[]; library: string[]; mcp: boolean; python?: string[] };
+  parts?: string[];
+  settings?: PluginSetting[];
+  values?: Record<string, unknown>;
+  tools?: string[];
+  routes?: { rule: string; methods: string[] }[];
+  events?: string[];
+  /** Its scheduled work (while running) and the jobs waiting. */
+  schedules?: { name: string; rule: string }[];
+  jobs?: number;
+  reference_sources?: { id: string; title: string }[];
+  export_formats?: { id: string; title: string }[];
+  /** Paths in the plugin's folder (from the manifest). */
+  frontend?: string | null;
+  styles?: string | null;
+  /** When it started (while running): the app loads its frontend again when this changes. */
+  started?: string;
+}
+
+/** A per-item field a running plugin declares (backend/plugins/fields.py). */
+export interface PluginField {
+  id: string;              // "<plugin>.<name>"
+  plugin: string;
+  plugin_name: string;
+  name: string;
+  type: 'int' | 'float' | 'text' | 'date' | 'bool' | 'url' | 'enum';
+  label: string;
+  description: string;
+  source: string;
+  options?: string[];
+}
+
+/** GET /api/items/<id>/fields: each field with this item's value. */
+export interface ItemFieldValue extends PluginField {
+  value: unknown;
+  checked: boolean;        // the plugin looked (a None value then means: nothing found)
+  updated: number | null;  // seconds since the epoch
+  source_url: string | null;
+}
+
+/** A list of papers a running plugin offers, shown in the sidebar (backend/plugins/sources.py). */
+export interface PluginSource {
+  id: string;              // "<plugin>.<source>"; its view is "source:<id>"
+  title: string;
+  icon: string;
+  description: string;
+  plugin: string;
+  plugin_name: string;
+  badge: string | null;
+}
+
+/** Why a plugin lists a paper; ``items``: the library papers involved (those it cites, say). */
+export interface Reason {
+  text: string;
+  kind: string;            // 'cites' | 'cited_by' | 'authors' | 'similar' | '' (the plugin's own words)
+  items: string[];
+}
+
+/** GET /api/plugin-host. */
+export interface PluginsOverview {
+  plugins: PluginInfo[];
+  safe_mode: boolean;
+  dir: string;
+  api: string;
+}
+
 /** A paired device (backend/access/devices.py). */
 export interface Device {
   id: string;
@@ -503,7 +589,7 @@ export interface AccessTokensOverview {
 export interface ChangeFeed {
   epoch: string;
   seq: number;
-  changes: ('library' | 'annotations' | 'notes')[];
+  changes: ('library' | 'annotations' | 'notes' | 'tasks' | 'plugins' | 'fields' | 'sources')[];
   reset: boolean;          // the server restarted: everything counts as changed
 }
 

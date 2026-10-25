@@ -1,9 +1,9 @@
 // Thin client for the JSON API. Every call throws an Error with a readable
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
-  AccessToken, AccessTokensOverview, AssistCompletion, AssistStatus, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, GraphData, HistoryEntry, ImportEntry, ImportPreview, Item,
+  AccessToken, AccessTokensOverview, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, HistoryEntry, ImportEntry, ImportPreview, Item,
   ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
-  Passkey, PasskeysOverview, PdfImport, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
+  ItemFieldValue, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginSource, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview,
 } from './types.js';
 import { openNewWindow, openPageInNewWindow } from './windows.js';
@@ -97,15 +97,31 @@ export const api = {
   accessTokens: () => request<AccessTokensOverview>('GET', '/api/mcp/tokens'),
   newAccessToken: (name: string) => request<{ token: string; entry: AccessToken }>('POST', '/api/mcp/tokens', { name }),
   removeAccessToken: (id: string) => request('DELETE', `/api/mcp/tokens/${encodeURIComponent(id)}`),
+  plugins: () => request<PluginsOverview>('GET', '/api/plugin-host'),
+  pluginFields: () => request<{ fields: PluginField[] }>('GET', '/api/plugin-fields'),
+  pluginSources: () => request<{ sources: PluginSource[] }>('GET', '/api/plugin-sources'),
+  /** Add a paper from a plugin's list to the library (201; 200 with duplicate: true when it is there already). */
+  addOutside: (paper: Item, folderId: number | null = null) =>
+    request<{ item: Item; duplicate: boolean }>('POST', '/api/outside/add', { paper, folder_id: folderId }),
+  itemFields: (id: string) => request<{ fields: ItemFieldValue[] }>('GET', `/api/items/${encodeURIComponent(id)}/fields`),
+  /** A plugin's own route (/api/plugins/<id><path>), for its frontend (plugins/host.ts). */
+  pluginRoute: <T = unknown>(id: string, method: Method, path: string, body?: unknown, query?: Record<string, unknown>, signal?: AbortSignal) => {
+    const q = query ? qs(query) : '';
+    return request<T>(method, `/api/plugins/${encodeURIComponent(id)}${path.startsWith('/') ? path : `/${path}`}${q ? `?${q}` : ''}`, body, signal);
+  },
+  enablePlugin: (id: string) => request<{ plugin: PluginInfo }>('POST', `/api/plugin-host/${encodeURIComponent(id)}/enable`),
+  disablePlugin: (id: string) => request<{ plugin: PluginInfo }>('POST', `/api/plugin-host/${encodeURIComponent(id)}/disable`),
+  restartPlugin: (id: string) => request<{ plugin: PluginInfo }>('POST', `/api/plugin-host/${encodeURIComponent(id)}/restart`),
+  setPluginSettings: (id: string, values: Record<string, unknown>) => request<{ values: Record<string, unknown> }>('PUT', `/api/plugin-host/${encodeURIComponent(id)}/settings`, values),
+  setPluginRemoteMcp: (id: string, on: boolean) => request<{ plugin: PluginInfo }>('PUT', `/api/plugin-host/${encodeURIComponent(id)}/remote-mcp`, { on }),
+  pluginLog: (id: string) => request<{ lines: string[] }>('GET', `/api/plugin-host/${encodeURIComponent(id)}/log`),
   backups: () => request<BackupStatus>('GET', '/api/backups'),
   backupNow: () => request('POST', '/api/backups'),
   restoreBackup: (name: string) => request<BackupStatus & { restored: string; safety_backup: string }>('POST', '/api/backups/restore', { name }),
   // autocompletion in notes (a model in Ollama on this computer)
-  assistStatus: ({ fresh = false, warm = false } = {}) => request<AssistStatus>('GET', `/api/assist/status?${qs({ fresh: fresh ? 1 : '', warm: warm ? 1 : '' })}`),
-  assistComplete: (prefix: string, suffix: string, signal?: AbortSignal) => request<AssistCompletion>('POST', '/api/assist/complete', { prefix, suffix }, signal),
   citekeyPreview: (pattern: string) => request<{ pattern: string; examples: string[] }>('GET', `/api/settings/citekey_preview?${qs({ pattern })}`),
 
-  formats: () => request<{ formats: Format[] }>('GET', '/api/formats'),
+  formats: () => request<{ formats: Format[]; exports: Format[] }>('GET', '/api/formats'),
   importPreview: (fileOrText: string | File, format?: string) => {
     if (typeof fileOrText === 'string') return request<ImportPreview>('POST', '/api/import/preview', { text: fileOrText, format });
     const fd = new FormData(); fd.append('file', fileOrText); if (format) fd.append('format', format);
@@ -113,6 +129,7 @@ export const api = {
   },
   importCommit: (entries: ImportEntry[], skipDuplicates: boolean, folderId: number | null = null, { keywordsAsTags }: { keywordsAsTags?: boolean } = {}) =>
     request<{ created: string[]; skipped: number }>('POST', '/api/import/commit', { entries, skip_duplicates: skipDuplicates, folder_id: folderId, keywords_as_tags: keywordsAsTags }),
+  clipboardBibtex: (ids: string[]) => request<{ text: string; count: number }>('POST', '/api/clipboard/bibtex', { ids }),
   exportText: (format: string, ids?: string[] | null) => request<{ text: string; format: string; count: number }>('GET', `/api/export?${qs({ format, ids: ids && ids.join(','), download: 0 })}`),
   exportUrl: (format: string, ids?: string[] | null) => `/api/export?${qs({ format, ids: ids && ids.join(',') })}`,
 
@@ -152,7 +169,6 @@ export const api = {
   fetchReferences: (id: string) => request<ItemReferences>('POST', `/api/items/${id}/references`),
   queueReferences: (ids: string[]) => request('POST', '/api/references/queue', { ids }),
   citationGraph: () => request('GET', '/api/graph/citations'),
-  graph: () => request<GraphData>('GET', '/api/graph'),
   noteTrash: () => request<{ trash: { trash_id: string; path: string; trashed_at?: string; deletes_at?: string }[]; retention: Settings['notes_trash_retention'] }>('GET', '/api/notes/trash'),
   noteAttachments: () => request<NoteAttachments>('GET', '/api/notes/attachments'),
   restoreNoteAttachment: (trashId: string, name: string) => request('POST', '/api/notes/attachments/restore', { trash_id: trashId, name }),

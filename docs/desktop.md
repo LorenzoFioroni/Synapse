@@ -12,6 +12,7 @@ in tabs inside the app, next to the library, in that window and in a browser tab
 | The desktop shortcut | `backend/desktop/shortcut.py`, the icon `frontend/assets/Synapse.icns` (drawn by `tools/icons/make_icns.py`) |
 | The app's tabs | `frontend/src/tabs/model.ts` (no DOM), `frontend/src/tabs/tabs.ts`, the hook in `frontend/src/api.ts` |
 | The viewer inside a tab | `frontend/src/viewer/inTab.ts`, `frontend/src/viewer/jumpHistory.ts`, `links.ts` |
+| Browser installation | `frontend/manifest.webmanifest`, install and touch icons in `frontend/assets/` |
 
 ## The window: `--window`
 
@@ -33,8 +34,17 @@ starts the server as usual and then opens the app in a window of its own. In ord
    which is why the server prints how to install the app (1).
 3. **The default browser**, when no Chromium browser is found.
 
+The launcher waits until the Synapse manifest answers at the selected address before it asks the
+browser to open the page. In particular, HTTPS certificate setup and server binding finish before
+a minimal Chromium app window makes its first request; otherwise that first load can remain blank.
+
 If Synapse already runs on that port, `--window` only opens the window and exits, so the shortcut
 can be clicked again at any time. If another program has the port, it says so and exits.
+
+When the server starts with `--lan --cert … --key …`, the window opens at this computer's
+Bonjour `.local` name, not at `127.0.0.1` or a LAN IP. This keeps the opened address consistent
+with the hostname in the HTTPS certificate. An installed Chromium app is reused when it was
+installed from that same `.local` address, scheme and port.
 
 The window is the same web app as in a browser tab, on the same address, so it shares the browser's
 storage (column widths, settings of the views and so on) with tabs of that browser. The app's own
@@ -48,6 +58,17 @@ opens `/#window=new`, the library alone in a new window (`readPlace` in `windows
 Edge show up to ten such entries, only for an installed app, and pick up a changed manifest when
 they next check it (after the app has been opened again; reinstalling applies it at once).
 `tests/test_desktop.py` checks the entry.
+
+### Browser installation
+
+The manifest uses a stable `/` app id, a `/` start URL and scope, `display: standalone`, and 192 px
+and 512 px PNG icons marked for both ordinary and maskable use. Those fields let Chromium install
+Synapse as an app and give Android launchers an adaptive icon. `index.html` also links the 192 px
+icon explicitly for browser shortcuts and the 180 px Apple touch icon for iOS.
+
+Localhost is a secure browser context, so desktop installation from `http://127.0.0.1` works.
+Another device's LAN address is not: Android installation needs Synapse's trusted HTTPS `.local`
+address. The setup is in [Sync and devices](sync-and-devices.md#installation-on-a-phone-or-tablet).
 
 ## Stopping with the window: `--quit-when-closed`
 
@@ -103,8 +124,9 @@ Desktop, with the icon `frontend/assets/icon-512.png`.
 
 The bar holds, in this order:
 
-- **The first tab**: the library or Tasks, whichever the switch in the toolbar (Library | Notes |
-  Tasks) last showed; it is named after it and cannot be closed.
+- **The first tab**: the library, Tasks or a plugin page, whichever was last shown; it is named
+  after it and cannot be closed. Tasks opens under **Plugins** in the sidebar; the toolbar switch
+  selects Library or Notes.
 - **Note tabs**: Notes has tabs. A note tab shows its note in the notes workspace (the notes list,
   the note, its side panel), which is part of the page.
 - **PDF tabs**: each PDF opened from the library, a citation, a card or a menu, holding the viewer
@@ -169,8 +191,10 @@ tab whose note was deleted elsewhere closes, with a message, when it is shown.
   and Reload; right-click the first tab for New Window and Close All Tabs.
 - **A reload** brings the window's tabs back, their order and the shown one, each PDF at the page it
   was left on. A PDF tab's viewer is loaded only when the tab is first shown.
-- **Back/Forward in the app** (⌘[ / Alt+←, the mouse buttons) go to the note or library view shown
-  before, in its tab: a note that has a tab shows that tab, else it opens in the preview tab.
+- **Back/Forward in the app** (⌘[ / Alt+←, the mouse buttons) restore library views and selections,
+  notes, Graph, Tasks and plugin pages. A note that has a tab shows that tab, else it opens in the
+  preview tab. A disabled plugin page, Tasks or paper list falls back to the library; a disabled
+  Graph falls back to Notes, without blocking further Back/Forward navigation.
 
 ### Folder colours
 
@@ -255,6 +279,9 @@ How it fits together:
   tabs' frames keep their size (`visibility`, not `display`), so their viewers keep their layout and
   place; coming back from a PDF tab gives the keyboard back where it was. `window.zcTabs` is what a
   viewer in a tab calls (`shortcut`, `touched`) and what the browser checklist reads (`list`, `win`).
+- On a phone the active PDF frame also sits above full-screen item details and starts at a
+  fit-to-width zoom. The viewer shell is locked to the viewport (only the PDF container scrolls),
+  so opening or panning a PDF cannot expose an unused strip beside it.
 
 ## Tests
 

@@ -6,16 +6,19 @@
 // "Folders" heading to move it to the top level. PDFs dropped on a folder are
 // added as new items in that folder.
 import * as A from '../actions.js';
+import { badges, navigation, pages } from '../extend.js';
 import { icon } from '../icons.js';
 import { currentFolderId, emit, folderById, folderTotal, folderTree, on, saveOpenFolders, state } from '../store.js';
 import { promptDialog } from '../ui/dialog.js';
 import { PALETTE, colorName } from '../ui/colors.js';
 import { openMenu } from '../ui/menu.js';
+import { toastError } from '../ui/toast.js';
 import type { Counts, Tag } from '../types.js';
-import { escapeHtml, modLabel, plural, storage, store } from '../util.js';
+import { escapeHtml, plural, storage, store } from '../util.js';
 import { openNewWindow } from '../windows.js';
 import { openExport } from './exportDialog.js';
 import { smartFolderDialog } from './organizeDialogs.js';
+import { currentPageId, openPage, pageOpen } from './pages.js';
 
 export const ITEMS_MIME = 'application/x-zc-items';
 const FOLDER_MIME = 'application/x-zc-folder';
@@ -39,7 +42,11 @@ export function initSidebar(): void {
 
       <div class="side-section" data-notes-only>Notes</div>
       <button class="side-item" data-act="open-notes" data-notes-only title="Markdown notes for papers and ideas">${icon('edit')}<span class="nm">All Notes</span><span class="count" data-count="notes"></span></button>
-      <button class="side-item" data-act="open-tasks" data-notes-only title="Tasks from all your notes (${modLabel}⇧K)">${icon('tasks')}<span class="nm">Tasks</span><span class="count" data-count="tasks"></span></button>
+
+      <div class="side-section" data-pages-head hidden>Plugins</div>
+      <div class="page-list" data-navigation></div>
+      <div class="page-list" data-sources></div>
+      <div class="page-list" data-pages></div>
 
       <div class="side-section with-action" data-drop="folder-root">Folders
         <button class="icon-btn side-add" data-act="new-folder" title="New folder">${icon('plus', 'icon-sm')}</button></div>
@@ -75,29 +82,45 @@ export function initSidebar(): void {
   on('workspace', paint);
   on('settings', paint);
   on('notes-count', (n) => { notesCount = n; paintNotes(); });
-  on('tasks-count', (c) => { tasksCount = c; paintNotes(); });
+  pages.subscribe(paintPages);
+  navigation.subscribe(() => { paintNotes(); paintPages(); });
+  on('sources', paintPages);
   paint();
 }
 
 let notesCount: number | null = null;
-let tasksCount: { open: number; overdue: number } | null = null;
 const inNotes = () => document.body.dataset.workspace === 'notes';
 const inLibrary = () => !document.body.dataset.workspace;
 
 function paintNotes() {
   const enabled = state.settings.notes_enabled !== false;
   root.querySelectorAll<HTMLElement>('[data-notes-only]').forEach((el) => { el.hidden = !enabled; });
-  root.querySelector('[data-act="open-notes"]')!.classList.toggle('active', inNotes());
+  root.querySelector('[data-act="open-notes"]')!.classList.toggle('active', inNotes() && !navigation.all().some((entry) => entry.active()));
   root.querySelector('[data-count="notes"]')!.textContent = notesCount ? String(notesCount) : '';
-  root.querySelector('[data-act="open-tasks"]')!.classList.toggle('active', document.body.dataset.workspace === 'tasks');
-  root.querySelector('[data-count="tasks"]')!.innerHTML = tasksCount?.open
-    ? `${tasksCount.overdue ? `<b class="overdue" title="${tasksCount.overdue} overdue">${tasksCount.overdue}</b> ` : ''}${tasksCount.open}` : '';
+
+}
+
+/** The lists of papers and the pages plugins added, with their badges. */
+function paintPages() {
+  const list = pages.all();
+  const links = navigation.all().filter((entry) => !entry.when || entry.when());
+  root.querySelector<HTMLElement>('[data-pages-head]')!.hidden = !links.length && !list.length && !state.sources.length;
+  root.querySelector<HTMLElement>('[data-navigation]')!.innerHTML = links.map((entry) => {
+    const badge = entry.badge?.();
+    return `<button class="side-item ${entry.active() ? 'active' : ''}" data-navigation="${escapeHtml(entry.id)}">${icon(entry.icon)}<span class="nm">${escapeHtml(entry.title)}</span><span class="count">${badge?.warning ? `<b class="overdue" title="${escapeHtml(badge.warningTitle || '')}">${escapeHtml(badge.warning)}</b> ` : ''}${escapeHtml(badge?.text || '')}</span></button>`;
+  }).join('');
+  root.querySelector<HTMLElement>('[data-sources]')!.innerHTML = state.sources.map((s) => `
+    <button class="side-item ${inLibrary() && state.view === `source:${s.id}` ? 'active' : ''}" data-view="source:${escapeHtml(s.id)}" title="${escapeHtml(`${s.description ? `${s.description}\n` : ''}(${s.plugin_name})`)}">${icon(s.icon || 'list')}<span class="nm">${escapeHtml(s.title)}</span><span class="count">${escapeHtml(s.badge || '')}</span></button>`).join('');
+  const shown = pageOpen() ? currentPageId() : null;
+  root.querySelector<HTMLElement>('[data-pages]')!.innerHTML = list.map((p) => `
+    <button class="side-item ${shown === p.id ? 'active' : ''}" data-page="${escapeHtml(p.id)}" title="${escapeHtml(p.source ? `${p.title} (${p.source})` : p.title)}">${icon(p.icon || 'plugin')}<span class="nm">${escapeHtml(p.title)}</span><span class="count">${escapeHtml(badges.get(p.id) || '')}</span></button>`).join('');
 }
 
 /* ================================================================= paint */
 function paint() {
   root.querySelectorAll<HTMLElement>('[data-view]').forEach((b) => b.classList.toggle('active', inLibrary() && b.dataset.view === state.view));
   paintNotes();
+  paintPages();
   for (const k of ['library', 'trash', 'duplicates'] as (keyof Counts)[]) {
     root.querySelector(`[data-count="${k}"]`)!.textContent = state.counts[k] ? String(state.counts[k]) : '';
   }
@@ -176,7 +199,14 @@ function onClick(e: MouseEvent): void {
     return;
   }
   if (act === 'open-notes') { emit('open-notes'); return; }
-  if (act === 'open-tasks') { emit('open-tasks'); return; }
+  const link = target.closest<HTMLElement>('[data-navigation]')?.dataset.navigation;
+  if (link) {
+    try { const result = navigation.get(link)?.open(); if (result instanceof Promise) result.catch(toastError); }
+    catch (e) { toastError(e); }
+    return;
+  }
+  const page = target.closest<HTMLElement>('[data-page]')?.dataset.page;
+  if (page) { openPage(page); return; }
   if (act === 'new-folder') { newFolder(null); return; }
   if (act === 'new-smart') { smartFolderDialog(null, state.query ? { query: state.query, mode: state.mode } : {}); return; }
   if (act === 'clear-tags') { A.clearTagFilter(); return; }

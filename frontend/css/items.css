@@ -68,3 +68,21 @@
 .row-dots { display: inline-flex; gap: 3px; margin-left: 2px; flex: none; }
 .row-dots .tag-dot { width: 8px; height: 8px; box-shadow: 0 0 0 1.5px var(--bg); }
 .drag-ghost { position: fixed; top: -100px; left: -100px; max-width: 320px; padding: 6px 12px; border-radius: 8px; background: var(--accent); color: var(--accent-text); font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: var(--shadow-md); }
+
+/* papers from a plugin's list that are not in the library: "+" where the twisty would be */
+.row-add { width: 16px; height: 16px; flex: none; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--accent); cursor: pointer; }
+.row-add:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+.row.selected .row-add { border-color: currentColor; }
+.row.outside .c-title .t { color: var(--text-2); }
+.row.outside.selected .c-title .t { color: inherit; }
+
+@media (max-width: 700px) {
+  .items-head { height: 36px; }
+  .row { min-height: 48px; height: 48px; font-size: calc(var(--fs) + 1px); }
+  .cell.c-title { gap: 8px; }
+  .row.child { min-height: 44px; height: 44px; }
+  .row.child .cell { display: flex; padding-left: 42px; }
+  .row.snippet { height: auto; }
+  .row.snippet .cell { display: block; padding: 2px 14px 10px 42px; }
+  .list-empty { inset: 36px 0 0; }
+}

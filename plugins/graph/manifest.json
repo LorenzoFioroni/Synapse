@@ -1,0 +1,11 @@
+{
+  "id": "graph",
+  "name": "Graph",
+  "version": "1.0.0",
+  "api": "^1.0",
+  "author": "Synapse",
+  "description": "The graph of your notes and the papers they cite, Obsidian-style: a local graph beside the open note, the full graph in Notes (Cmd/Ctrl+Shift+G), and Show in Graph in the item and note menus.",
+  "core": true,
+  "backend": "server",
+  "frontend": "core:graph"
+}

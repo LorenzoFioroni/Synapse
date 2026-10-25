@@ -25,6 +25,7 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
  (other PC)   │                                                                 │
               │ data/  library.db · fulltext.db · notes/ · notes_index.db ·     │
               │        citations.db · pdfs/ · backups/ · settings.json · auth.db│
+              │        plugins/ · plugin-data/ · plugins.json · fields.db       │
               └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -58,21 +59,21 @@ Two objects tie the backend together:
 |---|---|---|
 | `library/` | Items, attachments, folders, tags, smart folders, PDF annotations, citation keys and search. `fields.py` is the single source of truth for item fields and types, and `identifiers.py` for DOIs and arXiv ids (cleaning, normalising, matching). | `library.db` (schema and migrations in `library/db.py`) |
 | `notes/` | Markdown notes. The files are the source of truth; the index is disposable. | `notes/`, `notes_index.db` |
-| `tasks/` | Tasks (to-dos with a body and sub-tasks) and the `{{task:id}}` lines that show them in notes (see [tasks](tasks.md)). | `library.db` (`tasks`, `task_history`) |
-| `formats/` | Import and export for BibTeX, RIS, EndNote and CSL-JSON, behind one registry. | none |
+| `tasks/` | Task records, history and the integrity of `{{task:id}}` note links. The optional Tasks core plugin owns their UI, HTTP handlers and MCP tools (see [tasks](tasks.md)). | `library.db` (`tasks`, `task_history`) |
+| `formats/` | Import parsers and shared codecs for BibTeX, RIS, EndNote and CSL-JSON. The Export Formats plugin registers their library-export writers; `exporting.py` prepares records for writers and core clipboard copying. | none |
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
 | `mcp/` | The MCP server: the JSON-RPC layer (`protocol.py`), its HTTP transport (`http.py`), the library tools (`tools/`, one mixin per family), their schemas (`server.py`) and the instructions given to the AI app (`instructions.py`). | none (it uses the other packages) |
 | `pdf/` | PDF files on disk: text extraction (`text.py`), the full-text index (`fulltext.py`), and for the MCP tools page rendering (`render.py`), finding figures and equations (`regions.py`) and PNG encoding (`png.py`). | `fulltext.db` |
-| `online/` | Lookups on the web: item metadata (`metadata.py`), open-access PDFs (`pdf_finder.py`) and PDFs behind an attachment's web link (`remote_pdf.py`). `http.py` has what they share: timeout, User-Agent, the error type and the arXiv request spacing. | none |
-| `references/` | The citation graph: reference lists fetched from Semantic Scholar, OpenAlex or Crossref (`sources.py`), stored (`store.py`), fetched in the background and matched to library items (`service.py`), and the Graph view's network (`graph.py`). | `citations.db` |
+| `online/` | Lookups on the web: normalizing metadata queries (`metadata.py`; providers come from plugins), downloading and checking open-access PDFs (`pdf_finder.py`; where to look comes from plugins' PDF sources) and PDFs behind an attachment's web link (`remote_pdf.py`). `http.py` has what they share: timeout, User-Agent, the error type and the arXiv request spacing. | none |
+| `references/` | The citation graph: reference fetching through injected plugin providers (`sources.py`); scholarly HTTP and arXiv parsing live in `plugins/reference-sources/server/`, stored (`store.py`), fetched in the background and matched to library items (`service.py`), and how a paper outside the library connects to it (`connections.py`). | `citations.db` |
 | `access/` | Who may use the server: other websites never (`guard.py`), other devices only once paired (`devices.py`) or signed in with a passkey (`passkeys.py`, checked by `webauthn.py`), AI apps at `/mcp` only with an access token (`tokens.py`); `authdb.py` is what the `auth.db` tables share; `lan.py` finds this computer's network addresses and names. | `auth.db` |
 | `config.py`, `settings.py` | Paths of the data folder, and the user's preferences. | `settings.json` |
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
-| `assist/` | Autocompletion in notes from a model in Ollama on this computer: the client, the prompt, and checking that Ollama and the model are there (see [autocompletion](autocompletion.md)). | none |
+| `plugins/` | The plugin host: finds the plugins in `data/plugins/` (and those that come with Synapse in `plugins/`), starts and stops them, gives them the `Plugin` object (routes, tools for Claude, events, settings, storage, reading the library, per-item fields, lists of papers outside the library, Synapse's lookups and adding papers), and turns off one that keeps failing (see [plugins](plugins.md)). `backend.plugins` is the public import for third-party plugins. `catalog.py` discovers manifests and initializes defaults, `files.py` serializes shared storage writes, and `resolvers.py` orders metadata sources; core plugins may use the internal modules they need. | `plugins.json`, `plugin-data/`, `fields.db` |
 | `desktop/` | Running Synapse like a desktop program: opening its window (`window.py`), the open windows that keep a `--quit-when-closed` server running (`presence.py`), the desktop shortcut (`shortcut.py`). See [the app window](desktop.md). | none |
 
-Only `online/` and `references/` use the network. `assist/` talks only to Ollama on this computer
+Only `online/` and the scholarly core plugins use the network. The Autocompletion core plugin talks only to Ollama on this computer
 (its address must be a loopback one).
 
 ### Layers
@@ -84,11 +85,12 @@ never from those above:
   app · frontend · api                   composition: wires and exposes everything
   services · connector
   mcp                                    (library, notes, pdf, references, tasks)
+  plugins                                (library, online, references)
   references                             (library, formats, online)
   tasks                                  (library, notes)
   online                                 (library, formats, pdf)
   formats · notes · pdf                  (library)
-  library · backup · access · assist     (base only)
+  library · backup · access              (base only)
   config · settings · changes · desktop   base: no backend imports
 ```
 
@@ -123,6 +125,12 @@ once, `npm ci` in `frontend/`.
 
 The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest builds it first.
 
+The shell is responsive down to phone widths. At 700px and below the toolbar wraps, secondary
+actions move to its More menu, configured library columns remain available in the list's own
+horizontal scroller, and item, note and task details use one full-width pane at a time. Settings
+uses a horizontally scrolling section strip.
+Tablet widths keep the richer split panes but move the collections sidebar into a drawer.
+
 ### Modules
 
 - `main.ts` is the entry point. It loads the schema and settings, builds the views and wires the
@@ -147,16 +155,31 @@ The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest
   they call back into `notesView.ts`). `tree.ts` draws the notes list and `treeInput.ts` handles
   its mouse, keyboard and drag and drop; `fileOps.ts` creates, renames, moves and trashes notes;
   `readView.ts` is read mode and link following; `sidePanel.ts` the status, breadcrumbs and
-  details panel; `aiBar.ts` Claude's edits; `ghost.ts` and `assist.ts` autocompletion's ghost text and where it comes from; `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
-  exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`); `gallery.ts`
-  and `galleryView.ts` read ` ```gallery ` blocks and turn their carousels; `figures.ts` numbers
-  figures. `settingsView.ts` is the Settings page; its markup
-  is in `views/settings/page.ts`, and Autocompletion, Backups and Devices have their own modules there.
-  `views/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
+  details panel; `aiBar.ts` Claude's edits; `ghost.ts` autocompletion's ghost text (its source comes from the Autocompletion plugin through `hooks.ts`); `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
+  exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`). Galleries and
+  numbered figures are part of Extended Markdown (`plugins/core/extended-markdown/figures/`, through `hooks.ts`). `settingsView.ts` is the Settings page; its markup
+  is in `views/settings/page.ts`, and Backups and Devices have their own modules there. `settings/pluginSections.ts` owns the lifecycle
+  of plugin Settings sections; `settings/exportFormats.ts` follows active export providers; Autocompletion supplies its own section from its plugin.
+  `plugins/core/extended-markdown/` is the Extended Markdown package: one folder per syntax
+  extension (`figures/`, `spoilers/`), each a `MarkdownExtension` (`extension.ts`) adding markdown-it
+  rules, export preparation and what it starts while on; `index.ts` turns each on or off from the
+  package's settings and reaches the notes code through the `extended` and `figures` note hooks.
+  Live preview asks that hook for spoiler ranges once per document version and draws them with
+  shared Markdown widgets.
+  `plugins/core/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
   the notes workspace only through `taskHooks` in `views/notes/workspace.ts`.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
   header is `views/itemlist/columns.ts`, its virtualised rows `rows.ts` (only the rows near the
-  viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`.
+  viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`. The
+  item pane (`itempane.ts`) draws papers from a plugin's list that are not in the library, and
+  why a plugin lists a paper, with `views/itempane/outside.ts`.
+- `extend.ts` holds the extension points the views read: core workspace navigation (Tasks and Graph,
+  registered and disposed by their plugins), commands (the command palette,
+  `views/palette.ts`), pages (`views/pages.ts`, listed in the sidebar), item-pane sections and item
+  actions. `plugins/host.ts` loads plugins' frontends and registers what they add there; the types
+  promised to plugins are in `plugins/api.ts` (see [plugins](plugins.md#the-frontend)).
+- `notifications/*` owns browser-local notification history, the bell/panel and job progress,
+  with optional OS delivery and app/favicon badges (see [notifications](notifications.md)).
 - `ui/*` holds the generic widgets (dialogs, menus, toasts, long press).
 - `viewer/*` holds the PDF viewer (`viewer.html`): `viewer.ts` lays out, draws and zooms the pages
   and publishes `window.zcViewer`; `notesBridge.ts`, `links.ts` and `annotations.ts` add to it
@@ -233,8 +256,12 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
 | [Sync and devices](sync-and-devices.md) | The change feed, the viewer and app tabs, the guard, LAN pairing and the security model. |
 | [The app window](desktop.md) | `--window`, the server that stops with its window, the desktop shortcut, and the app's own tabs for PDFs. |
 | [MCP](mcp.md) | The MCP server, its tools and the rules it enforces. |
+| [Plugins](plugins.md) | Using and writing plugins: the manifest, the `plugin` object, events, storage, and how the host runs them. |
+| [Plugin authoring](plugin-authoring.md) | A runnable minimal plugin, interface choices, settings, storage, lifecycle cleanup and verification. |
+| [Plugin API review](plugin-api-review.md) | Review of the open Plugin API stack, findings, corrections and validation. |
 | [Autocompletion](autocompletion.md) | Ghost-text suggestions in notes from a local model (Ollama), and the checks that guard against a missing Ollama or model. |
 | [Browser extension](browser-extension.md) | The extension and the connector API it uses. |
+| [Notifications](notifications.md) | The bell, unread history, progress, plugin delivery and OS opt-in. |
 | [Frontend](frontend.md) | The build, the type checking, the pages, state and events, and the module map. |
 | [Testing](testing.md) | pytest, the JavaScript tests, the browser checklists, CI and the tools. |
 
@@ -251,7 +278,7 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
   - HTTP endpoints go in `api/` and only parse the request, call a component through `svc()`, and
     shape the response.
   - A new component is created and wired in `Services`.
-  - Anything that talks to the web goes in `online/` (or `references/sources.py`), using
+  - Anything that talks to the web goes in `online/` (or a scholarly core plugin), using
     `online/http.py`.
   - A module that grows a second responsibility is split. As a guide, a module past roughly 400
     lines usually has one.

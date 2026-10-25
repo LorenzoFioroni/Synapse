@@ -10,7 +10,7 @@ import type { ApiError } from '../api.js';
 import type { Item, ItemReferences } from '../types.js';
 import { escapeHtml, formatDate, plural, shortAuthors } from '../util.js';
 
-const SOURCES: Record<string, string> = { semanticscholar: 'Semantic Scholar', openalex: 'OpenAlex', crossref: 'Crossref', none: 'no service' };
+const SOURCES: Record<string, string> = { semanticscholar: 'Semantic Scholar', openalex: 'OpenAlex', crossref: 'Crossref', 'arxiv-html': 'arXiv (HTML version)', none: 'no service' };
 const SHOW = 8;
 const expanded = new Set<string>();   // items whose full list is open
 let pollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -109,7 +109,7 @@ async function onClick(e: MouseEvent, el: HTMLElement, it: Item, current: () => 
 
 /**
  * Fetch the reference lists of several items (item menu, multi-selection pane), one by one
- * with a progress toast that can be stopped. Items without a DOI / arXiv ID are skipped.
+ * with a notification-center job that can be stopped. Items without a DOI / arXiv ID are skipped.
  */
 export async function fetchReferencesBulk(ids: string[]): Promise<void> {
   if (!ids.length) return;
@@ -134,7 +134,6 @@ export async function fetchReferencesBulk(ids: string[]): Promise<void> {
     }
     if (n < ids.length - 1) await new Promise((r) => setTimeout(r, 400));   // be gentle with the free APIs
   }
-  pt.close();
   const missing = [...none, ...noId, ...failed];
   const parts = [`References for ${plural(found.length, 'item')}`];
   if (linked) parts.push(`${linked} cited works in your library`);
@@ -142,9 +141,8 @@ export async function fetchReferencesBulk(ids: string[]): Promise<void> {
   if (noId.length) parts.push(`${noId.length} without DOI/arXiv ID`);
   if (failed.length) parts.push(`${failed.length} failed`);
   if (cancelled) parts.push('stopped early');
-  toast(parts.join(' · '), {
+  pt.finish(parts.join(' · '), {
     type: found.length ? 'success' : 'error',
-    timeout: 8000,
     action: missing.length && ids.length > 1 ? { label: 'Select the others', run: () => A.select(missing, { anchor: missing[0] }) } : null,
   });
   emit('items');   // repaint the item pane with the new lists

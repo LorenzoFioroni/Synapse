@@ -5,7 +5,6 @@ import { state } from '../../store.js';
 import type { Settings, SettingsResponse } from '../../types.js';
 import { escapeHtml, isMac, modLabel } from '../../util.js';
 
-const altLabel = isMac ? '⌥' : 'Alt+';
 const tabMod = isMac ? '⌃' : 'Alt+';   // the tab keys (tabs/tabs.ts)
 
 const PHYSICS_SHOWN = ['\\vb', '\\dv', '\\pdv', '\\qty', '\\abs', '\\norm', '\\expval', '\\mel', '\\comm', '\\dd', '\\grad', '\\mqty']
@@ -13,7 +12,7 @@ const PHYSICS_SHOWN = ['\\vb', '\\dv', '\\pdv', '\\qty', '\\abs', '\\norm', '\\e
 
 const SECTIONS: [string, string, string][] = [
   ['general', 'General', 'palette'],
-  ['assist', 'Autocompletion', 'sparkle'],
+  ['notifications', 'Notifications', 'bell'],
   ['citekeys', 'Citation Keys', 'key'],
   ['search', 'Search & Full Text', 'search'],
   ['viewer', 'PDF Viewer', 'pdf'],
@@ -23,6 +22,7 @@ const SECTIONS: [string, string, string][] = [
   ['backups', 'Backups', 'restore'],
   ['devices', 'Devices', 'tablet'],
   ['ai', 'AI Access', 'sparkle'],
+  ['plugins', 'Plugins', 'plugin'],
   ['library', 'Library & Shortcuts', 'database'],
 ];
 
@@ -94,25 +94,13 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
           ${switchRow('show_subfolder_items', 'Show items from subfolders', 'A folder also lists the items of the folders inside it.')}
         </div></section>
 
-      <section class="settings-section" id="set-assist"><h2>Autocompletion</h2>
-        <p class="lead">Suggestions as you write a note, in grey after the cursor: <kbd>Tab</kbd> accepts, <kbd>Esc</kbd> dismisses,
-          <kbd>${modLabel}→</kbd> takes one word, <kbd>${altLabel}\\</kbd> asks for one now. They come from a model running on this computer
-          in <a href="https://ollama.com" target="_blank" rel="noopener">Ollama</a>; your notes are not sent anywhere else.</p>
-        <div class="card">
-          ${switchRow('notes_ai_complete', 'Suggest as you type', 'Needs Ollama and the model below on this computer. Without them nothing happens, and the notes say so once.')}
-          <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Status</div></div>
-            <span class="spacer" style="flex:1"></span><button class="btn btn-sm" data-ai-check>${icon('refresh', 'icon-sm')} Check Again</button></div>
-            <div data-ai-state><div class="s-desc">Checking Ollama…</div></div></div>
-          <div class="setting stack"><div class="s-text"><div class="s-title">Model ${saved}</div>
-            <div class="s-desc">A model that fills in the middle also sees the text after the cursor: <span class="mono">qwen2.5-coder:1.5b</span> is small and fast,
-              <span class="mono">qwen2.5-coder:7b</span> writes better and needs about 8 GB of memory. <span data-ai-installed></span></div></div>
-            <input class="input mono" type="text" list="ai-models" data-ai-model spellcheck="false" autocomplete="off" value="${escapeHtml(s.notes_ai_model)}"><datalist id="ai-models"></datalist></div>
-          ${segmentedRow('notes_ai_length', 'Suggestion length', 'How far a suggestion goes.', [['line', 'Rest of the line'], ['paragraph', 'Paragraph']])}
-          <div class="setting stack"><div class="s-text"><div class="s-title">Ollama address ${saved}</div>
-            <div class="s-desc">Where Ollama listens; only addresses on this computer are accepted.</div></div>
-            <input class="input mono" type="text" data-ai-url spellcheck="false" autocomplete="off" placeholder="http://127.0.0.1:11434" value="${escapeHtml(s.notes_ai_url)}">
-            <div class="form-error" data-ai-error hidden></div></div>
-        </div></section>
+      <section class="settings-section" id="set-notifications"><h2>Notifications</h2>
+        <p class="lead">Choose whether important Synapse notices may also appear through your operating system.</p>
+        <div class="card"><div class="setting"><div class="s-text"><div class="s-title">OS notifications</div>
+          <div class="s-desc" data-desktop-notifications-desc></div></div>
+          <div class="s-control"><button class="btn" data-desktop-notifications></button></div></div></div>
+        <p class="lead" style="margin-top:12px">This preference belongs to this browser profile. Notification history and every running job remain available from the bell.</p>
+      </section>
 
       <section class="settings-section" id="set-citekeys"><h2>Citation Keys</h2>
         <p class="lead">Keys are used by BibTeX/LaTeX (<span class="mono">\\cite{key}</span>). Duplicates get a, b, c… suffixes automatically.</p>
@@ -226,6 +214,16 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
             <div class="s-control" data-ai-control></div></div>
             <div data-ai-fresh></div>
             <div class="backup-list" data-ai-list></div></div>
+        </div></section>
+
+      <section class="settings-section" id="set-plugins"><h2>Plugins</h2>
+        <p class="lead">Plugins add features to Synapse. Like any program you install, a plugin runs with full access to your library
+          and this computer: turn on only plugins you trust.</p>
+        <div class="card">
+          <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text">
+            <div class="s-desc" data-plugins-desc>Loading…</div></div>
+            <div class="s-control"><button class="btn" data-plugins-rescan>${icon('refresh')} Look Again</button></div></div>
+            <div class="plugin-list" data-plugin-list></div></div>
         </div></section>
 
       <section class="settings-section" id="set-library"><h2>Library &amp; Shortcuts</h2><p class="lead" data-data-dir></p>

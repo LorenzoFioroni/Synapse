@@ -14,6 +14,7 @@ import { exportMenu } from './exportNote.js';
 import {
   fKey, keyOf, nKey, paintSelection, refreshTree, selectOnly, selectRange, selected, toggleFolder, toggleSelected, tree, treeEl, visibleKeys,
 } from './tree.js';
+import { noteHooks } from './hooks.js';
 import { hooks, parentOf, stemOf, ws } from './workspace.js';
 
 const NOTE_MIME = 'application/x-zc-note';
@@ -123,7 +124,7 @@ function onContextMenu(e: MouseEvent): void {
       { label: 'Rename…', icon: 'edit', run: () => renameNote(p), shortcut: 'F2' },
       { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
       { label: 'Copy link', icon: 'link', run: () => copyLinks([p]) },
-      { label: 'Show in Graph', icon: 'link', run: () => hooks.openNotesGraph(`note:${p}`) },
+      noteHooks.graph && { label: 'Show in Graph', icon: 'link', run: () => hooks.openNotesGraph(`note:${p}`) },
       { label: 'Export…', icon: 'export', run: () => exportMenu(p, at) },
       'sep',
       trash,

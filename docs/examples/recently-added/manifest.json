@@ -1,0 +1,33 @@
+{
+  "id": "recently-added",
+  "name": "Recently Added",
+  "version": "1.0.0",
+  "api": "^1.0",
+  "author": "Synapse",
+  "description": "Remembers when each item was added, and tells Claude what arrived in the last days. An example of a plugin.",
+  "backend": "backend",
+  "frontend": "frontend/main.js",
+  "styles": "frontend/style.css",
+  "permissions": {
+    "library": ["read"],
+    "mcp": true
+  },
+  "settings": [
+    {
+      "key": "keep_days",
+      "type": "int",
+      "label": "Remember for",
+      "description": "Days after which an addition is forgotten.",
+      "default": 90,
+      "min": 1,
+      "max": 3650
+    },
+    {
+      "key": "skip_tags",
+      "type": "multi",
+      "label": "Ignore items tagged",
+      "description": "Items with any of these tags are not remembered (comma-separated).",
+      "default": []
+    }
+  ]
+}

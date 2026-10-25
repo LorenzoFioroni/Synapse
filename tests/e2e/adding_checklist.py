@@ -68,6 +68,18 @@ async def shot(page, name):
         await page.screenshot(path=f"{SHOTS}/{name}.png")
 
 
+CENTER = "#notification-center"
+RUNNING = CENTER + " .notification:has(progress)"
+REVIEW = CENTER + ' .notification:has([data-n="action"]:has-text("Review"))'
+
+
+async def open_center(page):
+    """Long jobs report in the notification center (the bell beside Settings), not in toasts."""
+    if not await page.locator(CENTER).is_visible():
+        await page.click('[data-a="notifications"]')
+        await page.wait_for_selector(CENTER, state="visible")
+
+
 async def wait_for(fn, timeout=10):
     end = time.time() + timeout
     while time.time() < end:
@@ -157,18 +169,18 @@ async def main():
             check("'Continue in Background' is offered while looking up", await bg.is_visible())
             await bg.click()
             await page.wait_for_selector(".mr-dialog", state="detached")
+            await open_center(page)
             check(
-                "a progress notification shows instead",
-                await page.locator(".progress-toast").count() == 1,
-                await page.text_content(".progress-toast") if await page.locator(".progress-toast").count() else "",
+                "a running job shows in the notification center instead",
+                await page.locator(RUNNING).count() == 1,
+                await page.text_content(RUNNING) if await page.locator(RUNNING).count() else "",
             )
             await shot(page, "a2-background")
-            await wait_for(lambda: page.locator('.toast .toast-action:has-text("Review")').count(), 15)
-            await page.wait_for_selector(".progress-toast", state="detached")
-            msg = " ".join((await page.text_content(".toast:not(.progress-toast):has(.toast-action)")).split())
-            check("when done, a notification offers Review", "Review" in msg and "up to date" in msg, msg)
-            check("…and the progress notification is gone", await page.locator(".progress-toast").count() == 0)
-            await page.click('.toast .toast-action:has-text("Review")')
+            await wait_for(lambda: page.locator(REVIEW).count(), 15)
+            msg = " ".join((await page.text_content(REVIEW)).split())
+            check("when done, its entry offers Review", "Review" in msg and "up to date" in msg, msg)
+            check("…and nothing is left running", await page.locator(RUNNING).count() == 0)
+            await page.click(REVIEW + ' [data-n="action"]')
             await page.wait_for_selector(".mr-dialog")
             check(
                 "an article whose only change is a new citation key counts as up to date",
@@ -222,7 +234,13 @@ async def main():
             await page.uncheck('.import-after [data-after="tags"]')
             await page.click(".dialog .btn-primary")
             await page.wait_for_selector(".import-list", state="detached")
-            await wait_for(lambda: page.locator('.toast .toast-action:has-text("Review")').count(), 15)
+            await open_center(page)
+            # the import's own lookup: a second Review entry, newest first
+
+            async def two_reviews():
+                return await page.locator(REVIEW).count() == 2
+
+            await wait_for(two_reviews, 15)
             items = await page.evaluate(
                 "fetch('/api/items').then((r) => r.json()).then((d) => d.items.filter((i) => i.title.startsWith('Imported')))"
             )
@@ -232,7 +250,7 @@ async def main():
                 first["tags"] == [] and "spin" in (first.get("keywords") or ""),
                 str(first["tags"]),
             )
-            msg = " ".join((await page.text_content('.toast:has(.toast-action:has-text("Review"))')).split())
+            msg = " ".join((await page.locator(REVIEW).first.text_content()).split())
             check("the imported items' metadata is retrieved in the background", "1 article with updates" in msg, msg)
             calls_after = len(requests.get(BASE + "/test/calls").json()["calls"])
             check("…only for the imported items", calls_after == 24 + 2, str(calls_after))

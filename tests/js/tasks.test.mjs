@@ -3,8 +3,8 @@
 // (views, search, sort, groups) for a set of tasks.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { dueLabel, dueState, monthGrid, parseDue, parseQuick } from '../../frontend/js/views/tasks/dates.js';
-import { buildRows, effectiveDue, inView, parseQuery, viewCounts } from '../../frontend/js/views/tasks/taskQuery.js';
+import { dueLabel, dueState, monthGrid, parseDue, parseQuick } from '../../frontend/js/plugins/core/tasks/dates.js';
+import { buildRows, effectiveDue, inView, parseQuery, viewCounts } from '../../frontend/js/plugins/core/tasks/taskQuery.js';
 import { portableBody } from '../../frontend/js/views/notes/portable.js';
 import { searchTasks } from '../../frontend/js/views/notes/completion.js';
 

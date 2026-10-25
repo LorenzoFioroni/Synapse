@@ -1,0 +1,9 @@
+{
+  "id": "export-formats",
+  "name": "Export Formats",
+  "version": "1.0.0",
+  "api": "^1.1",
+  "core": true,
+  "backend": "server",
+  "description": "Export the library or selected items as BibTeX, RIS, EndNote tagged/XML or CSL JSON. Imports and citation copying remain available when this is off."
+}

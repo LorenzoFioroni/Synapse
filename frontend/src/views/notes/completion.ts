@@ -7,8 +7,8 @@ import type { EditorState } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
 import type { SyntaxNode } from '@lezer/common';
 import type { CiteEntry, NoteInfo } from '../../types.js';
-import { galleryInfo } from './gallery.js';
 import { completionContext, noteChoices, searchItems, searchNotes, shortAuthors } from './library.js';
+import { GALLERY_INFO } from './mdscan.js';
 
 type CM = typeof import('../../../vendor/cm6/cm6.js');
 
@@ -23,7 +23,7 @@ export interface TaskChoice { id: string; title: string; detail: string; info: s
 export interface CompletionData {
   items(): CiteEntry[];
   notes(): NoteInfo[];
-  tasks?(): TaskChoice[];
+  tasks?(): TaskChoice[] | null;
   newTask?(title: string): Promise<string | null>;
   /** A task's title as HTML (math, citations rendered), shown in place of the plain label. */
   taskHtml?(id: string): string;
@@ -49,13 +49,13 @@ export function searchTasks(tasks: TaskChoice[], query: string, limit = 30): Tas
 /** The autocompletion extension; ``data`` gives the cite index, the notes overview and the tasks. */
 export function completions(cm: CM, data: CompletionData) {
   const taskOf = new WeakMap<Completion, string>();   // the task an option stands for
-  // a ```gallery block is a fenced block to CodeMirror, but its captions are text (gallery.ts)
+  // a ```gallery block is a fenced block to CodeMirror, but its captions are text (mdscan.ts)
   const inCode = (state: EditorState, pos: number) => {
     const names: string[] = [];
     let gallery = false;
     for (let n: SyntaxNode | null = cm.syntaxTree(state).resolveInner(pos, -1); n; n = n.parent) {
       names.push(n.name);
-      if (n.name === 'FencedCode') { const info = n.getChild('CodeInfo'); gallery = !!info && !!galleryInfo(state.sliceDoc(info.from, info.to)); }
+      if (n.name === 'FencedCode') { const info = n.getChild('CodeInfo'); gallery = !!info && GALLERY_INFO.test(state.sliceDoc(info.from, info.to).trim()); }
     }
     return names.some((name) => NO_COMPLETE.test(name) && !(gallery && (name === 'CodeText' || name === 'FencedCode')));
   };
@@ -63,17 +63,18 @@ export function completions(cm: CM, data: CompletionData) {
   /** "{{task query": the tasks that match, and a new task named "query". Picking one writes its {{task:id}}. */
   function taskSource(ctx: CompletionContext, lineFrom: number, before: string): CompletionResult | null {
     const m = TASK_START.exec(before);
-    if (!m || !data.tasks || inCode(ctx.state, ctx.pos)) return null;
+    const tasks = data.tasks?.();
+    if (!m || !tasks || inCode(ctx.state, ctx.pos)) return null;
     if (((before.slice(0, m.index).match(/(?<!\\)\$/g) || []).length) % 2) return null;   // inside $math$
     const from = lineFrom + m.index;
     const query = m[1].trim();
-    if (/^[a-z0-9]{4,32}$/.test(query) && data.tasks().some((t) => t.id === query)) return null;   // inside a whole {{task:id}}
+    if (/^[a-z0-9]{4,32}$/.test(query) && tasks.some((t) => t.id === query)) return null;   // inside a whole {{task:id}}
     const close = ctx.state.sliceDoc(ctx.pos, ctx.pos + 2) === '}}' ? 2 : 0;   // closeBrackets typed "}}" already
     const put = (view: EditorView, f: number, t: number, id: string) => {
       const insert = `{{task:${id}}}`;
       view.dispatch({ changes: { from: f, to: t, insert }, selection: { anchor: f + insert.length } });
     };
-    const options: Completion[] = searchTasks(data.tasks(), query).map((t) => {
+    const options: Completion[] = searchTasks(tasks, query).map((t) => {
       const o: Completion = {
         label: t.title || '(untitled)',
         detail: t.detail,

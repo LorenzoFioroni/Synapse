@@ -1,6 +1,6 @@
-"""The knowledge graph (/api/graph): papers, cited works, notes and their links."""
+"""The knowledge graph (the Graph core plugin's /data route): papers, cited works, notes and their links."""
 
-from backend.references import sources as R
+import requests
 
 from .test_references import S2_PAGE1, S2_PAGE2, Resp, router
 
@@ -11,7 +11,7 @@ def test_graph_combines_citations_and_notes(client, svc, monkeypatch):
         {"title": "Matrix product states", "doi": "10.1080/14789940801912366", "year": 2008, "citation_key": "mps2008"}
     )
     monkeypatch.setattr(
-        R.requests,
+        requests,
         "get",
         router([("semanticscholar", lambda url, p: Resp(S2_PAGE1 if not p.get("offset") else S2_PAGE2))]),
     )
@@ -35,7 +35,7 @@ def test_graph_combines_citations_and_notes(client, svc, monkeypatch):
     write(pn["path"], f"\nBuilds on [@{kb}] and [@{ka}]. See [[Review]].\n")
     write(review["path"], f"\nCompare [@{kb}; @missingKey]. Also [[Other]], [[Nowhere]] and [[#Heading]].\n")
 
-    g = client.get("/api/graph").json
+    g = client.get("/api/plugins/graph/data").json
     nodes = {n["id"]: n for n in g["nodes"]}
     ia, ib = f"item:{a['id']}", f"item:{b['id']}"
     assert nodes[ia]["kind"] == "paper" and nodes[ia]["citation_key"] == ka

@@ -2,7 +2,9 @@
 
 With an iPad and the computer open at the same time, each needs to notice what the other changed.
 Every page polls ``GET /api/changes?since=N`` every few seconds and refreshes what the answer
-names: ``library`` (items, folders, tags, attachments), ``annotations``, ``notes``, ``tasks``.
+names: ``library`` (items, folders, tags, attachments), ``annotations``, ``notes``, ``tasks``,
+``plugins`` (turned on or off, set up, or turned off after failing), ``fields`` (values plugins
+attach to papers changed: the list's columns).
 
 The feed is kept in memory: a restart starts a new ``epoch`` and pages simply refresh everything.
 Changes are recorded
@@ -25,6 +27,15 @@ from pathlib import Path
 
 KEEP = 2000  # entries remembered; a page further behind refreshes everything
 CLIENT_HEADER = "X-Synapse-Client"
+ALL = (
+    "library",
+    "annotations",
+    "notes",
+    "tasks",
+    "plugins",
+    "fields",
+    "sources",
+)  # what a page refreshes after a reset
 
 
 def _mtime(*paths: Path) -> tuple:
@@ -86,7 +97,7 @@ class ChangeFeed:
                 return {
                     "epoch": self.epoch,
                     "seq": current,
-                    "changes": ["library", "annotations", "notes", "tasks"] if full else [],
+                    "changes": list(ALL) if full else [],
                     "reset": full,
                 }
             oldest = self._log[0][0] if self._log else current + 1
@@ -94,7 +105,7 @@ class ChangeFeed:
                 return {
                     "epoch": self.epoch,
                     "seq": current,
-                    "changes": ["library", "annotations", "notes", "tasks"],
+                    "changes": list(ALL),
                     "reset": True,
                 }
             kinds: set[str] = set()
@@ -106,7 +117,7 @@ class ChangeFeed:
 
 def kind_of(path: str) -> str:
     """Which part of the app a library-database write through this API path changes."""
-    if path.startswith("/api/tasks"):
+    if path.startswith(("/api/tasks", "/api/plugins/tasks/")):
         return "tasks"
     if path.startswith("/api/annotations") or ("/annotations" in path and path.startswith("/api/attachments/")):
         return "annotations"

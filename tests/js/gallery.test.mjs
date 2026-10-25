@@ -4,9 +4,14 @@ import { test } from 'node:test';
 import * as lib from '../../frontend/vendor/md/md.js';
 import {
   endsSentence, figureCaption, figureColumns, galleryInfo, galleryMarkdown, panelLabel, parseGallery,
-} from '../../frontend/js/views/notes/gallery.js';
+} from '../../frontend/js/plugins/core/extended-markdown/figures/gallery.js';
 import { portableBody } from '../../frontend/js/views/notes/portable.js';
 import { createRenderer } from '../../frontend/js/views/notes/render.js';
+import { setNoteHook } from '../../frontend/js/views/notes/hooks.js';
+import { figuresHook } from '../../frontend/js/plugins/core/extended-markdown/figures/hook.js';
+
+// galleries and figures come from Extended Markdown, on unless a test turns them off
+setNoteHook('figures', figuresHook);
 
 test('info string: gallery and its width', () => {
   assert.deepEqual(galleryInfo('gallery'), { width: null });
@@ -91,4 +96,28 @@ test('rendered as a carousel, captions parsed as Markdown', () => {
   assert.match(r.render('```gallery\n```'), /gallery-empty/);
   // raw HTML in a caption stays text
   assert.ok(!r.render('```gallery\n![](a.png) <img src=x onerror=alert(1)>\n```').includes('<img src="x"'));
+});
+
+test('with galleries off a gallery reads as the Markdown it holds', () => {
+  const r = createRenderer(lib);
+  const src = 'Before.\n\n```gallery\n![](attachments/a.png)\n*First, $x$ [@k].*\n\nThe caption.\n```\n\nAfter.';
+  assert.match(r.render(src), /class="gallery"/);
+  setNoteHook('figures', null);
+  try {
+    // the same renderer draws it again without the plugin (it rebuilds when a hook changed)
+    const html = r.render(src);
+    assert.doesNotMatch(html, /gallery|Fig\. /);
+    assert.doesNotMatch(html, /<code/);
+    assert.match(html, /<img src="\/api\/notes\/attachments\/a.png"/);
+    assert.match(html, /<em>First, <span class="math">/);
+    assert.match(html, /<p data-line="6">The caption.<\/p>/);   // its line in the note
+    assert.match(html, /<p data-line="9">After.<\/p>/);
+    // an image with a caption line is an image and a line of text
+    const fig = r.render('![](attachments/p.png)\n*Photons. \\label{fig:p}*\n\nSee \\ref{fig:p}.');
+    assert.doesNotMatch(fig, /<figure|Fig\. 1/);
+    assert.match(fig, /class="eqref missing"/);
+  } finally {
+    setNoteHook('figures', figuresHook);
+  }
+  assert.match(r.render(src), /class="gallery"/);
 });

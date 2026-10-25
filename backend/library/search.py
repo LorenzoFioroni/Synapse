@@ -23,6 +23,9 @@ any can be negated with ``-``):
     has:pdf   has:doi   has:abstract   (any field: has:<field>)
     author:cirac   title:lindblad   journal:"physical review"   doi:10.1103   key:cui2015
 
+Plugins add filters of their own through ``ctx["field_filters"]`` (``citations:>100``,
+``citation-counts.citations:none``); see backend/plugins/fields.py.
+
 Unknown prefixes (``arXiv:2205.03415``) are searched as plain text.
 """
 
@@ -46,16 +49,18 @@ def normalize(s) -> str:
 FILTER_KEYS = {"tag", "tags", "folder", "type", "year", "has", "author", "title", "journal", "doi", "key"}
 FIELD_ALIASES = {"author": "authors", "key": "citation_key", "journal": "journal", "title": "title", "doi": "doi"}
 
-_TOKEN = re.compile(r'(-?)(?:([A-Za-z_]+):)?(?:"([^"]*)"|(\S+))')
+_TOKEN = re.compile(r'(-?)(?:([A-Za-z_][A-Za-z0-9_.-]*):)?(?:"([^"]*)"|(\S+))')
 
 
-def parse_query(q: str) -> list[tuple]:
-    """Return [(term, negated, field)]; ``field`` is None for plain text terms."""
+def parse_query(q: str, extra_keys=()) -> list[tuple]:
+    """Return [(term, negated, field)]; ``field`` is None for plain text terms. ``extra_keys``:
+    more filter names (plugins' fields)."""
     out = []
+    known = FILTER_KEYS | {k.lower() for k in extra_keys}
     for m in _TOKEN.finditer(q or ""):
         neg, field, quoted, bare = bool(m.group(1)), m.group(2), m.group(3), m.group(4)
         value = quoted if quoted is not None else bare
-        if field and field.lower() not in FILTER_KEYS:
+        if field and field.lower() not in known:
             value, field = f"{field}:{value}", None  # e.g. arXiv:2205.03415 is plain text
         if value in (None, "", "-"):
             continue
@@ -116,6 +121,8 @@ def _type_names(labels: tuple[tuple[str, str], ...]) -> frozenset[str]:
 
 
 def _filter_matches(p: dict, field: str, value: str, ctx: dict) -> bool:
+    if field not in FILTER_KEYS:
+        return ctx["field_filters"][field](p, value)
     v = normalize(value)
     if field in ("tag", "tags"):
         tags = [normalize(t) for t in p.get("tags") or []]
@@ -160,13 +167,13 @@ def search(
 ) -> tuple[list[dict], dict]:
     """Filter ``papers``. Returns (matches, hits) where hits[paper_id] = {"fulltext": snippet}.
 
-    ``ctx`` gives filters what they need: ``folder_paths`` {folder_id: [names]}
-    and ``type_labels`` {item_type: label}.
+    ``ctx`` gives filters what they need: ``folder_paths`` {folder_id: [names]},
+    ``type_labels`` {item_type: label}, and ``field_filters`` {name: fn(item, spec) -> bool}.
     """
     if mode not in MODES:
         mode = "basic"
     ctx = ctx or {}
-    parsed = parse_query(query)
+    parsed = parse_query(query, ctx.get("field_filters") or ())
     if not parsed:
         return papers, {}
     filters = [(v, neg, f) for v, neg, f in parsed if f]

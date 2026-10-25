@@ -43,6 +43,9 @@ class Services:
         self.fulltext = FulltextIndex(config.fulltext_db_path)
         self.indexer = Indexer(self.papers, self.fulltext)
         self.citations = Citations(CitationStore(config.citations_db_path), self.papers, self.settings)
+        from .references.connections import Connections
+
+        self.connections = Connections(self.citations, self.papers)  # how outside papers connect to the library
         self.vault = Vault(config.notes_dir)
         self.vault.ensure()
         self.notes = NotesIndex(config.notes_index_path, self.vault)
@@ -70,10 +73,27 @@ class Services:
         from .backup import Backups
 
         self.backups = Backups(self)
-        from .assist import Completer
-
-        self.assist = Completer(self.settings)  # autocompletion in notes, from Ollama on this computer
         self.presence = Presence()  # the open windows, when the server stops with the last one
+        # Plugins (backend/plugins/), started by create_app (or mcp_server.py), not here. They hear
+        # about changes to items and notes through the listeners below.
+        from .plugins import LibraryReader, PluginHost
+
+        self.plugins = PluginHost(
+            config,
+            library=LibraryReader(self),
+            before_backup=self.backups.before,
+            changed=lambda: self.changes.record({"plugins"}),
+            settings=self.settings,
+            fields_changed=lambda: self.changes.record({"fields"}),
+            sources_changed=lambda: self.changes.record({"sources"}),
+            services=self,
+        )
+        self.citations.reference_sources = self.plugins.fetch_references
+        self.papers.on_items(lambda event, ids, **details: self.plugins.emit(event, ids=ids, **details))
+        self.papers.on_citekey_change(lambda i, old, new: self.plugins.emit("citekey.changed", id=i, old=old, new=new))
+        self.note_service.saved_listeners.append(
+            lambda path, h, by: self.plugins.emit("note.saved", path=path, hash=h, by=by)
+        )
         # A changed citation key is rewritten in every note (with a backup first).
         self.papers.on_citekey_change(lambda _id, old, new: self.note_service.rename_key(old, new) if new else None)
         self.papers.on_citekey_change(lambda _id, old, new: self.tasks.rename_key(old, new) if new and old else None)
@@ -93,7 +113,7 @@ class Services:
                 # Notes and tasks written by a tool show up in the open windows. The request itself
                 # counts only as a library write (kind_of), which would hide a task change.
                 self._mcp_http = HttpTransport(
-                    lambda: build_server(self), lambda: self.changes.record({"notes", "tasks"})
+                    lambda: build_server(self, remote=True), lambda: self.changes.record({"notes", "tasks"})
                 )
             return self._mcp_http
 
@@ -123,12 +143,16 @@ class Services:
         _, arxiv_id = identifiers(item)  # from archive_id, an arXiv DOI, the URL, Extra …
         if not item.get("title") and not item.get("doi") and not arxiv_id:
             return {"status": "error", "message": "The item needs a title, DOI or arXiv ID to search for a PDF."}
+        paper = {"title": item.get("title"), "doi": item.get("doi"), "arxiv": arxiv_id}
+        sources = self.plugins.has_pdf_sources() if self.plugins else False
         result = pdf_finder.find_and_download(
             item.get("title"),
             item.get("doi"),
             self.config.pdf_dir,
             self.settings.get("contact_email"),
             arxiv_id=arxiv_id,
+            # where to look: the plugins' PDF sources (Unpaywall and arXiv: plugins/open-access-pdfs)
+            candidates=(lambda by_title: self.plugins.pdf_candidates(paper, by_title=by_title)) if sources else None,
         )
         if result["status"] == "success":
             result["attachment"] = self.papers.add_attachment(item_id, "Full Text PDF", result["filename"], "pdf")
@@ -148,6 +172,53 @@ class Services:
                     logging.getLogger(__name__).exception("Background PDF search failed for %s", item_id)
 
         threading.Thread(target=run, name="find-pdf", daemon=True).start()
+
+    def add_paper(
+        self, paper: dict, *, folder_id: int | None = None, tags=(), lookup: bool = True
+    ) -> tuple[dict, bool]:
+        """Add a paper from outside the library (an outside record: title, authors, doi, arxiv …),
+        as Add by Identifier does: its metadata looked up online by DOI or arXiv id (the record's
+        own fields when that fails, offline say), the duplicate check, a citation key. Returns
+        (item, False), or (the library item it already is, True)."""
+        from .library.identifiers import norm_arxiv, norm_doi
+        from .online.http import LookupFailed
+        from .online.metadata import known_authors
+        from .online.metadata import lookup as lookup_meta
+
+        arx = norm_arxiv(paper.get("arxiv")) or norm_arxiv(paper.get("archive_id"))
+        doi = norm_doi(paper.get("doi"))
+        meta = {
+            k: paper[k]
+            for k in ("title", "authors", "year", "abstract", "journal", "item_type", "url", "volume", "pages", "date")
+            if paper.get(k)
+        }
+        if doi:
+            meta["doi"] = paper.get("doi")
+        if arx:
+            meta.setdefault("archive_id", f"arXiv:{arx}")
+            meta.setdefault("url", f"https://arxiv.org/abs/{arx}")
+            meta.setdefault("item_type", "preprint")
+        dup = self.papers.find_duplicate(meta)
+        if dup:
+            return self.papers.get(dup), True
+        if lookup and (arx or doi):
+            try:
+                fetched = lookup_meta(
+                    sources=self.plugins.lookup_metadata,
+                    identifier=f"arXiv:{arx}" if arx else doi,
+                    known=known_authors(self.papers.list()),
+                    email=self.settings.get("contact_email"),
+                )
+                meta.update({k: v for k, v in fetched.items() if v})
+            except (LookupFailed, OSError) as e:
+                logging.getLogger(__name__).info("Adding %s without looking it up: %s", arx or doi, e)
+            except Exception:  # requests errors and the like: the record is enough
+                logging.getLogger(__name__).exception("Looking up %s failed", arx or doi)
+            dup = self.papers.find_duplicate(meta)
+            if dup:
+                return self.papers.get(dup), True
+        item = self.papers.create({**meta, "folder_id": folder_id, "tags": list(tags or [])})
+        return item, False
 
     def attachments_changed(self) -> None:
         """Call after adding/removing files so the full-text index catches up."""

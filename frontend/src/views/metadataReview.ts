@@ -10,6 +10,7 @@ import { type ApiError, api } from '../api.js';
 import { icon, typeIcon } from '../icons.js';
 import { byId, state } from '../store.js';
 import { openDialog } from '../ui/dialog.js';
+import { notify } from '../notifications/center.js';
 import { progressToast, toast, toastError } from '../ui/toast.js';
 import type { Item, MetadataLookup } from '../types.js';
 import { diffWords, escapeHtml, h, plural, shortAuthors } from '../util.js';
@@ -176,11 +177,11 @@ export async function openMetadataReview(idOrIds: string | string[]): Promise<un
   // A single item with nothing new doesn't need a dialog.
   let prefetched: MetadataLookup | null = null;
   if (ids.length === 1) {
-    const close = toast('Looking up metadata…', { timeout: 0 });
+    const lookup = progressToast('Looking up metadata…');
     let found: MetadataLookup;
-    try { found = await api.lookup(ids[0]); } catch (e) { close(); return toastError(e); }
+    try { found = await api.lookup(ids[0]); } catch (e) { lookup.finish((e as Error).message, { type: 'error' }); return; }
     prefetched = found;
-    close();
+    lookup.finish('Metadata lookup complete');
     if (!computeChanges(found.current, found.fetched).length) {
       return toast('Metadata is already up to date', { type: 'success' });
     }
@@ -214,21 +215,21 @@ function watchInBackground(job: LookupJob): void {
   const off = job.on((a) => {
     if (a) { paint(); return; }
     off();
-    pt.close();
-    finishedToast(job);
+    finishedToast(job, pt);
   });
 }
 
-function finishedToast(job: LookupJob): void {
-  if (job.applied) return;
+function finishedToast(job: LookupJob, progress?: import('../ui/toast.js').ProgressToast): void {
+  if (job.applied) { progress?.finish('Metadata updates applied'); return; }
+  const report = progress ? progress.finish : notify;
   const n = job.withChanges, failed = job.count('error'), skipped = job.count('skipped');
   const parts = [n ? `Metadata: ${plural(n, 'article')} with updates` : 'Metadata is up to date'];
   if (job.count('same') && n) parts.push(`${job.count('same')} up to date`);
   if (failed) parts.push(`${failed} not found`);
   if (skipped) parts.push(`stopped, ${skipped} not looked up`);
-  if (!n) { toast(parts.join(' · '), { type: failed && !job.count('same') ? 'error' : 'success', timeout: 7000 }); return; }
+  if (!n) { report(parts.join(' · '), { type: failed && !job.count('same') ? 'error' : 'success' }); return; }
   // stays until dismissed, so the results can't be missed
-  toast(parts.join(' · '), { type: 'success', timeout: 0, action: { label: 'Review', run: () => reviewDialog(job) } });
+  report(parts.join(' · '), { type: 'success', action: { label: 'Review', run: () => reviewDialog(job) } });
 }
 
 /* ----------------------------------------------------------------- dialog */

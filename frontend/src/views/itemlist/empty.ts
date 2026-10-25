@@ -1,7 +1,7 @@
 // What the item list shows when it has no rows: why it is empty here, and what to do about it.
 import * as A from '../../actions.js';
 import { icon } from '../../icons.js';
-import { currentFolderId, emit, folderById, state } from '../../store.js';
+import { currentFolderId, currentSource, emit, folderById, state } from '../../store.js';
 import { escapeHtml } from '../../util.js';
 import { smartFolderDialog } from '../organizeDialogs.js';
 
@@ -25,6 +25,11 @@ export function emptyState(): HTMLElement {
     el.innerHTML = `<div class="empty-state">${icon('smartFolder')}<h3>Nothing matches yet</h3>
       <p>This smart folder shows items matching <code class="mono">${escapeHtml(smartFolder()?.query || '')}</code>.</p>
       <div class="actions"><button class="btn" data-empty="edit-smart">Edit Smart Folder…</button></div></div>`;
+  } else if (state.view.startsWith('source:')) {
+    const src = currentSource();
+    el.innerHTML = `<div class="empty-state">${icon(src?.icon || 'plugin')}<h3>${escapeHtml(src?.title || 'This list')} is empty</h3>
+      <p>${escapeHtml(src?.description || '')} ${src ? `It comes from the plugin ${escapeHtml(src.plugin_name)}, which may still be fetching papers.` : ''}</p>
+      <div class="actions"><button class="btn" data-empty="reload">${icon('refresh')} Reload</button></div></div>`;
   } else if (state.view === 'duplicates') {
     el.innerHTML = `<div class="empty-state">${icon('check')}<h3>No duplicates</h3><p>No two items share a DOI, or the same title and year.</p></div>`;
   } else if (state.view === 'trash') {
@@ -45,6 +50,7 @@ export function emptyState(): HTMLElement {
     if (act === 'new') A.newItem();
     if (act === 'clear-tags') A.clearTagFilter();
     if (act === 'edit-smart') smartFolderDialog(smartFolder());
+    if (act === 'reload') A.loadItems();
   });
   return el;
 }

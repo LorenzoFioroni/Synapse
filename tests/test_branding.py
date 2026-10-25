@@ -74,6 +74,9 @@ def png_size(path):
     [
         ("frontend/assets/favicon.png", 16),
         ("frontend/assets/favicon-32.png", 32),
+        ("frontend/assets/apple-touch-icon.png", 180),
+        ("frontend/assets/icon-192.png", 192),
+        ("frontend/assets/icon-512.png", 512),
         ("browser_extension/icons/icon16.png", 16),
         ("browser_extension/icons/icon32.png", 32),
         ("browser_extension/icons/icon48.png", 48),
@@ -88,3 +91,8 @@ def test_toolbar_shows_the_icon_not_a_letter():
     js = (ROOT / "frontend/src/main.ts").read_text("utf-8")
     assert '<img class="brand-logo" src="/assets/favicon.svg' in js
     assert '<div class="brand-logo">Z</div>' not in js
+
+
+def test_page_links_a_large_android_icon():
+    html = (ROOT / "frontend/index.html").read_text("utf-8")
+    assert 'rel="icon" type="image/png" sizes="192x192" href="/assets/icon-192.png?v=3"' in html

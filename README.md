@@ -90,6 +90,11 @@ mkcert Lorenzos-MacBook.local                     # your computer's .local name 
 python server.py --lan --cert Lorenzos-MacBook.local.pem --key Lorenzos-MacBook.local-key.pem
 ```
 
+With `--lan` and HTTPS, Synapse opens its browser tab or `--window` at that computer's `.local`
+name rather than at an IP address, so the address matches the certificate. The certificate must
+name the `.local` address Synapse prints; if the Mac's sharing name changes, make a new certificate
+for the new name.
+
 Then install mkcert's authority on each device: `mkcert -CAROOT` shows the folder; send
 `rootCA.pem` to the iPad (AirDrop or mail), install the profile in Settings → General → VPN &
 Device Management, and turn it on in Settings → General → About → Certificate Trust Settings. On
@@ -100,6 +105,15 @@ Add a Passkey…** and save it. A device already paired can add one as well. Pas
 the address they were made on. Remove one in Settings → Devices on the computer; devices it signed
 in stay until you remove them there too. Passkeys need the `cryptography` package (in
 `requirements.txt`).
+
+#### Installing on Android
+
+Open the trusted HTTPS `.local` address above in Chrome, then choose **⋮ → Add to Home screen →
+Install app**. Synapse opens in its own window and uses its red Synapse icon. Chrome deliberately
+does not offer an app installation from a plain `http://` LAN address or from HTTPS whose
+certificate the phone does not trust; in that case it only offers a basic browser shortcut. If an
+old iconless shortcut already exists, remove it and add or install Synapse again after opening the
+HTTPS address.
 
 Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
 
@@ -120,6 +134,15 @@ never mix.
 
 ## Features
 
+- **Responsive on phones and tablets**: compact, touch-sized navigation keeps the library,
+  item details, notes, tasks and Settings usable one pane at a time on narrow screens.
+
+- **Notification center**: a bell beside Settings keeps unread notices and long-running jobs,
+  with a red count on the bell and browser tab icon. Info, Success, Warning and Error are separate
+  from optional OS delivery: arXiv Today's ready notice can reach the OS after you grant permission
+  under **Settings → Notifications**, where OS delivery can also be disabled again.
+  History stays in this browser. See [notifications](docs/notifications.md).
+
 - **Search** in three scopes, picked from the search box (the default is a setting):
   *Title, Abstract & Authors* · *All Fields* · *All Fields & Full Text*.
   Terms are ANDed, `"exact phrase"` and `-exclude` work, and accents are ignored
@@ -127,7 +150,9 @@ never mix.
 - **Full-text index** of attached PDFs, kept in its own database so the library
   stays small. New attachments are indexed in the background; progress is shown
   in the sidebar and Settings, which can also rebuild it.
-- **Import / export**: BibTeX, RIS, EndNote (tagged `.enw` and XML) and CSL JSON.
+- **Import / export**: BibTeX, RIS, EndNote (tagged `.enw` and XML) and CSL JSON. Library export
+  writers are the **Export Formats** core plugin; turning it off preserves imports and clipboard
+  citation copying.
   Imports are previewed first with duplicates flagged. Export the whole library,
   a selection, or copy BibTeX / citation keys from the context menu.
 - **Citation keys** from a configurable pattern (Settings → Citation Keys), with a
@@ -157,7 +182,8 @@ never mix.
   an available PDF, fetch reference lists, and turn imported keywords into tags — each *Never*,
   *Always* or *Ask* (a ticked checkbox where you add the items: the import dialog, Add by
   Identifier, the browser button). They all run in the background.
-- **References / citation graph**: for new items (see Adding Items) and after Retrieve Metadata
+- **References / citation graph** (online fetching is the **Reference Sources** core plugin;
+  turning it off keeps saved references and citation links): for new items (see Adding Items) and after Retrieve Metadata
   the list of papers the item cites is fetched too, in the background (Semantic Scholar, then
   OpenAlex, then Crossref; optional API keys in Settings → Online Services). The item pane shows *References* — cited works that are
   in your library link to them (matched by DOI, arXiv ID, or else title and year), the others
@@ -172,10 +198,10 @@ never mix.
   between papers, cited works not in your library and orphans. It is centred on the note or paper
   you opened it from and shows only what is 1, 2 (the default) or 3 links away, or **All** of it;
   Shift-click a node, or **Centre graph here** on a paper's card, to move the centre. Clicking a
-  paper shows a card (paper note, Show in Library, PDF, Add to Library). The data is at
-  `GET /api/graph`.
+  paper shows a card (paper note, Show in Library, PDF, Add to Library). It is a core plugin
+  (**Graph**, also under **Plugins** in the sidebar): turn it off in Settings → Plugins if you don't use it.
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
-  arXiv, Scholar) and checks the file is really the right paper. Batch runs skip items
+  arXiv: the core plugin Open-Access PDFs; other plugins can add places to look) and checks the file is really the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.
 - **Folders** (nested; an item can be in several folders but is stored once — a folder
   only holds a link to it), **tags** (many per item, optional colours) and **smart
@@ -221,9 +247,11 @@ never mix.
   cleveref: `\cref{fig:name}` writes "Fig. 2", `\cref{eq:name}` "Eq. (3)", `\cref{a,b,c}` "Figs. 1
   and 2 and Eq. (3)" (ranges as "Eqs. (1)–(3)"), `\Cref` the full word for the start of a
   sentence ("Figure 2"), and `\ref` / `\eqref` the bare number (see
-  [Figures](docs/notes.md#figures-and-their-numbers)). Switch with the
+  [Figures](docs/notes.md#figures-and-their-numbers)); galleries and figure numbers are part of the core
+  plugin **Extended Markdown**, with a switch of their own in its settings. Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
-  Cmd+[ / Alt+←) go back to the note or library selection you came from.
+  Cmd+[ / Alt+←) restore notes, Graph, Tasks, plugin pages and library views/selections.
+  If a destination's plugin is off, navigation returns to the library (or Notes for Graph).
   Images pasted into notes are kept in the notes' attachments folder; one that no note uses any more
   moves to an attachment trash by itself (and comes back if a note uses it again). **Attachments…**
   in the notes list menu shows them all — which notes use each, insert one into the open note,
@@ -247,7 +275,13 @@ never mix.
   In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
   drag to move; folders can be renamed, moved and deleted the same way.
-- **Tasks**: to-dos with a title, a due date, details written in Markdown like a note, and
+- **Extended Markdown** (core plugin, on by default) is where Markdown syntax beyond the basics
+  lives, each part with its own switch in its settings: **galleries and numbered figures** (above)
+  and **spoilers**: `||inline spoilers||` with a keyboard-accessible
+  Show/Hide button, and collapsible `:::spoiler Optional summary` blocks closed by `:::`. Blocks
+  support nested Markdown and spoilers. Source text stays intact when the plugin is off; HTML/PDF
+  exports reveal spoiler contents. See [Extended Markdown](docs/notes.md#extended-markdown-core-plugin).
+- **Tasks** (open it under **Plugins** in the left sidebar; a core plugin, on by default; turn it off in Settings → Plugins without losing tasks): to-dos with a title, a due date, details written in Markdown like a note, and
   sub-tasks to any depth. In a note, Cmd/Ctrl+Enter (or **Task** in the note's header) opens a
   small popup: name the task (the line's text, if any), give it a date in words ("fri", "27 oct",
   "in 3 days") and details, or pick a task you already have — or type `{{task` and a few words of
@@ -262,7 +296,7 @@ never mix.
   goes to the trash with it (Undo, or Cmd/Ctrl+Z in the note, brings it back); older tasks stay in
   Tasks. Tasks are kept in the library database, so backups include them; deleted tasks can be
   restored. See [`docs/tasks.md`](docs/tasks.md).
-- **Autocompletion** in notes (Settings → Autocompletion; off by default): after a short pause a
+- **Autocompletion** in notes (a core plugin, off by default: turn it on in Settings → Plugins): after a short pause a
   model running on this computer in [Ollama](https://ollama.com) suggests how the text goes on, in
   grey after the cursor. Tab accepts, Esc dismisses, Cmd/Ctrl+→ takes one word, Alt/⌥+\ asks for
   one now, clicking it accepts it. Only local models are supported: install Ollama and a model
@@ -290,6 +324,67 @@ never mix.
   PDF right at the quoted words or the snapshot's region and flashes it for a moment (it is not
   saved as an annotation). Quotes are found by their words, so older quotes work too; a snapshot
   remembers its page region inside the PNG, so the note has no extra markup.
+
+## Command palette
+
+**⌘⇧P** (Ctrl+Shift+P, or F1) opens the command palette: type a few letters of a command (New Item,
+Show Tasks, Settings: Backups …) and press Enter. Commands of plugins are there too, with their keys.
+
+## Plugins
+
+Plugins add features without changing Synapse itself. To install one, put its folder in
+`data/plugins/`, open **Settings → Plugins**, press **Look Again** and turn it on. Turning it on
+asks first and lists what the plugin may do (read the library, connect to sites, offer tools to
+Claude). A plugin runs with full access to your library and computer, like any program you
+install, so turn on only plugins you trust. Each plugin's settings, its log and a Restart button
+are under **More**; a plugin that keeps failing is turned off and Settings says why. If one keeps
+the app from working, start it with `python server.py --safe-mode` (only core plugins run) and turn it
+off.
+
+Synapse’s own optional features are **core plugins**: Graph, Metadata Sources,
+Reference Sources, Export Formats, Extended Markdown, Open-Access PDFs and Tasks start on,
+while Autocompletion starts as previously configured.
+Turn them off in Settings → Plugins without losing their data. Core plugins can also be toggled
+and restarted in safe mode; changes are followed by the standalone MCP server. Safe mode keeps core plugins
+running and stops third-party plugins. Tasks and Graph register their own sidebar entries under
+**Plugins**; their selection follows the visible workspace when switching between views. Plugin
+settings sections appear and disappear immediately as their plugin is switched on or off, including
+while Settings stays open. Disabling Autocompletion dismisses visible
+suggestions and cancels pending ones immediately.
+
+The built-in metadata providers (Crossref, OpenAlex, arXiv and Open Library) are the
+**Metadata Sources** core plugin, on by default. Switch it off in Settings → Plugins to stop
+those lookups; all existing metadata stays in the library. Other plugins can supply sources too.
+
+Two plugins come with Synapse, off until you turn them on:
+
+- **Citation Counts** adds a *Citations* column from OpenAlex and Semantic Scholar, refreshed
+  weekly, and lets you search for `citations:>100`.
+- **arXiv Today** lists each morning's arXiv papers in the categories you choose, ranked by how
+  they connect to your library (papers of yours they cite, shared authors, similar topics), with
+  a notification ("12 new papers, 3 connected to your library"), a **+** to add a paper and
+  Dismiss for the rest. Earlier days stay for a month, and Claude can ask for them.
+
+A plugin can offer a **list of papers** that are not in your library yet (today's arXiv papers,
+say), under **Plugins** in the sidebar. It shows like a folder, ranked by the plugin (often by how
+each paper connects to your library: papers it cites or that cite it, shared authors, similar
+topics); the item pane says why each one is listed. Click **+** on a row, or **Add to My
+Library** in the item pane, to add a paper; right-click or select several to add them to a folder.
+
+A plugin has a `manifest.json`, Python for the server (routes, tools for Claude, listeners for
+changes in the library, settings and stored data, and per-item fields: values such as a citation
+count that appear as list columns, search filters like `citations:>100` and rows in the item pane) and JavaScript for the app (pages listed under
+**Plugins** in the sidebar, sections in the item pane, actions in the item menu, commands).
+Start with the [plugin authoring guide](docs/plugin-authoring.md) and its runnable Hello Library
+example. [Plugins](docs/plugins.md) is the API reference;
+[`docs/examples/recently-added`](docs/examples/recently-added) shows a larger plugin to adapt
+([`suggested-reading`](docs/examples/suggested-reading) offers a list of papers).
+To write one, `python server.py --new-plugin my-plugin --dev-plugins ~/synapse-plugins` makes a
+plugin to start from, and `python server.py --dev-plugins ~/synapse-plugins` restarts it whenever
+you save a file. Plugins can also run work on a schedule, reach the sites their manifest names and
+bring Python packages of their own; their frontend may be TypeScript. Daily local schedules keep
+their wall-clock time across daylight-saving changes.
+Their tools reach Claude like Synapse's own; restart Claude if they do not show up.
 
 ## AI access (MCP)
 
@@ -375,6 +470,7 @@ For how the code fits together and where new code goes, see
 ├── browser_extension/     Chrome extension (Manifest V3) – load unpacked
 ├── tools/                 build scripts for the vendored libraries and the macOS icon
 ├── tests/                 pytest suite, js/ unit tests, e2e/ browser checklists
+├── plugins/               plugins that come with Synapse, off until turned on (Citation Counts, arXiv Today)
 ├── docs/                  technical documentation
 └── data/                  your library (git-ignored)
 ```
@@ -417,6 +513,8 @@ python tests/e2e/usability_checklist.py  # multi-select, Delete + Undo, folders,
 python tests/e2e/viewer_links_checklist.py  # PDF links: jump, hover preview, Back/Forward in the viewer
 python tests/e2e/tabs_checklist.py       # PDFs in the app's own tabs; a --quit-when-closed server stops with its window
 python tests/e2e/export_checklist.py     # Export: HTML (self-contained, offline), Markdown, PDF via the print dialog
+python tests/e2e/extensions_checklist.py # provider/export lifecycle, spoilers in Live/Read, static export
+python tests/e2e/navigation_checklist.py # workspace switches, sidebar selection, history, shortcuts and disabled plugins
 python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, levels, filters, paper card, Show in Graph, Back/Forward
 python tests/e2e/attachments_checklist.py  # note attachments: unused ones to the trash, Attachments dialog, retention
 python tests/e2e/adding_checklist.py     # bulk Retrieve Metadata (parallel, grouped, background), Settings → Adding Items

@@ -18,7 +18,11 @@ class LibraryToolsMixin(ToolsBase):
             items = self.s.papers.list()
             mode = "fulltext" if fulltext else "all"
             matcher = self.s.note_service.text_matcher()
-            ctx = {"folder_paths": self.s.folders.paths(), "type_labels": ITEM_TYPE_LABELS}
+            ctx = {
+                "folder_paths": self.s.folders.paths(),
+                "type_labels": ITEM_TYPE_LABELS,
+                "field_filters": self.s.plugins.fields.search_filters(),  # plugins' fields: citations:>100
+            }
             found, hits = search_mod.search(items, query, mode, self.s.fulltext, ctx, notes=matcher)
             terms = [search_mod.normalize(t) for t, neg, f in search_mod.parse_query(query) if not f and not neg]
 

@@ -52,10 +52,11 @@ well (`test_remote_pdf.py`).
 |---|---|
 | Library | `test_api.py` (create, edit, trash, settings, import and export, attachments, schema), `test_list_payload.py` (lean lists, items by id), `test_organize.py` (folders, tags, smart folders, their migrations), `test_citekeys.py`, `test_search.py` (query syntax, accents, filters, notes in search), `test_identifiers.py` (DOI and arXiv ids), `test_annotations.py` (annotation records, conversion of old ones) |
 | Formats | `test_formats.py`: BibTeX, RIS, EndNote and CSL-JSON round trips |
-| Online and references | `test_metadata.py` (lookups), `test_pdf_finder.py` (Find Available PDF), `test_remote_pdf.py` (PDFs behind a web link: public addresses only, PDFs only, size cap), `test_references.py` (reference lists), `test_graph.py` (`/api/graph`) |
+| Online and references | `test_metadata.py` (lookups), `test_pdf_finder.py` (Find Available PDF through the plugins' PDF sources, the Open-Access PDFs core plugin), `test_remote_pdf.py` (PDFs behind a web link: public addresses only, PDFs only, size cap), `test_references.py` (reference lists), `test_graph.py` (the Graph plugin's data) |
 | Notes | `tests/notes/`: `test_vault.py` (safe paths, save conflicts, trash, move), `test_index.py`, `test_parser.py` (golden tests on the fixtures), `test_frontmatter.py`, `test_gallery.py` (gallery blocks for the MCP tools), `test_rewrite.py`, `test_rekey.py`, `test_attachments.py`, `test_api_notes.py`, `test_scanner_parity.py` |
 | Access and sync | `test_guard.py` (other websites and extensions refused), `test_devices.py` (pairing, who manages devices, `--debug` refused on the network), `test_changes.py` (change feed), `test_connector.py` (browser extension API), `test_backup.py` |
 | MCP | `test_mcp.py`: the protocol and every tool, in-process and over stdio |
+| Plugins | `tests/plugins/`: `test_manifest.py` (manifests and settings values), `test_host.py` (turning on and off, routes, events, settings, tools for Claude and `/mcp`, the MCP server following `plugins.json`, failures, safe mode, reloading code), `test_storage.py` (JSON and SQLite stores, migrations, plugin data in backups and restores). `test_fields.py` (per-item fields: keys, types, filters, the list, the item pane, the refresher, outside papers, Claude, the change feed, backups), `test_http.py` (`plugin.http` against a local server), `test_jobs.py` (cron rules, schedules, the job queue and runner), `test_tooling.py` (background work in the app and the MCP server, Python packages with a stand-in for pip, TypeScript builds, the scaffold, dev plugins), `test_outside.py` (papers outside the library: records, plugins' lists in the item list, adding, `plugin.services` and `plugin.actions`, how papers connect to the library, arXiv's HTML references, the Suggested Reading example), `test_citation_counts.py` (the bundled Citation Counts plugin against faked OpenAlex and Semantic Scholar answers, the services' keys in `plugin.http`, a refresher's `LATER`), `test_arxiv_today.py` (the bundled arXiv Today plugin with a faked RSS feed and reference lists: the listing, scoring, its lists, dismissing, the news, Claude's tool, forgetting old days, the RSS parser). `conftest.py` leaves the plugins in `plugins/` out of every other test, so each sees only what it installs; the `bundled` fixture brings them back. The `example` fixture installs `docs/examples/recently-added`; `make_plugin` writes small ones. |
 | Frontend | `test_frontend_build.py` (`needs_build` and `ensure_built`), `test_frontend_js.py` (runs the JavaScript tests) |
 | Architecture | `test_layers.py`, `test_offline.py`, `test_branding.py` (below) |
 
@@ -71,7 +72,8 @@ These check rules of the code base rather than behaviour:
 - **`test_layers.py`** parses every module in `backend/` and fails on an import against the
   layers in [architecture](architecture.md#layers). `ALLOWED` lists what each package may import;
   `test_every_unit_is_listed` fails when a new package is missing from it. Change `ALLOWED` and
-  the diagram in `architecture.md` together.
+  the diagram in `architecture.md` together. `test_plugins_use_only_the_plugin_api` checks that the
+  plugins in `plugins/` and `docs/examples/` import from Synapse only `backend.plugins`.
 - **`test_offline.py`** scans the frontend's own `.html`, `.css`, `.ts` and `.js` files (and the
   vendored `.html` and `.css`) for anything that *loads* from the web: a remote `src` or `href`,
   `url(https://…)`, `@import`, a remote `import`, `importScripts` or worker. Links the user clicks
@@ -92,17 +94,18 @@ These check rules of the code base rather than behaviour:
 | `diff.test.mjs` | `views/notes/diff.js` |
 | `embed.test.mjs` | `views/notes/embed.js` and `linkData.js`: what an embedded note shows, with its own link data |
 | `equations.test.mjs` | `equations.js`, `mathClick.js`, `macros.js` and math in `render.js` |
-| `figures.test.mjs` | `views/notes/figures.js`: which images are figures, numbering, labels; figures in `render.js` and the Markdown export |
+| `figures.test.mjs` | `plugins/core/extended-markdown/figures/figures.js`: which images are figures, numbering, labels; figures in `render.js` and the Markdown export |
 | `crossref.test.mjs` | `views/notes/crossref.js`: `\ref`, `\eqref`, `\cref`, `\Cref`: kinds, plurals, ranges, unknown names |
-| `gallery.test.mjs` | `views/notes/gallery.js`: reading gallery blocks, the figure caption, Markdown export; galleries in `render.js` |
+| `gallery.test.mjs` | `plugins/core/extended-markdown/figures/gallery.js`: reading gallery blocks, the figure caption, Markdown export; galleries in `render.js`, with the `figures` hook set and without it |
 | `extract.test.mjs` | `extractCitation` in `browser_extension/extract.js`, with a faked `document` and `location` |
-| `graph.test.mjs` | `views/graph/model.js` |
+| `graph.test.mjs` | `plugins/core/graph/model.js` |
 | `library.test.mjs` | `views/notes/library.js`: autocomplete ranking |
 | `linkNav.test.mjs` | `viewer/linkNav.js`: link targets and previews in the PDF viewer |
 | `lookupJob.test.mjs` | `LookupJob` in `views/metadataReview.js` |
 | `noteSession.test.mjs` | `views/notes/noteSession.js`: saving, conflicts, drafts |
 | `render.test.mjs` | `views/notes/render.js` |
 | `store.test.mjs` | `sortedItems` in `store.js`, `hitBadge` in `util.js` |
+| `extend.test.mjs` | `extend.js`: the registries of the extension points, parsing, matching and showing keys, which keys a plugin may take, the command palette's ranking |
 | `tabs.test.mjs` | `tabs/model.js`: the app's tabs (opening, reuse, closing and where it goes, reopening, order, saving and restoring; note tabs: the preview tab, keeping, renamed and deleted notes, what a dragged tab may be); `viewer/jumpHistory.js`; `windows.js`: the address of a new window |
 
 `embed.test.mjs`, `equations.test.mjs`, `figures.test.mjs`, `gallery.test.mjs` and `render.test.mjs` load the real markdown-it and KaTeX from
@@ -174,7 +177,7 @@ looking for a bug.
 | `equations` | 8786 | Editing notes with equations |
 | `export` | 8792 | Exporting a note: a self-contained HTML page that works offline, portable Markdown, PDF through the print dialog |
 | `extension` | 8789, 8790 | The browser extension: options page connects, the popup reads an article's citation tags and saves it with a tag |
-| `gallery` | 8794 | Figure numbers and `\cref` (read mode, live preview, exports); galleries: the carousel in read mode and the live preview, editing its source, autocomplete in captions, exported as one figure with panels (HTML, PDF, Markdown) |
+| `gallery` | 8794 | Figure numbers and `\cref` (read mode, live preview, exports); galleries: the carousel in read mode and the live preview, editing its source, autocomplete in captions, exported as one figure with panels (HTML, PDF, Markdown); galleries switched off and on in Extended Markdown's settings, then the whole plugin off and on, in the open note |
 | `graph` | 8787 | Local and global graph in Notes, Show in Graph, Cmd/Ctrl+Shift+G, Back/Forward |
 | `lazy_viewer` | 8778 | A 300-page PDF: pages drawn only near the viewport, fast jumps and zoom, annotations on far pages |
 | `library` | 8768 | Citation key rename with preview, notes in search, trashed items, Quote and Snapshot to note |
@@ -182,13 +185,15 @@ looking for a bug.
 | `list_perf` | 8779 | 10,000 items: fast list, few rows in the DOM, quick selection, small changes without a full reload |
 | `multipdf` | 8788 | Items with several PDFs: citations, cards and menus |
 | `notes` | 8765 | The notes editor |
+| `outside` | 8799 | A plugin's list of papers: its sidebar entry and badge, the list in the plugin's order and sorted (a third click goes back), "+" on papers not in the library, the item pane's reasons and their links, the menu (with a plugin's action for outside papers, not its others), adding with "+" and Undo, several into a folder, a changed list shown again, a plugin's action changing it at once, opening it from Notes through the palette, the entry gone when the plugin is turned off |
+| `plugins` | 8798 | Settings → Plugins: the example plugin listed off (and the plugins that come with Synapse), turning it on asks first and lists its access, settings from its manifest saved (a bad value refused), its route answers, its log, a plugin that cannot start says why; its frontend: a page with a sidebar entry and a count, opening an item from it, its item-pane section, its field's value in the item pane, as a column and as a search filter, its item action, its command in the command palette and its key, Synapse's own commands in the palette; turning it off shows in another window and takes its page away; with `--dev-plugins`, a TypeScript plugin's page shows and saving its file reloads it in the open window |
 | `passkeys` | 8794 | Over HTTPS: adding a passkey, signing an unpaired iPad in with it (Chromium's virtual authenticator), removing it; Settings → AI Access makes a token that reaches `/mcp` from another computer, and removing it locks the app out |
 | `pdf_tabs` | 8773 | One viewer tab per PDF; Cmd/Ctrl+click or middle click opens a new one |
 | `remote_pdf` | 8774 | Attachments stored as web links open through `/api/attachments/<id>/remote`; local-network links refused |
 | `render` | 8766 | Note rendering (uses `tests/e2e/kitchen-sink.md`) |
 | `tabs` | 8796, 8797 | The app's own tabs: a PDF opens in a tab, one per PDF, pointed at a cited page; Ctrl+Tab and Alt+W/1–9/⇧T from inside a PDF; closing goes back to where it was opened; middle click, dragging, the tab menu; Back/Forward inside a PDF tab stay inside it; tabs come back after a reload; the first tab (Library or Tasks) and the switch; note tabs (preview, kept by double-click on the tab or in the list or by editing, undo kept across tabs, each tab's own mode, switching back without waiting for the server, renamed and deleted notes, reload); folder colours on a note's tab and the title bar (neutral by default, and in the dark theme); each window with its own tabs; a tab dropped on another window or outside every window; Move to New Window, New Window, Open in New Window from the menus; Settings → Open PDFs in → Browser Tabs. Then a `--quit-when-closed` server stops once its page closes |
 | `tasks` | 8795 | Tasks: task lines in a note (ticking, the task popup, the New task popup with a new or existing task, the `{{task` autocomplete, a wrapped task on an indented line, ticking a parent, Backspace), read mode, the side panel, the Tasks page (views, search, quick add, keyboard, delete and Undo, changes from elsewhere) |
-| `touch_app` | 8783 | The library on an iPad profile: drawer, long press for menus and cards, hover tools shown, resizing, Home Screen |
+| `touch_app` | 8783 | The library on iPad and phone profiles: responsive panes, configured list columns, details closing across workspaces, Settings, PDF coverage and viewport-locked fit-to-width layout, full-width Graph replacing the notes panes, drawer, long press for menus and cards, hover tools shown, resizing, and the installable Home Screen manifest and icons |
 | `touch` | 8782 | The PDF viewer on an iPad profile: pen tools, finger scrolling, pinch zoom, snapshots |
 | `usability` | 8769 | Several notes selected, delete with Undo, folder operations, Back/Forward, the Library/Notes switch, note markers |
 | `viewer_links` | 8770 | Links in the PDF viewer: jumps, external links, hover previews, Back/Forward |
@@ -308,3 +313,66 @@ pytest picks it up through the `*.test.mjs` glob in `test_frontend_js.py`.
 Name it `<name>_checklist.py` so that `run.py` finds it, and add it to the table above. Read state
 through the `window.zc…` hooks in `frontend/src/globals.d.ts` rather than through the DOM where
 one exists.
+
+`tests/test_metadata.py` tests query normalization and the Metadata Sources plugin’s providers
+with faked responses. `tests/plugins/test_metadata_sources.py` tests provider priority, fallback,
+turning sources off and on, and preserving library records without network access.
+
+### Reliable tab, scroll and plugin checks
+
+The tab checklist chooses Control on macOS and Alt elsewhere for app tab shortcuts, and uses
+Cmd/Ctrl for editor undo. The render checklist waits for the requested note's text and measures
+only its visible editor; hidden editors retain other tabs' histories and scroll positions.
+
+Playwright closes a headless target without dispatching `pagehide`. The shutdown check therefore
+navigates away before closing its empty target, exercising the real browser farewell. It keeps
+the browser process alive until the keepalive request arrives and the server stops. This covers
+leaving the last page; native window closure still needs the manual check in [desktop](desktop.md).
+
+The outside-paper checklist disables Metadata Sources for its synthetic identifiers. This keeps
+real scholarly metadata from replacing fixture titles and lets the checklist run offline.
+The plugin checklist also covers partial frontend activation cleanup and a plugin route
+disappearing during async activation; host synchronization must finish in both cases. It also starts a safe-mode server to check core
+plugin switches, Restart, and suppression of installed plugins. Cron regressions cover both DST
+transitions for the default local timezone.
+
+### Plugin interface lifecycle audit
+
+`graph` checks its plugin-owned sidebar entry and repeated off/on cycles, including removal of
+local/global graph controls. `tasks` checks its entry, counts, retained records, shortcuts and
+off/on cycles. `assist` keeps Settings open through two cycles, checks section disposal, selection
+falling back to General, and exactly one section on reactivation. A delayed status response must
+not replace a newer result; disabling the plugin must also clear a visible suggestion without
+reloading. `gallery` verifies galleries fall back to ordinary Markdown while
+disabled; `plugins` and `outside` cover fields, item actions, pages and paper-source navigation.
+Backend provider and field tests cover Citation Counts, arXiv Today, Metadata Sources and
+Open-Access PDFs.
+
+The note-session autosave tests await the public `saved` status rather than sleeping for a
+fixed duration, so a busy machine cannot make the assertion race the fake server's response.
+
+## Optional reference/export and Markdown extensions
+
+`tests/plugins/test_extensions.py` checks reference-provider priority/fallback and disablement
+without losing saved graph records; existing export output, independent import parsing and writer
+disposal; and third-party registration through API 1.1. Provider HTTP responses are faked in the
+existing reference tests, which target `plugins/reference-sources/server/`.
+
+`tests/js/spoilers.test.mjs` covers delimiters, escapes, code exclusions, nested blocks, hostile
+HTML and renderer invalidation. It also compares the spoiler ranges with the rules applied position
+by position on 3000 random notes, and fails if finding them in a 300 KB note full of formulas takes
+250 ms or more (live preview does it on every keystroke). `python tests/e2e/run.py extensions` uses a temporary library and
+checks Live/Read controls (mouse and keyboard), note preservation, repeated disable/enable, the Spoilers switch on its own, static
+HTML/PDF preparation, links inside Live spoilers and export Settings following provider lifecycle.
+The existing `plugins`, `export`, `render`, `graph`, `tasks`, `tabs` and `navigation` checklists cover
+related behavior.
+
+When a test asserts fields written by different workers, wait for each producer independently.
+For example, Recently Added's `added_on` is written by its item-added listener, while
+`author_count` comes from a field refresher. `svc.plugins.drain("recently-added")` waits for the
+listener; the normal field-refresh wait then covers the computed value. Seeing one field does
+not imply the other has been published.
+
+The `notifications` browser checklist uses an isolated data folder and port 8808; OS APIs are
+stubbed to verify permission, delivery, denied/unsupported fallback and badges without sending
+real desktop alerts. History model tests cover retention and multiple windows.

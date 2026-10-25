@@ -1,4 +1,4 @@
-"""Reading ```gallery blocks (backend/notes/gallery.py), as frontend/src/views/notes/gallery.ts does."""
+"""Reading ```gallery blocks (backend/notes/gallery.py), as frontend/src/plugins/core/extended-markdown/figures/gallery.ts does."""
 
 from backend.notes import gallery
 

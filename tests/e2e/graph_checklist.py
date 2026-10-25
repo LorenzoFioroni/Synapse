@@ -141,7 +141,7 @@ async def main():
     time.sleep(1.5)
     try:
         papers, keys, review, pnote, idea = seed()
-        g = requests.get(f"{BASE}/api/graph").json()
+        g = requests.get(f"{BASE}/api/plugins/graph/data").json()
         check("API: papers, works and notes", g["stats"]["papers"] == 10 and g["stats"]["notes"] == 4, g["stats"])
         P = lambda i: f"item:{papers[i]['id']}"  # noqa: E731
         async with async_playwright() as p:
@@ -157,8 +157,8 @@ async def main():
                 "['zc.graph.local','zc.graph.global','zc.graph.localOpen'].forEach((k) => localStorage.removeItem(k))"
             )
 
-            # ---- toolbar: two workspaces, the logo keeps its size
-            check("toolbar has Library | Notes only", await page.locator(".ws-switch [data-ws]").count() == 2)
+            # ---- toolbar: Library and Notes; plugin workspaces live in the sidebar
+            check("toolbar has Library | Notes", await page.locator(".ws-switch [data-ws]").count() == 2)
             w = await page.evaluate("document.querySelector('.brand-logo').getBoundingClientRect().width")
             check("logo is not squeezed", abs(w - 24) < 0.5, w)
 
@@ -369,6 +369,53 @@ async def main():
             await page.keyboard.press(f"{MOD}+Shift+G")
             await settled(page, "global")
             await shot(page, "5-dark")
+            graph_link = '#sidebar [data-navigation="graph.main"]'
+            # A retained graph in the hidden Notes workspace must not stay selected.
+            for destination, selector, workspace in (
+                ("Tasks", '#sidebar [data-navigation="tasks.main"]', "tasks"),
+                ("Library", '.ws-switch [data-ws="library"]', None),
+            ):
+                await page.click(graph_link)
+                await settled(page, "global")
+                await page.click(selector)
+                await page.wait_for_function(
+                    "expected => (document.body.dataset.workspace || null) === expected", arg=workspace
+                )
+                check(
+                    f"Graph is not selected after switching to {destination}",
+                    not await page.locator(graph_link).evaluate("el => el.classList.contains('active')"),
+                )
+                if destination == "Tasks":
+                    check(
+                        "Tasks is the only selected plugin navigation entry",
+                        await page.locator("#sidebar button[data-navigation].active").evaluate_all(
+                            "els => els.map(el => el.dataset.navigation)"
+                        )
+                        == ["tasks.main"],
+                    )
+            # Plugin navigation and contextual graph controls follow off/on without a reload.
+            for cycle in range(2):
+                await page.click(graph_link)
+                await settled(page, "global")
+                check(
+                    f"Graph sidebar entry opens its view ({cycle + 1})",
+                    await page.locator(graph_link).evaluate("el => el.classList.contains('active')"),
+                )
+                requests.post(BASE + "/api/plugin-host/graph/disable").raise_for_status()
+                await page.evaluate("window.zcPlugins.sync()")
+                check(
+                    f"Graph off removes navigation and controls ({cycle + 1})",
+                    await page.locator(graph_link).count() == 0
+                    and await page.locator(".ns-graph, .notes-graph").count() == 0
+                    and await page.locator('[data-act="graph"]').is_hidden(),
+                )
+                requests.post(BASE + "/api/plugin-host/graph/enable").raise_for_status()
+                await page.evaluate("window.zcPlugins.sync()")
+                check(
+                    f"Graph on restores one entry and local graph ({cycle + 1})",
+                    await page.locator(graph_link).count() == 1 and await page.locator(".ns-graph").count() == 1,
+                )
+
             check("no console errors", not errors, errors[:5])
             await b.close()
     finally:

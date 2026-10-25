@@ -23,6 +23,10 @@ class Config:
     # True when the server listens on the network (``--lan`` or ``--host 0.0.0.0``): other devices can
     # pair (Settings → Devices) and requests naming this computer by a LAN address are accepted.
     lan: bool = False
+    # ``--safe-mode``: no plugin is started, so a plugin that breaks the app can be turned off.
+    safe_mode: bool = False
+    # ``--dev-plugins DIR``: plugins being written, loaded from DIR and reloaded when a file changes.
+    dev_plugins_dir: Path | None = None
 
     @classmethod
     def from_env(cls, data_dir: str | os.PathLike | None = None) -> Config:
@@ -71,6 +75,31 @@ class Config:
     @property
     def settings_path(self) -> Path:
         return self.data_dir / "settings.json"
+
+    @property
+    def plugins_dir(self) -> Path:
+        # Plugins the user installed: one folder each, with a manifest.json (docs/plugins.md).
+        return self.data_dir / "plugins"
+
+    @property
+    def bundled_plugins_dir(self) -> Path:
+        # Plugins that come with Synapse; off until the user turns them on.
+        return APP_ROOT / "plugins"
+
+    @property
+    def plugin_data_dir(self) -> Path:
+        # What plugins store, one folder per plugin; apart from their code, and in backups.
+        return self.data_dir / "plugin-data"
+
+    @property
+    def fields_db_path(self) -> Path:
+        # Values plugins attach to papers (backend/plugins/fields.py); in backups.
+        return self.data_dir / "fields.db"
+
+    @property
+    def plugins_state_path(self) -> Path:
+        # Which plugins are on, and their settings.
+        return self.data_dir / "plugins.json"
 
     @property
     def frontend_dir(self) -> Path:

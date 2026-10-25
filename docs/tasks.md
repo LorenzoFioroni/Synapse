@@ -1,5 +1,14 @@
 # Tasks
 
+The **Tasks** core plugin (`plugins/tasks/`) owns the page, the note editor’s task controls,
+and the HTTP and MCP interfaces. It is on by default and can be turned off in Settings → Plugins.
+Turning it off hides its controls and Claude tools; note lines show their task IDs. Turning it
+on restores the interface without changing any records. Storage, history, note validation,
+attachment retention and backups remain in `backend/tasks/`, even while the plugin is off.
+
+The `/api/tasks` URLs remain compatibility aliases for the plugin’s routes. They keep the same
+request and response shapes and return 404 while Tasks is disabled.
+
 A **task** is a to-do with a title, a status (open or done), an optional due date, a Markdown body
 and sub-tasks to any depth. Tasks are records in `library.db`, not text in a note: a note *shows*
 a task with a `{{task:<id>}}` line, which the editor draws as the task's checkbox and title.
@@ -7,8 +16,8 @@ Ticking the box or editing the body changes the task, never the note. Plain Mark
 (`- [ ] …`) stay checkboxes.
 
 This page covers the records (`backend/tasks/store.py`), the lines in notes
-(`backend/tasks/service.py` and the notes parser), the HTTP API (`backend/api/tasks.py`), Claude's
-task tools, and the frontend (`frontend/src/views/tasks/`). Related pages: [notes](notes.md) (the
+(`backend/tasks/service.py` and the notes parser), the HTTP API (`plugins/tasks/server/routes.py`), Claude's
+task tools, and the frontend (`frontend/src/plugins/core/tasks/`). Related pages: [notes](notes.md) (the
 parser and the editor), [storage](storage.md) (the tables and backups), [mcp](mcp.md).
 
 ## Using tasks
@@ -45,7 +54,7 @@ parser and the editor), [storage](storage.md) (the tables and backups), [mcp](mc
   which is the point: older tasks never go away because a line did.
 - **The side panel** of a note lists its tasks with a progress bar, **Add a task** and **Show in
   Tasks**.
-- **The Tasks page** (**Tasks** in the toolbar switch or the sidebar, <kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd>):
+- **The Tasks page** (**Tasks** under **Plugins** in the left sidebar, <kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd>):
   - *Views*: Open, Today (overdue and due today), Next 7 days, No date, Not in a note, Done, All
     tasks; then each note that shows tasks, and Deleted tasks… at the bottom.
   - *The list*: sub-tasks under their parent (fold with the arrow). Search with words and filters
@@ -156,7 +165,7 @@ bullets) its body. It returns the text with each top-level item replaced by its 
 everything else is kept, including checkboxes inside code. The editor puts the result in place of
 the selected lines, as one edit.
 
-## HTTP API (`backend/api/tasks.py`)
+## HTTP API (`plugins/tasks/server/routes.py`)
 
 Writes are recorded in the change feed as `tasks` (`kind_of` in `changes.py`); endpoints that
 also write a note record `notes`. `TaskMissing` becomes 404, `TaskError` 400.
@@ -185,7 +194,7 @@ changed this task" with Undo. `get_note` lists the tasks a note shows, and `Note
 note that shows an id that is not a task (Claude must create tasks with `create_task` instead of
 inventing ids). The writing rules tell Claude that `- [ ]` is a checkbox and `{{task:ID}}` a task.
 
-## Frontend (`frontend/src/views/tasks/`)
+## Frontend (`frontend/src/plugins/core/tasks/`)
 
 | Module | Role |
 |---|---|

@@ -2,9 +2,12 @@
 // show up here without a reload. The page asks /api/changes every few seconds while it is
 // visible (and at once when it becomes visible again); the server leaves out this page's own edits.
 import * as A from './actions.js';
+import { emit, state } from './store.js';
 import { api } from './api.js';
 import { notesChanged } from './views/notes/notesView.js';
-import { tasksChanged } from './views/tasks/tasksView.js';
+import { pluginsChanged } from './views/settings/plugins.js';
+import { pluginChanges } from './plugins/host.js';
+import { tasksPage } from './tasksPage.js';
 
 const EVERY = 4000;          // ms between polls while the page is visible
 const MIN_GAP = 2500;        // at most one library refresh this often (background fetching can be busy)
@@ -32,10 +35,17 @@ function editing() {
 }
 
 async function apply() {
+  if (pending.delete('plugins')) pluginsChanged();   // only the Settings page shows them (for now)
   if (editing()) return;   // tried again at the next poll
   const notes = pending.delete('notes');
   if (notes) notesChanged();
-  if (pending.delete('tasks') || notes) tasksChanged();   // a note's {{task:…}} lines may have changed too
+  if (pending.delete('tasks') || notes) tasksPage.changed();   // a note's {{task:…}} lines may have changed too
+  if (pending.delete('sources') && state.view.startsWith('source:')) pending.add('library');   // a plugin's list changed
+  if (pending.delete('fields')) {
+    // values plugins attach changed (background refreshes): the list's columns and the item pane
+    pending.add('library');
+    emit('item-fields');
+  }
   if (pending.has('library')) {
     if (Date.now() - lastLibrary < MIN_GAP) return;   // tried again at the next poll
     pending.delete('library');
@@ -52,6 +62,11 @@ async function poll() {
     seq = res.seq;
     epoch = res.epoch;
     for (const k of res.changes || []) pending.add(k);
+    // Stop a disabled plugin before dispatching changes that would call its removed routes.
+    if (res.changes?.length) {
+      const plugins = pluginChanges(res.changes);
+      if (res.changes.includes('plugins')) await plugins;
+    }
     pending.delete('annotations');   // the PDF viewer looks after its own
     if (pending.size) await apply();
   } catch { /* server away for a moment: try again next time */ }

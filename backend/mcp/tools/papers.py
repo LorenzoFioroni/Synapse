@@ -77,6 +77,9 @@ class PaperToolsMixin(ToolsBase):
                 for c in self.s.notes.citing(key)
                 if c["path"] not in mine
             ]
+        plugin_fields = self.s.plugins.fields.labelled(p)  # values plugins attach (citation counts …)
+        if plugin_fields:
+            out["plugin_fields"] = plugin_fields
         try:
             view = self.s.citations.item_view(p["id"])
         except NotFound:

@@ -51,7 +51,7 @@ class HttpTransport:
         for m in messages:
             if isinstance(m, dict) and m.get("method") == "tools/call" and isinstance(m.get("params"), dict):
                 name = m["params"].get("name")
-                tool = server.tools.get(name) if isinstance(name, str) else None
+                tool = server.all_tools().get(name) if isinstance(name, str) else None
                 if tool is not None and not tool.read_only:
                     return True
         return False

@@ -86,3 +86,60 @@
 .ai-steps .btn { margin-left: 6px; vertical-align: middle; }
 .link-btn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; }
 .link-btn:hover { text-decoration: underline; }
+
+/* Settings → Plugins */
+.plugin-list { display: flex; flex-direction: column; }
+.plugin-row { border-top: 1px solid var(--border); padding: 10px 0; }
+.plugin-row .p-head { display: flex; align-items: flex-start; gap: 12px; }
+.plugin-row .p-icon { color: var(--text-3); margin-top: 2px; }
+.plugin-row .p-main { flex: 1; min-width: 0; }
+.plugin-row .p-name { font-weight: 600; }
+.plugin-row .p-desc { color: var(--text-2); font-size: var(--fs-sm); margin-top: 2px; }
+.plugin-row .p-meta { color: var(--text-3); font-size: var(--fs-xs); margin-top: 2px; }
+.plugin-row .p-perms { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 6px; }
+.plugin-row .p-perms span { font-size: var(--fs-xs); color: var(--text-2); background: var(--bg-app); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+.plugin-row .form-error { margin-top: 6px; }
+.plugin-row .p-side { flex: none; display: flex; align-items: center; gap: 6px; }
+.plugin-row .p-details { margin: 10px 0 0 28px; border-left: 2px solid var(--border); padding-left: 14px; display: flex; flex-direction: column; gap: 10px; }
+.plugin-row .p-setting { display: flex; align-items: center; gap: 16px; }
+.plugin-row .p-setting .s-text { flex: 1; min-width: 0; }
+.plugin-row .p-setting .s-title { font-weight: 550; }
+.plugin-row .p-setting .s-desc { color: var(--text-2); font-size: var(--fs-sm); }
+.plugin-row .p-control { flex: none; display: flex; align-items: center; }
+.plugin-row .p-control .input, .plugin-row .p-control .select { width: 240px; }
+.plugin-row .p-control .p-num { width: 110px; }
+.plugin-row .p-multi { display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: 320px; }
+.plugin-row .p-offers { font-size: var(--fs-xs); color: var(--text-2); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.plugin-row .p-foot { display: flex; align-items: center; gap: 8px; }
+.plugin-row .p-folder { flex: 1; min-width: 0; font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.p-empty { border-top: 1px solid var(--border); padding: 10px 0 2px; color: var(--text-3); font-size: var(--fs-sm); }
+.plugin-log { margin: 0; max-height: 60vh; overflow: auto; font-family: var(--font-mono); font-size: var(--fs-xs); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
+@media (max-width: 700px) {
+  .settings-top { height: auto; min-height: 54px; padding: max(6px, env(safe-area-inset-top)) 10px 6px; gap: 6px; }
+  .settings-top h1 { display: none; }
+  .settings-top .btn { padding-inline: 8px; }
+  .settings-main { flex-direction: column; }
+  .settings-nav {
+    width: 100%; flex: none; display: flex; gap: 4px; padding: 6px 8px; border-right: 0; border-bottom: 1px solid var(--border);
+    overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none;
+  }
+  .settings-nav::-webkit-scrollbar { display: none; }
+  .settings-nav .side-item { width: auto; flex: none; min-height: 38px; scroll-snap-align: start; }
+  .settings-content { padding: 18px 12px max(40px, env(safe-area-inset-bottom)); }
+  .settings-section { margin-bottom: 28px; scroll-margin-top: 62px; }
+  .settings-section h2 { font-size: 19px; }
+  .setting { flex-direction: column; align-items: stretch; gap: 10px; padding: 14px; }
+  .setting .s-control { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .setting .s-control .select { width: 100%; }
+  .setting .s-control > .segmented { max-width: 100%; overflow-x: auto; }
+  .setting.stack > div[style*="display:flex"] { flex-wrap: wrap; }
+  .backup-row { flex-wrap: wrap; }
+  .backup-row .b-main { flex-basis: calc(100% - 44px); }
+  .shortcuts { grid-template-columns: minmax(72px, auto) 1fr; padding: 14px; gap: 10px; }
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 14px; }
+  .preview-box .ex { flex-direction: column; gap: 2px; }
+  .preview-box .ex span { white-space: normal; }
+  .plugin-row .p-setting { flex-direction: column; align-items: stretch; gap: 6px; }
+  .plugin-row .p-control .input, .plugin-row .p-control .select { width: 100%; }
+  .plugin-row .p-details { margin-left: 0; }
+}

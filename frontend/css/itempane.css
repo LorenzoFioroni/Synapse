@@ -5,6 +5,7 @@
 .ip-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
 .ip-body { flex: 1; overflow: auto; padding: 6px 0 24px; }
 .ip-placeholder { color: var(--text-3); }
+.ip-mobile-back { display: none; }
 
 .section { border-bottom: 1px solid var(--border); }
 .section-head {
@@ -197,3 +198,30 @@ details.mr-same > .mr-group-items { margin-top: 12px; }
   .field-row .field-tools .icon-btn, .ip-ref .r-add { opacity: 1; }
   .author-row .icon-btn { width: 22px; opacity: 1; }
 }
+
+@media (max-width: 700px) {
+  .ip-mobile-back, #item-pane > .ip-mobile-back {
+    display: flex; align-items: center; gap: 7px; min-height: 42px; width: 100%; padding: 0 14px;
+    border: 0; border-bottom: 1px solid var(--border); background: var(--bg); color: var(--accent); font-weight: 600;
+  }
+  .ip-header { padding: 12px 16px 14px; }
+  .ip-header .ip-mobile-back { margin: -12px -16px 12px; width: calc(100% + 32px); }
+  .ip-title { font-size: 18px; }
+  .ip-body { padding-bottom: max(32px, env(safe-area-inset-bottom)); }
+  .section-head { min-height: 44px; padding: 11px 16px 9px; }
+  .section-body { padding: 0 12px 14px; }
+  .field-row { grid-template-columns: 86px minmax(0, 1fr); gap: 4px; min-height: 34px; }
+  .field-row > label { padding-top: 8px; }
+  .fv { min-height: 32px; padding: 6px; }
+  .more-toggle { margin-left: 92px; min-height: 36px; }
+  .att { min-height: 48px; }
+}
+
+/* "Why It Is Here": the reasons a plugin gives for listing a paper */
+.ip-reasons { display: flex; flex-direction: column; gap: 8px; }
+.ip-reason { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-sm); }
+.ip-reason > .icon { color: var(--accent); flex: none; margin-top: 2px; }
+.ip-reason > div { min-width: 0; flex: 1; }
+.ip-reason-items { margin: 2px 0 0 -6px; }
+.ip-abstract { white-space: pre-wrap; }
+.ip-type .badge { margin-left: 6px; }

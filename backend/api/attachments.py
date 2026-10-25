@@ -58,9 +58,14 @@ def items_from_pdfs():
         meta, note = {}, None
         try:
             if ident.get("doi"):
-                meta = lookup(doi=ident["doi"], known=known, email=s.settings.get("contact_email"))
+                meta = lookup(
+                    sources=s.plugins.lookup_metadata,
+                    doi=ident["doi"],
+                    known=known,
+                    email=s.settings.get("contact_email"),
+                )
             elif ident.get("arxiv"):
-                meta = lookup(identifier="arXiv:" + ident["arxiv"], known=known)
+                meta = lookup(sources=s.plugins.lookup_metadata, identifier="arXiv:" + ident["arxiv"], known=known)
         except LookupFailed as e:
             note = str(e)
         if not meta:

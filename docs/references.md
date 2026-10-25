@@ -2,8 +2,8 @@
 
 This page covers everything in Synapse that uses the web: item metadata, open-access PDFs, PDFs
 behind an attachment's web link, and the citation graph. [Architecture](architecture.md) has the
-map; this page goes into the two packages that own this work, `backend/online/` and
-`backend/references/`. They are the only parts of the backend that use the network.
+map; this page goes into the core services in `backend/online/` and `backend/references/`, with provider HTTP code in
+bundled plugins. The reference records, matching and graph remain available with providers off.
 
 Nothing here runs on its own schedule. Every request starts from something the user did (a menu
 command, adding items) or from a Settings → Adding Items choice. Without a network, these
@@ -12,21 +12,24 @@ features fail with a message and the rest of the app works as before.
 | Module | What it does |
 |---|---|
 | `backend/online/http.py` | What every lookup shares: timeout, User-Agent headers, `LookupFailed`, arXiv request spacing. |
-| `backend/online/metadata.py` | Item metadata from Crossref, OpenAlex, arXiv and Open Library. |
+| `backend/online/metadata.py` | Query classification, author normalization and routing to plugin metadata sources. |
+| `plugins/metadata-sources/server/providers.py` | Crossref, OpenAlex, arXiv and Open Library requests, title fallback and author enrichment. |
 | `backend/online/pdf_finder.py` | Finds an open-access PDF, downloads it and checks it is the right paper. |
 | `backend/online/remote_pdf.py` | Downloads the PDF behind an attachment that is stored as a web link. |
 | `backend/library/identifiers.py` | DOIs and arXiv ids: cleaning, normalising, finding them in an item. Offline. |
-| `backend/references/sources.py` | Reference lists from Semantic Scholar, OpenAlex and Crossref. |
+| `backend/references/sources.py` | Validates reference-fetch requests and delegates to injected providers. |
+| `plugins/reference-sources/server/providers.py` | Reference lists from Semantic Scholar, OpenAlex and Crossref, with the existing fallback and recent-arXiv policy. |
+| `plugins/reference-sources/server/arxiv_html.py` | Reading the bibliography of an arXiv paper's HTML version. |
+| `backend/references/connections.py` | How a paper outside the library connects to it (for plugins' lists). |
 | `backend/references/store.py` | `data/citations.db`, where the fetched lists are kept. |
 | `backend/references/service.py` | `Citations`: fetching now or in a background queue, matching references to library items. |
-| `backend/references/graph.py` | The network shown in the Graph view (papers, cited works, notes). |
 
 ## Shared HTTP helpers
 
 `backend/online/http.py` holds what the lookups share:
 
 - `TIMEOUT` (15 s) for API requests. The PDF code uses its own limits: `pdf_finder.py` waits 10 s
-  for Unpaywall, Google Scholar and arXiv searches and 20 s per download; `remote_pdf.py` has
+  for Unpaywall and arXiv searches and 20 s per download; `remote_pdf.py` has
   `TIMEOUT = 30`.
 - `api_headers(email)` returns a User-Agent of the form
   `Synapse/2.0 (https://github.com/…; mailto:<email>)`. Crossref and OpenAlex ask clients to name
@@ -144,19 +147,25 @@ The review is `frontend/src/views/metadataReview.ts`:
 `identifiers()`, calls `pdf_finder.find_and_download`, and attaches a found file as "Full Text PDF".
 It then calls `attachments_changed()` so the full-text index picks the file up.
 
-`candidate_urls()` lists where to look, best first:
+Where to look comes from the plugins' **PDF sources** (`@plugin.pdf_source`, see
+[plugins](plugins.md#the-plugin-object)), gathered by `PluginHost.pdf_candidates(paper,
+by_title=…)`: sources by identifier and sources searching by title, lower `order` first, each URL
+once. With no source running (the core plugin below turned off, and no other), Find Available PDF
+says so. The core plugin **Open-Access PDFs** (`plugins/open-access-pdfs/server/finder.py`) has
+Synapse's two sources, best first:
 
 1. For a preprint (an arXiv id, and no DOI or only an arXiv DOI): `arxiv.org/pdf/<id>`.
 2. For a DOI that is not an arXiv DOI: Unpaywall's `best_oa_location.url_for_pdf`. Unpaywall
    requests carry the contact e-mail (Settings → Online Services, else `FALLBACK_EMAIL`),
    URL-encoded.
 3. For a published paper that also has an arXiv id: the arXiv PDF, after Unpaywall.
-4. Searches by title: Unpaywall's search (first two results), the PDF link of Google Scholar's
-   first result (scraped, with the browser User-Agent), and an arXiv title search (the arXiv
-   API over https, after `arxiv_wait()`, with `TIMEOUT`).
+4. Searches by title: Unpaywall's search (first two results) and an arXiv title search (the
+   arXiv API over https, after `arxiv_wait()`, with `TIMEOUT`). Google Scholar is not asked: it
+   has no API, and its robots.txt forbids programs to read its result pages.
 
-When the item has an arXiv id, `find_and_download` tries steps 1–3 first and runs the title
-searches only if none of those was the paper.
+When the item has an arXiv id, `find_and_download` tries the sources by identifier (steps 1–3)
+first and asks the title searches only if none of those was the paper; otherwise it tries them all
+in one go.
 
 `_download_first` downloads the candidates in order. A response counts only if it is a PDF (by
 `Content-Type` or the `%PDF` header). `verify_pdf` then reads the first two pages and accepts the
@@ -193,7 +202,10 @@ address, 413 too large, 415 not a PDF, 502 for network trouble).
 ### Fetching reference lists
 
 `fetch(item)` in `backend/references/sources.py` needs a DOI or an arXiv id; without one it raises
-`LookupFailed`. It tries the sources in order and keeps the first non-empty list:
+`LookupFailed`. It delegates to the running reference providers registered with the plugin host.
+**Reference Sources** is a core plugin, on by default; disabling it stops its HTTP requests but
+keeps `citations.db` and saved graph links. Without any provider, fetching reports how to turn one
+on. Its bundled scholarly provider preserves the existing order and first-nonempty policy:
 
 1. **Semantic Scholar** (`semanticscholar`). The DOI first (a journal version), then the arXiv
    id. One request gives titles too, and it is good for arXiv papers. Pages of 1000, following
@@ -203,6 +215,23 @@ address, 413 too large, 415 not a PDF, 502 for network trouble).
    filter). The original order is kept, and works without details stay as bare OpenAlex ids.
 3. **Crossref** (`crossref`). The publisher's reference list, often with DOIs only. Skipped for
    arXiv DOIs.
+4. **arXiv's HTML version** (`arxiv-html`, `arxiv_html.py`), for papers with an arXiv id: the
+   other services usually know a paper's references only days after it is announced, the HTML
+   version (made with LaTeXML for most LaTeX submissions, at `arxiv.org/html/<id>`) from the first
+   day. Each `li.ltx_bibitem` of the `ltx_bibliography` section becomes a reference: its text
+   (`raw`, without the `[12]` label), a DOI or arXiv id from its text or links (an arXiv DOI,
+   `10.48550/arXiv.…`, counts as the arXiv id), the title from quotes or else the longest
+   italic stretch, and the year. A paper without an HTML version (404) has no references here.
+   It goes through `arxiv_wait()` like every arXiv request.
+
+   On announcement day the other services often know only part of a paper's references, or none
+   (measured on a day of quant-ph: Semantic Scholar had 13 of 119, 13 of 57, none of 478). So for
+   an arXiv id from this month or the last (`recent_arxiv`), the HTML list is asked even when
+   another service answered, and kept when it is longer. `fetch(item, fresh=True)` (a paper
+   announced in the last days, as arXiv Today asks) puts the HTML version first and asks the others
+   only when it has no list. `python tools/arxiv_refs.py quant-ph`
+   measures, for a day's new papers, how many have references there and how many of those carry
+   identifiers, next to what Semantic Scholar knows that day.
 
 Each request goes through `_get`: a 404 means "nothing here", and a 429 or 5xx is retried once
 after `Retry-After` (at most 10 s; 2 s when the header is a date). A source that fails is logged
@@ -218,7 +247,7 @@ each reference (identifiers through `identifiers.py`, integer year, collapsed wh
 
 | Table | Columns |
 |---|---|
-| `fetches` | `item_id` (key), `source` (`semanticscholar`, `openalex`, `crossref` or `none`), `fetched_at`, `doi` and `arxiv_id` used, `count`, `error` |
+| `fetches` | `item_id` (key), `source` (`semanticscholar`, `openalex`, `crossref`, `arxiv-html` or `none`), `fetched_at`, `doi` and `arxiv_id` used, `count`, `error` |
 | `refs` | `item_id`, `position` (key together), `doi`, `arxiv_id`, `openalex_id`, `s2_id`, `title`, `authors`, `year`, `venue`, `raw` (the citation as printed) |
 
 `save` replaces an item's list. `save_error` records a failure without losing a list fetched
@@ -248,8 +277,28 @@ The pane (`frontend/src/views/referencesSection.ts`) polls every 2 s while the i
 `graph()` returns every library item and every work they cite, with ids `item:<id>`, `doi:…`,
 `arxiv:…`, `openalex:…` or `ref:<item>:<position>`, and `cited_by_library` counts.
 
-`build_graph()` in `backend/references/graph.py` adds the notes for the Graph view
-(`frontend/src/views/graph/`): `paper`, `work` and `note` nodes, and `cites`, `cite` (a note's
+`match_refs(refs)`, `citing_ids(doi, arxiv_id)` (the library items whose stored lists cite a
+work, `CitationStore.citing`) and `library_signature()` are what `connections.py` uses.
+
+### How a paper connects to the library
+
+`Connections` (`backend/references/connections.py`, created in `Services`) scores papers outside
+the library for plugins (`plugin.services.connections`, see [plugins](plugins.md#papers-outside-the-library)).
+For each paper it gives `{"score", "reasons"}`, each reason `{kind, text, items}` with the library
+items involved:
+
+| Kind | Found by | Score |
+|---|---|---|
+| `cites` | its reference list (given by the caller) matched with `match_refs` | 3 per library paper |
+| `cited_by` | library papers whose stored reference lists contain its DOI or arXiv id | 3 per library paper |
+| `authors` | family name and first initial, normalised, shared with library papers | 2 per library paper, at most 5 |
+| `similar` | cosine similarity of title and abstract (TF-IDF over the library; words in more than a quarter of the library and stop words left out), from 0.15 | 10 × the best similarity |
+
+The library side (author index, word weights and postings) is built once and again only when
+`library_signature()` changes. `folders` limits all of it to papers in those folders.
+
+`build_graph()` in the Graph core plugin (`plugins/graph/server/build.py`, served at
+`GET /api/plugins/graph/data`) adds the notes for the Graph view (`frontend/src/plugins/core/graph/`): `paper`, `work` and `note` nodes, and `cites`, `cite` (a note's
 `[@key]`), `link` (a note's `[[link]]`) and `about` (a paper note) edges. Everything is derived;
 nothing is stored. See [notes](notes.md) for the links it reads.
 
@@ -282,8 +331,8 @@ checkboxes; see [browser extension](browser-extension.md).
 | `POST /api/references/queue` | `api/references.py` | Queues `{ids}` for background fetching. |
 | `GET /api/references/status` | `api/references.py` | `{queued, running, last_error}`. |
 | `GET /api/graph/citations` | `api/references.py` | The whole citation graph (`Citations.graph()`). |
-| `GET /api/graph` | `api/references.py` | The Graph view's network (`build_graph()`). |
 | `POST /api/connector/save` | `api/connector.py`, `backend/connector.py` | The browser button; looks up metadata when the page has a DOI or arXiv id. |
+| `POST /api/outside/add` | `api/plugins.py`, `Services.add_paper` | Adds `{paper, folder_id, tags}` from a plugin's list: looked up by DOI or arXiv id (the paper's fields when that fails), duplicates checked. 201 `{item, duplicate: false}`, or 200 with the existing item and `duplicate: true`. |
 
 ## How tests fake the network
 
@@ -304,6 +353,8 @@ canned data, using pytest's `monkeypatch`. They patch it through the module unde
   public or private addresses.
 - `tests/test_connector.py`: patches `connector.lookup`, `pdf_finder.find_and_download` or
   `Services.find_pdf_later` directly.
+- `tests/plugins/test_outside.py`: patches `metadata.lookup` and `sources.fetch` (the `no_web`
+  fixture); parses a LaTeXML bibliography written in the test.
 
 `tests/conftest.py` sets `ARXIV_SPACING` to 0 for every test, and the `app` fixture turns off
 background reference fetching and PDF finding, which would outlive the test. The frontend job is
@@ -312,19 +363,22 @@ tested in `tests/js/lookupJob.test.mjs` with an injected `lookup` function. See
 
 ## Where to change things
 
-- **A new metadata source.** Add a function in `backend/online/metadata.py` that returns item
-  fields (drop empty values, set `library_catalog`) and raises `LookupFailed` with a readable
-  message. Recognise its identifier in `classify_identifier` if it has one, and route to it in
-  `lookup()`. Use `TIMEOUT` and `api_headers(email)`, and `arxiv_wait()` for anything on arXiv.
-  Add a faked test in `tests/test_metadata.py`. If it returns a field the review should offer,
-  add it to `LOOKUP_FIELDS` in `metadataReview.ts`.
-- **A new PDF source.** Add its candidates in `candidate_urls()` at the right priority; downloads
-  and checks are shared.
-- **A new reference source.** Add a function in `backend/references/sources.py` that returns
-  dicts with keys from `REF_FIELDS` and add it to `attempts` in `fetch()`. Add its name to the
-  `source` comment in `store.py` and to `SOURCES` in `referencesSection.ts`.
+- **A new metadata source.** Register `@plugin.metadata_source` in a plugin (see
+  [plugins](plugins.md)). Return normalized item fields or `None`; a lower `order` takes
+  priority over the core plugin (100). Use `plugin.http` with network permission in a
+  third-party plugin. The existing core providers live in `plugins/metadata-sources/server/`.
+  Add a faked test, and add any new reviewable field to `LOOKUP_FIELDS` in `metadataReview.ts`.
+- **A new PDF source.** Register `@plugin.pdf_source`; the core downloads and checks the candidates.
+- **A new reference source.** Register `@plugin.reference_source` (API 1.1). Return
+  `{"references": [...]}` with reference objects using `doi`, `arxiv_id`, `title`, `authors`,
+  `year`, `venue` and `raw` where known, or `None`/an empty list inside that object for no match.
+  Lower `order` runs first. Third-party source names are qualified by plugin id; the core
+  provider retains historical source names for saved graphs. Use `plugin.http` and fake its
+  responses in tests. See [Plugins](plugins.md).
 - **A new identifier rule** shared by several packages goes in `backend/library/identifiers.py`,
   with a test in `tests/test_identifiers.py`.
 - **A new setting** (an e-mail, a key) goes in `DEFAULTS` in `backend/settings.py` and on the
   Online Services page (`frontend/src/views/settings/page.ts`); read it in the caller and pass it
   in.
+
+Metadata providers are the default-on **Metadata Sources** core plugin (`plugins/metadata-sources/server/providers.py`): Crossref, OpenAlex, arXiv and Open Library. `backend/online/metadata.py` keeps query classification, title matching and author normalization; the running plugin sources supply metadata. Existing HTTP endpoints and responses are unchanged. Turning all matching sources off gives a readable error without a network request; library records are kept.

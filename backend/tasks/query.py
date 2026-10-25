@@ -1,4 +1,4 @@
-"""Searching tasks with the same syntax as the Tasks page (frontend/src/views/tasks/taskQuery.ts):
+"""Searching tasks with the same syntax as the Tasks page (frontend/src/plugins/core/tasks/taskQuery.ts):
 words, "phrases", -exclusions, is:open|done, due:today|overdue|week|none|<DATE|>DATE|DATE,
 note:"title", has:body|subtasks."""
 

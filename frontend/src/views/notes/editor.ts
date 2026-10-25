@@ -121,7 +121,7 @@ export function highlightStyle(cm: CM): HighlightStyle {
 /**
  * The notes editor in ``parent``. ``preview`` is what livePreview.ts needs (renderer, resolveNote,
  * citeInfo, openNote …); ``data`` gives autocomplete the cite index and the notes overview, and
- * ``data.assist`` the source of ghost-text suggestions (assist.ts).
+ * ``data.assist`` the source of ghost-text suggestions (hooks.ts: the Autocompletion plugin's).
  */
 export async function createEditor(
   parent: HTMLElement,

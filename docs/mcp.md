@@ -127,6 +127,15 @@ note or a search, find pages before reading them) and `WRITING_RULES`, the note 
 descriptions of `write_note` and `edit_note` repeat `WRITING_RULES`, because the model reads tool
 descriptions when it decides how to call them. See [notes](notes.md) for the syntax itself.
 
+**Plugin tools.** Running plugins add tools of their own, named `<plugin id>__<name>` and described
+with the plugin's name in brackets (see [plugins](plugins.md)). `build_server` sets `Server.extra`,
+which `tools/list` and `tools/call` ask each time, so a plugin turned on in the app appears without
+restarting the server (the MCP server follows `plugins.json`). Over `/mcp` (`remote=True`) only
+plugins whose tools the user allowed for other computers take part. A plugin's `PluginError`
+reaches the model as a tool error (`_readable`); anything else counts as the plugin failing.
+Plugins' per-item fields reach the model too: `get_paper` lists their known values as
+`plugin_fields`, and `search_library` takes them as filters (`citations:>100`).
+
 Claude's task changes are recorded with `by: "ai"` in `task_history`, so the app shows them as
 Claude's and can undo them; `get_note` lists the tasks a note shows, and `NoteChecker` refuses a
 note that shows a task id that does not exist (see [tasks](tasks.md)).
@@ -299,3 +308,7 @@ versions, making, listing and removing tokens, and a note written over HTTP reac
 feed. The browser checklist `passkeys` makes a token in Settings and uses it.
 
 Tests that render pages are skipped when `pypdfium2` is not installed. See [testing](testing.md).
+
+The five task tools are supplied by the Tasks core plugin, keeping their names and schemas.
+They are offered to remote MCP clients by default, as before, and disappear while the plugin is
+off. Task storage and validation of task IDs in note writes remain available in the core.

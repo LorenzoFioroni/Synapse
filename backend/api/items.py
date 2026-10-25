@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, request
 from ..library import search as search_mod
 from ..library.fields import schema_payload
 from ..library.repository import NotFound
+from ..plugins import PluginError
 from . import body, error, ids_from_body, svc
 
 bp = Blueprint("items", __name__, url_prefix="/api")
@@ -20,7 +21,11 @@ def schema():
 def search_context(s) -> dict:
     from ..library.fields import ITEM_TYPE_LABELS
 
-    return {"folder_paths": s.folders.paths(), "type_labels": ITEM_TYPE_LABELS}
+    return {
+        "folder_paths": s.folders.paths(),
+        "type_labels": ITEM_TYPE_LABELS,
+        "field_filters": s.plugins.fields.search_filters(),  # plugins' fields: citations:>100
+    }
 
 
 def notes_matcher(s):
@@ -37,6 +42,8 @@ def items_for_view(s, view: str, library: list[dict]) -> tuple[list[dict], str |
         s.folders.get(fid)
         ids = s.folders.descendants(fid) if s.settings.get("show_subfolder_items") else {fid}
         return [p for p in library if ids & set(p.get("folder_ids") or [])], None, None
+    if view.startswith("source:"):  # a list of outside papers a plugin offers
+        return s.plugins.sources.items(view[len("source:") :]), None, None
     if view.startswith("smart:"):
         sf = s.smart.get(int(view.split(":", 1)[1]))
         return library, sf["query"], sf["mode"]
@@ -53,6 +60,8 @@ LEAN_DROP = {"abstract"}
 
 
 def lean(p: dict) -> dict:
+    if p.get("_outside"):  # a paper outside the library: the item pane has only what the list sends
+        return {k: v for k, v in p.items() if v is not None and v != ""}
     return {k: v for k, v in p.items() if k not in LEAN_DROP and v is not None and v != ""}
 
 
@@ -66,7 +75,10 @@ def list_items():
     mode = request.args.get("mode") or s.settings.get("default_search_mode")
     tag_filter = [t for t in request.args.get("tags", "").split(",") if t.strip()]
     library = s.papers.list()
-    items, smart_q, smart_mode = items_for_view(s, view, library)
+    try:
+        items, smart_q, smart_mode = items_for_view(s, view, library)
+    except PluginError as e:  # a plugin's list failed: say why, the page keeps what it shows
+        return error(str(e), 502)
     ctx = search_context(s)
     hits = {}
     notes = notes_matcher(s) if q or smart_q else None
@@ -79,7 +91,7 @@ def list_items():
         items, more = search_mod.search(items, q, mode, s.fulltext, ctx, notes=notes)
         hits = {**{k: v for k, v in hits.items() if k in {p["id"] for p in items}}, **more}
     if request.args.get("lean") in ("1", "true"):
-        items = [lean(p) for p in items]
+        items = s.plugins.fields.attach([lean(p) for p in items])  # plugins' fields as _f, for columns
     return jsonify(items=items, hits=hits, counts=s.papers.counts(library), mode=mode, query=q, sidebar=sidebar(s))
 
 
@@ -94,7 +106,7 @@ def items_by_ids():
             items.append(lean(s.papers.get(i)))
         except NotFound:
             missing.append(i)
-    return jsonify(items=items, missing=missing, counts=s.papers.counts(), sidebar=sidebar(s))
+    return jsonify(items=s.plugins.fields.attach(items), missing=missing, counts=s.papers.counts(), sidebar=sidebar(s))
 
 
 @bp.get("/search/preview")
@@ -126,7 +138,8 @@ def create_item():
 
 @bp.get("/items/<item_id>")
 def get_item(item_id):
-    return jsonify(svc().papers.get(item_id))
+    s = svc()
+    return jsonify(s.plugins.fields.attach([s.papers.get(item_id)])[0])
 
 
 @bp.patch("/items/<item_id>")

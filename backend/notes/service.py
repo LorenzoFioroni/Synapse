@@ -107,6 +107,8 @@ class NotesService:
         default = vault.root.parent / "backups"  # data/backups
         self.rekeyer = Rekeyer(vault, index, backups_dir or default, fallback_dir=default)
         self.on_change: Callable[[], None] | None = None  # called after notes are saved, deleted or restored
+        # called with (path, hash, by) after a note is written: by is "app" or "ai" (plugins hear it)
+        self.saved_listeners: list[Callable[[str, str, str], None]] = []
         self.history = NoteHistory(vault.root)  # earlier versions of notes Claude changed
         self.folder_colors = FolderColors(vault.root)  # colours given to notes folders
 
@@ -260,7 +262,15 @@ class NotesService:
         path = self.vault.clean_rel(path)
         h = self.vault.write(path, content, expected_hash=None)
         self.index.update(path)
+        self._saved(path, h, "app")
         return {"path": path, "text": content, "hash": h}
+
+    def _saved(self, path: str, h: str, by: str) -> None:
+        for fn in list(self.saved_listeners):
+            try:
+                fn(path, h, by)
+            except Exception:  # the note is saved; a listener must not undo that
+                log.exception("note listener failed for %s", path)
 
     def _changed(self) -> None:
         """Notes were saved, deleted or restored: attachments may have become (un)used."""
@@ -273,6 +283,7 @@ class NotesService:
         h = self.vault.write(path, text, expected_hash=base_hash)
         self.index.update(path)
         self._changed()
+        self._saved(path, h, "app")
         return {"path": path, "hash": h, "info": self.index.note(path)}
 
     def edit(self, path: str, text: str, base_hash: str, *, by: str = "ai", summary: str = "") -> dict:
@@ -286,6 +297,7 @@ class NotesService:
         entry = self.history.record(path, before=before, before_hash=h, after_hash=h2, by=by, summary=summary)
         self.index.update(path)
         self._changed()
+        self._saved(path, h2, by)
         return {"path": path, "hash": h2, "version": entry["id"]}
 
     def history_of(self, path: str) -> dict:

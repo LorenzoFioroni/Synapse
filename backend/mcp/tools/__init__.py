@@ -18,10 +18,7 @@ from .images import ImageToolsMixin
 from .library import LibraryToolsMixin
 from .notes import NoteToolsMixin
 from .papers import PaperToolsMixin
-from .tasks import TaskToolsMixin
 
 
-class LibraryTools(
-    LibraryToolsMixin, NoteToolsMixin, ImageToolsMixin, PaperToolsMixin, CitationToolsMixin, TaskToolsMixin, ToolsBase
-):
+class LibraryTools(LibraryToolsMixin, NoteToolsMixin, ImageToolsMixin, PaperToolsMixin, CitationToolsMixin, ToolsBase):
     """All the tools, as methods; ``build_server`` exposes them over MCP."""

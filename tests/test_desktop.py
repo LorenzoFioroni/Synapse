@@ -17,6 +17,7 @@ import pytest
 from backend.desktop import presence as P
 from backend.desktop import shortcut, window
 from backend.desktop.presence import Presence
+from server import _open_when_ready, app_url
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -162,6 +163,12 @@ def test_finds_synapse_installed_as_an_app(tmp_path):
     assert window.installed_app("http://127.0.0.1:5050/", tmp_path) is None, "another port"
     assert window.installed_app("https://127.0.0.1:8000/", tmp_path) is None
     assert window.installed_app("http://127.0.0.1:8000/", tmp_path / "nobody") is None
+
+
+def test_finds_an_installed_app_for_the_same_local_name(tmp_path):
+    syn = chrome_app(tmp_path, "Chrome Apps.localized", "Synapse", "https://macbook.local:8000/")
+    assert window.installed_app("https://macbook.local:8000/", tmp_path) == syn
+    assert window.installed_app("https://other.local:8000/", tmp_path) is None
 
 
 def test_an_app_for_another_computer_is_not_this_server(tmp_path):
@@ -335,6 +342,38 @@ def test_no_shortcut_on_other_systems(tmp_path):
 # --------------------------------------------------------------- server.py
 
 
+def test_https_lan_opens_the_certificate_friendly_local_name(monkeypatch):
+    from backend.access import lan
+
+    monkeypatch.setattr(lan, "local_hostname", lambda: "Lorenzos-MacBook.local")
+    assert app_url("0.0.0.0", 8000, tls=True) == "https://Lorenzos-MacBook.local:8000/"
+    assert app_url("::", 8443, tls=True) == "https://Lorenzos-MacBook.local:8443/"
+    assert app_url("0.0.0.0", 8000, tls=False) == "http://127.0.0.1:8000/"
+    assert app_url("::1", 8000, tls=True) == "https://[::1]:8000/"
+
+
+def test_browser_or_window_opens_only_after_synapse_is_ready(monkeypatch):
+    answers = iter([None, False, True])
+    checked = []
+    opened = []
+    monkeypatch.setattr("server.time.sleep", lambda seconds: None)
+
+    assert _open_when_ready(
+        "https://mac.local:8000/",
+        opened.append,
+        ready=lambda url: checked.append(url) or next(answers),
+    )
+    assert checked == ["https://mac.local:8000/"] * 3
+    assert opened == ["https://mac.local:8000/"]
+
+
+def test_browser_or_window_is_not_opened_when_the_server_never_starts(monkeypatch):
+    opened = []
+    monkeypatch.setattr("server.time.sleep", lambda seconds: None)
+    assert not _open_when_ready("https://mac.local:8000/", opened.append, ready=lambda url: None, attempts=2)
+    assert opened == []
+
+
 def run_server(*args, home: Path, timeout=60):
     env = dict(os.environ, HOME=str(home), BROWSER="true")  # BROWSER: never open a real one
     env.pop("SYNAPSE_DATA_DIR", None)
@@ -386,3 +425,14 @@ def test_the_manifest_offers_a_new_window(client):
     (sc,) = [s for s in m["shortcuts"] if s["name"] == "New Window"]
     assert sc["url"] == "/#window=new"
     assert all(i["src"].startswith("/assets/") for i in sc["icons"])
+
+
+def test_the_manifest_is_installable(client):
+    """Chromium needs standalone display and suitably sized PNG icons to offer installation."""
+    m = client.get("/manifest.webmanifest").get_json(force=True)
+    assert m["id"] == "/"
+    assert m["start_url"] == "/"
+    assert m["scope"] == "/"
+    assert m["display"] == "standalone"
+    assert {icon["sizes"] for icon in m["icons"]} >= {"192x192", "512x512"}
+    assert all("any" in icon["purpose"] and "maskable" in icon["purpose"] for icon in m["icons"])
