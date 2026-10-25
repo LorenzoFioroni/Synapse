@@ -77,6 +77,27 @@ def test_pairing_page_and_icon_are_open(ipad):
     assert remote(ipad, "GET", "/assets/favicon.svg").status_code == 200
 
 
+def test_home_screen_icon_and_manifest_need_no_cookie(ipad):
+    # Browsers fetch the manifest without cookies and iOS the Home Screen icon too: a paired
+    # device's request for them looks like an unpaired one.
+    for path, kind in (
+        ("/manifest.webmanifest", "application/manifest+json"),
+        ("/assets/apple-touch-icon.png", "image/png"),
+        ("/apple-touch-icon.png", "image/png"),
+        ("/apple-touch-icon-precomposed.png", "image/png"),
+        ("/assets/icon-192.png", "image/png"),
+        ("/assets/icon-512.png", "image/png"),
+        ("/assets/favicon-32.png", "image/png"),
+    ):
+        r = remote(ipad, "GET", path)
+        assert r.status_code == 200 and r.mimetype == kind, (path, r.status_code, r.mimetype)
+    icons = [i["src"] for i in remote(ipad, "GET", "/manifest.webmanifest").get_json()["icons"]]
+    assert all(remote(ipad, "GET", src).status_code == 200 for src in icons)
+    # nothing else of the app's files
+    assert remote(ipad, "GET", "/assets/../index.html").status_code in (401, 404)
+    assert remote(ipad, "GET", "/js/main.js").status_code == 401
+
+
 def test_this_computer_needs_no_pairing(mac):
     assert mac.get("/api/items").status_code == 200
     assert mac.post("/api/items", json={"title": "From the Mac"}).status_code in (200, 201)
