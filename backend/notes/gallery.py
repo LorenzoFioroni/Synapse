@@ -9,7 +9,7 @@
 
 The app shows a gallery as a carousel and exports it as one figure with panels (a), (b), ….
 This module reads the blocks for the MCP tools; the frontend's
-``plugins/core/figures/gallery.ts`` (the Figures plugin) reads them the same way for display. The parser (``parser.mask``) decides where a gallery block is.
+``plugins/core/extended-markdown/figures/gallery.ts`` (Extended Markdown) reads them the same way for display. The parser (``parser.mask``) decides where a gallery block is.
 """
 
 from __future__ import annotations

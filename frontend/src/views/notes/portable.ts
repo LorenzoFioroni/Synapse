@@ -205,7 +205,7 @@ export function portableBody(text: string, opts: PortableOptions): Portable {
     }
     at = l.to;
   }
-  // figures (the Figures plugin): numbered, galleries as their images and one caption
+  // figures (Extended Markdown): numbered, galleries as their images and one caption
   const md = out + text.slice(at);
   return { markdown: noteHooks.figures ? noteHooks.figures.portable(md) : md, keys };
 }

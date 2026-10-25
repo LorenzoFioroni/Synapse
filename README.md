@@ -224,8 +224,8 @@ never mix.
   cleveref: `\cref{fig:name}` writes "Fig. 2", `\cref{eq:name}` "Eq. (3)", `\cref{a,b,c}` "Figs. 1
   and 2 and Eq. (3)" (ranges as "Eqs. (1)–(3)"), `\Cref` the full word for the start of a
   sentence ("Figure 2"), and `\ref` / `\eqref` the bare number (see
-  [Figures](docs/notes.md#figures-and-their-numbers)); galleries and figure numbers are the core
-  plugin **Figures**, which can be turned off in Settings → Plugins. Switch with the
+  [Figures](docs/notes.md#figures-and-their-numbers)); galleries and figure numbers are part of the core
+  plugin **Extended Markdown**, with a switch of their own in its settings. Switch with the
   *Library | Notes* toggle or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
   Cmd+[ / Alt+←) restore notes, Graph, Tasks, plugin pages and library views/selections.
   If a destination's plugin is off, navigation returns to the library (or Notes for Graph).
@@ -253,7 +253,8 @@ never mix.
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
   drag to move; folders can be renamed, moved and deleted the same way.
 - **Extended Markdown** (core plugin, on by default) is where Markdown syntax beyond the basics
-  lives. Its first extension is **spoilers**: `||inline spoilers||` with a keyboard-accessible
+  lives, each part with its own switch in its settings: **galleries and numbered figures** (above)
+  and **spoilers**: `||inline spoilers||` with a keyboard-accessible
   Show/Hide button, and collapsible `:::spoiler Optional summary` blocks closed by `:::`. Blocks
   support nested Markdown and spoilers. Source text stays intact when the plugin is off; HTML/PDF
   exports reveal spoiler contents. See [Extended Markdown](docs/notes.md#extended-markdown-core-plugin).
@@ -317,7 +318,7 @@ are under **More**; a plugin that keeps failing is turned off and Settings says 
 the app from working, start it with `python server.py --safe-mode` (only core plugins run) and turn it
 off.
 
-Synapse’s own optional features are **core plugins**: Figures, Graph, Metadata Sources,
+Synapse’s own optional features are **core plugins**: Graph, Metadata Sources,
 Reference Sources, Export Formats, Extended Markdown, Open-Access PDFs and Tasks start on,
 while Autocompletion starts as previously configured.
 Turn them off in Settings → Plugins without losing their data. Core plugins can also be toggled

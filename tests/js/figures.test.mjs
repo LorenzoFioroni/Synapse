@@ -2,14 +2,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as lib from '../../frontend/vendor/md/md.js';
-import { figuresOf, imageFigureAt } from '../../frontend/js/plugins/core/figures/figures.js';
-import { takeLabels, wholeEmphasis } from '../../frontend/js/plugins/core/figures/gallery.js';
+import { figuresOf, imageFigureAt } from '../../frontend/js/plugins/core/extended-markdown/figures/figures.js';
+import { takeLabels, wholeEmphasis } from '../../frontend/js/plugins/core/extended-markdown/figures/gallery.js';
 import { portableBody } from '../../frontend/js/views/notes/portable.js';
 import { createRenderer } from '../../frontend/js/views/notes/render.js';
 import { setNoteHook } from '../../frontend/js/views/notes/hooks.js';
-import { figuresHook } from '../../frontend/js/plugins/core/figures/hook.js';
+import { figuresHook } from '../../frontend/js/plugins/core/extended-markdown/figures/hook.js';
 
-// galleries and figures come from the Figures plugin, on unless a test turns it off
+// galleries and figures come from Extended Markdown, on unless a test turns them off
 setNoteHook('figures', figuresHook);
 
 const NOTE = [

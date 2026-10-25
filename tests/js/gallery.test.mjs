@@ -4,13 +4,13 @@ import { test } from 'node:test';
 import * as lib from '../../frontend/vendor/md/md.js';
 import {
   endsSentence, figureCaption, figureColumns, galleryInfo, galleryMarkdown, panelLabel, parseGallery,
-} from '../../frontend/js/plugins/core/figures/gallery.js';
+} from '../../frontend/js/plugins/core/extended-markdown/figures/gallery.js';
 import { portableBody } from '../../frontend/js/views/notes/portable.js';
 import { createRenderer } from '../../frontend/js/views/notes/render.js';
 import { setNoteHook } from '../../frontend/js/views/notes/hooks.js';
-import { figuresHook } from '../../frontend/js/plugins/core/figures/hook.js';
+import { figuresHook } from '../../frontend/js/plugins/core/extended-markdown/figures/hook.js';
 
-// galleries and figures come from the Figures plugin, on unless a test turns it off
+// galleries and figures come from Extended Markdown, on unless a test turns them off
 setNoteHook('figures', figuresHook);
 
 test('info string: gallery and its width', () => {
@@ -98,7 +98,7 @@ test('rendered as a carousel, captions parsed as Markdown', () => {
   assert.ok(!r.render('```gallery\n![](a.png) <img src=x onerror=alert(1)>\n```').includes('<img src="x"'));
 });
 
-test('without the Figures plugin a gallery reads as the Markdown it holds', () => {
+test('with galleries off a gallery reads as the Markdown it holds', () => {
   const r = createRenderer(lib);
   const src = 'Before.\n\n```gallery\n![](attachments/a.png)\n*First, $x$ [@k].*\n\nThe caption.\n```\n\nAfter.';
   assert.match(r.render(src), /class="gallery"/);

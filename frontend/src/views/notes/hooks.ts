@@ -44,7 +44,7 @@ export interface FigureInText {
 /** A note's figures in order, and what each \label stands for ("2", "2(b)"). */
 export interface Figures { figures: FigureInText[]; labels: Map<string, string> }
 
-/** Galleries and numbered figures (the Figures plugin). Without it a ```gallery block reads as
+/** Galleries and numbered figures (the figures extension of Extended Markdown). Without it a ```gallery block reads as
     the Markdown it holds, and an image's caption line as the text it is. */
 export interface FiguresHook {
   /** Add the rules and renderers to a Markdown renderer (render.ts). They run before the
@@ -81,7 +81,7 @@ interface Hooks {
   editorOpened: Set<() => void>;
   /** The graph (Graph), or null. Set it with setNoteHook, so the notes view hears of it. */
   graph: GraphHook | null;
-  /** Galleries and figures (Figures), or null. Set it with setNoteHook. */
+  /** Galleries and figures (Extended Markdown), or null. Set it with setNoteHook. */
   figures: FiguresHook | null;
 }
 

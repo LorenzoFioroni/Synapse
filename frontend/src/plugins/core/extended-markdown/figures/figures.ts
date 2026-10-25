@@ -16,8 +16,8 @@
 // in the text (figuresOf): both apply imageFigureAt to the note's lines, so they agree.
 // No DOM here (tests/js/figures.test.mjs).
 import { type Gallery, galleryCaptioned, panelLabel, parseGallery, takeLabels, wholeEmphasis } from './gallery.js';
-import type { FigureInText as Figure } from '../../../views/notes/hooks.js';
-import { type Scan, scan } from '../../../views/notes/mdscan.js';
+import type { FigureInText as Figure } from '../../../../views/notes/hooks.js';
+import { type Scan, scan } from '../../../../views/notes/mdscan.js';
 
 const IMAGE_LINE = /^ {0,3}!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)\s*$/;
 const blank = (s: string | undefined) => s === undefined || !s.trim();

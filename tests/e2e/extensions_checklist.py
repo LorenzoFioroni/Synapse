@@ -133,6 +133,21 @@ async def main():
                         f"Spoilers on restores one inline control ({cycle + 1})",
                         await page.locator(".note-read .spoiler-toggle").count() == 1,
                     )
+                # the package's own switch for spoilers, the rest of the package still on
+                switch = f"{BASE}/api/plugin-host/extended-markdown/settings"
+                requests.put(switch, json={"spoilers": False}, timeout=10).raise_for_status()
+                await page.wait_for_function("!document.querySelector('.note-read .spoiler-toggle')", timeout=15000)
+                check(
+                    "The Spoilers switch alone shows the source",
+                    "||inline secret" in await page.locator(".note-read").inner_text()
+                    and "extended-markdown" in await page.evaluate("window.zcPlugins.loaded()"),
+                )
+                requests.put(switch, json={"spoilers": True}, timeout=10).raise_for_status()
+                await page.wait_for_selector(".note-read .spoiler-toggle", timeout=15000)
+                check(
+                    "The Spoilers switch on again restores the control",
+                    await page.locator(".note-read .spoiler-toggle").count() == 1,
+                )
                 saved = requests.get(BASE + "/api/notes/note", params={"path": path}, timeout=5).json()["text"]
                 check("Toggling the plugin does not rewrite the note", saved == original)
                 async with page.expect_download() as pending:

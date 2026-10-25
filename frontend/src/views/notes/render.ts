@@ -7,8 +7,8 @@
 //  * indented code blocks are off; fenced code only;
 //  * $…$ closes on the same line (Pandoc rules), $$…$$ inline or as a block;
 //  * [[Note|alias]], ![[Note]], [@key, p. 4], [see @a; @b], > [!note] callouts, - [ ] tasks;
-//  * ```gallery blocks and numbered figures come from the Figures plugin (hooks.ts, FiguresHook;
-//    plugins/core/figures/markdown.ts); without it a gallery reads as the Markdown it holds;
+//  * ```gallery blocks and numbered figures come from Extended Markdown (hooks.ts, FiguresHook;
+//    plugins/core/extended-markdown/figures/markdown.ts); without it a gallery reads as the Markdown it holds;
 //  * display equations are numbered through the note and \eqref{label} resolved (equations.ts);
 //  * math macros: the physics package, Settings, and \newcommand in the note (macros.ts).
 
@@ -259,7 +259,7 @@ function taskRule(state: StateCore): void {
 }
 
 /**
- * A ```gallery block when the Figures plugin is off (it turns them into carousels before this
+ * A ```gallery block when galleries are off (Extended Markdown) (it turns them into carousels before this
  * runs): the Markdown it holds, read like the rest of the note (its images, captions, citations).
  * Runs after block parsing, before inline parsing.
  */
@@ -407,7 +407,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
         : `<span class="math">${katex(t[i].content, false, env.macros)}</span>`);
     R.math_block = (t, i, opts, env) => (onlyDefines(t[i]) ? ''
       : `<div class="math-block" data-line="${(t[i].map?.[0] ?? 0) + (o.lineOffset || 0)}">${anchors(t[i].meta?.labels)}${katex(t[i].content, true, env.macros)}</div>\n`);
-    // an equation's label, else a figure's (env.figLabels, from the Figures plugin); \cref writes the kind too (crossref.ts)
+    // an equation's label, else a figure's (env.figLabels, from Extended Markdown's figures); \cref writes the kind too (crossref.ts)
     R.eq_ref = (t, i, opts, env) => {
       const { kind, names } = t[i].meta;
       return refHtml(kind, names, lookupIn(env.eqLabels, env.figLabels));

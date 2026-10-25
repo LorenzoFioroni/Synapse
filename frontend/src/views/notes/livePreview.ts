@@ -76,14 +76,14 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
   });
 
   /* ------------------------------------------------------- per-document data */
-  let cache: { doc: Text | null; scan: Scan | null; refs: TextRef[] | null; eq: Equations | null; mode: string | null; base: Macros | null; figs: Figures | null; spoilers: Spoiler[] | null; atomic: DecorationSet | null } = { doc: null, scan: null, refs: null, eq: null, mode: null, base: null, figs: null, spoilers: null, atomic: null };
+  let cache: { doc: Text | null; scan: Scan | null; refs: TextRef[] | null; eq: Equations | null; mode: string | null; base: Macros | null; figs: Figures | null; spoilers: { of: unknown; spans: Spoiler[] } | null; atomic: DecorationSet | null } = { doc: null, scan: null, refs: null, eq: null, mode: null, base: null, figs: null, spoilers: null, atomic: null };
   let lastBase: Macros | null = null, baseVersion = 0;
   const scanOf = (state: EditorState): Scan => {
     if (cache.doc !== state.doc) cache = { doc: state.doc, scan: scan(state.doc.toString()), refs: null, eq: null, mode: null, base: null, figs: null, spoilers: null, atomic: null };
     return cache.scan!;
   };
-  // the note's figures and their numbers (the Figures plugin), found with the same rule as the
-  // renderer's; none without the plugin
+  // the note's figures and their numbers (Extended Markdown), found with the same rule as the
+  // renderer's; none while galleries and figures are off
   const noFigures: Figures = { figures: [], labels: new Map() };
   const figuresOfDoc = (state: EditorState): Figures => {
     const s = scanOf(state);
@@ -98,8 +98,9 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     const s = scanOf(state);
     const hook = noteHooks.extended;
     if (!hook) return [];
-    cache.spoilers ||= hook.spoilers(state.doc.toString(), s);
-    return cache.spoilers;
+    // keyed on the hook too: switching spoilers on or off in Settings gives a new hook, same text
+    if (cache.spoilers?.of !== hook) cache.spoilers = { of: hook, spans: hook.spoilers(state.doc.toString(), s) };
+    return cache.spoilers.spans;
   };
   // what a reference may name: an equation's label, else a figure's or a gallery panel's
   const refLookup = (state: EditorState, eq: Equations): Lookup => lookupIn(eq.labels, figuresOfDoc(state).labels);
@@ -243,7 +244,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
           const info = node.node.getChild('CodeInfo');
           const lang = info ? doc.sliceString(info.from, info.to).trim().toLowerCase() : '';
           if (GALLERY_INFO.test(lang)) {
-            // without the Figures plugin a gallery is its lines, as any text
+            // with galleries off a gallery is its lines, as any text
             if (!noteHooks.figures) return false;
             // a gallery is one unit: drawn as its carousel, or, while the cursor is in it, its
             // source with the carousel below it (nothing inside the source is rendered)

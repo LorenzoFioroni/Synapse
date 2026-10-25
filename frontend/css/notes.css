@@ -427,7 +427,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 
 @media (hover: none) { .prose .code-block .copy-code { opacity: 1; } }   /* touch screens */
 
-/* ---------------------------------------------------------- galleries (the Figures plugin: plugins/core/figures/)
+/* ---------------------------------------------------------- galleries (Extended Markdown: plugins/core/extended-markdown/figures/)
    The panels sit side by side in a track that scrolls with snapping; one panel shows at a time. */
 .gallery { margin: 0 auto .9em; padding: 0; }
 .gallery-view { position: relative; }
@@ -470,7 +470,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 /* its lines are Markdown text, not code: no code font or shading */
 .cm-live .cm-line.cm-lp-gallerysrc .cmt-code { font-family: inherit; font-size: inherit; background: none; color: inherit; border-radius: 0; }
 
-/* ---------------------------------------------------------- figures (the Figures plugin, figures.ts): an image with its
+/* ---------------------------------------------------------- figures (Extended Markdown, figures/figures.ts): an image with its
    caption, numbered Fig. 1, 2, … like galleries with a caption */
 .figure { margin: 0 0 .9em; padding: 0; }
 .figure-image { display: flex; justify-content: center; }

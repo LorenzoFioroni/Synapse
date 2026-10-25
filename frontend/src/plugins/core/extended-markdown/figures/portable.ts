@@ -1,8 +1,8 @@
 // Figures in a note exported as plain Markdown (views/notes/portable.ts calls portableFigures
 // through the FiguresHook). No DOM (tests/js/portable.test.mjs).
-import { type Lookup, type RefKind, refNames, refParts, refPlain } from '../../../views/notes/crossref.js';
-import { textRefs } from '../../../views/notes/equations.js';
-import { mask } from '../../../views/notes/mdscan.js';
+import { type Lookup, type RefKind, refNames, refParts, refPlain } from '../../../../views/notes/crossref.js';
+import { textRefs } from '../../../../views/notes/equations.js';
+import { mask } from '../../../../views/notes/mdscan.js';
 import { figureLabel, figuresOf } from './figures.js';
 import { galleryMarkdown, italic } from './gallery.js';
 

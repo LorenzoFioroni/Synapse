@@ -43,7 +43,7 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     ignoreEvent(e: Event) { return e.type !== 'mousedown'; }   // a click places the cursor (and reveals the source)
   }
 
-  // the carousel's arrows and dots turn it (the Figures plugin's galleryView.ts); a click anywhere
+  // the carousel's arrows and dots turn it (Extended Markdown's figures/galleryView.ts); a click anywhere
   // else opens the source
   class SpoilerWidget extends HtmlWidget {
     ignoreEvent(e: Event) { return !!(e.target as Element | null)?.closest?.('.spoiler-toggle, summary, a') || super.ignoreEvent(e); }

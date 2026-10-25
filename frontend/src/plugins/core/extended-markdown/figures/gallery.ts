@@ -15,7 +15,7 @@
 // for \ref and \cref (figures.ts, views/notes/crossref.ts).
 // The block is not code: the parser and views/notes/mdscan.ts read its lines like any paragraph, so its images
 // and citations count. No DOM here (tests/js/gallery.test.mjs).
-import { GALLERY_INFO, mask } from '../../../views/notes/mdscan.js';
+import { GALLERY_INFO, mask } from '../../../../views/notes/mdscan.js';
 
 export interface GalleryPanel {
   src: string;           // the image path (or URL) as written

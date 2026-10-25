@@ -93,7 +93,7 @@ export function initNotes(): void {
   attachGraph();
   onNoteHookChange((key) => {
     if (key === 'graph') attachGraph();
-    // galleries and figures (the Figures plugin) were turned on or off: draw the notes again
+    // Extended Markdown or one of its extensions (galleries and figures, spoilers) was turned on or off: draw the notes again
     if (key === 'tasks') {
       root.querySelector<HTMLElement>('.note-add-task')!.hidden = !taskHooks.add;
       if (ws.session) paintSide();

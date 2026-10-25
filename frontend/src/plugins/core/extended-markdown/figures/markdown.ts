@@ -4,7 +4,7 @@
 // what their labels stand for. No DOM here (tests/js/render.test.mjs).
 import type MarkdownIt from 'markdown-it';
 import type { StateCore, Token as MdToken } from 'markdown-it';
-import { anchorsHtml, esc, imageSrc, lineAttr } from '../../../views/notes/render.js';
+import { anchorsHtml, esc, imageSrc, lineAttr } from '../../../../views/notes/render.js';
 import { figureLabel, imageFigureAt } from './figures.js';
 import { galleryCaptioned, galleryInfo, panelLabel, parseGallery } from './gallery.js';
 
