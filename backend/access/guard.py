@@ -43,7 +43,9 @@ CONNECTOR_PREFIX = "/api/connector/"  # the only endpoints extension origins may
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
 # What an unpaired device may open: the pairing page and the calls it and the sign-in page make,
-# plus the icon.
+# plus the icons and the web app manifest. Browsers fetch the manifest without cookies, and iOS
+# fetches the Home Screen icon the same way, so a paired iPad or phone would get the sign-in page
+# instead and draw a plain tile. They say nothing about the library.
 PAIRING_PATHS = {
     "/pair",
     "/api/devices/pair",
@@ -51,6 +53,13 @@ PAIRING_PATHS = {
     "/api/passkeys/login",
     "/favicon.ico",
     "/assets/favicon.svg",
+    "/assets/favicon-32.png",
+    "/assets/apple-touch-icon.png",
+    "/apple-touch-icon.png",
+    "/apple-touch-icon-precomposed.png",
+    "/assets/icon-192.png",
+    "/assets/icon-512.png",
+    "/manifest.webmanifest",
 }
 MCP_PATH = "/mcp"  # AI apps, with an access token instead of a device cookie
 

@@ -51,6 +51,13 @@ def favicon():
     return send_from_directory(_frontend() / "assets", "favicon.ico", mimetype="image/vnd.microsoft.icon")
 
 
+# iOS also looks for the Home Screen icon at the site's root.
+@bp.get("/apple-touch-icon.png")
+@bp.get("/apple-touch-icon-precomposed.png")
+def apple_touch_icon():
+    return send_from_directory(_frontend() / "assets", "apple-touch-icon.png", mimetype="image/png")
+
+
 @bp.get("/<path:path>")
 def static_files(path):
     resp = send_from_directory(_frontend(), path)

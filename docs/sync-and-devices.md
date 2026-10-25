@@ -182,7 +182,10 @@ this computer's own LAN addresses (`lan.own_addresses`, cached 30 s). The result
 
 Requests from this computer need nothing more. Any other request needs the cookie of a device
 that was paired or signed in with a passkey. Without it, only `PAIRING_PATHS` are served (`/pair`,
-`/api/devices/pair`, `/api/passkeys/login/options`, `/api/passkeys/login` and the icon).
+`/api/devices/pair`, `/api/passkeys/login/options`, `/api/passkeys/login`, the icons and
+`manifest.webmanifest`). The icons and the manifest are there because browsers fetch the manifest
+without cookies, and iOS fetches the Home Screen icon the same way: behind the guard, a paired
+iPad or phone got the sign-in page and drew a plain tile with an "S".
 Everything else answers `not_paired()`: 401 with `{error, paired: false}` under `/api/`, and the
 sign-in page otherwise (`frontend/signin.html`, read on each request; it says how to pair and, where
 passkeys can work, offers **Sign In with a Passkey**). The page is self-contained, because such a

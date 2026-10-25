@@ -96,3 +96,13 @@ def test_toolbar_shows_the_icon_not_a_letter():
 def test_page_links_a_large_android_icon():
     html = (ROOT / "frontend/index.html").read_text("utf-8")
     assert 'rel="icon" type="image/png" sizes="192x192" href="/assets/icon-192.png?v=3"' in html
+
+
+def test_home_screen_icon_is_in_the_page():
+    """index.html carries assets/apple-touch-icon.png itself, so iOS needs no request for it."""
+    import base64
+
+    page = (ROOT / "frontend/index.html").read_text()
+    m = re.search(r'<link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,([A-Za-z0-9+/=]+)">', page)
+    assert m, "no apple-touch-icon data link in index.html"
+    assert base64.b64decode(m.group(1)) == (ROOT / "frontend/assets/apple-touch-icon.png").read_bytes()
