@@ -103,10 +103,11 @@ async def main():
         )
         # 2. front matter: a properties box in live preview; metadata (not a heading) in source mode
         props = await A.text_content(".cm-lp-props") if await A.locator(".cm-lp-props").count() else ""
+        names = await A.locator(".cm-lp-props dt").all_text_contents()
         check(
-            "live preview shows the front matter as properties",
-            "title" in props and "First idea" in props and "01" not in props,
-            props[:80],
+            "live preview shows the front matter as properties (not the note's id)",
+            "title" in names and "First idea" in props and "id" not in names,
+            names,
         )
         await A.click('.note-modes [data-mode="source"]')
         await A.wait_for_timeout(300)
