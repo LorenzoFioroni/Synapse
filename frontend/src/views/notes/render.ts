@@ -309,21 +309,44 @@ function eqRefRule(state: StateInline, silent: boolean): boolean {
 /** Number headings and collect their \label targets before their inline content is parsed. */
 function sectionsRule(state: StateCore): void {
   const headings = state.tokens.filter((t) => t.type === 'heading_open');
-  const base = headings.reduce((n, t) => Math.min(n, Number(t.tag.slice(1))), 6);
+  const title = headings.length > 1 && headings[0].tag === 'h1' && headings.slice(1).some((t) => t.tag !== 'h1') ? headings[0] : null;
+  const numbered = title ? headings.slice(1) : headings;
+  const base = numbered.reduce((n, t) => Math.min(n, Number(t.tag.slice(1))), 6);
   const counters = [0, 0, 0, 0, 0, 0];
   const labels = new Map<string, string>();
   for (let i = 0; i < state.tokens.length - 1; i++) {
     const open = state.tokens[i], inline = state.tokens[i + 1];
     if (open.type !== 'heading_open' || inline.type !== 'inline') continue;
     const level = Number(open.tag.slice(1));
-    counters[level - 1]++; counters.fill(0, level);
-    const number = counters.slice(base - 1, level).map((n) => n || 1).join('.');
+    let number = '';
+    if (open !== title) {
+      counters[level - 1]++; counters.fill(0, level);
+      number = counters.slice(base - 1, level).map((n) => n || 1).join('.');
+    }
     const p = takeSectionLabels(inline.content);
     inline.content = p.text;
     open.meta = { ...(open.meta || {}), sectionNumber: number, sectionLabels: p.labels.map((l) => l.name) };
-    for (const l of p.labels) if (!labels.has(l.name)) labels.set(l.name, number);
+    for (const l of p.labels) if (number && !labels.has(l.name)) labels.set(l.name, number);
   }
   state.env.sectionLabels = labels;
+}
+
+/** Replace a paragraph containing only \tableofcontents with links to the note's headings. */
+function tableOfContentsRule(state: StateCore): void {
+  const headings: { level: number; number: string; text: string; id: string }[] = [];
+  for (let i = 0; i < state.tokens.length - 1; i++) {
+    const open = state.tokens[i], inline = state.tokens[i + 1];
+    if (open.type !== 'heading_open' || inline.type !== 'inline') continue;
+    headings.push({ level: Number(open.tag.slice(1)), number: open.meta?.sectionNumber || '', text: inline.content, id: `h-${slugHeading(inline.content)}` });
+  }
+  for (let i = 0; i < state.tokens.length - 2; i++) {
+    const open = state.tokens[i], inline = state.tokens[i + 1], close = state.tokens[i + 2];
+    if (open.type !== 'paragraph_open' || inline.type !== 'inline' || close.type !== 'paragraph_close' || inline.content.trim() !== '\\tableofcontents') continue;
+    open.type = 'toc_open'; open.tag = ''; open.nesting = 0;
+    inline.type = 'toc_body'; inline.children = null; inline.content = '';
+    inline.meta = { headings };
+    close.type = 'toc_close'; close.tag = ''; close.nesting = 0;
+  }
 }
 
 /** Collect the note's macro definitions (macros.ts), number its display equations and resolve
@@ -419,6 +442,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
     md.inline.ruler.before('emphasis', 'task_ref', taskRefRule);
     md.inline.ruler.before('escape', 'eq_ref', eqRefRule);
     md.core.ruler.before('inline', 'sections', sectionsRule);
+    md.core.ruler.after('sections', 'table_of_contents', tableOfContentsRule);
     md.core.ruler.after('inline', 'equations', equationsRule(o.equations ?? renderDefaults.equations, o.macros ?? renderDefaults.macros));
     md.core.ruler.after('block', 'callout', calloutRule);
     md.core.ruler.after('block', 'gallery_plain', plainGalleries);
@@ -462,6 +486,14 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
     R.tag = (t, i) => `<span class="tag">#${esc(t[i].content)}</span>`;
     R.task_ref = (t, i) => renderDefaults.taskHtml(t[i].meta.id);
     R.task_box = (t, i) => `<input type="checkbox" class="task-box"${t[i].meta.checked ? ' checked' : ''}${t[i].meta.line != null ? ` data-task-line="${t[i].meta.line + (o.lineOffset || 0)}"` : ''}>`;
+    R.toc_open = () => '<nav class="note-toc" aria-label="Table of contents"><div class="note-toc-title">Contents</div><ol>';
+    R.toc_body = (t, i) => {
+      const hs = t[i].meta.headings as { level: number; number: string; text: string; id: string }[];
+      const shown = hs.filter((h, n) => h.number || n > 0);
+      const base = shown.reduce((v, h) => Math.min(v, h.level), 6);
+      return shown.map((h) => `<li style="--toc-depth:${Math.max(0, h.level - base)}"><a href="#${esc(h.id)}">${h.number ? `<span>${esc(h.number)}</span>` : ''}${esc(h.text)}</a></li>`).join('');
+    };
+    R.toc_close = () => '</ol></nav>\n';
     const defaultImage = R.image!;
     R.image = (t, i, opts, env, self) => {
       const tok = t[i];
@@ -493,7 +525,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
       const text = t[i + 1]?.content || '';
       t[i].attrSet('id', `h-${slugHeading(text)}`);
       const names = t[i].meta?.sectionLabels as string[] | undefined;
-      const prefix = names?.length ? `${anchorsHtml(names)}<span class="section-num">${esc(t[i].meta.sectionNumber)}</span> ` : '';
+      const prefix = names?.length && t[i].meta.sectionNumber ? `${anchorsHtml(names)}<span class="section-num">${esc(t[i].meta.sectionNumber)}</span> ` : '';
       return self.renderToken(t, i, opts) + prefix;
     };
     // data-line values include the front-matter offset

@@ -659,8 +659,10 @@ receives its hierarchical number. `\ref{name}` shows the bare number, `\cref{nam
 The calibration is described in \cref{sec:method}.
 ```
 
-Heading levels determine the hierarchy, and numbering starts at the shallowest heading level in
-the note. Labels in inline code or math are left alone. Read mode, standalone HTML, and exported
+Heading levels determine the hierarchy. A leading H1 is treated as the note's document title, so
+the next level starts at 1 rather than 1.1; otherwise numbering starts at the shallowest heading.
+Put `\tableofcontents` on its own line for a linked, nested contents block in Live and Read modes
+and in HTML/PDF exports. Labels in inline code or math are left alone. Read mode, standalone HTML, and exported
 PDFs all retain the anchors and internal links. Equation labels win a duplicate name, then figure
 labels, then section labels.
 

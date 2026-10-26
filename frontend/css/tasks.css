@@ -61,10 +61,15 @@ button.link:hover { text-decoration: underline; }
 .prose li:has(> .task-ref:first-child), .prose li:has(> p:first-child > .task-ref:first-child) { list-style: none; margin-left: -1.5em; }
 .task-block-wrap { margin: 1em 0; }
 .task-block { display: flex; flex-direction: column; gap: 5px; }
+.task-block-controls { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; padding: 7px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev); }
+.task-block-controls .segmented button { text-transform: none; }
 .task-block-list { display: flex; flex-direction: column; gap: 3px; }
 .task-block-group { margin: 10px 0 3px; color: var(--text-3); font-size: var(--fs-xs); font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
 .task-block-group:first-child { margin-top: 0; }
-.task-block-table { width: 100%; margin: 3px 0 10px; }
+.task-block-table { width: 100%; margin: 3px 0 10px; border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; }
+.task-block-table th { text-align: left; color: var(--text-3); font-size: var(--fs-xs); font-weight: 650; background: var(--bg-elev); }
+.task-block-table th, .task-block-table td { padding: 7px 9px; border-bottom: 1px solid var(--border); }
+.task-block-table tbody tr:last-child td { border-bottom: 0; }
 .task-block-table td:first-child { width: 100%; }
 .task-block-table td:nth-child(n+2), .task-block-table th:nth-child(n+2) { white-space: nowrap; }
 .task-block.empty, .task-block-empty { color: var(--text-3); font-style: italic; }

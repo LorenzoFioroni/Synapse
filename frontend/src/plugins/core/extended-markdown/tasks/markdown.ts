@@ -10,8 +10,6 @@ export function tasksMarkdown(md: MarkdownIt): void {
     const parsed = parseTaskBlockInfo(tok.info || '');
     if (!parsed) return fallback(tokens, i, options, env, self);
     const ids = taskBlockIds(tok.content);
-    return `<div class="task-block-wrap"${lineAttr(tok)} data-task-block data-task-ids="${esc(ids.join(','))}" data-task-view="${parsed.view}" data-task-group="${parsed.group}" data-task-completed="${parsed.completed}">${ids.length
-      ? renderDefaults.taskBlockHtml(ids, parsed)
-      : `<div class="task-block-empty">${esc('Empty task block: add one task ID per line.')}</div>`}</div>\n`;
+    return `<div class="task-block-wrap"${lineAttr(tok)} data-task-block data-task-ids="${esc(ids.join(','))}" data-task-view="${parsed.view}" data-task-group="${parsed.group}" data-task-completed="${parsed.completed}">${renderDefaults.taskBlockHtml(ids, parsed)}</div>\n`;
   };
 }

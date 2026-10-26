@@ -1,5 +1,5 @@
-// arXiv Today in the app: dismissing papers from its lists, opening their PDF on arXiv, fetching
-// now, and the morning's notification. The lists themselves are item sources (the backend).
+// arXiv Today in the app: dismissing papers from its feed, opening their PDF on arXiv, fetching
+// now, and the morning's notification. The feed and its day variants are an item source (backend).
 
 /** @typedef {import('../../../frontend/src/plugins/api').PluginContext} PluginContext */
 /** @typedef {import('../../../frontend/src/plugins/api').PluginItem} PluginItem */
@@ -37,7 +37,7 @@ export function activate(p) {
     id: 'dismiss', title: 'arXiv: Dismiss Selected Papers', key: 'Mod-Alt-d',
     when: () => fromLists(p.library.selected()), run: () => dismiss(p.library.selected()),
   });
-  p.commands.register({ id: 'show', title: 'Show arXiv Today', key: 'Mod-Alt-t', run: () => p.sources.open('today') });
+  p.commands.register({ id: 'show', title: 'Show arXiv Feed', key: 'Mod-Alt-t', run: () => p.sources.open('feed') });
   p.commands.register({
     id: 'fetch', title: 'arXiv: Fetch Today’s Papers Now',
     run: async () => {
@@ -58,7 +58,7 @@ export function activate(p) {
       if (n && n.count) {
         const papers = n.count === 1 ? 'One new paper' : `${n.count} new papers`;
         const connected = n.connected ? `, ${n.connected} connected to your library` : '';
-        p.notify(`${papers}${connected}`, { type: 'success', sourceId: 'today', desktop: true });
+        p.notify(`${papers}${connected}`, { type: 'success', sourceId: 'feed', desktop: true });
       }
     } finally {
       asking = false;

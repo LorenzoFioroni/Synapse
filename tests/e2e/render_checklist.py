@@ -339,7 +339,7 @@ async def main():
             table_text = (await page.locator(".cm-lp-table").inner_text()).replace("\u00a0", " ")
             check(
                 "live: table references use labels from the whole note",
-                "Eq. (1) and Sec. 1.1" in table_text and "??" not in table_text,
+                "Eq. (1) and Sec. 1" in table_text and "??" not in table_text,
                 table_text,
             )
             labels = await page.locator(".cm-lp-chip.cite").all_text_contents()

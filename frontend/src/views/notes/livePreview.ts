@@ -195,6 +195,17 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
       out.push(Decoration.replace({ widget: W.spoiler(doc.sliceString(sp.from, sp.to), String(version), true), block: true }).range(sp.from, sp.to));
     }
 
+    // A LaTeX-style table of contents uses the headings from the whole note.
+    for (let n = 1; n <= doc.lines; n++) {
+      const line = doc.line(n);
+      if (line.text.trim() !== '\\tableofcontents' || overlapsTaken(line.from, line.to)) continue;
+      if (blockActive(line.from, line.to)) lineDeco(line.from, 'cm-lp-tocsrc');
+      else {
+        taken.push([line.from, line.to]);
+        out.push(Decoration.replace({ widget: W.toc(sectionsOfDoc(state).sections, String(version)), block: true }).range(line.from, line.to));
+      }
+    }
+
     // front matter: a compact box of properties until the cursor goes into it
     if (doc.sliceString(0, 4) === '---\n') {
       const fm = splitFrontmatter(doc.sliceString(0, Math.min(doc.length, 50000)));

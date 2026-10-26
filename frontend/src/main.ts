@@ -190,7 +190,8 @@ async function navigate(entry: NavEntry): Promise<void> {
   const unavailable = (entry.ws === 'tasks' && !tasksPage.on)
     || (entry.ws === 'page' && !pages.get(entry.page || ''))
     || (entry.ws === 'notes' && state.settings.notes_enabled === false)
-    || (entry.ws === 'library' && entry.view?.startsWith('source:') && !state.sources.some((s) => `source:${s.id}` === entry.view));
+    || (entry.ws === 'library' && entry.view?.startsWith('source:')
+      && !state.sources.some((s) => `source:${s.id}` === entry.view!.split('~', 1)[0]));
   if (unavailable) {
     entry = { ws: 'library', view: 'library', sel: [] };
     navReplace(entry);

@@ -11,6 +11,7 @@ import { initColumns, renderHead, visibleCols } from './itemlist/columns.js';
 import { attachmentMenu, copyKeys, itemMenu, openItemNote } from './itemlist/menus.js';
 import { initRows, order, renderBody, toggleExpand } from './itemlist/rows.js';
 import { editTagsDialog } from './organizeDialogs.js';
+import { initSourceVariants } from './sourceVariants.js';
 
 export { openColumnPicker } from './itemlist/columns.js';
 
@@ -21,9 +22,11 @@ let pendingCollapse: string | null = null;  // multi-selection row pressed: coll
 
 export function initItemList(): void {
   pane = document.getElementById('items-pane')!;
-  pane.innerHTML = `<div class="items-scroll" tabindex="0" aria-label="Items">
+  pane.innerHTML = `<aside class="source-variants-pane" aria-label="Source dates" hidden></aside>
+    <div class="items-scroll" tabindex="0" aria-label="Items">
       <div class="items-table"><div class="items-head" role="row"></div><div class="items-body" role="rowgroup"></div></div>
     </div>`;
+  initSourceVariants(pane.querySelector<HTMLElement>('.source-variants-pane')!);
   scroller = pane.querySelector<HTMLElement>('.items-scroll')!;
   const table = pane.querySelector<HTMLElement>('.items-table')!;
   const head = pane.querySelector<HTMLElement>('.items-head')!;

@@ -275,6 +275,7 @@ export function flushNote(path: string): void {
 /** The full graph in Notes, optionally centred on a node ("note:<path>", "item:<id>"). */
 export async function openNotesGraph(focus: string | null = null): Promise<void> {
   if (!notesEnabled() || !noteHooks.graph) return;
+  if (!focus && ws.session) focus = `note:${ws.session.path}`;
   if (!notesOpen()) { await openNotes(null, null, { graph: true, focus }); return; }
   ws.root.classList.remove('mobile-tree-open');
   await noteHooks.graph.openGlobal(focus);
@@ -565,6 +566,9 @@ function setMode(m: Mode, { focus = true, keepPlace = true } = {}): void {
 
 /** Open a note: in a tab (the preview tab unless ``keep``), which shows it here. */
 function openNote(path: string, { keep = false }: { keep?: boolean } = {}): Promise<void> {
+  // While the global graph is open, the notes list is its navigator: clicking a note recentres
+  // the graph instead of replacing it with the editor. Graph-node clicks close it first.
+  if (noteHooks.graph?.globalOpen()) return openNotesGraph(`note:${path}`);
   if (noteTabs.open) return noteTabs.open(path, { keep });
   return openInPlace(path);
 }

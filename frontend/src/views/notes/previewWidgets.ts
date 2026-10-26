@@ -191,6 +191,21 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
       el.innerHTML = r ? r.render(src) : '';
     }, { block: true, cls: 'cm-lp-taskblock' }),
 
+    toc: (sections: { level: number; number: string; text: string }[], version: string) => new MarkdownBlockWidget(`toc:${version}:${JSON.stringify(sections)}`, (el) => {
+      const shown = sections.filter((s, i) => s.number || i > 0);
+      const base = shown.reduce((v, s) => Math.min(v, s.level), 6);
+      el.classList.add('note-toc');
+      const title = document.createElement('div'); title.className = 'note-toc-title'; title.textContent = 'Contents';
+      const list = document.createElement('ol');
+      for (const s of shown) {
+        const li = document.createElement('li'); li.style.setProperty('--toc-depth', String(Math.max(0, s.level - base)));
+        const a = document.createElement('a'); a.href = `#h-${s.text.normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '')}`;
+        if (s.number) { const n = document.createElement('span'); n.textContent = s.number; a.append(n); }
+        a.append(document.createTextNode(s.text)); li.append(a); list.append(li);
+      }
+      el.append(title, list);
+    }, { block: true, cls: 'cm-lp-toc' }),
+
     /** A gallery's carousel, drawn by the renderer; ``preview``: shown below its source while it is
      *  edited. Its figure number and \ref numbers come from the whole note (``fig``, ``labels``). */
     gallery: (src: string, lookup: Lookup, fig: number | null, version: string, preview: boolean) => new GalleryWidget(`g:${version}:${preview}:${src}`, (el) => {

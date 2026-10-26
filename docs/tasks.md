@@ -32,7 +32,10 @@ undated ones last (`group=none` is the default). `completed=bottom` is the defau
 `completed=inline` keeps source order and `completed=hide` omits completed tasks. A leading `- `
 before an ID is accepted. Unknown options and invalid lines are ignored.
 
-The block is live in the editor and Read mode: boxes tick tasks and titles open them. It is static
+The block is live in the editor and Read mode: boxes tick tasks and titles open them. Its toolbar
+filters All/Open/Done, cycles through manual/deadline/title order, and **Add task** creates a task
+and appends its ID before that fence's closing marker. These controls are presentation state and
+do not rewrite the block options. It is static
 but fully rendered in HTML/PDF export. Portable Markdown export expands it to ordinary checkbox
 items. The notes parser always indexes the IDs inside the fence, even when Extended Markdown is
 off, so the Tasks page and note/task relationships remain correct. With the extension off the

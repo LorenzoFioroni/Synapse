@@ -6,6 +6,12 @@ import { scan } from './mdscan.js';
 export interface SectionLabel { name: string; from: number; to: number }
 export interface Section { level: number; number: string; from: number; text: string; labels: SectionLabel[] }
 
+/** A leading H1 is the note title, not section 1. Number the sections below it from 1. */
+function numberedHeadings(headings: Heading[]): Heading[] {
+  return headings.length > 1 && headings[0].level === 1 && headings.slice(1).some((h) => h.level > 1)
+    ? headings.slice(1) : headings;
+}
+
 /** Remove labels outside inline code and math, retaining their exact offsets. */
 export function takeSectionLabels(text: string, base = 0): { text: string; labels: SectionLabel[] } {
   const labels: SectionLabel[] = [];
@@ -37,8 +43,9 @@ export function takeSectionLabels(text: string, base = 0): { text: string; label
 function numberHeadings(headings: Heading[]): Map<number, string> {
   const out = new Map<number, string>();
   const counters = [0, 0, 0, 0, 0, 0];
-  const base = headings.reduce((n, h) => Math.min(n, h.level), 6);
-  for (const h of headings) {
+  const numbered = numberedHeadings(headings);
+  const base = numbered.reduce((n, h) => Math.min(n, h.level), 6);
+  for (const h of numbered) {
     counters[h.level - 1]++;
     counters.fill(0, h.level);
     out.set(h.from, counters.slice(base - 1, h.level).map((n) => n || 1).join('.'));
@@ -57,8 +64,8 @@ export function sectionsOf(text: string, scanned: Scan = scan(text)): { sections
     const mark = /^ {0,3}#{1,6}[ \t]+/.exec(raw);
     const contentAt = h.from + (mark?.[0].length || 0);
     const p = takeSectionLabels(raw.slice(mark?.[0].length || 0).replace(/[ \t]+#+[ \t]*$/u, ''), contentAt);
-    const number = nums.get(h.from)!;
-    for (const label of p.labels) if (!labels.has(label.name)) labels.set(label.name, number);
+    const number = nums.get(h.from) || '';
+    for (const label of p.labels) if (number && !labels.has(label.name)) labels.set(label.name, number);
     sections.push({ level: h.level, number, from: h.from, text: p.text, labels: p.labels });
   }
   return { sections, labels };

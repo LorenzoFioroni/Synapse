@@ -182,6 +182,7 @@ function staticCopy(root: HTMLElement, listed: Set<string>): void {
   root.querySelectorAll('details.properties').forEach((el) => el.remove());
   // tasks: their checkbox and title as they are now, nothing to click
   root.querySelectorAll('.task-ref-actions').forEach((el) => el.remove());
+  root.querySelectorAll('.task-block-controls').forEach((el) => el.remove());
   root.querySelectorAll('.task-ref [data-task-act], .task-ref [role="checkbox"]').forEach((el) => { el.removeAttribute('data-task-act'); el.removeAttribute('role'); });
 }
 

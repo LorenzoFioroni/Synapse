@@ -509,6 +509,7 @@ export interface PluginSource {
   plugin: string;
   plugin_name: string;
   badge: string | null;
+  variants?: { id: string; title: string; badge: string | null }[];
 }
 
 /** Why a plugin lists a paper; ``items``: the library papers involved (those it cites, say). */

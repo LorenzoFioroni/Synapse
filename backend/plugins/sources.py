@@ -19,18 +19,42 @@ class SourceList:
         self.host = host
 
     def _find(self, full_id: str):
-        pid, _, sid = full_id.partition(".")
+        base_id, _, variant = full_id.partition("~")
+        pid, _, sid = base_id.partition(".")
         act = self.host._active.get(pid)
         src = act.plugin.sources.get(sid) if act else None
         if not src:
             raise NotFound(f"No list {full_id!r} (is its plugin turned on?)")
-        return act, src
+        if variant and variant not in {v["id"] for v in self._variants(pid, src)}:
+            raise NotFound(f"No list variant {variant!r} in {base_id!r}")
+        return act, src, variant or None
+
+    def _variants(self, pid: str, src) -> list[dict]:
+        if not src.variants:
+            return []
+        got = self.host.run(pid, f"variants of {src.id}", src.variants) or []
+        if not isinstance(got, list | tuple):
+            raise PluginError(f"The variants of item source {src.id} must be a list")
+        out = []
+        for v in got[:400]:
+            if not isinstance(v, dict) or not str(v.get("id") or "").strip():
+                raise PluginError(f"Each variant of item source {src.id} needs an id and title")
+            out.append(
+                {
+                    "id": str(v["id"])[:80],
+                    "title": str(v.get("title") or v["id"])[:80],
+                    "badge": str(v["badge"])[:12] if v.get("badge") not in (None, "", 0) else None,
+                }
+            )
+        return out
 
     def describe(self) -> list[dict]:
         """The sources of the running plugins, for the sidebar (with their badges)."""
         out = []
         for pid, act in list(self.host._active.items()):
             for s in act.plugin.sources.values():
+                if s.hidden:
+                    continue
                 badge = None
                 if s.badge:
                     try:
@@ -38,25 +62,32 @@ class SourceList:
                         badge = None if b in (None, "", 0) else str(b)[:12]
                     except Exception:
                         badge = None
-                out.append(
-                    {
-                        "id": f"{pid}.{s.id}",
-                        "title": s.title,
-                        "icon": s.icon,
-                        "description": s.description,
-                        "plugin": pid,
-                        "plugin_name": act.entry.manifest.name if act.entry.manifest else pid,
-                        "badge": badge,
-                    }
-                )
+                described = {
+                    "id": f"{pid}.{s.id}",
+                    "title": s.title,
+                    "icon": s.icon,
+                    "description": s.description,
+                    "plugin": pid,
+                    "plugin_name": act.entry.manifest.name if act.entry.manifest else pid,
+                    "badge": badge,
+                }
+                variants = self._variants(pid, s)
+                if variants:
+                    described["variants"] = variants
+                out.append(described)
         return out
 
     def items(self, full_id: str) -> list[dict]:
         """A source's papers: library items for those in the library, outside records for the
         rest, in the order the plugin gave them (each with ``_rank``). Raises NotFound for an
         unknown source, PluginError when the plugin fails."""
-        act, src = self._find(full_id)
-        got = self.host.run(act.entry.id, f"item source {src.id}", src.fn) or []
+        act, src, variant = self._find(full_id)
+        got = (
+            self.host.run(act.entry.id, f"item source {src.id}", src.fn, variant)
+            if src.variants
+            else self.host.run(act.entry.id, f"item source {src.id}", src.fn)
+        )
+        got = got or []
         if not isinstance(got, list | tuple):
             raise PluginError(f"The item source {src.id} must return a list of papers")
         by_key: dict[str, dict] = {}

@@ -46,10 +46,12 @@ class ItemSource:
 
     id: str
     title: str
-    fn: Callable[[], list]
+    fn: Callable[..., list]
     icon: str = "list"
     description: str = ""
     badge: Callable[[], object] | None = None
+    variants: Callable[[], list[dict]] | None = None
+    hidden: bool = False
 
 
 @dataclass
@@ -244,16 +246,22 @@ class Plugin:
         icon: str = "list",
         description: str = "",
         badge: Callable[[], object] | None = None,
+        variants: Callable[[], list[dict]] | None = None,
+        hidden: bool = False,
     ):
         """Offer the papers ``fn()`` returns (dicts with a ``doi`` or an ``arxiv`` id, see
         outside.py) as a list in the sidebar, under Plugins: the app shows them like a folder, with
         its sorting, search, columns and fields, and a "+" on those not in the library. ``badge()``
-        may return a count or short text for the sidebar entry. Usable as a decorator."""
+        may return a count or short text for the sidebar entry. ``variants()`` adds choices to a
+        separate pane beside the item list and passes the selected id to ``fn``. Usable as a
+        decorator."""
         if not TOOL_NAME_RE.match(id or ""):
             raise PluginError(f"Item source id {id!r}: lowercase letters, digits and _")
 
-        def register(fn: Callable[[], list]) -> Callable[[], list]:
-            self.sources[id] = ItemSource(id, str(title)[:60], fn, icon, str(description)[:300], badge)
+        def register(fn: Callable[..., list]) -> Callable[..., list]:
+            self.sources[id] = ItemSource(
+                id, str(title)[:60], fn, icon, str(description)[:300], badge, variants, hidden
+            )
             return fn
 
         return register

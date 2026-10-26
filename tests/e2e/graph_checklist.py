@@ -319,6 +319,15 @@ async def main():
                 await page.is_visible(".notes-graph") and await page.is_hidden(".note-body"),
             )
 
+            # ---- the notes list navigates the graph without closing it
+            await page.click('.nt-row.note[data-path="Lonely.md"]')
+            await page.wait_for_timeout(500)
+            check(
+                "the notes list recentres the open graph",
+                await page.evaluate("window.zcGraph.globalFocus()") == "note:Lonely.md"
+                and await page.is_visible(".notes-graph"),
+            )
+
             # ---- Close / Escape go back to the note
             await page.click('.ng-bar [data-ng="close"]')
             check(

@@ -285,7 +285,8 @@ never mix.
   drag to move; folders can be renamed, moved and deleted the same way.
 - **Extended Markdown** (core plugin, on by default) is where Markdown syntax beyond the basics
   lives, each part with its own switch in its settings: **galleries and numbered figures** (above),
-  **task blocks** (` ```tasks table group=deadline completed=bottom ` with one task ID per line),
+  **task blocks** (` ```tasks table group=deadline completed=bottom ` with one task ID per line;
+  their rich block can filter open/done tasks, sort them, and create a task in place),
   and **spoilers**: `||inline spoilers||` with a keyboard-accessible
   Show/Hide button, and collapsible `:::spoiler Optional summary` blocks closed by `:::`. Blocks
   support nested Markdown and spoilers. Source text stays intact when the plugin is off; HTML/PDF
@@ -384,14 +385,18 @@ The built-in metadata providers (Crossref, OpenAlex, arXiv and Open Library) are
 **Metadata Sources** core plugin, on by default. Switch it off in Settings → Plugins to stop
 those lookups; all existing metadata stays in the library. Other plugins can supply sources too.
 
-Two plugins come with Synapse, off until you turn them on:
+Three plugins come with Synapse, off until you turn them on:
 
 - **Citation Counts** adds a *Citations* column from OpenAlex and Semantic Scholar, refreshed
   weekly, and lets you search for `citations:>100`.
-- **arXiv Today** lists each morning's arXiv papers in the categories you choose, ranked by how
+- **Metadata Check** compares every identifiable library record with current metadata every
+  three days, flags fields to review, and identifies journal versions of arXiv preprints.
+- **arXiv Feed** lists each morning's arXiv papers in the categories you choose, ranked by how
   they connect to your library (papers of yours they cite, shared authors, similar topics), with
   a notification ("12 new papers, 3 connected to your library"), a **+** to add a paper and
-  Dismiss for the rest. Earlier days stay for a month, and Claude can ask for them.
+  Dismiss for the rest. It stays one entry in the main sidebar; opening it shows a second sidebar
+  for choosing today or any retained day. Earlier days stay for a month, and Claude can ask for
+  them.
 
 A plugin can offer a **list of papers** that are not in your library yet (today's arXiv papers,
 say), under **Plugins** in the sidebar. It shows like a folder, ranked by the plugin (often by how

@@ -1,6 +1,6 @@
-"""Browser checklist for papers outside the library: a plugin's list (an item source) has an entry
-with a badge under Plugins in the sidebar and shows like a folder, in the plugin's order until a
-column is sorted (a third click goes back); papers not in the library have a "+" and a pane with
+"""Browser checklist for papers outside the library: a plugin's list (an item source) has one entry
+with a badge under Plugins in the sidebar and puts its variants in a second pane. It shows like a
+folder, in the plugin's order until a column is sorted (a third click goes back); papers not in the library have a "+" and a pane with
 why they are listed, links to the library papers involved and buttons to add them; "+" adds a
 paper (Undo takes it out again), several go into a folder at once; a list the plugin changes is
 shown again by itself, and the entry goes when the plugin is turned off.
@@ -45,8 +45,10 @@ def activate(plugin: Plugin):
     def unread():
         return sum(1 for p in store.get("papers", []) if not plugin.library.find(doi=p.get("doi"), arxiv=p.get("arxiv")))
 
-    @plugin.item_source("today", title="Today's List", icon="calendar", description="Papers for today", badge=unread)
-    def today():
+    @plugin.item_source("today", title="Today's List", icon="calendar", description="Papers for today", badge=unread,
+                        variants=lambda: [{"id": "today", "title": "26 Oct 2026"},
+                                          {"id": "yesterday", "title": "25 Oct 2026"}])
+    def today(day=None):
         return store.get("papers", [])
 
     @plugin.route("/set", methods=["POST"])
@@ -188,6 +190,21 @@ async def main():
                 lambda: page.evaluate("document.querySelectorAll('.items-body .row[data-id]').length === 4")
             )
             check("it shows the papers", ok)
+            check(
+                "variants use a second pane, not extra main-sidebar rows",
+                await page.locator("#sidebar [data-view^='source:lists-demo.today']").count() == 1
+                and await page.is_visible(".source-variants-pane")
+                and await page.locator(".source-variant-item").count() == 2,
+            )
+            check(
+                "the default variant is Today",
+                "Today" in (await page.text_content(".source-variant-item.active") or ""),
+            )
+            await page.click('.source-variant-item[data-source-variant="yesterday"]')
+            check(
+                "a retained day opens from that pane",
+                await wait_for(lambda: page.is_visible('.source-variant-item.active[data-source-variant="yesterday"]')),
+            )
             order = await titles(page)
             check(
                 "in the plugin's order",
