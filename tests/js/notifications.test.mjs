@@ -37,3 +37,45 @@ test('separate keys preserve another window’s notice and only interrupt this o
   assert.equal(b.entries.find(n => n.id === '1').status, 'interrupted');
   assert.equal(b.entries.find(n => n.id === '2').status, 'running');
 });
+test('recovery interrupts abandoned and legacy jobs, preserving live windows and completed results', () => {
+  const { history: h, persistence } = fixture();
+  h.put(notice(1, { status: 'running', owner: 'closed-window', read: true }));
+  h.put(notice(2, { status: 'running', owner: 'live-window' }));
+  h.put(notice(3, { status: 'running' }));
+  h.put(notice(4));
+  const restored = new History(persistence);
+  restored.recover(new Set(['live-window']), new Set(restored.entries.map(n => n.id)));
+  const again = new History(persistence);
+  for (const id of ['1', '3']) {
+    const n = again.entries.find(n => n.id === id);
+    assert.equal(n.status, 'interrupted');
+    assert.equal(n.level, 'warning');
+    assert.equal(n.read, false);
+    assert.match(n.message, /check the result before retrying/);
+  }
+  assert.equal(again.entries.find(n => n.id === '2').status, 'running');
+  assert.equal(again.entries.find(n => n.id === '4').status, 'done');
+  again.clear();
+  assert.deepEqual(again.entries.map(n => n.id), ['2']);
+});
+test('recovery does not overwrite a concurrent completion or a newly started job', () => {
+  const { history: h, persistence } = fixture();
+  h.put(notice(1, { status: 'running', owner: 'closed-window' }));
+  const candidates = new Set(h.entries.map(n => n.id));
+  const other = new History(persistence);
+  other.put(notice(1, { message: 'Finished while checking owners' }));
+  other.put(notice(2, { status: 'running', owner: 'new-window' }));
+  h.reload();
+  h.recover(new Set(), candidates);
+  assert.equal(h.entries.find(n => n.id === '1').status, 'done');
+  assert.equal(h.entries.find(n => n.id === '2').status, 'running');
+});
+test('explicit fallback dismissal removes one stranded job without clearing other running jobs', () => {
+  const { history: h, persistence } = fixture();
+  h.put(notice(1, { status: 'running', owner: 'gone' }));
+  h.put(notice(2, { status: 'running', owner: 'live' }));
+  h.remove('1', true, true);
+  const restored = new History(persistence);
+  restored.clear();
+  assert.deepEqual(restored.entries.map(n => n.id), ['2']);
+});

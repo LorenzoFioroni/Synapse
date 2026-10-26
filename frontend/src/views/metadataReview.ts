@@ -461,7 +461,7 @@ function changeBlock(c: Change, onToggle: () => void, options: ReviewDialogOptio
           ${c.key === 'item_type' ? '' : '<button class="btn btn-ghost btn-sm" data-edit>Edit</button>'}
           ${rejectBtn}
         </div></div>
-      <div class="diff-body">${c.isNew ? '' : `<div class="diff-old">${d.old || '<em>(empty)</em>'}</div>`}<div class="diff-new">${d.new || '<em>(empty)</em>'}</div></div>
+      <div class="diff-body">${c.isNew ? '' : `<div class="diff-old"><span class="diff-text">${d.old || '<em>(empty)</em>'}</span></div>`}<div class="diff-new"><span class="diff-text">${d.new || '<em>(empty)</em>'}</span></div></div>
       <div class="diff-edit" hidden><textarea class="input" rows="${c.key === 'abstract' ? 6 : (MULTILINE.has(c.key) ? 3 : 1)}"></textarea></div>
     </div>`);
   const cb = block.querySelector('input')!;
@@ -480,8 +480,8 @@ function changeBlock(c: Change, onToggle: () => void, options: ReviewDialogOptio
     if (opening) ta.focus();
     else {
       const nd = diffWords(cur, ta.value);
-      const o = block.querySelector('.diff-old'); if (o) o.innerHTML = nd.old || '<em>(empty)</em>';
-      block.querySelector('.diff-new')!.innerHTML = nd.new || '<em>(empty)</em>';
+      const o = block.querySelector('.diff-old .diff-text'); if (o) o.innerHTML = nd.old || '<em>(empty)</em>';
+      block.querySelector('.diff-new .diff-text')!.innerHTML = nd.new || '<em>(empty)</em>';
     }
   });
   block.querySelector('[data-reject]')?.addEventListener('click', async (e) => {

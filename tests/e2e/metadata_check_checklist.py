@@ -338,6 +338,52 @@ async def main():
             )
             check("unchecked title remains reviewable", await becomes(second, "Review: title"))
 
+            # Inline highlights must read left-to-right across a wrapped paragraph, including
+            # when Show Diff rebuilds the content after a manual edit.
+            await page.evaluate("""async () => {
+                const { openReviewDialog } = await import('/js/views/metadataReview.js');
+                const current = 'Quantum circuits approximate the steady state of open systems. '.repeat(6);
+                const fetched = current.replaceAll('circuits', 'algorithms').replaceAll('open', 'noisy');
+                void openReviewDialog([{
+                    id: 'layout-fixture', n: 1, item: { title: 'Diff layout' }, status: 'changes',
+                    changes: [{ key: 'abstract', current, fetched, isNew: false, checked: true }],
+                    unchanged: [], error: null,
+                }]);
+            }""")
+            await page.wait_for_selector(".mr-dialog .diff-new ins")
+            for width in (1400, 390):
+                await page.set_viewport_size({"width": width, "height": 900})
+                for edited in (False, True):
+                    if edited:
+                        await page.click(".mr-dialog [data-edit]")
+                        textarea = page.locator(".mr-dialog .diff-edit textarea")
+                        await textarea.fill((await textarea.input_value()).replace("steady", "stationary"))
+                        await page.click(".mr-dialog [data-edit]")
+                    layout = await page.locator(".mr-dialog .diff-body").evaluate("""body => {
+                        const rows = [...body.querySelectorAll('.diff-old, .diff-new')];
+                        return rows.length === 2 && rows.every(row => {
+                            const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+                            let node, previous;
+                            while ((node = walker.nextNode())) {
+                                for (let i = 0; i < node.length; i++) {
+                                    if (/\\s/.test(node.textContent[i])) continue;
+                                    const range = document.createRange();
+                                    range.setStart(node, i);
+                                    range.setEnd(node, i + 1);
+                                    const rect = range.getBoundingClientRect();
+                                    if (previous && (rect.top < previous.top - 1 ||
+                                        (Math.abs(rect.top - previous.top) < 1 && rect.left < previous.left - 1))) {
+                                        return false;
+                                    }
+                                    previous = rect;
+                                }
+                            }
+                            return row.scrollWidth <= row.clientWidth + 1;
+                        });
+                    }""")
+                    check(f"metadata diff wraps in reading order at {width}px (edited={edited})", layout)
+            await shot(page, "metadata-diff-wrapping")
+            await page.keyboard.press("Escape")
             check("no page errors", not errors, errors)
             await b.close()
     finally:

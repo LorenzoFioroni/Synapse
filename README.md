@@ -145,6 +145,8 @@ never mix.
   with a red count on the bell and browser tab icon. Info, Success, Warning and Error are separate
   from optional OS delivery: arXiv Today's ready notice can reach the OS after you grant permission
   under **Settings → Notifications**, where OS delivery can also be disabled again.
+  Job notifications whose window crashed or restarted become interrupted and can be dismissed;
+  browsers without automatic owner detection offer manual dismissal for previous windows' jobs.
   History stays in this browser. See [notifications](docs/notifications.md).
 
 - **Search** in three scopes, picked from the search box (the default is a setting):
@@ -176,12 +178,14 @@ never mix.
 - **Add items** by DOI, arXiv ID or ISBN (several at once), by dropping PDFs (the
   DOI/arXiv id on the first pages is used to fetch metadata), or manually.
 - **Retrieve Metadata** works on one item or a whole selection: one review dialog
-  with a section per article, word-level diffs with a checkbox per field, and the
+  with a section per article, word-level diffs that wrap long text with a checkbox per field, and the
   article's unchanged metadata below. Nothing is saved until you apply; replacing an
   existing citation key is opt-in. Several lookups run at once (arXiv requests are spaced out),
   and they can be stopped, or continue in the background with a progress notification and a
   *Review* button when done. Articles with updates are listed first, those not found next, and
   the ones already up to date are folded away at the end.
+  OpenAlex author enrichment uses the names credited on the paper, with author-profile names
+  as a fallback when those are missing.
 - **Adding items** (Settings → Adding Items): whether to retrieve metadata for imported items, find
   an available PDF, fetch reference lists, and turn imported keywords into tags — each *Never*,
   *Always* or *Ask* (a ticked checkbox where you add the items: the import dialog, Add by
@@ -503,7 +507,8 @@ problems the change adds block it. Every change an AI app makes to a note keeps 
 replaced (`notes/.history/`, in backups): an open note takes the change as one step, so ⌘Z (Ctrl+Z)
 undoes it; a bar over the note says which app changed what ("Codex edited this note"), with Show
 changes and Undo; and the note's details list all AI edits, each with the app's name, its diff and a
-way back. Equations are found by the number in
+way back. The diff highlights changed words and wraps long paragraphs to the dialog's width.
+Equations are found by the number in
 parentheses at the end of their line, and the snapshot covers all their lines (never half an
 equation). `view_page` and `snapshot` need `pypdfium2`
 (in `requirements.txt`). Note text and PDF passages the AI reads are sent to the AI app's provider

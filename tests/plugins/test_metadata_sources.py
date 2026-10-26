@@ -1,5 +1,9 @@
 """Metadata sources: core-provider toggling and user-provider routing, with no real network."""
 
+import json
+import time
+from pathlib import Path
+
 import pytest
 
 from backend.online import metadata
@@ -80,3 +84,50 @@ def test_declining_and_failing_sources_fall_through(svc, make_plugin):
     svc.plugins.disable("fallback-metadata")
     with pytest.raises(metadata.LookupFailed, match="No metadata sources"):
         metadata.lookup(doi="10.1234/x", sources=svc.plugins.lookup_metadata)
+
+
+@pytest.mark.parametrize("already_correct", [False, True])
+def test_retrieve_and_metadata_check_use_paper_author_names(client, svc, monkeypatch, already_correct):
+    fixture = json.loads((Path(__file__).parents[1] / "fixtures/metadata_author_names.json").read_text())
+    message = fixture["crossref"]["message"]
+
+    class Response:
+        ok, status_code = True, 200
+
+        def __init__(self, data):
+            self.data = data
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.data
+
+    monkeypatch.setattr(
+        "requests.get",
+        lambda url, **kwargs: Response(fixture["openalex"] if "openalex" in url else fixture["crossref"]),
+    )
+    stored = fixture["expected"] if already_correct else fixture["profile_authors"]
+    item = svc.papers.create(
+        {"title": message["title"][0], "doi": message["DOI"], "authors": stored, "library_catalog": "Crossref"}
+    )
+    result = client.post(f"/api/items/{item['id']}/lookup")
+    assert result.status_code == 200
+    assert result.json["fetched"]["authors"] == fixture["expected"]
+
+    svc.plugins.enable("metadata-check")
+    value = None
+    end = time.monotonic() + 5
+    while value is None and time.monotonic() < end:
+        fields = client.get(f"/api/items/{item['id']}/fields").json["fields"]
+        value = next((f["value"] for f in fields if f["name"] == "metadata_check"), None)
+        if value is None:
+            time.sleep(0.05)
+    assert value == ("Up to date" if already_correct else "Review: authors")
+    articles = client.get("/api/plugins/metadata-check/review").json["articles"]
+    if already_correct:
+        assert articles == []
+    else:
+        change = next(c for c in articles[0]["changes"] if c["key"] == "authors")
+        assert change["fetched"] == fixture["expected"]
+    assert svc.papers.get(item["id"])["authors"] == stored

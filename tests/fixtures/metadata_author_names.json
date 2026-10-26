@@ -1,0 +1,23 @@
+{
+  "crossref": {
+    "message": {
+      "type": "journal-article",
+      "title": ["Metadata lookup example"],
+      "DOI": "10.1234/author-name-precedence",
+      "author": [
+        {"given": "Avery", "family": "Rivera"},
+        {"given": "Mina", "family": "de Vries"},
+        {"given": "Alex", "family": "García"}
+      ]
+    }
+  },
+  "openalex": {
+    "authorships": [
+      {"author": {"display_name": "Avery Rivera X"}, "raw_author_name": "Avery Rivera"},
+      {"author": {"display_name": "M. de Vries"}, "raw_author_name": "Mina de Vries"},
+      {"author": {"display_name": "Alex Garcia"}, "raw_author_name": "Alex García"}
+    ]
+  },
+  "expected": "Rivera, Avery; de Vries, Mina; García, Alex",
+  "profile_authors": "X, Avery Rivera; de Vries, M.; Garcia, Alex"
+}

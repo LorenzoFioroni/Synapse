@@ -560,6 +560,11 @@ Each open note has one `NoteSession`. It keeps `saved` (the text and hash the se
 4. If the user has unsaved edits, their next save gets a 409 and the conflict dialog appears.
    On the MCP side, `edit_note` re-reads and retries up to three times when the user saved first.
 
+The AI changes and conflict dialogs share `diffHtml`: changed lines have inline word highlights
+and long unchanged stretches collapse into a line count. Each row keeps its text and highlights
+in one wrapping block beside the fixed-width +/− marker, so long paragraphs remain readable at
+narrow widths.
+
 ### Exporting a note
 
 **Export** in the note head (and **Export…** in a note's menu in the notes list) opens
