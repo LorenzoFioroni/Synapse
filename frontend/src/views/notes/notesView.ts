@@ -14,6 +14,7 @@ import { openMenu } from '../../ui/menu.js';
 import { toast, toastError } from '../../ui/toast.js';
 import { h, modLabel, storage, store } from '../../util.js';
 import { loadAiEdits, onAiAction, paintAiBar, remoteArrived } from './aiBar.js';
+import { markMilestone, openNoteHistory, openVaultHistory } from './historyView.js';
 import { ghostSource, noteHooks, onNoteHookChange } from './hooks.js';
 import { openAttachments } from './attachmentsDialog.js';
 import { attachCiteCards, openCitation, pdfsOf, showCard } from './citeCard.js';
@@ -262,9 +263,18 @@ export async function closeNoteTab(path: string): Promise<void> {
   await opening;
   const view = ws.views.get(path);
   if (!view) return;
-  await view.session.save();
+  await checkpointAfterSave(view);
   if (ws.view === view) await closeCurrent();
   else dropView(view);
+}
+
+/** The note was left (switched away from or closed): once saved, its edits become a version in
+    the history now rather than after a pause (backend/notes/history/). */
+function checkpointAfterSave(view: NoteView): Promise<void> {
+  const path = view.path;
+  return view.session.save().then(() => {
+    if (!view.session.dirty) api.historyCheckpoint(path).catch(() => null);
+  });
 }
 
 /** A note tab is going to another window: save what was typed, so that window loads it. */
@@ -420,7 +430,7 @@ function hideView(view: NoteView): void {
     view.top = view.editor.topLine();
   }
   view.el.remove();   // out of the page: one editor in the page at a time (CodeMirror allows moving it)
-  view.session.save();
+  checkpointAfterSave(view);
   ws.view = null;
 }
 
@@ -673,6 +683,7 @@ function onClick(e: MouseEvent): void {
   if (act === 'rename' && session) { renameNote(session.path); return; }
   if (act === 'export' && session) { exportMenu(session.path, actEl!); return; }
   if (act === 'show-conflict' && session?.conflict) { conflictDialog(session.conflict); return; }
+  if (act === 'history' && session) { openNoteHistory(); return; }
   if (act?.startsWith('ai-')) { onAiAction(act, t.closest<HTMLElement>('[data-ai-id]')?.dataset.aiId); return; }
   if (act === 'paper-item' && info?.paper) { const it = itemInfo(info.paper); if (it) emit('show-item', it.id); return; }
   if (act === 'paper-pdf' && info?.paper) { openPaperPdf(actEl!); return; }
@@ -680,6 +691,8 @@ function onClick(e: MouseEvent): void {
     openMenu([
       { label: 'Rescan notes folder', icon: 'refresh', run: rescan },
       { label: 'Deleted notes…', icon: 'trash', run: showTrash },
+      { label: 'Notes history…', icon: 'restore', run: openVaultHistory },
+      { label: 'Mark milestone…', icon: 'flag', run: markMilestone },
       { label: 'Attachments…', icon: 'paperclip', run: showAttachments },
       'sep',
       { label: 'Collapse all folders', icon: 'minus', run: () => { ws.overview.folders.forEach((f) => tree.collapsed.add(f)); saveCollapsed(); paintTree(); } },

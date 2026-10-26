@@ -1,6 +1,7 @@
 // Changes AI apps (Claude, Codex …) made to notes through the MCP server's edit_note.
 //
-// The server keeps the version each change replaced (GET /api/notes/history). The open note
+// The server keeps every version of the note (GET /api/notes/history; the whole history is
+// historyView.ts). The open note
 // shows a bar while it is exactly what the AI app left — "Codex edited this note … Show changes ·
 // Undo" — and the note's details list every change AI apps made, each with its diff and a way
 // back. Undoing goes through the editor like typing would (so Cmd+Z / Cmd+Shift+Z work on it
@@ -17,7 +18,7 @@ const SEEN = 'zc.notes.aiSeen';
 
 /** The changes AI apps made to a note, newest first, or null. */
 export async function editsOf(path: string): Promise<NoteHistory | null> {
-  try { return await api.noteHistory(path); } catch { return null; }
+  try { return await api.noteHistory(path, 20); } catch { return null; }
 }
 
 const seen = () => new Set(storage<string[]>(SEEN, []));
@@ -64,7 +65,8 @@ export function diffHtml(a: string, b: string): string {
  * differs from the version before it. Resolves with the text to put back, or null.
  */
 export async function showEdit(entry: HistoryEntry, { savedHash, currentText }: { savedHash: string | null; currentText: string }): Promise<string | null> {
-  const v = await api.noteVersion(entry.id);
+  const v = await api.noteVersion(entry.id, entry.path, entry.from_path);
+  const before = v.before ?? '';
   const current = entry.after_hash === savedHash;
   return openDialog({
     title: current ? `${aiOwner(entry.agent).replace(/^./, (c) => c.toUpperCase())} change` : `Before ${aiOwner(entry.agent)} change`,
@@ -73,11 +75,11 @@ export async function showEdit(entry: HistoryEntry, { savedHash, currentText }: 
     wide: true,
     render: (b) => {
       b.innerHTML = `<div class="diff-legend"><span class="d-del">− before ${escapeHtml(aiOwner(entry.agent))} change</span><span class="d-add">+ ${current ? 'after it (the note now)' : 'the note now'}</span></div>
-        ${diffHtml(v.before, currentText)}`;
+        ${diffHtml(before, currentText)}`;
     },
     buttons: [{ label: 'Close', value: null },
       { label: current ? 'Undo this change' : 'Restore the version before it', kind: 'primary', value: 'restore' }],
-  }).then((r) => (r === 'restore' ? v.before : null));
+  }).then((r) => (r === 'restore' ? before : null));
 }
 
 /** Every change AI apps made to the note. Resolves with the text to put back, or null. */

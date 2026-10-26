@@ -1,8 +1,8 @@
 // Thin client for the JSON API. Every call throws an Error with a readable
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
-  AccessToken, AccessTokensOverview, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, HistoryEntry, ImportEntry, ImportPreview, Item,
-  ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
+  AccessToken, AccessTokensOverview, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, HistoryDiff, HistoryLog, HistoryStatus, HistoryVersion, ImportEntry, ImportPreview, Item,
+  ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, Milestone, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
   ItemFieldValue, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginSource, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview,
 } from './types.js';
@@ -153,8 +153,17 @@ export const api = {
   notes: () => request<NotesListing>('GET', '/api/notes'),
   getNote: (path: string) => request<NoteFile>('GET', `/api/notes/note?${qs({ path })}`),
   createNote: (data: Record<string, unknown>) => request<Omit<NoteFile, 'info'>>('POST', '/api/notes/note', data),
-  noteHistory: (path: string) => request<NoteHistory>('GET', `/api/notes/history?${qs({ path })}`),
-  noteVersion: (id: string) => request<HistoryEntry & { before: string }>('GET', `/api/notes/history/version?${qs({ id })}`),
+  noteHistory: (path: string, limit?: number) => request<NoteHistory>('GET', `/api/notes/history?${qs({ path, limit })}`),
+  noteVersion: (id: string, path?: string, from?: string) => request<HistoryVersion>('GET', `/api/notes/history/version?${qs({ id, path, from })}`),
+  historyStatus: () => request<HistoryStatus>('GET', '/api/notes/history/status'),
+  historyLog: (limit = 100, skip = 0) => request<HistoryLog>('GET', `/api/notes/history/log?${qs({ limit, skip })}`),
+  historyDiff: (from: string, to: string) => request<HistoryDiff>('GET', `/api/notes/history/diff?${qs({ from, to })}`),
+  historyCheckpoint: (path?: string, restoredFrom?: string) =>
+    request<{ commits: string[] }>('POST', '/api/notes/history/checkpoint', { path, restored_from: restoredFrom }),
+  addMilestone: (label: string) => request<Milestone>('POST', '/api/notes/history/milestones', { label }),
+  renameMilestone: (id: string, label: string) => request<Milestone>('PUT', `/api/notes/history/milestones/${encodeURIComponent(id)}`, { label }),
+  deleteMilestone: (id: string) => request('DELETE', `/api/notes/history/milestones/${encodeURIComponent(id)}`),
+  restoreMilestone: (id: string) => request<{ restored: string[]; trashed: string[]; trash_id: string | null }>('POST', `/api/notes/history/milestones/${encodeURIComponent(id)}/restore`),
   saveNote: (path: string, text: string, hash: string | null) => request<NoteSaved>('PUT', '/api/notes/note', { path, text, hash }),
   recreateNote: (path: string, text: string) => request<NoteSaved>('PUT', '/api/notes/note', { path, text, create: true }),
   moveNote: (path: string, to: string, hash?: string | null) => request<NoteMoved>('POST', '/api/notes/move', { path, to, hash }),

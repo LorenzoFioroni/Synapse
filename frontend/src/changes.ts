@@ -4,6 +4,7 @@
 import * as A from './actions.js';
 import { emit, state } from './store.js';
 import { api } from './api.js';
+import { historyChanged } from './views/notes/historyView.js';
 import { notesChanged } from './views/notes/notesView.js';
 import { pluginsChanged } from './views/settings/plugins.js';
 import { pluginChanges } from './plugins/host.js';
@@ -36,6 +37,7 @@ function editing() {
 
 async function apply() {
   if (pending.delete('plugins')) pluginsChanged();   // only the Settings page shows them (for now)
+  if (pending.delete('history')) historyChanged();   // an open history list reloads (even in its dialog)
   if (editing()) return;   // tried again at the next poll
   const notes = pending.delete('notes');
   if (notes) notesChanged();

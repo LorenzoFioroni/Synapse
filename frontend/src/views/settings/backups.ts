@@ -1,14 +1,32 @@
-// Settings → Backups: the list of backups, Back Up Now, restoring one, and the backup folder.
+// Settings → Backups: the list of backups, Back Up Now, restoring one, the backup folder, and
+// whether the notes history is on.
 import { api } from '../../api.js';
 import { icon } from '../../icons.js';
 import { state } from '../../store.js';
 import { confirmDialog } from '../../ui/dialog.js';
 import { toast, toastError } from '../../ui/toast.js';
 import { escapeHtml, formatBytes, formatDate, plural } from '../../util.js';
+import { installHtml, openVaultHistory } from '../notes/historyView.js';
 import { flashSaved } from './page.js';
+
+/** Whether the notes history is on (it needs Git), in the open Settings page ``view``. */
+async function refreshHistory(view: HTMLElement): Promise<void> {
+  const desc = view.querySelector<HTMLElement>('[data-history-desc]');
+  if (!desc) return;
+  try {
+    const st = await api.historyStatus();
+    if (!view.isConnected) return;
+    desc.innerHTML = st.enabled
+      ? `Every version of your notes’ text is kept, with who changed it (you, an AI app or another program), in <span class="mono">${escapeHtml(st.folder)}</span> (Git ${escapeHtml(st.git || '')}). Backups include it.`
+        + (st.error ? `<div class="form-error">${escapeHtml(st.error)}</div>` : '')
+      : `<span class="form-error">${installHtml(st)}</span> Until then only the changes AI apps make are kept.`;
+    view.querySelector<HTMLButtonElement>('[data-history-open]')!.hidden = !st.enabled;
+  } catch (e) { desc.textContent = (e as Error).message; }
+}
 
 /** Show the backups (and where they are) in the open Settings page ``view``. */
 export async function refreshBackups(view: HTMLElement): Promise<void> {
+  refreshHistory(view);
   const desc = view.querySelector<HTMLElement>('[data-backup-desc]')!;
   const list = view.querySelector<HTMLElement>('[data-backup-list]')!;
   try {
@@ -26,6 +44,7 @@ export async function refreshBackups(view: HTMLElement): Promise<void> {
 }
 
 export function bindBackups(view: HTMLElement): void {
+  view.querySelector<HTMLButtonElement>('[data-history-open]')!.onclick = () => openVaultHistory();
   const bdir = view.querySelector<HTMLInputElement>('[data-backup-dir]')!;
   bdir.addEventListener('change', async () => {
     const errEl = view.querySelector<HTMLElement>('[data-backup-dir-error]')!;

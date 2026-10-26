@@ -5,7 +5,8 @@ import { api } from '../../api.js';
 import { toast, toastError } from '../../ui/toast.js';
 import type { NoteHistory } from '../../types.js';
 import { aiName, modLabel } from '../../util.js';
-import { barHtml, editsDialog, editsOf, markSeen, pendingEdit, showEdit } from './aiEdits.js';
+import { barHtml, editsOf, markSeen, pendingEdit, showEdit } from './aiEdits.js';
+import { openNoteHistory } from './historyView.js';
 import { renderRead } from './readView.js';
 import { paintSide } from './sidePanel.js';
 import { ws } from './workspace.js';
@@ -38,13 +39,15 @@ export async function remoteArrived(path: string): Promise<void> {
   else toast('Updated with changes made in another window.');
 }
 
-/** Put an earlier version in the editor, as one undoable step, and save it. */
-async function putBack(text: string): Promise<void> {
+/** Put an earlier version in the editor, as one undoable step, and save it; ``from`` names the
+    version in the history, so the history records a restore of it. */
+export async function putBack(text: string, from?: string): Promise<void> {
   const { session, editor } = ws;
   if (!session || !editor || session.status === 'conflict') return;
   editor.replace(text, { userEvent: 'restore' });
   if (ws.mode === 'read') renderRead();
   await session.save();
+  if (from && !session.dirty) await api.historyCheckpoint(session.path, from).catch(() => null);
   paintAiBar();
   toast(`Restored the earlier version. ${modLabel}Z in the note brings the change back.`, { type: 'success' });
 }
@@ -55,13 +58,7 @@ export async function onAiAction(act: string, id: string | undefined): Promise<v
   if (!session) return;
   const ctx = () => ({ savedHash: session.saved.hash, currentText: session.text });
   try {
-    if (act === 'ai-edits') {
-      const hist = await loadAiEdits();
-      if (!hist?.entries.length) return;
-      const text = await editsDialog(hist, ctx());
-      if (text !== null) await putBack(text);
-      return;
-    }
+    if (act === 'ai-edits') { await openNoteHistory(); return; }
     const e = ws.aiHist?.entries.find((x) => x.id === id);
     if (!e || !id) return;
     if (act === 'ai-dismiss') { markSeen(id); paintAiBar(); return; }
@@ -70,6 +67,6 @@ export async function onAiAction(act: string, id: string | undefined): Promise<v
       if (text !== null) await putBack(text);
       return;
     }
-    if (act === 'ai-undo') await putBack((await api.noteVersion(id)).before);
+    if (act === 'ai-undo') await putBack((await api.noteVersion(id, e.path, e.from_path)).before ?? '');
   } catch (err) { toastError(err); }
 }

@@ -189,6 +189,9 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
             <div class="s-desc" data-backup-desc>Loading…</div></div>
             <div class="s-control"><button class="btn" data-backup-now>${icon('download')} Back Up Now</button></div></div>
             <div class="backup-list" data-backup-list></div></div>
+          <div class="setting"><div class="s-text"><div class="s-title">Notes history</div>
+            <div class="s-desc" data-history-desc>Loading…</div></div>
+            <div class="s-control"><button class="btn" data-history-open>${icon('restore')} Notes History…</button></div></div>
         </div></section>
 
       <section class="settings-section" id="set-devices"><h2>Devices</h2>

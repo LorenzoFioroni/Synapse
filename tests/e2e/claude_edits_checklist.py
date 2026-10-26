@@ -143,6 +143,7 @@ async def main():
             )
             got = await wait_for(page, "window.zcNotes.text().includes('now with noise')")
             check("the open note shows Claude's change without a reload", got)
+            await wait_for(page, "!document.querySelector('.note-ai-bar').hidden")
             check(
                 "a bar names the change and the app",
                 await page.is_visible(".note-ai-bar")
@@ -230,22 +231,32 @@ async def main():
                 "hidden bar stays hidden; the change stays",
                 not await page.is_visible(".note-ai-bar") and "revised" in body(),
             )
-            # 6. the list of Claude edits restores an earlier version
+            # 6. the note's history lists Claude's edits among the user's, and restores an earlier version
             await page.wait_for_selector(".ai-edits-btn")
-            label = await page.text_content(".ai-edits-btn")
+            check("the note's details name the last AI edit", "Claude" in (await page.text_content(".ns-meta") or ""))
             await page.click(".ai-edits-btn")
-            await page.wait_for_selector(".dialog .ai-row")
-            rows = await page.locator(".dialog .ai-row").count()
-            check("the note's details list Claude's edits", rows == 3 and "3 edits" in label, f"{rows} rows, {label!r}")
-            await page.locator(".dialog .ai-row button").nth(rows - 1).click()  # the oldest one
-            await page.wait_for_selector('.dialog .dialog-title:has-text("Before Claude")')
-            await page.click('.dialog button:has-text("Restore the version before it")')
+            await page.wait_for_selector(".hist-dialog .hist-row")
+            rows = page.locator(".hist-dialog .hist-list > .h-group > .hist-row")
+            metas = await page.locator(".hist-dialog .hist-list > .h-group > .hist-row .h-meta").all_text_contents()
+            whats = await page.locator(".hist-dialog .hist-list > .h-group > .hist-row .h-what").all_text_contents()
+            check(
+                "the note's history lists each of Claude's edits with its summary",
+                sum(m.startswith("Claude") for m in metas) == 3
+                and "Revised" in whats
+                and "Expanded the model" in whats,
+                f"{whats} {metas}",
+            )
+            await rows.nth(await rows.count() - 1).click()  # the oldest: the note as it was made
+            await page.wait_for_selector(".hist-dialog .hist-body .diff, .hist-dialog .hist-body p")
+            await page.click('.dialog button:has-text("Restore This Version")')
             await saved(page)
-            await page.wait_for_timeout(400)
+            await page.wait_for_timeout(600)
             check(
                 "restoring the oldest version gives the original note",
                 body() == ORIGINAL and await page.locator(".dialog").count() == 0,
             )
+            hist = s.get(BASE + "/api/notes/history?path=plan.md").json()["entries"]
+            check("… and the history records it as a restore", hist[0]["kind"] == "restore", str(hist[0]))
             # 7. a note edited while another one is open shows the bar when opened
             await page.click('.nt-row.note[data-path="other.md"]')
             await page.wait_for_timeout(500)
