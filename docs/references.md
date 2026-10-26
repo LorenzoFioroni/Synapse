@@ -116,8 +116,12 @@ Two merges happen inside `lookup()`:
 ### Reviewing the result
 
 `POST /api/items/<id>/lookup` (`backend/api/metadata.py`) looks up an existing item and saves
-nothing. It answers `{current, fetched}`. `fetched` also carries a `citation_key` generated with
-the user's pattern from the merged item.
+nothing. It answers `{current, fetched, changes}`; the added `changes` field leaves existing clients
+compatible. `fetched` also carries a `citation_key` generated with the user's pattern from the merged
+item. `backend/online/metadata.py` shares this lookup and `compute_changes` with Metadata Check;
+shared fixtures check that the Python and TypeScript comparisons agree. Metadata Check reuses
+`openReviewDialog` with stored results and callbacks for rejecting suggestions or ignoring papers.
+Only successfully saved item IDs reach its Apply callback; unchecked changes remain reviewable.
 
 The review is `frontend/src/views/metadataReview.ts`:
 

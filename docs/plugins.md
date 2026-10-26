@@ -117,7 +117,8 @@ with these differences, all from `"core": true` in its manifest and honoured onl
   the user's choice, as for any plugin.
 - Its tools for Claude keep the names they had in Synapse (no `<plugin>__` prefix), its commands
   may use Synapse's own keys (which other plugins cannot take, even while it is off), and its
-  commands and actions are not labelled with a plugin name.
+  commands and actions are not labelled with a plugin name, except Metadata Check, which keeps
+  its name so its Run Now and Review Changes commands are easy to identify.
 - Its server part gets the app's `Services` object as `plugin.synapse` (None for other plugins).
 - It keeps running in safe mode (`--safe-mode` stops the other plugins only).
 
@@ -143,9 +144,9 @@ selected section disappears, Settings selects General. Unrelated sections keep t
 Autocompletion also clears visible and pending suggestions when stopped; an older status request
 cannot overwrite a newer check.
 
-### Other plugins that come with Synapse
+### Optional plugins that come with Synapse
 
-These are off until turned on:
+These are off until turned on (Metadata Check is a core plugin with an opt-in default):
 
 - **Citation Counts** (`plugins/citation-counts`): how often each paper is cited, from OpenAlex
   and Semantic Scholar, as a *Citations* column, a search filter (`citations:>100`, also in smart
@@ -155,15 +156,22 @@ These are off until turned on:
   setting turns Semantic Scholar off. It uses the keys in Settings → Online Services, if any.
 - **Metadata Check** (`plugins/metadata-check`): a *Metadata Check* text field refreshed through
   the active metadata providers, every three days by default (setting *Days between checks*, applied
-  without a restart). It reports records that need an identifier, fields whose current values
-  differ, and a real DOI when an arXiv preprint has been published. It only reports; it never
-  overwrites library metadata. **Run Now** (in its Settings section and the command palette)
-  checks every item again at once. **Ignore Metadata Suggestion** (item menu, palette) hides an
-  item's current suggestion ("Up to date · ignored title"); the ignore remembers the values it was
-  about, so a later check that finds a *different* title or another published DOI shows again. Its
-  Settings section lists the ignored suggestions with **Stop Ignoring** (also in the item menu),
-  which shows the suggestion again at once without asking the services. What each check found is
-  kept in the plugin's `findings.json`, the ignores in `ignored.json` (both in backups).
+  without a restart). It compares every field the Retrieve Metadata dialog compares without folding case,
+  accents or punctuation. Existing citation keys remain opt-in and do not trigger a flag by themselves.
+  Runs show progress in the notification center and notify with a desktop alert and a
+  **Review** button when papers have differences, or end silently when all are up to date. Clicking
+  Review (from the notification, palette, or Settings) opens the Retrieve Metadata review popup fed from
+  stored findings without re-fetching, allowing per-suggestion Accept, Reject (remembered per-field),
+  editing, or ignoring the paper altogether. Its Settings section offers **Run Now**, **Review Changes**
+  (with a pending badge), and lists of both **Ignored papers** and **Rejected suggestions** with
+  **Stop Ignoring**. What each check found is kept in `findings.json`, the ignores in `ignored.json`, and
+  ignored papers in `ignored_papers.json` (all in backups). Rejections remember complete field values,
+  including long abstracts; older normalized rejections are migrated from their saved display values.
+  Old findings without a full metadata payload are refreshed once. Applying only selected fields keeps
+  the remaining suggestions available, and Stop Ignoring a paper restores its cached findings without
+  another lookup. Progress counts only items due in that run, counts failed attempts separately, and
+  clears interrupted runs on restart. An unreachable service keeps its previous field value for retry;
+  failed attempts produce a warning rather than an all-up-to-date message.
 - **arXiv Today** (`plugins/arxiv-today`): the papers announced on arXiv in the categories you
   choose in its settings, under one **arXiv Feed** entry. Opening it shows a separate sidebar beside
   the papers for the retained announcement days (latest first, 30 days by default), without
@@ -385,9 +393,13 @@ plugin.fields.set({"arxiv": "2610.01234"}, "citations", 0)  # also for a paper n
   refresher that reached some services but not others answers **`plugin.fields.LATER`** for the
   papers it could not ask about: nothing is stored for them and they are handed over again in an
   hour (not at once, so they do not hold up the rest).
+- **Reviewing a library item.** `plugin.services.lookup_item(item_or_id)` returns `(current, fetched)`
+  through the same metadata lookup as Retrieve Metadata, including author resolution and a proposed
+  citation key. It saves nothing. `lookup(identifier)` remains the outside-record lookup.
 - **Asking again now.** `plugin.fields.refresh(name, papers=None)` hands the field's papers (or
   only `papers`) to its refresher again soon, whatever their age: for a "Check now" button. The
-  values stay shown until the new ones arrive. A refresh interval taken from a setting can be
+  values stay shown until the new ones arrive. Explicit refresh also retries papers deferred after
+  an unreachable service. A refresh interval taken from a setting can be
   changed while running by assigning seconds to the declared field's `refresh`
   (`field = plugin.fields.declare(…)`; `field.refresh = days * 86400` in
   `@plugin.settings.on_change`).

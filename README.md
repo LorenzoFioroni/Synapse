@@ -391,8 +391,10 @@ Three plugins come with Synapse, off until you turn them on:
   weekly, and lets you search for `citations:>100`.
 - **Metadata Check** compares every identifiable library record with current metadata every
   three days (or as often as you set), flags fields to review, and identifies journal versions of
-  arXiv preprints. **Run Now** checks everything at once; a suggestion you ignore (item menu)
-  stays hidden until a check finds something different, and Settings lists the ignored ones.
+  arXiv preprints. **Run Now** checks everything at once, with progress in the notification center.
+  **Review Changes** opens the metadata review dialog from stored results: apply selected fields,
+  edit values, reject suggestions, or ignore a paper altogether. Rejected values stay hidden until
+  they change; Settings lists rejected suggestions and ignored papers so you can restore them.
 - **arXiv Feed** lists each morning's arXiv papers in the categories you choose, ranked by how
   they connect to your library (papers of yours they cite, shared authors, similar topics), with
   a notification ("12 new papers, 3 connected to your library"), a **+** to add a paper and

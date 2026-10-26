@@ -66,7 +66,7 @@ const copy = <T>(x: T): T => { try { return structuredClone(x); } catch { return
 function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
   const pid = info.id;
   const full = (id: string) => `${pid}.${id}`;
-  const src = info.core ? undefined : info.name;   // a core plugin's parts are Synapse's own: not labelled
+  const src = (info.core && info.id !== 'metadata-check') ? undefined : info.name;
   const keep = (d: Dispose): Dispose => { if (rec.disposed) d(); else rec.disposers.push(d); return d; };
   // A retired context must settle its calls, so async activation and synchronization can finish.
   const call = async <T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, query?: Record<string, unknown>): Promise<T> => {

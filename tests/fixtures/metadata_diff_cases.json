@@ -1,0 +1,203 @@
+[
+  {
+    "name": "title_case_difference",
+    "current": {
+      "title": "Deep Learning"
+    },
+    "fetched": {
+      "title": "Deep learning"
+    },
+    "expected": [
+      {
+        "key": "title",
+        "current": "Deep Learning",
+        "fetched": "Deep learning",
+        "isNew": false,
+        "checked": true
+      }
+    ]
+  },
+  {
+    "name": "title_accents_difference",
+    "current": {
+      "title": "Poincare Conjecture"
+    },
+    "fetched": {
+      "title": "Poincar\u00e9 Conjecture"
+    },
+    "expected": [
+      {
+        "key": "title",
+        "current": "Poincare Conjecture",
+        "fetched": "Poincar\u00e9 Conjecture",
+        "isNew": false,
+        "checked": true
+      }
+    ]
+  },
+  {
+    "name": "title_punctuation_difference",
+    "current": {
+      "title": "Attention: Is All You Need"
+    },
+    "fetched": {
+      "title": "Attention Is All You Need"
+    },
+    "expected": [
+      {
+        "key": "title",
+        "current": "Attention: Is All You Need",
+        "fetched": "Attention Is All You Need",
+        "isNew": false,
+        "checked": true
+      }
+    ]
+  },
+  {
+    "name": "citation_key_existing",
+    "current": {
+      "citation_key": "vaswani2017"
+    },
+    "fetched": {
+      "citation_key": "vaswani2017attention"
+    },
+    "expected": [
+      {
+        "key": "citation_key",
+        "current": "vaswani2017",
+        "fetched": "vaswani2017attention",
+        "isNew": false,
+        "checked": false
+      }
+    ]
+  },
+  {
+    "name": "citation_key_missing",
+    "current": {},
+    "fetched": {
+      "citation_key": "vaswani2017"
+    },
+    "expected": [
+      {
+        "key": "citation_key",
+        "current": null,
+        "fetched": "vaswani2017",
+        "isNew": true,
+        "checked": true
+      }
+    ]
+  },
+  {
+    "name": "citation_key_blank_string",
+    "current": {
+      "citation_key": "   "
+    },
+    "fetched": {
+      "citation_key": "vaswani2017"
+    },
+    "expected": [
+      {
+        "key": "citation_key",
+        "current": "   ",
+        "fetched": "vaswani2017",
+        "isNew": true,
+        "checked": true
+      }
+    ]
+  },
+  {
+    "name": "item_type_empty_in_current",
+    "current": {},
+    "fetched": {
+      "item_type": "journalArticle"
+    },
+    "expected": []
+  },
+  {
+    "name": "item_type_present_in_current",
+    "current": {
+      "item_type": "preprint"
+    },
+    "fetched": {
+      "item_type": "journalArticle"
+    },
+    "expected": [
+      {
+        "key": "item_type",
+        "current": "preprint",
+        "fetched": "journalArticle",
+        "isNew": false,
+        "checked": true
+      }
+    ]
+  },
+  {
+    "name": "multi_field_changes",
+    "current": {
+      "title": "Old Title",
+      "year": 2020,
+      "journal": "Old Journal"
+    },
+    "fetched": {
+      "title": "New Title",
+      "year": "2021",
+      "journal": "New Journal",
+      "doi": "10.1000/1"
+    },
+    "expected": [
+      {
+        "key": "title",
+        "current": "Old Title",
+        "fetched": "New Title",
+        "isNew": false,
+        "checked": true
+      },
+      {
+        "key": "year",
+        "current": 2020,
+        "fetched": "2021",
+        "isNew": false,
+        "checked": true
+      },
+      {
+        "key": "journal",
+        "current": "Old Journal",
+        "fetched": "New Journal",
+        "isNew": false,
+        "checked": true
+      },
+      {
+        "key": "doi",
+        "current": null,
+        "fetched": "10.1000/1",
+        "isNew": true,
+        "checked": true
+      }
+    ]
+  },
+  {
+    "name": "blank_fetched_ignored",
+    "current": {
+      "title": "Title",
+      "abstract": "Abstract"
+    },
+    "fetched": {
+      "title": "Title",
+      "abstract": null,
+      "extra": "   "
+    },
+    "expected": []
+  },
+  {
+    "name": "identical_fields_no_change",
+    "current": {
+      "title": "Exact Title",
+      "year": 2020
+    },
+    "fetched": {
+      "title": "Exact Title",
+      "year": "2020"
+    },
+    "expected": []
+  }
+]

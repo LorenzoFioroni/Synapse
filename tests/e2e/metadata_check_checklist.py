@@ -243,6 +243,101 @@ async def main():
             ok = await wait_for(lambda: page.evaluate(f"!document.querySelector('{sec} .mc-ignored')"))
             check("Stop Ignoring in Settings empties the list", ok)
             check("and the suggestion is back", await becomes(item, "Review: title"))
+
+            # Review Changes dialog from Settings
+            await page.wait_for_selector(f"{sec} [data-mc-review]:not([disabled])")
+            check("Review Changes button is enabled", await page.is_visible(f"{sec} [data-mc-review]"))
+            await page.click(f"{sec} [data-mc-review]")
+            await page.wait_for_selector(".mr-dialog")
+            check("Review dialog opens", await page.is_visible(".mr-dialog"))
+            await page.wait_for_selector(".mr-dialog .diff-block")
+            check("Review dialog shows proposed changes", await page.is_visible(".mr-dialog .diff-block"))
+
+            # Reject suggestion in review dialog
+            await page.click(".mr-dialog .diff-block [data-reject]")
+            check("Rejecting in review dialog marks it ignored", await becomes(item, "Up to date · ignored title"))
+            await page.keyboard.press("Escape")
+            await page.wait_for_selector(".mr-dialog", state="detached")
+
+            # Ignore paper in review dialog
+            answer("Title to ignore altogether")
+            await page.click(f"{sec} [data-mc-run]")
+            check("different suggestion shows again", await becomes(item, "Review: title"))
+            await page.wait_for_selector(f"{sec} [data-mc-review]:not([disabled])")
+            await page.click(f"{sec} [data-mc-review]")
+            await page.wait_for_selector(".mr-dialog .mr-ignore")
+            await page.click(".mr-dialog .mr-ignore")
+            check("Ignore paper updates server value", await becomes(item, "Up to date · ignored paper"))
+            await page.keyboard.press("Escape")
+            await page.wait_for_selector(".mr-dialog", state="detached")
+
+            # Settings lists ignored paper
+            await page.wait_for_selector(f"{sec} .mc-ignored-paper")
+            check("Settings lists the ignored paper", await page.is_visible(f"{sec} .mc-ignored-paper"))
+            await page.click(f"{sec} [data-mc-unignore-paper]")
+            ok = await wait_for(lambda: page.evaluate(f"!document.querySelector('{sec} .mc-ignored-paper')"))
+            check("Stop Ignoring paper empties the ignored paper list", ok)
+
+            # Apply changes in review dialog
+            await page.click(f"{sec} [data-mc-run]")
+            check("suggestion returns after unignoring paper", await becomes(item, "Review: title"))
+            await page.wait_for_selector(f"{sec} [data-mc-review]:not([disabled])")
+            await page.click(f"{sec} [data-mc-review]")
+            await page.wait_for_selector(".mr-dialog button:has-text('Apply')")
+            await page.click(".mr-dialog button:has-text('Apply')")
+            ok = await wait_for(
+                lambda: asyncio.to_thread(
+                    lambda: api(f"/api/items/{item['id']}")["title"] == "Title to ignore altogether"
+                )
+            )
+            check("Apply saves changes to library", ok)
+            check("item is now up to date", await becomes(item, "Up to date"))
+
+            # Ignoring one paper must not leave its checked changes queued for Apply.
+            second = api(
+                "/api/items",
+                "POST",
+                json={"title": "Second stored title", "authors": "Doe, Jane", "year": 2020, "doi": "10.1000/second"},
+            )
+            answer("Another proposed title")
+            await page.click(f"{sec} [data-mc-run]")
+            check(
+                "both items have new suggestions",
+                await becomes(item, "Review: title") and await becomes(second, "Review: title"),
+            )
+            await page.wait_for_selector(f"{sec} [data-mc-review]:not([disabled])")
+            await page.click(f"{sec} [data-mc-review]")
+            await page.wait_for_selector(f'.mr-dialog [data-article="{item["id"]}"] .mr-ignore')
+            await page.click(f'.mr-dialog [data-article="{item["id"]}"] .mr-ignore')
+            check("first paper is ignored before applying", await becomes(item, "Up to date · ignored paper"))
+            await page.click(".dialog-footer button.btn-primary")
+            await page.wait_for_selector(".mr-dialog", state="detached")
+            check(
+                "Apply leaves the ignored paper unchanged",
+                api(f"/api/items/{item['id']}")["title"] == "Title to ignore altogether",
+            )
+            check(
+                "Apply saves the remaining paper",
+                api(f"/api/items/{second['id']}")["title"] == "Another proposed title",
+            )
+
+            # Saving just one field keeps the unchecked suggestion in Review Changes.
+            api(f"/api/items/{second['id']}", "PATCH", json={"year": 2010})
+            answer("Still pending title")
+            await page.click(f"{sec} [data-mc-run]")
+            check("two fields need review", await becomes(second, "Review: title, year"))
+            await page.wait_for_selector(f"{sec} [data-mc-review]:not([disabled])")
+            await page.click(f"{sec} [data-mc-review]")
+            blocks = page.locator(".mr-dialog .diff-block")
+            await blocks.filter(has_text="Title").locator('input[type="checkbox"]').uncheck()
+            await page.click(".dialog-footer button.btn-primary")
+            await page.wait_for_selector(".mr-dialog", state="detached")
+            check(
+                "unchecked title stays in the library",
+                api(f"/api/items/{second['id']}")["title"] == "Another proposed title",
+            )
+            check("unchecked title remains reviewable", await becomes(second, "Review: title"))
+
             check("no page errors", not errors, errors)
             await b.close()
     finally:
