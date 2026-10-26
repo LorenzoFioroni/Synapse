@@ -367,6 +367,16 @@ async def main():
                 and await page.locator(".cm-lp-star-heading .katex").count() == 1
                 and "##*" not in (await page.locator(".cm-lp-h2").filter(has_text="Hidden detail").inner_text()),
             )
+            await page.locator(".cm-lp-star-heading", has_text="Hidden detail").click()
+            check(
+                "live: clicking a rendered heading after contents selects its source line",
+                await page.evaluate(
+                    """() => { const text = window.zcNotes.text(), at = window.zcNotes.cursor();
+                    const from = text.indexOf('##* Hidden detail'), to = text.indexOf('\\n', from);
+                    return at >= from && at <= to; }"""
+                ),
+                await page.evaluate("window.zcNotes.cursor()"),
+            )
             await page.locator(".cm-lp-toc a", has_text="Destination").click()
             check(
                 "live: a contents link scrolls to its heading",
@@ -379,6 +389,16 @@ async def main():
                         return r.top >= box.top && r.bottom <= box.bottom; }"""
                     )
                 ),
+            )
+            await page.locator(".cm-line", has_text="Destination").click()
+            check(
+                "live: clicking a heading reached from contents selects its source line",
+                await page.evaluate(
+                    """() => { const text = window.zcNotes.text(), at = window.zcNotes.cursor();
+                    const from = text.indexOf('## Destination'), to = text.indexOf('\\n', from);
+                    return at >= from && at <= to; }"""
+                ),
+                await page.evaluate("window.zcNotes.cursor()"),
             )
 
             # ---- switching modes keeps the line at the top

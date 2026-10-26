@@ -119,6 +119,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 
 /* source mode: the Markdown as code, in one monospaced size (headings only bold) so columns line up */
 .note-toc { margin: 1em 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-elev); }
+.cm-lp-toc.note-toc { margin: 0; }
 .note-toc-title { margin-bottom: 6px; font-weight: 650; }
 .note-toc ol { list-style: none; margin: 0; padding: 0; }
 .note-toc li { margin-left: calc(var(--toc-depth) * 18px); }
