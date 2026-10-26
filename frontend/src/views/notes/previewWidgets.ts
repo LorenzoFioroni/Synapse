@@ -167,6 +167,11 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     checkbox: (checked: boolean, pos: number) => new CheckboxWidget(checked, pos),
     task: (id: string, hooks: TaskPreview) => new TaskWidget(id, hooks),
     katex: (eq: Equations, tex: string, display: boolean, block = false, preview = false) => new MathWidget(tex, display, block, preview, eq),
+    heading: (text: string, level: number, number: string, version: string) => new HtmlWidget(`h:${version}:${level}:${number}:${text}`, (el) => {
+      const r = deps.renderer();
+      if (r) el.innerHTML = `${number ? `<span class="section-num">${number}</span> ` : ''}${r.renderInline(text)}`;
+      else el.textContent = `${number ? `${number} ` : ''}${text}`;
+    }, { cls: `cm-lp-star-heading cmt-h cmt-h${Math.min(level, 4)}` }),
 
     /** A formula that only defines macros: a small label (click it to edit the definitions). */
     defs: (names: string[], block: boolean) => new HtmlWidget(`defs:${block}:${names.join(' ')}`, (el) => {

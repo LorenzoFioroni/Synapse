@@ -82,7 +82,7 @@ def setup():
     )
     requests.post(f"{BASE}/api/notes/note", json={"path": "Table math.md", "title": "Table math", "text": table})
     contents = (
-        "# Contents\n\n\\tableofcontents\n\n##* Hidden detail\n\n"
+        "# Contents\n\n\\tableofcontents\n\n##* Hidden detail $x^2$\n\n"
         + "\n\n".join(f"Filler paragraph {i}." for i in range(1, 201))
         + "\n\n## Destination $E=mc^2$\n\nEnd.\n"
     )
@@ -360,6 +360,12 @@ async def main():
                 "Destination" in toc_text
                 and "Hidden detail" not in toc_text
                 and await page.locator(".cm-lp-toc .katex").count() == 1,
+            )
+            check(
+                "live: ##* still renders as a heading",
+                await page.locator(".cm-lp-star-heading.cmt-h2").count() == 1
+                and await page.locator(".cm-lp-star-heading .katex").count() == 1
+                and "##*" not in (await page.locator(".cm-lp-h2").filter(has_text="Hidden detail").inner_text()),
             )
             await page.locator(".cm-lp-toc a", has_text="Destination").click()
             check(

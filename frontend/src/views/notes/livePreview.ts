@@ -327,6 +327,20 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     const taken: [number, number][] = [];
     const overlapsTaken = (from: number, to: number) => taken.some(([a, b]) => from < b && to > a);
 
+    // CodeMirror's Markdown grammar does not know the LaTeX-style `##* Heading` extension.
+    // Draw the entire line as an inline-rendered heading when it is not being edited, so it has
+    // the same typography, formatting and math as an ordinary heading.
+    for (const section of sectionsOfDoc(state).sections) {
+      const line = doc.lineAt(section.from);
+      if (!/^( {0,3}#{1,6})\*([ \t]+)/.test(line.text) || !shown(line.from, line.to)) continue;
+      lineDeco(line.from, `cm-lp-h cm-lp-h${section.level}`);
+      if (lineActive(line.from)) continue;
+      taken.push([line.from, line.to]);
+      replace(line.from, line.to, Decoration.replace({
+        widget: W.heading(section.text, section.level, section.labels.length ? section.number : '', String(state.field(blocks).version)),
+      }));
+    }
+
     for (const sp of spoilersOfDoc(state)) {
       if (!sp.block && shown(sp.from, sp.to) && !touches(sp.from, sp.to)) {
         taken.push([sp.from, sp.to]);
@@ -359,9 +373,8 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
       if (!shown(section.from, section.from)) continue;
       const line = doc.lineAt(section.from);
       const starred = /^( {0,3}#{1,6})\*([ \t]+)/.exec(line.text);
-      if (starred) lineDeco(section.from, `cm-lp-h cm-lp-h${section.level}`);
+      if (starred) continue;   // rendered as a whole above (or shown as source while edited)
       if (lineActive(section.from)) continue;
-      if (starred) replace(line.from, line.from + starred[0].length, hide);
       if (section.labels.length) out.push(Decoration.widget({ widget: W.chip(`sec:${section.from}:${section.number}`, 'section-num', section.number, {}), side: 1 }).range(section.from));
       for (const label of section.labels) replace(label.from, label.to, hide);
     }
