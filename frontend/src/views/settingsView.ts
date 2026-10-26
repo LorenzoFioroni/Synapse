@@ -96,6 +96,7 @@ function setNav(id: string, scroll = true): void {
   if (!view) return;
   if (scroll && !view.querySelector(`#set-${CSS.escape(id)}`)) { pendingNav = id; return; }
   if (scroll) pendingNav = null;
+  view.querySelector('.settings-nav')!.classList.toggle('plugins-expanded', id === 'plugins' || id.startsWith('plugin-'));
   view.querySelectorAll<HTMLElement>('[data-nav]').forEach((b) => b.classList.toggle('active', b.dataset.nav === id));
   if (scroll) view.querySelector(`#set-${CSS.escape(id)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }

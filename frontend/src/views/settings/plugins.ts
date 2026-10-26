@@ -135,9 +135,12 @@ function render(view: HTMLElement, data: PluginsOverview, force = false): void {
   const list = view.querySelector<HTMLElement>('[data-plugin-list]')!;
   desc.innerHTML = (data.safe_mode ? `<div class="form-error">Synapse was started in safe mode (<span class="mono">--safe-mode</span>): no plugin runs until it is started normally.</div>` : '')
     + `Put a plugin's folder in <span class="mono">${escapeHtml(data.dir)}</span>, then press Look Again. Plugin API ${escapeHtml(data.api)}.`;
-  list.innerHTML = data.plugins.length
-    ? data.plugins.map((p) => rowHtml(p, data.safe_mode)).join('')
-    : '<div class="p-empty">No plugins yet.</div>';
+  const group = (title: string, plugins: PluginInfo[], empty: string) => `<section class="plugin-group">
+    <h3>${title}</h3><div class="plugin-group-list">${plugins.length
+      ? plugins.map((p) => rowHtml(p, data.safe_mode)).join('')
+      : `<div class="p-empty">${empty}</div>`}</div></section>`;
+  list.innerHTML = group('Core plugins', data.plugins.filter((p) => p.core), 'No core plugins found.')
+    + group('Contributed plugins', data.plugins.filter((p) => !p.core), 'No contributed plugins installed.');
   renderSections(view, data, force);
 }
 
@@ -146,7 +149,8 @@ function render(view: HTMLElement, data: PluginsOverview, force = false): void {
 function renderSections(view: HTMLElement, data: PluginsOverview, force = false): void {
   const anchor = view.querySelector<HTMLElement>('#set-plugins')!;
   const navAnchor = view.querySelector<HTMLElement>('.settings-nav [data-nav="plugins"]')!;
-  const wanted = data.plugins.filter(hasSection);
+  const sections = data.plugins.filter(hasSection);
+  const wanted = [...sections.filter((p) => p.core), ...sections.filter((p) => !p.core)];
   const keep = new Set(wanted.map((p) => pluginNavId(p.id)));
   let activeRemoved = false;
   view.querySelectorAll<HTMLElement>('.plugin-settings').forEach((s) => { if (!keep.has(s.dataset.section!)) s.remove(); });

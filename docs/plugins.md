@@ -57,6 +57,10 @@ but each can be turned off in Settings → Plugins (as Obsidian's core plugins c
 lives in its own folder. They start on (or as the switch they replace was), keep running in safe
 mode, and their settings are in their own section of Settings:
 
+Settings lists these separately from **Contributed plugins** (bundled optional additions and
+plugins installed in `data/plugins/`). Its navigation expands the individual plugin sections only
+while the Plugins area is in view, and otherwise keeps a single top-level **Plugins** entry.
+
 - **Autocompletion** (`plugins/autocompletion`, off by default): suggestions from a model in
   Ollama on this computer as you write a note; see [autocompletion](autocompletion.md).
 - **Metadata Sources** (`plugins/metadata-sources`, on by default): metadata by DOI, arXiv ID,
