@@ -78,6 +78,7 @@
 .diff-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 12px; background: var(--bg-app); border-bottom: 1px solid var(--border); }
 .diff-body { font-size: var(--fs-sm); line-height: 1.5; }
 .diff-old, .diff-new { padding: 6px 12px; word-break: break-word; display: flex; gap: 8px; }
+.diff-body .diff-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .diff-old::before, .diff-new::before { font-family: var(--font-mono); font-weight: 700; flex: none; }
 .diff-old { background: #fff1f1; color: #8a1f1f; }
 .diff-old::before { content: "−"; }

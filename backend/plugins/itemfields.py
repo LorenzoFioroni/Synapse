@@ -34,6 +34,9 @@ class PluginFields:
         self._find = find_item
         self._changed = changed
         self.defs: dict[str, FieldDef] = {}
+        # set by the host while the plugin's background runner is going (web app only)
+        self.refresh_soon: Callable[[], None] = lambda: None
+        self.allow_retry: Callable[[str, list[str] | None], None] = lambda name, keys: None
 
     def declare(
         self,
@@ -100,6 +103,20 @@ class PluginFields:
             keys = keys_of(item) if item else [self.key(ref)]
         row = pick(self._store().rows(self._pid, name), keys)
         return row["value"] if row else None
+
+    def refresh(self, name: str, papers=None) -> int:
+        """Ask the field's refresher about its papers again soon, whatever their age (a "Check
+        now" button, say); with ``papers`` (refs as for ``set``), only those. Papers without a
+        value are asked about anyway. The values stay shown until the new ones arrive. Returns how
+        many stored values were marked."""
+        d = self._def(name)
+        if not d.refresher:
+            raise PluginError(f"Field {name!r} has no refresher to ask")
+        keys = None if papers is None else [self.key(r) for r in papers]
+        self.allow_retry(name, keys)
+        n = self._store().expire(self._pid, name, keys)
+        self.refresh_soon()
+        return n
 
     def clear(self, name: str | None = None, papers=None) -> int:
         """Forget the stored values of one field (or of all of this plugin's); with ``papers``
@@ -219,6 +236,12 @@ class FieldIndex:
         return check
 
     # ------------------------------------------------------------------ refreshing
+    def allow_retry(self, plugin: str, name: str, keys: list[str] | None = None) -> None:
+        """An explicit refresh may retry papers deferred after an unreachable service."""
+        for retry in list(self._later):
+            if retry[:2] == (plugin, name) and (keys is None or retry[2] in keys):
+                self._later.pop(retry, None)
+
     def due(self, d: FieldDef, items: list[dict], now: float | None = None) -> list[dict]:
         """The library items whose value is missing, or older than the field's ``refresh``:
         never looked first, then the oldest."""

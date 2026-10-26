@@ -62,6 +62,13 @@ async def main():
                 context = await browser.new_context(viewport={"width": 1300, "height": 900})
                 await context.add_init_script(f"({MOCK_OS})()")
                 page = await context.new_page()
+                await page.add_init_script("""if (!localStorage.getItem('notification-fixture-seeded')) {
+                  localStorage.setItem('notification-fixture-seeded', 'yes');
+                  localStorage.setItem('synapse.notification.abandoned', JSON.stringify({
+                    id: 'abandoned', message: 'Interrupted import', level: 'info', status: 'running',
+                    owner: 'terminated-window', time: Date.now(), read: true
+                  }));
+                }""")
                 errors = []
                 page.on("pageerror", lambda e: errors.append(str(e)))
                 await page.goto(BASE)
@@ -71,6 +78,17 @@ async def main():
                 await bell.click()
                 center = page.locator("#notification-center")
                 check("Bell opens a labeled center beside Settings", await center.is_visible())
+                abandoned = center.locator('[data-notice="abandoned"]')
+                await abandoned.locator('[data-n="dismiss"]').wait_for()
+                check(
+                    "Startup recovers a job left running without a shutdown event",
+                    "interrupted" in await abandoned.inner_text() and await abandoned.locator("progress").count() == 0,
+                )
+                await abandoned.locator('[data-n="dismiss"]').click()
+                await page.reload()
+                await bell.wait_for()
+                await bell.click()
+                check("Recovered job dismissal survives reload", await abandoned.count() == 0)
                 check(
                     "Notification center only contains history actions",
                     await center.locator('[data-n="desktop"]').count() == 0,
@@ -255,6 +273,45 @@ async def main():
                     "document.querySelector('[data-a=notifications]').getAttribute('aria-label')==='Notifications'"
                 )
                 check("Read state synchronizes across windows", True)
+                await page.evaluate("""async () => {
+                  const m = await import('/js/notifications/center.js');
+                  window.liveJob = m.startJob('Job in another window');
+                }""")
+                live_job = second.locator("article").filter(has_text="Job in another window")
+                await live_job.locator("progress").wait_for()
+                # Startup reconciliation must preserve a live owner even with no progress updates.
+                await second.reload()
+                await second.locator('[data-a="notifications"]').click()
+                await second.wait_for_timeout(600)
+                check(
+                    "A second window preserves an idle job owned by a live window",
+                    await live_job.locator("progress").count() == 1
+                    and await live_job.locator('[data-n="dismiss"]').count() == 0,
+                )
+                # Simulate termination that never reaches the notification shutdown handler.
+                await page.evaluate("""window.addEventListener('pagehide',
+                  e => e.stopImmediatePropagation(), {capture:true})""")
+                await page.close()
+                await live_job.locator('[data-n="dismiss"]').wait_for(timeout=15000)
+                check("An open window recovers a vanished owner's job", await live_job.locator("progress").count() == 0)
+
+                fallback_context = await browser.new_context()
+                fallback = await fallback_context.new_page()
+                await fallback.add_init_script("""Object.defineProperty(navigator, 'locks', {value: undefined});
+                  localStorage.setItem('synapse.notification.unsupported', JSON.stringify({
+                    id: 'unsupported', message: 'Previous window job', level: 'info', status: 'running',
+                    owner: 'previous-window', time: Date.now(), read: false
+                  }));""")
+                await fallback.goto(BASE)
+                await fallback.locator('[data-a="notifications"]').click()
+                stranded = fallback.locator('[data-notice="unsupported"]')
+                await stranded.locator('[data-n="dismiss"]').click()
+                check(
+                    "Without owner detection a previous window's job is manually dismissable",
+                    await stranded.count() == 0
+                    and await fallback.evaluate("localStorage.getItem('synapse.notification.unsupported') === null"),
+                )
+                await fallback_context.close()
                 check("No browser errors", not errors)
                 await browser.close()
         finally:

@@ -22,8 +22,8 @@ export class History {
     for (const old of this.entries.filter(x => x.status !== 'running').slice(LIMIT)) this.remove(old.id, false);
     this.changed();
   }
-  remove(id: string, announce = true): void {
-    if (this.entries.find(n => n.id === id)?.status === 'running') return;
+  remove(id: string, announce = true, allowRunning = false): void {
+    if (!allowRunning && this.entries.find(n => n.id === id)?.status === 'running') return;
     this.entries = this.entries.filter(n => n.id !== id); this.disk.remove(id);
     if (announce) this.changed();
   }
@@ -38,6 +38,13 @@ export class History {
   interrupt(owner: string): void {
     for (const n of [...this.entries]) if (n.status === 'running' && n.owner === owner)
       this.put({ ...n, status: 'interrupted', level: 'warning', read: false, message: `${n.message} — page reloaded; check the result before retrying` });
+  }
+  recover(liveOwners: Set<string>, candidates: Set<string>): void {
+    for (const n of [...this.entries]) {
+      if (n.status !== 'running' || !candidates.has(n.id) || (n.owner && liveOwners.has(n.owner))) continue;
+      this.put({ ...n, status: 'interrupted', level: 'warning', read: false,
+        message: `${n.message} — progress tracking interrupted; check the result before retrying` });
+    }
   }
 }
 function valid(n: Notice): boolean {

@@ -116,8 +116,11 @@ def openalex_authors(doi: str, email: str = "") -> list[tuple[str, str]]:
         )
         if not r.ok:
             return []
+        # Profile names can be wrong; the raw name is specific to this work.
         return [
-            parse_display_name((a.get("author") or {}).get("display_name") or "")
+            parse_display_name(
+                (a.get("raw_author_name") or "").strip() or (a.get("author") or {}).get("display_name") or ""
+            )
             for a in r.json().get("authorships") or []
         ]
     except Exception as e:

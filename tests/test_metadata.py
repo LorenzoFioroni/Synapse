@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -86,6 +87,56 @@ def test_lookup_doi(monkeypatch):
     assert item["authors"] == "Ljubotina, Marko; Papić, Zlatko"
     assert item["year"] == "2023" and item["abstract"] == "We study transport."
     assert item["journal"] == "Physical Review X" and item["issn"] == "2160-3308"
+
+
+@pytest.mark.parametrize("by_title", [False, True])
+def test_lookup_uses_the_papers_author_names_not_openalex_profile_names(monkeypatch, by_title):
+    fixture = json.loads((Path(__file__).parent / "fixtures/metadata_author_names.json").read_text())
+    message = fixture["crossref"]["message"]
+
+    def fake_get(url, **kwargs):
+        if "openalex" in url:
+            return FakeResp(fixture["openalex"])
+        return FakeResp({"message": {"items": [message]}} if by_title else fixture["crossref"])
+
+    monkeypatch.setattr(providers.requests, "get", fake_get)
+    query = {"title": message["title"][0]} if by_title else {"doi": message["DOI"]}
+    assert metadata.join_authors(providers.openalex_authors(message["DOI"])) == fixture["expected"]
+    assert metadata.lookup(**query)["authors"] == fixture["expected"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "profile", "expected"),
+    [
+        ("Avery Rivera", "Avery Rivera X", ("Rivera", "Avery")),
+        ("Mina de Vries", "M. de Vries", ("de Vries", "Mina")),
+        ("García, Alex", "Alex Garcia", ("García", "Alex")),
+        ("A. Rivera", "Avery Jordan Rivera", ("Rivera", "A.")),
+        ("  Avery   Rivera  ", None, ("Rivera", "Avery")),
+    ],
+    ids=["spurious-suffix", "expanded-given-name", "accented-comma-name", "shorter-work-name", "no-profile"],
+)
+def test_openalex_prefers_work_author_name(monkeypatch, raw, profile, expected):
+    monkeypatch.setattr(
+        providers.requests,
+        "get",
+        lambda *args, **kwargs: FakeResp(
+            {"authorships": [{"raw_author_name": raw, "author": {"display_name": profile} if profile else None}]}
+        ),
+    )
+    assert providers.openalex_authors("10.1234/author-name-precedence") == [expected]
+
+
+@pytest.mark.parametrize("raw", [None, "", "   "])
+def test_openalex_authors_falls_back_to_profile_when_paper_name_is_blank(monkeypatch, raw):
+    monkeypatch.setattr(
+        providers.requests,
+        "get",
+        lambda *args, **kwargs: FakeResp(
+            {"authorships": [{"raw_author_name": raw, "author": {"display_name": "Avery Rivera"}}]}
+        ),
+    )
+    assert providers.openalex_authors("10.1234/author-name-precedence") == [("Rivera", "Avery")]
 
 
 def test_api_lookup_and_from_identifier(client, monkeypatch):

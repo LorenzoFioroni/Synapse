@@ -56,7 +56,7 @@ export function diffHtml(a: string, b: string): string {
   if (rows === null) return '<p class="muted">The notes are too long to compare here.</p>';
   return `<div class="diff">${markInlineChanges(compactDiff(rows)).map((r) => (r.op === '…'
     ? `<div class="d-gap">… ${plural(r.count, 'unchanged line')} …</div>`
-    : `<div class="d-${r.op === '+' ? 'add' : r.op === '-' ? 'del' : 'same'}"><span class="d-op">${r.op === ' ' ? '' : r.op}</span>${r.html}</div>`)).join('')}</div>`;
+    : `<div class="d-${r.op === '+' ? 'add' : r.op === '-' ? 'del' : 'same'}"><span class="d-op">${r.op === ' ' ? '' : r.op}</span><span class="d-text">${r.html}</span></div>`)).join('')}</div>`;
 }
 
 /**

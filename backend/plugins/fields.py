@@ -236,6 +236,15 @@ class FieldStore:
                 return c.execute(sql, args).rowcount
             return sum(c.execute(sql + " AND key = ?", [*args, k]).rowcount for k in keys)
 
+    def expire(self, plugin: str, name: str, keys: Iterable[str] | None = None) -> int:
+        """Make stored values look as old as can be, so they are refreshed first next time; the
+        values themselves stay until the new ones arrive."""
+        sql, args = "UPDATE field_values SET updated = 0 WHERE plugin = ? AND name = ?", [plugin, name]
+        with self._lock, self._connect() as c:
+            if keys is None:
+                return c.execute(sql, args).rowcount
+            return sum(c.execute(sql + " AND key = ?", [*args, k]).rowcount for k in keys)
+
     def rows(self, plugin: str, name: str) -> dict[str, dict]:
         """Every stored value of one field: ``{key: {value, updated, source_url}}``."""
         with self._connect() as c:

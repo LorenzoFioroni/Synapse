@@ -166,6 +166,9 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   package's settings and reaches the notes code through the `extended` and `figures` note hooks.
   Live preview asks that hook for spoiler ranges once per document version and draws them with
   shared Markdown widgets.
+  `plugins/core/metadata-check/` connects Metadata Check to notifications and the shared metadata
+  review dialog (`views/metadataReview.ts`). Its backend package keeps comparison and rejection
+  rules in `plugins/metadata-check/backend/comparison.py` and run progress in `progress.py`.
   `plugins/core/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
   the notes workspace only through `taskHooks` in `views/notes/workspace.ts`.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its

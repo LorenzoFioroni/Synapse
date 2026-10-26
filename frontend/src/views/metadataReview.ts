@@ -29,6 +29,7 @@ export interface Article {
   changes: Change[];
   unchanged: { key: string; value: string }[];
   error: string | null;
+  published?: string | null;
 }
 
 // Fields the lookup can return, in display order.
@@ -70,7 +71,7 @@ export function computeChanges(current: Item, fetched: Partial<Item>): Change[] 
 }
 
 /** Every non-empty field of the item that the lookup leaves as it is. */
-function unchangedFields(current: Item, changes: Change[]): { key: string; value: string }[] {
+export function unchangedFields(current: Item, changes: Change[]): { key: string; value: string }[] {
   const changed = new Set(changes.map((c) => c.key));
   return state.schema!.fields
     .filter((f) => f.editable && !changed.has(f.key) && !blank(current[f.key]))
@@ -233,18 +234,28 @@ function finishedToast(job: LookupJob, progress?: import('../ui/toast.js').Progr
 }
 
 /* ----------------------------------------------------------------- dialog */
-function reviewDialog(job: LookupJob): Promise<unknown> {
-  const { articles } = job;
+export interface ReviewDialogOptions {
+  job?: LookupJob | null;
+  title?: string;
+  subtitle?: string;
+  onRejectSuggestion?: (article: Article, change: Change) => Promise<void> | void;
+  onRejectArticle?: (article: Article) => Promise<void> | void;
+  onIgnorePaper?: (article: Article) => Promise<void> | void;
+  onApplied?: (savedIds: string[]) => Promise<void> | void;
+}
+
+export function openReviewDialog(articles: Article[], options: ReviewDialogOptions = {}): Promise<unknown> {
+  const { job = null } = options;
   let applyBtn: HTMLButtonElement, list: HTMLElement, summary: HTMLElement, stopBtn: HTMLButtonElement, bgBtn: HTMLButtonElement;
   let groups: Record<string, HTMLElement>, offJob: (() => void) | undefined, background = false;
 
   const refreshSummary = () => {
-    const done = job.looked;
-    const skipped = job.count('skipped');
-    const withChanges = job.withChanges;
+    const done = job ? job.looked : articles.length;
+    const skipped = job ? job.count('skipped') : 0;
+    const withChanges = articles.filter((a) => a.status === 'changes').length;
     const ticked = articles.reduce((n, a) => n + a.changes.filter((c) => c.checked).length, 0);
-    const failed = job.count('error');
-    const running = job.running && !job.stopped;
+    const failed = job ? job.count('error') : 0;
+    const running = job ? job.running && !job.stopped : false;
     summary.innerHTML = `${running ? '<span class="spinner"></span>' : icon('check', 'icon-sm')}
       <span>${running ? `Looking up ${done} of ${articles.length}…` : `Looked up ${done} of ${plural(articles.length, 'article')}`}</span>
       <span class="mr-dot">·</span><span>${plural(withChanges, 'article')} with updates</span>
@@ -252,10 +263,10 @@ function reviewDialog(job: LookupJob): Promise<unknown> {
       ${skipped ? `<span class="mr-dot">·</span><span>stopped, ${skipped} not looked up</span>` : ''}
       <span class="spacer"></span><b>${plural(ticked, 'change')} selected</b>`;
     stopBtn.hidden = !running || articles.length === 1;
-    bgBtn.hidden = !job.running || articles.length === 1;
-    applyBtn.disabled = ticked === 0 || job.running;
+    bgBtn.hidden = !job || !job.running || articles.length === 1;
+    applyBtn.disabled = ticked === 0 || (job ? job.running : false);
     applyBtn.textContent = ticked ? `Apply ${plural(ticked, 'Change')}` : 'Apply';
-    const same = job.count('same');
+    const same = articles.filter((a) => a.status === 'same').length;
     groups.same.hidden = !same;
     groups.same.querySelector('.mr-group-count')!.textContent = String(same);
     groups.error.hidden = !failed;
@@ -267,15 +278,20 @@ function reviewDialog(job: LookupJob): Promise<unknown> {
   const groupOf = (a: Article) => ({ changes: 'changes', pending: 'pending', skipped: 'pending', error: 'error', same: 'same' } as const)[a.status];
   const renderArticle = (a: Article) => {
     list.querySelector(`[data-article="${a.id}"]`)?.remove();
-    const el = articleSection(a, refreshSummary);
-    const box = groups[groupOf(a)].querySelector('.mr-group-items') || groups[groupOf(a)];
+    const el = articleSection(a, refreshSummary, options);
+    const targetGroup = groups[groupOf(a)];
+    if (!targetGroup) return;
+    const box = targetGroup.querySelector('.mr-group-items') || targetGroup;
     const after = ([...box.children] as HTMLElement[]).find((c) => Number(c.dataset.n) > a.n);
     box.insertBefore(el, after || null);
   };
 
+  const defaultTitle = articles.length === 1 ? 'Review Metadata Updates' : `Review Metadata for ${articles.length} Articles`;
+  const defaultSub = 'Untick anything you want to keep as it is, or edit a value before applying. Nothing is saved until you apply.';
+
   return openDialog({
-    title: articles.length === 1 ? 'Review Metadata Updates' : `Review Metadata for ${articles.length} Articles`,
-    subtitle: 'Untick anything you want to keep as it is, or edit a value before applying. Nothing is saved until you apply.',
+    title: options.title || defaultTitle,
+    subtitle: options.subtitle || defaultSub,
     wide: true,
     render: (body, close, buttons) => {
       applyBtn = buttons[buttons.length - 1];
@@ -292,18 +308,20 @@ function reviewDialog(job: LookupJob): Promise<unknown> {
       groups = Object.fromEntries([...list.querySelectorAll<HTMLElement>('[data-group]')].map((g) => [g.dataset.group!, g]));
       const left = body.closest('.dialog')!.querySelector('.dialog-footer .left')!;
       stopBtn = h<HTMLButtonElement>('<button class="btn btn-sm">Stop</button>');
-      stopBtn.onclick = () => { job.stop(); stopBtn.disabled = true; stopBtn.textContent = 'Stopping…'; };
+      stopBtn.onclick = () => { job?.stop(); stopBtn.disabled = true; stopBtn.textContent = 'Stopping…'; };
       bgBtn = h<HTMLButtonElement>('<button class="btn btn-sm" title="Close this window and keep looking up; a notification lets you review when it is done">Continue in Background</button>');
       bgBtn.onclick = () => { background = true; close(null); };
       left.append(stopBtn, bgBtn);
       articles.forEach(renderArticle);
       refreshSummary();
-      offJob = job.on((a) => {
-        if (!list.isConnected) return;
-        if (a) renderArticle(a);
-        else articles.filter((x) => x.status === 'skipped').forEach(renderArticle);
-        refreshSummary();
-      });
+      if (job) {
+        offJob = job.on((a) => {
+          if (!list.isConnected) return;
+          if (a) renderArticle(a);
+          else articles.filter((x) => x.status === 'skipped').forEach(renderArticle);
+          refreshSummary();
+        });
+      }
     },
     footerLeft: (() => {
       const b = h('<button class="btn btn-ghost btn-sm">Select all / none</button>');
@@ -323,33 +341,49 @@ function reviewDialog(job: LookupJob): Promise<unknown> {
         onClick: async (close, btn) => {
           btn.disabled = true;
           btn.textContent = 'Saving…';
-          const ok = await applyChanges(articles, job.referencesToQueue(articles));
+          const toQueue = job ? job.referencesToQueue(articles) : [];
+          const saved: string[] = [];
+          const ok = await applyChanges(articles, toQueue, saved);
           if (!ok) { btn.disabled = false; btn.textContent = 'Apply'; return false; }
-          job.applied = true;
+          if (job) job.applied = true;
+          if (options.onApplied) {
+            try { await options.onApplied(saved); } catch (e) { console.error(e); }
+          }
           return undefined;
         },
       },
     ],
   }).then((v) => {
     offJob?.();
-    if (background) watchInBackground(job);
-    else if (job.running) job.stop();     // closed while looking up: stop
+    if (job) {
+      if (background) watchInBackground(job);
+      else if (job.running) job.stop();     // closed while looking up: stop
+    }
     return v;
   });
 }
 
+export function reviewDialog(job: LookupJob, options: ReviewDialogOptions = {}): Promise<unknown> {
+  return openReviewDialog(job.articles, { job, ...options });
+}
+
 /* --------------------------------------------------------- one article */
-function articleSection(a: Article, onChange: () => void): HTMLElement {
+function articleSection(a: Article, onChange: () => void, options: ReviewDialogOptions = {}): HTMLElement {
   const it: Partial<Item> = a.item || {};
   const sub = [shortAuthors(it.authors), it.year, it.journal].filter(Boolean).join(' · ');
   const ticked = a.changes.filter((c) => c.checked).length;
+  const publishedDoi = a.published;
+  const pubBadge = publishedDoi ? `<span class="badge accent">Published version: ${escapeHtml(publishedDoi)}</span>` : '';
   const badge = {
     pending: '<span class="badge"><span class="spinner" style="width:10px;height:10px;border-width:1.5px"></span>&nbsp;Looking up…</span>',
-    changes: `<span class="badge accent">${plural(a.changes.length, 'update')}</span>`,
+    changes: pubBadge || `<span class="badge accent">${plural(a.changes.length, 'update')}</span>`,
     same: a.changes.length ? '<span class="badge ok">Up to date</span> <span class="badge">new citation key available</span>' : '<span class="badge ok">Up to date</span>',
     error: '<span class="badge err">Not found</span>',
     skipped: '<span class="badge">Not looked up</span>',
   }[a.status];
+  const rejectBtn = options.onRejectArticle && a.changes.length ? `<button class="btn btn-ghost btn-sm mr-reject" title="Reject suggestions for this paper">Reject</button>` : '';
+  const ignoreBtn = options.onIgnorePaper ? `<button class="btn btn-ghost btn-sm mr-ignore" title="Never check this paper again">Ignore paper</button>` : '';
+
   const el = h(`<section class="mr-article ${a.status}" data-article="${a.id}" data-n="${a.n}">
       <header class="mr-head">
         <span class="mr-num">${a.n}</span>
@@ -357,6 +391,8 @@ function articleSection(a: Article, onChange: () => void): HTMLElement {
         <div class="mr-titles"><div class="mr-title">${escapeHtml(it.title || 'Untitled')}</div>
           ${sub ? `<div class="mr-sub">${escapeHtml(sub)}</div>` : ''}</div>
         ${badge}
+        ${rejectBtn}
+        ${ignoreBtn}
         <button class="icon-btn mr-collapse" title="Collapse">${icon('chevronDown', 'icon-sm')}</button>
       </header>
       <div class="mr-body"></div>
@@ -370,7 +406,7 @@ function articleSection(a: Article, onChange: () => void): HTMLElement {
 
   if (a.changes.length) {
     const box = h('<div class="mr-changes"><div class="mr-label">Proposed changes</div></div>');
-    for (const c of a.changes) box.appendChild(changeBlock(c, () => { syncHeader(); onChange(); }));
+    for (const c of a.changes) box.appendChild(changeBlock(c, () => { syncHeader(); onChange(); }, options, a));
     body.appendChild(box);
   }
   if (a.unchanged.length && a.status !== 'pending') {
@@ -389,19 +425,43 @@ function articleSection(a: Article, onChange: () => void): HTMLElement {
     body.querySelectorAll<HTMLInputElement>('.diff-block input[type=checkbox]').forEach((cb) => { cb.checked = all.checked; cb.dispatchEvent(new Event('sync')); });
     onChange();
   });
+  el.querySelector('.mr-reject')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (options.onRejectArticle) {
+      try { await options.onRejectArticle(a); } catch (error) { toastError(error); return; }
+      a.changes = [];
+      a.status = 'same';
+      el.remove();
+      onChange();
+    }
+  });
+  el.querySelector('.mr-ignore')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (options.onIgnorePaper) {
+      try { await options.onIgnorePaper(a); } catch (error) { toastError(error); return; }
+      el.remove();
+      a.changes = [];
+      a.status = 'skipped';
+      onChange();
+    }
+  });
   el.querySelector('.mr-collapse')!.addEventListener('click', () => el.classList.toggle('collapsed'));
   return el;
 }
 
-function changeBlock(c: Change, onToggle: () => void): HTMLElement {
+function changeBlock(c: Change, onToggle: () => void, options: ReviewDialogOptions = {}, a?: Article): HTMLElement {
   const cur = display(c.key, c.current), nxt = display(c.key, c.fetched);
   const d = diffWords(cur, nxt);
   const note = c.key === 'citation_key' && !c.isNew ? '<span class="subtle" style="font-weight:400;font-size:var(--fs-xs)">notes are updated; LaTeX \\cite commands are not</span>' : '';
+  const rejectBtn = options.onRejectSuggestion && a ? '<button class="btn btn-ghost btn-sm" data-reject>Reject</button>' : '';
   const block = h(`<div class="diff-block ${c.checked ? '' : 'off'}">
       <div class="diff-head"><label class="checkbox"><input type="checkbox" ${c.checked ? 'checked' : ''}> <b>${escapeHtml(label(c.key))}</b>
         ${c.isNew ? '<span class="badge accent">new</span>' : ''} ${note}</label>
-        ${c.key === 'item_type' ? '' : '<button class="btn btn-ghost btn-sm" data-edit>Edit</button>'}</div>
-      <div class="diff-body">${c.isNew ? '' : `<div class="diff-old">${d.old || '<em>(empty)</em>'}</div>`}<div class="diff-new">${d.new || '<em>(empty)</em>'}</div></div>
+        <div style="display:flex;align-items:center;gap:6px">
+          ${c.key === 'item_type' ? '' : '<button class="btn btn-ghost btn-sm" data-edit>Edit</button>'}
+          ${rejectBtn}
+        </div></div>
+      <div class="diff-body">${c.isNew ? '' : `<div class="diff-old"><span class="diff-text">${d.old || '<em>(empty)</em>'}</span></div>`}<div class="diff-new"><span class="diff-text">${d.new || '<em>(empty)</em>'}</span></div></div>
       <div class="diff-edit" hidden><textarea class="input" rows="${c.key === 'abstract' ? 6 : (MULTILINE.has(c.key) ? 3 : 1)}"></textarea></div>
     </div>`);
   const cb = block.querySelector('input')!;
@@ -420,15 +480,28 @@ function changeBlock(c: Change, onToggle: () => void): HTMLElement {
     if (opening) ta.focus();
     else {
       const nd = diffWords(cur, ta.value);
-      const o = block.querySelector('.diff-old'); if (o) o.innerHTML = nd.old || '<em>(empty)</em>';
-      block.querySelector('.diff-new')!.innerHTML = nd.new || '<em>(empty)</em>';
+      const o = block.querySelector('.diff-old .diff-text'); if (o) o.innerHTML = nd.old || '<em>(empty)</em>';
+      block.querySelector('.diff-new .diff-text')!.innerHTML = nd.new || '<em>(empty)</em>';
+    }
+  });
+  block.querySelector('[data-reject]')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (options.onRejectSuggestion && a) {
+      try { await options.onRejectSuggestion(a, c); } catch (error) { toastError(error); return; }
+      c.checked = false;
+      a.changes = a.changes.filter((x) => x !== c);
+      block.remove();
+      if (!a.changes.length) {
+        a.status = 'same';
+      }
+      onToggle();
     }
   });
   return block;
 }
 
 /* ----------------------------------------------------------------- apply */
-async function applyChanges(articles: Article[], referenceIds: string[] = []): Promise<boolean> {
+async function applyChanges(articles: Article[], referenceIds: string[] = [], savedIds: string[] = []): Promise<boolean> {
   // Keys proposed for several articles in this batch must stay unique.
   const others = new Set(state.items.filter((i) => !articles.some((a) => a.id === i.id)).map((i) => i.citation_key).filter(Boolean));
   const uniqueKey = (k: string) => {
@@ -448,6 +521,7 @@ async function applyChanges(articles: Article[], referenceIds: string[] = []): P
     try {
       const item = await api.updateItem(a.id, updates);
       A.patchLocal(item);
+      savedIds.push(a.id);
       saved++;
       fields += Object.keys(updates).length;
     } catch (e) { errors.push(`${a.item?.title || a.id}: ${(e as Error).message}`); }

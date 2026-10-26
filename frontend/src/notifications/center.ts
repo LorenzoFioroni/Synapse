@@ -3,6 +3,7 @@ import { emit, on, state } from '../store.js';
 import { escapeHtml, formatDate, h } from '../util.js';
 import { badge, faviconBadge, showDesktop } from './desktop.js';
 import { History, PREFIX, newId, type Level, type Notice } from './model.js';
+import { monitorOwners } from './ownership.js';
 export interface NoticeAction { label: string; run: () => unknown }
 export interface NoticeOptions {
   type?: Level; desktop?: boolean; source?: string; target?: string; action?: NoticeAction | null;
@@ -25,6 +26,7 @@ const history = new History({
   write: n => { memory.set(n.id, n); try { localStorage.setItem(PREFIX + n.id, JSON.stringify(n)); } catch { /* memory fallback */ } },
   remove: id => { memory.delete(id); actions.delete(id); cancels.delete(id); try { localStorage.removeItem(PREFIX + id); } catch { /* memory fallback */ } },
 }, render);
+let ownerTracking = false;
 
 export function notify(message: string, options: NoticeOptions = {}): string {
   const n: Notice = { id: newId(), message, level: options.type || 'info', status: 'done', time: Date.now(), read: false, source: options.source, target: options.target, desktop: options.desktop };
@@ -65,6 +67,7 @@ export function openCenter(): void {
   panel.querySelector<HTMLButtonElement>('[data-n="close"]')?.focus();
 }
 export function initNotifications(button: HTMLButtonElement): void {
+  ownerTracking = monitorOwners(owner, history, () => { ownerTracking = false; render(); });
   bell = button;
   panel = h(`<section id="notification-center" role="dialog" aria-labelledby="notification-heading" hidden>
     <header><h2 id="notification-heading">Notifications</h2><button class="icon-btn" data-n="close" aria-label="Close notifications">${icon('close')}</button></header>
@@ -79,7 +82,10 @@ export function initNotifications(button: HTMLButtonElement): void {
     if (b.dataset.n === 'read') history.markRead();
     if (b.dataset.n === 'clear') history.clear();
     if (!id) return;
-    if (b.dataset.n === 'dismiss') history.remove(id);
+    if (b.dataset.n === 'dismiss') {
+      const n = history.entries.find(n => n.id === id);
+      history.remove(id, true, !ownerTracking && n?.owner !== owner);
+    }
     if (b.dataset.n === 'seen') history.markRead(id);
     if (b.dataset.n === 'cancel') cancels.get(id)?.();
     if (b.dataset.n === 'action') {
@@ -120,7 +126,7 @@ function render(): void {
       ${running ? `<progress aria-label="Job progress" ${pct === null ? '' : `value="${pct}" max="100"`}></progress>` : ''}
       <div class="notification-actions">${targetAvailable || (!n.target && actions.has(n.id)) ? `<button data-n="action">${escapeHtml(n.target ? 'Show' : actions.get(n.id)!.label)}</button>` : ''}
       ${cancels.has(n.id) ? '<button data-n="cancel">Cancel</button>' : ''}${!n.read ? '<button data-n="seen">Mark read</button>' : ''}
-      ${!running ? '<button data-n="dismiss">Dismiss</button>' : ''}</div></div></article>`;
+      ${!running || (!ownerTracking && n.owner !== owner) ? '<button data-n="dismiss">Dismiss</button>' : ''}</div></div></article>`;
   }).join('') : '<p class="notification-empty">No notifications yet.</p>';
   if (focusId && focusAction) {
     const next = [...list.querySelectorAll<HTMLButtonElement>('button')].find(b => b.dataset.n === focusAction && b.closest<HTMLElement>('[data-notice]')?.dataset.notice === focusId);

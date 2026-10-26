@@ -1,0 +1,6 @@
+[data-plugin="metadata-check"] .mc-run { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+[data-plugin="metadata-check"] .mc-dim { color: var(--text-2); font-size: 12px; }
+[data-plugin="metadata-check"] .mc-head { margin: 8px 0 6px; font-size: 13px; }
+[data-plugin="metadata-check"] .mc-list { list-style: none; margin: 0; padding: 0; }
+[data-plugin="metadata-check"] .mc-ignored, [data-plugin="metadata-check"] .mc-ignored-paper { display: flex; align-items: center; gap: 12px; padding: 6px 0; border-top: 1px solid var(--border); }
+[data-plugin="metadata-check"] .mc-what { flex: 1; min-width: 0; overflow-wrap: anywhere; }

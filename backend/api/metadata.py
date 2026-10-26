@@ -4,36 +4,22 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify
 
-from ..library import citekeys
-from ..library.identifiers import arxiv_id_of
 from ..online.http import LookupFailed
-from ..online.metadata import known_authors, lookup
+from ..online.metadata import compute_changes, known_authors, lookup, lookup_for_item
 from . import body, error, svc
 
 bp = Blueprint("metadata", __name__, url_prefix="/api")
 
 
 @bp.post("/items/<item_id>/lookup")
-def lookup_for_item(item_id):
+def lookup_for_item_endpoint(item_id):
     """Fetch fresh metadata for an existing item (for the review dialog). Does not save."""
     s = svc()
-    item = s.papers.get(item_id)
-    others = [p for p in s.papers.list() if p["id"] != item_id]
     try:
-        fetched = lookup(
-            sources=s.plugins.lookup_metadata,
-            doi=item.get("doi"),
-            title=item.get("title"),
-            arxiv_id=arxiv_id_of(item),
-            known=known_authors(others),
-            email=s.settings.get("contact_email"),
-        )
+        item, fetched = lookup_for_item(s, item_id)
     except LookupFailed as e:
         return error(str(e), 404)
-    merged = {**item, **fetched}
-    taken = s.papers.all_citation_keys(exclude_id=item_id)
-    fetched["citation_key"] = citekeys.generate(s.settings.get("citekey_pattern"), merged, taken)
-    return jsonify(current=item, fetched=fetched)
+    return jsonify(current=item, fetched=fetched, changes=compute_changes(item, fetched))
 
 
 @bp.post("/items/from_identifier")

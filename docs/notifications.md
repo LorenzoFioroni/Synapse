@@ -34,6 +34,13 @@ separate keys prevent unrelated writes replacing one another. Keep the latest 10
 entries plus running jobs. Read state is shared across these windows, not across devices. If
 storage is unavailable the page retains notices in memory. Leaving/reloading a page marks its
 running jobs interrupted, since client progress tracking stops; the server may still finish work.
+`ownership.ts` also holds a Web Lock for each window's notification owner. At startup, every
+10 seconds and on focus it checks the browser's held/pending locks, marking orphaned running
+notices interrupted so Dismiss and Clear completed work after a crash or reboot. Live owners
+in other windows are preserved; elapsed time alone never makes a job stale. Results are re-read
+before recovery so concurrent completions are not overwritten. Where Web Locks are unavailable
+or fail, notices owned by another/previous window offer Dismiss as a fallback; this only removes
+the notification and does not cancel server work.
 
 Action callbacks and Cancel handlers belong to the window that created them and are not stored.
 Reloading keeps text/history but drops callbacks. Plugin stop drops its callbacks. Plugins can
@@ -52,6 +59,8 @@ this window, cleaned up on plugin stop. Use `transient: true` for a short toast 
 the center. An OS notification click focuses Synapse and opens the center.
 
 Verification: `tests/js/notifications.test.mjs` checks persistence, retention, read state,
-independent delivery/severity, multi-window writes and interrupted owners.
+independent delivery/severity, multi-window writes, orphan recovery, concurrent completions
+and interrupted owners.
 `python tests/e2e/run.py notifications` checks the actual bell, progress/results, arXiv plugin
-notification, OS opt-in/fallback, keyboard access, reload and cross-window state.
+notification, OS opt-in/fallback, keyboard access, reload, vanished/live owners, manual fallback
+dismissal and cross-window state.

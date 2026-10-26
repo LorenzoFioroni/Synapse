@@ -160,6 +160,20 @@ def test_the_refresher_fills_values_in_the_background(client, svc, plugin):
     assert svc.plugins.fields.due(plugin.fields.defs["score"], svc.papers.list(), now=time.time() + 2 * 86400)
 
 
+def test_refresh_asks_again_now_and_keeps_the_values_meanwhile(client, svc, plugin):
+    client.post("/api/items", json={"title": "Alpha", "doi": "10.1/a"})
+    store = svc.plugins.fields.store
+    assert wait(lambda: "doi:10.1/a" in store.rows("scores", "score"))
+    first = store.rows("scores", "score")["doi:10.1/a"]["updated"]
+    asked = len(plugin.storage.json("asked").all())
+    assert plugin.fields.refresh("score") >= 1
+    assert store.rows("scores", "score")["doi:10.1/a"]["value"] == 5  # still shown while it is asked again
+    assert wait(lambda: store.rows("scores", "score")["doi:10.1/a"]["updated"] > first)
+    assert len(plugin.storage.json("asked").all()) > asked
+    with pytest.raises(PluginError):
+        plugin.fields.refresh("mood")  # no refresher
+
+
 def test_an_unreachable_web_leaves_values_unset(client, svc, plugin):
     client.put("/api/plugin-host/scores/settings", json={"offline": True})
     time.sleep(0.2)

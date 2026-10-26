@@ -270,6 +270,8 @@ class PluginHost:
                 if refreshed:
                     act.runner.refresher = lambda: self._refresh_fields(refreshed, plog)
                 plugin.wake = act.runner.wake
+                plugin.fields.allow_retry = lambda name, keys: self.fields.allow_retry(pid, name, keys)
+                plugin.fields.refresh_soon = act.runner.refresh_soon
                 act.runner.start()
         except BaseException as e:
             plog.error("Could not start:\n%s", traceback.format_exc())
@@ -303,6 +305,8 @@ class PluginHost:
         if act.runner:
             act.runner.stop()
             act.plugin.wake = lambda: None
+            act.plugin.fields.refresh_soon = lambda: None
+            act.plugin.fields.allow_retry = lambda name, keys: None
         if run_unload:
             stop = getattr(act.module, "deactivate", None) if act.module else None
             for fn in ([lambda: stop(act.plugin)] if callable(stop) else []) + list(reversed(act.plugin.unload)):

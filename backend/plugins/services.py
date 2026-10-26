@@ -48,6 +48,17 @@ class PluginServices:
         arx = norm_arxiv(meta.get("archive_id")) or norm_arxiv(identifier if "arxiv" in identifier.lower() else None)
         return record({**meta, "arxiv": arx})
 
+    def lookup_item(self, item_or_id: str | dict) -> tuple[dict, dict]:
+        """Fetch fresh metadata for an existing item (passes DOI, arXiv id and title together)."""
+        from ..online.metadata import lookup_for_item
+
+        try:
+            return lookup_for_item(self._s, item_or_id)
+        except LookupFailed as e:
+            raise PluginError(str(e)) from e
+        except requests.RequestException as e:
+            raise Offline(f"The item lookup could not reach the web: {e}") from e
+
     def references(self, paper: dict, *, new: bool = False) -> list[dict]:
         """The works ``paper`` cites (each with ``doi``, ``arxiv_id``, ``title``, ``year``, ``raw``
         when known): from Semantic Scholar, OpenAlex or Crossref, else from arXiv's HTML version,

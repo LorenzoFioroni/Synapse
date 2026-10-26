@@ -108,6 +108,9 @@ and the journal reference in `extra` as `Published as: …`.
 Two merges happen inside `lookup()`:
 
 1. When the result has a DOI, the OpenAlex author list replaces Crossref's if it is longer.
+   Names come from each work's `raw_author_name`, falling back to the author profile's
+   `display_name` only when the work's name is blank. Profile names can be incorrect or differ
+   from the name credited on this paper.
 2. `resolve_authors` prefers a spelling already in the library: when a fetched name matches a
    known author letter for letter once accents are removed, and only the known one has accents,
    the known spelling is used (Banuls → Bañuls). The endpoints pass `known_authors(...)` of the
@@ -116,8 +119,12 @@ Two merges happen inside `lookup()`:
 ### Reviewing the result
 
 `POST /api/items/<id>/lookup` (`backend/api/metadata.py`) looks up an existing item and saves
-nothing. It answers `{current, fetched}`. `fetched` also carries a `citation_key` generated with
-the user's pattern from the merged item.
+nothing. It answers `{current, fetched, changes}`; the added `changes` field leaves existing clients
+compatible. `fetched` also carries a `citation_key` generated with the user's pattern from the merged
+item. `backend/online/metadata.py` shares this lookup and `compute_changes` with Metadata Check;
+shared fixtures check that the Python and TypeScript comparisons agree. Metadata Check reuses
+`openReviewDialog` with stored results and callbacks for rejecting suggestions or ignoring papers.
+Only successfully saved item IDs reach its Apply callback; unchecked changes remain reviewable.
 
 The review is `frontend/src/views/metadataReview.ts`:
 
@@ -344,6 +351,11 @@ canned data, using pytest's `monkeypatch`. They patch it through the module unde
 - `tests/test_metadata.py`: `FakeResp` and `fake_net()` route by host (Crossref, arXiv Atom feeds
   built by `atom()`). One test uses a `threading.Barrier` to prove Crossref and OpenAlex are asked
   side by side; another checks the arXiv spacing.
+- `tests/fixtures/metadata_author_names.json`: synthetic Crossref and OpenAlex responses where
+  profile names differ from the names credited on a work. `tests/test_metadata.py` checks DOI
+  and title lookups, spurious suffixes, initials, surname particles, accents, missing profiles
+  and blank work-name fallbacks. `tests/plugins/test_metadata_sources.py` checks Retrieve
+  Metadata and Metadata Check against both correct records and records using profile names.
 - `tests/test_pdf_finder.py`: the `web` fixture answers by URL prefix and records every URL asked,
   so tests can assert the order of candidates. The PDFs are made with `make_pdf` from
   `tests/conftest.py`.

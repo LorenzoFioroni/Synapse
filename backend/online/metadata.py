@@ -8,7 +8,8 @@ import unicodedata
 from collections.abc import Callable
 
 from ..formats.common import join_authors, split_authors
-from ..library.identifiers import ARXIV_DOI, clean_doi
+from ..library import citekeys
+from ..library.identifiers import ARXIV_DOI, arxiv_id_of, clean_doi
 from .http import LookupFailed
 
 
@@ -121,3 +122,84 @@ def lookup(
     if known and item.get("authors"):
         item["authors"] = resolve_authors(split_authors(item["authors"]), known)
     return item
+
+
+LOOKUP_FIELDS = (
+    "item_type",
+    "title",
+    "authors",
+    "year",
+    "journal",
+    "volume",
+    "issue",
+    "pages",
+    "publisher",
+    "place",
+    "doi",
+    "url",
+    "issn",
+    "isbn",
+    "citation_key",
+    "short_title",
+    "language",
+    "license",
+    "archive",
+    "archive_id",
+    "library_catalog",
+    "abstract",
+    "extra",
+)
+
+
+def is_blank(v: object) -> bool:
+    return v is None or str(v).strip() == ""
+
+
+def compute_changes(current: dict, fetched: dict) -> list[dict]:
+    """Changed fields between current item and fetched metadata, exactly matching frontend computeChanges."""
+    changes = []
+    for k in LOOKUP_FIELDS:
+        f_val = fetched.get(k)
+        if is_blank(f_val):
+            continue
+        c_val = current.get(k)
+        c_str = "" if c_val is None else str(c_val)
+        f_str = str(f_val)
+        if f_str == c_str:
+            continue
+        if k == "item_type" and is_blank(c_val):
+            continue
+        has_current_key = k == "citation_key" and not is_blank(c_val)
+        changes.append(
+            {
+                "key": k,
+                "current": c_val,
+                "fetched": f_val,
+                "is_new": is_blank(c_val),
+                "isNew": is_blank(c_val),
+                "checked": not has_current_key,
+            }
+        )
+    return changes
+
+
+def lookup_for_item(services, item_or_id: str | dict) -> tuple[dict, dict]:
+    """Fetch fresh metadata for an existing item (passes DOI, arXiv ID and title together, generates citation key)."""
+    item = services.papers.get(item_or_id) if isinstance(item_or_id, str) else item_or_id
+    if not item:
+        raise LookupFailed("Item not found")
+    item_id = item.get("id")
+    others = [p for p in services.papers.list() if p.get("id") != item_id]
+
+    fetched = lookup(
+        sources=services.plugins.lookup_metadata,
+        doi=item.get("doi"),
+        title=item.get("title"),
+        arxiv_id=arxiv_id_of(item),
+        known=known_authors(others),
+        email=services.settings.get("contact_email"),
+    )
+    merged = {**item, **fetched}
+    taken = services.papers.all_citation_keys(exclude_id=item_id) if item_id else set()
+    fetched["citation_key"] = citekeys.generate(services.settings.get("citekey_pattern"), merged, taken)
+    return item, fetched

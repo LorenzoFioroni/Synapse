@@ -289,7 +289,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `organizeDialogs.ts` | Folder picker, tag editor and input, smart folder dialog. |
 | `importDialog.ts`, `exportDialog.ts` | Import with preview and duplicate flags; export to the formats. |
 | `identifierDialog.ts` | Add items by DOI, arXiv id or ISBN. |
-| `metadataReview.ts` | Retrieve Metadata: the `LookupJob` (parallel, cancellable, can run in the background) and the review dialog. |
+| `metadataReview.ts` | Retrieve Metadata: the `LookupJob` (parallel, cancellable, can run in the background) and the shared review dialog, also used by Metadata Check. Each diff row wraps its text and inline word highlights together beside its +/− marker, including after editing a suggestion. |
 | `settingsView.ts` | The Settings page: binds the controls and saves each change; `applyAppearance`. |
 | `settings/page.ts` | The Settings markup (`settingsHtml`). |
 | `settings/backups.ts`, `settings/devices.ts` | Settings → Backups and Settings → Devices (pairing). |

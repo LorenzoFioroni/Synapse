@@ -36,7 +36,7 @@ sys.path.insert(0, {str(APP)!r})
 from backend import create_app
 from backend.config import Config
 from backend.api import metadata as M
-from backend.online import pdf_finder
+from backend.online import metadata as online_metadata, pdf_finder
 from backend.online.http import LookupFailed
 calls = []
 lock = threading.Lock()
@@ -48,6 +48,7 @@ def fake_lookup(**k):
     if 'Old' in title: return {{'title': title.replace('Old', 'New'), 'journal': 'Physical Review Letters'}}
     return {{'title': title}}
 M.lookup = fake_lookup
+online_metadata.lookup = fake_lookup
 pdf_finder.find_and_download = lambda *a, **k: {{'status': 'not_found', 'message': 'No open-access PDF found'}}
 app = create_app(Config.from_env({DATA!r}), start_indexer=False)
 @app.get('/test/calls')
