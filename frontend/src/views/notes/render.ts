@@ -325,7 +325,8 @@ function sectionsRule(state: StateCore): void {
     }
     const p = takeSectionLabels(inline.content);
     inline.content = p.text;
-    open.meta = { ...(open.meta || {}), sectionNumber: number, sectionLabels: p.labels.map((l) => l.name) };
+    const inToc = !(state.env.notocHeadings as Set<number> | undefined)?.has(open.map?.[0] ?? -1);
+    open.meta = { ...(open.meta || {}), sectionNumber: number, sectionLabels: p.labels.map((l) => l.name), inToc };
     for (const l of p.labels) if (number && !labels.has(l.name)) labels.set(l.name, number);
   }
   state.env.sectionLabels = labels;
@@ -337,7 +338,7 @@ function tableOfContentsRule(state: StateCore): void {
   for (let i = 0; i < state.tokens.length - 1; i++) {
     const open = state.tokens[i], inline = state.tokens[i + 1];
     if (open.type !== 'heading_open' || inline.type !== 'inline') continue;
-    headings.push({ level: Number(open.tag.slice(1)), number: open.meta?.sectionNumber || '', text: inline.content, id: `h-${slugHeading(inline.content)}` });
+    if (open.meta?.inToc !== false) headings.push({ level: Number(open.tag.slice(1)), number: open.meta?.sectionNumber || '', text: inline.content, id: `h-${slugHeading(inline.content)}` });
   }
   for (let i = 0; i < state.tokens.length - 2; i++) {
     const open = state.tokens[i], inline = state.tokens[i + 1], close = state.tokens[i + 2];
@@ -491,7 +492,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
       const hs = t[i].meta.headings as { level: number; number: string; text: string; id: string }[];
       const shown = hs.filter((h, n) => h.number || n > 0);
       const base = shown.reduce((v, h) => Math.min(v, h.level), 6);
-      return shown.map((h) => `<li style="--toc-depth:${Math.max(0, h.level - base)}"><a href="#${esc(h.id)}">${h.number ? `<span>${esc(h.number)}</span>` : ''}${esc(h.text)}</a></li>`).join('');
+      return shown.map((h) => `<li style="--toc-depth:${Math.max(0, h.level - base)}"><a href="#${esc(h.id)}">${h.number ? `<span>${esc(h.number)}</span>` : ''}${md.renderInline(h.text)}</a></li>`).join('');
     };
     R.toc_close = () => '</ol></nav>\n';
     const defaultImage = R.image!;
@@ -545,7 +546,16 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
   };
   return {
     get md() { return current(); },
-    render: (src: string) => current().render(src),
+    render: (src: string) => {
+      const notocHeadings = new Set<number>();
+      const normalized = src.split('\n').map((line, index) => {
+        const m = /^( {0,3}#{1,6})\*([ \t]+)/.exec(line);
+        if (!m) return line;
+        notocHeadings.add(index);
+        return `${m[1]} ${line.slice(m[1].length + 1)}`;
+      }).join('\n');
+      return current().render(normalized, { notocHeadings });
+    },
     renderInline: (src: string) => current().renderInline(src),
     katex,
   };

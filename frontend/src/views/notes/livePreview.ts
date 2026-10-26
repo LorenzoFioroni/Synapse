@@ -356,8 +356,13 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
 
     // Labels on headings are hidden until that line is edited; labelled headings show their section number.
     for (const section of sectionsOfDoc(state).sections) {
-      if (!section.labels.length || !shown(section.from, section.from) || lineActive(section.from)) continue;
-      out.push(Decoration.widget({ widget: W.chip(`sec:${section.from}:${section.number}`, 'section-num', section.number, {}), side: 1 }).range(section.from));
+      if (!shown(section.from, section.from)) continue;
+      const line = doc.lineAt(section.from);
+      const starred = /^( {0,3}#{1,6})\*([ \t]+)/.exec(line.text);
+      if (starred) lineDeco(section.from, `cm-lp-h cm-lp-h${section.level}`);
+      if (lineActive(section.from)) continue;
+      if (starred) replace(line.from, line.from + starred[0].length, hide);
+      if (section.labels.length) out.push(Decoration.widget({ widget: W.chip(`sec:${section.from}:${section.number}`, 'section-num', section.number, {}), side: 1 }).range(section.from));
       for (const label of section.labels) replace(label.from, label.to, hide);
     }
 

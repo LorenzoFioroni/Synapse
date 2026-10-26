@@ -19,10 +19,12 @@ test('rendered section labels are internal links and cref names sections', () =>
 });
 
 test('table of contents links to headings and omits the document title number', () => {
-  const html = createRenderer(lib, {}).render('# Paper title\n\n\\tableofcontents\n\n## Methods\n\n### Sample');
+  const html = createRenderer(lib, {}).render('# Paper title\n\n\\tableofcontents\n\n## Methods $E=mc^2$\n\n##* Internal detail\n\n### Sample');
   assert.match(html, /class="note-toc"/);
-  assert.match(html, /href="#h-methods"><span>1<\/span>Methods<\/a>/);
-  assert.match(html, /href="#h-sample"><span>1\.1<\/span>Sample<\/a>/);
+  assert.match(html, /href="#h-methods-emc2"><span>1<\/span>Methods <span class="math"><span class="katex"/);
+  assert.doesNotMatch(html, /note-toc[\s\S]*href="#h-internal-detail"/);
+  assert.match(html, /<h2[^>]*id="h-internal-detail"[^>]*>Internal detail<\/h2>/);
+  assert.match(html, /href="#h-sample"><span>2\.1<\/span>Sample<\/a>/);
 });
 
 test('cross-reference lookup includes sections after equations and figures', () => {

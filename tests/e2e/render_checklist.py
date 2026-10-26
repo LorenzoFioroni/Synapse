@@ -81,6 +81,12 @@ def setup():
         "| small $\\mu$ | [@cuiVariational2015]; \\cref{eq:energy} and \\cref{sec:method} |\n\nEnd.\n"
     )
     requests.post(f"{BASE}/api/notes/note", json={"path": "Table math.md", "title": "Table math", "text": table})
+    contents = (
+        "# Contents\n\n\\tableofcontents\n\n##* Hidden detail\n\n"
+        + "\n\n".join(f"Filler paragraph {i}." for i in range(1, 201))
+        + "\n\n## Destination $E=mc^2$\n\nEnd.\n"
+    )
+    requests.post(f"{BASE}/api/notes/note", json={"path": "Contents.md", "title": "Contents", "text": contents})
     long = "# Long\n\n" + "\n\n".join(f"Paragraph {i} of a long note." for i in range(1, 301)) + "\n"
     requests.post(f"{BASE}/api/notes/note", json={"path": "Long.md", "title": "Long", "text": long})
     return item
@@ -344,6 +350,30 @@ async def main():
             )
             labels = await page.locator(".cm-lp-chip.cite").all_text_contents()
             check("live: [@key, p. 1]: is a citation", any("Cui & Cirac 2015, p. 1" in l for l in labels), labels)
+
+            # ---- starred headings and live table-of-contents navigation
+            await page.click('.nt-row.note[data-path="Contents.md"]')
+            await page.wait_for_selector(".cm-lp-toc [data-toc-pos]")
+            toc_text = await page.locator(".cm-lp-toc").inner_text()
+            check(
+                "live: ##* omits a heading from the contents",
+                "Destination" in toc_text
+                and "Hidden detail" not in toc_text
+                and await page.locator(".cm-lp-toc .katex").count() == 1,
+            )
+            await page.locator(".cm-lp-toc a", has_text="Destination").click()
+            check(
+                "live: a contents link scrolls to its heading",
+                await wait_for(
+                    lambda: page.evaluate(
+                        """() => { const box = document.querySelector('.note-editor-view:not([hidden]) .cm-scroller').getBoundingClientRect();
+                        const line = [...document.querySelectorAll('.note-editor-view:not([hidden]) .cm-line')]
+                          .find((el) => el.textContent.includes('Destination'));
+                        if (!line) return false; const r = line.getBoundingClientRect();
+                        return r.top >= box.top && r.bottom <= box.bottom; }"""
+                    )
+                ),
+            )
 
             # ---- switching modes keeps the line at the top
             await page.click('.nt-row.note[data-path="Long.md"]')
