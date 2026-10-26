@@ -94,7 +94,7 @@ when it becomes visible again. It skips a poll while one is running or the page 
 | `annotations` | Ignored: the viewer looks after its own. |
 | `fields` | Handled like `library` (the list reloads, with the values as `_f`); the item pane redraws its *From Plugins* section. |
 | `sources` | The sidebar's entries for plugins' lists are asked for again (their badges); the list reloads when it shows one of them. |
-| `plugins` | `syncPlugins()` in `plugins/host.ts` loads or unloads plugins' frontends; `pluginsChanged()` in `views/settings/plugins.ts` redraws an open Settings page's Plugins section (not while a field in it is being edited). Every kind is also passed to plugins' `onChange` listeners. |
+| `plugins` | `syncPlugins()` in `plugins/host.ts` loads or unloads plugins' frontends; `pluginsChanged()` in `views/settings/plugins.ts` redraws an open Settings page's Plugins section and each plugin's own section (not while a field in it is being edited). Every kind is also passed to plugins' `onChange` listeners. |
 
 A refresh waits while the user is busy (`editing()`): a dialog or autocomplete list is open, a
 form field has focus, or the note editor was typed in during the last 4 seconds. Fields save when

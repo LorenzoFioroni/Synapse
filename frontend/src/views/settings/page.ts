@@ -206,8 +206,9 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
         </div></section>
 
       <section class="settings-section" id="set-ai"><h2>AI Access</h2>
-        <p class="lead">Let Claude Code on another computer use the library over the network (MCP). On this computer, Claude can start
-          Synapse's MCP server itself instead: run <span class="mono">python mcp_server.py --config</span> for the setup.</p>
+        <p class="lead">Let AI apps on another computer (Claude Code, Codex, any app that speaks MCP) use the library over the network.
+          On this computer, an AI app can start Synapse's MCP server itself instead: run <span class="mono">python mcp_server.py --config</span>
+          for the setup of Claude and Codex. What an AI app changes in notes and tasks is shown with its name.</p>
         <div class="card">
           <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Access tokens</div>
             <div class="s-desc" data-ai-desc>Loading…</div></div>

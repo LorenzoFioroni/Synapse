@@ -318,8 +318,8 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "(append), or give the whole new text. Read it with get_note first and copy each old passage exactly. "
             "The change is checked like write_note (links, citations, pages, quotes, images, math) and refused if it "
             "adds a problem; problems already in the note do not block it. The version before the change is kept: the "
-            "user sees what Claude changed in the app and can undo it (Cmd+Z in the open note, or from the note's list "
-            "of Claude edits). Use only when the user asks to change the note.\n\n" + WRITING_RULES,
+            "user sees what you changed in the app and can undo it (Cmd+Z in the open note, or from the note's list "
+            "of AI edits). Use only when the user asks to change the note.\n\n" + WRITING_RULES,
             {
                 "type": "object",
                 "properties": {
@@ -358,8 +358,8 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
     server.add(
         Tool(
             "undo_note_edit",
-            "Undo Claude's last edit of a note",
-            "Put a note back as it was before Claude's last edit_note, if it was not changed since. Use when the user "
+            "Undo the last AI edit of a note",
+            "Put a note back as it was before the last edit_note by an AI app, if it was not changed since. Use when the user "
             "asks to revert it.",
             {
                 "type": "object",
@@ -386,7 +386,7 @@ def _plugin_tools(services, remote: bool) -> dict[str, Tool]:
 
 
 def _readable(fn):
-    """A plugin's ``PluginError`` reaches Claude as a tool error it can read and act on."""
+    """A plugin's ``PluginError`` reaches the AI app as a tool error it can read and act on."""
 
     def call(**kwargs):
         try:

@@ -185,6 +185,7 @@ looking for a bug.
 | `list_perf` | 8779 | 10,000 items: fast list, few rows in the DOM, quick selection, small changes without a full reload |
 | `multipdf` | 8788 | Items with several PDFs: citations, cards and menus |
 | `notes` | 8765 | The notes editor |
+| `note_commands` | 8809 | The command palette while a note is open: images, figures and galleries (several images chosen or pasted at once, with and without Extended Markdown), citations, links, tasks, tables, modes, the note's own commands, none in the library |
 | `outside` | 8799 | A plugin's list of papers: its sidebar entry and badge, the list in the plugin's order and sorted (a third click goes back), "+" on papers not in the library, the item pane's reasons and their links, the menu (with a plugin's action for outside papers, not its others), adding with "+" and Undo, several into a folder, a changed list shown again, a plugin's action changing it at once, opening it from Notes through the palette, the entry gone when the plugin is turned off |
 | `plugins` | 8798 | Settings → Plugins: the example plugin listed off (and the plugins that come with Synapse), turning it on asks first and lists its access, settings from its manifest saved (a bad value refused), its route answers, its log, a plugin that cannot start says why; its frontend: a page with a sidebar entry and a count, opening an item from it, its item-pane section, its field's value in the item pane, as a column and as a search filter, its item action, its command in the command palette and its key, Synapse's own commands in the palette; turning it off shows in another window and takes its page away; with `--dev-plugins`, a TypeScript plugin's page shows and saving its file reloads it in the open window |
 | `passkeys` | 8794 | Over HTTPS: adding a passkey, signing an unpaired iPad in with it (Chromium's virtual authenticator), removing it; Settings → AI Access makes a token that reaches `/mcp` from another computer, and removing it locks the app out |
@@ -195,7 +196,7 @@ looking for a bug.
 | `tasks` | 8795 | Tasks: task lines in a note (ticking, the task popup, the New task popup with a new or existing task, the `{{task` autocomplete, a wrapped task on an indented line, ticking a parent, Backspace), read mode, the side panel, the Tasks page (views, search, quick add, keyboard, delete and Undo, changes from elsewhere) |
 | `touch_app` | 8783 | The library on iPad and phone profiles: responsive panes, configured list columns, details closing across workspaces, Settings, PDF coverage and viewport-locked fit-to-width layout, full-width Graph replacing the notes panes, drawer, long press for menus and cards, hover tools shown, resizing, and the installable Home Screen manifest and icons |
 | `touch` | 8782 | The PDF viewer on an iPad profile: pen tools, finger scrolling, pinch zoom, snapshots |
-| `usability` | 8769 | Several notes selected, delete with Undo, folder operations, Back/Forward, the Library/Notes switch, note markers |
+| `usability` | 8769 | Several notes selected, delete with Undo, folder operations, Back/Forward, switching between Library and Notes, note markers |
 | `viewer_links` | 8770 | Links in the PDF viewer: jumps, external links, hover previews, Back/Forward |
 | `zoom` | 8780 | Zoom keeps the spot under the pointer in place; +/- keep the middle |
 

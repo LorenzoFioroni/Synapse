@@ -66,6 +66,12 @@ export function hitBadge(snippet: string | undefined): string {
     : ' <span class="badge accent" title="Matched in the full text">full text</span>';
 }
 
+/** The AI app that made a change (Claude, Codex …, recorded by the MCP server), to start a sentence
+ *  with; changes recorded before the app's name was kept say "An AI app". */
+export const aiName = (agent?: string | null): string => agent || 'An AI app';
+/** "Codex’s", or "the AI app’s" when the name is unknown, for the middle of a sentence. */
+export const aiOwner = (agent?: string | null): string => (agent ? `${agent}’s` : 'the AI app’s');
+
 export const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 export const modKey = (e: KeyboardEvent | MouseEvent): boolean => (isMac ? e.metaKey : e.ctrlKey);
 export const modLabel = isMac ? '⌘' : 'Ctrl+';

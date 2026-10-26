@@ -37,6 +37,7 @@ export interface AppEvents {
   'clear-search': void;
   'set-search-mode': SearchMode;
   'open-page': string;              // a page a plugin added (its id)
+  'open-settings': string | undefined;   // Settings, at a section (its navigation id, e.g. 'plugin-<id>')
   'open-view': string;              // a view of the library to show, leaving Notes, Tasks or a page
   'item-fields': void;               // plugins' fields (or their values) changed: the item pane redraws its section
   'export-formats': void;           // running export providers changed

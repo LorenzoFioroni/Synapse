@@ -22,6 +22,8 @@ export interface EditorHandlers {
   onBlur?(): void;
   /** A pasted or dropped image: store it and return the Markdown that shows it (null: nothing to insert). */
   onImage?(file: File): Promise<string | null> | string | null;
+  /** Several images pasted or dropped at once (their Markdown): what to insert (default: one per line). */
+  combineImages?(images: string[]): string;
   onToggleRead?(): void;
   /** Cmd/Ctrl+Enter (the notes add a task with it); false lets the editor do its own thing. */
   onModEnter?(view: EditorView): boolean;
@@ -144,15 +146,17 @@ export async function createEditor(
   ];
 
   const insertImages = async (view: EditorView, files: File[], pos?: number) => {
+    const images: string[] = [];
     for (const f of files) {
       const md = await handlers.onImage?.(f);
-      if (!md) continue;
-      const at = pos ?? view.state.selection.main.head;
-      const before = at > 0 && view.state.sliceDoc(at - 1, at) !== '\n' ? '\n' : '';
-      const text = `${before}${md}\n`;
-      view.dispatch({ changes: { from: at, insert: text }, selection: { anchor: at + text.length } });
-      pos = at + text.length;
+      if (md) images.push(md);
     }
+    if (!images.length) return;
+    const md = images.length > 1 && handlers.combineImages ? handlers.combineImages(images) : images.join('\n');
+    const at = Math.min(pos ?? view.state.selection.main.head, view.state.doc.length);
+    const before = at > 0 && view.state.sliceDoc(at - 1, at) !== '\n' ? '\n' : '';
+    const text = `${before}${md}\n`;
+    view.dispatch({ changes: { from: at, insert: text }, selection: { anchor: at + text.length } });
   };
   const imagesOf = (dt: DataTransfer | null) => [...(dt?.files || [])].filter((f) => f.type.startsWith('image/'));
 

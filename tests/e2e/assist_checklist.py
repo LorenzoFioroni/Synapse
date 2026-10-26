@@ -134,8 +134,8 @@ async def main():
 
             # ---- Settings → Autocompletion
             await page.keyboard.press(f"{MOD}+,")
-            await page.wait_for_selector("#set-x-autocompletion-ollama")
-            await page.click('[data-nav="x-autocompletion-ollama"]')
+            await page.wait_for_selector("#set-plugin-autocompletion [data-ai-state]")
+            await page.click('[data-nav="plugin-autocompletion"]')
             ok = await wait_for(page, "document.querySelector('[data-ai-state]').textContent.includes('not running')")
             steps = await page.evaluate("document.querySelector('.ai-steps')?.textContent || ''")
             check(
@@ -326,17 +326,19 @@ async def main():
             # Settings stays open while the plugin is stopped and started in another window.
             fake.models[:] = ["qwen2.5-coder:1.5b"]
             await page.keyboard.press(f"{MOD}+,")
-            nav = '.settings-nav [data-nav="x-autocompletion-ollama"]'
-            section = "#set-x-autocompletion-ollama"
+            nav = '.settings-nav [data-nav="plugin-autocompletion"]'
+            section = "#set-plugin-autocompletion"
             for cycle in range(2):
                 await page.click(nav)
                 s.post(BASE + "/api/plugin-host/autocompletion/disable").raise_for_status()
                 await page.evaluate("window.zcPlugins.sync()")
+                gone = await wait_for(
+                    page,
+                    f"!document.querySelector('{nav}') && !document.querySelector('{section}')",
+                )
                 check(
                     f"Off removes its open Settings controls ({cycle + 1})",
-                    await page.locator(nav).count() == 0
-                    and await page.locator(section).count() == 0
-                    and await page.locator("#settings-view").count() == 1,
+                    gone and await page.locator("#settings-view").count() == 1,
                 )
                 check(
                     "Settings selects General after its current plugin section disappears",
@@ -346,9 +348,12 @@ async def main():
                 )
                 s.post(BASE + "/api/plugin-host/autocompletion/enable").raise_for_status()
                 await page.evaluate("window.zcPlugins.sync()")
+                await wait_for(page, f"!!document.querySelector('{section} [data-ai-state]')")
                 check(
                     f"On restores exactly one Settings section ({cycle + 1})",
-                    await page.locator(nav).count() == 1 and await page.locator(section).count() == 1,
+                    await page.locator(nav).count() == 1
+                    and await page.locator(section).count() == 1
+                    and await page.locator(f"{section} [data-ai-state]").count() == 1,
                 )
             await page.keyboard.press("Escape")
 

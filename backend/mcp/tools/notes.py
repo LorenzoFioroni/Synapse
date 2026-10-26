@@ -6,6 +6,7 @@ import json
 import re
 import time
 
+from ...library.agent import current_agent
 from ...notes import frontmatter, parser
 from ...notes.service import now_iso, ulid
 from ...notes.vault import Conflict, NoteExists, slugify
@@ -142,7 +143,10 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
         _, fm_body, _ = frontmatter.split(body)
         if not re.search(r"^\s*#\s", fm_body):
             body = f"# {title}\n\n" + body
-        meta: dict[str, object] = {"id": ulid(), "title": title, "type": "note", "author": "ai", "created": now_iso()}
+        meta: dict[str, object] = {"id": ulid(), "title": title, "type": "note", "author": "ai"}
+        if current_agent():
+            meta["agent"] = current_agent()  # which AI app wrote it
+        meta["created"] = now_iso()
         if tags:
             meta["tags"] = [str(t) for t in tags]
         content = frontmatter.set_fields(body, meta)
@@ -266,7 +270,7 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                     + "\n- ".join(errors)
                     + ("\nAlso: " + " ".join(warnings) if warnings else "")
                 )
-            summary_text = " ".join(str(summary or "").split()) or "Edited by Claude"
+            summary_text = " ".join(str(summary or "").split()) or f"Edited by {current_agent() or 'an AI app'}"
             try:
                 res = self.s.note_service.edit(path, new, h, by="ai", summary=summary_text)
                 break
@@ -285,7 +289,7 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                 "links_fixed": fixes or None,
                 "warnings": warnings or None,
                 "undo": "The user sees the change in the app and can undo it there (Cmd+Z in the open note, or the "
-                "note's Claude edits list); undo_note_edit reverts it if the user asks you to.",
+                "note's list of AI edits); undo_note_edit reverts it if the user asks you to.",
             }
         )
 
@@ -293,14 +297,14 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
         path = self._note_path(note)
         e = next((x for x in self.s.note_service.history.list(path) if x.get("by") == "ai"), None)
         if not e:
-            raise ToolError(f"Claude has not edited {path} (or its earlier versions were cleaned up).")
+            raise ToolError(f"No AI app has edited {path} (or its earlier versions were cleaned up).")
         full = self.s.note_service.history.get(e["id"])
         cur, h = self.s.vault.read(path)
         if h != e["after_hash"]:
             raise ToolError(
-                f"{path} was changed after Claude's last edit ({e['summary']}), so undoing it would also "
+                f"{path} was changed after the last AI edit ({e['summary']}), so undoing it would also "
                 "remove those changes. Nothing was undone. The user can restore any earlier version in "
-                "the app (the note's Claude edits list), or read the note with get_note and edit_note it."
+                "the app (the note's list of AI edits), or read the note with get_note and edit_note it."
             )
         try:
             res = self.s.note_service.edit(path, full["before"], h, by="ai", summary=f"Undid: {e['summary']}")

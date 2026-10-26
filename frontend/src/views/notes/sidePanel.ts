@@ -77,7 +77,7 @@ export function paintSide(): void {
         ${(info.tags || []).length ? `<dt>Tags</dt><dd>${info.tags.map((t) => `<span class="tag-pill sm">${escapeHtml(t)}</span>`).join(' ')}</dd>` : ''}
         ${info.created ? `<dt>Created</dt><dd>${escapeHtml(formatDate(info.created, true))}</dd>` : ''}
         ${info.mtime ? `<dt>Modified</dt><dd>${escapeHtml(formatDate(new Date(info.mtime * 1000).toISOString(), true))}</dd>` : ''}
-        ${aiHist?.path === session?.path && aiHist?.entries.length ? `<dt>Claude</dt><dd><button class="btn btn-sm btn-ghost ai-edits-btn" data-act="ai-edits">${icon('sparkle', 'icon-sm')} ${plural(aiHist.entries.length, 'edit')}…</button></dd>` : ''}
+        ${aiHist?.path === session?.path && aiHist?.entries.length ? `<dt>AI edits</dt><dd><button class="btn btn-sm btn-ghost ai-edits-btn" data-act="ai-edits">${icon('sparkle', 'icon-sm')} ${plural(aiHist.entries.length, 'edit')}…</button></dd>` : ''}
         <dt>File</dt><dd class="mono path">${escapeHtml(info.path)}</dd>
       </dl>
     </div>`;

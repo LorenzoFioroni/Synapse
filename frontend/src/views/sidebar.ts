@@ -1,4 +1,6 @@
-// Left sidebar: library views, folder tree, smart folders and the tag pane.
+// Left sidebar: one plain list of what the app shows (Library, Notes, and what plugins add: Tasks,
+// Graph, lists of papers, pages), then what belongs to the library alone (duplicates, Trash,
+// folders, smart folders, tags), shown only while the library is.
 //
 // Drag & drop: drop items on a folder to add them to it (an item can be in several
 // folders; hold Shift while dropping to move them out of the folder being viewed),
@@ -14,7 +16,7 @@ import { PALETTE, colorName } from '../ui/colors.js';
 import { openMenu } from '../ui/menu.js';
 import { toastError } from '../ui/toast.js';
 import type { Counts, Tag } from '../types.js';
-import { escapeHtml, plural, storage, store } from '../util.js';
+import { escapeHtml, modLabel, plural, storage, store } from '../util.js';
 import { openNewWindow } from '../windows.js';
 import { openExport } from './exportDialog.js';
 import { smartFolderDialog } from './organizeDialogs.js';
@@ -35,18 +37,18 @@ export function initSidebar(): void {
   root = document.getElementById('sidebar')!;
   root.innerHTML = `
     <div class="side-scroll">
-      <div class="side-section">Library</div>
-      <button class="side-item" data-view="library">${icon('library')}<span class="nm">My Library</span><span class="count" data-count="library"></span></button>
+      <div class="tool-list" role="list">
+        <button class="side-item tool" data-view="library" title="Your papers (shows all of them when the library is open)">${icon('library')}<span class="nm">Library</span><span class="count" data-count="library"></span></button>
+        <button class="side-item tool" data-act="open-notes" data-notes-only title="Markdown notes for papers and ideas (${modLabel}⇧L)">${icon('edit')}<span class="nm">Notes</span><span class="count" data-count="notes"></span></button>
+        <div class="page-list" data-navigation></div>
+        <div class="page-list" data-sources></div>
+        <div class="page-list" data-pages></div>
+      </div>
+
+      <div class="library-only" data-library-only>
+      <div class="side-divider"></div>
       <button class="side-item" data-view="duplicates" title="Items with the same DOI, or the same title and year">${icon('copy')}<span class="nm">Duplicate Items</span><span class="count" data-count="duplicates"></span></button>
       <button class="side-item" data-view="trash" data-drop="trash">${icon('trash')}<span class="nm">Trash</span><span class="count" data-count="trash"></span></button>
-
-      <div class="side-section" data-notes-only>Notes</div>
-      <button class="side-item" data-act="open-notes" data-notes-only title="Markdown notes for papers and ideas">${icon('edit')}<span class="nm">All Notes</span><span class="count" data-count="notes"></span></button>
-
-      <div class="side-section" data-pages-head hidden>Plugins</div>
-      <div class="page-list" data-navigation></div>
-      <div class="page-list" data-sources></div>
-      <div class="page-list" data-pages></div>
 
       <div class="side-section with-action" data-drop="folder-root">Folders
         <button class="icon-btn side-add" data-act="new-folder" title="New folder">${icon('plus', 'icon-sm')}</button></div>
@@ -55,14 +57,15 @@ export function initSidebar(): void {
       <div class="side-section with-action">Smart Folders
         <button class="icon-btn side-add" data-act="new-smart" title="New smart folder (saved search)">${icon('plus', 'icon-sm')}</button></div>
       <div class="smart-list"></div>
+      </div>
     </div>
-    <div class="tag-pane">
+    <div class="tag-pane" data-library-only>
       <div class="tag-head"><span>Tags</span>
         <input class="tag-filter" placeholder="Filter tags" spellcheck="false">
         <button class="icon-btn" data-act="tag-menu" title="Tag options">${icon('drag', 'icon-sm')}</button></div>
       <div class="tag-cloud"></div>
     </div>
-    <div class="side-footer"><div class="row" data-index-status></div></div>`;
+    <div class="side-footer" data-library-only><div class="row" data-index-status></div></div>`;
   tree = root.querySelector<HTMLElement>('.folder-tree')!;
   smartList = root.querySelector<HTMLElement>('.smart-list')!;
   tagCloud = root.querySelector<HTMLElement>('.tag-cloud')!;
@@ -91,6 +94,8 @@ export function initSidebar(): void {
 let notesCount: number | null = null;
 const inNotes = () => document.body.dataset.workspace === 'notes';
 const inLibrary = () => !document.body.dataset.workspace;
+/** The library itself is shown, not one of the plugins' lists of papers (shown in the same place). */
+const libraryTool = () => inLibrary() && !state.view.startsWith('source:');
 
 function paintNotes() {
   const enabled = state.settings.notes_enabled !== false;
@@ -100,11 +105,10 @@ function paintNotes() {
 
 }
 
-/** The lists of papers and the pages plugins added, with their badges. */
+/** What plugins added to the list (Tasks, Graph, lists of papers, pages), with their badges. */
 function paintPages() {
   const list = pages.all();
   const links = navigation.all().filter((entry) => !entry.when || entry.when());
-  root.querySelector<HTMLElement>('[data-pages-head]')!.hidden = !links.length && !list.length && !state.sources.length;
   root.querySelector<HTMLElement>('[data-navigation]')!.innerHTML = links.map((entry) => {
     const badge = entry.badge?.();
     return `<button class="side-item ${entry.active() ? 'active' : ''}" data-navigation="${escapeHtml(entry.id)}">${icon(entry.icon)}<span class="nm">${escapeHtml(entry.title)}</span><span class="count">${badge?.warning ? `<b class="overdue" title="${escapeHtml(badge.warningTitle || '')}">${escapeHtml(badge.warning)}</b> ` : ''}${escapeHtml(badge?.text || '')}</span></button>`;
@@ -119,6 +123,9 @@ function paintPages() {
 /* ================================================================= paint */
 function paint() {
   root.querySelectorAll<HTMLElement>('[data-view]').forEach((b) => b.classList.toggle('active', inLibrary() && b.dataset.view === state.view));
+  // Library stays marked while one of its folders or other views is shown
+  root.querySelector('.tool[data-view="library"]')!.classList.toggle('current', libraryTool() && state.view !== 'library');
+  root.querySelectorAll<HTMLElement>('[data-library-only]').forEach((el) => { el.hidden = !libraryTool(); });
   paintNotes();
   paintPages();
   for (const k of ['library', 'trash', 'duplicates'] as (keyof Counts)[]) {
@@ -225,6 +232,9 @@ function onClick(e: MouseEvent): void {
   }
   const v = target.closest<HTMLElement>('[data-view]');
   if (v && !target.closest('input')) {
+    // Library from Notes, Tasks or a page: back to the library as it was (the folder it showed);
+    // a plugin's list has its own entry, so from one Library shows all items
+    if (v.dataset.view === 'library' && !inLibrary() && !state.view.startsWith('source:')) { emit('close-notes'); return; }
     if (!inLibrary()) emit('close-notes');
     A.setView(v.dataset.view!);
   }
@@ -298,7 +308,7 @@ function folderPathString(id: number): string {
   return names.join('/');
 }
 
-async function newFolder(parentId: number | null): Promise<void> {
+export async function newFolder(parentId: number | null): Promise<void> {
   // unique default name among siblings, then rename inline
   const siblings = new Set(state.sidebar.folders.filter((f) => (f.parent_id ?? null) === parentId).map((f) => f.name.toLowerCase()));
   let name = 'New Folder', n = 2;

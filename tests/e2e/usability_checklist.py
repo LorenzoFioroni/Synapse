@@ -205,12 +205,12 @@ async def main():
             )
 
             # ---- workspace switch + shortcut
-            await page.click('.ws-switch [data-ws="library"]')
+            await page.click('#sidebar [data-view="library"]')
             await wait_for(lambda: page.is_hidden("#notes-view"))
             check(
                 "toolbar switch goes to the library",
                 await page.is_hidden("#notes-view")
-                and "active" in (await page.get_attribute('.ws-switch [data-ws="library"]', "class")),
+                and "active" in (await page.get_attribute('#sidebar [data-view="library"]', "class")),
             )
             await page.keyboard.press("ControlOrMeta+Shift+L")
             check(
@@ -226,7 +226,7 @@ async def main():
             labels = await page.eval_on_selector_all(".menu .menu-item", "xs => xs.map(x => x.textContent.trim())")
             check("item menu offers the notes citing it", any("Open Notes Citing This" in x for x in labels))
             await page.keyboard.press("Escape")
-            await page.click('.ws-switch [data-ws="notes"]')
+            await page.click('#sidebar [data-act="open-notes"]')
             await wait_for(lambda: page.is_visible("#notes-view"))
 
             # ---- keyboard: select + Delete + Undo

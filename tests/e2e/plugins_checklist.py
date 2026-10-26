@@ -64,7 +64,8 @@ def plugin(pid):
     return next(p for p in api("/api/plugin-host")["plugins"] if p["id"] == pid)
 
 
-ROW = '[data-plugin="recently-added"]'
+ROW = '.plugin-row[data-plugin="recently-added"]'
+SEC = "#set-plugin-recently-added"
 
 
 async def open_plugins(page):
@@ -131,7 +132,9 @@ async def main():
             toggle = f"{ROW} [data-ptoggle]"
             check("a new plugin is off", not await page.is_checked(toggle))
             perms = await page.text_content(f"{ROW} .p-perms")
-            check("what it may do is shown", "Reads your library" in perms and "Offers tools to Claude" in perms, perms)
+            check(
+                "what it may do is shown", "Reads your library" in perms and "Offers tools to AI apps" in perms, perms
+            )
             await shot(page, "p1-list")
 
             # turning on asks first; Cancel leaves it off
@@ -152,32 +155,45 @@ async def main():
             check("Turn On starts it", ok)
             check("the switch shows it on", await wait_for(lambda: page.is_checked(toggle)))
 
-            # its settings, drawn from the manifest
-            await page.click(f"{ROW} [data-pmore]")
-            await page.wait_for_selector(f'{ROW} [data-pset="keep_days"]')
-            await page.fill(f'{ROW} [data-pset="keep_days"]', "30")
-            await page.press(f'{ROW} [data-pset="keep_days"]', "Tab")
+            # its settings, drawn from the manifest, in a section of its own that its row's button opens
+            check(
+                "a plugin that is on has a Settings button",
+                await wait_for(lambda: page.is_visible(f"{ROW} [data-popen]")),
+            )
+            check("its row has no settings of its own", await page.locator(f"{ROW} [data-pset]").count() == 0)
+            await page.click(f"{ROW} [data-popen]")
+            await page.wait_for_selector(f'{SEC} [data-pset="keep_days"]')
+            check(
+                "the section is in the navigation, under Plugins",
+                await wait_for(
+                    lambda: page.evaluate(
+                        "document.querySelector('.settings-nav [data-nav=\"plugin-recently-added\"]')?.classList.contains('active')"
+                    )
+                ),
+            )
+            await page.fill(f'{SEC} [data-pset="keep_days"]', "30")
+            await page.press(f'{SEC} [data-pset="keep_days"]', "Tab")
             ok = await wait_for(
                 lambda: asyncio.to_thread(lambda: plugin("recently-added")["values"]["keep_days"] == 30)
             )
             check("a number setting is saved", ok)
-            await page.fill(f'{ROW} [data-pset="skip_tags"]', "draft, old")
-            await page.press(f'{ROW} [data-pset="skip_tags"]', "Tab")
+            await page.fill(f'{SEC} [data-pset="skip_tags"]', "draft, old")
+            await page.press(f'{SEC} [data-pset="skip_tags"]', "Tab")
             ok = await wait_for(
                 lambda: asyncio.to_thread(lambda: plugin("recently-added")["values"]["skip_tags"] == ["draft", "old"])
             )
             check("a list setting is saved", ok)
-            await page.fill(f'{ROW} [data-pset="keep_days"]', "0")
-            await page.press(f'{ROW} [data-pset="keep_days"]', "Tab")
+            await page.fill(f'{SEC} [data-pset="keep_days"]', "0")
+            await page.press(f'{SEC} [data-pset="keep_days"]', "Tab")
             ok = await wait_for(lambda: page.evaluate("!!document.querySelector('.toast')"))
             check("a value out of range is refused", ok and plugin("recently-added")["values"]["keep_days"] == 30)
             check(
                 "the field shows the saved value again",
                 await wait_for(
-                    lambda: page.eval_on_selector(f'{ROW} [data-pset="keep_days"]', "e => e.value === '30'")
+                    lambda: page.eval_on_selector(f'{SEC} [data-pset="keep_days"]', "e => e.value === '30'")
                 ),
             )
-            offers = await page.text_content(f"{ROW} .p-offers")
+            offers = await page.text_content(f"{SEC} .p-offers")
             check(
                 "what it offers is listed", "recently-added__recently_added" in offers and "/recent" in offers, offers
             )
@@ -195,7 +211,7 @@ async def main():
             )
             check("its route answers with what it stored", ok)
 
-            await page.click(f"{ROW} [data-plog]")
+            await page.click(f"{SEC} [data-plog]")
             await page.wait_for_selector(".plugin-log")
             log = await page.text_content(".plugin-log")
             check("the log opens", "Started (app" in log and "Settings changed: keep_days" in log, log[-300:])
@@ -472,14 +488,16 @@ async def main():
             safe = await browser.new_page(viewport={"width": 1300, "height": 950})
             await safe.goto(BASE)
             await open_plugins(safe)
-            graph_row = '[data-plugin="graph"]'
+            graph_row = '.plugin-row[data-plugin="graph"]'
             check("safe mode leaves core switches usable", await safe.is_enabled(f"{graph_row} [data-ptoggle]"))
             check(
                 "safe mode suppresses installed plugins",
                 not plugin("recently-added")["running"] and await safe.is_disabled(f"{ROW} [data-ptoggle]"),
             )
-            await safe.click(f"{graph_row} [data-pmore]")
-            check("safe mode offers restarting a core plugin", await safe.is_visible(f"{graph_row} [data-prestart]"))
+            await safe.click(f"{graph_row} [data-popen]")
+            check(
+                "safe mode offers restarting a core plugin", await safe.is_visible("#set-plugin-graph [data-prestart]")
+            )
             await safe.click(f"{graph_row} .switch")
             check(
                 "safe mode can turn a core plugin off",

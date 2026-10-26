@@ -338,6 +338,7 @@ async function newEditor(view: NoteView, mode: 'live' | 'source'): Promise<NoteE
     onImage: async (file) => {
       try { return (await api.uploadNoteImage(file)).markdown; } catch (e) { toastError(e); return null; }
     },
+    combineImages: imagesMarkdown,
   }, {
     renderer: () => ws.renderer,
     resolveNote,
@@ -670,28 +671,12 @@ function onClick(e: MouseEvent): void {
   if (act === 'show-conflict' && session?.conflict) { conflictDialog(session.conflict); return; }
   if (act?.startsWith('ai-')) { onAiAction(act, t.closest<HTMLElement>('[data-ai-id]')?.dataset.aiId); return; }
   if (act === 'paper-item' && info?.paper) { const it = itemInfo(info.paper); if (it) emit('show-item', it.id); return; }
-  if (act === 'paper-pdf' && info?.paper) {
-    const it = itemInfo(info.paper);
-    if (!it) return;
-    const pdfs = pdfsOf(it);
-    if (pdfs.length > 1) openMenu(pdfs.map((p) => ({ label: `Open “${p.name || 'PDF'}”`, icon: 'pdf', run: () => openAttachment({ id: it.id, title: it.title }, p) })), actEl!);
-    else if (pdfs.length) openAttachment({ id: it.id, title: it.title }, pdfs[0]);
-    return;
-  }
+  if (act === 'paper-pdf' && info?.paper) { openPaperPdf(actEl!); return; }
   if (act === 'tree-menu') {
     openMenu([
       { label: 'Rescan notes folder', icon: 'refresh', run: rescan },
       { label: 'Deleted notes…', icon: 'trash', run: showTrash },
-      { label: 'Attachments…', icon: 'paperclip', run: () => openAttachments({
-        insert: (md) => {
-          const { session: s, editor } = ws;
-          if (!s || !editor || s.status === 'conflict') return false;
-          editor.insertBlock(md);
-          if (ws.mode === 'read') renderRead();
-          return true;
-        },
-        openNote: (p) => openNote(p),
-      }) },
+      { label: 'Attachments…', icon: 'paperclip', run: showAttachments },
       'sep',
       { label: 'Collapse all folders', icon: 'minus', run: () => { ws.overview.folders.forEach((f) => tree.collapsed.add(f)); saveCollapsed(); paintTree(); } },
       { label: 'Expand all folders', icon: 'plus', run: () => { tree.collapsed.clear(); saveCollapsed(); paintTree(); } },
@@ -708,6 +693,41 @@ function onClick(e: MouseEvent): void {
   const ol = t.closest<HTMLElement>('[data-outline-line]');
   if (ol) gotoLine(Number(ol.dataset.outlineLine), 'start');
 }
+
+/** Several images at once: one gallery with Extended Markdown's figures (with ``caption``, a numbered
+ *  figure, ``panels`` a caption to fill in for each), else one image per line. */
+export function imagesMarkdown(images: string[], options: { caption?: string; panels?: boolean } = {}): string {
+  if (images.length > 1 && noteHooks.figures) return noteHooks.figures.gallery(images, options);
+  return images.join('\n');
+}
+
+/** Put a block of Markdown (an image, a figure, a table …) into the open note, after the cursor's
+ *  line. False when no note can take it (none open, or a conflict to resolve first). */
+export function insertIntoNote(md: string): boolean {
+  const { session, editor } = ws;
+  if (!session || !editor || session.status === 'conflict') return false;
+  editor.insertBlock(md);
+  if (ws.mode === 'read') renderRead();
+  return true;
+}
+
+/** The notes' attachments (images): which notes use each, insert one, the attachment trash. */
+export function showAttachments(): Promise<void> {
+  return openAttachments({ insert: insertIntoNote, openNote: (p) => openNote(p) });
+}
+
+/** The PDF of the paper the open note is about (a menu when it has several). */
+export function openPaperPdf(anchor: Element | { x: number; y: number }): void {
+  const paper = ws.info?.paper;
+  const it = paper ? itemInfo(paper) : null;
+  if (!it) return;
+  const pdfs = pdfsOf(it);
+  if (pdfs.length > 1) openMenu(pdfs.map((p) => ({ label: `Open “${p.name || 'PDF'}”`, icon: 'pdf', run: () => openAttachment({ id: it.id, title: it.title }, p) })), anchor);
+  else if (pdfs.length) openAttachment({ id: it.id, title: it.title }, pdfs[0]);
+}
+
+/** Live, Source or Read for the open note (the buttons in its head). */
+export function setNoteMode(m: Mode): void { setMode(m); }
 
 /** Keyboard shortcuts while the notes workspace is open (called from main.ts). */
 export function notesShortcut(e: KeyboardEvent, k: string, mod: boolean): boolean {

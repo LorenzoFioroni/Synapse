@@ -17,7 +17,7 @@ import { type NavEntry, initNav, navPush, navReplace, navSnapshot, navUpdate } f
 import { initChanges } from './changes.js';
 import { startPresence } from './presence.js';
 import {
-  closeNoteTabs, homeUnderneath, initTabs, repaintColors, noteEdited, noteModeChanged, notesDeleted as tabsNotesDeleted, notesRenamed as tabsNotesRenamed, openNoteTab, openViewerTab,
+  closeNoteTabs, homeUnderneath, initTabs, pdfTabActive, repaintColors, noteEdited, noteModeChanged, notesDeleted as tabsNotesDeleted, notesRenamed as tabsNotesRenamed, openNoteTab, openViewerTab,
   setHomeLabel, showHome, tabShortcut,
 } from './tabs/tabs.js';
 import { type Mode, folderColor, noteTabs } from './views/notes/workspace.js';
@@ -29,6 +29,9 @@ import { smartFolderDialog } from './views/organizeDialogs.js';
 import { openIdentifierDialog } from './views/identifierDialog.js';
 import { openImport } from './views/importDialog.js';
 import { focusList, initItemList, openColumnPicker } from './views/itemlist.js';
+import { registerLibraryCommands } from './views/itemlist/commands.js';
+import { newFolder as newNotesFolder, newNote, showTrash as showNotesTrash } from './views/notes/fileOps.js';
+import { registerNoteCommands } from './views/notes/commands.js';
 import { initItemPane, toggleItemPane } from './views/itempane.js';
 import { applyAppearance, closeSettings, openSettings, settingsOpen } from './views/settingsView.js';
 import { initSidebar } from './views/sidebar.js';
@@ -97,6 +100,7 @@ async function boot() {
   on('open-note', ({ path, line }) => { showHome(); openNotes(path, line ?? null); });
   on('show-item', (id) => showItem(id));
   on('open-view', (view) => openView(view));
+  on('open-settings', (section) => openSettings(section || null));
   on('workspace', paintWorkspace);
   on('tasks-page', paintWorkspace);
   // Back/Forward move between notes and the library view you came from.
@@ -210,7 +214,7 @@ async function navigate(entry: NavEntry): Promise<void> {
   focusList();
 }
 
-/** Library ⇄ Notes (⌘⇧L), or the workspace a toolbar switch button names. */
+/** Library ⇄ Notes (⌘⇧L), or the one named. */
 async function switchWorkspace(to: string = notesOpen() ? 'library' : 'notes'): Promise<void> {
   if (settingsOpen()) closeSettings();
   if (to === 'notes') await openNotes();
@@ -224,11 +228,7 @@ async function switchWorkspace(to: string = notesOpen() ? 'library' : 'notes'): 
 let homeWs: 'library' | 'tasks' | 'page' = 'library';
 
 function paintWorkspace() {
-  const sw = document.querySelector<HTMLElement>('.ws-switch');
-  if (!sw) return;
-  sw.hidden = state.settings.notes_enabled === false;
   const ws = notesOpen() ? 'notes' : tasksPage.isOpen() ? 'tasks' : pageOpen() ? 'page' : 'library';
-  sw.querySelectorAll<HTMLElement>('[data-ws]').forEach((b) => b.classList.toggle('active', b.dataset.ws === ws));
   if (ws === 'notes') return;
   homeWs = ws;
   const page = ws === 'page' ? pages.get(currentPageId() || '')?.title || 'Library' : '';
@@ -258,11 +258,7 @@ function initToolbar() {
   const tb = document.getElementById('toolbar')!;
   tb.innerHTML = `
     <button class="icon-btn side-toggle" data-a="sidebar" title="Collections" aria-label="Show collections">${icon('menu')}</button>
-    <div class="brand"><img class="brand-logo" src="/assets/favicon.svg?v=3" alt="Synapse" title="Synapse" width="24" height="24">
-      <div class="segmented ws-switch" role="group" aria-label="Workspace">
-        <button data-ws="library" title="Library (${modLabel}⇧L switches)">Library</button>
-        <button data-ws="notes" title="Notes (${modLabel}⇧L switches)">Notes</button>
-      </div></div>
+    <div class="brand"><img class="brand-logo" src="/assets/favicon.svg?v=3" alt="" width="24" height="24"><span class="brand-name">Synapse</span></div>
     <button class="icon-btn" data-a="new" title="New Item (${modLabel}N)">${icon('plus')}</button>
     <button class="icon-btn" data-a="identifier" title="Add by DOI, arXiv ID or ISBN (${modLabel}⇧N)">${icon('wand')}</button>
     <span class="toolbar-sep"></span>
@@ -287,12 +283,8 @@ function initToolbar() {
   modeBtn = tb.querySelector<HTMLElement>('[data-a="mode"]')!;
   paintMode();
 
-  paintWorkspace();
-  on('settings', paintWorkspace);
   tb.addEventListener('click', (e) => {
     const target = e.target as Element;
-    const ws = target.closest<HTMLElement>('[data-ws]');
-    if (ws) { switchWorkspace(ws.dataset.ws); return; }
     const b = target.closest<HTMLElement>('[data-a]');
     if (!b) return;
     const a = b.dataset.a!;
@@ -569,6 +561,14 @@ function registerCoreCommands(): void {
   add('settings-plugins', 'Settings: Plugins', () => openSettings('plugins'));
   add('settings-backups', 'Settings: Backups', () => openSettings('backups'));
   add('new-window', 'New Window', () => openNewWindow());
+  add('new-note', 'New Note…', async () => { await switchWorkspace('notes'); await newNote(); }, undefined, notesOn);
+  add('new-notes-folder', 'New Notes Folder…', async () => { await switchWorkspace('notes'); await newNotesFolder(); }, undefined, notesOn);
+  add('notes-trash', 'Deleted Notes…', async () => { await switchWorkspace('notes'); await showNotesTrash(); }, undefined, notesOn);
+  registerNoteCommands({ shown: () => notesOpen() && !settingsOpen() && !pdfTabActive() });
+  registerLibraryCommands({
+    shown: () => !document.body.dataset.workspace && !settingsOpen() && !pdfTabActive(),
+    show: async () => { showHome(); await switchWorkspace('library'); },
+  });
 }
 
 boot();

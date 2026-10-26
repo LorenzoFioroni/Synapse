@@ -333,14 +333,14 @@ async def main():
                 "toolbar: the item pane button hides and shows the note details",
                 was and not now and await page.evaluate(side),
             )
-            await page.click('.ws-switch [data-ws="library"]')
+            await page.click('#sidebar [data-view="library"]')
             await page.wait_for_timeout(400)
             check(
                 "in the Library the two buttons are the item list's again",
                 await cols.get_attribute("title") == "Choose columns"
                 and await pane_btn.get_attribute("title") == "Toggle item pane",
             )
-            await page.click('.ws-switch [data-ws="notes"]')
+            await page.click('#sidebar [data-act="open-notes"]')
             await page.wait_for_selector(".cm-lp-mathblock")
 
             # ---- text width (Settings)

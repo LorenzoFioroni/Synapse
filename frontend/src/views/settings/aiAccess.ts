@@ -1,5 +1,5 @@
-// Settings → AI Access: access tokens for AI apps (Claude Code) that use the library from another
-// computer through the MCP endpoint, /mcp. See backend/access/tokens.py and backend/mcp/http.py.
+// Settings → AI Access: access tokens for AI apps (Claude Code, Codex, any MCP client) that use the
+// library from another computer through the MCP endpoint, /mcp. See backend/access/tokens.py and backend/mcp/http.py.
 import { api } from '../../api.js';
 import { icon } from '../../icons.js';
 import { confirmDialog, promptDialog } from '../../ui/dialog.js';
@@ -10,12 +10,26 @@ import { relTime } from './devices.js';
 
 let overview: AccessTokensOverview | null = null;
 /** A token just made: shown until Settings closes, because the server does not keep it. */
-let fresh: { token: string; name: string; index: number } | null = null;
+let fresh: { token: string; name: string; index: number; app: App } | null = null;
 
-/** The command that adds Synapse to Claude Code with this token. */
-function command(url: string, token: string): string {
+type App = 'claude' | 'codex' | 'other';
+const APPS: [App, string][] = [['claude', 'Claude Code'], ['codex', 'Codex'], ['other', 'Other app']];
+
+/** What to run (or enter) on the other computer so ``app`` uses Synapse with this token. */
+function command(app: App, url: string, token: string): string {
+  if (app === 'codex') {
+    // Codex reads the token from an environment variable, which the shell must set for it
+    return `export SYNAPSE_TOKEN=${token}\ncodex mcp add synapse --url ${url} --bearer-token-env-var SYNAPSE_TOKEN`;
+  }
+  if (app === 'other') return `URL: ${url}\nHeader: Authorization: Bearer ${token}`;
   return `claude mcp add --scope user --transport http synapse ${url} --header "Authorization: Bearer ${token}"`;
 }
+
+const HINTS: Record<App, string> = {
+  claude: 'On the other computer, run:',
+  codex: 'On the other computer, run this (and put the first line in your shell profile, so Codex always finds the token):',
+  other: 'In the other app, add a Streamable HTTP MCP server with:',
+};
 
 function renderFresh(box: HTMLElement): void {
   if (!fresh || !overview) { box.innerHTML = ''; return; }
@@ -24,10 +38,13 @@ function renderFresh(box: HTMLElement): void {
   const choices = eps.length > 1 ? `<div class="pair-addrs">Address: ${eps.map((l, i) =>
     `<button class="token${i === fresh!.index ? ' active' : ''}" data-ai-addr="${i}">${escapeHtml(l.label)}</button>`).join(' ')}</div>` : '';
   box.innerHTML = `<div class="s-title">Token for ${escapeHtml(fresh.name)}</div>
-    <div class="s-desc">Copy it now: Synapse keeps only a fingerprint and cannot show it again. On the other computer, run:</div>
-    <pre class="mono ai-command" data-ai-command>${escapeHtml(command(ep ? ep.url : '<url>/mcp', fresh.token))}</pre>
+    <div class="s-desc">Copy it now: Synapse keeps only a fingerprint and cannot show it again.</div>
+    <div class="segmented ai-apps" role="group" aria-label="App">${APPS.map(([a, label]) =>
+      `<button data-ai-app="${a}" class="${a === fresh!.app ? 'active' : ''}">${label}</button>`).join('')}</div>
+    <div class="s-desc">${HINTS[fresh.app]}</div>
+    <pre class="mono ai-command" data-ai-command>${escapeHtml(command(fresh.app, ep ? ep.url : '<url>/mcp', fresh.token))}</pre>
     ${choices}
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" data-ai-copy-cmd>${icon('copy')} Copy Command</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" data-ai-copy-cmd>${icon('copy')} Copy ${fresh.app === 'other' ? 'Both' : 'Command'}</button>
       <button class="btn btn-sm" data-ai-copy-token>${icon('copy')} Copy Token Only</button>
       <button class="btn btn-sm" data-ai-done>Done</button></div>`;
 }
@@ -66,12 +83,12 @@ async function copy(text: string, what: string): Promise<void> {
 export function bindAiAccess(view: HTMLElement): void {
   view.querySelector('[data-ai-control]')!.addEventListener('click', async (e) => {
     if (!(e.target as Element).closest('[data-ai-new]')) return;
-    const name = await promptDialog('Name', { title: 'New access token', placeholder: 'Work laptop — Claude Code', confirm: 'Make Token',
+    const name = await promptDialog('Name', { title: 'New access token', placeholder: 'Work laptop — Codex', confirm: 'Make Token',
       hint: 'Which computer or app will use it, so you know which one to remove later.' });
     if (!name || !name.trim()) return;
     try {
       const res = await api.newAccessToken(name.trim());
-      fresh = { token: res.token, name: res.entry.name, index: 0 };
+      fresh = { token: res.token, name: res.entry.name, index: 0, app: /codex/i.test(res.entry.name) ? 'codex' : 'claude' };
     } catch (err) { toastError(err); return; }
     refreshAiAccess(view);
   });
@@ -79,7 +96,11 @@ export function bindAiAccess(view: HTMLElement): void {
     const target = e.target as Element;
     if (!fresh || !overview) return;
     const ep = overview.endpoints[fresh.index] || overview.endpoints[0];
-    if (target.closest('[data-ai-copy-cmd]')) copy(command(ep ? ep.url : '', fresh.token), 'Command');
+    if (target.closest('[data-ai-copy-cmd]')) copy(command(fresh.app, ep ? ep.url : '', fresh.token), fresh.app === 'other' ? 'Address and header' : 'Command');
+    else if (target.closest('[data-ai-app]')) {
+      fresh.app = target.closest<HTMLElement>('[data-ai-app]')!.dataset.aiApp as App;
+      renderFresh(view.querySelector<HTMLElement>('[data-ai-fresh]')!);
+    }
     else if (target.closest('[data-ai-copy-token]')) copy(fresh.token, 'Token');
     else if (target.closest('[data-ai-done]')) { fresh = null; renderFresh(view.querySelector<HTMLElement>('[data-ai-fresh]')!); }
     else if (target.closest('[data-ai-addr]')) {

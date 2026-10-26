@@ -75,8 +75,12 @@ export interface SettingsSectionSpec {
   id: string;
   title: string;
   icon?: string;
-  /** The id of the Settings section it follows ('general', 'online', 'plugins' …); default: just before Plugins. */
+  /** Kept for plugins written for an earlier Synapse: a plugin's part now always goes in the
+      plugin's own section in Settings. */
   after?: string;
+  /** Keys of the manifest's settings this part draws itself; the plugin's section does not list
+      them again. */
+  shows?: string[];
   /** Draw the section into `el` each time Settings opens; return a function to clean up. */
   mount: (el: HTMLElement) => Cleanup;
 }

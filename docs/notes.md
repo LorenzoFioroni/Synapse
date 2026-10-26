@@ -20,7 +20,7 @@ change feed), [frontend.md](frontend.md) and [testing.md](testing.md).
 | `attachments/` | Images shown by notes. Reserved: no notes or user folders go here. |
 | `.trash/<timestamp>/` | Deleted notes and folders, at their old relative path. |
 | `.trash-attachments/<timestamp>/` | Images no note uses any more. `.since` records when automatic emptying started. |
-| `.history/<id>.json` | The version each of Claude's edits replaced (see [History of Claude's edits](#history-of-claudes-edits-backendnoteshistorypy)). |
+| `.history/<id>.json` | The version each of Claude's edits replaced (see [History of AI edits](#history-of-ai-edits-backendnoteshistorypy)). |
 | `.folders.json` | Colours given to folders: `{"folder/path": "#rrggbb"}` (see [Folder colours](#folder-colours)). |
 
 Hidden folders (any name starting with `.`) are never indexed, and a path from outside can never
@@ -40,7 +40,8 @@ unterminated header is treated as body, by the backend and the frontend alike.
 | `title` | The title. Without it the index uses the first `# heading`, then the file name. |
 | `type` | `paper` or `note`. When missing, the index says `paper` if `paper` is set, else `note`. |
 | `paper` | The citation key of the item a paper note is about. |
-| `author` | `human` (default) or `ai` for notes written by Claude. |
+| `author` | `human` (default) or `ai` for notes written by an AI app through `write_note`. |
+| `agent` | Which AI app wrote it (`Claude`, `Codex` …), beside `author: ai`. |
 | `created` | ISO time with offset (`now_iso()`). `updated` is indexed when present but never written. |
 | `tags` | A list or a comma-separated string. Joined with the inline `#tags`. |
 
@@ -206,7 +207,7 @@ the index is then updated from the file.
   `created`) and picks a free name (`Untitled 2.md`, …). With `item_id` it makes a paper note.
 - `save(path, text, base_hash)` is the hash-checked save behind the editor. `base_hash=None`
   creates. A `Conflict` reaches the browser as a 409.
-- `edit(...)` is the save used for Claude's changes: same check, plus a history entry.
+- `edit(...)` is the save used for AI apps' changes: same check, plus a history entry naming the app (`current_agent()`).
 - `move` and `move_folder` do **not** rewrite links. They collect the backlinks first and return
   the ones that no longer resolve as `broken_links`. Links by name survive a folder move; a
   rename breaks them, and the UI says which.
@@ -233,12 +234,14 @@ When an item's citation key changes, `PaperRepository.on_citekey_change` calls
 4. A paper note still named `papers/<old>.md` moves to `papers/<new>.md` if that name is free,
    and `[[links]]` to it are updated. History entries follow the move.
 
-### History of Claude's edits (`backend/notes/history.py`)
+### History of AI edits (`backend/notes/history.py`)
 
-`NoteHistory` stores one JSON file per change in `.history/`: `id`, `path`, `at`, `by`,
-`summary`, `before` (the whole previous text), `before_hash`, `after_hash`. One file per change,
-with a unique name, means the app and the MCP server cannot overwrite each other's entries.
-`after_hash` tells whether the note is still exactly what Claude left, which decides whether the
+`NoteHistory` stores one JSON file per change in `.history/`: `id`, `path`, `at`, `by` (`ai`),
+`agent` (the AI app that made it: Claude, Codex …; missing in entries recorded before it was
+kept, which the app shows as "An AI app"), `summary`, `before` (the whole previous text),
+`before_hash`, `after_hash`. One file per change, with a unique name, means the app and the MCP
+server cannot overwrite each other's entries. `after_hash` tells whether the note is still exactly
+what the AI app left, which decides whether the
 app offers a plain Undo. Moves rewrite the stored paths (`moved`). `prune` keeps at most
 `KEEP` (1000) entries and none older than a year.
 
@@ -262,7 +265,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | POST | `/api/notes/trash` | Trash one note (`path`) or several notes and folders together (`paths`, `folders`). |
 | GET | `/api/notes/trash` | Trashed notes with `trashed_at` and `deletes_at`, and the retention. |
 | POST | `/api/notes/restore` | Restore one note (`trash_id`, `path`) or a whole batch (`trash_id` only). |
-| GET | `/api/notes/history?path=` | Claude's changes to a note, newest first, without their text. |
+| GET | `/api/notes/history?path=` | AI apps' changes to a note, newest first, without their text. |
 | GET | `/api/notes/history/version?id=` | One change with the text from before it. |
 | GET | `/api/notes/search?q=` | Full-text search of notes. |
 | GET | `/api/notes/links?path=` | Outgoing links with library info, cited keys, unresolved links, backlinks. |
@@ -315,12 +318,13 @@ only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 | `readView.ts` | Read mode, following `[[links]]` (offering to create missing notes), going to a line. |
 | `sidePanel.ts`, `panels.ts` | Status, breadcrumbs and details panel; showing and hiding the side panels. |
 | `citeCard.ts`, `citeTarget.ts` | Citation hover cards; where in the PDF a citation points (quoted words or a snapshot's region). |
-| `aiBar.ts`, `aiEdits.ts`, `diff.ts` | Claude's edits: the bar, the history dialog, line diffs. |
+| `aiBar.ts`, `aiEdits.ts`, `diff.ts` | AI apps' edits: the bar ("Codex edited this note"), the history dialog with each app's name, line diffs. |
 | `conflict.ts` | The dialog for a note changed or deleted elsewhere. |
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
 | `exportNote.ts`, `portable.ts` | Exporting a note as PDF, HTML or Markdown; the Markdown conversion and reference entries (no DOM). |
 | `crossref.ts`, `sections.ts` | References (`\ref`, `\eqref`, `\cref`, `\Cref`) written out as cleveref does, from equations, figures and labelled Markdown headings; hierarchical section numbering (no DOM). |
 | `hooks.ts` | What core plugins add to the editor: ghost text, the graph, galleries and figures (`setNoteHook`). |
+| `commands.ts` | The command palette's commands for the open note: inserting images and figures (`Insert Image…`, `Insert Figure with Caption…`), citations, links and tasks (they type `[@]`, `[[]]` or `{{task }}` and open the completion), tables, callouts, equations and diagrams; Live/Source/Read; renaming, moving, deleting, exporting and linking the note; its graph, AI edits, paper and PDF. Each is offered only while a note is on screen and it can act (a figure needs Extended Markdown's figures, a task the Tasks plugin); inserting from Read goes back to editing. |
 
 Galleries and figures are an extension of the **Extended Markdown** core plugin, in
 `frontend/src/plugins/core/extended-markdown/figures/`:
@@ -331,7 +335,7 @@ Galleries and figures are an extension of the **Extended Markdown** core plugin,
 | `figures.ts` | Which images and galleries are figures, their numbers and `\label`s (no DOM). |
 | `markdown.ts` | The renderer's rules: `galleryRule`, `figureRule` and their HTML. |
 | `portable.ts`, `exportStatic.ts` | Figures in the Markdown export (`portableFigures`); carousels as static figures in HTML and PDF (`staticGalleries`). |
-| `hook.ts`, `index.ts` | The `FiguresHook` the notes code asks (`views/notes/hooks.ts`); turning the extension on and off. |
+| `hook.ts`, `index.ts` | The `FiguresHook` the notes code asks (`views/notes/hooks.ts`), including `gallery(images, {caption, panels})` (`newGallery` in `gallery.ts`), the block several images become; turning the extension on and off. |
 
 ### The editor and read mode
 
@@ -396,6 +400,13 @@ Photon number versus $N$ at equal reduced drive.
   panel's caption, up to a blank line or the next image. An image's own `|300` width still applies.
 - **The gallery's caption.** Lines that belong to no panel: after a blank line, or before the
   first image.
+- **Several images at once.** Pasting or dropping several images into the editor (one paste or
+  drop), or choosing several with **Insert Image…** in the command palette, inserts one gallery
+  (`imagesMarkdown` in `notesView.ts`, through the editor's `combineImages`, asks the hook's
+  `gallery`): the images only, so it is not numbered until it gets a caption. **Insert Figure with
+  Caption…** with several images adds a caption to each panel ("Panel a.") and one for the figure
+  with a `\label`, selected to type over. Without the figures extension they are inserted one
+  image per line.
 - **Captions** are Markdown on a line, so math, citations, `[[links]]`, `\eqref` and emphasis work.
   A caption wrapped as a whole in `*…*` or `_…_` (the way an image is usually captioned) is
   unwrapped, so an image and its caption can be moved into a gallery as they are.

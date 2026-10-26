@@ -181,11 +181,12 @@ expects something else. To add an event, add it to `AppEvents` and to the table 
 | `focus-list` | none | `notesView.ts`, `settingsView.ts` | `itemlist.ts` |
 | `open-note` | `{ path, line? }` | item pane, `itemlist/menus.ts` | `main.ts` |
 | `open-notes`, `close-notes` | none | sidebar | `main.ts` |
+| `open-settings` | a section's navigation id, or none | `plugins/host.ts` ("Settings: <plugin>" commands) | `main.ts` |
 | `show-item` | item id | `plugins/core/graph/notesGraph.ts`, `citeCard.ts`, `notesView.ts`, `referencesSection.ts` | `main.ts` |
 | `open-import` | optional `File` | `itemlist/empty.ts`, `itemlist.ts`, `settingsView.ts` | `main.ts` |
 | `open-identifier`, `clear-search` | none | `itemlist/empty.ts` | `main.ts` |
 | `set-search-mode` | `SearchMode` | `itemlist/empty.ts`, `settingsView.ts` | `main.ts` |
-| `sources` | none | `plugins/host.ts` (`syncSources`) | sidebar (the Plugins section) |
+| `sources` | none | `plugins/host.ts` (`syncSources`) | sidebar (its list) |
 | `open-view` | a view (`source:<id>`, `folder:<id>` …) | `plugins/host.ts` (`p.sources.open`) | `main.ts` (leaves Notes, Tasks, Settings or a page) |
 
 The events `main.ts` hears are how a view reaches code it must not import (opening Notes from the
@@ -277,10 +278,11 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `itemlist/rows.ts` | The virtualised rows: only rows near the viewport are in the DOM, between two spacers. |
 | `itemlist/empty.ts` | What an empty list says, with buttons for what to do. |
 | `itemlist/menus.ts` | Context menus for items and attachments, shared with the item pane. |
+| `itemlist/commands.ts` | The library's commands for the palette: what the item menu does to the selected items (open or add a PDF attachment, find a PDF, metadata, references, folders, tags, citation keys, paper note, trash), restoring from the Trash, adding papers from a plugin's list, and the library's own actions (add PDFs as items, new folder or smart folder, show duplicates or the Trash). A command on the selection is offered only while the library is on screen and it fits what is selected; one on the library brings it on screen first. |
 | `itempane.ts` | The right-hand pane: editable fields, authors, abstract, attachments; *From Plugins* (values plugins attach, from `/api/items/<id>/fields`) and the sections plugins add. |
 | `referencesSection.ts` | The item pane's References section (see [references](references.md)). |
-| `settings/pluginSections.ts` | Mounts and disposes plugin Settings sections as their registry changes, preserving unrelated controls and removing stale navigation. |
-| `sidebar.ts` | Plugin-owned workspace navigation (Tasks and Graph), library views, folder tree, smart folders, tag pane, the pages plugins add, and drag and drop onto them. |
+| `settings/pluginSections.ts` | Mounts and disposes what plugins' frontends draw in Settings (`p.settingsPage`) inside each plugin's own section as their registry changes, preserving unrelated controls; asks for the plugins again when a frontend comes or goes. |
+| `sidebar.ts` | One plain list of what the app shows — Library, Notes, then what plugins add (Tasks, Graph, lists of papers, pages) — with no headings; then what belongs to the library alone (Duplicate Items, Trash, folder tree, smart folders, tag pane, the indexing line), shown only while the library itself is (not Notes, Tasks, a page or a plugin's list). Library stays marked while one of its folders is shown, and from elsewhere it goes back to the library as it was. Drag and drop onto folders, tags and Trash. |
 | `pages.ts` | A plugin's page in place of the library (`openPage`, `closePage`; `body[data-workspace="page"]`). |
 | `palette.ts` | The command palette (⌘⇧P / Ctrl+Shift+P, F1): every command in `extend.ts`, best match first. |
 | `organizeDialogs.ts` | Folder picker, tag editor and input, smart folder dialog. |
@@ -291,8 +293,8 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `settings/page.ts` | The Settings markup (`settingsHtml`). |
 | `settings/backups.ts`, `settings/devices.ts` | Settings → Backups and Settings → Devices (pairing). |
 | `settings/passkeys.ts` | Settings → Devices → Passkeys: adding one with `navigator.credentials.create`, removing one. |
-| `settings/aiAccess.ts` | Settings → AI Access: access tokens for `/mcp`, with the `claude mcp add` command shown once. |
-| `settings/plugins.ts` | Settings → Plugins: the plugins found, turning them on (after a confirmation listing their access) and off, their settings drawn from each manifest, tools for other computers, Restart and the log. `pluginsChanged()` redraws it when the change feed names `plugins`. See [plugins](plugins.md). |
+| `settings/aiAccess.ts` | Settings → AI Access: access tokens for `/mcp`, shown once with what to run for Claude Code or Codex, or the URL and header for another app. |
+| `settings/plugins.ts` | Settings → Plugins: the plugins found, turning them on (after a confirmation listing their access) and off, a Settings button on each that is on. Each plugin that is on gets a section of its own (`#set-plugin-<id>`, an entry under Plugins in the navigation): its settings drawn from the manifest (less those its frontend draws, `shows`), tools for other computers, what it offers, Restart and the log. `pluginsChanged()` redraws them when the change feed names `plugins`. See [plugins](plugins.md). |
 
 **`views/notes/`: the notes workspace.** [Notes](notes.md) covers it in depth. In short:
 `notesView.ts` sets the workspace up and opens and closes notes; `workspace.ts` is the shared

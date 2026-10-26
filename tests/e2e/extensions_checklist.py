@@ -164,7 +164,7 @@ async def main():
                     and 'spoiler-content" hidden' not in html
                     and '<details class="spoiler-block" open' in html,
                 )
-                await page.click('.ws-switch [data-ws="library"]')
+                await page.click('#sidebar [data-view="library"]')
                 requests.post(
                     BASE + "/api/items", json={"title": "An exported paper", "citation_key": "export2026"}, timeout=5
                 ).raise_for_status()

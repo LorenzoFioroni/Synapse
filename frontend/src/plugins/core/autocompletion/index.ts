@@ -13,7 +13,7 @@ export function activate(p: PluginContext): void {
   const opened = () => { src.check(); };   // load the model, so the first suggestion does not wait for it
   noteHooks.editorOpened.add(opened);
   src.check();
-  p.settingsPage.register({ id: 'ollama', title: 'Autocompletion', icon: 'sparkle', after: 'general', mount: (el) => mountSettings(p, el, src) });
+  p.settingsPage.register({ id: 'ollama', title: 'Autocompletion', icon: 'sparkle', shows: ['model', 'length', 'url'], mount: (el) => mountSettings(p, el, src) });
   p.onUnload(() => {
     if (noteHooks.ghost === src.ghost) setNoteHook('ghost', null);
     noteHooks.editorOpened.delete(opened);

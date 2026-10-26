@@ -152,18 +152,34 @@ async def main():
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
             await page.goto(BASE)
-            await page.wait_for_selector('.ws-switch [data-ws="notes"]')
+            await page.wait_for_selector('#sidebar [data-act="open-notes"]')
             await page.evaluate(
                 "['zc.graph.local','zc.graph.global','zc.graph.localOpen'].forEach((k) => localStorage.removeItem(k))"
             )
 
-            # ---- toolbar: Library and Notes; plugin workspaces live in the sidebar
-            check("toolbar has Library | Notes", await page.locator(".ws-switch [data-ws]").count() == 2)
+            # ---- one list in the sidebar: Library, Notes and the plugins' workspaces; no switch in the toolbar
+            check("the toolbar has no Library | Notes switch", await page.locator("#toolbar [data-ws]").count() == 0)
+            await page.wait_for_selector('#sidebar [data-navigation="graph.main"]')
+            listed = await page.eval_on_selector_all(
+                "#sidebar .tool-list .side-item .nm", "els => els.map((e) => e.textContent)"
+            )
+            check(
+                "the sidebar lists Library, Notes, Graph and Tasks",
+                listed[:2] == ["Library", "Notes"] and {"Graph", "Tasks"} <= set(listed),
+                listed,
+            )
+            check(
+                "no Notes or Plugins heading",
+                await page.locator("#sidebar .side-section").evaluate_all(
+                    "els => els.map((e) => e.textContent.trim()).filter((t) => /^(Notes|Plugins|Library)$/i.test(t))"
+                )
+                == [],
+            )
             w = await page.evaluate("document.querySelector('.brand-logo').getBoundingClientRect().width")
             check("logo is not squeezed", abs(w - 24) < 0.5, w)
 
             # ---- local graph next to the note
-            await page.click('.ws-switch [data-ws="notes"]')
+            await page.click('#sidebar [data-act="open-notes"]')
             await page.wait_for_selector("#notes-view:not([hidden])")
             await page.locator(".notes-tree").get_by_text("Review", exact=True).click()
             await page.wait_for_function("window.zcGraph?.localPath() === 'topics/Review.md'")
@@ -325,7 +341,7 @@ async def main():
             check(f"{MOD}+Shift+G closes it", await page.is_hidden(".notes-graph"))
 
             # ---- Show in Graph from the item menu and the notes tree
-            await page.click('.ws-switch [data-ws="library"]')
+            await page.click('#sidebar [data-view="library"]')
             await page.wait_for_timeout(300)
             await page.locator(f'#items-pane .row[data-id="{papers[7]["id"]}"]').click(button="right")
             await page.click(".menu >> text=Show in Graph")
@@ -373,7 +389,7 @@ async def main():
             # A retained graph in the hidden Notes workspace must not stay selected.
             for destination, selector, workspace in (
                 ("Tasks", '#sidebar [data-navigation="tasks.main"]', "tasks"),
-                ("Library", '.ws-switch [data-ws="library"]', None),
+                ("Library", '#sidebar [data-view="library"]', None),
             ):
                 await page.click(graph_link)
                 await settled(page, "global")

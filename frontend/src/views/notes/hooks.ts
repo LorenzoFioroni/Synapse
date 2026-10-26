@@ -58,6 +58,9 @@ export interface FiguresHook {
   portable(markdown: string): string;
   /** An exported copy of a rendered note: carousels become static figures (exportNote.ts). */
   exportStatic(root: HTMLElement): void;
+  /** A new gallery block showing the image lines ``images`` together: what several images chosen,
+      pasted or dropped at once become. ``caption`` and ``panels`` as in gallery.ts's newGallery. */
+  gallery(images: string[], options?: { caption?: string; panels?: boolean }): string;
 }
 
 /** A spoiler's source range; `block` for a :::spoiler block, else inline ||…||. */

@@ -95,7 +95,7 @@ async def main():
             page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
             page.on("response", lambda r: errors.append(f"{r.status} {r.url}") if r.status >= 400 else None)
             await page.goto(BASE)
-            await page.click('.ws-switch [data-ws="notes"]')
+            await page.click('#sidebar [data-act="open-notes"]')
             await page.wait_for_selector("#notes-view:not([hidden])")
             await page.locator(".notes-tree").get_by_text("Figures", exact=True).click()
             await page.wait_for_function("window.zcNotes.path() === 'Figures.md'")

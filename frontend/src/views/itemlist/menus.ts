@@ -30,7 +30,7 @@ export async function openItemNote(it: Item | undefined): Promise<void> {
   } catch (e) { toastError(e); }
 }
 
-async function newPaperNote(it: Item): Promise<void> {
+export async function newPaperNote(it: Item): Promise<void> {
   try {
     const res = await api.createNote({ item_id: it.id });
     emit('open-note', { path: res.path });
@@ -153,7 +153,7 @@ export async function copyKeys(items: Item[]): Promise<void> {
   toast(`Copied ${keys.length === 1 ? keys[0] : plural(keys.length, 'key')}`, { type: 'success' });
 }
 
-async function copyBibtex(ids: string[]): Promise<void> {
+export async function copyBibtex(ids: string[]): Promise<void> {
   try {
     const res = await api.clipboardBibtex(ids);
     await copyText(res.text);

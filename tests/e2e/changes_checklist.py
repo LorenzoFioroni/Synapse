@@ -144,7 +144,7 @@ async def main():
             check("… and shows up once the field is left", ok)
 
             # ---- notes -------------------------------------------------------------------------------------
-            await mac.click('[data-ws="notes"]')
+            await mac.click('#sidebar [data-act="open-notes"]')
             await mac.wait_for_selector("#notes-view:not([hidden])")
             await as_page(
                 ipad,
@@ -154,7 +154,7 @@ async def main():
                 lambda: mac.evaluate("!!document.querySelector('.nt-row.note[data-path=\"From the iPad.md\"]')")
             )
             check("a note written on the iPad appears in the computer's notes", ok)
-            await mac.click('[data-ws="library"]')
+            await mac.click('#sidebar [data-view="library"]')
 
             # ---- annotations in an open PDF -------------------------------------------------------------------
             q = urlencode(

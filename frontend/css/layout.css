@@ -16,7 +16,6 @@ body { display: flex; flex-direction: column; }
   background: var(--bg); border-bottom: 1px solid var(--border);
 }
 .brand { display: flex; align-items: center; gap: 8px; width: 196px; flex: none; padding-left: 4px; font-weight: 650; font-size: 14px; letter-spacing: -.01em; }
-.brand .ws-switch button { padding: 3px 10px; }
 .brand-logo { width: 24px; height: 24px; flex: none; border-radius: 6px; display: block; box-shadow: var(--shadow-sm); }
 .toolbar-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
 
@@ -100,6 +99,12 @@ body { display: flex; flex-direction: column; }
 .side-item:hover { background: var(--bg-hover); }
 .side-item.active { background: var(--accent-soft); color: var(--accent); }
 .side-item.active .icon { color: var(--accent); }
+/* Library while one of its folders or other views is shown (that one is marked active) */
+.side-item.tool.current { color: var(--accent); }
+.side-item.tool.current .icon { color: var(--accent); }
+.tool-list { display: flex; flex-direction: column; }
+.side-divider { height: 1px; background: var(--border); margin: 8px 6px; }
+[data-library-only][hidden] { display: none !important; }
 .side-item.drop-target { box-shadow: inset 0 0 0 2px var(--accent); }
 .side-item .count { margin-left: auto; font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
 .side-footer { margin-top: auto; padding: 10px; font-size: var(--fs-xs); color: var(--text-3); display: flex; flex-direction: column; gap: 6px; }
@@ -180,7 +185,7 @@ body { display: flex; flex-direction: column; }
 body.has-tabs #sidebar { top: calc(var(--tabbar-h) + var(--toolbar-h)); }
 body.has-tabs.sidebar-open::after { top: calc(var(--tabbar-h) + var(--toolbar-h)); }
 @media (max-width: 760px) {
-  .brand .ws-switch, .toolbar-sep { display: none; }
+  .toolbar-sep, .brand-name { display: none; }
 }
 @media (max-width: 700px) {
   :root { --toolbar-h: 94px; --statusbar-h: 28px; }

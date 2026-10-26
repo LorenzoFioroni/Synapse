@@ -535,7 +535,7 @@ def test_undo_note_edit_and_history_follows_moves(lib, svc):
     err, texts = call(server, "undo_note_edit", note=path)
     assert err and "changed after" in texts[0] and "Typed by the user" in svc.vault.read(path)[0]
     err, texts = call(server, "undo_note_edit", note="crispr")
-    assert err and "has not edited" in texts[0]
+    assert err and "No AI app has edited" in texts[0]
     # renaming or moving keeps the history with the note
     svc.note_service.move(path, "moved/other2.md")
     assert len(svc.note_service.history_of("moved/other2.md")["entries"]) == 3

@@ -211,12 +211,13 @@ export interface NoteInfo {
   tags: string[];
 }
 
-/** A change to a note recorded by the server (backend/notes/history.py): Claude's edits through MCP. */
+/** A change to a note recorded by the server (backend/notes/history.py): AI apps' edits through MCP. */
 export interface HistoryEntry {
   id: string;
   path: string;
   at: string;
   by: string;              // 'ai'
+  agent?: string;          // the AI app: 'Claude', 'Codex' … (missing in older entries)
   summary: string;
   before_hash: string;
   after_hash: string;
@@ -619,6 +620,7 @@ export interface Task {
   done_at: string | null;
   created_by: 'human' | 'ai';
   updated_by: 'human' | 'ai';
+  updated_agent?: string | null;   // the AI app that made the last change, when updated_by is 'ai'
   deleted_at: string | null;
   deleted_batch: string | null;
 }
@@ -633,6 +635,7 @@ export interface TaskHistoryEntry {
   task_id: string;
   at: string;
   by: 'human' | 'ai';
+  agent?: string | null;
   action: 'create' | 'update' | 'move' | 'delete' | 'restore';
   before: Partial<Task> | null;
   after: Partial<Task> | null;

@@ -13,7 +13,7 @@ import { bindBackups, refreshBackups } from './settings/backups.js';
 import { bindAiAccess, forgetFreshToken, refreshAiAccess } from './settings/aiAccess.js';
 import { bindDevices, cancelPairing, refreshDevices } from './settings/devices.js';
 import { bindPasskeys, refreshPasskeys } from './settings/passkeys.js';
-import { bindPlugins, refreshPlugins } from './settings/plugins.js';
+import { SECTIONS_EVENT, bindPlugins, refreshPlugins } from './settings/plugins.js';
 import { refreshExportFormats } from './settings/exportFormats.js';
 import { mountPluginSections } from './settings/pluginSections.js';
 import { TOKENS, flashSaved, settingsHtml } from './settings/page.js';
@@ -64,6 +64,11 @@ export function openSettings(sectionId: string | null = null): void {
   refreshAiAccess(page);
   refreshPlugins(page);
   refreshExportFormats(page);
+  pendingNav = null;
+  page.addEventListener(SECTIONS_EVENT, (e) => {
+    if (pendingNav && page.querySelector(`#set-${CSS.escape(pendingNav)}`)) setNav(pendingNav);
+    else if ((e as CustomEvent<{ activeRemoved?: boolean }>).detail?.activeRemoved) setNav('general');   // its plugin was turned off
+  });
   unmountPluginSections = mountPluginSections(page, () => setNav('general'));
   statsTimer = setInterval(refreshStats, 2000);
   const sel = page.querySelector<HTMLSelectElement>('[data-key="_preset"]')!;
@@ -84,10 +89,15 @@ export function closeSettings(): void {
 }
 export const settingsOpen = (): boolean => !!view;
 
+/** A section asked for before it was there: a plugin's, which comes once the plugins are listed. */
+let pendingNav: string | null = null;
+
 function setNav(id: string, scroll = true): void {
   if (!view) return;
+  if (scroll && !view.querySelector(`#set-${CSS.escape(id)}`)) { pendingNav = id; return; }
+  if (scroll) pendingNav = null;
   view.querySelectorAll<HTMLElement>('[data-nav]').forEach((b) => b.classList.toggle('active', b.dataset.nav === id));
-  if (scroll) view.querySelector(`#set-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (scroll) view.querySelector(`#set-${CSS.escape(id)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 const refreshPreview = debounce(async (pattern: string) => {
@@ -224,7 +234,7 @@ function bind(view: HTMLElement): void {
   bindPasskeys(view);
   bindAiAccess(view);
   bindBackups(view);
-  bindPlugins(view);
+  bindPlugins(view, (id) => setNav(id));
 
   view.querySelector<HTMLElement>('[data-rebuild]')!.onclick = async () => {
     await api.rebuildFulltext();

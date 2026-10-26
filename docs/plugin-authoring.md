@@ -15,8 +15,8 @@ python server.py --data-dir "$plugin_sandbox" --dev-plugins docs/examples --port
 ```
 
 Open `http://127.0.0.1:8806`, then Settings → Plugins → Hello Library → Turn On. Its page appears
-under Plugins in the sidebar. Open Greeting is also in the command palette, with Cmd/Ctrl+Alt+Y.
-Under More, change Message; the page reads that value from its own backend route. Refresh reads
+in the sidebar's list. Open Greeting is also in the command palette, with Cmd/Ctrl+Alt+Y.
+Press the plugin's **Settings** button and change Message in its section; the page reads that value from its own backend route. Refresh reads
 it again immediately. With `--dev-plugins`, saving a plugin file restarts that plugin.
 
 The example needs no network or additional packages. The temporary data directory keeps this
@@ -59,8 +59,8 @@ and MCP tools call the same domain functions. Return JSON from routes and call t
 | An item attribute | `plugin.fields.declare`, with stored or refreshed values |
 | Contextual details or actions | `p.itemPane.register`, `p.itemActions.register` |
 | A command or shortcut | `p.commands.register` (respect reserved keys) |
-| Simple preferences | Manifest `settings`; standard controls appear under More |
-| A status panel or richer preferences | `p.settingsPage.register` |
+| Simple preferences | Manifest `settings`; standard controls appear in the plugin's Settings section |
+| A status panel or richer preferences | `p.settingsPage.register` (a part of that section; `shows` for settings it draws itself) |
 | Lookup providers | Backend `@plugin.metadata_source` / `@plugin.pdf_source` |
 | Reference lists (API 1.1) | Backend `@plugin.reference_source` |
 | Text exports (API 1.1) | Backend `@plugin.export_format` |

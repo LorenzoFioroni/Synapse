@@ -315,7 +315,7 @@ async def main():
             await page.click('#sidebar [data-navigation="tasks.main"]')
             await page.wait_for_timeout(500)
             check("the first tab says Tasks while Tasks is shown", (await tabs(page))[0]["title"] == "Tasks")
-            await page.click('.ws-switch [data-ws="notes"]')
+            await page.click('#sidebar [data-act="open-notes"]')
             await page.wait_for_timeout(500)
             t = await tabs(page)
             check(
@@ -326,7 +326,7 @@ async def main():
             await page.click(".tab.home")
             await page.wait_for_timeout(500)
             check("the first tab goes back to Tasks", await page.evaluate("document.body.dataset.workspace") == "tasks")
-            await page.click('.ws-switch [data-ws="library"]')
+            await page.click('#sidebar [data-view="library"]')
             await page.wait_for_timeout(300)
             check(
                 "the empty Notes tab goes once Notes is left",
@@ -362,7 +362,7 @@ async def main():
                 w = await pop.value
                 w.on("pageerror", lambda e: errors.append(f"new window: {e}"))
                 await w.wait_for_load_state()
-                await w.wait_for_selector("#toolbar .ws-switch")
+                await w.wait_for_selector("#toolbar .brand-logo")
                 return w
 
             # ---- Move to New Window ---------------------------------------------------------------------
@@ -437,7 +437,7 @@ async def main():
             )
             await win.close()
 
-            await page.click('.ws-switch [data-ws="notes"]')
+            await page.click('#sidebar [data-act="open-notes"]')
             await page.wait_for_selector(f'.nt-row.note[data-path="{note}"]')
             await page.locator(f'.nt-row.note[data-path="{note}"]').click(button="right")
             win = await new_window(lambda: page.locator(".menu-item", has_text="Open in New Window").click())
@@ -456,7 +456,7 @@ async def main():
             )
             check("a task: Open in New Window opens the Tasks page with it selected", ok)
             await win.close()
-            await page.click('.ws-switch [data-ws="library"]')
+            await page.click('#sidebar [data-view="library"]')
             await page.wait_for_timeout(300)
 
             # ---- notes in tabs, VS Code's way ------------------------------------------------------------
@@ -466,7 +466,7 @@ async def main():
             async def note_path(path, pg=page):
                 return await wait_for(lambda: pg.evaluate(f"window.zcNotes?.path() === {path!r}"))
 
-            await page.click('.ws-switch [data-ws="notes"]')
+            await page.click('#sidebar [data-act="open-notes"]')
             await page.wait_for_selector('.nt-row.note[data-path="Alpha.md"]')
             await page.click('.nt-row.note[data-path="Alpha.md"]')
             await note_path("Alpha.md")
@@ -572,7 +572,7 @@ async def main():
             await page.click(".tab.home")
             await page.wait_for_timeout(400)
             check("the first tab shows the library", await page.evaluate("document.body.dataset.workspace") is None)
-            await page.click('.ws-switch [data-ws="notes"]')
+            await page.click('#sidebar [data-act="open-notes"]')
             await note_path("Beta.md")
             check(
                 "Notes goes back to the note tab used last",
@@ -681,7 +681,7 @@ async def main():
                 await bar_color() == [neutral],
                 (await bar_color(), neutral),
             )
-            await page.click('.ws-switch [data-ws="notes"]')
+            await page.click('#sidebar [data-act="open-notes"]')
             await page.wait_for_selector('.nt-row.folder[data-folder="Colored"]')
             await page.locator('.nt-row.folder[data-folder="Colored"]').click(button="right")
             await page.locator(".menu-item", has_text="Blue").click()
@@ -725,7 +725,7 @@ async def main():
                 (await bar_color(), dark),
             )
             await page.evaluate("delete document.documentElement.dataset.theme")
-            await page.click('.ws-switch [data-ws="notes"]')
+            await page.click('#sidebar [data-act="open-notes"]')
             await page.locator('.nt-row.folder[data-folder="Colored"]').click(button="right")
             await page.locator(".menu-item", has_text="No Colour").click()
             ok = await wait_for(
@@ -769,7 +769,7 @@ async def main():
             b = await p.chromium.launch()
             page = await b.new_page()
             await page.goto(f"http://127.0.0.1:{QUIT_PORT}/")
-            await page.wait_for_selector("#toolbar .ws-switch")
+            await page.wait_for_selector("#toolbar .brand-logo")
             await page.wait_for_function("document.readyState === 'complete'")
             check("the server runs while its window is open", srv2.poll() is None)
             # Playwright closes a headless target without dispatching pagehide. Navigating out

@@ -36,8 +36,8 @@ def check(name, cond, extra=""):
     print(("PASS " if cond else "FAIL ") + name, extra)
 
 
-def claude(tool, **args):
-    """One call to the real MCP server, as Claude makes it."""
+def claude(tool, client="claude-code", **args):
+    """One call to the real MCP server, as Claude (or another AI app, ``client``) makes it."""
     msgs = [
         {
             "jsonrpc": "2.0",
@@ -46,7 +46,7 @@ def claude(tool, **args):
             "params": {
                 "protocolVersion": "2025-06-18",
                 "capabilities": {},
-                "clientInfo": {"name": "e2e", "version": "1"},
+                "clientInfo": {"name": client, "version": "1"},
             },
         },
         {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": tool, "arguments": args}},
@@ -129,9 +129,10 @@ async def main():
             got = await wait_for(page, "window.zcNotes.text().includes('now with noise')")
             check("the open note shows Claude's change without a reload", got)
             check(
-                "a bar names the change",
+                "a bar names the change and the app",
                 await page.is_visible(".note-ai-bar")
-                and "Expanded the model" in await page.text_content(".note-ai-bar"),
+                and "Expanded the model" in await page.text_content(".note-ai-bar")
+                and "Claude edited this note" in await page.text_content(".note-ai-bar"),
             )
             # 2. Cmd/Ctrl+Z undoes it, Cmd/Ctrl+Shift+Z brings it back
             await page.click(".cm-content")
@@ -203,13 +204,16 @@ async def main():
             # 7. a note edited while another one is open shows the bar when opened
             await page.click('.nt-row.note[data-path="other.md"]')
             await page.wait_for_timeout(500)
-            claude("edit_note", note="plan", append="Done while away.", summary="While away")
+            claude("edit_note", client="codex-mcp-client", note="plan", append="Done while away.", summary="While away")
             await page.click('.nt-row.note[data-path="plan.md"]')
             await page.wait_for_timeout(800)
+            bar = await page.text_content(".note-ai-bar") or ""
             check(
-                "opening a note Claude edited shows the bar",
-                "While away" in (await page.text_content(".note-ai-bar") or "")
+                "opening a note another app edited shows the bar, with that app's name",
+                "While away" in bar
+                and "Codex edited this note" in bar
                 and "Done while away." in await editor_text(page),
+                bar,
             )
             # 8. the user typing hides the bar (the note is no longer what Claude left)
             await page.click(".cm-content")
