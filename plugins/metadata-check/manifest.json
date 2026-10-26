@@ -1,12 +1,25 @@
 {
   "id": "metadata-check",
   "name": "Metadata Check",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "api": "^1.0",
   "author": "Synapse",
-  "description": "Checks library records against current scholarly metadata every three days and flags changed fields or a published version of an arXiv preprint.",
+  "description": "Checks library records against current scholarly metadata every few days (three by default) and flags changed fields or a published version of an arXiv preprint. Suggestions you ignore stay hidden until something different turns up.",
   "backend": "backend",
+  "frontend": "frontend/main.js",
+  "styles": "frontend/style.css",
   "permissions": {
     "library": ["read"]
-  }
+  },
+  "settings": [
+    {
+      "key": "interval_days",
+      "type": "int",
+      "label": "Days between checks",
+      "description": "Days between two checks of the same item. Run Now checks everything at once.",
+      "default": 3,
+      "min": 1,
+      "max": 365
+    }
+  ]
 }

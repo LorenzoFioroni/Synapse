@@ -390,7 +390,9 @@ Three plugins come with Synapse, off until you turn them on:
 - **Citation Counts** adds a *Citations* column from OpenAlex and Semantic Scholar, refreshed
   weekly, and lets you search for `citations:>100`.
 - **Metadata Check** compares every identifiable library record with current metadata every
-  three days, flags fields to review, and identifies journal versions of arXiv preprints.
+  three days (or as often as you set), flags fields to review, and identifies journal versions of
+  arXiv preprints. **Run Now** checks everything at once; a suggestion you ignore (item menu)
+  stays hidden until a check finds something different, and Settings lists the ignored ones.
 - **arXiv Feed** lists each morning's arXiv papers in the categories you choose, ranked by how
   they connect to your library (papers of yours they cite, shared authors, similar topics), with
   a notification ("12 new papers, 3 connected to your library"), a **+** to add a paper and

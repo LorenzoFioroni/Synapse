@@ -89,7 +89,10 @@ function render(force = false): void {
     const cached = it._lean && whole.get(it.id);
     if (cached && cached.date_modified === it.date_modified) {   // fetched before and unchanged since
       const i = state.items.indexOf(it);
-      if (i >= 0) state.items[i] = { ...cached };
+      // plugins' field values change without touching date_modified: the list's copy is the newer one
+      const merged: Item = { ...cached };
+      if (it._f) merged._f = it._f; else delete merged._f;
+      if (i >= 0) state.items[i] = merged;
       renderItem(state.items[i] || cached);
       return;
     }

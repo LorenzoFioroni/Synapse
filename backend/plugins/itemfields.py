@@ -34,6 +34,8 @@ class PluginFields:
         self._find = find_item
         self._changed = changed
         self.defs: dict[str, FieldDef] = {}
+        # set by the host while the plugin's background runner is going (web app only)
+        self.refresh_soon: Callable[[], None] = lambda: None
 
     def declare(
         self,
@@ -100,6 +102,19 @@ class PluginFields:
             keys = keys_of(item) if item else [self.key(ref)]
         row = pick(self._store().rows(self._pid, name), keys)
         return row["value"] if row else None
+
+    def refresh(self, name: str, papers=None) -> int:
+        """Ask the field's refresher about its papers again soon, whatever their age (a "Check
+        now" button, say); with ``papers`` (refs as for ``set``), only those. Papers without a
+        value are asked about anyway. The values stay shown until the new ones arrive. Returns how
+        many stored values were marked."""
+        d = self._def(name)
+        if not d.refresher:
+            raise PluginError(f"Field {name!r} has no refresher to ask")
+        keys = None if papers is None else [self.key(r) for r in papers]
+        n = self._store().expire(self._pid, name, keys)
+        self.refresh_soon()
+        return n
 
     def clear(self, name: str | None = None, papers=None) -> int:
         """Forget the stored values of one field (or of all of this plugin's); with ``papers``

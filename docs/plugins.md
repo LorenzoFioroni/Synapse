@@ -153,10 +153,17 @@ These are off until turned on:
   are added; counts are refreshed weekly. Papers with a DOI are asked of OpenAlex first, arXiv
   preprints of Semantic Scholar first (it counts a preprint and its journal version together); its
   setting turns Semantic Scholar off. It uses the keys in Settings → Online Services, if any.
-- **Metadata Check** (`plugins/metadata-check`): a *Metadata Check* text field refreshed every
-  three days through the active metadata providers. It reports records that need an identifier,
-  fields whose current values differ, and a real DOI when an arXiv preprint has been published.
-  It only reports; it never overwrites library metadata.
+- **Metadata Check** (`plugins/metadata-check`): a *Metadata Check* text field refreshed through
+  the active metadata providers, every three days by default (setting *Days between checks*, applied
+  without a restart). It reports records that need an identifier, fields whose current values
+  differ, and a real DOI when an arXiv preprint has been published. It only reports; it never
+  overwrites library metadata. **Run Now** (in its Settings section and the command palette)
+  checks every item again at once. **Ignore Metadata Suggestion** (item menu, palette) hides an
+  item's current suggestion ("Up to date · ignored title"); the ignore remembers the values it was
+  about, so a later check that finds a *different* title or another published DOI shows again. Its
+  Settings section lists the ignored suggestions with **Stop Ignoring** (also in the item menu),
+  which shows the suggestion again at once without asking the services. What each check found is
+  kept in the plugin's `findings.json`, the ignores in `ignored.json` (both in backups).
 - **arXiv Today** (`plugins/arxiv-today`): the papers announced on arXiv in the categories you
   choose in its settings, under one **arXiv Feed** entry. Opening it shows a separate sidebar beside
   the papers for the retained announcement days (latest first, 30 days by default), without
@@ -378,6 +385,12 @@ plugin.fields.set({"arxiv": "2610.01234"}, "citations", 0)  # also for a paper n
   refresher that reached some services but not others answers **`plugin.fields.LATER`** for the
   papers it could not ask about: nothing is stored for them and they are handed over again in an
   hour (not at once, so they do not hold up the rest).
+- **Asking again now.** `plugin.fields.refresh(name, papers=None)` hands the field's papers (or
+  only `papers`) to its refresher again soon, whatever their age: for a "Check now" button. The
+  values stay shown until the new ones arrive. A refresh interval taken from a setting can be
+  changed while running by assigning seconds to the declared field's `refresh`
+  (`field = plugin.fields.declare(…)`; `field.refresh = days * 86400` in
+  `@plugin.settings.on_change`).
 - Values live in `data/fields.db` (in backups), apart from the library. A plugin turned off takes
   its columns and filters with it; its values stay for when it is turned on again.
 
