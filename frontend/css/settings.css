@@ -88,7 +88,9 @@
 .link-btn:hover { text-decoration: underline; }
 
 /* Settings → Plugins */
-.plugin-list { display: flex; flex-direction: column; }
+.plugin-list { display: flex; flex-direction: column; gap: 22px; }
+.plugin-group h3 { margin: 0 0 5px; font-size: var(--fs-sm); font-weight: 650; color: var(--text-2); }
+.plugin-group-list { display: flex; flex-direction: column; }
 .plugin-row { border-top: 1px solid var(--border); padding: 10px 0; }
 .plugin-row .p-head { display: flex; align-items: flex-start; gap: 12px; }
 .plugin-row .p-icon { color: var(--text-3); margin-top: 2px; }
@@ -117,6 +119,7 @@
 .plugin-part-title { font-size: 14px; margin: 0 0 8px; font-weight: 650; }
 .settings-nav .side-item.sub { padding-left: 26px; }
 .settings-nav .side-item.sub .icon { width: 14px; height: 14px; }
+.settings-nav:not(.plugins-expanded) [data-plugin-nav] { display: none; }
 .p-empty { border-top: 1px solid var(--border); padding: 10px 0 2px; color: var(--text-3); font-size: var(--fs-sm); }
 .plugin-log { margin: 0; max-height: 60vh; overflow: auto; font-family: var(--font-mono); font-size: var(--fs-xs); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
 @media (max-width: 700px) {

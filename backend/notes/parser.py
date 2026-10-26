@@ -11,7 +11,7 @@ Syntax (see docs/notes.md):
     ![alt](attachments/x.png)                                     images
     {{task:k7f3q2mx}}                                             tasks (records in library.db)
     ```gallery … ```                                              a gallery of images (not code)
-    # Heading                                                     headings (ATX)
+    # Heading  ##* Heading                                        headings (ATX; * omits one from the TOC)
     #tag  #nested/tag                                             tags (+ front-matter tags)
 
 Nothing inside fenced code, inline code, math ($…$, $$…$$), HTML comments or the
@@ -53,7 +53,7 @@ _FENCE = re.compile(r"^([ \t]*)(`{3,}|~{3,})(.*)$")
 _GALLERY = re.compile(r"^gallery(?![^\s|])", re.I)
 _TASKS = re.compile(r"^tasks(?:\s|$)", re.I)
 _TASK_BLOCK_ID = re.compile(r"^\s*(?:[-*+]\s+)?([a-z0-9]{4,32})\s*$")
-_HEADING = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*(?:#+[ \t]*)?$")
+_HEADING = re.compile(r"^ {0,3}(#{1,6})\*?[ \t]+(.+?)[ \t]*(?:#+[ \t]*)?$")
 _WIKI = re.compile(r"(!?)\[\[([^\[\]\n]+?)\]\]")
 _BRACKET = re.compile(r"(?<![!\[\]\\])\[([^\[\]\n]*@[^\[\]\n]*)\](?![(\[\]])")
 _IMAGE = re.compile(r"!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")

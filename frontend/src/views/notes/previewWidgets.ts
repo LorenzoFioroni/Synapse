@@ -74,6 +74,21 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     }
   }
 
+  class TocWidget extends MarkdownBlockWidget {
+    toDOM(view: EditorViewT): HTMLElement {
+      const el = super.toDOM(view);
+      el.addEventListener('click', (event) => {
+        const link = (event.target as Element).closest<HTMLElement>('[data-toc-pos]');
+        if (!link) return;
+        event.preventDefault();
+        const at = Number(link.dataset.tocPos);
+        if (Number.isFinite(at)) view.dispatch({ effects: cm.EditorView.scrollIntoView(at, { y: 'start' }) });
+        view.focus();
+      });
+      return el;
+    }
+  }
+
   class CheckboxWidget extends WidgetType {
     checked: boolean;
     pos: number;
@@ -152,6 +167,11 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     checkbox: (checked: boolean, pos: number) => new CheckboxWidget(checked, pos),
     task: (id: string, hooks: TaskPreview) => new TaskWidget(id, hooks),
     katex: (eq: Equations, tex: string, display: boolean, block = false, preview = false) => new MathWidget(tex, display, block, preview, eq),
+    heading: (text: string, level: number, number: string, version: string) => new HtmlWidget(`h:${version}:${level}:${number}:${text}`, (el) => {
+      const r = deps.renderer();
+      if (r) el.innerHTML = `${number ? `<span class="section-num">${number}</span> ` : ''}${r.renderInline(text)}`;
+      else el.textContent = `${number ? `${number} ` : ''}${text}`;
+    }, { cls: `cm-lp-star-heading cmt-h cmt-h${Math.min(level, 4)}` }),
 
     /** A formula that only defines macros: a small label (click it to edit the definitions). */
     defs: (names: string[], block: boolean) => new HtmlWidget(`defs:${block}:${names.join(' ')}`, (el) => {
@@ -190,6 +210,24 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
       const r = deps.renderer();
       el.innerHTML = r ? r.render(src) : '';
     }, { block: true, cls: 'cm-lp-taskblock' }),
+
+    toc: (sections: { level: number; number: string; text: string; from: number; inToc: boolean }[], version: string) => new TocWidget(`toc:${version}:${JSON.stringify(sections)}`, (el) => {
+      const shown = sections.filter((s) => s.inToc && !!s.number);
+      const base = shown.reduce((v, s) => Math.min(v, s.level), 6);
+      el.classList.add('note-toc');
+      const title = document.createElement('div'); title.className = 'note-toc-title'; title.textContent = 'Contents';
+      const list = document.createElement('ol');
+      for (const s of shown) {
+        const li = document.createElement('li'); li.style.setProperty('--toc-depth', String(Math.max(0, s.level - base)));
+        const a = document.createElement('a'); a.href = `#h-${s.text.normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '')}`;
+        a.dataset.tocPos = String(s.from);
+        if (s.number) { const n = document.createElement('span'); n.textContent = s.number; a.append(n); }
+        const label = document.createElement('span'), r = deps.renderer();
+        if (r) label.innerHTML = r.renderInline(s.text); else label.textContent = s.text;
+        a.append(label); li.append(a); list.append(li);
+      }
+      el.append(title, list);
+    }, { block: true, cls: 'cm-lp-toc' }),
 
     /** A gallery's carousel, drawn by the renderer; ``preview``: shown below its source while it is
      *  edited. Its figure number and \ref numbers come from the whole note (``fig``, ``labels``). */

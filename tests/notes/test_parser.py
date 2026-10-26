@@ -36,6 +36,11 @@ def test_mask_keeps_length_and_lines():
     assert "[@x]" not in m and "[@y]" not in m and "[@z]" in m
 
 
+def test_starred_heading_is_still_a_heading():
+    got = parser.parse("# Title\n\n##* Internal detail")
+    assert [[h.level, h.text, h.line] for h in got.headings] == [[1, "Title", 1], [2, "Internal detail", 3]]
+
+
 def test_gallery_blocks_are_text_not_code():
     # Only the fence lines of a ```gallery block are blanked: its images and captions count.
     body = "```gallery|600\n![a](x.png) see [@k]\n```\n```gallery2\n[@code]\n```\n~~~Gallery\n[@t]\n~~~"

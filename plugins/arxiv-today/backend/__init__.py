@@ -1,5 +1,5 @@
 """arXiv Today: the papers announced on arXiv in the user's categories, ranked by how they connect
-to the library, as two lists in the sidebar (today's, and every day kept) with a "+" on each.
+to the library, as one feed with a separate retained-day picker and a "+" on each paper.
 
 How a day arrives:
 1. ``listing`` (a job; the schedule queues it after each announcement, and changing the
@@ -187,16 +187,25 @@ def activate(plugin: Plugin) -> None:
         rows = db.query("SELECT COUNT(*) AS n FROM papers WHERE day = ? AND seen = 0 AND dismissed = 0", (day,))
         return rows[0]["n"] if day else 0
 
+    def feed_days() -> list[dict]:
+        rows = db.query(
+            "SELECT day, SUM(seen = 0 AND dismissed = 0) AS unseen FROM papers GROUP BY day ORDER BY day DESC"
+        )
+        return [
+            {"id": r["day"], "title": date.fromisoformat(r["day"]).strftime("%d %b %Y"), "badge": r["unseen"]}
+            for r in rows
+        ]
+
     @plugin.item_source(
-        "today",
-        title="arXiv Today",
+        "feed",
+        title="arXiv Feed",
         icon="today",
-        description="The latest papers in your arXiv categories (Settings → Plugins → arXiv Today), "
-        "best connected to your library first.",
+        description="Papers in your arXiv categories, grouped by retained announcement day and best connected to your library first.",
         badge=unseen,
+        variants=feed_days,
     )
-    def today_list() -> list[dict]:
-        day = latest_day()
+    def feed_list(day: str | None = None) -> list[dict]:
+        day = day or latest_day()
         if not day:
             return []
         rows = db.query(
@@ -206,11 +215,17 @@ def activate(plugin: Plugin) -> None:
             c.execute("UPDATE papers SET seen = 1 WHERE day = ? AND seen = 0", (day,))
         return [record(r) for r in rows]
 
+    # Old source ids remain readable for saved navigation and external clients.
+    @plugin.item_source("today", title="arXiv Today", hidden=True)
+    def today_list() -> list[dict]:
+        return feed_list()
+
     @plugin.item_source(
         "past",
         title="arXiv: Past Days",
         icon="calendar",
-        description="Every paper of the days kept (Settings → Plugins → arXiv Today → Keep for), newest day first.",
+        description="Every retained paper, newest day first.",
+        hidden=True,
     )
     def past_list() -> list[dict]:
         rows = db.query("SELECT * FROM papers WHERE dismissed = 0 ORDER BY day DESC, score IS NULL, score DESC, arxiv")

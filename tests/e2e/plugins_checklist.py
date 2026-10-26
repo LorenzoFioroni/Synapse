@@ -122,11 +122,38 @@ async def main():
 
             desc = await page.text_content("[data-plugins-desc]")
             check("the section says where plugins go", str(plugins) in desc, desc)
-            names = await page.eval_on_selector_all("#set-plugins .p-name", "els => els.map(e => e.textContent)")
+            core_names = await page.eval_on_selector_all(
+                "#set-plugins .plugin-group:first-child .p-name", "els => els.map(e => e.textContent)"
+            )
+            contributed_names = await page.eval_on_selector_all(
+                "#set-plugins .plugin-group:last-child .p-name", "els => els.map(e => e.textContent)"
+            )
             # the two installed here, and those that come with Synapse (plugins/)
-            bundled = [json.loads(m.read_text())["name"] for m in (APP / "plugins").glob("*/manifest.json")]
-            want = sorted(["Broken One", "Hello Library", "Recently Added", *bundled], key=str.lower)
-            check("the plugins are listed", names == want, names)
+            manifests = [json.loads(m.read_text()) for m in (APP / "plugins").glob("*/manifest.json")]
+            want_core = sorted([m["name"] for m in manifests if m.get("core")], key=str.lower)
+            want_contributed = sorted(
+                ["Broken One", "Hello Library", "Recently Added", *[m["name"] for m in manifests if not m.get("core")]],
+                key=str.lower,
+            )
+            check(
+                "core and contributed plugins are listed separately",
+                core_names == want_core and contributed_names == want_contributed,
+                (core_names, contributed_names),
+            )
+            check(
+                "the plugin sublist expands only in the Plugins area",
+                await page.locator(".settings-nav").evaluate("el => el.classList.contains('plugins-expanded')")
+                and await page.is_visible(".settings-nav [data-plugin-nav]"),
+            )
+            await page.click('.settings-nav [data-nav="general"]')
+            await page.wait_for_timeout(600)
+            check(
+                "away from Plugins the sidebar keeps only its top-level entry",
+                await page.is_hidden(".settings-nav [data-plugin-nav]")
+                and await page.is_visible('.settings-nav [data-nav="plugins"]'),
+            )
+            await page.click('.settings-nav [data-nav="plugins"]')
+            await page.wait_for_timeout(600)
             bundled = await page.text_content('[data-plugin="citation-counts"]')
             check("one comes with Synapse", "comes with Synapse" in bundled, bundled[:200])
             toggle = f"{ROW} [data-ptoggle]"

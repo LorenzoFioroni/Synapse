@@ -186,7 +186,7 @@ expects something else. To add an event, add it to `AppEvents` and to the table 
 | `open-import` | optional `File` | `itemlist/empty.ts`, `itemlist.ts`, `settingsView.ts` | `main.ts` |
 | `open-identifier`, `clear-search` | none | `itemlist/empty.ts` | `main.ts` |
 | `set-search-mode` | `SearchMode` | `itemlist/empty.ts`, `settingsView.ts` | `main.ts` |
-| `sources` | none | `plugins/host.ts` (`syncSources`) | sidebar (its list) |
+| `sources` | none | `plugins/host.ts` (`syncSources`) | sidebar (its list), source variants pane |
 | `open-view` | a view (`source:<id>`, `folder:<id>` …) | `plugins/host.ts` (`p.sources.open`) | `main.ts` (leaves Notes, Tasks, Settings or a page) |
 
 The events `main.ts` hears are how a view reaches code it must not import (opening Notes from the
@@ -279,6 +279,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `itemlist/empty.ts` | What an empty list says, with buttons for what to do. |
 | `itemlist/menus.ts` | Context menus for items and attachments, shared with the item pane. |
 | `itemlist/commands.ts` | The library's commands for the palette: what the item menu does to the selected items (open or add a PDF attachment, find a PDF, metadata, references, folders, tags, citation keys, paper note, trash), restoring from the Trash, adding papers from a plugin's list, and the library's own actions (add PDFs as items, new folder or smart folder, show duplicates or the Trash). A command on the selection is offered only while the library is on screen and it fits what is selected; one on the library brings it on screen first. |
+| `sourceVariants.ts` | A plugin source's variants in a second left pane beside the item list. The main sidebar keeps one source entry; choosing a row opens `source:<id>~<variant>`. |
 | `itempane.ts` | The right-hand pane: editable fields, authors, abstract, attachments; *From Plugins* (values plugins attach, from `/api/items/<id>/fields`) and the sections plugins add. |
 | `referencesSection.ts` | The item pane's References section (see [references](references.md)). |
 | `settings/pluginSections.ts` | Mounts and disposes what plugins' frontends draw in Settings (`p.settingsPage`) inside each plugin's own section as their registry changes, preserving unrelated controls; asks for the plugins again when a frontend comes or goes. |
@@ -322,7 +323,9 @@ what is shown (no DOM, unit-tested); `forceGraph.ts` draws it with force-graph; 
 beside a note and the global graph in place of the editor. Both show a neighbourhood through
 `buildView`'s `focus` and `depth`: the local graph around the open note (depth 1 or 2), the global
 graph around the node it was opened for (`globalFocus`, depth 1, 2, 3 or 0 for everything, kept
-with the other options in `localStorage` under `zc.graph.global`).
+with the other options in `localStorage` under `zc.graph.global`). Opening Graph while a note is
+shown uses that note as the focus; while Graph remains open, choosing another note in the notes
+list recentres it instead of replacing it with the editor.
 
 **`plugins/core/extended-markdown/figures/`: galleries and figures** (an extension of the Extended
 Markdown core plugin, `plugins/extended-markdown`, with its own switch there). Its `index.ts`

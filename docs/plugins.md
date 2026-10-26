@@ -57,6 +57,10 @@ but each can be turned off in Settings → Plugins (as Obsidian's core plugins c
 lives in its own folder. They start on (or as the switch they replace was), keep running in safe
 mode, and their settings are in their own section of Settings:
 
+Settings lists these separately from **Contributed plugins** (bundled optional additions and
+plugins installed in `data/plugins/`). Its navigation expands the individual plugin sections only
+while the Plugins area is in view, and otherwise keeps a single top-level **Plugins** entry.
+
 - **Autocompletion** (`plugins/autocompletion`, off by default): suggestions from a model in
   Ollama on this computer as you write a note; see [autocompletion](autocompletion.md).
 - **Metadata Sources** (`plugins/metadata-sources`, on by default): metadata by DOI, arXiv ID,
@@ -149,10 +153,14 @@ These are off until turned on:
   are added; counts are refreshed weekly. Papers with a DOI are asked of OpenAlex first, arXiv
   preprints of Semantic Scholar first (it counts a preprint and its journal version together); its
   setting turns Semantic Scholar off. It uses the keys in Settings → Online Services, if any.
+- **Metadata Check** (`plugins/metadata-check`): a *Metadata Check* text field refreshed every
+  three days through the active metadata providers. It reports records that need an identifier,
+  fields whose current values differ, and a real DOI when an arXiv preprint has been published.
+  It only reports; it never overwrites library metadata.
 - **arXiv Today** (`plugins/arxiv-today`): the papers announced on arXiv in the categories you
-  choose in its settings, as two lists under Plugins: **arXiv Today** (the latest announcement,
-  with a badge of papers not looked at yet) and **arXiv: Past Days** (every day kept, 30 by
-  default). They are ranked by how they connect to your library (`plugin.services.connections`),
+  choose in its settings, under one **arXiv Feed** entry. Opening it shows a separate sidebar beside
+  the papers for the retained announcement days (latest first, 30 days by default), without
+  crowding the main sidebar. They are ranked by how they connect to your library (`plugin.services.connections`),
   with the reasons in the item pane; each paper's reference list is read from its HTML version on
   arXiv in the background (one request every 3 seconds), so papers citing yours rise to the top
   as the morning goes on. A notification says "12 new papers, 3 connected to your library" once a
@@ -381,8 +389,9 @@ fields all work on it, papers already in the library show as the library items, 
 get a **+**.
 
 ```python
-@plugin.item_source("today", title="arXiv Today", icon="calendar", badge=lambda: len(unseen()))
-def today() -> list[dict]:
+@plugin.item_source("feed", title="arXiv Feed", icon="calendar", badge=lambda: len(unseen()),
+                    variants=lambda: [{"id": "2026-10-26", "title": "26 Oct 2026"}])
+def feed(day=None) -> list[dict]:
     # called each time the list is shown: return what you have, fetch in jobs
     return [
         {"arxiv": "2610.01234", "title": "…", "authors": ["Jane Doe", "Roe, Rick"], "year": 2026,
@@ -397,6 +406,10 @@ def today() -> list[dict]:
   Synapse gives it the id `x:<key>` (`x:arxiv:2610.01234`) and a `url` (arXiv's or doi.org's).
   `plugin.services.lookup` returns papers in this shape. The list keeps the plugin's order (at most
   2000 papers), shows each paper once, and the badge is the short text or count `badge()` returns.
+- **Variants** keep one entry in the main sidebar and add a second choice pane beside the item
+  list. `variants()` returns `{id, title, badge?}` rows; the source function receives the selected
+  id (or `None` for its default view). Variant ids are validated against the current list before
+  the source runs.
 - **Reasons** say why the paper is listed, shown in the item pane under *Why It Is Here*: lines of
   text, or `{"kind", "text", "items"}` where `items` are library item ids (shown as links), as
   `plugin.services.connections` gives them.

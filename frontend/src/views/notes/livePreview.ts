@@ -195,6 +195,17 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
       out.push(Decoration.replace({ widget: W.spoiler(doc.sliceString(sp.from, sp.to), String(version), true), block: true }).range(sp.from, sp.to));
     }
 
+    // A LaTeX-style table of contents uses the headings from the whole note.
+    for (let n = 1; n <= doc.lines; n++) {
+      const line = doc.line(n);
+      if (line.text.trim() !== '\\tableofcontents' || overlapsTaken(line.from, line.to)) continue;
+      if (blockActive(line.from, line.to)) lineDeco(line.from, 'cm-lp-tocsrc');
+      else {
+        taken.push([line.from, line.to]);
+        out.push(Decoration.replace({ widget: W.toc(sectionsOfDoc(state).sections, String(version)), block: true }).range(line.from, line.to));
+      }
+    }
+
     // front matter: a compact box of properties until the cursor goes into it
     if (doc.sliceString(0, 4) === '---\n') {
       const fm = splitFrontmatter(doc.sliceString(0, Math.min(doc.length, 50000)));
@@ -316,6 +327,20 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     const taken: [number, number][] = [];
     const overlapsTaken = (from: number, to: number) => taken.some(([a, b]) => from < b && to > a);
 
+    // CodeMirror's Markdown grammar does not know the LaTeX-style `##* Heading` extension.
+    // Draw the entire line as an inline-rendered heading when it is not being edited, so it has
+    // the same typography, formatting and math as an ordinary heading.
+    for (const section of sectionsOfDoc(state).sections) {
+      const line = doc.lineAt(section.from);
+      if (!/^( {0,3}#{1,6})\*([ \t]+)/.test(line.text) || !shown(line.from, line.to)) continue;
+      lineDeco(line.from, `cm-lp-h cm-lp-h${section.level}`);
+      if (lineActive(line.from)) continue;
+      taken.push([line.from, line.to]);
+      replace(line.from, line.to, Decoration.replace({
+        widget: W.heading(section.text, section.level, section.labels.length ? section.number : '', String(state.field(blocks).version)),
+      }));
+    }
+
     for (const sp of spoilersOfDoc(state)) {
       if (!sp.block && shown(sp.from, sp.to) && !touches(sp.from, sp.to)) {
         taken.push([sp.from, sp.to]);
@@ -345,8 +370,12 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
 
     // Labels on headings are hidden until that line is edited; labelled headings show their section number.
     for (const section of sectionsOfDoc(state).sections) {
-      if (!section.labels.length || !shown(section.from, section.from) || lineActive(section.from)) continue;
-      out.push(Decoration.widget({ widget: W.chip(`sec:${section.from}:${section.number}`, 'section-num', section.number, {}), side: 1 }).range(section.from));
+      if (!shown(section.from, section.from)) continue;
+      const line = doc.lineAt(section.from);
+      const starred = /^( {0,3}#{1,6})\*([ \t]+)/.exec(line.text);
+      if (starred) continue;   // rendered as a whole above (or shown as source while edited)
+      if (lineActive(section.from)) continue;
+      if (section.labels.length) out.push(Decoration.widget({ widget: W.chip(`sec:${section.from}:${section.number}`, 'section-num', section.number, {}), side: 1 }).range(section.from));
       for (const label of section.labels) replace(label.from, label.to, hide);
     }
 

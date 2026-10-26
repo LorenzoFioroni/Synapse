@@ -86,9 +86,15 @@ export function refHtml(id: string): string {
   return `<span class="task-ref${t?.status === 'done' ? ' done' : ''}${t ? '' : ' missing'}" data-task="${escapeHtml(id)}">${refInnerHtml(id)}</span>`;
 }
 
-function taskBlockRows(ids: string[], options: TaskBlockOptions): { label: string; ids: string[] }[] {
+export type TaskBlockUi = { filter?: 'all' | 'open' | 'done'; sort?: 'manual' | 'deadline' | 'title' };
+
+function taskBlockRows(ids: string[], options: TaskBlockOptions, ui: TaskBlockUi = {}): { label: string; ids: string[] }[] {
   let rows = ids.filter((id) => options.completed !== 'hide' || td.tasks.get(id)?.status !== 'done');
+  if (ui.filter === 'open') rows = rows.filter((id) => td.tasks.get(id)?.status !== 'done');
+  if (ui.filter === 'done') rows = rows.filter((id) => td.tasks.get(id)?.status === 'done');
   if (options.completed === 'bottom') rows = [...rows.filter((id) => td.tasks.get(id)?.status !== 'done'), ...rows.filter((id) => td.tasks.get(id)?.status === 'done')];
+  if (ui.sort === 'deadline') rows = [...rows].sort((a, b) => (td.tasks.get(a)?.due || '9999').localeCompare(td.tasks.get(b)?.due || '9999'));
+  if (ui.sort === 'title') rows = [...rows].sort((a, b) => (td.tasks.get(a)?.title || '').localeCompare(td.tasks.get(b)?.title || ''));
   if (options.group !== 'deadline') return [{ label: '', ids: rows }];
   const groups = new Map<string, string[]>();
   for (const id of rows) {
@@ -105,9 +111,14 @@ function taskBlockRows(ids: string[], options: TaskBlockOptions): { label: strin
 }
 
 /** A fenced task block in read/live modes and HTML/PDF exports. */
-export function taskBlockHtml(ids: string[], options: TaskBlockOptions): string {
-  const groups = taskBlockRows(ids, options);
-  if (!groups.some((g) => g.ids.length)) return '<div class="task-block empty">No tasks to show.</div>';
+export function taskBlockHtml(ids: string[], options: TaskBlockOptions, ui: TaskBlockUi = {}): string {
+  const filter = ui.filter || 'all', sort = ui.sort || 'manual';
+  const controls = `<div class="task-block-controls" data-task-block-controls>
+    <span class="segmented" role="group" aria-label="Filter tasks">${(['all', 'open', 'done'] as const).map((v) => `<button type="button" data-task-block-filter="${v}" class="${filter === v ? 'active' : ''}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</span>
+    <button type="button" class="btn btn-sm btn-ghost" data-task-block-act="sort" title="Change task order">${icon('sort', 'icon-sm')} ${sort === 'manual' ? 'Manual' : sort === 'deadline' ? 'Deadline' : 'Title'}</button>
+    <span class="spacer"></span><button type="button" class="btn btn-sm" data-task-block-act="add">${icon('plus', 'icon-sm')} Add task</button></div>`;
+  const groups = taskBlockRows(ids, options, ui);
+  if (!groups.some((g) => g.ids.length)) return `<div class="task-block ${options.view}" data-task-block>${controls}<div class="task-block-empty">No tasks match this filter.</div></div>`;
   const content = groups.map((group) => {
     const heading = group.label ? `<div class="task-block-group">${escapeHtml(group.label)}</div>` : '';
     if (options.view === 'table') {
@@ -120,7 +131,7 @@ export function taskBlockHtml(ids: string[], options: TaskBlockOptions): string 
     }
     return `${heading}<div class="task-block-list">${group.ids.map(refHtml).join('')}</div>`;
   }).join('');
-  return `<div class="task-block ${options.view}" data-task-block>${content}</div>`;
+  return `<div class="task-block ${options.view}" data-task-block>${controls}${content}</div>`;
 }
 
 /** Install the task drawing into every Markdown renderer. */

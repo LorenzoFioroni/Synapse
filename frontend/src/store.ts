@@ -287,7 +287,9 @@ export function saveSort() { persist('zc.sort', state.sort); }
 
 /** The plugin list the view shows, or undefined. */
 export const currentSource = (): PluginSource | undefined =>
-  state.view.startsWith('source:') ? state.sources.find((s) => `source:${s.id}` === state.view) : undefined;
+  state.view.startsWith('source:')
+    ? state.sources.find((s) => `source:${s.id}` === state.view.split('~', 1)[0])
+    : undefined;
 /** A paper from a plugin's list that is not in the library. */
 export const isOutside = (it: Item | undefined): boolean => !!it?._outside;
 

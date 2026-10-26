@@ -17,6 +17,7 @@ from backend.references import sources as ref_sources
 PID = "arxiv-today"
 TODAY = f"/api/items?view=source:{PID}.today&lean=1"
 PAST = f"/api/items?view=source:{PID}.past&lean=1"
+FEED = f"/api/items?view=source:{PID}.feed&lean=1"
 
 
 def rss(day: date, items: list[tuple]) -> str:
@@ -124,8 +125,10 @@ def _scored(client):
 def test_a_day_arrives(client, svc, feed, plugin):
     assert feed.urls[0].startswith("https://rss.arxiv.org/rss/quant-ph")  # the bad category left out
     src = {s["id"]: s for s in client.get("/api/plugin-sources").get_json()["sources"]}
-    assert src[f"{PID}.today"]["badge"] == "2"  # unseen
-    items = client.get(TODAY).get_json()["items"]
+    assert list(src) == [f"{PID}.feed"]
+    assert src[f"{PID}.feed"]["badge"] == "2"  # unseen
+    assert src[f"{PID}.feed"]["variants"][0]["id"] == date.today().isoformat()
+    items = client.get(FEED).get_json()["items"]
     first, second = items
     assert first["id"] == "x:arxiv:2610.00001" and first["_outside"]  # cites a library paper, shares an author
     assert {r["kind"] for r in first["reasons"]} >= {"cites", "authors"}
@@ -137,7 +140,9 @@ def test_a_day_arrives(client, svc, feed, plugin):
     assert client.get("/api/plugin-sources").get_json()["sources"][0]["badge"] is None  # seen now
     assert len(client.get(PAST).get_json()["items"]) == 2
     # filters on its fields work on the list
-    found = client.get(f"/api/items?view=source:{PID}.today&q=categories:ao-ph").get_json()["items"]
+    found = client.get(f"/api/items?view=source:{PID}.feed~{date.today().isoformat()}&q=categories:ao-ph").get_json()[
+        "items"
+    ]
     assert [i["id"] for i in found] == ["x:arxiv:2610.00002"]
 
 

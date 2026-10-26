@@ -9,6 +9,7 @@ import { api } from '../../../api.js';
 import { icon } from '../../../icons.js';
 import { emit, off, on, state } from '../../../store.js';
 import { toast, toastError } from '../../../ui/toast.js';
+import { promptDialog } from '../../../ui/dialog.js';
 import { escapeHtml, modLabel, plural } from '../../../util.js';
 import { scan } from '../../../views/notes/mdscan.js';
 import type { PortableTask } from '../../../views/notes/portable.js';
@@ -80,12 +81,7 @@ export function initNoteTasks(): void {
     // Read mode and embeds: grouping, ordering and hidden completed rows may all have changed.
     document.querySelectorAll<HTMLElement>('.task-block-wrap[data-task-ids]').forEach((el) => {
       if (el.closest('.cm-editor')) return;
-      const options: TaskBlockOptions = {
-        view: el.dataset.taskView === 'table' ? 'table' : 'list',
-        group: el.dataset.taskGroup === 'deadline' ? 'deadline' : 'none',
-        completed: el.dataset.taskCompleted === 'hide' ? 'hide' : el.dataset.taskCompleted === 'inline' ? 'inline' : 'bottom',
-      };
-      el.innerHTML = taskBlockHtml((el.dataset.taskIds || '').split(',').filter(Boolean), options);
+      repaintBlock(el);
     });
     // tasks drawn outside the editor (read mode, embeds): their content follows the task
     document.querySelectorAll<HTMLElement>('.task-ref[data-task]').forEach((el) => {
@@ -100,12 +96,72 @@ export function initNoteTasks(): void {
   // read mode and embeds: clicks on a drawn task
   clickListener = (e) => {
     const t = e.target as Element;
+    const block = t.closest<HTMLElement>('.task-block-wrap[data-task-ids]');
+    const filter = t.closest<HTMLElement>('[data-task-block-filter]');
+    const blockAct = t.closest<HTMLElement>('[data-task-block-act]');
+    if (block && (filter || blockAct)) {
+      e.preventDefault(); e.stopPropagation();
+      if (filter) block.dataset.taskFilter = filter.dataset.taskBlockFilter;
+      else if (blockAct?.dataset.taskBlockAct === 'sort') {
+        const order = ['manual', 'deadline', 'title'];
+        block.dataset.taskSort = order[(order.indexOf(block.dataset.taskSort || 'manual') + 1) % order.length];
+      } else if (blockAct?.dataset.taskBlockAct === 'add') { void addTaskToBlock(block); return; }
+      repaintBlock(block);
+      return;
+    }
     const ref = t.closest?.<HTMLElement>('.task-ref[data-task]');
     if (!ref || (ref.closest('.cm-editor') && !ref.closest('[data-task-block]'))) return;
     e.preventDefault();
     taskAct(ref.dataset.task!, t.closest<HTMLElement>('[data-task-act]')?.dataset.taskAct || 'open', ref, null);
   };
   document.addEventListener('click', clickListener);
+}
+
+function blockOptions(el: HTMLElement): TaskBlockOptions {
+  return {
+    view: el.dataset.taskView === 'table' ? 'table' : 'list',
+    group: el.dataset.taskGroup === 'deadline' ? 'deadline' : 'none',
+    completed: el.dataset.taskCompleted === 'hide' ? 'hide' : el.dataset.taskCompleted === 'inline' ? 'inline' : 'bottom',
+  };
+}
+
+function repaintBlock(el: HTMLElement): void {
+  el.innerHTML = taskBlockHtml((el.dataset.taskIds || '').split(',').filter(Boolean), blockOptions(el), {
+    filter: (el.dataset.taskFilter as 'all' | 'open' | 'done') || 'all',
+    sort: (el.dataset.taskSort as 'manual' | 'deadline' | 'title') || 'manual',
+  });
+}
+
+/** Create a task and append its id immediately before this block's closing fence. */
+async function addTaskToBlock(el: HTMLElement): Promise<void> {
+  const view = ws.editor?.view;
+  if (!view) return;
+  const title = await promptDialog('Task title', { title: 'Add task to this block', confirm: 'Add', placeholder: 'What needs doing?' });
+  if (!title?.trim()) return;
+  const made = await createTask({ title: title.trim() });
+  if (!made) return;
+  const wanted = (el.dataset.taskIds || '').split(',').filter(Boolean);
+  const doc = view.state.doc;
+  let insert = -1;
+  for (let n = 1; n <= doc.lines; n++) {
+    const line = doc.line(n), m = /^\s*(`{3,}|~{3,})tasks(?:\s|$)/i.exec(line.text);
+    if (!m) continue;
+    const ids: string[] = [];
+    for (let j = n + 1; j <= doc.lines; j++) {
+      const row = doc.line(j);
+      if (new RegExp(`^\\s*${m[1][0]}{${m[1].length},}\\s*$`).test(row.text)) {
+        if (ids.join(',') === wanted.join(',')) insert = row.from;
+        n = j; break;
+      }
+      const id = row.text.trim().replace(/^[-*+]\s+/, '');
+      if (/^[a-z0-9]{4,32}$/.test(id) && !ids.includes(id)) ids.push(id);
+    }
+    if (insert >= 0) break;
+  }
+  if (insert < 0) { toast('Could not find this task block in the editor.', { type: 'error' }); return; }
+  if (ws.session) fresh.set(made.id, ws.session.path);
+  view.dispatch({ changes: { from: insert, insert: `${made.id}\n` }, selection: { anchor: insert + made.id.length + 1 }, scrollIntoView: true });
+  view.focus();
 }
 
 /** Which tasks each note shows, as last saved: when that changes, the notes of each task are loaded again. */
