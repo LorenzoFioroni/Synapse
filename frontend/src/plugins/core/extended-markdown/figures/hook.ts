@@ -3,6 +3,7 @@
 import type { FiguresHook } from '../../../../views/notes/hooks.js';
 import { staticGalleries } from './exportStatic.js';
 import { figureLabel, figuresOf } from './figures.js';
+import { newGallery } from './gallery.js';
 import { figuresMarkdown } from './markdown.js';
 import { portableFigures } from './portable.js';
 
@@ -12,4 +13,5 @@ export const figuresHook: FiguresHook = {
   label: figureLabel,
   portable: portableFigures,
   exportStatic: staticGalleries,
+  gallery: newGallery,
 };

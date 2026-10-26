@@ -121,3 +121,19 @@ test('with galleries off a gallery reads as the Markdown it holds', () => {
   }
   assert.match(r.render(src), /class="gallery"/);
 });
+
+test('a new gallery from several images reads back as their panels', async () => {
+  const { newGallery } = await import('../../frontend/js/plugins/core/extended-markdown/figures/gallery.js');
+  const images = ['![](attachments/a.png)', '![](attachments/b.png)'];
+  const plain = newGallery(images);
+  assert.equal(plain, '```gallery\n![](attachments/a.png)\n![](attachments/b.png)\n```');
+  const body = (md) => md.split('\n').slice(1, -1).join('\n');
+  let g = parseGallery(body(plain));
+  assert.deepEqual(g.panels.map((p) => [p.src, p.caption]), [['attachments/a.png', ''], ['attachments/b.png', '']]);
+  assert.equal(g.caption, '');   // not a numbered figure
+  const figure = newGallery(images, { caption: 'Caption. \\label{fig:a}', panels: true });
+  g = parseGallery(body(figure));
+  assert.deepEqual(g.panels.map((p) => p.caption), ['Panel a.', 'Panel b.']);
+  assert.equal(g.caption, 'Caption.');
+  assert.deepEqual(g.labels, ['fig:a']);
+});

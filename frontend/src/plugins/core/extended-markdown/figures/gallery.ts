@@ -149,5 +149,16 @@ export function galleryMarkdown(g: Gallery, number: number | null = null): strin
   return `${images}\n\n${number ? `**Fig. ${number}.** ` : ''}${italic(caption)}`;
 }
 
+/**
+ * A new gallery block for the image lines ``images`` (several images chosen, pasted or dropped at
+ * once). With ``caption`` (the gallery's, written after a blank line) it is a numbered figure;
+ * with ``panels`` each image gets a caption to fill in ("Panel a."). Without either it only shows
+ * the images together, unnumbered.
+ */
+export function newGallery(images: string[], { caption = '', panels = false }: { caption?: string; panels?: boolean } = {}): string {
+  const lines = images.map((md, i) => (panels ? `${md.trim()} Panel ${panelLabel(i)}.` : md.trim()));
+  return ['```gallery', ...lines, ...(caption.trim() ? ['', caption.trim()] : []), '```'].join('\n');
+}
+
 /** A caption in *italics*, unless an asterisk of its own (outside math and code) would break them. */
 export const italic = (text: string): string => (mask(text).masked.includes('*') ? text : `*${text}*`);

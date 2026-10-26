@@ -31,6 +31,7 @@ import { openImport } from './views/importDialog.js';
 import { focusList, initItemList, openColumnPicker } from './views/itemlist.js';
 import { registerLibraryCommands } from './views/itemlist/commands.js';
 import { newFolder as newNotesFolder, newNote, showTrash as showNotesTrash } from './views/notes/fileOps.js';
+import { registerNoteCommands } from './views/notes/commands.js';
 import { initItemPane, toggleItemPane } from './views/itempane.js';
 import { applyAppearance, closeSettings, openSettings, settingsOpen } from './views/settingsView.js';
 import { initSidebar } from './views/sidebar.js';
@@ -563,6 +564,7 @@ function registerCoreCommands(): void {
   add('new-note', 'New Note…', async () => { await switchWorkspace('notes'); await newNote(); }, undefined, notesOn);
   add('new-notes-folder', 'New Notes Folder…', async () => { await switchWorkspace('notes'); await newNotesFolder(); }, undefined, notesOn);
   add('notes-trash', 'Deleted Notes…', async () => { await switchWorkspace('notes'); await showNotesTrash(); }, undefined, notesOn);
+  registerNoteCommands({ shown: () => notesOpen() && !settingsOpen() && !pdfTabActive() });
   registerLibraryCommands({
     shown: () => !document.body.dataset.workspace && !settingsOpen() && !pdfTabActive(),
     show: async () => { showHome(); await switchWorkspace('library'); },

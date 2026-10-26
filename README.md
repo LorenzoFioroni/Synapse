@@ -258,7 +258,9 @@ never mix.
   sidebar or Cmd/Ctrl+Shift+L; the browser's Back/Forward (mouse buttons,
   Cmd+[ / Alt+←) restore notes, Graph, Tasks, plugin pages and library views/selections.
   If a destination's plugin is off, navigation returns to the library (or Notes for Graph).
-  Images pasted into notes are kept in the notes' attachments folder; one that no note uses any more
+  Images pasted into notes are kept in the notes' attachments folder. Several images pasted or
+  dropped at once (or chosen with **Insert Image…** in the command palette) become one gallery
+  with Extended Markdown's galleries on, else one image per line; one that no note uses any more
   moves to an attachment trash by itself (and comes back if a note uses it again). **Attachments…**
   in the notes list menu shows them all — which notes use each, insert one into the open note,
   restore or delete trashed ones. Deleted notes and trashed attachments are deleted for good after
@@ -335,7 +337,12 @@ never mix.
 ## Command palette
 
 **⌘⇧P** (Ctrl+Shift+P, or F1) opens the command palette: type a few letters of a command (New Item,
-Show Tasks, Settings: Backups …) and press Enter. What the item menu does to the selected items is
+Show Tasks, Settings: Backups …) and press Enter. While a note is open: **Insert Image…**,
+**Insert Figure with Caption…** (an image, or a gallery when you choose several, with a caption to
+type and a `\label` to refer to it), **Insert Citation…**, **Insert Link to Note…**, **Add Task to
+This Note…**, **Insert Existing Task…**, Insert Table / Callout / Numbered Equation / Mermaid
+Diagram, Live Preview / Source / Read Mode, Rename / Move / Delete / Export This Note, Copy Link to
+This Note, Show This Note in the Graph, and for a paper note its paper and PDF. What the item menu does to the selected items is
 there too while the library is shown (Add PDF Attachment…, Find Available PDF, Retrieve Metadata…,
 Edit Tags…, Add to Folder…, Copy as BibTeX …), as are New Note…, New Folder, Add PDFs as New
 Items…, Empty Trash…, "Settings: <plugin>" for each plugin that is on, and the plugins' own
