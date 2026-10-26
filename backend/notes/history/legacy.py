@@ -1,5 +1,6 @@
-"""Earlier versions of notes changed by an AI app (the MCP server's edit_note), so every such change
-can be seen and undone in the app.
+"""The history kept before Git: earlier versions of notes changed by an AI app (the MCP server's
+edit_note), one JSON file per change. Still written when Git is not installed, so AI changes stay
+undoable in the app; read once to bring them into the Git history when it is created.
 
 One JSON file per change in ``<vault>/.history/`` (hidden like ``.trash``, included in backups):
 
@@ -31,7 +32,7 @@ MAX_AGE = 365 * 86400  # … and none older than a year
 _ID = re.compile(r"^[0-9A-Z]{26}$")
 
 
-class NoteHistory:
+class LegacyHistory:
     def __init__(self, vault_root: Path | str):
         self.dir = Path(vault_root) / HISTORY
         self._lock = threading.Lock()
@@ -48,7 +49,7 @@ class NoteHistory:
         agent: str | None = None,
         summary: str = "",
     ) -> dict:
-        from .service import now_iso, ulid
+        from ..service import now_iso, ulid
 
         entry = {
             "id": ulid(),

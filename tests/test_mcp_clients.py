@@ -65,14 +65,16 @@ def test_note_edits_name_the_app(svc, note):
     call(claude, "edit_note", note=note, append="Second idea.", summary="Added an idea")
     anon = build_server(svc)  # a client that never said who it is
     call(anon, "edit_note", note=note, append="Third idea.")
-    entries = svc.note_service.history_of(note)["entries"]
+    entries = [e for e in svc.note_service.history_of(note)["entries"] if e["by"] == "ai"]
     assert [e.get("agent") for e in entries] == [None, "Claude", "Codex"]  # newest first
     assert [e["by"] for e in entries] == ["ai"] * 3
     assert entries[2]["summary"] == "Edited by Codex" and entries[0]["summary"] == "Edited by an AI app"
-    # and the app's own saves stay unattributed
+    # and the app's own saves are the user's, from this computer
     text, h = svc.vault.read(note)
     svc.note_service.save(note, text + "Mine.\n", h)
-    assert len(svc.note_service.history_of(note)["entries"]) == 3
+    svc.note_service.checkpoint(note)
+    mine = svc.note_service.history_of(note)["entries"][0]
+    assert mine["by"] == "human" and mine["device"] == "This computer" and not mine["agent"]
 
 
 def test_new_notes_name_the_app(svc):
@@ -139,7 +141,7 @@ def test_each_token_keeps_its_app(svc, tmp_path):
     edit(tokens[0], "From the laptop.")
     edit(tokens[1], "From the desktop.")
     edit(tokens[0], "Laptop again.")
-    entries = lan.note_service.history_of("plan.md")["entries"]
+    entries = [e for e in lan.note_service.history_of("plan.md")["entries"] if e["by"] == "ai"]
     assert [e.get("agent") for e in entries] == ["Codex", "Claude", "Codex"]
 
 

@@ -102,6 +102,7 @@ def test_restart_means_refresh_everything(client):
         "notes",
         "tasks",
         "plugins",
+        "history",
         "fields",
         "sources",
     }

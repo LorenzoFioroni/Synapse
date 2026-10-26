@@ -54,6 +54,11 @@ class Config:
         return self.data_dir / "notes"
 
     @property
+    def notes_history_dir(self) -> Path:
+        # Git repository of every version of the notes' text (its work tree is notes_dir).
+        return self.data_dir / "notes-history.git"
+
+    @property
     def notes_index_path(self) -> Path:
         # Derived from notes_dir; safe to delete (rebuilt on startup).
         return self.data_dir / "notes_index.db"

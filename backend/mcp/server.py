@@ -359,8 +359,8 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
         Tool(
             "undo_note_edit",
             "Undo the last AI edit of a note",
-            "Put a note back as it was before the last edit_note by an AI app, if it was not changed since. Use when the user "
-            "asks to revert it.",
+            "Take the last edit_note by an AI app back out of a note, keeping the edits made after it (refused when they "
+            "touch the same lines). Use when the user asks to revert it.",
             {
                 "type": "object",
                 "properties": {

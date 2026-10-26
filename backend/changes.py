@@ -4,7 +4,8 @@ With an iPad and the computer open at the same time, each needs to notice what t
 Every page polls ``GET /api/changes?since=N`` every few seconds and refreshes what the answer
 names: ``library`` (items, folders, tags, attachments), ``annotations``, ``notes``, ``tasks``,
 ``plugins`` (turned on or off, set up, or turned off after failing), ``fields`` (values plugins
-attach to papers changed: the list's columns).
+attach to papers changed: the list's columns), ``history`` (a change was recorded in the notes
+history).
 
 The feed is kept in memory: a restart starts a new ``epoch`` and pages simply refresh everything.
 Changes are recorded
@@ -35,6 +36,7 @@ ALL = (
     "plugins",
     "fields",
     "sources",
+    "history",
 )  # what a page refreshes after a reset
 
 
