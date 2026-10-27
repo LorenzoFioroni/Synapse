@@ -14,7 +14,12 @@ Examples to copy are in [docs/examples](../docs/examples).
 `tasks/` and `metadata-sources/` are core plugins (on by default): the optional Tasks interface
 and the online metadata providers. Their records and data integrity remain in the core.
 
-`reference-sources/` and `export-formats/` supply the existing scholarly reference providers and
-library export writers. `extended-markdown/` holds extra Markdown syntax: galleries and numbered
-figures, and inline and collapsible spoilers, each with its own switch. All three are
-core plugins, on by default, and can be disabled without rewriting user data.
+`reference-sources/` supplies the existing scholarly reference providers. `extended-markdown/`
+holds extra Markdown syntax: galleries and numbered figures, and inline and collapsible spoilers,
+each with its own switch. Both are core plugins, on by default, and can be disabled without
+rewriting user data.
+
+[`open-access-pdfs`](open-access-pdfs) (where Find Available PDF looks) and
+[`export-formats`](export-formats) (the library exports) are contributed plugins that start on:
+they use only the public plugin API, so they are also worked examples of a PDF source and of
+export writers.

@@ -5,8 +5,10 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.1**, which also accepts plugins targeting 1.0. Reference providers
-and export writers were added in 1.1; plugins using them should declare `"api": "^1.1"`.
+This page documents API **1.2**, which also accepts plugins targeting 1.0 and 1.1. Reference
+providers and export writers were added in 1.1, Synapse's reference writers
+(`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
+`"^1.2"`.
 What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
@@ -70,11 +72,6 @@ while the Plugins area is in view, and otherwise keeps a single top-level **Plug
 - **Reference Sources** (`plugins/reference-sources`, on by default): the existing Semantic Scholar,
   OpenAlex, Crossref and arXiv HTML reference fetching and fallback policy. Saved references and
   citation matching remain in core when off; third-party providers may still supply references.
-- **Export Formats** (`plugins/export-formats`, on by default): the existing BibTeX, RIS, EndNote
-  tagged/XML and CSL JSON library exports. Imports, clipboard citation copying and note HTML/PDF/
-  Markdown exports remain in core. The canonical codecs in `backend/formats/` are shared; this
-  plugin owns which writers the library export dialog/API exposes. With it off, imports still
-  work, stored export preferences survive and the dialog explains how to enable a writer.
 - **Extended Markdown** (`plugins/extended-markdown`, frontend only, on by default): Markdown
   syntax beyond the basics, one extension per folder in
   `frontend/src/plugins/core/extended-markdown/`, each with a boolean setting of its own:
@@ -154,6 +151,15 @@ choice, and safe mode stops them like any contributed plugin. Settings lists the
   [references](references.md#open-access-pdfs)), through `plugin.http` (network permission for
   `api.unpaywall.org` and `export.arxiv.org`). Turned off, or in safe mode, Find Available PDF has
   nowhere to look unless another plugin offers a source.
+- **Export Formats** (`plugins/export-formats`): the existing BibTeX, RIS, EndNote tagged/XML and
+  CSL JSON library exports, registered with Synapse's own writers through the public
+  `backend.plugins.formats`, so the output is what it always was. Imports, clipboard citation
+  copying and note HTML/PDF/Markdown exports remain in core. Its formats are named like any
+  plugin's, `export-formats.bibtex` and so on; the names they had before (`bibtex`, `ris`,
+  `endnote`, `endnote_xml`, `csljson`) still reach them through `/api/export`, and a saved
+  *Default export format* is renamed once when the settings are read (`RENAMED_EXPORT_FORMATS` in
+  `backend/settings.py`). With it off, imports still work, the stored export preference survives
+  and the dialog explains how to enable a writer.
 
 ### Optional plugins that come with Synapse
 
@@ -329,7 +335,7 @@ def activate(plugin: Plugin) -> None:
 | `@plugin.metadata_source(id, title=…, kinds=("doi", "arxiv", "isbn", "title", "pmid"), order=100)` | `fn(query)` receives `kind`, normalized `value`, and the contact `email`. Return an item dict in Synapse's field format, or `None` for no match. Lower order runs first; the first nonempty result wins. Raise `PluginError` for an unavailable source or a readable lookup problem; later sources are still tried. The core plugin uses order 100. Sources are removed when their plugin stops and listed as `metadata_sources` in its info. Use `plugin.http` and declare network permission for a third-party provider. |
 | `@plugin.pdf_source(id, title=…, by_title=False, order=100)` | Where Find Available PDF may look: `fn(paper)` gets `{"title", "doi", "arxiv"}` and returns PDF URLs, best first; Synapse downloads them in turn and keeps the first that is the paper (it checks the DOI, the arXiv stamp or the title in its text). Sources `by_title` are asked only when those going by identifier found nothing for a paper with an arXiv id. Lower `order` first (Open-Access PDFs uses 10). For an institutional repository or a proxy, say. |
 | `@plugin.reference_source(id, title=…, order=100)` | API 1.1: `fn(query)` receives `item` (a copied library-style record), contact `email` and `fresh` (prefer newly announced-paper sources). Return `{"references": [...]}` or `None`. Lower order first; empty results and failures fall through. No active source raises a readable lookup error. Only bundled core providers may override the recorded source name for compatibility. |
-| `@plugin.export_format(id, title=…, extension=…, mimetype=…)` | API 1.1: `fn(items, options) -> str` registers a text export. Options contain `unicode`, `abstract` and citation-key `pattern`. Third-party keys are `<plugin>.<id>`; bundled core writers retain their old keys. Writers disappear on unload. Extensions and MIME types are validated. Imports remain independent. |
+| `@plugin.export_format(id, title=…, extension=…, mimetype=…)` | API 1.1: `fn(items, options) -> str` registers a text export. Options contain `unicode`, `abstract` and citation-key `pattern`. Keys are `<plugin>.<id>` (a core plugin's would keep its bare id). Writers disappear on unload. Extensions and MIME types are validated. Imports remain independent. To write a format Synapse knows, use `backend.plugins.formats` (below). |
 | `plugin.services` | `contact_email()`, `lookup(identifier)`, `references(paper, new=False)`, `match(refs)`, `connections(papers, refs=None, folders=None)`: Synapse's own lookups, reference lists and scoring. |
 | `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). |
 
@@ -337,6 +343,25 @@ Raise **`PluginError("…")`** for a problem the user or Claude should read: a r
 it as the error, a tool returns it as an error Claude can act on, and it does not count as the
 plugin failing. Any other exception from a route, a tool or a listener is logged with its traceback
 and counts towards turning the plugin off.
+
+**Synapse's reference writers** (API 1.2): `from backend.plugins import formats`.
+`formats.writers()` lists them (`key`, `title`, `extension`, `mimetype`, and `dump(items,
+**options)`), and `formats.dump(items, key, **options)` writes one: BibTeX (`bibtex`), RIS (`ris`),
+EndNote tagged (`endnote`) and XML (`endnote_xml`), CSL JSON (`csljson`). They are the writers File →
+Import reads back, so a plugin exporting through them does not drift from Synapse's importers.
+Items are dicts in the library's field format; the options are an export writer's. Export Formats
+registers exactly these:
+
+```python
+from backend.plugins import Plugin, formats
+
+
+def activate(plugin: Plugin) -> None:
+    for w in formats.writers():
+        plugin.export_format(w.key, title=w.title, extension=w.extension, mimetype=w.mimetype)(
+            lambda items, options, w=w: w.dump(items, **options)
+        )
+```
 
 ### Events
 

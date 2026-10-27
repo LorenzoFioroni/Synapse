@@ -183,8 +183,8 @@ never mix.
   stays small. New attachments are indexed in the background; progress is shown
   in the sidebar and Settings, which can also rebuild it.
 - **Import / export**: BibTeX, RIS, EndNote (tagged `.enw` and XML) and CSL JSON. Library export
-  writers are the **Export Formats** core plugin; turning it off preserves imports and clipboard
-  citation copying.
+  writers are the **Export Formats** plugin, on by default; turning it off preserves imports and
+  clipboard citation copying.
   Imports are previewed first with duplicates flagged. Export the whole library,
   a selection, or copy BibTeX / citation keys from the context menu.
 - **Citation keys** from a configurable pattern (Settings → Citation Keys), with a
@@ -413,8 +413,11 @@ the app from working, start it with `python server.py --safe-mode` (only core pl
 off.
 
 Synapse’s own optional features are **core plugins**: Graph, Metadata Sources,
-Reference Sources, Export Formats, Extended Markdown, Open-Access PDFs and Tasks start on,
-while Autocompletion starts as previously configured.
+Reference Sources, Extended Markdown and Tasks start on, while Autocompletion starts as
+previously configured. **Open-Access PDFs** (where Find Available PDF looks) and **Export
+Formats** (the library exports) are contributed plugins built only on the public plugin API, as
+yours would be; they come with Synapse and start on, but safe mode stops them like any other
+contributed plugin.
 Turn them off in Settings → Plugins without losing their data. Core plugins can also be toggled
 and restarted in safe mode; changes are followed by the standalone MCP server. Safe mode keeps core plugins
 running and stops third-party plugins. Tasks and Graph add their own entries to the sidebar's

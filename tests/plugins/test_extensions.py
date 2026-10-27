@@ -67,6 +67,9 @@ def test_export_plugin_preserves_existing_output_and_imports(client, svc, fmt):
         pattern=svc.settings.get("citekey_pattern"),
     )
     assert result.json["text"] == expected
+    # the plugin's own key gives the same text; the old key above is an alias for it
+    own = client.post("/api/export", json={"format": f"export-formats.{fmt}", "ids": [paper["id"]], "download": False})
+    assert own.json["text"] == expected
     svc.plugins.disable("export-formats")
     assert client.get("/api/formats").json["exports"] == []
     assert client.get("/api/formats").json["formats"] == formats.listing()
@@ -98,3 +101,23 @@ def test_third_party_export_format_registration_and_disposal(client, svc, make_p
     assert response.json["text"] == "Exported"
     svc.plugins.disable("plain-export")
     assert all(f["key"] != "plain-export.titles" for f in client.get("/api/formats").json["exports"])
+
+
+def test_export_formats_is_a_contributed_plugin(client, svc):
+    """It starts on by itself, names its formats like any plugin, and writes through the public
+    backend.plugins.formats."""
+    from backend.plugins import formats as public
+
+    info = svc.plugins.info("export-formats")
+    assert info["enabled"] and not info["core"]
+    keys = [f["key"] for f in client.get("/api/formats").json["exports"]]
+    assert (
+        keys
+        == [f"export-formats.{w.key}" for w in public.writers()]
+        == [f"export-formats.{k}" for k in formats.FORMATS]
+    )
+    assert svc.settings.get("export_format") == "export-formats.bibtex"
+    item = {"title": "T", "authors": "Doe, Jane", "year": 2026, "item_type": "journalArticle"}
+    assert public.dump([item], "ris", abstract=True) == formats.dump([item], "ris", abstract=True)
+    with pytest.raises(Exception, match="Unknown reference format"):
+        public.dump([item], "docx")

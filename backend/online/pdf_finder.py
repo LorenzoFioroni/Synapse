@@ -22,6 +22,7 @@ from .http import BROWSER_UA, arxiv_wait
 
 log = logging.getLogger(__name__)
 
+
 def _ratio(a: str, b: str) -> float:
     try:
         from rapidfuzz import fuzz

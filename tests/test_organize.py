@@ -141,6 +141,11 @@ def test_old_settings_file_is_migrated(tmp_path):
         s.update({"add_find_pdf": "sometimes"})
     path.write_text(json.dumps({"notes_equation_numbers": "latex"}))  # the first version of PR #46
     assert SettingsStore(path).get("notes_equation_numbers") == "labelled"
+    for old in ("bibtex", "ris", "endnote", "endnote_xml", "csljson"):  # Export Formats became contributed
+        path.write_text(json.dumps({"export_format": old}))
+        assert SettingsStore(path).get("export_format") == f"export-formats.{old}"
+    path.write_text(json.dumps({"export_format": "my-plugin.titles"}))
+    assert SettingsStore(path).get("export_format") == "my-plugin.titles"
 
 
 def test_permanent_delete_cleans_tags(client):

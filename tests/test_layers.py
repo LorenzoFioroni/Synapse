@@ -26,7 +26,7 @@ ALLOWED = {
     "mcp": BASE | {"library", "notes", "pdf", "references", "tasks"},
     "backup": BASE,
     "access": BASE,
-    "plugins": BASE | {"library", "online", "references"},
+    "plugins": BASE | {"library", "formats", "online", "references"},
     "desktop": set(),
     # the composition layer: wires and exposes everything
     "services": None,

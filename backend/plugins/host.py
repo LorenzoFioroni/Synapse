@@ -25,6 +25,7 @@ from pathlib import Path
 from werkzeug.exceptions import HTTPException, MethodNotAllowed, NotFound
 from werkzeug.routing import Map, Rule
 
+from ..settings import RENAMED_EXPORT_FORMATS
 from . import build, deps
 from .catalog import discover, initialize_defaults
 from .context import Plugin, PluginError, ToolSpec
@@ -556,7 +557,9 @@ class PluginHost:
         ]
 
     def export_items(self, key: str, items: list[dict], options: dict) -> tuple:
-        entry = self._export_formats().get(key)
+        found = self._export_formats()
+        # a request naming a format as Synapse used to ("bibtex") gets Export Formats' writer
+        entry = found.get(key) or found.get(RENAMED_EXPORT_FORMATS.get(key, ""))
         if entry is None:
             raise PluginError(
                 "This export format is not available: turn on Export Formats or its provider in Settings → Plugins."

@@ -43,11 +43,7 @@ def starts_by_itself(entry: Entry) -> bool:
     a core plugin, or a contributed one whose manifest says it starts on (Open-Access PDFs,
     Export Formats: features Synapse always had). An installed plugin always waits for the user."""
     man = entry.manifest
-    return bool(
-        entry.source == "bundled"
-        and man
-        and (man.core or man.enabled_by_default or man.enabled_from_setting)
-    )
+    return bool(entry.source == "bundled" and man and (man.core or man.enabled_by_default or man.enabled_from_setting))
 
 
 def initialize_defaults(entries: dict[str, Entry], state: StateFile, settings) -> None:

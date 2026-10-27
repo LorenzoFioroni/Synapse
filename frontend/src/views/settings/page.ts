@@ -155,7 +155,7 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
 
       <section class="settings-section" id="set-io"><h2>Import &amp; Export</h2><p class="lead">BibTeX, RIS, EndNote (tagged .enw and XML) and CSL JSON are supported in both directions.</p>
         <div class="card">
-          ${selectRow('export_format', 'Default export format', 'Pre-selected in the Export dialog.', [['bibtex', 'BibTeX'], ['ris', 'RIS'], ['endnote', 'EndNote (.enw)'], ['endnote_xml', 'EndNote XML'], ['csljson', 'CSL JSON']])}
+          ${selectRow('export_format', 'Default export format', 'Pre-selected in the Export dialog.', [['export-formats.bibtex', 'BibTeX'], ['export-formats.ris', 'RIS'], ['export-formats.endnote', 'EndNote (.enw)'], ['export-formats.endnote_xml', 'EndNote XML'], ['export-formats.csljson', 'CSL JSON']])}
           ${switchRow('bibtex_unicode', 'Keep Unicode in BibTeX', 'On: write “Bañuls” as is (biber/BibLaTeX). Off: escape as “Ba{\\~{n}}uls” for classic BibTeX.')}
           ${switchRow('export_abstract', 'Include abstracts when exporting', 'Turn off for smaller .bib files.')}
           ${switchRow('import_skip_duplicates', 'Untick duplicates when importing', 'Entries whose DOI or title+year already exist start unticked in the import preview.')}
