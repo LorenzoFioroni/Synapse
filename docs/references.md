@@ -161,7 +161,7 @@ It then calls `attachments_changed()` so the full-text index picks the file up.
 Where to look comes from the plugins' **PDF sources** (`@plugin.pdf_source`, see
 [plugins](plugins.md#the-plugin-object)), gathered by `PluginHost.pdf_candidates(paper,
 by_title=…)`: sources by identifier and sources searching by title, lower `order` first, each URL
-once. With no source running (the core plugin below turned off, and no other), Find Available PDF
+once. With no source running (the plugin below turned off, and no other), Find Available PDF
 says so. The plugin **Open-Access PDFs** (`plugins/open-access-pdfs/server/finder.py`), which comes
 with Synapse and is on by default, has Synapse's two sources, best first. It is a contributed
 plugin: it uses only the public plugin API, asking Unpaywall and arXiv through `plugin.http` (its

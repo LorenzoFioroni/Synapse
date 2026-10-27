@@ -11,15 +11,16 @@ replaces the one here.
 
 Examples to copy are in [docs/examples](../docs/examples).
 
-`tasks/` and `metadata-sources/` are core plugins (on by default): the optional Tasks interface
-and the online metadata providers. Their records and data integrity remain in the core.
+None of the plugins here is a core plugin any more: they all use only the public plugin API, so
+they double as worked examples. These start on by themselves the first time (`enabled_by_default`)
+and can be turned off without rewriting user data:
 
-`reference-sources/` supplies the existing scholarly reference providers. `extended-markdown/`
-holds extra Markdown syntax: galleries and numbered figures, and inline and collapsible spoilers,
-each with its own switch. Both are core plugins, on by default, and can be disabled without
-rewriting user data.
+- `tasks/`: the Tasks interface (task records and note integrity stay in Synapse's core).
+- `metadata-sources/` and `reference-sources/`: the online metadata and reference providers.
+- `extended-markdown/`: galleries and numbered figures, inline and collapsible spoilers.
+- `graph/`: the notes and citation graph.
+- [`open-access-pdfs`](open-access-pdfs): where Find Available PDF looks (a PDF source).
+- [`export-formats`](export-formats): the library exports (export writers).
 
-[`open-access-pdfs`](open-access-pdfs) (where Find Available PDF looks) and
-[`export-formats`](export-formats) (the library exports) are contributed plugins that start on:
-they use only the public plugin API, so they are also worked examples of a PDF source and of
-export writers.
+`metadata-check/` and `autocompletion/` start off (Autocompletion follows the old
+`notes_ai_complete` setting when it was set).
