@@ -111,6 +111,26 @@ export interface SuggestionSource {
   delay?: number;
 }
 
+/** A proposed metadata difference. Values are saved only after the user presses Apply. */
+export interface MetadataChange {
+  key: string; current: unknown; fetched: unknown; isNew: boolean; checked: boolean;
+}
+export interface MetadataReviewArticle {
+  id: string; current: PluginItem; changes: MetadataChange[]; published?: string | null;
+}
+export interface MetadataReviewOptions {
+  title?: string;
+  onRejectSuggestion?: (article: { id: string }, change: MetadataChange) => Promise<void> | void;
+  onRejectArticle?: (article: { id: string }) => Promise<void> | void;
+  onIgnorePaper?: (article: { id: string }) => Promise<void> | void;
+  onApplied?: (ids: string[]) => Promise<void> | void;
+}
+export interface PluginJob {
+  set(message: string, done?: number, total?: number): void;
+  finish(message?: string, options?: NotifyOptions): void;
+  close(): void;
+}
+
 export interface PluginContext {
   /** The plugin's id and what its manifest says. */
   readonly id: string;
@@ -151,6 +171,8 @@ export interface PluginContext {
 
   /** A persistent notification in the bell center; OS delivery is independent of severity and requires user opt-in. */
   notify(message: string, options?: NotifyOptions): void;
+  /** Progress in the notification center; closed automatically when the plugin stops. */
+  jobs: { start(message: string): PluginJob };
 
   /** The plugin's own routes (`plugin.route` in its backend), under /api/plugins/<id>/. Each resolves
       to the parsed JSON answer and throws an Error with the server's message on failure. */
@@ -164,6 +186,8 @@ export interface PluginContext {
   library: {
     /** The items selected in the list. */
     selected(): PluginItem[];
+    /** Edit metadata (requires library: ["edit"]); uses the app's validation and change feed. */
+    update(id: string, changes: Record<string, unknown>): Promise<PluginItem>;
     /** One item, with its abstract and attachments. */
     item(id: string): Promise<PluginItem>;
     /** Show an item in the library (leaving Notes, Tasks or a page). */
@@ -179,6 +203,9 @@ export interface PluginContext {
   ui: {
     /** The app's icon as SVG markup (the names the sidebar uses: 'calendar', 'list', 'star' …). */
     icon(name: string, className?: string): string;
+    /** Explicit Apply, per-field rejection and paper exclusion; requires library: ["edit"].
+        The dialog closes when the plugin stops. Inputs are copied. */
+    reviewMetadata(articles: MetadataReviewArticle[], options?: MetadataReviewOptions): Promise<unknown>;
     /** Text made safe to put into HTML. */
     escapeHtml(text: unknown): string;
     confirm(message: string, options?: { title?: string; confirm?: string; danger?: boolean; detail?: string }): Promise<boolean>;

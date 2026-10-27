@@ -1,10 +1,8 @@
 // Metadata Check in the app: background checking with notifications, review dialog,
 // and settings with ignored papers and rejected suggestions.
-import type { PluginContext, PluginItem } from "../../api.js";
-import { startJob, type Job } from "../../../notifications/center.js";
-import { openReviewDialog, unchangedFields, type Article, type Change } from "../../../views/metadataReview.js";
-import type { Item } from "../../../types.js";
-import { plural } from "../../../util.js";
+import type { PluginContext, PluginItem, PluginJob, MetadataChange } from "../../../frontend/src/plugins/api.js";
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 interface StatusResponse {
   last_checked: number | null;
@@ -59,7 +57,7 @@ export function activate(p: PluginContext): void {
   const anyIgnoredPaper = (items: PluginItem[]): boolean =>
     items.length > 0 && !items.some((i) => i._outside) && items.some((i) => verdictOf(i).includes("ignored paper"));
 
-  let activeJob: Job | null = null;
+  let activeJob: PluginJob | null = null;
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
   let unreviewedCount = 0;
   let isChecking = false;
@@ -84,11 +82,11 @@ export function activate(p: PluginContext): void {
       if (disposed) return;
       if (!st.running && (st.last_run?.at || 0) > lastCompleted) {
         lastCompleted = st.last_run!.at;
-        if (!activeJob) activeJob = startJob("Checking metadata…");
+        if (!activeJob) activeJob = p.jobs.start("Checking metadata…");
       }
       if (st.running) {
         if (!activeJob) {
-          activeJob = startJob("Checking metadata…");
+          activeJob = p.jobs.start("Checking metadata…");
         }
         activeJob.set("Checking metadata…", st.done, st.total);
         pollTimer = setTimeout(pollStatus, 400);
@@ -97,12 +95,12 @@ export function activate(p: PluginContext): void {
         const total = st.total || st.done || 0;
         if (st.failed) {
           activeJob.finish(`Could not verify ${plural(st.failed, "paper")}; ${plural(changes, "paper")} have changes to review`, {
-            type: "warning", desktop: false, source: p.id,
+            type: "warning", desktop: false, 
             action: changes ? { label: "Review", run: openReview } : undefined,
           });
         } else if (changes > 0) {
           activeJob.finish(`${plural(changes, "paper")} have metadata changes`, {
-            desktop: true, source: p.id,
+            desktop: true, 
             type: "success",
             action: {
               label: "Review",
@@ -111,7 +109,7 @@ export function activate(p: PluginContext): void {
           });
         } else {
           activeJob.finish(`All ${total} papers up to date`, {
-            desktop: false, source: p.id,
+            desktop: false, 
             type: "success",
           });
         }
@@ -126,24 +124,34 @@ export function activate(p: PluginContext): void {
 
   async function runNow(): Promise<void> {
     if (!activeJob) {
-      activeJob = startJob("Checking metadata…");
+      activeJob = p.jobs.start("Checking metadata…");
     }
     try {
       await p.backend.post("/run");
       await pollStatus();
     } catch (error) {
-      activeJob?.finish(String(error), { type: "error", source: p.id });
+      activeJob?.finish(String(error), { type: "error" });
       activeJob = null;
     }
   }
 
-  async function openReview(): Promise<void> {
+  function report(error: unknown): void {
+    if (!disposed && (error as Error)?.name !== "AbortError") {
+      p.notify(String(error), { type: "error", transient: true });
+    }
+  }
+
+  function openReview(): Promise<void> {
+    return reviewChanges().catch(report);
+  }
+
+  async function reviewChanges(): Promise<void> {
     const res = await p.backend.get<{
       articles: Array<{
         id: string;
-        current: Item;
-        fetched: Partial<Item>;
-        changes: Change[];
+        current: PluginItem;
+        fetched: Partial<PluginItem>;
+        changes: MetadataChange[];
         published?: string | null;
       }>;
     }>("/review");
@@ -153,22 +161,8 @@ export function activate(p: PluginContext): void {
       return;
     }
 
-    const articles: Article[] = res.articles.map((a, i) => {
-      const item = a.current;
-      const changes = a.changes || [];
-      return {
-        id: a.id,
-        n: i + 1,
-        item,
-        status: "changes",
-        changes,
-        unchanged: unchangedFields(item, changes),
-        error: null,
-        published: a.published || null,
-      };
-    });
-
-    await openReviewDialog(articles, {
+    if (disposed) return;
+    await p.ui.reviewMetadata(res.articles, {
       title: "Review Metadata Changes",
       onRejectSuggestion: async (a, c) => {
         await p.backend.post("/ignore", { ids: [a.id], field: c.key, value: String(res.articles.find((item) => item.id === a.id)?.fetched[c.key] ?? c.fetched) });
@@ -187,7 +181,7 @@ export function activate(p: PluginContext): void {
         await updateStatus();
       },
     });
-    await updateStatus();
+    if (!disposed) await updateStatus();
   }
 
   async function unignore(ids: string[]): Promise<void> {
@@ -268,6 +262,7 @@ export function activate(p: PluginContext): void {
       const esc = p.ui.escapeHtml;
 
       async function draw() {
+        if (gone || disposed) return;
         const [st, ig] = await Promise.all([
           updateStatus(),
           p.backend.get<IgnoredResponse>("/ignored"),
@@ -324,7 +319,7 @@ export function activate(p: PluginContext): void {
         }
         if (t.closest("[data-mc-review]")) {
           await openReview();
-          draw();
+          await draw();
           return;
         }
         const rowUnignore = t.closest("[data-mc-unignore]") && t.closest<HTMLElement>("[data-id]");
@@ -341,16 +336,18 @@ export function activate(p: PluginContext): void {
         }
       }
 
-      el.addEventListener("click", onClick);
+      const click = (ev: MouseEvent) => { void onClick(ev).catch(report); };
+      const redraw = () => { void draw().catch(report); };
+      el.addEventListener("click", click);
       const offChange = p.onChange((kinds) => {
-        if (kinds.includes("fields")) draw();
+        if (kinds.includes("fields")) redraw();
       });
-      draw();
+      redraw();
 
       return () => {
         gone = true;
         offChange();
-        el.removeEventListener("click", onClick);
+        el.removeEventListener("click", click);
       };
     },
   });

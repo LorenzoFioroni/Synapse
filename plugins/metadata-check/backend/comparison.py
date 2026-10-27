@@ -2,8 +2,7 @@
 
 import time
 
-from backend.library.identifiers import arxiv_id_of
-from backend.online.metadata import compute_changes
+from backend.plugins.scholarly import arxiv_id_of, compute_changes
 
 
 def _real_doi(value) -> str:

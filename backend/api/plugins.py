@@ -22,6 +22,14 @@ def overview():
     return jsonify(_host().overview())
 
 
+@bp.patch("/plugin-host/<pid>/items/<item_id>")
+def update_item(pid: str, item_id: str):
+    try:
+        return jsonify(_host().update_item(pid, item_id, body()))
+    except PluginError as e:
+        return error(str(e))
+
+
 @bp.post("/plugin-host/<pid>/enable")
 def enable(pid: str):
     try:

@@ -423,6 +423,9 @@ in safe mode. Plugin API 1.3 exposes plain-text editor suggestions to plugins; 1
 helpers for identifiers, author names and title matching, shared with the library and importers.
 API 1.5 lets reference plugins declare named catalogues and share the existing reference-record
 contract. Saved provider identities remain stable and the item pane can show their display titles.
+API 1.6 adds permission-checked metadata editing, explicit review dialogs, progress notifications and
+field scheduling helpers. **Metadata Check** now uses these public APIs as a contributed plugin;
+it stays off by default, preserves settings and cached findings, and stops in safe mode.
 Turn them off in Settings → Plugins without losing their data. Core plugins can also be toggled
 and restarted in safe mode; changes are followed by the standalone MCP server. Safe mode keeps core plugins
 running and stops contributed plugins. Tasks and Graph add their own entries to the sidebar's

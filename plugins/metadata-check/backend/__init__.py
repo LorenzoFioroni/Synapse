@@ -9,12 +9,10 @@ check that finds a *different* title, or another published DOI, is a new suggest
 from __future__ import annotations
 
 import time
+from threading import Event
 
-import requests
-
-from backend.online.http import LookupFailed
-from backend.online.metadata import compute_changes
 from backend.plugins import Offline, Plugin, PluginError
+from backend.plugins.scholarly import compute_changes
 
 from .comparison import find, ignore_entry, is_preprint, verdict
 from .progress import Progress
@@ -48,12 +46,9 @@ def activate(plugin: Plugin) -> None:
                 entry["fields"] = dict(entry["shown"])
                 ignored.set(item_id, entry)
         state.set("exact_rejections", True)
-    # Older findings have no full payload to feed the review dialog; refresh them once.
-    for item_id, finding in findings.all().items():
-        if "fetched" not in finding:
-            plugin.synapse.plugins.fields.store.expire(plugin.id, FIELD, [plugin.fields.key(item_id)])
-
-    progress = Progress(state, lambda: plugin.synapse.changes.record({"fields"}))
+    stopped = Event()
+    plugin.on_unload(stopped.set)
+    progress = Progress(state, lambda: None if stopped.is_set() else plugin.fields.changed())
 
     def remember_ignore(item_id: str, finding: dict) -> dict:
         item = plugin.library.get(item_id) or {}
@@ -85,10 +80,12 @@ def activate(plugin: Plugin) -> None:
     def audit(papers: list[dict]) -> dict:
         out: dict = {}
         if not progress.running:
-            due = plugin.synapse.plugins.fields.due(field, plugin.library.items())
+            due = plugin.fields.due(FIELD)
             progress.start([p["id"] for p in due])
 
         for paper in papers:
+            if stopped.is_set():
+                return {p["key"]: plugin.fields.LATER for p in papers}
             item_id = str(paper["item_id"])
             if item_id in ignored_papers.all():
                 out[paper["key"]] = "Up to date · ignored paper"
@@ -108,16 +105,13 @@ def activate(plugin: Plugin) -> None:
                 out[paper["key"]] = plugin.fields.LATER
                 progress.done(item_id, failed=True)
                 continue
-            except (PluginError, LookupFailed) as error:
+            except PluginError as error:
                 out[paper["key"]] = f"Could not verify: {error}"
                 progress.done(item_id, failed=True)
                 continue
-            except requests.RequestException as error:
-                plugin.log.info("Could not check %s: %s", item_id, error)
-                out[paper["key"]] = plugin.fields.LATER
-                progress.done(item_id, failed=True)
-                continue
 
+            if stopped.is_set():
+                return {p["key"]: plugin.fields.LATER for p in papers}
             finding = find(current, found, is_preprint(current) or bool(paper.get("arxiv")))
             has_diffs = bool(finding.get("fields") or finding.get("published"))
             if has_diffs:
@@ -145,6 +139,11 @@ def activate(plugin: Plugin) -> None:
         refresh=f"{_days(plugin.settings.get('interval_days', DEFAULT_DAYS)):g}d",
         refresher=audit,
     )
+
+    # Older findings lack the full payload needed for review; refresh them once.
+    old = [item_id for item_id, finding in findings.all().items() if "fetched" not in finding]
+    if old:
+        plugin.fields.refresh(FIELD, old, wake=False)
 
     @plugin.settings.on_change
     def _interval(changed: dict) -> None:
@@ -229,11 +228,9 @@ def activate(plugin: Plugin) -> None:
         """Check every library item again soon, whatever the interval says."""
         if progress.running:
             return {"items": state.get("total", 0)}
-        index = plugin.synapse.plugins.fields
-        # Expire before taking the due snapshot, and wake only after progress is initialized.
-        index.allow_retry(plugin.id, FIELD)
-        index.store.expire(plugin.id, FIELD)
-        due = index.due(field, plugin.library.items())
+        # Wake only after progress is initialized from the complete due snapshot.
+        plugin.fields.refresh(FIELD, wake=False)
+        due = plugin.fields.due(FIELD)
         progress.start([p["id"] for p in due])
         progress.finish()
         plugin.fields.refresh_soon()

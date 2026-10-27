@@ -138,6 +138,8 @@ async def main():
             b = await p.chromium.launch()
             page = await b.new_page(viewport={"width": 1300, "height": 850})
             errors = []
+            edits = []
+            page.on("request", lambda req: edits.append(req.url) if req.method == "PATCH" else None)
             page.on("pageerror", lambda e: errors.append(str(e)))
             await page.goto(BASE)
             await page.wait_for_function(f"window.zcPlugins?.loaded().includes('{PID}')")
@@ -384,6 +386,17 @@ async def main():
                     check(f"metadata diff wraps in reading order at {width}px (edited={edited})", layout)
             await shot(page, "metadata-diff-wrapping")
             await page.keyboard.press("Escape")
+            check(
+                "review Apply uses the permission-checked plugin endpoint",
+                any(f"/api/plugin-host/{PID}/items/" in url for url in edits),
+            )
+            # A contributed plugin owns its open review. Stopping it must close the dialog.
+            await page.set_viewport_size({"width": 1400, "height": 900})
+            await page.click(f"{sec} [data-mc-review]")
+            await page.wait_for_selector(".mr-dialog")
+            await asyncio.to_thread(api, f"/api/plugin-host/{PID}/disable", "POST")
+            await page.wait_for_selector(".mr-dialog", state="detached")
+            check("stopping Metadata Check closes its review", not await page.is_visible(".mr-dialog"))
             check("no page errors", not errors, errors)
             await b.close()
     finally:

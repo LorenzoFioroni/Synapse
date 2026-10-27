@@ -5,11 +5,11 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.5**, which also accepts plugins targeting 1.0–1.4. Reference
+This page documents API **1.6**, which also accepts plugins targeting 1.0–1.5. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
 `"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`. Named reference sub-sources and the reference record
-contract require `"^1.5"`.
+contract require `"^1.5"`. Metadata review, progress jobs, library editing and field scheduling helpers require `"^1.6"`.
 What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
@@ -101,8 +101,7 @@ with these differences, all from `"core": true` in its manifest and honoured onl
   the user's choice, as for any plugin.
 - Its tools for Claude keep the names they had in Synapse (no `<plugin>__` prefix), its commands
   may use Synapse's own keys (which other plugins cannot take, even while it is off), and its
-  commands and actions are not labelled with a plugin name, except Metadata Check, which keeps
-  its name so its Run Now and Review Changes commands are easy to identify.
+  commands and actions are not labelled with a plugin name.
 - Its server part gets the app's `Services` object as `plugin.synapse` (None for other plugins).
 - It keeps running in safe mode (`--safe-mode` stops the other plugins only).
 
@@ -170,7 +169,7 @@ choice, and safe mode stops them like any contributed plugin. Settings lists the
 
 ### Optional plugins that come with Synapse
 
-These are off until turned on (Metadata Check is a core plugin with an opt-in default):
+These are contributed plugins, off until turned on; safe mode stops them:
 
 - **Citation Counts** (`plugins/citation-counts`): how often each paper is cited, from OpenAlex
   and Semantic Scholar, as a *Citations* column, a search filter (`citations:>100`, also in smart
@@ -275,7 +274,7 @@ data/plugins/recently-added/      the folder's name is the plugin's id
 | `backend` | Its Python code: a package folder (with `__init__.py`) or a `.py` file, inside the plugin's folder. |
 | `frontend` | Its part in the app: an ES module (`.js`), or TypeScript (`.ts`, `.tsx`) that Synapse bundles with esbuild when the plugin starts (see [The frontend](#the-frontend)). |
 | `styles` | A stylesheet the app loads while the plugin runs. |
-| `permissions` | `network`: the hosts `plugin.http` may reach (`"export.arxiv.org"`, or `"*.example.org"` for a domain and its subdomains). `library`: `read` (`plugin.library`), `add` (`plugin.actions.add`; `edit` is reserved). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
+| `permissions` | `network`: the hosts `plugin.http` may reach (`"export.arxiv.org"`, or `"*.example.org"` for a domain and its subdomains). `library`: `read` (`plugin.library`), `add` (`plugin.actions.add`), `edit` (`plugin.actions.update`, `p.library.update` and review Apply). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
 | `python` | Python packages it needs, as requirements (`["scirate>=0.0.7"]`): installed with pip when it first starts (see [Python packages](#python-packages)). |
 | `settings` | What the user can set, see below. |
 | `enabled_by_default` | `true`: start on the first time Synapse sees it. Honoured only for the plugins that come with Synapse (`plugins/`); an installed plugin waits for the user. |
@@ -344,7 +343,7 @@ def activate(plugin: Plugin) -> None:
 | `@plugin.reference_source(id, title=…, order=100, subsources=None)` | API 1.1: `fn(query)` receives `item` (a copied library-style record), contact `email` and `fresh` (prefer newly announced-paper sources). Return `{"references": [...]}` or `None`. Lower order first; empty results and failures fall through. No active source raises a readable lookup error. API 1.5 adds declared named sub-sources; fixed host aliases preserve historical bundled names (below). |
 | `@plugin.export_format(id, title=…, extension=…, mimetype=…)` | API 1.1: `fn(items, options) -> str` registers a text export. Options contain `unicode`, `abstract` and citation-key `pattern`. Keys are `<plugin>.<id>` (a core plugin's would keep its bare id). Writers disappear on unload. Extensions and MIME types are validated. Imports remain independent. To write a format Synapse knows, use `backend.plugins.formats` (below). |
 | `plugin.services` | `contact_email()`, `lookup(identifier)`, `references(paper, new=False)`, `match(refs)`, `connections(papers, refs=None, folders=None)`: Synapse's own lookups, reference lists and scoring. |
-| `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). |
+| `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). API 1.6: `update(id, changes)` edits metadata with `"library": ["edit"]`, using the library validation, citation-key rewrite and change events. Unknown/read-only fields and structured values are rejected before writing; tags and folder membership use separate app operations and are not accepted here. |
 
 Raise **`PluginError("…")`** for a problem the user or Claude should read: a route answers 400 with
 it as the error, a tool returns it as an error Claude can act on, and it does not count as the
@@ -493,7 +492,7 @@ plugin.fields.set({"arxiv": "2610.01234"}, "citations", 0)  # also for a paper n
 - **Reviewing a library item.** `plugin.services.lookup_item(item_or_id)` returns `(current, fetched)`
   through the same metadata lookup as Retrieve Metadata, including author resolution and a proposed
   citation key. It saves nothing. `lookup(identifier)` remains the outside-record lookup.
-- **Asking again now.** `plugin.fields.refresh(name, papers=None)` hands the field's papers (or
+- **Asking again now.** `plugin.fields.refresh(name, papers=None, wake=True)` hands the field's papers (or
   only `papers`) to its refresher again soon, whatever their age: for a "Check now" button. The
   values stay shown until the new ones arrive. Explicit refresh also retries papers deferred after
   an unreachable service. A refresh interval taken from a setting can be
@@ -837,3 +836,33 @@ both clipboard output and optional writers; endpoints only parse requests and sh
 delivery are independent: `{type: "success", desktop: true, sourceId: "today"}` offers an OS
 notification when enabled and retains a Show action across reloads. Use `transient: true` for
 brief confirmations/Undo; `timeout` only applies to transient toasts.
+
+### Metadata review and audit APIs (1.6)
+
+`scholarly.compute_changes(current, fetched)` returns differences in the app's metadata display
+order, as `{key, current, fetched, isNew, checked}` dictionaries. Empty fetched values are skipped;
+comparison preserves case and punctuation. Changing an existing citation key is unchecked by
+default. This is an offline helper and does not edit either record.
+
+`plugin.fields.due(name)` returns library items in scheduler order (missing values first, then
+oldest stale values); it requires library `read`, a declared field and a refresher. It respects
+retry backoff after `LATER`. `refresh(name, papers=None, wake=False)` expires cached values and
+clears retry backoff without waking the runner. An audit can take its due snapshot, initialize
+progress, then call `plugin.fields.refresh_soon()`. `plugin.fields.changed()` tells open pages
+that associated status changed without rewriting a field value. Results from stopped or restarted
+refreshers are discarded by the host.
+
+`p.jobs.start(message)` returns a progress job with `set(message, done?, total?)`,
+`finish(message?, options?)` and `close()`. Finish accepts notification options (severity,
+Review action, optional desktop delivery); the host assigns the plugin as owner. Unfinished jobs
+close on unload, and actions cannot run after the plugin stops.
+
+`p.ui.reviewMetadata(articles, options)` opens the shared review dialog. Each article is
+`{id, current: PluginItem, changes: MetadataChange[], published?: string}`; inputs are copied.
+Options are `title`, `onRejectSuggestion({id}, change)`, `onRejectArticle({id})`,
+`onIgnorePaper({id})` and `onApplied(savedIds)`. Only selected fields are saved, after explicit
+Apply. Callbacks let the plugin persist exact rejections and exclusions. Apply, like
+`p.library.update(id, changes)`, uses the running plugin's `library: ["edit"]` permission through
+`PATCH /api/plugin-host/<pid>/items/<id>` and the ordinary metadata update path. A stopped plugin
+cannot submit new edits; unloading closes its review and prevents subsequent batch saves.
+An edit already submitted may complete. No library schema or stored plugin data changes.

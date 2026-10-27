@@ -58,6 +58,7 @@ export const api = {
   itemsByIds: (ids: string[]) => request<ItemsByIds>('GET', `/api/items?ids=${encodeURIComponent(ids.join(','))}`),   // [] → just counts and sidebar
   getItem: (id: string) => request<Item>('GET', `/api/items/${id}`),
   createItem: (data: Partial<Item> = {}) => request<Item>('POST', '/api/items', data),
+  updatePluginItem: (pid: string, id: string, changes: Record<string, unknown>) => request<Item>('PATCH', `/api/plugin-host/${encodeURIComponent(pid)}/items/${encodeURIComponent(id)}`, changes),
   updateItem: (id: string, data: Partial<Item>) => request<Item>('PATCH', `/api/items/${id}`, data),
   trash: (ids: string[]) => request('POST', '/api/items/trash', { ids }),
   restore: (ids: string[]) => request('POST', '/api/items/restore', { ids }),

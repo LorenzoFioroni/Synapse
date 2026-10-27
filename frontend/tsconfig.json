@@ -14,5 +14,5 @@
     "types": [],
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "../plugins/autocompletion/frontend"]
+  "include": ["src", "../plugins/autocompletion/frontend", "../plugins/metadata-check/frontend"]
 }

@@ -239,6 +239,9 @@ class PluginHost:
                 lambda: self.fields.store,
                 self.library.get if self.library else None,
                 self.fields.changed,
+                (lambda d: self.fields.due(d, self.library.items()))
+                if self.library and "read" in man.library
+                else None,
             ),
             sources_changed=lambda: self.sources_changed() if self.sources_changed else None,
             tool_prefix=not self.is_core(pid),
@@ -273,14 +276,17 @@ class PluginHost:
                 plugin.wake = act.runner.wake
                 plugin.fields.allow_retry = lambda name, keys: self.fields.allow_retry(pid, name, keys)
                 plugin.fields.refresh_soon = act.runner.refresh_soon
+            with self._lock:
+                self._active[pid] = act
+            if act.runner:
                 act.runner.start()
         except BaseException as e:
             plog.error("Could not start:\n%s", traceback.format_exc())
+            with self._lock:
+                self._active.pop(pid, None)
             self._teardown(act, run_unload=True)
             self._failed(pid, f"Could not start: {_describe(e)}")
             return False
-        with self._lock:
-            self._active[pid] = act
         plog.info("Started (%s, version %s)", self.role, man.version)
         return True
 
@@ -495,6 +501,14 @@ class PluginHost:
         """Wait until the listeners called so far have run (for tests)."""
         acts = [self._active[pid]] if pid else list(self._active.values())
         return all(a.worker.drain(timeout) for a in acts)
+
+    def update_item(self, pid: str, item_id: str, changes: dict) -> dict:
+        """Apply metadata through a running plugin's permission-checked actions."""
+        with self._lock:
+            act = self._active.get(pid)
+            if not act or not act.plugin.actions:
+                raise NotFound(f"No plugin {pid!r} is running")
+            return act.plugin.actions.update(item_id, changes)
 
     def route(self, pid: str, path: str, method: str) -> tuple[Callable, Mapping]:
         """The function serving ``path`` of plugin ``pid``, and its arguments from the path.

@@ -17,6 +17,7 @@ import type { ChangeKind, PluginContext, PluginItem, PluginModule } from './api.
 import { CORE } from './core/index.js';
 import { registerSuggestions } from './suggestions.js';
 import { noteHooks } from '../views/notes/hooks.js';
+import { feedback } from './feedback.js';
 
 interface Loaded {
   disposed: boolean;
@@ -68,11 +69,21 @@ const copy = <T>(x: T): T => { try { return structuredClone(x); } catch { return
 function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
   const pid = info.id;
   const full = (id: string) => `${pid}.${id}`;
-  const src = (info.core && info.id !== 'metadata-check') ? undefined : info.name;
+  const src = info.core ? undefined : info.name;
   const keep = (d: Dispose): Dispose => { if (rec.disposed) d(); else rec.disposers.push(d); return d; };
+  const assertLive = () => { if (rec.disposed) throw new DOMException('Plugin stopped', 'AbortError'); };
+  const update = async (id: string, changes: Record<string, unknown>): Promise<Item> => {
+    assertLive();
+    const item = await api.updatePluginItem(pid, id, changes);
+    assertLive();
+    return item;
+  };
+  const notices = feedback(pid, () => rec.disposed, fn => guarded(info, 'notification action', fn), update);
+  keep(notices.dispose);
   // A retired context must settle its calls, so async activation and synchronization can finish.
   const call = async <T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, query?: Record<string, unknown>, signal?: AbortSignal): Promise<T> => {
     try {
+      assertLive();
       const result = await api.pluginRoute<T>(pid, method, path, body, query, signal);
       if (rec.disposed) throw new DOMException('Plugin stopped', 'AbortError');
       return result;
@@ -177,6 +188,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
       else notify(`${info.name}: ${message}`, { type: options.type, source: pid, desktop: options.desktop,
         target: options.sourceId ? `source:${full(options.sourceId)}` : undefined, action });
     },
+    jobs: notices.jobs,
     backend: {
       get: (path, query) => call('GET', path, undefined, query),
       post: (path, body, options) => call('POST', path, body ?? {}, undefined, options?.signal),
@@ -185,6 +197,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     },
     library: {
       selected: () => copy(selectedItems()) as PluginItem[],
+      update: async (id, changes) => { const item = await update(id, changes); A.patchLocal(item); await A.refreshItems([id]); return copy(item) as PluginItem; },
       item: async (id) => copy(await api.getItem(id)) as PluginItem,
       show: (id) => emit('show-item', id),
     },
@@ -196,6 +209,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     onUnload: (fn) => { if (rec.disposed) fn(); else rec.unload.push(fn); },
     ui: {
       icon: (name, cls = '') => icon(name, cls),
+      reviewMetadata: notices.reviewMetadata,
       escapeHtml,
       confirm: (message, o = {}) => confirmDialog(message, o),
       prompt: (label, o = {}) => promptDialog(label, o),
