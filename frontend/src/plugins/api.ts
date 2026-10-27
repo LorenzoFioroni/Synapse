@@ -131,6 +131,27 @@ export interface PluginJob {
   close(): void;
 }
 
+/** Host-owned Notes layout and navigation; no editor or app-store objects are exposed. */
+export interface NotesVisualizationContext {
+  main: HTMLElement;
+  currentPath(): string | null;
+  openNote(path: string): void;
+  open(focus: string | null): void;
+  setOpen(open: boolean): void;
+  closed(): void;
+}
+export interface NotesVisualizationSpec {
+  id: string; title: string; icon?: string;
+  attach(context: NotesVisualizationContext): void;
+  section(): HTMLElement;
+  showNote(path: string | null): void;
+  changed(): void;
+  open(focus: string | null): Promise<void>;
+  close(options?: { notify?: boolean }): void;
+  isOpen(): boolean;
+  destroy(): void;
+}
+
 export interface PluginContext {
   /** The plugin's id and what its manifest says. */
   readonly id: string;
@@ -143,6 +164,19 @@ export interface PluginContext {
       plugin's backend hears the change (`@plugin.settings.on_change`). */
   saveSettings(changes: Record<string, unknown>): Promise<Record<string, unknown>>;
 
+  /** URLs of host-vendored offline dependencies; currently force-graph. */
+  assets: { vendor(name: 'force-graph'): string };
+  notes: {
+    enabled(): boolean;
+    current(): string | null;
+    open(path: string): Promise<void>;
+    /** One visualization at a time, alongside and in place of the note editor. */
+    visualizations: {
+      register(spec: NotesVisualizationSpec): Dispose;
+      open(id: string, focus?: string | null): Promise<void>;
+      toggle(id: string): Promise<void>;
+    };
+  };
   editor: {
     suggestions: { register(source: SuggestionSource): Dispose };
     /** Called when a note editor opens; activation should also check existing editors. */
@@ -186,6 +220,9 @@ export interface PluginContext {
   library: {
     /** The items selected in the list. */
     selected(): PluginItem[];
+    refresh(): Promise<void>;
+    /** Open the first attachment or the item's URL, as in the item pane. */
+    openPdf(id: string): Promise<void>;
     /** Edit metadata (requires library: ["edit"]); uses the app's validation and change feed. */
     update(id: string, changes: Record<string, unknown>): Promise<PluginItem>;
     /** One item, with its abstract and attachments. */

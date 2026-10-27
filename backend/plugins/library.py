@@ -54,6 +54,16 @@ class LibraryReader:
                 return p
         return None
 
+    def citation_graph(self) -> dict:
+        """Stored citation graph, with ``fetched`` item ids (including empty reference lists).
+
+        No network requests are made; nodes, edges and stats use the citation graph's JSON
+        contract. Trash is excluded, as it is from ``items()``.
+        """
+        graph = self._s.citations.graph()
+        ids = {p["id"] for p in self.items()}
+        return {**graph, "fetched": sorted(self._s.citations.store.fetched_ids() & ids)}
+
     def folders(self) -> list[dict]:
         """The folder tree: each folder with its id, name and children."""
         return self._s.folders.tree()

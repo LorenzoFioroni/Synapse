@@ -1,4 +1,4 @@
-"""The knowledge graph (the Graph core plugin's /data route): papers, cited works, notes and their links."""
+"""The knowledge graph (the Graph contributed plugin's /data route): papers, cited works, notes and their links."""
 
 from tests.fake_metadata import install_transport
 

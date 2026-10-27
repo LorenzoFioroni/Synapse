@@ -1,5 +1,5 @@
-// What the Graph view shows, from /api/graph and the options (no DOM; tests/js/graph.test.mjs).
-import type { EdgeKind, GraphData, GraphEdge, GraphNode } from '../../../types.js';
+// What the Graph view shows, from the plugin data route and the options (no DOM; tests/js/graph.test.mjs).
+import type { EdgeKind, GraphData, GraphEdge, GraphNode } from './types.js';
 
 export const EDGE_KINDS: EdgeKind[] = ['cites', 'cite', 'link', 'about'];
 

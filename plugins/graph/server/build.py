@@ -18,8 +18,8 @@ from __future__ import annotations
 
 
 def build_graph(s) -> dict:
-    cg = s.citations.graph()
-    items = {p["id"]: p for p in s.papers.list()}
+    cg = s.library.citation_graph()
+    items = {p["id"]: p for p in s.library.items()}
     key_to_item = {p["citation_key"]: pid for pid, p in items.items() if p.get("citation_key")}
 
     nodes: list[dict] = []
@@ -75,7 +75,7 @@ def build_graph(s) -> dict:
             edges.append({"source": nid, "target": f"item:{key_to_item[note['paper']]}", "kind": "about"})
 
     about = {(e["source"], e["target"]) for e in edges if e["kind"] == "about"}
-    for l in s.notes.link_graph():
+    for l in s.notes.links():
         src = f"note:{l['source']}"
         if l["kind"] == "note":
             edges.append({"source": src, "target": f"note:{l['target']}", "kind": "link"})
@@ -90,7 +90,7 @@ def build_graph(s) -> dict:
     ekinds: dict[str, int] = {}
     for e in edges:
         ekinds[e["kind"]] = ekinds.get(e["kind"], 0) + 1
-    fetched = sorted(s.citations.store.fetched_ids() & set(items))
+    fetched = cg["fetched"]
     return {
         "nodes": nodes,
         "edges": edges,

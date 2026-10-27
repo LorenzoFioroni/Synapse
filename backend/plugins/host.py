@@ -34,6 +34,7 @@ from .itemfields import FieldIndex, PluginFields
 from .jobs import Runner
 from .loading import Active, Entry, asset_path, forget_modules, load_module, newest
 from .manifest import ManifestError
+from .notes import NotesReader
 from .report import describe
 from .runtime import Worker, make_logger, tail
 from .services import PluginActions, PluginServices
@@ -223,6 +224,7 @@ class PluginHost:
             log=plog,
             settings=lambda: self.values(pid),
             library=self.library,
+            notes=NotesReader(self.services) if self.services else None,
             before_upgrade=before_upgrade,
             http=PluginHttp(
                 pid,

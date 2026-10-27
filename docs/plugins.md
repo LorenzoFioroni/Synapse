@@ -5,11 +5,11 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.6**, which also accepts plugins targeting 1.0–1.5. Reference
+This page documents API **1.7**, which also accepts plugins targeting 1.0–1.6. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
 `"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`. Named reference sub-sources and the reference record
-contract require `"^1.5"`. Metadata review, progress jobs, library editing and field scheduling helpers require `"^1.6"`.
+contract require `"^1.5"`. Metadata review, progress jobs, library editing and field scheduling helpers require `"^1.6"`. Notes reads and visualizations require `"^1.7"`.
 What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
@@ -81,11 +81,6 @@ while the Plugins area is in view, and otherwise keeps a single top-level **Plug
   Records and note links stay in the core for validation, backups and attachment retention.
   Disabling it removes its controls and tools; reenabling restores them with all tasks intact.
   Its routes are `/api/plugins/tasks/…`; `/api/tasks` remains a compatibility alias. See [tasks](tasks.md).
-- **Graph** (`plugins/graph`, opened under **Plugins** in the left sidebar): the graph of notes and the papers they cite: the local graph
-  beside a note, the full graph (Cmd/Ctrl+Shift+G), Show in Graph; its data at
-  `/api/plugins/graph/data`. A core plugin's frontend reaches into the notes view through
-  `frontend/src/views/notes/hooks.ts` (`setNoteHook('graph' | 'figures' | 'extended', …)`, which redraws the
-  open note); a core plugin's server part gets the app's `Services` as `plugin.synapse`.
 A core plugin is a plugin like any other (manifest, `activate(plugin)`, routes, tools, settings),
 with these differences, all from `"core": true` in its manifest and honoured only in `plugins/`:
 
@@ -105,12 +100,12 @@ with these differences, all from `"core": true` in its manifest and honoured onl
 - Its server part gets the app's `Services` object as `plugin.synapse` (None for other plugins).
 - It keeps running in safe mode (`--safe-mode` stops the other plugins only).
 
-Core workspaces (Tasks and Graph) register their sidebar entries in the internal `navigation`
+Tasks and the host bridge for contributed Notes visualizations register sidebar entries in the internal `navigation`
 registry in `frontend/src/extend.ts`, and remove them on unload. The sidebar only renders those
 registrations; it does not own plugin-specific buttons or counts. Each entry determines its active
 state from the visible workspace as well as its retained view state, so leaving Graph for Tasks or
 the library clears its highlight even though Notes keeps the graph in memory. Third-party plugins
-continue to use `p.pages` and backend item sources. Extended Markdown and Autocompletion are editor integrations, Citation
+can use `p.pages`, backend item sources, or the public Notes visualization API. Extended Markdown and Autocompletion are editor integrations, Citation
 Counts adds item fields, and metadata/PDF plugins supply lookups; those do not create empty pages.
 
 Workspace transitions are coordinated by `main.ts`: opening a plugin page first saves and closes
@@ -136,6 +131,14 @@ first time Synapse sees them, because their manifest says `"enabled_by_default":
 `plugins/`; an installed plugin always waits to be turned on). After that they are the user's
 choice, and safe mode stops them like any contributed plugin. Settings lists them under
 **Contributed plugins**.
+
+- **Graph** (`plugins/graph`, on by default): local note neighbourhoods and the full graph in
+  Notes, with the existing sidebar entry, note/item menus, history and Cmd/Ctrl+Shift+G. It uses
+  public citation and note reads, the Notes visualization API and the host-vendored offline
+  force-graph library. Its data route remains `/api/plugins/graph/data`; graph data is derived
+  from saved notes and references, with no migration. The host retains the bundled Graph toggle's
+  reserved shortcut only; installed replacements receive ordinary shortcut rules. Saved Graph
+  preferences and enabled choices survive. Safe mode stops the plugin, preserving all inputs.
 
 - **Reference Sources** (`plugins/reference-sources`, on by default): Semantic Scholar, OpenAlex,
   Crossref and arXiv HTML citation lists through the public API 1.5, declared HTTP permissions and
@@ -274,7 +277,7 @@ data/plugins/recently-added/      the folder's name is the plugin's id
 | `backend` | Its Python code: a package folder (with `__init__.py`) or a `.py` file, inside the plugin's folder. |
 | `frontend` | Its part in the app: an ES module (`.js`), or TypeScript (`.ts`, `.tsx`) that Synapse bundles with esbuild when the plugin starts (see [The frontend](#the-frontend)). |
 | `styles` | A stylesheet the app loads while the plugin runs. |
-| `permissions` | `network`: the hosts `plugin.http` may reach (`"export.arxiv.org"`, or `"*.example.org"` for a domain and its subdomains). `library`: `read` (`plugin.library`), `add` (`plugin.actions.add`), `edit` (`plugin.actions.update`, `p.library.update` and review Apply). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
+| `permissions` | `network`: the hosts `plugin.http` may reach (`"export.arxiv.org"`, or `"*.example.org"` for a domain and its subdomains). `notes`: `["read"]` for note listings/links; `library`: `read` (`plugin.library`), `add` (`plugin.actions.add`), `edit` (`plugin.actions.update`, `p.library.update` and review Apply). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
 | `python` | Python packages it needs, as requirements (`["scirate>=0.0.7"]`): installed with pip when it first starts (see [Python packages](#python-packages)). |
 | `settings` | What the user can set, see below. |
 | `enabled_by_default` | `true`: start on the first time Synapse sees it. Honoured only for the plugins that come with Synapse (`plugins/`); an installed plugin waits for the user. |
@@ -866,3 +869,41 @@ Apply. Callbacks let the plugin persist exact rejections and exclusions. Apply, 
 `PATCH /api/plugin-host/<pid>/items/<id>` and the ordinary metadata update path. A stopped plugin
 cannot submit new edits; unloading closes its review and prevents subsequent batch saves.
 An edit already submitted may complete. No library schema or stored plugin data changes.
+
+### Notes and visualization APIs (1.7)
+
+`plugin.library.citation_graph()` requires library `read`. It returns the stored citation graph
+(`nodes`, `edges`, `stats`) plus `fetched`: library item IDs whose reference lists have been fetched,
+including empty lists. Trash is excluded. It makes no network requests.
+
+`plugin.notes.list()` and `plugin.notes.links()` require `permissions: {"notes": ["read"]}`.
+The listing contains paths, front-matter metadata and timestamps. Links are resolved as in Notes:
+`{source: path, kind: "note" | "cite", target: path | citation_key}`. Embedded-note links are
+included; unresolved note targets are omitted. These operations do not grant note writes.
+Settings shows notes read access alongside library/network permissions.
+
+`p.notes.enabled()`, `current()` and `open(path)` expose Notes availability, the current path and
+navigation. `p.notes.visualizations.register(spec)` adds a sidebar entry, a section above note
+details and a view in place of the editor. One visualization may register at a time; a second
+registration fails explicitly. This preserves Notes navigation and Back/Forward rather than
+turning a visualization into a separate page. The current view is also available from the Notes
+header and note menu.
+
+A spec has `id`, `title`, optional `icon`, `attach(context)`, `section(): HTMLElement`,
+`showNote(pathOrNull)`, `changed()`, `open(focusOrNull): Promise<void>`,
+`close({notify?})`, `isOpen(): boolean` and `destroy()`. The context provides `main` (the main-view
+host), `currentPath()`, `openNote(path)`, `open(focus)`, `setOpen(boolean)` (host layout/sidebar
+state), and `closed()` (history after a user close). Plugins own their section/main DOM, canvases,
+observers and timers, and dispose them in `destroy`. The host unregisters navigation, restores
+the editor and calls destroy on unload. `visualizations.open(id, focus?)` and `toggle(id)` leave
+other workspaces through the host; plugins never import private navigation/store modules.
+
+`p.assets.vendor("force-graph")` returns the host-vendored offline library entry point. TypeScript
+plugins may use force-graph's public package types; Synapse's checker resolves its installed type
+dependency for bundled Graph. There is no runtime npm/CDN import. Graph keeps its own model and
+rendering code in `plugins/graph/frontend/` and discards retired async canvas/data work.
+
+`p.library.openPdf(id)` opens an item's attachment or URL through the ordinary app operation;
+`p.library.refresh()` refreshes the visible library data after a plugin route adds an item.
+Graph's Add button uses `plugin.actions.add`, with library `add` permission and existing duplicate
+checks, metadata fallback, citation-key generation and Adding Items settings.

@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildView, label, matchNodes, neighbourhood, relations } from '../../frontend/js/plugins/core/graph/model.js';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+const { transformSync } = createRequire(new URL('../../frontend/package.json', import.meta.url))('esbuild');
+const source = readFileSync(new URL('../../plugins/graph/frontend/model.ts', import.meta.url), 'utf8');
+const code = transformSync(source, { loader: 'ts', format: 'esm' }).code;
+const { buildView, label, matchNodes, neighbourhood, relations } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'));
 
 const P = (id, extra = {}) => ({ id: `item:${id}`, kind: 'paper', title: `Paper ${id}`, authors: 'Doe, Jane', year: 2020, folder_ids: [], ...extra });
 const W = (id) => ({ id: `doi:${id}`, kind: 'work', title: `Work ${id}`, authors: 'Ext, Ernie', year: 1999 });

@@ -115,6 +115,7 @@ class Plugin:
         log: logging.Logger,
         settings: Callable[[], dict],
         library=None,
+        notes=None,
         before_upgrade: Callable[[str], None] | None = None,
         http=None,
         fields=None,
@@ -131,6 +132,7 @@ class Plugin:
         self.storage = Storage(data_dir, before_upgrade)
         self.settings = Settings(settings)
         self._library = library
+        self._notes = notes
         self.routes: list[Route] = []
         self.tools: list[ToolSpec] = []
         self.listeners: dict[str, list[Callable]] = {}
@@ -160,6 +162,13 @@ class Plugin:
         if "read" not in self.manifest.library or self._library is None:
             raise PluginError(f'{self.manifest.name} needs "library": ["read"] in its manifest to read the library')
         return self._library
+
+    @property
+    def notes(self):
+        """Read note listings and resolved links (needs ``"notes": ["read"]``)."""
+        if "read" not in self.manifest.notes or self._notes is None:
+            raise PluginError(f'{self.manifest.name} needs "notes": ["read"] in its manifest to read notes')
+        return self._notes
 
     # ------------------------------------------------------------------ routes
     def route(self, rule: str, methods: tuple[str, ...] | list[str] = ("GET",)):

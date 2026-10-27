@@ -71,7 +71,7 @@ Two objects tie the backend together:
 | `config.py`, `settings.py` | Paths of the data folder, and the user's preferences. | `settings.json` |
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
-| `plugins/` | The plugin host: finds the plugins in `data/plugins/` (and those that come with Synapse in `plugins/`), starts and stops them, gives them the `Plugin` object (routes, tools for Claude, events, settings, storage, reading the library, per-item fields, lists of papers outside the library—including variants such as arXiv feed days shown in a second pane—Synapse's lookups and adding papers), and turns off one that keeps failing (see [plugins](plugins.md)). `backend.plugins` is the public import for third-party plugins (with `formats.py`, Synapse's reference writers, and `scholarly.py`, the shared offline identifier, author-name and title-matching helpers). `catalog.py` discovers manifests and initializes defaults, `files.py` serializes shared storage writes, and `resolvers.py` orders metadata sources; core plugins may use the internal modules they need. | `plugins.json`, `plugin-data/`, `fields.db` |
+| `plugins/` | The plugin host: finds the plugins in `data/plugins/` (and those that come with Synapse in `plugins/`), starts and stops them, gives them the `Plugin` object (routes, tools for Claude, events, settings, storage, reading the library and notes, Notes visualizations, per-item fields, lists of papers outside the library—including variants such as arXiv feed days shown in a second pane—Synapse's lookups and adding papers), and turns off one that keeps failing (see [plugins](plugins.md)). `backend.plugins` is the public import for third-party plugins (with `formats.py`, Synapse's reference writers, and `scholarly.py`, the shared offline identifier, author-name and title-matching helpers). `catalog.py` discovers manifests and initializes defaults, `files.py` serializes shared storage writes, and `resolvers.py` orders metadata sources; core plugins may use the internal modules they need. | `plugins.json`, `plugin-data/`, `fields.db` |
 | `desktop/` | Running Synapse like a desktop program: opening its window (`window.py`), the open windows that keep a `--quit-when-closed` server running (`presence.py`), the desktop shortcut (`shortcut.py`). See [the app window](desktop.md). | none |
 
 Online lookups live in `online/` and scholarly plugins; contributed plugins use `plugin.http`.
@@ -180,6 +180,11 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   them through `plugins/feedback.ts` to notifications and `views/metadataReview.ts`, with permission-checked edits through
   `PluginActions.update`. Its backend package keeps comparison and rejection
   rules in `plugins/metadata-check/backend/comparison.py` and run progress in `progress.py`.
+  `plugins/graph/frontend/` owns Graph's model, canvases and local/full views, with only public
+  plugin imports. `plugins/notes.ts` bridges public Notes visualization registrations to layout,
+  sidebar navigation and history. `backend/plugins/notes.py` supplies permission-gated note reads;
+  `LibraryReader.citation_graph` supplies stored citation inputs. Graph's server builds the combined
+  view from those public reads; no graph or notes data moves into plugin storage.
   `plugins/core/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
   the notes workspace only through `taskHooks` in `views/notes/workspace.ts`.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
@@ -191,8 +196,8 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   provider on disposal; the host bridges editor-open events and cancellable backend calls.
   Autocompletion lives entirely in `plugins/autocompletion/`, including its TypeScript frontend
   (bundled by the plugin host); it imports only public plugin types.
-- `extend.ts` holds the extension points the views read: core workspace navigation (Tasks and Graph,
-  registered and disposed by their plugins), commands (the command palette,
+- `extend.ts` holds the extension points the views read: workspace navigation (Tasks and the public Notes visualization bridge,
+  registered and disposed with their plugins), commands (the command palette,
   `views/palette.ts`), pages (`views/pages.ts`, listed in the sidebar), item-pane sections and item
   actions. `plugins/host.ts` loads plugins' frontends and registers what they add there; the types
   promised to plugins are in `plugins/api.ts` (see [plugins](plugins.md#the-frontend)).

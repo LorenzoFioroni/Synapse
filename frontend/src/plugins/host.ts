@@ -18,6 +18,7 @@ import { CORE } from './core/index.js';
 import { registerSuggestions } from './suggestions.js';
 import { noteHooks } from '../views/notes/hooks.js';
 import { feedback } from './feedback.js';
+import { notesContext } from './notes.js';
 
 interface Loaded {
   disposed: boolean;
@@ -100,6 +101,12 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     version: info.version,
     settings: async () => (await api.plugins()).plugins.find((x) => x.id === pid)?.values || {},
     saveSettings: async (changes) => (await api.setPluginSettings(pid, changes)).values,
+    assets: { vendor: name => {
+      assertLive();
+      if (name !== 'force-graph') throw new Error(`Unknown vendored library ${name}`);
+      return '/vendor/force-graph/force-graph.min.js';
+    } },
+    notes: notesContext(pid, () => rec.disposed, keep, e => failed(info, 'Notes visualization', e)),
     editor: {
       suggestions: { register: (source) => keep(registerSuggestions({
         ready: () => !!guarded(info, 'suggestion readiness', () => source.ready())(),
@@ -115,8 +122,9 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     commands: {
       register: (spec) => {
         let key = spec.key;
-        // a core plugin's key is Synapse's own (it stays reserved for other plugins while it is off)
-        const problem = key && !(info.core && parseKey(key)) ? keyProblem(key) : null;
+        // Preserve the bundled legacy toggle's reserved key; installed replacements obey ordinary rules.
+        const graphToggle = info.source === 'bundled' && pid === 'graph' && spec.id === 'toggle' && key?.toLowerCase() === 'mod-shift-g';
+        const problem = key && !((info.core || graphToggle) && parseKey(key)) ? keyProblem(key) : null;
         if (problem) { console.warn(`Plugin ${pid}: command ${spec.id}: ${problem}; it gets no key`); key = undefined; }
         return keep(commands.register({
           id: full(spec.id), title: spec.title, key, source: src, owner: pid,
@@ -197,6 +205,8 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     },
     library: {
       selected: () => copy(selectedItems()) as PluginItem[],
+      refresh: async () => { assertLive(); await A.loadItems(); assertLive(); },
+      openPdf: async id => { assertLive(); const item = await api.getItem(id); assertLive(); A.openPdf(item); },
       update: async (id, changes) => { const item = await update(id, changes); A.patchLocal(item); await A.refreshItems([id]); return copy(item) as PluginItem; },
       item: async (id) => copy(await api.getItem(id)) as PluginItem,
       show: (id) => emit('show-item', id),

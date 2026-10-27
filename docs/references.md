@@ -310,8 +310,8 @@ items involved:
 The library side (author index, word weights and postings) is built once and again only when
 `library_signature()` changes. `folders` limits all of it to papers in those folders.
 
-`build_graph()` in the Graph core plugin (`plugins/graph/server/build.py`, served at
-`GET /api/plugins/graph/data`) adds the notes for the Graph view (`frontend/src/plugins/core/graph/`): `paper`, `work` and `note` nodes, and `cites`, `cite` (a note's
+`build_graph()` in the Graph contributed plugin (`plugins/graph/server/build.py`, served at
+`GET /api/plugins/graph/data`, using public citation-graph and permission-gated notes reads) adds the notes for the Graph view (`plugins/graph/frontend/`): `paper`, `work` and `note` nodes, and `cites`, `cite` (a note's
 `[@key]`), `link` (a note's `[[link]]`) and `about` (a paper note) edges. Everything is derived;
 nothing is stored. See [notes](notes.md) for the links it reads.
 

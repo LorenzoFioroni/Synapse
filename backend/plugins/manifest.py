@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-API_VERSION = (1, 6)  # the plugin API this Synapse offers (major, minor)
+API_VERSION = (1, 7)  # the plugin API this Synapse offers (major, minor)
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -118,6 +118,7 @@ class Manifest:
     styles: str | None = None
     network: list[str] = field(default_factory=list)
     library: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
     mcp: bool = False
     settings: list[Setting] = field(default_factory=list)
     python: list[str] = field(default_factory=list)  # packages it needs (deps.py)
@@ -141,6 +142,7 @@ class Manifest:
         return {
             "network": list(self.network),
             "library": list(self.library),
+            "notes": list(self.notes),
             "mcp": self.mcp,
             "python": list(self.python),
         }
@@ -262,7 +264,7 @@ def parse(data: object, folder: Path) -> Manifest:
     perms = data.get("permissions") or {}
     if not isinstance(perms, dict):
         raise ManifestError('"permissions" must be an object')
-    unknown = set(perms) - {"network", "library", "mcp"}
+    unknown = set(perms) - {"network", "library", "notes", "mcp"}
     if unknown:
         raise ManifestError(f"unknown permission {sorted(unknown)[0]!r} (does it need a newer Synapse?)")
     # "loopback" is a reserved token, not a DNS host permission (http.py).
@@ -274,6 +276,10 @@ def parse(data: object, folder: Path) -> Manifest:
     if not isinstance(library, list) or any(p not in LIBRARY_PERMISSIONS for p in library):
         raise ManifestError(f'"library" is a list of {", ".join(LIBRARY_PERMISSIONS)}')
     man.library = [p for p in LIBRARY_PERMISSIONS if p in library]
+    notes = perms.get("notes", [])
+    if not isinstance(notes, list) or any(p != "read" for p in notes):
+        raise ManifestError('"notes" is a list containing "read"')
+    man.notes = ["read"] if "read" in notes else []
     if (perms.get("mcp") or False) not in (True, False):
         raise ManifestError('"mcp" is true or false')
     man.mcp = bool(perms.get("mcp"))

@@ -98,7 +98,7 @@ These check rules of the code base rather than behaviour:
 | `crossref.test.mjs` | `views/notes/crossref.js`: `\ref`, `\eqref`, `\cref`, `\Cref`: kinds, plurals, ranges, unknown names |
 | `gallery.test.mjs` | `plugins/core/extended-markdown/figures/gallery.js`: reading gallery blocks, the figure caption, Markdown export; galleries in `render.js`, with the `figures` hook set and without it |
 | `extract.test.mjs` | `extractCitation` in `browser_extension/extract.js`, with a faked `document` and `location` |
-| `graph.test.mjs` | `plugins/core/graph/model.js` |
+| `graph.test.mjs` | `plugins/graph/frontend/model.ts` (compiled by the test harness) |
 | `library.test.mjs` | `views/notes/library.js`: autocomplete ranking |
 | `linkNav.test.mjs` | `viewer/linkNav.js`: link targets and previews in the PDF viewer |
 | `lookupJob.test.mjs` | `LookupJob` in `views/metadataReview.js` |

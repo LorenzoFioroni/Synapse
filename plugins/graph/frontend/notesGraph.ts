@@ -11,18 +11,11 @@
 //
 // Clicking a note opens it. Clicking a paper shows a small card (paper note, library, PDF).
 // Data: the plugin's /data route (plugins/graph/server/build.py), filtered with model.ts, drawn
-// with forceGraph.ts. The notes view reaches this through views/notes/hooks.ts (index.ts sets it).
+// with forceGraph.ts. The public Notes visualization API owns layout and navigation.
 
-import * as A from '../../../actions.js';
-import { api } from '../../../api.js';
-import { navigation } from '../../../extend.js';
-import { icon } from '../../../icons.js';
-import { emit } from '../../../store.js';
-import { toast, toastError } from '../../../ui/toast.js';
-import { escapeHtml as esc, h, shortAuthors, storage, store } from '../../../util.js';
-import type { ApiError } from '../../../api.js';
-import type { GraphData } from '../../../types.js';
-import type { NotesGraphContext } from '../../../views/notes/hooks.js';
+import type { PluginContext, NotesVisualizationContext } from '../../../frontend/src/plugins/api.js';
+import { icon, toast, toastError, escapeHtml as esc, h, shortAuthors, storage, store } from './ui.js';
+import type { GraphData } from './types.js';
 import { type GNode, type GraphCanvas, createGraph } from './forceGraph.js';
 import { buildView, label, matchNodes, relations } from './model.js';
 
@@ -31,7 +24,20 @@ type LocalOptions = { depth: number; papers: boolean };
 type GlobalOptions = { papers: boolean; citations: boolean; works: boolean; orphans: boolean; depth: number };   // depth 0: all
 
 let data: GraphData | null = null, dataAt = 0, fetching: Promise<GraphData> | null = null;
-let ctx: NotesGraphContext;
+let ctx: NotesVisualizationContext;
+let plugin: PluginContext;
+let disposed = false, localPaint = 0, globalPaint = 0;
+const observers = new Map<HTMLElement, ResizeObserver>();
+const timers = new Set<ReturnType<typeof setTimeout>>();
+const later = (fn: () => void, ms: number) => {
+  const timer = setTimeout(() => { timers.delete(timer); if (!disposed) fn(); }, ms);
+  timers.add(timer); return timer;
+};
+export function configure(p: PluginContext): void { plugin = p; }
+function observe(host: HTMLElement, resize: () => void): void {
+  observers.get(host)?.disconnect();
+  const observer = new ResizeObserver(resize); observers.set(host, observer); observer.observe(host);
+}
 let local: (GraphCanvas & { host?: HTMLElement }) | null = null, localHost: HTMLElement | null = null, localPath: string | null = null;
 let global: GraphCanvas | null = null, globalEl: HTMLElement | null = null, globalFocus: string | null = null;
 let card: HTMLElement | null = null;
@@ -42,29 +48,30 @@ const globalOpts: GlobalOptions = { papers: true, citations: false, works: false
 /** Graph data, fetched again when it may have changed (after a save) or is older than a minute. */
 async function getData(fresh = false): Promise<GraphData> {
   if (!fresh && data && Date.now() - dataAt < 60000) return data;
-  fetching ||= api.pluginRoute<GraphData>('graph', 'GET', '/data').then((d) => { data = d; dataAt = Date.now(); return d; }).finally(() => { fetching = null; });
+  fetching ||= plugin.backend.get<GraphData>('/data').then((d) => { if (!disposed) { data = d; dataAt = Date.now(); } return d; }).finally(() => { fetching = null; });
   return fetching;
 }
 
 /** Call after a note was saved, moved or deleted: the next paint fetches the graph again. */
 export function graphChanged(): void {
+  if (disposed) return;
   dataAt = 0;
   clearTimeout(changedTimer);
-  changedTimer = setTimeout(() => { if (localPath) paintLocal(); if (global) paintGlobal(); }, 400);
+  changedTimer = later(() => { if (localPath) paintLocal(); if (global) paintGlobal(); }, 400);
 }
 
 let themeObserver: MutationObserver | null = null;
 const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && card) closeCard(); };
 const onDown = (e: MouseEvent) => { if (card && !card.contains(e.target as Node)) closeCard(); };
 
-export function initNotesGraph(c: NotesGraphContext): void {
+export function initNotesGraph(c: NotesVisualizationContext): void {
   ctx = c;
   themeObserver?.disconnect();
   themeObserver = new MutationObserver(() => { local?.refreshColors(); global?.refreshColors(); });
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   window.addEventListener('keydown', onKey);
   document.addEventListener('mousedown', onDown);
-  window.zcGraph = {   // for tests
+  (window as Window & { zcGraph?: unknown }).zcGraph = {   // for tests
     local: () => local, global: () => global, localPath: () => localPath, globalFocus: () => globalFocus,
     get data() { return data; },
   };
@@ -73,6 +80,12 @@ export function initNotesGraph(c: NotesGraphContext): void {
 /** The plugin stops: take the graphs away. */
 export function teardownNotesGraph(): void {
   closeGlobal();
+  disposed = true; localPaint++; globalPaint++;
+  for (const observer of observers.values()) observer.disconnect();
+  observers.clear();
+  for (const timer of timers) clearTimeout(timer);
+  timers.clear();
+  clearTimeout(changedTimer);
   themeObserver?.disconnect();
   themeObserver = null;
   window.removeEventListener('keydown', onKey);
@@ -108,7 +121,7 @@ export function localSection(): HTMLElement {
     if (!b) return;
     if (b.dataset.lgDepth) { localOpts.depth = Number(b.dataset.lgDepth); store('zc.graph.local', localOpts); paintLocal(); }
     else if (b.dataset.lg === 'papers') { localOpts.papers = !localOpts.papers; store('zc.graph.local', localOpts); paintLocal(); }
-    else if (b.dataset.lg === 'expand') ctx.openGraph(localPath ? `note:${localPath}` : null);   // with a history entry
+    else if (b.dataset.lg === 'expand') ctx.open(localPath ? `note:${localPath}` : null);   // with a history entry
     else if (b.dataset.lg === 'toggle') {
       const nowOpen = el.classList.toggle('collapsed') === false;
       store('zc.graph.localOpen', nowOpen);
@@ -132,13 +145,15 @@ export function showLocal(path: string | null): void {
 }
 
 async function paintLocal() {
+  const paint = ++localPaint;
+  if (disposed) return;
   const section = localHost?.closest('.ns-graph');
   if (!localHost || !localPath || !section || section.classList.contains('collapsed') || !localHost.isConnected) return;
   const host = localHost;
   const path = localPath;
   let d: GraphData;
   try { d = await getData(); } catch { return; }
-  if (path !== localPath || !host.isConnected) return;
+  if (disposed || paint !== localPaint || path !== localPath || !host.isConnected) return;
   const focus = `note:${path}`;
   const view = buildView(d, {
     papers: localOpts.papers, works: false, notes: true, hideIsolated: false, focus, depth: localOpts.depth,
@@ -146,16 +161,18 @@ async function paintLocal() {
   });
   if (!local || local.host !== localHost) {
     local?.destroy();
+    if (local?.host) { observers.get(local.host)?.disconnect(); observers.delete(local.host); }
     const g: GraphCanvas & { host?: HTMLElement } = await createGraph(host, { compact: true, onNodeClick: (n, e) => onNodeClick(n, e, host) });
+    if (disposed || paint !== localPaint || !host.isConnected) { g.destroy(); return; }
     g.host = host;
     local = g;
-    new ResizeObserver(() => { if (local?.host === localHost) local.resize(); }).observe(host);
+    observe(host, () => { if (local?.host === host) local.resize(); });
   }
   const g = local;
   g.setCurrent(focus);
   g.setData(view);
   g.graph.onEngineStop(() => g.fit(300));
-  setTimeout(() => local?.fit(300), 350);
+  later(() => local?.fit(300), 350);
   host.dataset.count = String(view.nodes.length);
   host.classList.toggle('alone', view.nodes.length <= 1);
 }
@@ -165,7 +182,8 @@ export const globalOpen = () => !!globalEl && !globalEl.hidden;
 
 /** Show the full graph in place of the editor, optionally centred on a node. */
 export async function openGlobal(focus: string | null = null): Promise<void> {
-  const main = ctx.root.querySelector('.notes-main')!;
+  if (disposed) return;
+  const main = ctx.main;
   if (!globalEl) {
     const el = h(`<div class="notes-graph" hidden>
       <div class="ng-bar">
@@ -224,9 +242,8 @@ export async function openGlobal(focus: string | null = null): Promise<void> {
     el.tabIndex = -1;
   }
   globalFocus = focus;
-  ctx.root.classList.add('graph-on');
   globalEl.hidden = false;
-  navigation.changed();
+  ctx.setOpen(true);
   paintGlobalControls();
   await paintGlobal({ refit: true });
   globalEl?.focus();
@@ -235,11 +252,10 @@ export async function openGlobal(focus: string | null = null): Promise<void> {
 export function closeGlobal({ push = false } = {}): void {
   if (!globalOpen()) return;
   globalEl!.hidden = true;
-  navigation.changed();
-  ctx.root.classList.remove('graph-on');
+  ctx.setOpen(false);
   closeCard();
   global?.graph.pauseAnimation();
-  if (push) ctx.onGlobalClosed?.();
+  if (push) ctx.closed();
 }
 
 function setDepth(depth: number): void {
@@ -265,10 +281,12 @@ function paintGlobalControls(): void {
 }
 
 async function paintGlobal({ refit = false } = {}): Promise<void> {
-  if (!globalOpen()) return;
+  const paint = ++globalPaint;
+  if (disposed || !globalOpen()) return;
   const root = globalEl!;
   let d: GraphData;
-  try { d = await getData(); } catch (e) { toastError(e); return; }
+  try { d = await getData(); } catch (e) { if (!disposed) toastError(e); return; }
+  if (disposed || paint !== globalPaint || root !== globalEl || !globalOpen()) return;
   const host = root.querySelector<HTMLElement>('.ng-canvas')!;
   const centreNode = globalFocus ? d.nodes.find((n) => n.id === globalFocus) : undefined;
   const levels = !!centreNode && globalOpts.depth > 0;
@@ -290,8 +308,10 @@ async function paintGlobal({ refit = false } = {}): Promise<void> {
     centreEl.title = `${centreNode.title || label(centreNode)} — Shift-click a node to centre on it`;
   }
   if (!global) {
-    global = await createGraph(host, { onNodeClick: (n, e) => onNodeClick(n, e, host), onBackgroundClick: closeCard });
-    new ResizeObserver(() => global?.resize()).observe(host);
+    const created = await createGraph(host, { onNodeClick: (n, e) => onNodeClick(n, e, host), onBackgroundClick: closeCard });
+    if (disposed || paint !== globalPaint || root !== globalEl || !globalOpen()) { created.destroy(); return; }
+    global = created;
+    observe(host, () => global?.resize());
   }
   const g = global;
   g.graph.resumeAnimation();
@@ -305,11 +325,11 @@ async function paintGlobal({ refit = false } = {}): Promise<void> {
     const focus = globalFocus;
     if (levels) {   // a neighbourhood: show all of it, the centre ringed
       g.setMarked(focus);
-      setTimeout(() => g.fit(500), 700);
+      later(() => g.fit(500), 700);
     } else if (focus && view.nodes.some((n) => n.id === focus)) {
       g.setMarked(focus);
-      setTimeout(() => g.focus(focus, 500), 700);
-    } else setTimeout(() => g.fit(500), 700);
+      later(() => g.focus(focus, 500), 700);
+    } else later(() => g.fit(500), 700);
   }
 }
 
@@ -350,19 +370,20 @@ function showCard(n: GNode, e: MouseEvent | undefined, host: HTMLElement): void 
     if (!b) return;
     const a = b.dataset.gc;
     if (a === 'note') { closeCard(); closeGlobal({ push: false }); ctx.openNote(paperNote.path!); }
-    else if (a === 'item' && n.item_id) { closeCard(); emit('show-item', n.item_id); }
-    else if (a === 'pdf') { closeCard(); A.openPdf(n.item_id); }
+    else if (a === 'item' && n.item_id) { closeCard(); plugin.library.show(n.item_id); }
+    else if (a === 'pdf') { closeCard(); plugin.library.openPdf(n.item_id!); }
     else if (a === 'centre') { closeCard(); centreOn(n.id); }
     else if (a === 'add') {
       b.disabled = true;
       try {
-        await api.fromIdentifier(ident!, false, null);
-        toast('Added to your library.', { type: 'success' });
-        await A.loadItems();
+        const result = await plugin.backend.post<{ duplicate?: boolean }>('/add', { doi: n.doi, arxiv: n.arxiv_id, title: n.title, authors: n.authors, year: n.year });
+        if (disposed) return;
+        toast(result.duplicate ? 'Already in your library.' : 'Added to your library.', { type: 'success' });
+        await plugin.library.refresh();
         graphChanged();
         closeCard();
       } catch (err) {
-        if ((err as ApiError).status === 409) toast('Already in your library.'); else toastError(err);
+        if (!disposed) toastError(err);
         b.disabled = false;
       }
     }

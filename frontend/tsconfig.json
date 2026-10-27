@@ -12,7 +12,9 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "types": [],
+    "baseUrl": ".",
+    "paths": { "force-graph": ["node_modules/force-graph"] },
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "../plugins/autocompletion/frontend", "../plugins/metadata-check/frontend"]
+  "include": ["src", "../plugins/autocompletion/frontend", "../plugins/metadata-check/frontend", "../plugins/graph/frontend"]
 }

@@ -10,8 +10,8 @@
 
 import type ForceGraphClass from 'force-graph';
 import type { LinkObject, NodeObject } from 'force-graph';
-import type { EdgeKind, GraphNode } from '../../../types.js';
-import { escapeHtml as esc } from '../../../util.js';
+import type { EdgeKind, GraphNode } from './types.js';
+import { escapeHtml as esc } from './ui.js';
 import { type GraphView, label } from './model.js';
 
 /** A node as force-graph keeps it: our node plus its position and velocity. */
@@ -36,12 +36,15 @@ export interface GraphCanvas {
 }
 
 let loading: Promise<typeof ForceGraphClass> | null = null;
+let libraryUrl = '';
+export function configureGraphLibrary(url: string): void { libraryUrl = url; }
+const graphWindow = window as Window & { ForceGraph?: typeof ForceGraphClass };
 function loadForceGraph(): Promise<typeof ForceGraphClass> {
   loading ||= new Promise((resolve, reject) => {
-    if (window.ForceGraph) { resolve(window.ForceGraph); return; }
+    if (graphWindow.ForceGraph) { resolve(graphWindow.ForceGraph); return; }
     const s = document.createElement('script');
-    s.src = 'vendor/force-graph/force-graph.min.js';
-    s.onload = () => resolve(window.ForceGraph!);
+    s.src = libraryUrl;
+    s.onload = () => resolve(graphWindow.ForceGraph!);
     s.onerror = () => { loading = null; reject(new Error('Could not load the graph library')); };
     document.head.appendChild(s);
   });
