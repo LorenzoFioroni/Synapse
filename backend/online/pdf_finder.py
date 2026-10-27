@@ -1,6 +1,6 @@
 """Download an open-access PDF of an item and verify it is the right paper. Where to look comes
-from the plugins' PDF sources (``@plugin.pdf_source``; Unpaywall and arXiv are the core plugin
-plugins/open-access-pdfs)."""
+from the plugins' PDF sources (``@plugin.pdf_source``; Unpaywall and arXiv are the plugin
+plugins/open-access-pdfs, on by default)."""
 
 from __future__ import annotations
 
@@ -21,9 +21,6 @@ from ..pdf.text import extract_text
 from .http import BROWSER_UA, arxiv_wait
 
 log = logging.getLogger(__name__)
-
-FALLBACK_EMAIL = "synapse@example.com"
-
 
 def _ratio(a: str, b: str) -> float:
     try:
@@ -54,11 +51,6 @@ def verify_pdf(path: str, title: str | None, doi: str | None, arxiv_id: str | No
         t = re.sub(r"\s+", "", title.lower())[:150]
         return _ratio(t, re.sub(r"\s+", "", low)) >= 85
     return False
-
-
-def arxiv_pdf_url(arxiv_id: str) -> str:
-    """arxiv.org/pdf/<id> (latest version unless the id pins one); old ids like quant-ph/0001106 too."""
-    return f"https://arxiv.org/pdf/{arxiv_id}"
 
 
 def _unique(urls: list) -> list[str]:

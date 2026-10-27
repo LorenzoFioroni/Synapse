@@ -26,7 +26,7 @@ from werkzeug.exceptions import HTTPException, MethodNotAllowed, NotFound
 from werkzeug.routing import Map, Rule
 
 from . import build, deps
-from .catalog import discover, initialize_core
+from .catalog import discover, initialize_defaults
 from .context import Plugin, PluginError, ToolSpec
 from .http import PluginHttp, service_credentials
 from .itemfields import FieldIndex, PluginFields
@@ -130,7 +130,7 @@ class PluginHost:
             except OSError:
                 pass
         self.scan()
-        self._turn_on_core()
+        self._initialize_defaults()
         self._state_seen = self.state.stamp()
         if self.safe_mode:
             log.warning("Safe mode: plugins are off (except the core plugins, which are part of Synapse)")
@@ -188,8 +188,8 @@ class PluginHost:
         entry = self._entries.get(pid)
         return bool(entry and entry.source == "bundled" and entry.manifest and entry.manifest.core)
 
-    def _turn_on_core(self) -> None:
-        initialize_core(self._entries, self.state, self.settings)
+    def _initialize_defaults(self) -> None:
+        initialize_defaults(self._entries, self.state, self.settings)
 
     def _sync(self) -> None:
         on = {pid for pid, st in self.state.read().items() if st.get("enabled")}

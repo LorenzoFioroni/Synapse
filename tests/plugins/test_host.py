@@ -400,3 +400,40 @@ def test_safe_mode_follows_core_plugin_changes(tmp_path):
     finally:
         app_host.stop()
         mcp_host.stop()
+
+
+def test_a_bundled_plugin_may_start_on_without_being_core(tmp_path):
+    """A contributed plugin that comes with Synapse starts on the first time when its manifest says
+    so, then follows the user's choice; an installed one with the same claim waits to be turned on,
+    and safe mode stops both."""
+    from backend.config import Config
+    from backend.plugins.host import PluginHost
+    from tests.plugins.conftest import write_plugin
+
+    cfg = Config.from_env(tmp_path / "data")
+    write_plugin(cfg.bundled_plugins_dir, "bundled-on", enabled_by_default=True, permissions={"mcp": True})
+    write_plugin(cfg.bundled_plugins_dir, "bundled-off")
+    write_plugin(cfg.plugins_dir, "installed-on", enabled_by_default=True)
+    host = PluginHost(cfg)
+    try:
+        host.start("app")
+        on = host.info("bundled-on")
+        assert on["running"] and not on["core"] and not on["remote_mcp"]  # other computers: the user's choice
+        assert not host.info("bundled-off")["enabled"] and not host.info("installed-on")["enabled"]
+        host.disable("bundled-on")
+    finally:
+        host.stop()
+    again = PluginHost(cfg)
+    try:
+        again.start("app")
+        assert not again.info("bundled-on")["enabled"]  # the default applies only the first time
+    finally:
+        again.stop()
+    cfg.safe_mode = True
+    safe = PluginHost(cfg)
+    try:
+        safe.start("app")
+        safe.enable("bundled-on")
+        assert safe.info("bundled-on")["status"] == "safe-mode"
+    finally:
+        safe.stop()

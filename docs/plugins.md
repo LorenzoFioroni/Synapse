@@ -97,11 +97,6 @@ while the Plugins area is in view, and otherwise keeps a single top-level **Plug
   `/api/plugins/graph/data`. A core plugin's frontend reaches into the notes view through
   `frontend/src/views/notes/hooks.ts` (`setNoteHook('graph' | 'figures' | 'extended', …)`, which redraws the
   open note); a core plugin's server part gets the app's `Services` as `plugin.synapse`.
-- **Open-Access PDFs** (`plugins/open-access-pdfs`): where Find Available PDF looks, Unpaywall and
-  arXiv by identifier and by title (its two PDF sources, see
-  [references](references.md#open-access-pdfs)). Turned off, Find Available PDF has nowhere to
-  look unless another plugin offers a source.
-
 A core plugin is a plugin like any other (manifest, `activate(plugin)`, routes, tools, settings),
 with these differences, all from `"core": true` in its manifest and honoured only in `plugins/`:
 
@@ -143,6 +138,22 @@ Stopping one disposes and removes its controls; starting it again mounts one fre
 selected section disappears, Settings selects General. Unrelated sections keep their mounted state.
 Autocompletion also clears visible and pending suggestions when stopped; an older status request
 cannot overwrite a newer check.
+
+### Contributed plugins that start on
+
+Some features Synapse always had are **contributed plugins**: they use only the public plugin API
+(`backend.plugins`, `plugin.http`), as an installed plugin would, so they show what a plugin can
+do and keep that API honest. They come with Synapse and start on the first time Synapse sees them,
+because their manifest says `"enabled_by_default": true` (honoured only for plugins in
+`plugins/`; an installed plugin always waits to be turned on). After that they are the user's
+choice, and safe mode stops them like any contributed plugin. Settings lists them under
+**Contributed plugins**.
+
+- **Open-Access PDFs** (`plugins/open-access-pdfs`): where Find Available PDF looks, Unpaywall and
+  arXiv by identifier and by title (its two PDF sources, see
+  [references](references.md#open-access-pdfs)), through `plugin.http` (network permission for
+  `api.unpaywall.org` and `export.arxiv.org`). Turned off, or in safe mode, Find Available PDF has
+  nowhere to look unless another plugin offers a source.
 
 ### Optional plugins that come with Synapse
 
@@ -254,6 +265,7 @@ data/plugins/recently-added/      the folder's name is the plugin's id
 | `permissions` | `network`: the hosts `plugin.http` may reach (`"export.arxiv.org"`, or `"*.example.org"` for a domain and its subdomains). `library`: `read` (`plugin.library`), `add` (`plugin.actions.add`; `edit` is reserved). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
 | `python` | Python packages it needs, as requirements (`["scirate>=0.0.7"]`): installed with pip when it first starts (see [Python packages](#python-packages)). |
 | `settings` | What the user can set, see below. |
+| `enabled_by_default` | `true`: start on the first time Synapse sees it. Honoured only for the plugins that come with Synapse (`plugins/`); an installed plugin waits for the user. |
 
 Each setting has a `key` (lowercase, `_`), a `type`, a `label`, an optional `description` and
 `default`:
@@ -504,8 +516,10 @@ of this):
 
 - Only the hosts its manifest's `network` names, and only public addresses (not this computer or
   the local network), also after redirects.
-- Requests to one host are spaced (0.5 s, 3 s for arXiv; more with `plugin.http.limit(host,
-  seconds)`), across all plugins, so two plugins cannot overload one service.
+- Requests to one host are spaced (0.5 s; more with `plugin.http.limit(host, seconds)`), across
+  all plugins, so two plugins cannot overload one service. All of arXiv's hosts share one line, 3 s
+  apart as its API terms ask, with Synapse's own requests to arXiv (`backend/online/http.py`
+  `HOST_GAPS`).
 - A User-Agent naming Synapse, the plugin and the contact address from Settings → Online
   Services, as scholarly APIs ask.
 - For the scholarly services Synapse itself uses, the user's keys from Settings → Online Services,
@@ -608,7 +622,7 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
 | Module | What it does |
 |---|---|
 | `host.py` | `PluginHost`: finds plugins (`scan`), starts and stops them, runs their routes and tools with failure counting (`route`, `run`, `mcp_tools`), sends events (`emit`), and what Settings shows (`info`, `overview`). |
-| `catalog.py` | Discovers manifests without importing code, applies folder precedence and initializes core defaults from legacy preferences once. |
+| `catalog.py` | Discovers manifests without importing code, applies folder precedence and, once per plugin, turns on the bundled plugins that start by themselves (core plugins, and contributed ones with `enabled_by_default`), carrying legacy preferences over. |
 | `files.py` | Shared file transactions: process and thread locks, atomic JSON replacement. |
 | `manifest.py` | Reads and checks `manifest.json`; `API_VERSION`; settings and their values. |
 | `context.py` | `Plugin`, the object a plugin gets; `PluginError`; `EVENTS`; tool schemas from type hints. |

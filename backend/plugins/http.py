@@ -1,6 +1,6 @@
 """``plugin.http``: how plugins reach the web. Only the hosts a plugin's manifest names, only public
-addresses, spaced requests per host (shared by every plugin, so two plugins cannot flood one
-service), a polite User-Agent, the user's keys for the scholarly services Synapse itself uses,
+addresses, spaced requests per host (shared by every plugin and by Synapse's own lookups, so
+together they cannot flood one service), a polite User-Agent, the user's keys for the scholarly services Synapse itself uses,
 answers cached by ETag / Last-Modified, and readable errors."""
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ import ipaddress
 import json as jsonlib
 import socket
 import threading
-import time
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -17,14 +16,13 @@ from urllib.parse import urljoin, urlsplit
 
 import requests
 
+from ..online import http as online_http
 from .errors import PluginError
 
 TIMEOUT = 20  # seconds
 MAX_BYTES = 50 * 1024 * 1024
 MAX_REDIRECTS = 5
-DEFAULT_GAP = 0.5  # seconds between two requests to one host
-# Services that ask for more room (arXiv's API terms: one request every three seconds).
-GAPS = {"arxiv.org": 3.0}
+DEFAULT_GAP = 0.5  # seconds between two requests to one host (arXiv asks for more: online/http.py)
 CACHE_ENTRIES = 200
 
 
@@ -57,30 +55,9 @@ class Response:
         return jsonlib.loads(self.content)
 
 
-class _Gaps:
-    """When each host may next be asked (process-wide)."""
-
-    def __init__(self):
-        self._next: dict[str, float] = {}
-        self._lock = threading.Lock()
-
-    def wait(self, host: str, gap: float) -> None:
-        with self._lock:
-            now = time.monotonic()
-            at = max(now, self._next.get(host, 0.0))
-            self._next[host] = at + gap
-        if at > now:
-            time.sleep(at - now)
-
-
-GAPS_STATE = _Gaps()
-
-
-def _gap_for(host: str) -> float:
-    for suffix, gap in GAPS.items():
-        if host == suffix or host.endswith("." + suffix):
-            return gap
-    return DEFAULT_GAP
+def _gap_for(host: str) -> tuple[str, float]:
+    """(the line ``host`` waits in, its gap), shared with Synapse's own requests."""
+    return online_http.spacing(host, DEFAULT_GAP)
 
 
 def allowed(host: str, patterns: list[str]) -> bool:
@@ -196,7 +173,8 @@ class PluginHttp:
                 for k in cred_headers:
                     if k not in (headers or {}):
                         hdrs.pop(k, None)
-            GAPS_STATE.wait(host, max(_gap_for(host), self._gaps.get(host, 0.0)))
+            key, gap = _gap_for(host)
+            online_http.HOST_GAPS.wait(key, max(gap, self._gaps.get(host, 0.0)))
             try:
                 r = requests.request(
                     method,

@@ -40,9 +40,11 @@ features fail with a message and the rest of the app works as before.
   something that looks like a browser.
 - `LookupFailed`: a lookup failed, and its message is shown to the user as is. The API turns it
   into a JSON error (mostly 404). `references/sources.py` subclasses it as `FetchFailed`.
-- `arxiv_wait()` keeps requests to arXiv (API and PDF downloads alike) `ARXIV_SPACING` (1 s)
-  apart, behind a process-wide lock. arXiv asks API users to space their requests, and Synapse
-  runs several lookups side by side.
+- `arxiv_wait()` keeps requests to arXiv (API and PDF downloads alike) `ARXIV_SPACING` (3 s)
+  apart. arXiv's API terms ask for one request every three seconds, and Synapse runs several
+  lookups side by side. The turns are taken from `HOST_GAPS`, a process-wide line per service that
+  plugins' requests (`plugin.http`) wait in too, so Synapse and its plugins together keep the
+  spacing; `spacing(host, default)` puts all of arXiv's hosts in one line.
 
 **Contact e-mail and API keys.** They live in the settings (Settings → Online Services):
 `contact_email`, `openalex_api_key` and `semantic_scholar_api_key`. `http.py` does not read
@@ -158,16 +160,18 @@ Where to look comes from the plugins' **PDF sources** (`@plugin.pdf_source`, see
 [plugins](plugins.md#the-plugin-object)), gathered by `PluginHost.pdf_candidates(paper,
 by_title=…)`: sources by identifier and sources searching by title, lower `order` first, each URL
 once. With no source running (the core plugin below turned off, and no other), Find Available PDF
-says so. The core plugin **Open-Access PDFs** (`plugins/open-access-pdfs/server/finder.py`) has
-Synapse's two sources, best first:
+says so. The plugin **Open-Access PDFs** (`plugins/open-access-pdfs/server/finder.py`), which comes
+with Synapse and is on by default, has Synapse's two sources, best first. It is a contributed
+plugin: it uses only the public plugin API, asking Unpaywall and arXiv through `plugin.http` (its
+manifest names `api.unpaywall.org` and `export.arxiv.org`).
 
 1. For a preprint (an arXiv id, and no DOI or only an arXiv DOI): `arxiv.org/pdf/<id>`.
 2. For a DOI that is not an arXiv DOI: Unpaywall's `best_oa_location.url_for_pdf`. Unpaywall
-   requests carry the contact e-mail (Settings → Online Services, else `FALLBACK_EMAIL`),
+   requests carry the contact e-mail (Settings → Online Services, else a placeholder address),
    URL-encoded.
 3. For a published paper that also has an arXiv id: the arXiv PDF, after Unpaywall.
 4. Searches by title: Unpaywall's search (first two results) and an arXiv title search (the
-   arXiv API over https, after `arxiv_wait()`, with `TIMEOUT`). Google Scholar is not asked: it
+   arXiv API over https, in arXiv's line of `plugin.http`). Google Scholar is not asked: it
    has no API, and its robots.txt forbids programs to read its result pages.
 
 When the item has an arXiv id, `find_and_download` tries the sources by identifier (steps 1–3)

@@ -235,7 +235,7 @@ never mix.
   paper shows a card (paper note, Show in Library, PDF, Add to Library). It is a core plugin
   (**Graph**, also under **Plugins** in the sidebar): turn it off in Settings → Plugins if you don't use it.
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
-  arXiv: the core plugin Open-Access PDFs; other plugins can add places to look) and checks the file is really the right paper. Batch runs skip items
+  arXiv: the plugin Open-Access PDFs, on by default; other plugins can add places to look) and checks the file is really the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.
 - **Folders** (nested; an item can be in several folders but is stored once — a folder
   only holds a link to it), **tags** (many per item, optional colours) and **smart

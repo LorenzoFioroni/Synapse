@@ -1,10 +1,12 @@
 """Find Available PDF uses a known arXiv id first. The network is faked."""
 
+import json
 import time
 
 import pytest
 
 from backend.online import http, pdf_finder
+from backend.plugins import http as plugin_http
 from tests.conftest import make_pdf
 
 
@@ -12,6 +14,9 @@ class Resp:
     def __init__(self, status=200, content=b"", ctype="application/pdf", data=None, text=""):
         self.status_code, self.content, self._data, self.text = status, content, data, text
         self.headers = {"Content-Type": ctype}
+        self.encoding, self.reason = "utf-8", ""
+        if data is not None and not content:  # plugin.http reads the body, not .json()
+            self.content = json.dumps(data).encode()
 
     @property
     def ok(self):
@@ -19,6 +24,12 @@ class Resp:
 
     def json(self):
         return self._data or {}
+
+    def iter_content(self, size):
+        return [self.content]
+
+    def close(self):
+        pass
 
 
 @pytest.fixture
@@ -33,7 +44,12 @@ def web(monkeypatch, tmp_path):
                 return r() if callable(r) else r
         return Resp(404, ctype="text/html")
 
+    def request(method, url, **kw):  # plugins' requests (plugin.http)
+        return get(url, **kw)
+
     monkeypatch.setattr(pdf_finder.requests, "get", get)
+    monkeypatch.setattr(pdf_finder.requests, "request", request)
+    monkeypatch.setattr(plugin_http, "public", lambda host: True)  # no DNS in tests
     return routes, calls
 
 
@@ -159,29 +175,36 @@ def test_an_arxiv_id_alone_is_enough(svc, web, tmp_path):
     assert svc.find_pdf(item["id"])["status"] == "success"
 
 
-def test_title_search_requests(monkeypatch):
-    """The contact e-mail is URL-encoded, and the arXiv search is https, spaced and on TIMEOUT."""
+def test_title_search_requests(svc, web):
+    """The plugin asks only through plugin.http: the contact e-mail URL-encoded, a DOI quoted into
+    Unpaywall's path, and the arXiv search over https in arXiv's line (shared with Synapse)."""
     from backend.config import APP_ROOT
     from backend.plugins.loading import load_module
 
-    calls, waits = [], []
-
-    def get(url, **kw):
-        calls.append((url, kw.get("timeout")))
-        return Resp(404, ctype="text/html")
-
+    _, calls = web
     module, _ = load_module("open-access-pdfs", APP_ROOT / "plugins" / "open-access-pdfs" / "server")
     finder = module.finder
-    monkeypatch.setattr(finder.requests, "get", get)
-    monkeypatch.setattr(finder, "arxiv_wait", lambda: waits.append(len(calls)))
-    assert finder.by_identifier("10.1/abc", None, "me+lib@example.org") == []
-    assert finder.by_title("A title", "me+lib@example.org") == []
-    urls = [u for u, _ in calls]
-    assert urls[0] == "https://api.unpaywall.org/v2/10.1/abc?email=me%2Blib@example.org"
-    assert urls[1].endswith("&email=me%2Blib@example.org")
-    url, timeout = calls[-1]
-    assert url.startswith("https://export.arxiv.org/api/query?") and timeout == http.TIMEOUT
-    assert waits == [len(calls) - 1]  # right before the arXiv request
+    client = plugin_http.PluginHttp("open-access-pdfs", ["api.unpaywall.org", "export.arxiv.org"], lambda: "test")
+    lines = []
+    monkeypatch_wait = http.HOST_GAPS.wait
+    try:
+        http.HOST_GAPS.wait = lambda key, gap: (lines.append((key, len(calls))), monkeypatch_wait(key, gap))
+        assert finder.by_identifier(client, "10.1/a?b", None, "me+lib@example.org") == []
+        assert finder.by_title(client, "A title", "me+lib@example.org") == []
+    finally:
+        http.HOST_GAPS.wait = monkeypatch_wait
+    assert calls[0] == "https://api.unpaywall.org/v2/10.1/a%3Fb?email=me%2Blib%40example.org"
+    assert calls[1].startswith("https://api.unpaywall.org/v2/search?query=A+title&")
+    assert calls[1].endswith("email=me%2Blib%40example.org")
+    assert calls[2].startswith("https://export.arxiv.org/api/query?search_query=ti%3A%22A+title%22")
+    assert ("arxiv.org", 2) in lines  # right before the arXiv request, in arXiv's line
+
+
+def test_the_plugin_uses_only_the_plugin_api(svc):
+    """Open-Access PDFs is a contributed plugin that starts on by itself."""
+    info = next(p for p in svc.plugins.listing() if p["id"] == "open-access-pdfs")
+    assert info["enabled"] and not info["core"]
+    assert info["permissions"]["network"] == ["api.unpaywall.org", "export.arxiv.org"]
 
 
 def test_sources_come_from_plugins(client, svc, web, tmp_path):
