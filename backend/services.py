@@ -50,7 +50,10 @@ class Services:
         self.vault.ensure()
         self.notes = NotesIndex(config.notes_index_path, self.vault)
         # key renames back up the notes into the backup folder from Settings, like Backups does
-        self.note_service = NotesService(self.vault, self.notes, self.papers, self._backup_dir)
+        self.note_service = NotesService(
+            self.vault, self.notes, self.papers, self._backup_dir, history_dir=config.notes_history_dir
+        )
+        self.note_service.history.on_commit = lambda: self.changes.record({"history"})
         # Attachments no note uses go to their own trash; both trashes are emptied after a while.
         self.attachments = Attachments(self.vault, self.notes, self.settings)
         self.note_service.on_change = self.attachments.poke

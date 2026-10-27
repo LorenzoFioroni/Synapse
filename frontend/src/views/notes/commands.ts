@@ -1,6 +1,6 @@
 // The notes' commands for the command palette, for the note being edited: inserting images and
 // figures (several at once make a gallery with Extended Markdown), citations, links, tasks and other blocks; Live/Source/Read; renaming,
-// moving, deleting, exporting and linking the note; its graph, AI edits and paper. Each is offered
+// moving, deleting, exporting and linking the note; its graph, history and paper; the history of all notes. Each is offered
 // only while a note is open on screen and it can do something there (a figure needs Extended
 // Markdown's figures, a task the Tasks plugin), so the palette never lists one that would do nothing.
 import { api } from '../../api.js';
@@ -8,7 +8,7 @@ import { commands } from '../../extend.js';
 import { emit } from '../../store.js';
 import { toast, toastError } from '../../ui/toast.js';
 import { pickFiles } from '../itemlist/menus.js';
-import { loadAiEdits, onAiAction } from './aiBar.js';
+import { markMilestone, openNoteHistory, openVaultHistory } from './historyView.js';
 import { pdfsOf } from './citeCard.js';
 import { loadCM } from './editor.js';
 import { exportNote } from './exportNote.js';
@@ -52,8 +52,9 @@ export function registerNoteCommands(host: NoteCommandsHost): void {
   add('source', 'Source Mode', () => setNoteMode('source'), () => open() && ws.mode !== 'source');
   add('read', 'Read Mode', () => setNoteMode('read'), () => open() && ws.mode !== 'read');
   add('graph', 'Show This Note in the Graph', () => openNotesGraph(`note:${ws.session!.path}`), () => open() && !!noteHooks.graph);
-  add('ai-edits', 'AI Edits of This Note…', async () => { await loadAiEdits(); await onAiAction('ai-edits', undefined); },
-    () => open() && ws.aiHist?.path === ws.session!.path && !!ws.aiHist?.entries.length);
+  add('history', 'History of This Note…', () => openNoteHistory());
+  add('notes-history', 'Notes History…', () => openVaultHistory(), () => host.shown());
+  add('milestone', 'Mark Notes Milestone…', () => markMilestone(), () => host.shown());
   add('paper', 'Show This Note’s Paper in the Library', () => { const it = itemInfo(ws.info!.paper!); if (it) emit('show-item', it.id); },
     () => open() && !!ws.info?.paper && !!itemInfo(ws.info.paper));
   add('paper-pdf', 'Open This Note’s Paper PDF', () => openPaperPdf(centre()),
@@ -143,9 +144,8 @@ function pickImages(figure: boolean): void {
   }, IMAGES, true);
 }
 
-/** The new-task popup at the cursor, as the Task button in the note's head opens it. */
+/** The new-task popup at the cursor, as Cmd/Ctrl+Enter in the note opens it. */
 function newTask(): void {
   editing();
-  const anchor = ws.root.querySelector<HTMLElement>('.note-add-task') || document.body;
-  taskHooks.add?.(anchor);
+  taskHooks.add?.(null);
 }

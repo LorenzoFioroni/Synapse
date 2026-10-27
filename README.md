@@ -232,6 +232,18 @@ never mix.
   `data/pdfs` yourself). Keep the last 7–90; choose another folder (e.g. one synced by iCloud
   Drive or Dropbox). **Restore** backs up the current state first, then puts the library,
   settings and notes back and rebuilds the indexes.
+- **Notes history**: every version of your notes' text is kept, with who made it — you (and on
+  which device), an AI app (with its name and summary) or another program — like Overleaf's
+  history. **History** in a note's head (or **Versions…** in its details, or **History of This
+  Note…** in the command palette) lists them: your edits close together as one row, each AI change on its own; select one
+  to see exactly what it changed (changed words marked) or how it differs from the note now, and
+  **Restore This Version** (⌘Z takes it back). **Notes History…** shows every change to all notes;
+  **Mark Milestone…** names how all notes are now (a submitted draft, say), shows what changed
+  since and can put every note back as it was. Edits become a version when you leave the note, or
+  after two minutes without typing; an edit you undo leaves no version. Images are not versioned,
+  and nothing else is ever deleted from the history. It needs [Git](https://git-scm.com) (on a Mac: `xcode-select --install`), kept in
+  `data/notes-history.git` apart from your own Git setup; backups include it. See
+  [notes history](docs/notes-history.md).
 - **Notes**: Markdown notes with live preview, KaTeX, code, Mermaid and images; `[@key]`
   citations and `[[links]]` between notes; a paper note per item. An item with several PDFs gets
   one button per PDF in citation cards and in its menus; `[@key, p. 4, att:12]` names the PDF with
@@ -296,7 +308,7 @@ never mix.
   support nested Markdown and spoilers. Source text stays intact when the plugin is off; HTML/PDF
   exports reveal spoiler contents. See [Extended Markdown](docs/notes.md#extended-markdown-core-plugin).
 - **Tasks** (open it under **Plugins** in the left sidebar; a core plugin, on by default; turn it off in Settings → Plugins without losing tasks): to-dos with a title, a due date, details written in Markdown like a note, and
-  sub-tasks to any depth. In a note, Cmd/Ctrl+Enter (or **Task** in the note's header) opens a
+  sub-tasks to any depth. In a note, Cmd/Ctrl+Enter (or **Add Task to This Note…** in the command palette) opens a
   small popup: name the task (the line's text, if any), give it a date in words ("fri", "27 oct",
   "in 3 days") and details, or pick a task you already have — or type `{{task` and a few words of
   its title to pick one from a list, as `[@` does for papers. The note then shows the task as one
@@ -452,7 +464,7 @@ python mcp_server.py --config     # prints the exact entries for your paths
 - **Other apps:** run the same command as a stdio MCP server.
 
 Whatever an AI app changes is shown with its name: "Codex edited this note", "Claude changed this
-task", and in each note's list of AI edits, all with Undo.
+task", and in each note's history, all with Undo.
 
 **From another computer.** An AI app on another computer of your network reaches the library
 through the running app instead (start it with `--lan`). On the computer running Synapse, open
@@ -492,8 +504,8 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 | `get_references` | what a paper cites (library items marked, others with DOI/arXiv) and which library items cite it |
 | `get_citation_graph` | the neighbourhood of some papers, or a library-wide overview of the most cited works you do not have |
 | `write_note` | saves a new note in `notes/ai/` (`author: ai`), never overwriting anything — after checking it |
-| `edit_note` | changes an existing note (replace passages, append, or new text) — checked the same way; the version before is kept |
-| `undo_note_edit` | puts a note back as it was before the last AI edit (if you did not change it since) |
+| `edit_note` | changes an existing note (replace passages, append, or new text) — checked the same way; a version of its own in the note's history |
+| `undo_note_edit` | takes the last AI edit back out of a note, keeping what you changed since (unless you changed the same lines) |
 | `list_tasks`, `get_task` | your tasks (open ones unless asked), filtered like the Tasks page; one task with its details, sub-tasks and the notes that show it |
 | `create_task`, `update_task`, `delete_task` | make, change (title, details, open/done, due date, parent) or delete tasks, and put a new task's line in a note — marked as the AI app's (with its name), undoable in the app |
 
@@ -503,10 +515,10 @@ snapshots, callouts…), and `write_note` refuses a note — saving nothing — 
 does not resolve, a citation key or page does not exist, a quote's words are not on the cited page, an
 image is missing, or formulas are written in Unicode instead of `$…$`; the AI then corrects it. A link
 written with a note's title is fixed to its file name. `edit_note` is checked the same way, but only
-problems the change adds block it. Every change an AI app makes to a note keeps the version it
-replaced (`notes/.history/`, in backups): an open note takes the change as one step, so ⌘Z (Ctrl+Z)
+problems the change adds block it. Every change an AI app makes to a note is a version of its own
+in the [notes history](docs/notes-history.md): an open note takes the change as one step, so ⌘Z (Ctrl+Z)
 undoes it; a bar over the note says which app changed what ("Codex edited this note"), with Show
-changes and Undo; and the note's details list all AI edits, each with the app's name, its diff and a
+changes and Undo; and the note's history lists each change with the app's name, its diff and a
 way back. The diff highlights changed words and wraps long paragraphs to the dialog's width.
 Equations are found by the number in
 parentheses at the end of their line, and the snapshot covers all their lines (never half an
@@ -576,7 +588,8 @@ python tests/e2e/navigation_checklist.py # workspace switches, sidebar selection
 python tests/e2e/graph_checklist.py      # Graph: local graph, full graph, levels, filters, paper card, Show in Graph, Back/Forward
 python tests/e2e/attachments_checklist.py  # note attachments: unused ones to the trash, Attachments dialog, retention
 python tests/e2e/adding_checklist.py     # bulk Retrieve Metadata (parallel, grouped, background), Settings → Adding Items
-python tests/e2e/claude_edits_checklist.py  # Claude's note edits: appear live, ⌘Z / bar Undo / Show changes, edit list
+python tests/e2e/claude_edits_checklist.py  # Claude's note edits: appear live, ⌘Z / bar Undo / Show changes, the note's history
+python tests/e2e/notes_history_checklist.py # notes history: versions grouped, diffs, restore, outside changes, milestones
 python tests/e2e/equations_checklist.py  # equation numbers, \eqref, macros, clicks into formulas, panels and width
 python tests/e2e/extension_checklist.py  # the browser button: options, reading an article page, saving it
 ```

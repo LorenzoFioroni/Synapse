@@ -476,13 +476,13 @@ def test_edit_note(lib, svc):
     after, h1 = svc.vault.read(path)
     assert after == before.replace("[@doe2019]", "[@doe2019; @lee2020]")
     assert "lee2020" in [l["target"] for l in svc.notes.outgoing(path)]  # index updated
-    # the version before is kept, for the app's undo
+    # the change is its own version in the history (after the user's own edits), for the app's undo
     hist = svc.note_service.history_of(path)
-    assert hist["hash"] == h1 and len(hist["entries"]) == 1
+    assert hist["hash"] == h1 and [e["by"] for e in hist["entries"]] == ["ai", "human"]
     e = hist["entries"][0]
     assert e["current"] and e["by"] == "ai" and e["summary"] == "Pointed to Lee" and "before" not in e
-    assert e["before_hash"] == h0 and e["after_hash"] == h1
-    assert svc.note_service.history_version(e["id"])["before"] == before
+    assert e["before_hash"] == h0 and e["after_hash"] == h1 and e["id"] == r["version"]
+    assert svc.note_service.history_version(e["id"], path)["before"] == before
     # append, and several edits in one call; the old [@missing2000] in the note does not block them
     r = call_json(
         server,
@@ -493,7 +493,7 @@ def test_edit_note(lib, svc):
     )
     text = svc.vault.read(path)[0]
     assert text.endswith("\n\n## Next\n\nRead [@smith2021, p. 3].\n") and "[[other]] and [[crispr]]" in text
-    assert len(svc.note_service.history_of(path)["entries"]) == 2
+    assert [e["by"] for e in svc.note_service.history_of(path)["entries"]] == ["ai", "ai", "human"]
     # whole text: front matter kept when left out
     r = call_json(server, "edit_note", note=path, text="# Crispr project\n\nShort now.\n")
     text = svc.vault.read(path)[0]
@@ -526,31 +526,44 @@ def test_undo_note_edit_and_history_follows_moves(lib, svc):
     call_json(server, "edit_note", note=path, append="Added by Claude.", summary="Added a line")
     r = call_json(server, "undo_note_edit", note="other")
     assert r["undid"] == "Added a line" and svc.vault.read(path)[0] == original
-    entries = svc.note_service.history_of(path)["entries"]
+    entries = [e for e in svc.note_service.history_of(path)["entries"] if e["by"] == "ai"]
     assert [e["summary"] for e in entries] == ["Undid: Added a line", "Added a line"]
-    # changed by the user since: refused
-    call_json(server, "edit_note", note=path, append="Second line.")
+    # changed by the user since, elsewhere in the note: the AI's change is taken out, the user's kept
+    call_json(server, "edit_note", note=path, append="Second line.", summary="Second")
     text, h = svc.vault.read(path)
-    svc.note_service.save(path, text + "Typed by the user.\n", h)
+    svc.note_service.save(path, "Typed at the top.\n\n" + text, h)
+    r = call_json(server, "undo_note_edit", note=path)
+    now = svc.vault.read(path)[0]
+    assert r["undid"] == "Second" and r["kept_later_edits"] and "Second line." not in now
+    assert now.startswith("Typed at the top.") and now.endswith(original.rstrip("\n").split("\n")[-1] + "\n")
+    # … but not when the user changed the same lines
+    call_json(server, "edit_note", note=path, append="Third line.", summary="Third")
+    text, h = svc.vault.read(path)
+    svc.note_service.save(path, text.replace("Third line.", "Third line, reworded by the user."), h)
     err, texts = call(server, "undo_note_edit", note=path)
-    assert err and "changed after" in texts[0] and "Typed by the user" in svc.vault.read(path)[0]
+    assert err and "changed after" in texts[0] and "reworded by the user" in svc.vault.read(path)[0]
     err, texts = call(server, "undo_note_edit", note="crispr")
     assert err and "No AI app has edited" in texts[0]
     # renaming or moving keeps the history with the note
+    svc.note_service.checkpoint(path)  # the user's last edit, waiting until now
+    n = len(svc.note_service.history_of(path)["entries"])
     svc.note_service.move(path, "moved/other2.md")
-    assert len(svc.note_service.history_of("moved/other2.md")["entries"]) == 3
+    moved = svc.note_service.history_of("moved/other2.md")["entries"]
+    assert len(moved) == n + 1 and moved[0]["kind"] == "rename" and moved[0]["from_path"] == path
     svc.note_service.move_folder("moved", "elsewhere")
-    assert len(svc.note_service.history_of("elsewhere/other2.md")["entries"]) == 3
-    assert not any(p.suffix == ".md" for p in (svc.vault.root / ".history").iterdir())  # hidden, not notes
+    assert len(svc.note_service.history_of("elsewhere/other2.md")["entries"]) == n + 2
+    assert not (svc.vault.root / ".git").exists()  # the history lives next to the notes, not in them
 
 
 def test_history_api(lib, svc, client):
     call_json(lib["server"], "edit_note", note="other.md", append="More.", summary="More")
     r = client.get("/api/notes/history?path=other.md").get_json()
     assert r["path"] == "other.md" and r["entries"][0]["current"] and r["entries"][0]["summary"] == "More"
-    v = client.get(f"/api/notes/history/version?id={r['entries'][0]['id']}").get_json()
-    assert v["before"].endswith("Back to [[crispr]].\n")
-    assert client.get("/api/notes/history/version?id=../../x").status_code == 404
+    e = r["entries"][0]
+    v = client.get(f"/api/notes/history/version?id={e['id']}&path=other.md").get_json()
+    assert v["before"].endswith("Back to [[crispr]].\n") and v["after"].endswith("More.\n")
+    assert client.get("/api/notes/history/version?id=../../x&path=other.md").status_code == 404
+    assert client.get(f"/api/notes/history/version?id={e['id']}").status_code == 404
     assert client.get("/api/notes/history?path=../x.md").status_code == 400
 
 

@@ -305,6 +305,7 @@ state; `noteSession.ts` saves (hash-checked, with drafts and retries); `editor.t
 math; `tree.ts`, `treeInput.ts` and `fileOps.ts` are the notes list; `readView.ts`,
 `sidePanel.ts` and `panels.ts` the views around a note; `citeCard.ts`, `citeTarget.ts` and
 `library.ts` connect citations to the library; `aiBar.ts` and `aiEdits.ts` show Claude's edits;
+`historyView.ts` and `historyGroups.ts` the [notes history](notes-history.md#the-app);
 `conflict.ts`, `diff.ts`, `rekeyDialog.ts` and `attachmentsDialog.ts` are dialogs; note diffs pair
 adjacent removed and added lines and use `util.diffWords` for the darker changed spans; `exportNote.ts`
 and `portable.ts` export a note as PDF, HTML or Markdown.

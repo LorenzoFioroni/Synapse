@@ -52,7 +52,7 @@ parser and the editor), [storage](storage.md) (the tables and backups), [mcp](mc
 |---|---|---|
 | ![New task popup](images/tasks-new.png) | ![Task popup](images/tasks-popup.png) | ![Tasks page](images/tasks-page.png) |
 
-- **In a note.** <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd> (or **Task** in the note head) opens the
+- **In a note.** <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd> (or **Add Task to This Note…** in the command palette) opens the
   *New task* popup. On a line with text, that text is the title, and the task's line takes the
   line's place (a checkbox item's `- [ ]` goes with it); otherwise the line goes below the cursor. Give a due date in words ("fri", "27 oct",
   "in 3 days", "next week") and, under **Add details**, a body. As you type a title, tasks you

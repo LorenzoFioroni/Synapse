@@ -23,8 +23,10 @@ data/
 │   ├── attachments/    images used by notes
 │   ├── .trash/         deleted notes, in <timestamp>/ folders
 │   ├── .trash-attachments/   images no note uses any more (and the .since marker)
-│   ├── .history/       earlier versions of notes changed through the MCP server
+│   ├── .history/       AI changes kept before the Git history (and while Git is missing)
 │   └── .folders.json   colours given to notes folders (folder path → #rrggbb)
+├── notes-history.git/  every version of the notes' text (Git; its work tree is notes/)
+├── .notes-history.git.lock   taken by the app and the MCP server in turn while recording
 ├── notes_index.db      links, tags, headings and search index of the notes (derived)
 ├── citations.db        reference lists fetched online (a cache)
 ├── backups/            library-*.tar.gz and notes-*.tar.gz
@@ -227,6 +229,7 @@ lower case).
 | `library.db` | Copied with SQLite's online backup API, so the copy is consistent while the app writes. |
 | `settings.json` | As it is on disk, if it exists. |
 | `notes/` | Every file in the notes folder, including `attachments/`, both trashes, `.history/` and `.folders.json`. |
+| `notes-history.bundle` | The notes history (`git bundle --all`), when Git is installed. Restoring keeps the live history and adds the restored notes to it; the bundle rebuilds a history that was missing or empty (see [notes history](notes-history.md#backups)). |
 | `plugins.json` | As it is on disk, if it exists. |
 | `fields.db` | Copied with the backup API, if it exists. |
 | `plugin-data/` | What plugins store; SQLite files (`.sqlite`, `.db`) copied with the backup API, `-wal`/`-shm` files and dot files (the plugins' logs) left out. |

@@ -24,6 +24,7 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
  AI app     ─►│ /mcp (token) ─► backend.mcp   the web app's own Services        │
  (other PC)   │                                                                 │
               │ data/  library.db · fulltext.db · notes/ · notes_index.db ·     │
+              │        notes-history.git ·                                      │
               │        citations.db · pdfs/ · backups/ · settings.json · auth.db│
               │        plugins/ · plugin-data/ · plugins.json · fields.db       │
               └─────────────────────────────────────────────────────────────────┘
@@ -58,7 +59,7 @@ Two objects tie the backend together:
 | Package / module | Responsibility | Storage |
 |---|---|---|
 | `library/` | Items, attachments, folders, tags, smart folders, PDF annotations, citation keys and search. `fields.py` is the single source of truth for item fields and types, and `identifiers.py` for DOIs and arXiv ids (cleaning, normalising, matching). `agent.py` holds which AI app is making the current change (set by the MCP server, read by notes and tasks). | `library.db` (schema and migrations in `library/db.py`) |
-| `notes/` | Markdown notes. The files are the source of truth; the index is disposable. | `notes/`, `notes_index.db` |
+| `notes/` | Markdown notes. The files are the source of truth; the index is disposable. `history/` keeps every version of their text in Git (see [notes history](notes-history.md)). | `notes/`, `notes_index.db`, `notes-history.git/` |
 | `tasks/` | Task records, history and the integrity of `{{task:id}}` note links. The optional Tasks core plugin owns their UI, HTTP handlers and MCP tools (see [tasks](tasks.md)). | `library.db` (`tasks`, `task_history`) |
 | `formats/` | Import parsers and shared codecs for BibTeX, RIS, EndNote and CSL-JSON. The Export Formats plugin registers their library-export writers; `exporting.py` prepares records for writers and core clipboard copying. | none |
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
@@ -254,6 +255,7 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
 | [Storage](storage.md) | The data folder, who owns each file, the `library.db` schema and its migrations, settings and backups. |
 | [Tasks](tasks.md) | Tasks: the records, the `{{task:id}}` lines in notes, the Tasks page and the task tools for AI apps. |
 | [Notes](notes.md) | The notes format, the vault, the index, the parser and its frontend port, rekeying, Claude's edits, and the notes workspace. |
+| [Notes history](notes-history.md) | Every version of the notes' text in Git: who made each change, checkpoints, milestones, restoring, backups. |
 | [Full-text search](fulltext-search.md) | PDF text extraction, the full-text index and the library search with its query syntax. |
 | [References](references.md) | Metadata lookup, finding PDFs, the citation graph, and what the Adding Items settings trigger. |
 | [Sync and devices](sync-and-devices.md) | The change feed, the viewer and app tabs, the guard, LAN pairing and the security model. |

@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 
-from ..library.agent import current_agent
+from ..library.agent import current_agent, current_device
 from . import frontmatter
 from .folder_colors import FolderColorError, FolderColors
 from .history import NoteHistory
+from .history.reading import MILESTONE_PREFIX
 from .index import NotesIndex
 from .rekey import Rekeyer
 from .vault import ATTACHMENTS, Conflict, NoteExists, Vault, slugify
@@ -100,8 +103,9 @@ class NoteTextMatcher:
 
 
 class NotesService:
-    def __init__(self, vault: Vault, index: NotesIndex, papers, backups_dir=None):
-        """``backups_dir``: where key renames back up the notes (a path, or a function giving it)."""
+    def __init__(self, vault: Vault, index: NotesIndex, papers, backups_dir=None, history_dir=None):
+        """``backups_dir``: where key renames back up the notes (a path, or a function giving it);
+        ``history_dir``: the Git directory of the notes history (default: next to the notes)."""
         self.vault = vault
         self.index = index
         self.papers = papers
@@ -110,7 +114,10 @@ class NotesService:
         self.on_change: Callable[[], None] | None = None  # called after notes are saved, deleted or restored
         # called with (path, hash, by) after a note is written: by is "app" or "ai" (plugins hear it)
         self.saved_listeners: list[Callable[[str, str, str], None]] = []
-        self.history = NoteHistory(vault.root)  # earlier versions of notes Claude changed
+        # every version of the notes' text (Git; see history/recorder.py)
+        self.history = NoteHistory(
+            vault.root, history_dir or vault.root.parent / "notes-history.git", valid_path=self._valid_path
+        )
         self.folder_colors = FolderColors(vault.root)  # colours given to notes folders
 
     # ------------------------------------------------------------------ citation keys
@@ -126,9 +133,17 @@ class NotesService:
     def rename_plan(self, old: str, new: str) -> dict:
         return self.rekeyer.plan(old, new)
 
+    def _valid_path(self, rel: str) -> bool:
+        try:
+            self.vault.clean_rel(rel)
+            return True
+        except Exception:
+            return False
+
     def rename_key(self, old: str, new: str) -> dict:
-        res = self.rekeyer.apply(old, new)
-        self.history.moved([(m["from"], m["to"]) for m in res.get("moves") or []])
+        with self.history.change(kind="bulk", subject=f"Citation key {old} became {new}", device=current_device()):
+            res = self.rekeyer.apply(old, new)
+        self.history.legacy.moved([(m["from"], m["to"]) for m in res.get("moves") or []])
         return res
 
     # ------------------------------------------------------------------ helpers
@@ -261,7 +276,8 @@ class NotesService:
             path = self._unique_path(f"{folder.strip('/')}/{name}.md" if folder.strip("/") else f"{name}.md")
         content = frontmatter.set_fields(text if text is not None else body, meta)
         path = self.vault.clean_rel(path)
-        h = self.vault.write(path, content, expected_hash=None)
+        with self.history.saving([path], device=current_device()):
+            h = self.vault.write(path, content, expected_hash=None)
         self.index.update(path)
         self._saved(path, h, "app")
         return {"path": path, "text": content, "hash": h}
@@ -278,56 +294,171 @@ class NotesService:
         if self.on_change:
             self.on_change()
 
-    def save(self, path: str, text: str, base_hash: str | None) -> dict:
-        """Save over the version with ``base_hash``; ``None`` creates (fails if the file exists)."""
+    def save(self, path: str, text: str, base_hash: str | None, *, by: str = "app", summary: str = "") -> dict:
+        """Save over the version with ``base_hash``; ``None`` creates (fails if the file exists).
+        ``by="ai"``: a note an AI app wrote, recorded in the history as its own change."""
         path = self.vault.clean_rel(path)
-        h = self.vault.write(path, text, expected_hash=base_hash)
+        if by == "ai":
+            agent = current_agent()
+            with self.history.change(
+                kind="ai", by="ai", agent=agent, paths=[path], subject=summary or f"Wrote {Path(path).stem}"
+            ):
+                h = self.vault.write(path, text, expected_hash=base_hash)
+        else:
+            with self.history.saving([path], device=current_device()):
+                h = self.vault.write(path, text, expected_hash=base_hash)
         self.index.update(path)
         self._changed()
-        self._saved(path, h, "app")
+        self._saved(path, h, by)
         return {"path": path, "hash": h, "info": self.index.note(path)}
 
     def edit(self, path: str, text: str, base_hash: str, *, by: str = "ai", summary: str = "") -> dict:
         """Save a change made for someone else than the editor (an AI app), keeping the version it
         replaces in the history so the app can show the change, who made it, and undo it."""
         path = self.vault.clean_rel(path)
-        before, h = self.vault.read(path)
-        if h != base_hash:
-            raise Conflict(path, h)
-        h2 = self.vault.write(path, text, expected_hash=base_hash)
         agent = current_agent() if by == "ai" else None
-        entry = self.history.record(
-            path, before=before, before_hash=h, after_hash=h2, by=by, agent=agent, summary=summary
-        )
+        with self.history.change(
+            kind="ai" if by == "ai" else "edit",
+            by="ai" if by == "ai" else "human",
+            agent=agent,
+            device=current_device(),
+            paths=[path],
+            subject=summary or (f"Edited by {agent}" if agent else "Edited"),
+        ) as rec:
+            before, h = self.vault.read(path)
+            if h != base_hash:
+                raise Conflict(path, h)
+            h2 = self.vault.write(path, text, expected_hash=base_hash)
+        version = rec.commit
+        if not self.history.enabled:  # without Git the change is still kept, the old way
+            version = self.history.legacy.record(
+                path, before=before, before_hash=h, after_hash=h2, by=by, agent=agent, summary=summary
+            )["id"]
         self.index.update(path)
         self._changed()
         self._saved(path, h2, by)
-        return {"path": path, "hash": h2, "version": entry["id"]}
+        return {"path": path, "hash": h2, "version": version}
 
-    def history_of(self, path: str) -> dict:
-        """The changes AI apps made to a note, newest first; ``current`` marks the one the note is
-        still exactly the result of."""
+    # ------------------------------------------------------------------ history
+    def history_status(self) -> dict:
+        return self.history.status()
+
+    def history_of(self, path: str, limit: int = 200) -> dict:
+        """A note's versions, newest first (following renames): who changed it, when and how,
+        with the hashes of the text before and after each change; ``current`` marks the version
+        the note on disk still is. Without Git: the AI changes kept the old way."""
         path = self.vault.clean_rel(path)
         h = self.vault.current_hash(path)
-        entries = self.history.list(path)
+        limit = max(1, min(limit, 1000))
+        if self.history.enabled:
+            entries = self.history.note_log(path, limit=limit)
+        else:
+            entries = self.history.legacy.list(path, limit=limit)
         for e in entries:
-            e["current"] = e["after_hash"] == h
-        return {"path": path, "hash": h, "entries": entries}
+            e["current"] = e.get("after_hash") == h
+        return {"path": path, "hash": h, "enabled": self.history.enabled, "entries": entries}
 
-    def history_version(self, entry_id: str) -> dict:
-        e = self.history.get(entry_id)
-        if not e:
+    def history_version(self, entry_id: str, path: str | None = None, from_path: str | None = None) -> dict:
+        """One version: the note's text after the change ``entry_id`` and before it."""
+        if not self.history.enabled or re.fullmatch(r"[0-9A-Z]{26}", entry_id or ""):
+            e = self.history.legacy.get(entry_id)
+            if not e:
+                raise KeyError(entry_id)
+            return e
+        if not re.fullmatch(r"[0-9a-f]{7,64}", entry_id or "") or not path:
             raise KeyError(entry_id)
-        return e
+        path = self.vault.clean_rel(path)
+        from_path = self.vault.clean_rel(from_path) if from_path else path
+        v = self.history.version(entry_id, path, from_path)
+        if v["after"] is None and v["before"] is None:
+            raise KeyError(entry_id)
+        return v
+
+    def history_log(self, limit: int = 100, skip: int = 0) -> dict:
+        """Every recorded change to the notes, newest first, with the notes each touched."""
+        if not self.history.enabled:
+            return {**self.history.status(), "entries": [], "milestones": []}
+        self.history.checkpoint()
+        return {
+            **self.history.status(),
+            "entries": self.history.log(limit=max(1, min(limit, 500)), skip=max(0, skip)),
+            "milestones": self.history.milestones(),
+        }
+
+    def history_diff(self, a: str, b: str) -> dict:
+        if not self.history.enabled:
+            raise ValueError(self.history.reason or "The notes history is off.")
+        if b == "now":
+            self.history.checkpoint()
+        return self.history.diff(a, b)
+
+    def checkpoint(self, path: str | None = None, restored_from: str | None = None) -> dict:
+        """Commit now what is waiting (the app calls it when a note is closed, and after putting
+        an earlier version back, with the version it came from)."""
+        paths = [self.vault.clean_rel(path)] if path else None
+        if restored_from is not None and not re.fullmatch(r"[0-9a-f]{7,64}", restored_from):
+            raise ValueError("Bad version")
+        return {"commits": self.history.checkpoint(paths, restored=restored_from)}
+
+    def add_milestone(self, label: str) -> dict:
+        return self.history.add_milestone(label)
+
+    def rename_milestone(self, mid: str, label: str) -> dict:
+        return self.history.rename_milestone(mid, label)
+
+    def delete_milestone(self, mid: str) -> dict:
+        self.history.delete_milestone(mid)
+        return {"deleted": mid}
+
+    def restore_milestone(self, mid: str) -> dict:
+        """Put every note back as it was at a milestone: changed notes get their text back, notes
+        deleted since come back, notes made since go to the notes trash (one Undo brings them
+        back). One commit; the history keeps everything in between."""
+        if not re.fullmatch(rf"{MILESTONE_PREFIX}[0-9\-]+", mid or ""):
+            raise ValueError("No such milestone.")
+        m = next((x for x in self.history.milestones() if x["id"] == mid), None)
+        if m is None:
+            raise ValueError("No such milestone.")
+        self.history.checkpoint()
+        with self.history.change(
+            kind="restore", subject=f"Restored the milestone “{m['label']}”", device=current_device()
+        ) as rec:
+            d = self.history.diff("now", mid, texts=False)
+            back: list[str] = []
+            gone: list[str] = []
+            for f in d["files"]:
+                if f["status"] == "R":
+                    gone.append(f["from"])
+                if f["status"] in ("M", "A", "R"):
+                    text = self.history.text_at(mid, f["path"])
+                    if text is not None and self._valid_path(f["path"]):
+                        self.vault._atomic_write(self.vault.root / f["path"], text.encode("utf-8"))
+                        back.append(f["path"])
+                elif f["status"] == "D":
+                    gone.append(f["path"])
+            gone = [p for p in gone if self.vault.exists(p) and p not in back]
+            trash_id = self.vault.trash_batch(gone, [])[0] if gone else None
+        for p in gone:
+            self.index.remove(p)
+        self._reindex(back)
+        self._changed()
+        return {"restored": back, "trashed": gone, "trash_id": trash_id, "commit": rec.commit}
 
     def move(self, path: str, to: str, base_hash: str | None = None) -> dict:
         src = self.vault.clean_rel(path)
         dst = self.vault.clean_rel(to)
         linked_before = self.index.backlinks(src)
-        self.vault.move(src, dst, expected_hash=base_hash)
+        moved = Path(src).parent != Path(dst).parent
+        with self.history.change(
+            kind="rename",
+            subject=f"{'Moved' if moved else 'Renamed'} {Path(src).stem} to {dst if moved else Path(dst).stem}",
+            device=current_device(),
+            paths=[src, dst],
+        ):
+            self.vault.move(src, dst, expected_hash=base_hash)
         self.index.remove(src)
         self.index.update(dst)
-        self.history.moved([(src, dst)])
+        self.history.legacy.moved([(src, dst)])
         # Links by name keep working if only the folder changed; report the ones that broke.
         broken = [
             b
@@ -341,13 +472,20 @@ class NotesService:
 
     def trash(self, path: str) -> dict:
         path = self.vault.clean_rel(path)
-        tid = self.vault.trash(path)
+        with self.history.change(
+            kind="delete", subject=f"Deleted {Path(path).stem}", device=current_device(), paths=[path]
+        ):
+            tid = self.vault.trash(path)
         self.index.remove(path)
         self._changed()
         return {"trash_id": tid, "path": path}
 
     def trash_many(self, paths: list[str], folders: list[str]) -> dict:
-        tid, moved = self.vault.trash_batch(paths or [], folders or [])
+        inside = [n for f in folders or [] for n in self._notes_in_quietly(f)]
+        notes = [self.vault.clean_rel(p) for p in paths or []] + inside
+        subject = f"Deleted {Path(notes[0]).stem}" if len(notes) == 1 else f"Deleted {len(notes)} notes"
+        with self.history.change(kind="delete", subject=subject, device=current_device(), paths=notes):
+            tid, moved = self.vault.trash_batch(paths or [], folders or [])
         for p in moved:
             self.index.remove(p)
         self._changed()
@@ -361,8 +499,16 @@ class NotesService:
             except Exception:
                 log.exception("Could not index %s", p)
 
+    def _notes_in_quietly(self, folder: str) -> list[str]:
+        try:
+            return self.vault.notes_in(folder)
+        except Exception:  # the vault reports a bad folder itself
+            return []
+
     def restore_batch(self, trash_id: str) -> dict:
-        restored, skipped = self.vault.restore_batch(trash_id)
+        with self.history.change(kind="restore", subject="Restored from the trash", device=current_device()) as rec:
+            restored, skipped = self.vault.restore_batch(trash_id)
+            rec.paths = restored
         self._reindex(restored)
         self._changed()
         return {"paths": restored, "skipped": skipped}
@@ -370,8 +516,12 @@ class NotesService:
     def move_folder(self, path: str, to: str) -> dict:
         src = self.vault.clean_rel(path, suffix=None)
         before = {n: self.index.backlinks(n) for n in self.vault.notes_in(src)}
-        moved = self.vault.move_folder(src, to)
-        self.history.moved(moved)
+        with self.history.change(
+            kind="rename", subject=f"Moved the folder {src} to {to}", device=current_device(), paths=list(before)
+        ) as rec:
+            moved = self.vault.move_folder(src, to)
+            rec.paths = [p for pair in moved for p in pair]
+        self.history.legacy.moved(moved)
         self.folder_colors.moved(src, self.vault.clean_rel(to, suffix=None))
         for old, _ in moved:
             self.index.remove(old)
@@ -393,7 +543,11 @@ class NotesService:
         return self.index.key_summary()
 
     def restore(self, trash_id: str, path: str) -> dict:
-        path = self.vault.restore(trash_id, path)
+        with self.history.change(
+            kind="restore", subject=f"Restored {Path(path).stem} from the trash", device=current_device()
+        ) as rec:
+            path = self.vault.restore(trash_id, path)
+            rec.paths = [path]
         self.index.update(path)
         self._changed()
         return {"path": path}
@@ -425,7 +579,8 @@ class NotesService:
             nl = "\r\n" if "\r\n" in text else "\n"
             new = text.rstrip("\r\n") + nl + nl + markdown.replace("\n", nl) + nl
             try:
-                h2 = self.vault.write(path, new, expected_hash=h)
+                with self.history.saving([path], device=current_device()):
+                    h2 = self.vault.write(path, new, expected_hash=h)
                 break
             except Conflict:
                 continue
@@ -435,4 +590,5 @@ class NotesService:
         return {"path": path, "hash": h2, "created": not existing}
 
     def rescan(self) -> dict:
+        self.history.checkpoint()  # notes changed by other programs: recorded as such
         return self.index.sync()

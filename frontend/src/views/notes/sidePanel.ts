@@ -2,7 +2,8 @@
 // to the paper for a paper note), and the details panel on the right (cited papers, backlinks,
 // unresolved links, outline, note info).
 import { icon } from '../../icons.js';
-import { escapeHtml, formatDate, plural } from '../../util.js';
+import type { NoteHistory } from '../../types.js';
+import { aiName, escapeHtml, formatDate } from '../../util.js';
 import { shortAuthors } from './library.js';
 import type { SaveStatus } from './noteSession.js';
 import { itemInfo, stemOf, taskHooks, ws } from './workspace.js';
@@ -36,6 +37,12 @@ export function paintCrumbs(): void {
   ws.root.querySelector('.note-crumbs')!.innerHTML = parts.map((x, i) => (i === parts.length - 1
     ? `<button class="crumb last" data-act="rename" title="Rename (F2 in the list)">${escapeHtml(x.replace(/\.md$/i, ''))}</button>`
     : `<span class="crumb">${escapeHtml(x)}</span><span class="sep">/</span>`)).join('') + paper;
+}
+
+/** "· last AI edit 2 h ago" after the History button, when an AI app edited the note. */
+function lastAi(hist: NoteHistory | null, path: string | undefined): string {
+  const e = hist?.path === path ? hist?.entries.find((x) => x.by === 'ai') : null;
+  return e ? ` <span class="muted" title="${escapeHtml(e.summary)}">${icon('sparkle', 'icon-sm')} ${escapeHtml(aiName(e.agent))}, ${escapeHtml(formatDate(e.at))}</span>` : '';
 }
 
 export function paintSide(): void {
@@ -77,7 +84,7 @@ export function paintSide(): void {
         ${(info.tags || []).length ? `<dt>Tags</dt><dd>${info.tags.map((t) => `<span class="tag-pill sm">${escapeHtml(t)}</span>`).join(' ')}</dd>` : ''}
         ${info.created ? `<dt>Created</dt><dd>${escapeHtml(formatDate(info.created, true))}</dd>` : ''}
         ${info.mtime ? `<dt>Modified</dt><dd>${escapeHtml(formatDate(new Date(info.mtime * 1000).toISOString(), true))}</dd>` : ''}
-        ${aiHist?.path === session?.path && aiHist?.entries.length ? `<dt>AI edits</dt><dd><button class="btn btn-sm btn-ghost ai-edits-btn" data-act="ai-edits">${icon('sparkle', 'icon-sm')} ${plural(aiHist.entries.length, 'edit')}…</button></dd>` : ''}
+        <dt>History</dt><dd><button class="btn btn-sm btn-ghost ai-edits-btn" data-act="history" title="Every version of this note">${icon('restore', 'icon-sm')} Versions…</button>${lastAi(aiHist, session?.path)}</dd>
         <dt>File</dt><dd class="mono path">${escapeHtml(info.path)}</dd>
       </dl>
     </div>`;

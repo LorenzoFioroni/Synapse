@@ -106,7 +106,7 @@ use it), an input schema and `read_only`. `read_only` sets the `readOnlyHint` an
 | `get_citation_graph` | `citations.py` | The neighbourhood of some papers (1 or 2 steps), or a library-wide overview of the most cited works. | no |
 | `write_note` | `notes.py` | Saves a new note under `notes/ai/`. | yes |
 | `edit_note` | `notes.py` | Changes an existing note: exact replacements, an append, or the whole text. | yes |
-| `undo_note_edit` | `notes.py` | Puts a note back as it was before the last AI edit, if it was not changed since. | yes |
+| `undo_note_edit` | `notes.py` | Takes the last AI edit back out of a note, keeping the user's later edits (refused when they touch the same lines). | yes |
 | `list_tasks` | `tasks.py` | The user's tasks, open ones by default, filtered with the Tasks page's search syntax (`backend/tasks/query.py`). | no |
 | `get_task` | `tasks.py` | One task with its details, sub-tasks, parents and the notes that show it. | no |
 | `create_task` | `tasks.py` | Creates a task (optionally a sub-task), and with `note` adds its `{{task:ID}}` line to that note through the note's history. | yes |
@@ -159,12 +159,12 @@ is not affected), and the components that record changes read `current_agent()`:
 
 | Where | What is recorded |
 |---|---|
-| Notes history (`notes/history.py`) | `agent` beside `by: "ai"` in each change's JSON; edit_note's default summary is "Edited by Codex". |
+| Notes history (`notes/history/`) | The AI app as the commit's author and `Synapse-Agent` trailer, beside `Synapse-By: ai`; edit_note's default summary is "Edited by Codex". |
 | New notes (`write_note`) | `agent: Codex` in the front matter, beside `author: ai`. |
 | Tasks (`tasks/store.py`) | `tasks.updated_agent` and `task_history.agent`, beside `updated_by` / `by` = `ai`. |
 
-The app shows the name: "Codex edited this note", "Codex changed this task", and each entry of a
-note's list of AI edits. Changes recorded before the name was kept have no `agent`; the app then
+The app shows the name: "Codex edited this note", "Codex changed this task", and each AI change in
+a note's history. Changes recorded before the name was kept have no `agent`; the app then
 says "An AI app". Over HTTP one `Server` answers every app, so `HttpTransport` remembers the name
 each access token's `initialize` gave and sets `Server.client` from it for each request; after a
 restart of the web app a client that does not initialize again is unnamed until it does.
@@ -192,14 +192,16 @@ What it can write, and how:
   tool reads the note again and reapplies the edit, up to three times, since the user may be
   saving that note at the same moment. A whole-text replacement keeps the note's front matter if
   the new text has none.
-- **A history of every AI edit.** `NotesService.edit` records the version it replaces in
-  `notes/.history/` (`backend/notes/history.py`): one JSON file per change with the text before,
-  the hashes before and after, a summary and `by: ai`. Each change has its own uniquely named file,
-  so the two processes never overwrite each other's entries. The app shows these changes and can
-  undo them (`GET /api/notes/history`, `GET /api/notes/history/version`).
-- **Undo only when it is safe.** `undo_note_edit` restores the text before the last AI edit only if
-  the note's hash still equals that edit's `after_hash`. Otherwise undoing would also remove the
-  user's later changes, and the tool refuses.
+- **Every AI edit is a version of its own.** `NotesService.edit` (and `write_note`) records the
+  change in the notes history (see [notes history](notes-history.md)): the user's edits still
+  waiting are committed first, then the AI change alone, with its summary and the app's name. The
+  MCP process and the web app take turns through a lock file, so neither takes the other's change
+  for one made outside Synapse. The app shows the change and can undo it. Without Git, the change
+  is kept the old way (one JSON file in `notes/.history/`).
+- **Undo keeps the user's work.** `undo_note_edit` takes the last AI edit back out with a
+  three-way merge: when the note is still exactly what the AI left, that is the text before;
+  when the user changed it since, their changes stay (`kept_later_edits`). When they touched the
+  same lines, the tool refuses and nothing changes.
 - **Images only in `notes/attachments/`.** `snapshot` saves through `NotesService.add_image`, with a
   timestamped name. The web app moves images that no note uses to `.trash-attachments/` and
   deletes them later (`backend/notes/attachments.py`), so a discarded snapshot does not stay.

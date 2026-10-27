@@ -7,6 +7,7 @@ from functools import wraps
 from flask import Blueprint, jsonify, request, send_from_directory
 
 from ..changes import CLIENT_HEADER
+from ..notes.history import GitError
 from ..notes.vault import ATTACHMENTS, Conflict, NoteExists, VaultError
 from . import body, error, svc
 
@@ -17,6 +18,9 @@ bp = Blueprint("notes", __name__, url_prefix="/api")
 def _record_change(resp):
     """Tell the other windows and devices that notes changed (see backend/changes.py)."""
     if request.method in ("POST", "PUT", "PATCH", "DELETE") and resp.status_code < 400:
+        # recording the history changes no note (its commits announce themselves), except a milestone restored
+        if request.path.startswith("/api/notes/history/") and not request.path.endswith("/restore"):
+            return resp
         svc().changes.record({"notes"}, request.headers.get(CLIENT_HEADER))
     return resp
 
@@ -140,18 +144,94 @@ def restore_note():
 @bp.get("/notes/history")
 @guarded
 def note_history():
-    """Changes Claude made to a note (newest first, without their text)."""
-    return jsonify(svc().note_service.history_of(_path_arg()))
+    """A note's versions, newest first (without their text)."""
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except ValueError:
+        return error("limit must be a number")
+    return jsonify(svc().note_service.history_of(_path_arg(), limit))
 
 
 @bp.get("/notes/history/version")
 @guarded
 def note_history_version():
-    """One change, with the note's text from before it."""
+    """One version: the note's text after the change and before it."""
+    a = request.args
     try:
-        return jsonify(svc().note_service.history_version(request.args.get("id") or ""))
+        return jsonify(svc().note_service.history_version(a.get("id") or "", a.get("path"), a.get("from")))
     except KeyError:
         return error("No such version", 404)
+
+
+@bp.get("/notes/history/status")
+@guarded
+def history_status():
+    """Whether the notes history is on (Git found), for Settings."""
+    return jsonify(svc().note_service.history_status())
+
+
+@bp.get("/notes/history/log")
+@guarded
+def history_log():
+    """Every recorded change to the notes, newest first, and the milestones."""
+    a = request.args
+    try:
+        limit, skip = int(a.get("limit") or 100), int(a.get("skip") or 0)
+    except ValueError:
+        return error("limit and skip must be numbers")
+    return jsonify(svc().note_service.history_log(limit, skip))
+
+
+@bp.get("/notes/history/diff")
+@guarded
+def history_diff():
+    """The notes that differ between two states: ``from``/``to`` are commit ids, ``<id>^`` (the
+    state before a commit), milestone ids or ``now``."""
+    a = request.args
+    try:
+        return jsonify(svc().note_service.history_diff(a.get("from") or "", a.get("to") or "now"))
+    except GitError:
+        return error("No such version", 404)
+
+
+@bp.post("/notes/history/checkpoint")
+@guarded
+def history_checkpoint():
+    """``{path?, restored_from?}``: record what is waiting now (a note was closed, or an earlier
+    version was put back)."""
+    d = body()
+    return jsonify(svc().note_service.checkpoint(d.get("path") or None, d.get("restored_from") or None))
+
+
+@bp.post("/notes/history/milestones")
+@guarded
+def add_milestone():
+    return jsonify(svc().note_service.add_milestone(body().get("label") or "")), 201
+
+
+@bp.put("/notes/history/milestones/<mid>")
+@guarded
+def rename_milestone(mid: str):
+    try:
+        return jsonify(svc().note_service.rename_milestone(mid, body().get("label") or ""))
+    except GitError:
+        return error("No such milestone", 404)
+
+
+@bp.delete("/notes/history/milestones/<mid>")
+@guarded
+def delete_milestone(mid: str):
+    try:
+        return jsonify(svc().note_service.delete_milestone(mid))
+    except GitError:
+        return error("No such milestone", 404)
+
+
+@bp.post("/notes/history/milestones/<mid>/restore")
+@guarded
+def restore_milestone(mid: str):
+    """Put every note back as it was at the milestone (one change in the history)."""
+    return jsonify(svc().note_service.restore_milestone(mid))
 
 
 @bp.get("/notes/search")

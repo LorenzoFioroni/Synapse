@@ -160,7 +160,7 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                 + ("\nAlso: " + " ".join(warnings) if warnings else "")
             )
         try:
-            self.s.note_service.save(path, content, None)
+            self.s.note_service.save(path, content, None, by="ai", summary=f"Wrote “{title}”")
         except NoteExists as e:
             raise ToolError(f"A note already exists at {path}; try another title.") from e
         parsed = parser.parse(content, fallback_title=title)
@@ -295,12 +295,48 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
 
     def undo_note_edit(self, note: str):
         path = self._note_path(note)
-        e = next((x for x in self.s.note_service.history.list(path) if x.get("by") == "ai"), None)
+        ns = self.s.note_service
+        cur, h = self.s.vault.read(path)
+        if not ns.history.enabled:
+            return self._undo_legacy(path, cur, h)
+        e = next((x for x in ns.history_of(path, limit=300)["entries"] if x.get("by") == "ai"), None)
+        if not e:
+            raise ToolError(f"No AI app has edited {path}.")
+        try:
+            new = ns.history.reverted(e["id"], path, cur)
+        except ValueError as err:
+            raise ToolError(
+                f"{path} was changed after the last AI edit ({e['summary']}) in the same places, so undoing it "
+                "would also remove those changes. Nothing was undone. The user can restore any earlier version "
+                "in the app (the note's history), or read the note with get_note and edit_note it."
+            ) from err
+        if new == cur:
+            raise ToolError(
+                f"The last AI edit of {path} ({e['summary']}) is no longer in the note; nothing was undone."
+            )
+        try:
+            res = ns.edit(path, new, h, by="ai", summary=f"Undid: {e['summary']}")
+        except Conflict as err:
+            raise ToolError(f"{path} changed just now; nothing was undone.") from err
+        return drop_empty(
+            {
+                "restored": path,
+                "undid": e["summary"],
+                "kept_later_edits": True if e.get("after_hash") != h else None,
+                "version": res["version"],
+                "changes": self._diff(cur, new),
+            }
+        )
+
+    def _undo_legacy(self, path: str, cur: str, h: str):
+        """Without Git: the AI changes kept as JSON files (only the latest, and only while the
+        note is exactly what it left)."""
+        hist = self.s.note_service.history.legacy
+        e = next((x for x in hist.list(path) if x.get("by") == "ai"), None)
         if not e:
             raise ToolError(f"No AI app has edited {path} (or its earlier versions were cleaned up).")
-        full = self.s.note_service.history.get(e["id"])
-        cur, h = self.s.vault.read(path)
-        if h != e["after_hash"]:
+        full = hist.get(e["id"])
+        if not full or h != e["after_hash"]:
             raise ToolError(
                 f"{path} was changed after the last AI edit ({e['summary']}), so undoing it would also "
                 "remove those changes. Nothing was undone. The user can restore any earlier version in "

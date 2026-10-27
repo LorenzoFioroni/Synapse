@@ -5,6 +5,8 @@ One archive per backup, ``library-YYYYMMDD-HHMMSS.tar.gz``, holding:
 * ``library.db`` — copied with SQLite's online backup API, so it is consistent while the app runs;
 * ``settings.json``;
 * ``notes/`` — every note, the images notes use (``attachments/``) and both notes trashes;
+* ``notes-history.bundle`` — the whole history of the notes' text (``git bundle``), when Git is
+  installed;
 * ``fields.db`` — the values plugins attach to papers (copied like ``library.db``);
 * ``plugins.json`` and ``plugin-data/`` — which plugins are on, their settings and what they store
   (their SQLite databases copied consistently, like ``library.db``; their log files left out);
@@ -22,7 +24,9 @@ citation-key rename (``notes-*.tar.gz``) are separate and never touched here.
 
 Restoring first backs up the current state, then puts back ``library.db`` (through the backup
 API, so open connections stay valid), ``settings.json`` and ``notes/``, and rebuilds the
-indexes. Nothing in the live data is touched until the archive has been checked.
+indexes. Nothing in the live data is touched until the archive has been checked. The notes history
+is not rolled back: the restored notes become one more change in it, so nothing recorded after the
+backup is lost. Only a missing or damaged history is rebuilt from the backup's bundle.
 """
 
 from __future__ import annotations
@@ -197,6 +201,9 @@ class Backups:
                         tar.add(cfg.settings_path, arcname="settings.json")
                     for p in note_files:
                         tar.add(p, arcname=f"notes/{p.relative_to(cfg.notes_dir).as_posix()}", recursive=False)
+                    bundle = Path(tmp) / "notes-history.bundle"
+                    if self.s.note_service.history.bundle(bundle):
+                        tar.add(bundle, arcname="notes-history.bundle")
                     if cfg.plugins_state_path.is_file():
                         tar.add(cfg.plugins_state_path, arcname="plugins.json")
                     if cfg.fields_db_path.is_file():
@@ -346,6 +353,8 @@ class Backups:
             self._extract(path, root)
             db = root / "library.db"
             self._check_db(db)
+            history = self.s.note_service.history
+            lost = history.lost()  # checked before the safety backup creates a new one
             # The current state is kept first: a restore can always be undone.
             safety = self.create(f"before restoring {name}")
             plugins = getattr(self.s, "plugins", None)
@@ -362,6 +371,8 @@ class Backups:
                         self.s.settings.reload()
                         self.s.settings.update(keep)
                     self._restore_notes(root / "notes")
+                    bundle = root / "notes-history.bundle"
+                    history.after_restore(bundle if bundle.is_file() else None, name, rebuild=lost)
                     self._restore_plugins(root)
             finally:
                 if plugins and plugins.role:
@@ -393,6 +404,7 @@ class Backups:
                             "plugins.json",
                             "plugin-data",
                             "fields.db",
+                            "notes-history.bundle",
                         )
                     ):
                         raise BackupError(f"Unexpected entry in the backup: {m.name}")

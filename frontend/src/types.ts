@@ -211,19 +211,68 @@ export interface NoteInfo {
   tags: string[];
 }
 
-/** A change to a note recorded by the server (backend/notes/history.py): AI apps' edits through MCP. */
+/** Who made a recorded change, and what kind of change it was (backend/notes/history/). */
+export type HistoryBy = 'human' | 'ai' | 'outside';
+export type HistoryKind = 'start' | 'earlier' | 'edit' | 'ai' | 'outside' | 'rename' | 'delete' | 'restore' | 'bulk';
+
+/** A milestone: a named state of all notes (a Git tag). */
+export interface Milestone { id: string; label: string; at: string; commit: string }
+
+/**
+ * A version of a note in its history (GET /api/notes/history): the commit that made it, who made
+ * it, and hashes of the text before and after (compared with the open note). Without Git, only AI
+ * changes, kept the old way (``id`` a ULID, no ``kind``).
+ */
 export interface HistoryEntry {
   id: string;
   path: string;
   at: string;
-  by: string;              // 'ai'
-  agent?: string;          // the AI app: 'Claude', 'Codex' … (missing in older entries)
+  by: HistoryBy;
+  kind?: HistoryKind;
+  agent?: string | null;   // the AI app: 'Claude', 'Codex' …
+  device?: string | null;  // the user's device: 'This computer', 'iPad' …
   summary: string;
-  before_hash: string;
-  after_hash: string;
+  body?: string;
+  status?: 'A' | 'M' | 'D' | 'R';
+  from_path?: string;      // the note's path before this change (a rename)
+  restored_from?: string | null;
+  milestones?: { id: string; label: string }[];
+  before_hash: string | null;
+  after_hash: string | null;
+  current?: boolean;
 }
 
-export interface NoteHistory { path: string; hash: string | null; entries: HistoryEntry[] }
+export interface NoteHistory { path: string; hash: string | null; enabled?: boolean; entries: HistoryEntry[] }
+
+/** GET /api/notes/history/version: a note's text after a change and before it. */
+export interface HistoryVersion { id: string; path: string; from_path?: string; before: string | null; after: string | null }
+
+/** A change to any notes (GET /api/notes/history/log). */
+export interface HistoryCommit {
+  id: string;
+  tree: string;               // the state of all notes after it …
+  parent_tree: string | null; // … and before it
+  parents: string[];
+  at: string;
+  by: HistoryBy;
+  kind: HistoryKind;
+  agent: string | null;
+  device: string | null;
+  restored_from: string | null;
+  summary: string;
+  body: string;
+  files: { status: string; path: string; from?: string }[];
+  milestones: { id: string; label: string }[];
+}
+
+export interface HistoryStatus { enabled: boolean; git: string | null; reason: string | null; error: string | null; folder: string }
+export interface HistoryLog extends HistoryStatus { entries: HistoryCommit[]; milestones: Milestone[] }
+
+/** GET /api/notes/history/diff: the notes that differ between two states, with both texts. */
+export interface HistoryDiff {
+  from: string; to: string; cut: boolean;
+  files: { status: string; path: string; from?: string; before?: string | null; after?: string | null }[];
+}
 
 /** GET /api/notes/attachments: images in the notes folder, and the attachment trash. */
 export interface NoteAttachments {

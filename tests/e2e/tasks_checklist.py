@@ -550,21 +550,17 @@ async def main():
                 check(
                     "off: task IDs remain in notes, with no task controls",
                     await page.locator(".cm-content .cm-lp-chip.taskref").count() > 0
-                    and await page.locator(".cm-content .task-ref").count() == 0
-                    and await page.locator(".note-add-task").is_hidden(),
+                    and await page.locator(".cm-content .task-ref").count() == 0,
                 )
                 s.post(BASE + "/api/plugin-host/tasks/enable").raise_for_status()
                 on = await wait_for(
                     page,
-                    "!!document.querySelector('#tasks-view') && !!document.querySelector('#sidebar [data-navigation=\"tasks.main\"]')"
-                    " && !document.querySelector('.note-add-task').hidden",
+                    "!!document.querySelector('#tasks-view') && !!document.querySelector('#sidebar [data-navigation=\"tasks.main\"]')",
                     12000,
                 )
                 check(
                     f"on ({cycle + 1}): one page and note controls return",
-                    on
-                    and await page.locator("#tasks-view").count() == 1
-                    and await page.locator(".note-add-task").count() == 1,
+                    on and await page.locator("#tasks-view").count() == 1,
                 )
                 check("on: all tasks survive", len(all_tasks()["tasks"]) == before_off)
             await page.click('[data-mode="read"]')

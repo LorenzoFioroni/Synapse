@@ -33,6 +33,24 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
 
     guard.install(app, config.allowed_hosts, config.lan)
 
+    from flask import g
+
+    from .library.agent import reset_device, set_device
+
+    @app.before_request
+    def _device():  # after the guard: the notes history credits edits to the device making them
+        dev = g.get("device")
+        g.device_token = set_device(dev.get("name") if dev else None)
+
+    @app.teardown_request
+    def _device_done(_exc):
+        token = g.pop("device_token", None)
+        if token is not None:
+            try:
+                reset_device(token)
+            except ValueError:  # set in another context (should not happen); nothing to undo
+                pass
+
     from . import frontend
     from .api import register_blueprints
 
@@ -65,4 +83,5 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
     if start_indexer:
         services.attachments.start()
         services.backups.start()
+        services.note_service.history.start()  # checkpoints of idle edits, changes made outside
     return app

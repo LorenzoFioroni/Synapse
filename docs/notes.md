@@ -20,7 +20,7 @@ change feed), [frontend.md](frontend.md) and [testing.md](testing.md).
 | `attachments/` | Images shown by notes. Reserved: no notes or user folders go here. |
 | `.trash/<timestamp>/` | Deleted notes and folders, at their old relative path. |
 | `.trash-attachments/<timestamp>/` | Images no note uses any more. `.since` records when automatic emptying started. |
-| `.history/<id>.json` | The version each of Claude's edits replaced (see [History of AI edits](#history-of-ai-edits-backendnoteshistorypy)). |
+| `.history/<id>.json` | AI changes as kept before the Git history, and while Git is missing (`history/legacy.py`). Every version of the notes is in `data/notes-history.git` (see [notes history](notes-history.md)). |
 | `.folders.json` | Colours given to folders: `{"folder/path": "#rrggbb"}` (see [Folder colours](#folder-colours)). |
 
 Hidden folders (any name starting with `.`) are never indexed, and a path from outside can never
@@ -232,18 +232,16 @@ When an item's citation key changes, `PaperRepository.on_citekey_change` calls
 3. Each note is rewritten with `link_spans`/`replace_spans` (`[@old]` becomes `[@new]`, never
    inside code or math) and `paper: old` in the front matter, hash-checked, up to three tries.
 4. A paper note still named `papers/<old>.md` moves to `papers/<new>.md` if that name is free,
-   and `[[links]]` to it are updated. History entries follow the move.
+   and `[[links]]` to it are updated. The whole rename is one change in the notes history.
 
-### History of AI edits (`backend/notes/history.py`)
+### History (`backend/notes/history/`)
 
-`NoteHistory` stores one JSON file per change in `.history/`: `id`, `path`, `at`, `by` (`ai`),
-`agent` (the AI app that made it: Claude, Codex …; missing in entries recorded before it was
-kept, which the app shows as "An AI app"), `summary`, `before` (the whole previous text),
-`before_hash`, `after_hash`. One file per change, with a unique name, means the app and the MCP
-server cannot overwrite each other's entries. `after_hash` tells whether the note is still exactly
-what the AI app left, which decides whether the
-app offers a plain Undo. Moves rewrite the stored paths (`moved`). `prune` keeps at most
-`KEEP` (1000) entries and none older than a year.
+Every version of the notes' text, who made it and when, in a Git repository of its own; see
+[notes history](notes-history.md). `NotesService` wraps each write: a save by the app is
+`history.saving` (a pending edit, committed as a checkpoint later), every other change
+(`edit` by an AI app, `move`, `trash`, `restore`, `rename_key` …) is `history.change` (its own
+commit). `history_of`, `history_version`, `history_log`, `history_diff`, `checkpoint` and the
+milestone methods serve the API.
 
 ## HTTP API (`backend/api/notes.py`)
 
@@ -265,8 +263,8 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | POST | `/api/notes/trash` | Trash one note (`path`) or several notes and folders together (`paths`, `folders`). |
 | GET | `/api/notes/trash` | Trashed notes with `trashed_at` and `deletes_at`, and the retention. |
 | POST | `/api/notes/restore` | Restore one note (`trash_id`, `path`) or a whole batch (`trash_id` only). |
-| GET | `/api/notes/history?path=` | AI apps' changes to a note, newest first, without their text. |
-| GET | `/api/notes/history/version?id=` | One change with the text from before it. |
+| GET | `/api/notes/history?path=&limit=` | A note's versions, newest first, without their text. The other history endpoints (versions, the whole log, differences, checkpoints, milestones) are in [notes history](notes-history.md#http-api). |
+| GET | `/api/notes/history/version?id=&path=&from=` | One version: the text after it and before it. |
 | GET | `/api/notes/search?q=` | Full-text search of notes. |
 | GET | `/api/notes/links?path=` | Outgoing links with library info, cited keys, unresolved links, backlinks. |
 | GET | `/api/notes/rename_plan?old=&new=` | What a key change would change. Writes nothing. |
@@ -292,7 +290,7 @@ A folder can be given a colour (right-click it in the notes list → Colour; the
 one it has from a folder above.
 
 `backend/notes/folder_colors.py` (`FolderColors`, `NotesService.folder_colors`) keeps them in
-`.folders.json` at the top of the notes folder: hidden like `.history`, so it is never indexed and
+`.folders.json` at the top of the notes folder: hidden like `.trash`, so it is never indexed and
 goes into backups with the notes. Renaming or moving a folder in the app moves its colour and
 those of the folders inside (`moved`); a folder renamed outside the app loses its colour; a
 deleted folder keeps it in the file, so it comes back if the folder is restored, but the listing
@@ -318,13 +316,14 @@ only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 | `readView.ts` | Read mode, following `[[links]]` (offering to create missing notes), going to a line. |
 | `sidePanel.ts`, `panels.ts` | Status, breadcrumbs and details panel; showing and hiding the side panels. |
 | `citeCard.ts`, `citeTarget.ts` | Citation hover cards; where in the PDF a citation points (quoted words or a snapshot's region). |
-| `aiBar.ts`, `aiEdits.ts`, `diff.ts` | AI apps' edits: the bar ("Codex edited this note"), the history dialog with each app's name, line diffs. |
+| `aiBar.ts`, `aiEdits.ts`, `diff.ts` | AI apps' edits: the bar ("Codex edited this note", Show changes, Undo), line diffs with the changed words marked. |
+| `historyView.ts`, `historyGroups.ts` | The history of a note and of all notes, milestones (see [notes history](notes-history.md#the-app)); grouping without a DOM. |
 | `conflict.ts` | The dialog for a note changed or deleted elsewhere. |
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
 | `exportNote.ts`, `portable.ts` | Exporting a note as PDF, HTML or Markdown; the Markdown conversion and reference entries (no DOM). |
 | `crossref.ts`, `sections.ts` | References (`\ref`, `\eqref`, `\cref`, `\Cref`) written out as cleveref does, from equations, figures and labelled Markdown headings; hierarchical section numbering (no DOM). |
 | `hooks.ts` | What core plugins add to the editor: ghost text, the graph, galleries and figures (`setNoteHook`). |
-| `commands.ts` | The command palette's commands for the open note: inserting images and figures (`Insert Image…`, `Insert Figure with Caption…`), citations, links and tasks (they type `[@]`, `[[]]` or `{{task }}` and open the completion), tables, callouts, equations and diagrams; Live/Source/Read; renaming, moving, deleting, exporting and linking the note; its graph, AI edits, paper and PDF. Each is offered only while a note is on screen and it can act (a figure needs Extended Markdown's figures, a task the Tasks plugin); inserting from Read goes back to editing. |
+| `commands.ts` | The command palette's commands for the open note: inserting images and figures (`Insert Image…`, `Insert Figure with Caption…`), citations, links and tasks (they type `[@]`, `[[]]` or `{{task }}` and open the completion), tables, callouts, equations and diagrams; Live/Source/Read; renaming, moving, deleting, exporting and linking the note; its graph, history, paper and PDF; the history of all notes and marking a milestone. Each is offered only while a note is on screen and it can act (a figure needs Extended Markdown's figures, a task the Tasks plugin); inserting from Read goes back to editing. |
 
 Galleries and figures are an extension of the **Extended Markdown** core plugin, in
 `frontend/src/plugins/core/extended-markdown/figures/`:
@@ -548,8 +547,8 @@ Each open note has one `NoteSession`. It keeps `saved` (the text and hash the se
 ### How a change made by Claude reaches an open note
 
 1. Claude calls `edit_note`. The MCP process reads the note, applies the edit and calls
-   `NotesService.edit`, which writes with the hash it read, records a `.history` entry and
-   updates `notes_index.db`.
+   `NotesService.edit`, which writes with the hash it read, records the change as its own
+   commit in the notes history and updates `notes_index.db`.
 2. The app's `ChangeFeed` notices that `notes_index.db` changed on disk and reports `notes` on
    the next `/api/changes` poll. `changes.ts` then calls `notesChanged()`, which runs
    `checkRemote()` and refreshes the tree, unless the user typed in the last few seconds.
