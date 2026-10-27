@@ -21,7 +21,8 @@ Code: `backend/notes/history/` (recording and reading), `frontend/src/views/note
 | Pending edits | `synapse-pending.json` in the Git directory |
 | Lock | `data/.notes-history.git.lock` |
 
-Nothing is ever pruned. Git packs the versions as deltas itself (`gc.auto` 2000).
+Nothing is ever pruned, with one exception: edits you undo (below). Git packs the versions as
+deltas itself (`gc.auto` 2000).
 
 The repository is Synapse's alone and is isolated from the user's Git setup (`Repo` in `git.py`):
 `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, `HOME` pointed into the Git directory (for
@@ -62,6 +63,7 @@ guard's `g.device`), like the AI app's name comes from `acting_as`.
 | Rename or move (`move`, `move_folder`) | A pure-rename commit, after committing what was pending for the note, so Git always follows the note (`log --follow`). |
 | Delete, restore from the trash | A commit removing / adding the files. |
 | Citation-key rename (`rename_key`) | One commit for every note it rewrote. |
+| …that brings the notes back to a state of a moment ago (you changed something and undid it, and a checkpoint fell in between) | No version: `_drop_detour` moves the branch back to that state (`reset --soft`), so the versions in between leave the Git history. Only your own edits on the same device, at most `DETOUR_GAP` (30 min) apart and without a milestone on them, are dropped; an AI change, another device's edit, an outside change or a milestone in between keeps them. The whole tree must match, so no other note's change is lost. |
 | A version put back from the history | Your edit, recorded as `restore` with `Synapse-Restored`. |
 | A milestone restored | One commit for every note it changed (newer notes go to the notes trash). |
 | A backup restored | One commit "Restored the backup …": the history is not rolled back, so nothing recorded after the backup is lost. |
@@ -128,10 +130,13 @@ milestone.
 
 ## The app
 
-- **A note's history** — the note's details (**Versions…**) or the palette (**History of This
-  Note…**). Left: the versions; your edits less than 30 minutes
+- **A note's history** — **History** in the note's head (beside Export; only its icon on a
+  phone), the note's details (**Versions…**) or the palette (**History of This Note…**). Left: the versions; your edits less than 30 minutes
   apart on the same device form one row ("Edited · 4 versions", open it for each one), and every
-  AI change, rename, restore or outside change is a row of its own. Right: what the selected row
+  AI change, rename, restore or outside change is a row of its own. A row of your edits that ends
+  where it began is left out (`changesNothing`: the note's hashes, or for all notes the trees
+  before and after, which `log` gives as `tree` and `parent_tree`); such detours are dropped when
+  recorded, so this only hides ones recorded before that. Right: what the selected row
   changed (line diff with the changed words marked, `diff.ts`), or **Compared with now**.
   **Restore This Version** puts it in the editor (Cmd/Ctrl+Z takes it back) and records a restore.
 - **All notes** — the palette (**Notes History…**), the notes list's menu, Settings → Backups. Each

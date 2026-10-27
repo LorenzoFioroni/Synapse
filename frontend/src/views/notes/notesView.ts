@@ -77,7 +77,7 @@ export function initNotes(): void {
           <button data-mode="source" title="Plain Markdown">Source</button>
           <button data-mode="read" title="Read (${modLabel}E)">Read</button>
         </div>
-        <button class="btn btn-sm note-add-task" hidden data-act="add-task" title="Add a task to this note (${modLabel}↩)">${icon('tasks', 'icon-sm')} Task</button>
+        <button class="btn btn-sm note-history" data-act="history" title="Every version of this note">${icon('restore', 'icon-sm')}<span class="lbl">History</span></button>
         <button class="icon-btn" data-act="export" title="Export as PDF, HTML or Markdown">${icon('export')}</button>
       </div>
       <div class="note-ai-bar" role="status" hidden></div>
@@ -97,10 +97,7 @@ export function initNotes(): void {
   onNoteHookChange((key) => {
     if (key === 'graph') attachGraph();
     // Extended Markdown or one of its extensions (galleries and figures, spoilers) was turned on or off: draw the notes again
-    if (key === 'tasks') {
-      root.querySelector<HTMLElement>('.note-add-task')!.hidden = !taskHooks.add;
-      if (ws.session) paintSide();
-    }
+    if (key === 'tasks' && ws.session) paintSide();
     if (key === 'extended' || key === 'figures' || key === 'tasks') { staleOthers(); if (!notesOpen() || !ws.session) return; ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); }
   });
 
@@ -675,7 +672,6 @@ function onClick(e: MouseEvent): void {
   if (taskHooks.click?.(e)) return;
   const actEl = t.closest<HTMLElement>('[data-act]');
   const act = actEl?.dataset.act;
-  if (act === 'add-task' && session) { taskHooks.add?.(actEl!); return; }
   if (act === 'mobile-list') { ws.root.classList.toggle('mobile-tree-open'); return; }
   if (act === 'new-note') { newNote(); return; }
   if (act === 'new-folder') { newFolder(folderOfSelection()); return; }

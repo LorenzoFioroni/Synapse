@@ -144,9 +144,8 @@ function pickImages(figure: boolean): void {
   }, IMAGES, true);
 }
 
-/** The new-task popup at the cursor, as the Task button in the note's head opens it. */
+/** The new-task popup at the cursor, as Cmd/Ctrl+Enter in the note opens it. */
 function newTask(): void {
   editing();
-  const anchor = ws.root.querySelector<HTMLElement>('.note-add-task') || document.body;
-  taskHooks.add?.(anchor);
+  taskHooks.add?.(null);
 }

@@ -14,6 +14,12 @@ export interface Listed {
   summary: string;
   status?: string;
   milestones?: { id: string; label: string }[];
+  /** A note's version: hashes of its text before and after. */
+  before_hash?: string | null;
+  after_hash?: string | null;
+  /** A change to all notes: the state after it, and before it. */
+  tree?: string;
+  parent_tree?: string | null;
 }
 
 export interface Group<T extends Listed> {
@@ -24,8 +30,19 @@ export interface Group<T extends Listed> {
 export const GROUP_GAP_MS = 30 * 60 * 1000;   // edits less than this apart belong together
 export const THIS_COMPUTER = 'This computer';
 
-/** Group consecutive edits by the user on the same device, each within ``gap`` of the next.
-    A milestone ends a group: its version stays a row of its own to point at. */
+/** Your edits that end exactly where they began (changed, then undone): nothing to show. */
+export function changesNothing(g: Group<Listed>): boolean {
+  const newest = g.entries[0], oldest = g.entries[g.entries.length - 1];
+  if (g.entries.some((e) => (e.kind ?? '') !== 'edit' || e.milestones?.length)) return false;
+  if (oldest.before_hash !== undefined || newest.after_hash !== undefined) {
+    return !!oldest.before_hash && oldest.before_hash === newest.after_hash;
+  }
+  return !!oldest.parent_tree && oldest.parent_tree === newest.tree;
+}
+
+/** Group consecutive edits by the user on the same device, each within ``gap`` of the next, and
+    leave out the groups that change nothing in the end (the history drops such detours as they
+    happen; these are older ones). A milestone ends a group: its version stays a row of its own. */
 export function groupEdits<T extends Listed>(entries: T[], gap = GROUP_GAP_MS): Group<T>[] {
   const out: Group<T>[] = [];
   let cur: Group<T> | null = null;
@@ -38,7 +55,7 @@ export function groupEdits<T extends Listed>(entries: T[], gap = GROUP_GAP_MS): 
     if (joins) cur!.entries.push(e);
     else { cur = { entries: [e] }; out.push(cur); }
   }
-  return out;
+  return out.filter((g) => !changesNothing(g));
 }
 
 /** Who made a change, for a row: "You", "You · iPad", the AI app, "Outside Synapse". */

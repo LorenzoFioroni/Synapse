@@ -83,9 +83,6 @@ button.link:hover { text-decoration: underline; }
 .cm-tooltip-autocomplete .cm-completionInfo { white-space: pre-line; }
 
 /* the note head's button and the side panel */
-.note-head .note-add-task { gap: 5px; color: var(--text-2); }
-.note-head .note-add-task:hover { color: var(--text); }
-.reading .note-head .note-add-task { display: none; }
 .ns-tasks[hidden] { display: none; }
 .ns-task-bar { height: 4px; border-radius: 2px; background: var(--bg-active); overflow: hidden; margin: 0 6px 6px; }
 .ns-task-bar i { display: block; height: 100%; background: var(--success); border-radius: 2px; transition: width .2s; }

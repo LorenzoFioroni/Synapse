@@ -234,14 +234,14 @@ never mix.
   settings and notes back and rebuilds the indexes.
 - **Notes history**: every version of your notes' text is kept, with who made it — you (and on
   which device), an AI app (with its name and summary) or another program — like Overleaf's
-  history. A note's **Versions…** (in its details, or **History of This Note…** in the command
-  palette) lists them: your edits close together as one row, each AI change on its own; select one
+  history. **History** in a note's head (or **Versions…** in its details, or **History of This
+  Note…** in the command palette) lists them: your edits close together as one row, each AI change on its own; select one
   to see exactly what it changed (changed words marked) or how it differs from the note now, and
   **Restore This Version** (⌘Z takes it back). **Notes History…** shows every change to all notes;
   **Mark Milestone…** names how all notes are now (a submitted draft, say), shows what changed
   since and can put every note back as it was. Edits become a version when you leave the note, or
-  after two minutes without typing. Images are not versioned, and nothing is ever deleted from the
-  history. It needs [Git](https://git-scm.com) (on a Mac: `xcode-select --install`), kept in
+  after two minutes without typing; an edit you undo leaves no version. Images are not versioned,
+  and nothing else is ever deleted from the history. It needs [Git](https://git-scm.com) (on a Mac: `xcode-select --install`), kept in
   `data/notes-history.git` apart from your own Git setup; backups include it. See
   [notes history](docs/notes-history.md).
 - **Notes**: Markdown notes with live preview, KaTeX, code, Mermaid and images; `[@key]`
@@ -308,7 +308,7 @@ never mix.
   support nested Markdown and spoilers. Source text stays intact when the plugin is off; HTML/PDF
   exports reveal spoiler contents. See [Extended Markdown](docs/notes.md#extended-markdown-core-plugin).
 - **Tasks** (open it under **Plugins** in the left sidebar; a core plugin, on by default; turn it off in Settings → Plugins without losing tasks): to-dos with a title, a due date, details written in Markdown like a note, and
-  sub-tasks to any depth. In a note, Cmd/Ctrl+Enter (or **Task** in the note's header) opens a
+  sub-tasks to any depth. In a note, Cmd/Ctrl+Enter (or **Add Task to This Note…** in the command palette) opens a
   small popup: name the task (the line's text, if any), give it a date in words ("fri", "27 oct",
   "in 3 days") and details, or pick a task you already have — or type `{{task` and a few words of
   its title to pick one from a list, as `[@` does for papers. The note then shows the task as one

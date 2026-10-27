@@ -127,7 +127,7 @@ export const taskHooks = {
   /** Cmd/Ctrl+Enter in the note editor (true: handled). */
   key: null as ((view: import('@codemirror/view').EditorView) => boolean) | null,
   /** The note head's "Add task" button. */
-  add: null as ((anchor: HTMLElement) => void) | null,
+  add: null as ((anchor: HTMLElement | null) => void) | null,
   /** The Tasks section of the side panel (an empty element to fill). */
   paintSide: null as ((box: HTMLElement) => void) | null,
   /** A click in the notes workspace (true: handled). */

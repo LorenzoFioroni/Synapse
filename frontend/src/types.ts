@@ -250,6 +250,8 @@ export interface HistoryVersion { id: string; path: string; from_path?: string; 
 /** A change to any notes (GET /api/notes/history/log). */
 export interface HistoryCommit {
   id: string;
+  tree: string;               // the state of all notes after it …
+  parent_tree: string | null; // … and before it
   parents: string[];
   at: string;
   by: HistoryBy;

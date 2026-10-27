@@ -101,6 +101,50 @@ def test_the_users_edits_wait_until_the_note_is_left_alone(svc, ns, monkeypatch)
     assert ns.history_of(n["path"])["entries"][0]["summary"] == "Edited Draft"
 
 
+def test_an_edit_undone_leaves_no_versions(svc, ns):
+    p = ns.create(title="Undo", text="original\n")["path"]
+    ns.checkpoint()
+    start = git(svc, "rev-parse", "HEAD").strip()
+    original = ns.vault.read(p)[0]
+    write(ns, p, original + "typed\n")
+    ns.checkpoint(p)  # e.g. the history was opened in between
+    write(ns, p, original + "typed\nmore\n")
+    ns.checkpoint(p)
+    write(ns, p, original)  # undone, back to the start
+    assert ns.checkpoint(p)["commits"] == []
+    assert git(svc, "rev-parse", "HEAD").strip() == start and not git(svc, "status", "--porcelain")
+    # back to an earlier version of the session: only what came after it goes
+    write(ns, p, original + "kept\n")
+    ns.checkpoint(p)
+    kept = git(svc, "rev-parse", "HEAD").strip()
+    write(ns, p, original + "kept\ndetour\n")
+    ns.checkpoint(p)
+    write(ns, p, original + "kept\n")
+    ns.checkpoint(p)
+    assert git(svc, "rev-parse", "HEAD").strip() == kept
+
+
+def test_an_undone_edit_keeps_what_others_did_in_between(svc, ns):
+    p = ns.create(title="Kept", text="original\n")["path"]
+    ns.checkpoint()
+    original = ns.vault.read(p)[0]
+    write(ns, p, original + "typed\n")
+    ns.checkpoint(p)
+    with on_device("iPad"):  # another device's version in between
+        write(ns, p, original + "typed\nfrom the iPad\n")
+    ns.checkpoint(p)
+    write(ns, p, original)
+    ns.checkpoint(p)
+    assert [e["device"] for e in ns.history_of(p)["entries"]][:3] == ["This computer", "iPad", "This computer"]
+    m = ns.add_milestone("Marked")  # a milestone keeps the version it marks
+    write(ns, p, original + "after the milestone\n")
+    ns.checkpoint(p)
+    write(ns, p, original)
+    ns.checkpoint(p)
+    assert m["commit"] in git(svc, "rev-list", "HEAD")
+    assert ns.history_of(p)["entries"][0]["summary"] == "Edited Kept"
+
+
 def test_another_device_starts_a_new_version(svc, ns):
     n = ns.create(title="Shared")
     write(ns, n["path"], "from the Mac\n")

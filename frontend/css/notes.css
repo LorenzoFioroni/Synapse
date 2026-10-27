@@ -518,7 +518,8 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
   .note-status { display: none; }
   .note-modes { margin-left: auto; }
   .note-modes button { padding-inline: 8px; }
-  .note-add-task { display: none !important; }
+  .note-history .lbl { display: none; }
+  .note-head .note-history { border-color: transparent; background: none; padding-inline: 6px; }
   .note-body .cm-content { padding-left: 14px; padding-right: 14px; }
   .prose { padding: 20px 16px 30vh; font-size: calc(var(--fs) + 2px); }
   #notes-view.details-shown.has-note .notes-side, #notes-view.graph-on .notes-side { display: none; }
@@ -528,6 +529,8 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 }
 
 /* ------------------------------------------------------- history (historyView.ts) */
+.note-head .note-history { gap: 5px; color: var(--text-2); }
+.note-head .note-history:hover { color: var(--text); }
 .dialog.hist-dialog { width: 1080px; height: min(760px, calc(100vh - 40px)); }
 .hist-dialog .dialog-body { display: flex; min-height: 0; flex: 1; padding-bottom: 8px; }
 .hist { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 16px; flex: 1; min-height: 0; width: 100%; }

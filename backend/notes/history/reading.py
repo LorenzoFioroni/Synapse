@@ -20,7 +20,7 @@ from pathlib import Path
 from .git import GitError, Repo
 
 TRAILERS = ("Synapse-By", "Synapse-Kind", "Synapse-Agent", "Synapse-Device", "Synapse-Restored")
-LOG_FORMAT = "%x1e%H%x1f%P%x1f%at%x1f%B%x1f"
+LOG_FORMAT = "%x1e%H%x1f%T%x1f%P%x1f%at%x1f%B%x1f"
 MILESTONE_PREFIX = "m-"
 MAX_DIFF_FILES = 60
 # Renames Synapse makes are exact; a lower threshold pairs up two different short notes that share
@@ -56,7 +56,7 @@ def parse_log(raw: bytes) -> list[dict]:
     out = []
     for chunk in raw.decode("utf-8", "replace").split("\x1e")[1:]:
         head, _, rest = chunk.rpartition("\x1f")
-        sha, parents, at, msg = (head.split("\x1f", 3) + ["", "", "", ""])[:4]
+        sha, tree, parents, at, msg = (head.split("\x1f", 4) + ["", "", "", "", ""])[:5]
         subject, body, tr = split_message(msg)
         fields = rest.lstrip("\0\n").split("\0")
         files = []
@@ -78,6 +78,7 @@ def parse_log(raw: bytes) -> list[dict]:
         out.append(
             {
                 "id": sha,
+                "tree": tree,
                 "parents": parents.split(),
                 "at": iso(ts),
                 "ts": ts,
@@ -172,6 +173,14 @@ class HistoryReader:
         if path:
             args += ["--follow", "--", path]
         entries = parse_log(self._r().run(*args).stdout)
+        # The state before each commit, so the app can tell edits that end where they began.
+        trees = {e["id"]: e["tree"] for e in entries}
+        missing = sorted({e["parents"][0] for e in entries if e["parents"] and e["parents"][0] not in trees})
+        if missing:
+            got = self._r().out("rev-parse", *(f"{p}^{{tree}}" for p in missing)).split()
+            trees.update(zip(missing, got))
+        for e in entries:
+            e["parent_tree"] = trees.get(e["parents"][0]) if e["parents"] else None
         tags: dict[str, list[dict]] = {}
         for m in self.milestones():
             tags.setdefault(m["commit"], []).append({"id": m["id"], "label": m["label"]})

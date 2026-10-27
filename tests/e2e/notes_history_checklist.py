@@ -106,6 +106,17 @@ async def main():
             save("plan.md", text + line + "\n")
             api("/api/notes/history/checkpoint", "POST", json={"path": "plan.md"})
         subprocess.run([sys.executable, "-c", AI_SCRIPT, str(APP), DATA], check=True, timeout=60)
+        # changed, recorded (the history was looked at), then undone: no versions
+        before_detour = api("/api/notes/history/log")["entries"][0]["id"]
+        text = api("/api/notes/note?path=plan.md")["text"]
+        save("plan.md", text + "A detour.\n")
+        api("/api/notes/history/checkpoint", "POST", json={"path": "plan.md"})
+        save("plan.md", text)
+        api("/api/notes/history/checkpoint", "POST", json={"path": "plan.md"})
+        check(
+            "an edit undone leaves no versions",
+            api("/api/notes/history/log")["entries"][0]["id"] == before_detour,
+        )
 
         async with async_playwright() as pw:
             b = await pw.chromium.launch()
@@ -121,7 +132,12 @@ async def main():
             await page.wait_for_timeout(600)
 
             # 1. the note's versions
-            await page.click('[data-act="history"]')
+            check(
+                "the note's head has History where the Task button was",
+                await page.locator('.note-head [data-act="history"]').is_visible()
+                and await page.locator(".note-head [data-act='add-task']").count() == 0,
+            )
+            await page.click('.note-head [data-act="history"]')
             await page.wait_for_selector(".hist-dialog .hist-row")
             await page.wait_for_selector(".hist-dialog .hist-body .diff")
             await shot(page, "note-history")

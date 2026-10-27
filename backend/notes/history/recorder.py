@@ -42,7 +42,7 @@ from ...library.agent import THIS_COMPUTER
 from .git import MIN_VERSION, GitError, Repo, find_git, git_version, lock_for
 from .legacy import LegacyHistory
 from .migrate import import_legacy
-from .reading import MILESTONE_PREFIX, HistoryReader
+from .reading import MILESTONE_PREFIX, HistoryReader, split_message
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +51,10 @@ TICK = 30  # how often the app looks for idle edits and changes made outside
 PENDING = "synapse-pending.json"
 EMAILS = {"human": "you@synapse.local", "ai": "ai@synapse.local", "outside": "outside@synapse.local"}
 OUTSIDE = "Outside Synapse"
+# Your edits that end where they began within a session leave no versions (_drop_detour): the
+# commits are this far apart at most (as the app groups them), and so many are looked at.
+DETOUR_GAP = 30 * 60
+DETOUR_SCAN = 200
 
 
 @dataclass
@@ -321,6 +325,8 @@ class NoteHistory(HistoryReader):
                 restored=restored,
                 when=max(float(pend[p].get("last") or 0) for p in ps) or None,
             )
+            if c and not restored and self._drop_detour(device):
+                c = None
             made += [c] if c else []
         # Forget what was committed, and saves that changed nothing a while ago.
         still = set(self._status()) if made else set(changed)  # what committing left (normally nothing)
@@ -334,6 +340,35 @@ class NoteHistory(HistoryReader):
         if keep != pend:
             self._save_pending(keep)
         return made
+
+    def _drop_detour(self, device: str) -> bool:
+        """The edit just committed brought the notes back to a state of a moment ago — you changed
+        something and undid it, and a checkpoint fell in between. The detour is dropped (the
+        branch goes back to that state) rather than kept as versions that change nothing in the
+        end. Only your own edits on this device, close together and without a milestone on them,
+        are dropped; anything else in between keeps them. Returns whether it dropped any."""
+        r = self._r()
+        raw = r.out("log", f"--max-count={DETOUR_SCAN}", "--format=%x1e%H%x1f%T%x1f%at%x1f%B", "HEAD")
+        commits: list[tuple[str, str, int, dict[str, str]]] = []
+        for chunk in raw.split("\x1e")[1:]:
+            sha, tree, at, msg = (chunk.split("\x1f", 3) + ["", "", "", ""])[:4]
+            commits.append((sha, tree, int(at) if at.isdigit() else 0, split_message(msg)[2]))
+        if len(commits) < 2:
+            return False
+        tagged = set(r.out("for-each-ref", "--format=%(*objectname) %(objectname)", "refs/tags").split())
+        head_tree = commits[0][1]
+        for k in range(1, len(commits)):
+            c_sha, c_tree, c_at, tr = commits[k]
+            if c_tree == head_tree:
+                r.run("reset", "-q", "--soft", c_sha)  # the work tree and index already are that state
+                log.info("Notes history: dropped %d versions that ended where they began", k)
+                return True
+            mine = tr.get("Synapse-By") == "human" and tr.get("Synapse-Kind") == "edit"
+            if not mine or tr.get("Synapse-Device", THIS_COMPUTER) != " ".join(device.split()) or c_sha in tagged:
+                return False
+            if commits[k - 1][2] - c_at > DETOUR_GAP:
+                return False
+        return False
 
     # ------------------------------------------------------------------ recording
     @contextmanager
