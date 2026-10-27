@@ -297,15 +297,19 @@ class Plugin:
 
         return register(self.export_formats, id, title=title, extension=extension, mimetype=mimetype)
 
-    def reference_source(self, id: str, *, title: str, order: int = 100):
+    def reference_source(self, id: str, *, title: str, order: int = 100, subsources: dict[str, str] | None = None):
         """Register fn({item, email, fresh}) -> {references: [...], source?: str} or None."""
-        from .references import ReferenceSource
+        from .references import ReferenceSource, clean_subsources
 
         if not TOOL_NAME_RE.fullmatch(id or "") or id in self.reference_sources:
             raise PluginError("Reference source id must be unique, with lowercase letters, digits and _")
 
+        names = clean_subsources(subsources)
+
         def register(fn):
-            self.reference_sources[id] = ReferenceSource(id, str(title)[:80], fn, int(order))
+            if id in self.reference_sources:
+                raise PluginError(f"Reference source {id!r} is registered twice")
+            self.reference_sources[id] = ReferenceSource(id, str(title)[:80], fn, int(order), names)
             return fn
 
         return register

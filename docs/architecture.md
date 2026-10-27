@@ -79,6 +79,9 @@ The Autocompletion contributed plugin talks only to Ollama on this computer thro
 loopback permission. Metadata Sources is also contributed: `plugins/metadata-sources/server/providers.py`
 owns its HTTP calls, parallel enrichment and executor lifecycle; `parsing.py` owns provider-record
 conversion. It reaches shared offline helpers through `backend.plugins.scholarly`.
+`backend/plugins/references.py` owns named reference sub-sources and fixed legacy source aliases.
+Services inject its title resolver into `Citations`, so reference views can show plugin labels
+without making storage depend on the plugin host.
 
 ### Layers
 

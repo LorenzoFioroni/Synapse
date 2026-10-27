@@ -384,3 +384,13 @@ not imply the other has been published.
 The `notifications` browser checklist uses an isolated data folder and port 8808; OS APIs are
 stubbed to verify permission, delivery, denied/unsupported fallback and badges without sending
 real desktop alerts. History model tests cover retention and multiple windows.
+
+
+### Reference provider identity checks
+
+`tests/plugins/test_reference_api.py` covers declared sub-source IDs, fixed legacy aliases,
+readable titles and the public reference-record contract. `tests/js/referenceSource.test.mjs`
+checks labels with old servers and unknown stored providers. The dedicated
+`python tests/e2e/run.py reference_sources` checklist starts one temporary offline provider and
+one browser to verify item-pane titles, HTML escaping, saved data while disabled, and reactivation.
+It makes no request to a real scholarly service.

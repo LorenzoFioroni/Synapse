@@ -40,6 +40,7 @@ class Citations:
         self.papers = papers
         self.settings = settings
         self.reference_sources: Callable | None = None
+        self.reference_source_title: Callable[[str], str] | None = None
         self._queue: queue.Queue[str] = queue.Queue()
         self._pending: set[str] = set()
         self._lock = threading.Lock()
@@ -197,8 +198,11 @@ class Citations:
             for i in items
             if i in citing
         ]
+        info = self.store.fetch_info(item_id)
+        if info and self.reference_source_title:
+            info["source_title"] = self.reference_source_title(info["source"])
         return {
-            "fetch": self.store.fetch_info(item_id),
+            "fetch": info,
             "references": refs,
             "cited_by": cited_by,
             "can_fetch": bool(doi or arx),

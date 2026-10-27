@@ -420,7 +420,8 @@ export interface Reference {
 
 export interface ReferenceFetch {
   item_id: string;
-  source: 'semanticscholar' | 'openalex' | 'crossref' | 'none';
+  source: string;
+  source_title?: string;
   fetched_at: string;
   doi: string | null;
   arxiv_id: string | null;
@@ -519,7 +520,7 @@ export interface PluginInfo {
   /** Its scheduled work (while running) and the jobs waiting. */
   schedules?: { name: string; rule: string }[];
   jobs?: number;
-  reference_sources?: { id: string; title: string }[];
+  reference_sources?: { id: string; title: string; subsources?: Record<string, string> }[];
   export_formats?: { id: string; title: string }[];
   /** Paths in the plugin's folder (from the manifest). */
   frontend?: string | null;

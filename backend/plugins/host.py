@@ -581,6 +581,13 @@ class PluginHost:
             ]
         return resolve(sources, self.run, query)
 
+    def reference_source_title(self, name: str) -> str:
+        from .references import source_title
+
+        with self._lock:
+            sources = [(pid, s) for pid, act in self._active.items() for s in act.plugin.reference_sources.values()]
+        return source_title(name, sources)
+
     def lookup_metadata(self, query: dict) -> dict:
         """Ask the metadata sources of running plugins for the normalized query."""
         from .resolvers import lookup

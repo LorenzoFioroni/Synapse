@@ -5,10 +5,11 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.4**, which also accepts plugins targeting 1.0–1.3. Reference
+This page documents API **1.5**, which also accepts plugins targeting 1.0–1.4. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
-`"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`.
+`"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`. Named reference sub-sources and the reference record
+contract require `"^1.5"`.
 What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
@@ -338,7 +339,7 @@ def activate(plugin: Plugin) -> None:
 | `@plugin.item_source(id, title=…, icon="list", description="", badge=None)`, `plugin.refresh_sources()` | A list of papers in the sidebar, and saying it changed (see [Papers outside the library](#papers-outside-the-library)). |
 | `@plugin.metadata_source(id, title=…, kinds=("doi", "arxiv", "isbn", "title", "pmid"), order=100)` | `fn(query)` receives `kind`, normalized `value`, and the contact `email`. Return an item dict in Synapse's field format, or `None` for no match. Lower order runs first; the first nonempty result wins. Raise `PluginError` for an unavailable source or a readable lookup problem; later sources are still tried. The bundled Metadata Sources plugin uses order 100. Sources are removed when their plugin stops and listed as `metadata_sources` in its info. Use `plugin.http` and declare network permission for a third-party provider. |
 | `@plugin.pdf_source(id, title=…, by_title=False, order=100)` | Where Find Available PDF may look: `fn(paper)` gets `{"title", "doi", "arxiv"}` and returns PDF URLs, best first; Synapse downloads them in turn and keeps the first that is the paper (it checks the DOI, the arXiv stamp or the title in its text). Sources `by_title` are asked only when those going by identifier found nothing for a paper with an arXiv id. Lower `order` first (Open-Access PDFs uses 10). For an institutional repository or a proxy, say. |
-| `@plugin.reference_source(id, title=…, order=100)` | API 1.1: `fn(query)` receives `item` (a copied library-style record), contact `email` and `fresh` (prefer newly announced-paper sources). Return `{"references": [...]}` or `None`. Lower order first; empty results and failures fall through. No active source raises a readable lookup error. Only bundled core providers may override the recorded source name for compatibility. |
+| `@plugin.reference_source(id, title=…, order=100, subsources=None)` | API 1.1: `fn(query)` receives `item` (a copied library-style record), contact `email` and `fresh` (prefer newly announced-paper sources). Return `{"references": [...]}` or `None`. Lower order first; empty results and failures fall through. No active source raises a readable lookup error. Only bundled core providers may override the recorded source name for compatibility. |
 | `@plugin.export_format(id, title=…, extension=…, mimetype=…)` | API 1.1: `fn(items, options) -> str` registers a text export. Options contain `unicode`, `abstract` and citation-key `pattern`. Keys are `<plugin>.<id>` (a core plugin's would keep its bare id). Writers disappear on unload. Extensions and MIME types are validated. Imports remain independent. To write a format Synapse knows, use `backend.plugins.formats` (below). |
 | `plugin.services` | `contact_email()`, `lookup(identifier)`, `references(paper, new=False)`, `match(refs)`, `connections(papers, refs=None, folders=None)`: Synapse's own lookups, reference lists and scoring. |
 | `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). |
@@ -383,6 +384,42 @@ importers' implementations and work offline without reading settings or user dat
 | `split_authors(text)`, `join_authors(pairs)` | Read/write Synapse's `Family, Given; Family2, Given2` author format. Joining accepts an iterable of pairs. |
 | `strip_tags(text)` | Plain text from JATS/HTML markup, omitting a JATS abstract heading and collapsing whitespace; None becomes `""`. It does not decode HTML entities. |
 | `title_similarity(a, b)`, `TITLE_MATCH` | Similarity in 0–1 using the existing case/accent/punctuation-insensitive rules (ASCII letters after normalization); empty normalized titles score 0. The current lookup threshold is 0.8. |
+
+### Named reference sub-sources
+
+API 1.5 lets one reference provider identify which catalogue answered:
+
+```python
+@plugin.reference_source("catalogues", title="Catalogues", subsources={"local": "Local catalogue"})
+def references(query):
+    return {"source": "local", "references": [{"title": "A cited work"}]}
+```
+
+A nonempty result must select one declared sub-source. Sub-source IDs contain lowercase letters,
+digits, underscores or hyphens, start with a letter and have at most 64 characters. Titles must
+be nonempty strings of at most 80 characters. A contributed result is stored as
+`<plugin>.<registration>.<sub-source>`; another plugin cannot claim that identity. If `subsources`
+is omitted, API 1.1 behavior is preserved: contributed results use `<plugin>.<registration>` and
+ignore a returned `source` value. Empty reference lists still mean no match and allow fallback.
+
+The host supplies four fixed compatibility aliases for `reference-sources.scholarly.*`:
+`semanticscholar`, `openalex`, `crossref` and `arxiv-html`. Those declarations continue returning
+exactly the historical bare values in `citations.db` and HTTP responses, preserving existing
+records and consumers without a database rewrite. These aliases are scoped to those complete
+plugin/registration/sub-source IDs and cannot be claimed by other plugin IDs.
+
+The reference view adds an optional `fetch.source_title` from running declarations. Historical
+bundled titles remain available with plugins off, including after restart; unknown saved plugin
+sources retain their full ID as their fallback label. The browser also keeps its old labels for
+older servers. Source IDs remain the stable identity; titles are presentation only.
+
+`scholarly.REF_FIELDS` is the reference-record field tuple: `doi`, `arxiv_id`, `openalex_id`,
+`s2_id`, `title`, `authors`, `year`, `venue`, `raw`. References may provide any subset; absent values
+are unknown. The first two fields identify a work, author text uses the library's author format,
+`year` is an integer or unknown, and `raw` preserves an unstructured citation. The store owns
+`item_id`, `position` and later library matching; providers must not supply database identity.
+API 1.5 also exposes `scholarly.identifiers(item)` (normalized DOI and arXiv ID, both may be present)
+and `ARXIV_DOI` (group 1 is the suffix of an arXiv DOI).
 
 ### Events
 

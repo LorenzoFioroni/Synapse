@@ -92,6 +92,7 @@ class Services:
             services=self,
         )
         self.citations.reference_sources = self.plugins.fetch_references
+        self.citations.reference_source_title = self.plugins.reference_source_title
         self.papers.on_items(lambda event, ids, **details: self.plugins.emit(event, ids=ids, **details))
         self.papers.on_citekey_change(lambda i, old, new: self.plugins.emit("citekey.changed", id=i, old=old, new=new))
         self.note_service.saved_listeners.append(

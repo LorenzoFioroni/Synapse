@@ -6,14 +6,18 @@ same normalization rules as the library; author pairs are ``(family, given)`` an
 """
 
 from ..formats.common import join_authors, parse_display_name, split_authors, strip_tags
-from ..library.identifiers import ARXIV_ID, arxiv_id_of, clean_doi, norm_arxiv, norm_doi
+from ..library.identifiers import ARXIV_DOI, ARXIV_ID, arxiv_id_of, clean_doi, identifiers, norm_arxiv, norm_doi
 from ..online.metadata import TITLE_MATCH, title_similarity
+from ..references.store import REF_FIELDS
 
 __all__ = [
+    "ARXIV_DOI",
     "ARXIV_ID",
+    "REF_FIELDS",
     "TITLE_MATCH",
     "arxiv_id_of",
     "clean_doi",
+    "identifiers",
     "join_authors",
     "norm_arxiv",
     "norm_doi",

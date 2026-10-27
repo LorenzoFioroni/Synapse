@@ -416,3 +416,20 @@ Crossref result. Stored fields, query normalization and the HTTP API have no mig
 Metadata Sources remains on by default only for the bundled copy's first discovery. Existing
 plugin choices are preserved; an installed copy waits for user enablement. Safe mode now stops
 it, as it does other contributed plugins.
+
+
+## Named reference providers and compatibility
+
+Plugin API 1.5 adds declared sub-sources to `plugin.reference_source` and exposes the existing
+reference-record field contract as `scholarly.REF_FIELDS`. Registrations without declarations
+retain their API 1.1 behavior. A selected declared source receives a qualified ID, except for the
+host's four compatibility aliases for the bundled `reference-sources.scholarly` registration.
+Those aliases preserve `semanticscholar`, `openalex`, `crossref` and `arxiv-html` exactly on disk
+and in `fetch.source`; no existing citation rows are rewritten.
+
+The app's reference response may add `fetch.source_title`. Services inject the plugin host's
+label resolver into `Citations`; storage stays independent of plugins and still stores only the
+source identity. Historical labels work with fetching disabled or the plugin missing. Other
+providers get their declared titles while running, and unknown stored identities fall back to
+their source ID. The browser escapes titles and retains its own legacy fallback labels for an
+older server. See [the plugin contract](plugins.md#named-reference-sub-sources).
