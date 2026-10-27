@@ -2,7 +2,7 @@
 
 import time
 
-from backend.plugins.scholarly import arxiv_id_of, compute_changes
+from backend.plugins import scholarly
 
 
 def _real_doi(value) -> str:
@@ -12,12 +12,12 @@ def _real_doi(value) -> str:
 
 def is_preprint(item: dict) -> bool:
     """Whether the item is an arXiv preprint (archive_id or preprint item_type)."""
-    return bool(arxiv_id_of(item))
+    return bool(scholarly.arxiv_id_of(item))
 
 
 def find(current: dict, found: dict, is_arxiv: bool) -> dict:
     """Differences between current record and fetched metadata: published version and changed fields."""
-    changes = compute_changes(current, found)
+    changes = scholarly.compute_changes(current, found)
     active_changes = [c for c in changes if c["checked"]]
 
     out: dict = {
