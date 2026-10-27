@@ -318,8 +318,13 @@ through the `window.zc…` hooks in `frontend/src/globals.d.ts` rather than thro
 one exists.
 
 `tests/test_metadata.py` tests query normalization and the Metadata Sources plugin’s providers
-with faked responses. `tests/plugins/test_metadata_sources.py` tests provider priority, fallback,
-turning sources off and on, and preserving library records without network access.
+with faked responses through `tests/fake_metadata.py`, leaving the public HTTP client's permission,
+credential, cache and spacing behavior in place. `tests/plugins/test_metadata_sources.py` tests
+provider priority, fallback, current credentials, concurrent conditional-cache reads, safe mode,
+turning sources off and on, and preserving saved choices and library records. The separate
+`test_metadata_provider_lifecycle.py` blocks workers with events and checks queued enrichment is
+cancelled when the provider stops; every worker is released and joined before the test finishes.
+These tests need no real provider network access and can run as small sequential local batches.
 
 ### Reliable tab, scroll and plugin checks
 

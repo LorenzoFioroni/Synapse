@@ -1,10 +1,18 @@
 {
   "id": "metadata-sources",
   "name": "Metadata Sources",
-  "version": "1.0.0",
-  "api": "^1.0",
+  "version": "1.1.0",
+  "api": "^1.4",
   "author": "Synapse",
   "description": "Metadata by DOI, arXiv ID, ISBN or title from Crossref, OpenAlex, arXiv and Open Library. Turning this off leaves existing library records unchanged.",
-  "core": true,
-  "backend": "server"
+  "backend": "server",
+  "enabled_by_default": true,
+  "permissions": {
+    "network": [
+      "api.crossref.org",
+      "api.openalex.org",
+      "export.arxiv.org",
+      "openlibrary.org"
+    ]
+  }
 }

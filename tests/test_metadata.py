@@ -1,29 +1,50 @@
-import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from backend.online import http, metadata
+from backend.plugins import PluginError
+from backend.plugins.http import PluginHttp
+from backend.plugins.loading import load_module
+from tests.fake_metadata import Response as FakeResp
+from tests.fake_metadata import install_transport
 
-spec = importlib.util.spec_from_file_location(
-    "metadata_providers_test", Path(__file__).resolve().parents[1] / "plugins/metadata-sources/server/providers.py"
-)
-assert spec and spec.loader
-providers = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(providers)
+package, _ = load_module("metadata_test", Path(__file__).resolve().parents[1] / "plugins/metadata-sources/server")
+providers = package.providers
+network = SimpleNamespace(get=None)
 
 
 @pytest.fixture(autouse=True)
-def _provider_for_direct_queries(monkeypatch):
-    # Standalone core-query tests explicitly supply a source; app calls retain their live host.
+def resolver(monkeypatch):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Unexpected metadata HTTP request")
+
+    monkeypatch.setattr(network, "get", unexpected)
+    install_transport(monkeypatch, lambda *args, **kwargs: network.get(*args, **kwargs))
+    instance = providers.Providers(
+        PluginHttp(
+            "metadata-test",
+            ["api.crossref.org", "api.openalex.org", "export.arxiv.org", "openlibrary.org"],
+            lambda: "test",
+        )
+    )
     original = metadata.lookup
 
+    def source(query):
+        try:
+            return instance.resolve(query)
+        except PluginError as e:
+            raise metadata.LookupFailed(str(e)) from e
+
     def lookup(**kwargs):
-        kwargs.setdefault("sources", providers.resolve)
+        kwargs.setdefault("sources", source)
         return original(**kwargs)
 
     monkeypatch.setattr(metadata, "lookup", lookup)
+    yield instance
+    instance.close()
 
 
 def test_classify_identifier():
@@ -43,18 +64,6 @@ def test_resolve_authors_prefers_known_accents():
     out = metadata.resolve_authors([("Banuls", "Mari Carmen"), ("Znidaric", "M."), ("Cui", "Jian")], known)
     # exact given-name match only: "M." is not expanded to "Marko"
     assert out == "Bañuls, Mari Carmen; Znidaric, M.; Cui, Jian"
-
-
-class FakeResp:
-    def __init__(self, data, status=200):
-        self._d, self.status_code, self.ok = data, status, status < 400
-
-    def json(self):
-        return self._d
-
-    def raise_for_status(self):
-        if not self.ok:
-            raise RuntimeError(self.status_code)
 
 
 CROSSREF = {
@@ -81,7 +90,7 @@ def test_lookup_doi(monkeypatch):
             return FakeResp(CROSSREF)
         return FakeResp({}, 404)  # OpenAlex unavailable
 
-    monkeypatch.setattr(providers.requests, "get", fake_get)
+    monkeypatch.setattr(network, "get", fake_get)
     item = metadata.lookup(doi="https://doi.org/10.1103/PhysRevX.13.011033", known=[("Papić", "Zlatko")])
     assert item["title"] == "Superdiffusive Energy Transport"
     assert item["authors"] == "Ljubotina, Marko; Papić, Zlatko"
@@ -90,7 +99,7 @@ def test_lookup_doi(monkeypatch):
 
 
 @pytest.mark.parametrize("by_title", [False, True])
-def test_lookup_uses_the_papers_author_names_not_openalex_profile_names(monkeypatch, by_title):
+def test_lookup_uses_the_papers_author_names_not_openalex_profile_names(monkeypatch, by_title, resolver):
     fixture = json.loads((Path(__file__).parent / "fixtures/metadata_author_names.json").read_text())
     message = fixture["crossref"]["message"]
 
@@ -99,9 +108,9 @@ def test_lookup_uses_the_papers_author_names_not_openalex_profile_names(monkeypa
             return FakeResp(fixture["openalex"])
         return FakeResp({"message": {"items": [message]}} if by_title else fixture["crossref"])
 
-    monkeypatch.setattr(providers.requests, "get", fake_get)
+    monkeypatch.setattr(network, "get", fake_get)
     query = {"title": message["title"][0]} if by_title else {"doi": message["DOI"]}
-    assert metadata.join_authors(providers.openalex_authors(message["DOI"])) == fixture["expected"]
+    assert metadata.join_authors(resolver.openalex_authors(message["DOI"])) == fixture["expected"]
     assert metadata.lookup(**query)["authors"] == fixture["expected"]
 
 
@@ -116,32 +125,32 @@ def test_lookup_uses_the_papers_author_names_not_openalex_profile_names(monkeypa
     ],
     ids=["spurious-suffix", "expanded-given-name", "accented-comma-name", "shorter-work-name", "no-profile"],
 )
-def test_openalex_prefers_work_author_name(monkeypatch, raw, profile, expected):
+def test_openalex_prefers_work_author_name(monkeypatch, raw, profile, expected, resolver):
     monkeypatch.setattr(
-        providers.requests,
+        network,
         "get",
         lambda *args, **kwargs: FakeResp(
             {"authorships": [{"raw_author_name": raw, "author": {"display_name": profile} if profile else None}]}
         ),
     )
-    assert providers.openalex_authors("10.1234/author-name-precedence") == [expected]
+    assert resolver.openalex_authors("10.1234/author-name-precedence") == [expected]
 
 
 @pytest.mark.parametrize("raw", [None, "", "   "])
-def test_openalex_authors_falls_back_to_profile_when_paper_name_is_blank(monkeypatch, raw):
+def test_openalex_authors_falls_back_to_profile_when_paper_name_is_blank(monkeypatch, raw, resolver):
     monkeypatch.setattr(
-        providers.requests,
+        network,
         "get",
         lambda *args, **kwargs: FakeResp(
             {"authorships": [{"raw_author_name": raw, "author": {"display_name": "Avery Rivera"}}]}
         ),
     )
-    assert providers.openalex_authors("10.1234/author-name-precedence") == [("Rivera", "Avery")]
+    assert resolver.openalex_authors("10.1234/author-name-precedence") == [("Rivera", "Avery")]
 
 
 def test_api_lookup_and_from_identifier(client, monkeypatch):
     monkeypatch.setattr(
-        providers.requests, "get", lambda url, **kw: FakeResp(CROSSREF) if "crossref" in url else FakeResp({}, 404)
+        network, "get", lambda url, **kw: FakeResp(CROSSREF) if "crossref" in url else FakeResp({}, 404)
     )
     r = client.post("/api/items/from_identifier", json={"identifier": "10.1103/PhysRevX.13.011033"})
     assert r.status_code == 201
@@ -177,8 +186,7 @@ def atom(entries):
 
 class XmlResp(FakeResp):
     def __init__(self, content, status=200):
-        super().__init__({}, status)
-        self.content = content
+        super().__init__({}, status, content=content)
 
 
 PREPRINT = {
@@ -213,7 +221,7 @@ def test_title_similarity_tolerates_small_differences():
 
 def test_arxiv_item_is_looked_up_on_arxiv_not_crossref(monkeypatch):
     calls = []
-    monkeypatch.setattr(providers.requests, "get", fake_net(calls))
+    monkeypatch.setattr(network, "get", fake_net(calls))
     item = metadata.lookup(title="Variational MPO", arxiv_id="2205.03415")
     assert item["title"].startswith("Variational Matrix Product Operators for the Steady State of Dissipative")
     assert item["item_type"] == "preprint" and item["archive_id"] == "arXiv:2205.03415"
@@ -222,7 +230,7 @@ def test_arxiv_item_is_looked_up_on_arxiv_not_crossref(monkeypatch):
 
 def test_arxiv_doi_goes_to_arxiv(monkeypatch):
     calls = []
-    monkeypatch.setattr(providers.requests, "get", fake_net(calls))
+    monkeypatch.setattr(network, "get", fake_net(calls))
     item = metadata.lookup(doi="https://doi.org/10.48550/arXiv.2205.03415")
     assert item["archive_id"] == "arXiv:2205.03415"
     assert calls[0][1] == {"id_list": "2205.03415"}
@@ -232,7 +240,7 @@ def test_arxiv_doi_goes_to_arxiv(monkeypatch):
 
 def test_title_falls_back_to_arxiv_search(monkeypatch):
     calls = []
-    monkeypatch.setattr(providers.requests, "get", fake_net(calls))
+    monkeypatch.setattr(network, "get", fake_net(calls))
     item = metadata.lookup(
         title="Variational matrix product operators for the steady state of dissipative quantum systems"
     )
@@ -242,23 +250,21 @@ def test_title_falls_back_to_arxiv_search(monkeypatch):
 
 
 def test_no_match_anywhere_has_a_helpful_message(monkeypatch):
-    monkeypatch.setattr(
-        providers.requests, "get", fake_net([], arxiv_feed=[{"id": "9999.99999", "title": "Unrelated"}])
-    )
+    monkeypatch.setattr(network, "get", fake_net([], arxiv_feed=[{"id": "9999.99999", "title": "Unrelated"}]))
     with pytest.raises(metadata.LookupFailed, match="Crossref or arXiv"):
         metadata.lookup(title="Variational matrix product operators for the steady state")
 
 
 def test_published_doi_still_uses_crossref(monkeypatch):
     calls = []
-    monkeypatch.setattr(providers.requests, "get", fake_net(calls, crossref=CROSSREF))
+    monkeypatch.setattr(network, "get", fake_net(calls, crossref=CROSSREF))
     item = metadata.lookup(doi="10.1103/PhysRevX.13.011033", arxiv_id="2205.03415")
     assert item["title"] == "Superdiffusive Energy Transport"
 
 
 def test_api_lookup_for_arxiv_item(client, svc, monkeypatch):
     calls = []
-    monkeypatch.setattr(providers.requests, "get", fake_net(calls))
+    monkeypatch.setattr(network, "get", fake_net(calls))
     it = svc.papers.create({"title": "Variational MPO", "url": "https://arxiv.org/abs/2205.03415"})
     r = client.post(f"/api/items/{it['id']}/lookup")
     assert r.status_code == 200, r.json
@@ -276,58 +282,91 @@ def test_doi_lookup_asks_crossref_and_openalex_side_by_side(monkeypatch):
         inside.append(url)
         both.wait()
         if "openalex" in url:
-            return type(
-                "R",
-                (),
+            return FakeResp(
                 {
-                    "ok": True,
-                    "json": lambda self: {
-                        "authorships": [
-                            {"author": {"display_name": "Jian Cui"}},
-                            {"author": {"display_name": "J. Ignacio Cirac"}},
-                        ]
-                    },
-                },
-            )()
-        return type(
-            "R",
-            (),
-            {
-                "status_code": 200,
-                "raise_for_status": lambda self: None,
-                "json": lambda self: {
-                    "message": {"title": ["T"], "DOI": "10.1/x", "author": [{"family": "Cui", "given": "J"}]}
-                },
-            },
-        )()
+                    "authorships": [
+                        {"author": {"display_name": "Jian Cui"}},
+                        {"author": {"display_name": "J. Ignacio Cirac"}},
+                    ]
+                }
+            )
+        return FakeResp({"message": {"title": ["T"], "DOI": "10.1/x", "author": [{"family": "Cui", "given": "J"}]}})
 
-    monkeypatch.setattr(providers.requests, "get", fake_get)
+    monkeypatch.setattr(network, "get", fake_get)
     t0 = _t.monotonic()
     item = metadata.lookup(doi="10.1/x")
     assert item["authors"] == "Cui, Jian; Cirac, J. Ignacio" and _t.monotonic() - t0 < 2
     assert len(inside) == 2
 
 
-def test_arxiv_requests_are_spaced(monkeypatch):
+def test_arxiv_requests_are_spaced(monkeypatch, resolver):
     import time as _t
 
     monkeypatch.setattr(http, "ARXIV_SPACING", 0.3)
     stamps = []
     monkeypatch.setattr(
-        providers.requests,
+        network,
         "get",
-        lambda *a, **k: (
-            stamps.append(_t.monotonic())
-            or type(
-                "R",
-                (),
-                {"raise_for_status": lambda self: None, "content": b"<feed xmlns='http://www.w3.org/2005/Atom'/>"},
-            )()
-        ),
+        lambda *a, **k: stamps.append(_t.monotonic()) or XmlResp(b"<feed xmlns='http://www.w3.org/2005/Atom'/>"),
     )
+
     from concurrent.futures import ThreadPoolExecutor
 
     with ThreadPoolExecutor(3) as ex:
-        list(ex.map(lambda _: providers._arxiv_entries({"id_list": "1"}), range(3)))
+        list(ex.map(lambda _: resolver._arxiv_entries({"id_list": "1"}), range(3)))
     stamps.sort()
     assert all(b - a >= 0.28 for a, b in zip(stamps, stamps[1:]))
+
+
+def test_isbn_lookup_maps_open_library_fields(monkeypatch):
+    isbn = "9780262033848"
+    monkeypatch.setattr(
+        network,
+        "get",
+        lambda *a, **k: FakeResp(
+            {
+                f"ISBN:{isbn}": {
+                    "title": "Quantum systems",
+                    "subtitle": "An introduction",
+                    "publish_date": "May 2016",
+                    "authors": [{"name": "Mina de Vries"}],
+                    "publishers": [{"name": "Example Press"}],
+                    "publish_places": [{"name": "Cambridge"}],
+                    "url": "https://openlibrary.org/books/example",
+                }
+            }
+        ),
+    )
+    item = metadata.lookup(identifier=isbn)
+    assert item["title"] == "Quantum systems: An introduction"
+    assert item["authors"] == "de Vries, Mina" and item["year"] == "2016"
+    assert item["isbn"] == isbn and item["publisher"] == "Example Press" and item["place"] == "Cambridge"
+
+
+@pytest.mark.parametrize("data", [None, [], {"message": []}, {"message": {"title": None, "author": [None]}}])
+def test_malformed_crossref_data_is_a_readable_failure(monkeypatch, data):
+    monkeypatch.setattr(network, "get", lambda url, **kwargs: FakeResp(data if "crossref" in url else {}, 200))
+    with pytest.raises(metadata.LookupFailed, match="invalid data"):
+        metadata.lookup(doi="10.1234/invalid")
+
+
+def test_malformed_arxiv_feed_is_a_readable_failure(monkeypatch):
+    monkeypatch.setattr(network, "get", lambda *a, **k: XmlResp(b"<not-an-atom-feed"))
+    with pytest.raises(metadata.LookupFailed, match="invalid data"):
+        metadata.lookup(arxiv_id="2101.00001")
+
+
+def test_crossref_404_preserves_the_identifier_in_the_error(monkeypatch):
+    monkeypatch.setattr(network, "get", lambda *a, **k: FakeResp({}, 404))
+    with pytest.raises(metadata.LookupFailed, match="DOI 10.1234/missing was not found on Crossref"):
+        metadata.lookup(doi="10.1234/missing")
+
+
+def test_failed_arxiv_fallback_preserves_crossref_no_match(monkeypatch):
+    monkeypatch.setattr(
+        network,
+        "get",
+        lambda url, **kwargs: FakeResp({}, 503) if "arxiv.org" in url else FakeResp({"message": {"items": []}}),
+    )
+    with pytest.raises(metadata.LookupFailed, match="No match found on Crossref"):
+        metadata.lookup(title="A research paper with no matching result")

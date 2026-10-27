@@ -412,10 +412,10 @@ Settings (listed under Plugins, opened by the **Settings** button on its row or 
 the app from working, start it with `python server.py --safe-mode` (only core plugins run) and turn it
 off.
 
-Synapse’s own optional features are **core plugins**: Graph, Metadata Sources,
-Reference Sources, Extended Markdown and Tasks start on. **Open-Access PDFs** (where Find
-Available PDF looks) and **Export Formats** (the library exports) are contributed plugins built only on the public plugin API, as
-yours would be; they come with Synapse and start on, but safe mode stops them like any other
+Synapse’s own optional features are **core plugins**: Graph, Reference Sources,
+Extended Markdown and Tasks start on. **Open-Access PDFs** (where Find Available PDF looks),
+**Export Formats** (the library exports), and **Metadata Sources** (scholarly lookups) are
+contributed plugins built only on the public plugin API, as yours would be; they come with Synapse and start on, but safe mode stops them like any other
 contributed plugin. **Autocompletion** is also contributed: it starts off (or as previously
 configured), uses only Ollama on this computer through an explicit loopback permission, and stops
 in safe mode. Plugin API 1.3 exposes plain-text editor suggestions to plugins; 1.4 adds offline scholarly
@@ -429,8 +429,10 @@ while Settings stays open. Disabling Autocompletion dismisses visible
 suggestions and cancels pending ones immediately.
 
 The built-in metadata providers (Crossref, OpenAlex, arXiv and Open Library) are the
-**Metadata Sources** core plugin, on by default. Switch it off in Settings → Plugins to stop
-those lookups; all existing metadata stays in the library. Other plugins can supply sources too.
+**Metadata Sources** contributed plugin, on by default and stopped in safe mode. Switch it off in Settings → Plugins to stop
+those lookups; all existing metadata stays in the library. It uses the public HTTP client with
+declared provider hosts, the shared arXiv queue, and Online Services credentials for OpenAlex.
+Other plugins can supply sources too.
 
 Three plugins come with Synapse, off until you turn them on:
 

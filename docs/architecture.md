@@ -76,7 +76,9 @@ Two objects tie the backend together:
 
 Online lookups live in `online/` and scholarly plugins; contributed plugins use `plugin.http`.
 The Autocompletion contributed plugin talks only to Ollama on this computer through the public
-loopback permission.
+loopback permission. Metadata Sources is also contributed: `plugins/metadata-sources/server/providers.py`
+owns its HTTP calls, parallel enrichment and executor lifecycle; `parsing.py` owns provider-record
+conversion. It reaches shared offline helpers through `backend.plugins.scholarly`.
 
 ### Layers
 
@@ -288,8 +290,8 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
   - HTTP endpoints go in `api/` and only parse the request, call a component through `svc()`, and
     shape the response.
   - A new component is created and wired in `Services`.
-  - Anything that talks to the web goes in `online/` (or a scholarly core plugin), using
-    `online/http.py`.
+  - Anything that talks to the web goes in `online/` (using `online/http.py`) or a scholarly
+    plugin (using `plugin.http` for contributed plugins).
   - A module that grows a second responsibility is split. As a guide, a module past roughly 400
     lines usually has one.
 - **Names.** Helpers used only inside their own module start with `_`. Anything imported by

@@ -354,7 +354,8 @@ canned data, using pytest's `monkeypatch`. They patch it through the module unde
 
 - `tests/test_metadata.py`: `FakeResp` and `fake_net()` route by host (Crossref, arXiv Atom feeds
   built by `atom()`). One test uses a `threading.Barrier` to prove Crossref and OpenAlex are asked
-  side by side; another checks the arXiv spacing.
+  side by side; another checks the arXiv spacing. `tests/fake_metadata.py` fakes only HTTP/DNS,
+  keeping the public client's permissions, credentials, response parsing and spacing in the tests.
 - `tests/fixtures/metadata_author_names.json`: synthetic Crossref and OpenAlex responses where
   profile names differ from the names credited on a work. `tests/test_metadata.py` checks DOI
   and title lookups, spurious suffixes, initials, surname particles, accents, missing profiles
@@ -381,8 +382,8 @@ tested in `tests/js/lookupJob.test.mjs` with an injected `lookup` function. See
 
 - **A new metadata source.** Register `@plugin.metadata_source` in a plugin (see
   [plugins](plugins.md)). Return normalized item fields or `None`; a lower `order` takes
-  priority over the core plugin (100). Use `plugin.http` with network permission in a
-  third-party plugin. The existing core providers live in `plugins/metadata-sources/server/`.
+  priority over the bundled Metadata Sources plugin (100). Use `plugin.http` with network permission in a
+  third-party plugin. The bundled contributed providers live in `plugins/metadata-sources/server/`.
   Add a faked test, and add any new reviewable field to `LOOKUP_FIELDS` in `metadataReview.ts`.
 - **A new PDF source.** Register `@plugin.pdf_source`; the core downloads and checks the candidates.
 - **A new reference source.** Register `@plugin.reference_source` (API 1.1). Return
@@ -397,4 +398,21 @@ tested in `tests/js/lookupJob.test.mjs` with an injected `lookup` function. See
   Online Services page (`frontend/src/views/settings/page.ts`); read it in the caller and pass it
   in.
 
-Metadata providers are the default-on **Metadata Sources** core plugin (`plugins/metadata-sources/server/providers.py`): Crossref, OpenAlex, arXiv and Open Library. `backend/online/metadata.py` keeps query classification, title matching and author normalization; the running plugin sources supply metadata. Existing HTTP endpoints and responses are unchanged. Turning all matching sources off gives a readable error without a network request; library records are kept.
+Metadata providers are the default-on **Metadata Sources** contributed plugin: Crossref, OpenAlex, arXiv and Open Library. Its `server/providers.py` owns HTTP and lookup orchestration; `server/parsing.py` converts provider records into library fields. `backend/online/metadata.py` keeps query classification, title matching and author normalization; the running plugin sources supply metadata. Existing HTTP endpoints and responses are unchanged. Turning all matching sources off gives a readable error without a network request; library records are kept.
+
+The plugin imports only `backend.plugins`. Its manifest declares `api.crossref.org`,
+`api.openalex.org`, `export.arxiv.org` and `openlibrary.org`; calls use `plugin.http`, its current
+Online Services credentials/User-Agent and conditional cache. The existing parallel Crossref and
+OpenAlex DOI requests remain parallel. arXiv uses the shared queue once per request, without a
+second plugin-specific wait. Other hosts now follow the host's default 0.5 s spacing, so batches
+of Crossref/OpenAlex/Open Library lookups can take longer than before.
+
+Each activation owns its provider and executor. Disable/restart closes that instance and cancels
+queued author enrichment; an in-flight HTTP call may finish within its timeout, but its retired
+provider does not return the result as a successful lookup. Restart creates a new executor.
+Malformed required-provider data produces a readable error; optional OpenAlex failures retain the
+Crossref result. Stored fields, query normalization and the HTTP API have no migration.
+
+Metadata Sources remains on by default only for the bundled copy's first discovery. Existing
+plugin choices are preserved; an installed copy waits for user enablement. Safe mode now stops
+it, as it does other contributed plugins.
