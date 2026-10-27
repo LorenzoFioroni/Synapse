@@ -5,6 +5,8 @@ import importlib
 import pytest
 
 from backend.online.http import LookupFailed
+from tests.fake_metadata import Response as HttpResponse
+from tests.fake_metadata import install_transport
 
 R = importlib.import_module("plugins.reference-sources.server.providers")
 
@@ -228,11 +230,10 @@ def test_fetched_automatically_after_add_by_identifier(client, svc, monkeypatch)
             "published-print": {"date-parts": [[2015]]},
         }
     }
-    monkeypatch.setattr(
-        requests,
-        "get",
-        router([("semanticscholar", lambda url, p: Resp(S2_PAGE2)), ("crossref", Resp(crossref_item))]),
-    )
+    monkeypatch.setattr(requests, "get", router([("semanticscholar", lambda url, p: Resp(S2_PAGE2))]))
+    # the lookup goes through Metadata Sources, i.e. plugin.http
+    crossref = router([("crossref", HttpResponse(crossref_item))])
+    install_transport(monkeypatch, lambda url, params=None, **kwargs: crossref(url, params))
     svc.settings.update({"add_fetch_references": "always"})
     item = client.post("/api/items/from_identifier", json={"identifier": "10.1234/X"}).json
     svc.citations.wait(10)
