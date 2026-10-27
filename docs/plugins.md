@@ -5,10 +5,10 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.2**, which also accepts plugins targeting 1.0 and 1.1. Reference
+This page documents API **1.3**, which also accepts plugins targeting 1.0–1.2. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
-`"^1.2"`.
+`"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`.
 What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
@@ -63,8 +63,6 @@ Settings lists these separately from **Contributed plugins** (bundled optional a
 plugins installed in `data/plugins/`). Its navigation expands the individual plugin sections only
 while the Plugins area is in view, and otherwise keeps a single top-level **Plugins** entry.
 
-- **Autocompletion** (`plugins/autocompletion`, off by default): suggestions from a model in
-  Ollama on this computer as you write a note; see [autocompletion](autocompletion.md).
 - **Metadata Sources** (`plugins/metadata-sources`, on by default): metadata by DOI, arXiv ID,
   ISBN or title from Crossref, OpenAlex, arXiv and Open Library, including the existing title
   fallback and author enrichment. Turning it off keeps library records and lookup URLs; lookups
@@ -136,16 +134,20 @@ selected section disappears, Settings selects General. Unrelated sections keep t
 Autocompletion also clears visible and pending suggestions when stopped; an older status request
 cannot overwrite a newer check.
 
-### Contributed plugins that start on
+### Bundled contributed plugins
 
 Some features Synapse always had are **contributed plugins**: they use only the public plugin API
 (`backend.plugins`, `plugin.http`), as an installed plugin would, so they show what a plugin can
-do and keep that API honest. They come with Synapse and start on the first time Synapse sees them,
-because their manifest says `"enabled_by_default": true` (honoured only for plugins in
+do and keep that API honest. Open-Access PDFs and Export Formats start on the first time Synapse
+sees them, because their manifest says `"enabled_by_default": true` (honoured only for plugins in
 `plugins/`; an installed plugin always waits to be turned on). After that they are the user's
 choice, and safe mode stops them like any contributed plugin. Settings lists them under
 **Contributed plugins**.
 
+- **Autocompletion** (`plugins/autocompletion`, off by default or as previously configured): local
+  Ollama suggestions through `plugin.http` with `network: ["loopback"]` and the public editor
+  suggestion API. It stops in safe mode; settings survive. Legacy `notes_ai_*` settings are
+  carried over once by the host for the bundled plugin only. See [autocompletion](autocompletion.md).
 - **Open-Access PDFs** (`plugins/open-access-pdfs`): where Find Available PDF looks, Unpaywall and
   arXiv by identifier and by title (its two PDF sources, see
   [references](references.md#open-access-pdfs)), through `plugin.http` (network permission for
@@ -539,8 +541,13 @@ schedules count elapsed seconds instead.
 `plugin.http` is the only way a plugin should reach the web (`requests` would work, but skips all
 of this):
 
-- Only the hosts its manifest's `network` names, and only public addresses (not this computer or
-  the local network), also after redirects.
+- Only the hosts its manifest's `network` names, and only public addresses, also after redirects.
+  API 1.3 adds the special `"loopback"` network permission, shown as **this computer (loopback)**:
+  localhost and literal loopback IPs (`127.0.0.0/8`, `::1`), on any port. It grants no LAN or web
+  access. Localhost is pinned to `127.0.0.1`, environment proxies are bypassed, embedded credentials
+  are refused, and each redirect is checked again. Loopback calls have no default rate gap; a
+  plugin can still request one with `limit`. Status and model-generation timeouts may be a
+  `(connect, read)` pair, as in requests. Ordinary host permissions still refuse private addresses.
 - Requests to one host are spaced (0.5 s; more with `plugin.http.limit(host, seconds)`), across
   all plugins, so two plugins cannot overload one service. All of arXiv's hosts share one line, 3 s
   apart as its API terms ask, with Synapse's own requests to arXiv (`backend/online/http.py`
@@ -576,6 +583,9 @@ Plugins (or turn it off and on) loads the code again. Watch the plugin's **Log**
 
 ### The frontend
 
+API 1.3 also accepts `p.backend.post(path, body, {signal})` to cancel requests. Registrations and
+editor-open listeners are disposed automatically on stop or failed activation.
+
 The `frontend` module is loaded by the app (every window) while the plugin runs. It exports
 `activate(p)`, and optionally `deactivate(p)`; `p` is a `PluginContext`, declared in
 [`frontend/src/plugins/api.ts`](../frontend/src/plugins/api.ts). That file has only types, so it can
@@ -599,6 +609,9 @@ export function activate(p) {
 
 | Member | What it does |
 |---|---|
+| `p.editor.suggestions.register({ready, complete, delay})` | API 1.3: register a plain-text ghost suggestion provider. `ready()` gates requests; `complete(prefix, suffix, signal)` resolves to text, with up to 6,000 characters before and 2,000 after the cursor. `delay` defaults to 350 ms. The newest registration is active; disposing it restores the preceding one. Registration/disposal cancels requests and clears visible text in retained editors. CodeMirror stays private. |
+| `p.editor.onOpened(fn)` | API 1.3: disposable event when a note editor opens. Also initialize at activation, since an editor may already exist. |
+| `p.settingsPage.open()` | API 1.3: show this plugin's Settings section. |
 | `p.pages.register({id, title, icon, mount})` | A page: an entry under **Plugins** in the sidebar; when chosen, the page takes the place of the library (as Tasks does) and `mount(el)` draws it. `p.pages.setBadge(id, value)` puts a count on the entry, `p.pages.open(id)` shows it. |
 | `p.commands.register({id, title, key, when, run})` | A command in the palette, named after the plugin. `key` like `Mod-Alt-r` (Mod: ⌘ on a Mac, Ctrl elsewhere) needs Mod or Alt and cannot be one of Synapse's keys; a key that cannot be used is left out (the console says why). |
 | `p.itemPane.register({id, title, when, mount})` | A section at the end of the item pane, for the items `when(item)` accepts; `mount(el, item)` runs once the selection rests. Papers from a list (`item._outside`) get sections too. |

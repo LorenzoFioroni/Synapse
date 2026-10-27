@@ -1,17 +1,17 @@
 // Autocompletion's part of its section in Settings: whether Ollama and the model are there (and what to do if
 // not), the model (from those installed), the length, Ollama's address. Turning autocompletion on
 // and off is the plugin's switch in Settings → Plugins.
-import type { PluginContext } from '../../api.js';
-import { icon } from '../../../icons.js';
-import { toast } from '../../../ui/toast.js';
-import { escapeHtml, isMac, modLabel } from '../../../util.js';
+import type { PluginContext } from '../../../frontend/src/plugins/api.js';
 import type { AssistStatus, Source } from './source.js';
+
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+const modLabel = isMac ? '⌘' : 'Ctrl+';
 
 const altLabel = isMac ? '⌥' : 'Alt+';
 const pull = (model: string) => `ollama pull ${model}`;
-const saved = `<span class="saved-pill">${icon('check', 'icon-sm')} Saved</span>`;
+function savedHtml(icon: PluginContext['ui']['icon']): string { return `<span class="saved-pill">${icon('check', 'icon-sm')} Saved</span>`; }
 
-function statusHtml(st: AssistStatus): string {
+function statusHtml(st: AssistStatus, { icon, escapeHtml }: PluginContext['ui']): string {
   if (st.ok) {
     return `<div class="ai-state ok">${icon('check', 'icon-sm')}<span>Ready: <span class="mono">${escapeHtml(st.model)}</span> in Ollama ${escapeHtml(st.version)}${st.fim ? ', fills in the middle.' : '.'}</span></div>
       ${st.fim ? '' : `<div class="s-desc">${escapeHtml(st.message.replace(/^Ready\.\s*/, ''))}</div>`}`;
@@ -35,6 +35,9 @@ function statusHtml(st: AssistStatus): string {
 
 /** Draw the section into ``el`` (each time Settings opens). */
 export function mountSettings(p: PluginContext, el: HTMLElement, src: Source): () => void {
+  const { icon, escapeHtml } = p.ui;
+  const saved = savedHtml(icon);
+  const toast = (message: string, options: { type: 'error' | 'success' }) => p.notify(message, { ...options, transient: true });
   let alive = true;
   let statusRequest = 0;
   let saveRequest = 0;
@@ -73,7 +76,7 @@ export function mountSettings(p: PluginContext, el: HTMLElement, src: Source): (
       const st = await p.backend.get<AssistStatus>('/status', { fresh: fresh ? 1 : undefined });
       if (!alive || request !== statusRequest) return;
       src.known(st);
-      box.innerHTML = statusHtml(st);
+      box.innerHTML = statusHtml(st, p.ui);
       el.querySelector('#ai-models')!.innerHTML = st.models.map((m) => `<option value="${escapeHtml(m)}"></option>`).join('');
       el.querySelector('[data-ai-installed]')!.innerHTML = st.models.length
         ? `Installed: ${st.models.map((m) => `<button class="link-btn mono" data-ai-pick="${escapeHtml(m)}">${escapeHtml(m)}</button>`).join(', ')}`

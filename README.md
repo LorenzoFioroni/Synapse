@@ -348,7 +348,7 @@ never mix.
   goes to the trash with it (Undo, or Cmd/Ctrl+Z in the note, brings it back); older tasks stay in
   Tasks. Tasks are kept in the library database, so backups include them; deleted tasks can be
   restored. See [`docs/tasks.md`](docs/tasks.md).
-- **Autocompletion** in notes (a core plugin, off by default: turn it on in Settings → Plugins): after a short pause a
+- **Autocompletion** in notes (a contributed plugin, off by default: turn it on in Settings → Plugins): after a short pause a
   model running on this computer in [Ollama](https://ollama.com) suggests how the text goes on, in
   grey after the cursor. Tab accepts, Esc dismisses, Cmd/Ctrl+→ takes one word, Alt/⌥+\ asks for
   one now, clicking it accepts it. Only local models are supported: install Ollama and a model
@@ -413,14 +413,15 @@ the app from working, start it with `python server.py --safe-mode` (only core pl
 off.
 
 Synapse’s own optional features are **core plugins**: Graph, Metadata Sources,
-Reference Sources, Extended Markdown and Tasks start on, while Autocompletion starts as
-previously configured. **Open-Access PDFs** (where Find Available PDF looks) and **Export
-Formats** (the library exports) are contributed plugins built only on the public plugin API, as
+Reference Sources, Extended Markdown and Tasks start on. **Open-Access PDFs** (where Find
+Available PDF looks) and **Export Formats** (the library exports) are contributed plugins built only on the public plugin API, as
 yours would be; they come with Synapse and start on, but safe mode stops them like any other
-contributed plugin.
+contributed plugin. **Autocompletion** is also contributed: it starts off (or as previously
+configured), uses only Ollama on this computer through an explicit loopback permission, and stops
+in safe mode. Plugin API 1.3 exposes plain-text editor suggestions to plugins.
 Turn them off in Settings → Plugins without losing their data. Core plugins can also be toggled
 and restarted in safe mode; changes are followed by the standalone MCP server. Safe mode keeps core plugins
-running and stops third-party plugins. Tasks and Graph add their own entries to the sidebar's
+running and stops contributed plugins. Tasks and Graph add their own entries to the sidebar's
 list; their selection follows the visible workspace when switching between views. Plugins'
 settings sections appear and disappear immediately as their plugin is switched on or off, including
 while Settings stays open. Disabling Autocompletion dismisses visible

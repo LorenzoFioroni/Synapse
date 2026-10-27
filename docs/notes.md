@@ -307,7 +307,7 @@ only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 | `fileOps.ts` | New, rename, move, trash with Undo, the trash dialog, rescan. |
 | `editor.ts`, `livePreview.ts`, `previewWidgets.ts` | CodeMirror 6 (`vendor/cm6/`), the live preview decorations (built on `mdscan.ts`) and the widgets they draw. |
 | `completion.ts`, `library.ts` | `[@`, `[[` and `{{task` autocomplete and their ranking (tasks come from the Tasks module through `taskHooks`). |
-| `ghost.ts`, `ghostLogic.ts`, `hooks.ts` | Autocompletion: suggestions as ghost text, from the source the Autocompletion core plugin sets in `hooks.ts` (see [autocompletion](autocompletion.md)). |
+| `ghost.ts`, `ghostLogic.ts`, `hooks.ts` | Autocompletion: suggestions as ghost text, from the public suggestion source registered by the Autocompletion contributed plugin (see [autocompletion](autocompletion.md)). |
 | `render.ts` | Markdown to HTML with markdown-it and KaTeX (`vendor/md/`): math, links, citations, callouts, tasks. Raw HTML is never rendered. No DOM. |
 | `richRender.ts` | Mermaid (loaded on demand from `vendor/mermaid/`), code highlighting, filling embedded notes into the page. |
 | `embed.ts`, `linkData.ts` | What an embedded note shows; what a note links to (`/api/notes/links` as maps for the renderer). No DOM. |
@@ -322,7 +322,7 @@ only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
 | `exportNote.ts`, `portable.ts` | Exporting a note as PDF, HTML or Markdown; the Markdown conversion and reference entries (no DOM). |
 | `crossref.ts`, `sections.ts` | References (`\ref`, `\eqref`, `\cref`, `\Cref`) written out as cleveref does, from equations, figures and labelled Markdown headings; hierarchical section numbering (no DOM). |
-| `hooks.ts` | What core plugins add to the editor: ghost text, the graph, galleries and figures (`setNoteHook`). |
+| `hooks.ts` | Editor hooks: public ghost suggestions, core graph, galleries and figures (`setNoteHook`). |
 | `commands.ts` | The command palette's commands for the open note: inserting images and figures (`Insert Image…`, `Insert Figure with Caption…`), citations, links and tasks (they type `[@]`, `[[]]` or `{{task }}` and open the completion), tables, callouts, equations and diagrams; Live/Source/Read; renaming, moving, deleting, exporting and linking the note; its graph, history, paper and PDF; the history of all notes and marking a milestone. Each is offered only while a note is on screen and it can act (a figure needs Extended Markdown's figures, a task the Tasks plugin); inserting from Read goes back to editing. |
 
 Galleries and figures are an extension of the **Extended Markdown** core plugin, in

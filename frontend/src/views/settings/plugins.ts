@@ -40,7 +40,7 @@ export function permissionWords(p: PluginInfo): string[] {
     const verbs = [lib.includes('read') && 'reads', lib.includes('add') && 'adds items to', lib.includes('edit') && 'changes items in'].filter(Boolean);
     out.push(`${verbs.join(', ').replace(/^./, (c) => c.toUpperCase())} your library`);
   }
-  if (perms.network.length) out.push(`Connects to ${perms.network.join(', ')}`);
+  if (perms.network.length) out.push(`Connects to ${perms.network.map((host) => host === 'loopback' ? 'this computer (loopback)' : host).join(', ')}`);
   if (perms.mcp) out.push('Offers tools to AI apps');
   if (perms.python?.length) out.push(`Installs Python packages: ${perms.python.join(', ')}`);
   return out;

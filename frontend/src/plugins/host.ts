@@ -15,6 +15,8 @@ import type { Item, PluginInfo } from '../types.js';
 import { escapeHtml, formatDate } from '../util.js';
 import type { ChangeKind, PluginContext, PluginItem, PluginModule } from './api.js';
 import { CORE } from './core/index.js';
+import { registerSuggestions } from './suggestions.js';
+import { noteHooks } from '../views/notes/hooks.js';
 
 interface Loaded {
   disposed: boolean;
@@ -69,9 +71,9 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
   const src = (info.core && info.id !== 'metadata-check') ? undefined : info.name;
   const keep = (d: Dispose): Dispose => { if (rec.disposed) d(); else rec.disposers.push(d); return d; };
   // A retired context must settle its calls, so async activation and synchronization can finish.
-  const call = async <T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, query?: Record<string, unknown>): Promise<T> => {
+  const call = async <T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, query?: Record<string, unknown>, signal?: AbortSignal): Promise<T> => {
     try {
-      const result = await api.pluginRoute<T>(pid, method, path, body, query);
+      const result = await api.pluginRoute<T>(pid, method, path, body, query, signal);
       if (rec.disposed) throw new DOMException('Plugin stopped', 'AbortError');
       return result;
     } catch (e) {
@@ -87,6 +89,18 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     version: info.version,
     settings: async () => (await api.plugins()).plugins.find((x) => x.id === pid)?.values || {},
     saveSettings: async (changes) => (await api.setPluginSettings(pid, changes)).values,
+    editor: {
+      suggestions: { register: (source) => keep(registerSuggestions({
+        ready: () => !!guarded(info, 'suggestion readiness', () => source.ready())(),
+        complete: (prefix, suffix, signal) => source.complete(prefix, suffix, signal),
+        delay: source.delay,
+      })) },
+      onOpened: (fn) => {
+        const opened = guarded(info, 'editor opened', fn);
+        noteHooks.editorOpened.add(opened);
+        return keep(() => { noteHooks.editorOpened.delete(opened); });
+      },
+    },
     commands: {
       register: (spec) => {
         let key = spec.key;
@@ -141,6 +155,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
       },
     },
     settingsPage: {
+      open: () => { if (!rec.disposed) void import('../views/settingsView.js').then((m) => { if (!rec.disposed) m.openSettings(`plugin-${pid}`); }); },
       register: (spec) => keep(settingsSections.register({
         id: full(spec.id), title: spec.title, icon: spec.icon, after: spec.after, shows: Array.isArray(spec.shows) ? spec.shows.map(String) : undefined, source: src, owner: pid,
         mount: (el) => guarded(info, `settings section ${spec.id}`, spec.mount)(el),
@@ -164,7 +179,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     },
     backend: {
       get: (path, query) => call('GET', path, undefined, query),
-      post: (path, body) => call('POST', path, body ?? {}),
+      post: (path, body, options) => call('POST', path, body ?? {}, undefined, options?.signal),
       put: (path, body) => call('PUT', path, body ?? {}),
       delete: (path) => call('DELETE', path),
     },

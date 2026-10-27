@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-API_VERSION = (1, 2)  # the plugin API this Synapse offers (major, minor)
+API_VERSION = (1, 3)  # the plugin API this Synapse offers (major, minor)
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -33,7 +33,7 @@ class Setting:
     options: list[tuple[str, str]] = field(default_factory=list)  # (value, label), for choice and multi
     min: float | None = None
     max: float | None = None
-    # a core plugin's setting that used to be one of Synapse's own (settings.json): its value
+    # a bundled plugin's setting that used to be one of Synapse's own (settings.json): its value
     # carries over when the plugin first starts
     from_setting: str | None = None
 
@@ -265,6 +265,7 @@ def parse(data: object, folder: Path) -> Manifest:
     unknown = set(perms) - {"network", "library", "mcp"}
     if unknown:
         raise ManifestError(f"unknown permission {sorted(unknown)[0]!r} (does it need a newer Synapse?)")
+    # "loopback" is a reserved token, not a DNS host permission (http.py).
     network = perms.get("network") or []
     if not isinstance(network, list) or not all(isinstance(h, str) and HOST_RE.match(h.lower()) for h in network):
         raise ManifestError('"network" is a list of host names, e.g. ["export.arxiv.org"]')

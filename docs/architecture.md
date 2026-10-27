@@ -74,8 +74,9 @@ Two objects tie the backend together:
 | `plugins/` | The plugin host: finds the plugins in `data/plugins/` (and those that come with Synapse in `plugins/`), starts and stops them, gives them the `Plugin` object (routes, tools for Claude, events, settings, storage, reading the library, per-item fields, lists of papers outside the library—including variants such as arXiv feed days shown in a second pane—Synapse's lookups and adding papers), and turns off one that keeps failing (see [plugins](plugins.md)). `backend.plugins` is the public import for third-party plugins (with `formats.py`, Synapse's reference writers for plugins). `catalog.py` discovers manifests and initializes defaults, `files.py` serializes shared storage writes, and `resolvers.py` orders metadata sources; core plugins may use the internal modules they need. | `plugins.json`, `plugin-data/`, `fields.db` |
 | `desktop/` | Running Synapse like a desktop program: opening its window (`window.py`), the open windows that keep a `--quit-when-closed` server running (`presence.py`), the desktop shortcut (`shortcut.py`). See [the app window](desktop.md). | none |
 
-Only `online/` and the scholarly core plugins use the network. The Autocompletion core plugin talks only to Ollama on this computer
-(its address must be a loopback one).
+Online lookups live in `online/` and scholarly plugins; contributed plugins use `plugin.http`.
+The Autocompletion contributed plugin talks only to Ollama on this computer through the public
+loopback permission.
 
 ### Layers
 
@@ -156,7 +157,7 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   they call back into `notesView.ts`). `tree.ts` draws the notes list and `treeInput.ts` handles
   its mouse, keyboard and drag and drop; `fileOps.ts` creates, renames, moves and trashes notes;
   `readView.ts` is read mode and link following; `sidePanel.ts` the status, breadcrumbs and
-  details panel; `aiBar.ts` AI apps' edits; `ghost.ts` autocompletion's ghost text (its source comes from the Autocompletion plugin through `hooks.ts`); `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
+  details panel; `aiBar.ts` AI apps' edits; `ghost.ts` autocompletion's ghost text (the public `plugins/suggestions.ts` bridge supplies its source through `hooks.ts`); `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
   exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`). Galleries and
   numbered figures are part of Extended Markdown (`plugins/core/extended-markdown/figures/`, through `hooks.ts`). `settingsView.ts` is the Settings page; its markup
   is in `views/settings/page.ts`, and Backups and Devices have their own modules there. `settings/pluginSections.ts` owns the lifecycle
@@ -177,6 +178,10 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`. The
   item pane (`itempane.ts`) draws papers from a plugin's list that are not in the library, and
   why a plugin lists a paper, with `views/itempane/outside.ts`.
+- `plugins/suggestions.ts` owns public editor suggestion registrations and restores the previous
+  provider on disposal; the host bridges editor-open events and cancellable backend calls.
+  Autocompletion lives entirely in `plugins/autocompletion/`, including its TypeScript frontend
+  (bundled by the plugin host); it imports only public plugin types.
 - `extend.ts` holds the extension points the views read: core workspace navigation (Tasks and Graph,
   registered and disposed by their plugins), commands (the command palette,
   `views/palette.ts`), pages (`views/pages.ts`, listed in the sidebar), item-pane sections and item

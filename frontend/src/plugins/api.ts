@@ -102,6 +102,15 @@ export interface NotifyOptions {
     device, by Claude or by background work. */
 export type ChangeKind = 'library' | 'notes' | 'tasks' | 'annotations' | 'plugins' | 'fields' | 'sources';
 
+/** Plain text around the cursor; no editor-library objects cross the plugin boundary.
+ * The newest registration is active; disposing it restores the preceding provider. */
+export interface SuggestionSource {
+  ready(): boolean;
+  complete(prefix: string, suffix: string, signal: AbortSignal): Promise<string>;
+  /** Pause after typing in milliseconds (350 by default). */
+  delay?: number;
+}
+
 export interface PluginContext {
   /** The plugin's id and what its manifest says. */
   readonly id: string;
@@ -114,6 +123,11 @@ export interface PluginContext {
       plugin's backend hears the change (`@plugin.settings.on_change`). */
   saveSettings(changes: Record<string, unknown>): Promise<Record<string, unknown>>;
 
+  editor: {
+    suggestions: { register(source: SuggestionSource): Dispose };
+    /** Called when a note editor opens; activation should also check existing editors. */
+    onOpened(fn: () => void): Dispose;
+  };
   commands: { register(spec: CommandSpec): Dispose };
   pages: {
     register(spec: PageSpec): Dispose;
@@ -125,7 +139,7 @@ export interface PluginContext {
   itemActions: { register(spec: ItemActionSpec): Dispose };
   /** A section of its own in the Settings page, for what the manifest's settings cannot show
       (a status, a test button, a list to pick from). */
-  settingsPage: { register(spec: SettingsSectionSpec): Dispose };
+  settingsPage: { register(spec: SettingsSectionSpec): Dispose; open(): void };
   /** The plugin's lists of papers (`@plugin.item_source` in its backend). */
   sources: {
     /** Show the list `sourceId` (leaving Notes, Tasks or a page). */
@@ -142,7 +156,7 @@ export interface PluginContext {
       to the parsed JSON answer and throws an Error with the server's message on failure. */
   backend: {
     get<T = unknown>(path: string, query?: Record<string, string | number | boolean | undefined>): Promise<T>;
-    post<T = unknown>(path: string, body?: unknown): Promise<T>;
+    post<T = unknown>(path: string, body?: unknown, options?: { signal?: AbortSignal }): Promise<T>;
     put<T = unknown>(path: string, body?: unknown): Promise<T>;
     delete<T = unknown>(path: string): Promise<T>;
   };

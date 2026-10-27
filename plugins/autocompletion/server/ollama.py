@@ -6,11 +6,16 @@ Every failure becomes `Unavailable` with a reason code and a message that can be
 
 from __future__ import annotations
 
-import re
-from typing import Any
+import ipaddress
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 
-import requests
+from backend.plugins import HttpError, Offline, PluginError
+
+
+class HttpClient(Protocol):
+    def request(self, method: str, url: str, **kwargs) -> Any: ...
+
 
 CONNECT_TIMEOUT = 1.0  # seconds: Ollama runs on this computer, so it answers at once or not at all
 STATUS_TIMEOUT = 4.0
@@ -34,32 +39,41 @@ def same_model(installed: str, wanted: str) -> bool:
 
 
 class Ollama:
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, http: HttpClient):
         self.base = base_url.rstrip("/")
+        self.http = http
 
     def _call(self, method: str, path: str, timeout: float, payload: dict | None = None) -> Any:
         try:
-            r = requests.request(method, self.base + path, json=payload, timeout=(CONNECT_TIMEOUT, timeout))
-        except requests.Timeout as e:
-            if isinstance(e, requests.ConnectTimeout):
-                raise Unavailable("unreachable", self._not_running()) from e
-            raise Unavailable("timeout", "Ollama took too long to answer.") from e
-        except requests.RequestException as e:
-            raise Unavailable("unreachable", self._not_running()) from e
+            r = self.http.request(
+                method,
+                self.base + path,
+                json=payload,
+                timeout=(CONNECT_TIMEOUT, timeout),
+                cache=False,
+                raise_for_status=False,
+            )
+        except Offline as e:
+            reason = "timeout" if "Timeout" in str(e) and "ConnectTimeout" not in str(e) else "unreachable"
+            raise Unavailable(
+                reason, "Ollama took too long to answer." if reason == "timeout" else self._not_running()
+            ) from e
+        except (HttpError, PluginError) as e:
+            raise Unavailable("error", str(e)) from e
         try:
             data = r.json()
         except ValueError:
             data = {}
-        if r.status_code == 404 and path in ("/api/show", "/api/generate"):
+        if r.status == 404 and path in ("/api/show", "/api/generate"):
             raise Unavailable("no_model", (data or {}).get("error") or "Model not found.")
-        if not r.ok:
+        if r.status >= 400:
             msg = (data or {}).get("error") if isinstance(data, dict) else None
             if msg and "does not support" in msg:
                 raise Unavailable("unsupported", f"Ollama: {msg}")
-            if r.status_code == 404:
+            if r.status == 404:
                 # something answers on that port, but it is not Ollama (or a very old one)
-                raise Unavailable("unreachable", f"No Ollama at {self.base} (it answered {r.status_code}).")
-            raise Unavailable("error", f"Ollama: {msg or f'error {r.status_code}'}")
+                raise Unavailable("unreachable", f"No Ollama at {self.base} (it answered {r.status}).")
+            raise Unavailable("error", f"Ollama: {msg or f'error {r.status}'}")
         if not isinstance(data, dict):
             raise Unavailable("unreachable", f"No Ollama at {self.base}.")
         return data
@@ -116,7 +130,10 @@ def local_url(value: str) -> str:
         u.port  # noqa: B018 - raises ValueError on a port that is not a number
     except ValueError as e:
         raise ValueError("Ollama address: something like http://127.0.0.1:11434") from e
-    loopback = host == "localhost" or host == "::1" or re.fullmatch(r"127(\.\d{1,3}){3}", host)
+    try:
+        loopback = host == "localhost" or ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        loopback = False
     if u.scheme not in ("http", "https") or not loopback or u.username or u.password:
         raise ValueError("Ollama address: only a model on this computer is supported (localhost or 127.0.0.1)")
     if u.path not in ("", "/") or u.query or u.fragment:

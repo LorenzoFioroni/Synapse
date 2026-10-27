@@ -14,5 +14,5 @@
     "types": [],
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src"]
+  "include": ["src", "../plugins/autocompletion/frontend"]
 }

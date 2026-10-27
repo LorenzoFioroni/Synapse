@@ -166,3 +166,40 @@ def test_arxiv_spacing_is_shared_with_synapse(monkeypatch):
     stamps.append(time.monotonic())
     gaps = [b - a for a, b in zip(stamps, stamps[1:])]
     assert min(gaps) >= 0.28, gaps
+
+
+def test_loopback_permission_connects_without_proxy_or_dns(server, monkeypatch):
+    monkeypatch.setenv("HTTP_PROXY", "http://192.0.2.1:9")
+    monkeypatch.setenv("ALL_PROXY", "http://192.0.2.1:9")
+    monkeypatch.setenv("NO_PROXY", "")
+    c = PluginHttp("local", ["loopback"], lambda: "test")
+    assert c.get(server + "/json").json() == {"a": 1}
+    # localhost is pinned to a literal, rather than trusting local DNS configuration.
+    assert c.get(server.replace("127.0.0.1", "localhost") + "/json").json() == {"a": 1}
+    for url in ("http://[::1]:11434/x", "http://127.2.3.4/x"):
+        assert c._check(url)
+    for url in ("http://192.168.1.1/x", "https://example.com/x", "http://localhost.evil/x", "http://loopback/x"):
+        with pytest.raises(PluginError):
+            c.get(url)
+    with pytest.raises(HttpError, match="credentials"):
+        c.get("http://user:secret@localhost/x")
+    with pytest.raises(PluginError, match="example.com"):
+        c.get(server + "/away")
+    assert len(Handler.hits) == 3
+
+
+def test_web_permission_cannot_reach_loopback_through_redirect(server, monkeypatch):
+    c = PluginHttp("web", ["example.com"], lambda: "test")
+    monkeypatch.setattr(H, "public", lambda host: True)
+
+    class Redirect:
+        status_code = 302
+        headers = {"Location": server + "/json"}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(H.requests, "request", lambda *a, **kw: Redirect())
+    with pytest.raises(PluginError):
+        c.get("https://example.com/start")
+    assert not Handler.hits

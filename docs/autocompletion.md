@@ -1,10 +1,11 @@
 # Autocompletion
 
 While you write a note, a model running on this computer suggests how the text goes on. The
-suggestion shows in grey after the cursor ("ghost text"), as in code editors. It is a core plugin
-(`plugins/autocompletion`, see [plugins](plugins.md#core-plugins)): off until turned on in
+suggestion shows in grey after the cursor ("ghost text"), as in code editors. It is a contributed plugin
+(`plugins/autocompletion`, see [plugins](plugins.md)): off until turned on in
 Settings → Plugins, and only local models served by [Ollama](https://ollama.com) are supported:
-nothing is sent to another computer.
+nothing is sent to another computer. Safe mode stops it; switching it off preserves its settings.
+It requires Plugin API 1.3 and declares the explicit `loopback` network permission.
 
 | Key | What it does |
 |---|---|
@@ -46,7 +47,7 @@ the status has found both:
 - **Status first.** `GET /api/plugins/autocompletion/status` lists Ollama's models (`/api/tags`), looks for the
   chosen one and reads its capabilities (`/api/show`). The answer is remembered for 60 s when all
   is well and 15 s when something is missing (`server/completer.py`), and at once again
-  when the address or model changes. The editor (`frontend/src/plugins/core/autocompletion/source.ts`) asks for it when a note
+  when the address or model changes. The editor (`plugins/autocompletion/frontend/source.ts`) asks for it when a note
   opens and then every 2 minutes (30 s while something is missing), and sends no suggestion
   request while the answer is not "ready".
 - **One notice.** When the plugin is on but suggestions cannot be made, the editor shows one
@@ -71,18 +72,23 @@ frontend/src/views/notes/ghost.ts       CodeMirror extension: state field (the s
   │                                       keys, view plugin (waits for a pause, cancels on typing)
 frontend/src/views/notes/ghostLogic.ts  no DOM: where a suggestion may appear, text sent, typing through
 frontend/src/views/notes/hooks.ts       noteHooks.ghost: the source a running plugin gives the editor
-frontend/src/plugins/core/autocompletion/
-  index.ts                              activate: sets the source, adds the Settings section
+plugins/autocompletion/frontend/
+  index.ts                              activate: registers p.editor.suggestions, adds Settings
   source.ts                             the source: status checks, the notice, POST …/complete
   settings.ts                           Settings → Autocompletion (status, model, length, address)
   │
 plugins/autocompletion/
-  manifest.json                         a core plugin, off by default; its settings
+  manifest.json                         a contributed plugin, off by default; its settings
   server/__init__.py                    routes GET /status (fresh=1, warm=1) · POST /complete {prefix, suffix}
   server/completer.py                   Completer: status cache, one request at a time, superseded requests
   server/prompt.py                      the request (prefix/suffix, stop, length) and cleaning the answer
-  server/ollama.py                      the HTTP client (every failure becomes Unavailable), local_url
+  server/ollama.py                      plugin.http client (failures become Unavailable), local_url
 ```
+
+The plugin frontend is bundled separately by the plugin host and uses only `PluginContext`.
+The host owns suggestion registration, editor-open events, notifications and cancellable backend
+requests. Loopback HTTP bypasses proxies and pins localhost to a literal address. Legacy
+preferences continue to migrate once through the bundled-plugin host shim.
 
 The editor itself has the ghost-text extension always; it asks `noteHooks.ghost` when it needs a
 suggestion, so turning the plugin on or off takes effect in an open note too.

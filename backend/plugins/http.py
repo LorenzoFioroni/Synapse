@@ -1,5 +1,5 @@
-"""``plugin.http``: how plugins reach the web. Only the hosts a plugin's manifest names, only public
-addresses, spaced requests per host (shared by every plugin and by Synapse's own lookups, so
+"""``plugin.http``: how plugins reach the web. Only declared public hosts or explicitly
+permitted loopback addresses, spaced requests per host (shared by every plugin and Synapse, so
 together they cannot flood one service), a polite User-Agent, the user's keys for the scholarly services Synapse itself uses,
 answers cached by ETag / Last-Modified, and readable errors."""
 
@@ -70,6 +70,16 @@ def allowed(host: str, patterns: list[str]) -> bool:
         elif host == p:
             return True
     return False
+
+
+def loopback(host: str) -> bool:
+    """Only localhost and literal loopback IPs, never arbitrary names or LAN addresses."""
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def public(host: str) -> bool:
@@ -148,7 +158,7 @@ class PluginHttp:
         data=None,
         json=None,
         headers: dict | None = None,
-        timeout: float = TIMEOUT,
+        timeout: float | tuple[float, float] = TIMEOUT,
         max_bytes: int = MAX_BYTES,
         cache: bool = True,
         raise_for_status: bool = True,
@@ -169,14 +179,21 @@ class PluginHttp:
                 hdrs.setdefault("If-Modified-Since", cached.modified)
         for _ in range(MAX_REDIRECTS + 1):
             host = self._check(url)
+            local = loopback(host)
+            if local and host == "localhost":
+                # Use a literal address: DNS cannot redirect note text off this computer.
+                parts = urlsplit(url)
+                url = parts._replace(netloc="127.0.0.1" + (f":{parts.port}" if parts.port else "")).geturl()
             if host != first:  # redirected elsewhere: the service's key stays with the service
                 for k in cred_headers:
                     if k not in (headers or {}):
                         hdrs.pop(k, None)
             key, gap = _gap_for(host)
-            online_http.HOST_GAPS.wait(key, max(gap, self._gaps.get(host, 0.0)))
+            online_http.HOST_GAPS.wait(key, max(0.0 if local else gap, self._gaps.get(host, 0.0)))
             try:
-                r = requests.request(
+                # Local model requests must not pass through environment HTTP proxies.
+                send = _local_request if local else requests.request
+                r = send(
                     method,
                     url,
                     data=data,
@@ -221,7 +238,12 @@ class PluginHttp:
         host = (parts.hostname or "").lower()
         if parts.scheme not in ("http", "https") or not host:
             raise HttpError(f"Only http(s) addresses can be fetched: {url}")
-        if not allowed(host, self.hosts):
+        local = loopback(host)
+        if local and "loopback" in self.hosts:
+            if parts.username or parts.password:
+                raise HttpError("Loopback addresses cannot contain credentials")
+            return host
+        if not allowed(host, [name for name in self.hosts if name != "loopback"]):
             raise PluginError(
                 f'{host} is not in the plugin\'s "network" permission'
                 + (f" ({', '.join(self.hosts)})" if self.hosts else " (it names no host)")
@@ -229,6 +251,12 @@ class PluginHttp:
         if not self.private and not public(host):
             raise HttpError(f"{host} is on this computer or the local network; plugins may only reach the web")
         return host
+
+
+def _local_request(*args, **kwargs) -> requests.Response:
+    with requests.Session() as session:
+        session.trust_env = False
+        return session.request(*args, **kwargs)
 
 
 def _read(r: requests.Response, max_bytes: int, host: str) -> bytes:
