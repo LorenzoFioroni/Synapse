@@ -3,6 +3,32 @@
 A local, web-based reference manager: a Flask backend with SQLite storage and a
 TypeScript frontend. Everything runs on your machine.
 
+## ✨ Your research, connected
+
+- 🏠 **Local first, offline ready** — keep your library, PDFs and Markdown notes on your own machine.
+- 📚 **Build your library in seconds** — add papers by DOI, arXiv ID or ISBN, drop in PDFs,
+  or save articles with the browser extension.
+- 🔎 **Find the passage you remember** — search metadata and PDF full text, then organise
+  your collection with folders, coloured tags and smart folders.
+- 🖍️ **Read, highlight, capture** — annotate PDFs with highlights, drawings and comments,
+  and send quotes or snapshots straight into your notes.
+- 📝 **Write notes that connect** — live Markdown preview, LaTeX maths, diagrams, images,
+  paper citations and links between notes.
+- 🕸️ **See the bigger picture** — explore a graph of your notes, papers and citation links.
+- ✅ **Turn ideas into action** — track tasks, due dates and subtasks right alongside your notes.
+- 🤖 **Bring your AI tools** — connect Claude, Codex and other AI apps through MCP;
+  optionally complete notes with a local Ollama model.
+- 🔄 **Move references freely** — import and export BibTeX, RIS, EndNote and CSL JSON,
+  with customisable citation keys.
+- 🧩 **Make it yours** — extend Synapse with plugins, including arXiv feeds, and choose
+  light or dark mode.
+- 📱 **Take research around the house** — use the responsive interface on a paired phone
+  or tablet over your local network.
+- 🛟 **Keep a way back** — automatic library and notes backups, note version history,
+  and Trash with Undo.
+
+Explore the [full feature list](#features) below, or [get started](#run-it).
+
 ## Run it
 
 You need Python 3.10+ and [Node.js](https://nodejs.org) 20+ (Node only builds the web app's
