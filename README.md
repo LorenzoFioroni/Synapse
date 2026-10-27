@@ -216,7 +216,7 @@ never mix.
   an available PDF, fetch reference lists, and turn imported keywords into tags — each *Never*,
   *Always* or *Ask* (a ticked checkbox where you add the items: the import dialog, Add by
   Identifier, the browser button). They all run in the background.
-- **References / citation graph** (online fetching is the **Reference Sources** core plugin;
+- **References / citation graph** (online fetching is the **Reference Sources** contributed plugin;
   turning it off keeps saved references and citation links): for new items (see Adding Items) and after Retrieve Metadata
   the list of papers the item cites is fetched too, in the background (Semantic Scholar, then
   OpenAlex, then Crossref; optional API keys in Settings → Online Services). The item pane shows *References* — cited works that are
@@ -412,10 +412,11 @@ Settings (listed under Plugins, opened by the **Settings** button on its row or 
 the app from working, start it with `python server.py --safe-mode` (only core plugins run) and turn it
 off.
 
-Synapse’s own optional features are **core plugins**: Graph, Reference Sources,
-Extended Markdown and Tasks start on. **Open-Access PDFs** (where Find Available PDF looks),
-**Export Formats** (the library exports), and **Metadata Sources** (scholarly lookups) are
-contributed plugins built only on the public plugin API, as yours would be; they come with Synapse and start on, but safe mode stops them like any other
+Synapse’s own optional features are **core plugins**: Graph, Extended Markdown and Tasks start on.
+**Open-Access PDFs** (where Find Available PDF looks),
+**Export Formats** (the library exports), **Metadata Sources** (scholarly lookups) and
+**Reference Sources** (citation lists) are contributed plugins built only on the public plugin
+API, as yours would be; they come with Synapse and start on, but safe mode stops them like any other
 contributed plugin. **Autocompletion** is also contributed: it starts off (or as previously
 configured), uses only Ollama on this computer through an explicit loopback permission, and stops
 in safe mode. Plugin API 1.3 exposes plain-text editor suggestions to plugins; 1.4 adds offline scholarly

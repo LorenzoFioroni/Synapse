@@ -363,8 +363,14 @@ fixed duration, so a busy machine cannot make the assertion race the fake server
 
 `tests/plugins/test_extensions.py` checks reference-provider priority/fallback and disablement
 without losing saved graph records; existing export output, independent import parsing and writer
-disposal; and third-party registration through API 1.1. Provider HTTP responses are faked in the
-existing reference tests, which target `plugins/reference-sources/server/`.
+disposal; and third-party registration through API 1.1. Provider HTTP/DNS are faked at the shared
+client's transport boundary in the reference and graph tests, keeping permissions, credentials,
+response parsing and cache policy in place. `tests/plugins/test_reference_sources.py` covers all
+four legacy source keys, saved-data retention, safe mode, dynamic per-service credentials,
+malformed data and repeated pagination. Its small event-driven thread fixtures verify that stop
+interrupts retry waits and discards an in-flight result while a new activation can fetch. Every
+fixture releases and joins its thread before finishing. These run as small sequential local
+batches, without connecting to real scholarly services.
 
 `tests/js/spoilers.test.mjs` covers delimiters, escapes, code exclusions, nested blocks, hostile
 HTML and renderer invalidation. It also compares the spoiler ranges with the rules applied position

@@ -64,9 +64,6 @@ Settings lists these separately from **Contributed plugins** (bundled optional a
 plugins installed in `data/plugins/`). Its navigation expands the individual plugin sections only
 while the Plugins area is in view, and otherwise keeps a single top-level **Plugins** entry.
 
-- **Reference Sources** (`plugins/reference-sources`, on by default): the existing Semantic Scholar,
-  OpenAlex, Crossref and arXiv HTML reference fetching and fallback policy. Saved references and
-  citation matching remain in core when off; third-party providers may still supply references.
 - **Extended Markdown** (`plugins/extended-markdown`, frontend only, on by default): Markdown
   syntax beyond the basics, one extension per folder in
   `frontend/src/plugins/core/extended-markdown/`, each with a boolean setting of its own:
@@ -135,12 +132,17 @@ cannot overwrite a newer check.
 
 Some features Synapse always had are **contributed plugins**: they use only the public plugin API
 (`backend.plugins`, `plugin.http`), as an installed plugin would, so they show what a plugin can
-do and keep that API honest. Open-Access PDFs, Export Formats and Metadata Sources start on the first time
-Synapse sees them, because their manifest says `"enabled_by_default": true` (honoured only for plugins in
+do and keep that API honest. Open-Access PDFs, Export Formats, Metadata Sources and Reference Sources start on the
+first time Synapse sees them, because their manifest says `"enabled_by_default": true` (honoured only for plugins in
 `plugins/`; an installed plugin always waits to be turned on). After that they are the user's
 choice, and safe mode stops them like any contributed plugin. Settings lists them under
 **Contributed plugins**.
 
+- **Reference Sources** (`plugins/reference-sources`, on by default): Semantic Scholar, OpenAlex,
+  Crossref and arXiv HTML citation lists through the public API 1.5, declared HTTP permissions and
+  named sub-sources. Host aliases preserve historical source keys and titles. Saved references,
+  matching and graphs remain in core when off or in safe mode. Retry waits can be interrupted
+  when the plugin stops, and retired in-flight results are discarded. See [references](references.md).
 - **Metadata Sources** (`plugins/metadata-sources`, on by default): Crossref, OpenAlex, arXiv and
   Open Library lookups through `plugin.http`, with exactly those four API hosts declared. API 1.4's
   `scholarly` module supplies shared identifier, author-name and title-matching rules. Parallel
@@ -339,7 +341,7 @@ def activate(plugin: Plugin) -> None:
 | `@plugin.item_source(id, title=…, icon="list", description="", badge=None)`, `plugin.refresh_sources()` | A list of papers in the sidebar, and saying it changed (see [Papers outside the library](#papers-outside-the-library)). |
 | `@plugin.metadata_source(id, title=…, kinds=("doi", "arxiv", "isbn", "title", "pmid"), order=100)` | `fn(query)` receives `kind`, normalized `value`, and the contact `email`. Return an item dict in Synapse's field format, or `None` for no match. Lower order runs first; the first nonempty result wins. Raise `PluginError` for an unavailable source or a readable lookup problem; later sources are still tried. The bundled Metadata Sources plugin uses order 100. Sources are removed when their plugin stops and listed as `metadata_sources` in its info. Use `plugin.http` and declare network permission for a third-party provider. |
 | `@plugin.pdf_source(id, title=…, by_title=False, order=100)` | Where Find Available PDF may look: `fn(paper)` gets `{"title", "doi", "arxiv"}` and returns PDF URLs, best first; Synapse downloads them in turn and keeps the first that is the paper (it checks the DOI, the arXiv stamp or the title in its text). Sources `by_title` are asked only when those going by identifier found nothing for a paper with an arXiv id. Lower `order` first (Open-Access PDFs uses 10). For an institutional repository or a proxy, say. |
-| `@plugin.reference_source(id, title=…, order=100, subsources=None)` | API 1.1: `fn(query)` receives `item` (a copied library-style record), contact `email` and `fresh` (prefer newly announced-paper sources). Return `{"references": [...]}` or `None`. Lower order first; empty results and failures fall through. No active source raises a readable lookup error. Only bundled core providers may override the recorded source name for compatibility. |
+| `@plugin.reference_source(id, title=…, order=100, subsources=None)` | API 1.1: `fn(query)` receives `item` (a copied library-style record), contact `email` and `fresh` (prefer newly announced-paper sources). Return `{"references": [...]}` or `None`. Lower order first; empty results and failures fall through. No active source raises a readable lookup error. API 1.5 adds declared named sub-sources; fixed host aliases preserve historical bundled names (below). |
 | `@plugin.export_format(id, title=…, extension=…, mimetype=…)` | API 1.1: `fn(items, options) -> str` registers a text export. Options contain `unicode`, `abstract` and citation-key `pattern`. Keys are `<plugin>.<id>` (a core plugin's would keep its bare id). Writers disappear on unload. Extensions and MIME types are validated. Imports remain independent. To write a format Synapse knows, use `backend.plugins.formats` (below). |
 | `plugin.services` | `contact_email()`, `lookup(identifier)`, `references(paper, new=False)`, `match(refs)`, `connections(papers, refs=None, folders=None)`: Synapse's own lookups, reference lists and scoring. |
 | `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). |

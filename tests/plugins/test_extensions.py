@@ -1,4 +1,4 @@
-"""Reference and export providers: optional core features with stable data/API contracts."""
+"""Reference and export providers: optional plugins with stable data/API contracts."""
 
 import pytest
 
@@ -17,7 +17,9 @@ def test_reference_sources_off_keeps_saved_graph_and_stops_network(client, svc, 
     svc.citations.store.save(paper["id"], "crossref", [{"doi": "10.1234/cited", "title": "Cited"}])
     assert svc.plugins.info("reference-sources")["reference_sources"]
     svc.plugins.disable("reference-sources")
-    monkeypatch.setattr("requests.get", lambda *a, **k: pytest.fail("disabled reference providers used the network"))
+    monkeypatch.setattr(
+        "requests.request", lambda *a, **k: pytest.fail("disabled reference providers used the network")
+    )
     result = client.get(f"/api/items/{paper['id']}/references").json
     assert result["fetch"]["source"] == "crossref" and len(result["references"]) == 1
     result = client.post(f"/api/items/{paper['id']}/references")

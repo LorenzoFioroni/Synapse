@@ -1,23 +1,25 @@
-"""The bundled scholarly reference providers, preserving their existing fallback policy."""
+"""Scholarly reference providers using only the public plugin API."""
 
-from backend.online.http import LookupFailed
-from backend.plugins import Plugin, PluginError
+from backend.plugins import Plugin
 
+from .client import Client
 from .providers import fetch
 
 
 def activate(plugin: Plugin) -> None:
-    @plugin.reference_source("scholarly", title="Semantic Scholar, OpenAlex, Crossref and arXiv")
+    http = Client(plugin.http)
+    plugin.on_unload(http.close)
+
+    @plugin.reference_source(
+        "scholarly",
+        title="Semantic Scholar, OpenAlex, Crossref and arXiv",
+        subsources={
+            "semanticscholar": "Semantic Scholar",
+            "openalex": "OpenAlex",
+            "crossref": "Crossref",
+            "arxiv-html": "arXiv (HTML version)",
+        },
+    )
     def references(query: dict) -> dict:
-        settings = plugin.synapse.settings
-        try:
-            source, refs = fetch(
-                query["item"],
-                email=query["email"],
-                openalex_key=settings.get("openalex_api_key") or "",
-                s2_key=settings.get("semantic_scholar_api_key") or "",
-                fresh=query["fresh"],
-            )
-            return {"source": source, "references": refs}
-        except LookupFailed as e:
-            raise PluginError(str(e)) from e
+        source, refs = fetch(query["item"], http=http, fresh=query["fresh"])
+        return {"source": source, "references": refs}

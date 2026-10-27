@@ -18,7 +18,9 @@ features fail with a message and the rest of the app works as before.
 | `backend/online/remote_pdf.py` | Downloads the PDF behind an attachment that is stored as a web link. |
 | `backend/library/identifiers.py` | DOIs and arXiv ids: cleaning, normalising, finding them in an item. Offline. |
 | `backend/references/sources.py` | Validates reference-fetch requests and delegates to injected providers. |
-| `plugins/reference-sources/server/providers.py` | Reference lists from Semantic Scholar, OpenAlex and Crossref, with the existing fallback and recent-arXiv policy. |
+| `plugins/reference-sources/server/providers.py` | Reference fetching order and the existing fresh/recent-arXiv policy, using an injected public HTTP client. |
+| `plugins/reference-sources/server/client.py` | Public `plugin.http` transport, one retry on 429/selected 5xx, interruptible retry waits and activation shutdown. |
+| `plugins/reference-sources/server/records.py` | Offline reference normalization and OpenAlex record conversion through `scholarly`. |
 | `plugins/reference-sources/server/arxiv_html.py` | Reading the bibliography of an arXiv paper's HTML version. |
 | `backend/references/connections.py` | How a paper outside the library connects to it (for plugins' lists). |
 | `backend/references/store.py` | `data/citations.db`, where the fetched lists are kept. |
@@ -214,7 +216,7 @@ address, 413 too large, 415 not a PDF, 502 for network trouble).
 
 `fetch(item)` in `backend/references/sources.py` needs a DOI or an arXiv id; without one it raises
 `LookupFailed`. It delegates to the running reference providers registered with the plugin host.
-**Reference Sources** is a core plugin, on by default; disabling it stops its HTTP requests but
+**Reference Sources** is a contributed plugin, on by default and stopped in safe mode; disabling it stops its HTTP requests but
 keeps `citations.db` and saved graph links. Without any provider, fetching reports how to turn one
 on. Its bundled scholarly provider preserves the existing order and first-nonempty policy:
 
@@ -365,7 +367,8 @@ canned data, using pytest's `monkeypatch`. They patch it through the module unde
   so tests can assert the order of candidates. The PDFs are made with `make_pdf` from
   `tests/conftest.py`.
 - `tests/test_references.py` and `tests/test_graph.py`: `router()` answers by a substring of the
-  URL; `R.time.sleep` is patched so retries do not wait.
+  URL through `tests/fake_metadata.py`, so the public HTTP policy still runs. Retry waits are
+  bypassed in these fixtures; dedicated lifecycle tests use actual stop events.
 - `tests/test_remote_pdf.py`: also fakes `socket.getaddrinfo`, so host names resolve to chosen
   public or private addresses.
 - `tests/test_connector.py`: patches `connector.lookup`, `pdf_finder.find_and_download` or
@@ -389,8 +392,8 @@ tested in `tests/js/lookupJob.test.mjs` with an injected `lookup` function. See
 - **A new reference source.** Register `@plugin.reference_source` (API 1.1). Return
   `{"references": [...]}` with reference objects using `doi`, `arxiv_id`, `title`, `authors`,
   `year`, `venue` and `raw` where known, or `None`/an empty list inside that object for no match.
-  Lower `order` runs first. Third-party source names are qualified by plugin id; the core
-  provider retains historical source names for saved graphs. Use `plugin.http` and fake its
+  Lower `order` runs first. Declared sub-sources are qualified by plugin and registration;
+  fixed host aliases retain the bundled providers' historical source names. Use `plugin.http` and fake its
   responses in tests. See [Plugins](plugins.md).
 - **A new identifier rule** shared by several packages goes in `backend/library/identifiers.py`,
   with a test in `tests/test_identifiers.py`.
@@ -433,3 +436,30 @@ source identity. Historical labels work with fetching disabled or the plugin mis
 providers get their declared titles while running, and unknown stored identities fall back to
 their source ID. The browser escapes titles and retains its own legacy fallback labels for an
 older server. See [the plugin contract](plugins.md#named-reference-sub-sources).
+
+
+## Reference Sources as a contributed plugin
+
+The bundled plugin requires API 1.5 and declares only `api.semanticscholar.org`,
+`api.openalex.org`, `api.crossref.org` and `arxiv.org`. Credentials and User-Agent come from
+`plugin.http` at every request. No provider imports internal backend modules or reads
+`plugin.synapse`. Parsing, source selection and the stored record format are preserved.
+The host's fixed aliases keep all four recorded source names and their titles unchanged; there
+is no citation database migration or rewrite. Existing enabled/disabled choices survive;
+first discovery enables only the bundled copy. Safe mode stops fetching while saved graphs and
+references remain readable.
+
+Every activation owns a small client with a stop event. As before, scholarly APIs retry once on
+429, 500, 502, 503 and 504; numeric Retry-After is clamped to 0–10 seconds and a nonnumeric value
+uses 2 seconds. arXiv HTML retains its no-retry policy. Stop interrupts a retry wait, prevents the
+next fallback request, and discards an in-flight response when it returns. In-flight DNS/network
+work already accepted by the shared host transport finishes under that transport's policy.
+Restart creates a fresh client without waiting for the old HTTP response. Failed refreshes keep
+previously saved lists; HTTP error messages include the service host and status, not credential
+query strings. Repeated Semantic Scholar pagination cursors are treated as a provider failure
+and allow fallback instead of looping indefinitely.
+
+All requests now use the shared host spacing and conditional cache. arXiv enters its shared
+3-second queue once per request; the separate arXiv wait was removed. Other hosts use the host's
+0.5-second default spacing, so multi-page/batched reference fetching can take longer than the
+previous unthrottled direct requests.

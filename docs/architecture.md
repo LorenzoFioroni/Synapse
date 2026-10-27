@@ -81,7 +81,10 @@ owns its HTTP calls, parallel enrichment and executor lifecycle; `parsing.py` ow
 conversion. It reaches shared offline helpers through `backend.plugins.scholarly`.
 `backend/plugins/references.py` owns named reference sub-sources and fixed legacy source aliases.
 Services inject its title resolver into `Citations`, so reference views can show plugin labels
-without making storage depend on the plugin host.
+without making storage depend on the plugin host. Reference Sources is contributed as well:
+`providers.py` retains source selection/fallback, `records.py` converts and normalizes records,
+`arxiv_html.py` parses the bibliography, and `client.py` owns the public HTTP transport's retries
+and activation stop signal. Stored source aliases are owned by the host, not by the plugin.
 
 ### Layers
 

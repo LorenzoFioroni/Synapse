@@ -12,10 +12,13 @@ from __future__ import annotations
 import re
 from html.parser import HTMLParser
 
-import requests
+from backend.plugins import scholarly
 
-from backend.library.identifiers import ARXIV_ID, norm_arxiv, norm_doi
-from backend.online.http import TIMEOUT, LookupFailed, arxiv_wait
+from .client import Client
+
+ARXIV_ID = scholarly.ARXIV_ID
+norm_arxiv = scholarly.norm_arxiv
+norm_doi = scholarly.norm_doi
 
 URL = "https://arxiv.org/html/{}"
 DOI_RE = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>{}|\\^`]+)", re.I)
@@ -128,20 +131,12 @@ def parse(html: str) -> list[dict]:
     return refs
 
 
-def fetch(arxiv_id: str) -> list[dict]:
+def fetch(arxiv_id: str, *, http: Client) -> list[dict]:
     """The references of arXiv paper ``arxiv_id`` from its HTML version; [] when it has none
-    (no HTML version, or one without a bibliography). Raises LookupFailed when arXiv cannot be
+    (no HTML version, or one without a bibliography). Raises a public plugin HTTP error when arXiv cannot be
     reached."""
     aid = norm_arxiv(arxiv_id)
     if not aid:
         return []
-    arxiv_wait()
-    try:
-        r = requests.get(URL.format(aid), timeout=TIMEOUT, headers={"User-Agent": "Synapse/2.0 (reference lists)"})
-    except requests.RequestException as e:
-        raise LookupFailed(f"arXiv could not be reached: {e}") from e
-    if r.status_code == 404:
-        return []
-    if r.status_code >= 400:
-        raise LookupFailed(f"arXiv answered {r.status_code}")
-    return parse(r.text)
+    response = http.get(URL.format(aid), retries=0)
+    return parse(response.text) if response is not None else []

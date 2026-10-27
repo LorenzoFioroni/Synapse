@@ -1,6 +1,6 @@
 """The knowledge graph (the Graph core plugin's /data route): papers, cited works, notes and their links."""
 
-import requests
+from tests.fake_metadata import install_transport
 
 from .test_references import S2_PAGE1, S2_PAGE2, Resp, router
 
@@ -10,10 +10,9 @@ def test_graph_combines_citations_and_notes(client, svc, monkeypatch):
     b = svc.papers.create(
         {"title": "Matrix product states", "doi": "10.1080/14789940801912366", "year": 2008, "citation_key": "mps2008"}
     )
-    monkeypatch.setattr(
-        requests,
-        "get",
-        router([("semanticscholar", lambda url, p: Resp(S2_PAGE1 if not p.get("offset") else S2_PAGE2))]),
+    install_transport(
+        monkeypatch,
+        router([("semanticscholar", lambda url, p: Resp(S2_PAGE1 if not int(p.get("offset") or 0) else S2_PAGE2))]),
     )
     client.post(f"/api/items/{a['id']}/references")
     ka = svc.papers.get(a["id"])["citation_key"]
