@@ -23,6 +23,10 @@ class Config:
     # True when the server listens on the network (``--lan`` or ``--host 0.0.0.0``): other devices can
     # pair (Settings → Devices) and requests naming this computer by a LAN address are accepted.
     lan: bool = False
+    # ``--public-url https://name``: the HTTPS address a tunnel or reverse proxy (such as Cloudflare
+    # Tunnel) serves Synapse at. Requests for that name are never trusted as "this computer", however
+    # they connect. See backend/access/proxy.py.
+    public_url: str | None = None
     # ``--safe-mode``: no plugin is started, so a plugin that breaks the app can be turned off.
     safe_mode: bool = False
     # ``--dev-plugins DIR``: plugins being written, loaded from DIR and reloaded when a file changes.
@@ -33,6 +37,11 @@ class Config:
         # SYNAPSE_DATA_DIR; ZCLONE_DATA_DIR is the old name, still accepted
         d = data_dir or os.environ.get("SYNAPSE_DATA_DIR") or os.environ.get("ZCLONE_DATA_DIR") or (APP_ROOT / "data")
         return cls(Path(d).expanduser().resolve())
+
+    @property
+    def other_devices(self) -> bool:
+        """Whether other devices can reach this server (on the network or through a tunnel)."""
+        return self.lan or bool(self.public_url)
 
     # -- paths -------------------------------------------------------------
     @property

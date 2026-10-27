@@ -9,7 +9,8 @@ from flask import Blueprint, g, jsonify, request
 from ..access import lan
 from ..access.devices import COOKIE, PairingError
 from ..access.guard import set_device_cookie
-from . import body, error, svc
+from ..access.proxy import client_addr, is_proxied, public_host
+from . import admin, body, error, svc
 
 bp = Blueprint("devices", __name__, url_prefix="/api/devices")
 
@@ -23,11 +24,17 @@ def _port() -> str:
 
 
 def addresses() -> list[dict]:
-    """Where other devices can reach this server: the .local name first, then IP addresses."""
+    """Where other devices can reach this server: the public address (``--public-url``) first, then
+    — when it listens on the network — the .local name and IP addresses."""
+    out = []
+    public = svc().config.public_url
+    if public:
+        out.append({"label": public_host(public) or public, "url": public + "/"})
+    if not svc().config.lan or is_proxied(request.environ):
+        return out  # through the tunnel the network addresses would be the server's, not reachable here
     port = _port()
     suffix = f":{port}" if port and port not in ("80", "443") else ""
     scheme = request.scheme
-    out = []
     name = lan.local_hostname()
     if name:
         out.append({"label": name, "url": f"{scheme}://{name}{suffix}/"})
@@ -60,23 +67,25 @@ def _qr_svg(text: str) -> str:
 def overview():
     current = (g.get("device") or {}).get("id")
     return jsonify(
-        lan=svc().config.lan,
-        this_computer=bool(g.get("this_computer")),
+        **admin.state(),
+        lan=svc().config.other_devices,
+        public_url=svc().config.public_url,
         current=current,
         devices=svc().devices.list(),
-        addresses=addresses() if svc().config.lan else [],
+        addresses=addresses() if svc().config.other_devices else [],
     )
 
 
 @bp.post("/pairing")
 def new_pairing():
-    """A one-time pairing code, as links with QR codes. Only on the computer running Synapse."""
-    if not g.get("this_computer"):
-        return error("Devices can only be added on the computer running Synapse.", 403)
-    if not svc().config.lan:
+    """A one-time pairing code, as links with QR codes. On the computer running Synapse, or on a
+    device that just confirmed with a passkey (``python server.py --pairing-link`` asks for one too)."""
+    if (refused := admin.refusal("Devices can only be added on the computer running Synapse.")) is not None:
+        return refused
+    if not svc().config.other_devices:
         return error(
             "Synapse is only reachable from this computer. Start it with  python server.py --lan  "
-            "to use it from other devices.",
+            "(or --public-url behind a tunnel) to use it from other devices.",
             409,
         )
     code, expires = svc().devices.new_pairing_code()
@@ -94,8 +103,8 @@ def new_pairing():
 @bp.delete("/pairing")
 def cancel_pairing():
     """Void the pairing code being shown (Cancel, or leaving Settings)."""
-    if not g.get("this_computer"):
-        return error("Devices can only be added on the computer running Synapse.", 403)
+    if (refused := admin.refusal("Devices can only be added on the computer running Synapse.")) is not None:
+        return refused
     svc().devices.cancel_pairing()
     return jsonify(ok=True)
 
@@ -108,7 +117,7 @@ def pair():
             str(data.get("code") or ""),
             str(data.get("name") or ""),
             request.headers.get("User-Agent", ""),
-            request.remote_addr or "",
+            client_addr(request.environ),
         )
     except PairingError as e:
         return error(str(e), e.status)
@@ -118,9 +127,12 @@ def pair():
     return resp
 
 
-def _may_manage(dev_id: str) -> bool:
-    """The computer running Synapse manages every device; another device only itself."""
-    return bool(g.get("this_computer")) or (g.get("device") or {}).get("id") == dev_id
+def _manage_refusal(dev_id: str):
+    """The computer running Synapse manages every device; another device itself, and the others
+    after confirming with a passkey."""
+    if (g.get("device") or {}).get("id") == dev_id:
+        return None
+    return admin.refusal(MANAGE_REFUSED)
 
 
 MANAGE_REFUSED = "Other devices can only be renamed or removed on the computer running Synapse."
@@ -128,8 +140,8 @@ MANAGE_REFUSED = "Other devices can only be renamed or removed on the computer r
 
 @bp.patch("/<dev_id>")
 def rename(dev_id):
-    if not _may_manage(dev_id):
-        return error(MANAGE_REFUSED, 403)
+    if (refused := _manage_refusal(dev_id)) is not None:
+        return refused
     try:
         device = svc().devices.rename(dev_id, str(body().get("name") or ""))
     except PairingError as e:
@@ -141,10 +153,11 @@ def rename(dev_id):
 
 @bp.delete("/<dev_id>")
 def revoke(dev_id):
-    if not _may_manage(dev_id):
-        return error(MANAGE_REFUSED, 403)
+    if (refused := _manage_refusal(dev_id)) is not None:
+        return refused
     if not svc().devices.revoke(dev_id):
         return error("No such device.", 404)
+    svc().confirmations.forget(dev_id)
     resp = jsonify(ok=True, devices=svc().devices.list())
     if (g.get("device") or {}).get("id") == dev_id:  # signed this device out
         resp.delete_cookie(COOKIE, path="/")

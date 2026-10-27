@@ -238,13 +238,22 @@ def test_counter_must_go_up(mac, ipad):
     assert r.status_code == 401 and "counter" in r.get_json()["error"]
 
 
+def confirm(ipad, auth: Authenticator, **kw):
+    o = secure(ipad, "POST", "/api/passkeys/confirm/options", remote=True)
+    assert o.status_code == 200, o.get_json()
+    return secure(ipad, "POST", "/api/passkeys/confirm", remote=True, json={"credential": auth.get(o.get_json(), **kw)})
+
+
 def test_only_signed_in_devices_add_passkeys(mac, ipad):
     r = secure(ipad, "POST", "/api/passkeys/register/options", remote=True, json={})
     assert r.status_code == 401
-    # a device signed in with a passkey may add another one
+    # a device signed in with a passkey may add another one, after confirming with it
     auth = Authenticator()
     add_passkey(mac, auth)
     assert sign_in(ipad, auth).status_code == 201
+    r = secure(ipad, "POST", "/api/passkeys/register/options", remote=True, json={"name": "iPad"})
+    assert r.status_code == 403 and r.get_json()["confirm"] is True
+    assert confirm(ipad, auth).status_code == 200
     o = secure(ipad, "POST", "/api/passkeys/register/options", remote=True, json={"name": "iPad"})
     assert o.status_code == 200
     second = Authenticator()
@@ -368,3 +377,69 @@ def test_cbor_decoder():
 def test_unsupported_key_type():
     with pytest.raises(WebAuthnError, match="kind of key"):
         webauthn.cose_to_der({1: 2, 3: -35, -1: 2, -2: b"x", -3: b"y"})  # ES384
+
+
+def test_a_paired_device_adds_the_first_passkey(mac, ipad):
+    code_links = secure(mac, "POST", "/api/devices/pairing").get_json()["links"]
+    code = code_links[0]["url"].split("code=")[1]
+    assert secure(ipad, "POST", "/api/devices/pair", remote=True, json={"code": code}).status_code == 201
+    o = secure(ipad, "POST", "/api/passkeys/register/options", remote=True, json={"name": "Phone"})
+    assert o.status_code == 200, o.get_json()
+    auth = Authenticator()
+    r = secure(ipad, "POST", "/api/passkeys/register", remote=True, json={"credential": auth.create(o.get_json())})
+    assert r.status_code == 201
+
+
+def test_admin_actions_from_a_device_need_a_confirmation(lan_app, mac, ipad):
+    auth = Authenticator()
+    add_passkey(mac, auth)
+    assert sign_in(ipad, auth).status_code == 201
+    st = secure(ipad, "GET", "/api/devices", remote=True).get_json()
+    assert st["this_computer"] is False and st["can_confirm"] is True and st["confirmed"] is False
+    for method, path, body in (
+        ("POST", "/api/devices/pairing", None),
+        ("POST", "/api/mcp/tokens", {"name": "Laptop"}),
+    ):
+        r = secure(ipad, method, path, remote=True, json=body)
+        assert r.status_code == 403 and r.get_json()["confirm"] is True, path
+    # a wrong passkey does not confirm
+    assert confirm(ipad, Authenticator()).status_code == 401
+    # a login challenge is not a confirmation
+    lo = secure(ipad, "POST", "/api/passkeys/login/options", remote=True).get_json()
+    bad = secure(ipad, "POST", "/api/passkeys/confirm", remote=True, json={"credential": auth.get(lo)})
+    assert bad.status_code == 400
+    r = confirm(ipad, auth)
+    assert r.status_code == 200 and r.get_json()["until"]
+    assert secure(ipad, "GET", "/api/devices", remote=True).get_json()["confirmed"] is True
+    assert secure(ipad, "POST", "/api/devices/pairing", remote=True).status_code == 201
+    made = secure(ipad, "POST", "/api/mcp/tokens", remote=True, json={"name": "Laptop"})
+    assert made.status_code == 201
+    tok = made.get_json()["entry"]["id"]
+    assert secure(ipad, "DELETE", f"/api/mcp/tokens/{tok}", remote=True).status_code == 200
+    # the confirmation runs out
+    conf = lan_app.extensions["synapse"].confirmations
+    conf.clock = lambda: 10**12
+    r = secure(ipad, "POST", "/api/devices/pairing", remote=True)
+    assert r.status_code == 403 and r.get_json()["confirm"] is True
+
+
+def test_another_device_cannot_use_my_confirmation(lan_app, mac, ipad):
+    auth = Authenticator()
+    add_passkey(mac, auth)
+    assert sign_in(ipad, auth).status_code == 201
+    assert confirm(ipad, auth).status_code == 200
+    other = lan_app.test_client()
+    assert sign_in(other, auth).status_code == 201
+    r = secure(other, "POST", "/api/devices/pairing", remote=True)
+    assert r.status_code == 403
+    # an unpaired device can't even ask
+    stranger = lan_app.test_client()
+    assert secure(stranger, "POST", "/api/passkeys/confirm/options", remote=True).status_code == 401
+
+
+def test_without_a_passkey_a_device_is_told_where_to_go(mac, ipad):
+    code = secure(mac, "POST", "/api/devices/pairing").get_json()["links"][0]["url"].split("code=")[1]
+    assert secure(ipad, "POST", "/api/devices/pair", remote=True, json={"code": code}).status_code == 201
+    r = secure(ipad, "POST", "/api/mcp/tokens", remote=True, json={"name": "x"})
+    assert r.status_code == 403 and "confirm" not in r.get_json()
+    assert "computer running Synapse" in r.get_json()["error"]

@@ -158,23 +158,23 @@ class Passkeys(AuthTable):
         return public(dict(row))
 
     # -- signing in ----------------------------------------------------------
-    def login_options(self, rp_id: str, origin: str) -> dict:
+    def login_options(self, rp_id: str, origin: str, purpose: str = "login") -> dict:
         """What ``navigator.credentials.get`` needs. No list of passkeys: the browser offers the
-        ones it has for this site, and an unpaired device learns nothing about them."""
+        ones it has for this site, and an unpaired device learns nothing about them. ``purpose`` is
+        ``login`` (signing a device in) or ``confirm`` (a signed-in device proving it again before an
+        administrative action, see confirm.py)."""
         return {
-            "challenge": self._challenge("login", rp_id, origin),
+            "challenge": self._challenge(purpose, rp_id, origin),
             "rpId": rp_id,
             "allowCredentials": [],
             "userVerification": "preferred",
             "timeout": CHALLENGE_TTL * 1000,
         }
 
-    def sign_in(
-        self, rp_id: str, origin: str, response: dict, name: str, user_agent: str, addr: str
-    ) -> tuple[dict, str, dict]:
-        """Check a passkey sign-in and make a device for it. Returns (device, token, passkey)."""
+    def _verify(self, purpose: str, rp_id: str, origin: str, response: dict, addr: str) -> dict:
+        """Check a passkey answer to a challenge given out for ``purpose``; returns the passkey's row."""
         assertion = webauthn.read_assertion(response, origin)
-        self._take(assertion.challenge, "login", rp_id, origin)
+        self._take(assertion.challenge, purpose, rp_id, origin)
         cred_id = b64url(webauthn.from_b64url(response.get("id")))
         with self._lock:
             row = (
@@ -193,8 +193,24 @@ class Passkeys(AuthTable):
                 (count, now_iso(), addr, row["id"]),
             )
             self._conn().commit()
+        return dict(row)
+
+    def sign_in(
+        self, rp_id: str, origin: str, response: dict, name: str, user_agent: str, addr: str
+    ) -> tuple[dict, str, dict]:
+        """Check a passkey sign-in and make a device for it. Returns (device, token, passkey)."""
+        row = self._verify("login", rp_id, origin, response, addr)
         device, token = self.devices.add(name, user_agent, addr)
-        return device, token, public(dict(row))
+        return device, token, public(row)
+
+    def confirm(self, rp_id: str, origin: str, response: dict, addr: str) -> dict:
+        """Check a confirmation (see ``login_options``). Returns the passkey used."""
+        return public(self._verify("confirm", rp_id, origin, response, addr))
+
+    def count(self, rp_id: str) -> int:
+        """How many passkeys work at this site."""
+        with self._lock:
+            return self._conn().execute("SELECT COUNT(*) FROM passkeys WHERE rp_id = ?", (rp_id,)).fetchone()[0]
 
     # -- managing ------------------------------------------------------------
     def list(self) -> builtins.list[dict]:

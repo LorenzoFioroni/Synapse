@@ -178,9 +178,11 @@ cross-origin reads, and only the connector endpoints add CORS headers, for exten
 ### 3. Device
 
 Whether a request comes from **this computer** is decided by `lan.is_this_computer` from the
-connection's address (`request.remote_addr`), never from a header. Loopback counts, and so do
-this computer's own LAN addresses (`lan.own_addresses`, cached 30 s). The result is stored as
-`g.this_computer`.
+connection's address (`request.remote_addr`). Loopback counts, and so do this computer's own LAN
+addresses (`lan.own_addresses`, cached 30 s), unless the request came through a tunnel or proxy:
+one naming the `--public-url` host, or carrying a proxy header such as `X-Forwarded-For`, is always
+another device (`proxy.py`, see [`remote-access.md`](remote-access.md)). Headers can only take
+trust away, never grant it. The result is stored as `g.this_computer`.
 
 Requests from this computer need nothing more. Any other request needs the cookie of a device
 that was paired or signed in with a passkey. Without it, only `PAIRING_PATHS` are served (`/pair`,
@@ -355,20 +357,34 @@ keeps it from running out. `public()` is what the API shows: never the token has
 
 ### Settings → Devices
 
-`GET /api/devices` answers `lan`, `this_computer`, `current` (the id of the device making the
-request, if any), `devices` and `addresses`. `frontend/src/views/settings/devices.ts` shows:
+`GET /api/devices` answers `lan` (other devices can reach the server: `--lan` or `--public-url`),
+`public_url`, `this_computer`, `can_confirm` and `confirmed` (see below), `current` (the id of the
+device making the request, if any), `devices` and `addresses` (the public address first).
+`frontend/src/views/settings/devices.ts` shows:
 
-- without LAN mode, how to start with `--lan`;
-- on another device, that devices are added on the computer running Synapse;
-- on this computer, the **Add a Device** button, then the QR code, a countdown, a copy button and
-  a choice of address when there are several;
+- without LAN mode or a public address, how to start with `--lan`;
+- on another device that can't confirm with a passkey, where devices are added;
+- on this computer, or on a device that can confirm, the **Add a Device** button, then the QR
+  code, a countdown, a copy button and a choice of address when there are several;
 - the list of devices with **Rename…** (`PATCH /api/devices/<id>`) and **Remove…**
   (`DELETE /api/devices/<id>`). On the device itself the button reads **Sign Out**.
 
-Only the computer running Synapse renames or removes any device. Another device may rename or
-sign out only itself: for any other id both endpoints answer 403 (`_may_manage` in
-`backend/api/devices.py`), before checking that the id exists. The page shows those buttons only
-where they work: on another device, only on its own row.
+The computer running Synapse renames or removes any device. Another device may rename or sign out
+itself, and the others only after confirming with a passkey: otherwise both endpoints answer 403
+(`_manage_refusal` in `backend/api/devices.py`), before checking that the id exists. The page
+shows those buttons only where they can work.
+
+### Confirming with a passkey
+
+Pairing codes, access tokens, a second passkey and removing passkeys or other devices give or take
+lasting access. `backend/api/admin.py` allows them on this computer, or on a signed-in device that
+confirmed with one of Synapse's passkeys in the last 5 minutes (`backend/access/confirm.py`). Such
+a device that has not confirmed gets 403 with `confirm: true`; `asAdmin` in
+`frontend/src/views/settings/confirm.ts` then asks the browser for a passkey
+(`POST /api/passkeys/confirm/options`, `POST /api/passkeys/confirm`, challenges of their own
+purpose, so a sign-in answer can't be replayed as a confirmation) and repeats the request.
+`can_confirm` in the overviews says whether the device could (signed in, HTTPS by name, a passkey
+exists for this address). Without it, the 403 says where to do the action instead.
 
 Removing a device deletes its row, so its next request fails the device check. When a device
 removes itself, the answer also deletes its cookie and the page reloads to the "not paired" page.
@@ -380,11 +396,12 @@ What is protected:
 - **Other websites** in the user's browser cannot change anything (Origin check) and cannot read
   anything (same-origin policy, plus the Host check against DNS rebinding).
 - **Other devices** on the network get nothing but the sign-in page until they are paired or
-  signed in with a passkey. Only the computer running Synapse can make a pairing code. Only the
+  signed in with a passkey. Only the computer running Synapse, or a signed-in device right after
+  confirming with a passkey, can make a pairing code. Only the
   newest code works, once, for at most 5 minutes, and Cancel voids it. A passkey sign-in needs a
   signature from a private key that never leaves the user's authenticator, over a fresh challenge.
 - **AI apps** reach only `/mcp`, and only with an access token made on the computer running
-  Synapse. A token gives the MCP tools, not the rest of the API.
+  Synapse (or on a device after a passkey confirmation). A token gives the MCP tools, not the rest of the API.
 - **Stored secrets** are hashes. A copy of `auth.db` does not give anyone a working token.
 - **Pages from another device** must also pass the Origin check, so a paired device's browser
   cannot be used for CSRF either.
@@ -399,12 +416,15 @@ What is assumed:
   who can watch the traffic can read the library and copy a device cookie or an access token. The
   README says to use `--lan` without `--cert` only on a trusted network.
 - **A paired device is trusted with the library.** It has the same API as this computer, apart
-  from making or cancelling pairing codes, renaming or removing other devices, removing passkeys and
-  making or removing access tokens. It may add a passkey, which the computer's Settings lists.
+  from making or cancelling pairing codes, renaming or removing other devices, adding a second
+  passkey, removing passkeys and making or removing access tokens, which need a fresh passkey
+  confirmation. It may add the first passkey, which Settings lists.
 - **Whoever holds a passkey is the user.** Anyone who has it (a shared iCloud account, say) can
   sign a device in. Remove the passkey on the computer to stop that.
-- **No proxy in front.** "This computer" is judged by the connection's address, so a reverse proxy
-  on the same machine would make every request look local.
+- **A proxy in front is declared or announces itself.** "This computer" is judged by the
+  connection's address, so a proxy on the same machine must either be named with `--public-url` or
+  add a forwarding header (`X-Forwarded-For` and the like; Cloudflare Tunnel, nginx and Caddy do).
+  A proxy that does neither would make every request look local.
 - **`--debug` is for development, on this computer only.** `server.py` refuses it with `--lan`
   or a non-loopback `--host`, because the debugger runs before the guard.
 
@@ -418,6 +438,8 @@ What is assumed:
 | Messages between viewer and notes | `notesBridge.ts` and `listenForQuotes` in `notesView.ts`, together |
 | Which hosts or origins are accepted | `host_allowed`, `allowed_origin` and `refusal` in `backend/access/guard.py` |
 | What an unpaired device may open | `PAIRING_PATHS` in `guard.py` (and keep `frontend/pair.html` and `frontend/signin.html` self-contained) |
+| Which requests count as coming through a proxy | `ProxyMiddleware` and `FORWARD_HEADERS` in `backend/access/proxy.py` |
+| Which actions need a passkey confirmation | the `admin.refusal` calls in `backend/api/` (`devices.py`, `passkeys.py`, `mcp.py`); how long one lasts: `CONFIRM_TTL` in `backend/access/confirm.py` |
 | Where passkeys work, what is asked of the authenticator | `relying_party` and `registration_options` in `backend/access/passkeys.py` |
 | Key types, checks of the browser's answer | `backend/access/webauthn.py` |
 | Who may add or remove passkeys | `backend/api/passkeys.py`, and the buttons in `refreshPasskeys` in `passkeys.ts` |

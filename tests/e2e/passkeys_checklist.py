@@ -215,6 +215,24 @@ async def main():
             check("… and the passkey as used from the iPad's address", ip in used, used.strip()[-40:])
             r = await ipad.evaluate("() => fetch('/api/passkeys/' + 'x', { method: 'DELETE' }).then(r => r.status)")
             check("the iPad cannot remove passkeys", r == 403, r)
+            r = await ipad.evaluate(
+                "() => fetch('/api/mcp/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' },"
+                " body: JSON.stringify({ name: 'x' }) }).then(r => r.json())"
+            )
+            check("… nor make an access token without confirming", r.get("confirm") is True, r)
+            await ipad.evaluate("() => import('/js/views/settingsView.js').then(m => m.openSettings('ai'))")
+            await ipad.wait_for_selector("[data-ai-new]")
+            await ipad.click("[data-ai-new]")
+            await fill_prompt(ipad, "iPad token")
+            ok = await wait_for(lambda: ipad.evaluate("() => !!document.querySelector('[data-ai-command]')"))
+            check("the iPad makes a token after confirming with its passkey", ok)
+            await ipad.click("[data-ai-done]")
+            await ipad.click("[data-ai-remove]")
+            await ipad.wait_for_selector("text=Remove the token")
+            await ipad.click(".dialog-backdrop:last-of-type button:has-text('Remove')")
+            ok = await wait_for(lambda: ipad.evaluate("() => !document.querySelector('[data-ai-token]')"))
+            check("… and removes it again (the confirmation lasts a few minutes)", ok)
+            await ipad.keyboard.press("Escape")
 
             # -- AI access --------------------------------------------------------------------------
             await mac.click('.settings-nav [data-nav="ai"]')

@@ -90,7 +90,7 @@ python server.py --lan            # also reachable on your network (paired devic
 2. Scan it with the iPad's camera (or open the link it shows) and tap **Pair This Device**.
 
 The iPad stays paired until you remove it in Settings → Devices on the computer (or sign it
-out on the iPad itself; a paired device cannot remove others). Without pairing, another
+out on the iPad itself; a paired device removes others only after confirming with a passkey). Without pairing, another
 device sees only a "pair this device" page — the library, PDFs and notes stay closed. The
 computer running Synapse never needs pairing. Both devices must be on the same network, and the
 computer must be awake (System Settings → Energy, or `caffeinate -s python server.py --lan`).
@@ -128,9 +128,10 @@ Device Management, and turn it on in Settings → General → About → Certific
 Android: Settings → Security → Encryption & credentials → Install a certificate → CA certificate.
 
 Open `https://Lorenzos-MacBook.local:8000/` (on the computer too), go to **Settings → Devices →
-Add a Passkey…** and save it. A device already paired can add one as well. Passkeys work only at
-the address they were made on. Remove one in Settings → Devices on the computer; devices it signed
-in stay until you remove them there too. Passkeys need the `cryptography` package (in
+Add a Passkey…** and save it. A device already paired can add the first one as well (more after
+confirming with an existing passkey). Passkeys work only at the address they were made on. Remove
+one in Settings → Devices on the computer, or on a device signed in over HTTPS after confirming with
+a passkey; devices it signed in stay until you remove them too. Passkeys need the `cryptography` package (in
 `requirements.txt`).
 
 #### Installing on Android
@@ -141,6 +142,22 @@ does not offer an app installation from a plain `http://` LAN address or from HT
 certificate the phone does not trust; in that case it only offers a basic browser shortcut. If an
 old iconless shortcut already exists, remove it and add or install Synapse again after opening the
 HTTPS address.
+
+### From anywhere (a tunnel)
+
+Synapse can also run on another computer, such as a Linux server, and be used from your devices
+anywhere, with no app or VPN on them, through an HTTPS tunnel such as Cloudflare Tunnel:
+
+```bash
+python server.py --no-browser --public-url https://synapse.example.com
+python server.py --pairing-link   # on that computer (over SSH): a one-time link + QR code for your phone
+```
+
+Every request through the tunnel needs a signed-in device, whatever address it comes from. Pair
+your phone with the link, add a passkey there, and sign your other devices in with it. Pairing more
+devices, making AI access tokens and removing devices or passkeys work from a signed-in device after
+confirming with the passkey (Face ID / Touch ID). The full setup, with a systemd service and the
+Cloudflare steps: [docs/remote-access.md](docs/remote-access.md).
 
 Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
 

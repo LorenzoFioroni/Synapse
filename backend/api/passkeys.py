@@ -6,7 +6,8 @@ from flask import Blueprint, g, jsonify, request
 
 from ..access.guard import set_device_cookie
 from ..access.passkeys import PasskeyError, relying_party
-from . import body, error, svc
+from ..access.proxy import client_addr
+from . import admin, body, error, svc
 
 bp = Blueprint("passkeys", __name__, url_prefix="/api/passkeys")
 
@@ -30,17 +31,28 @@ def overview():
     except PasskeyError as e:
         rp_id, why = None, str(e)
     return jsonify(
-        this_computer=bool(g.get("this_computer")),
+        **admin.state(),
         rp_id=rp_id,
         unavailable=why,
         passkeys=svc().passkeys.list(),
     )
 
 
+def _may_add(rp_id: str):
+    """The first passkey for an address may be added by any signed-in device (that is how a device
+    paired with a code gets one); later ones need the same confirmation as other administrative
+    actions, so a stolen device cookie can't turn itself into a passkey."""
+    if svc().passkeys.count(rp_id) == 0:
+        return None
+    return admin.refusal("Passkeys can only be added on the computer running Synapse.")
+
+
 @bp.post("/register/options")
 def register_options():
     try:
         rp_id, origin = _site()
+        if (refused := _may_add(rp_id)) is not None:
+            return refused
         return jsonify(svc().passkeys.registration_options(rp_id, origin, str(body().get("name") or "")))
     except PasskeyError as e:
         return error(str(e), e.status)
@@ -50,7 +62,9 @@ def register_options():
 def register():
     try:
         rp_id, origin = _site()
-        passkey = svc().passkeys.register(rp_id, origin, _credential(), request.remote_addr or "")
+        if (refused := _may_add(rp_id)) is not None:
+            return refused
+        passkey = svc().passkeys.register(rp_id, origin, _credential(), client_addr(request.environ))
     except PasskeyError as e:
         return error(str(e), e.status)
     return jsonify(passkey=passkey), 201
@@ -76,7 +90,7 @@ def login():
             _credential(),
             str(body().get("name") or ""),
             request.headers.get("User-Agent", ""),
-            request.remote_addr or "",
+            client_addr(request.environ),
         )
     except PasskeyError as e:
         return error(str(e), e.status)
@@ -86,10 +100,36 @@ def login():
     return resp
 
 
+@bp.post("/confirm/options")
+def confirm_options():
+    """A signed-in device proving again that its user holds a passkey, before an administrative
+    action (backend/access/confirm.py)."""
+    if not g.get("device"):
+        return error("Only a signed-in device confirms with a passkey.", 403)
+    try:
+        rp_id, origin = _site()
+        return jsonify(svc().passkeys.login_options(rp_id, origin, purpose="confirm"))
+    except PasskeyError as e:
+        return error(str(e), e.status)
+
+
+@bp.post("/confirm")
+def confirm():
+    device = g.get("device")
+    if not device:
+        return error("Only a signed-in device confirms with a passkey.", 403)
+    try:
+        rp_id, origin = _site()
+        svc().passkeys.confirm(rp_id, origin, _credential(), client_addr(request.environ))
+    except PasskeyError as e:
+        return error(str(e), e.status)
+    return jsonify(until=svc().confirmations.confirm(device["id"]))
+
+
 @bp.delete("/<pk_id>")
 def remove(pk_id):
-    if not g.get("this_computer"):
-        return error("Passkeys can only be removed on the computer running Synapse.", 403)
+    if (refused := admin.refusal("Passkeys can only be removed on the computer running Synapse.")) is not None:
+        return refused
     if not svc().passkeys.remove(pk_id):
         return error("No such passkey.", 404)
     return jsonify(ok=True, passkeys=svc().passkeys.list())

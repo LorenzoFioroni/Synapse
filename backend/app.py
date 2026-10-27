@@ -30,8 +30,10 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
     app.extensions["synapse"] = services
 
     from .access import guard
+    from .access.proxy import ProxyMiddleware
 
-    guard.install(app, config.allowed_hosts, config.lan)
+    app.wsgi_app = ProxyMiddleware(app.wsgi_app, config.public_url)  # type: ignore[method-assign]
+    guard.install(app, config.allowed_hosts, config.lan, public_url=config.public_url)
 
     from flask import g
 

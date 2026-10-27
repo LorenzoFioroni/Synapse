@@ -6,6 +6,9 @@ Run:   python server.py                 (http://127.0.0.1:8000, opens your brows
        python server.py --lan            (also reachable from your iPad/phone; pair them in Settings → Devices)
        python server.py --lan --cert mac.local.pem --key mac.local-key.pem
                                          (HTTPS, needed to sign devices in with passkeys)
+       python server.py --public-url https://synapse.example.com
+                                         (behind Cloudflare Tunnel or another HTTPS proxy; see docs/remote-access.md)
+       python server.py --pairing-link   (a one-time link that pairs a device with the running server)
        python server.py --window         (in a window of its own, like a program, not a browser tab)
        python server.py --make-shortcut  (an icon on the Desktop that does that; see docs/desktop.md)
        python server.py --new-plugin my-plugin --dev-plugins ~/plugins
@@ -84,6 +87,19 @@ def main() -> None:
         "certificate your devices trust",
     )
     ap.add_argument("--key", metavar="FILE", help="the certificate's private key (PEM)")
+    ap.add_argument(
+        "--public-url",
+        metavar="URL",
+        help="the HTTPS address a tunnel or reverse proxy (such as Cloudflare Tunnel) serves Synapse at, "
+        "e.g. https://synapse.example.com. Requests that come through it always need a signed-in "
+        "device; see docs/remote-access.md",
+    )
+    ap.add_argument(
+        "--pairing-link",
+        action="store_true",
+        help="ask the Synapse already running on this computer (same --port) for a one-time link that "
+        "pairs a device, print it, then exit; for a server without a screen",
+    )
     ap.add_argument("--data-dir", default=None, help="folder for the library data (default: ./data)")
     ap.add_argument("--no-browser", action="store_true", help="don't open a browser tab")
     ap.add_argument(
@@ -137,6 +153,27 @@ def main() -> None:
     )
     logging.getLogger("werkzeug").setLevel(logging.INFO if a.debug else logging.WARNING)
 
+    if a.pairing_link:
+        from backend.access.pairing_link import PairingLinkError, describe, request_pairing
+
+        try:
+            print(describe(request_pairing(a.port, tls=bool(a.cert))))
+        except PairingLinkError as e:
+            raise SystemExit(str(e)) from e
+        return
+
+    public_url = None
+    if a.public_url:
+        from backend.access.proxy import PublicUrlError, parse_public_url
+
+        try:
+            public_url = parse_public_url(a.public_url)
+        except PublicUrlError as e:
+            raise SystemExit(str(e)) from e
+        if a.debug:
+            # The tunnel puts this server on the internet; Flask's debugger console runs Python code.
+            raise SystemExit("--debug cannot be combined with --public-url: the debugger would be on the internet.")
+
     if a.lan and a.host in ("127.0.0.1", "localhost"):
         a.host = "0.0.0.0"
     wildcard = a.host in ("0.0.0.0", "::")
@@ -183,6 +220,7 @@ def main() -> None:
     config = Config.from_env(a.data_dir)
     config.allowed_hosts = set(a.allow_host)
     config.lan = not loopback_only
+    config.public_url = public_url
     config.safe_mode = a.safe_mode
     config.dev_plugins_dir = Path(a.dev_plugins).expanduser().resolve() if a.dev_plugins else None
     if not wildcard and not loopback_only:
@@ -208,6 +246,12 @@ def main() -> None:
             import segno  # noqa: F401
         except ImportError:
             print("Tip: pip install segno  (shows the pairing QR code; without it only the link works)")
+    if public_url:
+        print(f"Public address: {public_url}/  — requests through it need a signed-in device.", flush=True)
+        print(
+            "Pair the first device with:  python server.py --pairing-link"
+            + (f" --port {a.port}" if a.port != 8000 else "")
+        )
     if a.window:
         from backend.desktop.window import open_window
 
@@ -240,6 +284,8 @@ def make_shortcut(a: argparse.Namespace) -> None:
         args += ["--cert", str(Path(a.cert).resolve()), "--key", str(Path(a.key).resolve())]
     for h in a.allow_host:
         args += ["--allow-host", h]
+    if a.public_url:
+        args += ["--public-url", a.public_url]
     try:
         made = make(Path(__file__).resolve().parent, args, path_env=os.environ.get("PATH", ""))
     except ShortcutError as e:

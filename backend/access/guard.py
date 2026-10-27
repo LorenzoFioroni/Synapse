@@ -10,7 +10,8 @@ The server has no accounts. Three checks decide whether a request goes ahead:
 * **Device** — a request that comes over the network from another device (judged by the
   connection's address, never by a header) needs the cookie of a device that was paired or
   signed in with a passkey; see ``devices.py`` and ``passkeys.py``. Requests from this computer
-  itself — loopback or one of its own LAN addresses — need none. Without the cookie, pages answer
+  itself — loopback or one of its own LAN addresses — need none, unless they came through a tunnel
+  or proxy (``proxy.py``): those count as another device, whatever address they connect from. Without the cookie, pages answer
   with the sign-in page (``frontend/signin.html``) and the API with 401.
 * **Origin** — a request that changes something (POST, PUT, PATCH, DELETE) must come from the
   app's own pages. On this computer clients that send no Origin at all (curl, scripts, the test
@@ -35,6 +36,7 @@ from flask import Flask, Response, current_app, g, jsonify, request
 from . import lan
 from .devices import COOKIE, COOKIE_MAX_AGE
 from .lan import host_name
+from .proxy import client_addr, is_proxied, public_host
 from .tokens import bearer
 
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
@@ -147,12 +149,18 @@ def set_device_cookie(resp: Response, token: str) -> None:
     )
 
 
-def install(app: Flask, allowed_hosts: set[str] | None = None, lan_mode: bool = False) -> None:
+def install(
+    app: Flask, allowed_hosts: set[str] | None = None, lan_mode: bool = False, public_url: str | None = None
+) -> None:
     hosts = {host_name(h) for h in (allowed_hosts or set()) if h}
+    public = public_host(public_url)
+    if public:
+        hosts.add(public)
 
     @app.before_request
     def _guard():
-        local = lan.is_this_computer(request.remote_addr)
+        addr = client_addr(request.environ)
+        local = lan.is_this_computer(request.remote_addr) and not is_proxied(request.environ)
         g.this_computer = local
         g.device = None
         if request.path == MCP_PATH:
@@ -174,7 +182,7 @@ def install(app: Flask, allowed_hosts: set[str] | None = None, lan_mode: bool = 
         if local:
             return None
         devices = current_app.extensions["synapse"].devices
-        device = devices.check(request.cookies.get(COOKIE), request.remote_addr)
+        device = devices.check(request.cookies.get(COOKIE), addr)
         if device is None:
             if request.path in PAIRING_PATHS:
                 return None
@@ -187,7 +195,7 @@ def install(app: Flask, allowed_hosts: set[str] | None = None, lan_mode: bool = 
         if origin is not None and not allowed_origin(origin, request.host, extensions=False):
             return jsonify(error="The MCP endpoint does not answer other websites."), 403
         tokens = current_app.extensions["synapse"].tokens
-        entry = tokens.check(bearer(request.headers.get("Authorization")), request.remote_addr)
+        entry = tokens.check(bearer(request.headers.get("Authorization")), client_addr(request.environ))
         if entry is None:
             resp = jsonify(
                 error="This needs an access token. Make one in Settings → AI Access on the computer running "

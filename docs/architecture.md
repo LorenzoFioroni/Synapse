@@ -67,7 +67,7 @@ Two objects tie the backend together:
 | `pdf/` | PDF files on disk: text extraction (`text.py`), the full-text index (`fulltext.py`), and for the MCP tools page rendering (`render.py`), finding figures and equations (`regions.py`) and PNG encoding (`png.py`). | `fulltext.db` |
 | `online/` | Lookups on the web: normalizing metadata queries (`metadata.py`; providers come from plugins), downloading and checking open-access PDFs (`pdf_finder.py`; where to look comes from plugins' PDF sources) and PDFs behind an attachment's web link (`remote_pdf.py`). `http.py` has what they share: timeout, User-Agent, the error type and the arXiv request spacing. | none |
 | `references/` | The citation graph: reference fetching through injected plugin providers (`sources.py`); scholarly HTTP and arXiv parsing live in `plugins/reference-sources/server/`, stored (`store.py`), fetched in the background and matched to library items (`service.py`), and how a paper outside the library connects to it (`connections.py`). | `citations.db` |
-| `access/` | Who may use the server: other websites never (`guard.py`), other devices only once paired (`devices.py`) or signed in with a passkey (`passkeys.py`, checked by `webauthn.py`), AI apps at `/mcp` only with an access token (`tokens.py`); `authdb.py` is what the `auth.db` tables share; `lan.py` finds this computer's network addresses and names. | `auth.db` |
+| `access/` | Who may use the server: other websites never (`guard.py`), other devices only once paired (`devices.py`) or signed in with a passkey (`passkeys.py`, checked by `webauthn.py`), AI apps at `/mcp` only with an access token (`tokens.py`); requests through a tunnel or proxy never count as this computer (`proxy.py`, `--public-url`); administrative actions from a device after a passkey confirmation (`confirm.py`); `--pairing-link` (`pairing_link.py`); `authdb.py` is what the `auth.db` tables share; `lan.py` finds this computer's network addresses and names. See [`remote-access.md`](remote-access.md). | `auth.db` |
 | `config.py`, `settings.py` | Paths of the data folder, and the user's preferences. | `settings.json` |
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
@@ -259,6 +259,7 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
 | [Full-text search](fulltext-search.md) | PDF text extraction, the full-text index and the library search with its query syntax. |
 | [References](references.md) | Metadata lookup, finding PDFs, the citation graph, and what the Adding Items settings trigger. |
 | [Sync and devices](sync-and-devices.md) | The change feed, the viewer and app tabs, the guard, LAN pairing and the security model. |
+| [Remote access](remote-access.md) | Running Synapse behind an HTTPS tunnel (`--public-url`, Cloudflare Tunnel), `--pairing-link`, confirming administrative actions with a passkey. |
 | [The app window](desktop.md) | `--window`, the server that stops with its window, the desktop shortcut, and the app's own tabs for PDFs. |
 | [MCP](mcp.md) | The MCP server, its tools and the rules it enforces. |
 | [Plugins](plugins.md) | Using and writing plugins: the manifest, the `plugin` object, events, storage, and how the host runs them. |
