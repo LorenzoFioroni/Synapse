@@ -56,7 +56,7 @@ def tool_names(server):
 # ------------------------------------------------------------------ listing, turning on and off
 def test_plugins_are_listed_off_until_turned_on(client, svc, example):
     data = client.get("/api/plugin-host").get_json()
-    assert data["safe_mode"] is False and data["api"] == "1.3"
+    assert data["safe_mode"] is False and data["api"] == "1.4"
     assert data["dir"] == str(svc.config.plugins_dir)
     [p] = data["plugins"]
     assert p["id"] == "recently-added" and p["status"] == "off" and not p["running"]

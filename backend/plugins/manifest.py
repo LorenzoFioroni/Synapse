@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-API_VERSION = (1, 3)  # the plugin API this Synapse offers (major, minor)
+API_VERSION = (1, 4)  # the plugin API this Synapse offers (major, minor)
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")

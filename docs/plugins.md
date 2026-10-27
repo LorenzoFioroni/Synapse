@@ -5,10 +5,10 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.3**, which also accepts plugins targeting 1.0–1.2. Reference
+This page documents API **1.4**, which also accepts plugins targeting 1.0–1.3. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
-`"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`.
+`"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`.
 What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
@@ -364,6 +364,23 @@ def activate(plugin: Plugin) -> None:
             lambda items, options, w=w: w.dump(items, **options)
         )
 ```
+
+### Scholarly helpers
+
+API 1.4 provides `from backend.plugins import scholarly`. These helpers reuse the library and
+importers' implementations and work offline without reading settings or user data.
+
+| Helper | Contract |
+|---|---|
+| `clean_doi(value)` | Strip a DOI URL or `doi:` prefix and surrounding whitespace; keep case and trailing punctuation. Empty/None becomes `""`. |
+| `norm_doi(value)` | A DOI for matching: stripped prefix, lowercase, no trailing dots; empty/None becomes `None`. |
+| `norm_arxiv(value)` | Bare lowercase arXiv ID without its version, from an identifier or URL; `None` if absent. |
+| `arxiv_id_of(item)` | Find an arXiv ID in a library item's identifier/link fields; keep its case. Return `None` when absent. |
+| `ARXIV_ID` | Compiled pattern for modern and legacy IDs; group 1 is the unversioned ID, preserving case. |
+| `parse_display_name(name)` | Convert a display name to `(family, given)`, preserving accents and family-name particles. |
+| `split_authors(text)`, `join_authors(pairs)` | Read/write Synapse's `Family, Given; Family2, Given2` author format. Joining accepts an iterable of pairs. |
+| `strip_tags(text)` | Plain text from JATS/HTML markup, omitting a JATS abstract heading and collapsing whitespace; None becomes `""`. It does not decode HTML entities. |
+| `title_similarity(a, b)`, `TITLE_MATCH` | Similarity in 0–1 using the existing case/accent/punctuation-insensitive rules (ASCII letters after normalization); empty normalized titles score 0. The current lookup threshold is 0.8. |
 
 ### Events
 
