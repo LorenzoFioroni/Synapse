@@ -232,7 +232,7 @@ never mix.
   between papers, cited works not in your library and orphans. It is centred on the note or paper
   you opened it from and shows only what is 1, 2 (the default) or 3 links away, or **All** of it;
   Shift-click a node, or **Centre graph here** on a paper's card, to move the centre. Clicking a
-  paper shows a card (paper note, Show in Library, PDF, Add to Library). It is a core plugin
+  paper shows a card (paper note, Show in Library, PDF, Add to Library). It is a contributed plugin
   (**Graph**, also under **Plugins** in the sidebar): turn it off in Settings → Plugins if you don't use it.
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
   arXiv: the plugin Open-Access PDFs, on by default; other plugins can add places to look) and checks the file is really the right paper. Batch runs skip items
@@ -325,7 +325,7 @@ never mix.
   In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
   drag to move; folders can be renamed, moved and deleted the same way.
-- **Extended Markdown** (core plugin, on by default) is where Markdown syntax beyond the basics
+- **Extended Markdown** (contributed plugin, on by default) is where Markdown syntax beyond the basics
   lives, each part with its own switch in its settings: **galleries and numbered figures** (above),
   **task blocks** (` ```tasks table group=deadline completed=bottom ` with one task ID per line;
   their rich block can filter open/done tasks, sort them, and create a task in place),
@@ -333,7 +333,7 @@ never mix.
   Show/Hide button, and collapsible `:::spoiler Optional summary` blocks closed by `:::`. Blocks
   support nested Markdown and spoilers. Source text stays intact when the plugin is off; HTML/PDF
   exports reveal spoiler contents. See [Extended Markdown](docs/notes.md#extended-markdown-core-plugin).
-- **Tasks** (open it under **Plugins** in the left sidebar; a core plugin, on by default; turn it off in Settings → Plugins without losing tasks): to-dos with a title, a due date, details written in Markdown like a note, and
+- **Tasks** (open it under **Plugins** in the left sidebar; a contributed plugin, on by default; turn it off in Settings → Plugins without losing tasks): to-dos with a title, a due date, details written in Markdown like a note, and
   sub-tasks to any depth. In a note, Cmd/Ctrl+Enter (or **Add Task to This Note…** in the command palette) opens a
   small popup: name the task (the line's text, if any), give it a date in words ("fri", "27 oct",
   "in 3 days") and details, or pick a task you already have — or type `{{task` and a few words of
@@ -412,7 +412,8 @@ Settings (listed under Plugins, opened by the **Settings** button on its row or 
 the app from working, start it with `python server.py --safe-mode` (only core plugins run) and turn it
 off.
 
-Synapse’s own optional features are **core plugins**: Tasks starts on.
+All bundled optional feature plugins now use the public API as **contributed plugins**.
+Tasks starts on and retains its records, history and note-link integrity in core.
 **Open-Access PDFs** (where Find Available PDF looks),
 **Export Formats** (the library exports), **Metadata Sources** (scholarly lookups) and
 **Reference Sources** (citation lists) are contributed plugins built only on the public plugin
@@ -431,9 +432,10 @@ is now contributed: existing syntax, switches and exports remain, and safe mode 
 API 1.7 adds permission-gated notes/citation reads and Notes visualizations. **Graph** now uses
 these public APIs as a contributed plugin: its local/full views, sidebar, history and shortcut
 remain, and safe mode stops it.
-Turn them off in Settings → Plugins without losing their data. Core plugins can also be toggled
-and restarted in safe mode; changes are followed by the standalone MCP server. Safe mode keeps core plugins
-running and stops contributed plugins. Tasks and Graph add their own entries to the sidebar's
+API 1.9 adds permission-checked task services and shared editor/UI integration. **Tasks** is now
+contributed, with its existing routes, AI tool names, shortcut and saved records preserved.
+Turn plugins off in Settings → Plugins without losing their data. The standalone MCP server follows
+those choices. Safe mode keeps the basic library and notes available and stops contributed plugins. Tasks and Graph add their own entries to the sidebar's
 list; their selection follows the visible workspace when switching between views. Plugins'
 settings sections appear and disappear immediately as their plugin is switched on or off, including
 while Settings stays open. Disabling Autocompletion dismisses visible

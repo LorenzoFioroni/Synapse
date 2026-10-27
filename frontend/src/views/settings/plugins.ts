@@ -40,6 +40,8 @@ export function permissionWords(p: PluginInfo): string[] {
     const verbs = [lib.includes('read') && 'reads', lib.includes('add') && 'adds items to', lib.includes('edit') && 'changes items in'].filter(Boolean);
     out.push(`${verbs.join(', ').replace(/^./, (c) => c.toUpperCase())} your library`);
   }
+  if (perms.tasks?.length) out.push(`${perms.tasks.includes("edit") ? "Reads and changes" : "Reads"} your tasks`);
+  if (perms.notes?.includes("edit")) out.push("Changes note content through the note history");
   if (perms.notes?.includes("read")) out.push("Reads your notes and their links");
   if (perms.network.length) out.push(`Connects to ${perms.network.map((host) => host === 'loopback' ? 'this computer (loopback)' : host).join(', ')}`);
   if (perms.mcp) out.push('Offers tools to AI apps');

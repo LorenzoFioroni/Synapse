@@ -486,7 +486,7 @@ export interface PluginInfo {
   failed_at: string | null;
   remote_mcp: boolean;
   api?: string;
-  permissions?: { network: string[]; library: string[]; notes?: string[]; mcp: boolean; python?: string[] };
+  permissions?: { network: string[]; library: string[]; notes?: string[]; tasks?: string[]; mcp: boolean; python?: string[] };
   parts?: string[];
   settings?: PluginSetting[];
   values?: Record<string, unknown>;

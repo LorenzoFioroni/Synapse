@@ -71,7 +71,7 @@ def initialize_defaults(entries: dict[str, Entry], state: StateFile, settings) -
                     except ManifestError:
                         pass
             changes: dict = {"enabled": on}
-            if man.mcp and man.core:
+            if man.mcp and (man.core or man.id == "tasks"):
                 changes["remote_mcp"] = True
             if values:
                 changes["settings"] = {**(states.get(pid, {}).get("settings") or {}), **values}

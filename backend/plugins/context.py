@@ -121,6 +121,8 @@ class Plugin:
         fields=None,
         services=None,
         actions=None,
+        tasks=None,
+        tool_aliases=None,
         sources_changed: Callable[[], object] | None = None,
         tool_prefix: bool = True,
         synapse=None,
@@ -140,6 +142,8 @@ class Plugin:
         self.http = http  # PluginHttp (http.py): the web, within the manifest's "network" permission
         self.fields = fields  # PluginFields (itemfields.py): values attached to papers
         self.services = services  # PluginServices (services.py): lookups, references, connections
+        self.tasks = tasks
+        self._tool_aliases = set(tool_aliases or ())
         self.actions = actions  # PluginActions (services.py): adding papers to the library
         self.sources: dict[str, ItemSource] = {}
         self.pdf_sources: dict[str, PdfSource] = {}
@@ -207,14 +211,15 @@ class Plugin:
             tool = name or fn.__name__
             if not TOOL_NAME_RE.match(tool):
                 raise PluginError(f"Tool name {tool!r}: lowercase letters, digits and _")
-            full = f"{self.id}__{tool}" if self._tool_prefix else tool
+            prefixed = self._tool_prefix and tool not in self._tool_aliases
+            full = f"{self.id}__{tool}" if prefixed else tool
             if any(t.name == full for t in self.tools):
                 raise PluginError(f"Tool {tool} is registered twice")
             self.tools.append(
                 ToolSpec(
                     full,
                     title or tool.replace("_", " ").capitalize(),
-                    f"[{self.manifest.name}] {description}" if self._tool_prefix else description,
+                    f"[{self.manifest.name}] {description}" if prefixed else description,
                     schema if schema is not None else schema_of(fn),
                     fn,
                     read_only,

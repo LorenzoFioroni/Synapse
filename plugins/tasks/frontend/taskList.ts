@@ -1,12 +1,12 @@
 // The list of the Tasks page: rows as a tree (taskQuery.ts decides which), selection, the
 // keyboard, the row menu, renaming in place, drag and drop, and Undo of the page's own changes.
-import { api } from '../../../api.js';
-import { icon } from '../../../icons.js';
-import type { Task, TaskChanges } from '../../../types.js';
-import { openMenu } from '../../../ui/menu.js';
-import { toast, toastError } from '../../../ui/toast.js';
-import { escapeHtml, modKey, modLabel, plural } from '../../../util.js';
-import { openNewWindow } from '../../../windows.js';
+import { api } from './api.js';
+import { icon } from '../../../frontend/src/plugins/task-runtime.js';
+import type { Task, TaskChanges } from '../../../frontend/src/plugins/task-runtime.js';
+import { openMenu } from '../../../frontend/src/plugins/task-runtime.js';
+import { toast, toastError } from '../../../frontend/src/plugins/task-runtime.js';
+import { escapeHtml, modKey, modLabel, plural } from '../../../frontend/src/plugins/task-runtime.js';
+import { openNewWindow } from '../../../frontend/src/plugins/task-runtime.js';
 import { parseDue, parseQuick } from './dates.js';
 import { openNoteAt, pickNote } from './notePicker.js';
 import { type Row, type TaskRow, buildRows } from './taskQuery.js';

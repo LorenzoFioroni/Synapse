@@ -5,7 +5,7 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.8**, which also accepts plugins targeting 1.0–1.7. Reference
+This page documents API **1.9**, which also accepts plugins targeting 1.0–1.8. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
 `"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`. Named reference sub-sources and the reference record
@@ -55,21 +55,14 @@ Plugins that come with Synapse live in the repository's `plugins/` folder. A plu
 
 ### Core plugins
 
-Some of Synapse's own features are **core plugins**: they come with Synapse and are part of it,
-but each can be turned off in Settings → Plugins (as Obsidian's core plugins can), and its code
-lives in its own folder. They start on (or as the switch they replace was), keep running in safe
-mode, and their settings are in their own section of Settings:
+The host retains core status for bundled implementations that require private app modules.
+All currently shipped optional feature plugins use the public API and are contributed plugins;
+core status cannot be claimed by installed plugins.
 
 Settings lists these separately from **Contributed plugins** (bundled optional additions and
 plugins installed in `data/plugins/`). Its navigation expands the individual plugin sections only
 while the Plugins area is in view, and otherwise keeps a single top-level **Plugins** entry.
 
-- **Tasks** (`plugins/tasks`, on by default): the Tasks workspace under **Plugins** in the left
-  sidebar, task controls in notes,
-  and the existing `list_tasks`, `get_task`, `create_task`, `update_task`, `delete_task` tools.
-  Records and note links stay in the core for validation, backups and attachment retention.
-  Disabling it removes its controls and tools; reenabling restores them with all tasks intact.
-  Its routes are `/api/plugins/tasks/…`; `/api/tasks` remains a compatibility alias. See [tasks](tasks.md).
 A core plugin is a plugin like any other (manifest, `activate(plugin)`, routes, tools, settings),
 with these differences, all from `"core": true` in its manifest and honoured only in `plugins/`:
 
@@ -120,6 +113,13 @@ first time Synapse sees them, because their manifest says `"enabled_by_default":
 `plugins/`; an installed plugin always waits to be turned on). After that they are the user's
 choice, and safe mode stops them like any contributed plugin. Settings lists them under
 **Contributed plugins**.
+
+- **Tasks** (`plugins/tasks`, on by default): the Tasks workspace under **Plugins** in the left
+  sidebar, task controls in notes,
+  and the existing `list_tasks`, `get_task`, `create_task`, `update_task`, `delete_task` tools.
+  Records and note links stay in the core for validation, backups and attachment retention.
+  Disabling it removes its controls and tools; reenabling restores them with all tasks intact.
+  Its routes are `/api/plugins/tasks/…`; `/api/tasks` remains a compatibility alias. See [tasks](tasks.md).
 
 - **Extended Markdown** (`plugins/extended-markdown`, frontend only, on by default): Markdown
   syntax beyond the basics, one extension per folder in
@@ -278,7 +278,7 @@ data/plugins/recently-added/      the folder's name is the plugin's id
 | `backend` | Its Python code: a package folder (with `__init__.py`) or a `.py` file, inside the plugin's folder. |
 | `frontend` | Its part in the app: an ES module (`.js`), or TypeScript (`.ts`, `.tsx`) that Synapse bundles with esbuild when the plugin starts (see [The frontend](#the-frontend)). |
 | `styles` | A stylesheet the app loads while the plugin runs. |
-| `permissions` | `network`: the hosts `plugin.http` may reach (`"export.arxiv.org"`, or `"*.example.org"` for a domain and its subdomains). `notes`: `["read"]` for note listings/links; `library`: `read` (`plugin.library`), `add` (`plugin.actions.add`), `edit` (`plugin.actions.update`, `p.library.update` and review Apply). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
+| `permissions` | `network`: the hosts `plugin.http` may reach (`"export.arxiv.org"`, or `"*.example.org"` for a domain and its subdomains). `notes`: `read` for note listings/links, `edit` for supported history-preserving note operations; `tasks`: `read` and/or `edit` for task operations; `library`: `read` (`plugin.library`), `add` (`plugin.actions.add`), `edit` (`plugin.actions.update`, `p.library.update` and review Apply). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
 | `python` | Python packages it needs, as requirements (`["scirate>=0.0.7"]`): installed with pip when it first starts (see [Python packages](#python-packages)). |
 | `settings` | What the user can set, see below. |
 | `enabled_by_default` | `true`: start on the first time Synapse sees it. Honoured only for the plugins that come with Synapse (`plugins/`); an installed plugin waits for the user. |
@@ -934,3 +934,55 @@ saved choices survive and safe mode stops it. Parser support for gallery images/
 IDs, attachment retention, note validation and MCP reading/writing conventions remain in core as
 saved-data contracts. This conversion does not introduce arbitrary new backend syntax registration
 or move note data. Disabling the plugin still leaves those saved notes safely readable.
+
+### Tasks, editor integration and UI SDK (1.9)
+
+Declare `permissions: {"tasks": ["read", "edit"], "notes": ["read", "edit"]}` as needed.
+`plugin.tasks.records` offers `list(trashed=False)`, `get(id)`, `history(id)`,
+`create(title, body=…, parent_id=…, due=…, status=…)`, `update(id, changes)`,
+`move(id, parent_id=…, before=…, after=…)`, `set_status(id, status, with_subtasks=False)`,
+`delete(ids)`, `restore(batch=… or task_id=…)` and `undo(history_id)`.
+Reads require tasks `read`, mutations tasks `edit`. Record methods return ordinary dictionaries
+and lists; they use the existing validation, task history and change events.
+
+`plugin.tasks.overview()`, `refs()` and `task(id)` additionally require notes `read` because
+results include associated note paths/titles. `create(data, by="human")` accepts the existing
+creation fields, optional `note` and `after_line`; using `note` also requires notes `edit`.
+`add_to_note`, `remove_from_note` and `add_image(filename, bytes)` require tasks `edit` and notes
+`edit`. `convert(text)` requires tasks `edit`; the editor applies its returned replacement text.
+`notes_changed(client_id=None)` reports the resulting note update to open pages. Public
+`backend.plugins.tasks` exports the task errors, note error, existing query matcher, token writer
+and client-header name. `plugin.notes.resolve(ref)` resolves a path/wiki link/title under notes
+`read` without changing files. All task records and note integrity stay in core.
+
+Frontend `p.tasks.register(integration)` installs one Tasks UI provider at a time. Its `page`
+supplies `open`, `close`, `isOpen`, `panelButton`, `shortcut` and `changed`; `notes` supplies the
+published `TaskNoteHooks` callbacks for task preview/actions, side panel, note saves, completion,
+new tasks, title HTML and portable tasks. `render` supplies task and task-block HTML. `destroy`
+retires plugin resources. Registration and removal update the host layout, navigation and renderer.
+
+The public `frontend/src/plugins/task-runtime.ts` module exposes shared `createEditor`, `loadMD`,
+`createRenderer`, rendering helpers/settings, UI utilities/dialogs/menus, window opening, typed
+app events and navigation, task/note record types, note/citation indexes, current editor, a plain
+current-note snapshot and library selection/view snapshots. This explicit SDK is shared as
+`/js/plugins/task-runtime.js`; it does not expose the mutable app store or private workspace.
+Plugins must clean up subscriptions and editor/form instances they create. SDK modules and the
+host's CodeMirror/Markdown libraries stay singletons; no runtime packages or CDN are fetched.
+`p.backend.patch(path, body)` adds scoped PATCH alongside the existing plugin route methods.
+
+Only the bundled Tasks plugin retains the five historical MCP tool names and Mod-Shift-K.
+User/dev replacements keep normal tool prefixes and shortcut restrictions. The bundled plugin's
+initial MCP availability is preserved; saved user choices take precedence. Safe mode stops the
+UI/routes/tools without removing records, history, attachments or note tokens. See [tasks](tasks.md).
+
+The standalone MCP host does not build frontend modules: it can start contributed Python tools
+without Node/esbuild. Only the web app bundles a plugin frontend.
+
+Import public Python helpers with `from backend.plugins import tasks` (or `scholarly`),
+then call their documented members. The frontend `api.ts` declarations reference the public
+Markdown/task SDK types; use those declarations together for TypeScript integrations.
+
+`noteIndexSnapshot()` returns a plain copy of the host note listing. Tasks follows the
+`notes-count` UI event for this window's own writes, and notes/library change notifications
+for other clients, so its private picker/completion indexes stay current without sharing the
+mutable workspace. Pending index responses are generation-checked and ignored after unload.

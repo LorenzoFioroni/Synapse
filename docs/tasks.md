@@ -1,6 +1,6 @@
 # Tasks
 
-The **Tasks** core plugin (`plugins/tasks/`) owns the page, the note editor’s task controls,
+The **Tasks** contributed plugin (`plugins/tasks/`) owns the page, the note editor’s task controls,
 and the HTTP and MCP interfaces. It is on by default and can be turned off in Settings → Plugins.
 Turning it off hides its controls and Claude tools; note lines show their task IDs. Turning it
 on restores the interface without changing any records. Storage, history, note validation,
@@ -43,7 +43,7 @@ fence is ordinary code and no task data changes.
 
 This page covers the records (`backend/tasks/store.py`), the lines in notes
 (`backend/tasks/service.py` and the notes parser), the HTTP API (`plugins/tasks/server/routes.py`), Claude's
-task tools, and the frontend (`frontend/src/plugins/core/tasks/`). Related pages: [notes](notes.md) (the
+task tools, and the frontend (`plugins/tasks/frontend/`). Related pages: [notes](notes.md) (the
 parser and the editor), [storage](storage.md) (the tables and backups), [mcp](mcp.md).
 
 ## Using tasks
@@ -213,7 +213,7 @@ also write a note record `notes`. `TaskMissing` becomes 404, `TaskError` 400.
 
 ## Task tools for AI apps
 
-`backend/mcp/tools/tasks.py` adds `list_tasks`, `get_task`, `create_task`, `update_task` and
+`plugins/tasks/server/tools.py` adds `list_tasks`, `get_task`, `create_task`, `update_task` and
 `delete_task` (see [mcp](mcp.md)). `list_tasks` filters with the same syntax as the Tasks page
 (`backend/tasks/query.py`). Changes are recorded as `ai` with the AI app's name (`updated_agent`
 on the task, `agent` in its history; see [mcp](mcp.md#which-ai-app)); the task form then shows
@@ -221,7 +221,7 @@ on the task, `agent` in its history; see [mcp](mcp.md#which-ai-app)); the task f
 note that shows an id that is not a task (the AI must create tasks with `create_task` instead of
 inventing ids). The writing rules tell the AI that `- [ ]` is a checkbox and `{{task:ID}}` a task.
 
-## Frontend (`frontend/src/plugins/core/tasks/`)
+## Frontend (`plugins/tasks/frontend/`)
 
 | Module | Role |
 |---|---|
@@ -235,7 +235,7 @@ inventing ids). The writing rules tell the AI that `- [ ]` is a checkbox and `{{
 | `notePicker.ts` | Choosing a note ("Show in a note…"). |
 
 The notes code never imports the tasks code: `noteTasks.ts` fills in `taskHooks`
-(`views/notes/workspace.ts`) at start-up — `preview` (drawing a task line in the live preview:
+(a plugin-owned object handed to public `p.tasks.register`) at start-up — `preview` (drawing a task line in the live preview:
 `TaskWidget` in `previewWidgets.ts`, made atomic in `livePreview.ts`; a line that only shows a task
 is laid out as a row, `cm-lp-taskline`, so an indented task does not wrap below its indentation),
 `choices`, `create` and `titleHtml` (the `{{task` autocomplete in `completion.ts`: `taskSource`,
@@ -257,3 +257,37 @@ Markdown export; `tests/js/render.test.mjs` the rendering of task lines. The bro
 `tests/e2e/tasks_checklist.py` (port 8795) goes through tasks in a note, the popups, a task made by
 mistake going to the trash with its line (and back with Cmd/Ctrl+Z or in another note), read
 mode, the side panel and the Tasks page.
+
+## Contributed boundary (Plugin API 1.9)
+
+Task records remain core-owned deliberately: `library.db` tables, history, task-token validation,
+attachment discovery, citation-key rewrites and backups keep their existing contracts. The
+contributed plugin owns HTTP handlers, tool formatting/querying and all frontend views/widgets.
+`plugin.tasks` is a permission-checked facade over records and note-integrity operations; no
+plugin reaches raw Services, the database or internal MCP base classes.
+
+`tasks: ["read"]` permits record reads; `tasks: ["edit"]` permits mutations. Note-aware
+reads require `notes: ["read"]`, and adding/removing a task line or uploading a task-body image
+also requires `notes: ["edit"]`. Those note edits still use note history, validation and the
+existing change feed. `/api/tasks` stays a compatibility alias, while the frontend sends its
+requests through its scoped `/api/plugins/tasks/` context so a retired context cannot submit new
+writes. Task-body image uploads use the same guarded context and core image validation.
+
+The five bundled MCP tool names remain unprefixed through a fixed host allow-list. Installed
+replacements and other plugins cannot claim those names. The bundled Tasks toggle alone retains
+Mod-Shift-K; ordinary installed plugins follow normal shortcut rules. Existing enabled/remote-MCP
+choices survive, and first discovery keeps the bundled tool availability from before conversion.
+
+`p.tasks.register({page, notes, render, destroy})` supplies the optional Tasks interface. The host
+bridges its page to native sidebar/history/deep links and its note callbacks to preview,
+completion, atomic task lines, note-head actions, side-panel rendering and portable export.
+The plugin keeps its own caches and renderer callbacks. The public `task-runtime.ts` SDK shares
+host editor/Markdown engines, dialogs/menus, UI helpers and typed event/navigation operations;
+current-note access is a plain path/text snapshot, and current-editor access uses the host's
+published editor interface. The bundler keeps this SDK external to preserve engine identity.
+All subscriptions, popups, forms, DOM and pending data generations are retired by the plugin's
+`destroy` implementation; the host removes native registrations and restores default rendering.
+
+Tasks remains on by default at first discovery, preserves existing preferences, and now stops
+in safe mode. Stored records and task IDs remain available to core validation/readers while the
+interface and plugin routes/tools are off. No database or note migration is required.

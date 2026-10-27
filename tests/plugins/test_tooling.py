@@ -257,3 +257,29 @@ def test_public_markdown_sdk_keeps_host_module_identity(client, svc, make_plugin
     assert js.status_code == 200
     assert b'"/js/plugins/markdown.js"' in js.data
     assert b"renderDefaults" not in js.data and b"function createRenderer" not in js.data
+
+
+def test_mcp_host_does_not_require_frontend_bundling(svc, make_plugin, monkeypatch):
+    from backend.plugins.host import PluginHost
+    from backend.plugins.library import LibraryReader
+
+    folder = make_plugin(
+        "mcp-ui",
+        """
+        def activate(p):
+            @p.mcp_tool("Read", name="read")
+            def read(): return {"ok": True}
+    """,
+        frontend="frontend.ts",
+        permissions={"mcp": True},
+    )
+    (folder / "frontend.ts").write_text("export function activate() {}")
+    svc.plugins._update_state("mcp-ui", enabled=True)
+    monkeypatch.setattr("backend.plugins.build.bundle", lambda *a, **k: pytest.fail("MCP tried to build a frontend"))
+    host = PluginHost(svc.config, library=LibraryReader(svc), services=svc)
+    try:
+        host.start("mcp")
+        assert host.info("mcp-ui")["running"]
+        assert next(t for t in host.mcp_tools() if t.name == "mcp-ui__read").fn() == {"ok": True}
+    finally:
+        host.stop()

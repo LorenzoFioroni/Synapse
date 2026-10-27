@@ -310,7 +310,7 @@ math; `tree.ts`, `treeInput.ts` and `fileOps.ts` are the notes list; `readView.t
 adjacent removed and added lines and use `util.diffWords` for the darker changed spans; `exportNote.ts`
 and `portable.ts` export a note as PDF, HTML or Markdown.
 
-**`plugins/core/tasks/`: tasks.** [Tasks](tasks.md#frontend-frontendsrcviewstasks) covers it. In short:
+**`plugins/tasks/frontend/`: tasks.** [Tasks](tasks.md#frontend-pluginstasksfrontend) covers it. In short:
 `taskData.ts` holds the tasks and makes the changes; `taskQuery.ts` and `dates.ts` are the logic
 without a DOM (views, search, sorting, groups; reading dates); `taskRender.ts` draws a task;
 `taskForm.ts` is the form of the detail pane and the popup; `tasksView.ts`, `taskList.ts` and
@@ -332,7 +332,7 @@ list recentres it instead of replacing it with the editor. Unload disconnects ob
 timers, destroys both canvases, and ignores late data or canvas creation.
 
 **`plugins/extended-markdown/frontend/figures/`: galleries and figures** (an extension of the Extended
-Markdown core plugin, `plugins/extended-markdown`, with its own switch there). Its `index.ts`
+Markdown contributed plugin, `plugins/extended-markdown`, with its own switch there). Its `index.ts`
 installs the carousels' listeners (`galleryView.ts`) and sets the `figures` hook
 (`hook.ts`) in `views/notes/hooks.ts`, which the notes code asks when it needs it: the renderer
 adds `markdown.ts`'s rules (it rebuilds itself when a hook changes, `hooksVersion`), the live
@@ -400,7 +400,7 @@ state and call each other without import cycles. Three patterns are used:
   `openNotesGraph`) with do-nothing defaults. `notesView.ts` fills them with
   `Object.assign(hooks, …)`. The other parts import `workspace.ts`, never `notesView.ts`.
   `taskHooks` in the same file works the other way round: the tasks code
-  (`plugins/core/tasks/noteTasks.ts`) fills it in, and the notes code calls it to draw and add tasks
+  (`plugins/tasks/frontend/noteTasks.ts`) fills it in, and the notes code calls it to draw and add tasks
   without importing the tasks code.
   `viewer/annotations/model.ts` does the same with `hooks.onSelect`, which
   `annotations/input.ts` sets to show its selection controls.
@@ -474,7 +474,7 @@ markup; an unknown name falls back to `doc`. To add one, add its paths to `P`.
 6. Cover what you can with a JavaScript unit test (keep the logic in a DOM-free module) and the
    rest with a browser checklist. See [testing](testing.md).
 
-The Tasks core plugin (`plugins/core/tasks/index.ts`) registers its page through `tasksPage.ts`
-and installs the existing note `taskHooks`. On unload it removes its DOM, listeners, popups and
+The Tasks contributed plugin (`plugins/tasks/frontend/index.ts`) registers through public `p.tasks.register`; `plugins/taskHost.ts` bridges its page to
+`tasksPage.ts` and its note integration to internal hooks. On unload it removes its DOM, listeners, popups and
 renderers and invalidates pending loads. Plugin startup completes before task deep links open;
 plugin changes are applied before the change feed dispatches task or note refreshes.

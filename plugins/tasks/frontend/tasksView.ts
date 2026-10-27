@@ -1,16 +1,17 @@
 // The Tasks page: the views column (views, notes), the list with its search, sort, group and
 // quick add, and the detail pane of the selected task. It covers the item list and item pane like
 // Notes does (body[data-workspace="tasks"]). See docs/tasks.md.
-import { api } from '../../../api.js';
-import { icon } from '../../../icons.js';
-import { navPush, navReplace, navUpdate } from '../../../nav.js';
-import { type AppEvent, type AppEvents, emit, off, on, state } from '../../../store.js';
-import type { Task } from '../../../types.js';
-import { openDialog } from '../../../ui/dialog.js';
-import { openMenu } from '../../../ui/menu.js';
-import { toastError } from '../../../ui/toast.js';
-import { escapeHtml, h, modLabel, plural, storage, store } from '../../../util.js';
-import { ws } from '../../../views/notes/workspace.js';
+import { api } from './api.js';
+import { icon } from '../../../frontend/src/plugins/task-runtime.js';
+import { navPush, navReplace, navUpdate } from '../../../frontend/src/plugins/task-runtime.js';
+import { type AppEvent, type AppEvents, emit, off, on } from '../../../frontend/src/plugins/task-runtime.js';
+import { state } from './environment.js';
+import type { Task } from '../../../frontend/src/plugins/task-runtime.js';
+import { openDialog } from '../../../frontend/src/plugins/task-runtime.js';
+import { openMenu } from '../../../frontend/src/plugins/task-runtime.js';
+import { toastError } from '../../../frontend/src/plugins/task-runtime.js';
+import { escapeHtml, h, modLabel, plural, storage, store } from '../../../frontend/src/plugins/task-runtime.js';
+import { ws } from './environment.js';
 import { dueLabel, parseQuick } from './dates.js';
 import { pickNote } from './notePicker.js';
 import { GROUPS, SORTS, VIEWS, type GroupId, type SortId, type ViewId, viewCounts } from './taskQuery.js';

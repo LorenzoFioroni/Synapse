@@ -1,4 +1,4 @@
-"""Compatibility URLs for clients using /api/tasks before Tasks became a core plugin."""
+"""Compatibility URLs for clients using /api/tasks before the optional Tasks plugin."""
 
 from flask import Blueprint
 

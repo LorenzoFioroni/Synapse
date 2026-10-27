@@ -1,7 +1,7 @@
 // What the Tasks page shows: the tasks of a view, filtered by the search, as a tree whose siblings
 // are sorted, cut into groups. No DOM (tested in tests/js/tasks.test.mjs). The search syntax is the
 // same as backend/tasks/query.py (list_tasks for Claude).
-import type { Task, TaskRef } from '../../../types.js';
+import type { Task, TaskRef } from '../../../frontend/src/plugins/task-runtime.js';
 import { daysUntil } from './dates.js';
 
 export type ViewId = 'open' | 'today' | 'upcoming' | 'nodate' | 'unfiled' | 'done' | 'all';

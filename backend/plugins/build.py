@@ -43,7 +43,7 @@ def bundle(entry: Path, out_dir: Path, app_frontend: Path) -> Path:
     out = out_dir / BUNDLE
     cmd = [tool, str(entry), "--bundle", "--format=esm", "--target=es2020", f"--outfile={out}", "--log-level=error"]
     # Public SDK modules must keep the host's renderer/editor identity instead of bundling copies.
-    sdk_modules = ("markdown",)
+    sdk_modules = ("markdown", "task-runtime")
     cmd += [f"--external:*/frontend/src/plugins/{name}.js" for name in sdk_modules]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT, check=False)

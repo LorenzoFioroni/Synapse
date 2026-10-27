@@ -18,7 +18,7 @@ def activate(p):
 """
 
 
-@pytest.mark.parametrize("notes", [["write"], "read", True, None, ["read", "edit"]])
+@pytest.mark.parametrize("notes", [["write"], "read", True, None, ["read", "admin"]])
 def test_notes_permission_is_read_only(tmp_path, notes):
     with pytest.raises(ManifestError, match='"notes"'):
         parse(

@@ -2,12 +2,12 @@
 // the Tasks page and the notes make to them. Everyone who draws a task listens for the 'tasks'
 // event. A change is applied here first, so a click shows at once; the server's answer then
 // replaces it (and an error puts back what was there).
-import { api } from '../../../api.js';
-import { emit } from '../../../store.js';
-import type { Task, TaskChanges, TaskRef } from '../../../types.js';
-import { openDialog } from '../../../ui/dialog.js';
-import { toast, toastError } from '../../../ui/toast.js';
-import { escapeHtml, plural } from '../../../util.js';
+import { api } from './api.js';
+import { emit } from '../../../frontend/src/plugins/task-runtime.js';
+import type { Task, TaskChanges, TaskRef } from '../../../frontend/src/plugins/task-runtime.js';
+import { openDialog } from '../../../frontend/src/plugins/task-runtime.js';
+import { toast, toastError } from '../../../frontend/src/plugins/task-runtime.js';
+import { escapeHtml, plural } from '../../../frontend/src/plugins/task-runtime.js';
 
 export const td = {
   tasks: new Map<string, Task>(),

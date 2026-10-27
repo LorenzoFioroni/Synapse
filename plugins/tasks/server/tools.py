@@ -7,16 +7,25 @@ the task's history, and a task added to a note goes through the note's history, 
 
 from __future__ import annotations
 
-from backend.mcp.protocol import ToolError
-from backend.mcp.tools.common import ToolsBase, drop_empty
-from backend.tasks import TaskError
-from backend.tasks.query import matcher
-from backend.tasks.service import token
+from backend.plugins import PluginError as ToolError
+from backend.plugins import tasks as task_api
+
+
+def drop_empty(data):
+    return {k: v for k, v in data.items() if v not in (None, "", [], {})}
+
 
 MAX_LISTED = 200
 
 
-class TaskToolsMixin(ToolsBase):
+class TaskToolsMixin:
+    def __init__(self, plugin):
+        self.tasks = plugin.tasks
+        self._notes = plugin.notes
+
+    def _note_path(self, ref):
+        return self._notes.resolve(ref)
+
     def _task_ref(self, task: str) -> str:
         t = str(task or "").strip()
         if t.startswith("{{task:") and t.endswith("}}"):
@@ -59,10 +68,10 @@ class TaskToolsMixin(ToolsBase):
         return out
 
     def list_tasks(self, query: str = "", include_done: bool = False, limit: int = 100):
-        tasks = self.s.task_store.list()
-        refs = self.s.tasks.refs()
+        tasks = self.tasks.records.list()
+        refs = self.tasks.refs()
         children = self._children(tasks)
-        test = matcher(query or "", refs=refs)
+        test = task_api.matcher(query or "", refs=refs)
         rows = []
         for t in tasks:
             t["has_subtasks"] = t["id"] in children
@@ -84,17 +93,17 @@ class TaskToolsMixin(ToolsBase):
     def get_task(self, task: str):
         tid = self._task_ref(task)
         try:
-            t = self.s.task_store.get(tid)
-        except TaskError as e:
+            t = self.tasks.records.get(tid)
+        except task_api.TaskError as e:
             raise ToolError(str(e)) from e
-        tasks = self.s.task_store.list()
-        out = self._task_out(t, self.s.tasks.refs(), self._children(tasks), full=True)
+        tasks = self.tasks.records.list()
+        out = self._task_out(t, self.tasks.refs(), self._children(tasks), full=True)
         if t.get("deleted_at"):
             out["in_trash"] = True
         chain: list[dict] = []
         p = t.get("parent_id")
         while p:
-            pt = self.s.task_store.get(p)
+            pt = self.tasks.records.get(p)
             chain.insert(0, {"id": pt["id"], "title": pt["title"]})
             p = pt.get("parent_id")
         if chain:
@@ -120,14 +129,14 @@ class TaskToolsMixin(ToolsBase):
             data["note"] = self._note_path(note)
             data["after_line"] = after_line
         try:
-            out = self.s.tasks.create(data, by="ai")
-        except TaskError as e:
+            out = self.tasks.create(data, by="ai")
+        except task_api.TaskError as e:
             raise ToolError(str(e)) from e
         t = out["task"]
         return drop_empty(
             {
                 "created": t["id"],
-                "line": token(t["id"]),
+                "line": task_api.token(t["id"]),
                 "in_note": out.get("ref"),
                 "hint": None if note else "Not shown in any note; pass note= to add it to one, or write its line.",
             }
@@ -144,7 +153,7 @@ class TaskToolsMixin(ToolsBase):
         with_subtasks: bool = False,
     ):
         tid = self._task_ref(task)
-        store = self.s.task_store
+        store = self.tasks.records
         fields: dict = {}
         for k, v in (("title", title), ("body", details), ("due", due)):
             if v is not None:
@@ -155,7 +164,7 @@ class TaskToolsMixin(ToolsBase):
             if fields:
                 store.update(tid, fields, by="ai")
             changed = store.set_status(tid, status, with_subtasks=with_subtasks, by="ai") if status else []
-        except TaskError as e:
+        except task_api.TaskError as e:
             raise ToolError(str(e)) from e
         t = store.get(tid)
         return drop_empty(
@@ -170,8 +179,8 @@ class TaskToolsMixin(ToolsBase):
     def delete_task(self, task: str):
         tid = self._task_ref(task)
         try:
-            out = self.s.task_store.delete([tid], by="ai")
-        except TaskError as e:
+            out = self.tasks.records.delete([tid], by="ai")
+        except task_api.TaskError as e:
             raise ToolError(str(e)) from e
         return {
             "deleted": out["ids"],

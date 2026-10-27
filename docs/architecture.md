@@ -60,7 +60,7 @@ Two objects tie the backend together:
 |---|---|---|
 | `library/` | Items, attachments, folders, tags, smart folders, PDF annotations, citation keys and search. `fields.py` is the single source of truth for item fields and types, and `identifiers.py` for DOIs and arXiv ids (cleaning, normalising, matching). `agent.py` holds which AI app is making the current change (set by the MCP server, read by notes and tasks). | `library.db` (schema and migrations in `library/db.py`) |
 | `notes/` | Markdown notes. The files are the source of truth; the index is disposable. `history/` keeps every version of their text in Git (see [notes history](notes-history.md)). | `notes/`, `notes_index.db`, `notes-history.git/` |
-| `tasks/` | Task records, history and the integrity of `{{task:id}}` note links. The optional Tasks core plugin owns their UI, HTTP handlers and MCP tools (see [tasks](tasks.md)). | `library.db` (`tasks`, `task_history`) |
+| `tasks/` | Task records, history and the integrity of `{{task:id}}` note links. The optional Tasks contributed plugin owns their UI, HTTP handlers and MCP tools (see [tasks](tasks.md)). | `library.db` (`tasks`, `task_history`) |
 | `formats/` | Import parsers and shared codecs for BibTeX, RIS, EndNote and CSL-JSON. The Export Formats plugin registers their library-export writers; `exporting.py` prepares records for writers and core clipboard copying. | none |
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
 | `mcp/` | The MCP server: the JSON-RPC layer (`protocol.py`), its HTTP transport (`http.py`), the library tools (`tools/`, one mixin per family), their schemas (`server.py`) and the instructions given to the AI app (`instructions.py`). | none (it uses the other packages) |
@@ -95,7 +95,7 @@ never from those above:
   app · frontend · api                   composition: wires and exposes everything
   services · connector
   mcp                                    (library, notes, pdf, references, tasks)
-  plugins                                (library, formats, online, references)
+  plugins                                (library, formats, online, references, notes, tasks)
   references                             (library, formats, online)
   tasks                                  (library, notes)
   online                                 (library, formats, pdf)
@@ -188,8 +188,10 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   sidebar navigation and history. `backend/plugins/notes.py` supplies permission-gated note reads;
   `LibraryReader.citation_graph` supplies stored citation inputs. Graph's server builds the combined
   view from those public reads; no graph or notes data moves into plugin storage.
-  `plugins/core/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
-  the notes workspace only through `taskHooks` in `views/notes/workspace.ts`.
+  `plugins/tasks/frontend/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it supplies public `p.tasks.register` integrations, bridged by `plugins/taskHost.ts`.
+  `plugins/task-runtime.ts` is the shared editor/UI SDK; the plugin owns its cache and scoped
+  route client. `backend/plugins/tasks.py` guards core task and note-integrity operations.
+  Fixed host compatibility aliases preserve the bundled MCP tool names and toggle key.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
   header is `views/itemlist/columns.ts`, its virtualised rows `rows.ts` (only the rows near the
   viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`. The

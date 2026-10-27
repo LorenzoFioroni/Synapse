@@ -20,6 +20,7 @@ import { noteHooks } from '../views/notes/hooks.js';
 import { feedback } from './feedback.js';
 import { notesContext } from './notes.js';
 import { registerMarkdown, registerFigures } from './markdownHost.js';
+import { registerTaskIntegration } from './taskHost.js';
 
 interface Loaded {
   disposed: boolean;
@@ -83,7 +84,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
   const notices = feedback(pid, () => rec.disposed, fn => guarded(info, 'notification action', fn), update);
   keep(notices.dispose);
   // A retired context must settle its calls, so async activation and synchronization can finish.
-  const call = async <T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, query?: Record<string, unknown>, signal?: AbortSignal): Promise<T> => {
+  const call = async <T>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown, query?: Record<string, unknown>, signal?: AbortSignal): Promise<T> => {
     try {
       assertLive();
       const result = await api.pluginRoute<T>(pid, method, path, body, query, signal);
@@ -102,6 +103,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     version: info.version,
     settings: async () => (await api.plugins()).plugins.find((x) => x.id === pid)?.values || {},
     saveSettings: async (changes) => (await api.setPluginSettings(pid, changes)).values,
+    tasks: { register: integration => { assertLive(); return keep(registerTaskIntegration(pid, integration)); } },
     markdown: { register: provider => { assertLive(); return keep(registerMarkdown(provider)); },
       figures: { register: provider => { assertLive(); return keep(registerFigures(provider)); } } },
     assets: { vendor: name => {
@@ -126,7 +128,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
       register: (spec) => {
         let key = spec.key;
         // Preserve the bundled legacy toggle's reserved key; installed replacements obey ordinary rules.
-        const graphToggle = info.source === 'bundled' && pid === 'graph' && spec.id === 'toggle' && key?.toLowerCase() === 'mod-shift-g';
+        const graphToggle = info.source === 'bundled' && spec.id === 'toggle' && ((pid === 'graph' && key?.toLowerCase() === 'mod-shift-g') || (pid === 'tasks' && key?.toLowerCase() === 'mod-shift-k'));
         const problem = key && !((info.core || graphToggle) && parseKey(key)) ? keyProblem(key) : null;
         if (problem) { console.warn(`Plugin ${pid}: command ${spec.id}: ${problem}; it gets no key`); key = undefined; }
         return keep(commands.register({
@@ -203,6 +205,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     backend: {
       get: (path, query) => call('GET', path, undefined, query),
       post: (path, body, options) => call('POST', path, body ?? {}, undefined, options?.signal),
+      patch: (path, body) => call('PATCH', path, body ?? {}),
       put: (path, body) => call('PUT', path, body ?? {}),
       delete: (path) => call('DELETE', path),
     },

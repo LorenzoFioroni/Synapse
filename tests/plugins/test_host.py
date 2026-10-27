@@ -56,7 +56,7 @@ def tool_names(server):
 # ------------------------------------------------------------------ listing, turning on and off
 def test_plugins_are_listed_off_until_turned_on(client, svc, example):
     data = client.get("/api/plugin-host").get_json()
-    assert data["safe_mode"] is False and data["api"] == "1.8"
+    assert data["safe_mode"] is False and data["api"] == "1.9"
     assert data["dir"] == str(svc.config.plugins_dir)
     [p] = data["plugins"]
     assert p["id"] == "recently-added" and p["status"] == "off" and not p["running"]
@@ -295,7 +295,7 @@ def test_unload_hooks_run_when_turned_off(client, svc, make_plugin, tmp_path):
 
 def test_invalid_and_incompatible_plugins_cannot_be_turned_on(client, svc, make_plugin):
     (svc.config.plugins_dir / "junk").mkdir(parents=True)
-    make_plugin("future", api="^1.9")
+    make_plugin("future", api="^1.99")
     listed = {p["id"]: p for p in client.get("/api/plugin-host").get_json()["plugins"]}
     assert listed["junk"]["status"] == "invalid" and "missing" in listed["junk"]["problem"]
     assert listed["future"]["status"] == "incompatible"

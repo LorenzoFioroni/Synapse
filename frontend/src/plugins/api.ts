@@ -1,5 +1,5 @@
 // The plugin API for a plugin's frontend: what `activate(p)` receives. This file holds types only,
-// with no imports, so it doubles as the declaration file plugin authors copy (docs/plugins.md):
+// with type-only references to the public SDK modules (docs/plugins.md):
 // write `/** @param {import('./api').PluginContext} p */` in a JavaScript plugin, or import the
 // types in a TypeScript one. Only what is declared here is promised to plugins; the rest of the
 // app's code may change between versions.
@@ -153,6 +153,7 @@ export interface NotesVisualizationSpec {
 }
 
 export interface PluginContext {
+  tasks: { register(integration: import('./task-runtime.js').TaskIntegration): Dispose };
   markdown: import('./markdown.js').MarkdownApi;
   /** The plugin's id and what its manifest says. */
   readonly id: string;
@@ -214,6 +215,7 @@ export interface PluginContext {
   backend: {
     get<T = unknown>(path: string, query?: Record<string, string | number | boolean | undefined>): Promise<T>;
     post<T = unknown>(path: string, body?: unknown, options?: { signal?: AbortSignal }): Promise<T>;
+    patch<T = unknown>(path: string, body?: unknown): Promise<T>;
     put<T = unknown>(path: string, body?: unknown): Promise<T>;
     delete<T = unknown>(path: string): Promise<T>;
   };

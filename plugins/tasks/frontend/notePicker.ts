@@ -1,12 +1,12 @@
 // Choosing a note (to show a task in it): a dialog with a filter over every note, most recently
 // changed first.
-import { api } from '../../../api.js';
-import { icon } from '../../../icons.js';
-import { emit } from '../../../store.js';
-import type { NoteInfo } from '../../../types.js';
-import { openDialog } from '../../../ui/dialog.js';
-import { escapeHtml } from '../../../util.js';
-import { ws } from '../../../views/notes/workspace.js';
+import { api } from './api.js';
+import { icon } from '../../../frontend/src/plugins/task-runtime.js';
+import { emit } from '../../../frontend/src/plugins/task-runtime.js';
+import type { NoteInfo } from '../../../frontend/src/plugins/task-runtime.js';
+import { openDialog } from '../../../frontend/src/plugins/task-runtime.js';
+import { escapeHtml } from '../../../frontend/src/plugins/task-runtime.js';
+import { ws } from './environment.js';
 
 async function notes(): Promise<NoteInfo[]> {
   if (!ws.overview.notes.length) {

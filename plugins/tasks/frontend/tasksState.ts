@@ -1,6 +1,6 @@
 // What the Tasks page shows (view, search, sort, group, toggles, folded tasks, selection),
 // remembered in this browser between visits (the selection and search are not).
-import { storage, store } from '../../../util.js';
+import { storage, store } from '../../../frontend/src/plugins/task-runtime.js';
 import type { GroupId, SortId, ViewId } from './taskQuery.js';
 
 export interface ListState {

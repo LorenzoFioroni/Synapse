@@ -5,22 +5,23 @@
 // Tasks section of the note's side panel. The notes code reaches it only through taskHooks
 // (notes/workspace.ts).
 import type { EditorView } from '@codemirror/view';
-import { api } from '../../../api.js';
-import { icon } from '../../../icons.js';
-import { emit, off, on, state } from '../../../store.js';
-import { toast, toastError } from '../../../ui/toast.js';
-import { promptDialog } from '../../../ui/dialog.js';
-import { escapeHtml, modLabel, plural } from '../../../util.js';
-import { scan } from '../../../views/notes/mdscan.js';
-import type { PortableTask } from '../../../views/notes/portable.js';
-import type { TaskChoice } from '../../../views/notes/completion.js';
-import { renderDefaults } from '../../../views/notes/render.js';
-import { taskHooks, ws } from '../../../views/notes/workspace.js';
+import { api } from './api.js';
+import { icon } from '../../../frontend/src/plugins/task-runtime.js';
+import { emit, off, on } from '../../../frontend/src/plugins/task-runtime.js';
+import { state } from './environment.js';
+import { toast, toastError } from '../../../frontend/src/plugins/task-runtime.js';
+import { promptDialog } from '../../../frontend/src/plugins/task-runtime.js';
+import { escapeHtml, modLabel, plural } from '../../../frontend/src/plugins/task-runtime.js';
+import { scan } from '../../../frontend/src/plugins/task-runtime.js';
+import type { PortableTask } from '../../../frontend/src/plugins/task-runtime.js';
+import type { TaskChoice } from '../../../frontend/src/plugins/task-runtime.js';
+import { renderDefaults } from './rendering.js';
+import { taskHooks, ws } from './environment.js';
 import { dueLabel, dueState, parseDue } from './dates.js';
 import { childrenOf, createTask, deleteTasks, loadTasks, plainTitle, progress, restoreTask, td, toggleTask } from './taskData.js';
 import { type TaskForm, mountTaskForm } from './taskForm.js';
 import { boxHtml, chipsHtml, ensureRenderer, installTaskRendering, refInnerHtml, refSig, taskBlockHtml, titleHtml } from './taskRender.js';
-import type { TaskBlockOptions } from '../../../views/notes/render.js';
+import type { TaskBlockOptions } from './rendering.js';
 
 const TOKEN = (id: string) => `{{task:${id}}}`;
 const TOKEN_RE = /\{\{task:([a-z0-9]{4,32})\}\}/g;

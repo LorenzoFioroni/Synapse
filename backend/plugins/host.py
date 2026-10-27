@@ -40,6 +40,7 @@ from .runtime import Worker, make_logger, tail
 from .services import PluginActions, PluginServices
 from .sources import SourceList
 from .state import StateFile
+from .tasks import TaskAccess
 
 log = logging.getLogger(__name__)
 
@@ -235,6 +236,10 @@ class PluginHost:
             ),
             services=PluginServices(self.services) if self.services else None,
             actions=PluginActions(self.services, man) if self.services else None,
+            tasks=TaskAccess(self.services, man) if self.services else None,
+            tool_aliases={"list_tasks", "get_task", "create_task", "update_task", "delete_task"}
+            if pid == "tasks" and entry.source == "bundled"
+            else set(),
             fields=PluginFields(
                 pid,
                 man.name,
@@ -257,7 +262,7 @@ class PluginHost:
             if target:
                 act.pypath = str(target)
                 sys.path.insert(0, act.pypath)
-            if build.needs_build(man.frontend):
+            if self.role == "app" and build.needs_build(man.frontend):
                 source = (man.folder / (man.frontend or "")).resolve()
                 act.bundle = build.bundle(source, data_dir / build.BUILD_DIR, self.config.frontend_dir)
             path = man.backend_path()
