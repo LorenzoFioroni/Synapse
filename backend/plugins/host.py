@@ -508,9 +508,11 @@ class PluginHost:
         """Apply metadata through a running plugin's permission-checked actions."""
         with self._lock:
             act = self._active.get(pid)
-            if not act or not act.plugin.actions:
-                raise NotFound(f"No plugin {pid!r} is running")
-            return act.plugin.actions.update(item_id, changes)
+            actions = act.plugin.actions if act else None
+        if not actions:
+            raise NotFound(f"No plugin {pid!r} is running")
+        # outside the host's lock: a library write must not hold up every other plugin call
+        return actions.update(item_id, changes)
 
     def route(self, pid: str, path: str, method: str) -> tuple[Callable, Mapping]:
         """The function serving ``path`` of plugin ``pid``, and its arguments from the path.
