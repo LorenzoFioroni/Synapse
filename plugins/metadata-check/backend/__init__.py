@@ -11,8 +11,7 @@ from __future__ import annotations
 import time
 from threading import Event
 
-from backend.plugins import Offline, Plugin, PluginError
-from backend.plugins.scholarly import compute_changes
+from backend.plugins import Offline, Plugin, PluginError, scholarly
 
 from .comparison import find, ignore_entry, is_preprint, verdict
 from .progress import Progress
@@ -189,7 +188,7 @@ def activate(plugin: Plugin) -> None:
             pub_active = pub and pub != entry.get("published")
             changes = [
                 c
-                for c in compute_changes(item, fetched)
+                for c in scholarly.compute_changes(item, fetched)
                 if c["checked"]
                 and ignored_fields.get(c["key"]) != str(c["fetched"])
                 and not (c["key"] == "doi" and pub and not pub_active)
