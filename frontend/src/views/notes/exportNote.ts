@@ -4,7 +4,7 @@
 // list of references (each citation links to its entry in HTML and PDF, and each entry to the
 // work's DOI), [[links]] become text, and embeds, formulas, diagrams and images are included. A
 // gallery becomes one figure with its panels side by side, (a), (b), …, and one caption (Extended
-// Markdown, plugins/core/extended-markdown/figures/exportStatic.ts). Everything is built here from files the
+// Markdown, plugins/extended-markdown/frontend/figures/exportStatic.ts). Everything is built here from files the
 // app already serves, so it works offline.
 import { api } from '../../api.js';
 import type { Item, NoteLinks } from '../../types.js';

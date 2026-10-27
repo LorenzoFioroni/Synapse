@@ -6,6 +6,7 @@ JavaScript module with esbuild when the plugin starts: the copy Synapse builds i
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -41,6 +42,9 @@ def bundle(entry: Path, out_dir: Path, app_frontend: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / BUNDLE
     cmd = [tool, str(entry), "--bundle", "--format=esm", "--target=es2020", f"--outfile={out}", "--log-level=error"]
+    # Public SDK modules must keep the host's renderer/editor identity instead of bundling copies.
+    sdk_modules = ("markdown",)
+    cmd += [f"--external:*/frontend/src/plugins/{name}.js" for name in sdk_modules]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT, check=False)
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -48,4 +52,8 @@ def bundle(entry: Path, out_dir: Path, app_frontend: Path) -> Path:
     if r.returncode != 0:
         tail = "\n".join((r.stderr or r.stdout).strip().splitlines()[-8:])
         raise PluginError(f"Building its frontend failed:\n{tail}")
+    source = out.read_text("utf-8")
+    for name in sdk_modules:
+        source = re.sub(r"([\"'])[^\"']*/frontend/src/plugins/" + name + r"\.js\1", f'"/js/plugins/{name}.js"', source)
+    out.write_text(source, "utf-8")
     return out

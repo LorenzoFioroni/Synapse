@@ -8,7 +8,7 @@
 //  * $…$ closes on the same line (Pandoc rules), $$…$$ inline or as a block;
 //  * [[Note|alias]], ![[Note]], [@key, p. 4], [see @a; @b], > [!note] callouts, - [ ] tasks;
 //  * ```gallery blocks and numbered figures come from Extended Markdown (hooks.ts, FiguresHook;
-//    plugins/core/extended-markdown/figures/markdown.ts); without it a gallery reads as the Markdown it holds;
+//    plugins/extended-markdown/frontend/figures/markdown.ts); without it a gallery reads as the Markdown it holds;
 //  * display equations are numbered through the note and \eqref{label} resolved (equations.ts);
 //  * math macros: the physics package, Settings, and \newcommand in the note (macros.ts).
 

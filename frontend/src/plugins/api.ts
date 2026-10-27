@@ -153,6 +153,7 @@ export interface NotesVisualizationSpec {
 }
 
 export interface PluginContext {
+  markdown: import('./markdown.js').MarkdownApi;
   /** The plugin's id and what its manifest says. */
   readonly id: string;
   readonly name: string;

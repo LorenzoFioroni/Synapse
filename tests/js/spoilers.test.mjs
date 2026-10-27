@@ -1,10 +1,11 @@
+import { pluginModule } from './pluginModule.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as lib from '../../frontend/vendor/md/md.js';
 import { createRenderer } from '../../frontend/js/views/notes/render.js';
 import { setNoteHook } from '../../frontend/js/views/notes/hooks.js';
-import { installSpoilers } from '../../frontend/js/plugins/core/extended-markdown/spoilers/markdown.js';
-import { escaped, spoilerSpans } from '../../frontend/js/plugins/core/extended-markdown/spoilers/syntax.js';
+const { installSpoilers } = await pluginModule('extended-markdown/frontend/spoilers/markdown.ts');
+const { escaped, spoilerSpans } = await pluginModule('extended-markdown/frontend/spoilers/syntax.ts');
 import { scan } from '../../frontend/js/views/notes/mdscan.js';
 
 const hook = { markdown: installSpoilers, spoilers: spoilerSpans, exportStatic() {} };

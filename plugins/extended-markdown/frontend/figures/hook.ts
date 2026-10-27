@@ -1,6 +1,6 @@
 // What the figures extension hands the notes editor (views/notes/hooks.ts, FiguresHook). No DOM is
 // touched on import, so the Node tests set it with setNoteHook('figures', figuresHook).
-import type { FiguresHook } from '../../../../views/notes/hooks.js';
+import type { FiguresHook } from '../../../../frontend/src/plugins/markdown.js';
 import { staticGalleries } from './exportStatic.js';
 import { figureLabel, figuresOf } from './figures.js';
 import { newGallery } from './gallery.js';

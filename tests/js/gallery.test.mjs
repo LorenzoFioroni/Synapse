@@ -1,14 +1,15 @@
+import { pluginModule } from './pluginModule.mjs';
 // Run with: node --test tests/js   (also run by tests/test_frontend_js.py)
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as lib from '../../frontend/vendor/md/md.js';
-import {
+const {
   endsSentence, figureCaption, figureColumns, galleryInfo, galleryMarkdown, panelLabel, parseGallery,
-} from '../../frontend/js/plugins/core/extended-markdown/figures/gallery.js';
+} = await pluginModule('extended-markdown/frontend/figures/gallery.ts');
 import { portableBody } from '../../frontend/js/views/notes/portable.js';
 import { createRenderer } from '../../frontend/js/views/notes/render.js';
 import { setNoteHook } from '../../frontend/js/views/notes/hooks.js';
-import { figuresHook } from '../../frontend/js/plugins/core/extended-markdown/figures/hook.js';
+const { figuresHook } = await pluginModule('extended-markdown/frontend/figures/hook.ts');
 
 // galleries and figures come from Extended Markdown, on unless a test turns them off
 setNoteHook('figures', figuresHook);
@@ -123,7 +124,7 @@ test('with galleries off a gallery reads as the Markdown it holds', () => {
 });
 
 test('a new gallery from several images reads back as their panels', async () => {
-  const { newGallery } = await import('../../frontend/js/plugins/core/extended-markdown/figures/gallery.js');
+  const { newGallery } = await pluginModule('extended-markdown/frontend/figures/gallery.ts');
   const images = ['![](attachments/a.png)', '![](attachments/b.png)'];
   const plain = newGallery(images);
   assert.equal(plain, '```gallery\n![](attachments/a.png)\n![](attachments/b.png)\n```');

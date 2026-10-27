@@ -94,9 +94,9 @@ These check rules of the code base rather than behaviour:
 | `diff.test.mjs` | `views/notes/diff.js` |
 | `embed.test.mjs` | `views/notes/embed.js` and `linkData.js`: what an embedded note shows, with its own link data |
 | `equations.test.mjs` | `equations.js`, `mathClick.js`, `macros.js` and math in `render.js` |
-| `figures.test.mjs` | `plugins/core/extended-markdown/figures/figures.js`: which images are figures, numbering, labels; figures in `render.js` and the Markdown export |
+| `figures.test.mjs` | `plugins/extended-markdown/frontend/figures/figures.js`: which images are figures, numbering, labels; figures in `render.js` and the Markdown export |
 | `crossref.test.mjs` | `views/notes/crossref.js`: `\ref`, `\eqref`, `\cref`, `\Cref`: kinds, plurals, ranges, unknown names |
-| `gallery.test.mjs` | `plugins/core/extended-markdown/figures/gallery.js`: reading gallery blocks, the figure caption, Markdown export; galleries in `render.js`, with the `figures` hook set and without it |
+| `gallery.test.mjs` | `plugins/extended-markdown/frontend/figures/gallery.js`: reading gallery blocks, the figure caption, Markdown export; galleries in `render.js`, with the `figures` hook set and without it |
 | `extract.test.mjs` | `extractCitation` in `browser_extension/extract.js`, with a faked `document` and `location` |
 | `graph.test.mjs` | `plugins/graph/frontend/model.ts` (compiled by the test harness) |
 | `library.test.mjs` | `views/notes/library.js`: autocomplete ranking |

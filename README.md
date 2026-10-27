@@ -412,7 +412,7 @@ Settings (listed under Plugins, opened by the **Settings** button on its row or 
 the app from working, start it with `python server.py --safe-mode` (only core plugins run) and turn it
 off.
 
-Synapse’s own optional features are **core plugins**: Extended Markdown and Tasks start on.
+Synapse’s own optional features are **core plugins**: Tasks starts on.
 **Open-Access PDFs** (where Find Available PDF looks),
 **Export Formats** (the library exports), **Metadata Sources** (scholarly lookups) and
 **Reference Sources** (citation lists) are contributed plugins built only on the public plugin
@@ -426,6 +426,8 @@ contract. Saved provider identities remain stable and the item pane can show the
 API 1.6 adds permission-checked metadata editing, explicit review dialogs, progress notifications and
 field scheduling helpers. **Metadata Check** now uses these public APIs as a contributed plugin;
 it stays off by default, preserves settings and cached findings, and stops in safe mode.
+API 1.8 adds public Markdown/figure contributions and a shared renderer SDK. **Extended Markdown**
+is now contributed: existing syntax, switches and exports remain, and safe mode stops it.
 API 1.7 adds permission-gated notes/citation reads and Notes visualizations. **Graph** now uses
 these public APIs as a contributed plugin: its local/full views, sidebar, history and shortcut
 remain, and safe mode stops it.

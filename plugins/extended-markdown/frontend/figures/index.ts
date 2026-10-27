@@ -3,18 +3,17 @@
 // Fig. 1, 2, … for \ref and \cref. The notes editor, read mode and the exports use it through the
 // `figures` hook in views/notes/hooks.ts; turned off, a gallery reads as the Markdown it holds
 // and captions as the text they are.
-import { noteHooks, setNoteHook } from '../../../../views/notes/hooks.js';
 import type { MarkdownExtension } from '../extension.js';
 import { installGalleries } from './galleryView.js';
 import { figuresHook } from './hook.js';
 
 export const figures: MarkdownExtension = {
   id: 'figures',
-  attach() {
+  attach(p) {
     const uninstall = installGalleries();
-    setNoteHook('figures', figuresHook);
+    const offFigures = p.markdown.figures.register(figuresHook);
     return () => {
-      if (noteHooks.figures === figuresHook) setNoteHook('figures', null);
+      offFigures();
       uninstall();
     };
   },

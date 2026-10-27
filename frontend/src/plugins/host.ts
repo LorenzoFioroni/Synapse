@@ -19,6 +19,7 @@ import { registerSuggestions } from './suggestions.js';
 import { noteHooks } from '../views/notes/hooks.js';
 import { feedback } from './feedback.js';
 import { notesContext } from './notes.js';
+import { registerMarkdown, registerFigures } from './markdownHost.js';
 
 interface Loaded {
   disposed: boolean;
@@ -101,6 +102,8 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     version: info.version,
     settings: async () => (await api.plugins()).plugins.find((x) => x.id === pid)?.values || {},
     saveSettings: async (changes) => (await api.setPluginSettings(pid, changes)).values,
+    markdown: { register: provider => { assertLive(); return keep(registerMarkdown(provider)); },
+      figures: { register: provider => { assertLive(); return keep(registerFigures(provider)); } } },
     assets: { vendor: name => {
       assertLive();
       if (name !== 'force-graph') throw new Error(`Unknown vendored library ${name}`);

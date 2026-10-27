@@ -1,10 +1,10 @@
 // Source ranges shared by Markdown rendering and live preview. Code, math and escapes win.
 // Live preview asks on every keystroke, so a note is read in one pass: only positions holding
 // "||" are looked at, and code/math ranges are found by binary search rather than one by one.
-import type { Spoiler } from '../../../../views/notes/hooks.js';
-import { scan, type Scan } from '../../../../views/notes/mdscan.js';
+import type { Spoiler } from '../../../../frontend/src/plugins/markdown.js';
+import { scan, type Scan } from '../../../../frontend/src/plugins/markdown.js';
 
-export type { Spoiler } from '../../../../views/notes/hooks.js';
+export type { Spoiler } from '../../../../frontend/src/plugins/markdown.js';
 export const escaped = (src: string, at: number): boolean => {
   let n = 0; while (at > 0 && src[--at] === '\\') n++;
   return n % 2 === 1;

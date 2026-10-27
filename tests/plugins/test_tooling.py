@@ -233,3 +233,27 @@ def test_stopping_and_restarting_dev_host_stops_its_watcher(tmp_path):
         assert host._watcher is not watcher and host._watcher.is_alive()
     finally:
         host.stop()
+
+
+def test_public_markdown_sdk_keeps_host_module_identity(client, svc, make_plugin):
+    from backend.config import APP_ROOT
+
+    folder = make_plugin("sdk-reader", frontend="frontend.js")
+    # Relative source imports are rewritten to the public host module in the served bundle.
+    source = APP_ROOT / "frontend" / "src" / "plugins" / "markdown.js"
+    import os
+
+    relative = os.path.relpath(source, folder).replace(os.sep, "/")
+    (folder / "frontend.ts").write_text(
+        f'import {{ renderTaskBlock }} from "{relative}"; export function activate() {{ return renderTaskBlock([], {{view:"list", group:"none", completed:"hide"}}); }}'
+    )
+    import json
+
+    manifest = json.loads((folder / "manifest.json").read_text())
+    manifest["frontend"] = "frontend.ts"
+    (folder / "manifest.json").write_text(json.dumps(manifest))
+    svc.plugins.enable("sdk-reader")
+    js = client.get("/api/plugin-files/sdk-reader/__build__/main.js")
+    assert js.status_code == 200
+    assert b'"/js/plugins/markdown.js"' in js.data
+    assert b"renderDefaults" not in js.data and b"function createRenderer" not in js.data

@@ -331,7 +331,7 @@ shown uses that note as the focus; while Graph remains open, choosing another no
 list recentres it instead of replacing it with the editor. Unload disconnects observers, clears
 timers, destroys both canvases, and ignores late data or canvas creation.
 
-**`plugins/core/extended-markdown/figures/`: galleries and figures** (an extension of the Extended
+**`plugins/extended-markdown/frontend/figures/`: galleries and figures** (an extension of the Extended
 Markdown core plugin, `plugins/extended-markdown`, with its own switch there). Its `index.ts`
 installs the carousels' listeners (`galleryView.ts`) and sets the `figures` hook
 (`hook.ts`) in `views/notes/hooks.ts`, which the notes code asks when it needs it: the renderer

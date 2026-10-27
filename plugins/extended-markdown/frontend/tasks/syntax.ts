@@ -1,4 +1,4 @@
-import type { TaskBlockOptions } from '../../../../views/notes/render.js';
+import type { TaskBlockOptions } from '../../../../frontend/src/plugins/markdown.js';
 
 export const TASKS_INFO = /^tasks(?:\s|$)/i;
 const ID = /^[a-z0-9]{4,32}$/;

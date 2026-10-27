@@ -1,8 +1,9 @@
+import { pluginModule } from './pluginModule.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as lib from '../../frontend/vendor/md/md.js';
-import { tasksMarkdown } from '../../frontend/js/plugins/core/extended-markdown/tasks/markdown.js';
-import { parseTaskBlockInfo, taskBlockIds, taskBlocksToRefs } from '../../frontend/js/plugins/core/extended-markdown/tasks/syntax.js';
+const { tasksMarkdown } = await pluginModule('extended-markdown/frontend/tasks/markdown.ts');
+const { parseTaskBlockInfo, taskBlockIds, taskBlocksToRefs } = await pluginModule('extended-markdown/frontend/tasks/syntax.ts');
 import { createRenderer, renderDefaults } from '../../frontend/js/views/notes/render.js';
 
 test('task block options and ids', () => {

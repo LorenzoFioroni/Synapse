@@ -5,7 +5,7 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.7**, which also accepts plugins targeting 1.0–1.6. Reference
+This page documents API **1.8**, which also accepts plugins targeting 1.0–1.7. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
 `"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`. Named reference sub-sources and the reference record
@@ -64,17 +64,6 @@ Settings lists these separately from **Contributed plugins** (bundled optional a
 plugins installed in `data/plugins/`). Its navigation expands the individual plugin sections only
 while the Plugins area is in view, and otherwise keeps a single top-level **Plugins** entry.
 
-- **Extended Markdown** (`plugins/extended-markdown`, frontend only, on by default): Markdown
-  syntax beyond the basics, one extension per folder in
-  `frontend/src/plugins/core/extended-markdown/`, each with a boolean setting of its own:
-  - **Galleries and numbered figures** (`figures`): ` ```gallery ` blocks drawn as carousels (one
-    figure with panels in exports), figures numbered Fig. 1, 2, … and `\ref` / `\cref` to them;
-    see [notes](notes.md#galleries). Off, a gallery reads as the images and captions it holds, an
-    image's caption as the line of text it is, and a reference to a figure as ??. The notes format
-    does not change: the parser and the attachment sweep still read a gallery's lines.
-  - **Spoilers** (`spoilers`): inline `||spoilers||` and collapsible `:::spoiler` blocks in
-    Live/Read modes. Disabling it renders ordinary Markdown
-  without changing note files. HTML/PDF export reveals spoiler contents; Markdown keeps the source.
 - **Tasks** (`plugins/tasks`, on by default): the Tasks workspace under **Plugins** in the left
   sidebar, task controls in notes,
   and the existing `list_tasks`, `get_task`, `create_task`, `update_task`, `delete_task` tools.
@@ -131,6 +120,18 @@ first time Synapse sees them, because their manifest says `"enabled_by_default":
 `plugins/`; an installed plugin always waits to be turned on). After that they are the user's
 choice, and safe mode stops them like any contributed plugin. Settings lists them under
 **Contributed plugins**.
+
+- **Extended Markdown** (`plugins/extended-markdown`, frontend only, on by default): Markdown
+  syntax beyond the basics, one extension per folder in
+  `plugins/extended-markdown/frontend/`, each with a boolean setting of its own:
+  - **Galleries and numbered figures** (`figures`): ` ```gallery ` blocks drawn as carousels (one
+    figure with panels in exports), figures numbered Fig. 1, 2, … and `\ref` / `\cref` to them;
+    see [notes](notes.md#galleries). Off, a gallery reads as the images and captions it holds, an
+    image's caption as the line of text it is, and a reference to a figure as ??. The notes format
+    does not change: the parser and the attachment sweep still read a gallery's lines.
+  - **Spoilers** (`spoilers`): inline `||spoilers||` and collapsible `:::spoiler` blocks in
+    Live/Read modes. Disabling it renders ordinary Markdown
+  without changing note files. HTML/PDF export reveals spoiler contents; Markdown keeps the source.
 
 - **Graph** (`plugins/graph`, on by default): local note neighbourhoods and the full graph in
   Notes, with the existing sidebar entry, note/item menus, history and Cmd/Ctrl+Shift+G. It uses
@@ -907,3 +908,29 @@ rendering code in `plugins/graph/frontend/` and discards retired async canvas/da
 `p.library.refresh()` refreshes the visible library data after a plugin route adds an item.
 Graph's Add button uses `plugin.actions.add`, with library `add` permission and existing duplicate
 checks, metadata fallback, citation-key generation and Adding Items settings.
+
+### Markdown contributions and shared SDK (1.8)
+
+`p.markdown.register(provider)` installs a Markdown provider: `markdown(md)`,
+`spoilers(text, scanned)`, `exportStatic(root)`, `fence(info)` and `portable(text)`.
+Providers compose in registration order; disposing a registration rebuilds retained renderers and
+live preview. No editor-library instance is handed over: spoiler/figure source ranges remain plain
+UTF-16 offsets, and the host creates preview widgets. `p.markdown.figures.register(provider)`
+registers the document's figure scanner, label formatter, renderer, portable/export preparation
+and gallery insertion function. One figure provider may register at a time because numbering is
+document-wide. The host removes both registrations on unload.
+
+The public `frontend/src/plugins/markdown.ts` SDK exports existing scan/mask rules, reference
+formatting and text-reference helpers, image/anchor/line HTML helpers and `renderTaskBlock`.
+Imports of this SDK are kept external by the plugin bundler and rewritten to the single host
+module `/js/plugins/markdown.js`. This preserves host renderer and Tasks-provider identity without
+bundling another engine or fetching a CDN. Type-only imports of markdown-it use the installed
+matching types; actual rules receive the host's vendored renderer instance.
+
+Extended Markdown now lives in `plugins/extended-markdown/frontend/` and uses only these public
+interfaces. All three settings, plugin identity, galleries/figures/spoilers/task-block source,
+rendering, exports and multi-image insertion behavior remain. It stays enabled on first discovery;
+saved choices survive and safe mode stops it. Parser support for gallery images/captions and task
+IDs, attachment retention, note validation and MCP reading/writing conventions remain in core as
+saved-data contracts. This conversion does not introduce arbitrary new backend syntax registration
+or move note data. Disabling the plugin still leaves those saved notes safely readable.

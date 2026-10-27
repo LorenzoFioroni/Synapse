@@ -1,8 +1,8 @@
 // Extended Markdown: syntax beyond Synapse's own Markdown, one folder per extension, each with a
 // switch among the package's settings. Turning the package or an extension off renders notes as
 // ordinary Markdown; their text never changes.
-import type { PluginContext } from '../../api.js';
-import { noteHooks, setNoteHook, type ExtendedMarkdownHook } from '../../../views/notes/hooks.js';
+import type { PluginContext } from '../../../frontend/src/plugins/api.js';
+import type { ExtendedMarkdownHook } from '../../../frontend/src/plugins/markdown.js';
 import type { MarkdownExtension } from './extension.js';
 import { figures } from './figures/index.js';
 import { spoilers } from './spoilers/index.js';
@@ -16,6 +16,7 @@ const noSpoilers = () => [];
 export async function activate(p: PluginContext): Promise<void> {
   const running = new Map<string, () => void>();   // extension id → what turns it off
   let hook: ExtendedMarkdownHook | null = null;
+  let offMarkdown: (() => void) | undefined;
   let stopped = false;
 
   const apply = (values: Record<string, unknown>) => {
@@ -24,7 +25,7 @@ export async function activate(p: PluginContext): Promise<void> {
     if (hook && wanted.length === running.size && wanted.every((ext) => running.has(ext.id))) return;
     for (const ext of EXTENSIONS) {
       const on = wanted.includes(ext);
-      if (on && !running.has(ext.id)) running.set(ext.id, ext.attach?.() ?? (() => {}));
+      if (on && !running.has(ext.id)) running.set(ext.id, ext.attach?.(p) ?? (() => {}));
       else if (!on && running.has(ext.id)) { running.get(ext.id)!(); running.delete(ext.id); }
     }
     // a new hook object: renderers and the live preview rebuild when it changes
@@ -35,7 +36,8 @@ export async function activate(p: PluginContext): Promise<void> {
       fence(info) { return wanted.some((ext) => ext.fence?.(info)); },
       portable(markdown) { return wanted.reduce((text, ext) => ext.portable?.(text) ?? text, markdown); },
     };
-    setNoteHook('extended', hook);
+    offMarkdown?.();
+    offMarkdown = p.markdown.register(hook);
   };
   // settings that cannot be read leave every extension on rather than none
   const refresh = async () => apply(await p.settings().catch(() => ({})));
@@ -47,6 +49,6 @@ export async function activate(p: PluginContext): Promise<void> {
     stopped = true;
     for (const off of running.values()) off();
     running.clear();
-    if (noteHooks.extended === hook) setNoteHook('extended', null);
+    offMarkdown?.();
   });
 }
