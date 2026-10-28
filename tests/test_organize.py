@@ -107,18 +107,19 @@ def test_import_tags_setting(client, svc):
     bib = "@article{k1, title={Paper}, author={Doe, J}, year={2020}, keywords={spin chains, transport}}"
     entries = client.post("/api/import/preview", json={"text": bib}).get_json()["entries"]
 
-    def imported(**extra):
-        res = client.post("/api/import/commit", json={"entries": entries, "skip_duplicates": False, **extra}).get_json()
+    def imported(key, **extra):
+        batch = [{**entries[0], "citation_key": key}]
+        res = client.post("/api/import/commit", json={"entries": batch, "skip_duplicates": False, **extra}).get_json()
         return client.get(f"/api/items/{res['created'][0]}").get_json()
 
     assert svc.settings.get("import_tags") == "ask"  # the default: the import dialog asks
-    no = imported()  # not ticked: keywords stay keywords
+    no = imported("unticked")  # not ticked: keywords stay keywords
     assert no["tags"] == [] and no["keywords"] == "spin chains; transport"
-    assert imported(keywords_as_tags=True)["tags"] == ["spin chains", "transport"]
+    assert imported("ticked", keywords_as_tags=True)["tags"] == ["spin chains", "transport"]
     svc.settings.update({"import_tags": "never"})
-    assert imported(keywords_as_tags=True)["tags"] == []
+    assert imported("never", keywords_as_tags=True)["tags"] == []
     svc.settings.update({"import_tags": "always"})
-    assert imported()["tags"] == ["spin chains", "transport"]
+    assert imported("always")["tags"] == ["spin chains", "transport"]
 
 
 def test_old_settings_file_is_migrated(tmp_path):
