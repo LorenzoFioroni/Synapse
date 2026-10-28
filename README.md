@@ -128,8 +128,9 @@ Device Management, and turn it on in Settings → General → About → Certific
 Android: Settings → Security → Encryption & credentials → Install a certificate → CA certificate.
 
 Open `https://Lorenzos-MacBook.local:8000/` (on the computer too), go to **Settings → Devices →
-Add a Passkey…** and save it. A device already paired can add the first one as well (more after
-confirming with an existing passkey). Passkeys work only at the address they were made on. Remove
+Add a Passkey…** and save it. A device just paired can add one too, for a few minutes after it pairs
+(afterwards, add one after confirming with an existing passkey, or pair the device again). Passkeys
+work only at the address they were made on. Remove
 one in Settings → Devices on the computer, or on a device signed in over HTTPS after confirming with
 a passkey; devices it signed in stay until you remove them too. Passkeys need the `cryptography` package (in
 `requirements.txt`).

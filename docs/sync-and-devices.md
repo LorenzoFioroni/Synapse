@@ -315,7 +315,9 @@ on this computer or on any device already signed in:
    signature counter.
 
 The attestation statement is not checked: there is no list of trusted authenticator makers to
-check it against, and only someone already signed in can add a passkey.
+check it against. Only someone already signed in can add a passkey, and from another device only
+straight after pairing (`Devices.recently_paired`) or after confirming with a passkey already held
+(`_may_add` in `backend/api/passkeys.py`), so a stolen device cookie cannot enrol one of its own.
 
 **Signing in.** On the sign-in page (`frontend/signin.html`):
 
@@ -416,9 +418,11 @@ What is assumed:
   who can watch the traffic can read the library and copy a device cookie or an access token. The
   README says to use `--lan` without `--cert` only on a trusted network.
 - **A paired device is trusted with the library.** It has the same API as this computer, apart
-  from making or cancelling pairing codes, renaming or removing other devices, adding a second
-  passkey, removing passkeys and making or removing access tokens, which need a fresh passkey
-  confirmation. It may add the first passkey, which Settings lists.
+  from making or cancelling pairing codes, renaming or removing other devices, adding or removing
+  passkeys, making or removing access tokens, and changing plugins (enabling, disabling or
+  reconfiguring them), which need a fresh passkey confirmation. The one exception is enrolling a
+  passkey straight after pairing — the window a just-paired device uses to add its first one
+  (`Devices.recently_paired`).
 - **Whoever holds a passkey is the user.** Anyone who has it (a shared iCloud account, say) can
   sign a device in. Remove the passkey on the computer to stop that.
 - **A proxy in front is declared or announces itself.** "This computer" is judged by the
@@ -439,7 +443,8 @@ What is assumed:
 | Which hosts or origins are accepted | `host_allowed`, `allowed_origin` and `refusal` in `backend/access/guard.py` |
 | What an unpaired device may open | `PAIRING_PATHS` in `guard.py` (and keep `frontend/pair.html` and `frontend/signin.html` self-contained) |
 | Which requests count as coming through a proxy | `ProxyMiddleware` and `FORWARD_HEADERS` in `backend/access/proxy.py` |
-| Which actions need a passkey confirmation | the `admin.refusal` calls in `backend/api/` (`devices.py`, `passkeys.py`, `mcp.py`); how long one lasts: `CONFIRM_TTL` in `backend/access/confirm.py` |
+| Which actions need a passkey confirmation | the `admin.refusal` calls in `backend/api/` (`devices.py`, `passkeys.py`, `mcp.py`, `plugins.py`); how long one lasts: `CONFIRM_TTL` in `backend/access/confirm.py` |
+| How a just-paired device adds its first passkey | `Devices.recently_paired` / `PASSKEY_ENROLL_GRACE` in `backend/access/devices.py`, used by `_may_add` in `backend/api/passkeys.py` |
 | Where passkeys work, what is asked of the authenticator | `relying_party` and `registration_options` in `backend/access/passkeys.py` |
 | Key types, checks of the browser's answer | `backend/access/webauthn.py` |
 | Who may add or remove passkeys | `backend/api/passkeys.py`, and the buttons in `refreshPasskeys` in `passkeys.ts` |
