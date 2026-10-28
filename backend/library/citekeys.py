@@ -65,6 +65,37 @@ PRESETS = [
 _TOKEN = re.compile(r"\{([A-Za-z0-9]+)\}")
 
 
+class CitationKeyError(ValueError):
+    """A proposed citation key cannot safely identify one library item."""
+
+
+# What the notes' citation parser reads as a whole key (backend/notes/parser.py, mdscan.ts): it
+# needs a letter, digit or _ first, and treats a trailing . : / - as punctuation after the key.
+_KEY_CHARS = r"A-Za-z0-9_:./+-"
+_VALID_KEY = re.compile(rf"[A-Za-z0-9_](?:[{_KEY_CHARS}]*[A-Za-z0-9_+])?")
+KEY_RULE = (
+    "Citation keys may contain only letters, digits and _ - : . / +, "
+    "and must start with a letter, digit or _ and end with a letter, digit, _ or +"
+)
+
+
+def validate(key: str | None) -> None:
+    """Empty keys are allowed for incomplete items; nonempty keys must work in citations."""
+    if key and not _VALID_KEY.fullmatch(key):
+        raise CitationKeyError(KEY_RULE)
+
+
+def sanitize(key: str | None) -> str:
+    """The nearest valid key ("" if nothing usable is left): accents folded, other characters
+    dropped, and the ends trimmed to what citations can hold."""
+    s = unicodedata.normalize("NFKD", key or "")
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = s.replace("ß", "ss").replace("ø", "o").replace("Ø", "O").replace("ł", "l").replace("Ł", "L")
+    s = re.sub(rf"[^{_KEY_CHARS}]", "", s)
+    s = re.sub(r"^[:./+-]+", "", s)
+    return re.sub(r"[:./-]+$", "", s)
+
+
 def ascii_alnum(s: str) -> str:
     s = unicodedata.normalize("NFKD", s or "")
     s = "".join(ch for ch in s if not unicodedata.combining(ch))
@@ -139,8 +170,7 @@ def render(pattern: str, paper: dict) -> str:
             return ascii_alnum(doi.split("/", 1)[-1]).lower()
         return m.group(0)  # unknown tokens are left visible so mistakes are obvious
 
-    key = _TOKEN.sub(repl, pattern or "{auth}{year}")
-    key = re.sub(r"[^A-Za-z0-9_:\-.+]", "", key)
+    key = sanitize(_TOKEN.sub(repl, pattern or "{auth}{year}"))
     return key or "item"
 
 
@@ -161,8 +191,10 @@ def required_fields(pattern: str) -> set[str]:
 
 
 def make_unique(key: str, taken: set[str]) -> str:
-    """Disambiguate with a, b, c … like Zotero/Better BibTeX."""
-    if key not in taken:
+    """Disambiguate with a, b, c … like Zotero/Better BibTeX. Keys that differ only in case count
+    as taken: their paper notes would share one file on macOS and Windows."""
+    folded = {t.casefold() for t in taken}
+    if key.casefold() not in folded:
         return key
     i = 0
     while True:
@@ -173,7 +205,7 @@ def make_unique(key: str, taken: set[str]) -> str:
             n = n // 26 - 1
             if n < 0:
                 break
-        if key + suffix not in taken:
+        if (key + suffix).casefold() not in folded:
             return key + suffix
         i += 1
 

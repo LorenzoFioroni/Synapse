@@ -9,6 +9,7 @@ from __future__ import annotations
 import builtins
 import logging
 import os
+import sqlite3
 import uuid
 from pathlib import Path
 
@@ -186,6 +187,20 @@ class PaperRepository:
             )
             return {r["citation_key"] for r in rows if r["id"] != exclude_id}
 
+    def _check_citation_key(self, c: sqlite3.Connection, key: str | None, paper_id: str = "") -> None:
+        citekeys.validate(key)
+        if not key:
+            return
+        # Case-insensitive: keys differing only in case would share a paper-note file on macOS.
+        other = c.execute(
+            "SELECT id, title FROM papers WHERE citation_key = ? COLLATE NOCASE AND id != ? LIMIT 1",
+            (key, paper_id),
+        ).fetchone()
+        if other:
+            raise citekeys.CitationKeyError(
+                f'Citation key "{key}" is already used by "{other["title"] or "Untitled"}" ({other["id"]})'
+            )
+
     def find_duplicate(self, entry: dict, papers: builtins.list[dict] | None = None) -> str | None:
         """Return the id of an existing (non-trashed) item matching by DOI or title+year."""
         return DuplicateFinder(papers if papers is not None else self.list()).find(entry)
@@ -195,24 +210,83 @@ class PaperRepository:
         return self.get(self.create_many([data or {}], auto_citekey=auto_citekey)[0])
 
     def create_many(self, entries: builtins.list[dict], *, auto_citekey: bool | None = None) -> builtins.list[str]:
-        """Insert several items in one transaction (used by imports). Returns the new ids.
+        """Insert several items in one transaction. Returns the new ids. A citation key that is
+        malformed or already taken rejects the whole batch (CitationKeyError).
 
         Besides metadata fields, an entry may carry ``folder_id`` / ``folder_ids`` and ``tags``.
         """
+        return self._create_many(entries, auto_citekey=auto_citekey, fix_keys=False)[0]
+
+    def import_many(self, entries: builtins.list[dict]) -> tuple[builtins.list[str], builtins.list[dict]]:
+        """Like create_many for imported files, which often carry keys made elsewhere: a key that
+        is malformed or already taken is replaced instead of failing the import. Returns the new
+        ids and the replaced keys as ``{"id", "title", "from", "to"}``."""
+        return self._create_many(entries, auto_citekey=None, fix_keys=True)
+
+    def _create_many(
+        self, entries: builtins.list[dict], *, auto_citekey: bool | None, fix_keys: bool
+    ) -> tuple[builtins.list[str], builtins.list[dict]]:
         from .organize import add_tags_conn
 
         if auto_citekey is None:
             auto_citekey = self.settings.get("citekey_auto")
         pattern = self.settings.get("citekey_pattern")
-        taken = self.all_citation_keys() if auto_citekey else set()
         now = utcnow()
-        ids = []
+        ids: builtins.list[str] = []
+        changes: builtins.list[dict] = []
         with self.db.session() as c:
-            for data in entries:
+            # Serialize key selection with other writers, including other Synapse processes.
+            c.execute("BEGIN IMMEDIATE")
+            taken = {r[0] for r in c.execute("SELECT citation_key FROM papers WHERE citation_key != ''")}
+            # Explicit keys are reserved first, so a generated key never takes one a later entry asks for.
+            keys: builtins.list[str | None] = []
+            replace: dict[int, str] = {}  # entry index -> the key it asked for, when that cannot be kept
+            explicit: set[str] = set()
+            for i, data in enumerate(entries):
+                key = _clean_value("citation_key", data.get("citation_key"))
+                if key and fix_keys:
+                    clean = citekeys.sanitize(key)
+                    if not clean or clean.casefold() in explicit:
+                        replace[i] = key
+                        key = None
+                    else:
+                        try:
+                            self._check_citation_key(c, clean)
+                        except citekeys.CitationKeyError:
+                            replace[i] = key
+                            key = None
+                        else:
+                            if clean != key:
+                                replace[i] = key
+                            key = clean
+                else:
+                    self._check_citation_key(c, key)
+                    if key and key.casefold() in explicit:
+                        raise citekeys.CitationKeyError(
+                            f'Citation key "{key}" is already used by another imported item'
+                        )
+                if key:
+                    explicit.add(key.casefold())
+                keys.append(key)
+            taken.update(k for k in keys if k)
+            for i, data in enumerate(entries):
                 values = {k: _clean_value(k, data.get(k)) for k in EDITABLE_KEYS if k in data}
                 values.setdefault("item_type", DEFAULT_ITEM_TYPE)
                 values.setdefault("title", "")
-                if auto_citekey and not values.get("citation_key") and (values.get("authors") or values.get("title")):
+                if keys[i]:
+                    values["citation_key"] = keys[i]
+                elif i in replace:
+                    values.pop("citation_key", None)
+                if i in replace and not keys[i]:
+                    # The file named a key that cannot be used as it is: the nearest free one, or one
+                    # from the pattern when nothing of it survives (even with automatic keys off, so
+                    # the item keeps a key as it had in the file).
+                    clean = citekeys.sanitize(replace[i])
+                    if clean:
+                        values["citation_key"] = citekeys.make_unique(clean, taken)
+                    elif values.get("authors") or values.get("title"):
+                        values["citation_key"] = citekeys.generate(pattern, values, taken)
+                elif auto_citekey and not values.get("citation_key") and (values.get("authors") or values.get("title")):
                     values["citation_key"] = citekeys.generate(pattern, values, taken)
                 if values.get("citation_key"):
                     taken.add(values["citation_key"])
@@ -231,39 +305,47 @@ class PaperRepository:
                 if data.get("tags"):
                     add_tags_conn(c, [new_id], data["tags"])
                 ids.append(new_id)
+                if i in replace:
+                    changes.append(
+                        {
+                            "id": new_id,
+                            "title": values.get("title") or "",
+                            "from": replace[i],
+                            "to": values.get("citation_key") or "",
+                        }
+                    )
         self._notify_items("item.added", ids)
-        return ids
+        return ids, changes
 
     def update(self, paper_id: str, data: dict) -> dict:
         values = {k: _clean_value(k, v) for k, v in data.items() if k in EDITABLE_KEYS}
-        if (
-            values
-            and "citation_key" not in values
-            and self.settings.get("citekey_auto")
-            and {"authors", "title", "year"} & values.keys()
-        ):
-            # Items created empty get a key as soon as they have enough metadata.
-            current = self.get(paper_id)
-            if not current.get("citation_key"):
-                merged = {**current, **values}
-                pattern = self.settings.get("citekey_pattern")
-                if all(merged.get(f) for f in citekeys.required_fields(pattern) or {"authors", "title"}):
-                    values["citation_key"] = citekeys.generate(
-                        pattern, merged, self.all_citation_keys(exclude_id=paper_id)
-                    )
         changed_key = None
         if values:
-            values["date_modified"] = utcnow()
-            sets = ", ".join(f"{k} = ?" for k in values)
             with self.db.session() as c:
-                if "citation_key" in values:
-                    row = c.execute("SELECT citation_key FROM papers WHERE id = ?", (paper_id,)).fetchone()
-                    old = (row["citation_key"] if row else None) or ""
-                    if old and old != (values["citation_key"] or ""):
-                        changed_key = (old, values["citation_key"] or "")
-                cur = c.execute(f"UPDATE papers SET {sets} WHERE id = ?", [*values.values(), paper_id])
-                if cur.rowcount == 0:
+                c.execute("BEGIN IMMEDIATE")
+                row = c.execute("SELECT * FROM papers WHERE id = ?", (paper_id,)).fetchone()
+                if row is None:
                     raise NotFound(paper_id)
+                old = row["citation_key"] or ""
+                if (
+                    "citation_key" not in values
+                    and not old
+                    and self.settings.get("citekey_auto")
+                    and {"authors", "title", "year"} & values.keys()
+                ):
+                    # Items created empty get a key as soon as they have enough metadata.
+                    merged = {**dict(row), **values}
+                    pattern = self.settings.get("citekey_pattern")
+                    if all(merged.get(f) for f in citekeys.required_fields(pattern) or {"authors", "title"}):
+                        taken = {r[0] for r in c.execute("SELECT citation_key FROM papers WHERE citation_key != ''")}
+                        values["citation_key"] = citekeys.generate(pattern, merged, taken)
+                if "citation_key" in values and (values["citation_key"] or "") != old:
+                    self._check_citation_key(c, values["citation_key"], paper_id)
+                    if old:
+                        changed_key = (old, values["citation_key"] or "")
+                values["date_modified"] = utcnow()
+                sets = ", ".join(f"{k} = ?" for k in values)
+                c.execute(f"UPDATE papers SET {sets} WHERE id = ?", [*values.values(), paper_id])
         if changed_key:
             self._notify_citekey_change(paper_id, *changed_key)
         if values:

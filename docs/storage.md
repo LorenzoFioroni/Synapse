@@ -140,6 +140,31 @@ Details worth knowing:
 - **Indexes:** `idx_title`, `idx_papers_deleted`, `idx_papers_doi`, `idx_att_paper`,
   `idx_paper_folders_folder`, `idx_paper_tags_tag` and `idx_annotations_attachment`.
 
+### Citation-key integrity
+
+`PaperRepository.create_many` and `update` validate nonempty citation keys (`citekeys.validate`).
+A key uses ASCII letters, digits and `_ - : . / +`, starts with a letter, digit or `_`, and ends
+with a letter, digit, `_` or `+`: the shape the notes' citation parser reads as one key (it treats
+a trailing `. : / -` as punctuation). A key already held by another item, in the library or the
+Trash, is refused, also when it differs only in case: two such items' paper notes would share one
+file on macOS and Windows. Empty keys remain valid for incomplete items. Generated keys are passed
+through `citekeys.sanitize`, so they always validate, and get the usual `a, b, c` suffixes.
+
+Key selection and validation run under a SQLite write transaction (`BEGIN IMMEDIATE`), so two
+writers cannot claim the same key. Explicit keys in a batch are reserved before others are
+generated. For `create_many` (and the single `create`), a bad or taken key rejects the whole
+batch; HTTP writes return 400 with the reason, and duplicate errors name the item holding the key.
+
+Imported files often carry keys made elsewhere, so `import_many` (used by `POST
+/api/import/commit`) repairs instead of refusing: a key is sanitised (accents folded, other
+characters dropped, ends trimmed), and if that is taken, in the library or earlier in the file, it
+gets a suffix. When nothing of the key survives, one is generated from the pattern. The response
+lists each replaced key in `renamed_keys` (`id`, `title`, `from`, `to`), and the import dialog
+offers to show them.
+
+Existing records are not rewritten: metadata edits and resubmitting an unchanged legacy key still
+work. A changed key must pass validation before the existing note/task rekey listeners run.
+
 ### How migrations work
 
 There is no schema version number. `Database.migrate()` brings any older file up to date, and it
