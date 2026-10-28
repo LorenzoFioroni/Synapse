@@ -1,7 +1,7 @@
 {
   "id": "arxiv-today",
   "name": "arXiv Today",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "api": "^1.0",
   "author": "Synapse",
   "description": "Each morning, the papers announced on arXiv in your categories, ranked by how they connect to your library (the papers they cite, shared authors, similar topics), with a + to add one. Earlier days stay for a month, and AI apps can ask for them too.",

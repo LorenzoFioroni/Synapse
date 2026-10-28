@@ -62,12 +62,15 @@ class Feed:
     def __init__(self):
         self.day = date.today()
         self.items = PAPERS
+        self.uncached: list[tuple] | None = None  # what arXiv itself lists when its cache is behind
         self.urls: list[str] = []
 
     def __call__(self, method, url, headers=None, **kw):
         self.urls.append(url)
         assert urlsplit(url).hostname == "rss.arxiv.org", url
-        body = rss(self.day, self.items).encode()
+        past_cache = "?t=" in url
+        items = self.uncached if past_cache and self.uncached is not None else self.items
+        body = rss(self.day, items).encode()
 
         class R:
             status_code, reason, headers, encoding = 200, "OK", {}, "utf-8"
@@ -231,6 +234,21 @@ def test_a_feed_dated_ahead_of_its_papers_is_read_again(client, svc, feed, plugi
     assert days == [tomorrow.isoformat(), date.today().isoformat()]
     news = client.post(f"/api/plugins/{PID}/news").get_json()["news"]  # told although marked told before
     assert news and news["day"] == tomorrow.isoformat() and news["count"] == 1
+
+
+def test_a_stale_cached_feed_is_asked_again_past_the_cache(client, svc, feed, plugin):
+    """28 Oct 2026: arXiv's cache served the new day's date over the previous day's papers all day."""
+    tomorrow = date.today() + timedelta(days=1)
+    feed.day = tomorrow
+    feed.uncached = [("2610.36047", "new", "Wednesday's paper", "New Author", "Fresh.", ["quant-ph"])]
+    seen = len(feed.urls)
+    assert client.post(f"/api/plugins/{PID}/fetch").get_json()["queued"]
+    assert wait(lambda: not plugin.jobs.pending() and len(client.get(PAST).get_json()["items"]) == 3)
+    asked = feed.urls[seen:]
+    assert "?t=" not in asked[0] and "?t=" in asked[1]  # the cache first, arXiv itself only when stale
+    days = [i["id"] for i in client.get("/api/plugin-sources").get_json()["sources"][0]["variants"]]
+    assert days == [tomorrow.isoformat(), date.today().isoformat()]
+    assert not any(j["key"] == "listing-again" for j in plugin.jobs.pending())
 
 
 def test_no_categories(client, svc, feed):
