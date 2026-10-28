@@ -12,8 +12,11 @@ Start Synapse with the address the tunnel serves:
 python server.py --no-browser --public-url https://synapse.example.com
 ```
 
-Without `--public-url` nothing changes. The server keeps listening on 127.0.0.1 only; the tunnel
-is the only way in from outside.
+With `--public-url`, Synapse requires loopback-only listening (`127.0.0.1`, `localhost` or `::1`).
+It refuses `--lan` and any other `--host` before starting: direct network access could bypass the
+tunnel and treat a request from the server's own LAN address as this computer, without sign-in.
+The application factory also rejects a configuration combining `public_url` with `lan`.
+Without `--public-url`, LAN access works as before.
 
 ## How it works
 

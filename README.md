@@ -154,6 +154,8 @@ python server.py --no-browser --public-url https://synapse.example.com
 python server.py --pairing-link   # on that computer (over SSH): a one-time link + QR code for your phone
 ```
 
+`--public-url` requires a loopback host (`127.0.0.1`, `localhost` or `::1`); combining it with
+`--lan` or a non-loopback `--host` is refused so direct network access cannot bypass the tunnel.
 Every request through the tunnel needs a signed-in device, whatever address it comes from. Pair
 your phone with the link, add a passkey there, and sign your other devices in with it. Pairing more
 devices, making AI access tokens and removing devices or passkeys work from a signed-in device after

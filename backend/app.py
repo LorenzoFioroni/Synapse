@@ -24,6 +24,8 @@ mimetypes.add_type("application/wasm", ".wasm")
 def create_app(config: Config | None = None, *, start_indexer: bool = True) -> Flask:
     """The app for ``config``. Tests pass ``start_indexer=False`` to skip the background work."""
     config = config or Config.from_env()
+    if config.public_url and config.lan:
+        raise ValueError("public_url requires loopback-only listening; LAN access would bypass the tunnel")
     app = Flask(__name__, static_folder=None)
     app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024
     services = Services(config)

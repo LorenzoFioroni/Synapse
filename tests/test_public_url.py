@@ -202,3 +202,51 @@ def test_debug_is_refused_with_a_public_url(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["server.py", "--public-url", "http://x.example"])
     with pytest.raises(SystemExit, match="https"):
         server.main()
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--lan"],
+        ["--lan", "--host", "::1"],
+        ["--host", "0.0.0.0"],
+        ["--host", "::"],
+        ["--host", "192.168.1.5"],
+        ["--host", "server.local"],
+    ],
+)
+def test_public_url_refuses_network_listening(monkeypatch, args):
+    import server
+
+    monkeypatch.setattr(sys, "argv", ["server.py", "--public-url", PUBLIC_URL, *args])
+    with pytest.raises(SystemExit, match="--public-url cannot be combined"):
+        server.main()
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
+def test_public_url_accepts_loopback_listening(monkeypatch, host):
+    import server
+
+    monkeypatch.setattr(sys, "argv", ["server.py", "--public-url", PUBLIC_URL, "--host", host, "--no-browser"])
+    monkeypatch.setattr(server, "ensure_built", lambda _: None)
+
+    class App:
+        def run(self, **kwargs):
+            assert kwargs["host"] == host
+
+    def create(config):
+        assert config.public_url == PUBLIC_URL
+        assert not config.lan
+        return App()
+
+    monkeypatch.setattr(server, "create_app", create)
+    server.main()
+
+
+def test_factory_refuses_public_url_with_lan(tmp_path):
+    cfg = Config.from_env(tmp_path / "data")
+    cfg.public_url = PUBLIC_URL
+    cfg.lan = True
+    with pytest.raises(ValueError, match="loopback-only"):
+        create_app(cfg, start_indexer=False)
+    assert not cfg.data_dir.exists()

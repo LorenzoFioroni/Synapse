@@ -178,6 +178,11 @@ def main() -> None:
         a.host = "0.0.0.0"
     wildcard = a.host in ("0.0.0.0", "::")
     loopback_only = a.host in ("127.0.0.1", "localhost", "::1")
+    if public_url and (a.lan or not loopback_only):
+        raise SystemExit(
+            "--public-url cannot be combined with --lan or a non-loopback --host: "
+            "direct network access would bypass the tunnel. Use --host 127.0.0.1, localhost or ::1."
+        )
     if a.debug and not loopback_only:
         # Werkzeug's debugger answers before the guard's checks, and its console runs Python code:
         # on the network that would let anyone who reaches the port run code on this computer.
