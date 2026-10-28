@@ -21,7 +21,7 @@ import { attachCiteCards, openCitation, pdfsOf, showCard } from './citeCard.js';
 import { conflictDialog } from './conflict.js';
 import { createEditor, loadMD, type NoteEditor } from './editor.js';
 import { exportMenu } from './exportNote.js';
-import { folderOfSelection, newFolder, newNote, renameNote, rescan, showTrash } from './fileOps.js';
+import { folderOfSelection, followMove, newFolder, newNote, renameNote, rescan, showTrash } from './fileOps.js';
 import { linkDataOf } from './linkData.js';
 import { refitOnResize } from './mathFit.js';
 import { NoteSession } from './noteSession.js';
@@ -33,7 +33,7 @@ import { paintCrumbs, paintSide, paintStatus } from './sidePanel.js';
 import { nKey, paintTree, refreshTree, saveCollapsed, selectOnly, setFilter, tree, treeEl } from './tree.js';
 import { initTreeInput } from './treeInput.js';
 import {
-  citeInfo, equationMode, hooks, itemInfo, type Mode, noteMacros, noteTabs, type NoteView, notesEnabled, notesOpen, resolveNote, stemOf, taskHooks, ws,
+  citeInfo, equationMode, hooks, itemInfo, type Mode, noteMacros, noteTabs, type NoteView, movedElsewhere, notesEnabled, notesOpen, notesRenamed, resolveNote, stemOf, taskHooks, ws,
 } from './workspace.js';
 
 export { notesOpen } from './workspace.js';
@@ -248,6 +248,13 @@ export async function showNote(path: string | null, mode?: Mode): Promise<boolea
   if (path && !ws.views.has(path) && !exists()) await refreshTree();
   if (request !== openRequest) return true;
   if (path && !ws.views.has(path) && !exists()) {
+    const to = await movedTo(path);   // renamed or moved in another window or on another device?
+    if (request !== openRequest) return true;
+    if (to) {
+      notesRenamed((p) => (p === path ? to : p));   // its tab follows
+      toast(movedElsewhere(path, to));
+      return showNote(to, mode);
+    }
     toast(`“${stemOf(path)}” no longer exists (moved or deleted).`);
     return false;
   }
@@ -258,6 +265,15 @@ export async function showNote(path: string | null, mode?: Mode): Promise<boolea
     if (request === openRequest) showNothing();
   }
   return true;
+}
+
+/** Where the server says a note that was at ``path`` went (moved since it started), if anywhere. */
+async function movedTo(path: string): Promise<string | null> {
+  try { await api.getNote(path); } catch (e) {
+    const to = (e as { data?: { moved_to?: unknown } } | null)?.data?.moved_to;
+    return typeof to === 'string' && to !== path ? to : null;
+  }
+  return null;
 }
 
 /** A note tab closed (tabs/tabs.ts): save its note and close its view. */
@@ -407,6 +423,8 @@ async function createView(path: string, mode: Mode): Promise<NoteView> {
       remoteArrived(path);
     },
     onSaved: () => afterSave(view),
+    // only the note on screen follows; a hidden tab's view finds out when it is shown again
+    onMoved: (to, typed) => (ws.view === view ? followMove(view.path, to, typed) : false),
   });
   ws.views.set(path, view);
   if (start.conflict) view.pendingStart = 'conflict';

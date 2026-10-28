@@ -21,6 +21,7 @@ from pathlib import Path
 TRASH = ".trash"
 ATTACHMENTS = "attachments"
 NOTE_SUFFIX = ".md"
+MOVES_KEPT = 5000  # moved notes remembered for windows still showing an old path
 _BAD_CHARS = re.compile(r'[\x00-\x1f<>:"\\|?*]')
 
 
@@ -34,6 +35,15 @@ class InvalidPath(VaultError):
 
 class NoteMissing(VaultError):
     status = 404
+
+
+class NoteMoved(NoteMissing):
+    """The note is not at this path because Synapse moved it there (``to``) while running: a
+    window still showing the old path can follow it instead of treating it as deleted."""
+
+    def __init__(self, path: str, to: str):
+        super().__init__(path)
+        self.to = to
 
 
 class NoteExists(VaultError):
@@ -69,6 +79,8 @@ class Vault:
     def __init__(self, root: Path | str):
         self.root = Path(root).expanduser().resolve()
         self._lock = threading.RLock()
+        # old path -> new path of notes moved since start (bounded; oldest dropped first)
+        self._moves: dict[str, str] = {}
 
     # ------------------------------------------------------------------ paths
     def ensure(self) -> None:
@@ -112,7 +124,8 @@ class Vault:
         """Return ``(text, hash)``."""
         p = self.abs(rel)
         if not p.is_file():
-            raise NoteMissing(rel)
+            to = self.moved_to(rel)
+            raise NoteMoved(rel, to) if to else NoteMissing(rel)
         data = p.read_bytes()
         return data.decode("utf-8", errors="replace"), content_hash(data)
 
@@ -174,6 +187,7 @@ class Vault:
             if expected_hash is None:
                 if current is not None:
                     raise NoteExists(rel)
+                self._moves.pop(rel, None)  # a new note here: the old one's move no longer applies
             elif current != expected_hash:
                 raise Conflict(rel, current)
             self._atomic_write(p, data)
@@ -206,7 +220,27 @@ class Vault:
                 raise NoteExists(dst)
             pd.parent.mkdir(parents=True, exist_ok=True)
             os.replace(ps, pd)
+            self._moved([(src, dst)])
         return dst
+
+    def _moved(self, pairs: list[tuple[str, str]]) -> None:
+        for old, new in pairs:
+            self._moves.pop(old, None)
+            self._moves[old] = new
+        while len(self._moves) > MOVES_KEPT:
+            del self._moves[next(iter(self._moves))]
+
+    def moved_to(self, rel: str) -> str | None:
+        """Where a note that was at ``rel`` is now, if Synapse moved it since start and it is still
+        there (following renames of renames)."""
+        with self._lock:
+            seen, at = {rel}, rel
+            while at in self._moves:
+                at = self._moves[at]
+                if at in seen:
+                    return None
+                seen.add(at)
+            return at if at != rel and (self.root / at).is_file() else None
 
     @staticmethod
     def _reserved(rel: str) -> bool:
@@ -265,7 +299,9 @@ class Vault:
             notes = self.notes_in(src)
             pd.parent.mkdir(parents=True, exist_ok=True)
             os.replace(ps, pd)
-        return [(n, dst + n[len(src) :]) for n in notes]
+            moved = [(n, dst + n[len(src) :]) for n in notes]
+            self._moved(moved)
+        return moved
 
     # ------------------------------------------------------------------ trash
     def trash(self, rel: str) -> str:

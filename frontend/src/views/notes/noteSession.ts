@@ -42,6 +42,9 @@ export interface NoteSessionOptions {
   onConflict?: (info: Conflict) => void;
   onRemoteText?: (text: string) => void;   // replace the editor content
   onSaved?: (hash: string | null) => void;
+  /** The note was moved elsewhere (another window, device or a citation-key rename) to ``to``:
+   *  reopen it there, carrying ``text``. Resolves false when the caller cannot follow it. */
+  onMoved?: (to: string, text: string) => boolean | Promise<boolean>;
 }
 
 const draftKey = (path: string) => `zc.noteDraft:${path}`;
@@ -55,6 +58,7 @@ export class NoteSession {
   onConflict: (info: Conflict) => void;
   onRemoteText: (text: string) => void;
   onSaved: (hash: string | null) => void;
+  onMoved: ((to: string, text: string) => boolean | Promise<boolean>) | null;
   saved: { text: string; hash: string | null };
   text: string;
   status: SaveStatus;
@@ -65,6 +69,7 @@ export class NoteSession {
   disposed: boolean;
   conflict: Conflict | null;
   private remoteCheck: Promise<void> | null = null;
+  private moved = false;
 
   constructor(o: NoteSessionOptions) {
     this.path = o.path;
@@ -74,6 +79,7 @@ export class NoteSession {
     this.onStatus = o.onStatus || (() => {});
     this.onConflict = o.onConflict || (() => {});
     this.onRemoteText = o.onRemoteText || (() => {});
+    this.onMoved = o.onMoved || null;
     this.onSaved = o.onSaved || (() => {});
     this.saved = { text: o.serverText ?? o.text, hash: o.hash };
     this.text = o.text;
@@ -136,6 +142,7 @@ export class NoteSession {
 
   /** Save now if needed. Resolves when the server has the current text (or saving failed). */
   async save(): Promise<void> {
+    if (this.moved) return;   // its text went on with the note's new session
     if (this.disposed && !this.dirty) return;
     if (this.conflict || !this.dirty) return;
     if (this.inFlight) { this.again = true; return this.inFlight; }
@@ -173,7 +180,10 @@ export class NoteSession {
       const r = await this.api.get(this.path);
       theirs = r.text; theirsHash = r.hash;
     } catch (e) {
-      if ((e as { status?: number } | null)?.status === 404) deleted = true;
+      if ((e as { status?: number } | null)?.status === 404) {
+        if (await this._followMove(e)) return;
+        deleted = true;
+      }
     }
     if (!deleted && theirs === this.text) {   // the other side wrote exactly our text
       this.saved = { text: theirs, hash: theirsHash };
@@ -251,10 +261,11 @@ export class NoteSession {
   }
 
   private async _checkRemote(): Promise<void> {
-    if (this.disposed || this.conflict || this.inFlight) return;
+    if (this.disposed || this.moved || this.conflict || this.inFlight) return;
     let r: { text: string; hash: string };
     try { r = await this.api.get(this.path); } catch (e) {
       if ((e as { status?: number } | null)?.status === 404 && !this.disposed && !this.conflict && !this.inFlight) {
+        if (await this._followMove(e)) return;
         await this._enterConflict();
       }
       return;
@@ -265,6 +276,27 @@ export class NoteSession {
     this.text = r.text;
     this.onRemoteText(r.text);
     this.onSaved(r.hash);
+  }
+
+  /** A 404 that says where the note went: follow it when that loses nothing, i.e. nothing is
+   *  unsaved here or the moved note is still the version this session last saved. Otherwise
+   *  (both sides changed) the caller shows the usual conflict. */
+  private async _followMove(e: unknown): Promise<boolean> {
+    const to = (e as { data?: { moved_to?: unknown } } | null)?.data?.moved_to;
+    if (typeof to !== 'string' || !to || !this.onMoved || this.disposed || this.moved) return false;
+    if (this.dirty) {
+      let r: { text: string; hash: string };
+      try { r = await this.api.get(to); } catch { return false; }
+      if (r.hash !== this.saved.hash) return false;
+    }
+    const from = this.path;
+    clearTimeout(this.timer ?? undefined);
+    this.moved = true;
+    let followed = false;
+    try { followed = await this.onMoved(to, this.text); } catch { /* treat as not followed */ }
+    if (!followed) { this.moved = false; return false; }
+    this.drafts.remove(draftKey(from));   // the text goes on under the new path
+    return true;
   }
 
   /** Stop timers. Unsaved text stays in the draft. */
