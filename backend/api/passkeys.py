@@ -38,20 +38,26 @@ def overview():
     )
 
 
-def _may_add(rp_id: str):
-    """The first passkey for an address may be added by any signed-in device (that is how a device
-    paired with a code gets one); later ones need the same confirmation as other administrative
-    actions, so a stolen device cookie can't turn itself into a passkey."""
-    if svc().passkeys.count(rp_id) == 0:
+def _may_add():
+    """Who may enrol a passkey. The computer running Synapse always may. Another device may enrol a
+    passkey only straight after pairing (``Devices.recently_paired`` — the pairing code is issued on
+    this computer, or over SSH with ``--pairing-link``, so this means a deliberate pairing just
+    happened) or after confirming with a passkey it already holds, like the other administrative
+    actions. A stale device cookie can neither pair itself nor confirm, so a stolen cookie cannot turn
+    itself into a passkey and gain lasting access."""
+    if admin.allowed():
         return None
-    return admin.refusal("Passkeys can only be added on the computer running Synapse.")
+    device = g.get("device")
+    if device is not None and svc().devices.recently_paired(device.get("id")):
+        return None
+    return admin.refusal("Passkeys can only be added on the computer running Synapse, or on a device you just paired.")
 
 
 @bp.post("/register/options")
 def register_options():
     try:
         rp_id, origin = _site()
-        if (refused := _may_add(rp_id)) is not None:
+        if (refused := _may_add()) is not None:
             return refused
         return jsonify(svc().passkeys.registration_options(rp_id, origin, str(body().get("name") or "")))
     except PasskeyError as e:
@@ -62,7 +68,7 @@ def register_options():
 def register():
     try:
         rp_id, origin = _site()
-        if (refused := _may_add(rp_id)) is not None:
+        if (refused := _may_add()) is not None:
             return refused
         passkey = svc().passkeys.register(rp_id, origin, _credential(), client_addr(request.environ))
     except PasskeyError as e:

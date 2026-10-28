@@ -30,6 +30,10 @@ TOUCH_EVERY = 60  # seconds between "last seen" updates of a device
 FAILED_LIMIT = 10  # failed pairing attempts per address …
 FAILED_WINDOW = 10 * 60  # … within this many seconds
 NAME_MAX = 60
+# How long after pairing a device may still enrol its first passkey (see recently_paired). Long
+# enough to pair and then add a passkey in one sitting, short enough that a long-lived cookie on its
+# own never qualifies.
+PASSKEY_ENROLL_GRACE = 10 * 60
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS devices (
@@ -73,6 +77,7 @@ class Devices(AuthTable):
         self._code: tuple[str, float] | None = None  # (hash, expiry) of the one code (a restart voids it)
         self._failed: dict[str, list[float]] = {}  # address → times of failed pairing attempts
         self._touched: dict[str, float] = {}  # device id → last "last seen" write
+        self._paired: dict[str, float] = {}  # device id → when it redeemed a pairing code (recently_paired)
 
     # -- pairing -------------------------------------------------------------
     def new_pairing_code(self) -> tuple[str, float]:
@@ -113,7 +118,11 @@ class Devices(AuthTable):
                     401,
                 )
             self._code = None  # it works once
-            return self._insert(name, user_agent, addr)
+            device, token = self._insert(name, user_agent, addr)
+            # Opens the grace window in which this device may add its first passkey (recently_paired).
+            # Only pairing with a code does so, not a passkey sign-in (which already proves a passkey).
+            self._paired[device["id"]] = self.clock()
+            return device, token
 
     def add(self, name: str, user_agent: str, addr: str) -> tuple[dict, str]:
         """A new device that proved itself another way (a passkey). Returns (device, token)."""
@@ -158,6 +167,18 @@ class Devices(AuthTable):
                 self._conn().commit()
             return dev
 
+    def recently_paired(self, dev_id: str | None, within: float = PASSKEY_ENROLL_GRACE) -> bool:
+        """True for a short while after a device redeemed a pairing code, so it can add its first
+        passkey straight after pairing (``--pairing-link`` → pair → Add a Passkey). A long-lived
+        device cookie on its own is never "recently paired", so a stolen cookie cannot enrol a passkey
+        and turn itself into lasting access. Kept in memory, so a restart closes the window (the device
+        pairs again)."""
+        if not dev_id:
+            return False
+        with self._lock:
+            paired = self._paired.get(dev_id)
+        return paired is not None and self.clock() - paired < within
+
     # -- managing ------------------------------------------------------------
     def _get(self, dev_id: str) -> dict | None:
         row = self._conn().execute("SELECT * FROM devices WHERE id = ?", (dev_id,)).fetchone()
@@ -182,6 +203,7 @@ class Devices(AuthTable):
             cur = self._conn().execute("DELETE FROM devices WHERE id = ?", (dev_id,))
             self._conn().commit()
             self._touched.pop(dev_id, None)
+            self._paired.pop(dev_id, None)
             return cur.rowcount > 0
 
 

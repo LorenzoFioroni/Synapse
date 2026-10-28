@@ -43,14 +43,18 @@ The public name is accepted by the Host check, and changes must come from
 ## Administrative actions from your devices
 
 On a server you don't sit at, the actions that were reserved for "the computer running Synapse" —
-pairing a device, making or removing an access token, adding a second passkey, removing passkeys or
-other devices — can be done from a signed-in device, **after confirming with a passkey** (Face ID,
+pairing a device, making or removing an access token, adding or removing passkeys, removing other
+devices, and changing plugins (enabling, disabling or reconfiguring them, which runs or changes code
+on the server) — can be done from a signed-in device, **after confirming with a passkey** (Face ID,
 Touch ID). The server answers such a request with 403 and `confirm: true`; the app asks the browser
 for one of Synapse's passkeys (`POST /api/passkeys/confirm/options`, then `/api/passkeys/confirm`)
 and tries once more. The confirmation is remembered for that device for 5 minutes
 (`backend/access/confirm.py`, in memory). A stolen device cookie alone can therefore not hand out new
-access. The first passkey for an address can be added by any signed-in device, since a device
-paired with a code has nothing to confirm with yet.
+access. Enrolling a passkey is the one bootstrap: a device may add a passkey only straight after it
+pairs (`Devices.recently_paired`, a few minutes — the first passkey has nothing to confirm with yet)
+or after confirming with a passkey it already holds. Because pairing codes are issued only on this
+computer or over SSH (`--pairing-link`), a stale cookie is never "recently paired" and so cannot
+enrol a passkey of its own.
 
 This works the same over the LAN with `--cert`: any device signed in over HTTPS can confirm.
 
@@ -65,8 +69,10 @@ python server.py --pairing-link            # same --port (and --cert) as the run
 
 It prints the link (`https://synapse.example.com/pair#code=…`, valid once for a few minutes) and,
 with `segno` installed, a QR code in the terminal. Open it on your phone, then in **Settings →
-Devices** choose **Add a Passkey…**. Your other devices then sign in with that passkey (it syncs
-through iCloud Keychain or Google Password Manager); no more pairing.
+Devices** choose **Add a Passkey…** — do this soon after pairing, within the few-minute enrolment
+window (`PASSKEY_ENROLL_GRACE`); leave it longer and you simply run `--pairing-link` and pair again.
+Your other devices then sign in with that passkey (it syncs through iCloud Keychain or Google
+Password Manager); no more pairing.
 
 `--pairing-link` asks the server over loopback, like Settings → Devices does
 (`backend/access/pairing_link.py`).
