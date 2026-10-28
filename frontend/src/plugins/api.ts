@@ -163,7 +163,8 @@ export interface PluginContext {
       a change of settings restarts nothing, so read them when needed via `settings()`). */
   settings(): Promise<Record<string, unknown>>;
   /** Change some of those values (checked against the manifest); resolves to all of them. The
-      plugin's backend hears the change (`@plugin.settings.on_change`). */
+      plugin's backend hears the change (`@plugin.settings.on_change`). On a device other than the
+      computer running Synapse this first asks for the user's passkey; it rejects when they cancel. */
   saveSettings(changes: Record<string, unknown>): Promise<Record<string, unknown>>;
 
   /** URLs of host-vendored offline dependencies; currently force-graph. */

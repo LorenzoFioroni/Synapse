@@ -220,6 +220,20 @@ async def main():
                 " body: JSON.stringify({ name: 'x' }) }).then(r => r.json())"
             )
             check("… nor make an access token without confirming", r.get("confirm") is True, r)
+            # Settings → Plugins asks for the passkey like the other pages (it used to show only the refusal)
+            await ipad.evaluate("() => import('/js/views/settingsView.js').then(m => m.openSettings('plugins'))")
+            toggle = '.plugin-row[data-plugin="graph"] .switch'
+            await ipad.wait_for_selector(toggle)
+            await ipad.click(toggle)
+            graph_on = "() => fetch('/api/plugin-host').then(r => r.json()).then(o => o.plugins.find(p => p.id === 'graph').enabled)"
+            ok = await wait_for(lambda: ipad.evaluate(f"() => ({graph_on})().then(on => !on)"))
+            refused = await ipad.locator(".toast", has_text="Confirm with your passkey").count()
+            check("the iPad turns a plugin off after confirming with its passkey", ok and not refused, refused)
+            await ipad.click(toggle)
+            await ipad.click(".dialog-backdrop:last-of-type button:has-text('Turn On')")
+            ok = await wait_for(lambda: ipad.evaluate(graph_on))
+            check("… and on again", ok)
+            await ipad.keyboard.press("Escape")
             await ipad.evaluate("() => import('/js/views/settingsView.js').then(m => m.openSettings('ai'))")
             await ipad.wait_for_selector("[data-ai-new]")
             await ipad.click("[data-ai-new]")

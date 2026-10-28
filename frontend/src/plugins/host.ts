@@ -17,6 +17,7 @@ import type { ChangeKind, PluginContext, PluginItem, PluginModule } from './api.
 import { CORE } from './core/index.js';
 import { registerSuggestions } from './suggestions.js';
 import { noteHooks } from '../views/notes/hooks.js';
+import { asAdmin } from '../views/settings/confirm.js';
 import { feedback } from './feedback.js';
 import { notesContext } from './notes.js';
 import { registerMarkdown, registerFigures } from './markdownHost.js';
@@ -102,7 +103,12 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     name: info.name,
     version: info.version,
     settings: async () => (await api.plugins()).plugins.find((x) => x.id === pid)?.values || {},
-    saveSettings: async (changes) => (await api.setPluginSettings(pid, changes)).values,
+    saveSettings: async (changes) => {
+      // the same passkey confirmation as Settings → Plugins when this is not the computer Synapse runs on
+      const res = await asAdmin(() => api.setPluginSettings(pid, changes));
+      if (!res) throw new Error('Not saved: changing plugin settings from this device needs your passkey.');
+      return res.values;
+    },
     tasks: { register: integration => { assertLive(); return keep(registerTaskIntegration(pid, integration)); } },
     markdown: { register: provider => { assertLive(); return keep(registerMarkdown(provider)); },
       figures: { register: provider => { assertLive(); return keep(registerFigures(provider)); } } },
