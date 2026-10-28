@@ -158,3 +158,8 @@ from the bundle (`after_restore`), the one made meanwhile kept as `notes-history
 changes, AI commits, pure renames, deletes, key renames, milestones, restores, reverts, two
 processes, no Git, migration, backups, the API), `tests/js/historyGroups.test.mjs`, the
 `notes_history` browser checklist and `claude_edits` (the AI bar and the note's history).
+
+The worker also calls `Services.sync_external_notes` on each tick, independently of Git being
+available or making a commit. This refreshes the disposable notes index and publishes `notes`
+changes only when files were added, changed or removed. History failure does not disable this
+index refresh; errors in the refresh are logged and retried at the next tick.

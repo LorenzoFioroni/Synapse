@@ -64,6 +64,7 @@ export class NoteSession {
   retryMs: number;
   disposed: boolean;
   conflict: Conflict | null;
+  private remoteCheck: Promise<void> | null = null;
 
   constructor(o: NoteSessionOptions) {
     this.path = o.path;
@@ -242,12 +243,24 @@ export class NoteSession {
     await this.save();
   }
 
-  /** When the window regains focus: pick up edits made in another tab if we have none. */
+  /** Pick up outside edits; unsaved typing goes through the existing conflict dialog. */
   async checkRemote(): Promise<void> {
-    if (this.status !== 'saved' || this.inFlight) return;
+    if (this.remoteCheck) return this.remoteCheck;
+    this.remoteCheck = this._checkRemote();
+    try { await this.remoteCheck; } finally { this.remoteCheck = null; }
+  }
+
+  private async _checkRemote(): Promise<void> {
+    if (this.disposed || this.conflict || this.inFlight) return;
     let r: { text: string; hash: string };
-    try { r = await this.api.get(this.path); } catch { return; }
-    if (this.status !== 'saved' || this.dirty || r.hash === this.saved.hash) return;
+    try { r = await this.api.get(this.path); } catch (e) {
+      if ((e as { status?: number } | null)?.status === 404 && !this.disposed && !this.conflict && !this.inFlight) {
+        await this._enterConflict();
+      }
+      return;
+    }
+    if (this.disposed || this.conflict || this.inFlight || r.hash === this.saved.hash) return;
+    if (this.dirty) { await this._enterConflict(); return; }
     this.saved = { text: r.text, hash: r.hash };
     this.text = r.text;
     this.onRemoteText(r.text);

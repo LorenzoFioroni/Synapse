@@ -135,6 +135,7 @@ class NoteHistory(HistoryReader):
         self._ready = False
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self.on_tick: Callable[[], object] | None = None
         self.on_commit: Callable[[], object] | None = None  # the change feed: history panels refresh
 
     # ------------------------------------------------------------------ state
@@ -499,16 +500,26 @@ class NoteHistory(HistoryReader):
             self._safe(run, "checkpoint")
         return made
 
+    def tick(self) -> None:
+        """Checkpoint history and refresh external consumers, even without Git."""
+        self.due()
+        if self.on_tick:
+            try:
+                self.on_tick()
+            except Exception:
+                log.exception("Notes refresh failed")
+
     def start(self) -> None:
         """In the web app: record what changed while it was not running, then keep checkpointing."""
-        if not self.enabled or self._thread:
+        if self._thread:
             return
         self._stop.clear()
 
         def loop():
             self.checkpoint()
+            self.tick()
             while not self._stop.wait(TICK):
-                self.due()
+                self.tick()
 
         self._thread = threading.Thread(target=loop, name="notes-history", daemon=True)
         self._thread.start()

@@ -541,7 +541,8 @@ Each open note has one `NoteSession`. It keeps `saved` (the text and hash the se
   is shown and the dialog comes back; a note someone else wrote again meanwhile becomes a
   conflict with their text.
 - **Remote checks.** `checkRemote()` loads the file and replaces the editor text only when the
-  session is `saved` with no edits. `editor.replace` changes just the differing span, so the
+  session has no edits; a changed or deleted file with unsaved text enters the conflict
+  dialog instead. `editor.replace` changes just the differing span, so the
   cursor stays and the change is one undo step.
 
 ### How a change made by Claude reaches an open note
@@ -713,3 +714,12 @@ Live preview asks for the spoiler ranges on every keystroke, so finding them is 
 note: only positions holding `||` are examined, and code/math ranges are looked up by binary
 search; the result is kept until the text changes. `tests/js/spoilers.test.mjs` checks the ranges
 against the rules applied position by position and keeps a 300 KB note under 250 ms.
+
+### Edits from other programs
+
+While the web app runs, the notes history worker also syncs the notes index every 30 seconds,
+including when Git is unavailable. Files created, changed, renamed or deleted outside Synapse
+refresh note lists, search, links and backlinks and notify all windows through the change feed.
+A clean open editor loads changed text; unsaved text is retained in its local draft and the
+existing conflict dialog asks which version to keep. An outside deletion offers to close the
+note or save the editor text again. Refreshes wait while typing or another dialog is open.

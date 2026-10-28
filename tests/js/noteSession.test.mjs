@@ -238,7 +238,7 @@ test('opening with drafts: same text, restorable, or conflicting', () => {
   assert.deepEqual(NoteSession.open('a.md', { text: 't', hash: 'h1' }, drafts), { text: 'unsaved', restored: true, conflict: true });
 });
 
-test('checkRemote picks up another tab\'s save only when we have no edits', async () => {
+test('checkRemote refreshes clean text and prompts for unsaved edits', async () => {
   const { server, s, events } = setup();
   server.text = 'remote'; server.hash = hashOf('remote');
   await s.checkRemote();
@@ -247,7 +247,10 @@ test('checkRemote picks up another tab\'s save only when we have no edits', asyn
   s.update('local');
   server.text = 'remote2'; server.hash = hashOf('remote2');
   await s.checkRemote();
-  assert.deepEqual(events.remote, ['remote']);   // unchanged: our edit will conflict on save instead
+  assert.deepEqual(events.remote, ['remote']);
+  assert.equal(s.status, 'conflict');
+  assert.equal(s.text, 'local');
+  assert.equal(events.conflicts.at(-1).theirs, 'remote2');
   s.dispose();
 });
 
@@ -259,4 +262,51 @@ test('lineDiff', () => {
   const long = Array.from({ length: 50 }, (_, i) => `l${i}`).join('\n');
   const c = compactDiff(lineDiff(long, long.replace('l25', 'changed')), 1);
   assert.deepEqual(c.map((r) => r.op), ['…', ' ', '-', '+', ' ', '…']);
+});
+
+for (const dirty of [false, true]) {
+  test(`outside deletion preserves the open note (dirty=${dirty})`, async () => {
+    const { server, s, events, mem } = setup();
+    if (dirty) s.update('my draft');
+    server.deleted = true;
+    await s.checkRemote();
+    assert.equal(s.status, 'conflict');
+    assert.equal(events.conflicts.at(-1).deleted, true);
+    assert.equal(mem.get(draftStorageKey('a.md')).text, dirty ? 'my draft' : 'v1');
+    s.dispose();
+  });
+}
+
+test('unchanged remote text does not interrupt unsaved typing', async () => {
+  const { s, events } = setup();
+  s.update('draft');
+  await s.checkRemote();
+  assert.equal(s.status, 'dirty');
+  assert.equal(events.conflicts.length, 0);
+  s.dispose();
+});
+
+test('typing while a remote read is pending is preserved', async () => {
+  const { s, api, events } = setup();
+  let answer;
+  api.get = () => new Promise((resolve) => { answer = resolve; });
+  const check = s.checkRemote();
+  s.update('draft');
+  api.get = async () => ({ text: 'outside', hash: hashOf('outside') });
+  answer(await api.get());
+  await check;
+  assert.equal(s.text, 'draft');
+  assert.equal(s.status, 'conflict');
+  assert.deepEqual(events.remote, []);
+  s.dispose();
+});
+
+
+test('overlapping remote checks show only one conflict dialog', async () => {
+  const { s, server, events } = setup();
+  s.update('draft');
+  server.text = 'outside'; server.hash = hashOf('outside');
+  await Promise.all([s.checkRemote(), s.checkRemote()]);
+  assert.equal(events.conflicts.length, 1);
+  s.dispose();
 });

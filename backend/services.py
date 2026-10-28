@@ -53,6 +53,7 @@ class Services:
         self.note_service = NotesService(
             self.vault, self.notes, self.papers, self._backup_dir, history_dir=config.notes_history_dir
         )
+        self.note_service.history.on_tick = self.sync_external_notes
         self.note_service.history.on_commit = lambda: self.changes.record({"history"})
         # Attachments no note uses go to their own trash; both trashes are emptied after a while.
         self.attachments = Attachments(self.vault, self.notes, self.settings)
@@ -107,6 +108,13 @@ class Services:
             self.notes.sync()
         except Exception:  # notes must never stop the library from starting
             logging.getLogger(__name__).exception("Notes index sync failed")
+
+    def sync_external_notes(self) -> None:
+        """Refresh disposable indexes and every window after files change outside the app."""
+        result = self.notes.sync()
+        if any(result.values()):
+            self.changes.record({"notes"})
+            self.attachments.poke()
 
     def mcp_http(self):
         """The MCP server over HTTP (``/mcp``), built on first use. It shares these services with

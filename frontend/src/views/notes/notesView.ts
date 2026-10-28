@@ -184,7 +184,9 @@ function flushOnUnload(): void {
 /** Notes changed elsewhere (another window or device): pick it up like coming back to the tab. */
 export function notesChanged(): void {
   if (!notesEnabled()) return;
-  if (notesOpen()) ws.session?.checkRemote();
+  if (notesOpen()) { ws.session?.checkRemote(); loadLinks(); }
+  staleOthers();
+  noteHooks.graph?.changed();
   refreshTree();   // also the notes count in the sidebar and the pencil column
 }
 
