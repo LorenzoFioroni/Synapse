@@ -3,7 +3,8 @@ in tabs beside the Synapse tab (one per PDF, reused and pointed at a new spot), 
 from inside a PDF too, closing goes back where the PDF was opened from, tabs can be reopened,
 reordered and come back after a reload at the page they were left on, Back/Forward inside a PDF
 stay inside it, and Settings can send PDFs to browser tabs instead. Then a server started with
---quit-when-closed stops once its window is closed.
+--quit-when-closed stops once its window is closed. A foreign origin cannot embed the app,
+while its own PDF frames still work.
 
     python tests/e2e/tabs_checklist.py        (SHOTS=/some/dir to save screenshots)
 
@@ -126,6 +127,17 @@ async def main():
         async with async_playwright() as p:
             b = await p.chromium.launch()
             ctx = await b.new_context(viewport={"width": 1300, "height": 850})
+            # Different loopback hostnames are foreign origins without relying on an outside site.
+            probe = await ctx.new_page()
+            await probe.goto(BASE)
+            async with probe.expect_console_message(predicate=lambda m: "frame-ancestors" in m.text) as violation:
+                await probe.set_content(f'<iframe src="http://localhost:{PORT}/"></iframe>')
+            check(
+                "a foreign site cannot frame Synapse",
+                not await probe.frames[1].evaluate("Boolean(window.zcTabs)"),
+                (await violation.value).text,
+            )
+            await probe.close()
             page = await ctx.new_page()
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))

@@ -9,6 +9,26 @@ from tests.conftest import make_pdf
 
 EVIL = {"Origin": "https://evil.example"}
 
+
+@pytest.mark.parametrize(
+    "path,headers,remote,status",
+    [
+        ("/", {}, "127.0.0.1", 200),
+        ("/viewer.html", {}, "127.0.0.1", 200),
+        ("/api/items", {}, "127.0.0.1", 200),
+        ("/missing.html", {}, "127.0.0.1", 404),
+        ("/", {"Host": "evil.example"}, "127.0.0.1", 403),
+        ("/", {}, "192.0.2.10", 401),
+        ("/mcp", {}, "127.0.0.1", 401),
+        ("/", {"Sec-Fetch-Dest": "iframe", "Sec-Fetch-Site": "cross-site"}, "127.0.0.1", 200),
+    ],
+)
+def test_frame_protection_covers_pages_and_refusals(client, path, headers, remote, status):
+    response = client.get(path, headers=headers, environ_base={"REMOTE_ADDR": remote})
+    assert response.status_code == status
+    assert response.headers["Content-Security-Policy"] == "frame-ancestors 'self'"
+
+
 # Every state-changing route a web page could reach without a CORS preflight
 # (no body, or a form/multipart body), plus JSON and DELETE routes for good measure.
 CROSS_SITE_CALLS = [
