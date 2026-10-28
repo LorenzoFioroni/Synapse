@@ -383,13 +383,15 @@ shows those buttons only where they can work.
 
 ### Confirming with a passkey
 
-Pairing codes, access tokens, a second passkey and removing passkeys or other devices give or take
-lasting access. `backend/api/admin.py` allows them on this computer, or on a signed-in device that
+Pairing codes, access tokens, a second passkey, removing passkeys or other devices, and turning
+plugins on or off, restarting or reconfiguring them give or take lasting access. `backend/api/admin.py` allows them on this computer, or on a signed-in device that
 confirmed with one of Synapse's passkeys in the last 5 minutes (`backend/access/confirm.py`). Such
 a device that has not confirmed gets 403 with `confirm: true`; `asAdmin` in
 `frontend/src/views/settings/confirm.ts` then asks the browser for a passkey
 (`POST /api/passkeys/confirm/options`, `POST /api/passkeys/confirm`, challenges of their own
-purpose, so a sign-in answer can't be replayed as a confirmation) and repeats the request.
+purpose, so a sign-in answer can't be replayed as a confirmation) and repeats the request. Every
+page that makes such a request goes through it: Settings → Devices, AI Access, Passkeys and
+Plugins, and a plugin frontend's `saveSettings`.
 `can_confirm` in the overviews says whether the device could (signed in, HTTPS by name, a passkey
 exists for this address). Without it, the 403 says where to do the action instead.
 

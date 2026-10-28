@@ -40,7 +40,9 @@ What exists today:
 - Enabling, disabling, restarting or reconfiguring a plugin runs or changes code on the computer
   running Synapse and lasts, so from another device it needs a passkey confirmation, like pairing a
   device or making an access token (the `admin.refusal` gate in `backend/api/plugins.py`; see
-  [remote access](remote-access.md)). Reading the list of plugins does not.
+  [remote access](remote-access.md)). Settings → Plugins and a plugin frontend's `saveSettings`
+  ask for the passkey when the server wants one (`asAdmin`); cancelling leaves the plugin as it
+  was. Reading the list of plugins does not need it.
 - `python server.py --safe-mode` runs only bundled core plugins, for when an installed plugin keeps the app from working.
   `mcp_server.py --safe-mode` does the same for the MCP server an AI app starts.
 - Restart the AI app after turning on a plugin with tools if they do not show up: some AI apps read

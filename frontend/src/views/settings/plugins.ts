@@ -11,6 +11,7 @@ import { confirmDialog, openDialog } from '../../ui/dialog.js';
 import { toast, toastError } from '../../ui/toast.js';
 import type { PluginInfo, PluginSetting, PluginsOverview } from '../../types.js';
 import { escapeHtml, formatDate } from '../../util.js';
+import { asAdmin } from './confirm.js';
 import { flashSaved } from './page.js';
 
 let current: HTMLElement | null = null;
@@ -229,8 +230,9 @@ async function toggle(view: HTMLElement, p: PluginInfo, input: HTMLInputElement)
   }
   input.disabled = true;
   try {
-    const res = input.checked ? await api.enablePlugin(p.id) : await api.disablePlugin(p.id);
-    if (res.plugin.status === 'failed') toast(`${p.name}: ${res.plugin.problem}`, { type: 'error', timeout: 8000 });
+    // From another device the server asks for a passkey first (asAdmin); cancelling changes nothing.
+    const res = await asAdmin(() => (input.checked ? api.enablePlugin(p.id) : api.disablePlugin(p.id)));
+    if (res?.plugin.status === 'failed') toast(`${p.name}: ${res.plugin.problem}`, { type: 'error', timeout: 8000 });
   } catch (e) { toastError(e); }
   await refreshPlugins(view);
   syncPlugins();   // this window's own change is not in the change feed
@@ -246,7 +248,8 @@ async function saveSetting(view: HTMLElement, id: string, el: HTMLElement): Prom
   else if (holder.dataset.ptype === 'int' || holder.dataset.ptype === 'float') value = (holder as HTMLInputElement).value === '' ? null : Number((holder as HTMLInputElement).value);
   else value = (holder as HTMLInputElement | HTMLSelectElement).value;
   try {
-    const res = await api.setPluginSettings(id, { [key]: value });
+    const res = await asAdmin(() => api.setPluginSettings(id, { [key]: value }));
+    if (!res) { await refreshPlugins(view, true); return; }   // passkey not given: show the saved value again
     const p = find(id);
     if (p) p.values = res.values;
     flashSaved(holder.closest('.p-setting'));
@@ -286,7 +289,7 @@ export function bindPlugins(view: HTMLElement, go: (navId: string) => void): voi
     if (!p) return;
     if (el.matches('[data-ptoggle]')) toggle(view, p, el);
     else if (el.matches('[data-premote]')) {
-      api.setPluginRemoteMcp(p.id, el.checked).then(() => refreshPlugins(view), (err) => { toastError(err); refreshPlugins(view); });
+      asAdmin(() => api.setPluginRemoteMcp(p.id, el.checked)).then(() => refreshPlugins(view), (err) => { toastError(err); refreshPlugins(view); });
     } else if (el.closest('[data-pset]')) saveSetting(view, p.id, el);
   });
   content.addEventListener('click', async (e) => {
@@ -299,8 +302,8 @@ export function bindPlugins(view: HTMLElement, go: (navId: string) => void): voi
     else if (t.closest('[data-plog]')) showLog(p);
     else if (t.closest('[data-prestart]')) {
       try {
-        const res = await api.restartPlugin(p.id);
-        toast(res.plugin.running ? `${p.name} restarted` : `${p.name}: ${res.plugin.problem}`, { type: res.plugin.running ? 'success' : 'error' });
+        const res = await asAdmin(() => api.restartPlugin(p.id));
+        if (res) toast(res.plugin.running ? `${p.name} restarted` : `${p.name}: ${res.plugin.problem}`, { type: res.plugin.running ? 'success' : 'error' });
       } catch (err) { toastError(err); }
       refreshPlugins(view);
       syncPlugins();
