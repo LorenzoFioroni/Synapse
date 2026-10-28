@@ -65,6 +65,16 @@ PRESETS = [
 _TOKEN = re.compile(r"\{([A-Za-z0-9]+)\}")
 
 
+class CitationKeyError(ValueError):
+    """A proposed citation key cannot safely identify one library item."""
+
+
+def validate(key: str | None) -> None:
+    """Empty keys are allowed for incomplete items; nonempty keys must work in citations."""
+    if key and not re.fullmatch(r"[A-Za-z0-9_:./-]+", key):
+        raise CitationKeyError("Citation keys may contain only letters, digits and _ - : . /")
+
+
 def ascii_alnum(s: str) -> str:
     s = unicodedata.normalize("NFKD", s or "")
     s = "".join(ch for ch in s if not unicodedata.combining(ch))
@@ -140,7 +150,7 @@ def render(pattern: str, paper: dict) -> str:
         return m.group(0)  # unknown tokens are left visible so mistakes are obvious
 
     key = _TOKEN.sub(repl, pattern or "{auth}{year}")
-    key = re.sub(r"[^A-Za-z0-9_:\-.+]", "", key)
+    key = re.sub(r"[^A-Za-z0-9_:./-]", "", key)
     return key or "item"
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import builtins
 import logging
 import os
+import sqlite3
 import uuid
 from pathlib import Path
 
@@ -186,6 +187,18 @@ class PaperRepository:
             )
             return {r["citation_key"] for r in rows if r["id"] != exclude_id}
 
+    def _check_citation_key(self, c: sqlite3.Connection, key: str | None, paper_id: str = "") -> None:
+        citekeys.validate(key)
+        if not key:
+            return
+        other = c.execute(
+            "SELECT id, title FROM papers WHERE citation_key = ? AND id != ? LIMIT 1", (key, paper_id)
+        ).fetchone()
+        if other:
+            raise citekeys.CitationKeyError(
+                f'Citation key "{key}" is already used by "{other["title"] or "Untitled"}" ({other["id"]})'
+            )
+
     def find_duplicate(self, entry: dict, papers: builtins.list[dict] | None = None) -> str | None:
         """Return the id of an existing (non-trashed) item matching by DOI or title+year."""
         return DuplicateFinder(papers if papers is not None else self.list()).find(entry)
@@ -204,10 +217,23 @@ class PaperRepository:
         if auto_citekey is None:
             auto_citekey = self.settings.get("citekey_auto")
         pattern = self.settings.get("citekey_pattern")
-        taken = self.all_citation_keys() if auto_citekey else set()
         now = utcnow()
         ids = []
         with self.db.session() as c:
+            # Serialize key selection with other writers, including other Synapse processes.
+            c.execute("BEGIN IMMEDIATE")
+            taken = {r[0] for r in c.execute("SELECT citation_key FROM papers WHERE citation_key != ''")}
+            explicit = set()
+            for data in entries:
+                key = _clean_value("citation_key", data.get("citation_key"))
+                self._check_citation_key(c, key)
+                if key:
+                    if key in explicit:
+                        raise citekeys.CitationKeyError(
+                            f'Citation key "{key}" is already used by another imported item'
+                        )
+                    explicit.add(key)
+            taken.update(explicit)
             for data in entries:
                 values = {k: _clean_value(k, data.get(k)) for k in EDITABLE_KEYS if k in data}
                 values.setdefault("item_type", DEFAULT_ITEM_TYPE)
@@ -236,34 +262,33 @@ class PaperRepository:
 
     def update(self, paper_id: str, data: dict) -> dict:
         values = {k: _clean_value(k, v) for k, v in data.items() if k in EDITABLE_KEYS}
-        if (
-            values
-            and "citation_key" not in values
-            and self.settings.get("citekey_auto")
-            and {"authors", "title", "year"} & values.keys()
-        ):
-            # Items created empty get a key as soon as they have enough metadata.
-            current = self.get(paper_id)
-            if not current.get("citation_key"):
-                merged = {**current, **values}
-                pattern = self.settings.get("citekey_pattern")
-                if all(merged.get(f) for f in citekeys.required_fields(pattern) or {"authors", "title"}):
-                    values["citation_key"] = citekeys.generate(
-                        pattern, merged, self.all_citation_keys(exclude_id=paper_id)
-                    )
         changed_key = None
         if values:
-            values["date_modified"] = utcnow()
-            sets = ", ".join(f"{k} = ?" for k in values)
             with self.db.session() as c:
-                if "citation_key" in values:
-                    row = c.execute("SELECT citation_key FROM papers WHERE id = ?", (paper_id,)).fetchone()
-                    old = (row["citation_key"] if row else None) or ""
-                    if old and old != (values["citation_key"] or ""):
-                        changed_key = (old, values["citation_key"] or "")
-                cur = c.execute(f"UPDATE papers SET {sets} WHERE id = ?", [*values.values(), paper_id])
-                if cur.rowcount == 0:
+                c.execute("BEGIN IMMEDIATE")
+                row = c.execute("SELECT * FROM papers WHERE id = ?", (paper_id,)).fetchone()
+                if row is None:
                     raise NotFound(paper_id)
+                old = row["citation_key"] or ""
+                if (
+                    "citation_key" not in values
+                    and not old
+                    and self.settings.get("citekey_auto")
+                    and {"authors", "title", "year"} & values.keys()
+                ):
+                    # Items created empty get a key as soon as they have enough metadata.
+                    merged = {**dict(row), **values}
+                    pattern = self.settings.get("citekey_pattern")
+                    if all(merged.get(f) for f in citekeys.required_fields(pattern) or {"authors", "title"}):
+                        taken = {r[0] for r in c.execute("SELECT citation_key FROM papers WHERE citation_key != ''")}
+                        values["citation_key"] = citekeys.generate(pattern, merged, taken)
+                if "citation_key" in values and (values["citation_key"] or "") != old:
+                    self._check_citation_key(c, values["citation_key"], paper_id)
+                    if old:
+                        changed_key = (old, values["citation_key"] or "")
+                values["date_modified"] = utcnow()
+                sets = ", ".join(f"{k} = ?" for k in values)
+                c.execute(f"UPDATE papers SET {sets} WHERE id = ?", [*values.values(), paper_id])
         if changed_key:
             self._notify_citekey_change(paper_id, *changed_key)
         if values:

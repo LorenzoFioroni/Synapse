@@ -140,6 +140,20 @@ Details worth knowing:
 - **Indexes:** `idx_title`, `idx_papers_deleted`, `idx_papers_doi`, `idx_att_paper`,
   `idx_paper_folders_folder`, `idx_paper_tags_tag` and `idx_annotations_attachment`.
 
+### Citation-key integrity
+
+`PaperRepository.create_many` and `update` validate nonempty citation keys. They accept ASCII
+letters, digits and `_ - : . /`, and reject a key already held by another item (including the
+Trash). Keys are case-sensitive; empty keys remain valid for incomplete items. Generated keys
+use the same character set and retain the usual collision suffixes.
+
+Key selection and validation run under a SQLite write transaction (`BEGIN IMMEDIATE`), so two
+writers cannot claim the same key. Batch imports reserve explicit keys before generating others;
+a bad or duplicate key rejects the whole batch. HTTP writes return 400 with the reason; duplicate
+errors name the item holding the key, shown by the item pane's existing error toast.
+Existing records are not rewritten: metadata edits and resubmitting an unchanged legacy key still
+work. A changed key must pass validation before the existing note/task rekey listeners run.
+
 ### How migrations work
 
 There is no schema version number. `Database.migrate()` brings any older file up to date, and it

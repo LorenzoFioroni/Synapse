@@ -10,6 +10,7 @@ from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
 
 from .config import Config
+from .library.citekeys import CitationKeyError
 from .library.repository import NotFound
 from .services import Services
 
@@ -58,6 +59,10 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
 
     register_blueprints(app)
     app.register_blueprint(frontend.bp)  # last: its catch-all serves the static files
+
+    @app.errorhandler(CitationKeyError)
+    def citation_key_error(e):
+        return jsonify(error=str(e)), 400
 
     @app.errorhandler(NotFound)
     def not_found(e):

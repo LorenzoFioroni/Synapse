@@ -19,7 +19,8 @@ TypeScript frontend. Everything runs on your machine.
 - 🤖 **Bring your AI tools** — connect Claude, Codex and other AI apps through MCP;
   optionally complete notes with a local Ollama model.
 - 🔄 **Move references freely** — import and export BibTeX, RIS, EndNote and CSL JSON,
-  with customisable citation keys.
+  with customisable citation keys. Nonempty keys must be unique across the library and Trash,
+  and use only letters, digits and `_ - : . /`; invalid edits and imports report an error.
 - 🧩 **Make it yours** — extend Synapse with plugins, including arXiv feeds, and choose
   light or dark mode.
 - 📱 **Take research around the house** — use the responsive interface on a paired phone

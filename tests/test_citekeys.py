@@ -80,3 +80,122 @@ def test_failing_listener_does_not_break_update(svc):
     svc.papers.on_citekey_change(boom)
     item = svc.papers.create({"authors": "Cui, Jian", "title": "Variational", "year": 2015})
     assert svc.papers.update(item["id"], {"citation_key": "k2"})["citation_key"] == "k2"
+
+
+# --- validation: every writer uses the same repository rules -------------------------------
+
+
+def test_safe_key_characters_and_empty_keys(svc):
+    for key in ("AZaz09_-:./", "", None):
+        item = svc.papers.create({"citation_key": key}, auto_citekey=False)
+        assert item["citation_key"] == key
+
+
+def test_generated_keys_use_the_safe_set(svc):
+    svc.settings.update({"citekey_pattern": "{auth}+/{year}"})
+    item = svc.papers.create({"authors": "Cui, Jian", "year": 2015}, auto_citekey=True)
+    assert item["citation_key"] == "cui/2015"
+
+
+def test_invalid_keys_are_rejected_by_create_and_update(svc):
+    import pytest
+
+    from backend.library.citekeys import CitationKeyError
+
+    item = svc.papers.create({"citation_key": "valid"})
+    seen = []
+    svc.papers.on_citekey_change(lambda *args: seen.append(args))
+    for key in ("has space", "a,b", "{x}", 'a"b', "a'b", "a;b", "a\\b", "a\nb", "a\tb", "café", "<img src=x>"):
+        with pytest.raises(CitationKeyError):
+            svc.papers.create({"citation_key": key})
+        with pytest.raises(CitationKeyError):
+            svc.papers.update(item["id"], {"citation_key": key, "title": "Must not save"})
+    assert svc.papers.get(item["id"])["citation_key"] == "valid"
+    assert not svc.papers.get(item["id"])["title"]
+    assert svc.papers.counts()["library"] == 1
+    assert seen == []
+
+
+def test_duplicate_keys_include_trash_and_exclude_the_item_itself(svc):
+    import pytest
+
+    from backend.library.citekeys import CitationKeyError
+
+    first = svc.papers.create({"title": "First paper", "citation_key": "same"})
+    second = svc.papers.create({"citation_key": "other"})
+    assert svc.papers.update(first["id"], {"citation_key": "same"})["citation_key"] == "same"
+    svc.papers.trash([first["id"]])
+    with pytest.raises(CitationKeyError, match="already used by.*First paper"):
+        svc.papers.create({"citation_key": "same"}, auto_citekey=False)
+    with pytest.raises(CitationKeyError):
+        svc.papers.update(second["id"], {"citation_key": "same"})
+    assert svc.papers.create({"citation_key": "Same"})["citation_key"] == "Same"
+    assert svc.papers.update(second["id"], {"citation_key": ""})["citation_key"] == ""
+
+
+def test_batch_validation_is_atomic_and_reserves_explicit_keys(svc):
+    import pytest
+
+    from backend.library.citekeys import CitationKeyError
+
+    for entries in (
+        [{"citation_key": "fresh"}, {"citation_key": "bad key"}],
+        [{"citation_key": "same"}, {"citation_key": "same"}],
+    ):
+        with pytest.raises(CitationKeyError):
+            svc.papers.create_many(entries, auto_citekey=False)
+        assert svc.papers.list() == []
+    svc.settings.update({"citekey_pattern": "{auth}{year}"})
+    ids = svc.papers.create_many(
+        [
+            {"authors": "Cui, Jian", "year": 2015},
+            {"citation_key": "cui2015"},
+            {"authors": "Cui, Jian", "year": 2015},
+        ],
+        auto_citekey=True,
+    )
+    assert [svc.papers.get(pid)["citation_key"] for pid in ids] == ["cui2015a", "cui2015", "cui2015b"]
+
+
+def test_existing_legacy_keys_survive_metadata_edits(svc):
+    item = svc.papers.create({"citation_key": "valid"})
+    with svc.papers.db.session() as c:
+        c.execute("UPDATE papers SET citation_key = ? WHERE id = ?", ("legacy+key", item["id"]))
+    assert svc.papers.update(item["id"], {"title": "New title"})["citation_key"] == "legacy+key"
+    assert svc.papers.update(item["id"], {"citation_key": "legacy+key"})["citation_key"] == "legacy+key"
+
+
+def test_concurrent_writers_cannot_claim_the_same_key(svc):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from backend.library.citekeys import CitationKeyError
+
+    barrier = Barrier(2)
+
+    def create(_):
+        barrier.wait()
+        try:
+            return svc.papers.create({"citation_key": "shared"})["citation_key"]
+        except CitationKeyError:
+            return "rejected"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(create, range(2))) == ["rejected", "shared"]
+    assert len(svc.papers.list()) == 1
+
+
+def test_http_validation_returns_actionable_400s(client):
+    first = client.post("/api/items", json={"title": "Original", "citation_key": "same"}).get_json()
+    second = client.post("/api/items", json={"citation_key": "other"}).get_json()
+    for key in ("same", "bad key"):
+        created = client.post("/api/items", json={"citation_key": key})
+        updated = client.patch(f"/api/items/{second['id']}", json={"citation_key": key})
+        assert created.status_code == updated.status_code == 400
+        assert created.get_json()["error"] == updated.get_json()["error"]
+    assert first["id"] in client.post("/api/items", json={"citation_key": "same"}).get_json()["error"]
+    imported = client.post(
+        "/api/import/commit", json={"entries": [{"citation_key": "fresh"}, {"citation_key": "same"}]}
+    )
+    assert imported.status_code == 400
+    assert len(client.get("/api/items").get_json()["items"]) == 2
