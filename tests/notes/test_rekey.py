@@ -129,3 +129,10 @@ def test_rename_backups_fall_back_to_data_backups(lib, client, tmp_path):
     client.patch(f"/api/items/{item['id']}", json={"citation_key": "smith2021"})
     assert len(list(svc.config.backups_dir.glob("notes-*.tar.gz"))) == 1
     assert "[@smith2021, p. 3]" in svc.vault.read("Review.md")[0]  # and rewritten
+
+
+def test_a_paper_note_renamed_with_its_key_says_where_it_went(lib, client):
+    svc, item, other, key, text = lib
+    client.patch(f"/api/items/{item['id']}", json={"citation_key": "smith2021"})
+    r = client.get("/api/notes/note", query_string={"path": f"papers/{key}.md"})
+    assert r.status_code == 404 and r.json["moved_to"] == "papers/smith2021.md"

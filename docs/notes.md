@@ -103,7 +103,11 @@ MCP server builds the same objects in its own process over the same folder.
   files whose place is taken again and leaves them in the trash.
 
 Errors are `VaultError` subclasses with an HTTP `status`: `InvalidPath` (400), `NoteMissing`
-(404), `NoteExists` and `Conflict` (409).
+(404), `NoteExists` and `Conflict` (409). The vault remembers the notes it moved since start
+(`move`, `move_folder`, so also renames, folder moves and citation-key renames of paper notes; the
+last 5000), and `read` of a path a note was moved away from raises `NoteMoved`, a `NoteMissing`
+whose `to` is where the note is now (following renames of renames). The API answers it with 404
+and `moved_to`, so a window still showing the old path can follow the note.
 
 ### The index (`backend/notes/index.py`)
 
@@ -541,7 +545,15 @@ Each open note has one `NoteSession`. It keeps `saved` (the text and hash the se
   is shown and the dialog comes back; a note someone else wrote again meanwhile becomes a
   conflict with their text.
 - **Remote checks.** `checkRemote()` loads the file and replaces the editor text only when the
-  session is `saved` with no edits. `editor.replace` changes just the differing span, so the
+  session has no edits; a changed or deleted file with unsaved text enters the conflict
+  dialog instead.
+- **Moved elsewhere.** When the file is gone and the 404 carries `moved_to` (another window or
+  device renamed or moved it, or a citation-key rename moved a paper note), the session calls
+  `onMoved(to, text)`: the note on screen reopens at the new path with the editor text, its tab
+  renamed (`followMove` in `fileOps.ts`), and the old session stops saving. It follows only when
+  that loses nothing: no unsaved text, or the moved file is still the version last saved here;
+  otherwise the deleted-note conflict dialog asks as before. This applies to a save that meets
+  the move too (409, then the 404). `editor.replace` changes just the differing span, so the
   cursor stays and the change is one undo step.
 
 ### How a change made by Claude reaches an open note
@@ -713,3 +725,12 @@ Live preview asks for the spoiler ranges on every keystroke, so finding them is 
 note: only positions holding `||` are examined, and code/math ranges are looked up by binary
 search; the result is kept until the text changes. `tests/js/spoilers.test.mjs` checks the ranges
 against the rules applied position by position and keeps a 300 KB note under 250 ms.
+
+### Edits from other programs
+
+While the web app runs, the notes history worker also syncs the notes index every 30 seconds,
+including when Git is unavailable. Files created, changed, renamed or deleted outside Synapse
+refresh note lists, search, links and backlinks and notify all windows through the change feed.
+A clean open editor loads changed text; unsaved text is retained in its local draft and the
+existing conflict dialog asks which version to keep. An outside deletion offers to close the
+note or save the editor text again. Refreshes wait while typing or another dialog is open.

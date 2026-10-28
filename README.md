@@ -79,6 +79,11 @@ window to move it there, or outside every window for a new one (or right-click i
 Window**); right-click items, PDFs, folders, notes and tasks for **Open in New Window**. Settings →
 PDF Viewer → Open PDFs in → Browser Tabs keeps PDFs in browser tabs of their own.
 
+Notes edited in another program are detected every 30 seconds while Synapse is running.
+Lists and backlinks refresh automatically; an open note reloads if clean, or offers the
+conflict dialog while preserving unsaved text. This also works without Git history. A note
+renamed or moved in another window or on another device follows to its new name.
+
 Give a notes folder a colour (right-click it in the notes list → Colour): its notes show it on
 their tab and in the app window's title bar, which is otherwise neutral like the tab bar.
 

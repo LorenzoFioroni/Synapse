@@ -409,3 +409,27 @@ def test_the_history_api(client, svc):
     assert client.post(f"/api/notes/history/milestones/{mid}/restore").json["restored"] == []
     assert client.delete(f"/api/notes/history/milestones/{mid}").json == {"deleted": mid}
     assert client.post("/api/notes/history/checkpoint", json={"restored_from": "x; rm"}).status_code == 400
+
+
+def test_refresh_worker_runs_without_git_and_retries_failed_refresh(tmp_path, monkeypatch):
+    import threading
+
+    monkeypatch.setattr(recorder, "find_git", lambda: None)
+    monkeypatch.setattr(recorder, "TICK", 0.01)
+    history = recorder.NoteHistory(tmp_path / "notes", tmp_path / "history.git")
+    retried = threading.Event()
+    calls = []
+
+    def refresh():
+        calls.append(True)
+        if len(calls) == 1:
+            raise OSError("temporarily unavailable")
+        retried.set()
+
+    history.on_tick = refresh
+    try:
+        history.start()
+        assert retried.wait(5)
+        assert not history.enabled
+    finally:
+        history.stop()

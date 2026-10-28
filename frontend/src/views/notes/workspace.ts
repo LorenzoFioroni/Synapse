@@ -84,6 +84,12 @@ export function notesRenamed(rename: (path: string) => string): void {
   noteTabs.renamed?.(rename);
 }
 
+/** What to tell the user when a note they had open was renamed or moved elsewhere. */
+export function movedElsewhere(from: string, to: string): string {
+  const where = parentOf(from) === parentOf(to) ? `renamed to “${stemOf(to)}”` : `moved to ${to.replace(/\.md$/i, '')}`;
+  return `This note was ${where} elsewhere.`;
+}
+
 /** Notes went to the trash: their tabs close. */
 export function notesDeleted(gone: (path: string) => boolean): void {
   for (const p of [...ws.parked.keys()]) if (gone(p)) ws.parked.delete(p);

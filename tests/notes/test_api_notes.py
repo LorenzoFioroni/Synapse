@@ -237,3 +237,25 @@ def test_cite_index_lists_every_pdf(client, svc):
     assert [p["name"] for p in info["pdfs"]] == ["main.pdf", "supplement.pdf"]
     assert info["pdf"]["name"] == "main.pdf"
     assert [p["id"] for p in info["pdfs"]][0] == info["pdf"]["id"]
+
+
+def test_a_moved_note_says_where_it_went(client):
+    """A window still showing the old path learns the new one instead of "deleted"."""
+    get = lambda p: client.get("/api/notes/note", query_string={"path": p})  # noqa: E731
+    create(client, title="Alpha")
+    assert client.post("/api/notes/move", json={"path": "Alpha.md", "to": "Beta.md"}).status_code == 200
+    r = get("Alpha.md")
+    assert r.status_code == 404 and r.json["moved_to"] == "Beta.md"
+    # renames of renames and folder moves are followed to where the note is now
+    client.post("/api/notes/move", json={"path": "Beta.md", "to": "box/Gamma.md"})
+    client.post("/api/notes/folder/move", json={"path": "box", "to": "crate"})
+    assert get("Alpha.md").json["moved_to"] == "crate/Gamma.md"
+    assert get("box/Gamma.md").json["moved_to"] == "crate/Gamma.md"
+    # gone for good (trashed), or a new note at the old path: no stale answer
+    client.post("/api/notes/trash", json={"paths": ["crate/Gamma.md"]})
+    assert "moved_to" not in get("Alpha.md").json
+    create(client, title="Delta")
+    client.post("/api/notes/move", json={"path": "Delta.md", "to": "Epsilon.md"})
+    assert client.put("/api/notes/note", json={"path": "Delta.md", "text": "new", "create": True}).status_code == 200
+    client.post("/api/notes/trash", json={"paths": ["Delta.md"]})
+    assert "moved_to" not in get("Delta.md").json

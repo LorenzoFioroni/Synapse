@@ -238,7 +238,7 @@ test('opening with drafts: same text, restorable, or conflicting', () => {
   assert.deepEqual(NoteSession.open('a.md', { text: 't', hash: 'h1' }, drafts), { text: 'unsaved', restored: true, conflict: true });
 });
 
-test('checkRemote picks up another tab\'s save only when we have no edits', async () => {
+test('checkRemote refreshes clean text and prompts for unsaved edits', async () => {
   const { server, s, events } = setup();
   server.text = 'remote'; server.hash = hashOf('remote');
   await s.checkRemote();
@@ -247,7 +247,10 @@ test('checkRemote picks up another tab\'s save only when we have no edits', asyn
   s.update('local');
   server.text = 'remote2'; server.hash = hashOf('remote2');
   await s.checkRemote();
-  assert.deepEqual(events.remote, ['remote']);   // unchanged: our edit will conflict on save instead
+  assert.deepEqual(events.remote, ['remote']);
+  assert.equal(s.status, 'conflict');
+  assert.equal(s.text, 'local');
+  assert.equal(events.conflicts.at(-1).theirs, 'remote2');
   s.dispose();
 });
 
@@ -259,4 +262,115 @@ test('lineDiff', () => {
   const long = Array.from({ length: 50 }, (_, i) => `l${i}`).join('\n');
   const c = compactDiff(lineDiff(long, long.replace('l25', 'changed')), 1);
   assert.deepEqual(c.map((r) => r.op), ['…', ' ', '-', '+', ' ', '…']);
+});
+
+for (const dirty of [false, true]) {
+  test(`outside deletion preserves the open note (dirty=${dirty})`, async () => {
+    const { server, s, events, mem } = setup();
+    if (dirty) s.update('my draft');
+    server.deleted = true;
+    await s.checkRemote();
+    assert.equal(s.status, 'conflict');
+    assert.equal(events.conflicts.at(-1).deleted, true);
+    assert.equal(mem.get(draftStorageKey('a.md')).text, dirty ? 'my draft' : 'v1');
+    s.dispose();
+  });
+}
+
+test('unchanged remote text does not interrupt unsaved typing', async () => {
+  const { s, events } = setup();
+  s.update('draft');
+  await s.checkRemote();
+  assert.equal(s.status, 'dirty');
+  assert.equal(events.conflicts.length, 0);
+  s.dispose();
+});
+
+test('typing while a remote read is pending is preserved', async () => {
+  const { s, api, events } = setup();
+  let answer;
+  api.get = () => new Promise((resolve) => { answer = resolve; });
+  const check = s.checkRemote();
+  s.update('draft');
+  api.get = async () => ({ text: 'outside', hash: hashOf('outside') });
+  answer(await api.get());
+  await check;
+  assert.equal(s.text, 'draft');
+  assert.equal(s.status, 'conflict');
+  assert.deepEqual(events.remote, []);
+  s.dispose();
+});
+
+
+test('overlapping remote checks show only one conflict dialog', async () => {
+  const { s, server, events } = setup();
+  s.update('draft');
+  server.text = 'outside'; server.hash = hashOf('outside');
+  await Promise.all([s.checkRemote(), s.checkRemote()]);
+  assert.equal(events.conflicts.length, 1);
+  s.dispose();
+});
+
+/** The note was renamed elsewhere to b.md: the old path answers 404 with moved_to. */
+function moveTo(server, api, { changedAfter = false } = {}) {
+  const moved = { text: changedAfter ? 'edited after the move' : server.text };
+  moved.hash = hashOf(moved.text);
+  server.deleted = true;
+  const get = api.get;
+  api.get = async (path) => {
+    if (path === 'b.md') return { text: moved.text, hash: moved.hash };
+    try { return await get(path); } catch (e) { throw Object.assign(e, { data: { moved_to: 'b.md' } }); }
+  };
+}
+
+for (const dirty of [false, true]) {
+  test(`a note moved elsewhere is followed, keeping the text (dirty=${dirty})`, async () => {
+    const { server, api, s, events, mem } = setup();
+    const follows = [];
+    s.onMoved = (to, text) => { follows.push([to, text]); return true; };
+    if (dirty) s.update('my draft');
+    moveTo(server, api);
+    await s.checkRemote();
+    assert.deepEqual(follows, [['b.md', dirty ? 'my draft' : 'v1']]);
+    assert.equal(events.conflicts.length, 0);
+    assert.equal(mem.get(draftStorageKey('a.md')), undefined);
+    await s.save();   // the old session never writes to the old path again
+    assert.equal(server.saves, 0);
+    s.dispose();
+  });
+}
+
+test('a save after a move elsewhere follows instead of a deleted-note conflict', async () => {
+  const { server, api, s, events } = setup('v1', { delay: 5 });
+  const follows = [];
+  s.onMoved = (to, text) => { follows.push([to, text]); return true; };
+  moveTo(server, api);
+  s.update('typed');
+  await s.save();
+  assert.deepEqual(follows, [['b.md', 'typed']]);
+  assert.equal(events.conflicts.length, 0);
+  s.dispose();
+});
+
+test('unsaved text and a note changed after its move elsewhere: the usual conflict', async () => {
+  const { server, api, s, events } = setup();
+  const follows = [];
+  s.onMoved = (to) => { follows.push(to); return true; };
+  s.update('my draft');
+  moveTo(server, api, { changedAfter: true });
+  await s.checkRemote();
+  assert.deepEqual(follows, []);
+  assert.equal(s.status, 'conflict');
+  assert.equal(events.conflicts.at(-1).deleted, true);
+  s.dispose();
+});
+
+test('a move the window cannot follow falls back to the deleted-note conflict', async () => {
+  const { server, api, s, events } = setup();
+  s.onMoved = () => false;
+  moveTo(server, api);
+  await s.checkRemote();
+  assert.equal(s.status, 'conflict');
+  assert.equal(events.conflicts.at(-1).deleted, true);
+  s.dispose();
 });

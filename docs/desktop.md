@@ -159,7 +159,8 @@ meanwhile. Only the 8 views used last stay alive: an older one is saved and put 
 shown. The tab keeps its mode (`Tab.mode`) through a reload. Notes in background tabs are saved on
 leaving them, when the page is hidden and before notes are moved. Moving or renaming a note renames its tab (`notesRenamed` in `notes/workspace.ts`,
 called by `fileOps.ts`); deleting it closes its tab, or empties the tab shown (`notesDeleted`). A
-tab whose note was deleted elsewhere closes, with a message, when it is shown.
+tab whose note was deleted elsewhere closes, with a message, when it is shown; one whose note was
+renamed or moved elsewhere follows it to its new name.
 
 **PDF tabs.**
 

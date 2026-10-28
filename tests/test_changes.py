@@ -129,3 +129,37 @@ def test_a_failing_listener_never_breaks_saving(client, svc):
     r = client.post("/api/items", json={"title": "Still saved"})
     assert r.status_code in (200, 201)
     assert any(p["title"] == "Still saved" for p in svc.papers.list())
+
+
+def test_outside_note_tick_refreshes_index_and_every_window(client, svc):
+    root = svc.vault.root
+    (root / "Target.md").write_text("# Target\n", encoding="utf-8")
+    (root / "Source.md").write_text("# Source\n[[Target]] #outside\n", encoding="utf-8")
+    seq, ep = start(client, MAC)
+    # The same callback runs even when Git is unavailable.
+    svc.note_service.history.repo = None
+    svc.note_service.history.tick()
+    assert svc.notes.note("Source.md")["title"] == "Source"
+    assert svc.notes.backlinks("Target.md")
+    assert "notes" in poll(client, MAC, seq, ep)["changes"]
+    assert "notes" in poll(client, IPAD, seq, ep)["changes"]
+    (root / "Source.md").write_text("# Renamed title\nNo link\n", encoding="utf-8")
+    (root / "Target.md").rename(root / "Moved.md")
+    seq, ep = start(client, MAC)
+    svc.note_service.history.tick()
+    assert svc.notes.note("Source.md")["title"] == "Renamed title"
+    assert svc.notes.note("Target.md") is None
+    assert svc.notes.note("Moved.md") is not None
+    assert not svc.notes.backlinks("Moved.md")
+    assert "notes" in poll(client, MAC, seq, ep)["changes"]
+    (root / "Source.md").unlink()
+    svc.note_service.history.tick()
+    assert svc.notes.note("Source.md") is None
+
+
+def test_unchanged_note_tick_does_not_publish_changes(client, svc):
+    svc.note_service.history.repo = None
+    svc.note_service.history.tick()
+    seq, ep = start(client, MAC)
+    svc.note_service.history.tick()
+    assert poll(client, MAC, seq, ep)["changes"] == []

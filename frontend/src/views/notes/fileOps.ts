@@ -13,7 +13,7 @@ import type { NoteSession } from './noteSession.js';
 import {
   fKey, nKey, refreshTree, saveCollapsed, selectOnly, selected, tree, treeEl, visibleKeys,
 } from './tree.js';
-import { hooks, nameOf, notesDeleted, notesRenamed, parentOf, stemOf, within, ws } from './workspace.js';
+import { hooks, movedElsewhere, nameOf, notesDeleted, notesRenamed, parentOf, stemOf, within, ws } from './workspace.js';
 
 /** Notes and folders to act on together. */
 export interface Selection { notes: string[]; folders: string[] }
@@ -78,10 +78,23 @@ function keepTreeFocus(): () => void {
   return () => { if (was) treeEl().focus({ preventScroll: true }); };
 }
 
+/** The open note was moved elsewhere (another window or device, or a citation-key rename): follow
+ *  it to ``to`` with ``typed`` as this window's text, as a rename here would. False when ``from`` is
+ *  not the note on screen. */
+export async function followMove(from: string, to: string, typed: string): Promise<boolean> {
+  if (ws.session?.path !== from) return false;
+  notesRenamed((p) => (p === from ? to : p));
+  await reopenAs(to, typed);
+  if (tree.sel.delete(nKey(from))) tree.sel.add(nKey(to));
+  if (tree.cursor === nKey(from)) tree.anchor = tree.cursor = nKey(to);
+  await refreshTree();
+  toast(movedElsewhere(from, to));
+  return true;
+}
+
 /** The open note was moved: keep editing it under its new path, with anything typed meanwhile, its
  *  undo history and its tab's mode. */
-async function reopenAs(path: string): Promise<void> {
-  const typed = ws.session!.text;
+async function reopenAs(path: string, typed = ws.session!.text): Promise<void> {
   const mode = ws.mode;
   if (ws.editor) ws.parked.set(path, { state: ws.editor.park(), top: ws.editor.topLine() });
   await hooks.closeCurrent();
