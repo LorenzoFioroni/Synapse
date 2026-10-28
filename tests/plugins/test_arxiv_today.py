@@ -203,6 +203,36 @@ def test_old_days_are_forgotten(client, svc, feed, plugin):
     assert "arxiv:2609.00042" not in svc.plugins.fields.store.rows(PID, "announced")
 
 
+def test_a_feed_dated_ahead_of_its_papers_is_read_again(client, svc, feed, plugin):
+    """arXiv may date the feed for the new day while it still lists the previous day's papers."""
+    import sqlite3
+
+    tomorrow = date.today() + timedelta(days=1)
+    db = plugin.jobs._folder / "feed.sqlite"
+    with sqlite3.connect(db) as c:  # what the old version recorded for such a feed
+        c.execute(
+            "INSERT INTO days (day, fetched_at, categories, notified) VALUES (?, 'x', 'quant-ph', 1)", (str(tomorrow),)
+        )
+    feed.day = tomorrow  # the same papers under tomorrow's date
+    assert client.post(f"/api/plugins/{PID}/fetch").get_json()["queued"]
+    assert wait(lambda: any(j["key"] == "listing-again" for j in plugin.jobs.pending()))
+    again = next(j for j in plugin.jobs.pending() if j["key"] == "listing-again")
+    assert json.loads(again["args"]) == [1] and again["run_after"] > time.time() + 25 * 60
+    days = [i["id"] for i in client.get("/api/plugin-sources").get_json()["sources"][0]["variants"]]
+    assert days == [date.today().isoformat()]  # the papers kept their day
+    assert client.post(f"/api/plugins/{PID}/news").get_json()["news"] is None
+
+    feed.items = [("2610.00077", "new", "Tomorrow's paper", "New Author", "Fresh.", ["quant-ph"])]
+    with plugin.jobs.queue._connect() as c:  # (bring the second look forward)
+        c.execute("UPDATE jobs SET run_after = 0 WHERE key = 'listing-again'")
+    plugin.wake()
+    assert wait(lambda: not plugin.jobs.pending() and len(client.get(PAST).get_json()["items"]) == 3)
+    days = [i["id"] for i in client.get("/api/plugin-sources").get_json()["sources"][0]["variants"]]
+    assert days == [tomorrow.isoformat(), date.today().isoformat()]
+    news = client.post(f"/api/plugins/{PID}/news").get_json()["news"]  # told although marked told before
+    assert news and news["day"] == tomorrow.isoformat() and news["count"] == 1
+
+
 def test_no_categories(client, svc, feed):
     svc.plugins.private_network = True
     client.post(f"/api/plugin-host/{PID}/enable")
