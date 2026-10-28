@@ -16,6 +16,7 @@ library" once a day is scored.
 from __future__ import annotations
 
 import json
+import time
 from datetime import date, datetime, timedelta, timezone
 
 from backend.plugins import Plugin, PluginError
@@ -24,8 +25,8 @@ from . import listing
 from .store import SCHEMA
 
 RESCORE_DAYS = 3  # how many recent days a rescoring covers (older ones keep their scores)
-# arXiv sometimes dates the feed for the new announcement before it lists the new papers: look
-# again this often, this many times (until mid-morning US Eastern after the 00:30 run)
+# when even arXiv itself still lists the previous day's papers under the new date, look again
+# this often, this many times (until mid-morning US Eastern after the 00:30 run)
 CATCH_UP_WAIT_S = 30 * 60
 CATCH_UP_TRIES = 12
 
@@ -75,26 +76,43 @@ def activate(plugin: Plugin) -> None:
         return plugin.library.find(arxiv=arxiv) is not None
 
     # ------------------------------------------------------------------ fetching
-    @plugin.job("listing", retries=3)
-    def fetch_listing(tries: int = 0) -> None:
-        cats = categories()
-        if not cats:
-            plugin.log.info("No categories chosen (Settings → Plugins → arXiv Today)")
-            return
-        r = plugin.http.get(listing.url(cats))
+    def read_feed(cats: list[str], fresh: bool = False) -> tuple[str | None, list[dict]]:
+        """The feed's day and the entries of the kinds chosen in the settings. ``fresh`` adds a
+        query string arXiv's cache has not seen, so the answer comes from arXiv itself."""
+        params = {"t": str(int(time.time()))} if fresh else None
+        r = plugin.http.get(listing.url(cats), params=params, cache=not fresh)
         day, entries = listing.parse(r.text)
         kinds = {"new"}
         if plugin.settings["cross_lists"]:
             kinds.add("cross")
         if plugin.settings["replacements"]:
             kinds |= {"replace", "replace-cross"}
-        entries = [e for e in entries if e["kind"] in kinds]
+        return day, [e for e in entries if e["kind"] in kinds]
+
+    def looks_stale(day: str, entries: list[dict]) -> bool:
+        """Dated after the newest stored day, yet listing only papers already stored."""
+        newest = newest_stored()
+        return bool(newest and day > newest and all(stored(e["arxiv"]) for e in entries))
+
+    @plugin.job("listing", retries=3)
+    def fetch_listing(tries: int = 0) -> None:
+        cats = categories()
+        if not cats:
+            plugin.log.info("No categories chosen (Settings → Plugins → arXiv Today)")
+            return
+        day, entries = read_feed(cats)
         if not day or not entries:
             plugin.log.info("No new papers in %s (no announcement today?)", ", ".join(cats))
             return
-        newest = newest_stored()
-        if newest and day > newest and all(stored(e["arxiv"]) for e in entries):
-            # a new day's date over the previous day's papers: the feed is not rebuilt yet
+        if looks_stale(day, entries):
+            # arXiv's cache can keep a feed dated for the new day that lists the previous day's
+            # papers for up to 24 hours: ask arXiv itself, past the cache
+            plugin.log.info("The cached feed for %s lists earlier papers; asking arXiv directly", day)
+            day, entries = read_feed(cats, fresh=True)
+            if not day or not entries:
+                return
+        if looks_stale(day, entries):
+            newest = newest_stored()
             if tries < CATCH_UP_TRIES:
                 plugin.log.info(
                     "The feed for %s still lists the papers of %s; looking again in %d min",
