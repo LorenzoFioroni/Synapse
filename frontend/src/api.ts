@@ -1,7 +1,7 @@
 // Thin client for the JSON API. Every call throws an Error with a readable
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
-  AccessToken, AccessTokensOverview, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, HistoryDiff, HistoryLog, HistoryStatus, HistoryVersion, ImportEntry, ImportPreview, Item,
+  AccessToken, AccessTokensOverview, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, HistoryDiff, HistoryLog, HistoryStatus, HistoryVersion, ImportEntry, ImportPreview, Item, RenamedKey,
   ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, Milestone, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
   ItemFieldValue, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginSource, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview,
@@ -131,7 +131,7 @@ export const api = {
     return request<ImportPreview>('POST', '/api/import/preview', fd);
   },
   importCommit: (entries: ImportEntry[], skipDuplicates: boolean, folderId: number | null = null, { keywordsAsTags }: { keywordsAsTags?: boolean } = {}) =>
-    request<{ created: string[]; skipped: number }>('POST', '/api/import/commit', { entries, skip_duplicates: skipDuplicates, folder_id: folderId, keywords_as_tags: keywordsAsTags }),
+    request<{ created: string[]; skipped: number; renamed_keys?: RenamedKey[] }>('POST', '/api/import/commit', { entries, skip_duplicates: skipDuplicates, folder_id: folderId, keywords_as_tags: keywordsAsTags }),
   clipboardBibtex: (ids: string[]) => request<{ text: string; count: number }>('POST', '/api/clipboard/bibtex', { ids }),
   exportText: (format: string, ids?: string[] | null) => request<{ text: string; format: string; count: number }>('GET', `/api/export?${qs({ format, ids: ids && ids.join(','), download: 0 })}`),
   exportUrl: (format: string, ids?: string[] | null) => `/api/export?${qs({ format, ids: ids && ids.join(',') })}`,

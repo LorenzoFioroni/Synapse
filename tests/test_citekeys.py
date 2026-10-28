@@ -86,7 +86,7 @@ def test_failing_listener_does_not_break_update(svc):
 
 
 def test_safe_key_characters_and_empty_keys(svc):
-    for key in ("AZaz09_-:./", "", None):
+    for key in ("AZaz09_-:./+x", "a+", "_a", "9", "", None):
         item = svc.papers.create({"citation_key": key}, auto_citekey=False)
         assert item["citation_key"] == key
 
@@ -94,7 +94,11 @@ def test_safe_key_characters_and_empty_keys(svc):
 def test_generated_keys_use_the_safe_set(svc):
     svc.settings.update({"citekey_pattern": "{auth}+/{year}"})
     item = svc.papers.create({"authors": "Cui, Jian", "year": 2015}, auto_citekey=True)
-    assert item["citation_key"] == "cui/2015"
+    assert item["citation_key"] == "cui+/2015"
+    # an empty token must not leave punctuation that citations would cut off
+    svc.settings.update({"citekey_pattern": "{journal}:{auth}{year}:{doi}"})
+    item = svc.papers.create({"authors": "Cui, Jian", "year": 2016}, auto_citekey=True)
+    assert item["citation_key"] == "cui2016"
 
 
 def test_invalid_keys_are_rejected_by_create_and_update(svc):
@@ -105,7 +109,11 @@ def test_invalid_keys_are_rejected_by_create_and_update(svc):
     item = svc.papers.create({"citation_key": "valid"})
     seen = []
     svc.papers.on_citekey_change(lambda *args: seen.append(args))
-    for key in ("has space", "a,b", "{x}", 'a"b', "a'b", "a;b", "a\\b", "a\nb", "a\tb", "café", "<img src=x>"):
+    for key in (
+        *("has space", "a,b", "{x}", 'a"b', "a'b", "a;b", "a\\b", "a\nb", "a\tb", "café", "<img src=x>"),
+        # what the notes' citation parser cannot read as one key
+        *("-lead", ".lead", "/lead", ":lead", "+lead", "trail.", "trail:", "trail/", "trail-"),
+    ):
         with pytest.raises(CitationKeyError):
             svc.papers.create({"citation_key": key})
         with pytest.raises(CitationKeyError):
@@ -129,7 +137,9 @@ def test_duplicate_keys_include_trash_and_exclude_the_item_itself(svc):
         svc.papers.create({"citation_key": "same"}, auto_citekey=False)
     with pytest.raises(CitationKeyError):
         svc.papers.update(second["id"], {"citation_key": "same"})
-    assert svc.papers.create({"citation_key": "Same"})["citation_key"] == "Same"
+    with pytest.raises(CitationKeyError):  # differs only in case: the paper-note files would collide
+        svc.papers.create({"citation_key": "Same"})
+    assert svc.papers.update(first["id"], {"citation_key": "SAME"})["citation_key"] == "SAME"
     assert svc.papers.update(second["id"], {"citation_key": ""})["citation_key"] == ""
 
 
@@ -160,9 +170,9 @@ def test_batch_validation_is_atomic_and_reserves_explicit_keys(svc):
 def test_existing_legacy_keys_survive_metadata_edits(svc):
     item = svc.papers.create({"citation_key": "valid"})
     with svc.papers.db.session() as c:
-        c.execute("UPDATE papers SET citation_key = ? WHERE id = ?", ("legacy+key", item["id"]))
-    assert svc.papers.update(item["id"], {"title": "New title"})["citation_key"] == "legacy+key"
-    assert svc.papers.update(item["id"], {"citation_key": "legacy+key"})["citation_key"] == "legacy+key"
+        c.execute("UPDATE papers SET citation_key = ? WHERE id = ?", ("legacy key", item["id"]))
+    assert svc.papers.update(item["id"], {"title": "New title"})["citation_key"] == "legacy key"
+    assert svc.papers.update(item["id"], {"citation_key": "legacy key"})["citation_key"] == "legacy key"
 
 
 def test_concurrent_writers_cannot_claim_the_same_key(svc):
@@ -194,8 +204,68 @@ def test_http_validation_returns_actionable_400s(client):
         assert created.status_code == updated.status_code == 400
         assert created.get_json()["error"] == updated.get_json()["error"]
     assert first["id"] in client.post("/api/items", json={"citation_key": "same"}).get_json()["error"]
+    # an import keeps going: a key that is taken gets a free one, and the response says so
     imported = client.post(
-        "/api/import/commit", json={"entries": [{"citation_key": "fresh"}, {"citation_key": "same"}]}
+        "/api/import/commit",
+        json={"entries": [{"citation_key": "fresh"}, {"title": "Again", "citation_key": "same"}]},
     )
-    assert imported.status_code == 400
-    assert len(client.get("/api/items").get_json()["items"]) == 2
+    assert imported.status_code == 200
+    body = imported.get_json()
+    assert len(body["created"]) == 2
+    assert body["renamed_keys"] == [{"id": body["created"][1], "title": "Again", "from": "same", "to": "samea"}]
+    assert len(client.get("/api/items").get_json()["items"]) == 4
+
+
+def test_imports_replace_keys_they_cannot_keep(svc):
+    svc.settings.update({"citekey_auto": False, "citekey_pattern": "{auth}{year}"})
+    svc.papers.create({"title": "Already here", "citation_key": "smith2020"})
+    entries = [
+        {"title": "Plus", "citation_key": "Smith+2021"},  # fine as it is
+        {"title": "Apostrophe", "citation_key": "OBrien'21"},
+        {"title": "Accent", "citation_key": "Müller2021"},
+        {"title": "Taken", "citation_key": "smith2020"},
+        {"title": "Taken but for case", "citation_key": "Smith2020"},
+        {"title": "Twice in the file", "citation_key": "dup"},
+        {"title": "Twice in the file again", "citation_key": "dup"},
+        {"title": "Ends badly", "citation_key": "-odd."},
+        {"title": "Nothing usable", "authors": "Cui, Jian", "year": 2015, "citation_key": "{}"},
+        {"title": "Nothing usable, no metadata", "citation_key": "{}"},
+        {"title": "No key"},
+    ]
+    ids, changes = svc.papers.import_many(entries)
+    keys = [svc.papers.get(i)["citation_key"] or "" for i in ids]
+    assert keys == [
+        "Smith+2021",
+        "OBrien21",
+        "Muller2021",
+        "smith2020a",
+        "Smith2020b",
+        "dup",
+        "dupa",
+        "odd",
+        "cui2015",
+        "item",  # as the pattern makes it for an item without author or year
+        "",
+    ]
+    assert [(c["from"], c["to"]) for c in changes] == [
+        ("OBrien'21", "OBrien21"),
+        ("Müller2021", "Muller2021"),
+        ("smith2020", "smith2020a"),
+        ("Smith2020", "Smith2020b"),
+        ("dup", "dupa"),
+        ("-odd.", "odd"),
+        ("{}", "cui2015"),
+        ("{}", "item"),
+    ]
+    assert all(c["id"] in ids for c in changes)
+
+
+def test_sanitize_gives_keys_that_validate():
+    import random
+
+    rnd = random.Random(7)
+    alphabet = "aZ09_-:./+ 'é{}ß,;\\"
+    for _ in range(2000):
+        raw = "".join(rnd.choice(alphabet) for _ in range(rnd.randint(0, 12)))
+        citekeys.validate(citekeys.sanitize(raw))  # never raises
+        citekeys.validate(citekeys.render(raw + "{title}" + raw, {"title": "Word"}))

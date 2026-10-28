@@ -52,6 +52,10 @@
 .import-row .t { font-weight: 500; }
 .import-row .m { font-size: var(--fs-xs); color: var(--text-3); margin-top: 2px; }
 .import-summary { display: flex; align-items: center; gap: 10px; margin: 12px 0 8px; }
+.renamed-keys { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: var(--fs-sm); }
+.renamed-keys th { text-align: left; font-weight: 600; color: var(--text-2); padding: 6px 8px; border-bottom: 1px solid var(--border-strong); }
+.renamed-keys td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.renamed-keys code { font-family: var(--font-mono); overflow-wrap: anywhere; }
 .format-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
 .format-opt { border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 10px 12px; cursor: pointer; background: var(--bg); text-align: left; }
 .format-opt:hover { border-color: var(--accent); }

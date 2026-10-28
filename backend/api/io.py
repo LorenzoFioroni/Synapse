@@ -74,9 +74,9 @@ def import_commit():
         clean["folder_id"] = folder_id
         keep.append(clean)
         finder.add(clean, "pending")  # also catch duplicates within the same file
-    # Imported keys are kept; missing ones follow the auto-generate setting.
-    created = s.papers.create_many(keep)
-    return jsonify(created=created, skipped=skipped)
+    # Imported keys are kept when usable; missing ones follow the auto-generate setting.
+    created, renamed = s.papers.import_many(keep)
+    return jsonify(created=created, skipped=skipped, renamed_keys=renamed)
 
 
 @bp.route("/export", methods=["GET", "POST"])

@@ -6,7 +6,7 @@ import { icon } from '../icons.js';
 import { currentFolderId, folderTree, state } from '../store.js';
 import { openDialog } from '../ui/dialog.js';
 import { toast, toastError } from '../ui/toast.js';
-import type { ImportEntry, ImportPreview } from '../types.js';
+import type { ImportEntry, ImportPreview, RenamedKey } from '../types.js';
 import { escapeHtml, plural, shortAuthors } from '../util.js';
 import type { AfterAddKind } from '../afterAdd.js';
 
@@ -81,7 +81,14 @@ export async function openImport(initialFile: File | null = null): Promise<void>
             A.setView(folder ? `folder:${folder}` : 'library');
             await A.loadItems();
             A.select(res.created, { anchor: res.created[0] });
-            toast(`Imported ${plural(res.created.length, 'item')}`, { type: 'success' });
+            const renamed = res.renamed_keys || [];
+            if (renamed.length) {
+              toast(`Imported ${plural(res.created.length, 'item')}. ${plural(renamed.length, 'citation key')} changed to keep keys unique and citable.`, {
+                type: 'success', timeout: 12000, action: { label: 'Show', run: () => showRenamed(renamed) },
+              });
+            } else {
+              toast(`Imported ${plural(res.created.length, 'item')}`, { type: 'success' });
+            }
             runAfterAdd(res.created, what);
           } catch (e) { toastError(e); btn.disabled = false; btn.textContent = 'Import'; return false; }
           return undefined;
@@ -130,4 +137,22 @@ export async function openImport(initialFile: File | null = null): Promise<void>
     });
     update();
   }
+}
+
+/** The keys an import could not keep as they were in the file, and what the items got instead. */
+function showRenamed(renamed: RenamedKey[]): void {
+  openDialog({
+    title: 'Changed citation keys',
+    wide: true,
+    render: (body) => {
+      body.innerHTML = `
+        <p class="muted">These keys were already taken in your library or in the file, or used characters that
+        citations in notes cannot hold. Edit a key in the item pane if you want a different one.</p>
+        <table class="renamed-keys">
+          <thead><tr><th>In the file</th><th>Now</th><th>Item</th></tr></thead>
+          <tbody>${renamed.map((r) => `<tr><td><code>${escapeHtml(r.from)}</code></td><td><code>${escapeHtml(r.to || '(none)')}</code></td><td>${escapeHtml(r.title || 'Untitled')}</td></tr>`).join('')}</tbody>
+        </table>`;
+    },
+    buttons: [{ label: 'OK', kind: 'primary' }],
+  });
 }

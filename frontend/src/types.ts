@@ -375,6 +375,8 @@ export interface DuplicateFound { error: string; duplicate_of: string; metadata:
 export type ImportEntry = Partial<Item> & { duplicate_of?: string | null };
 
 export interface ImportPreview { format: string; label: string; entries: ImportEntry[] }
+/** A citation key an import replaced (POST /api/import/commit). */
+export interface RenamedKey { id: string; title: string; from: string; to: string }
 
 /* ------------------------------------------------------------------ references */
 

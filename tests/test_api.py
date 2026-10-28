@@ -84,7 +84,7 @@ def test_import_preview_commit_and_export(client):
     prev2 = client.post("/api/import/preview", json={"text": bib}).get_json()
     assert all(e["duplicate_of"] for e in prev2["entries"])
     res2 = client.post("/api/import/commit", json={"entries": prev2["entries"], "skip_duplicates": True}).get_json()
-    assert res2 == {"created": [], "skipped": 2}
+    assert res2 == {"created": [], "skipped": 2, "renamed_keys": []}
     for fmt in ("bibtex", "ris", "endnote", "endnote_xml", "csljson"):
         r = client.get(f"/api/export?format={fmt}")
         assert r.status_code == 200 and "First Paper" in r.get_data(as_text=True)
