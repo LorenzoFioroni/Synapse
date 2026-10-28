@@ -218,7 +218,10 @@ These are contributed plugins, off until turned on; safe mode stops them:
   (`categories:quant-ph`, `score:>3`) and stay with a paper you add. Claude can ask for a day's
   papers with its tool `arxiv-today__today`. The feed (rss.arxiv.org) is read after each
   announcement (Monday to Friday, 00:30 US Eastern), at the next start when the computer was off,
-  and when the categories change. Cross-lists are in by default, replacements not.
+  and when the categories change. arXiv sometimes dates the feed for the new day while it still
+  lists the previous day's papers; the plugin then keeps the papers under their own day and looks
+  again every 30 minutes (up to 6 hours) until the new papers are there. Cross-lists are in by
+  default, replacements not.
 
 ## Writing a plugin
 

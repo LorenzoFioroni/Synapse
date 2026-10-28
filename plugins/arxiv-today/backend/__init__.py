@@ -24,6 +24,10 @@ from . import listing
 from .store import SCHEMA
 
 RESCORE_DAYS = 3  # how many recent days a rescoring covers (older ones keep their scores)
+# arXiv sometimes dates the feed for the new announcement before it lists the new papers: look
+# again this often, this many times (until mid-morning US Eastern after the 00:30 run)
+CATCH_UP_WAIT_S = 30 * 60
+CATCH_UP_TRIES = 12
 
 
 def activate(plugin: Plugin) -> None:
@@ -46,6 +50,10 @@ def activate(plugin: Plugin) -> None:
         rows = db.query("SELECT MAX(day) AS day FROM papers WHERE dismissed = 0")
         return rows[0]["day"] if rows else None
 
+    def newest_stored() -> str | None:
+        rows = db.query("SELECT MAX(day) AS day FROM papers")
+        return rows[0]["day"] if rows else None
+
     def record(r: dict) -> dict:
         """A stored paper as a list entry (an outside paper, see docs/plugins.md)."""
         return {
@@ -60,12 +68,15 @@ def activate(plugin: Plugin) -> None:
             "reasons": json.loads(r["reasons"]) or (["Not scored yet"] if r["score"] is None else []),
         }
 
+    def stored(arxiv: str) -> bool:
+        return bool(db.query("SELECT 1 FROM papers WHERE arxiv = ?", (arxiv,)))
+
     def in_library(arxiv: str) -> bool:
         return plugin.library.find(arxiv=arxiv) is not None
 
     # ------------------------------------------------------------------ fetching
     @plugin.job("listing", retries=3)
-    def fetch_listing() -> None:
+    def fetch_listing(tries: int = 0) -> None:
         cats = categories()
         if not cats:
             plugin.log.info("No categories chosen (Settings → Plugins → arXiv Today)")
@@ -81,6 +92,22 @@ def activate(plugin: Plugin) -> None:
         if not day or not entries:
             plugin.log.info("No new papers in %s (no announcement today?)", ", ".join(cats))
             return
+        newest = newest_stored()
+        if newest and day > newest and all(stored(e["arxiv"]) for e in entries):
+            # a new day's date over the previous day's papers: the feed is not rebuilt yet
+            if tries < CATCH_UP_TRIES:
+                plugin.log.info(
+                    "The feed for %s still lists the papers of %s; looking again in %d min",
+                    day,
+                    newest,
+                    CATCH_UP_WAIT_S // 60,
+                )
+                # its own key: the job running now still holds "listing" until it returns
+                plugin.jobs.enqueue("listing", tries + 1, key="listing-again", delay=CATCH_UP_WAIT_S)
+            else:
+                plugin.log.warning("The feed for %s still lists the papers of %s; giving up for today", day, newest)
+            return
+        had = db.query("SELECT COUNT(*) AS n FROM papers WHERE day = ?", (day,))[0]["n"]
         added = []
         with db.session() as c:
             for e in entries:
@@ -104,6 +131,8 @@ def activate(plugin: Plugin) -> None:
                 "ON CONFLICT (day) DO UPDATE SET fetched_at = excluded.fetched_at, categories = excluded.categories",
                 (day, _now(), ",".join(cats)),
             )
+            if added and not had:  # the day's papers arrive now: tell about them even if it was claimed empty
+                c.execute("UPDATE days SET notified = 0 WHERE day = ?", (day,))
         plugin.log.info("%s: %d papers, %d new", day, len(entries), len(added))
         plugin.fields.set_many("announced", {f"arxiv:{a}": day for a in added})
         plugin.fields.set_many(
@@ -268,6 +297,8 @@ def activate(plugin: Plugin) -> None:
             "SELECT COUNT(*) AS n, SUM(score >= ?) AS connected FROM papers WHERE day = ? AND dismissed = 0",
             (plugin.settings["min_score"], day),
         )[0]
+        if not stats["n"]:  # a day recorded without papers (an unfinished feed): nothing to tell yet
+            return {"news": None}
         with db.session() as c:
             # Multiple windows may ask together; only the one claiming the day publishes it.
             if not c.execute("UPDATE days SET notified = 1 WHERE day = ? AND notified = 0", (day,)).rowcount:
