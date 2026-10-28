@@ -6,7 +6,7 @@ from __future__ import annotations
 from flask import Blueprint, Response, g, jsonify, request
 
 from ..access.tokens import TokenError
-from . import body, error, svc
+from . import admin, body, error, svc
 from .devices import addresses
 
 bp = Blueprint("mcp", __name__)
@@ -32,15 +32,15 @@ def mcp_other():
 
 def _endpoints() -> list[dict]:
     """The URLs an AI app can use: on the network when it is reachable there, else this computer's."""
-    found = addresses() if svc().config.lan else [{"label": request.host, "url": request.host_url}]
+    found = addresses() if svc().config.other_devices else [{"label": request.host, "url": request.host_url}]
     return [{"label": a["label"], "url": a["url"] + "mcp"} for a in found]
 
 
 @bp.get("/api/mcp/tokens")
 def tokens():
     return jsonify(
-        this_computer=bool(g.get("this_computer")),
-        lan=svc().config.lan,
+        **admin.state(),
+        lan=svc().config.other_devices,
         endpoints=_endpoints(),
         tokens=svc().tokens.list(),
     )
@@ -49,8 +49,8 @@ def tokens():
 @bp.post("/api/mcp/tokens")
 def new_token():
     """A new access token, shown this once. Only on the computer running Synapse."""
-    if not g.get("this_computer"):
-        return error("Access tokens can only be made on the computer running Synapse.", 403)
+    if (refused := admin.refusal("Access tokens can only be made on the computer running Synapse.")) is not None:
+        return refused
     try:
         entry, token = svc().tokens.create(str(body().get("name") or ""))
     except TokenError as e:
@@ -60,8 +60,8 @@ def new_token():
 
 @bp.delete("/api/mcp/tokens/<tok_id>")
 def revoke_token(tok_id):
-    if not g.get("this_computer"):
-        return error("Access tokens can only be removed on the computer running Synapse.", 403)
+    if (refused := admin.refusal("Access tokens can only be removed on the computer running Synapse.")) is not None:
+        return refused
     if not svc().tokens.revoke(tok_id):
         return error("No such token.", 404)
     return jsonify(ok=True, tokens=svc().tokens.list())

@@ -65,6 +65,7 @@ class Services:
         self.attachments.extra_texts = lambda: [(f"task:{i}", b) for i, b in self.task_store.bodies()]
         self.attachments.on_maintain = self.purge_task_trash
         # Backups of library.db, settings and notes; the scheduler is started by create_app only.
+        from .access.confirm import Confirmations
         from .access.devices import Devices
         from .access.passkeys import Passkeys
         from .access.tokens import AccessTokens
@@ -72,6 +73,7 @@ class Services:
         self.devices = Devices(config.auth_db_path)  # paired iPads/phones (--lan)
         self.passkeys = Passkeys(config.auth_db_path, self.devices)  # sign a device in without pairing
         self.tokens = AccessTokens(config.auth_db_path)  # AI apps on other computers (/mcp)
+        self.confirmations = Confirmations()  # devices that just confirmed with a passkey (admin actions)
         self._mcp_http = None
         from .backup import Backups
 

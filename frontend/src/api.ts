@@ -94,6 +94,8 @@ export const api = {
   passkeyOptions: (name: string) => request<Record<string, any>>('POST', '/api/passkeys/register/options', { name }),
   addPasskey: (credential: Record<string, unknown>) => request<{ passkey: Passkey }>('POST', '/api/passkeys/register', { credential }),
   removePasskey: (id: string) => request('DELETE', `/api/passkeys/${encodeURIComponent(id)}`),
+  confirmOptions: () => request<Record<string, any>>('POST', '/api/passkeys/confirm/options'),
+  confirm: (credential: Record<string, unknown>) => request<{ until: number }>('POST', '/api/passkeys/confirm', { credential }),
 
   accessTokens: () => request<AccessTokensOverview>('GET', '/api/mcp/tokens'),
   newAccessToken: (name: string) => request<{ token: string; entry: AccessToken }>('POST', '/api/mcp/tokens', { name }),

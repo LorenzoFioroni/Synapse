@@ -280,7 +280,8 @@ computer too; device cookies do not count. Otherwise it answers 401 with
 `WWW-Authenticate: Bearer`. A request with an `Origin` other than the server's own answers 403,
 so a web page cannot use a token the browser does not have anyway, and the Host check still stops
 DNS rebinding. Tokens (`syn_` and 43 random characters) are made in **Settings → AI Access**
-(`frontend/src/views/settings/aiAccess.ts`), only on the computer running Synapse, shown once with
+(`frontend/src/views/settings/aiAccess.ts`), on the computer running Synapse or on a signed-in device
+after confirming with a passkey ([`remote-access.md`](remote-access.md)), shown once with
 what to run on the other computer, and stored as SHA-256 hashes. The token box offers three apps:
 Claude Code (`claude mcp add --transport http … --header "Authorization: Bearer …"`), Codex
 (`export SYNAPSE_TOKEN=…` and `codex mcp add synapse --url … --bearer-token-env-var SYNAPSE_TOKEN`,
@@ -291,9 +292,9 @@ locks its app out at the next request.
 | Endpoint | Who | What |
 |---|---|---|
 | `POST /mcp` | a valid token | One JSON-RPC message or batch. |
-| `GET /api/mcp/tokens` | this computer or a signed-in device | `this_computer`, `lan`, `endpoints` (the `/mcp` URLs, one per address under `--lan`), `tokens`. |
-| `POST /api/mcp/tokens` | this computer | `{name}` → 201 `{token, entry, tokens}`; the token is not kept. |
-| `DELETE /api/mcp/tokens/<id>` | this computer | Removes the token. |
+| `GET /api/mcp/tokens` | this computer or a signed-in device | `this_computer`, `can_confirm`, `confirmed`, `lan`, `endpoints` (the `/mcp` URLs: the `--public-url` one first, then one per address under `--lan`), `tokens`. |
+| `POST /api/mcp/tokens` | this computer, or a device after a passkey confirmation (else 403, with `confirm: true` when it can confirm) | `{name}` → 201 `{token, entry, tokens}`; the token is not kept. |
+| `DELETE /api/mcp/tokens/<id>` | the same | Removes the token. |
 
 Over plain HTTP the token crosses the network in the clear, like a device cookie: use `--lan` on a
 trusted network, or HTTPS (`--cert`/`--key`; the AI app must then trust the certificate, for

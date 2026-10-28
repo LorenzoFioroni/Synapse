@@ -1,6 +1,7 @@
 // Settings → AI Access: access tokens for AI apps (Claude Code, Codex, any MCP client) that use the
 // library from another computer through the MCP endpoint, /mcp. See backend/access/tokens.py and backend/mcp/http.py.
 import { api } from '../../api.js';
+import { asAdmin } from './confirm.js';
 import { icon } from '../../icons.js';
 import { confirmDialog, promptDialog } from '../../ui/dialog.js';
 import { toast, toastError } from '../../ui/toast.js';
@@ -61,13 +62,15 @@ export async function refreshAiAccess(view: HTMLElement): Promise<void> {
   const where = st.endpoints.length ? ` The address is <span class="mono">${escapeHtml(st.endpoints[0].url)}</span>.` : '';
   desc.innerHTML = (st.lan ? `Each app gets its own token.${where}`
     : `Synapse only answers this computer. To use it from another computer, start it with <span class="mono">python server.py --lan</span>.${where}`)
-    + (st.this_computer ? '' : ' Tokens are made on the computer running Synapse.');
-  control.innerHTML = st.this_computer ? `<button class="btn" data-ai-new>${icon('plus')} New Token…</button>` : '';
+    + (st.this_computer ? '' : st.can_confirm ? ' You confirm with your passkey before making or removing a token.'
+      : ' Tokens are made on the computer running Synapse, or on a device signed in with a passkey.');
+  const admin = st.this_computer || st.can_confirm;
+  control.innerHTML = admin ? `<button class="btn" data-ai-new>${icon('plus')} New Token…</button>` : '';
   renderFresh(view.querySelector<HTMLElement>('[data-ai-fresh]')!);
   list.innerHTML = st.tokens.length ? st.tokens.map((t) => `<div class="backup-row" data-ai-token="${escapeHtml(t.id)}">
       <div class="b-main"><div class="b-when">${escapeHtml(t.name)}</div>
         <div class="b-what">Made ${escapeHtml(formatDate(t.created, true))} · last used ${escapeHtml(relTime(t.last_used))}${t.last_addr ? ` from ${escapeHtml(t.last_addr)}` : ''}</div></div>
-      ${st.this_computer ? '<button class="btn btn-sm" data-ai-remove>Remove…</button>' : ''}</div>`).join('')
+      ${admin ? '<button class="btn btn-sm" data-ai-remove>Remove…</button>' : ''}</div>`).join('')
     : '<div class="s-desc">No tokens yet.</div>';
 }
 
@@ -87,7 +90,8 @@ export function bindAiAccess(view: HTMLElement): void {
       hint: 'Which computer or app will use it, so you know which one to remove later.' });
     if (!name || !name.trim()) return;
     try {
-      const res = await api.newAccessToken(name.trim());
+      const res = await asAdmin(() => api.newAccessToken(name.trim()));
+      if (!res) return;
       fresh = { token: res.token, name: res.entry.name, index: 0, app: /codex/i.test(res.entry.name) ? 'codex' : 'claude' };
     } catch (err) { toastError(err); return; }
     refreshAiAccess(view);
@@ -116,7 +120,7 @@ export function bindAiAccess(view: HTMLElement): void {
     const ok = await confirmDialog(`Remove the token “${tok.name}”?`, {
       title: 'Remove token', confirm: 'Remove', danger: true, detail: 'The app using it loses access to the library at once.' });
     if (!ok) return;
-    try { await api.removeAccessToken(tok.id); } catch (err) { toastError(err); }
+    try { await asAdmin(() => api.removeAccessToken(tok.id)); } catch (err) { toastError(err); }
     refreshAiAccess(view);
   });
 }

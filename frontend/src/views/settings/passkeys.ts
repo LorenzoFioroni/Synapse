@@ -6,25 +6,10 @@ import { confirmDialog, promptDialog } from '../../ui/dialog.js';
 import { toast, toastError } from '../../ui/toast.js';
 import type { PasskeysOverview } from '../../types.js';
 import { escapeHtml, formatDate } from '../../util.js';
+import { asAdmin, b64url, fromB64url } from './confirm.js';
 import { relTime } from './devices.js';
 
 let overview: PasskeysOverview | null = null;
-
-function b64url(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  let s = '';
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function fromB64url(text: string): Uint8Array<ArrayBuffer> {
-  let s = text.replace(/-/g, '+').replace(/_/g, '/');
-  while (s.length % 4) s += '=';
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
 
 /** Why this browser cannot make a passkey here, or '' when it can. */
 function browserProblem(): string {
@@ -48,11 +33,13 @@ export async function refreshPasskeys(view: HTMLElement): Promise<void> {
     : `A device with a passkey signs in on its own, without a code from this computer: on the “not paired” page it
        chooses <b>Sign In with a Passkey</b>. Passkeys added here work at <span class="mono">https://${escapeHtml(st.rp_id || '')}</span>.`;
   control.innerHTML = problem ? '' : `<button class="btn" data-passkey-add>${icon('key')} Add a Passkey…</button>`;
-  // Like other devices, passkeys are removed only on the computer running Synapse.
+  // Like other devices, passkeys are removed on the computer running Synapse, or after confirming
+  // with a passkey on a signed-in device.
+  const admin = st.this_computer || st.can_confirm;
   list.innerHTML = st.passkeys.map((p) => `<div class="backup-row" data-passkey="${escapeHtml(p.id)}">
       <div class="b-main"><div class="b-when">${escapeHtml(p.name)}</div>
         <div class="b-what">For ${escapeHtml(p.rp_id)} · added ${escapeHtml(formatDate(p.created, true))} · last used ${escapeHtml(relTime(p.last_used))}${p.last_addr && p.last_used ? ` from ${escapeHtml(p.last_addr)}` : ''}</div></div>
-      ${st.this_computer ? '<button class="btn btn-sm" data-passkey-remove>Remove…</button>' : ''}</div>`).join('');
+      ${admin ? '<button class="btn btn-sm" data-passkey-remove>Remove…</button>' : ''}</div>`).join('');
 }
 
 async function addPasskey(view: HTMLElement): Promise<void> {
@@ -62,7 +49,8 @@ async function addPasskey(view: HTMLElement): Promise<void> {
   });
   if (name === null) return;
   try {
-    const o = await api.passkeyOptions(name.trim());
+    const o = await asAdmin(() => api.passkeyOptions(name.trim()));   // the second passkey on: confirm first
+    if (!o) return;
     const publicKey: PublicKeyCredentialCreationOptions = {
       rp: o.rp,
       user: { ...o.user, id: fromB64url(o.user.id) },
@@ -100,7 +88,7 @@ export function bindPasskeys(view: HTMLElement): void {
       detail: 'It can no longer sign devices in. Devices already signed in with it stay signed in until you remove them above. '
         + 'Delete it from your password manager too.' });
     if (!ok) return;
-    try { await api.removePasskey(pk.id); } catch (err) { toastError(err); }
+    try { await asAdmin(() => api.removePasskey(pk.id)); } catch (err) { toastError(err); }
     refreshPasskeys(view);
   });
 }

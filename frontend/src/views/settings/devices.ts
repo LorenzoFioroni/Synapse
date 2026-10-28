@@ -6,6 +6,7 @@ import { confirmDialog, promptDialog } from '../../ui/dialog.js';
 import { toast, toastError } from '../../ui/toast.js';
 import type { DevicesOverview, Pairing } from '../../types.js';
 import { escapeHtml, formatDate } from '../../util.js';
+import { asAdmin } from './confirm.js';
 
 /** The pairing code being shown: which address is picked, and the devices paired before it. */
 let pairing: (Pick<Pairing, 'links' | 'expires'> & { index: number; known: Set<string>; tick: number;
@@ -56,7 +57,9 @@ function renderPairing(box: HTMLElement): void {
         <div class="s-desc">Or open this link on it: <span class="mono pair-url">${escapeHtml(link.url.split('#')[0])}…</span>
           <button class="btn btn-sm" data-pair-copy>${icon('copy')} Copy Link</button></div>
         ${choices}
-        <div class="s-desc">If the other device can't open the page, try another address. Both devices must be on the same network.</div>
+        <div class="s-desc">${overview?.public_url && link.url.startsWith(overview.public_url)
+          ? 'This address works from anywhere with an internet connection.'
+          : "If the other device can't open the page, try another address. Both devices must be on the same network."}</div>
         <div class="s-desc">The code works once and expires in <b data-pair-left>${timeLeft}</b>.</div>
         <div><button class="btn btn-sm" data-pair-cancel>Cancel</button></div>
       </div></div>`;
@@ -83,21 +86,25 @@ export async function refreshDevices(view: HTMLElement): Promise<void> {
       add.innerHTML = `<div class="s-title">Not reachable from other devices</div>
         <div class="s-desc">Synapse only answers this computer. To use it from an iPad or a phone, stop it and start it again with
           <span class="mono">python server.py --lan</span>, then come back here.</div>`;
-    } else if (!st.this_computer) {
-      add.innerHTML = `<div class="s-desc">New devices are added on the computer running Synapse (Settings → Devices → Add a Device).</div>`;
+    } else if (!st.this_computer && !st.can_confirm) {
+      add.innerHTML = `<div class="s-desc">New devices are added on the computer running Synapse (Settings → Devices → Add a Device,
+        or <span class="mono">python server.py --pairing-link</span> there), or here once this device has a passkey.</div>`;
     } else {
-      const where = st.addresses.length ? ` Other devices reach it at <span class="mono">${escapeHtml(st.addresses[0].url)}</span>.` : '';
+      const where = (st.addresses.length ? ` Other devices reach it at <span class="mono">${escapeHtml(st.addresses[0].url)}</span>.` : '')
+        + (st.this_computer ? '' : ' You confirm with your passkey first.');
       add.innerHTML = `<div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Add a device</div>
           <div class="s-desc">Shows a QR code to scan with the iPad or phone.${where}</div></div>
           <div class="s-control"><button class="btn" data-pair-new>${icon('plus')} Add a Device</button></div></div>`;
     }
   }
   desc.textContent = st.devices.length ? '' : 'No devices yet.';
-  // Only the computer running Synapse manages other devices; a device manages only itself.
+  // The computer running Synapse manages every device; another device itself, and the others after
+  // confirming with a passkey.
+  const admin = st.this_computer || st.can_confirm;
   list.innerHTML = st.devices.map((d) => `<div class="backup-row" data-device="${escapeHtml(d.id)}">
       <div class="b-main"><div class="b-when">${escapeHtml(d.name)}${d.id === st.current ? ' <span class="device-this">This device</span>' : ''}</div>
         <div class="b-what">Paired ${escapeHtml(formatDate(d.created, true))} · last used ${escapeHtml(relTime(d.last_seen))}${d.last_addr ? ` from ${escapeHtml(d.last_addr)}` : ''}</div></div>
-      ${st.this_computer || d.id === st.current ? `<button class="btn btn-sm" data-device-rename>${icon('edit')} Rename…</button>
+      ${admin || d.id === st.current ? `<button class="btn btn-sm" data-device-rename>${icon('edit')} Rename…</button>
       <button class="btn btn-sm" data-device-remove>${d.id === st.current ? 'Sign Out' : 'Remove…'}</button>` : ''}</div>`).join('');
   overview = st;
 }
@@ -105,7 +112,8 @@ export async function refreshDevices(view: HTMLElement): Promise<void> {
 async function startPairing(view: HTMLElement): Promise<void> {
   const box = view.querySelector<HTMLElement>('[data-device-add]')!;
   try {
-    const res = await api.newPairing();
+    const res = await asAdmin(() => api.newPairing());
+    if (!res) return;
     const known = new Set((overview?.devices || []).map((d) => d.id));
     stopPairing();
     const p: NonNullable<typeof pairing> = { links: res.links, expires: res.expires, index: 0, known, tick: 0 };
@@ -147,7 +155,7 @@ export function bindDevices(view: HTMLElement): void {
     if (target.closest('[data-device-rename]')) {
       const name = await promptDialog('Name', { title: 'Rename device', value: dev.name, confirm: 'Rename' });
       if (!name || !name.trim()) return;
-      try { await api.renameDevice(id, name.trim()); } catch (err) { toastError(err); }
+      try { await asAdmin(() => api.renameDevice(id, name.trim())); } catch (err) { toastError(err); }
       refreshDevices(view);
     } else if (target.closest('[data-device-remove]')) {
       const ok = await confirmDialog(self ? 'Sign out this device?' : `Remove ${dev.name}?`, {
@@ -155,7 +163,7 @@ export function bindDevices(view: HTMLElement): void {
         detail: self ? 'To use the library here again, pair this device again from the computer running Synapse.'
           : 'It can no longer open the library until it is paired again.' });
       if (!ok) return;
-      try { await api.removeDevice(id); } catch (err) { toastError(err); return; }
+      try { if (!await asAdmin(() => api.removeDevice(id))) return; } catch (err) { toastError(err); return; }
       if (self) { location.reload(); return; }
       refreshDevices(view);
     }

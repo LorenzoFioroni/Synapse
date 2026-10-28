@@ -563,10 +563,18 @@ export interface Device {
   last_addr: string | null;
 }
 
-/** GET /api/devices: the paired devices, and whether and where other devices can reach this server. */
-export interface DevicesOverview {
-  lan: boolean;
+/** Whether the page may offer the administrative actions (backend/api/admin.py): on the computer
+ * running Synapse, or on a device that can confirm with a passkey first. */
+export interface AdminState {
   this_computer: boolean;
+  can_confirm: boolean;    // a signed-in device that can confirm with one of Synapse's passkeys here
+  confirmed: boolean;      // ... and has, a few minutes ago
+}
+
+/** GET /api/devices: the paired devices, and whether and where other devices can reach this server. */
+export interface DevicesOverview extends AdminState {
+  lan: boolean;
+  public_url: string | null;   // --public-url: the address a tunnel serves Synapse at
   current: string | null;  // the device asking (null on this computer)
   devices: Device[];
   addresses: { label: string; url: string }[];
@@ -589,8 +597,7 @@ export interface Passkey {
 }
 
 /** GET /api/passkeys: the passkeys, and why this page cannot add one (``unavailable``), if it cannot. */
-export interface PasskeysOverview {
-  this_computer: boolean;
+export interface PasskeysOverview extends AdminState {
   rp_id: string | null;
   unavailable: string | null;
   passkeys: Passkey[];
@@ -606,8 +613,7 @@ export interface AccessToken {
 }
 
 /** GET /api/mcp/tokens: the tokens, and the MCP endpoint's URLs. */
-export interface AccessTokensOverview {
-  this_computer: boolean;
+export interface AccessTokensOverview extends AdminState {
   lan: boolean;
   endpoints: { label: string; url: string }[];
   tokens: AccessToken[];

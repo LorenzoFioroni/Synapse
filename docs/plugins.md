@@ -37,6 +37,10 @@ What exists today:
   code) and its **Log**. A plugin that is off has only its row (and **Log** when it failed).
 - A plugin that fails while starting, or fails three times within ten minutes, is turned off and
   Settings says why. Turning it on again tries again.
+- Enabling, disabling, restarting or reconfiguring a plugin runs or changes code on the computer
+  running Synapse and lasts, so from another device it needs a passkey confirmation, like pairing a
+  device or making an access token (the `admin.refusal` gate in `backend/api/plugins.py`; see
+  [remote access](remote-access.md)). Reading the list of plugins does not.
 - `python server.py --safe-mode` runs only bundled core plugins, for when an installed plugin keeps the app from working.
   `mcp_server.py --safe-mode` does the same for the MCP server an AI app starts.
 - Restart the AI app after turning on a plugin with tools if they do not show up: some AI apps read

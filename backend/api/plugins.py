@@ -8,7 +8,12 @@ from werkzeug.exceptions import HTTPException
 
 from ..plugins import PluginError
 from ..plugins.outside import record as outside_record
-from . import body, error, svc
+from . import admin, body, error, svc
+
+# Enabling, disabling or reconfiguring a plugin runs or changes code on this computer and lasts, like
+# pairing a device or making an access token, so another device may do it only after confirming with a
+# passkey (backend/access/confirm.py). Reading the list of plugins stays open to any paired device.
+PLUGIN_CHANGE_REFUSED = "Plugins can only be changed on the computer running Synapse."
 
 bp = Blueprint("plugins", __name__, url_prefix="/api")
 
@@ -32,6 +37,8 @@ def update_item(pid: str, item_id: str):
 
 @bp.post("/plugin-host/<pid>/enable")
 def enable(pid: str):
+    if (refused := admin.refusal(PLUGIN_CHANGE_REFUSED)) is not None:
+        return refused
     try:
         return jsonify(plugin=_host().enable(pid))
     except PluginError as e:
@@ -40,6 +47,8 @@ def enable(pid: str):
 
 @bp.post("/plugin-host/<pid>/disable")
 def disable(pid: str):
+    if (refused := admin.refusal(PLUGIN_CHANGE_REFUSED)) is not None:
+        return refused
     try:
         return jsonify(plugin=_host().disable(pid))
     except PluginError as e:
@@ -48,6 +57,8 @@ def disable(pid: str):
 
 @bp.post("/plugin-host/<pid>/restart")
 def restart(pid: str):
+    if (refused := admin.refusal(PLUGIN_CHANGE_REFUSED)) is not None:
+        return refused
     try:
         return jsonify(plugin=_host().restart(pid))
     except PluginError as e:
@@ -56,6 +67,8 @@ def restart(pid: str):
 
 @bp.put("/plugin-host/<pid>/settings")
 def settings(pid: str):
+    if (refused := admin.refusal(PLUGIN_CHANGE_REFUSED)) is not None:
+        return refused
     try:
         return jsonify(values=_host().set_settings(pid, body()))
     except PluginError as e:
@@ -64,6 +77,8 @@ def settings(pid: str):
 
 @bp.put("/plugin-host/<pid>/remote-mcp")
 def remote_mcp(pid: str):
+    if (refused := admin.refusal(PLUGIN_CHANGE_REFUSED)) is not None:
+        return refused
     try:
         return jsonify(plugin=_host().set_remote_mcp(pid, bool(body().get("on"))))
     except PluginError as e:
