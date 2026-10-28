@@ -441,6 +441,28 @@ async def main():
                     await page.locator(graph_link).count() == 1 and await page.locator(".ns-graph").count() == 1,
                 )
 
+            # A response delivered after disable must not resurrect canvases or cached state.
+            pending, release = asyncio.Event(), asyncio.Event()
+
+            async def hold_data(route):
+                pending.set()
+                await release.wait()
+                await route.fulfill(json=g)
+
+            await page.route("**/api/plugins/graph/data*", hold_data)
+            requests.post(BASE + "/api/plugin-host/graph/restart").raise_for_status()
+            await page.evaluate("window.zcPlugins.sync()")
+            await asyncio.wait_for(pending.wait(), timeout=10)
+            requests.post(BASE + "/api/plugin-host/graph/disable").raise_for_status()
+            await page.evaluate("window.zcPlugins.sync()")
+            release.set()
+            await page.wait_for_timeout(500)
+            check(
+                "late Graph data cannot recreate retired canvases",
+                await page.locator(".ns-graph, .notes-graph").count() == 0,
+            )
+            check("late Graph data cannot refill retired cache", await page.evaluate("window.zcGraph.data === null"))
+            await page.unroute("**/api/plugins/graph/data*", hold_data)
             check("no console errors", not errors, errors[:5])
             await b.close()
     finally:

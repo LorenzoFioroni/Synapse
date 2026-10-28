@@ -568,7 +568,9 @@ async def main():
             patches = []
             page.on(
                 "request",
-                lambda req: patches.append(req.url) if req.method == "PATCH" and "/api/tasks/" in req.url else None,
+                lambda req: (
+                    patches.append(req.url) if req.method == "PATCH" and "/api/plugins/tasks/" in req.url else None
+                ),
             )
             before_status = get(plot)["status"]
             await page.locator(f'.note-read .task-ref[data-task="{plot}"] .task-check').click()

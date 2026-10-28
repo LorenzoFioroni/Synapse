@@ -27,12 +27,14 @@ class PluginFields:
         store: Callable[[], FieldStore],
         find_item,
         changed: Callable[[], None] = lambda: None,
+        due: Callable[[FieldDef], list[dict]] | None = None,
     ):
         self._pid = plugin_id
         self._pname = plugin_name
         self._store = store
         self._find = find_item
         self._changed = changed
+        self._due = due
         self.defs: dict[str, FieldDef] = {}
         # set by the host while the plugin's background runner is going (web app only)
         self.refresh_soon: Callable[[], None] = lambda: None
@@ -104,18 +106,33 @@ class PluginFields:
         row = pick(self._store().rows(self._pid, name), keys)
         return row["value"] if row else None
 
-    def refresh(self, name: str, papers=None) -> int:
+    def changed(self) -> None:
+        """Notify open pages that this plugin's field-related status changed."""
+        self._changed()
+
+    def due(self, name: str) -> list[dict]:
+        """Library items missing a value or due for refresh, in scheduler order."""
+        d = self._def(name)
+        if not d.refresher:
+            raise PluginError(f"Field {name!r} has no refresher to ask")
+        if self._due is None:
+            raise PluginError('Reading due items needs "library": ["read"] in the manifest')
+        return self._due(d)
+
+    def refresh(self, name: str, papers=None, *, wake: bool = True) -> int:
         """Ask the field's refresher about its papers again soon, whatever their age (a "Check
         now" button, say); with ``papers`` (refs as for ``set``), only those. Papers without a
         value are asked about anyway. The values stay shown until the new ones arrive. Returns how
-        many stored values were marked."""
+        many stored values were marked. With ``wake=False``, initialize status before calling
+        ``refresh_soon()`` to wake the runner."""
         d = self._def(name)
         if not d.refresher:
             raise PluginError(f"Field {name!r} has no refresher to ask")
         keys = None if papers is None else [self.key(r) for r in papers]
         self.allow_retry(name, keys)
         n = self._store().expire(self._pid, name, keys)
-        self.refresh_soon()
+        if wake:
+            self.refresh_soon()
         return n
 
     def clear(self, name: str | None = None, papers=None) -> int:
@@ -288,6 +305,9 @@ class FieldIndex:
             got = d.refresher(papers) or {}
         except HttpError as e:
             plog.warning("Refreshing %s could not finish: %s", d.name, e)
+            return 0
+        # A stopped or restarted plugin must not publish a late lookup into its successor.
+        if not any(current is d for current in self.defs()):
             return 0
         if not isinstance(got, dict):
             raise PluginError(f"The refresher of {d.name} must return a dict {{key: value}}")

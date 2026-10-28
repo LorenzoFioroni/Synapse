@@ -5,8 +5,11 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.1**, which also accepts plugins targeting 1.0. Reference providers
-and export writers were added in 1.1; plugins using them should declare `"api": "^1.1"`.
+This page documents API **1.9**, which also accepts plugins targeting 1.0–1.8. Reference
+providers and export writers were added in 1.1, Synapse's reference writers
+(`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
+`"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`. Named reference sub-sources and the reference record
+contract require `"^1.5"`. Metadata review, progress jobs, library editing and field scheduling helpers require `"^1.6"`. Notes reads and visualizations require `"^1.7"`.
 What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
@@ -52,55 +55,13 @@ Plugins that come with Synapse live in the repository's `plugins/` folder. A plu
 
 ### Core plugins
 
-Some of Synapse's own features are **core plugins**: they come with Synapse and are part of it,
-but each can be turned off in Settings → Plugins (as Obsidian's core plugins can), and its code
-lives in its own folder. They start on (or as the switch they replace was), keep running in safe
-mode, and their settings are in their own section of Settings:
+The host retains core status for bundled implementations that require private app modules.
+All currently shipped optional feature plugins use the public API and are contributed plugins;
+core status cannot be claimed by installed plugins.
 
 Settings lists these separately from **Contributed plugins** (bundled optional additions and
 plugins installed in `data/plugins/`). Its navigation expands the individual plugin sections only
 while the Plugins area is in view, and otherwise keeps a single top-level **Plugins** entry.
-
-- **Autocompletion** (`plugins/autocompletion`, off by default): suggestions from a model in
-  Ollama on this computer as you write a note; see [autocompletion](autocompletion.md).
-- **Metadata Sources** (`plugins/metadata-sources`, on by default): metadata by DOI, arXiv ID,
-  ISBN or title from Crossref, OpenAlex, arXiv and Open Library, including the existing title
-  fallback and author enrichment. Turning it off keeps library records and lookup URLs; lookups
-  report that no source is on unless another plugin supplies one. See [references](references.md).
-- **Reference Sources** (`plugins/reference-sources`, on by default): the existing Semantic Scholar,
-  OpenAlex, Crossref and arXiv HTML reference fetching and fallback policy. Saved references and
-  citation matching remain in core when off; third-party providers may still supply references.
-- **Export Formats** (`plugins/export-formats`, on by default): the existing BibTeX, RIS, EndNote
-  tagged/XML and CSL JSON library exports. Imports, clipboard citation copying and note HTML/PDF/
-  Markdown exports remain in core. The canonical codecs in `backend/formats/` are shared; this
-  plugin owns which writers the library export dialog/API exposes. With it off, imports still
-  work, stored export preferences survive and the dialog explains how to enable a writer.
-- **Extended Markdown** (`plugins/extended-markdown`, frontend only, on by default): Markdown
-  syntax beyond the basics, one extension per folder in
-  `frontend/src/plugins/core/extended-markdown/`, each with a boolean setting of its own:
-  - **Galleries and numbered figures** (`figures`): ` ```gallery ` blocks drawn as carousels (one
-    figure with panels in exports), figures numbered Fig. 1, 2, … and `\ref` / `\cref` to them;
-    see [notes](notes.md#galleries). Off, a gallery reads as the images and captions it holds, an
-    image's caption as the line of text it is, and a reference to a figure as ??. The notes format
-    does not change: the parser and the attachment sweep still read a gallery's lines.
-  - **Spoilers** (`spoilers`): inline `||spoilers||` and collapsible `:::spoiler` blocks in
-    Live/Read modes. Disabling it renders ordinary Markdown
-  without changing note files. HTML/PDF export reveals spoiler contents; Markdown keeps the source.
-- **Tasks** (`plugins/tasks`, on by default): the Tasks workspace under **Plugins** in the left
-  sidebar, task controls in notes,
-  and the existing `list_tasks`, `get_task`, `create_task`, `update_task`, `delete_task` tools.
-  Records and note links stay in the core for validation, backups and attachment retention.
-  Disabling it removes its controls and tools; reenabling restores them with all tasks intact.
-  Its routes are `/api/plugins/tasks/…`; `/api/tasks` remains a compatibility alias. See [tasks](tasks.md).
-- **Graph** (`plugins/graph`, opened under **Plugins** in the left sidebar): the graph of notes and the papers they cite: the local graph
-  beside a note, the full graph (Cmd/Ctrl+Shift+G), Show in Graph; its data at
-  `/api/plugins/graph/data`. A core plugin's frontend reaches into the notes view through
-  `frontend/src/views/notes/hooks.ts` (`setNoteHook('graph' | 'figures' | 'extended', …)`, which redraws the
-  open note); a core plugin's server part gets the app's `Services` as `plugin.synapse`.
-- **Open-Access PDFs** (`plugins/open-access-pdfs`): where Find Available PDF looks, Unpaywall and
-  arXiv by identifier and by title (its two PDF sources, see
-  [references](references.md#open-access-pdfs)). Turned off, Find Available PDF has nowhere to
-  look unless another plugin offers a source.
 
 A core plugin is a plugin like any other (manifest, `activate(plugin)`, routes, tools, settings),
 with these differences, all from `"core": true` in its manifest and honoured only in `plugins/`:
@@ -117,17 +78,16 @@ with these differences, all from `"core": true` in its manifest and honoured onl
   the user's choice, as for any plugin.
 - Its tools for Claude keep the names they had in Synapse (no `<plugin>__` prefix), its commands
   may use Synapse's own keys (which other plugins cannot take, even while it is off), and its
-  commands and actions are not labelled with a plugin name, except Metadata Check, which keeps
-  its name so its Run Now and Review Changes commands are easy to identify.
+  commands and actions are not labelled with a plugin name.
 - Its server part gets the app's `Services` object as `plugin.synapse` (None for other plugins).
 - It keeps running in safe mode (`--safe-mode` stops the other plugins only).
 
-Core workspaces (Tasks and Graph) register their sidebar entries in the internal `navigation`
+Tasks and the host bridge for contributed Notes visualizations register sidebar entries in the internal `navigation`
 registry in `frontend/src/extend.ts`, and remove them on unload. The sidebar only renders those
 registrations; it does not own plugin-specific buttons or counts. Each entry determines its active
 state from the visible workspace as well as its retained view state, so leaving Graph for Tasks or
 the library clears its highlight even though Notes keeps the graph in memory. Third-party plugins
-continue to use `p.pages` and backend item sources. Extended Markdown and Autocompletion are editor integrations, Citation
+can use `p.pages`, backend item sources, or the public Notes visualization API. Extended Markdown and Autocompletion are editor integrations, Citation
 Counts adds item fields, and metadata/PDF plugins supply lookups; those do not create empty pages.
 
 Workspace transitions are coordinated by `main.ts`: opening a plugin page first saves and closes
@@ -144,9 +104,76 @@ selected section disappears, Settings selects General. Unrelated sections keep t
 Autocompletion also clears visible and pending suggestions when stopped; an older status request
 cannot overwrite a newer check.
 
+### Bundled contributed plugins
+
+Some features Synapse always had are **contributed plugins**: they use only the public plugin API
+(`backend.plugins`, `plugin.http`), as an installed plugin would, so they show what a plugin can
+do and keep that API honest. Open-Access PDFs, Export Formats, Metadata Sources and Reference Sources start on the
+first time Synapse sees them, because their manifest says `"enabled_by_default": true` (honoured only for plugins in
+`plugins/`; an installed plugin always waits to be turned on). After that they are the user's
+choice, and safe mode stops them like any contributed plugin. Settings lists them under
+**Contributed plugins**.
+
+- **Tasks** (`plugins/tasks`, on by default): the Tasks workspace under **Plugins** in the left
+  sidebar, task controls in notes,
+  and the existing `list_tasks`, `get_task`, `create_task`, `update_task`, `delete_task` tools.
+  Records and note links stay in the core for validation, backups and attachment retention.
+  Disabling it removes its controls and tools; reenabling restores them with all tasks intact.
+  Its routes are `/api/plugins/tasks/…`; `/api/tasks` remains a compatibility alias. See [tasks](tasks.md).
+
+- **Extended Markdown** (`plugins/extended-markdown`, frontend only, on by default): Markdown
+  syntax beyond the basics, one extension per folder in
+  `plugins/extended-markdown/frontend/`, each with a boolean setting of its own:
+  - **Galleries and numbered figures** (`figures`): ` ```gallery ` blocks drawn as carousels (one
+    figure with panels in exports), figures numbered Fig. 1, 2, … and `\ref` / `\cref` to them;
+    see [notes](notes.md#galleries). Off, a gallery reads as the images and captions it holds, an
+    image's caption as the line of text it is, and a reference to a figure as ??. The notes format
+    does not change: the parser and the attachment sweep still read a gallery's lines.
+  - **Spoilers** (`spoilers`): inline `||spoilers||` and collapsible `:::spoiler` blocks in
+    Live/Read modes. Disabling it renders ordinary Markdown
+  without changing note files. HTML/PDF export reveals spoiler contents; Markdown keeps the source.
+
+- **Graph** (`plugins/graph`, on by default): local note neighbourhoods and the full graph in
+  Notes, with the existing sidebar entry, note/item menus, history and Cmd/Ctrl+Shift+G. It uses
+  public citation and note reads, the Notes visualization API and the host-vendored offline
+  force-graph library. Its data route remains `/api/plugins/graph/data`; graph data is derived
+  from saved notes and references, with no migration. The host retains the bundled Graph toggle's
+  reserved shortcut only; installed replacements receive ordinary shortcut rules. Saved Graph
+  preferences and enabled choices survive. Safe mode stops the plugin, preserving all inputs.
+
+- **Reference Sources** (`plugins/reference-sources`, on by default): Semantic Scholar, OpenAlex,
+  Crossref and arXiv HTML citation lists through the public API 1.5, declared HTTP permissions and
+  named sub-sources. Host aliases preserve historical source keys and titles. Saved references,
+  matching and graphs remain in core when off or in safe mode. Retry waits can be interrupted
+  when the plugin stops, and retired in-flight results are discarded. See [references](references.md).
+- **Metadata Sources** (`plugins/metadata-sources`, on by default): Crossref, OpenAlex, arXiv and
+  Open Library lookups through `plugin.http`, with exactly those four API hosts declared. API 1.4's
+  `scholarly` module supplies shared identifier, author-name and title-matching rules. Parallel
+  DOI/author enrichment and title fallback are preserved. Turning it off or entering safe mode
+  preserves library records; lookups still work when another matching provider is enabled.
+  Existing enabled/disabled choices survive the conversion. See [references](references.md).
+- **Autocompletion** (`plugins/autocompletion`, off by default or as previously configured): local
+  Ollama suggestions through `plugin.http` with `network: ["loopback"]` and the public editor
+  suggestion API. It stops in safe mode; settings survive. Legacy `notes_ai_*` settings are
+  carried over once by the host for the bundled plugin only. See [autocompletion](autocompletion.md).
+- **Open-Access PDFs** (`plugins/open-access-pdfs`): where Find Available PDF looks, Unpaywall and
+  arXiv by identifier and by title (its two PDF sources, see
+  [references](references.md#open-access-pdfs)), through `plugin.http` (network permission for
+  `api.unpaywall.org` and `export.arxiv.org`). Turned off, or in safe mode, Find Available PDF has
+  nowhere to look unless another plugin offers a source.
+- **Export Formats** (`plugins/export-formats`): the existing BibTeX, RIS, EndNote tagged/XML and
+  CSL JSON library exports, registered with Synapse's own writers through the public
+  `backend.plugins.formats`, so the output is what it always was. Imports, clipboard citation
+  copying and note HTML/PDF/Markdown exports remain in core. Its formats are named like any
+  plugin's, `export-formats.bibtex` and so on; the names they had before (`bibtex`, `ris`,
+  `endnote`, `endnote_xml`, `csljson`) still reach them through `/api/export`, and a saved
+  *Default export format* is renamed once when the settings are read (`RENAMED_EXPORT_FORMATS` in
+  `backend/settings.py`). With it off, imports still work, the stored export preference survives
+  and the dialog explains how to enable a writer.
+
 ### Optional plugins that come with Synapse
 
-These are off until turned on (Metadata Check is a core plugin with an opt-in default):
+These are contributed plugins, off until turned on; safe mode stops them:
 
 - **Citation Counts** (`plugins/citation-counts`): how often each paper is cited, from OpenAlex
   and Semantic Scholar, as a *Citations* column, a search filter (`citations:>100`, also in smart
@@ -251,9 +278,10 @@ data/plugins/recently-added/      the folder's name is the plugin's id
 | `backend` | Its Python code: a package folder (with `__init__.py`) or a `.py` file, inside the plugin's folder. |
 | `frontend` | Its part in the app: an ES module (`.js`), or TypeScript (`.ts`, `.tsx`) that Synapse bundles with esbuild when the plugin starts (see [The frontend](#the-frontend)). |
 | `styles` | A stylesheet the app loads while the plugin runs. |
-| `permissions` | `network`: the hosts `plugin.http` may reach (`"export.arxiv.org"`, or `"*.example.org"` for a domain and its subdomains). `library`: `read` (`plugin.library`), `add` (`plugin.actions.add`; `edit` is reserved). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
+| `permissions` | `network`: the hosts `plugin.http` may reach (`"export.arxiv.org"`, or `"*.example.org"` for a domain and its subdomains). `notes`: `read` for note listings/links, `edit` for supported history-preserving note operations; `tasks`: `read` and/or `edit` for task operations; `library`: `read` (`plugin.library`), `add` (`plugin.actions.add`), `edit` (`plugin.actions.update`, `p.library.update` and review Apply). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
 | `python` | Python packages it needs, as requirements (`["scirate>=0.0.7"]`): installed with pip when it first starts (see [Python packages](#python-packages)). |
 | `settings` | What the user can set, see below. |
+| `enabled_by_default` | `true`: start on the first time Synapse sees it. Honoured only for the plugins that come with Synapse (`plugins/`); an installed plugin waits for the user. |
 
 Each setting has a `key` (lowercase, `_`), a `type`, a `label`, an optional `description` and
 `default`:
@@ -314,17 +342,89 @@ def activate(plugin: Plugin) -> None:
 | `plugin.fields` | `declare(name, type=…, label=…, refresher=…, refresh=…)`, `set(paper, name, value)`, `set_many(name, {paper: value})`, `get(paper, name)`, `key(paper)`, `clear(name, papers=None)`: values attached to papers (see [Per-item fields](#per-item-fields)). |
 | `plugin.http` | `get(url, params=…)`, `post(url, json=…)`, `request(method, url, …)`, `limit(host, seconds)`: the web, within the manifest's `network` (see [Reaching the web](#reaching-the-web)). |
 | `@plugin.item_source(id, title=…, icon="list", description="", badge=None)`, `plugin.refresh_sources()` | A list of papers in the sidebar, and saying it changed (see [Papers outside the library](#papers-outside-the-library)). |
-| `@plugin.metadata_source(id, title=…, kinds=("doi", "arxiv", "isbn", "title", "pmid"), order=100)` | `fn(query)` receives `kind`, normalized `value`, and the contact `email`. Return an item dict in Synapse's field format, or `None` for no match. Lower order runs first; the first nonempty result wins. Raise `PluginError` for an unavailable source or a readable lookup problem; later sources are still tried. The core plugin uses order 100. Sources are removed when their plugin stops and listed as `metadata_sources` in its info. Use `plugin.http` and declare network permission for a third-party provider. |
+| `@plugin.metadata_source(id, title=…, kinds=("doi", "arxiv", "isbn", "title", "pmid"), order=100)` | `fn(query)` receives `kind`, normalized `value`, and the contact `email`. Return an item dict in Synapse's field format, or `None` for no match. Lower order runs first; the first nonempty result wins. Raise `PluginError` for an unavailable source or a readable lookup problem; later sources are still tried. The bundled Metadata Sources plugin uses order 100. Sources are removed when their plugin stops and listed as `metadata_sources` in its info. Use `plugin.http` and declare network permission for a third-party provider. |
 | `@plugin.pdf_source(id, title=…, by_title=False, order=100)` | Where Find Available PDF may look: `fn(paper)` gets `{"title", "doi", "arxiv"}` and returns PDF URLs, best first; Synapse downloads them in turn and keeps the first that is the paper (it checks the DOI, the arXiv stamp or the title in its text). Sources `by_title` are asked only when those going by identifier found nothing for a paper with an arXiv id. Lower `order` first (Open-Access PDFs uses 10). For an institutional repository or a proxy, say. |
-| `@plugin.reference_source(id, title=…, order=100)` | API 1.1: `fn(query)` receives `item` (a copied library-style record), contact `email` and `fresh` (prefer newly announced-paper sources). Return `{"references": [...]}` or `None`. Lower order first; empty results and failures fall through. No active source raises a readable lookup error. Only bundled core providers may override the recorded source name for compatibility. |
-| `@plugin.export_format(id, title=…, extension=…, mimetype=…)` | API 1.1: `fn(items, options) -> str` registers a text export. Options contain `unicode`, `abstract` and citation-key `pattern`. Third-party keys are `<plugin>.<id>`; bundled core writers retain their old keys. Writers disappear on unload. Extensions and MIME types are validated. Imports remain independent. |
+| `@plugin.reference_source(id, title=…, order=100, subsources=None)` | API 1.1: `fn(query)` receives `item` (a copied library-style record), contact `email` and `fresh` (prefer newly announced-paper sources). Return `{"references": [...]}` or `None`. Lower order first; empty results and failures fall through. No active source raises a readable lookup error. API 1.5 adds declared named sub-sources; fixed host aliases preserve historical bundled names (below). |
+| `@plugin.export_format(id, title=…, extension=…, mimetype=…)` | API 1.1: `fn(items, options) -> str` registers a text export. Options contain `unicode`, `abstract` and citation-key `pattern`. Keys are `<plugin>.<id>` (a core plugin's would keep its bare id). Writers disappear on unload. Extensions and MIME types are validated. Imports remain independent. To write a format Synapse knows, use `backend.plugins.formats` (below). |
 | `plugin.services` | `contact_email()`, `lookup(identifier)`, `references(paper, new=False)`, `match(refs)`, `connections(papers, refs=None, folders=None)`: Synapse's own lookups, reference lists and scoring. |
-| `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). |
+| `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). API 1.6: `update(id, changes)` edits metadata with `"library": ["edit"]`, using the library validation, citation-key rewrite and change events. Unknown/read-only fields and structured values are rejected before writing; tags and folder membership use separate app operations and are not accepted here. |
 
 Raise **`PluginError("…")`** for a problem the user or Claude should read: a route answers 400 with
 it as the error, a tool returns it as an error Claude can act on, and it does not count as the
 plugin failing. Any other exception from a route, a tool or a listener is logged with its traceback
 and counts towards turning the plugin off.
+
+**Synapse's reference writers** (API 1.2): `from backend.plugins import formats`.
+`formats.writers()` lists them (`key`, `title`, `extension`, `mimetype`, and `dump(items,
+**options)`), and `formats.dump(items, key, **options)` writes one: BibTeX (`bibtex`), RIS (`ris`),
+EndNote tagged (`endnote`) and XML (`endnote_xml`), CSL JSON (`csljson`). They are the writers File →
+Import reads back, so a plugin exporting through them does not drift from Synapse's importers.
+Items are dicts in the library's field format; the options are an export writer's. Export Formats
+registers exactly these:
+
+```python
+from backend.plugins import Plugin, formats
+
+
+def activate(plugin: Plugin) -> None:
+    for w in formats.writers():
+        plugin.export_format(w.key, title=w.title, extension=w.extension, mimetype=w.mimetype)(
+            lambda items, options, w=w: w.dump(items, **options)
+        )
+```
+
+### Scholarly helpers
+
+API 1.4 provides `from backend.plugins import scholarly`. These helpers reuse the library and
+importers' implementations and work offline without reading settings or user data.
+
+| Helper | Contract |
+|---|---|
+| `clean_doi(value)` | Strip a DOI URL or `doi:` prefix and surrounding whitespace; keep case and trailing punctuation. Empty/None becomes `""`. |
+| `norm_doi(value)` | A DOI for matching: stripped prefix, lowercase, no trailing dots; empty/None becomes `None`. |
+| `norm_arxiv(value)` | Bare lowercase arXiv ID without its version, from an identifier or URL; `None` if absent. |
+| `arxiv_id_of(item)` | Find an arXiv ID in a library item's identifier/link fields; keep its case. Return `None` when absent. |
+| `ARXIV_ID` | Compiled pattern for modern and legacy IDs; group 1 is the unversioned ID, preserving case. |
+| `parse_display_name(name)` | Convert a display name to `(family, given)`, preserving accents and family-name particles. |
+| `split_authors(text)`, `join_authors(pairs)` | Read/write Synapse's `Family, Given; Family2, Given2` author format. Joining accepts an iterable of pairs. |
+| `strip_tags(text)` | Plain text from JATS/HTML markup, omitting a JATS abstract heading and collapsing whitespace; None becomes `""`. It does not decode HTML entities. |
+| `title_similarity(a, b)`, `TITLE_MATCH` | Similarity in 0–1 using the existing case/accent/punctuation-insensitive rules (ASCII letters after normalization); empty normalized titles score 0. The current lookup threshold is 0.8. |
+
+### Named reference sub-sources
+
+API 1.5 lets one reference provider identify which catalogue answered:
+
+```python
+@plugin.reference_source("catalogues", title="Catalogues", subsources={"local": "Local catalogue"})
+def references(query):
+    return {"source": "local", "references": [{"title": "A cited work"}]}
+```
+
+A nonempty result must select one declared sub-source. Sub-source IDs contain lowercase letters,
+digits, underscores or hyphens, start with a letter and have at most 64 characters. Titles must
+be nonempty strings of at most 80 characters. A contributed result is stored as
+`<plugin>.<registration>.<sub-source>`; another plugin cannot claim that identity. If `subsources`
+is omitted, API 1.1 behavior is preserved: contributed results use `<plugin>.<registration>` and
+ignore a returned `source` value. Empty reference lists still mean no match and allow fallback.
+
+The host supplies four fixed compatibility aliases for `reference-sources.scholarly.*`:
+`semanticscholar`, `openalex`, `crossref` and `arxiv-html`. Those declarations continue returning
+exactly the historical bare values in `citations.db` and HTTP responses, preserving existing
+records and consumers without a database rewrite. These aliases are scoped to those complete
+plugin/registration/sub-source IDs and cannot be claimed by other plugin IDs.
+
+The reference view adds an optional `fetch.source_title` from running declarations. Historical
+bundled titles remain available with plugins off, including after restart; unknown saved plugin
+sources retain their full ID as their fallback label. The browser also keeps its old labels for
+older servers. Source IDs remain the stable identity; titles are presentation only.
+
+`scholarly.REF_FIELDS` is the reference-record field tuple: `doi`, `arxiv_id`, `openalex_id`,
+`s2_id`, `title`, `authors`, `year`, `venue`, `raw`. References may provide any subset; absent values
+are unknown. The first two fields identify a work, author text uses the library's author format,
+`year` is an integer or unknown, and `raw` preserves an unstructured citation. The store owns
+`item_id`, `position` and later library matching; providers must not supply database identity.
+API 1.5 also exposes `scholarly.identifiers(item)` (normalized DOI and arXiv ID, both may be present)
+and `ARXIV_DOI` (group 1 is the suffix of an arXiv DOI).
 
 ### Events
 
@@ -396,7 +496,7 @@ plugin.fields.set({"arxiv": "2610.01234"}, "citations", 0)  # also for a paper n
 - **Reviewing a library item.** `plugin.services.lookup_item(item_or_id)` returns `(current, fetched)`
   through the same metadata lookup as Retrieve Metadata, including author resolution and a proposed
   citation key. It saves nothing. `lookup(identifier)` remains the outside-record lookup.
-- **Asking again now.** `plugin.fields.refresh(name, papers=None)` hands the field's papers (or
+- **Asking again now.** `plugin.fields.refresh(name, papers=None, wake=True)` hands the field's papers (or
   only `papers`) to its refresher again soon, whatever their age: for a "Check now" button. The
   values stay shown until the new ones arrive. Explicit refresh also retries papers deferred after
   an unreachable service. A refresh interval taken from a setting can be
@@ -502,10 +602,17 @@ schedules count elapsed seconds instead.
 `plugin.http` is the only way a plugin should reach the web (`requests` would work, but skips all
 of this):
 
-- Only the hosts its manifest's `network` names, and only public addresses (not this computer or
-  the local network), also after redirects.
-- Requests to one host are spaced (0.5 s, 3 s for arXiv; more with `plugin.http.limit(host,
-  seconds)`), across all plugins, so two plugins cannot overload one service.
+- Only the hosts its manifest's `network` names, and only public addresses, also after redirects.
+  API 1.3 adds the special `"loopback"` network permission, shown as **this computer (loopback)**:
+  localhost and literal loopback IPs (`127.0.0.0/8`, `::1`), on any port. It grants no LAN or web
+  access. Localhost is pinned to `127.0.0.1`, environment proxies are bypassed, embedded credentials
+  are refused, and each redirect is checked again. Loopback calls have no default rate gap; a
+  plugin can still request one with `limit`. Status and model-generation timeouts may be a
+  `(connect, read)` pair, as in requests. Ordinary host permissions still refuse private addresses.
+- Requests to one host are spaced (0.5 s; more with `plugin.http.limit(host, seconds)`), across
+  all plugins, so two plugins cannot overload one service. All of arXiv's hosts share one line, 3 s
+  apart as its API terms ask, with Synapse's own requests to arXiv (`backend/online/http.py`
+  `HOST_GAPS`).
 - A User-Agent naming Synapse, the plugin and the contact address from Settings → Online
   Services, as scholarly APIs ask.
 - For the scholarly services Synapse itself uses, the user's keys from Settings → Online Services,
@@ -537,6 +644,9 @@ Plugins (or turn it off and on) loads the code again. Watch the plugin's **Log**
 
 ### The frontend
 
+API 1.3 also accepts `p.backend.post(path, body, {signal})` to cancel requests. Registrations and
+editor-open listeners are disposed automatically on stop or failed activation.
+
 The `frontend` module is loaded by the app (every window) while the plugin runs. It exports
 `activate(p)`, and optionally `deactivate(p)`; `p` is a `PluginContext`, declared in
 [`frontend/src/plugins/api.ts`](../frontend/src/plugins/api.ts). That file has only types, so it can
@@ -560,6 +670,9 @@ export function activate(p) {
 
 | Member | What it does |
 |---|---|
+| `p.editor.suggestions.register({ready, complete, delay})` | API 1.3: register a plain-text ghost suggestion provider. `ready()` gates requests; `complete(prefix, suffix, signal)` resolves to text, with up to 6,000 characters before and 2,000 after the cursor. `delay` defaults to 350 ms. The newest registration is active; disposing it restores the preceding one. Registration/disposal cancels requests and clears visible text in retained editors. CodeMirror stays private. |
+| `p.editor.onOpened(fn)` | API 1.3: disposable event when a note editor opens. Also initialize at activation, since an editor may already exist. |
+| `p.settingsPage.open()` | API 1.3: show this plugin's Settings section. |
 | `p.pages.register({id, title, icon, mount})` | A page: an entry under **Plugins** in the sidebar; when chosen, the page takes the place of the library (as Tasks does) and `mount(el)` draws it. `p.pages.setBadge(id, value)` puts a count on the entry, `p.pages.open(id)` shows it. |
 | `p.commands.register({id, title, key, when, run})` | A command in the palette, named after the plugin. `key` like `Mod-Alt-r` (Mod: ⌘ on a Mac, Ctrl elsewhere) needs Mod or Alt and cannot be one of Synapse's keys; a key that cannot be used is left out (the console says why). |
 | `p.itemPane.register({id, title, when, mount})` | A section at the end of the item pane, for the items `when(item)` accepts; `mount(el, item)` runs once the selection rests. Papers from a list (`item._outside`) get sections too. |
@@ -608,7 +721,7 @@ from `PaperRepository.on_items`, key changes from `on_citekey_change`, saved not
 | Module | What it does |
 |---|---|
 | `host.py` | `PluginHost`: finds plugins (`scan`), starts and stops them, runs their routes and tools with failure counting (`route`, `run`, `mcp_tools`), sends events (`emit`), and what Settings shows (`info`, `overview`). |
-| `catalog.py` | Discovers manifests without importing code, applies folder precedence and initializes core defaults from legacy preferences once. |
+| `catalog.py` | Discovers manifests without importing code, applies folder precedence and, once per plugin, turns on the bundled plugins that start by themselves (core plugins, and contributed ones with `enabled_by_default`), carrying legacy preferences over. |
 | `files.py` | Shared file transactions: process and thread locks, atomic JSON replacement. |
 | `manifest.py` | Reads and checks `manifest.json`; `API_VERSION`; settings and their values. |
 | `context.py` | `Plugin`, the object a plugin gets; `PluginError`; `EVENTS`; tool schemas from type hints. |
@@ -727,3 +840,149 @@ both clipboard output and optional writers; endpoints only parse requests and sh
 delivery are independent: `{type: "success", desktop: true, sourceId: "today"}` offers an OS
 notification when enabled and retains a Show action across reloads. Use `transient: true` for
 brief confirmations/Undo; `timeout` only applies to transient toasts.
+
+### Metadata review and audit APIs (1.6)
+
+`scholarly.compute_changes(current, fetched)` returns differences in the app's metadata display
+order, as `{key, current, fetched, isNew, checked}` dictionaries. Empty fetched values are skipped;
+comparison preserves case and punctuation. Changing an existing citation key is unchecked by
+default. This is an offline helper and does not edit either record.
+
+`plugin.fields.due(name)` returns library items in scheduler order (missing values first, then
+oldest stale values); it requires library `read`, a declared field and a refresher. It respects
+retry backoff after `LATER`. `refresh(name, papers=None, wake=False)` expires cached values and
+clears retry backoff without waking the runner. An audit can take its due snapshot, initialize
+progress, then call `plugin.fields.refresh_soon()`. `plugin.fields.changed()` tells open pages
+that associated status changed without rewriting a field value. Results from stopped or restarted
+refreshers are discarded by the host.
+
+`p.jobs.start(message)` returns a progress job with `set(message, done?, total?)`,
+`finish(message?, options?)` and `close()`. Finish accepts notification options (severity,
+Review action, optional desktop delivery); the host assigns the plugin as owner. Unfinished jobs
+close on unload, and actions cannot run after the plugin stops.
+
+`p.ui.reviewMetadata(articles, options)` opens the shared review dialog. Each article is
+`{id, current: PluginItem, changes: MetadataChange[], published?: string}`; inputs are copied.
+Options are `title`, `onRejectSuggestion({id}, change)`, `onRejectArticle({id})`,
+`onIgnorePaper({id})` and `onApplied(savedIds)`. Only selected fields are saved, after explicit
+Apply. Callbacks let the plugin persist exact rejections and exclusions. Apply, like
+`p.library.update(id, changes)`, uses the running plugin's `library: ["edit"]` permission through
+`PATCH /api/plugin-host/<pid>/items/<id>` and the ordinary metadata update path. A stopped plugin
+cannot submit new edits; unloading closes its review and prevents subsequent batch saves.
+An edit already submitted may complete. No library schema or stored plugin data changes.
+
+### Notes and visualization APIs (1.7)
+
+`plugin.library.citation_graph()` requires library `read`. It returns the stored citation graph
+(`nodes`, `edges`, `stats`) plus `fetched`: library item IDs whose reference lists have been fetched,
+including empty lists. Trash is excluded. It makes no network requests.
+
+`plugin.notes.list()` and `plugin.notes.links()` require `permissions: {"notes": ["read"]}`.
+The listing contains paths, front-matter metadata and timestamps. Links are resolved as in Notes:
+`{source: path, kind: "note" | "cite", target: path | citation_key}`. Embedded-note links are
+included; unresolved note targets are omitted. These operations do not grant note writes.
+Settings shows notes read access alongside library/network permissions.
+
+`p.notes.enabled()`, `current()` and `open(path)` expose Notes availability, the current path and
+navigation. `p.notes.visualizations.register(spec)` adds a sidebar entry, a section above note
+details and a view in place of the editor. One visualization may register at a time; a second
+registration fails explicitly. This preserves Notes navigation and Back/Forward rather than
+turning a visualization into a separate page. The current view is also available from the Notes
+header and note menu.
+
+A spec has `id`, `title`, optional `icon`, `attach(context)`, `section(): HTMLElement`,
+`showNote(pathOrNull)`, `changed()`, `open(focusOrNull): Promise<void>`,
+`close({notify?})`, `isOpen(): boolean` and `destroy()`. The context provides `main` (the main-view
+host), `currentPath()`, `openNote(path)`, `open(focus)`, `setOpen(boolean)` (host layout/sidebar
+state), and `closed()` (history after a user close). Plugins own their section/main DOM, canvases,
+observers and timers, and dispose them in `destroy`. The host unregisters navigation, restores
+the editor and calls destroy on unload. `visualizations.open(id, focus?)` and `toggle(id)` leave
+other workspaces through the host; plugins never import private navigation/store modules.
+
+`p.assets.vendor("force-graph")` returns the host-vendored offline library entry point. TypeScript
+plugins may use force-graph's public package types; Synapse's checker resolves its installed type
+dependency for bundled Graph. There is no runtime npm/CDN import. Graph keeps its own model and
+rendering code in `plugins/graph/frontend/` and discards retired async canvas/data work.
+
+`p.library.openPdf(id)` opens an item's attachment or URL through the ordinary app operation;
+`p.library.refresh()` refreshes the visible library data after a plugin route adds an item.
+Graph's Add button uses `plugin.actions.add`, with library `add` permission and existing duplicate
+checks, metadata fallback, citation-key generation and Adding Items settings.
+
+### Markdown contributions and shared SDK (1.8)
+
+`p.markdown.register(provider)` installs a Markdown provider: `markdown(md)`,
+`spoilers(text, scanned)`, `exportStatic(root)`, `fence(info)` and `portable(text)`.
+Providers compose in registration order; disposing a registration rebuilds retained renderers and
+live preview. No editor-library instance is handed over: spoiler/figure source ranges remain plain
+UTF-16 offsets, and the host creates preview widgets. `p.markdown.figures.register(provider)`
+registers the document's figure scanner, label formatter, renderer, portable/export preparation
+and gallery insertion function. One figure provider may register at a time because numbering is
+document-wide. The host removes both registrations on unload.
+
+The public `frontend/src/plugins/markdown.ts` SDK exports existing scan/mask rules, reference
+formatting and text-reference helpers, image/anchor/line HTML helpers and `renderTaskBlock`.
+Imports of this SDK are kept external by the plugin bundler and rewritten to the single host
+module `/js/plugins/markdown.js`. This preserves host renderer and Tasks-provider identity without
+bundling another engine or fetching a CDN. Type-only imports of markdown-it use the installed
+matching types; actual rules receive the host's vendored renderer instance.
+
+Extended Markdown now lives in `plugins/extended-markdown/frontend/` and uses only these public
+interfaces. All three settings, plugin identity, galleries/figures/spoilers/task-block source,
+rendering, exports and multi-image insertion behavior remain. It stays enabled on first discovery;
+saved choices survive and safe mode stops it. Parser support for gallery images/captions and task
+IDs, attachment retention, note validation and MCP reading/writing conventions remain in core as
+saved-data contracts. This conversion does not introduce arbitrary new backend syntax registration
+or move note data. Disabling the plugin still leaves those saved notes safely readable.
+
+### Tasks, editor integration and UI SDK (1.9)
+
+Declare `permissions: {"tasks": ["read", "edit"], "notes": ["read", "edit"]}` as needed.
+`plugin.tasks.records` offers `list(trashed=False)`, `get(id)`, `history(id)`,
+`create(title, body=…, parent_id=…, due=…, status=…)`, `update(id, changes)`,
+`move(id, parent_id=…, before=…, after=…)`, `set_status(id, status, with_subtasks=False)`,
+`delete(ids)`, `restore(batch=… or task_id=…)` and `undo(history_id)`.
+Reads require tasks `read`, mutations tasks `edit`. Record methods return ordinary dictionaries
+and lists; they use the existing validation, task history and change events.
+
+`plugin.tasks.overview()`, `refs()` and `task(id)` additionally require notes `read` because
+results include associated note paths/titles. `create(data, by="human")` accepts the existing
+creation fields, optional `note` and `after_line`; using `note` also requires notes `edit`.
+`add_to_note`, `remove_from_note` and `add_image(filename, bytes)` require tasks `edit` and notes
+`edit`. `convert(text)` requires tasks `edit`; the editor applies its returned replacement text.
+`notes_changed(client_id=None)` reports the resulting note update to open pages. Public
+`backend.plugins.tasks` exports the task errors, note error, existing query matcher, token writer
+and client-header name. `plugin.notes.resolve(ref)` resolves a path/wiki link/title under notes
+`read` without changing files. All task records and note integrity stay in core.
+
+Frontend `p.tasks.register(integration)` installs one Tasks UI provider at a time. Its `page`
+supplies `open`, `close`, `isOpen`, `panelButton`, `shortcut` and `changed`; `notes` supplies the
+published `TaskNoteHooks` callbacks for task preview/actions, side panel, note saves, completion,
+new tasks, title HTML and portable tasks. `render` supplies task and task-block HTML. `destroy`
+retires plugin resources. Registration and removal update the host layout, navigation and renderer.
+
+The public `frontend/src/plugins/task-runtime.ts` module exposes shared `createEditor`, `loadMD`,
+`createRenderer`, rendering helpers/settings, UI utilities/dialogs/menus, window opening, typed
+app events and navigation, task/note record types, note/citation indexes, current editor, a plain
+current-note snapshot and library selection/view snapshots. This explicit SDK is shared as
+`/js/plugins/task-runtime.js`; it does not expose the mutable app store or private workspace.
+Plugins must clean up subscriptions and editor/form instances they create. SDK modules and the
+host's CodeMirror/Markdown libraries stay singletons; no runtime packages or CDN are fetched.
+`p.backend.patch(path, body)` adds scoped PATCH alongside the existing plugin route methods.
+
+Only the bundled Tasks plugin retains the five historical MCP tool names and Mod-Shift-K.
+User/dev replacements keep normal tool prefixes and shortcut restrictions. The bundled plugin's
+initial MCP availability is preserved; saved user choices take precedence. Safe mode stops the
+UI/routes/tools without removing records, history, attachments or note tokens. See [tasks](tasks.md).
+
+The standalone MCP host does not build frontend modules: it can start contributed Python tools
+without Node/esbuild. Only the web app bundles a plugin frontend.
+
+Import public Python helpers with `from backend.plugins import tasks` (or `scholarly`),
+then call their documented members. The frontend `api.ts` declarations reference the public
+Markdown/task SDK types; use those declarations together for TypeScript integrations.
+
+`noteIndexSnapshot()` returns a plain copy of the host note listing. Tasks follows the
+`notes-count` UI event for this window's own writes, and notes/library change notifications
+for other clients, so its private picker/completion indexes stay current without sharing the
+mutable workspace. Pending index responses are generation-checked and ignored after unload.

@@ -9,8 +9,8 @@ import { progressToast, toast, toastError } from '../ui/toast.js';
 import type { ApiError } from '../api.js';
 import type { Item, ItemReferences } from '../types.js';
 import { escapeHtml, formatDate, plural, shortAuthors } from '../util.js';
+import { referenceSourceTitle } from './referenceSource.js';
 
-const SOURCES: Record<string, string> = { semanticscholar: 'Semantic Scholar', openalex: 'OpenAlex', crossref: 'Crossref', 'arxiv-html': 'arXiv (HTML version)', none: 'no service' };
 const SHOW = 8;
 const expanded = new Set<string>();   // items whose full list is open
 let pollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -41,7 +41,7 @@ function paint(el: HTMLElement, it: Item, v: ItemReferences): void {
   else if (!f.count) status = `No reference list found (${escapeHtml(formatDate(f.fetched_at))}).`;
   else {
     status = `${plural(f.count, 'reference')}${inLib ? ` · <b>${inLib}</b> in your library` : ''}
-      <span class="muted">· ${escapeHtml(SOURCES[f.source] || f.source)}, ${escapeHtml(formatDate(f.fetched_at))}</span>`;
+      <span class="muted">· ${escapeHtml(referenceSourceTitle(f))}, ${escapeHtml(formatDate(f.fetched_at))}</span>`;
   }
   const btn = v.can_fetch && !v.queued && state.view !== 'trash'
     ? `<button class="btn btn-sm" data-ref="fetch">${icon('refresh', 'icon-sm')} ${f ? 'Refresh' : 'Fetch references'}</button>` : '';

@@ -183,8 +183,8 @@ never mix.
   stays small. New attachments are indexed in the background; progress is shown
   in the sidebar and Settings, which can also rebuild it.
 - **Import / export**: BibTeX, RIS, EndNote (tagged `.enw` and XML) and CSL JSON. Library export
-  writers are the **Export Formats** core plugin; turning it off preserves imports and clipboard
-  citation copying.
+  writers are the **Export Formats** plugin, on by default; turning it off preserves imports and
+  clipboard citation copying.
   Imports are previewed first with duplicates flagged. Export the whole library,
   a selection, or copy BibTeX / citation keys from the context menu.
 - **Citation keys** from a configurable pattern (Settings → Citation Keys), with a
@@ -216,7 +216,7 @@ never mix.
   an available PDF, fetch reference lists, and turn imported keywords into tags — each *Never*,
   *Always* or *Ask* (a ticked checkbox where you add the items: the import dialog, Add by
   Identifier, the browser button). They all run in the background.
-- **References / citation graph** (online fetching is the **Reference Sources** core plugin;
+- **References / citation graph** (online fetching is the **Reference Sources** contributed plugin;
   turning it off keeps saved references and citation links): for new items (see Adding Items) and after Retrieve Metadata
   the list of papers the item cites is fetched too, in the background (Semantic Scholar, then
   OpenAlex, then Crossref; optional API keys in Settings → Online Services). The item pane shows *References* — cited works that are
@@ -232,10 +232,10 @@ never mix.
   between papers, cited works not in your library and orphans. It is centred on the note or paper
   you opened it from and shows only what is 1, 2 (the default) or 3 links away, or **All** of it;
   Shift-click a node, or **Centre graph here** on a paper's card, to move the centre. Clicking a
-  paper shows a card (paper note, Show in Library, PDF, Add to Library). It is a core plugin
+  paper shows a card (paper note, Show in Library, PDF, Add to Library). It is a contributed plugin
   (**Graph**, also under **Plugins** in the sidebar): turn it off in Settings → Plugins if you don't use it.
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
-  arXiv: the core plugin Open-Access PDFs; other plugins can add places to look) and checks the file is really the right paper. Batch runs skip items
+  arXiv: the plugin Open-Access PDFs, on by default; other plugins can add places to look) and checks the file is really the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.
 - **Folders** (nested; an item can be in several folders but is stored once — a folder
   only holds a link to it), **tags** (many per item, optional colours) and **smart
@@ -325,7 +325,7 @@ never mix.
   In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
   drag to move; folders can be renamed, moved and deleted the same way.
-- **Extended Markdown** (core plugin, on by default) is where Markdown syntax beyond the basics
+- **Extended Markdown** (contributed plugin, on by default) is where Markdown syntax beyond the basics
   lives, each part with its own switch in its settings: **galleries and numbered figures** (above),
   **task blocks** (` ```tasks table group=deadline completed=bottom ` with one task ID per line;
   their rich block can filter open/done tasks, sort them, and create a task in place),
@@ -333,7 +333,7 @@ never mix.
   Show/Hide button, and collapsible `:::spoiler Optional summary` blocks closed by `:::`. Blocks
   support nested Markdown and spoilers. Source text stays intact when the plugin is off; HTML/PDF
   exports reveal spoiler contents. See [Extended Markdown](docs/notes.md#extended-markdown-core-plugin).
-- **Tasks** (open it under **Plugins** in the left sidebar; a core plugin, on by default; turn it off in Settings → Plugins without losing tasks): to-dos with a title, a due date, details written in Markdown like a note, and
+- **Tasks** (open it under **Plugins** in the left sidebar; a contributed plugin, on by default; turn it off in Settings → Plugins without losing tasks): to-dos with a title, a due date, details written in Markdown like a note, and
   sub-tasks to any depth. In a note, Cmd/Ctrl+Enter (or **Add Task to This Note…** in the command palette) opens a
   small popup: name the task (the line's text, if any), give it a date in words ("fri", "27 oct",
   "in 3 days") and details, or pick a task you already have — or type `{{task` and a few words of
@@ -348,7 +348,7 @@ never mix.
   goes to the trash with it (Undo, or Cmd/Ctrl+Z in the note, brings it back); older tasks stay in
   Tasks. Tasks are kept in the library database, so backups include them; deleted tasks can be
   restored. See [`docs/tasks.md`](docs/tasks.md).
-- **Autocompletion** in notes (a core plugin, off by default: turn it on in Settings → Plugins): after a short pause a
+- **Autocompletion** in notes (a contributed plugin, off by default: turn it on in Settings → Plugins): after a short pause a
   model running on this computer in [Ollama](https://ollama.com) suggests how the text goes on, in
   grey after the cursor. Tab accepts, Esc dismisses, Cmd/Ctrl+→ takes one word, Alt/⌥+\ asks for
   one now, clicking it accepts it. Only local models are supported: install Ollama and a model
@@ -412,20 +412,40 @@ Settings (listed under Plugins, opened by the **Settings** button on its row or 
 the app from working, start it with `python server.py --safe-mode` (only core plugins run) and turn it
 off.
 
-Synapse’s own optional features are **core plugins**: Graph, Metadata Sources,
-Reference Sources, Export Formats, Extended Markdown, Open-Access PDFs and Tasks start on,
-while Autocompletion starts as previously configured.
-Turn them off in Settings → Plugins without losing their data. Core plugins can also be toggled
-and restarted in safe mode; changes are followed by the standalone MCP server. Safe mode keeps core plugins
-running and stops third-party plugins. Tasks and Graph add their own entries to the sidebar's
+All bundled optional feature plugins now use the public API as **contributed plugins**.
+Tasks starts on and retains its records, history and note-link integrity in core.
+**Open-Access PDFs** (where Find Available PDF looks),
+**Export Formats** (the library exports), **Metadata Sources** (scholarly lookups) and
+**Reference Sources** (citation lists) are contributed plugins built only on the public plugin
+API, as yours would be; they come with Synapse and start on, but safe mode stops them like any other
+contributed plugin. **Autocompletion** is also contributed: it starts off (or as previously
+configured), uses only Ollama on this computer through an explicit loopback permission, and stops
+in safe mode. Plugin API 1.3 exposes plain-text editor suggestions to plugins; 1.4 adds offline scholarly
+helpers for identifiers, author names and title matching, shared with the library and importers.
+API 1.5 lets reference plugins declare named catalogues and share the existing reference-record
+contract. Saved provider identities remain stable and the item pane can show their display titles.
+API 1.6 adds permission-checked metadata editing, explicit review dialogs, progress notifications and
+field scheduling helpers. **Metadata Check** now uses these public APIs as a contributed plugin;
+it stays off by default, preserves settings and cached findings, and stops in safe mode.
+API 1.8 adds public Markdown/figure contributions and a shared renderer SDK. **Extended Markdown**
+is now contributed: existing syntax, switches and exports remain, and safe mode stops it.
+API 1.7 adds permission-gated notes/citation reads and Notes visualizations. **Graph** now uses
+these public APIs as a contributed plugin: its local/full views, sidebar, history and shortcut
+remain, and safe mode stops it.
+API 1.9 adds permission-checked task services and shared editor/UI integration. **Tasks** is now
+contributed, with its existing routes, AI tool names, shortcut and saved records preserved.
+Turn plugins off in Settings → Plugins without losing their data. The standalone MCP server follows
+those choices. Safe mode keeps the basic library and notes available and stops contributed plugins. Tasks and Graph add their own entries to the sidebar's
 list; their selection follows the visible workspace when switching between views. Plugins'
 settings sections appear and disappear immediately as their plugin is switched on or off, including
 while Settings stays open. Disabling Autocompletion dismisses visible
 suggestions and cancels pending ones immediately.
 
 The built-in metadata providers (Crossref, OpenAlex, arXiv and Open Library) are the
-**Metadata Sources** core plugin, on by default. Switch it off in Settings → Plugins to stop
-those lookups; all existing metadata stays in the library. Other plugins can supply sources too.
+**Metadata Sources** contributed plugin, on by default and stopped in safe mode. Switch it off in Settings → Plugins to stop
+those lookups; all existing metadata stays in the library. It uses the public HTTP client with
+declared provider hosts, the shared arXiv queue, and Online Services credentials for OpenAlex.
+Other plugins can supply sources too.
 
 Three plugins come with Synapse, off until you turn them on:
 

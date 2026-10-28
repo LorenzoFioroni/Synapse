@@ -319,3 +319,72 @@ def test_old_rejections_and_findings_are_upgraded(client, svc, monkeypatch):
     client.post(f"/api/plugin-host/{PID}/restart")
     assert wait(lambda: value(client, article) == "Up to date · ignored title")
     assert client.get(f"/api/plugins/{PID}/review").get_json()["articles"] == []
+
+
+def test_contributed_defaults_and_safe_mode_preserve_saved_state(client, svc, tmp_path):
+    import json
+
+    from backend import create_app
+    from backend.config import Config
+
+    info = svc.plugins.info(PID)
+    assert not info["core"] and not info["enabled"]
+    data = tmp_path / "safe"
+    data.mkdir()
+    (data / "plugins.json").write_text(json.dumps({"plugins": {PID: {"enabled": True}}}))
+    storage = data / "plugin-data" / PID
+    storage.mkdir(parents=True)
+    saved = '{"paper": {"title": "Kept", "at": 123}}'
+    (storage / "ignored_papers.json").write_text(saved)
+    config = Config.from_env(data)
+    config.safe_mode = True
+    app = create_app(config, start_indexer=False)
+    try:
+        host = app.extensions["synapse"].plugins
+        info = host.info(PID)
+        assert info["enabled"] and not info["running"] and not info["core"]
+        assert info["status"] == "safe-mode"
+        assert (storage / "ignored_papers.json").read_text() == saved
+        assert app.test_client().get(f"/api/plugins/{PID}/status").status_code == 404
+    finally:
+        app.extensions["synapse"].plugins.stop()
+
+
+def test_metadata_check_imports_only_the_public_plugin_api():
+    import ast
+
+    from backend.config import APP_ROOT
+
+    folder = APP_ROOT / "plugins" / PID
+    for path in (folder / "backend").glob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("backend."):
+                assert node.module in {"backend.plugins", "backend.plugins.scholarly"}, path
+    frontend = (folder / "frontend" / "index.ts").read_text()
+    assert "import type {" in frontend
+    assert 'from "../../../frontend/src/plugins/api.js"' in frontend
+    assert "plugin.synapse" not in (folder / "backend" / "__init__.py").read_text()
+
+
+def test_retired_lookup_does_not_save_findings_or_complete_run(client, svc, monkeypatch):
+    from backend.plugins.fields import LATER
+    from backend.plugins.jobs import Runner
+
+    # Run the refresher explicitly so retirement occurs at the exact lookup boundary.
+    monkeypatch.setattr(Runner, "start", lambda self: None)
+    item = svc.papers.create({"title": "Before", "doi": "10.1000/article"})
+    svc.plugins.enable(PID)
+    plugin = svc.plugins._active[PID].plugin
+
+    def lookup(current):
+        for stop in reversed(plugin.unload):
+            stop()
+        return current, {"title": "Late answer"}
+
+    monkeypatch.setattr(plugin.services, "lookup_item", lookup)
+    field = plugin.fields.defs["metadata_check"]
+    key = plugin.fields.key(item)
+    result = field.refresher([{"key": key, "item_id": item["id"], "doi": item["doi"]}])
+    assert result == {key: LATER}
+    assert plugin.storage.json("findings").all() == {}
+    assert plugin.storage.json("state").get("last_checked") is None

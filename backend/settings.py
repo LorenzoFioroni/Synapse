@@ -28,7 +28,7 @@ DEFAULTS: dict = {
     "confirm_trash": False,
     "open_pdf_on_double_click": True,
     # Import / export
-    "export_format": "bibtex",
+    "export_format": "export-formats.bibtex",
     "bibtex_unicode": True,  # False -> escape non-ASCII as LaTeX commands
     "export_abstract": True,
     "import_skip_duplicates": True,
@@ -93,6 +93,13 @@ CHOICES = {
 }
 
 
+# The library exports Synapse always had are the plugin Export Formats, whose formats are named
+# "<plugin>.<format>" like every plugin's; the names they had before still mean them.
+RENAMED_EXPORT_FORMATS = {
+    old: f"export-formats.{old}" for old in ("bibtex", "ris", "endnote", "endnote_xml", "csljson")
+}
+
+
 def _migrate(stored: dict) -> dict:
     """Settings files written by older versions."""
     stored = dict(stored)
@@ -102,6 +109,8 @@ def _migrate(stored: dict) -> dict:
         stored["import_tags"] = "never"
     if stored.get("references_auto") is False and "add_fetch_references" not in stored:
         stored["add_fetch_references"] = "never"
+    if stored.get("export_format") in RENAMED_EXPORT_FORMATS:
+        stored["export_format"] = RENAMED_EXPORT_FORMATS[stored["export_format"]]
     if stored.get("notes_equation_numbers") == "latex":  # value used by an early version of equation numbering
         stored["notes_equation_numbers"] = "labelled"
     return stored

@@ -515,26 +515,24 @@ async def main():
             safe = await browser.new_page(viewport={"width": 1300, "height": 950})
             await safe.goto(BASE)
             await open_plugins(safe)
+            # No plugin that comes with Synapse is core any more: safe mode stops them all, Graph
+            # included, and leaves their switches alone until Synapse starts normally.
             graph_row = '.plugin-row[data-plugin="graph"]'
-            check("safe mode leaves core switches usable", await safe.is_enabled(f"{graph_row} [data-ptoggle]"))
+            check(
+                "safe mode stops plugins that come with Synapse",
+                not plugin("graph")["running"] and await safe.is_disabled(f"{graph_row} [data-ptoggle]"),
+            )
             check(
                 "safe mode suppresses installed plugins",
                 not plugin("recently-added")["running"] and await safe.is_disabled(f"{ROW} [data-ptoggle]"),
             )
-            await safe.click(f"{graph_row} [data-popen]")
             check(
-                "safe mode offers restarting a core plugin", await safe.is_visible("#set-plugin-graph [data-prestart]")
+                "a stopped plugin's row says safe mode",
+                "Safe mode" in (await safe.inner_text(f"{graph_row} .p-name")),
             )
-            await safe.click(f"{graph_row} .switch")
             check(
-                "safe mode can turn a core plugin off",
-                await wait_for(lambda: asyncio.to_thread(lambda: not plugin("graph")["running"])),
-            )
-            await safe.click(f"{graph_row} .switch")
-            await safe.click(".dialog button:has-text('Turn On')")
-            check(
-                "safe mode can turn a core plugin on again",
-                await wait_for(lambda: asyncio.to_thread(lambda: plugin("graph")["running"])),
+                "the page says why nothing runs",
+                await safe.is_visible("text=Synapse was started in safe mode"),
             )
             await browser.close()
     finally:

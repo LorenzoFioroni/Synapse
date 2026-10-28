@@ -52,7 +52,7 @@ well (`test_remote_pdf.py`).
 |---|---|
 | Library | `test_api.py` (create, edit, trash, settings, import and export, attachments, schema), `test_list_payload.py` (lean lists, items by id), `test_organize.py` (folders, tags, smart folders, their migrations), `test_citekeys.py`, `test_search.py` (query syntax, accents, filters, notes in search), `test_identifiers.py` (DOI and arXiv ids), `test_annotations.py` (annotation records, conversion of old ones) |
 | Formats | `test_formats.py`: BibTeX, RIS, EndNote and CSL-JSON round trips |
-| Online and references | `test_metadata.py` (lookups), `test_pdf_finder.py` (Find Available PDF through the plugins' PDF sources, the Open-Access PDFs core plugin), `test_remote_pdf.py` (PDFs behind a web link: public addresses only, PDFs only, size cap), `test_references.py` (reference lists), `test_graph.py` (the Graph plugin's data) |
+| Online and references | `test_metadata.py` (lookups), `test_pdf_finder.py` (Find Available PDF through the plugins' PDF sources, the Open-Access PDFs plugin), `test_remote_pdf.py` (PDFs behind a web link: public addresses only, PDFs only, size cap), `test_references.py` (reference lists), `test_graph.py` (the Graph plugin's data) |
 | Notes | `tests/notes/`: `test_vault.py` (safe paths, save conflicts, trash, move), `test_index.py`, `test_parser.py` (golden tests on the fixtures), `test_frontmatter.py`, `test_gallery.py` (gallery blocks for the MCP tools), `test_rewrite.py`, `test_rekey.py`, `test_attachments.py`, `test_api_notes.py`, `test_scanner_parity.py` |
 | Access and sync | `test_guard.py` (other websites and extensions refused), `test_devices.py` (pairing, who manages devices, `--debug` refused on the network), `test_changes.py` (change feed), `test_connector.py` (browser extension API), `test_backup.py` |
 | MCP | `test_mcp.py`: the protocol and every tool, in-process and over stdio |
@@ -94,11 +94,11 @@ These check rules of the code base rather than behaviour:
 | `diff.test.mjs` | `views/notes/diff.js` |
 | `embed.test.mjs` | `views/notes/embed.js` and `linkData.js`: what an embedded note shows, with its own link data |
 | `equations.test.mjs` | `equations.js`, `mathClick.js`, `macros.js` and math in `render.js` |
-| `figures.test.mjs` | `plugins/core/extended-markdown/figures/figures.js`: which images are figures, numbering, labels; figures in `render.js` and the Markdown export |
+| `figures.test.mjs` | `plugins/extended-markdown/frontend/figures/figures.js`: which images are figures, numbering, labels; figures in `render.js` and the Markdown export |
 | `crossref.test.mjs` | `views/notes/crossref.js`: `\ref`, `\eqref`, `\cref`, `\Cref`: kinds, plurals, ranges, unknown names |
-| `gallery.test.mjs` | `plugins/core/extended-markdown/figures/gallery.js`: reading gallery blocks, the figure caption, Markdown export; galleries in `render.js`, with the `figures` hook set and without it |
+| `gallery.test.mjs` | `plugins/extended-markdown/frontend/figures/gallery.js`: reading gallery blocks, the figure caption, Markdown export; galleries in `render.js`, with the `figures` hook set and without it |
 | `extract.test.mjs` | `extractCitation` in `browser_extension/extract.js`, with a faked `document` and `location` |
-| `graph.test.mjs` | `plugins/core/graph/model.js` |
+| `graph.test.mjs` | `plugins/graph/frontend/model.ts` (compiled by the test harness) |
 | `library.test.mjs` | `views/notes/library.js`: autocomplete ranking |
 | `linkNav.test.mjs` | `viewer/linkNav.js`: link targets and previews in the PDF viewer |
 | `lookupJob.test.mjs` | `LookupJob` in `views/metadataReview.js` |
@@ -318,8 +318,13 @@ through the `window.zc…` hooks in `frontend/src/globals.d.ts` rather than thro
 one exists.
 
 `tests/test_metadata.py` tests query normalization and the Metadata Sources plugin’s providers
-with faked responses. `tests/plugins/test_metadata_sources.py` tests provider priority, fallback,
-turning sources off and on, and preserving library records without network access.
+with faked responses through `tests/fake_metadata.py`, leaving the public HTTP client's permission,
+credential, cache and spacing behavior in place. `tests/plugins/test_metadata_sources.py` tests
+provider priority, fallback, current credentials, concurrent conditional-cache reads, safe mode,
+turning sources off and on, and preserving saved choices and library records. The separate
+`test_metadata_provider_lifecycle.py` blocks workers with events and checks queued enrichment is
+cancelled when the provider stops; every worker is released and joined before the test finishes.
+These tests need no real provider network access and can run as small sequential local batches.
 
 ### Reliable tab, scroll and plugin checks
 
@@ -358,8 +363,14 @@ fixed duration, so a busy machine cannot make the assertion race the fake server
 
 `tests/plugins/test_extensions.py` checks reference-provider priority/fallback and disablement
 without losing saved graph records; existing export output, independent import parsing and writer
-disposal; and third-party registration through API 1.1. Provider HTTP responses are faked in the
-existing reference tests, which target `plugins/reference-sources/server/`.
+disposal; and third-party registration through API 1.1. Provider HTTP/DNS are faked at the shared
+client's transport boundary in the reference and graph tests, keeping permissions, credentials,
+response parsing and cache policy in place. `tests/plugins/test_reference_sources.py` covers all
+four legacy source keys, saved-data retention, safe mode, dynamic per-service credentials,
+malformed data and repeated pagination. Its small event-driven thread fixtures verify that stop
+interrupts retry waits and discards an in-flight result while a new activation can fetch. Every
+fixture releases and joins its thread before finishing. These run as small sequential local
+batches, without connecting to real scholarly services.
 
 `tests/js/spoilers.test.mjs` covers delimiters, escapes, code exclusions, nested blocks, hostile
 HTML and renderer invalidation. It also compares the spoiler ranges with the rules applied position
@@ -379,3 +390,13 @@ not imply the other has been published.
 The `notifications` browser checklist uses an isolated data folder and port 8808; OS APIs are
 stubbed to verify permission, delivery, denied/unsupported fallback and badges without sending
 real desktop alerts. History model tests cover retention and multiple windows.
+
+
+### Reference provider identity checks
+
+`tests/plugins/test_reference_api.py` covers declared sub-source IDs, fixed legacy aliases,
+readable titles and the public reference-record contract. `tests/js/referenceSource.test.mjs`
+checks labels with old servers and unknown stored providers. The dedicated
+`python tests/e2e/run.py reference_sources` checklist starts one temporary offline provider and
+one browser to verify item-pane titles, HTML escaping, saved data while disabled, and reactivation.
+It makes no request to a real scholarly service.

@@ -1,7 +1,5 @@
-// What core plugins add to the notes editor while they run (frontend/src/plugins/core/). The
-// editor asks these at the moment it needs them, so a plugin turned on or off takes effect in the
-// open editor too. They hand CodeMirror-level things over, which is why only core plugins (built
-// with the app, sharing its CodeMirror) use them; plugins of others get a wrapped editor API.
+// Internal editor integrations. Core plugins share CodeMirror and Markdown rendering hooks;
+// contributed plugins use public bridges for suggestions and Notes visualizations.
 import type MarkdownIt from 'markdown-it';
 import type { GhostSource } from './ghost.js';
 import type { Scan } from './mdscan.js';
@@ -18,6 +16,8 @@ export interface NotesGraphContext {
 /** The graph in Notes (the Graph plugin): a local graph in the side panel, the full graph in
     place of the editor. */
 export interface GraphHook {
+  title?: string;
+  icon?: string;
   /** The notes view is there: start (once per hook). */
   attach(ctx: NotesGraphContext): void;
   /** The side panel's section (made once; the notes view puts it at the top of the panel). */
@@ -82,7 +82,7 @@ export interface ExtendedMarkdownHook {
 interface Hooks {
   /** Extra Markdown syntax such as spoilers (Extended Markdown), or null. */
   extended: ExtendedMarkdownHook | null;
-  /** Where ghost-text suggestions come from (Autocompletion), or null for none. */
+  /** Active public suggestion provider, bridged by the plugin host, or null. */
   ghost: GhostSource | null;
   /** Called after a note's editor was made (to load a model before the first suggestion, say). */
   editorOpened: Set<() => void>;

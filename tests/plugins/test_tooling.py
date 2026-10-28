@@ -233,3 +233,53 @@ def test_stopping_and_restarting_dev_host_stops_its_watcher(tmp_path):
         assert host._watcher is not watcher and host._watcher.is_alive()
     finally:
         host.stop()
+
+
+def test_public_markdown_sdk_keeps_host_module_identity(client, svc, make_plugin):
+    from backend.config import APP_ROOT
+
+    folder = make_plugin("sdk-reader", frontend="frontend.js")
+    # Relative source imports are rewritten to the public host module in the served bundle.
+    source = APP_ROOT / "frontend" / "src" / "plugins" / "markdown.js"
+    import os
+
+    relative = os.path.relpath(source, folder).replace(os.sep, "/")
+    (folder / "frontend.ts").write_text(
+        f'import {{ renderTaskBlock }} from "{relative}"; export function activate() {{ return renderTaskBlock([], {{view:"list", group:"none", completed:"hide"}}); }}'
+    )
+    import json
+
+    manifest = json.loads((folder / "manifest.json").read_text())
+    manifest["frontend"] = "frontend.ts"
+    (folder / "manifest.json").write_text(json.dumps(manifest))
+    svc.plugins.enable("sdk-reader")
+    js = client.get("/api/plugin-files/sdk-reader/__build__/main.js")
+    assert js.status_code == 200
+    assert b'"/js/plugins/markdown.js"' in js.data
+    assert b"renderDefaults" not in js.data and b"function createRenderer" not in js.data
+
+
+def test_mcp_host_does_not_require_frontend_bundling(svc, make_plugin, monkeypatch):
+    from backend.plugins.host import PluginHost
+    from backend.plugins.library import LibraryReader
+
+    folder = make_plugin(
+        "mcp-ui",
+        """
+        def activate(p):
+            @p.mcp_tool("Read", name="read")
+            def read(): return {"ok": True}
+    """,
+        frontend="frontend.ts",
+        permissions={"mcp": True},
+    )
+    (folder / "frontend.ts").write_text("export function activate() {}")
+    svc.plugins._update_state("mcp-ui", enabled=True)
+    monkeypatch.setattr("backend.plugins.build.bundle", lambda *a, **k: pytest.fail("MCP tried to build a frontend"))
+    host = PluginHost(svc.config, library=LibraryReader(svc), services=svc)
+    try:
+        host.start("mcp")
+        assert host.info("mcp-ui")["running"]
+        assert next(t for t in host.mcp_tools() if t.name == "mcp-ui__read").fn() == {"ok": True}
+    finally:
+        host.stop()

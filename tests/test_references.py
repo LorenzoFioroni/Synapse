@@ -1,24 +1,59 @@
 """Reference lists / citation graph (network mocked)."""
 
 import importlib
+from types import SimpleNamespace
 
 import pytest
 
 from backend.online.http import LookupFailed
+from backend.plugins import PluginError
+from backend.plugins.http import PluginHttp, service_credentials
+from tests.fake_metadata import Response as HttpResponse
+from tests.fake_metadata import install_transport
 
 R = importlib.import_module("plugins.reference-sources.server.providers")
 
 
-class Resp:
+class Resp(HttpResponse):
     def __init__(self, data, status=200, headers=None):
-        self._d, self.status_code, self.ok, self.headers = data, status, status < 400, headers or {}
+        super().__init__(data, status)
+        self.headers.update(headers or {})
+        if status in (429, 500, 502, 503, 504):
+            self.headers.setdefault("Retry-After", "0")
 
-    def json(self):
-        return self._d
 
-    def raise_for_status(self):
-        if not self.ok:
-            raise RuntimeError(f"HTTP {self.status_code}")
+network = SimpleNamespace(get=None)
+
+
+@pytest.fixture(autouse=True)
+def reference_client(monkeypatch):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Unexpected reference HTTP request")
+
+    monkeypatch.setattr(network, "get", unexpected)
+    install_transport(monkeypatch, lambda *args, **kwargs: network.get(*args, **kwargs))
+    settings = {"openalex_api_key": "KEY", "semantic_scholar_api_key": "k"}
+    http = PluginHttp(
+        "reference-sources",
+        ["api.semanticscholar.org", "api.openalex.org", "api.crossref.org", "arxiv.org"],
+        lambda: "test",
+        credentials=lambda host: service_credentials(host, settings),
+    )
+    client = R.Client(http)
+    monkeypatch.setattr(R.Client, "wait", lambda self, seconds: None)
+    original = R.fetch
+
+    def fetch(item, **kwargs):
+        try:
+            return original(item, http=client, **kwargs)
+        except R.FetchFailed:
+            raise
+        except PluginError as e:
+            raise LookupFailed(str(e)) from e
+
+    monkeypatch.setattr(R, "fetch", fetch)
+    yield client
+    client.close()
 
 
 S2_PAGE1 = {
@@ -88,7 +123,7 @@ CROSSREF = {
 
 
 def router(routes, calls=None):
-    def get(url, params=None, headers=None, timeout=None):
+    def get(url, params=None, headers=None, timeout=None, **kwargs):
         if calls is not None:
             calls.append((url, dict(params or {})))
         for needle, answer in routes:
@@ -107,11 +142,13 @@ def test_fetch_needs_an_identifier():
 def test_semantic_scholar_first_with_paging(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        R.requests,
+        network,
         "get",
-        router([("semanticscholar", lambda url, p: Resp(S2_PAGE1 if not p.get("offset") else S2_PAGE2))], calls),
+        router(
+            [("semanticscholar", lambda url, p: Resp(S2_PAGE1 if not int(p.get("offset") or 0) else S2_PAGE2))], calls
+        ),
     )
-    source, refs = R.fetch({"doi": "10.1/X"}, s2_key="k")
+    source, refs = R.fetch({"doi": "10.1/X"})
     assert source == "semanticscholar"
     assert [r["title"] for r in refs] == ["Matrix product states", "A preprint"]
     assert refs[0]["doi"] == "10.1080/14789940801912366" and refs[0]["authors"] == "Verstraete, Frank"
@@ -121,7 +158,7 @@ def test_semantic_scholar_first_with_paging(monkeypatch):
 
 def test_arxiv_items_ask_by_arxiv_id(monkeypatch):
     calls = []
-    monkeypatch.setattr(R.requests, "get", router([("semanticscholar", Resp(S2_PAGE2))], calls))
+    monkeypatch.setattr(network, "get", router([("semanticscholar", Resp(S2_PAGE2))], calls))
     R.fetch({"doi": "10.48550/arXiv.2101.00001"})
     assert "/paper/arXiv:2101.00001/references" in calls[0][0]
 
@@ -129,7 +166,7 @@ def test_arxiv_items_ask_by_arxiv_id(monkeypatch):
 def test_openalex_when_semantic_scholar_has_nothing(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        R.requests,
+        network,
         "get",
         router(
             [
@@ -140,7 +177,7 @@ def test_openalex_when_semantic_scholar_has_nothing(monkeypatch):
             calls,
         ),
     )
-    source, refs = R.fetch({"doi": "10.1/x"}, openalex_key="KEY")
+    source, refs = R.fetch({"doi": "10.1/x"})
     assert source == "openalex"
     assert [r["openalex_id"] for r in refs] == ["W9", "W8"]  # reference order kept
     assert refs[0]["doi"] == "10.1103/physrevlett.1.1" and refs[0]["venue"] == "PRL"
@@ -150,7 +187,7 @@ def test_openalex_when_semantic_scholar_has_nothing(monkeypatch):
 
 
 def test_crossref_last(monkeypatch):
-    monkeypatch.setattr(R.requests, "get", router([("crossref", Resp(CROSSREF))]))
+    monkeypatch.setattr(network, "get", router([("crossref", Resp(CROSSREF))]))
     source, refs = R.fetch({"doi": "10.1/x"})
     assert source == "crossref"
     assert refs[0]["doi"] == "10.1000/abc" and refs[0]["year"] == 2001
@@ -158,20 +195,20 @@ def test_crossref_last(monkeypatch):
 
 
 def test_errors(monkeypatch):
-    monkeypatch.setattr(R.time, "sleep", lambda s: None)
-    monkeypatch.setattr(R.requests, "get", router([("", Resp({}, 503))]))
+    monkeypatch.setattr(R.Client, "wait", lambda self, seconds: None)
+    monkeypatch.setattr(network, "get", router([("", Resp({}, 503))]))
     with pytest.raises(R.FetchFailed, match="Could not get the references"):
         R.fetch({"doi": "10.1/x"})
     # every service answered "nothing": not an error
-    monkeypatch.setattr(R.requests, "get", router([]))
+    monkeypatch.setattr(network, "get", router([]))
     assert R.fetch({"doi": "10.1/x"}) == ("none", [])
 
 
 def test_rate_limit_is_retried(monkeypatch):
     slept = []
-    monkeypatch.setattr(R.time, "sleep", slept.append)
+    monkeypatch.setattr(R.Client, "wait", lambda self, seconds: slept.append(seconds))
     answers = iter([Resp({}, 429, {"Retry-After": "3"}), Resp(S2_PAGE2)])
-    monkeypatch.setattr(R.requests, "get", router([("semanticscholar", lambda u, p: next(answers))]))
+    monkeypatch.setattr(network, "get", router([("semanticscholar", lambda u, p: next(answers))]))
     assert R.fetch({"doi": "10.1/x"})[0] == "semanticscholar" and slept == [3.0]
 
 
@@ -180,9 +217,9 @@ def test_api_graph_and_cleanup(client, svc, monkeypatch):
     b = svc.papers.create({"title": "Matrix product states", "doi": "10.1080/14789940801912366", "year": 2008})
     c = svc.papers.create({"title": "A preprint", "archive_id": "arXiv:2101.00001"})
     monkeypatch.setattr(
-        R.requests,
+        network,
         "get",
-        router([("semanticscholar", lambda url, p: Resp(S2_PAGE1 if not p.get("offset") else S2_PAGE2))]),
+        router([("semanticscholar", lambda url, p: Resp(S2_PAGE1 if not int(p.get("offset") or 0) else S2_PAGE2))]),
     )
 
     v = client.get(f"/api/items/{a['id']}/references").json
@@ -207,8 +244,8 @@ def test_api_graph_and_cleanup(client, svc, monkeypatch):
     assert r.status_code == 404 and "DOI" in r.json["error"]
     assert client.post("/api/items/nope/references").status_code == 404
     # every service failing is a 502 (try again later), not "no identifier"
-    monkeypatch.setattr(R.time, "sleep", lambda s: None)
-    monkeypatch.setattr(R.requests, "get", router([("", Resp({}, 503))]))
+    monkeypatch.setattr(R.Client, "wait", lambda self, seconds: None)
+    monkeypatch.setattr(network, "get", router([("", Resp({}, 503))]))
     assert client.post(f"/api/items/{b['id']}/references").status_code == 502
 
     svc.papers.trash([a["id"]])
@@ -217,8 +254,6 @@ def test_api_graph_and_cleanup(client, svc, monkeypatch):
 
 
 def test_fetched_automatically_after_add_by_identifier(client, svc, monkeypatch):
-    import requests
-
     crossref_item = {
         "message": {
             "type": "journal-article",
@@ -229,7 +264,7 @@ def test_fetched_automatically_after_add_by_identifier(client, svc, monkeypatch)
         }
     }
     monkeypatch.setattr(
-        requests,
+        network,
         "get",
         router([("semanticscholar", lambda url, p: Resp(S2_PAGE2)), ("crossref", Resp(crossref_item))]),
     )
@@ -259,8 +294,8 @@ def test_fetched_automatically_after_add_by_identifier(client, svc, monkeypatch)
 
 
 def test_queue_endpoint(client, svc, monkeypatch):
-    monkeypatch.setattr(R.requests, "get", router([("semanticscholar", Resp(S2_PAGE2))]))
-    monkeypatch.setattr(R.time, "sleep", lambda s: None)
+    monkeypatch.setattr(network, "get", router([("semanticscholar", Resp(S2_PAGE2))]))
+    monkeypatch.setattr(R.Client, "wait", lambda self, seconds: None)
     ids = [svc.papers.create({"title": f"P{i}", "doi": f"10.1/{i}"})["id"] for i in range(3)]
     assert client.post("/api/references/queue", json={"ids": ids + ids}).json["queued"] == 3
     svc.citations.wait(10)
@@ -270,7 +305,7 @@ def test_queue_endpoint(client, svc, monkeypatch):
 
 def test_semantic_scholar_falls_back_to_arxiv_id_and_quotes_dois(monkeypatch):
     calls = []
-    monkeypatch.setattr(R.requests, "get", router([("arXiv:2101.00001", Resp(S2_PAGE2))], calls))
+    monkeypatch.setattr(network, "get", router([("arXiv:2101.00001", Resp(S2_PAGE2))], calls))
     source, refs = R.fetch({"doi": "10.1002/(SICI)1097-0118;2-#", "archive_id": "arXiv:2101.00001v1"})
     assert source == "semanticscholar" and len(refs) == 1
     assert "DOI:10.1002/%28sici%291097-0118%3B2-%23/references" in calls[0][0]  # a raw "#" would cut the URL
@@ -279,7 +314,7 @@ def test_semantic_scholar_falls_back_to_arxiv_id_and_quotes_dois(monkeypatch):
 
 def test_openalex_works_without_details_are_kept(monkeypatch):
     monkeypatch.setattr(
-        R.requests,
+        network,
         "get",
         router(
             [
@@ -294,9 +329,9 @@ def test_openalex_works_without_details_are_kept(monkeypatch):
 
 
 def test_retry_after_as_a_date(monkeypatch):
-    monkeypatch.setattr(R.time, "sleep", lambda s: None)
+    monkeypatch.setattr(R.Client, "wait", lambda self, seconds: None)
     answers = iter([Resp({}, 429, {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}), Resp(S2_PAGE2)])
-    monkeypatch.setattr(R.requests, "get", router([("semanticscholar", lambda u, p: next(answers))]))
+    monkeypatch.setattr(network, "get", router([("semanticscholar", lambda u, p: next(answers))]))
     assert R.fetch({"doi": "10.1/x"})[0] == "semanticscholar"
 
 
@@ -322,7 +357,7 @@ def test_references_matched_by_title_when_identifiers_differ(client, svc, monkey
             },
         ]
     }
-    monkeypatch.setattr(R.requests, "get", router([("semanticscholar", Resp(preprint))]))
+    monkeypatch.setattr(network, "get", router([("semanticscholar", Resp(preprint))]))
     v = client.post(f"/api/items/{a['id']}/references").json
     assert [r["library_id"] for r in v["references"]] == [noid["id"], journal["id"]]
     assert [x["id"] for x in client.get(f"/api/items/{journal['id']}/references").json["cited_by"]] == [a["id"]]

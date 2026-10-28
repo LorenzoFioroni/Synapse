@@ -1,11 +1,23 @@
 """Register the task tools with their existing names, schemas and readable errors."""
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from functools import wraps
 
-from backend.mcp.protocol import Tool, ToolError
 from backend.plugins import Plugin, PluginError
+from backend.plugins import PluginError as ToolError
 
 from .tools import TaskToolsMixin
+
+
+@dataclass
+class Tool:
+    name: str
+    title: str
+    description: str
+    input_schema: dict
+    fn: Callable
+    read_only: bool = True
 
 
 class _Registry:
@@ -27,7 +39,7 @@ class _Registry:
 
 def register(plugin: Plugin) -> None:
     server = _Registry(plugin)
-    t = TaskToolsMixin(plugin.synapse)
+    t = TaskToolsMixin(plugin)
     task_arg = {"type": "string", "description": 'The task\'s id (as in its {{task:ID}} line, e.g. "k7f3q2mx").'}
     fields = {
         "due": {"type": "string", "description": 'Due date YYYY-MM-DD ("" removes it).'},

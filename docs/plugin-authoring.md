@@ -63,7 +63,8 @@ and MCP tools call the same domain functions. Return JSON from routes and call t
 | A status panel or richer preferences | `p.settingsPage.register` (a part of that section; `shows` for settings it draws itself) |
 | Lookup providers | Backend `@plugin.metadata_source` / `@plugin.pdf_source` |
 | Reference lists (API 1.1) | Backend `@plugin.reference_source` |
-| Text exports (API 1.1) | Backend `@plugin.export_format` |
+| Text exports (API 1.1) | Backend `@plugin.export_format`; Synapse's own BibTeX/RIS/EndNote/CSL JSON writers are `backend.plugins.formats` (API 1.2) |
+| A web service | Backend `plugin.http` with the hosts in the manifest's `network` permission (see `plugins/open-access-pdfs`) |
 
 Do not add a standalone page just to expose a provider or item field. A page belongs to the host:
 it handles workspace switches and browser history. Use `p.library.show` to open an item instead of

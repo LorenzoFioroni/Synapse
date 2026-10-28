@@ -171,7 +171,7 @@ async def main():
                 await open_export(page)
                 await page.wait_for_selector(".format-opt")
                 check("Existing five export formats are available", await page.locator(".format-opt").count() == 5)
-                await page.click('.format-opt[data-fmt="ris"]')
+                await page.click('.format-opt[data-fmt="export-formats.ris"]')
                 await page.wait_for_function("document.querySelector('.export-preview').textContent.includes('TY  -')")
                 check("Selected writer supplies the preview", True)
                 await page.click('.dialog button:text-is("Cancel")')

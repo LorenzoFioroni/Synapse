@@ -115,11 +115,14 @@ class Plugin:
         log: logging.Logger,
         settings: Callable[[], dict],
         library=None,
+        notes=None,
         before_upgrade: Callable[[str], None] | None = None,
         http=None,
         fields=None,
         services=None,
         actions=None,
+        tasks=None,
+        tool_aliases=None,
         sources_changed: Callable[[], object] | None = None,
         tool_prefix: bool = True,
         synapse=None,
@@ -131,6 +134,7 @@ class Plugin:
         self.storage = Storage(data_dir, before_upgrade)
         self.settings = Settings(settings)
         self._library = library
+        self._notes = notes
         self.routes: list[Route] = []
         self.tools: list[ToolSpec] = []
         self.listeners: dict[str, list[Callable]] = {}
@@ -138,6 +142,8 @@ class Plugin:
         self.http = http  # PluginHttp (http.py): the web, within the manifest's "network" permission
         self.fields = fields  # PluginFields (itemfields.py): values attached to papers
         self.services = services  # PluginServices (services.py): lookups, references, connections
+        self.tasks = tasks
+        self._tool_aliases = set(tool_aliases or ())
         self.actions = actions  # PluginActions (services.py): adding papers to the library
         self.sources: dict[str, ItemSource] = {}
         self.pdf_sources: dict[str, PdfSource] = {}
@@ -160,6 +166,13 @@ class Plugin:
         if "read" not in self.manifest.library or self._library is None:
             raise PluginError(f'{self.manifest.name} needs "library": ["read"] in its manifest to read the library')
         return self._library
+
+    @property
+    def notes(self):
+        """Read note listings and resolved links (needs ``"notes": ["read"]``)."""
+        if "read" not in self.manifest.notes or self._notes is None:
+            raise PluginError(f'{self.manifest.name} needs "notes": ["read"] in its manifest to read notes')
+        return self._notes
 
     # ------------------------------------------------------------------ routes
     def route(self, rule: str, methods: tuple[str, ...] | list[str] = ("GET",)):
@@ -198,14 +211,15 @@ class Plugin:
             tool = name or fn.__name__
             if not TOOL_NAME_RE.match(tool):
                 raise PluginError(f"Tool name {tool!r}: lowercase letters, digits and _")
-            full = f"{self.id}__{tool}" if self._tool_prefix else tool
+            prefixed = self._tool_prefix and tool not in self._tool_aliases
+            full = f"{self.id}__{tool}" if prefixed else tool
             if any(t.name == full for t in self.tools):
                 raise PluginError(f"Tool {tool} is registered twice")
             self.tools.append(
                 ToolSpec(
                     full,
                     title or tool.replace("_", " ").capitalize(),
-                    f"[{self.manifest.name}] {description}" if self._tool_prefix else description,
+                    f"[{self.manifest.name}] {description}" if prefixed else description,
                     schema if schema is not None else schema_of(fn),
                     fn,
                     read_only,
@@ -297,15 +311,19 @@ class Plugin:
 
         return register(self.export_formats, id, title=title, extension=extension, mimetype=mimetype)
 
-    def reference_source(self, id: str, *, title: str, order: int = 100):
+    def reference_source(self, id: str, *, title: str, order: int = 100, subsources: dict[str, str] | None = None):
         """Register fn({item, email, fresh}) -> {references: [...], source?: str} or None."""
-        from .references import ReferenceSource
+        from .references import ReferenceSource, clean_subsources
 
         if not TOOL_NAME_RE.fullmatch(id or "") or id in self.reference_sources:
             raise PluginError("Reference source id must be unique, with lowercase letters, digits and _")
 
+        names = clean_subsources(subsources)
+
         def register(fn):
-            self.reference_sources[id] = ReferenceSource(id, str(title)[:80], fn, int(order))
+            if id in self.reference_sources:
+                raise PluginError(f"Reference source {id!r} is registered twice")
+            self.reference_sources[id] = ReferenceSource(id, str(title)[:80], fn, int(order), names)
             return fn
 
         return register

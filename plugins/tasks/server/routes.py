@@ -6,31 +6,31 @@ from functools import wraps
 
 from flask import jsonify, request
 
-from backend.api import body, error
-from backend.changes import CLIENT_HEADER
-from backend.notes.vault import VaultError
 from backend.plugins import Plugin
-from backend.tasks import TaskError, TaskMissing
+from backend.plugins import tasks as task_api
 
 
 def register(plugin: Plugin) -> None:
-    def svc():
-        return plugin.synapse
+    def body():
+        return request.get_json(silent=True) or {}
+
+    def error(message, status=400):
+        return jsonify(error=message), status
 
     def _notes_changed() -> None:
         """A {{task:…}} line was written into or taken out of a note."""
-        svc().changes.record({"notes"}, request.headers.get(CLIENT_HEADER))
+        plugin.tasks.notes_changed(request.headers.get(task_api.CLIENT_HEADER))
 
     def guarded(fn):
         @wraps(fn)
         def wrapper(*a, **kw):
             try:
                 return fn(*a, **kw)
-            except TaskMissing as e:
+            except task_api.TaskMissing as e:
                 return error(str(e), 404)
-            except TaskError as e:
+            except task_api.TaskError as e:
                 return error(str(e))
-            except VaultError as e:
+            except task_api.NoteError as e:
                 return error(str(e) if e.args else type(e).__name__, e.status)
 
         return wrapper
@@ -38,22 +38,22 @@ def register(plugin: Plugin) -> None:
     @plugin.route("/", methods=["GET"])
     @guarded
     def overview():
-        return jsonify(svc().tasks.overview())
+        return jsonify(plugin.tasks.overview())
 
     @plugin.route("/trash", methods=["GET"])
     @guarded
     def trash():
-        return jsonify(tasks=svc().task_store.list(trashed=True))
+        return jsonify(tasks=plugin.tasks.records.list(trashed=True))
 
     @plugin.route("/<task_id>", methods=["GET"])
     @guarded
     def get_task(task_id):
-        return jsonify(task=svc().tasks.task(task_id))
+        return jsonify(task=plugin.tasks.task(task_id))
 
     @plugin.route("/", methods=["POST"])
     @guarded
     def create():
-        out = svc().tasks.create(body())
+        out = plugin.tasks.create(body())
         if out.get("ref"):
             _notes_changed()
         return jsonify(out), 201
@@ -64,7 +64,7 @@ def register(plugin: Plugin) -> None:
         """Fields (title, body, status, due); ``with_subtasks`` with a status; a move
         with ``parent_id`` (null: top level) and ``before`` or ``after`` a sibling."""
         d = body()
-        store = svc().task_store
+        store = plugin.tasks.records
         changed: list[dict] = []
         if "parent_id" in d or "before" in d or "after" in d:
             changed.append(
@@ -84,13 +84,13 @@ def register(plugin: Plugin) -> None:
         ids = [str(i) for i in (d.get("ids") or ([d["id"]] if d.get("id") else []))]
         if not ids:
             return error("No tasks given.")
-        return jsonify(svc().task_store.delete(ids))
+        return jsonify(plugin.tasks.records.delete(ids))
 
     @plugin.route("/restore", methods=["POST"])
     @guarded
     def restore():
         d = body()
-        return jsonify(ids=svc().task_store.restore(batch=d.get("batch"), task_id=d.get("id")))
+        return jsonify(ids=plugin.tasks.records.restore(batch=d.get("batch"), task_id=d.get("id")))
 
     @plugin.route("/<task_id>/notes", methods=["POST"])
     @guarded
@@ -98,7 +98,7 @@ def register(plugin: Plugin) -> None:
         d = body()
         if not d.get("path"):
             return error("Which note?")
-        ref = svc().tasks.add_to_note(task_id, d["path"], after_line=d.get("after_line"))
+        ref = plugin.tasks.add_to_note(task_id, d["path"], after_line=d.get("after_line"))
         _notes_changed()
         return jsonify(ref=ref)
 
@@ -108,7 +108,7 @@ def register(plugin: Plugin) -> None:
         d = body()
         if not d.get("path"):
             return error("Which note?")
-        out = svc().tasks.remove_from_note(task_id, d["path"])
+        out = plugin.tasks.remove_from_note(task_id, d["path"])
         _notes_changed()
         return jsonify(out)
 
@@ -116,12 +116,12 @@ def register(plugin: Plugin) -> None:
     @guarded
     def convert():
         """Checkbox lines (from the editor) to tasks; the editor puts the returned text in their place."""
-        return jsonify(svc().tasks.convert(str(body().get("text") or "")))
+        return jsonify(plugin.tasks.convert(str(body().get("text") or "")))
 
     @plugin.route("/<task_id>/history", methods=["GET"])
     @guarded
     def history(task_id):
-        return jsonify(history=svc().task_store.history(task_id))
+        return jsonify(history=plugin.tasks.records.history(task_id))
 
     @plugin.route("/undo", methods=["POST"])
     @guarded
@@ -129,4 +129,12 @@ def register(plugin: Plugin) -> None:
         hid = body().get("history_id")
         if hid is None:
             return error("Which change?")
-        return jsonify(task=svc().task_store.undo(int(hid)))
+        return jsonify(task=plugin.tasks.records.undo(int(hid)))
+
+    @plugin.route("/images", methods=["POST"])
+    @guarded
+    def upload_image():
+        image = request.files.get("file")
+        if not image:
+            return error("No file uploaded")
+        return jsonify(plugin.tasks.add_image(image.filename or "", image.read())), 201

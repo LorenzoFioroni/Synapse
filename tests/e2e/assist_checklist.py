@@ -133,9 +133,17 @@ async def main():
             check("Ollama missing: no ghost text", await ghost(page) == "")
 
             # ---- Settings → Autocompletion
-            await page.keyboard.press(f"{MOD}+,")
-            await page.wait_for_selector("#set-plugin-autocompletion [data-ai-state]")
-            await page.click('[data-nav="plugin-autocompletion"]')
+            await page.click('[data-a="notifications"]')
+            await (
+                page.locator("#notification-center .notification")
+                .filter(has_text="cannot make suggestions")
+                .locator('[data-n="action"]')
+                .click()
+            )
+            await page.wait_for_selector("#set-plugin-autocompletion [data-ai-state]", state="visible")
+            check(
+                "Public Settings action opens its contributed plugin section", await page.is_visible("[data-ai-model]")
+            )
             ok = await wait_for(page, "document.querySelector('[data-ai-state]').textContent.includes('not running')")
             steps = await page.evaluate("document.querySelector('.ai-steps')?.textContent || ''")
             check(
@@ -329,6 +337,7 @@ async def main():
             nav = '.settings-nav [data-nav="plugin-autocompletion"]'
             section = "#set-plugin-autocompletion"
             for cycle in range(2):
+                await page.click('.settings-nav [data-nav="plugins"]')
                 await page.click(nav)
                 s.post(BASE + "/api/plugin-host/autocompletion/disable").raise_for_status()
                 await page.evaluate("window.zcPlugins.sync()")

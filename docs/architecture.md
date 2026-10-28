@@ -60,7 +60,7 @@ Two objects tie the backend together:
 |---|---|---|
 | `library/` | Items, attachments, folders, tags, smart folders, PDF annotations, citation keys and search. `fields.py` is the single source of truth for item fields and types, and `identifiers.py` for DOIs and arXiv ids (cleaning, normalising, matching). `agent.py` holds which AI app is making the current change (set by the MCP server, read by notes and tasks). | `library.db` (schema and migrations in `library/db.py`) |
 | `notes/` | Markdown notes. The files are the source of truth; the index is disposable. `history/` keeps every version of their text in Git (see [notes history](notes-history.md)). | `notes/`, `notes_index.db`, `notes-history.git/` |
-| `tasks/` | Task records, history and the integrity of `{{task:id}}` note links. The optional Tasks core plugin owns their UI, HTTP handlers and MCP tools (see [tasks](tasks.md)). | `library.db` (`tasks`, `task_history`) |
+| `tasks/` | Task records, history and the integrity of `{{task:id}}` note links. The optional Tasks contributed plugin owns their UI, HTTP handlers and MCP tools (see [tasks](tasks.md)). | `library.db` (`tasks`, `task_history`) |
 | `formats/` | Import parsers and shared codecs for BibTeX, RIS, EndNote and CSL-JSON. The Export Formats plugin registers their library-export writers; `exporting.py` prepares records for writers and core clipboard copying. | none |
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
 | `mcp/` | The MCP server: the JSON-RPC layer (`protocol.py`), its HTTP transport (`http.py`), the library tools (`tools/`, one mixin per family), their schemas (`server.py`) and the instructions given to the AI app (`instructions.py`). | none (it uses the other packages) |
@@ -71,11 +71,20 @@ Two objects tie the backend together:
 | `config.py`, `settings.py` | Paths of the data folder, and the user's preferences. | `settings.json` |
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
 | `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
-| `plugins/` | The plugin host: finds the plugins in `data/plugins/` (and those that come with Synapse in `plugins/`), starts and stops them, gives them the `Plugin` object (routes, tools for Claude, events, settings, storage, reading the library, per-item fields, lists of papers outside the library—including variants such as arXiv feed days shown in a second pane—Synapse's lookups and adding papers), and turns off one that keeps failing (see [plugins](plugins.md)). `backend.plugins` is the public import for third-party plugins. `catalog.py` discovers manifests and initializes defaults, `files.py` serializes shared storage writes, and `resolvers.py` orders metadata sources; core plugins may use the internal modules they need. | `plugins.json`, `plugin-data/`, `fields.db` |
+| `plugins/` | The plugin host: finds the plugins in `data/plugins/` (and those that come with Synapse in `plugins/`), starts and stops them, gives them the `Plugin` object (routes, tools for Claude, events, settings, storage, reading the library and notes, Notes visualizations, per-item fields, lists of papers outside the library—including variants such as arXiv feed days shown in a second pane—Synapse's lookups and adding papers), and turns off one that keeps failing (see [plugins](plugins.md)). `backend.plugins` is the public import for third-party plugins (with `formats.py`, Synapse's reference writers, and `scholarly.py`, the shared offline identifier, author-name and title-matching helpers). `catalog.py` discovers manifests and initializes defaults, `files.py` serializes shared storage writes, and `resolvers.py` orders metadata sources; core plugins may use the internal modules they need. | `plugins.json`, `plugin-data/`, `fields.db` |
 | `desktop/` | Running Synapse like a desktop program: opening its window (`window.py`), the open windows that keep a `--quit-when-closed` server running (`presence.py`), the desktop shortcut (`shortcut.py`). See [the app window](desktop.md). | none |
 
-Only `online/` and the scholarly core plugins use the network. The Autocompletion core plugin talks only to Ollama on this computer
-(its address must be a loopback one).
+Online lookups live in `online/` and scholarly plugins; contributed plugins use `plugin.http`.
+The Autocompletion contributed plugin talks only to Ollama on this computer through the public
+loopback permission. Metadata Sources is also contributed: `plugins/metadata-sources/server/providers.py`
+owns its HTTP calls, parallel enrichment and executor lifecycle; `parsing.py` owns provider-record
+conversion. It reaches shared offline helpers through `backend.plugins.scholarly`.
+`backend/plugins/references.py` owns named reference sub-sources and fixed legacy source aliases.
+Services inject its title resolver into `Citations`, so reference views can show plugin labels
+without making storage depend on the plugin host. Reference Sources is contributed as well:
+`providers.py` retains source selection/fallback, `records.py` converts and normalizes records,
+`arxiv_html.py` parses the bibliography, and `client.py` owns the public HTTP transport's retries
+and activation stop signal. Stored source aliases are owned by the host, not by the plugin.
 
 ### Layers
 
@@ -86,7 +95,7 @@ never from those above:
   app · frontend · api                   composition: wires and exposes everything
   services · connector
   mcp                                    (library, notes, pdf, references, tasks)
-  plugins                                (library, online, references)
+  plugins                                (library, formats, online, references, notes, tasks)
   references                             (library, formats, online)
   tasks                                  (library, notes)
   online                                 (library, formats, pdf)
@@ -156,29 +165,44 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   they call back into `notesView.ts`). `tree.ts` draws the notes list and `treeInput.ts` handles
   its mouse, keyboard and drag and drop; `fileOps.ts` creates, renames, moves and trashes notes;
   `readView.ts` is read mode and link following; `sidePanel.ts` the status, breadcrumbs and
-  details panel; `aiBar.ts` AI apps' edits; `ghost.ts` autocompletion's ghost text (its source comes from the Autocompletion plugin through `hooks.ts`); `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
+  details panel; `aiBar.ts` AI apps' edits; `ghost.ts` autocompletion's ghost text (the public `plugins/suggestions.ts` bridge supplies its source through `hooks.ts`); `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
   exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`). Galleries and
-  numbered figures are part of Extended Markdown (`plugins/core/extended-markdown/figures/`, through `hooks.ts`). `settingsView.ts` is the Settings page; its markup
+  numbered figures are part of Extended Markdown (`plugins/extended-markdown/frontend/figures/`, through `hooks.ts`). `settingsView.ts` is the Settings page; its markup
   is in `views/settings/page.ts`, and Backups and Devices have their own modules there. `settings/pluginSections.ts` owns the lifecycle
   of plugin Settings sections; `settings/exportFormats.ts` follows active export providers; Autocompletion supplies its own section from its plugin.
-  `plugins/core/extended-markdown/` is the Extended Markdown package: one folder per syntax
+  `plugins/extended-markdown/frontend/` is the Extended Markdown package: one folder per syntax
   extension (`figures/`, `tasks/`, `spoilers/`), each a `MarkdownExtension` (`extension.ts`) adding markdown-it
   rules, export preparation and what it starts while on; `index.ts` turns each on or off from the
-  package's settings and reaches the notes code through the `extended` and `figures` note hooks.
+  package's settings through public `p.markdown` registrations. `plugins/markdownHost.ts` bridges
+  these to renderer/live-preview rebuilds; the public `plugins/markdown.ts` SDK shares scanner and
+  reference conventions without bundling a second renderer. Backend gallery/task syntax stays in
+  core to retain notes and attachments safely when the plugin is off.
   Live preview asks that hook for spoiler ranges once per document version and draws them with
   shared Markdown widgets.
-  `plugins/core/metadata-check/` connects Metadata Check to notifications and the shared metadata
-  review dialog (`views/metadataReview.ts`). Its backend package keeps comparison and rejection
+  `plugins/metadata-check/frontend/` uses public progress and metadata-review APIs; the host bridges
+  them through `plugins/feedback.ts` to notifications and `views/metadataReview.ts`, with permission-checked edits through
+  `PluginActions.update`. Its backend package keeps comparison and rejection
   rules in `plugins/metadata-check/backend/comparison.py` and run progress in `progress.py`.
-  `plugins/core/tasks/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it reaches into
-  the notes workspace only through `taskHooks` in `views/notes/workspace.ts`.
+  `plugins/graph/frontend/` owns Graph's model, canvases and local/full views, with only public
+  plugin imports. `plugins/notes.ts` bridges public Notes visualization registrations to layout,
+  sidebar navigation and history. `backend/plugins/notes.py` supplies permission-gated note reads;
+  `LibraryReader.citation_graph` supplies stored citation inputs. Graph's server builds the combined
+  view from those public reads; no graph or notes data moves into plugin storage.
+  `plugins/tasks/frontend/*` is the Tasks page and tasks in notes (see [tasks](tasks.md)); it supplies public `p.tasks.register` integrations, bridged by `plugins/taskHost.ts`.
+  `plugins/task-runtime.ts` is the shared editor/UI SDK; the plugin owns its cache and scoped
+  route client. `backend/plugins/tasks.py` guards core task and note-integrity operations.
+  Fixed host compatibility aliases preserve the bundled MCP tool names and toggle key.
   `itemlist.ts` is the items table (selection, keyboard, drag and drop, copying BibTeX); its
   header is `views/itemlist/columns.ts`, its virtualised rows `rows.ts` (only the rows near the
   viewport are in the DOM), its empty state `empty.ts`, and its context menus `menus.ts`. The
   item pane (`itempane.ts`) draws papers from a plugin's list that are not in the library, and
   why a plugin lists a paper, with `views/itempane/outside.ts`.
-- `extend.ts` holds the extension points the views read: core workspace navigation (Tasks and Graph,
-  registered and disposed by their plugins), commands (the command palette,
+- `plugins/suggestions.ts` owns public editor suggestion registrations and restores the previous
+  provider on disposal; the host bridges editor-open events and cancellable backend calls.
+  Autocompletion lives entirely in `plugins/autocompletion/`, including its TypeScript frontend
+  (bundled by the plugin host); it imports only public plugin types.
+- `extend.ts` holds the extension points the views read: workspace navigation (Tasks and the public Notes visualization bridge,
+  registered and disposed with their plugins), commands (the command palette,
   `views/palette.ts`), pages (`views/pages.ts`, listed in the sidebar), item-pane sections and item
   actions. `plugins/host.ts` loads plugins' frontends and registers what they add there; the types
   promised to plugins are in `plugins/api.ts` (see [plugins](plugins.md#the-frontend)).
@@ -283,8 +307,8 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
   - HTTP endpoints go in `api/` and only parse the request, call a component through `svc()`, and
     shape the response.
   - A new component is created and wired in `Services`.
-  - Anything that talks to the web goes in `online/` (or a scholarly core plugin), using
-    `online/http.py`.
+  - Anything that talks to the web goes in `online/` (using `online/http.py`) or a scholarly
+    plugin (using `plugin.http` for contributed plugins).
   - A module that grows a second responsibility is split. As a guide, a module past roughly 400
     lines usually has one.
 - **Names.** Helpers used only inside their own module start with `_`. Anything imported by

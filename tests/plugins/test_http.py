@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+from backend.online import http as online_http
 from backend.plugins import http as H
 from backend.plugins.errors import PluginError
 from backend.plugins.http import HttpError, Offline, PluginHttp, allowed
@@ -124,11 +125,81 @@ def test_answers_are_cached_by_etag(server):
 
 
 def test_requests_to_one_host_are_spaced(server, monkeypatch):
-    monkeypatch.setattr(H, "GAPS_STATE", H._Gaps())
+    monkeypatch.setattr(online_http, "HOST_GAPS", online_http.HostGaps())
     c = client()
     c.limit("127.0.0.1", 0.3)
     start = time.monotonic()
     for _ in range(3):
         c.get(server + "/x")
     assert time.monotonic() - start >= 0.55
-    assert H._gap_for("export.arxiv.org") == 3.0 and H._gap_for("example.org") == H.DEFAULT_GAP
+    monkeypatch.setattr(online_http, "ARXIV_SPACING", 3.0)  # tests/conftest.py turns it off
+    assert H._gap_for("export.arxiv.org") == ("arxiv.org", 3.0) == H._gap_for("rss.arxiv.org")
+    assert H._gap_for("example.org") == ("example.org", H.DEFAULT_GAP)
+
+
+def test_arxiv_spacing_is_shared_with_synapse(monkeypatch):
+    """A plugin's request to arXiv and Synapse's own (arxiv_wait) take turns in one line."""
+    monkeypatch.setattr(online_http, "HOST_GAPS", online_http.HostGaps())
+    monkeypatch.setattr(online_http, "ARXIV_SPACING", 0.3)
+    monkeypatch.setattr(H, "public", lambda host: True)
+    stamps = []
+
+    class Answer:
+        status_code, headers, encoding, reason = 200, {}, "utf-8", "OK"
+
+        def iter_content(self, n):
+            return [b"ok"]
+
+        def close(self):
+            pass
+
+    def request(*a, **kw):
+        stamps.append(time.monotonic())
+        return Answer()
+
+    monkeypatch.setattr(H.requests, "request", request)
+    c = PluginHttp("p", ["export.arxiv.org"], lambda: "test")
+    online_http.arxiv_wait()
+    stamps.append(time.monotonic())
+    c.get("https://export.arxiv.org/api/query", cache=False)
+    online_http.arxiv_wait()
+    stamps.append(time.monotonic())
+    gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+    assert min(gaps) >= 0.28, gaps
+
+
+def test_loopback_permission_connects_without_proxy_or_dns(server, monkeypatch):
+    monkeypatch.setenv("HTTP_PROXY", "http://192.0.2.1:9")
+    monkeypatch.setenv("ALL_PROXY", "http://192.0.2.1:9")
+    monkeypatch.setenv("NO_PROXY", "")
+    c = PluginHttp("local", ["loopback"], lambda: "test")
+    assert c.get(server + "/json").json() == {"a": 1}
+    # localhost is pinned to a literal, rather than trusting local DNS configuration.
+    assert c.get(server.replace("127.0.0.1", "localhost") + "/json").json() == {"a": 1}
+    for url in ("http://[::1]:11434/x", "http://127.2.3.4/x"):
+        assert c._check(url)
+    for url in ("http://192.168.1.1/x", "https://example.com/x", "http://localhost.evil/x", "http://loopback/x"):
+        with pytest.raises(PluginError):
+            c.get(url)
+    with pytest.raises(HttpError, match="credentials"):
+        c.get("http://user:secret@localhost/x")
+    with pytest.raises(PluginError, match="example.com"):
+        c.get(server + "/away")
+    assert len(Handler.hits) == 3
+
+
+def test_web_permission_cannot_reach_loopback_through_redirect(server, monkeypatch):
+    c = PluginHttp("web", ["example.com"], lambda: "test")
+    monkeypatch.setattr(H, "public", lambda host: True)
+
+    class Redirect:
+        status_code = 302
+        headers = {"Location": server + "/json"}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(H.requests, "request", lambda *a, **kw: Redirect())
+    with pytest.raises(PluginError):
+        c.get("https://example.com/start")
+    assert not Handler.hits

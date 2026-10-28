@@ -347,6 +347,6 @@ feed. The browser checklist `passkeys` makes a token in Settings and uses it.
 
 Tests that render pages are skipped when `pypdfium2` is not installed. See [testing](testing.md).
 
-The five task tools are supplied by the Tasks core plugin, keeping their names and schemas.
+The five task tools are supplied by the Tasks contributed plugin, keeping their names and schemas.
 They are offered to remote MCP clients by default, as before, and disappear while the plugin is
 off. Task storage and validation of task IDs in note writes remain available in the core.

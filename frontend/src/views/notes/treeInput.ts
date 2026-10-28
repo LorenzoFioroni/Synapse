@@ -124,7 +124,7 @@ function onContextMenu(e: MouseEvent): void {
       { label: 'Rename…', icon: 'edit', run: () => renameNote(p), shortcut: 'F2' },
       { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
       { label: 'Copy link', icon: 'link', run: () => copyLinks([p]) },
-      noteHooks.graph && { label: 'Show in Graph', icon: 'link', run: () => hooks.openNotesGraph(`note:${p}`) },
+      noteHooks.graph && { label: `Show in ${noteHooks.graph.title || 'Graph'}`, icon: 'link', run: () => hooks.openNotesGraph(`note:${p}`) },
       { label: 'Export…', icon: 'export', run: () => exportMenu(p, at) },
       'sep',
       trash,

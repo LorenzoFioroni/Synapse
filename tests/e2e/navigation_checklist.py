@@ -232,19 +232,18 @@ async def main():
                     await release_tasks.wait()
                     await route.continue_()
 
-                await page.route("**/api/tasks", delayed_tasks)
+                await page.route("**/api/plugins/tasks/", delayed_tasks)
                 await toggle(page, "tasks", True)
                 await asyncio.wait_for(tasks_requested.wait(), timeout=5)
                 await page.click(ENTRIES["tasks"])
                 await page.click(ENTRIES["page"])
                 await inspect(page, "Plugin page opens while Tasks is still loading", "page")
-                release_tasks.set()
-                await page.evaluate("""async () => {
-                    await (await import('/js/plugins/core/tasks/taskData.js')).loadTasks();
-                    await new Promise(requestAnimationFrame);
-                }""")
+                async with page.expect_response(lambda response: response.url.endswith("/api/plugins/tasks/")) as ready:
+                    release_tasks.set()
+                await (await ready.value).body()
+                await page.evaluate("() => new Promise(requestAnimationFrame)")
                 await inspect(page, "Delayed Tasks completion preserves the plugin page and history", "page")
-                await page.unroute("**/api/tasks", delayed_tasks)
+                await page.unroute("**/api/plugins/tasks/", delayed_tasks)
 
                 # Leaving a stopped page cancels its restart grace period.
                 await page.evaluate("""async () => {

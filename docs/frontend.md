@@ -34,7 +34,7 @@ steps through the TypeScript.
   `views/notes/editor.ts`, only when Notes is opened;
 - `views/metadataReview.ts` from `afterAdd.ts`, `views/exportDialog.ts` from `settingsView.ts`;
 - the classic UMD scripts Mermaid (`views/notes/richRender.ts`) and force-graph
-  (`plugins/core/graph/forceGraph.ts`) by adding a `<script>` tag; they put `window.mermaid` and
+  (`plugins/graph/frontend/forceGraph.ts`, using `p.assets.vendor`) by adding a `<script>` tag; they put `window.mermaid` and
   `window.ForceGraph` on the page.
 
 ### Why `js/` is not committed
@@ -182,7 +182,7 @@ expects something else. To add an event, add it to `AppEvents` and to the table 
 | `open-note` | `{ path, line? }` | item pane, `itemlist/menus.ts` | `main.ts` |
 | `open-notes`, `close-notes` | none | sidebar | `main.ts` |
 | `open-settings` | a section's navigation id, or none | `plugins/host.ts` ("Settings: <plugin>" commands) | `main.ts` |
-| `show-item` | item id | `plugins/core/graph/notesGraph.ts`, `citeCard.ts`, `notesView.ts`, `referencesSection.ts` | `main.ts` |
+| `show-item` | item id | `plugins/host.ts` (public `library.show`), `citeCard.ts`, `notesView.ts`, `referencesSection.ts` | `main.ts` |
 | `open-import` | optional `File` | `itemlist/empty.ts`, `itemlist.ts`, `settingsView.ts` | `main.ts` |
 | `open-identifier`, `clear-search` | none | `itemlist/empty.ts` | `main.ts` |
 | `set-search-mode` | `SearchMode` | `itemlist/empty.ts`, `settingsView.ts` | `main.ts` |
@@ -310,15 +310,17 @@ math; `tree.ts`, `treeInput.ts` and `fileOps.ts` are the notes list; `readView.t
 adjacent removed and added lines and use `util.diffWords` for the darker changed spans; `exportNote.ts`
 and `portable.ts` export a note as PDF, HTML or Markdown.
 
-**`plugins/core/tasks/`: tasks.** [Tasks](tasks.md#frontend-frontendsrcviewstasks) covers it. In short:
+**`plugins/tasks/frontend/`: tasks.** [Tasks](tasks.md#frontend-pluginstasksfrontend) covers it. In short:
 `taskData.ts` holds the tasks and makes the changes; `taskQuery.ts` and `dates.ts` are the logic
 without a DOM (views, search, sorting, groups; reading dates); `taskRender.ts` draws a task;
 `taskForm.ts` is the form of the detail pane and the popup; `tasksView.ts`, `taskList.ts` and
 `tasksState.ts` the Tasks page; `noteTasks.ts` tasks inside notes; `notePicker.ts` chooses a note.
 
-**`plugins/core/graph/`: the graph in Notes** (the Graph core plugin, `plugins/graph`). `index.ts`
-gives the notes view the graph through `views/notes/hooks.ts` (`setNoteHook('graph', …)`: the notes view puts the
-local graph in its side panel and shows the graph button only while it is set) and adds the
+**`plugins/graph/frontend/`: the graph in Notes** (the Graph contributed plugin). `index.ts`
+registers through public `p.notes.visualizations`; the host's `plugins/notes.ts` bridges that API to
+layout, sidebar and history. It receives a main-view host and lifecycle/navigation callbacks,
+without importing app store/editor objects. The host puts its section beside a note and shows
+its header button while registered. The plugin adds the
 command (Cmd/Ctrl+Shift+G) and Show in Graph for items. `model.ts` turns the plugin's `/data` into
 what is shown (no DOM, unit-tested); `forceGraph.ts` draws it with force-graph; `notesGraph.ts` is the local graph
 beside a note and the global graph in place of the editor. Both show a neighbourhood through
@@ -326,10 +328,11 @@ beside a note and the global graph in place of the editor. Both show a neighbour
 graph around the node it was opened for (`globalFocus`, depth 1, 2, 3 or 0 for everything, kept
 with the other options in `localStorage` under `zc.graph.global`). Opening Graph while a note is
 shown uses that note as the focus; while Graph remains open, choosing another note in the notes
-list recentres it instead of replacing it with the editor.
+list recentres it instead of replacing it with the editor. Unload disconnects observers, clears
+timers, destroys both canvases, and ignores late data or canvas creation.
 
-**`plugins/core/extended-markdown/figures/`: galleries and figures** (an extension of the Extended
-Markdown core plugin, `plugins/extended-markdown`, with its own switch there). Its `index.ts`
+**`plugins/extended-markdown/frontend/figures/`: galleries and figures** (an extension of the Extended
+Markdown contributed plugin, `plugins/extended-markdown`, with its own switch there). Its `index.ts`
 installs the carousels' listeners (`galleryView.ts`) and sets the `figures` hook
 (`hook.ts`) in `views/notes/hooks.ts`, which the notes code asks when it needs it: the renderer
 adds `markdown.ts`'s rules (it rebuilds itself when a hook changes, `hooksVersion`), the live
@@ -397,7 +400,7 @@ state and call each other without import cycles. Three patterns are used:
   `openNotesGraph`) with do-nothing defaults. `notesView.ts` fills them with
   `Object.assign(hooks, …)`. The other parts import `workspace.ts`, never `notesView.ts`.
   `taskHooks` in the same file works the other way round: the tasks code
-  (`plugins/core/tasks/noteTasks.ts`) fills it in, and the notes code calls it to draw and add tasks
+  (`plugins/tasks/frontend/noteTasks.ts`) fills it in, and the notes code calls it to draw and add tasks
   without importing the tasks code.
   `viewer/annotations/model.ts` does the same with `hooks.onSelect`, which
   `annotations/input.ts` sets to show its selection controls.
@@ -471,7 +474,7 @@ markup; an unknown name falls back to `doc`. To add one, add its paths to `P`.
 6. Cover what you can with a JavaScript unit test (keep the logic in a DOM-free module) and the
    rest with a browser checklist. See [testing](testing.md).
 
-The Tasks core plugin (`plugins/core/tasks/index.ts`) registers its page through `tasksPage.ts`
-and installs the existing note `taskHooks`. On unload it removes its DOM, listeners, popups and
+The Tasks contributed plugin (`plugins/tasks/frontend/index.ts`) registers through public `p.tasks.register`; `plugins/taskHost.ts` bridges its page to
+`tasksPage.ts` and its note integration to internal hooks. On unload it removes its DOM, listeners, popups and
 renderers and invalidates pending loads. Plugin startup completes before task deep links open;
 plugin changes are applied before the change feed dispatches task or note refreshes.

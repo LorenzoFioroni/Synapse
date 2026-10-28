@@ -1,9 +1,9 @@
-"""Autocompletion in notes, from a model served by Ollama on this computer (a core plugin).
+"""Autocompletion in notes, from a model served by Ollama on this computer (a contributed plugin).
 
 `ollama.py` is the HTTP client (and checks that Ollama's address is on this computer),
 `prompt.py` turns the text around the cursor into a request and cleans what comes back, and
 `completer.py` checks that Ollama and the model are there before anything is asked of them, and
-keeps requests from piling up. The frontend (frontend/src/plugins/core/autocompletion/) shows the
+keeps requests from piling up. The frontend (plugins/autocompletion/frontend/) shows the
 suggestions in the notes editor and its section in Settings.
 """
 
@@ -12,7 +12,7 @@ from __future__ import annotations
 from backend.plugins import Plugin
 
 from .completer import Completer
-from .ollama import Unavailable
+from .ollama import Ollama, Unavailable
 
 __all__ = ["Completer", "Unavailable", "activate"]
 
@@ -20,7 +20,7 @@ MAX_TEXT = 200_000  # characters of either side sent per request (only the end n
 
 
 def activate(plugin: Plugin) -> None:
-    completer = Completer(lambda: plugin.settings.all())
+    completer = Completer(lambda: plugin.settings.all(), client=lambda url: Ollama(url, plugin.http))
 
     @plugin.settings.on_change
     def changed(values: dict) -> None:

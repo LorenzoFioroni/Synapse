@@ -100,7 +100,7 @@ def no_web(monkeypatch):
     def fetch(item, **_):
         key = item.get("doi") or item.get("archive_id")
         if key == "offline":
-            raise ref_sources.FetchFailed("no network")
+            raise reference_entry.FetchFailed("no network")
         return "test", refs.get(key, [])
 
     monkeypatch.setattr(metadata, "lookup", lookup)
@@ -339,22 +339,31 @@ def test_arxiv_html_references():
     assert arxiv_html.parse("<html>no bibliography</html>") == []
 
 
-def test_arxiv_html_is_the_last_source(monkeypatch):
+@pytest.fixture
+def fetch_references():
+    client = ref_sources.Client(None)
+    yield lambda item, **kwargs: ref_sources.fetch(item, http=client, **kwargs)
+    client.close()
+
+
+def test_arxiv_html_is_the_last_source(monkeypatch, fetch_references):
     calls = []
     for name in ("semantic_scholar", "openalex", "crossref"):
         monkeypatch.setattr(ref_sources, name, lambda *a, _n=name, **k: calls.append(_n) or [])
-    monkeypatch.setattr(arxiv_html, "fetch", lambda aid: calls.append(f"html {aid}") or [{"title": "From HTML"}])
-    assert ref_sources.fetch({"archive_id": "arXiv:2610.00003"}) == (
+    monkeypatch.setattr(
+        arxiv_html, "fetch", lambda aid, **kwargs: calls.append(f"html {aid}") or [{"title": "From HTML"}]
+    )
+    assert fetch_references({"archive_id": "arXiv:2610.00003"}) == (
         "arxiv-html",
-        [ref_sources._clean_ref({"title": "From HTML"})],
+        ref_sources.usable([{"title": "From HTML"}]),
     )
     assert calls[-1] == "html 2610.00003"
     calls.clear()
-    assert ref_sources.fetch({"doi": "10.1/x"}) == ("none", [])  # no arXiv id: not asked
+    assert fetch_references({"doi": "10.1/x"}) == ("none", [])  # no arXiv id: not asked
     assert not any(c.startswith("html") for c in calls)
 
 
-def test_recent_arxiv_papers_get_the_longer_list(monkeypatch):
+def test_recent_arxiv_papers_get_the_longer_list(monkeypatch, fetch_references):
     from datetime import date
 
     assert ref_sources.recent_arxiv("2610.01234", date(2026, 10, 22))
@@ -367,16 +376,16 @@ def test_recent_arxiv_papers_get_the_longer_list(monkeypatch):
     html = [{"doi": f"10.1/{i}"} for i in range(5)]
     calls = []
     monkeypatch.setattr(ref_sources, "semantic_scholar", lambda *a, **k: calls.append("s2") or s2)
-    monkeypatch.setattr(arxiv_html, "fetch", lambda aid: calls.append("html") or html)
+    monkeypatch.setattr(arxiv_html, "fetch", lambda aid, **kwargs: calls.append("html") or html)
     # a recent paper: the HTML list is longer, so it wins
-    name, refs = ref_sources.fetch({"archive_id": "arXiv:2610.00003"})
+    name, refs = fetch_references({"archive_id": "arXiv:2610.00003"})
     assert name == "arxiv-html" and len(refs) == 5 and calls == ["s2", "html"]
     # an older one: the first list is kept
     calls.clear()
-    assert ref_sources.fetch({"archive_id": "arXiv:2101.00003"})[0] == "semanticscholar" and calls == ["s2"]
+    assert fetch_references({"archive_id": "arXiv:2101.00003"})[0] == "semanticscholar" and calls == ["s2"]
     # fresh: the HTML version first, alone when it has a list
     calls.clear()
-    assert ref_sources.fetch({"archive_id": "arXiv:2610.00003"}, fresh=True)[0] == "arxiv-html" and calls == ["html"]
+    assert fetch_references({"archive_id": "arXiv:2610.00003"}, fresh=True)[0] == "arxiv-html" and calls == ["html"]
 
 
 # ------------------------------------------------------------------ the example

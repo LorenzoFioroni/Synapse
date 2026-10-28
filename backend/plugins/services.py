@@ -3,7 +3,7 @@
 Services read (looking up a paper by identifier, its reference list, matching references to the
 library, how papers connect to it); actions change the library through the same code as the app
 (adding a paper: the duplicate check, a citation key, the change feed), and need ``"library":
-["add"]`` in the manifest. Both reach the web the way Synapse itself does (the scholarly services
+["add"]`` or ``["edit"]`` in the manifest. Both reach the web the way Synapse itself does (the scholarly services
 it already uses), not through ``plugin.http``.
 """
 
@@ -101,6 +101,19 @@ class PluginActions:
     def __init__(self, services, manifest):
         self._s = services
         self._man = manifest
+
+    def update(self, item_id: str, changes: dict) -> dict:
+        """Edit metadata through the library's validation, citation-key and event path."""
+        from ..library.fields import EDITABLE_KEYS
+
+        if "edit" not in self._man.library:
+            raise PluginError(f'{self._man.name} needs "library": ["edit"] in its manifest to edit papers')
+        if not isinstance(changes, dict) or any(k not in EDITABLE_KEYS for k in changes):
+            raise PluginError("Only editable metadata fields may be updated")
+        if any(v is not None and not isinstance(v, (str, int, float)) for v in changes.values()):
+            raise PluginError("Metadata values must be text, numbers or null")
+        self._s.papers.get(item_id)
+        return self._s.papers.update(item_id, changes)
 
     def add(self, paper: dict, *, folder_id: int | None = None, tags: list[str] | None = None) -> dict:
         """Add an outside paper (a record, or a dict with ``doi`` / ``arxiv``) to the library, as the

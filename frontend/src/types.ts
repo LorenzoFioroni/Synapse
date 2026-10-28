@@ -361,31 +361,7 @@ export interface CiteEntry {
 /* ------------------------------------------------------------------ graph */
 
 /** A node of GET /api/graph (backend/references/graph.py). */
-export interface GraphNode {
-  id: string;
-  kind: 'paper' | 'work' | 'note';
-  title: string;
-  authors?: string;
-  year?: number | string | null;
-  doi?: string | null;
-  arxiv_id?: string | null;
-  item_id?: string;        // papers
-  citation_key?: string;   // papers
-  item_type?: string;
-  folder_ids?: number[];
-  tags?: string[];
-  has_pdf?: boolean;
-  path?: string;           // notes
-  note_type?: string | null;
-  paper?: string | null;
-}
 
-/** cites: paper → paper/work (reference lists); cite: note → paper; link: note → note; about: paper note → paper. */
-export type EdgeKind = 'cites' | 'cite' | 'link' | 'about';
-
-export interface GraphEdge { source: string; target: string; kind: EdgeKind }
-
-export interface GraphData { nodes: GraphNode[]; edges: GraphEdge[] }
 
 /* ------------------------------------------------------------------ import / export */
 
@@ -420,7 +396,8 @@ export interface Reference {
 
 export interface ReferenceFetch {
   item_id: string;
-  source: 'semanticscholar' | 'openalex' | 'crossref' | 'none';
+  source: string;
+  source_title?: string;
   fetched_at: string;
   doi: string | null;
   arxiv_id: string | null;
@@ -509,7 +486,7 @@ export interface PluginInfo {
   failed_at: string | null;
   remote_mcp: boolean;
   api?: string;
-  permissions?: { network: string[]; library: string[]; mcp: boolean; python?: string[] };
+  permissions?: { network: string[]; library: string[]; notes?: string[]; tasks?: string[]; mcp: boolean; python?: string[] };
   parts?: string[];
   settings?: PluginSetting[];
   values?: Record<string, unknown>;
@@ -519,7 +496,7 @@ export interface PluginInfo {
   /** Its scheduled work (while running) and the jobs waiting. */
   schedules?: { name: string; rule: string }[];
   jobs?: number;
-  reference_sources?: { id: string; title: string }[];
+  reference_sources?: { id: string; title: string; subsources?: Record<string, string> }[];
   export_formats?: { id: string; title: string }[];
   /** Paths in the plugin's folder (from the manifest). */
   frontend?: string | null;

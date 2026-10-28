@@ -1,17 +1,13 @@
-"""Metadata Sources: the scholarly providers used by Synapse's metadata lookups."""
+"""Metadata Sources: scholarly providers using only the public plugin API."""
 
-from backend.online.http import LookupFailed
-from backend.plugins import Plugin, PluginError
+from backend.plugins import Plugin
 
-from .providers import pool, resolve
+from .providers import Providers
 
 
 def activate(plugin: Plugin) -> None:
-    plugin.on_unload(lambda: pool.shutdown(wait=False))
-
-    @plugin.metadata_source("scholarly", title="Crossref, OpenAlex, arXiv and Open Library", order=100)
-    def lookup(query: dict) -> dict:
-        try:
-            return resolve(query)
-        except LookupFailed as e:
-            raise PluginError(str(e)) from e
+    providers = Providers(plugin.http)
+    plugin.on_unload(providers.close)
+    plugin.metadata_source("scholarly", title="Crossref, OpenAlex, arXiv and Open Library", order=100)(
+        providers.resolve
+    )

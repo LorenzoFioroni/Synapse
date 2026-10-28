@@ -25,19 +25,22 @@ from pathlib import Path
 from werkzeug.exceptions import HTTPException, MethodNotAllowed, NotFound
 from werkzeug.routing import Map, Rule
 
+from ..settings import RENAMED_EXPORT_FORMATS
 from . import build, deps
-from .catalog import discover, initialize_core
+from .catalog import discover, initialize_defaults
 from .context import Plugin, PluginError, ToolSpec
 from .http import PluginHttp, service_credentials
 from .itemfields import FieldIndex, PluginFields
 from .jobs import Runner
 from .loading import Active, Entry, asset_path, forget_modules, load_module, newest
 from .manifest import ManifestError
+from .notes import NotesReader
 from .report import describe
 from .runtime import Worker, make_logger, tail
 from .services import PluginActions, PluginServices
 from .sources import SourceList
 from .state import StateFile
+from .tasks import TaskAccess
 
 log = logging.getLogger(__name__)
 
@@ -130,7 +133,7 @@ class PluginHost:
             except OSError:
                 pass
         self.scan()
-        self._turn_on_core()
+        self._initialize_defaults()
         self._state_seen = self.state.stamp()
         if self.safe_mode:
             log.warning("Safe mode: plugins are off (except the core plugins, which are part of Synapse)")
@@ -188,8 +191,8 @@ class PluginHost:
         entry = self._entries.get(pid)
         return bool(entry and entry.source == "bundled" and entry.manifest and entry.manifest.core)
 
-    def _turn_on_core(self) -> None:
-        initialize_core(self._entries, self.state, self.settings)
+    def _initialize_defaults(self) -> None:
+        initialize_defaults(self._entries, self.state, self.settings)
 
     def _sync(self) -> None:
         on = {pid for pid, st in self.state.read().items() if st.get("enabled")}
@@ -222,6 +225,7 @@ class PluginHost:
             log=plog,
             settings=lambda: self.values(pid),
             library=self.library,
+            notes=NotesReader(self.services) if self.services else None,
             before_upgrade=before_upgrade,
             http=PluginHttp(
                 pid,
@@ -232,12 +236,19 @@ class PluginHost:
             ),
             services=PluginServices(self.services) if self.services else None,
             actions=PluginActions(self.services, man) if self.services else None,
+            tasks=TaskAccess(self.services, man) if self.services else None,
+            tool_aliases={"list_tasks", "get_task", "create_task", "update_task", "delete_task"}
+            if pid == "tasks" and entry.source == "bundled"
+            else set(),
             fields=PluginFields(
                 pid,
                 man.name,
                 lambda: self.fields.store,
                 self.library.get if self.library else None,
                 self.fields.changed,
+                (lambda d: self.fields.due(d, self.library.items()))
+                if self.library and "read" in man.library
+                else None,
             ),
             sources_changed=lambda: self.sources_changed() if self.sources_changed else None,
             tool_prefix=not self.is_core(pid),
@@ -251,7 +262,7 @@ class PluginHost:
             if target:
                 act.pypath = str(target)
                 sys.path.insert(0, act.pypath)
-            if build.needs_build(man.frontend):
+            if self.role == "app" and build.needs_build(man.frontend):
                 source = (man.folder / (man.frontend or "")).resolve()
                 act.bundle = build.bundle(source, data_dir / build.BUILD_DIR, self.config.frontend_dir)
             path = man.backend_path()
@@ -272,14 +283,17 @@ class PluginHost:
                 plugin.wake = act.runner.wake
                 plugin.fields.allow_retry = lambda name, keys: self.fields.allow_retry(pid, name, keys)
                 plugin.fields.refresh_soon = act.runner.refresh_soon
+            with self._lock:
+                self._active[pid] = act
+            if act.runner:
                 act.runner.start()
         except BaseException as e:
             plog.error("Could not start:\n%s", traceback.format_exc())
+            with self._lock:
+                self._active.pop(pid, None)
             self._teardown(act, run_unload=True)
             self._failed(pid, f"Could not start: {_describe(e)}")
             return False
-        with self._lock:
-            self._active[pid] = act
         plog.info("Started (%s, version %s)", self.role, man.version)
         return True
 
@@ -495,6 +509,16 @@ class PluginHost:
         acts = [self._active[pid]] if pid else list(self._active.values())
         return all(a.worker.drain(timeout) for a in acts)
 
+    def update_item(self, pid: str, item_id: str, changes: dict) -> dict:
+        """Apply metadata through a running plugin's permission-checked actions."""
+        with self._lock:
+            act = self._active.get(pid)
+            actions = act.plugin.actions if act else None
+        if not actions:
+            raise NotFound(f"No plugin {pid!r} is running")
+        # outside the host's lock: a library write must not hold up every other plugin call
+        return actions.update(item_id, changes)
+
     def route(self, pid: str, path: str, method: str) -> tuple[Callable, Mapping]:
         """The function serving ``path`` of plugin ``pid``, and its arguments from the path.
         Raises werkzeug's NotFound / MethodNotAllowed."""
@@ -556,7 +580,9 @@ class PluginHost:
         ]
 
     def export_items(self, key: str, items: list[dict], options: dict) -> tuple:
-        entry = self._export_formats().get(key)
+        found = self._export_formats()
+        # a request naming a format as Synapse used to ("bibtex") gets Export Formats' writer
+        entry = found.get(key) or found.get(RENAMED_EXPORT_FORMATS.get(key, ""))
         if entry is None:
             raise PluginError(
                 "This export format is not available: turn on Export Formats or its provider in Settings → Plugins."
@@ -577,6 +603,13 @@ class PluginHost:
                 for source in act.plugin.reference_sources.values()
             ]
         return resolve(sources, self.run, query)
+
+    def reference_source_title(self, name: str) -> str:
+        from .references import source_title
+
+        with self._lock:
+            sources = [(pid, s) for pid, act in self._active.items() for s in act.plugin.reference_sources.values()]
+        return source_title(name, sources)
 
     def lookup_metadata(self, query: dict) -> dict:
         """Ask the metadata sources of running plugins for the normalized query."""

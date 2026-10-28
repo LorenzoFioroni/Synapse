@@ -1,4 +1,4 @@
-"""Autocompletion in notes, a core plugin (plugins/autocompletion): its settings and how they carry
+"""Autocompletion in notes, a contributed plugin (plugins/autocompletion): its settings and how they carry
 over from Synapse's own, the status checks that guard against a missing Ollama or model, the
 request sent to Ollama, and cleaning the model's answer."""
 
@@ -10,6 +10,7 @@ import pytest
 
 from backend import create_app
 from backend.config import APP_ROOT, Config
+from backend.plugins.http import PluginHttp
 from backend.plugins.loading import load_module
 from tests.fake_ollama import FakeOllama, free_port
 
@@ -36,10 +37,16 @@ def on(client, svc, bundled):
     return turn_on
 
 
+def make_ollama(mod, url):
+    return mod.ollama.Ollama(url, PluginHttp(PID, ["loopback"], lambda: "test"))
+
+
 def completer(svc):
     """A completer on the running plugin's settings (as its routes use)."""
     act = svc.plugins._active[PID]
-    return act.module.Completer(lambda: svc.plugins.values(PID))
+    return act.module.Completer(
+        lambda: svc.plugins.values(PID), client=lambda url: act.module.ollama.Ollama(url, act.plugin.http)
+    )
 
 
 # ------------------------------------------------------------------ the plugin and its settings
@@ -47,7 +54,7 @@ def completer(svc):
 
 def test_off_by_default(client, bundled):
     p = next(p for p in client.get("/api/plugin-host").get_json()["plugins"] if p["id"] == PID)
-    assert p["core"] and not p["enabled"] and p["status"] == "off"
+    assert not p["core"] and not p["enabled"] and p["status"] == "off"
     assert p["values"] == {"model": "qwen2.5-coder:1.5b", "length": "line", "url": "http://127.0.0.1:11434"}
     assert client.get(f"{BASE}/status").status_code == 404  # off: no routes
     assert "notes_ai_complete" not in client.get("/api/settings").get_json()["settings"]
@@ -179,7 +186,7 @@ def test_something_else_on_the_port_is_not_ollama(mod):
     t = threading.Thread(target=srv.handle_request, daemon=True)
     t.start()
     with pytest.raises(mod.ollama.Unavailable) as e:
-        mod.ollama.Ollama(f"http://127.0.0.1:{srv.server_address[1]}").models()
+        make_ollama(mod, f"http://127.0.0.1:{srv.server_address[1]}").models()
     assert e.value.reason == "unreachable"
     srv.server_close()
 
@@ -340,3 +347,20 @@ def test_same_model(mod):
 )
 def test_clean(mod, raw, prefix, suffix, length, fim, want):
     assert mod.prompt.clean(raw, prefix, suffix, length, fim=fim) == want
+
+
+def test_safe_mode_preserves_enabled_contributed_plugin(tmp_path, bundled):
+    data = tmp_path / "safe"
+    data.mkdir()
+    (data / "plugins.json").write_text(json.dumps({"plugins": {PID: {"enabled": True, "settings": {"model": "mine"}}}}))
+    cfg = Config.from_env(data)
+    cfg.safe_mode = True
+    app = create_app(cfg, start_indexer=False)
+    try:
+        c = app.test_client()
+        p = next(p for p in c.get("/api/plugin-host").get_json()["plugins"] if p["id"] == PID)
+        assert not p["core"] and p["enabled"] and not p["running"] and p["status"] == "safe-mode"
+        assert p["values"]["model"] == "mine"
+        assert c.get(f"{BASE}/status").status_code == 404
+    finally:
+        app.extensions["synapse"].plugins.stop()

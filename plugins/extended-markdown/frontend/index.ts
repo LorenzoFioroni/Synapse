@@ -1,0 +1,54 @@
+// Extended Markdown: syntax beyond Synapse's own Markdown, one folder per extension, each with a
+// switch among the package's settings. Turning the package or an extension off renders notes as
+// ordinary Markdown; their text never changes.
+import type { PluginContext } from '../../../frontend/src/plugins/api.js';
+import type { ExtendedMarkdownHook } from '../../../frontend/src/plugins/markdown.js';
+import type { MarkdownExtension } from './extension.js';
+import { figures } from './figures/index.js';
+import { spoilers } from './spoilers/index.js';
+import { spoilerSpans } from './spoilers/syntax.js';
+import { taskBlocks } from './tasks/index.js';
+
+export const EXTENSIONS: MarkdownExtension[] = [figures, spoilers, taskBlocks];
+
+const noSpoilers = () => [];
+
+export async function activate(p: PluginContext): Promise<void> {
+  const running = new Map<string, () => void>();   // extension id → what turns it off
+  let hook: ExtendedMarkdownHook | null = null;
+  let offMarkdown: (() => void) | undefined;
+  let stopped = false;
+
+  const apply = (values: Record<string, unknown>) => {
+    if (stopped) return;
+    const wanted = EXTENSIONS.filter((ext) => values[ext.id] !== false);
+    if (hook && wanted.length === running.size && wanted.every((ext) => running.has(ext.id))) return;
+    for (const ext of EXTENSIONS) {
+      const on = wanted.includes(ext);
+      if (on && !running.has(ext.id)) running.set(ext.id, ext.attach?.(p) ?? (() => {}));
+      else if (!on && running.has(ext.id)) { running.get(ext.id)!(); running.delete(ext.id); }
+    }
+    // a new hook object: renderers and the live preview rebuild when it changes
+    hook = {
+      markdown(md) { for (const ext of wanted) ext.markdown?.(md); },
+      spoilers: running.has(spoilers.id) ? spoilerSpans : noSpoilers,
+      exportStatic(root) { for (const ext of wanted) ext.exportStatic?.(root); },
+      fence(info) { return wanted.some((ext) => ext.fence?.(info)); },
+      portable(markdown) { return wanted.reduce((text, ext) => ext.portable?.(text) ?? text, markdown); },
+    };
+    offMarkdown?.();
+    offMarkdown = p.markdown.register(hook);
+  };
+  // settings that cannot be read leave every extension on rather than none
+  const refresh = async () => apply(await p.settings().catch(() => ({})));
+
+  await refresh();
+  // a switch changed in Settings (this window or another): the change feed says 'plugins'
+  p.onChange((kinds) => { if (kinds.includes('plugins')) void refresh(); });
+  p.onUnload(() => {
+    stopped = true;
+    for (const off of running.values()) off();
+    running.clear();
+    offMarkdown?.();
+  });
+}

@@ -193,7 +193,10 @@ export function notesChanged(): void {
 function attachGraph(): void {
   const g = noteHooks.graph;
   if (!ws.root) return;   // Notes not built yet: initNotes calls this
-  ws.root.querySelectorAll<HTMLElement>('[data-act="graph"]').forEach((b) => { b.hidden = !g; });
+  ws.root.querySelectorAll<HTMLElement>('[data-act="graph"]').forEach((b) => {
+    b.hidden = !g;
+    if (g) { b.title = g.title || 'Graph'; b.innerHTML = icon(g.icon || 'link'); }
+  });
   if (!g) return;
   g.attach({
     root: ws.root,

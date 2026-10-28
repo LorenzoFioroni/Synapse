@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-API_VERSION = (1, 1)  # the plugin API this Synapse offers (major, minor)
+API_VERSION = (1, 9)  # the plugin API this Synapse offers (major, minor)
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -33,7 +33,7 @@ class Setting:
     options: list[tuple[str, str]] = field(default_factory=list)  # (value, label), for choice and multi
     min: float | None = None
     max: float | None = None
-    # a core plugin's setting that used to be one of Synapse's own (settings.json): its value
+    # a bundled plugin's setting that used to be one of Synapse's own (settings.json): its value
     # carries over when the plugin first starts
     from_setting: str | None = None
 
@@ -118,6 +118,8 @@ class Manifest:
     styles: str | None = None
     network: list[str] = field(default_factory=list)
     library: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    tasks: list[str] = field(default_factory=list)
     mcp: bool = False
     settings: list[Setting] = field(default_factory=list)
     python: list[str] = field(default_factory=list)  # packages it needs (deps.py)
@@ -141,6 +143,8 @@ class Manifest:
         return {
             "network": list(self.network),
             "library": list(self.library),
+            "notes": list(self.notes),
+            "tasks": list(self.tasks),
             "mcp": self.mcp,
             "python": list(self.python),
         }
@@ -262,9 +266,10 @@ def parse(data: object, folder: Path) -> Manifest:
     perms = data.get("permissions") or {}
     if not isinstance(perms, dict):
         raise ManifestError('"permissions" must be an object')
-    unknown = set(perms) - {"network", "library", "mcp"}
+    unknown = set(perms) - {"network", "library", "notes", "tasks", "mcp"}
     if unknown:
         raise ManifestError(f"unknown permission {sorted(unknown)[0]!r} (does it need a newer Synapse?)")
+    # "loopback" is a reserved token, not a DNS host permission (http.py).
     network = perms.get("network") or []
     if not isinstance(network, list) or not all(isinstance(h, str) and HOST_RE.match(h.lower()) for h in network):
         raise ManifestError('"network" is a list of host names, e.g. ["export.arxiv.org"]')
@@ -273,6 +278,14 @@ def parse(data: object, folder: Path) -> Manifest:
     if not isinstance(library, list) or any(p not in LIBRARY_PERMISSIONS for p in library):
         raise ManifestError(f'"library" is a list of {", ".join(LIBRARY_PERMISSIONS)}')
     man.library = [p for p in LIBRARY_PERMISSIONS if p in library]
+    notes = perms.get("notes", [])
+    if not isinstance(notes, list) or any(p not in ("read", "edit") for p in notes):
+        raise ManifestError('"notes" is a list containing "read" or "edit"')
+    man.notes = [p for p in ("read", "edit") if p in notes]
+    tasks = perms.get("tasks", [])
+    if not isinstance(tasks, list) or any(p not in ("read", "edit") for p in tasks):
+        raise ManifestError('"tasks" is a list containing "read" or "edit"')
+    man.tasks = [p for p in ("read", "edit") if p in tasks]
     if (perms.get("mcp") or False) not in (True, False):
         raise ManifestError('"mcp" is true or false')
     man.mcp = bool(perms.get("mcp"))

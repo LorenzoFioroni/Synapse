@@ -15,6 +15,12 @@ import type { Item, PluginInfo } from '../types.js';
 import { escapeHtml, formatDate } from '../util.js';
 import type { ChangeKind, PluginContext, PluginItem, PluginModule } from './api.js';
 import { CORE } from './core/index.js';
+import { registerSuggestions } from './suggestions.js';
+import { noteHooks } from '../views/notes/hooks.js';
+import { feedback } from './feedback.js';
+import { notesContext } from './notes.js';
+import { registerMarkdown, registerFigures } from './markdownHost.js';
+import { registerTaskIntegration } from './taskHost.js';
 
 interface Loaded {
   disposed: boolean;
@@ -66,12 +72,22 @@ const copy = <T>(x: T): T => { try { return structuredClone(x); } catch { return
 function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
   const pid = info.id;
   const full = (id: string) => `${pid}.${id}`;
-  const src = (info.core && info.id !== 'metadata-check') ? undefined : info.name;
+  const src = info.core ? undefined : info.name;
   const keep = (d: Dispose): Dispose => { if (rec.disposed) d(); else rec.disposers.push(d); return d; };
+  const assertLive = () => { if (rec.disposed) throw new DOMException('Plugin stopped', 'AbortError'); };
+  const update = async (id: string, changes: Record<string, unknown>): Promise<Item> => {
+    assertLive();
+    const item = await api.updatePluginItem(pid, id, changes);
+    assertLive();
+    return item;
+  };
+  const notices = feedback(pid, () => rec.disposed, fn => guarded(info, 'notification action', fn), update);
+  keep(notices.dispose);
   // A retired context must settle its calls, so async activation and synchronization can finish.
-  const call = async <T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, query?: Record<string, unknown>): Promise<T> => {
+  const call = async <T>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown, query?: Record<string, unknown>, signal?: AbortSignal): Promise<T> => {
     try {
-      const result = await api.pluginRoute<T>(pid, method, path, body, query);
+      assertLive();
+      const result = await api.pluginRoute<T>(pid, method, path, body, query, signal);
       if (rec.disposed) throw new DOMException('Plugin stopped', 'AbortError');
       return result;
     } catch (e) {
@@ -87,11 +103,33 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     version: info.version,
     settings: async () => (await api.plugins()).plugins.find((x) => x.id === pid)?.values || {},
     saveSettings: async (changes) => (await api.setPluginSettings(pid, changes)).values,
+    tasks: { register: integration => { assertLive(); return keep(registerTaskIntegration(pid, integration)); } },
+    markdown: { register: provider => { assertLive(); return keep(registerMarkdown(provider)); },
+      figures: { register: provider => { assertLive(); return keep(registerFigures(provider)); } } },
+    assets: { vendor: name => {
+      assertLive();
+      if (name !== 'force-graph') throw new Error(`Unknown vendored library ${name}`);
+      return '/vendor/force-graph/force-graph.min.js';
+    } },
+    notes: notesContext(pid, () => rec.disposed, keep, e => failed(info, 'Notes visualization', e)),
+    editor: {
+      suggestions: { register: (source) => keep(registerSuggestions({
+        ready: () => !!guarded(info, 'suggestion readiness', () => source.ready())(),
+        complete: (prefix, suffix, signal) => source.complete(prefix, suffix, signal),
+        delay: source.delay,
+      })) },
+      onOpened: (fn) => {
+        const opened = guarded(info, 'editor opened', fn);
+        noteHooks.editorOpened.add(opened);
+        return keep(() => { noteHooks.editorOpened.delete(opened); });
+      },
+    },
     commands: {
       register: (spec) => {
         let key = spec.key;
-        // a core plugin's key is Synapse's own (it stays reserved for other plugins while it is off)
-        const problem = key && !(info.core && parseKey(key)) ? keyProblem(key) : null;
+        // Preserve the bundled legacy toggle's reserved key; installed replacements obey ordinary rules.
+        const graphToggle = info.source === 'bundled' && spec.id === 'toggle' && ((pid === 'graph' && key?.toLowerCase() === 'mod-shift-g') || (pid === 'tasks' && key?.toLowerCase() === 'mod-shift-k'));
+        const problem = key && !((info.core || graphToggle) && parseKey(key)) ? keyProblem(key) : null;
         if (problem) { console.warn(`Plugin ${pid}: command ${spec.id}: ${problem}; it gets no key`); key = undefined; }
         return keep(commands.register({
           id: full(spec.id), title: spec.title, key, source: src, owner: pid,
@@ -141,6 +179,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
       },
     },
     settingsPage: {
+      open: () => { if (!rec.disposed) void import('../views/settingsView.js').then((m) => { if (!rec.disposed) m.openSettings(`plugin-${pid}`); }); },
       register: (spec) => keep(settingsSections.register({
         id: full(spec.id), title: spec.title, icon: spec.icon, after: spec.after, shows: Array.isArray(spec.shows) ? spec.shows.map(String) : undefined, source: src, owner: pid,
         mount: (el) => guarded(info, `settings section ${spec.id}`, spec.mount)(el),
@@ -162,14 +201,19 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
       else notify(`${info.name}: ${message}`, { type: options.type, source: pid, desktop: options.desktop,
         target: options.sourceId ? `source:${full(options.sourceId)}` : undefined, action });
     },
+    jobs: notices.jobs,
     backend: {
       get: (path, query) => call('GET', path, undefined, query),
-      post: (path, body) => call('POST', path, body ?? {}),
+      post: (path, body, options) => call('POST', path, body ?? {}, undefined, options?.signal),
+      patch: (path, body) => call('PATCH', path, body ?? {}),
       put: (path, body) => call('PUT', path, body ?? {}),
       delete: (path) => call('DELETE', path),
     },
     library: {
       selected: () => copy(selectedItems()) as PluginItem[],
+      refresh: async () => { assertLive(); await A.loadItems(); assertLive(); },
+      openPdf: async id => { assertLive(); const item = await api.getItem(id); assertLive(); A.openPdf(item); },
+      update: async (id, changes) => { const item = await update(id, changes); A.patchLocal(item); await A.refreshItems([id]); return copy(item) as PluginItem; },
       item: async (id) => copy(await api.getItem(id)) as PluginItem,
       show: (id) => emit('show-item', id),
     },
@@ -181,6 +225,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     onUnload: (fn) => { if (rec.disposed) fn(); else rec.unload.push(fn); },
     ui: {
       icon: (name, cls = '') => icon(name, cls),
+      reviewMetadata: notices.reviewMetadata,
       escapeHtml,
       confirm: (message, o = {}) => confirmDialog(message, o),
       prompt: (label, o = {}) => promptDialog(label, o),

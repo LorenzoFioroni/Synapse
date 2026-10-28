@@ -235,6 +235,8 @@ function finishedToast(job: LookupJob, progress?: import('../ui/toast.js').Progr
 
 /* ----------------------------------------------------------------- dialog */
 export interface ReviewDialogOptions {
+  update?: (id: string, changes: Record<string, unknown>) => Promise<Item>;
+  signal?: AbortSignal;
   job?: LookupJob | null;
   title?: string;
   subtitle?: string;
@@ -245,7 +247,9 @@ export interface ReviewDialogOptions {
 }
 
 export function openReviewDialog(articles: Article[], options: ReviewDialogOptions = {}): Promise<unknown> {
+  if (options.signal?.aborted) return Promise.resolve(null);
   const { job = null } = options;
+  let offAbort: (() => void) | undefined;
   let applyBtn: HTMLButtonElement, list: HTMLElement, summary: HTMLElement, stopBtn: HTMLButtonElement, bgBtn: HTMLButtonElement;
   let groups: Record<string, HTMLElement>, offJob: (() => void) | undefined, background = false;
 
@@ -294,6 +298,9 @@ export function openReviewDialog(articles: Article[], options: ReviewDialogOptio
     subtitle: options.subtitle || defaultSub,
     wide: true,
     render: (body, close, buttons) => {
+      const abort = () => close(null);
+      options.signal?.addEventListener('abort', abort, { once: true });
+      offAbort = () => options.signal?.removeEventListener('abort', abort);
       applyBtn = buttons[buttons.length - 1];
       body.closest('.dialog')!.classList.add('mr-dialog');
       body.innerHTML = `<div class="mr-summary"></div><div class="mr-list">
@@ -343,10 +350,10 @@ export function openReviewDialog(articles: Article[], options: ReviewDialogOptio
           btn.textContent = 'Saving…';
           const toQueue = job ? job.referencesToQueue(articles) : [];
           const saved: string[] = [];
-          const ok = await applyChanges(articles, toQueue, saved);
+          const ok = await applyChanges(articles, toQueue, saved, options.update, options.signal);
           if (!ok) { btn.disabled = false; btn.textContent = 'Apply'; return false; }
           if (job) job.applied = true;
-          if (options.onApplied) {
+          if (!options.signal?.aborted && options.onApplied) {
             try { await options.onApplied(saved); } catch (e) { console.error(e); }
           }
           return undefined;
@@ -360,7 +367,7 @@ export function openReviewDialog(articles: Article[], options: ReviewDialogOptio
       else if (job.running) job.stop();     // closed while looking up: stop
     }
     return v;
-  });
+  }).finally(() => offAbort?.());
 }
 
 export function reviewDialog(job: LookupJob, options: ReviewDialogOptions = {}): Promise<unknown> {
@@ -501,7 +508,7 @@ function changeBlock(c: Change, onToggle: () => void, options: ReviewDialogOptio
 }
 
 /* ----------------------------------------------------------------- apply */
-async function applyChanges(articles: Article[], referenceIds: string[] = [], savedIds: string[] = []): Promise<boolean> {
+async function applyChanges(articles: Article[], referenceIds: string[] = [], savedIds: string[] = [], update = api.updateItem, signal?: AbortSignal): Promise<boolean> {
   // Keys proposed for several articles in this batch must stay unique.
   const others = new Set(state.items.filter((i) => !articles.some((a) => a.id === i.id)).map((i) => i.citation_key).filter(Boolean));
   const uniqueKey = (k: string) => {
@@ -513,13 +520,15 @@ async function applyChanges(articles: Article[], referenceIds: string[] = [], sa
   let saved = 0, fields = 0;
   const errors: string[] = [];
   for (const a of articles) {
+    if (signal?.aborted) return false;
     const updates: Record<string, unknown> = {};
     for (const c of a.changes) if (c.checked) updates[c.key] = c.fetched;
     if (updates.citation_key) updates.citation_key = uniqueKey(String(updates.citation_key));
     else if (a.item?.citation_key) others.add(a.item.citation_key);
     if (!Object.keys(updates).length) continue;
     try {
-      const item = await api.updateItem(a.id, updates);
+      const item = await update(a.id, updates);
+      if (signal?.aborted) return false;
       A.patchLocal(item);
       savedIds.push(a.id);
       saved++;

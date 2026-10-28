@@ -18,7 +18,7 @@ def test_the_example_manifest_is_valid():
     m = read(EXAMPLE)
     assert m.id == "recently-added"
     assert m.api == (1, 0) and m.compatible() is None
-    assert m.permissions() == {"network": [], "library": ["read"], "mcp": True, "python": []}
+    assert m.permissions() == {"network": [], "library": ["read"], "notes": [], "tasks": [], "mcp": True, "python": []}
     assert m.defaults() == {"keep_days": 90, "skip_tags": []}
     assert m.backend_path() == (EXAMPLE / "backend").resolve()
 

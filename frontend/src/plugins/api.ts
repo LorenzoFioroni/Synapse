@@ -1,5 +1,5 @@
 // The plugin API for a plugin's frontend: what `activate(p)` receives. This file holds types only,
-// with no imports, so it doubles as the declaration file plugin authors copy (docs/plugins.md):
+// with type-only references to the public SDK modules (docs/plugins.md):
 // write `/** @param {import('./api').PluginContext} p */` in a JavaScript plugin, or import the
 // types in a TypeScript one. Only what is declared here is promised to plugins; the rest of the
 // app's code may change between versions.
@@ -102,7 +102,59 @@ export interface NotifyOptions {
     device, by Claude or by background work. */
 export type ChangeKind = 'library' | 'notes' | 'tasks' | 'annotations' | 'plugins' | 'fields' | 'sources';
 
+/** Plain text around the cursor; no editor-library objects cross the plugin boundary.
+ * The newest registration is active; disposing it restores the preceding provider. */
+export interface SuggestionSource {
+  ready(): boolean;
+  complete(prefix: string, suffix: string, signal: AbortSignal): Promise<string>;
+  /** Pause after typing in milliseconds (350 by default). */
+  delay?: number;
+}
+
+/** A proposed metadata difference. Values are saved only after the user presses Apply. */
+export interface MetadataChange {
+  key: string; current: unknown; fetched: unknown; isNew: boolean; checked: boolean;
+}
+export interface MetadataReviewArticle {
+  id: string; current: PluginItem; changes: MetadataChange[]; published?: string | null;
+}
+export interface MetadataReviewOptions {
+  title?: string;
+  onRejectSuggestion?: (article: { id: string }, change: MetadataChange) => Promise<void> | void;
+  onRejectArticle?: (article: { id: string }) => Promise<void> | void;
+  onIgnorePaper?: (article: { id: string }) => Promise<void> | void;
+  onApplied?: (ids: string[]) => Promise<void> | void;
+}
+export interface PluginJob {
+  set(message: string, done?: number, total?: number): void;
+  finish(message?: string, options?: NotifyOptions): void;
+  close(): void;
+}
+
+/** Host-owned Notes layout and navigation; no editor or app-store objects are exposed. */
+export interface NotesVisualizationContext {
+  main: HTMLElement;
+  currentPath(): string | null;
+  openNote(path: string): void;
+  open(focus: string | null): void;
+  setOpen(open: boolean): void;
+  closed(): void;
+}
+export interface NotesVisualizationSpec {
+  id: string; title: string; icon?: string;
+  attach(context: NotesVisualizationContext): void;
+  section(): HTMLElement;
+  showNote(path: string | null): void;
+  changed(): void;
+  open(focus: string | null): Promise<void>;
+  close(options?: { notify?: boolean }): void;
+  isOpen(): boolean;
+  destroy(): void;
+}
+
 export interface PluginContext {
+  tasks: { register(integration: import('./task-runtime.js').TaskIntegration): Dispose };
+  markdown: import('./markdown.js').MarkdownApi;
   /** The plugin's id and what its manifest says. */
   readonly id: string;
   readonly name: string;
@@ -114,6 +166,24 @@ export interface PluginContext {
       plugin's backend hears the change (`@plugin.settings.on_change`). */
   saveSettings(changes: Record<string, unknown>): Promise<Record<string, unknown>>;
 
+  /** URLs of host-vendored offline dependencies; currently force-graph. */
+  assets: { vendor(name: 'force-graph'): string };
+  notes: {
+    enabled(): boolean;
+    current(): string | null;
+    open(path: string): Promise<void>;
+    /** One visualization at a time, alongside and in place of the note editor. */
+    visualizations: {
+      register(spec: NotesVisualizationSpec): Dispose;
+      open(id: string, focus?: string | null): Promise<void>;
+      toggle(id: string): Promise<void>;
+    };
+  };
+  editor: {
+    suggestions: { register(source: SuggestionSource): Dispose };
+    /** Called when a note editor opens; activation should also check existing editors. */
+    onOpened(fn: () => void): Dispose;
+  };
   commands: { register(spec: CommandSpec): Dispose };
   pages: {
     register(spec: PageSpec): Dispose;
@@ -125,7 +195,7 @@ export interface PluginContext {
   itemActions: { register(spec: ItemActionSpec): Dispose };
   /** A section of its own in the Settings page, for what the manifest's settings cannot show
       (a status, a test button, a list to pick from). */
-  settingsPage: { register(spec: SettingsSectionSpec): Dispose };
+  settingsPage: { register(spec: SettingsSectionSpec): Dispose; open(): void };
   /** The plugin's lists of papers (`@plugin.item_source` in its backend). */
   sources: {
     /** Show the list `sourceId` (leaving Notes, Tasks or a page). */
@@ -137,12 +207,15 @@ export interface PluginContext {
 
   /** A persistent notification in the bell center; OS delivery is independent of severity and requires user opt-in. */
   notify(message: string, options?: NotifyOptions): void;
+  /** Progress in the notification center; closed automatically when the plugin stops. */
+  jobs: { start(message: string): PluginJob };
 
   /** The plugin's own routes (`plugin.route` in its backend), under /api/plugins/<id>/. Each resolves
       to the parsed JSON answer and throws an Error with the server's message on failure. */
   backend: {
     get<T = unknown>(path: string, query?: Record<string, string | number | boolean | undefined>): Promise<T>;
-    post<T = unknown>(path: string, body?: unknown): Promise<T>;
+    post<T = unknown>(path: string, body?: unknown, options?: { signal?: AbortSignal }): Promise<T>;
+    patch<T = unknown>(path: string, body?: unknown): Promise<T>;
     put<T = unknown>(path: string, body?: unknown): Promise<T>;
     delete<T = unknown>(path: string): Promise<T>;
   };
@@ -150,6 +223,11 @@ export interface PluginContext {
   library: {
     /** The items selected in the list. */
     selected(): PluginItem[];
+    refresh(): Promise<void>;
+    /** Open the first attachment or the item's URL, as in the item pane. */
+    openPdf(id: string): Promise<void>;
+    /** Edit metadata (requires library: ["edit"]); uses the app's validation and change feed. */
+    update(id: string, changes: Record<string, unknown>): Promise<PluginItem>;
     /** One item, with its abstract and attachments. */
     item(id: string): Promise<PluginItem>;
     /** Show an item in the library (leaving Notes, Tasks or a page). */
@@ -165,6 +243,9 @@ export interface PluginContext {
   ui: {
     /** The app's icon as SVG markup (the names the sidebar uses: 'calendar', 'list', 'star' …). */
     icon(name: string, className?: string): string;
+    /** Explicit Apply, per-field rejection and paper exclusion; requires library: ["edit"].
+        The dialog closes when the plugin stops. Inputs are copied. */
+    reviewMetadata(articles: MetadataReviewArticle[], options?: MetadataReviewOptions): Promise<unknown>;
     /** Text made safe to put into HTML. */
     escapeHtml(text: unknown): string;
     confirm(message: string, options?: { title?: string; confirm?: string; danger?: boolean; detail?: string }): Promise<boolean>;

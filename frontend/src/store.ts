@@ -23,7 +23,7 @@ export interface AppEvents {
   settings: void;
   indexer: void;                    // new full-text indexer status in state.indexer
   workspace: void;                  // Notes, Tasks or a plugin's page opened or closed
-  tasks: void;                      // tasks were loaded or changed (plugins/core/tasks/taskData.ts)
+  tasks: void;                      // tasks were loaded or changed (plugins/tasks/frontend/taskData.ts)
   'tasks-count': { open: number; overdue: number } | null;   // for the sidebar; null: turned off
   'open-tasks': { task?: string | null; note?: string | null } | undefined;   // the Tasks page, a task selected or a note's tasks shown
   'notes-count': number | null;     // null: notes are turned off

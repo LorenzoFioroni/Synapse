@@ -307,7 +307,7 @@ only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 | `fileOps.ts` | New, rename, move, trash with Undo, the trash dialog, rescan. |
 | `editor.ts`, `livePreview.ts`, `previewWidgets.ts` | CodeMirror 6 (`vendor/cm6/`), the live preview decorations (built on `mdscan.ts`) and the widgets they draw. |
 | `completion.ts`, `library.ts` | `[@`, `[[` and `{{task` autocomplete and their ranking (tasks come from the Tasks module through `taskHooks`). |
-| `ghost.ts`, `ghostLogic.ts`, `hooks.ts` | Autocompletion: suggestions as ghost text, from the source the Autocompletion core plugin sets in `hooks.ts` (see [autocompletion](autocompletion.md)). |
+| `ghost.ts`, `ghostLogic.ts`, `hooks.ts` | Autocompletion: suggestions as ghost text, from the public suggestion source registered by the Autocompletion contributed plugin (see [autocompletion](autocompletion.md)). |
 | `render.ts` | Markdown to HTML with markdown-it and KaTeX (`vendor/md/`): math, links, citations, callouts, tasks. Raw HTML is never rendered. No DOM. |
 | `richRender.ts` | Mermaid (loaded on demand from `vendor/mermaid/`), code highlighting, filling embedded notes into the page. |
 | `embed.ts`, `linkData.ts` | What an embedded note shows; what a note links to (`/api/notes/links` as maps for the renderer). No DOM. |
@@ -322,11 +322,11 @@ only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 | `attachmentsDialog.ts`, `rekeyDialog.ts` | The attachments dialog; the preview before a key change. |
 | `exportNote.ts`, `portable.ts` | Exporting a note as PDF, HTML or Markdown; the Markdown conversion and reference entries (no DOM). |
 | `crossref.ts`, `sections.ts` | References (`\ref`, `\eqref`, `\cref`, `\Cref`) written out as cleveref does, from equations, figures and labelled Markdown headings; hierarchical section numbering (no DOM). |
-| `hooks.ts` | What core plugins add to the editor: ghost text, the graph, galleries and figures (`setNoteHook`). |
+| `hooks.ts` | Editor hooks: public ghost suggestions, core graph, galleries and figures (`setNoteHook`). |
 | `commands.ts` | The command palette's commands for the open note: inserting images and figures (`Insert Image…`, `Insert Figure with Caption…`), citations, links and tasks (they type `[@]`, `[[]]` or `{{task }}` and open the completion), tables, callouts, equations and diagrams; Live/Source/Read; renaming, moving, deleting, exporting and linking the note; its graph, history, paper and PDF; the history of all notes and marking a milestone. Each is offered only while a note is on screen and it can act (a figure needs Extended Markdown's figures, a task the Tasks plugin); inserting from Read goes back to editing. |
 
-Galleries and figures are an extension of the **Extended Markdown** core plugin, in
-`frontend/src/plugins/core/extended-markdown/figures/`:
+Galleries and figures are an extension of the **Extended Markdown** contributed plugin, in
+`plugins/extended-markdown/frontend/figures/`:
 
 | Module | What it does |
 |---|---|
@@ -375,7 +375,7 @@ cursor steps over it and Backspace deletes it whole. Read mode draws it with
 ### Galleries
 
 A gallery shows several images as one carousel, and exports as one figure with panels.
-Galleries and figure numbers come from the **Extended Markdown** core plugin (on unless its
+Galleries and figure numbers come from the **Extended Markdown** contributed plugin (on unless its
 "Galleries and numbered figures" switch, or the whole plugin, is turned off in Settings → Plugins).
 Turned off, a gallery reads as the Markdown it holds (its images and
 captions, one after the other), an image's caption line as text, and `\ref` to a figure as ??;
@@ -626,7 +626,7 @@ else the item's URL. `referenceHtml` makes it a link, and `referenceMarkdown` wr
 | How notes look when rendered | `render.ts` (tested in `tests/js/render.test.mjs`), `equations.ts`, `macros.ts`, `livePreview.ts`. |
 | Claude's note tools | `backend/mcp/tools/notes.py`; see [mcp.md](mcp.md). |
 | What an exported note looks like | `exportNote.ts` (HTML, PDF), `portable.ts` (Markdown, reference entries), `frontend/css/export.css`. |
-| Which images are figures, and how they are numbered | Extended Markdown's figures (`frontend/src/plugins/core/extended-markdown/figures/`): `figures.ts` (`imageFigureAt`, `figuresOf`) for the rule and the text; `figureRule` in `markdown.ts`; `livePreview.ts` for the chips. |
+| Which images are figures, and how they are numbered | Extended Markdown's figures (`plugins/extended-markdown/frontend/figures/`): `figures.ts` (`imageFigureAt`, `figuresOf`) for the rule and the text; `figureRule` in `markdown.ts`; `livePreview.ts` for the chips. |
 | How galleries are written, drawn or exported | Extended Markdown's figures: `gallery.ts` (the block, the figure caption), `markdown.ts` (`galleryRule`), `galleryView.ts` (the carousel), `exportStatic.ts`, `portable.ts`; `backend/notes/gallery.py` for the MCP tools. What counts inside one is the parser's (above), plugin or not. |
 
 The notes format, the `data/notes/` layout and these endpoints are contracts used by the MCP
@@ -635,7 +635,7 @@ server and older data. Change them only deliberately. Tests live in `tests/notes
 `claude_edits_checklist.py`, `render_checklist.py`, `equations_checklist.py`,
 `attachments_checklist.py`, `export_checklist.py` and `gallery_checklist.py` in `tests/e2e/` cover the workspace (see [testing.md](testing.md)).
 
-## Extended Markdown (core plugin)
+## Extended Markdown (contributed plugin)
 
 **Extended Markdown** collects Markdown syntax beyond Synapse's own (math, citations, links,
 callouts, footnotes and the rest stay in the core renderer). It starts on and adds no page of its
@@ -700,7 +700,7 @@ Raw note HTML is still escaped.
 
 ### Where the code is
 
-`frontend/src/plugins/core/extended-markdown/` holds one folder per extension (`figures/`,
+`plugins/extended-markdown/frontend/` holds one folder per extension (`figures/`,
 `tasks/`, `spoilers/`), each a `MarkdownExtension` (`extension.ts`): its markdown-it rules, what HTML/PDF
 export must open up, and what it starts while on (listeners, a note hook). `index.ts` lists the
 extensions, reads the package's settings (one boolean per extension, keyed by its id, in

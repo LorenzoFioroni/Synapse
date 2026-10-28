@@ -1,6 +1,8 @@
-"""Discover plugin manifests and initialize core defaults, including legacy preferences.
+"""Discover plugin manifests and initialize the defaults of the plugins that come with Synapse,
+including legacy preferences.
 
-Discovery never imports plugin code. Only manifests bundled with Synapse may claim core status.
+Discovery never imports plugin code. Only manifests bundled with Synapse may claim core status or
+start on by themselves.
 """
 
 from __future__ import annotations
@@ -36,8 +38,17 @@ def discover(config) -> dict[str, Entry]:
     return found
 
 
-def initialize_core(entries: dict[str, Entry], state: StateFile, settings) -> None:
-    """Carry legacy feature settings over once; preserve choices already made in Plugins."""
+def starts_by_itself(entry: Entry) -> bool:
+    """A plugin that comes with Synapse and decides on its own whether it starts the first time:
+    a core plugin, or a contributed one whose manifest says it starts on (Open-Access PDFs,
+    Export Formats: features Synapse always had). An installed plugin always waits for the user."""
+    man = entry.manifest
+    return bool(entry.source == "bundled" and man and (man.core or man.enabled_by_default or man.enabled_from_setting))
+
+
+def initialize_defaults(entries: dict[str, Entry], state: StateFile, settings) -> None:
+    """Turn on (or not) the plugins that come with Synapse the first time they are seen, carrying
+    legacy feature settings over once; preserve choices already made in Plugins."""
     legacy = getattr(settings, "legacy", lambda key: None)
     # Initialization and a settings request in the other process must not overwrite each other.
     from .files import transaction
@@ -46,7 +57,7 @@ def initialize_core(entries: dict[str, Entry], state: StateFile, settings) -> No
         states = state.read()
         for pid, entry in entries.items():
             man = entry.manifest
-            if entry.source != "bundled" or not man or not man.core or "enabled" in states.get(pid, {}):
+            if not starts_by_itself(entry) or not man or "enabled" in states.get(pid, {}):
                 continue
             on = man.enabled_by_default
             if man.enabled_from_setting and legacy(man.enabled_from_setting) is not None:
@@ -60,9 +71,9 @@ def initialize_core(entries: dict[str, Entry], state: StateFile, settings) -> No
                     except ManifestError:
                         pass
             changes: dict = {"enabled": on}
-            if man.mcp:
+            if man.mcp and (man.core or man.id == "tasks"):
                 changes["remote_mcp"] = True
             if values:
                 changes["settings"] = {**(states.get(pid, {}).get("settings") or {}), **values}
             state.update(pid, **changes)
-            log.info("Core plugin %s: %s", pid, "on" if on else "off")
+            log.info("Plugin %s: %s", pid, "on" if on else "off")

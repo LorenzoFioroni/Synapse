@@ -24,7 +24,7 @@ WARM_EVERY = 300.0  # at most one "load the model now" request per this many sec
 
 
 class Completer:
-    def __init__(self, values: Callable[[], dict], client: Callable[[str], Ollama] = Ollama):
+    def __init__(self, values: Callable[[], dict], client: Callable[[str], Ollama]):
         self.values = values  # the plugin's settings: model, length, url
         self._client = client
         self._run = threading.Lock()  # one generation at a time

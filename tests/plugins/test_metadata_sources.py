@@ -1,4 +1,4 @@
-"""Metadata sources: core-provider toggling and user-provider routing, with no real network."""
+"""Metadata sources: contributed-provider toggling and user-provider routing, with no real network."""
 
 import json
 import time
@@ -7,19 +7,20 @@ from pathlib import Path
 import pytest
 
 from backend.online import metadata
+from tests.fake_metadata import Response, install_transport
 
 
 @pytest.fixture(autouse=True)
-def core_sources(bundled):
+def bundled_sources(bundled):
     pass
 
 
-def test_core_metadata_sources_off_and_on_preserves_the_library(client, svc, monkeypatch):
+def test_metadata_sources_off_and_on_preserves_the_library(client, svc, monkeypatch):
     item = svc.papers.create({"title": "Kept", "doi": "10.1234/kept"})
     info = svc.plugins.info("metadata-sources")
     assert info["running"] and info["metadata_sources"][0]["id"] == "scholarly"
     svc.plugins.disable("metadata-sources")
-    monkeypatch.setattr("requests.get", lambda *a, **kw: pytest.fail("disabled sources used the network"))
+    install_transport(monkeypatch, lambda *a, **kw: pytest.fail("disabled sources used the network"))
     result = client.post(f"/api/items/{item['id']}/lookup")
     assert result.status_code == 404 and "No metadata sources" in result.json["error"]
     assert svc.papers.get(item["id"])["title"] == "Kept"
@@ -27,16 +28,9 @@ def test_core_metadata_sources_off_and_on_preserves_the_library(client, svc, mon
     assert svc.plugins.info("metadata-sources")["running"]
     assert svc.papers.get(item["id"])["title"] == "Kept"
 
-    class Response:
-        ok, status_code = True, 200
-
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"message": {"title": ["Fetched again"], "DOI": "10.1234/kept"}}
-
-    monkeypatch.setattr("requests.get", lambda *a, **kw: Response())
+    install_transport(
+        monkeypatch, lambda *a, **kw: Response({"message": {"title": ["Fetched again"], "DOI": "10.1234/kept"}})
+    )
     result = client.post(f"/api/items/{item['id']}/lookup")
     assert result.status_code == 200 and result.json["fetched"]["title"] == "Fetched again"
     assert svc.papers.get(item["id"])["title"] == "Kept"
@@ -54,7 +48,7 @@ def test_user_source_priority_and_identifier_normalization(client, svc, make_plu
     """,
     )
     svc.plugins.enable("custom-metadata")
-    monkeypatch.setattr("requests.get", lambda *a, **kw: pytest.fail("later source should not run"))
+    install_transport(monkeypatch, lambda *a, **kw: pytest.fail("later source should not run"))
     result = client.post("/api/items/from_identifier", json={"identifier": "https://doi.org/10.1234/custom"})
     assert result.status_code == 201 and result.json["title"] == "Custom result"
     svc.plugins.disable("metadata-sources")
@@ -91,21 +85,8 @@ def test_retrieve_and_metadata_check_use_paper_author_names(client, svc, monkeyp
     fixture = json.loads((Path(__file__).parents[1] / "fixtures/metadata_author_names.json").read_text())
     message = fixture["crossref"]["message"]
 
-    class Response:
-        ok, status_code = True, 200
-
-        def __init__(self, data):
-            self.data = data
-
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return self.data
-
-    monkeypatch.setattr(
-        "requests.get",
-        lambda url, **kwargs: Response(fixture["openalex"] if "openalex" in url else fixture["crossref"]),
+    install_transport(
+        monkeypatch, lambda url, **kwargs: Response(fixture["openalex"] if "openalex" in url else fixture["crossref"])
     )
     stored = fixture["expected"] if already_correct else fixture["profile_authors"]
     item = svc.papers.create(
@@ -131,3 +112,98 @@ def test_retrieve_and_metadata_check_use_paper_author_names(client, svc, monkeyp
         change = next(c for c in articles[0]["changes"] if c["key"] == "authors")
         assert change["fetched"] == fixture["expected"]
     assert svc.papers.get(item["id"])["authors"] == stored
+
+
+def test_contributed_permissions_and_live_service_credentials(svc, monkeypatch):
+    info = svc.plugins.info("metadata-sources")
+    assert not info["core"] and info["enabled"] and info["running"]
+    assert set(info["permissions"]["network"]) == {
+        "api.crossref.org",
+        "api.openalex.org",
+        "export.arxiv.org",
+        "openlibrary.org",
+    }
+    svc.settings.update({"contact_email": "researcher@example.org", "openalex_api_key": "test-key"})
+    calls = []
+
+    def get(url, params=None, headers=None, **kwargs):
+        calls.append((url, params, headers))
+        return Response(
+            {"message": {"title": ["Fetched"], "DOI": "10.1234/credentials"}}
+            if "crossref" in url
+            else {"authorships": []}
+        )
+
+    install_transport(monkeypatch, get)
+    svc.plugins.lookup_metadata({"kind": "doi", "value": "10.1234/credentials"})
+    crossref = next(c for c in calls if "crossref" in c[0])
+    openalex = next(c for c in calls if "openalex" in c[0])
+    assert crossref[1] is None
+    assert openalex[1] == {"api_key": "test-key", "mailto": "researcher@example.org"}
+    assert all(
+        "plugin metadata-sources" in c[2]["User-Agent"] and "researcher@example.org" in c[2]["User-Agent"]
+        for c in calls
+    )
+    calls.clear()
+    svc.settings.update({"openalex_api_key": "changed-key"})
+    svc.plugins.lookup_metadata({"kind": "doi", "value": "10.1234/credentials"})
+    assert next(c for c in calls if "openalex" in c[0])[1]["api_key"] == "changed-key"
+
+
+def test_disabling_retires_the_provider_and_preserves_saved_choice(svc):
+    from backend import create_app
+    from backend.plugins import PluginError
+
+    provider = next(iter(svc.plugins._active["metadata-sources"].plugin.metadata_sources.values())).fn
+    svc.plugins.disable("metadata-sources")
+    with pytest.raises(PluginError, match="stopped"):
+        provider({"kind": "doi", "value": "10.1234/stopped"})
+    app = create_app(svc.config, start_indexer=False)
+    try:
+        info = app.extensions["synapse"].plugins.info("metadata-sources")
+        assert not info["enabled"] and not info["running"]
+    finally:
+        app.extensions["synapse"].plugins.stop()
+
+
+def test_safe_mode_preserves_enabled_metadata_sources(tmp_path):
+    from backend import create_app
+    from backend.config import Config
+
+    data = tmp_path / "safe"
+    data.mkdir()
+    (data / "plugins.json").write_text(json.dumps({"plugins": {"metadata-sources": {"enabled": True}}}))
+    config = Config.from_env(data)
+    config.safe_mode = True
+    app = create_app(config, start_indexer=False)
+    try:
+        info = app.extensions["synapse"].plugins.info("metadata-sources")
+        assert not info["core"] and info["enabled"] and not info["running"]
+        assert info["status"] == "safe-mode"
+    finally:
+        app.extensions["synapse"].plugins.stop()
+
+
+def test_concurrent_queries_keep_provider_caches_separate(svc, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    revalidated = []
+
+    def get(url, headers=None, **kwargs):
+        if (headers or {}).get("If-None-Match") == '"same-tag"':
+            revalidated.append(url)
+            return Response(status=304, content=b"")
+        data = {"message": {"title": ["Shared lookup"], "DOI": "10.1234/cache"}}
+        if "openalex" in url:
+            data = {"authorships": [{"raw_author_name": "Mina de Vries"}]}
+        response = Response(data)
+        response.headers["ETag"] = '"same-tag"'
+        return response
+
+    install_transport(monkeypatch, get)
+    query = {"kind": "doi", "value": "10.1234/cache"}
+    with ThreadPoolExecutor(max_workers=2) as callers:
+        results = list(callers.map(lambda _: svc.plugins.lookup_metadata(query), range(2)))
+    results.append(svc.plugins.lookup_metadata(query))
+    assert all(item["title"] == "Shared lookup" and item["authors"] == "de Vries, Mina" for item in results)
+    assert any("crossref" in url for url in revalidated) and any("openalex" in url for url in revalidated)
