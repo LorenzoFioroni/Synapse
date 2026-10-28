@@ -208,6 +208,12 @@ def install(
         return None
 
     @app.after_request
+    def _frame_protection(resp: Response):
+        # The app embeds its own PDF viewer, but other sites must not frame signed-in pages.
+        resp.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
+        return resp
+
+    @app.after_request
     def _refresh_cookie(resp: Response):
         # Keep a device's cookie from running out while the device is in use.
         dev = g.get("device")

@@ -142,6 +142,11 @@ block goes to the item's paper note through `POST /api/notes/append` instead. Th
 
 ## The guard
 
+Every response carries `Content-Security-Policy: frame-ancestors 'self'`. Browsers refuse to
+embed Synapse in a page from another origin, preventing clickjacking against signed-in pages
+and the local library. Same-origin frames remain allowed for the app's PDF viewer. The header
+also covers sign-in pages and error responses; it does not depend on request fetch metadata.
+
 The server has no accounts. `guard.install` adds a `before_request` hook that every request goes
 through, pages and static files included. It makes three checks, in this order. The MCP endpoint,
 `/mcp`, is the one exception after the Host check: see [AI apps](#ai-apps-mcp) below.
