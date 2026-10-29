@@ -117,6 +117,7 @@ export function onNoteHookChange(fn: (key: HookKey) => void): () => void { liste
 export const ghostSource: GhostSource = {
   onChange: (fn) => onNoteHookChange((key) => { if (key === 'ghost') fn(); }),
   ready: () => !!noteHooks.ghost?.ready(),
-  complete: (prefix, suffix, signal) => (noteHooks.ghost ? noteHooks.ghost.complete(prefix, suffix, signal) : Promise.resolve('')),
+  complete: (prefix, suffix, signal, context) => (noteHooks.ghost ? noteHooks.ghost.complete(prefix, suffix, signal, context) : Promise.resolve('')),
+  get includeContext() { return noteHooks.ghost?.includeContext; },
   get delay() { return noteHooks.ghost?.delay; },
 };

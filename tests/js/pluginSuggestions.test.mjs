@@ -24,3 +24,22 @@ test('public suggestions replace, retire, and restore providers with change noti
   assert.deepEqual(changes, [true, false, true, false]);
   off();
 });
+
+test('optional earlier context reaches opted-in providers while legacy providers still work', async () => {
+  const signal = new AbortController().signal;
+  const context = { title: 'Cooling', headings: ['## Results'], excerpts: ['We define the reset.'] };
+  const legacy = registerSuggestions({ ready: () => true, complete: async (prefix, suffix) => prefix + suffix });
+  assert.equal(ghostSource.includeContext, undefined);
+  assert.equal(await ghostSource.complete('pre', 'post', signal), 'prepost');
+  const rich = registerSuggestions({ ready: () => true, includeContext: true,
+    complete: async (prefix, suffix, actualSignal, actualContext) => {
+      assert.equal(actualSignal, signal);
+      assert.equal(actualContext, context);
+      return prefix + suffix;
+    },
+  });
+  try {
+    assert.equal(ghostSource.includeContext, true);
+    assert.equal(await ghostSource.complete('pre', 'post', signal, context), 'prepost');
+  } finally { rich(); legacy(); }
+});

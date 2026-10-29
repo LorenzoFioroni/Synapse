@@ -5,7 +5,7 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.9**, which also accepts plugins targeting 1.0–1.8. Reference
+This page documents API **1.10**, which also accepts plugins targeting 1.0–1.9. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
 `"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`. Named reference sub-sources and the reference record
@@ -679,7 +679,7 @@ export function activate(p) {
 
 | Member | What it does |
 |---|---|
-| `p.editor.suggestions.register({ready, complete, delay})` | API 1.3: register a plain-text ghost suggestion provider. `ready()` gates requests; `complete(prefix, suffix, signal)` resolves to text, with up to 6,000 characters before and 2,000 after the cursor. `delay` defaults to 350 ms. The newest registration is active; disposing it restores the preceding one. Registration/disposal cancels requests and clears visible text in retained editors. CodeMirror stays private. |
+| `p.editor.suggestions.register({ready, complete, delay, includeContext})` | API 1.3: register a plain-text ghost suggestion provider. `ready()` gates requests; `complete(prefix, suffix, signal)` resolves to text, with up to 6,000 characters before and 2,000 after the cursor. API 1.10 optionally adds `includeContext: true`: `complete` receives a fourth argument `{title, headings, excerpts}`, containing bounded source text before the cursor. The combined field lengths are at most 1,100 characters; excerpts are relevant earlier definitions/notation, not other notes. Older three-argument providers retain the same nearby-text inputs and need no changes. `delay` defaults to 350 ms. The newest registration is active; disposing it restores the preceding one. Registration/disposal cancels requests and clears visible text in retained editors. CodeMirror stays private. |
 | `p.editor.onOpened(fn)` | API 1.3: disposable event when a note editor opens. Also initialize at activation, since an editor may already exist. |
 | `p.settingsPage.open()` | API 1.3: show this plugin's Settings section. |
 | `p.pages.register({id, title, icon, mount})` | A page: an entry under **Plugins** in the sidebar; when chosen, the page takes the place of the library (as Tasks does) and `mount(el)` draws it. `p.pages.setBadge(id, value)` puts a count on the entry, `p.pages.open(id)` shows it. |

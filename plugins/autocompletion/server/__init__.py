@@ -44,4 +44,4 @@ def activate(plugin: Plugin) -> None:
         data = request.get_json(silent=True) or {}
         prefix = str(data.get("prefix") or "")[-MAX_TEXT:]
         suffix = str(data.get("suffix") or "")[:MAX_TEXT]
-        return completer.complete(prefix, suffix)
+        return completer.complete(prefix, suffix, context=data.get("context"))

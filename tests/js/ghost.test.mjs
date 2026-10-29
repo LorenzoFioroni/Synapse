@@ -7,6 +7,14 @@ test('suggestions appear at the end of a line or before closing marks only', () 
   assert.ok(canSuggestAt('   ', 'We compute the'));
   assert.ok(canSuggestAt('$', 'Energy $E = '));
   assert.ok(canSuggestAt(')]', 'f(g[x'));
+  for (const after of ['$.', '$,', ').', '**.', '++.', '~~!', '.', '$.")', '); ', '…']) {
+    assert.ok(canSuggestAt(after, 'A sufficiently long prefix'), after);
+    assert.ok(canSuggestAt(after, 'ab', true), `explicit: ${after}`);
+  }
+  for (const after of ['$. More text', '). next', '**.word', '3.14', '.next', '=>']) {
+    assert.ok(!canSuggestAt(after, 'A sufficiently long prefix'), after);
+    assert.ok(!canSuggestAt(after, 'ab', true), `explicit: ${after}`);
+  }
   assert.ok(!canSuggestAt(' more words', 'We compute'));
   assert.ok(!canSuggestAt('', 'ab'));               // too little to go on
   assert.ok(canSuggestAt('', 'ab', true));          // unless asked for

@@ -5,7 +5,7 @@ suggestion shows in grey after the cursor ("ghost text"), as in code editors. It
 (`plugins/autocompletion`, see [plugins](plugins.md)): off until turned on in
 Settings → Plugins, and only local models served by [Ollama](https://ollama.com) are supported:
 nothing is sent to another computer. Safe mode stops it; switching it off preserves its settings.
-It requires Plugin API 1.3 and declares the explicit `loopback` network permission.
+It requires Plugin API 1.10 and declares the explicit `loopback` network permission.
 
 | Key | What it does |
 |---|---|
@@ -62,7 +62,8 @@ the status has found both:
   gives up (`superseded`), and the editor aborts the request it no longer needs as soon as you type.
 - **Where suggestions never appear**: in front matter, code and comments, while the citation or
   link list is open, while text is selected, and in the middle of a line (only when the rest of
-  the line is empty or closing marks such as `$`, `)` or `]`). A pause of 350 ms after typing comes
+  the line is empty or closing marks such as `$`, `)` or `]`, with optional punctuation such as
+  `$.`, `).` or `**.`). This also applies to explicit requests. A pause of 350 ms after typing comes
   first, and a suggestion needs a few characters before the cursor.
 
 ## How it works
@@ -71,6 +72,7 @@ the status has found both:
 frontend/src/views/notes/ghost.ts       CodeMirror extension: state field (the suggestion), widget,
   │                                       keys, view plugin (waits for a pause, cancels on typing)
 frontend/src/views/notes/ghostLogic.ts  no DOM: where a suggestion may appear, text sent, typing through
+frontend/src/views/notes/suggestionContext.ts  bounded title, section ancestry and relevant earlier definitions
 frontend/src/views/notes/hooks.ts       noteHooks.ghost: the source a running plugin gives the editor
 plugins/autocompletion/frontend/
   index.ts                              activate: registers p.editor.suggestions, adds Settings
@@ -79,9 +81,11 @@ plugins/autocompletion/frontend/
   │
 plugins/autocompletion/
   manifest.json                         a contributed plugin, off by default; its settings
-  server/__init__.py                    routes GET /status (fresh=1, warm=1) · POST /complete {prefix, suffix}
+  server/__init__.py                    routes GET /status (fresh=1, warm=1) · POST /complete {prefix, suffix, context?}
   server/completer.py                   Completer: status cache, one request at a time, superseded requests
   server/prompt.py                      the request (prefix/suffix, stop, length) and cleaning the answer
+  server/boundaries.py                  insertion boundaries, escapes, nested brackets/code/math
+  server/context.py                     combine selected context with recent text within the model budget
   server/ollama.py                      plugin.http client (failures become Unavailable), local_url
 ```
 
@@ -94,7 +98,19 @@ The editor itself has the ghost-text extension always; it asks `noteHooks.ghost`
 suggestion, so turning the plugin on or off takes effect in an open note too.
 
 **The request** (`prompt.build`). The editor sends up to 6,000 characters before the cursor and
-2,000 after it; the server keeps whole lines, at most 4,000 and 1,500. A fill-in-the-middle model
+2,000 after it; the server keeps whole lines, at most 4,000 and 1,500. The editor separately
+selects the note title, active section ancestry and up to three relevant earlier definitions or
+notation excerpts, all from before the cursor. Code fences, comments and galleries are excluded.
+Definitions are ranked by word overlap with the current line/section and their section and
+position; this is a bounded text heuristic, not semantic retrieval. A more recent convention in
+the active section takes priority when definitions match the same query terms. Whole snippets
+are used, so a size limit never cuts an equation or macro definition in half.
+
+Selected context occupies at most 1,200 of the same 4,000 prefix characters, including the
+separator; at least 2,800 remain available for recent text. Snippets already nearby are not
+duplicated. Short notes and callers that send only `prefix`/`suffix` retain their existing
+requests. The context is not inserted into the note, and no other notes or library items are
+read. A fill-in-the-middle model
 gets them as `prompt` and `suffix` (an empty suffix becomes a line end: with an empty suffix
 Ollama would use the model's chat template, and the model would answer like a chat). Other models
 get the text before the cursor with `raw: true`, so it is continued as it is. `temperature` 0.2,
@@ -104,7 +120,14 @@ at most 64 tokens for a line and 220 for a paragraph, and generation stops at th
 **The answer** (`prompt.clean`) is cut to one line (always when text follows the cursor on its
 line) or one paragraph; special tokens a model prints are dropped; a leading space is dropped
 after a space; and text that repeats what follows the cursor is removed (for models that did not
-see it, also a closing `$` or bracket that is already there).
+see it as well as fill-in-the-middle models). When the suffix begins with a closing mark,
+`boundaries.trim` stops the insertion before the model closes that enclosing span and writes
+past it. The existing suffix stays in the note. Escaped dollars, new nested brackets, code spans,
+math inside emphasis and contractions are preserved. For example, before `).`, `f(x)) more`
+becomes `f(x)`, while a suggestion already ending at `f(x)` keeps its own closing parenthesis.
+Bare punctuation repeated at the end of a suggestion is removed without cutting decimal points
+inside it. These limits protect insertion syntax; they do not check the scientific accuracy of
+the model's text. The model, total context budget and generation settings are unchanged.
 
 **The editor.** The suggestion is a widget decoration at the cursor, so it is never part of the
 note: saving, undo and the change feed do not see it. Its keys come before the editor's other
@@ -120,12 +143,23 @@ counts as typing it, so the rest stays.
   nothing sent while off or while the model is missing, the request sent, superseded requests,
   and `clean` on typical answers. It uses `tests/fake_ollama.py`, a stand-in for Ollama's API.
 - `tests/js/ghost.test.mjs`: `ghostLogic.ts`.
+- `tests/js/suggestionContext.test.mjs`: title/section/definition selection, scope, exclusions,
+  complete equations, context limits and isolation between notes and cursor positions.
+- `tests/plugins/test_autocompletion_context.py`: final model budget, legacy/malformed optional
+  context, deduplication and preserving the actual cursor tail for FIM and plain models.
+- `tests/plugins/test_autocompletion_boundaries.py`: FIM and plain continuations before existing
+  math, bracket, emphasis, underline, strike and quote closers; nested constructs and escapes.
 - `tests/e2e/assist_checklist.py` (port 8793): turning the plugin on, the notice and no requests without Ollama,
   Settings → Autocompletion (status, steps, refused address, Check Again), and the ghost text
   (Tab, Esc, typing through, word by word, Alt+\, clicking, undo, not mid-line, not in code, not
-  with the link list open, requests stop when the model goes away, off sends nothing).
+  with the link list open, requests stop when the model goes away, off sends nothing). Live and
+  Source checks also cover bounded automatic/explicit suggestions before punctuation, accepting
+  them with Tab and undoing the insertion while retaining the typed text and original suffix.
+  Long-note checks verify that an earlier convention crosses the public provider bridge and
+  reaches the model, while acceptance and undo affect only the suggestion at the cursor.
 
-Not tried here: a real model in Ollama (the tests use the stand-in), Safari, and the iPad.
+These automated checks use the stand-in model: they verify insertion syntax and editor behavior,
+not the factual quality of live-model suggestions. Safari and the iPad still need manual checks.
 
 The Settings section belongs to the plugin: switching Autocompletion off removes its navigation
 and controls immediately, even while Settings is open. Switching it back on mounts one fresh

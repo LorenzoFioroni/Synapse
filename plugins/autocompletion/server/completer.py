@@ -124,7 +124,7 @@ class Completer:
         threading.Thread(target=run, name="assist-warm", daemon=True).start()
 
     # -------------------------------------------------------------- complete
-    def complete(self, prefix: str, suffix: str) -> dict:
+    def complete(self, prefix: str, suffix: str, context: object = None) -> dict:
         """A suggestion for the cursor between ``prefix`` and ``suffix``: ``{"text": …}``, with
         ``reason`` (and ``message``) set when there is none because of a problem: off,
         unreachable, no_model, unsupported, timeout, error, or superseded (a newer request came)."""
@@ -143,7 +143,9 @@ class Completer:
             if mine != self._seq:
                 return {"text": "", "reason": "superseded"}
             fim = bool(st["fim"])
-            payload = prompt.build(model, prefix, suffix, fim=fim, thinking=bool(st["thinking"]), length=length)
+            payload = prompt.build(
+                model, prefix, suffix, fim=fim, thinking=bool(st["thinking"]), length=length, context=context
+            )
             try:
                 raw = self._client(local_url(url)).generate(payload)
             except Unavailable as e:

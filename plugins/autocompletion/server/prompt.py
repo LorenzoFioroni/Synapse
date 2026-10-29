@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import re
 
+from .boundaries import trim
+from .context import prefix_with_context, tail
+
 PREFIX_CHARS = 4000  # text before the cursor sent to the model (whole lines, from the end)
 SUFFIX_CHARS = 1500  # text after it, for models that fill in the middle
 MAX_TOKENS = {"line": 64, "paragraph": 220}
 MAX_LINES = 12  # of a paragraph suggestion
-_CLOSERS = set(")]}$`*_\"'")
 
 # Special tokens some models print when their template does not swallow them
 _SPECIAL = re.compile(r"<\|?(?:fim_|file_sep|endoftext|im_end|im_start|eot|EOT|end_of_turn|repo_name)[^>]*>|</s>")
@@ -27,10 +29,7 @@ def _head(text: str, n: int) -> str:
 
 def _tail(text: str, n: int) -> str:
     """The last ``n`` characters, starting at a line start when there is one."""
-    if len(text) <= n:
-        return text
-    cut = text.find("\n", len(text) - n)
-    return text[cut + 1 :] if 0 <= cut < len(text) - 1 else text[-n:]
+    return tail(text, n)
 
 
 def current_line(prefix: str) -> str:
@@ -38,9 +37,11 @@ def current_line(prefix: str) -> str:
     return prefix[prefix.rfind("\n") + 1 :]
 
 
-def build(model: str, prefix: str, suffix: str, *, fim: bool, thinking: bool, length: str) -> dict:
+def build(
+    model: str, prefix: str, suffix: str, *, fim: bool, thinking: bool, length: str, context: object = None
+) -> dict:
     """The /api/generate payload (without stream and keep_alive)."""
-    before, after = _tail(prefix, PREFIX_CHARS), _head(suffix, SUFFIX_CHARS)
+    before, after = prefix_with_context(prefix, context, PREFIX_CHARS), _head(suffix, SUFFIX_CHARS)
     stop = []
     if current_line(before).strip():
         # a suggestion goes to the end of this line, or of this paragraph
@@ -78,15 +79,8 @@ def clean(text: str, prefix: str, suffix: str, length: str, fim: bool = True) ->
         lines = re.split(r"\n[ \t]*\n", text, maxsplit=1)[0].split("\n")
         text = "\n".join(lines[:MAX_LINES])
 
-    # a model that did not see it may repeat what comes right after the cursor: "x^2$" before "$"
-    if rest.strip() and not fim:
-        closer = rest.lstrip()[0]
-        if closer in _CLOSERS and closer in text:
-            text = text[: text.index(closer)]  # it wrote past the closing $ or bracket
-        for k in range(len(rest), 0, -1):
-            if text.endswith(rest[:k]):
-                text = text[: len(text) - k]
-                break
+    # FIM models also write past a supplied closer, even though they saw it in their context.
+    text = trim(text, prefix, suffix, fim=fim)
     # ... or start writing the next lines again
     following = suffix.lstrip()[:20]
     if len(following) >= 8:
