@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 
 from .boundaries import trim
+from .context import prefix_with_context, tail
 
 PREFIX_CHARS = 4000  # text before the cursor sent to the model (whole lines, from the end)
 SUFFIX_CHARS = 1500  # text after it, for models that fill in the middle
@@ -28,10 +29,7 @@ def _head(text: str, n: int) -> str:
 
 def _tail(text: str, n: int) -> str:
     """The last ``n`` characters, starting at a line start when there is one."""
-    if len(text) <= n:
-        return text
-    cut = text.find("\n", len(text) - n)
-    return text[cut + 1 :] if 0 <= cut < len(text) - 1 else text[-n:]
+    return tail(text, n)
 
 
 def current_line(prefix: str) -> str:
@@ -39,9 +37,11 @@ def current_line(prefix: str) -> str:
     return prefix[prefix.rfind("\n") + 1 :]
 
 
-def build(model: str, prefix: str, suffix: str, *, fim: bool, thinking: bool, length: str) -> dict:
+def build(
+    model: str, prefix: str, suffix: str, *, fim: bool, thinking: bool, length: str, context: object = None
+) -> dict:
     """The /api/generate payload (without stream and keep_alive)."""
-    before, after = _tail(prefix, PREFIX_CHARS), _head(suffix, SUFFIX_CHARS)
+    before, after = prefix_with_context(prefix, context, PREFIX_CHARS), _head(suffix, SUFFIX_CHARS)
     stop = []
     if current_line(before).strip():
         # a suggestion goes to the end of this line, or of this paragraph

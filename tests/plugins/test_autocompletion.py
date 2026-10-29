@@ -266,6 +266,29 @@ def test_completion_without_fill_in_the_middle_is_raw(client, svc, on):
         assert sent["raw"] is True and "suffix" not in sent and "think" not in sent
 
 
+def test_completion_accepts_bounded_earlier_note_context(client, on):
+    with FakeOllama(reply=lambda p: r"\zeta$. More prose") as fake:
+        on(fake.url)
+        prefix = "Recent trial states and numerical diagnostics.\n" * 200 + "The reset is $"
+        result = client.post(
+            f"{BASE}/complete",
+            json={
+                "prefix": prefix,
+                "suffix": "$.",
+                "context": {
+                    "title": "Cooling",
+                    "headings": ["## Results"],
+                    "excerpts": [r"The reset is denoted by $\zeta$."],
+                },
+            },
+        ).get_json()
+        assert result == {"text": r"\zeta", "reason": ""}
+        sent = fake.generated()[-1]
+        assert len(sent["prompt"]) <= 4000
+        assert "# Cooling" in sent["prompt"] and r"denoted by $\zeta$" in sent["prompt"]
+        assert sent["prompt"].endswith("The reset is $") and sent["suffix"] == "$."
+
+
 def test_a_newer_request_supersedes_a_waiting_one(svc, on):
     with FakeOllama(reply=lambda p: " x", delay=0.3) as fake:
         on(fake.url)

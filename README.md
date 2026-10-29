@@ -392,7 +392,8 @@ never mix.
   (`ollama pull qwen2.5-coder:1.5b`); Settings says what is missing. Without them nothing is sent
   and the notes say so once. Suggestions also work before closing marks followed by punctuation
   (such as `$.`); they stop before existing closers while retaining nested brackets and escaped
-  dollars. See [docs/autocompletion.md](docs/autocompletion.md).
+  dollars. Long notes retain the title, current section and relevant earlier definitions alongside
+  recent text, within the existing model context budget. See [docs/autocompletion.md](docs/autocompletion.md).
 - Sortable, resizable, re-orderable columns; light/dark theme; compact density;
   keyboard navigation (see Settings → Library & Shortcuts).
 - Built-in PDF viewer with highlights, underlines, boxes (with a border, a fill or both: a filled

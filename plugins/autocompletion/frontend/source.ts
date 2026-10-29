@@ -85,13 +85,14 @@ export function makeSource(p: PluginContext): Source {
       check({ force: true });
     },
     ghost: {
+      includeContext: true,
       ready() {
         check();   // in the background when stale; this keystroke goes by the last answer
         return !!status?.ok;
       },
-      async complete(prefix, suffix, signal) {
+      async complete(prefix, suffix, signal, context) {
         // Pass cancellation through the public client when typing overtakes this suggestion.
-        const r = await p.backend.post<AssistCompletion>('/complete', { prefix, suffix }, { signal });
+        const r = await p.backend.post<AssistCompletion>('/complete', { prefix, suffix, context }, { signal });
         if (r.reason && LASTING.has(r.reason) && status) {
           // Ollama stopped or the model went away: stop asking until the next status check
           status = { ...status, ok: false, reason: r.reason, message: r.message || status.message };

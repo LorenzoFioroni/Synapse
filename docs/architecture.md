@@ -173,6 +173,8 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   Within the notes editor, `formatting.ts` owns Markdown formatting commands, `pairing.ts` owns
   dollar/backtick input behavior, `underline.ts` shares underline syntax between the editor and
   renderer, and `quoteBlocks.ts` keeps quotes/callouts continuous across rendered tables.
+  `suggestionContext.ts` selects bounded earlier title, section and definition snippets for
+  suggestion providers that opt in; the Autocompletion plugin assembles its final model context.
   `plugins/extended-markdown/frontend/` is the Extended Markdown package: one folder per syntax
   extension (`figures/`, `tasks/`, `spoilers/`), each a `MarkdownExtension` (`extension.ts`) adding markdown-it
   rules, export preparation and what it starts while on; `index.ts` turns each on or off from the

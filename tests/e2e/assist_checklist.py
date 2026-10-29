@@ -41,6 +41,12 @@ def check(name, cond, extra=""):
 
 def reply(payload):
     prompt = payload["prompt"]
+    if prompt.endswith("We denote the reset parameter by $"):
+        if r"denoted by $\kappa_{\mathrm{reset}}$" in prompt:
+            return r"\kappa_{\mathrm{reset}}$. Extra prose"
+        if r"denoted by $\zeta_{\mathrm{reset}}$" in prompt:
+            return r"\zeta_{\mathrm{reset}}$. Extra prose"
+        return "r$. The earlier convention was lost"
     if prompt.endswith("The quick"):
         return " brown fox jumps"
     if prompt.endswith("Explicit:"):
@@ -122,6 +128,62 @@ async def boundaries(page):
             await page.keyboard.press(f"{MOD}+z")
             actual = await page.evaluate("ed.text()")
             check(f"{mode}: undo preserves typed text and suffix {i + 1}", actual == before + "\n\n" + prefix + suffix)
+
+
+async def context_selection(page, fake, completes):
+    original_length = await page.evaluate("ed.view.state.doc.length")
+    filler = "\n\n".join(f"Run {i} records trial states and numerical convergence diagnostics." for i in range(120))
+    for mode, symbol in (("source", r"\zeta_{\mathrm{reset}}"), ("live", r"\kappa_{\mathrm{reset}}")):
+        await page.click(f'[data-mode="{mode}"]')
+        definition = f"The reset parameter is denoted by ${symbol}$."
+        added = (
+            "\n\n## Conventions\n\n"
+            + definition
+            + "\n\n"
+            + filler
+            + "\n\n## Current results\n\nWe denote the reset parameter by $"
+        )
+        await page.evaluate(
+            """added => {
+                const end = ed.view.state.doc.length;
+                ed.view.dispatch({changes: {from: end, insert: added + '$.'},
+                    selection: {anchor: end + added.length}});
+                ed.focus();
+            }""",
+            added,
+        )
+        before = await page.evaluate("ed.text()")
+        await page.keyboard.press("Alt+Backslash")
+        shown = await wait_for(page, f"{GHOST} === {json.dumps(symbol)}")
+        check(f"{mode}: an earlier definition reaches the model", shown, repr(await ghost(page)))
+        sent = fake.generated()[-1]
+        request = json.loads(completes[-1])
+        check(
+            f"{mode}: optional context crosses the provider bridge",
+            request.get("context", {}).get("title") == "Plan"
+            and definition in request.get("context", {}).get("excerpts", [])
+            and "## Current results" in request.get("context", {}).get("headings", []),
+        )
+        check(
+            f"{mode}: model context retains headings and cursor within its budget",
+            len(sent["prompt"]) <= 4000
+            and "# Plan" in sent["prompt"]
+            and "## Current results" in sent["prompt"]
+            and sent["prompt"].endswith("We denote the reset parameter by $")
+            and sent["suffix"] == "$.",
+        )
+        await page.keyboard.press("Tab")
+        actual = await page.evaluate("ed.text()")
+        cursor = len(before) - 2
+        check(f"{mode}: context stays outside accepted note text", actual == before[:cursor] + symbol + before[cursor:])
+        await page.keyboard.press(f"{MOD}+z")
+        check(f"{mode}: undo restores the original document", await page.evaluate("ed.text()") == before)
+    # Remove the long fixture and reveal the original lines for the following exclusion checks.
+    await page.evaluate(
+        """end => ed.view.dispatch({changes: {from: end, to: ed.view.state.doc.length},
+            selection: {anchor: 0}, scrollIntoView: true})""",
+        original_length,
+    )
 
 
 async def main():
@@ -350,6 +412,7 @@ async def main():
             await page.keyboard.press("Escape")
 
             await boundaries(page)
+            await context_selection(page, fake, completes)
 
             # ---- where it never appears
             n = len(fake.generated())

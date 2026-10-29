@@ -102,11 +102,20 @@ export interface NotifyOptions {
     device, by Claude or by background work. */
 export type ChangeKind = 'library' | 'notes' | 'tasks' | 'annotations' | 'plugins' | 'fields' | 'sources';
 
+/** Bounded source context from this note before the cursor (API 1.10). */
+export interface SuggestionContext {
+  title: string;
+  headings: string[];
+  excerpts: string[];
+}
+
 /** Plain text around the cursor; no editor-library objects cross the plugin boundary.
  * The newest registration is active; disposing it restores the preceding provider. */
 export interface SuggestionSource {
   ready(): boolean;
-  complete(prefix: string, suffix: string, signal: AbortSignal): Promise<string>;
+  complete(prefix: string, suffix: string, signal: AbortSignal, context?: SuggestionContext): Promise<string>;
+  /** API 1.10: request title, section ancestry and relevant earlier definitions as a fourth argument. */
+  includeContext?: boolean;
   /** Pause after typing in milliseconds (350 by default). */
   delay?: number;
 }

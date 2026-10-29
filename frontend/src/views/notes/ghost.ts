@@ -8,13 +8,16 @@ import type { EditorState, Transaction } from '@codemirror/state';
 import type { EditorView, ViewUpdate } from '@codemirror/view';
 import type { SyntaxNode } from '@lezer/common';
 import type { CM } from './editor.js';
+import type { SuggestionContext } from '../../plugins/api.js';
+import { suggestionContext } from './suggestionContext.js';
 import { type Ghost, canSuggestAt, consumeTyped, contextAround, nextWord } from './ghostLogic.js';
 
 export interface GhostSource {
   /** Suggestions may be asked for now (setting on, Ollama and the model there). */
   ready(): boolean;
   /** The suggestion for the cursor between ``prefix`` and ``suffix`` ('' for none). */
-  complete(prefix: string, suffix: string, signal: AbortSignal): Promise<string>;
+  complete(prefix: string, suffix: string, signal: AbortSignal, context?: SuggestionContext): Promise<string>;
+  includeContext?: boolean;
   /** Pause in typing before asking (ms). */
   delay?: number;
   /** The provider changed or stopped: clear its pending and visible suggestion. */
@@ -136,7 +139,7 @@ export function ghostText(cm: CM, source: GhostSource) {
       this.ctrl = ctrl;
       let text = '';
       try {
-        text = await source.complete(prefix, suffix, ctrl.signal);
+        text = await source.complete(prefix, suffix, ctrl.signal, source.includeContext ? suggestionContext(doc, sel.head) : undefined);
       } catch { return; /* cancelled, or no server: no suggestion */ }
       if (ctrl.signal.aborted || this.ctrl !== ctrl) return;
       this.ctrl = null;

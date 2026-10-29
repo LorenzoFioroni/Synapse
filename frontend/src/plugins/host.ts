@@ -121,7 +121,8 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     editor: {
       suggestions: { register: (source) => keep(registerSuggestions({
         ready: () => !!guarded(info, 'suggestion readiness', () => source.ready())(),
-        complete: (prefix, suffix, signal) => source.complete(prefix, suffix, signal),
+        complete: (prefix, suffix, signal, context) => source.complete(prefix, suffix, signal, context),
+        includeContext: source.includeContext,
         delay: source.delay,
       })) },
       onOpened: (fn) => {
