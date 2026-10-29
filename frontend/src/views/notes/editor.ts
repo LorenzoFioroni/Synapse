@@ -9,6 +9,9 @@ import { type GhostSource, ghostText } from './ghost.js';
 import { type PreviewDeps, livePreview } from './livePreview.js';
 import { refitOnResize } from './mathFit.js';
 import { splitFrontmatter } from './mdscan.js';
+import { underlineLanguage } from './underline.js';
+import { formattingKeys } from './formatting.js';
+import { delimiterPairing } from './pairing.js';
 
 export type CM = typeof import('../../../vendor/cm6/cm6.js');
 export type MD = typeof import('../../../vendor/md/md.js');
@@ -101,6 +104,7 @@ export function highlightStyle(cm: CM): HighlightStyle {
     { tag: [t.heading4, t.heading5, t.heading6], class: 'cmt-h cmt-h4' },
     { tag: t.strong, class: 'cmt-strong' },
     { tag: t.emphasis, class: 'cmt-em' },
+    { tag: t.special(t.emphasis), class: 'cmt-underline' },
     { tag: t.strikethrough, class: 'cmt-strike' },
     { tag: [t.link, t.url], class: 'cmt-link' },
     { tag: t.monospace, class: 'cmt-code' },
@@ -168,16 +172,17 @@ export async function createEditor(
     cm.EditorView.lineWrapping,
     cm.indentOnInput(),
     cm.bracketMatching(),
+    delimiterPairing(cm),
     cm.closeBrackets(),
     cm.highlightSelectionMatches(),
     cm.search({ top: true }),
-    cm.markdown({ base: cm.markdownLanguage, codeLanguages: cm.languages, extensions: [frontmatter(cm)] }),
+    cm.markdown({ base: cm.markdownLanguage, codeLanguages: cm.languages, extensions: [frontmatter(cm), underlineLanguage(cm)] }),
     cm.syntaxHighlighting(highlightStyle(cm)),
     completions(cm, data),
     modeSlot.of(modeExt(currentMode)),
     ghost,
     cm.EditorView.contentAttributes.of({ spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences' }),
-    cm.keymap.of([...keys, ...cm.closeBracketsKeymap, ...cm.markdownKeymap, ...cm.defaultKeymap,
+    cm.keymap.of([...keys, ...formattingKeys(cm), ...cm.closeBracketsKeymap, ...cm.markdownKeymap, ...cm.defaultKeymap,
       ...cm.searchKeymap, ...cm.historyKeymap, cm.indentWithTab]),
     cm.EditorView.updateListener.of((u) => {
       if (u.docChanged) handlers.onChange?.(u.state.doc.toString());

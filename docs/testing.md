@@ -104,6 +104,7 @@ These check rules of the code base rather than behaviour:
 | `lookupJob.test.mjs` | `LookupJob` in `views/metadataReview.js` |
 | `noteSession.test.mjs` | `views/notes/noteSession.js`: saving, conflicts, drafts |
 | `render.test.mjs` | `views/notes/render.js` |
+| `writing.test.mjs` | Formatting/Undo, generated dollar/backtick pairs, literal math/code, multiple selections and safe underline rendering |
 | `store.test.mjs` | `sortedItems` in `store.js`, `hitBadge` in `util.js` |
 | `extend.test.mjs` | `extend.js`: the registries of the extension points, parsing, matching and showing keys, which keys a plugin may take, the command palette's ranking |
 | `tabs.test.mjs` | `tabs/model.js`: the app's tabs (opening, reuse, closing and where it goes, reopening, order, saving and restoring; note tabs: the preview tab, keeping, renamed and deleted notes, what a dragged tab may be); `viewer/jumpHistory.js`; `windows.js`: the address of a new window |
@@ -176,6 +177,7 @@ looking for a bug.
 | `devices` | 8781 | Pairing under `--lan`: the unpaired page, the QR code, pairing, renaming and removing a device |
 | `equations` | 8786 | Editing notes with equations |
 | `editor_stability` | 8797 | Plain-text typing and autosave in a rich note: frame-by-frame scroll/cursor stability, retained gallery DOM, citation refreshes and callout emphasis |
+| `writing` | 8841 | Live/Source formatting keys and delimiter pairing; nested callouts with tables, source editing and underline rendering |
 | `export` | 8792 | Exporting a note: a self-contained HTML page that works offline, portable Markdown, PDF through the print dialog |
 | `extension` | 8789, 8790 | The browser extension: options page connects, the popup reads an article's citation tags and saves it with a tag |
 | `gallery` | 8794 | Figure numbers and `\cref` (read mode, live preview, exports); galleries: the carousel in read mode and the live preview, editing its source, autocomplete in captions, exported as one figure with panels (HTML, PDF, Markdown); galleries switched off and on in Extended Markdown's settings, then the whole plugin off and on, in the open note |

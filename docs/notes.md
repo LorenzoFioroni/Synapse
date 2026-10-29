@@ -310,6 +310,8 @@ only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 | `tree.ts`, `treeInput.ts` | The notes list and filter; mouse, keyboard, context menu, drag and drop. A click opens a note in the preview tab, a double-click keeps its tab (F2 renames). |
 | `fileOps.ts` | New, rename, move, trash with Undo, the trash dialog, rescan. |
 | `editor.ts`, `livePreview.ts`, `previewWidgets.ts` | CodeMirror 6 (`vendor/cm6/`), the live preview decorations (built on `mdscan.ts`) and the widgets they draw. |
+| `formatting.ts`, `pairing.ts` | Markdown formatting commands, selection mapping and undo; generated dollar/backtick pairs and their closing/deletion behavior. |
+| `underline.ts`, `quoteBlocks.ts` | The additive `++underline++` syntax in the renderer and editor grammar; quote/callout containers spanning lines and block widgets, and removing quote prefixes from table fragments. |
 | `completion.ts`, `library.ts` | `[@`, `[[` and `{{task` autocomplete and their ranking (tasks come from the Tasks module through `taskHooks`). |
 | `ghost.ts`, `ghostLogic.ts`, `hooks.ts` | Autocompletion: suggestions as ghost text, from the public suggestion source registered by the Autocompletion contributed plugin (see [autocompletion](autocompletion.md)). |
 | `render.ts` | Markdown to HTML with markdown-it and KaTeX (`vendor/md/`): math, links, citations, callouts, tasks. Raw HTML is never rendered. No DOM. |
@@ -375,7 +377,45 @@ The work done per keystroke is kept small, so long notes stay quick to edit:
   shared by every renderer.
 
 Callouts keep ordinary text upright while preserving explicit italic and bold-italic emphasis,
-including inside nested quotes.
+including inside nested quotes. `quoteBlocks.ts` supplies CodeMirror block wrappers for quotes
+and callouts, so paragraphs, tables and nested quotes share a continuous border and background.
+Tables render without their source `>` prefixes inside that container; editing a table reveals
+its original source while leaving the rest of the callout rendered.
+
+### Writing shortcuts and paired delimiters
+
+In Live and Source modes, use Cmd on macOS or Ctrl elsewhere:
+
+| Shortcut | Action | Markdown |
+|---|---|---|
+| Cmd/Ctrl+B | Toggle bold | `**text**` |
+| Cmd/Ctrl+I | Toggle italic | `*text*` |
+| Cmd/Ctrl+U | Toggle underline | `++text++` |
+| Cmd/Ctrl+Shift+X | Toggle strikethrough | `~~text~~` |
+| Cmd/Ctrl+Shift+C | Toggle inline code | `` `text` `` |
+| Cmd/Ctrl+K | Insert a web link, or select an existing link's URL | `[text](https://)` |
+
+Formatting keeps the selected text selected (including backwards selections); repeating the
+shortcut removes that format. Without a selection it removes the surrounding matching format,
+or inserts an empty pair with the cursor inside. Multiline selections format nonempty lines
+individually, retaining quote/list prefixes. Each command is its own undo step. Formatting
+does not modify math, fenced code or front matter; inline code can be toggled with its own key.
+Plugin shortcut validation reserves these keys so a plugin cannot take them over.
+
+Underline is an additive notes syntax: exactly two `+` characters on each side, with no inner
+edge whitespace. It can contain bold, italic, links and citations; escaped pluses, code and math
+remain literal, and raw HTML stays disabled. It renders in Live/Read and HTML/PDF exports;
+Markdown exports retain `++text++` for viewers that support it. Stored note text and existing
+database schemas do not need rewriting.
+
+Typing `$` or a backtick at a text boundary inserts a matching closer. Typing one around a
+selection preserves the selection; backticks use a longer delimiter when the selection already
+contains backticks. A second dollar between an empty pair expands it to `$$…$$`; three backticks
+make a fence, and Enter places its closing fence on a separate line. Multiline selections get
+display-math or fenced-code delimiters. Typing a generated closing mark moves past it; Backspace
+between an empty pair removes the pair. Generated pairs follow edits and undo/redo. Escaped
+delimiters and characters typed inside math, code or front matter remain literal. Write `\$` for
+a literal currency symbol when starting new text.
 
 Task boxes are drawn the same way in both modes (a rounded square, ticked and filled when done),
 and a done task is greyed and struck through. A `{{task:id}}` line is different: it shows a task record (see
