@@ -9,6 +9,8 @@ Starts its own server on port 8793 with a throw-away data folder, and a stand-in
 """
 
 import asyncio
+import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -44,7 +46,17 @@ def reply(payload):
     if prompt.endswith("Explicit:"):
         return " asked for"
     if prompt.endswith("Energy $E = "):
-        return "mc^2"
+        return "mc^2$. More prose outside the equation"
+    if prompt.endswith("Purity $P = "):
+        return "1$. More prose outside the equation"
+    if prompt.endswith("Function ("):
+        return "f([x, {y}])) beyond the outer parenthesis"
+    if prompt.endswith("**The state is "):
+        return "*locally* mixed**. More prose outside the emphasis"
+    if prompt.endswith("Cost $c = "):
+        return r"\text{cost \$5}$. More prose"
+    if prompt.endswith(r"Fraction $r = \frac{ "):
+        return r"\sqrt{x}}$. More prose"
     return " world"
 
 
@@ -67,6 +79,49 @@ async def ghost(page):
 async def to_end(page):
     await page.locator(".cm-line").last.click()
     await page.keyboard.press(f"{MOD}+End")
+
+
+async def boundaries(page):
+    cases = [
+        ("Purity $P = ", "$.", "1"),
+        ("Function (", ").", "f([x, {y}])"),
+        ("**The state is ", "**.", "*locally* mixed"),
+        ("> [!note] Bounds\n> Energy $E = ", "$.", "mc^2"),
+        ("Cost $c = ", "$.", r"\text{cost \$5}"),
+        (r"Fraction $r = \frac{ ", "}$.", r"\sqrt{x}"),
+    ]
+    await page.evaluate("async () => { window.ed = (await import('/js/views/notes/workspace.js')).ws.editor; }")
+    for mode in ("source", "live"):
+        await page.click(f'[data-mode="{mode}"]')
+        for i, (prefix, suffix, want) in enumerate(cases):
+            before = await page.evaluate("ed.text()")
+            automatic = i % 2 == 0
+            start = prefix[:-1] if automatic else prefix
+            await page.evaluate(
+                """([start, suffix]) => {
+                    const end = ed.view.state.doc.length;
+                    ed.view.dispatch({changes: {from: end, insert: '\\n\\n' + start + suffix},
+                        selection: {anchor: end + 2 + start.length}});
+                    ed.focus();
+                }""",
+                [start, suffix],
+            )
+            if automatic:
+                await page.keyboard.type(prefix[-1])
+            else:
+                await page.keyboard.press("Alt+Backslash")
+            shown = await wait_for(page, f"{GHOST} === {json.dumps(want)}")
+            check(
+                f"{mode}: {'automatic' if automatic else 'explicit'} bounded suggestion {i + 1}",
+                shown,
+                repr(await ghost(page)),
+            )
+            await page.keyboard.press("Tab")
+            actual = await page.evaluate("ed.text()")
+            check(f"{mode}: acceptance preserves suffix {i + 1}", actual == before + "\n\n" + prefix + want + suffix)
+            await page.keyboard.press(f"{MOD}+z")
+            actual = await page.evaluate("ed.text()")
+            check(f"{mode}: undo preserves typed text and suffix {i + 1}", actual == before + "\n\n" + prefix + suffix)
 
 
 async def main():
@@ -97,7 +152,7 @@ async def main():
         s.put(BASE + "/api/plugin-host/autocompletion/settings", json={"url": dead}).raise_for_status()
 
         async with async_playwright() as pw:
-            b = await pw.chromium.launch()
+            b = await pw.chromium.launch(channel=os.environ.get("CHROME_CHANNEL"))
             page = await b.new_page(viewport={"width": 1400, "height": 1000})
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
@@ -293,6 +348,8 @@ async def main():
             asked = await wait_for(page, f"{GHOST} === ' asked for'", 3000)
             check("Alt+\\ asks for a suggestion at once", asked)
             await page.keyboard.press("Escape")
+
+            await boundaries(page)
 
             # ---- where it never appears
             n = len(fake.generated())

@@ -62,7 +62,8 @@ the status has found both:
   gives up (`superseded`), and the editor aborts the request it no longer needs as soon as you type.
 - **Where suggestions never appear**: in front matter, code and comments, while the citation or
   link list is open, while text is selected, and in the middle of a line (only when the rest of
-  the line is empty or closing marks such as `$`, `)` or `]`). A pause of 350 ms after typing comes
+  the line is empty or closing marks such as `$`, `)` or `]`, with optional punctuation such as
+  `$.`, `).` or `**.`). This also applies to explicit requests. A pause of 350 ms after typing comes
   first, and a suggestion needs a few characters before the cursor.
 
 ## How it works
@@ -82,6 +83,7 @@ plugins/autocompletion/
   server/__init__.py                    routes GET /status (fresh=1, warm=1) · POST /complete {prefix, suffix}
   server/completer.py                   Completer: status cache, one request at a time, superseded requests
   server/prompt.py                      the request (prefix/suffix, stop, length) and cleaning the answer
+  server/boundaries.py                  insertion boundaries, escapes, nested brackets/code/math
   server/ollama.py                      plugin.http client (failures become Unavailable), local_url
 ```
 
@@ -104,7 +106,14 @@ at most 64 tokens for a line and 220 for a paragraph, and generation stops at th
 **The answer** (`prompt.clean`) is cut to one line (always when text follows the cursor on its
 line) or one paragraph; special tokens a model prints are dropped; a leading space is dropped
 after a space; and text that repeats what follows the cursor is removed (for models that did not
-see it, also a closing `$` or bracket that is already there).
+see it as well as fill-in-the-middle models). When the suffix begins with a closing mark,
+`boundaries.trim` stops the insertion before the model closes that enclosing span and writes
+past it. The existing suffix stays in the note. Escaped dollars, new nested brackets, code spans,
+math inside emphasis and contractions are preserved. For example, before `).`, `f(x)) more`
+becomes `f(x)`, while a suggestion already ending at `f(x)` keeps its own closing parenthesis.
+Bare punctuation repeated at the end of a suggestion is removed without cutting decimal points
+inside it. These limits protect insertion syntax; they do not check the scientific accuracy of
+the model's text. The model, prompt context budget and generation settings are unchanged.
 
 **The editor.** The suggestion is a widget decoration at the cursor, so it is never part of the
 note: saving, undo and the change feed do not see it. Its keys come before the editor's other
@@ -120,12 +129,17 @@ counts as typing it, so the rest stays.
   nothing sent while off or while the model is missing, the request sent, superseded requests,
   and `clean` on typical answers. It uses `tests/fake_ollama.py`, a stand-in for Ollama's API.
 - `tests/js/ghost.test.mjs`: `ghostLogic.ts`.
+- `tests/plugins/test_autocompletion_boundaries.py`: FIM and plain continuations before existing
+  math, bracket, emphasis, underline, strike and quote closers; nested constructs and escapes.
 - `tests/e2e/assist_checklist.py` (port 8793): turning the plugin on, the notice and no requests without Ollama,
   Settings → Autocompletion (status, steps, refused address, Check Again), and the ghost text
   (Tab, Esc, typing through, word by word, Alt+\, clicking, undo, not mid-line, not in code, not
-  with the link list open, requests stop when the model goes away, off sends nothing).
+  with the link list open, requests stop when the model goes away, off sends nothing). Live and
+  Source checks also cover bounded automatic/explicit suggestions before punctuation, accepting
+  them with Tab and undoing the insertion while retaining the typed text and original suffix.
 
-Not tried here: a real model in Ollama (the tests use the stand-in), Safari, and the iPad.
+These automated checks use the stand-in model: they verify insertion syntax and editor behavior,
+not the factual quality of live-model suggestions. Safari and the iPad still need manual checks.
 
 The Settings section belongs to the plugin: switching Autocompletion off removes its navigation
 and controls immediately, even while Settings is open. Switching it back on mounts one fresh

@@ -10,8 +10,8 @@ export const BEFORE = 6000;
 export const AFTER = 2000;
 
 /** What may follow the cursor on its line for a suggestion to appear: nothing, or closing marks
- *  ("$" of inline math, a bracket, the end of emphasis …), as in code editors. */
-const REST_OK = /^[\s)\]}$*_`'"]*$/;
+ *  ("$" of inline math, a bracket, the end of emphasis …), followed by punctuation. */
+const REST_OK = /^[\s)\]}$*_`'"+~.,;:!?…]*$/;
 
 /** May a suggestion appear with ``after`` following the cursor on its line? ``prefix`` is
  *  everything before the cursor: unless asked for (``explicit``), it needs some text to go on. */

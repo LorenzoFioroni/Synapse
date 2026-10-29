@@ -390,7 +390,9 @@ never mix.
   grey after the cursor. Tab accepts, Esc dismisses, Cmd/Ctrl+→ takes one word, Alt/⌥+\ asks for
   one now, clicking it accepts it. Only local models are supported: install Ollama and a model
   (`ollama pull qwen2.5-coder:1.5b`); Settings says what is missing. Without them nothing is sent
-  and the notes say so once. See [docs/autocompletion.md](docs/autocompletion.md).
+  and the notes say so once. Suggestions also work before closing marks followed by punctuation
+  (such as `$.`); they stop before existing closers while retaining nested brackets and escaped
+  dollars. See [docs/autocompletion.md](docs/autocompletion.md).
 - Sortable, resizable, re-orderable columns; light/dark theme; compact density;
   keyboard navigation (see Settings → Library & Shortcuts).
 - Built-in PDF viewer with highlights, underlines, boxes (with a border, a fill or both: a filled
