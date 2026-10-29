@@ -43,9 +43,31 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     ignoreEvent(e: Event) { return e.type !== 'mousedown'; }   // a click places the cursor (and reveals the source)
   }
 
+  // A refresh invalidates link/label data, but often leaves the rendered HTML unchanged.
+  // Keep that DOM (and its loaded images and carousel position) rather than briefly replacing
+  // a tall block with unloaded content, which makes CodeMirror readjust its scroll anchor.
+  class RenderedWidget extends HtmlWidget {
+    private html?: string;
+    private rendered(): string {
+      if (this.html === undefined) this.html = super.toDOM().innerHTML;
+      return this.html;
+    }
+    eq(o: RenderedWidget) {
+      // Either instance may be retained after an equal comparison; both need the original snapshot.
+      if (super.eq(o)) { this.html = o.html = this.html ?? o.html; return true; }
+      return this.cls === o.cls && this.block === o.block && this.rendered() === o.rendered();
+    }
+    toDOM(_view?: EditorViewT): HTMLElement {
+      const el = document.createElement(this.block ? 'div' : 'span');
+      el.className = `cm-lp-widget ${this.cls}`;
+      el.innerHTML = this.rendered();
+      return el;
+    }
+  }
+
   // the carousel's arrows and dots turn it (Extended Markdown's figures/galleryView.ts); a click anywhere
   // else opens the source
-  class SpoilerWidget extends HtmlWidget {
+  class SpoilerWidget extends RenderedWidget {
     ignoreEvent(e: Event) { return !!(e.target as Element | null)?.closest?.('.spoiler-toggle, summary, a') || super.ignoreEvent(e); }
     toDOM(view?: EditorViewT): HTMLElement {
       const el = super.toDOM(view);
@@ -64,17 +86,20 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     }
   }
 
-  class GalleryWidget extends HtmlWidget {
+  class GalleryWidget extends RenderedWidget {
     ignoreEvent(e: Event) { return !!(e.target as Element | null)?.closest?.('.gallery-btn, .gallery-dot') || super.ignoreEvent(e); }
   }
 
-  class MarkdownBlockWidget extends HtmlWidget {
+  class MarkdownBlockWidget extends RenderedWidget {
     ignoreEvent(e: Event) {
       return !!(e.target as Element | null)?.closest?.('[data-task-act], a, button, input') || super.ignoreEvent(e);
     }
   }
 
-  class TocWidget extends MarkdownBlockWidget {
+  class TocWidget extends HtmlWidget {
+    ignoreEvent(e: Event) {
+      return !!(e.target as Element | null)?.closest?.('[data-task-act], a, button, input') || super.ignoreEvent(e);
+    }
     toDOM(view: EditorViewT): HTMLElement {
       const el = super.toDOM(view);
       el.addEventListener('click', (event) => {
@@ -200,7 +225,7 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
     }, { block, cls: 'cm-lp-spoiler' }),
 
     /** A table rendered as in read mode. ``version`` changes when link or library data did. */
-    table: (src: string, lookup: Lookup, version: string) => new HtmlWidget(`t:${version}:${src}`, (el) => {
+    table: (src: string, lookup: Lookup, version: string) => new RenderedWidget(`t:${version}:${src}`, (el) => {
       const r = deps.renderer();
       el.innerHTML = r ? r.render(src) : '';
       resolveFragmentRefs(el, lookup);

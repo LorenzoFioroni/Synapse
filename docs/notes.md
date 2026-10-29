@@ -362,12 +362,20 @@ The work done per keystroke is kept small, so long notes stay quick to edit:
   note's label lookup, so math, citations, links and cross-references in its cells match Read mode. While a
   `$$` block is being edited, its whole source is protected from CodeMirror's Markdown escape and
   emphasis decorations: TeX such as `\,` and `_` therefore stays literal, as it does in Read mode.
+- **Stable refreshes.** After autosave or a link/library refresh, synchronous HTML widgets compare
+  rendered HTML as well as their keys. Unchanged galleries, tables, spoilers and plugin blocks keep
+  their DOM, loaded images and carousel position, avoiding scroll jumps while writing elsewhere.
+  The cached HTML follows equal widget instances across edits; changed citation metadata still
+  redraws the affected content. Asynchronous Mermaid rendering stays outside this comparison.
 - **Read mode.** `renderRead` keeps every top-level block whose HTML did not change, and changes
   the DOM in place: ticking a task redraws only its list, and formulas, diagrams and embedded
   notes elsewhere are not drawn or loaded again. Opening read mode, the theme and the math
   settings redraw everything (`fresh`), so embedded notes are reloaded then.
 - **KaTeX** output is remembered by formula and set of macros (`katexMemo` in `render.ts`),
   shared by every renderer.
+
+Callouts keep ordinary text upright while preserving explicit italic and bold-italic emphasis,
+including inside nested quotes.
 
 Task boxes are drawn the same way in both modes (a rounded square, ticked and filled when done),
 and a done task is greyed and struck through. A `{{task:id}}` line is different: it shows a task record (see
