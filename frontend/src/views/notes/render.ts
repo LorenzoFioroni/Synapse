@@ -22,6 +22,7 @@ import { type Cite, GALLERY_INFO, attachmentOf, parseCites, referenceDefinition,
 import { hooksVersion, noteHooks } from './hooks.js';
 import { type Definition, HAS_DEFINITIONS, type Macro, type Macros, baseMacros, macroSource, parseDefinitions, withDefinitions } from './macros.js';
 import { takeSectionLabels } from './sections.js';
+import { underlineMarkdown } from './underline.js';
 
 /** What a renderer may know about a cited key (any CiteEntry fits). */
 export interface CiteInfo { title?: string; authors?: string; year?: number | string | null; trashed?: boolean }
@@ -434,6 +435,7 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
     const md = new lib.MarkdownIt({ html: false, linkify: true, typographer: false });
     md.disable('code');
     md.use(lib.footnote);
+    md.use(underlineMarkdown);
     md.block.ruler.before('fence', 'math_block', mathBlock, { alt: ['paragraph', 'reference', 'blockquote', 'list'] });
     md.inline.ruler.before('escape', 'math_inline', mathInline());
     md.inline.ruler.before('link', 'wiki', wikiRule);

@@ -170,6 +170,9 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   numbered figures are part of Extended Markdown (`plugins/extended-markdown/frontend/figures/`, through `hooks.ts`). `settingsView.ts` is the Settings page; its markup
   is in `views/settings/page.ts`, and Backups and Devices have their own modules there. `settings/pluginSections.ts` owns the lifecycle
   of plugin Settings sections; `settings/exportFormats.ts` follows active export providers; Autocompletion supplies its own section from its plugin.
+  Within the notes editor, `formatting.ts` owns Markdown formatting commands, `pairing.ts` owns
+  dollar/backtick input behavior, `underline.ts` shares underline syntax between the editor and
+  renderer, and `quoteBlocks.ts` keeps quotes/callouts continuous across rendered tables.
   `plugins/extended-markdown/frontend/` is the Extended Markdown package: one folder per syntax
   extension (`figures/`, `tasks/`, `spoilers/`), each a `MarkdownExtension` (`extension.ts`) adding markdown-it
   rules, export preparation and what it starts while on; `index.ts` turns each on or off from the

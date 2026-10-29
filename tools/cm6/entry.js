@@ -2,8 +2,8 @@
 // Languages for fenced code blocks (language-data) are loaded lazily as separate chunks.
 export { EditorState, StateEffect, StateField, Compartment, RangeSetBuilder, Transaction, Annotation, EditorSelection } from '@codemirror/state';
 export { EditorView, keymap, drawSelection, highlightActiveLine, dropCursor, rectangularSelection, crosshairCursor,
-  highlightSpecialChars, placeholder, Decoration, ViewPlugin, WidgetType, hoverTooltip, showTooltip } from '@codemirror/view';
-export { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from '@codemirror/commands';
+  highlightSpecialChars, placeholder, Decoration, BlockWrapper, ViewPlugin, WidgetType, hoverTooltip, showTooltip } from '@codemirror/view';
+export { defaultKeymap, history, historyKeymap, isolateHistory, invertedEffects, indentWithTab, undo, redo } from '@codemirror/commands';
 export { syntaxHighlighting, HighlightStyle, defaultHighlightStyle, indentOnInput, bracketMatching, foldGutter,
   foldKeymap, syntaxTree, LanguageDescription } from '@codemirror/language';
 export { markdown, markdownLanguage, markdownKeymap } from '@codemirror/lang-markdown';

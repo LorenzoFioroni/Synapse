@@ -32,11 +32,11 @@ import { type Equations, previewWidgets } from './previewWidgets.js';
 import type { TaskPreview } from './workspace.js';
 import { type Figures, type Spoiler, noteHooks } from './hooks.js';
 import { sectionsOf } from './sections.js';
+import { calloutAt, quoteWrappers, tableSource } from './quoteBlocks.js';
+import { previewSelection } from './previewSelection.js';
 
 /** A DOM text node (``Text`` is CodeMirror's document here). */
 type Text_ = globalThis.Text;
-
-const CALLOUT_TYPES = ['note', 'tip', 'warning', 'question', 'quote', 'info', 'important', 'caution', 'example', 'todo'];
 
 /** What the live preview needs from the notes view. */
 export interface PreviewDeps {
@@ -63,11 +63,12 @@ const TASK_ITEM = /^\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+\{\{task:[a-z0-9]{4,32}\}\}\
 const TASK_LINE = /^\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s+)?\{\{task:[a-z0-9]{4,32}\}\}\s*$/;
 
 /** The block-level decorations, and the ranges they draw (nothing inline is added inside those). */
-interface Blocks { deco: DecorationSet; taken: [number, number][]; version: number }
+interface Blocks { deco: DecorationSet; taken: [number, number][]; version: number; quotes: ReturnType<typeof quoteWrappers> }
 
 export function livePreview(cm: CM, deps: PreviewDeps) {
   const { Decoration, StateField, StateEffect, EditorView, ViewPlugin, syntaxTree } = cm;
   const W = previewWidgets(cm, deps);
+  const drag = previewSelection(cm);
   const refresh = StateEffect.define<null>();
   // Lines show their source only while you are editing: with the editor unfocused, all is rendered.
   const setFocus = StateEffect.define<boolean>();
@@ -153,14 +154,16 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
   /** Where the selection is, and the tests built on it. */
   function selectionOf(state: EditorState) {
     const doc = state.doc;
-    const focused = state.field(focusField, false);
-    const active: [number, number][] = focused ? state.selection.ranges.map((r) => [doc.lineAt(r.from).from, doc.lineAt(r.to).to]) : [];
+    const held = state.field(drag.held, false);
+    const selection = held?.selection ?? state.selection;
+    const focused = held ? held.focused : state.field(focusField, false);
+    const active: [number, number][] = focused ? selection.ranges.map((r) => [doc.lineAt(r.from).from, doc.lineAt(r.to).to]) : [];
     const isActive = (from: number, to: number) => active.some(([a, b]) => from <= b && to >= a);
     return {
       lineActive: (pos: number) => { const l = doc.lineAt(pos); return isActive(l.from, l.to); },
       blockActive: (from: number, to: number) => isActive(doc.lineAt(from).from, doc.lineAt(to).to),
       // inline things open only when the selection is in them or right next to them
-      touches: (from: number, to: number) => !!focused && state.selection.ranges.some((r) => r.from <= to && r.to >= from),
+      touches: (from: number, to: number) => !!focused && selection.ranges.some((r) => r.from <= to && r.to >= from),
     };
   }
 
@@ -249,7 +252,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
             // drawn by the renderer, so math, citations and links in its cells are rendered too
             const lookup = refLookup(state, eq);
             taken.push([from, to]);
-            out.push(Decoration.replace({ widget: W.table(doc.sliceString(from, to), lookup, `${version}:${eq.sig}`), block: true }).range(from, to));
+            out.push(Decoration.replace({ widget: W.table(tableSource(doc, node.node), lookup, `${version}:${eq.sig}`), block: true }).range(from, to));
           }
           return false;
         }
@@ -292,18 +295,18 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
         return name === 'Document' || name.endsWith('List') || name === 'ListItem' || name === 'Blockquote' ? undefined : false;
       },
     });
-    return { deco: Decoration.set(out, true), taken, version };
+    return { deco: Decoration.set(out, true), taken, version, quotes: quoteWrappers(cm, state, s.spans) };
   }
 
   const blocks = StateField.define<Blocks>({
     create: (state) => buildBlocks(state, 0),
     update(v, tr) {
       const refreshed = tr.effects.some((e) => e.is(refresh));
-      if (refreshed || tr.docChanged || tr.selection || tr.effects.some((e) => e.is(setFocus))
+      if (refreshed || tr.docChanged || tr.selection || tr.startState.field(drag.held, false) !== tr.state.field(drag.held, false) || tr.effects.some((e) => e.is(setFocus))
           || syntaxTree(tr.startState) !== syntaxTree(tr.state)) return buildBlocks(tr.state, v.version + (refreshed ? 1 : 0));
       return v;
     },
-    provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
+    provide: (f) => [EditorView.decorations.from(f, (v) => v.deco), EditorView.blockWrappers.from(f, (v) => v.quotes)],
   });
 
   /* ------------------------------------------------------------------ inline */
@@ -468,9 +471,9 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
           }
           return;
         }
-        if (name === 'Emphasis' || name === 'StrongEmphasis' || name === 'Strikethrough' || name === 'InlineCode') {
+        if (name === 'Emphasis' || name === 'StrongEmphasis' || name === 'Strikethrough' || name === 'Underline' || name === 'InlineCode') {
           if (overlapsTaken(node.from, node.to) || touches(node.from, node.to)) return name === 'InlineCode' ? false : undefined;
-          const markName = name === 'Strikethrough' ? 'StrikethroughMark' : name === 'InlineCode' ? 'CodeMark' : 'EmphasisMark';
+          const markName = name === 'Underline' ? 'UnderlineMark' : name === 'Strikethrough' ? 'StrikethroughMark' : name === 'InlineCode' ? 'CodeMark' : 'EmphasisMark';
           for (const m of node.node.getChildren(markName)) replace(m.from, m.to, hide);
           return name === 'InlineCode' ? false : undefined;
         }
@@ -487,6 +490,10 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
           return false;
         }
         if (name === 'Image') return false;
+        if (name === 'QuoteMark') {
+          if (!lineActive(node.from)) replace(node.from, node.to, hide);
+          return false;
+        }
         if (name === 'Escape') {
           if (!touches(node.from, node.to) && !overlapsTaken(node.from, node.to)) replace(node.from, node.from + 1, hide);
           return false;
@@ -505,22 +512,16 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
         }
         if (name === 'Blockquote') {
           const first = doc.lineAt(node.from);
-          const m = /^\s*>\s*\[!([A-Za-z]+)\]([+-]?)[ \t]*(.*)$/.exec(first.text);
-          const type = m ? (CALLOUT_TYPES.includes(m[1].toLowerCase()) ? m[1].toLowerCase() : 'note') : null;
+          const callout = calloutAt(doc, node.from);
+          const type = callout?.type;
           for (let p = node.from; p <= node.to; p = doc.lineAt(p).to + 1) {
             const line = doc.lineAt(p);
             lineDeco(p, type ? `cm-lp-callout cm-lp-callout-${type}${line.from === first.from ? ' cm-lp-callout-head' : ''}` : 'cm-lp-quote');
-            if (!lineActive(p)) {
-              const qm = /^(\s*>[ \t]?)/.exec(line.text);
-              if (qm) replace(line.from, line.from + qm[1].length, hide);
-            }
             if (line.to >= node.to) break;
           }
-          if (m && !lineActive(first.from)) {
-            const start = first.from + first.text.indexOf('[!');
-            const end = start + m[1].length + 3 + m[2].length;
-            const title = m[3] ? '' : m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
-            replace(start, Math.min(end + (m[3] ? 1 : 0), first.to), Decoration.replace({ widget: W.calloutTitle(type!, title) }));
+          if (callout && !lineActive(first.from)) {
+            const title = callout.title ? '' : callout.fallback;
+            replace(callout.markFrom, Math.min(callout.markTo + (callout.title ? 1 : 0), first.to), Decoration.replace({ widget: W.calloutTitle(type!, title) }));
           }
           return undefined;
         }
@@ -541,6 +542,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     constructor(view: EditorViewT) { this.decorations = buildInline(view); }
     update(u: ViewUpdate) {
       if (u.docChanged || u.selectionSet || u.viewportChanged
+          || u.startState.field(drag.held, false) !== u.state.field(drag.held, false)
           || u.startState.field(blocks) !== u.state.field(blocks)
           || u.transactions.some((tr) => tr.effects.some((e) => e.is(refresh) || e.is(setFocus)))
           || syntaxTree(u.startState) !== syntaxTree(u.state)) this.decorations = buildInline(u.view);
@@ -668,5 +670,5 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     return cache.atomic;
   });
 
-  return { extension: [focusField, blocks, inline, clicks, focusEvents, atomic], refresh };
+  return { extension: [drag.extension, focusField, blocks, inline, clicks, focusEvents, atomic], refresh };
 }

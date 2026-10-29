@@ -175,7 +175,7 @@ export const RESERVED_KEYS = new Set([
   'Mod-a', 'Mod-c', 'Mod-v', 'Mod-x', 'Mod-z', 'Mod-Shift-z', 'Mod-y', 'Mod-s', 'Mod-f', 'Mod-g', 'Mod-Shift-f',
   'Mod-n', 'Mod-Shift-n', 'Mod-i', 'Mod-e', 'Mod-t', 'Mod-Shift-t', 'Mod-w', 'Mod-r', 'Mod-l', 'Mod-p', 'Mod-k',
   'Mod-,', 'Mod-Shift-l', 'Mod-Shift-g', 'Mod-Shift-k', 'Mod-Shift-p', 'Mod-Shift-c', 'Mod-\\', 'Mod-Enter',
-  'Mod-1', 'Mod-2', 'Mod-3', 'Mod-4', 'Mod-5', 'Mod-6', 'Mod-7', 'Mod-8', 'Mod-9', 'Mod-[', 'Mod-]', 'Mod-b',
+  'Mod-1', 'Mod-2', 'Mod-3', 'Mod-4', 'Mod-5', 'Mod-6', 'Mod-7', 'Mod-8', 'Mod-9', 'Mod-[', 'Mod-]', 'Mod-b', 'Mod-u', 'Mod-Shift-x',
 ].map((k) => normalKey(k)!));
 
 /** Why a plugin's command may not use ``spec`` (or null when it may). Keys need ⌘/Ctrl or Alt,

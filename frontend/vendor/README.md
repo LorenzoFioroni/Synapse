@@ -12,6 +12,9 @@ Everything the frontend needs is served from this folder; nothing is loaded from
 
 `cm6/cm6.js` is the entry point. The files in `cm6/chunks/` are loaded on demand (for example the
 syntax highlighter for a code block's language), so the folder must be copied as a whole.
+The bundle exposes CodeMirror's existing `BlockWrapper` API for continuous quote/callout
+containers, and its history isolation/inversion APIs for formatting and generated delimiter pairs.
+These exports use the same pinned versions and licences; no extra runtime package is required.
 
 `cm6/cm6.d.ts` and `md/md.d.ts` give the bundles their TypeScript types: they repeat the re-exports of
 `tools/cm6/entry.js` and `tools/md/entry.js` (the build scripts write them), and the types come from
