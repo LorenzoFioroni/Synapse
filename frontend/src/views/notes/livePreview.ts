@@ -33,6 +33,7 @@ import type { TaskPreview } from './workspace.js';
 import { type Figures, type Spoiler, noteHooks } from './hooks.js';
 import { sectionsOf } from './sections.js';
 import { calloutAt, quoteWrappers, tableSource } from './quoteBlocks.js';
+import { previewSelection } from './previewSelection.js';
 
 /** A DOM text node (``Text`` is CodeMirror's document here). */
 type Text_ = globalThis.Text;
@@ -67,6 +68,7 @@ interface Blocks { deco: DecorationSet; taken: [number, number][]; version: numb
 export function livePreview(cm: CM, deps: PreviewDeps) {
   const { Decoration, StateField, StateEffect, EditorView, ViewPlugin, syntaxTree } = cm;
   const W = previewWidgets(cm, deps);
+  const drag = previewSelection(cm);
   const refresh = StateEffect.define<null>();
   // Lines show their source only while you are editing: with the editor unfocused, all is rendered.
   const setFocus = StateEffect.define<boolean>();
@@ -152,14 +154,16 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
   /** Where the selection is, and the tests built on it. */
   function selectionOf(state: EditorState) {
     const doc = state.doc;
-    const focused = state.field(focusField, false);
-    const active: [number, number][] = focused ? state.selection.ranges.map((r) => [doc.lineAt(r.from).from, doc.lineAt(r.to).to]) : [];
+    const held = state.field(drag.held, false);
+    const selection = held?.selection ?? state.selection;
+    const focused = held ? held.focused : state.field(focusField, false);
+    const active: [number, number][] = focused ? selection.ranges.map((r) => [doc.lineAt(r.from).from, doc.lineAt(r.to).to]) : [];
     const isActive = (from: number, to: number) => active.some(([a, b]) => from <= b && to >= a);
     return {
       lineActive: (pos: number) => { const l = doc.lineAt(pos); return isActive(l.from, l.to); },
       blockActive: (from: number, to: number) => isActive(doc.lineAt(from).from, doc.lineAt(to).to),
       // inline things open only when the selection is in them or right next to them
-      touches: (from: number, to: number) => !!focused && state.selection.ranges.some((r) => r.from <= to && r.to >= from),
+      touches: (from: number, to: number) => !!focused && selection.ranges.some((r) => r.from <= to && r.to >= from),
     };
   }
 
@@ -298,7 +302,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     create: (state) => buildBlocks(state, 0),
     update(v, tr) {
       const refreshed = tr.effects.some((e) => e.is(refresh));
-      if (refreshed || tr.docChanged || tr.selection || tr.effects.some((e) => e.is(setFocus))
+      if (refreshed || tr.docChanged || tr.selection || tr.startState.field(drag.held, false) !== tr.state.field(drag.held, false) || tr.effects.some((e) => e.is(setFocus))
           || syntaxTree(tr.startState) !== syntaxTree(tr.state)) return buildBlocks(tr.state, v.version + (refreshed ? 1 : 0));
       return v;
     },
@@ -538,6 +542,7 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     constructor(view: EditorViewT) { this.decorations = buildInline(view); }
     update(u: ViewUpdate) {
       if (u.docChanged || u.selectionSet || u.viewportChanged
+          || u.startState.field(drag.held, false) !== u.state.field(drag.held, false)
           || u.startState.field(blocks) !== u.state.field(blocks)
           || u.transactions.some((tr) => tr.effects.some((e) => e.is(refresh) || e.is(setFocus)))
           || syntaxTree(u.startState) !== syntaxTree(u.state)) this.decorations = buildInline(u.view);
@@ -665,5 +670,5 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
     return cache.atomic;
   });
 
-  return { extension: [focusField, blocks, inline, clicks, focusEvents, atomic], refresh };
+  return { extension: [drag.extension, focusField, blocks, inline, clicks, focusEvents, atomic], refresh };
 }

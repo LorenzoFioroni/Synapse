@@ -311,6 +311,7 @@ only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 | `fileOps.ts` | New, rename, move, trash with Undo, the trash dialog, rescan. |
 | `editor.ts`, `livePreview.ts`, `previewWidgets.ts` | CodeMirror 6 (`vendor/cm6/`), the live preview decorations (built on `mdscan.ts`) and the widgets they draw. |
 | `formatting.ts`, `pairing.ts` | Markdown formatting commands, selection mapping and undo; generated dollar/backtick pairs and their closing/deletion behavior. |
+| `previewSelection.ts` | Holds the preview layout during native mouse drag selection; releases it after mouseup, keyboard input or window blur, with lifecycle cleanup. |
 | `underline.ts`, `quoteBlocks.ts` | The additive `++underline++` syntax in the renderer and editor grammar; quote/callout containers spanning lines and block widgets, and removing quote prefixes from table fragments. |
 | `completion.ts`, `library.ts` | `[@`, `[[` and `{{task` autocomplete and their ranking (tasks come from the Tasks module through `taskHooks`). |
 | `ghost.ts`, `ghostLogic.ts`, `hooks.ts` | Autocompletion: suggestions as ghost text, from the public suggestion source registered by the Autocompletion contributed plugin (see [autocompletion](autocompletion.md)). |
@@ -369,6 +370,10 @@ The work done per keystroke is kept small, so long notes stay quick to edit:
   their DOM, loaded images and carousel position, avoiding scroll jumps while writing elsewhere.
   The cached HTML follows equal widget instances across edits; changed citation metadata still
   redraws the affected content. Asynchronous Mermaid rendering stays outside this comparison.
+  During a mouse drag, `previewSelection.ts` holds the preview's selection/focus snapshot:
+  math, inline code, quote markers and block widgets stay in place under the pointer. After
+  release and CodeMirror's final selection read, the preview reveals the selected source.
+  Keyboard selection and typing still update immediately; document changes cancel the hold.
 - **Read mode.** `renderRead` keeps every top-level block whose HTML did not change, and changes
   the DOM in place: ticking a task redraws only its list, and formulas, diagrams and embedded
   notes elsewhere are not drawn or loaded again. Opening read mode, the theme and the math

@@ -40,6 +40,16 @@ TABLE = """> [!note] Results
 
 Outside.
 """
+DRAG_NOTE = (
+    "> [!note] Drag selection\n> Start drag here. "
+    + (
+        "The state $a_k$ changes as $b_k \\to \\infty$, while the value $P=2^N\\,\\Tr[\\rho^2]$ "
+        "changes from $P=1.25$ to $P=12.50$ and $P=27.75$. "
+        "Select `inline code`, *italic text* and $8$ values across wrapped rows. "
+    )
+    * 3
+    + "End drag here.\n\nOutside.\n"
+)
 
 
 def check(name, cond, extra=""):
@@ -66,6 +76,67 @@ async def set_text(page, value, anchor=None, head=None):
     )
 
 
+async def drag_reflow(page):
+    for width, focused in ((w, f) for w in (1440, 1100, 800) for f in (False, True)):
+        context = f"{width}px, {'focused' if focused else 'unfocused'}"
+        await page.set_viewport_size({"width": width, "height": 1000})
+        await set_text(page, DRAG_NOTE, 0)
+        await page.click(".note-crumbs")
+        if focused:
+            await page.evaluate("ed.focus()")
+        await page.wait_for_function("document.querySelectorAll('.cm-lp-math').length >= 18")
+        await page.evaluate("document.fonts.ready")
+        points = await page.evaluate("""() => {
+            window.dragWidgets = [...document.querySelectorAll('.cm-lp-math')];
+            window.dragRects = dragWidgets.map(el => el.getBoundingClientRect());
+            const root = document.querySelector('.cm-lp-callout-block');
+            const point = (text, end) => {
+                const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+                for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+                    const i = n.data.indexOf(text);
+                    if (i < 0) continue;
+                    const from = i + (end ? text.length - 1 : 0), range = document.createRange();
+                    range.setStart(n, from); range.setEnd(n, from + 1);
+                    const r = range.getBoundingClientRect();
+                    return {x: end ? r.right - 1 : r.left + 1, y: (r.top + r.bottom) / 2};
+                }
+                throw new Error('Missing drag endpoint');
+            };
+            return {start: point('Start drag here', false), end: point('End drag here', true)};
+        }""")
+        await page.mouse.move(points["start"]["x"], points["start"]["y"])
+        await page.mouse.down()
+        await page.mouse.move(points["end"]["x"], points["end"]["y"], steps=40)
+        during = await page.evaluate("""() => ({
+            held: dragWidgets.every(el => el.isConnected),
+            stable: dragWidgets.every((el, i) => {
+                const now = el.getBoundingClientRect(), before = dragRects[i];
+                return Math.abs(now.x - before.x) < 1 && Math.abs(now.y - before.y) < 1
+                    && Math.abs(now.width - before.width) < 1;
+            }),
+            source: document.querySelectorAll('.cm-lp-mathsrc').length,
+            selected: !ed.view.state.selection.main.empty,
+        })""")
+        check(
+            f"{context}: dragging keeps the rendered equations in place",
+            during["held"] and during["stable"] and during["source"] == 0 and during["selected"],
+            during,
+        )
+        await page.mouse.up()
+        await page.wait_for_function("document.querySelectorAll('.cm-lp-mathsrc').length > 0")
+        check(f"{context}: release reveals source without changing the document", await text(page) == DRAG_NOTE)
+        await page.keyboard.press("ArrowRight")
+        await page.wait_for_function("document.querySelectorAll('.cm-lp-math').length >= 18")
+        check(
+            f"{context}: collapsing the selection restores readable math",
+            await page.locator(".cm-lp-math").evaluate_all(
+                "els => els.every(el => el.getBoundingClientRect().width > 1)"
+            )
+            and await text(page) == DRAG_NOTE,
+        )
+    await page.set_viewport_size({"width": 1440, "height": 1000})
+
+
 async def main():
     guard(PORT)
     data = tempfile.mkdtemp(prefix="synapse-writing-")
@@ -88,7 +159,7 @@ async def main():
             BASE + "/api/notes/note", json={"path": "Writing.md", "title": "Writing", "text": "Start."}
         ).raise_for_status()
         async with async_playwright() as p:
-            browser = await p.chromium.launch()
+            browser = await p.chromium.launch(channel=os.environ.get("CHROME_CHANNEL"))
             page = await browser.new_page(viewport={"width": 1440, "height": 1000})
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
@@ -155,6 +226,7 @@ async def main():
                 check(f"{mode}: dollars inside code stay literal", await text(page) == "`co$de`")
 
             await page.click('[data-mode="live"]')
+            await drag_reflow(page)
             await set_text(page, TABLE)
             await page.click(".note-crumbs")
             await page.wait_for_selector(".cm-lp-callout-block .cm-lp-table table")

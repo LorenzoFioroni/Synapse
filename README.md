@@ -305,8 +305,9 @@ never mix.
   blocks in place to avoid scroll jumps while writing; callouts preserve explicit italics.
   Cmd/Ctrl+B, I and U toggle bold, italic and `++underline++`; Cmd/Ctrl+Shift+X adds strikethrough,
   Cmd/Ctrl+Shift+C inline code, and Cmd/Ctrl+K a web link. Dollars and backticks pair automatically
-  and wrap selected text. Tables stay inside their callouts in Live preview. See
-  [writing shortcuts](docs/notes.md#writing-shortcuts-and-paired-delimiters) for the exact keys and behavior.
+  and wrap selected text. Tables stay inside their callouts in Live preview.
+  Dragging a selection keeps rendered math and code in place until the mouse is released.
+  See [writing shortcuts](docs/notes.md#writing-shortcuts-and-paired-delimiters) for the exact keys and behavior.
   An item with several PDFs gets
   one button per PDF in citation cards and in its menus; `[@key, p. 4, att:12]` names the PDF with
   attachment id 12 (a citation without `att:` means the first PDF). **Export** (the button next

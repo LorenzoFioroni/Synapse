@@ -177,7 +177,7 @@ looking for a bug.
 | `devices` | 8781 | Pairing under `--lan`: the unpaired page, the QR code, pairing, renaming and removing a device |
 | `equations` | 8786 | Editing notes with equations |
 | `editor_stability` | 8797 | Plain-text typing and autosave in a rich note: frame-by-frame scroll/cursor stability, retained gallery DOM, citation refreshes and callout emphasis |
-| `writing` | 8841 | Live/Source formatting keys and delimiter pairing; nested callouts with tables, source editing and underline rendering |
+| `writing` | 8841 | Live/Source formatting keys and delimiter pairing; native mouse-drag reflow across wrapped math/code at three widths; nested callouts with tables, source editing and underline rendering |
 | `export` | 8792 | Exporting a note: a self-contained HTML page that works offline, portable Markdown, PDF through the print dialog |
 | `extension` | 8789, 8790 | The browser extension: options page connects, the popup reads an article's citation tags and saves it with a tag |
 | `gallery` | 8794 | Figure numbers and `\cref` (read mode, live preview, exports); galleries: the carousel in read mode and the live preview, editing its source, autocomplete in captions, exported as one figure with panels (HTML, PDF, Markdown); galleries switched off and on in Extended Markdown's settings, then the whole plugin off and on, in the open note |
