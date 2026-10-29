@@ -363,6 +363,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
 .cm-lp-bullet { color: var(--text-3); display: inline-block; width: .7em; text-align: center; }
 .prose .tag { color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 0 .25em; }
 .cm-live .cm-lp-callout .cmt-quote { font-style: normal; color: inherit; }
+.cm-live .cm-lp-callout .cmt-quote.cmt-em { font-style: italic; }
 
 /* ===================================================== M5: cards, side panel lists, autocomplete */
 .cite-card {

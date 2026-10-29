@@ -301,7 +301,9 @@ never mix.
   `data/notes-history.git` apart from your own Git setup; backups include it. See
   [notes history](docs/notes-history.md).
 - **Notes**: Markdown notes with live preview, KaTeX, code, Mermaid and images; `[@key]`
-  citations and `[[links]]` between notes; a paper note per item. An item with several PDFs gets
+  citations and `[[links]]` between notes; a paper note per item. Autosave keeps unchanged rendered
+  blocks in place to avoid scroll jumps while writing; callouts preserve explicit italics.
+  An item with several PDFs gets
   one button per PDF in citation cards and in its menus; `[@key, p. 4, att:12]` names the PDF with
   attachment id 12 (a citation without `att:` means the first PDF). **Export** (the button next
   to Live | Source | Read, or **Export…** in a note's menu in the notes list) saves a note as a
