@@ -200,9 +200,14 @@ class NotesService:
         self.folder_colors.set(folder, color)
         return {"folder_colors": self.overview()["folder_colors"]}
 
-    def get(self, path: str) -> dict:
+    def get(self, path: str, unless: str | None = None) -> dict:
+        """The note's text, hash and index entry. With ``unless`` (the hash the caller already
+        has), an unchanged note answers with its hash only: open windows ask every few seconds
+        whether their note changed elsewhere, and long notes would otherwise be sent each time."""
         path = self.vault.clean_rel(path)
         text, h = self.vault.read(path)
+        if unless and unless == h:
+            return {"path": path, "hash": h, "unchanged": True}
         info = self.index.note(path)
         if info is None or info["hash"] != h:  # edited outside the app since the last sync
             self.index.update(path)

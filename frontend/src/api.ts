@@ -155,6 +155,9 @@ export const api = {
   // notes (addressed by their path inside the notes folder)
   notes: () => request<NotesListing>('GET', '/api/notes'),
   getNote: (path: string) => request<NoteFile>('GET', `/api/notes/note?${qs({ path })}`),
+  /** The note, or only its hash when it still has ``hash`` (cheap enough to ask every few seconds). */
+  checkNote: (path: string, hash: string) =>
+    request<NoteFile | { path: string; hash: string; unchanged: true }>('GET', `/api/notes/note?${qs({ path, unless: hash })}`),
   createNote: (data: Record<string, unknown>) => request<Omit<NoteFile, 'info'>>('POST', '/api/notes/note', data),
   noteHistory: (path: string, limit?: number) => request<NoteHistory>('GET', `/api/notes/history?${qs({ path, limit })}`),
   noteVersion: (id: string, path?: string, from?: string) => request<HistoryVersion>('GET', `/api/notes/history/version?${qs({ id, path, from })}`),

@@ -171,7 +171,7 @@ async function paintLocal() {
   const g = local;
   g.setCurrent(focus);
   g.setData(view);
-  g.graph.onEngineStop(() => g.fit(300));
+  g.onEngineStop(() => g.fit(300));
   later(() => local?.fit(300), 350);
   host.dataset.count = String(view.nodes.length);
   host.classList.toggle('alone', view.nodes.length <= 1);
@@ -254,7 +254,7 @@ export function closeGlobal({ push = false } = {}): void {
   globalEl!.hidden = true;
   ctx.setOpen(false);
   closeCard();
-  global?.graph.pauseAnimation();
+  global?.sleep();
   if (push) ctx.closed();
 }
 
@@ -314,7 +314,7 @@ async function paintGlobal({ refit = false } = {}): Promise<void> {
     observe(host, () => global?.resize());
   }
   const g = global;
-  g.graph.resumeAnimation();
+  g.wake();
   g.setCurrent(ctx.currentPath() ? `note:${ctx.currentPath()}` : null);
   if (refit) g.setMarked(null);
   g.setData(view);

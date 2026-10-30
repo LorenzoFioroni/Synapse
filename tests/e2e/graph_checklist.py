@@ -379,15 +379,39 @@ async def main():
             await page.wait_for_function(f"window.zcNotes.path() === {pnote!r}", timeout=5000)
             check("clicking a note in the full graph opens it", await page.is_hidden(".notes-graph"))
 
+            # ---- an idle graph stops drawing (a canvas redrawn every frame kept the GPU busy)
+            await page.mouse.move(1, 1)
+            asleep = await page.wait_for_function("!window.zcGraph.local().awake()", timeout=15000)
+            f0 = await page.evaluate("window.zcGraph.local().frames()")
+            await page.wait_for_timeout(1500)
+            f1 = await page.evaluate("window.zcGraph.local().frames()")
+            check("an idle local graph stops drawing", asleep and f1 == f0, (f0, f1))
+            box = await page.locator(".ns-graph-canvas canvas").bounding_box()
+            await page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            await page.wait_for_timeout(500)
+            f2 = await page.evaluate("window.zcGraph.local().frames()")
+            check("…and draws again under the pointer", f2 > f1 + 5, (f1, f2))
+            await page.mouse.move(1, 1)
+            await page.wait_for_function("!window.zcGraph.local().awake()", timeout=5000)
+
             # ---- the local graph updates after an edit
+            before = await page.evaluate("window.zcGraph.local().frames()")
             await page.locator(".cm-content").click()
             await page.keyboard.press(f"{MOD}+End")
             await page.keyboard.type("\nAlso [[Lonely]].\n")
             await page.keyboard.press(f"{MOD}+s")
+            await page.mouse.move(1, 1)
             await page.wait_for_function(
                 "window.zcGraph.local().nodes().some((n) => n.id === 'note:Lonely.md')", timeout=8000
             )
             check("local graph picks up a new link after saving", True)
+            await page.wait_for_timeout(600)
+            drawn = await page.evaluate("window.zcGraph.local().frames()") - before
+            check("…and draws it while the layout moves", drawn > 10, drawn)
+            check(
+                "…then stops drawing again",
+                await page.wait_for_function("!window.zcGraph.local().awake()", timeout=15000),
+            )
 
             # ---- dark theme
             await page.evaluate("document.documentElement.dataset.theme = 'dark'")

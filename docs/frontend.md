@@ -331,6 +331,16 @@ shown uses that note as the focus; while Graph remains open, choosing another no
 list recentres it instead of replacing it with the editor. Unload disconnects observers, clears
 timers, destroys both canvases, and ignores late data or canvas creation.
 
+force-graph redraws its whole canvas on every animation frame while its loop runs, so an idle
+graph left running keeps the page, the GPU process and the window server busy. `forceGraph.ts`
+therefore runs the loop only while something can change on screen: the layout moving (new data,
+for example a link added to the note, restarts it until `onEngineStop`), a zoom or pan animation
+(`fit`, `focus`), a button or finger down, or a mouse over the canvas (hover highlights); then it
+pauses it (`wake(ms)` / `sleep()`). force-graph calls `onEngineStop` from inside its frame, where a
+pause would only cancel the frame already running, so the canvas settles in a timeout after it.
+`zcGraph.local().awake()` and `.frames()` let the graph checklist check that an idle graph draws
+nothing.
+
 **`plugins/extended-markdown/frontend/figures/`: galleries and figures** (an extension of the Extended
 Markdown contributed plugin, `plugins/extended-markdown`, with its own switch there). Its `index.ts`
 installs the carousels' listeners (`galleryView.ts`) and sets the `figures` hook

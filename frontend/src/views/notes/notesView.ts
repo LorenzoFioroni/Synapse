@@ -413,7 +413,7 @@ async function createView(path: string, mode: Mode): Promise<NoteView> {
   view.session = new NoteSession({
     path, text: start.text, serverText: res.text, hash: res.hash, drafts,
     delay: state.settings.notes_autosave_ms || 1500,
-    api: { save: api.saveNote, get: api.getNote, create: api.recreateNote },
+    api: { save: api.saveNote, get: api.getNote, check: api.checkNote, create: api.recreateNote },
     onStatus: (st) => { if (ws.view === view) paintStatus(st); },
     onConflict: (c) => { if (ws.view === view) conflictDialog(c); else view.conflict = c; },
     onRemoteText: (t) => {

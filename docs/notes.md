@@ -257,7 +257,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | Method | Path | What it does |
 |---|---|---|
 | GET | `/api/notes` | Listing: every note's index entry, the folders, `folder_colors` (only folders that exist), counts. |
-| GET | `/api/notes/note?path=` | Text, hash and index entry of one note. |
+| GET | `/api/notes/note?path=` | Text, hash and index entry of one note. With `&unless=<hash>`, a note that still has that hash answers `{path, hash, unchanged: true}` only. |
 | POST | `/api/notes/note` | Create (`title`, `folder` or `path`, `item_id`, `text`). |
 | PUT | `/api/notes/note` | Save `text` over `hash`; with `create: true`, write a note that must not exist. |
 | POST | `/api/notes/move` | Rename or move a note (`path`, `to`, optional `hash`); returns `broken_links`. |
@@ -597,9 +597,11 @@ Each open note has one `NoteSession`. It keeps `saved` (the text and hash the se
   still fails, or writing a deleted note again fails, the session stays in conflict, the error
   is shown and the dialog comes back; a note someone else wrote again meanwhile becomes a
   conflict with their text.
-- **Remote checks.** `checkRemote()` loads the file and replaces the editor text only when the
-  session has no edits; a changed or deleted file with unsaved text enters the conflict
-  dialog instead.
+- **Remote checks.** `checkRemote()` asks for the note with the hash it has
+  (`GET /api/notes/note?path=…&unless=<hash>`); an unchanged note answers with its hash only
+  (`{path, hash, unchanged: true}`), so the check every 5 s costs a few bytes however long the
+  note is. When the note changed, it replaces the editor text only when the session has no
+  edits; a changed or deleted file with unsaved text enters the conflict dialog instead.
 - **Moved elsewhere.** When the file is gone and the 404 carries `moved_to` (another window or
   device renamed or moved it, or a citation-key rename moved a paper note), the session calls
   `onMoved(to, text)`: the note on screen reopens at the new path with the editor text, its tab

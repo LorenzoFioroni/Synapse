@@ -7,6 +7,14 @@
 //   g.setCurrent(id)       the node drawn as "you are here"
 //   g.setMatches(ids)      search hits (the rest fades)
 //   g.focus(id) · g.fit() · g.resize() · g.destroy()
+//   g.onEngineStop(fn)     the layout has settled
+//   g.wake() · g.sleep()   start / stop drawing (it also does both by itself, see below)
+//
+// force-graph redraws the whole canvas on every animation frame while its loop runs. Left
+// running, an idle graph next to a note kept the page, the GPU process and the window server
+// busy all day. So the loop runs only while something can change on screen — the layout
+// moving, a zoom or pan animation, the pointer over the canvas (hover highlights) — and stops
+// soon after.
 
 import type ForceGraphClass from 'force-graph';
 import type { LinkObject, NodeObject } from 'force-graph';
@@ -32,6 +40,14 @@ export interface GraphCanvas {
   refreshColors(): void;
   nodes(): GNode[];
   screenOf(nodeId: string): { x: number; y: number } | null;
+  onEngineStop(fn: () => void): void;
+  /** Draw for at least ``ms`` (and for as long as something moves). */
+  wake(ms?: number): void;
+  /** Stop drawing now (the graph was hidden). */
+  sleep(): void;
+  /** Whether the drawing loop should run, and how many frames it has drawn (for tests). */
+  awake(): boolean;
+  frames(): number;
   destroy(): void;
 }
 
@@ -100,7 +116,54 @@ export async function createGraph(
     .onNodeHover((n) => { hover = n ? n.id : null; updateLit(); host.style.cursor = n ? 'pointer' : ''; })
     .onNodeClick((n, e) => onNodeClick(n, e))
     .onBackgroundClick(() => onBackgroundClick())
-    .onNodeDragEnd((n) => { n.fx = undefined; n.fy = undefined; });
+    .onNodeDragEnd((n) => { n.fx = undefined; n.fy = undefined; })
+    // Called from inside force-graph's frame: settle after it, see stop().
+    .onRenderFramePost(() => { drawn++; })
+    .onEngineStop(() => setTimeout(() => { moving = false; settle(); engineStopped(); }));
+
+  // The drawing loop (see the top of the file).
+  let moving = false;                 // the layout is being simulated
+  let pressed = false;                // a button or finger is down (dragging, panning, pinching)
+  let pointerType = '';
+  let until = 0;                      // draw at least until then (zoom animations, one last frame)
+  let sleepTimer: ReturnType<typeof setTimeout> | undefined;
+  let running = true;                 // force-graph starts its loop when created
+  let drawn = 0;
+  let engineStopped = () => {};
+  const listeners = new AbortController();
+  const busy = () => moving || pressed
+    // a finger leaves :hover behind after a tap, so only a mouse or pen keeps it awake by hovering
+    || (pointerType !== 'touch' && host.isConnected && host.matches(':hover'));
+  function settle() {
+    clearTimeout(sleepTimer);
+    if (!running) return;
+    const left = until - Date.now();
+    if (left > 0) sleepTimer = setTimeout(settle, left + 20);
+    else if (busy()) sleepTimer = setTimeout(settle, 1000);   // :hover has no event when the canvas is hidden under the pointer
+    else stop();
+  }
+  /** Pausing from inside force-graph's own frame (its callbacks) cancels the frame that is
+      already running, and the frame then books the next one: pause once more after it. */
+  function stop() {
+    clearTimeout(sleepTimer);
+    running = false;
+    g.pauseAnimation();
+    setTimeout(() => { if (!running) g.pauseAnimation(); });
+  }
+  function wake(ms = 250) {
+    until = Math.max(until, Date.now() + ms);
+    if (!running) { running = true; g.resumeAnimation(); }
+    settle();
+  }
+  const sig = { signal: listeners.signal };
+  host.addEventListener('pointerenter', (e) => { pointerType = e.pointerType; wake(); }, sig);
+  host.addEventListener('pointermove', (e) => { pointerType = e.pointerType; if (!running) wake(); }, sig);
+  host.addEventListener('pointerdown', (e) => { pointerType = e.pointerType; pressed = true; wake(); }, sig);
+  host.addEventListener('wheel', () => wake(400), { ...sig, passive: true });
+  host.addEventListener('pointerleave', () => wake(300), sig);   // a frame or two to clear hover highlights
+  const release = () => { if (pressed) { pressed = false; wake(400); } };
+  window.addEventListener('pointerup', release, sig);
+  window.addEventListener('pointercancel', release, sig);
   // Obsidian-like physics: soft repulsion, short springs, and a pull to the centre so
   // separate clusters stay together on screen.
   g.d3Force('charge')!.strength(compact ? -45 : -70).distanceMax(compact ? 220 : 420);
@@ -173,28 +236,36 @@ export async function createGraph(
       const nodes: GNode[] = view.nodes.map((n) => ({ ...n, ...(positions.get(n.id) || {}) }));
       const links: GLink[] = view.edges.map((e) => ({ source: e.source, target: e.target, kind: e.kind }));
       if (hover && !nodes.some((n) => n.id === hover)) hover = null;
-      g.graphData({ nodes, links });
+      g.graphData({ nodes, links });   // reheats the layout
       updateLit();
+      moving = true;
+      wake();
     },
-    setCurrent(nodeId) { current = nodeId; },
-    setMatches(ids) { matches = ids && ids.size ? ids : null; },
-    setMarked(nodeId) { marked = nodeId; },     // a ring and a label, without fading the rest
+    setCurrent(nodeId) { current = nodeId; wake(); },
+    setMatches(ids) { matches = ids && ids.size ? ids : null; wake(); },
+    setMarked(nodeId) { marked = nodeId; wake(); },     // a ring and a label, without fading the rest
     focus(nodeId, ms = 600) {
       const n = g.graphData().nodes.find((x) => x.id === nodeId);
       if (!n || !Number.isFinite(n.x)) return false;
+      wake(ms + 100);
       g.centerAt(n.x!, n.y!, ms);
       if (g.zoom() < 1.6) g.zoom(2, ms);
       return true;
     },
-    fit(ms = 400) { g.zoomToFit(ms, compact ? 34 : 60); },
-    resize() { g.width(host.clientWidth).height(host.clientHeight); },
-    refreshColors() { colors = palette(); },
+    fit(ms = 400) { wake(ms + 100); g.zoomToFit(ms, compact ? 34 : 60); },
+    resize() { g.width(host.clientWidth).height(host.clientHeight); wake(); },
+    refreshColors() { colors = palette(); wake(); },
     nodes: () => g.graphData().nodes,
     screenOf(nodeId) {   // for tests
       const n = g.graphData().nodes.find((x) => x.id === nodeId);
       return n && Number.isFinite(n.x) ? g.graph2ScreenCoords(n.x!, n.y!) : null;
     },
-    destroy() { g.pauseAnimation(); g._destructor?.(); host.innerHTML = ''; },
+    onEngineStop(fn) { engineStopped = fn; },
+    wake,
+    sleep() { until = 0; pressed = false; stop(); },
+    awake: () => running,
+    frames: () => drawn,
+    destroy() { api.sleep(); listeners.abort(); g._destructor?.(); host.innerHTML = ''; },
   };
   api.resize();
   return api;
