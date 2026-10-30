@@ -33,7 +33,7 @@ steps through the TypeScript.
 - CodeMirror (`vendor/cm6/cm6.js`) and markdown-it with KaTeX (`vendor/md/md.js`) in
   `views/notes/editor.ts`, only when Notes is opened;
 - `views/metadataReview.ts` from `afterAdd.ts`, `views/exportDialog.ts` from `settingsView.ts`;
-- the classic UMD scripts Mermaid (`views/notes/richRender.ts`) and force-graph
+- the classic scripts Mermaid (`views/notes/richRender.ts`; an IIFE built by `tools/md`) and force-graph (UMD)
   (`plugins/graph/frontend/forceGraph.ts`, using `p.assets.vendor`) by adding a `<script>` tag; they put `window.mermaid` and
   `window.ForceGraph` on the page.
 
@@ -330,6 +330,16 @@ with the other options in `localStorage` under `zc.graph.global`). Opening Graph
 shown uses that note as the focus; while Graph remains open, choosing another note in the notes
 list recentres it instead of replacing it with the editor. Unload disconnects observers, clears
 timers, destroys both canvases, and ignores late data or canvas creation.
+
+force-graph redraws its whole canvas on every animation frame while its loop runs, so an idle
+graph left running keeps the page, the GPU process and the window server busy. `forceGraph.ts`
+therefore runs the loop only while something can change on screen: the layout moving (new data,
+for example a link added to the note, restarts it until `onEngineStop`), a zoom or pan animation
+(`fit`, `focus`), a button or finger down, or a mouse over the canvas (hover highlights); then it
+pauses it (`wake(ms)` / `sleep()`). force-graph calls `onEngineStop` from inside its frame, where a
+pause would only cancel the frame already running, so the canvas settles in a timeout after it.
+`zcGraph.local().awake()` and `.frames()` let the graph checklist check that an idle graph draws
+nothing.
 
 **`plugins/extended-markdown/frontend/figures/`: galleries and figures** (an extension of the Extended
 Markdown contributed plugin, `plugins/extended-markdown`, with its own switch there). Its `index.ts`

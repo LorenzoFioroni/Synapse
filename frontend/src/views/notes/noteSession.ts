@@ -17,6 +17,8 @@ export interface NoteSessionApi {
   save(path: string, text: string, hash: string | null): Promise<{ hash: string }>;
   create(path: string, text: string): Promise<{ hash: string }>;
   get(path: string): Promise<{ text: string; hash: string }>;
+  /** Like ``get``, but the text may be left out while the note still has ``hash``. */
+  check?(path: string, hash: string): Promise<{ text?: string; hash: string }>;
 }
 
 /** Where drafts are kept (local storage in the app). */
@@ -263,7 +265,13 @@ export class NoteSession {
   private async _checkRemote(): Promise<void> {
     if (this.disposed || this.moved || this.conflict || this.inFlight) return;
     let r: { text: string; hash: string };
-    try { r = await this.api.get(this.path); } catch (e) {
+    try {
+      // Asked every few seconds: send the hash we have so an unchanged note costs a few bytes.
+      const known = this.saved.hash;
+      const c = this.api.check && known ? await this.api.check(this.path, known) : await this.api.get(this.path);
+      if (c.text === undefined && c.hash === known) return;
+      r = c.text === undefined ? await this.api.get(this.path) : { text: c.text, hash: c.hash };
+    } catch (e) {
       if ((e as { status?: number } | null)?.status === 404 && !this.disposed && !this.conflict && !this.inFlight) {
         if (await this._followMove(e)) return;
         await this._enterConflict();

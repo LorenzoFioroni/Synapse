@@ -254,6 +254,31 @@ test('checkRemote refreshes clean text and prompts for unsaved edits', async () 
   s.dispose();
 });
 
+test('checkRemote sends the hash it has and fetches the text only when it changed', async () => {
+  const { server, api, s, events } = setup();
+  const calls = { check: 0, get: 0 };
+  const get = api.get;
+  api.get = async (...a) => { calls.get++; return get(...a); };
+  api.check = async (path, hash) => {
+    calls.check++;
+    return hash === server.hash ? { hash } : { text: server.text, hash: server.hash };
+  };
+  await s.checkRemote();
+  await s.checkRemote();
+  assert.deepEqual(calls, { check: 2, get: 0 });
+  assert.deepEqual(events.remote, []);
+  server.text = 'remote'; server.hash = hashOf('remote');
+  await s.checkRemote();
+  assert.deepEqual(events.remote, ['remote']);
+  assert.equal(s.saved.hash, hashOf('remote'));
+  // a server that leaves the text out although the hash differs: ask for the whole note
+  api.check = async () => ({ hash: 'h:other' });
+  server.text = 'other'; server.hash = 'h:other';
+  await s.checkRemote();
+  assert.deepEqual(events.remote, ['remote', 'other']);
+  s.dispose();
+});
+
 test('lineDiff', () => {
   const rows = lineDiff('a\nb\nc\nd', 'a\nB\nc\nd\ne');
   assert.deepEqual(rows, [{ op: ' ', text: 'a' }, { op: '-', text: 'b' }, { op: '+', text: 'B' }, { op: ' ', text: 'c' },

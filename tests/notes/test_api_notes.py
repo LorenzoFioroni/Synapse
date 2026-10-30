@@ -259,3 +259,22 @@ def test_a_moved_note_says_where_it_went(client):
     assert client.put("/api/notes/note", json={"path": "Delta.md", "text": "new", "create": True}).status_code == 200
     client.post("/api/notes/trash", json={"paths": ["Delta.md"]})
     assert "moved_to" not in get("Delta.md").json
+
+
+def test_an_unchanged_note_answers_with_its_hash_only(client):
+    """Open windows ask every few seconds whether their note changed: an unchanged note must not
+    be sent again (a long note cost several KB/s per open window)."""
+    n = create(client, title="Long", text="# Long\n\n" + "$x^2$ words " * 2000)
+    q = {"path": n["path"], "unless": n["hash"]}
+    same = client.get("/api/notes/note", query_string=q)
+    assert same.status_code == 200
+    assert same.json == {"path": n["path"], "hash": n["hash"], "unchanged": True}
+    assert len(same.data) < 200
+
+    r = client.put("/api/notes/note", json={"path": n["path"], "text": "# Long\n\nshort now", "hash": n["hash"]})
+    changed = client.get("/api/notes/note", query_string=q).json
+    assert changed["hash"] == r.json["hash"] and changed["text"] == "# Long\n\nshort now" and "unchanged" not in changed
+
+    client.post("/api/notes/move", json={"path": n["path"], "to": "Elsewhere.md"})
+    gone = client.get("/api/notes/note", query_string=q)
+    assert gone.status_code == 404 and gone.json["moved_to"] == "Elsewhere.md"

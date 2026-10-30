@@ -57,7 +57,7 @@ def overview():
 @bp.get("/notes/note")
 @guarded
 def get_note():
-    return jsonify(svc().note_service.get(_path_arg()))
+    return jsonify(svc().note_service.get(_path_arg(), unless=request.args.get("unless") or None))
 
 
 @bp.post("/notes/note")
