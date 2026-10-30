@@ -33,7 +33,7 @@ steps through the TypeScript.
 - CodeMirror (`vendor/cm6/cm6.js`) and markdown-it with KaTeX (`vendor/md/md.js`) in
   `views/notes/editor.ts`, only when Notes is opened;
 - `views/metadataReview.ts` from `afterAdd.ts`, `views/exportDialog.ts` from `settingsView.ts`;
-- the classic UMD scripts Mermaid (`views/notes/richRender.ts`) and force-graph
+- the classic scripts Mermaid (`views/notes/richRender.ts`; an IIFE built by `tools/md`) and force-graph (UMD)
   (`plugins/graph/frontend/forceGraph.ts`, using `p.assets.vendor`) by adding a `<script>` tag; they put `window.mermaid` and
   `window.ForceGraph` on the page.
 
