@@ -669,7 +669,10 @@ CI (`.github/workflows/ci.yml`) runs all of these on every pull request.
 
 Browser checklists (need Playwright; each uses a throw-away data folder).
 `python tests/e2e/run.py` runs them all and prints a summary, `python tests/e2e/run.py notes render`
-only those, and `--retries 1` gives a failed one a second try. Or run one directly:
+only those, and `--retries 1` gives a failed one a second try. Each checklist reports its
+passed/total count and exits nonzero on failure; the runner rejects a missing summary.
+`python tests/e2e/run.py task_indexes` checks the Tasks note index and reports `4/4` when healthy.
+Or run one directly:
 
 ```bash
 pip install playwright requests && playwright install chromium
