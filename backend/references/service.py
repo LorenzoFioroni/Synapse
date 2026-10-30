@@ -138,7 +138,10 @@ class Citations:
         return index, items
 
     def _build_library_index(self):
-        by_doi, by_arxiv, by_title, items = {}, {}, {}, {}
+        by_doi: dict[str, str] = {}
+        by_arxiv: dict[str, str] = {}
+        by_title: dict[str, list[tuple[str, int | None]]] = {}
+        items: dict[str, dict] = {}
         for p in self.papers.list():
             items[p["id"]] = {k: v for k, v in p.items() if k != "abstract"}  # kept in memory: no abstracts
             doi, arx = identifiers(p)

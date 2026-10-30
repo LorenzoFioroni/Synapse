@@ -254,8 +254,10 @@ findings and `ruff format .` formats.
 The frontend and the browser extension are type-checked with `tsc` (`npm run check`; see
 [frontend](frontend.md)). The Python code is type-checked with **mypy**, configured in
 `pyproject.toml` (`[tool.mypy]`): it checks `backend/`, `server.py` and `mcp_server.py`. Code
-without annotations is not checked inside, so annotations can be added one module at a time, but
-everything that is annotated must type-check. Two things it asks for that are easy to forget: an
+inside functions without annotations is checked too, through `check_untyped_defs = true`.
+Annotations can still be added one module at a time; unannotated parameters remain dynamically
+typed, so this is not strict mode and does not require every function to have a signature.
+Two things it asks for that are easy to forget: an
 empty container that will be filled needs its type (`out: list[str] = []`), and a value that may
 be `None` (a regex match, `dict.get`) must be checked before use. A class with a method named
 `list` must write the built-in type as `builtins.list[...]` in its annotations.

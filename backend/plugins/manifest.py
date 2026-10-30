@@ -61,16 +61,16 @@ class Setting:
             if isinstance(value, bool):
                 raise ManifestError(f"{self.label} must be a number")
             try:
-                v = int(value) if t == "int" else float(value)
+                number = int(value) if t == "int" else float(value)
             except (TypeError, ValueError) as e:
                 raise ManifestError(f"{self.label} must be a number") from e
             if t == "int" and isinstance(value, float) and value != int(value):
                 raise ManifestError(f"{self.label} must be a whole number")
-            if self.min is not None and v < self.min:
+            if self.min is not None and number < self.min:
                 raise ManifestError(f"{self.label}: at least {_num(self.min)}")
-            if self.max is not None and v > self.max:
+            if self.max is not None and number > self.max:
                 raise ManifestError(f"{self.label}: at most {_num(self.max)}")
-            return v
+            return number
         if t == "text":
             v = "" if value is None else str(value)
             if len(v) > 10000:

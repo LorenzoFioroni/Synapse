@@ -17,11 +17,11 @@ skip_covered = true
 show_missing = true
 sort = "Cover"
 
-# Type checking of the Python code: mypy (CI runs it). Functions without annotations are not
-# checked inside, so type hints can be added module by module; annotated code must type-check.
+# Type checking of the Python code: mypy (CI runs it), including unannotated function bodies.
 [tool.mypy]
 files = ["backend", "server.py", "mcp_server.py"]
 python_version = "3.10"
+check_untyped_defs = true
 ignore_missing_imports = true   # optional libraries without type information (fitz, pypdfium2, segno …)
 warn_unused_ignores = true
 warn_redundant_casts = true

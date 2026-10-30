@@ -140,7 +140,7 @@ class _Parser:
                 self.i += 1
 
     def entries(self):
-        out = []
+        out: list[tuple[str, str, dict[str, str]]] = []
         while True:
             at = self.s.find("@", self.i)
             if at < 0:
