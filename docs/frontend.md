@@ -459,7 +459,9 @@ fixed colours, and both themes work. The notes editor takes its colours from the
 
 **Touch.** `@media (pointer: coarse)` rules give bigger targets and turn off the long-press
 callout on the app's own controls (`layout.css`, `notes.css`). `@media (hover: none)` rules show
-tools that otherwise appear on hover (`itempane.css`, `notes.css`).
+tools that otherwise appear on hover (`itempane.css`, `notes.css`). On tablets and desktop,
+the item-pane divider uses pointer capture for finger, Pencil and mouse drags; its saved width
+is restored on startup. Phone item details occupy the full view and have no resize divider.
 
 **Icons.** `icons.ts` keeps each icon as SVG path data on a 16 px grid, drawn with
 `currentColor`, so it takes the colour of the text around it. `icon('search')` returns the
