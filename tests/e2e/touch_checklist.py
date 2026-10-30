@@ -93,7 +93,7 @@ def viewer(item, att):
 
 async def open_viewer(page, url):
     await page.goto(url)
-    await page.wait_for_function("document.querySelectorAll('.page-wrapper .textLayer span').length > 20")
+    await page.wait_for_function("() => (document.querySelectorAll('.page-wrapper .textLayer span').length > 20)")
     await page.evaluate("window.zcAnnotations.ready")
     await page.wait_for_timeout(300)
 
@@ -485,7 +485,7 @@ async def main():
             page4 = await ctx4.new_page()
             page4.on("pageerror", lambda e: errors.append(str(e)))
             await page4.goto(viewer(long_item, long_att))
-            await page4.wait_for_function("document.querySelectorAll('.page-wrapper canvas').length > 0")
+            await page4.wait_for_function("() => (document.querySelectorAll('.page-wrapper canvas').length > 0)")
             for _ in range(16):
                 await page4.tap("#zoom-in")
             await page4.wait_for_timeout(2500)

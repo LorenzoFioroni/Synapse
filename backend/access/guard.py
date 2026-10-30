@@ -45,11 +45,14 @@ CONNECTOR_PREFIX = "/api/connector/"  # the only endpoints extension origins may
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
 # What an unpaired device may open: the pairing page and the calls it and the sign-in page make,
-# plus the icons and the web app manifest. Browsers fetch the manifest without cookies, and iOS
-# fetches the Home Screen icon the same way, so a paired iPad or phone would get the sign-in page
+# plus their two standalone scripts, the icons and the web app manifest. Browsers fetch the
+# manifest without cookies, and iOS fetches the Home Screen icon the same way, so a paired iPad
+# or phone would get the sign-in page
 # instead and draw a plain tile. They say nothing about the library.
 PAIRING_PATHS = {
     "/pair",
+    "/js/access/pair.js",
+    "/js/access/signin.js",
     "/api/devices/pair",
     "/api/passkeys/login/options",
     "/api/passkeys/login",
@@ -208,9 +211,12 @@ def install(
         return None
 
     @app.after_request
-    def _frame_protection(resp: Response):
-        # The app embeds its own PDF viewer, but other sites must not frame signed-in pages.
-        resp.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
+    def _content_security_policy(resp: Response):
+        # PDF decoders compile WebAssembly; JavaScript eval and inline scripts stay forbidden.
+        resp.headers["Content-Security-Policy"] = (
+            "script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
+            "object-src 'none'; base-uri 'none'; frame-ancestors 'self'"
+        )
         return resp
 
     @app.after_request

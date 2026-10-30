@@ -98,7 +98,9 @@ async def main():
 
             t0 = time.time()
             await page.goto(BASE)
-            await page.wait_for_function("document.querySelector('.row[data-id]')", polling="raf", timeout=30000)
+            await page.wait_for_function(
+                "() => (document.querySelector('.row[data-id]'))", polling="raf", timeout=30000
+            )
             ready = await page.evaluate("performance.now()") / 1000  # since the navigation started
             check("10,000 items: the list is ready in under 1 s", ready < 1.0, f"{ready:.2f} s")
             r = requests.get(BASE + "/api/items?lean=1")
@@ -147,7 +149,9 @@ async def main():
 
             # the item pane gets the abstract the list left out
             await page.click(f'.row[data-id="{first["id"]}"] .c-year')
-            await page.wait_for_function("document.querySelector('#item-pane [data-field=\"abstract\"]')", timeout=5000)
+            await page.wait_for_function(
+                "() => (document.querySelector('#item-pane [data-field=\"abstract\"]'))", timeout=5000
+            )
             abstract = await page.evaluate("document.querySelector('#item-pane [data-field=\"abstract\"]').textContent")
             check("the item pane shows the abstract", "must show in the pane" in abstract, abstract[:60])
 

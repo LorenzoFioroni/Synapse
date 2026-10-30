@@ -403,7 +403,7 @@ async def main():
 
             # ---- switching modes keeps the line at the top
             await page.click('.nt-row.note[data-path="Long.md"]')
-            await page.wait_for_function("window.zcNotes.text().includes('Paragraph 300')")
+            await page.wait_for_function("() => (window.zcNotes.text().includes('Paragraph 300'))")
             await page.evaluate(
                 "document.querySelector('.note-editor-view:not([hidden]) .cm-scroller').scrollTop = 6000"
             )

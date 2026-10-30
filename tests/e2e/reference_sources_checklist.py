@@ -92,7 +92,7 @@ def activate(p):
                     await show()
                     status = page.locator(".ip-refs-status")
                     await page.wait_for_function(
-                        "document.querySelector('.ip-refs-status')?.textContent.includes('Catalogue <b>title</b>')"
+                        "() => (document.querySelector('.ip-refs-status')?.textContent.includes('Catalogue <b>title</b>'))"
                     )
                     check(
                         "The item pane uses the declared provider title",

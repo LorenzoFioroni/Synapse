@@ -6,7 +6,7 @@
   <title>Synapse — sign in</title>
   <link rel="icon" href="/assets/favicon.svg">
   <!-- What a device that is not signed in sees instead of any page (backend/access/guard.py,
-       not_paired). Self-contained: such a device may load nothing else from the server. -->
+       not_paired). Its standalone script is also available before sign-in. -->
   <style>
     :root { color-scheme: light dark; --accent: #2f6fde; }
     * { box-sizing: border-box; }
@@ -44,65 +44,6 @@
     name (such as <b>https://your-computer.local</b>). See “Signing in with a passkey” in the README.</p>
   <p class="muted">If this device was paired before, it was signed out or its pairing was removed.</p>
 </main>
-<script>
-  (function () {
-    function enc(buf) {
-      var bytes = new Uint8Array(buf), s = '';
-      for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-      return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    }
-    function dec(text) {
-      var s = text.replace(/-/g, '+').replace(/_/g, '/');
-      while (s.length % 4) s += '=';
-      var bin = atob(s), out = new Uint8Array(bin.length);
-      for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-      return out;
-    }
-    function post(url, data) {
-      return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data || {}) })
-        .then(function (r) {
-          return r.json().catch(function () { return {}; }).then(function (d) {
-            if (!r.ok) throw new Error((d && d.error) || ('Signing in failed (' + r.status + ').'));
-            return d;
-          });
-        });
-    }
-    var host = location.hostname;
-    var byIp = /^[\d.]+$/.test(host) || host.indexOf(':') >= 0 || host.charAt(0) === '[';
-    if (!window.PublicKeyCredential || !window.isSecureContext || byIp) {
-      document.getElementById('nopasskey').hidden = false;
-      return;
-    }
-    document.getElementById('passkey').hidden = false;
-    var ua = navigator.userAgent;
-    // iPadOS Safari presents itself as a Mac; touch points tell them apart.
-    var name = /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'iPad'
-      : /iPhone/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android device' : '';
-    var btn = document.getElementById('go');
-    var err = document.getElementById('error');
-    btn.onclick = function () {
-      btn.disabled = true; err.hidden = true;
-      post('/api/passkeys/login/options')
-        .then(function (o) {
-          return navigator.credentials.get({ publicKey: {
-            challenge: dec(o.challenge), rpId: o.rpId, allowCredentials: [],
-            userVerification: o.userVerification, timeout: o.timeout } });
-        })
-        .then(function (cred) {
-          var r = cred.response;
-          return post('/api/passkeys/login', { name: name, credential: {
-            id: cred.id, clientDataJSON: enc(r.clientDataJSON), authenticatorData: enc(r.authenticatorData),
-            signature: enc(r.signature), userHandle: r.userHandle ? enc(r.userHandle) : null } });
-        })
-        .then(function () { location.reload(); })
-        .catch(function (e) {
-          err.textContent = e && e.name === 'NotAllowedError'
-            ? 'Signing in was cancelled, or this device has no passkey for Synapse.'
-            : (e && e.message) || 'Signing in failed.';
-          err.hidden = false; btn.disabled = false;
-        });
-    };
-  })();
-</script>
+<script type="module" src="/js/access/signin.js"></script>
 </body>
 </html>

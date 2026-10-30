@@ -43,7 +43,7 @@ async def main():
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
             await page.goto(BASE)
-            await page.wait_for_function("window.zcPlugins?.loaded().includes('tasks')")
+            await page.wait_for_function("() => (window.zcPlugins?.loaded().includes('tasks'))")
             await page.click('[data-navigation="tasks.main"]')
             await page.locator('#tasks-view [data-tv="dest"]').click()
             await page.get_by_role("menuitem", name="Another note…").click()

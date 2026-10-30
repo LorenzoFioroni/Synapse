@@ -176,6 +176,7 @@ looking for a bug.
 | `claude_edits` | 8785 | An edit by the real MCP server appears in the open note; Undo, Show changes, the note's history listing each AI edit and restoring a version (recorded as a restore) |
 | `devices` | 8781 | Pairing under `--lan`: the unpaired page, the QR code, pairing, renaming and removing a device |
 | `equations` | 8786 | Editing notes with equations |
+| `csp` | 8817 | Real browser enforcement of script/worker/object/base restrictions, local theme/modules/math/Mermaid and WebAssembly support; probes run as page scripts rather than DevTools eval |
 | `editor_stability` | 8797 | Plain-text typing and autosave in a rich note: frame-by-frame scroll/cursor stability, retained gallery DOM, citation refreshes and callout emphasis |
 | `writing` | 8841 | Live/Source formatting keys and delimiter pairing; native mouse-drag reflow across wrapped math/code at three widths; nested callouts with tables, source editing and underline rendering |
 | `export` | 8792 | Exporting a note: a self-contained HTML page that works offline, portable Markdown, PDF through the print dialog |
@@ -403,3 +404,9 @@ checks labels with old servers and unknown stored providers. The dedicated
 `python tests/e2e/run.py reference_sources` checklist starts one temporary offline provider and
 one browser to verify item-pane titles, HTML escaping, saved data while disabled, and reactivation.
 It makes no request to a real scholarly service.
+
+
+Browser waits use function predicates (`"() => condition"`), not bare expression strings:
+Playwright evaluates expression strings through JavaScript eval, which the app's CSP blocks.
+Keep CSP enforcement enabled in browser contexts. The `csp` checklist serves its attack probes
+as a local page script because DevTools evaluation can bypass the page's eval restriction.

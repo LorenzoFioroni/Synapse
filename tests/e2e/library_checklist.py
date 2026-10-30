@@ -218,7 +218,7 @@ async def main():
             viewer.on("pageerror", lambda e: errors.append("viewer: " + str(e)))
             await viewer.goto(f"{BASE}/viewer.html?file=/pdfs/{att['url']}&paper_id={cui['id']}&title=x")
             await viewer.wait_for_function(
-                "window.zcViewerBridge && document.querySelector('.textLayer span')", timeout=15000
+                "() => (window.zcViewerBridge && document.querySelector('.textLayer span'))", timeout=15000
             )
             await viewer.evaluate("""() => {
                 const span = [...document.querySelectorAll('.textLayer span')].find(s => s.textContent.includes('Variational'));

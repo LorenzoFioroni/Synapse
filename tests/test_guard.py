@@ -23,10 +23,17 @@ EVIL = {"Origin": "https://evil.example"}
         ("/", {"Sec-Fetch-Dest": "iframe", "Sec-Fetch-Site": "cross-site"}, "127.0.0.1", 200),
     ],
 )
-def test_frame_protection_covers_pages_and_refusals(client, path, headers, remote, status):
+def test_content_security_policy_covers_pages_and_refusals(client, path, headers, remote, status):
     response = client.get(path, headers=headers, environ_base={"REMOTE_ADDR": remote})
     assert response.status_code == status
-    assert response.headers["Content-Security-Policy"] == "frame-ancestors 'self'"
+    directives = dict(part.strip().split(" ", 1) for part in response.headers["Content-Security-Policy"].split(";"))
+    assert directives == {
+        "script-src": "'self' 'wasm-unsafe-eval'",
+        "worker-src": "'self'",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "frame-ancestors": "'self'",
+    }
 
 
 # Every state-changing route a web page could reach without a CORS preflight
@@ -182,3 +189,13 @@ def test_allowed_hosts(tmp_path):
 )
 def test_host_name(host, name):
     assert guard.host_name(host) == name
+
+
+@pytest.mark.parametrize("script", ["pair", "signin"])
+def test_unpaired_devices_can_fetch_only_standalone_auth_scripts(client, built_frontend, script):
+    remote = {"REMOTE_ADDR": "192.0.2.10"}
+    response = client.get(f"/js/access/{script}.js", environ_base=remote)
+    assert response.status_code == 200
+    assert "javascript" in response.mimetype
+    for path in ("/js/main.js", "/js/themeHint.js", f"/js/access/{script}.js.map", "/api/items"):
+        assert client.get(path, environ_base=remote).status_code == 401

@@ -138,7 +138,7 @@ async def main():
             t0 = time.time()
             await page.click("#zoom-in")
             await page.wait_for_function(
-                "document.querySelector('.page-wrapper[data-page-number=\"250\"]').dataset.rendered === String(window.zcViewer.scale)",
+                "() => (document.querySelector('.page-wrapper[data-page-number=\"250\"]').dataset.rendered === String(window.zcViewer.scale))",
                 timeout=10000,
             )
             zoom = time.time() - t0

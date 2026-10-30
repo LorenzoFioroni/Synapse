@@ -84,7 +84,7 @@ async def drag_reflow(page):
         await page.click(".note-crumbs")
         if focused:
             await page.evaluate("ed.focus()")
-        await page.wait_for_function("document.querySelectorAll('.cm-lp-math').length >= 18")
+        await page.wait_for_function("() => (document.querySelectorAll('.cm-lp-math').length >= 18)")
         await page.evaluate("document.fonts.ready")
         points = await page.evaluate("""() => {
             window.dragWidgets = [...document.querySelectorAll('.cm-lp-math')];
@@ -123,10 +123,10 @@ async def drag_reflow(page):
             during,
         )
         await page.mouse.up()
-        await page.wait_for_function("document.querySelectorAll('.cm-lp-mathsrc').length > 0")
+        await page.wait_for_function("() => (document.querySelectorAll('.cm-lp-mathsrc').length > 0)")
         check(f"{context}: release reveals source without changing the document", await text(page) == DRAG_NOTE)
         await page.keyboard.press("ArrowRight")
-        await page.wait_for_function("document.querySelectorAll('.cm-lp-math').length >= 18")
+        await page.wait_for_function("() => (document.querySelectorAll('.cm-lp-math').length >= 18)")
         check(
             f"{context}: collapsing the selection restores readable math",
             await page.locator(".cm-lp-math").evaluate_all(

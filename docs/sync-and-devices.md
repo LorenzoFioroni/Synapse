@@ -142,10 +142,26 @@ block goes to the item's paper note through `POST /api/notes/append` instead. Th
 
 ## The guard
 
-Every response carries `Content-Security-Policy: frame-ancestors 'self'`. Browsers refuse to
-embed Synapse in a page from another origin, preventing clickjacking against signed-in pages
-and the local library. Same-origin frames remain allowed for the app's PDF viewer. The header
-also covers sign-in pages and error responses; it does not depend on request fetch metadata.
+Every response carries this Content Security Policy, including sign-in, static files, API
+errors and requests refused by the guard:
+
+```text
+script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'
+```
+
+Only scripts and workers served by Synapse may load. Inline scripts, inline event handlers,
+JavaScript eval, embedded objects and changes to the document's base URL are blocked. The
+narrow `wasm-unsafe-eval` permission lets PDF.js compile its vendored image/colour decoders;
+it does not permit JavaScript eval. Styles, images and fetches retain their existing behavior
+because there is no `default-src` directive. Same-origin frames remain allowed for the PDF
+viewer, while other origins cannot frame signed-in pages. Installed plugins load local script
+modules through the same policy; CSP does not isolate plugins from the app.
+
+The cached theme hint runs from `js/themeHint.js` synchronously before first paint. Pairing and
+sign-in use standalone `js/access/pair.js` and `js/access/signin.js` modules. Those two exact
+paths are public before pairing; other app modules, source maps and library APIs still require
+local or paired access. Build these scripts with the rest of the frontend. There are no inline
+script exceptions or script nonces to maintain.
 
 The server has no accounts. `guard.install` adds a `before_request` hook that every request goes
 through, pages and static files included. It makes three checks, in this order. The MCP endpoint,

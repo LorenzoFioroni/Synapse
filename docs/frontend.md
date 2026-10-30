@@ -102,13 +102,18 @@ When a library is updated, change its version in the `tools/*/package.json` and 
 
 | Page | Loads | Notes |
 |---|---|---|
-| `index.html` | the CSS files, `vendor/md/katex/katex.min.css`, then `js/main.js` as a module | An inline script applies the cached theme (`zc.themeHint` in `localStorage`) before the first paint, to avoid a white flash. |
+| `index.html` | the CSS files, `vendor/md/katex/katex.min.css`, then `js/main.js` as a module | The blocking local `js/themeHint.js` applies the cached theme (`zc.themeHint` in `localStorage`) before first paint. |
 | `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, then the modules `js/viewer/pdfjs.js` (loads pdf.js, an ES module), `viewer.js`, `notesBridge.js`, `links.js`, `annotations.js` | The PDF viewer, one tab per PDF: a frame in one of the app's tabs (`tabs/tabs.ts`), or a browser tab of its own (Settings → PDF Viewer). Its own styles and toolbar markup are inline. |
-| `pair.html` | nothing else | Opened from the pairing QR code under `--lan`. Self-contained (inline style and script, no build) because the guard lets an unpaired device fetch only `PAIRING_PATHS` (`backend/access/guard.py`). |
-| `signin.html` | nothing else | Sent by the guard, with status 401, instead of any page a device that is not signed in asks for: how to pair, and **Sign In with a Passkey** where passkeys can work. Self-contained for the same reason. |
+| `pair.html` | `js/access/pair.js` | Pairing from the QR link. The standalone module is built from `src/access/pair.ts`; its exact path is public before pairing. Styles stay inline. |
+| `signin.html` | `js/access/signin.js` | Sent by the guard with status 401 instead of a protected page: pairing help and passkey sign-in. Its standalone module, built from `src/access/signin.ts`, is public before sign-in; it imports no protected modules. |
 
-In `viewer.html` the order matters. pdf.js is a classic script, so it has run before any module.
-Modules run in document order, so `viewer.ts` publishes `window.zcViewer` before the add-ons run.
+Both the app and viewer load `js/themeHint.js` as a blocking classic script before their body,
+so the cached theme applies before first paint. The source is `src/themeHint.ts`. The other
+page entry points are local modules; inline scripts and event attributes are forbidden by the
+[Content Security Policy](sync-and-devices.md#the-guard).
+
+In `viewer.html` module order matters: the pdf.js bridge runs first, then `viewer.ts`
+publishes `window.zcViewer` before the add-ons run.
 The add-ons import nothing from `viewer.ts` at run time (only its types). They hook in through
 `window.zcViewer` and the `zc:pagecreated` / `zc:pagerendered` events, so each can change
 without touching the others. `viewer.ts` owns the toolbar and shows the colour and size inputs a

@@ -76,7 +76,7 @@ def viewer(item, att, with_att=True):
 
 async def open_viewer(page, url):
     await page.goto(url)
-    await page.wait_for_function("document.querySelectorAll('.page-wrapper .textLayer span').length > 20")
+    await page.wait_for_function("() => (document.querySelectorAll('.page-wrapper .textLayer span').length > 20)")
     await page.evaluate("window.zcAnnotations.ready")
     await page.wait_for_timeout(300)
 

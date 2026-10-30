@@ -138,7 +138,7 @@ async def main():
             v = await ctx.new_page()
             await v.goto(viewer_url + "&page=2")
             await v.wait_for_function(
-                "window.zcViewerBridge && document.querySelector('.page-wrapper[data-page-number=\"2\"] .textLayer span')",
+                "() => (window.zcViewerBridge && document.querySelector('.page-wrapper[data-page-number=\"2\"] .textLayer span'))",
                 timeout=15000,
             )
             await v.evaluate("""() => {
