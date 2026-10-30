@@ -14,6 +14,12 @@ from playwright.async_api import async_playwright
 APP = Path(__file__).resolve().parents[2]
 PORT = 8808
 BASE = f"http://127.0.0.1:{PORT}"
+results = []
+
+
+def check(name, condition, extra=""):
+    results.append(bool(condition))
+    print(("PASS " if condition else "FAIL ") + name, extra)
 
 
 async def main():
@@ -49,7 +55,7 @@ async def main():
             await page.get_by_role("menuitem", name="Another note…").click()
             await page.get_by_role("button", name="Existing index note", exact=False).wait_for()
             await page.keyboard.press("Escape")
-            print("PASS Tasks starts with the existing note index")
+            check("Tasks starts with the existing note index", True)
             # Establish the change-feed cursor before the other client creates a note.
             await page.evaluate("window.zcChanges.poll()")
             requests.post(BASE + "/api/notes/note", json={"title": "Fresh index note"}, timeout=5).raise_for_status()
@@ -60,7 +66,7 @@ async def main():
             await page.locator('#tasks-view [data-tv="dest"]').click()
             await page.get_by_role("menuitem", name="Another note…").click()
             await page.get_by_role("button", name="Fresh index note", exact=False).wait_for()
-            print("PASS Tasks sees a note created in another client without restarting")
+            check("Tasks sees a note created in another client without restarting", True)
             await page.keyboard.press("Escape")
             await page.evaluate("""async () => {
                 const {api} = await import('/js/api.js');
@@ -74,18 +80,19 @@ async def main():
             await page.locator('#tasks-view [data-tv="dest"]').click()
             await page.get_by_role("menuitem", name="Another note…").click()
             await page.get_by_role("button", name="Local index note", exact=False).wait_for()
-            print("PASS Tasks sees this window's own newly created note")
-            assert not errors, errors
-            print("PASS No page errors")
+            check("Tasks sees this window's own newly created note", True)
+            check("No page errors", not errors, errors)
             await browser.close()
     finally:
         server.terminate()
         server.wait(timeout=10)
         shutil.rmtree(data, ignore_errors=True)
+    print(f"\n{sum(results)}/{len(results)} passed")
+    return 0 if all(results) else 1
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _guard import guard  # noqa: E402
 
 guard(PORT)
-asyncio.run(main())
+raise SystemExit(asyncio.run(main()))

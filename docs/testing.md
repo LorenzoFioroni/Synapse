@@ -146,7 +146,13 @@ python tests/e2e/run.py notes render --retries 1    # some, retrying a failed on
 
 `SHOTS` names a folder for screenshots; the checklists that take them say so in their docstring.
 `run.py` runs the checklists one at a time (`--list` prints their names), shows the last lines of
-a failed one, and exits with status 1 if any failed.
+a failed one, and exits with status 1 if any failed. Each checklist must print a final
+`n/m passed` (or `n/m checks passed`) summary and exit with status 0 only when every check
+passes. The runner rejects a missing summary, unequal counts or any nonzero exit status.
+`task_indexes` reports four checks: the existing note index, notes created by another client,
+notes created in this window, and page errors. Run it with `python tests/e2e/run.py task_indexes`;
+a healthy run reports `4/4` and `1/1 checklists passed`. Fatal setup or browser errors still
+exit nonzero even if they prevent the summary from being printed.
 
 **`_guard.py`.** Every checklist calls `guard(PORT)` before it starts its server. It refuses to
 run when the port is already in use, since a server already listening there would be someone
