@@ -311,6 +311,34 @@ def test_connections(client, svc, plugin):
     ]
 
 
+def test_authored_citations_require_a_matching_library_reference(client, svc, plugin):
+    mine = client.post(
+        "/api/items", json={"title": "My own work", "doi": "10.1/own", "authors": "Doe, Jane"}
+    ).get_json()
+    other = client.post(
+        "/api/items", json={"title": "A reference", "doi": "10.1/ref", "authors": "Smith, Ann"}
+    ).get_json()
+    paper = {"key": "new", "authors": ["Jane Doe"]}
+    refs = {"new": [{"doi": "10.1/own"}, {"doi": "10.1/ref"}, {"doi": "10.1/own"}, {"doi": "10.1/missing"}]}
+    result = svc.connections.score([paper], refs, author_names=["Jane Doe"], scoring="proposed")[0]
+    reasons = {r["kind"]: r for r in result["reasons"]}
+    assert reasons["cites_own"]["items"] == [mine["id"]]
+    assert reasons["cites"]["items"] == [other["id"]]
+    assert result["score"] == 9.5  # two distinct citations plus a small shared-author signal
+    missing = svc.connections.score(
+        [paper], {"new": [{"doi": "10.1/missing"}]}, author_names=["Jane Doe"], scoring="proposed"
+    )[0]
+    assert not any(r["kind"] == "cites_own" for r in missing["reasons"])
+
+
+def test_shared_author_signal_is_capped(client, svc, plugin):
+    for i in range(8):
+        client.post("/api/items", json={"title": f"Paper {i}", "authors": "Doe, Jane"})
+    result = svc.connections.score([{"authors": ["Jane Doe"]}], scoring="proposed")[0]
+    assert result["score"] == 1.5
+    assert len(result["reasons"][0]["items"]) == 8
+
+
 # ------------------------------------------------------------------ arXiv's HTML references
 HTML = """<html><body><article>
 <section class="ltx_bibliography" id="bib">

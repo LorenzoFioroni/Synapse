@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from backend.plugins import Plugin, PluginError
 
@@ -37,6 +38,8 @@ def activate(plugin: Plugin) -> None:
     plugin.fields.declare(
         "score", type="float", label="arXiv Score", description="How the paper connects to your library"
     )
+    for name, label in (("score_current", "arXiv Current Score"), ("score_proposed", "arXiv Proposed Score")):
+        plugin.fields.declare(name, type="float", label=label, description="Compare arXiv scoring methods")
     plugin.fields.declare("announced", type="date", label="Announced", description="When arXiv announced it")
     plugin.fields.declare("categories", type="text", label="arXiv Categories")
 
@@ -187,7 +190,17 @@ def activate(plugin: Plugin) -> None:
             return
         papers = [{**record(r), "key": f"arxiv:{r['arxiv']}"} for r in rows]
         refs = {f"arxiv:{r['arxiv']}": json.loads(r["refs"]) for r in rows if r["refs"]}
-        result = plugin.services.connections(papers, refs=refs)
+        results = {
+            method: plugin.services.connections(
+                papers, refs=refs, author_names=plugin.settings["author_names"], scoring=method
+            )
+            for method in ("current", "proposed")
+        }
+        result = results[plugin.settings["scoring"]]
+        for method, values in results.items():
+            plugin.fields.set_many(
+                f"score_{method}", {p["key"]: res["score"] for p, res in zip(papers, values, strict=True)}
+            )
         with db.session() as c:
             c.executemany(
                 "UPDATE papers SET score = ?, reasons = ? WHERE arxiv = ?",
@@ -202,7 +215,7 @@ def activate(plugin: Plugin) -> None:
         if not old:
             return
         gone = [f"arxiv:{a}" for a in old if not in_library(a)]  # an added paper keeps its values
-        for name in ("score", "announced", "categories"):
+        for name in ("score", "score_current", "score_proposed", "announced", "categories"):
             plugin.fields.clear(name, papers=gone)
         with db.session() as c:
             c.executemany("DELETE FROM papers WHERE arxiv = ?", [(a,) for a in old])
@@ -217,10 +230,24 @@ def activate(plugin: Plugin) -> None:
         tz="America/New_York",
     )
 
+    def retry_announcement() -> None:
+        # Empty/stale RSS responses are successful HTTP requests, not failed jobs. Keep
+        # checking until this announcement is stored, including after exhausted HTTP retries.
+        now = datetime.now(ZoneInfo("America/New_York"))
+        if now.weekday() >= 5 or (now.hour == 0 and now.minute < 30) or not categories():
+            return
+        rows = db.query("SELECT day FROM days WHERE day = ?", (now.date().isoformat(),))
+        if not rows:
+            plugin.jobs.enqueue("listing", key="listing")
+
+    plugin.schedule("announcement-retry", retry_announcement, every="30m")
+
     @plugin.settings.on_change
     def settings_changed(changed: dict) -> None:
         if {"categories", "cross_lists", "replacements"} & set(changed):
             plugin.jobs.enqueue("listing", key="listing")
+        if {"author_names", "scoring"} & set(changed):
+            plugin.jobs.enqueue("score", plugin.settings["keep_days"], key="score-all")
         if "keep_days" in changed:
             forget_old()
 
@@ -326,7 +353,7 @@ def activate(plugin: Plugin) -> None:
     # ------------------------------------------------------------------ Claude
     @plugin.mcp_tool(
         "Papers announced on arXiv in the user's categories, best connected to their library first, with "
-        "why each connects (papers of theirs it cites, shared authors, similar topics). `day` is "
+        "why each connects (library papers it cites, shared authors, title/abstract similarity). `day` is "
         "YYYY-MM-DD (default: the latest announcement); `category` keeps papers listed in it.",
         title="arXiv papers of the day",
     )
@@ -355,6 +382,9 @@ def activate(plugin: Plugin) -> None:
             for r in rows[: max(1, min(limit, 200))]
         ]
         return {"day": day, "total": len(rows), "papers": papers}
+
+    # Stored reasons and scores must also reflect scoring changes after an upgrade.
+    plugin.jobs.enqueue("score", plugin.settings["keep_days"], key="score-all")
 
 
 def _now() -> str:

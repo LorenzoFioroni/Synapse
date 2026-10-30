@@ -87,12 +87,22 @@ class PluginServices:
         """For each reference, the library item it is (by DOI, arXiv id or title and year), or None."""
         return self._s.citations.match_refs(refs)
 
-    def connections(self, papers: list[dict], refs: dict | None = None, folders: list[int] | None = None) -> list[dict]:
+    def connections(
+        self,
+        papers: list[dict],
+        refs: dict | None = None,
+        folders: list[int] | None = None,
+        author_names: list[str] | None = None,
+        scoring: str = "current",
+    ) -> list[dict]:
         """How each paper connects to the library: ``{"score", "reasons": [{kind, text, items}]}``,
         from the library papers it cites (``refs``: ``{key: references}``), those citing it,
-        shared authors and similar titles and abstracts. ``folders``: only those folders count."""
+        shared authors and similar titles and abstracts. ``folders``: only those folders count.
+        ``author_names``: names identifying authored library papers, identified by a separate reason.
+        ``scoring="proposed"`` boosts authored citations and reduces shared-author weight;
+        default ``"current"`` preserves the original numeric weights."""
         recs = [p if p.get("key") else {**p, "key": None} for p in papers]
-        return self._s.connections.score(recs, refs, set(folders) if folders else None)
+        return self._s.connections.score(recs, refs, set(folders) if folders else None, author_names, scoring)
 
 
 class PluginActions:

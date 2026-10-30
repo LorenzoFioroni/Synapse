@@ -26,7 +26,7 @@ export function desktopControl(): DesktopControl {
   };
   return {
     label: enabled ? 'Disable OS notifications' : 'Enable OS notifications',
-    description: enabled ? 'Enabled in this browser profile.' : 'Disabled in this browser profile. Notices still appear in Synapse.',
+    description: enabled ? 'Enabled in this browser profile. Delivery requires Synapse to stay open; background phone notifications are not supported.' : 'Disabled in this browser profile. Notices still appear in Synapse.',
     disabled: false, enabled,
   };
 }

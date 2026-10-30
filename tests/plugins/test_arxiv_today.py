@@ -111,7 +111,9 @@ def plugin(client, svc, feed):
         json={"title": "Tensor network methods for quantum circuits", "doi": "10.1/mine", "authors": "Doe, Jane"},
     )
     svc.plugins.private_network = True
-    client.put(f"/api/plugin-host/{PID}/settings", json={"categories": ["quant-ph", "not a category"]})
+    client.put(
+        f"/api/plugin-host/{PID}/settings", json={"categories": ["quant-ph", "not a category"], "scoring": "proposed"}
+    )
     assert client.post(f"/api/plugin-host/{PID}/enable").get_json()["plugin"]["running"]
     p = svc.plugins._active[PID].plugin
     assert wait(lambda: not p.jobs.pending() and _scored(client))
@@ -257,6 +259,7 @@ def test_no_categories(client, svc, feed):
     r = client.post(f"/api/plugins/{PID}/fetch")
     assert r.status_code == 400 and "categories" in r.get_json()["error"]
     assert client.get(TODAY).get_json()["items"] == [] and feed.urls == []
+    assert svc.plugins.values(PID)["scoring"] == "current"
 
 
 def _listing():
@@ -292,3 +295,64 @@ def test_the_rss_parser():
         ["hep th"],
     )
     assert listing.url(["quant-ph", "cs.LG"]) == "https://rss.arxiv.org/rss/quant-ph+cs.LG"
+
+
+def test_authored_library_papers_have_a_stronger_citation_signal(client, svc, plugin):
+    before = client.get(FEED).get_json()["items"][0]
+    assert next(r for r in before["reasons"] if r["kind"] == "cites")["text"] == "Cites 1 paper in your library"
+    assert client.put(f"/api/plugin-host/{PID}/settings", json={"author_names": ["Jane Doe"]}).status_code == 200
+    assert wait(lambda: any(r["kind"] == "cites_own" for r in client.get(FEED).get_json()["items"][0]["reasons"]))
+    after = client.get(FEED).get_json()["items"][0]
+    reason = next(r for r in after["reasons"] if r["kind"] == "cites_own")
+    assert reason["text"] == "Cites 1 paper you authored"
+    assert after["_f"][f"{PID}.score"] == before["_f"][f"{PID}.score"] + 3
+    assert not any(r["kind"] == "cites" for r in after["reasons"])
+    assert after["_f"][f"{PID}.score_proposed"] == after["_f"][f"{PID}.score"]
+    current = after["_f"][f"{PID}.score_current"]
+    assert client.put(f"/api/plugin-host/{PID}/settings", json={"scoring": "current"}).status_code == 200
+    assert wait(lambda: client.get(FEED).get_json()["items"][0]["_f"][f"{PID}.score"] == current)
+
+
+@pytest.mark.parametrize("response", ["empty", "stale", "offline"])
+def test_delayed_feed_is_checked_again_until_current_day_arrives(client, svc, feed, plugin, monkeypatch, response):
+    from zoneinfo import ZoneInfo
+
+    # Move to the next announcement after the fixture's already fetched day.
+    day = feed.day + timedelta(days=1)
+    while day.weekday() >= 5:
+        day += timedelta(days=1)
+    namespace = next(s.run for s in plugin.schedules if s.name == "announcement-retry").__globals__
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(day.year, day.month, day.day, 4, 0, tzinfo=ZoneInfo("America/New_York")).astimezone(tz)
+
+    monkeypatch.setitem(namespace, "datetime", Clock)
+    retry = next(s for s in plugin.schedules if s.name == "announcement-retry")
+    assert retry.every == 1800
+    if response == "empty":
+        feed.day, feed.items = day, []
+    elif response == "offline":
+
+        def offline(*args, **kwargs):
+            raise H.requests.ConnectionError("offline")
+
+        monkeypatch.setattr(H.requests, "request", offline)
+    retry.run()
+    if response == "offline":
+        assert wait(lambda: any(j["attempts"] > 0 for j in plugin.jobs.pending()))
+        # Simulate the runner exhausting its short HTTP retries.
+        for job in plugin.jobs.pending():
+            plugin.jobs.queue.done(job["id"])
+        monkeypatch.setattr(H.requests, "request", feed)
+    else:
+        assert wait(lambda: not plugin.jobs.pending())
+    feed.day = day
+    feed.items = [("2610.00003", "new", "Delayed paper", "Some One", "New.", ["quant-ph"])]
+    retry.run()
+    assert wait(lambda: not plugin.jobs.pending())
+    assert client.get("/api/plugin-sources").get_json()["sources"][0]["variants"][0]["id"] == day.isoformat()
+    count = len(feed.urls)
+    retry.run()
+    assert not plugin.jobs.pending() and len(feed.urls) == count

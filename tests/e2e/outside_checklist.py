@@ -197,8 +197,29 @@ async def main():
                 and await page.locator(".source-variant-item").count() == 2,
             )
             check(
-                "the default variant is Today",
+                "non-date variants keep their supplied title",
+                "26 Oct 2026" in (await page.text_content(".source-variant-item.active") or ""),
+            )
+            await page.evaluate("""async () => {
+                const {state, emit} = await import('/js/store.js');
+                const now = new Date();
+                const day = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+                state.sources.find(s => s.id === 'lists-demo.today').variants[0] = {id: day, title: day};
+                emit('sources');
+            }""")
+            check(
+                "a variant dated today gets the Today label",
                 "Today" in (await page.text_content(".source-variant-item.active") or ""),
+            )
+            await page.evaluate("""async () => {
+                const {state} = await import('/js/store.js');
+                state.sources.find(s => s.id === 'lists-demo.today').variants[0] = {id: '2020-01-01', title: '01 Jan 2020'};
+                document.dispatchEvent(new Event('visibilitychange'));
+            }""")
+            check(
+                "returning to an old feed updates its date without a fetch",
+                "01 Jan 2020" in (await page.text_content(".source-variant-item.active") or "")
+                and "Today" not in (await page.text_content(".source-variant-item.active") or ""),
             )
             await page.click('.source-variant-item[data-source-variant="yesterday"]')
             check(
