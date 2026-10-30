@@ -1,5 +1,7 @@
 import io
 
+import pytest
+
 from tests.conftest import make_pdf
 
 
@@ -216,3 +218,43 @@ def test_duplicates_view(client):
     assert res["counts"]["duplicates"] == 3
     client.post("/api/items/trash", json={"ids": [b["id"], c["id"]]})
     assert client.get("/api/items?view=duplicates").get_json()["items"] == []
+
+
+@pytest.mark.parametrize("field", ["publication", "id", "date_added", "date_modified", "pdfUrl", "_f"])
+def test_create_rejects_unsupported_fields_without_writing(client, svc, field):
+    folder = svc.folders.create("Manuscript")
+    r = client.post("/api/items", json={"title": "A", "tags": ["new tag"], "folder_id": folder["id"], field: "x"})
+    assert r.status_code == 400
+    assert r.get_json() == {"error": f"Unknown item fields: {field}"}
+    assert svc.papers.list() == []
+    assert svc.tags.list() == []
+
+
+def test_create_reports_all_unknown_fields_even_with_empty_values(client):
+    r = client.post("/api/items", json={"title": "A", "z_typo": None, "publication": "", "a_typo": False})
+    assert r.status_code == 400
+    assert r.get_json() == {"error": "Unknown item fields: a_typo, publication, z_typo"}
+    assert client.get("/api/items").get_json()["items"] == []
+
+
+def test_create_accepts_all_editable_fields_and_organization(client, svc):
+    from backend.library.fields import EDITABLE_KEYS
+
+    first = svc.folders.create("First")
+    second = svc.folders.create("Second")
+    data = dict.fromkeys(EDITABLE_KEYS, "example")
+    data.update(item_type="journalArticle", year=2026, citation_key="test2026")
+    data.update(tags=["physics"], folder_id=first["id"], folder_ids=[second["id"]])
+    r = client.post("/api/items", json=data)
+    assert r.status_code == 201
+    item = r.get_json()
+    for field in EDITABLE_KEYS:
+        assert item[field] == data[field]
+    assert item["tags"] == ["physics"]
+    assert set(item["folder_ids"]) == {first["id"], second["id"]}
+
+
+def test_create_accepts_empty_item(client):
+    r = client.post("/api/items", json={})
+    assert r.status_code == 201
+    assert r.get_json()["title"] == ""

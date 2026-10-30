@@ -5,7 +5,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 
 from ..library import search as search_mod
-from ..library.fields import schema_payload
+from ..library.fields import schema_payload, validate_create_fields
 from ..library.repository import NotFound
 from ..plugins import PluginError
 from . import body, error, ids_from_body, svc
@@ -132,6 +132,10 @@ def search_preview():
 @bp.post("/items")
 def create_item():
     data = body()
+    try:
+        validate_create_fields(data)
+    except ValueError as e:
+        return error(str(e))
     item = svc().papers.create(data)
     return jsonify(item), 201
 

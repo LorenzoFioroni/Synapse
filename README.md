@@ -233,6 +233,9 @@ never mix.
 
 - **Add items** by DOI, arXiv ID or ISBN (several at once), by dropping PDFs (the
   DOI/arXiv id on the first pages is used to fetch metadata), or manually.
+  When creating items through `POST /api/items`, unsupported field names return HTTP 400
+  with an explanation instead of silently discarding metadata. Use `journal` for Publication;
+  see [the accepted creation fields](docs/storage.md#creating-items-through-the-http-api).
 - **Retrieve Metadata** works on one item or a whole selection: one review dialog
   with a section per article, word-level diffs that wrap long text with a checkbox per field, and the
   article's unchanged metadata below. Nothing is saved until you apply; replacing an
