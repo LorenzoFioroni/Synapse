@@ -198,6 +198,8 @@ never mix.
 
 - **Responsive on phones and tablets**: compact, touch-sized navigation keeps the library,
   item details, notes, tasks and Settings usable one pane at a time on narrow screens.
+  On tablets and desktop, drag the item-pane divider with a finger or mouse; its width is
+  remembered after reload. Phone item details use the full view.
 
 - **Notification center**: a bell beside Settings keeps unread notices and long-running jobs,
   with a red count on the bell and browser tab icon. Info, Success, Warning and Error are separate

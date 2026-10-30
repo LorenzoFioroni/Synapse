@@ -216,6 +216,12 @@ looking for a bug.
 write `{"pdf_open_in": "browser"}` into their data folder's `settings.json` before starting;
 `tabs` covers the app's own tabs.
 
+`touch_app` waits for `#startup-screen` to disappear before its raw CDP landscape touch
+input. Library rows may already exist underneath the overlay; unlike Playwright locator
+clicks, CDP gestures do not wait for the target to receive events. The checklist keeps its
+finger enlargement assertion and also checks shrinking, width restoration after reload and
+desktop mouse resizing, alongside the existing phone navigation checks.
+
 Each checklist has a port of its own, so a new one needs an unused port. The touch checklists
 simulate Pencil, palm and pinch input; the real behaviour still needs a try on an iPad.
 
