@@ -58,7 +58,12 @@ app.
 ### Type checking
 
 `npm run check` runs `tsc --noEmit` for `frontend/` and then for `../browser_extension` (see
-[browser extension](browser-extension.md)). CI and the pre-commit hook run it. The settings that
+[browser extension](browser-extension.md)). CI and the pre-commit hook run it. Bundled TypeScript
+plugin frontends listed in
+`tsconfig.json`, including `plugins/arxiv-today/frontend/main.ts`, are checked with the app.
+The hook also runs for TypeScript changes under plugin frontend folders. ArXiv Today imports
+only public Plugin API types and declares its `/news` response shape; its manifest points to
+`main.ts`, which the plugin host bundles with esbuild when enabled. The settings that
 matter:
 
 - `strict` and `noUnusedLocals`: no implicit `any`, null checks, no unused variables or imports.

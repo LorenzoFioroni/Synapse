@@ -239,6 +239,8 @@ These are contributed plugins, off until turned on; safe mode stops them:
   Broad references and reviews currently receive the same citation weight as other library papers;
   automatic popularity discounts and per-reference overrides are not implemented.
   OS notices require an open running page; background phone push is not supported.
+  Its TypeScript frontend (`frontend/main.ts`) imports public Plugin API types and is included
+  in `npm run check`. The host bundles it when enabled; no generated bundle is committed.
 
 ## Writing a plugin
 
