@@ -33,4 +33,5 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
+      - run: python tools/typecheck_plugins.py
       - run: python -m pytest -q --cov   # coverage of backend/ in the log (pyproject.toml)

@@ -115,6 +115,11 @@ python -m pytest -q tests/plugins/test_examples.py
 node --check docs/examples/hello-library/frontend/main.js
 ```
 
+For a bundled Python plugin, also run `python tools/typecheck_plugins.py <folder-name>`.
+CI runs this for all bundled Python plugins, including unannotated function bodies. Use relative
+imports within the plugin and import host types through `backend.plugins`; the checker isolates
+reused package names without changing runtime imports. See [type checking](testing.md#type-checking).
+
 For your plugin, test domain behavior and migrations with temporary storage and fake network
 responses. Test public routes and lifecycle with the plugin fixtures in `tests/plugins/conftest.py`.
 Follow the repository's AGENTS.md conventions and run the [repository checks](testing.md) before

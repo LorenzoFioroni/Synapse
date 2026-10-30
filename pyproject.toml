@@ -19,12 +19,16 @@ sort = "Cover"
 
 # Type checking of the Python code: mypy (CI runs it), including unannotated function bodies.
 [tool.mypy]
-files = ["backend", "server.py", "mcp_server.py"]
+files = ["backend", "server.py", "mcp_server.py", "tools/typecheck_plugins.py"]
 python_version = "3.10"
 check_untyped_defs = true
 ignore_missing_imports = true   # optional libraries without type information (fitz, pypdfium2, segno …)
 warn_unused_ignores = true
 warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = "synapse_bundled.*"
+check_untyped_defs = true
 
 [tool.ruff]
 line-length = 120

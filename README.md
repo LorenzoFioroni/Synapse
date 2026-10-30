@@ -668,6 +668,7 @@ pip install -r requirements-dev.txt
 ruff check .                    # lint
 ruff format .                   # format
 mypy                            # type-check the Python code
+python tools/typecheck_plugins.py   # type-check bundled Python plugins in isolation
 python -m pytest                # backend + JavaScript unit tests (the JS part needs Node.js)
 pre-commit install              # optional: ruff, mypy and the type check on every commit
 ```

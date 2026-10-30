@@ -34,6 +34,7 @@ pip install -r requirements-dev.txt
 ruff check .                 # lint (ruff check --fix . fixes most findings)
 ruff format .                # format; CI runs ruff format --check .
 mypy                         # type-check the Python code (pyproject.toml)
+python tools/typecheck_plugins.py   # type-check bundled Python plugins in isolation
 python -m pytest -q          # includes the JavaScript unit tests when Node is installed
 ```
 
