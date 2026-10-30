@@ -8,9 +8,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   locks:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,6 +26,7 @@ jobs:
 
   test:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -55,7 +61,4 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
-      - if: matrix.os == 'macos-latest' && matrix.python == '3.13'
-        run: python -m pytest -q
-      - if: matrix.os != 'macos-latest' || matrix.python != '3.13'
-        run: python -m pytest -q --cov   # coverage of backend/ in the log (pyproject.toml)
+      - run: python -m pytest -q --cov --durations=20 -o faulthandler_timeout=60

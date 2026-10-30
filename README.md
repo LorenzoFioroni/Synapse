@@ -670,6 +670,9 @@ pre-commit install              # optional: ruff, mypy and the type check on eve
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of these on every pull request.
+CI limits each test job to twenty minutes, cancels obsolete runs of the same workflow/ref, and
+reports slow tests and stalled threads. Unit/API tests fake LAN discovery and window launches
+and release plugin resources between tests; see [Testing](docs/testing.md).
 
 Browser checklists (need Playwright; each uses a throw-away data folder).
 `python tests/e2e/run.py` runs them all and prints a summary, `python tests/e2e/run.py notes render`

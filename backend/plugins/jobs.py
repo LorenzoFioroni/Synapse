@@ -14,7 +14,8 @@ import sqlite3
 import threading
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,10 +56,15 @@ class JobQueue:
                 CREATE INDEX IF NOT EXISTS jobs_due ON jobs (run_after, id);"""
             )
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         c = sqlite3.connect(str(self.path), timeout=30)
         c.row_factory = sqlite3.Row
-        return c
+        try:
+            with c:
+                yield c
+        finally:
+            c.close()
 
     def add(self, name: str, args: list, key: str | None = None, delay: float = 0) -> bool:
         """Queue ``name(*args)``; with ``key``, not again while one with that key waits (but that

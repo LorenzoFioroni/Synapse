@@ -16,7 +16,8 @@ import re
 import sqlite3
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -210,10 +211,15 @@ class FieldStore:
         with self._connect() as c:
             c.executescript(SCHEMA)
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         c = sqlite3.connect(str(self.path), timeout=30)
         c.row_factory = sqlite3.Row
-        return c
+        try:
+            with c:
+                yield c
+        finally:
+            c.close()
 
     def put(self, plugin: str, name: str, values: dict[str, tuple[object, str | None]]) -> None:
         """Store ``{key: (value, source_url)}`` (values already cleaned)."""
