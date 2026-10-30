@@ -430,7 +430,7 @@ async def main():
             await page.wait_for_selector('#sidebar [data-navigation="tasks.main"]')
             await page.tap('#sidebar [data-navigation="tasks.main"]')
             await page.wait_for_selector("#tasks-view:not([hidden])")
-            await page.wait_for_function("!document.body.classList.contains('sidebar-open')")
+            await page.wait_for_function("() => (!document.body.classList.contains('sidebar-open'))")
             await page.locator(".tv-quick-input").fill("Phone task")
             await page.locator(".tv-quick-input").press("Enter")
             await page.wait_for_selector(".tv-row:has-text('Phone task')")

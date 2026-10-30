@@ -87,7 +87,7 @@ async def main():
             await options.fill("#server", f"127.0.0.1:{PORT}")
             await options.click("#save")
             await options.wait_for_function(
-                "document.querySelector('#status').textContent.includes('✓')", timeout=10000
+                "() => (document.querySelector('#status').textContent.includes('✓'))", timeout=10000
             )
             status = await options.inner_text("#status")
             check("the options page saves the address and connects", "Connected" in status, status)

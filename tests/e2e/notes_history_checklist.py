@@ -157,7 +157,7 @@ async def main():
             check("the newest change shows what it changed, the changed words marked", "sharper" in marked, marked)
             await groups.nth(1).locator(":scope > .hist-row").click()
             await page.wait_for_function(
-                "document.querySelector('.hist-dialog .hist-title').textContent.includes('4 versions')"
+                "() => (document.querySelector('.hist-dialog .hist-title').textContent.includes('4 versions'))"
             )
             await page.wait_for_selector(".hist-dialog .hist-body .diff")
             adds = await page.locator(".hist-dialog .hist-body .d-add").all_text_contents()

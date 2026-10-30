@@ -56,7 +56,7 @@ async def main():
                 page.on("pageerror", lambda e: errors.append(str(e)))
                 await page.goto(BASE)
                 await page.wait_for_selector(".brand-logo")
-                await page.wait_for_function("document.querySelector('.brand-logo').complete")
+                await page.wait_for_function("() => (document.querySelector('.brand-logo').complete)")
                 logo = await page.evaluate("""(() => { const el = document.querySelector('.brand-logo');
                     const r = el.getBoundingClientRect();
                     return { tag: el.tagName, src: el.getAttribute('src'), w: el.naturalWidth, text: el.textContent,

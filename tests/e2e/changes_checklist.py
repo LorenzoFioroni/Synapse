@@ -163,7 +163,7 @@ async def main():
             v = await mac_ctx.new_page()
             v.on("pageerror", lambda e: errors.append(f"viewer: {e}"))
             await v.goto(f"{BASE}/viewer.html?{q}")
-            await v.wait_for_function("document.querySelectorAll('.page-wrapper .textLayer span').length > 20")
+            await v.wait_for_function("() => (document.querySelectorAll('.page-wrapper .textLayer span').length > 20)")
             await v.evaluate("window.zcAnnotations.ready")
             await v.wait_for_timeout(1500)
             requests.post(

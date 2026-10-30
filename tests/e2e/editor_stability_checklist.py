@@ -124,12 +124,12 @@ async def main():
             requests.patch(BASE + f"/api/items/{item['id']}", json={"year": 2027}).raise_for_status()
             await page.keyboard.type(" updated ")  # the next save reloads this note's resolved citations
             await page.wait_for_function(
-                "[...document.querySelectorAll('.cm-lp-gallery .cite')].some(el => el.textContent.includes('2027'))"
+                "() => ([...document.querySelectorAll('.cm-lp-gallery .cite')].some(el => el.textContent.includes('2027')))"
             )
             check("changed citation data refreshes gallery captions", True)
 
             await page.click('.nt-row.note[data-path="Callout.md"]')
-            await page.wait_for_function("zcNotes.path() === 'Callout.md'")
+            await page.wait_for_function("() => (zcNotes.path() === 'Callout.md')")
             await page.wait_for_timeout(300)
             styles = await page.locator(".cm-content .cmt-em").evaluate_all(
                 "els => els.map(el => [el.textContent, getComputedStyle(el).fontStyle])"

@@ -182,7 +182,7 @@ async def main():
             await page.click('#sidebar [data-act="open-notes"]')
             await page.wait_for_selector("#notes-view:not([hidden])")
             await page.locator(".notes-tree").get_by_text("Review", exact=True).click()
-            await page.wait_for_function("window.zcGraph?.localPath() === 'topics/Review.md'")
+            await page.wait_for_function("() => (window.zcGraph?.localPath() === 'topics/Review.md')")
             await page.wait_for_selector(".ns-graph-canvas canvas", timeout=8000)
             check("local graph shown by default", await page.is_visible(".ns-graph-canvas canvas"))
             await settled(page, "local")
@@ -219,8 +219,8 @@ async def main():
 
             # ---- clicking a note in the local graph opens it, and the graph follows
             await click_node(page, "local", ".ns-graph-canvas", f"note:{idea}")
-            await page.wait_for_function(f"window.zcNotes.path() === {idea!r}", timeout=5000)
-            await page.wait_for_function(f"window.zcGraph.localPath() === {idea!r}")
+            await page.wait_for_function(f"() => (window.zcNotes.path() === {idea!r})", timeout=5000)
+            await page.wait_for_function(f"() => (window.zcGraph.localPath() === {idea!r})")
             await settled(page, "local")
             check(
                 "click opens the note; the local graph follows",
@@ -376,12 +376,12 @@ async def main():
             # ---- clicking a note in the full graph opens it
             await settled(page, "global")
             await click_node(page, "global", ".ng-canvas", f"note:{pnote}")
-            await page.wait_for_function(f"window.zcNotes.path() === {pnote!r}", timeout=5000)
+            await page.wait_for_function(f"() => (window.zcNotes.path() === {pnote!r})", timeout=5000)
             check("clicking a note in the full graph opens it", await page.is_hidden(".notes-graph"))
 
             # ---- an idle graph stops drawing (a canvas redrawn every frame kept the GPU busy)
             await page.mouse.move(1, 1)
-            asleep = await page.wait_for_function("!window.zcGraph.local().awake()", timeout=15000)
+            asleep = await page.wait_for_function("() => (!window.zcGraph.local().awake())", timeout=15000)
             f0 = await page.evaluate("window.zcGraph.local().frames()")
             await page.wait_for_timeout(1500)
             f1 = await page.evaluate("window.zcGraph.local().frames()")
@@ -392,7 +392,7 @@ async def main():
             f2 = await page.evaluate("window.zcGraph.local().frames()")
             check("…and draws again under the pointer", f2 > f1 + 5, (f1, f2))
             await page.mouse.move(1, 1)
-            await page.wait_for_function("!window.zcGraph.local().awake()", timeout=5000)
+            await page.wait_for_function("() => (!window.zcGraph.local().awake())", timeout=5000)
 
             # ---- the local graph updates after an edit
             before = await page.evaluate("window.zcGraph.local().frames()")
@@ -402,7 +402,7 @@ async def main():
             await page.keyboard.press(f"{MOD}+s")
             await page.mouse.move(1, 1)
             await page.wait_for_function(
-                "window.zcGraph.local().nodes().some((n) => n.id === 'note:Lonely.md')", timeout=8000
+                "() => (window.zcGraph.local().nodes().some((n) => n.id === 'note:Lonely.md'))", timeout=8000
             )
             check("local graph picks up a new link after saving", True)
             await page.wait_for_timeout(600)
@@ -410,7 +410,7 @@ async def main():
             check("…and draws it while the layout moves", drawn > 10, drawn)
             check(
                 "…then stops drawing again",
-                await page.wait_for_function("!window.zcGraph.local().awake()", timeout=15000),
+                await page.wait_for_function("() => (!window.zcGraph.local().awake())", timeout=15000),
             )
 
             # ---- dark theme

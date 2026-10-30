@@ -33,13 +33,7 @@
   <link rel="stylesheet" href="css/plugins.css">
   <link rel="stylesheet" href="css/notifications.css">
   <link rel="stylesheet" href="vendor/md/katex/katex.min.css">
-  <script>
-    // apply the cached theme before first paint to avoid a white flash
-    try {
-      const t = localStorage.getItem('zc.themeHint');
-      if (t) document.documentElement.dataset.theme = JSON.parse(t);
-    } catch (e) {}
-  </script>
+  <script src="/js/themeHint.js"></script>
 </head>
 <body>
   <div id="startup-screen" role="status" aria-live="polite">

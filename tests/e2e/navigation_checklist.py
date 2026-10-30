@@ -193,7 +193,7 @@ async def main():
                     await page.click(ENTRIES[destination])
                     await toggle(page, pid, False)
                     if destination == "page":
-                        await page.wait_for_function("document.body.dataset.workspace !== 'page'", timeout=6000)
+                        await page.wait_for_function("() => (document.body.dataset.workspace !== 'page')", timeout=6000)
                     await inspect(page, f"Stopping {pid} leaves a usable {fallback} view", fallback, history=True)
                     check(f"Stopping {pid} removes its entry", await page.locator(ENTRIES[destination]).count() == 0)
                     shortcut = {"tasks": "Shift+k", "graph": "Shift+g", "navigation-check": "Alt+y"}[pid]
@@ -257,7 +257,7 @@ async def main():
                     await page.evaluate("window.navigationCleanups || 0") == cleanups + 1,
                 )
                 await page.click('#sidebar [data-page="audit.other"]')
-                await page.wait_for_function("history.state?.zc?.page === 'audit.other'")
+                await page.wait_for_function("() => (history.state?.zc?.page === 'audit.other')")
                 await toggle(page, "navigation-check", True)
                 check(
                     "Restarting a page after leaving it does not replace the chosen page",

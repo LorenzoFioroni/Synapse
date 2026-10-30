@@ -138,7 +138,7 @@ async def main():
                     and await page.evaluate("badges.at(-1) === 3"),
                 )
                 await page.wait_for_function(
-                    "document.querySelector('link[rel=icon]').href.startsWith('data:image/png')"
+                    "() => (document.querySelector('link[rel=icon]').href.startsWith('data:image/png'))"
                 )
                 check(
                     "Browser tab icon receives a badge without replacing the launcher icon",
@@ -200,7 +200,7 @@ async def main():
                     """id => { void import('/js/actions.js').then(m=>m.findPdfs([id])); }""", item["id"]
                 )
                 await page.wait_for_function(
-                    "[...document.querySelectorAll('.notification-message')].some(e=>e.textContent.includes('Found 0 PDFs'))"
+                    "() => ([...document.querySelectorAll('.notification-message')].some(e=>e.textContent.includes('Found 0 PDFs')))"
                 )
                 check(
                     "PDF lookup result stays in center without bottom result banner",
@@ -222,7 +222,7 @@ async def main():
                 r.raise_for_status()
                 await page.evaluate("window.zcPlugins.sync()")
                 await page.wait_for_function(
-                    "[...document.querySelectorAll('.notification-message')].some(e=>e.textContent.includes('7 new papers'))"
+                    "() => ([...document.querySelectorAll('.notification-message')].some(e=>e.textContent.includes('7 new papers')))"
                 )
                 check("arXiv ready notice uses notification center", await page.locator("#toasts .toast").count() == 0)
                 check(
@@ -255,7 +255,7 @@ async def main():
                 check("Plugin restart restores persistent source navigation", True)
                 await arxiv.locator('[data-n="action"]').click()
                 await page.wait_for_function(
-                    "document.querySelector('#sidebar .selected')?.textContent.includes('arXiv') || document.querySelector('#items-pane')?.textContent.includes('arXiv')"
+                    "() => (document.querySelector('#sidebar .selected')?.textContent.includes('arXiv') || document.querySelector('#items-pane')?.textContent.includes('arXiv'))"
                 )
                 check("Persisted Show action opens arXiv source", True)
 
@@ -265,12 +265,12 @@ async def main():
                 await page.evaluate("import('/js/notifications/center.js').then(m=>m.notify('Other window notice'))")
                 await second.locator('[data-a="notifications"]').click()
                 await second.wait_for_function(
-                    "document.querySelector('#notification-center').textContent.includes('Other window notice')"
+                    "() => (document.querySelector('#notification-center').textContent.includes('Other window notice'))"
                 )
                 check("Notifications synchronize across windows", True)
                 await second.locator('[data-n="read"]').click()
                 await page.wait_for_function(
-                    "document.querySelector('[data-a=notifications]').getAttribute('aria-label')==='Notifications'"
+                    "() => (document.querySelector('[data-a=notifications]').getAttribute('aria-label')==='Notifications')"
                 )
                 check("Read state synchronizes across windows", True)
                 await page.evaluate("""async () => {

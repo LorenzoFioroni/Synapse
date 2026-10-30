@@ -105,8 +105,10 @@ If the `.local` address in the QR code doesn't open, pick the IP address instead
 
 `--debug` only works without `--lan`: Flask's debugger must never be reachable from the network.
 
-Synapse blocks other websites from embedding its pages to prevent clickjacking. Its own embedded
-PDF viewer continues to work.
+Synapse's Content Security Policy blocks inline scripts, JavaScript eval, scripts from other
+origins, embedded objects and changes to the document's base URL. It also prevents other sites
+from framing signed-in pages. Local modules, the embedded PDF viewer and its WebAssembly
+decoders remain supported. See [the guard](docs/sync-and-devices.md#the-guard).
 
 The connection is plain HTTP, so use it on a network you trust (your home Wi-Fi), or serve it
 over HTTPS (below). Paired devices are kept in `data/auth.db` (hashed), which backups leave out on

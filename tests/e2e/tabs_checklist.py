@@ -103,7 +103,7 @@ async def open_pdf(page, item, att, page_no=None, new_tab=False):
 
 async def viewer_ready(frame, timeout=15000):
     await frame.wait_for_function(
-        "window.zcLinks && window.zcViewer && document.querySelector('.page-wrapper canvas')", timeout=timeout
+        "() => (window.zcLinks && window.zcViewer && document.querySelector('.page-wrapper canvas'))", timeout=timeout
     )
 
 
@@ -782,7 +782,7 @@ async def main():
             page = await b.new_page()
             await page.goto(f"http://127.0.0.1:{QUIT_PORT}/")
             await page.wait_for_selector("#toolbar .brand-logo")
-            await page.wait_for_function("document.readyState === 'complete'")
+            await page.wait_for_function("() => (document.readyState === 'complete')")
             check("the server runs while its window is open", srv2.poll() is None)
             # Playwright closes a headless target without dispatching pagehide. Navigating out
             # exercises the browser's real farewell, then closes the now-empty target. Keep the

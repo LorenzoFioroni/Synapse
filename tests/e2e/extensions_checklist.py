@@ -77,7 +77,7 @@ async def main():
                 errors = []
                 page.on("pageerror", lambda e: errors.append(str(e)))
                 await page.goto(BASE)
-                await page.wait_for_function("window.zcPlugins?.loaded().includes('extended-markdown')")
+                await page.wait_for_function("() => (window.zcPlugins?.loaded().includes('extended-markdown'))")
                 await page.evaluate(
                     """async path => { (await import('/js/store.js')).emit('open-note',{path}); }""", path
                 )
@@ -122,7 +122,7 @@ async def main():
                 )
                 for cycle in range(2):
                     await toggle(page, "extended-markdown", False)
-                    await page.wait_for_function("!document.querySelector('.note-read .spoiler-toggle')")
+                    await page.wait_for_function("() => (!document.querySelector('.note-read .spoiler-toggle'))")
                     check(
                         f"Spoilers off exposes readable source ({cycle + 1})",
                         "||inline secret" in await page.locator(".note-read").inner_text(),
@@ -136,7 +136,9 @@ async def main():
                 # the package's own switch for spoilers, the rest of the package still on
                 switch = f"{BASE}/api/plugin-host/extended-markdown/settings"
                 requests.put(switch, json={"spoilers": False}, timeout=10).raise_for_status()
-                await page.wait_for_function("!document.querySelector('.note-read .spoiler-toggle')", timeout=15000)
+                await page.wait_for_function(
+                    "() => (!document.querySelector('.note-read .spoiler-toggle'))", timeout=15000
+                )
                 check(
                     "The Spoilers switch alone shows the source",
                     "||inline secret" in await page.locator(".note-read").inner_text()
@@ -172,7 +174,9 @@ async def main():
                 await page.wait_for_selector(".format-opt")
                 check("Existing five export formats are available", await page.locator(".format-opt").count() == 5)
                 await page.click('.format-opt[data-fmt="export-formats.ris"]')
-                await page.wait_for_function("document.querySelector('.export-preview').textContent.includes('TY  -')")
+                await page.wait_for_function(
+                    "() => (document.querySelector('.export-preview').textContent.includes('TY  -'))"
+                )
                 check("Selected writer supplies the preview", True)
                 await page.click('.dialog button:text-is("Cancel")')
                 await toggle(page, "export-formats", False)
@@ -182,7 +186,7 @@ async def main():
                 }""")
                 await page.locator("#items-pane .row").first.click(button="right")
                 await page.click('.menu-item:has-text("Copy as BibTeX")')
-                await page.wait_for_function("window.copiedReference?.includes('export2026')")
+                await page.wait_for_function("() => (window.copiedReference?.includes('export2026'))")
                 check("Copy BibTeX works with the export plugin disabled", True)
                 await open_export(page)
                 await page.wait_for_selector('.toast:has-text("No export formats")')
@@ -190,10 +194,10 @@ async def main():
                     "Disabled export plugin leaves no stale format dialog", await page.locator(".dialog").count() == 0
                 )
                 await page.keyboard.press(f"{MOD}+,")
-                await page.wait_for_function("document.querySelector('[data-key=export_format]').disabled")
+                await page.wait_for_function("() => (document.querySelector('[data-key=export_format]').disabled)")
                 check("Settings follows disabled export formats", True)
                 await toggle(page, "export-formats", True)
-                await page.wait_for_function("!document.querySelector('[data-key=export_format]').disabled")
+                await page.wait_for_function("() => (!document.querySelector('[data-key=export_format]').disabled)")
                 check(
                     "Settings follows reactivated export formats",
                     await page.locator("[data-key=export_format] option:not([disabled])").count() == 5,

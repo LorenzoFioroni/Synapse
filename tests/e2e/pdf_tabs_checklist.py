@@ -120,7 +120,7 @@ async def main():
                 await page.click('.note-read .cite[data-page="3"]')
             v = await pop.value
             await v.wait_for_function(
-                "window.zcViewerGoto && window.zcLinks && document.querySelector('.page-wrapper[data-page-number=\"4\"]')",
+                "() => (window.zcViewerGoto && window.zcLinks && document.querySelector('.page-wrapper[data-page-number=\"4\"]'))",
                 timeout=15000,
             )
             await v.wait_for_timeout(600)
@@ -168,7 +168,8 @@ async def main():
                 await page.locator('.note-read .cite[data-page="4"]').click(modifiers=[MOD])
             v2 = await pop.value
             await v2.wait_for_function(
-                "window.zcViewerGoto && document.querySelector('.page-wrapper[data-page-number=\"4\"]')", timeout=15000
+                "() => (window.zcViewerGoto && document.querySelector('.page-wrapper[data-page-number=\"4\"]'))",
+                timeout=15000,
             )
             await v2.wait_for_timeout(600)
             check(
@@ -238,7 +239,8 @@ async def main():
             check("after reloading the app, a citation still lands in the same tab", len(vs) == 1, len(vs))
             v = vs[0]
             await v.wait_for_function(
-                "window.zcViewerGoto && document.querySelector('.page-wrapper[data-page-number=\"4\"]')", timeout=15000
+                "() => (window.zcViewerGoto && document.querySelector('.page-wrapper[data-page-number=\"4\"]'))",
+                timeout=15000,
             )
             await v.wait_for_timeout(600)
             check("…at the cited page", await v.evaluate(TOP_PAGE) == 4)

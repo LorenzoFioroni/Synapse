@@ -141,12 +141,12 @@ async def main():
 
             async def open_plan():
                 await page.click('.nt-row.note[data-path="other.md"]')
-                await page.wait_for_function("window.zcNotes?.path() === 'other.md'")
+                await page.wait_for_function("() => (window.zcNotes?.path() === 'other.md')")
                 await page.wait_for_timeout(800)  # plan.md saved
                 reset_plan()
                 await page.click('.nt-row.note[data-path="plan.md"]')
                 await page.wait_for_function(
-                    "window.zcNotes?.path() === 'plan.md' && window.zcNotes.text().includes('First idea')"
+                    "() => (window.zcNotes?.path() === 'plan.md' && window.zcNotes.text().includes('First idea'))"
                 )
                 await page.wait_for_timeout(300)
 
@@ -178,7 +178,7 @@ async def main():
 
             # ---- images and figures
             await choose("Insert Image…", [speckle])
-            await page.wait_for_function("window.zcNotes.text().includes('](attachments/')")
+            await page.wait_for_function("() => (window.zcNotes.text().includes('](attachments/'))")
             t = await text()
             check(
                 "Insert Image…: one image is uploaded and inserted",
@@ -188,7 +188,7 @@ async def main():
 
             await open_plan()
             await choose("Insert Image…", [speckle, clean])
-            await page.wait_for_function("window.zcNotes.text().includes('```gallery')")
+            await page.wait_for_function("() => (window.zcNotes.text().includes('```gallery'))")
             t = await text()
             g = re.search(r"```gallery\n(!\[\]\(attachments/[^)]+\)\n){2}```", t)
             check("Insert Image…: two images become one gallery, without captions", bool(g), repr(t))
@@ -197,7 +197,7 @@ async def main():
 
             await open_plan()
             await choose("Insert Figure with Caption…", [speckle])
-            await page.wait_for_function("window.zcNotes.text().includes('*Caption.')")
+            await page.wait_for_function("() => (window.zcNotes.text().includes('*Caption.'))")
             await page.keyboard.type("Speckle pattern")
             t = await text()
             check(
@@ -208,7 +208,7 @@ async def main():
 
             await open_plan()
             await choose("Insert Figure with Caption…", [speckle, clean])
-            await page.wait_for_function("window.zcNotes.text().includes('```gallery')")
+            await page.wait_for_function("() => (window.zcNotes.text().includes('```gallery'))")
             await page.keyboard.type("Two systems")
             t = await text()
             check(
@@ -242,7 +242,7 @@ async def main():
                 )
 
             await paste([speckle, clean])
-            await page.wait_for_function("window.zcNotes.text().includes('```gallery')", timeout=6000)
+            await page.wait_for_function("() => (window.zcNotes.text().includes('```gallery'))", timeout=6000)
             t = await text()
             check(
                 "pasting two images makes one gallery",
@@ -259,7 +259,7 @@ async def main():
             check("without Extended Markdown no figure command", "Insert Figure with Caption…" not in listed, listed)
             await paste([speckle, clean])
             await page.wait_for_function(
-                "(window.zcNotes.text().match(/\\]\\(attachments\\//g) || []).length === 2", timeout=6000
+                "() => ((window.zcNotes.text().match(/\\]\\(attachments\\//g) || []).length === 2)", timeout=6000
             )
             t = await text()
             check("… and pasted images stay separate images", "```" not in t, repr(t))
@@ -295,7 +295,7 @@ async def main():
             await completion()
             await page.keyboard.press("Enter")
             ok = await page.wait_for_function(
-                "/\\{\\{task:[a-z0-9]+\\}\\}\\s*$/.test(window.zcNotes.text())", timeout=6000
+                "() => (/\\{\\{task:[a-z0-9]+\\}\\}\\s*$/.test(window.zcNotes.text()))", timeout=6000
             )
             t = await text()
             check("Insert Existing Task…: a {{task:id}} line, closed once", ok and "}}}}" not in t, repr(t[-60:]))
@@ -306,7 +306,7 @@ async def main():
             await page.keyboard.type("Check the speckle model")
             await page.keyboard.press("Enter")
             await page.wait_for_function(
-                "(window.zcNotes.text().match(/\\{\\{task:/g) || []).length === 2", timeout=6000
+                "() => ((window.zcNotes.text().match(/\\{\\{task:/g) || []).length === 2)", timeout=6000
             )
             check("Add Task to This Note…: the new-task popup adds its line", True)
 
@@ -341,7 +341,7 @@ async def main():
             if not await page.locator('.nt-row.note[data-path^="papers/"]').count():
                 await page.click('.nt-row.folder[data-folder="papers"]')
             await page.click('.nt-row.note[data-path^="papers/"]')
-            await page.wait_for_function("window.zcNotes?.path().startsWith('papers/')")
+            await page.wait_for_function("() => (window.zcNotes?.path().startsWith('papers/'))")
             await page.wait_for_timeout(500)
             listed = await palette("paper")
             await close_palette()

@@ -98,7 +98,7 @@ async def main():
             await page.click('#sidebar [data-act="open-notes"]')
             await page.wait_for_selector("#notes-view:not([hidden])")
             await page.locator(".notes-tree").get_by_text("Figures", exact=True).click()
-            await page.wait_for_function("window.zcNotes.path() === 'Figures.md'")
+            await page.wait_for_function("() => (window.zcNotes.path() === 'Figures.md')")
 
             # ---- the Attachments dialog
             await page.click('.notes-tree-head [data-act="tree-menu"]')
@@ -108,7 +108,7 @@ async def main():
             check("tabs count all / not used / trash", tabs == "All 2 Not used 1 Trash 1", tabs)
             try:  # the images load after the dialog opens
                 await page.wait_for_function(
-                    "[...document.querySelectorAll('.att-thumb img')].every((i) => i.complete && i.naturalWidth > 0)",
+                    "() => ([...document.querySelectorAll('.att-thumb img')].every((i) => i.complete && i.naturalWidth > 0))",
                     timeout=5000,
                 )
                 loaded = True

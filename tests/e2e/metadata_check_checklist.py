@@ -142,7 +142,7 @@ async def main():
             page.on("request", lambda req: edits.append(req.url) if req.method == "PATCH" else None)
             page.on("pageerror", lambda e: errors.append(str(e)))
             await page.goto(BASE)
-            await page.wait_for_function(f"window.zcPlugins?.loaded().includes('{PID}')")
+            await page.wait_for_function(f"() => (window.zcPlugins?.loaded().includes('{PID}'))")
             await page.wait_for_selector(".row[data-id]")
             await page.click(f'.row[data-id="{item["id"]}"]')
 

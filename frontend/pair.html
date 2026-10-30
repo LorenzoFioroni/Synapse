@@ -5,8 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pair with Synapse</title>
   <link rel="icon" href="/assets/favicon.svg">
-  <!-- Opened from the QR code in Settings → Devices. Self-contained: an unpaired
-       device may load nothing else from the server. -->
+  <!-- Opened from the QR code in Settings → Devices. Its standalone script is also available before pairing. -->
   <style>
     :root { color-scheme: light dark; --accent: #2f6fde; }
     * { box-sizing: border-box; }
@@ -40,34 +39,6 @@
   <p id="error" class="error" hidden></p>
   <p class="muted">You can rename or remove this device later in Settings → Devices.</p>
 </main>
-<script>
-  (function () {
-    var code = new URLSearchParams(location.hash.slice(1)).get('code') || '';
-    // Drop the code from the address bar and history: it is single-use anyway.
-    try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
-    var ua = navigator.userAgent;
-    // iPadOS Safari presents itself as a Mac; touch points tell them apart.
-    var name = /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'iPad'
-      : /iPhone/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android device' : '';
-    if (!code) { document.getElementById('nocode').hidden = false; return; }
-    document.getElementById('form').hidden = false;
-    var input = document.getElementById('name');
-    var btn = document.getElementById('go');
-    var err = document.getElementById('error');
-    input.value = name;
-    btn.onclick = function () {
-      btn.disabled = true; err.hidden = true;
-      fetch('/api/devices/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                   body: JSON.stringify({ code: code, name: input.value.trim() }) })
-        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return [r, d]; }); })
-        .then(function (res) {
-          if (res[0].ok) { location.replace('/'); return; }
-          err.textContent = (res[1] && res[1].error) || ('Pairing failed (' + res[0].status + ').');
-          err.hidden = false; btn.disabled = false;
-        })
-        .catch(function () { err.textContent = 'Cannot reach Synapse. Is this device on the same network?'; err.hidden = false; btn.disabled = false; });
-    };
-  })();
-</script>
+<script type="module" src="/js/access/pair.js"></script>
 </body>
 </html>
