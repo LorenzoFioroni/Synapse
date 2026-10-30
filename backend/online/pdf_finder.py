@@ -14,11 +14,10 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
-import requests
-
 from ..library.identifiers import clean_doi
 from ..pdf.text import extract_text
 from .http import BROWSER_UA, arxiv_wait
+from .remote_pdf import fetch_pdf
 
 log = logging.getLogger(__name__)
 
@@ -106,13 +105,10 @@ def _download_first(urls: list[str], title, doi, arxiv_id, pdf_dir) -> dict | No
         try:
             if urllib.parse.urlparse(url).hostname in ("arxiv.org", "export.arxiv.org"):
                 arxiv_wait()  # batch Find PDF: keep arXiv requests apart
-            r = requests.get(url, headers={"User-Agent": BROWSER_UA}, timeout=20)
-            ctype = r.headers.get("Content-Type", "application/pdf")
-            if not (r.ok and ("pdf" in ctype or r.content[:4] == b"%PDF")):
-                continue
+            content = fetch_pdf(url, BROWSER_UA)
             fd, tmp = tempfile.mkstemp(suffix=".pdf")
             with os.fdopen(fd, "wb") as fh:
-                fh.write(r.content)
+                fh.write(content)
             if verify_pdf(tmp, title, doi, arxiv_id):
                 filename = f"{uuid.uuid4().hex}_downloaded.pdf"
                 shutil.move(tmp, Path(pdf_dir) / filename)

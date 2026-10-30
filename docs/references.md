@@ -203,7 +203,17 @@ makes the server fetch a URL, it is careful not to become a way into the local n
 
 - Only `http` and `https`. Every address the host resolves to must be public
   (`ipaddress.is_global`, not multicast; IPv4-mapped IPv6 is unwrapped first).
-- Redirects are followed by hand, at most `MAX_REDIRECTS` (5), and each target is checked again.
+- Find Available PDF uses the same guarded downloader for its candidate URLs, with the same
+  redirect checks, 100 MB size cap and PDF header check, before verifying the paper identity.
+- The validator and transport live in `backend/online/http.py`, shared with `plugin.http`.
+  DNS answers are retained and sockets connect directly to those exact addresses, preventing a
+  second DNS lookup from redirecting the connection into a private network. All returned addresses
+  must pass validation before any connection, including when DNS mixes public and private answers.
+  Connection failures may try another checked address. HTTP Host, HTTPS SNI and certificate
+  verification keep the original hostname. Environment proxies and netrc are bypassed; requests'
+  default CA bundle is used rather than environment CA overrides.
+- Redirects are followed by hand, at most `MAX_REDIRECTS` (5), and each target is checked again,
+  even when it names the same host (DNS may have changed).
 - The body is capped at `MAX_BYTES` (100 MB), by `Content-Length` and while streaming, and must
   contain `%PDF-` in its first 1024 bytes.
 
@@ -356,15 +366,18 @@ checkboxes; see [browser extension](browser-extension.md).
 
 ## How tests fake the network
 
-No test talks to the web. The tests replace `requests.get` with a function that answers from
-canned data, using pytest's `monkeypatch`. They patch it through the module under test
-(`monkeypatch.setattr(metadata.requests, "get", fake)`), which replaces the attribute on the shared
-`requests` module for the length of the test.
+No test talks to the web. Provider tests replace `backend.online.http.public_request` with a
+function that answers from canned data, using pytest's `monkeypatch`. Permission checks,
+credentials, parsing and rate spacing still run. Transport tests use local HTTP/TLS servers
+and synthetic DNS answers instead of an external service.
 
 - `tests/test_metadata.py`: `FakeResp` and `fake_net()` route by host (Crossref, arXiv Atom feeds
   built by `atom()`). One test uses a `threading.Barrier` to prove Crossref and OpenAlex are asked
   side by side; another checks the arXiv spacing. `tests/fake_metadata.py` fakes only HTTP/DNS,
   keeping the public client's permissions, credentials, response parsing and spacing in the tests.
+  `tests/test_public_http.py` exercises the real shared transport against local HTTP/TLS servers
+  with synthetic public DNS answers: rebinding, redirect validation, Host/SNI, certificate failures,
+  mixed/private addresses, failover, proxy bypass and socket cleanup.
 - `tests/fixtures/metadata_author_names.json`: synthetic Crossref and OpenAlex responses where
   profile names differ from the names credited on a work. `tests/test_metadata.py` checks DOI
   and title lookups, spurious suffixes, initials, surname particles, accents, missing profiles

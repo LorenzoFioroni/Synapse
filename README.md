@@ -270,6 +270,9 @@ never mix.
 - **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
   arXiv: the plugin Open-Access PDFs, on by default; other plugins can add places to look) and checks the file is really the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.
+  These downloads, web-linked PDFs and plugins' public HTTP requests connect only to validated
+  public DNS addresses, including after redirects, while preserving HTTPS certificate verification.
+  They bypass environment proxies; explicit loopback permission still supports local models.
 - **Folders** (nested; an item can be in several folders but is stored once — a folder
   only holds a link to it), **tags** (many per item, optional colours) and **smart
   folders** (saved searches). Drag items onto a folder to add them (hold Shift to move

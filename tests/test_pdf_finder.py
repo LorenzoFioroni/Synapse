@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from backend.online import http, pdf_finder
+from backend.online import http
 from backend.plugins import http as plugin_http
 from tests.conftest import make_pdf
 
@@ -31,6 +31,16 @@ class Resp:
     def close(self):
         pass
 
+    @property
+    def is_redirect(self):
+        return False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
 
 @pytest.fixture
 def web(monkeypatch, tmp_path):
@@ -47,9 +57,7 @@ def web(monkeypatch, tmp_path):
     def request(method, url, **kw):  # plugins' requests (plugin.http)
         return get(url, **kw)
 
-    monkeypatch.setattr(pdf_finder.requests, "get", get)
-    monkeypatch.setattr(pdf_finder.requests, "request", request)
-    monkeypatch.setattr(plugin_http, "public", lambda host: True)  # no DNS in tests
+    monkeypatch.setattr(http, "public_request", request)  # no HTTP or DNS in tests
     return routes, calls
 
 

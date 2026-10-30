@@ -627,6 +627,12 @@ schedules count elapsed seconds instead.
 of this):
 
 - Only the hosts its manifest's `network` names, and only public addresses, also after redirects.
+  Public requests use the shared transport in `backend/online/http.py`: every DNS answer must be
+  public, and sockets connect directly to those checked addresses without another hostname lookup.
+  The original hostname remains the HTTP Host, TLS SNI and certificate-verification identity.
+  Each redirect gets fresh permission and DNS checks; mixed public/private DNS answers are refused.
+  Environment proxies and netrc credentials are not used for these requests, so they cannot bypass
+  destination validation. TLS verification remains enabled with requests' default CA bundle.
   API 1.3 adds the special `"loopback"` network permission, shown as **this computer (loopback)**:
   localhost and literal loopback IPs (`127.0.0.0/8`, `::1`), on any port. It grants no LAN or web
   access. Localhost is pinned to `127.0.0.1`, environment proxies are bypassed, embedded credentials

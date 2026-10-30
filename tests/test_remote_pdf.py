@@ -5,7 +5,7 @@ import socket
 
 import pytest
 
-from backend.online import remote_pdf
+from backend.online import http, remote_pdf
 
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"
 
@@ -56,13 +56,14 @@ def net(monkeypatch):
         fam = socket.AF_INET6 if ":" in ip else socket.AF_INET
         return [(fam, socket.SOCK_STREAM, 6, "", (ip, 0))]
 
-    def fake_get(url, **kw):
+    def fake_get(method, url, **kw):
+        http.resolve_public_url(url)
         assert kw.get("allow_redirects") is False  # redirects are checked one by one
         calls.append(url)
         return routes.get(url, FakeResponse(404))
 
-    monkeypatch.setattr(remote_pdf.socket, "getaddrinfo", fake_getaddrinfo)
-    monkeypatch.setattr(remote_pdf.requests, "get", fake_get)
+    monkeypatch.setattr(http.socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(http, "public_request", fake_get)
     return routes, calls
 
 
