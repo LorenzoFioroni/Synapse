@@ -139,12 +139,10 @@ function render(view: HTMLElement, data: PluginsOverview, force = false): void {
   const list = view.querySelector<HTMLElement>('[data-plugin-list]')!;
   desc.innerHTML = (data.safe_mode ? `<div class="form-error">Synapse was started in safe mode (<span class="mono">--safe-mode</span>): no plugin runs until it is started normally.</div>` : '')
     + `Put a plugin's folder in <span class="mono">${escapeHtml(data.dir)}</span>, then press Look Again. Plugin API ${escapeHtml(data.api)}.`;
-  const group = (title: string, plugins: PluginInfo[], empty: string) => `<section class="plugin-group">
-    <h3>${title}</h3><div class="plugin-group-list">${plugins.length
-      ? plugins.map((p) => rowHtml(p, data.safe_mode)).join('')
-      : `<div class="p-empty">${empty}</div>`}</div></section>`;
-  list.innerHTML = group('Core plugins', data.plugins.filter((p) => p.core), 'No core plugins found.')
-    + group('Contributed plugins', data.plugins.filter((p) => !p.core), 'No contributed plugins installed.');
+  list.innerHTML = `<section class="plugin-group">
+    <h3>Plugins</h3><div class="plugin-group-list">${data.plugins.length
+      ? data.plugins.map((p) => rowHtml(p, data.safe_mode)).join('')
+      : '<div class="p-empty">No plugins installed.</div>'}</div></section>`;
   renderSections(view, data, force);
 }
 

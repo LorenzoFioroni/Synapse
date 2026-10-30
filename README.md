@@ -456,9 +456,11 @@ asks first and lists what the plugin may do (read the library, connect to sites,
 AI apps). A plugin runs with full access to your library and computer, like any program you
 install, so turn on only plugins you trust. Each plugin that is on has a section of its own in
 Settings (listed under Plugins, opened by the **Settings** button on its row or "Settings:
-<plugin>" in the command palette) with its settings, its log and a Restart button; a plugin that keeps failing is turned off and Settings says why. If one keeps
-the app from working, start it with `python server.py --safe-mode` (only core plugins run) and turn it
-off.
+<plugin>" in the command palette) with its settings, its log and a Restart button; a plugin that keeps failing is turned off and Settings says why.
+Bundled and installed plugins share one list, with bundled rows labelled "comes with Synapse".
+If a plugin keeps the app from working, start with `python server.py --safe-mode` to use the basic
+library and notes while diagnosing it. Safe mode stops bundled and installed plugins, preserves
+their settings and enabled choices, and disables their controls until you restart normally.
 
 All bundled optional feature plugins now use the public API as **contributed plugins**.
 Tasks starts on and retains its records, history and note-link integrity in core.
