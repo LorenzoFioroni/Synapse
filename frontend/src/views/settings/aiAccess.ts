@@ -61,7 +61,9 @@ export async function refreshAiAccess(view: HTMLElement): Promise<void> {
   overview = st;
   const where = st.endpoints.length ? ` The address is <span class="mono">${escapeHtml(st.endpoints[0].url)}</span>.` : '';
   desc.innerHTML = (st.lan ? `Each app gets its own token.${where}`
-    : `Synapse only answers this computer. To use it from another computer, start it with <span class="mono">python server.py --lan</span>.${where}`)
+    : `Synapse only answers this computer. For another computer on the same network, start it with <span class="mono">python server.py --lan</span>.
+      For access through an HTTPS tunnel, use <span class="mono">python server.py --public-url https://synapse.example.com</span> instead.
+      Do not combine <span class="mono">--lan</span> with <span class="mono">--public-url</span>.${where}`)
     + (st.this_computer ? '' : st.can_confirm ? ' You confirm with your passkey before making or removing a token.'
       : ' Tokens are made on the computer running Synapse, or on a device signed in with a passkey.');
   const admin = st.this_computer || st.can_confirm;

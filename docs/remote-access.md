@@ -18,6 +18,12 @@ tunnel and treat a request from the server's own LAN address as this computer, w
 The application factory also rejects a configuration combining `public_url` with `lan`.
 Without `--public-url`, LAN access works as before.
 
+When Synapse is local-only, **Settings → AI Access** describes both setup options: `--lan`
+for the same network, or `--public-url https://synapse.example.com` behind an HTTPS tunnel,
+and says not to combine them. With the tunnel configured, the advertised MCP address and
+copied AI-client commands use `https://synapse.example.com/mcp`. Token creation and removal
+from another device still require passkey confirmation.
+
 ## How it works
 
 `cloudflared` passes every visitor's request to `http://127.0.0.1:8000`. Judged by the connection's
