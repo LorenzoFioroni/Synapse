@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .config import Config
 from .desktop import Presence
@@ -18,6 +19,9 @@ from .pdf.fulltext import FulltextIndex, Indexer
 from .references.service import Citations
 from .references.store import CitationStore
 from .settings import SettingsStore
+
+if TYPE_CHECKING:
+    from .mcp.http import HttpTransport
 
 
 class Services:
@@ -75,7 +79,7 @@ class Services:
         self.passkeys = Passkeys(config.auth_db_path, self.devices)  # sign a device in without pairing
         self.tokens = AccessTokens(config.auth_db_path)  # AI apps on other computers (/mcp)
         self.confirmations = Confirmations()  # devices that just confirmed with a passkey (admin actions)
-        self._mcp_http = None
+        self._mcp_http: HttpTransport | None = None
         from .backup import Backups
 
         self.backups = Backups(self)
@@ -116,7 +120,7 @@ class Services:
             self.changes.record({"notes"})
             self.attachments.poke()
 
-    def mcp_http(self):
+    def mcp_http(self) -> HttpTransport:
         """The MCP server over HTTP (``/mcp``), built on first use. It shares these services with
         the web app, so its writes reach the change feed like the app's own."""
         with self._mcp_lock:
@@ -126,9 +130,10 @@ class Services:
 
                 # Notes and tasks written by a tool show up in the open windows. The request itself
                 # counts only as a library write (kind_of), which would hide a task change.
-                self._mcp_http = HttpTransport(
-                    lambda: build_server(self, remote=True), lambda: self.changes.record({"notes", "tasks"})
-                )
+                def wrote() -> None:
+                    self.changes.record({"notes", "tasks"})
+
+                self._mcp_http = HttpTransport(lambda: build_server(self, remote=True), wrote)
             return self._mcp_http
 
     _mcp_lock = threading.Lock()

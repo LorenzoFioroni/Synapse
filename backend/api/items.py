@@ -80,10 +80,10 @@ def list_items():
     except PluginError as e:  # a plugin's list failed: say why, the page keeps what it shows
         return error(str(e), 502)
     ctx = search_context(s)
-    hits = {}
+    hits: dict[str, dict] = {}
     notes = notes_matcher(s) if q or smart_q else None
     if smart_q:
-        items, hits = search_mod.search(items, smart_q, smart_mode, s.fulltext, ctx, notes=notes)
+        items, hits = search_mod.search(items, smart_q, smart_mode or "basic", s.fulltext, ctx, notes=notes)
     if tag_filter:
         want = {search_mod.normalize(t) for t in tag_filter}
         items = [p for p in items if want <= {search_mod.normalize(t) for t in p.get("tags") or []}]
