@@ -302,13 +302,20 @@ items involved:
 
 | Kind | Found by | Score |
 |---|---|---|
-| `cites` | its reference list (given by the caller) matched with `match_refs` | 3 per library paper |
+| `cites` | its reference list (given by the caller) matched with `match_refs`, excluding authored matches | 3 per library paper |
+| `cites_own` | a matched library reference has an author matching caller-supplied `author_names` (surname and first initial) | 6 per authored library paper |
 | `cited_by` | library papers whose stored reference lists contain its DOI or arXiv id | 3 per library paper |
-| `authors` | family name and first initial, normalised, shared with library papers | 2 per library paper, at most 5 |
+| `authors` | family name and first initial, normalised, shared with library papers | 0.5 per library paper, at most 3 (1.5 total) |
 | `similar` | cosine similarity of title and abstract (TF-IDF over the library; words in more than a quarter of the library and stop words left out), from 0.15 | 10 × the best similarity |
 
 The library side (author index, word weights and postings) is built once and again only when
 `library_signature()` changes. `folders` limits all of it to papers in those folders.
+Citation reasons distinguish authored papers from other library papers; a configured author name
+alone cannot make an unmatched outside reference count as authored. Each matched reference counts
+once. Name matching can still confuse namesakes. Similarity is labelled “Similar title/abstract
+(TF-IDF)” and uses a search icon. This is local lexical similarity rather than an embedding model.
+The arXiv plugin rescans retained scores on activation and when configured author names change.
+The same score controls ordering and the notification threshold. No broad-reference discount is applied.
 
 `build_graph()` in the Graph contributed plugin (`plugins/graph/server/build.py`, served at
 `GET /api/plugins/graph/data`, using public citation-graph and permission-gated notes reads) adds the notes for the Graph view (`plugins/graph/frontend/`): `paper`, `work` and `note` nodes, and `cites`, `cite` (a note's

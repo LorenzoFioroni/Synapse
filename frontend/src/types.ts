@@ -543,7 +543,7 @@ export interface PluginSource {
 /** Why a plugin lists a paper; ``items``: the library papers involved (those it cites, say). */
 export interface Reason {
   text: string;
-  kind: string;            // 'cites' | 'cited_by' | 'authors' | 'similar' | '' (the plugin's own words)
+  kind: string;            // 'cites' | 'cites_own' | 'cited_by' | 'authors' | 'similar' | '' (the plugin's own words)
   items: string[];
 }
 

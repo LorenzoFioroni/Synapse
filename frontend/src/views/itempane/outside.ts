@@ -7,7 +7,7 @@ import { fieldText, itemTypeLabel, state } from '../../store.js';
 import type { Item, Reason } from '../../types.js';
 import { escapeHtml, shortAuthors } from '../../util.js';
 
-const REASON_ICON: Record<string, string> = { cites: 'link', cited_by: 'link', authors: 'library', similar: 'sparkle' };
+const REASON_ICON: Record<string, string> = { cites: 'link', cites_own: 'link', cited_by: 'link', authors: 'library', similar: 'search' };
 
 /** The header of a paper outside the library, with "Add to My Library". */
 export function outsideHeader(it: Item): string {

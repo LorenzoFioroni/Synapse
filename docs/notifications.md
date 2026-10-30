@@ -15,6 +15,8 @@ a notice appearing in the center. Synapse does not request permission on startup
 button is the explicit permission request. Support depends
 on the browser, secure context and OS; mobile browsers and the desktop webview may only support
 the in-app center. No background push service is installed: the app must be open to deliver notices.
+The enabled Settings description states this limitation; granting phone OS permission does not
+provide delivery while the installed app is closed or suspended.
 
 PDF searches/imports, bulk reference fetching, adding papers, background metadata retrieval
 and full-text indexing report progress in the center, including their result and available

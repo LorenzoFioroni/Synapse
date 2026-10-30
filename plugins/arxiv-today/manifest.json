@@ -21,6 +21,13 @@
       "default": []
     },
     {
+      "key": "author_names",
+      "type": "multi",
+      "label": "Your author names",
+      "description": "Names you publish under, in Given Family order (comma-separated aliases). Citations to matched library papers you authored score 6 instead of 3. Matching uses surname and first initial; namesakes can match.",
+      "default": []
+    },
+    {
       "key": "cross_lists",
       "type": "bool",
       "label": "Include cross-lists",
@@ -38,14 +45,14 @@
       "key": "references",
       "type": "bool",
       "label": "Read reference lists",
-      "description": "From each paper's HTML version on arXiv, to see which of your papers it cites (one request every 3 seconds, in the background).",
+      "description": "From each paper’s HTML version on arXiv, to see which papers in your library it cites (one request every 3 seconds, in the background).",
       "default": true
     },
     {
       "key": "min_score",
       "type": "float",
       "label": "Connected from score",
-      "description": "Papers scoring at least this count as connected to your library in the morning's notification (citing one of your papers scores 3, sharing an author with one 2).",
+      "description": "Notification threshold: authored library citations score 6, other library citations 3, shared authors 0.5 per library paper capped at 1.5.",
       "default": 3,
       "min": 0,
       "max": 100

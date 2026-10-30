@@ -1,6 +1,6 @@
 """How a paper outside the library connects to it: the library papers it cites, those that cite it,
 shared authors, and how close its title and abstract are to the library's (TF-IDF). Each
-connection is a reason the app can show ("Cites 4 of your papers"); together they give a score
+connection is a reason the app can show ("Cites 4 papers in your library"); together they give a score
 to rank a day's arXiv listing, say.
 
 The library side (authors, the text index) is built once and rebuilt only when the library
@@ -18,8 +18,8 @@ from dataclasses import dataclass, field
 from ..library.identifiers import identifiers, norm_arxiv, norm_doi
 from ..library.search import normalize
 
-WEIGHTS = {"cites": 3.0, "cited_by": 3.0, "authors": 2.0, "similar": 10.0}
-MAX_AUTHOR_ITEMS = 5  # shared authors count up to this many library papers
+WEIGHTS = {"cites": 3.0, "cites_own": 6.0, "cited_by": 3.0, "authors": 0.5, "similar": 10.0}
+MAX_AUTHOR_ITEMS = 3  # shared authors count up to this many library papers
 SIMILAR_MIN = 0.15  # cosine similarity from which a library paper counts as close
 COMMON = 0.25  # words in more than this share of the library say little and are left out
 STOP = set(
@@ -127,12 +127,15 @@ class Connections:
         papers: list[dict],
         refs: dict[str, list[dict]] | None = None,
         folders: set[int] | None = None,
+        author_names: list[str] | None = None,
     ) -> list[dict]:
         """For each paper (``title``, ``authors``, ``abstract``, ``doi``/``arxiv``, and optionally
         its ``key`` to find its reference list in ``refs``): ``{"score": float, "reasons": [{kind,
         text, items}]}``. ``folders``: only library papers in these folders count."""
         lib = self._library()
         within = {pid for pid, f in lib.in_folders.items() if f & folders} if folders else None
+        own_keys = set().union(*(author_keys([name]) for name in (author_names or [])))
+        authored = set().union(*(lib.authors.get(key, set()) for key in own_keys))
         out = []
         for p in papers:
             reasons = []
@@ -142,15 +145,18 @@ class Connections:
             if refs and p.get("key") in refs:
                 matched = self.citations.match_refs(refs[p["key"]])
                 cited = sorted({m for m in matched if m and (within is None or m in within)})
-            if cited:
-                reasons.append(
-                    {
-                        "kind": "cites",
-                        "text": f"Cites {len(cited)} of your papers" if len(cited) > 1 else "Cites one of your papers",
-                        "items": cited,
-                    }
-                )
-                score += WEIGHTS["cites"] * len(cited)
+            own = [pid for pid in cited if pid in authored]
+            other = [pid for pid in cited if pid not in authored]
+            for cited_ids, kind, label in ((own, "cites_own", "you authored"), (other, "cites", "in your library")):
+                if cited_ids:
+                    reasons.append(
+                        {
+                            "kind": kind,
+                            "text": f"Cites {len(cited_ids)} {'paper' if len(cited_ids) == 1 else 'papers'} {label}",
+                            "items": cited_ids,
+                        }
+                    )
+                    score += WEIGHTS[kind] * len(cited_ids)
             # the library papers citing it
             doi = norm_doi(p.get("doi"))
             arx = norm_arxiv(p.get("arxiv")) or identifiers(p)[1]
@@ -163,9 +169,9 @@ class Connections:
                 reasons.append(
                     {
                         "kind": "cited_by",
-                        "text": f"Cited by {len(citing)} of your papers"
+                        "text": f"Cited by {len(citing)} papers in your library"
                         if len(citing) > 1
-                        else "Cited by one of your papers",
+                        else "Cited by one paper in your library",
                         "items": citing,
                     }
                 )
@@ -183,9 +189,9 @@ class Connections:
                 reasons.append(
                     {
                         "kind": "authors",
-                        "text": f"Shares authors with {n} of your papers ({names})"
+                        "text": f"Shares authors with {n} papers in your library ({names})"
                         if n > 1
-                        else f"Shares authors with one of your papers ({names})",
+                        else f"Shares authors with one paper in your library ({names})",
                         "items": sorted(ids),
                     }
                 )
@@ -197,8 +203,14 @@ class Connections:
                 if s >= SIMILAR_MIN
             ]
             if close:
-                top = lib.titles.get(close[0][0]) or "one of your papers"
-                reasons.append({"kind": "similar", "text": f"Close to “{top}”", "items": [pid for pid, _ in close]})
+                top = lib.titles.get(close[0][0]) or "a paper in your library"
+                reasons.append(
+                    {
+                        "kind": "similar",
+                        "text": f"Similar title/abstract (TF-IDF) to “{top}”",
+                        "items": [pid for pid, _ in close],
+                    }
+                )
                 score += WEIGHTS["similar"] * close[0][1]
             out.append({"score": round(score, 1), "reasons": reasons})
         return out

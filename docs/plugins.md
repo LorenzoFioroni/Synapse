@@ -210,7 +210,7 @@ These are contributed plugins, off until turned on; safe mode stops them:
   the papers for the retained announcement days (latest first, 30 days by default), without
   crowding the main sidebar. They are ranked by how they connect to your library (`plugin.services.connections`),
   with the reasons in the item pane; each paper's reference list is read from its HTML version on
-  arXiv in the background (one request every 3 seconds), so papers citing yours rise to the top
+  arXiv in the background (one request every 3 seconds), so papers citing library references rise to the top
   as the morning goes on. A notification says "12 new papers, 3 connected to your library" once a
   day is scored. Right-click a paper to **Dismiss** it (⌘⌥D / Ctrl+Alt+D) or open its PDF on
   arXiv; ⌘⌥T / Ctrl+Alt+T shows the list, and the palette has **arXiv: Fetch Today's Papers
@@ -218,10 +218,25 @@ These are contributed plugins, off until turned on; safe mode stops them:
   (`categories:quant-ph`, `score:>3`) and stay with a paper you add. Claude can ask for a day's
   papers with its tool `arxiv-today__today`. The feed (rss.arxiv.org) is read after each
   announcement (Monday to Friday, 00:30 US Eastern), at the next start when the computer was off,
-  and when the categories change. arXiv's cache sometimes serves, for up to a day, a feed dated
-  for the new day that still lists the previous day's papers; the plugin then asks arXiv itself,
-  past the cache, and if that too is behind it looks again every 30 minutes (up to 6 hours).
+  and when the categories change. If arXiv's cache serves a feed dated for the new day but
+  listing only earlier papers, the plugin asks arXiv directly past the cache. A half-hourly check keeps retrying during announcement weekdays
+  until a nonempty listing dated that day is stored, including after empty/stale RSS responses or
+  exhausted network retries. Holidays or categories without new papers may therefore keep checking
+  that day. A fetched day stops these checks; Fetch Now still forces a request.
+  Day labels use the browser's calendar date and refresh every minute and on visibility changes;
+  the newest stored day is only labelled Today if its date is today.
   Cross-lists are in by default, replacements not.
+  **Your author names** accepts publication names in Given Family order. A citation only earns
+  the stronger authored signal after matching a reference to an existing library paper whose
+  author matches a configured name (surname and first initial, accent/case normalized; namesakes
+  can match). Authored citations score 6, other library citations 3 without double counting,
+  and shared authors 0.5 per library paper capped at 1.5. **arXiv Score** controls ordering and
+  the notification threshold. Changing author names rescores all retained days, as does plugin
+  activation so previously stored scores adopt the current weights. Title/abstract similarity remains
+  local TF-IDF cosine similarity (up to 10 points), labelled explicitly with a search icon.
+  Broad references and reviews currently receive the same citation weight as other library papers;
+  automatic popularity discounts and per-reference overrides are not implemented.
+  OS notices require an open running page; background phone push is not supported.
 
 ## Writing a plugin
 
@@ -355,7 +370,7 @@ def activate(plugin: Plugin) -> None:
 | `@plugin.pdf_source(id, title=…, by_title=False, order=100)` | Where Find Available PDF may look: `fn(paper)` gets `{"title", "doi", "arxiv"}` and returns PDF URLs, best first; Synapse downloads them in turn and keeps the first that is the paper (it checks the DOI, the arXiv stamp or the title in its text). Sources `by_title` are asked only when those going by identifier found nothing for a paper with an arXiv id. Lower `order` first (Open-Access PDFs uses 10). For an institutional repository or a proxy, say. |
 | `@plugin.reference_source(id, title=…, order=100, subsources=None)` | API 1.1: `fn(query)` receives `item` (a copied library-style record), contact `email` and `fresh` (prefer newly announced-paper sources). Return `{"references": [...]}` or `None`. Lower order first; empty results and failures fall through. No active source raises a readable lookup error. API 1.5 adds declared named sub-sources; fixed host aliases preserve historical bundled names (below). |
 | `@plugin.export_format(id, title=…, extension=…, mimetype=…)` | API 1.1: `fn(items, options) -> str` registers a text export. Options contain `unicode`, `abstract` and citation-key `pattern`. Keys are `<plugin>.<id>` (a core plugin's would keep its bare id). Writers disappear on unload. Extensions and MIME types are validated. Imports remain independent. To write a format Synapse knows, use `backend.plugins.formats` (below). |
-| `plugin.services` | `contact_email()`, `lookup(identifier)`, `references(paper, new=False)`, `match(refs)`, `connections(papers, refs=None, folders=None)`: Synapse's own lookups, reference lists and scoring. |
+| `plugin.services` | `contact_email()`, `lookup(identifier)`, `references(paper, new=False)`, `match(refs)`, `connections(papers, refs=None, folders=None, author_names=None)`: Synapse's own lookups, reference lists and scoring. |
 | `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). API 1.6: `update(id, changes)` edits metadata with `"library": ["edit"]`, using the library validation, citation-key rewrite and change events. Unknown/read-only fields and structured values are rejected before writing; tags and folder membership use separate app operations and are not accepted here. |
 
 Raise **`PluginError("…")`** for a problem the user or Claude should read: a route answers 400 with
@@ -564,7 +579,7 @@ with the contact address and keys from Settings), not through `plugin.http`, so 
 | `lookup(identifier)` | A paper's metadata by DOI, arXiv id (`arXiv:2610.01234`) or ISBN, as a paper in the shape above. `PluginError` when nothing is found, `Offline` without network. |
 | `references(paper, new=False)` | The works a paper (`{"doi"}` or `{"arxiv"}`) cites: `[{doi, arxiv_id, title, year, authors, venue, raw}]`, from Semantic Scholar, OpenAlex or Crossref, else from **arXiv's HTML version**, which has them on the day a paper is announced; for arXiv papers of this month or the last, the HTML list wins when it is longer (see [references](references.md)). `new=True`, for a paper announced in the last days, asks the HTML version first and the others only when it has no list. `[]` when none is known, `Offline` when the services cannot be reached. |
 | `match(refs)` | For each reference, the id of the library item it is (by DOI, arXiv id, or title and year), or `None`. |
-| `connections(papers, refs=None, folders=None)` | For each paper, `{"score", "reasons"}`: the library papers it cites (`refs`: `{paper key: its references}`), those whose reference lists cite it, shared authors (family name and first initial) and how close its title and abstract are to the library's (TF-IDF). `folders`: only papers in these folders count. Sort by `score`; show `reasons`. |
+| `connections(papers, refs=None, folders=None, author_names=None)` | For each paper, `{"score", "reasons"}`: the library papers it cites (`refs`: `{paper key: its references}`), those whose reference lists cite it, shared authors (family name and first initial) and how close its title and abstract are to the library's (TF-IDF). `folders`: only papers in these folders count. `author_names`: identify authored library papers by surname and first initial; their citations receive a separate `cites_own` reason and score 6 rather than 3. Shared authors contribute at most 1.5. Sort by `score`; show `reasons`. |
 
 `plugin.actions.add(paper, folder_id=None, tags=None)` adds a paper as the "+" does: looked up
 by its DOI or arXiv id (the paper's own fields when that fails), the duplicate check, a citation
