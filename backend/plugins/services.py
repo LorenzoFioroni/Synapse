@@ -93,16 +93,13 @@ class PluginServices:
         refs: dict | None = None,
         folders: list[int] | None = None,
         author_names: list[str] | None = None,
-        scoring: str = "current",
     ) -> list[dict]:
         """How each paper connects to the library: ``{"score", "reasons": [{kind, text, items}]}``,
         from the library papers it cites (``refs``: ``{key: references}``), those citing it,
         shared authors and similar titles and abstracts. ``folders``: only those folders count.
-        ``author_names``: names identifying authored library papers, identified by a separate reason.
-        ``scoring="proposed"`` boosts authored citations and reduces shared-author weight;
-        default ``"current"`` preserves the original numeric weights."""
+        ``author_names``: names identifying authored library papers, whose citations count more."""
         recs = [p if p.get("key") else {**p, "key": None} for p in papers]
-        return self._s.connections.score(recs, refs, set(folders) if folders else None, author_names, scoring)
+        return self._s.connections.score(recs, refs, set(folders) if folders else None, author_names)
 
 
 class PluginActions:

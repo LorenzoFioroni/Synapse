@@ -111,9 +111,7 @@ def plugin(client, svc, feed):
         json={"title": "Tensor network methods for quantum circuits", "doi": "10.1/mine", "authors": "Doe, Jane"},
     )
     svc.plugins.private_network = True
-    client.put(
-        f"/api/plugin-host/{PID}/settings", json={"categories": ["quant-ph", "not a category"], "scoring": "proposed"}
-    )
+    client.put(f"/api/plugin-host/{PID}/settings", json={"categories": ["quant-ph", "not a category"]})
     assert client.post(f"/api/plugin-host/{PID}/enable").get_json()["plugin"]["running"]
     p = svc.plugins._active[PID].plugin
     assert wait(lambda: not p.jobs.pending() and _scored(client))
@@ -259,7 +257,6 @@ def test_no_categories(client, svc, feed):
     r = client.post(f"/api/plugins/{PID}/fetch")
     assert r.status_code == 400 and "categories" in r.get_json()["error"]
     assert client.get(TODAY).get_json()["items"] == [] and feed.urls == []
-    assert svc.plugins.values(PID)["scoring"] == "current"
 
 
 def _listing():
@@ -307,10 +304,6 @@ def test_authored_library_papers_have_a_stronger_citation_signal(client, svc, pl
     assert reason["text"] == "Cites 1 paper you authored"
     assert after["_f"][f"{PID}.score"] == before["_f"][f"{PID}.score"] + 3
     assert not any(r["kind"] == "cites" for r in after["reasons"])
-    assert after["_f"][f"{PID}.score_proposed"] == after["_f"][f"{PID}.score"]
-    current = after["_f"][f"{PID}.score_current"]
-    assert client.put(f"/api/plugin-host/{PID}/settings", json={"scoring": "current"}).status_code == 200
-    assert wait(lambda: client.get(FEED).get_json()["items"][0]["_f"][f"{PID}.score"] == current)
 
 
 @pytest.mark.parametrize("response", ["empty", "stale", "offline"])

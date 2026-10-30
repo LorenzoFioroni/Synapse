@@ -504,10 +504,9 @@ Three plugins come with Synapse, off until you turn them on:
   for choosing today or any retained day. Earlier days stay for a month, and Claude can ask for
   them. Empty or delayed feeds are checked again every 30 minutes on announcement weekdays until
   that day's papers arrive. Day labels follow the calendar even without a new fetch. Set **Your
-  author names** to distinguish citations to your authored library papers. **Current** scoring
-  stays the default; **Proposed** gives authored citations more weight and caps shared authors
-  at a smaller contribution. Enable **arXiv Current Score** and **arXiv Proposed Score** columns
-  to compare them before choosing a method. Similarity is local TF-IDF on titles and abstracts.
+  author names** to distinguish citations to your authored library papers: these score 6 instead
+  of 3. Shared authors contribute 0.5 per library paper, capped at 1.5. Similarity is local TF-IDF
+  on titles and abstracts.
   OS notification delivery requires the app to be open; background phone push is not supported.
 
 A plugin can offer a **list of papers** that are not in your library yet (today's arXiv papers,

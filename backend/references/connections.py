@@ -18,9 +18,8 @@ from dataclasses import dataclass, field
 from ..library.identifiers import identifiers, norm_arxiv, norm_doi
 from ..library.search import normalize
 
-WEIGHTS = {"cites": 3.0, "cites_own": 3.0, "cited_by": 3.0, "authors": 2.0, "similar": 10.0}
-PROPOSED_WEIGHTS = {**WEIGHTS, "cites_own": 6.0, "authors": 0.5}
-MAX_AUTHOR_ITEMS = 5  # shared authors count up to this many library papers
+WEIGHTS = {"cites": 3.0, "cites_own": 6.0, "cited_by": 3.0, "authors": 0.5, "similar": 10.0}
+MAX_AUTHOR_ITEMS = 3  # shared authors count up to this many library papers
 SIMILAR_MIN = 0.15  # cosine similarity from which a library paper counts as close
 COMMON = 0.25  # words in more than this share of the library say little and are left out
 STOP = set(
@@ -129,13 +128,10 @@ class Connections:
         refs: dict[str, list[dict]] | None = None,
         folders: set[int] | None = None,
         author_names: list[str] | None = None,
-        scoring: str = "current",
     ) -> list[dict]:
         """For each paper (``title``, ``authors``, ``abstract``, ``doi``/``arxiv``, and optionally
         its ``key`` to find its reference list in ``refs``): ``{"score": float, "reasons": [{kind,
         text, items}]}``. ``folders``: only library papers in these folders count."""
-        weights = PROPOSED_WEIGHTS if scoring == "proposed" else WEIGHTS
-        max_authors = 3 if scoring == "proposed" else MAX_AUTHOR_ITEMS
         lib = self._library()
         within = {pid for pid, f in lib.in_folders.items() if f & folders} if folders else None
         own_keys = set().union(*(author_keys([name]) for name in (author_names or [])))
@@ -160,7 +156,7 @@ class Connections:
                             "items": cited_ids,
                         }
                     )
-                    score += weights[kind] * len(cited_ids)
+                    score += WEIGHTS[kind] * len(cited_ids)
             # the library papers citing it
             doi = norm_doi(p.get("doi"))
             arx = norm_arxiv(p.get("arxiv")) or identifiers(p)[1]
@@ -179,7 +175,7 @@ class Connections:
                         "items": citing,
                     }
                 )
-                score += weights["cited_by"] * len(citing)
+                score += WEIGHTS["cited_by"] * len(citing)
             # shared authors
             shared: dict[str, set[str]] = {}
             for k, family in author_keys(p.get("authors")).items():
@@ -199,7 +195,7 @@ class Connections:
                         "items": sorted(ids),
                     }
                 )
-                score += weights["authors"] * min(n, max_authors)
+                score += WEIGHTS["authors"] * min(n, MAX_AUTHOR_ITEMS)
             # close in title and abstract
             close = [
                 (pid, s)
@@ -215,6 +211,6 @@ class Connections:
                         "items": [pid for pid, _ in close],
                     }
                 )
-                score += weights["similar"] * close[0][1]
+                score += WEIGHTS["similar"] * close[0][1]
             out.append({"score": round(score, 1), "reasons": reasons})
         return out

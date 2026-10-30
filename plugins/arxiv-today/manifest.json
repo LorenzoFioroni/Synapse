@@ -24,25 +24,8 @@
       "key": "author_names",
       "type": "multi",
       "label": "Your author names",
-      "description": "Names you publish under, in Given Family order (comma-separated aliases). Matched library papers are labelled as authored. The Proposed method gives their citations extra weight. Matching uses surname and first initial; namesakes can match.",
+      "description": "Names you publish under, in Given Family order (comma-separated aliases). Citations to matched library papers you authored score 6 instead of 3. Matching uses surname and first initial; namesakes can match.",
       "default": []
-    },
-    {
-      "key": "scoring",
-      "type": "choice",
-      "label": "Scoring method",
-      "description": "Current preserves the existing ranking. Proposed gives authored citations more weight and reduces shared authors. Both score columns are available for comparison.",
-      "default": "current",
-      "options": [
-        [
-          "current",
-          "Current"
-        ],
-        [
-          "proposed",
-          "Proposed"
-        ]
-      ]
     },
     {
       "key": "cross_lists",
@@ -69,7 +52,7 @@
       "key": "min_score",
       "type": "float",
       "label": "Connected from score",
-      "description": "Notification threshold for the selected scoring method. Current: library citations 3, shared authors up to 10. Proposed: authored citations 6, other citations 3, shared authors up to 1.5.",
+      "description": "Notification threshold: authored library citations score 6, other library citations 3, shared authors 0.5 per library paper capped at 1.5.",
       "default": 3,
       "min": 0,
       "max": 100

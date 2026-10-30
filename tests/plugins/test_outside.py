@@ -296,7 +296,7 @@ def test_connections(client, svc, plugin):
     assert set(kinds) == {"cites", "cited_by", "authors", "similar"}
     assert kinds["cites"]["items"] == [lib[0]["id"]] and kinds["cited_by"]["items"] == [lib[1]["id"]]
     assert "Cirac" in kinds["authors"]["text"] and kinds["similar"]["items"][0] == lib[0]["id"]
-    assert res["score"] > 10
+    assert res["score"] > 6
     # only papers in a folder count
     f = client.post("/api/folders", json={"name": "Birds"}).get_json()
     assert client.post("/api/items/folders", json={"ids": [lib[1]["id"]], "add": [f["id"]]}).status_code == 200
@@ -320,21 +320,19 @@ def test_authored_citations_require_a_matching_library_reference(client, svc, pl
     ).get_json()
     paper = {"key": "new", "authors": ["Jane Doe"]}
     refs = {"new": [{"doi": "10.1/own"}, {"doi": "10.1/ref"}, {"doi": "10.1/own"}, {"doi": "10.1/missing"}]}
-    result = svc.connections.score([paper], refs, author_names=["Jane Doe"], scoring="proposed")[0]
+    result = svc.connections.score([paper], refs, author_names=["Jane Doe"])[0]
     reasons = {r["kind"]: r for r in result["reasons"]}
     assert reasons["cites_own"]["items"] == [mine["id"]]
     assert reasons["cites"]["items"] == [other["id"]]
     assert result["score"] == 9.5  # two distinct citations plus a small shared-author signal
-    missing = svc.connections.score(
-        [paper], {"new": [{"doi": "10.1/missing"}]}, author_names=["Jane Doe"], scoring="proposed"
-    )[0]
+    missing = svc.connections.score([paper], {"new": [{"doi": "10.1/missing"}]}, author_names=["Jane Doe"])[0]
     assert not any(r["kind"] == "cites_own" for r in missing["reasons"])
 
 
 def test_shared_author_signal_is_capped(client, svc, plugin):
     for i in range(8):
         client.post("/api/items", json={"title": f"Paper {i}", "authors": "Doe, Jane"})
-    result = svc.connections.score([{"authors": ["Jane Doe"]}], scoring="proposed")[0]
+    result = svc.connections.score([{"authors": ["Jane Doe"]}])[0]
     assert result["score"] == 1.5
     assert len(result["reasons"][0]["items"]) == 8
 
