@@ -298,6 +298,7 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
 | [Browser extension](browser-extension.md) | The extension and the connector API it uses. |
 | [Notifications](notifications.md) | The bell, unread history, progress, plugin delivery and OS opt-in. |
 | [Frontend](frontend.md) | The build, the type checking, the pages, state and events, and the module map. |
+| [Python dependencies](dependencies.md) | Runtime/development inputs, portable hashed locks, the pinned resolver, CI installation and dependency updates. |
 | [Testing](testing.md) | pytest, the JavaScript tests, the browser checklists, CI and the tools. |
 
 ## Conventions

@@ -38,7 +38,7 @@ scripts; the app itself runs offline).
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install --require-hashes --only-binary=:all: -r requirements.txt
 (cd frontend && npm ci)           # once, and again when frontend/package-lock.json changes
 python server.py                  # http://127.0.0.1:8000 opens in your browser
 python server.py --port 5050 --no-browser
@@ -46,6 +46,10 @@ python server.py --data-dir ~/MyLibrary
 python server.py --window         # in a window of its own, like a program
 python server.py --make-shortcut  # an icon on the Desktop that does that (see below)
 ```
+
+The requirements files pin direct and transitive Python dependencies, with hashes and platform
+markers. CI installs the same runtime pins. To change dependencies, edit the `.in` inputs and
+regenerate the locks; see [Python dependencies](docs/dependencies.md).
 
 `server.py` compiles the web app's scripts (`frontend/src` → `frontend/js`) whenever they changed,
 for example after a `git pull`.
@@ -656,7 +660,7 @@ the backend.
 ## Tests
 
 ```bash
-pip install -r requirements-dev.txt
+pip install --require-hashes --only-binary=:all: -r requirements-dev.txt
 (cd frontend && npm ci && npm run check)   # type-check the frontend and the browser extension
 ruff check .                    # lint
 ruff format .                   # format

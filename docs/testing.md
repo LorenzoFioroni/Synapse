@@ -215,11 +215,13 @@ simulate Pencil, palm and pinch input; the real behaviour still needs a try on a
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request, on Ubuntu with
-Python 3.10 and 3.13 and Node.js 22:
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request, on Ubuntu and macOS with
+Python 3.10 and 3.13 and Node.js 22. A separate job checks the generated Python locks with the
+uv version pinned in `tools/requirements-uv.txt`:
 
 1. `npm ci`, `npm run check` (type check) and `npm run build` in `frontend/`;
-2. `pip install -r requirements-dev.txt`;
+2. Install `requirements.txt` in a fresh runtime virtual environment, check it with `pip check`
+   and `server.py --help`, then install the hashed `requirements-dev.txt` in the test environment;
 3. `ruff check .`, `ruff format --check .` and `mypy`;
 4. `python -m pytest -q --cov`, which includes the JavaScript tests and prints the coverage
    report in the log (nothing is uploaded).
@@ -263,7 +265,7 @@ installed, so committing needs no network.
 From `CLAUDE.md`:
 
 ```bash
-pip install -r requirements-dev.txt
+pip install --require-hashes --only-binary=:all: -r requirements-dev.txt
 (cd frontend && npm ci && npm run check)   # the frontend and the browser extension
 ruff check .
 ruff format .
