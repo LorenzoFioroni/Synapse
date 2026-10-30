@@ -43,8 +43,10 @@ What exists today:
   [remote access](remote-access.md)). Settings → Plugins and a plugin frontend's `saveSettings`
   ask for the passkey when the server wants one (`asAdmin`); cancelling leaves the plugin as it
   was. Reading the list of plugins does not need it.
-- `python server.py --safe-mode` runs only bundled core plugins, for when an installed plugin keeps the app from working.
-  `mcp_server.py --safe-mode` does the same for the MCP server an AI app starts.
+- `python server.py --safe-mode` stops bundled and installed plugins, keeping the basic library
+  and notes available when a plugin keeps the app from working. Plugin settings and enabled
+  choices are preserved; plugin controls are disabled until Synapse starts normally.
+  `mcp_server.py --safe-mode` also stops these plugins for the MCP server an AI app starts.
 - Restart the AI app after turning on a plugin with tools if they do not show up: some AI apps read
   the list of tools only once.
 - A plugin's pages and lists of papers are listed in the sidebar with Library and Notes; its commands
@@ -59,18 +61,18 @@ What exists today:
 Plugins that come with Synapse live in the repository's `plugins/` folder. A plugin in
 `data/plugins/` with the same id replaces the one that comes with Synapse.
 
-### Core plugins
+### Plugin Settings and legacy core status
 
-The host retains core status for bundled implementations that require private app modules.
-All currently shipped optional feature plugins use the public API and are contributed plugins;
-core status cannot be claimed by installed plugins.
+Settings shows bundled and installed plugins in one **Plugins** list. Bundled rows say
+"comes with Synapse"; development packages and replacements retain their source labels.
+Its navigation expands the individual plugin sections only while the Plugins area is in view,
+and otherwise keeps a single top-level **Plugins** entry.
 
-Settings lists these separately from **Contributed plugins** (bundled optional additions and
-plugins installed in `data/plugins/`). Its navigation expands the individual plugin sections only
-while the Plugins area is in view, and otherwise keeps a single top-level **Plugins** entry.
-
-A core plugin is a plugin like any other (manifest, `activate(plugin)`, routes, tools, settings),
-with these differences, all from `"core": true` in its manifest and honoured only in `plugins/`:
+All currently shipped optional feature plugins use the public API and are contributed plugins.
+None has core status, so safe mode stops every currently shipped plugin as well as installed
+plugins. The host still retains the following internal compatibility paths for `"core": true`
+in bundled manifests; installed plugins cannot claim that status. These paths are not used by
+current plugins and are separate from the Settings list. A legacy core plugin has these privileges:
 
 - It may import Synapse's own modules (`backend.…`, and in the frontend the app's modules), since
   it ships and changes with Synapse; `tests/test_layers.py` leaves it out of the import rule.
@@ -117,8 +119,8 @@ Some features Synapse always had are **contributed plugins**: they use only the 
 do and keep that API honest. Open-Access PDFs, Export Formats, Metadata Sources and Reference Sources start on the
 first time Synapse sees them, because their manifest says `"enabled_by_default": true` (honoured only for plugins in
 `plugins/`; an installed plugin always waits to be turned on). After that they are the user's
-choice, and safe mode stops them like any contributed plugin. Settings lists them under
-**Contributed plugins**.
+choice, and safe mode stops them like any contributed plugin. Settings lists them alongside
+installed plugins under **Plugins**.
 
 - **Tasks** (`plugins/tasks`, on by default): the Tasks workspace under **Plugins** in the left
   sidebar, task controls in notes,
