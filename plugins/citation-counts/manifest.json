@@ -1,7 +1,7 @@
 {
   "id": "citation-counts",
   "name": "Citation Counts",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "api": "^1.0",
   "author": "Synapse",
   "description": "How often each paper in your library is cited, from OpenAlex and Semantic Scholar: a Citations column, a search filter (citations:>100) and a row in the item pane. Counts are fetched for new papers at once and refreshed every week.",
