@@ -39,6 +39,8 @@ class Web:
         self.openalex = {"10.1/known": 152, "10.48550/arxiv.2101.00002": 3}  # DOI -> count
         self.s2 = {"ARXIV:2101.00001": 40, "DOI:10.1/s2only": 7}
         self.s2_status = 200
+        self.s2_error = {"message": "Too Many Requests"}
+        self.s2_batches: list[list[str]] = []
         self.calls: list[tuple[str, str, dict, dict]] = []
 
     def __call__(self, method, url, data=None, json=None, headers=None, **kw):
@@ -54,8 +56,11 @@ class Web:
             ]
             return FakeResp(200, {"results": results})
         if parts.hostname == "api.semanticscholar.org":
+            self.s2_batches.append(list(json["ids"]))
             if self.s2_status != 200:
-                return FakeResp(self.s2_status, {"message": "Too Many Requests"})
+                return FakeResp(self.s2_status, self.s2_error)
+            if not any(i in self.s2 for i in json["ids"]):
+                return FakeResp(400, {"error": "No valid paper ids given"})
             return FakeResp(
                 200,
                 [
@@ -177,6 +182,45 @@ def test_every_service_down_leaves_the_batch(client, svc, web, plugin):
     assert values(svc) == {}
     d = plugin.fields.defs["citations"]
     assert len(svc.plugins.fields.due(d, svc.papers.list())) == 1  # asked again at the next round
+
+
+def test_unknown_batch_is_not_a_service_failure(client, svc, web, caplog):
+    add(client, doi="10.1/unknown")
+    add(client, doi="10.1/also-unknown")
+    svc.plugins.private_network = True
+    assert client.post(f"/api/plugin-host/{PID}/enable").get_json()["plugin"]["running"]
+    assert wait(lambda: len(values(svc)) == 2)
+    assert all(value == (None, None) for value in values(svc).values())
+    plugin = svc.plugins._active[PID].plugin
+    definition = plugin.fields.defs["citations"]
+    assert svc.plugins.fields.due(definition, svc.papers.list(), now=time.time() + 2 * 3600) == []
+    assert len(svc.plugins.fields.due(definition, svc.papers.list(), now=time.time() + 8 * 86400)) == 2
+    assert len(web.s2_batches) == 1
+    assert not [r for r in caplog.records if r.name == f"synapse.plugin.{PID}" and r.levelname == "WARNING"]
+
+
+def test_unknown_s2_batch_still_uses_openalex_arxiv_fallback(client, svc, web, caplog):
+    add(client, archive_id="arXiv:2101.00002")
+    svc.plugins.private_network = True
+    assert client.post(f"/api/plugin-host/{PID}/enable").get_json()["plugin"]["running"]
+    assert wait(lambda: values(svc).get("arxiv:2101.00002", (None,))[0] == 3)
+    assert not [r for r in caplog.records if r.name == f"synapse.plugin.{PID}" and r.levelname == "WARNING"]
+
+
+@pytest.mark.parametrize(
+    "body", [{"error": "Unrecognized or unsupported fields"}, b"not JSON", {"message": "No valid paper ids given"}]
+)
+def test_other_bad_requests_remain_retryable(client, svc, web, body, caplog):
+    web.s2_status = 400
+    web.s2_error = body
+    add(client, doi="10.1/unknown")
+    svc.plugins.private_network = True
+    assert client.post(f"/api/plugin-host/{PID}/enable").get_json()["plugin"]["running"]
+    assert wait(lambda: any("Refreshing citations could not finish" in r.message for r in caplog.records))
+    assert values(svc) == {}
+    assert svc.plugins.info(PID)["running"]
+    definition = svc.plugins._active[PID].plugin.fields.defs["citations"]
+    assert len(svc.plugins.fields.due(definition, svc.papers.list())) == 1
 
 
 # ------------------------------------------------------------------ the API it needed

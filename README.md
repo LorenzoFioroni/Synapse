@@ -503,6 +503,8 @@ Three plugins come with Synapse, off until you turn them on:
 
 - **Citation Counts** adds a *Citations* column from OpenAlex and Semantic Scholar, refreshed
   weekly, and lets you search for `citations:>100`.
+  A batch not yet indexed by Semantic Scholar still uses the OpenAlex fallback; papers neither
+  service knows keep an unknown count and are checked again weekly.
 - **Metadata Check** compares every identifiable library record with current metadata every
   three days (or as often as you set), flags fields to review, and identifies journal versions of
   arXiv preprints. **Run Now** checks everything at once, with progress in the notification center.

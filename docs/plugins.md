@@ -189,6 +189,10 @@ These are contributed plugins, off until turned on; safe mode stops them:
   are added; counts are refreshed weekly. Papers with a DOI are asked of OpenAlex first, arXiv
   preprints of Semantic Scholar first (it counts a preprint and its journal version together); its
   setting turns Semantic Scholar off. It uses the keys in Settings → Online Services, if any.
+  Semantic Scholar's `400` response with `error: "No valid paper ids given"` means that none of
+  the batch's papers is indexed there. The plugin continues to OpenAlex's arXiv fallback;
+  papers neither service knows keep an unknown count and are checked again at the normal
+  weekly refresh. Other HTTP errors retain the existing retry behavior.
 - **Metadata Check** (`plugins/metadata-check`): a *Metadata Check* text field refreshed through
   the active metadata providers, every three days by default (setting *Days between checks*, applied
   without a restart). It compares every field the Retrieve Metadata dialog compares without folding case,
