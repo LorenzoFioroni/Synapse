@@ -223,8 +223,9 @@ uv version pinned in `tools/requirements-uv.txt`:
 2. Install `requirements.txt` in a fresh runtime virtual environment, check it with `pip check`
    and `server.py --help`, then install the hashed `requirements-dev.txt` in the test environment;
 3. `ruff check .`, `ruff format --check .` and `mypy`;
-4. `python -m pytest -q --cov`, which includes the JavaScript tests and prints the coverage
-   report in the log (nothing is uploaded).
+4. `python -m pytest -q --cov` on all matrix entries except macOS/Python 3.13 (which runs
+   `python -m pytest -q` to avoid a `pytest-cov` SQLite data-file failure in that runtime),
+   including the JavaScript tests; coverage is printed in the log and not uploaded.
 
 The browser checklists do not run in CI.
 
