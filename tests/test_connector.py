@@ -230,7 +230,7 @@ def test_page_pdf_link_is_downloaded_only_from_public_addresses(client, monkeypa
     import socket
 
     from backend import connector
-    from backend.online import remote_pdf
+    from backend.online import http
     from backend.online.http import LookupFailed
 
     def offline(**k):
@@ -252,11 +252,17 @@ def test_page_pdf_link_is_downloaded_only_from_public_addresses(client, monkeypa
     ips = {"journal.example": "93.184.216.34"}
     monkeypatch.setattr(connector, "lookup", offline)
     monkeypatch.setattr(
-        remote_pdf.socket,
+        http.socket,
         "getaddrinfo",
         lambda host, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ips.get(host, host), 0))],
     )
-    monkeypatch.setattr(remote_pdf.requests, "get", lambda url, **k: fetched.append(url) or Resp())
+
+    def fetch(method, url, **kwargs):
+        http.resolve_public_url(url)
+        fetched.append(url)
+        return Resp()
+
+    monkeypatch.setattr(http, "public_request", fetch)
 
     local = client.post(
         "/api/connector/save", json={"title": "Router page", "pdf_url": "http://127.0.0.1:631/x.pdf"}

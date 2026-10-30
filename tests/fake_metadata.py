@@ -29,6 +29,5 @@ def install_transport(monkeypatch, get):
         params = dict(parse_qsl(parts.query)) or None
         return get(parts._replace(query="").geturl(), params=params, **kwargs)
 
-    monkeypatch.setattr(http.requests, "request", request)
-    monkeypatch.setattr(http, "public", lambda host: True)
+    monkeypatch.setattr(http.online_http, "public_request", request)
     monkeypatch.setattr(http, "DEFAULT_GAP", 0.0)

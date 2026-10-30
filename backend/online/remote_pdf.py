@@ -9,11 +9,11 @@ there. The response must be a PDF and is capped in size.
 
 from __future__ import annotations
 
-import ipaddress
-import socket
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 import requests
+
+from . import http
 
 MAX_BYTES = 100 * 1024 * 1024
 MAX_REDIRECTS = 5
@@ -26,39 +26,16 @@ class RemoteError(Exception):
         self.status = status
 
 
-def _public(host: str) -> bool:
-    """True when every address the host resolves to is a public one."""
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except (socket.gaierror, UnicodeError) as e:
-        raise RemoteError(f"Cannot resolve {host}.", 502) from e
-    for info in infos:
-        ip = ipaddress.ip_address(str(info[4][0]).split("%")[0])
-        mapped = getattr(ip, "ipv4_mapped", None)  # an IPv6 address that stands for an IPv4 one
-        if mapped:
-            ip = mapped
-        if not ip.is_global or ip.is_multicast:
-            return False
-    return bool(infos)
-
-
-def check_url(url: str) -> None:
-    p = urlparse(url)
-    if p.scheme not in ("http", "https") or not p.hostname:
-        raise RemoteError("Only http(s) links can be opened.")
-    if not _public(p.hostname):
-        raise RemoteError("Links to this computer or the local network are not opened.", 403)
-
-
 def fetch_pdf(url: str, user_agent: str, max_bytes: int | None = None) -> bytes:
     """The PDF at ``url``, following up to five redirects; :class:`RemoteError` otherwise."""
     max_bytes = max_bytes or MAX_BYTES
     for _ in range(MAX_REDIRECTS + 1):
-        check_url(url)
         try:
-            r = requests.get(
-                url, timeout=TIMEOUT, stream=True, allow_redirects=False, headers={"User-Agent": user_agent}
+            r = http.public_request(
+                "GET", url, timeout=TIMEOUT, stream=True, allow_redirects=False, headers={"User-Agent": user_agent}
             )
+        except http.PublicAddressError as e:
+            raise RemoteError(str(e), e.status) from e
         except requests.RequestException as e:
             raise RemoteError("The PDF could not be downloaded.", 502) from e
         with r:

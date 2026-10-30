@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import ipaddress
 import json as jsonlib
-import socket
 import threading
 from collections import OrderedDict
 from collections.abc import Callable
@@ -80,22 +79,6 @@ def loopback(host: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
-
-
-def public(host: str) -> bool:
-    """Every address ``host`` resolves to is a public one (not this computer, not the local network)."""
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except (socket.gaierror, UnicodeError) as e:
-        raise Offline(f"Cannot resolve {host}") from e
-    for info in infos:
-        ip = ipaddress.ip_address(str(info[4][0]).split("%")[0])
-        mapped = getattr(ip, "ipv4_mapped", None)
-        if mapped:
-            ip = mapped
-        if not ip.is_global or ip.is_multicast:
-            return False
-    return bool(infos)
 
 
 def service_credentials(host: str, settings) -> tuple[dict, dict]:
@@ -179,7 +162,7 @@ class PluginHttp:
                 hdrs.setdefault("If-Modified-Since", cached.modified)
         for _ in range(MAX_REDIRECTS + 1):
             host = self._check(url)
-            local = loopback(host)
+            local = loopback(host) and ("loopback" in self.hosts or self.private)
             if local and host == "localhost":
                 # Use a literal address: DNS cannot redirect note text off this computer.
                 parts = urlsplit(url)
@@ -192,7 +175,12 @@ class PluginHttp:
             online_http.HOST_GAPS.wait(key, max(0.0 if local else gap, self._gaps.get(host, 0.0)))
             try:
                 # Local model requests must not pass through environment HTTP proxies.
-                send = _local_request if local else requests.request
+                if local:
+                    send = _local_request
+                elif self.private:
+                    send = requests.request
+                else:
+                    send = online_http.public_request
                 r = send(
                     method,
                     url,
@@ -203,6 +191,10 @@ class PluginHttp:
                     stream=True,
                     allow_redirects=False,
                 )
+            except online_http.PublicAddressError as e:
+                if e.status == 502:
+                    raise Offline(str(e)) from e
+                raise HttpError(f"{host}: {e}", e.status) from e
             except (requests.ConnectionError, requests.Timeout) as e:
                 raise Offline(f"{host} could not be reached: {type(e).__name__}") from e
             except requests.RequestException as e:
@@ -248,8 +240,6 @@ class PluginHttp:
                 f'{host} is not in the plugin\'s "network" permission'
                 + (f" ({', '.join(self.hosts)})" if self.hosts else " (it names no host)")
             )
-        if not self.private and not public(host):
-            raise HttpError(f"{host} is on this computer or the local network; plugins may only reach the web")
         return host
 
 

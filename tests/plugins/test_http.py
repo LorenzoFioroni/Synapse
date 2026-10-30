@@ -141,7 +141,6 @@ def test_arxiv_spacing_is_shared_with_synapse(monkeypatch):
     """A plugin's request to arXiv and Synapse's own (arxiv_wait) take turns in one line."""
     monkeypatch.setattr(online_http, "HOST_GAPS", online_http.HostGaps())
     monkeypatch.setattr(online_http, "ARXIV_SPACING", 0.3)
-    monkeypatch.setattr(H, "public", lambda host: True)
     stamps = []
 
     class Answer:
@@ -157,7 +156,7 @@ def test_arxiv_spacing_is_shared_with_synapse(monkeypatch):
         stamps.append(time.monotonic())
         return Answer()
 
-    monkeypatch.setattr(H.requests, "request", request)
+    monkeypatch.setattr(online_http, "public_request", request)
     c = PluginHttp("p", ["export.arxiv.org"], lambda: "test")
     online_http.arxiv_wait()
     stamps.append(time.monotonic())
@@ -190,7 +189,6 @@ def test_loopback_permission_connects_without_proxy_or_dns(server, monkeypatch):
 
 def test_web_permission_cannot_reach_loopback_through_redirect(server, monkeypatch):
     c = PluginHttp("web", ["example.com"], lambda: "test")
-    monkeypatch.setattr(H, "public", lambda host: True)
 
     class Redirect:
         status_code = 302
@@ -199,7 +197,7 @@ def test_web_permission_cannot_reach_loopback_through_redirect(server, monkeypat
         def close(self):
             pass
 
-    monkeypatch.setattr(H.requests, "request", lambda *a, **kw: Redirect())
+    monkeypatch.setattr(online_http, "public_request", lambda *a, **kw: Redirect())
     with pytest.raises(PluginError):
         c.get("https://example.com/start")
     assert not Handler.hits
