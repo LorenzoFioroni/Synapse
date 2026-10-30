@@ -124,3 +124,10 @@ def schema_payload() -> dict:
         "commonFields": COMMON_FIELDS,
         "rareFields": [f.key for f in FIELDS if f.rare],
     }
+
+
+def validate_create_fields(data: dict) -> None:
+    """Reject unsupported HTTP creation fields before metadata can be silently lost."""
+    unknown = sorted(data.keys() - set(EDITABLE_KEYS) - {"tags", "folder_id", "folder_ids"})
+    if unknown:
+        raise ValueError(f"Unknown item fields: {', '.join(unknown)}")

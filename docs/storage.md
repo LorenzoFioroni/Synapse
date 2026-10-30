@@ -87,6 +87,18 @@ notices the other's writes.
 | `plugins.json`, `plugin-data/`, `fields.db` | Restore a backup (most field values can also be fetched again by their plugin). |
 | `plugins/` | Not in backups: install the plugins again. |
 
+## Creating items through the HTTP API
+
+`POST /api/items` accepts the editable metadata keys returned by `GET /api/schema`
+(`editable: true`), plus `tags`, `folder_id` and `folder_ids`. An empty object creates an
+untitled item. Unsupported keys, including read-only fields such as `id`, `date_added` and
+`date_modified`, reject the entire request before any item, tag or folder membership is saved.
+The response is HTTP 400 with a JSON `error` naming every unsupported key in alphabetical order.
+For example, `{"title": "A paper", "publication": "Nature"}` returns
+`{"error": "Unknown item fields: publication"}`; use `journal` for the publication field.
+This validation applies to this creation endpoint; imports and repository callers retain their
+own input handling.
+
 ## The library database
 
 `Database` (`backend/library/db.py`) opens a new connection per unit of work. `session()`
