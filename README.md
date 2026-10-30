@@ -565,8 +565,13 @@ python mcp_server.py --config     # prints the exact entries for your paths
 Whatever an AI app changes is shown with its name: "Codex edited this note", "Claude changed this
 task", and in each note's history, all with Undo.
 
-**From another computer.** An AI app on another computer of your network reaches the library
-through the running app instead (start it with `--lan`). On the computer running Synapse, open
+**From another computer.** An AI app reaches the library through the running app instead.
+Use `python server.py --lan` for another computer on the same network, or
+`python server.py --public-url https://synapse.example.com` behind an HTTPS tunnel
+([remote setup](docs/remote-access.md)). These are alternatives: do not combine `--lan` and
+`--public-url`. Settings → AI Access shows both setup options when access is local-only;
+when configured, it shows the advertised MCP address, using the public URL for a tunnel.
+On the computer running Synapse, open
 **Settings → AI Access → New Token…**, name it, pick the app (Claude Code, Codex or another) and
 run what it shows on the other computer. For Claude Code:
 
