@@ -226,7 +226,7 @@ Python 3.10 and 3.13 and Node.js 22:
 
 1. `npm ci`, `npm run check` (type check) and `npm run build` in `frontend/`;
 2. `pip install -r requirements-dev.txt`;
-3. `ruff check .`, `ruff format --check .` and `mypy`;
+3. `ruff check .`, `ruff format --check .`, `mypy` and `python tools/typecheck_plugins.py`;
 4. `python -m pytest -q --cov`, which includes the JavaScript tests and prints the coverage
    report in the log (nothing is uploaded).
 
@@ -262,13 +262,31 @@ empty container that will be filled needs its type (`out: list[str] = []`), and 
 be `None` (a regex match, `dict.get`) must be checked before use. A class with a method named
 `list` must write the built-in type as `builtins.list[...]` in its annotations.
 
+Bundled Python plugins have a separate check, also run in each CI Python job:
+
+```bash
+python tools/typecheck_plugins.py                 # all bundled Python plugins
+python tools/typecheck_plugins.py arxiv-today     # selected plugin folder names
+```
+
+The command discovers every plugin folder containing Python files, without importing its code.
+Each plugin's Python sources are copied to a temporary `synapse_bundled.<folder>` package and
+checked in a separate mypy process, with the repository on `MYPYPATH` for the real public
+`backend.plugins` API. Relative imports retain their layout; packages named `backend` or
+`server` cannot shadow the host or other plugins. Runtime paths and manifests do not change.
+The `synapse_bundled.*` mypy override checks unannotated bodies too. Source diagnostics point
+back to the original plugin files. All selected plugins are checked; any failure makes the
+command exit nonzero, and unknown names are rejected. It works offline after development
+requirements are installed. Plain `mypy` also checks the runner itself. The runner's tests
+cover package isolation, public API types and errors in unannotated, unimported modules.
+
 `.pre-commit-config.yaml` runs `ruff check --fix`, `ruff format`, mypy and the frontend type
 check on each commit, once installed with `pre-commit install`. It uses the tools already
 installed, so committing needs no network.
 
 ## Before committing
 
-From `CLAUDE.md`:
+From `AGENTS.md`:
 
 ```bash
 pip install -r requirements-dev.txt
@@ -276,6 +294,7 @@ pip install -r requirements-dev.txt
 ruff check .
 ruff format .
 mypy
+python tools/typecheck_plugins.py
 python -m pytest -q
 ```
 

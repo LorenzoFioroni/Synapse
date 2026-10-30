@@ -25,7 +25,8 @@ def url(categories: list[str]) -> str:
 
 def check_categories(values: list[str]) -> tuple[list[str], list[str]]:
     """(the usable categories, those that are not category names)."""
-    good, bad = [], []
+    good: list[str] = []
+    bad: list[str] = []
     for v in values:
         v = v.strip()
         if v:
