@@ -30,7 +30,7 @@ import { followLink, citeTargetOf, gotoLine, initReadView, readTopLine, renderRe
 import { createRenderer, renderDefaults } from './render.js';
 import { renderMermaid } from './richRender.js';
 import { paintCrumbs, paintSide, paintStatus } from './sidePanel.js';
-import { nKey, paintTree, refreshTree, saveCollapsed, selectOnly, setFilter, tree, treeEl } from './tree.js';
+import { nKey, paintTree, refreshTree, saveCollapsed, selectOnly, tree, treeEl } from './tree.js';
 import { initTreeInput } from './treeInput.js';
 import {
   citeInfo, equationMode, hooks, itemInfo, type Mode, noteMacros, noteTabs, type NoteView, movedElsewhere, notesEnabled, notesOpen, notesRenamed, resolveNote, stemOf, taskHooks, ws,
@@ -64,7 +64,6 @@ export function initNotes(): void {
         <button class="icon-btn" data-act="graph" title="Graph of notes and papers (${modLabel}⇧G)">${icon('link')}</button>
         <button class="icon-btn" data-act="tree-menu" title="More">${icon('drag', 'icon-sm')}</button>
       </div>
-      <div class="notes-filter"><input class="input" placeholder="Filter notes" spellcheck="false" aria-label="Filter notes"></div>
       <div class="notes-tree" role="tree" aria-multiselectable="true" tabindex="0" data-drop-folder=""></div>
     </section>
     <section class="notes-main">
@@ -114,9 +113,6 @@ export function initNotes(): void {
   attachCiteCards(root, { itemInfo, openNote: (p) => openNote(p), refreshLibrary: async () => { await loadLibrary(); await refreshTree(); }, targetOf: citeTargetOf });
   let libTimer: ReturnType<typeof setTimeout> | undefined;
   on('items', () => { if (notesOpen()) { clearTimeout(libTimer); libTimer = setTimeout(loadLibrary, 500); } });
-  root.querySelector<HTMLInputElement>('.notes-filter input')!.addEventListener('input', (e) => {
-    setFilter((e.target as HTMLInputElement).value.trim().toLowerCase());
-  });
   initTreeInput();
 
   window.addEventListener('focus', () => { if (notesOpen()) { ws.session?.checkRemote(); refreshTree(); } });
@@ -332,7 +328,7 @@ function applyLayout(): void {
   ws.root.classList.toggle('wide-text', state.settings.notes_width === 'full');
 }
 
-/** The toolbar's panel buttons while Notes is open (main.ts). */
+/** The toolbar's panel buttons while Notes is open (views/toolbar.ts). */
 export function notesPanelButton(a: string): void { panelButton(a); }
 
 /* ============================================================ note views */
@@ -358,7 +354,7 @@ const defaultMode = (): Mode => storage<Mode>('zc.notes.mode', 'live');
 /** An editor for ``view``: its handlers act on that view's note, shown or not. */
 async function newEditor(view: NoteView, mode: 'live' | 'source'): Promise<NoteEditor> {
   const ed = await createEditor(view.el, {
-    onChange: (text) => { view.session?.update(text); if (ws.view === view && ws.mode === 'read') scheduleRead(); },
+    onChange: (text) => { view.session?.update(text); if (ws.view === view) { emit('note-status'); if (ws.mode === 'read') scheduleRead(); } },
     onEdit: () => { if (ws.view === view) noteTabs.edited?.(); },
     onSave: () => view.session?.save(),
     onBlur: () => view.session?.save(),
@@ -419,6 +415,7 @@ async function createView(path: string, mode: Mode): Promise<NoteView> {
     onRemoteText: (t) => {
       view.editor.replace(t);
       if (ws.view !== view) { view.read = null; return; }
+      emit('note-status');
       if (ws.mode === 'read') renderRead();
       remoteArrived(path);
     },
@@ -638,6 +635,7 @@ async function doOpen(path: string, mode: Mode | undefined, request = ++openRequ
 }
 
 function paintEmpty(): void {
+  emit('note-status');
   const root = ws.root;
   root.classList.remove('has-note', 'reading');
   root.querySelector<HTMLElement>('.note-read')!.hidden = true;
@@ -771,6 +769,6 @@ export function notesShortcut(e: KeyboardEvent, k: string, mod: boolean): boolea
   if (mod && e.key === '\\' && !e.shiftKey && !e.altKey) { e.preventDefault(); toggleList(); return true; }
   if (mod && k === 'e' && ws.session && !inEditor) { e.preventDefault(); setMode(ws.mode === 'read' ? ws.editMode : 'read'); return true; }
   if (mod && k === 'n' && !e.shiftKey) { e.preventDefault(); newNote(); return true; }
-  if (mod && k === 'f' && !inEditor) { e.preventDefault(); if (listHidden()) peek(true); ws.root.querySelector<HTMLElement>('.notes-filter input')!.focus(); return true; }
+  if (mod && k === 'f' && !inEditor) { e.preventDefault(); if (listHidden()) peek(true); document.querySelector<HTMLElement>('#toolbar .notes-filter input')!.focus(); return true; }
   return false;
 }

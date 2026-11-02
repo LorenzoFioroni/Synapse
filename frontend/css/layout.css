@@ -208,12 +208,11 @@ body.has-tabs.sidebar-open::after { top: calc(var(--tabbar-h) + var(--toolbar-h)
 }
 @media (max-width: 700px) {
   :root { --toolbar-h: 94px; --statusbar-h: 28px; }
-  body[data-workspace="notes"], body[data-workspace="tasks"] { --toolbar-h: 50px; }
-  body[data-workspace="notes"] #toolbar .search, body[data-workspace="tasks"] #toolbar .search { display: none; }
+  body[data-workspace="tasks"], body[data-workspace="page"] { --toolbar-h: 50px; }
   #toolbar { flex-wrap: wrap; align-content: center; gap: 4px 6px; padding: max(4px, env(safe-area-inset-top)) 8px 6px; }
   #toolbar > [data-a="new"], #toolbar > [data-a="identifier"], #toolbar > [data-a="import"],
   #toolbar > [data-a="export"], #toolbar > [data-a="columns"], #toolbar > [data-a="pane"],
-  #toolbar > [data-a="settings"] { display: none; }
+  #toolbar > [data-a="settings"], #toolbar > [data-a="new-folder"], #toolbar > [data-a="note-export"] { display: none; }
   #toolbar > .search + .spacer { display: none; }
   #toolbar .mobile-more { display: inline-flex; }
   .brand { padding-left: 0; }

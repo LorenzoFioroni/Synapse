@@ -143,8 +143,9 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
 
 ### Modules
 
-- `main.ts` is the entry point. It loads the schema and settings, builds the views and wires the
-  toolbar.
+- `main.ts` is the entry point. It loads the schema and settings, builds the views and wires
+  navigation and shortcuts. `views/toolbar.ts` owns workspace actions and search;
+  `views/statusbar.ts` shows library counts, note words/save state or open-task counts.
 - `store.ts` holds the application state, with a small pub/sub that views subscribe to.
 - `actions.ts` has the user-level operations. Views call these, and these call `api.ts` (the thin
   JSON client) and update the store.

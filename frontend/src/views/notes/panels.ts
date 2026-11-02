@@ -28,7 +28,8 @@ function detailsShown() {
 /** Keep a peeking list open while you type in it or use one of its menus or dialogs. */
 function keepOpen() {
   const a = document.activeElement;
-  return (!!a && pane.contains(a) && a.matches('input, textarea, [contenteditable="true"]'))
+  const searching = a?.matches('#toolbar .notes-filter input');
+  return searching || (!!a && pane.contains(a) && a.matches('input, textarea, [contenteditable="true"]'))
     || !!document.querySelector('.menu, .dialog-backdrop');
 }
 
@@ -123,7 +124,7 @@ export function initPanels(notesRoot: HTMLElement): void {
   // a note chosen from the list: the list makes room for it again
   pane.addEventListener('click', (e) => { if (peeking() && (e.target as Element).closest('.nt-row.note, .nt-hit')) setTimeout(() => peek(false), 150); });
   document.addEventListener('pointerdown', (e) => {
-    if (peeking() && !(e.target as Element).closest('.notes-tree-pane, .notes-edge, .menu, .dialog-backdrop')) peek(false);
+    if (peeking() && !(e.target as Element).closest('.notes-tree-pane, .notes-edge, #toolbar .notes-filter, .menu, .dialog-backdrop')) peek(false);
   }, true);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && peeking() && !document.querySelector('.menu, .dialog-backdrop')) peek(false);

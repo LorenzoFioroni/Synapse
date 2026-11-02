@@ -17,6 +17,8 @@ USER_FACING = [
     "frontend/index.html",
     "frontend/viewer.html",
     "frontend/src/main.ts",
+    "frontend/src/views/toolbar.ts",
+    "frontend/src/views/statusbar.ts",
     "browser_extension/manifest.json",
     "browser_extension/README.md",
     "browser_extension/popup.html",
@@ -88,7 +90,7 @@ def test_icon_files(rel, size):
 
 
 def test_toolbar_shows_the_icon_not_a_letter():
-    js = (ROOT / "frontend/src/main.ts").read_text("utf-8")
+    js = (ROOT / "frontend/src/views/toolbar.ts").read_text("utf-8")
     assert '<img class="brand-logo" src="/assets/favicon.svg' in js
     assert '<div class="brand-logo">Z</div>' not in js
 
