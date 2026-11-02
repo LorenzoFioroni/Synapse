@@ -165,13 +165,14 @@ async def main():
             title = await page.locator(".trash-row .muted").first.get_attribute("title")
             check(
                 "Deleted notes says when they are deleted for good",
-                "after 1 month" in sub and title.startswith("Deleted for good on"),
+                "after 1 month" in sub and "Settings → Notes" in sub and title.startswith("Deleted for good on"),
                 (sub, title),
             )
             await page.click('.dialog-footer button:has-text("Close")')
 
             # ---- the setting
-            await page.keyboard.press("Control+,")
+            await page.keyboard.press("ControlOrMeta+,")
+            await page.click('.settings-nav [data-nav="notes"]')
             await page.wait_for_selector('select[data-key="notes_trash_retention"]')
             await page.select_option('select[data-key="notes_trash_retention"]', "2w")
             await page.wait_for_timeout(500)

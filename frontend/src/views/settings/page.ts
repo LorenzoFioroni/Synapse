@@ -12,6 +12,7 @@ const PHYSICS_SHOWN = ['\\vb', '\\dv', '\\pdv', '\\qty', '\\abs', '\\norm', '\\e
 
 const SECTIONS: [string, string, string][] = [
   ['general', 'General', 'palette'],
+  ['notes', 'Notes', 'edit'],
   ['notifications', 'Notifications', 'bell'],
   ['citekeys', 'Citation Keys', 'key'],
   ['search', 'Search & Full Text', 'search'],
@@ -67,9 +68,17 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
   return `
     <div class="settings-top"><button class="btn btn-ghost" data-close>${icon('arrowLeft')} Back to Library</button>
       <h1>Settings</h1><span class="spacer"></span><button class="btn btn-ghost btn-sm" data-reset>Reset to defaults</button></div>
+    <div class="settings-search-row" role="search">
+      <div class="settings-search-field">${icon('search')}
+        <input type="search" data-settings-search placeholder="Search settings…" aria-label="Search settings" autocomplete="off" spellcheck="false">
+        <button class="icon-btn" data-settings-search-clear title="Clear settings search" aria-label="Clear settings search" hidden>${icon('close', 'icon-sm')}</button>
+      </div>
+      <span class="settings-search-summary" data-settings-search-summary role="status" aria-live="polite" hidden></span>
+    </div>
     <div class="settings-main">
       <nav class="settings-nav">${SECTIONS.map(([id, label, ic]) => `<button class="side-item" data-nav="${id}">${icon(ic)}<span>${label}</span></button>`).join('')}</nav>
       <div class="settings-content"><div class="settings-inner">
+      <div class="settings-search-empty" data-settings-search-empty hidden><h2>No matching settings</h2><p>Try different words or clear the search.</p></div>
 
       <section class="settings-section" id="set-general"><h2>General</h2><p class="lead">How the library looks and behaves.</p>
         <div class="card">
@@ -79,6 +88,13 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
             <div class="s-control">${saved}<input type="range" min="11" max="18" step="1" value="${s.font_size}" data-key="font_size" style="width:140px">
             <span class="mono" data-fs-label style="width:36px">${s.font_size}px</span></div></div>
           ${switchRow('open_pdf_on_double_click', 'Double-click opens the PDF', 'When off, double-clicking an item starts editing its title.')}
+          ${switchRow('confirm_trash', 'Ask before moving to the Trash', 'Items in the Trash can always be restored, and an Undo button appears after deleting.')}
+          ${switchRow('show_subfolder_items', 'Show items from subfolders', 'A folder also lists the items of the folders inside it.')}
+        </div></section>
+
+      <section class="settings-section" id="set-notes"><h2>Notes</h2>
+        <p class="lead">Markdown notes for papers and ideas: editing, equations and deleted-note retention.</p>
+        <div class="card">
           ${switchRow('notes_enabled', 'Notes', 'Markdown notes for papers and ideas, stored as files in your data folder. Turn off to hide Notes in the sidebar and the item pane.')}
           ${selectRow('notes_trash_retention', 'Empty the notes trash', 'Deleted notes, and images no note uses any more, are deleted for good after this long.',
     [['never', 'Never'], ['1d', 'After 1 day'], ['1w', 'After 1 week'], ['2w', 'After 2 weeks'], ['1m', 'After 1 month'], ['6m', 'After 6 months']])}
@@ -90,8 +106,6 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
             <div class="s-desc">Your own commands for every note, one per line, e.g. <span class="mono">\\newcommand{\\R}{\\mathbb{R}}</span> or <span class="mono">\\DeclareMathOperator{\\Var}{Var}</span>. A \\newcommand written in a note's formula works in all formulas of that note.</div></div>
             <textarea class="input mono" data-key="notes_math_macros" rows="4" spellcheck="false" placeholder="\\newcommand{\\R}{\\mathbb{R}}">${escapeHtml(s.notes_math_macros || '')}</textarea>
             <div class="s-desc" data-macro-check></div></div>
-          ${switchRow('confirm_trash', 'Ask before moving to the Trash', 'Items in the Trash can always be restored, and an Undo button appears after deleting.')}
-          ${switchRow('show_subfolder_items', 'Show items from subfolders', 'A folder also lists the items of the folders inside it.')}
         </div></section>
 
       <section class="settings-section" id="set-notifications"><h2>Notifications</h2>

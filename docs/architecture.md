@@ -169,7 +169,8 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   details panel; `aiBar.ts` AI apps' edits; `ghost.ts` autocompletion's ghost text (the public `plugins/suggestions.ts` bridge supplies its source through `hooks.ts`); `conflict.ts` the dialog for a note changed elsewhere; `exportNote.ts`
   exports a note as PDF, HTML or Markdown (the Markdown conversion is `portable.ts`). Galleries and
   numbered figures are part of Extended Markdown (`plugins/extended-markdown/frontend/figures/`, through `hooks.ts`). `settingsView.ts` is the Settings page; its markup
-  is in `views/settings/page.ts`, and Backups and Devices have their own modules there. `settings/pluginSections.ts` owns the lifecycle
+  is in `views/settings/page.ts`; `settings/search.ts` filters built-in and dynamic plugin sections
+  without rebuilding controls. Notes preferences have their own section. Backups and Devices have their own modules there. `settings/pluginSections.ts` owns the lifecycle
   of plugin Settings sections; `settings/exportFormats.ts` follows active export providers; Autocompletion supplies its own section from its plugin.
   Within the notes editor, `formatting.ts` owns Markdown formatting commands, `pairing.ts` owns
   dollar/backtick input behavior, `underline.ts` shares underline syntax between the editor and

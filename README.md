@@ -239,6 +239,10 @@ never mix.
   | `{journal}` | prl |
   | `{doi}` | physrevlett114220601 |
 
+- **Find preferences** with Search settings (or Cmd/Ctrl+F while Settings is open).
+  Matching built-in and plugin sections stay editable. Notes has its own section for enabling
+  notes, trash retention, width, equation numbering, physics commands and math macros.
+
 - **Workspace controls** follow what you are doing: Library keeps item actions and search;
   Notes offers new notes/folders, note export and note search; Tasks keeps its own search and
   creation controls. The footer shows library counts, the open note's word count and save state,
@@ -362,7 +366,7 @@ never mix.
   moves to an attachment trash by itself (and comes back if a note uses it again). **Attachments…**
   in the notes list menu shows them all — which notes use each, insert one into the open note,
   restore or delete trashed ones. Deleted notes and trashed attachments are deleted for good after
-  a while (Settings → General → *Empty the notes trash*: never, 1 day … 6 months; default 1 month). The pencil column
+  a while (Settings → Notes → *Empty the notes trash*: never, 1 day … 6 months; default 1 month). The pencil column
   in the item list marks items with a paper note (blue) or cited in notes (grey).
   In live preview a formula, link or citation shows its source only while the cursor is in it, and
   clicking a symbol of a rendered formula puts the cursor on it; a `$$` block being edited shows
@@ -370,13 +374,13 @@ never mix.
   citations. Source mode shows the Markdown as code, in a monospaced font. Switching between
   Live, Source and Read keeps your place in the note. While Notes is open, the toolbar's two panel buttons hide and show
   the notes list (also Cmd/Ctrl+\) and the note details; a hidden list slides in when the pointer
-  reaches the window's left edge (or with a tap there). Settings → General → *Note width* lets
+  reaches the window's left edge (or with a tap there). Settings → Notes → *Note width* lets
   the text use the whole pane. A `$$` equation gets a number when it has a `\label{name}`
   (`equation`/`align` environments are numbered as in LaTeX, `\tag{3}` sets one; Settings can
   number every one), and `\eqref{name}` refers to it; the number never overlaps the formula, and
   an equation too wide for the pane is shrunk a little (then scrolls). Formulas know the physics
   package's commands (`\vb`, `\dv`, `\pdv`, `\qty`, `\abs`, `\expval`, `\mel`, `\comm`, …), your own
-  macros (Settings → General → *Math macros*), and a `\newcommand` written in any formula of the
+  macros (Settings → Notes → *Math macros*), and a `\newcommand` written in any formula of the
   note (it applies to the whole note).
   In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
   Delete/Backspace moves them to the notes trash (with Undo), F2 renames, Enter opens,
