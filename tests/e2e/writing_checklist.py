@@ -23,6 +23,7 @@ APP = Path(__file__).resolve().parents[2]
 PORT = 8841
 BASE = f"http://127.0.0.1:{PORT}"
 results = []
+REDO = "Meta+Shift+z" if sys.platform == "darwin" else "Control+y"
 TABLE = """> [!note] Results
 > Before *italic*.
 >
@@ -179,7 +180,7 @@ async def main():
                 await page.keyboard.press("ControlOrMeta+b")
                 await page.keyboard.press("ControlOrMeta+z")
                 check(f"{mode}: formatting undoes in one step", await text(page) == "word")
-                await page.keyboard.press("ControlOrMeta+Shift+z")
+                await page.keyboard.press(REDO)
                 check(f"{mode}: redo restores formatting", await text(page) == "**word**")
                 await set_text(page, "label", 0, 5)
                 await page.keyboard.press("ControlOrMeta+k")
@@ -209,7 +210,7 @@ async def main():
                 await page.keyboard.type("$")
                 await page.keyboard.press("ControlOrMeta+z")
                 check(f"{mode}: paired insertion undoes cleanly", await text(page) == "")
-                await page.keyboard.press("ControlOrMeta+Shift+z")
+                await page.keyboard.press(REDO)
                 await page.evaluate("ed.view.dispatch({selection: {anchor: 1}})")
                 await page.keyboard.type("x$")
                 check(f"{mode}: redo restores a usable generated closer", await text(page) == "$x$")

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as lib from '../../frontend/vendor/md/md.js';
 import { layoutTag, numberEquations, resolveRefs, splitRows, textRefs } from '../../frontend/js/views/notes/equations.js';
+import { fitEquations } from '../../frontend/js/views/notes/mathFit.js';
 import { clickOffset, texTokens } from '../../frontend/js/views/notes/mathClick.js';
 import { createRenderer } from '../../frontend/js/views/notes/render.js';
 import { PHYSICS, baseMacros, parseDefinitions, toMacro, withDefinitions } from '../../frontend/js/views/notes/macros.js';
@@ -122,4 +123,36 @@ test('macros: a note\'s \\newcommand works in all its formulas, read view', () =
   assert.equal((html.match(/class="math-block"/g) || []).length, 1);                // the definitions alone show nothing
   assert.equal((html.match(/class="katex-tag"/g) || []).length, 1);                 // and get no number
   assert.ok(!html.includes('newcommand'));
+});
+
+test('equations: fitting remeasures non-scaling padding and retains the scroll fallback', () => {
+  function equation(formula, padding, room) {
+    let scale = '';
+    const main = { get scrollWidth() { return Math.round(formula * Number(scale || 1)); } };
+    const tag = { offsetWidth: padding };
+    const html = { querySelector: selector => selector.includes('eq-main') ? main : tag };
+    const display = {
+      style: {
+        getPropertyValue: () => scale,
+        removeProperty: () => { scale = ''; },
+        setProperty: (_, value) => { scale = value; },
+      },
+      closest: () => ({ clientWidth: room }),
+      querySelector: () => html,
+      matches: () => true,
+    };
+    return { display, width: () => main.scrollWidth + tag.offsetWidth, scale: () => Number(scale || 1) };
+  }
+  const padded = equation(1000, 60, 900);
+  assert.equal(fitEquations(padded.display), true);
+  assert.ok(padded.width() <= 899, `fitted width: ${padded.width()}`);
+  assert.ok(padded.scale() >= 0.75);
+  assert.equal(fitEquations(padded.display), false, 'repeated fitting is stable');
+  const huge = equation(2000, 60, 900);
+  fitEquations(huge.display);
+  assert.equal(huge.scale(), 0.75);
+  assert.ok(huge.width() > 900, 'very wide equations keep scrolling');
+  const small = equation(200, 60, 900);
+  assert.equal(fitEquations(small.display), false);
+  assert.equal(small.scale(), 1);
 });

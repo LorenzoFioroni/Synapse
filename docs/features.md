@@ -186,8 +186,8 @@ see the [README](../README.md); for code ownership, see the [architecture map](a
   the text use the whole pane. A `$$` equation gets a number when it has a `\label{name}`
   (`equation`/`align` environments are numbered as in LaTeX, `\tag{3}` sets one; Settings can
   number every one), and `\eqref{name}` refers to it; the number never overlaps the formula, and
-  an equation too wide for the pane is shrunk a little (then scrolls). Formulas know the physics
-  package's commands (`\vb`, `\dv`, `\pdv`, `\qty`, `\abs`, `\expval`, `\mel`, `\comm`, …), your own
+  an equation too wide for the pane is shrunk a little, including space for its number (then scrolls).
+  Formulas know the physics package's commands (`\vb`, `\dv`, `\pdv`, `\qty`, `\abs`, `\expval`, `\mel`, `\comm`, …), your own
   macros (Settings → Notes → *Math macros*), and a `\newcommand` written in any formula of the
   note (it applies to the whole note).
   In the notes list: Cmd/Ctrl-click and Shift-click (or Shift+arrows) select several,
@@ -364,4 +364,3 @@ you save a file. Plugins can also run work on a schedule, reach the sites their 
 bring Python packages of their own; their frontend may be TypeScript. Daily local schedules keep
 their wall-clock time across daylight-saving changes.
 Their tools reach AI apps like Synapse's own; restart the AI app if they do not show up.
-

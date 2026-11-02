@@ -343,7 +343,12 @@ CI limits each test job to twenty minutes, cancels obsolete runs of the same wor
 reports slow tests and stalled threads. Unit/API tests fake LAN discovery and window launches
 and release plugin resources between tests; see [Testing](docs/testing.md).
 
-Browser checklists (need Playwright; each uses a throw-away data folder).
+Browser checklists run nightly and on demand through [Browser checks](.github/workflows/browser-checks.yml).
+Chromium runs every checklist; WebKit covers Notes, portable iPad/iPhone touch flows and passkey
+UI/error paths. Chromium retains raw gesture and virtual-authenticator coverage. Runs retain
+complete logs, available screenshots and a summary; see [Testing](docs/testing.md#browser-checklists).
+
+Browser checklists also run locally (need Playwright; each uses a throw-away data folder).
 `python tests/e2e/run.py` runs them all and prints a summary, `python tests/e2e/run.py notes render`
 only those, and `--retries 1` gives a failed one a second try. Each checklist reports its
 passed/total count and exits nonzero on failure; the runner rejects a missing summary.

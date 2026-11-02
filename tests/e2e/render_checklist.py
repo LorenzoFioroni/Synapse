@@ -404,10 +404,13 @@ async def main():
             # ---- switching modes keeps the line at the top
             await page.click('.nt-row.note[data-path="Long.md"]')
             await page.wait_for_function("() => (window.zcNotes.text().includes('Paragraph 300'))")
-            await page.evaluate(
-                "document.querySelector('.note-editor-view:not([hidden]) .cm-scroller').scrollTop = 6000"
-            )
-            await page.wait_for_function(f"() => ({TOP_PARAGRAPH})(false) > 50")
+            # Queue through CodeMirror so opening the note cannot restore over a raw DOM scroll.
+            await page.evaluate("""async () => {
+                const { ws } = await import('/js/views/notes/workspace.js');
+                const doc = ws.editor.view.state.doc;
+                ws.editor.scrollToLine(doc.lineAt(doc.toString().indexOf('Paragraph 150 ')).number);
+            }""")
+            await page.wait_for_function(f"() => ({TOP_PARAGRAPH})(false) === 150")
             tops = [await page.evaluate(TOP_PARAGRAPH, False)]
             for mode in ("read", "source", "read", "live"):
                 await page.click(f'[data-mode="{mode}"]')

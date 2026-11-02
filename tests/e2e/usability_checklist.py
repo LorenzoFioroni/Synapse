@@ -292,6 +292,8 @@ async def main():
                 on_disk("project/Ideas.md") and on_disk("project/sub/Plan.md") and not on_disk("proj"),
             )
             check("…the open note follows the folder", await crumbs_have(page, "project"))
+            # Renaming may return focus to the open editor; expand through the tree keyboard.
+            await page.locator(".notes-tree").focus()
             await page.keyboard.press("ArrowRight")
             await wait_for(lambda: count_is(page, frow("project/sub"), 1))
             await page.click(frow("project/sub"), button="right")

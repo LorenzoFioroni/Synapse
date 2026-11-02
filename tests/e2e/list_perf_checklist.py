@@ -9,6 +9,7 @@ Starts its own server on port 8779 with a throw-away data folder of 10,000 synth
 """
 
 import asyncio
+import os
 import random
 import shutil
 import string
@@ -29,6 +30,10 @@ PORT = 8779
 BASE = f"http://127.0.0.1:{PORT}"
 DATA = tempfile.mkdtemp(prefix="zc-listperf-e2e-")
 N = 10_000
+READY_SECONDS = float(os.environ.get("SYNAPSE_E2E_LIST_READY_SECONDS", "1"))
+STEP_MS = float(os.environ.get("SYNAPSE_E2E_LIST_STEP_MS", "16"))
+if READY_SECONDS <= 0 or STEP_MS <= 0:
+    raise ValueError("Performance budgets must be positive")
 results = []
 mod = "Meta" if sys.platform == "darwin" else "Control"
 
@@ -102,7 +107,9 @@ async def main():
                 "() => (document.querySelector('.row[data-id]'))", polling="raf", timeout=30000
             )
             ready = await page.evaluate("performance.now()") / 1000  # since the navigation started
-            check("10,000 items: the list is ready in under 1 s", ready < 1.0, f"{ready:.2f} s")
+            check(
+                f"10,000 items: the list is ready in under {READY_SECONDS:g} s", ready < READY_SECONDS, f"{ready:.2f} s"
+            )
             r = requests.get(BASE + "/api/items?lean=1")
             full = requests.get(BASE + "/api/items")
             check(
@@ -137,7 +144,7 @@ async def main():
                 for (let i = 0; i < 30; i++) s.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
                 void document.body.offsetHeight;
                 return (performance.now() - t) / 30; }""")
-            check("an arrow-key step takes under 16 ms", step < 16, f"{step:.1f} ms")
+            check(f"an arrow-key step takes under {STEP_MS:g} ms", step < STEP_MS, f"{step:.1f} ms")
             await page.keyboard.press("End")
             await page.wait_for_timeout(300)
             last = await page.evaluate("""() => { const r = document.querySelector('.row.selected'); if (!r) return null;

@@ -17,7 +17,10 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright
 
+BROWSER = os.environ.get("SYNAPSE_E2E_BROWSER", "chromium")
+
 APP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 PORT = 8765
 BASE = f"http://127.0.0.1:{PORT}/"
 DATA = tempfile.mkdtemp(prefix="zc-notes-e2e-")
@@ -71,7 +74,7 @@ async def main():
     srv = start_server()
     time.sleep(1.5)
     async with async_playwright() as p:
-        b = await p.chromium.launch()
+        b = await getattr(p, BROWSER).launch()
         ctx = await b.new_context(viewport={"width": 1440, "height": 900})
         errs = []
 
@@ -185,7 +188,7 @@ async def main():
         await A.keyboard.press("F2")
         await A.fill(".dialog input", "Renamed idea")
         await A.keyboard.press("Enter")
-        await A.wait_for_timeout(800)
+        await A.wait_for_function("() => window.zcNotes.path() === 'Renamed idea.md'")
         check(
             "rename moves the file and keeps it open",
             os.path.exists(f"{D}/Renamed idea.md")
@@ -200,11 +203,11 @@ async def main():
         await A.click('#notes-view [data-act="new-folder"]')
         await A.fill(".dialog input", "Projects")
         await A.keyboard.press("Enter")
-        await A.wait_for_timeout(500)
+        await A.locator('.nt-row.folder[data-folder="Projects"]').wait_for()
         await A.click('.nt-row.note[data-path="Renamed idea.md"]', button="right")
         await A.click(".menu >> text=Move to folder…")
         await A.click('.menu .menu-item:has-text("Projects")')
-        await A.wait_for_timeout(800)
+        await A.wait_for_function("() => window.zcNotes.path() === 'Projects/Renamed idea.md'")
         check(
             "move to folder",
             os.path.exists(f"{D}/Projects/Renamed idea.md") and "Projects" in await A.text_content(".note-crumbs"),
@@ -213,20 +216,21 @@ async def main():
         await A.keyboard.press("ControlOrMeta+n")
         await A.fill(".dialog input", "Second")
         await A.keyboard.press("Enter")
-        await A.wait_for_timeout(800)
+        await A.wait_for_function("() => window.zcNotes.path() === 'Projects/Second.md'")
         check("Ctrl+N creates the note in the current folder", os.path.exists(f"{D}/Projects/Second.md"))
 
         # 6. trash + undo
         await A.click('.nt-row.note[data-path="Projects/Second.md"]', button="right")
         await A.click(".menu >> text=Move to Trash")
-        await A.wait_for_timeout(600)
+        await A.locator('.toast-action:has-text("Undo")').wait_for()
+        await A.locator('.nt-row.note[data-path="Projects/Second.md"]').wait_for(state="detached")
         check(
             "trash moves the file to .trash",
             not os.path.exists(f"{D}/Projects/Second.md")
             and any("Second.md" in f for _, _, fs in os.walk(f"{D}/.trash") for f in fs),
         )
         await A.click('.toast-action:has-text("Undo")')
-        await A.wait_for_timeout(800)
+        await A.locator('.nt-row.note[data-path="Projects/Second.md"]').wait_for()
         check("undo restores it", os.path.exists(f"{D}/Projects/Second.md"))
 
         # 7. server down while typing: draft kept, saved after restart (in a new tab)

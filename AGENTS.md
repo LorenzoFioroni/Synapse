@@ -40,6 +40,10 @@ python -m pytest -q          # includes the JavaScript unit tests when Node is i
 
 `pre-commit install` runs ruff, mypy and the type check on every commit (`.pre-commit-config.yaml`).
 
-The browser checklists in `tests/e2e/` are run by hand and need `pip install playwright`:
+The browser checklists in `tests/e2e/` run nightly/manually in Browser checks CI and can run locally.
+Install their pinned tools with `pip install -r tools/requirements-e2e.txt`:
 `python tests/e2e/run.py <name> …` runs the named ones (`--list` shows them; no name runs all).
 Run the ones that cover UI you changed.
+
+`python tests/e2e/run.py --browser webkit` runs the supported portable subset. Use
+`--output-dir browser-results` to retain full logs/screenshots and a summary.

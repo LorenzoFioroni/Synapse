@@ -1,0 +1,78 @@
+name: Browser checks
+
+on:
+  schedule:
+    - cron: "23 2 * * *"  # nightly, UTC
+  workflow_dispatch:
+    inputs:
+      browser:
+        description: Browser suite
+        type: choice
+        options: [both, chromium, webkit]
+        default: both
+  pull_request:
+    paths:
+      - .github/workflows/browser-checks.yml
+      - tests/e2e/**
+      - tools/requirements-e2e.txt
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    name: ${{ matrix.browser }} checklists
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: ${{ fromJSON(inputs.browser == 'chromium' && '["chromium"]' || inputs.browser == 'webkit' && '["webkit"]' || '["chromium", "webkit"]') }}
+    env:
+      E2E_BROWSER: ${{ matrix.browser }}
+      PYTHONUNBUFFERED: "1"
+      SYNAPSE_E2E_LIST_READY_SECONDS: "3"
+      SYNAPSE_E2E_LIST_STEP_MS: "50"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            tools/requirements-e2e.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: |
+          python -m pip install --require-hashes --only-binary=:all: -r requirements-dev.txt
+      - run: python -m pip install -r tools/requirements-e2e.txt
+      - run: python -m pip check
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - name: Install browser and system dependencies
+        run: python -m playwright install --with-deps "$E2E_BROWSER"
+      - name: Run checklists without retries
+        run: python tests/e2e/run.py --browser "$E2E_BROWSER" --output-dir browser-results
+      - name: Publish checklist summary
+        if: always()
+        run: |
+          if [ -f browser-results/summary.md ]; then
+            cat browser-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-results-${{ matrix.browser }}
+          path: browser-results/
+          if-no-files-found: warn
+          retention-days: 7
