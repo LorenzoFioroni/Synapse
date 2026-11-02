@@ -430,6 +430,8 @@ across navigation. Screenshots go under `SHOTS`, including notifications, withou
 paths. These waits keep the same assertions on slower Linux CI workers.
 The render checklist waits for the requested note's text and measures
 only its visible editor; hidden editors retain other tabs' histories and scroll positions.
+Its mode-switch setup queues a line scroll through CodeMirror so the note-opening scroll
+restoration cannot overwrite a direct DOM scroll before the test begins.
 
 Playwright closes a headless target without dispatching `pagehide`. The shutdown check therefore
 navigates away before closing its empty target, exercising the real browser farewell. It keeps
