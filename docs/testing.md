@@ -147,10 +147,10 @@ node --test tests/js/*.test.mjs
 
 Each `tests/e2e/<name>_checklist.py` is a script that starts its own server on a fixed port with a
 throw-away data folder (`tempfile.mkdtemp`), so your library is never touched. It drives Chromium
-with Playwright and prints `PASS` or `FAIL` for each check, then `n/m checks passed`. It exits
+or the supported WebKit subset with Playwright and prints `PASS` or `FAIL` for each check, then `n/m checks passed`. It exits
 with status 1 when a check failed.
 
-**Requirements.** `pip install playwright` and, once, `playwright install chromium`. The
+**Requirements.** `pip install -r tools/requirements-e2e.txt` and, once, `python -m playwright install chromium webkit`. The
 checklists also use `requests` (in `requirements.txt`). They run the built frontend; a checklist
 that starts the app through `server.py` builds it, but some start `create_app` in a small script
 of their own (to fake online services, for example), so build first
@@ -185,10 +185,39 @@ server behind.
 `launch_persistent_context(..., channel="chromium")`. Extensions need the full Chromium in its new
 headless mode; the default headless shell cannot load them.
 
-**Timing-sensitive checks.** "The save is answered at once, even after racing through the list"
-in `list_perf_checklist.py` (a save must be answered within 2 s) sometimes fails on a slow or busy
-machine and passes on a second run. Use `run.py --retries 1`, or run the checklist again, before
-looking for a bug.
+**Browser CI.** `.github/workflows/browser-checks.yml` runs at 02:23 UTC nightly, by manual
+workflow dispatch (both engines or one), and for PRs that change browser infrastructure.
+Chromium discovers every checklist. WebKit runs `notes`, `portable_touch` and `passkey_ui`.
+The portable touch checklist uses real taps on iPad/iPhone profiles, PDF display, note editing
+and Settings. `passkey_ui` uses explicit credential/service stubs for feature detection,
+cancellation and service errors; it does not claim a native OS passkey ceremony. Full raw
+multi-finger/pen gestures and registration/sign-in/administrative confirmation remain in
+Chromium's CDP-backed `touch`, `touch_app` and `passkeys` checklists. Native Safari/iPad hardware
+and OS authenticator integration remain manual checks.
+
+```bash
+python tests/e2e/run.py --browser webkit
+python tests/e2e/run.py --browser chromium --output-dir browser-results
+```
+
+An unsupported WebKit checklist is rejected before execution, rather than silently running
+Chromium. CI runs without retries and with independent engine jobs. Each job has a 60-minute
+limit, installs the pinned Playwright package and matching browser/system dependencies, and
+uploads every attempt's full log and available screenshots for seven days even after failure.
+The runner writes `summary.md` for the GitHub job summary. The remote-PDF fixture fakes the
+HTTP send boundary while retaining shared DNS/public-address validation, and reports server
+startup errors instead of hiding them behind a connection timeout. A timed-out checklist is terminated
+with its test-server process group on POSIX so subsequent checklists cannot hit stale data.
+
+**Performance budgets.** Local `list_perf` limits remain 1 s to show 10,000 items and 16 ms per
+arrow-key step. CI uses explicit budgets of 3 s and 50 ms through
+`SYNAPSE_E2E_LIST_READY_SECONDS` and `SYNAPSE_E2E_LIST_STEP_MS`. The fixture size, virtualization,
+payload-size and no-reload assertions remain unchanged. Both budgets must be positive. An
+exceeded budget fails the checklist; CI does not hide it with a retry.
+
+Browser setup follows [Playwright’s CI instructions](https://playwright.dev/python/docs/ci-intro).
+Its [touchscreen API](https://playwright.dev/python/docs/api/class-touchscreen) supports taps;
+CDP-specific gesture/authenticator scenarios stay on Chromium.
 
 | Checklist | Port | Covers |
 |---|---|---|
@@ -215,6 +244,8 @@ looking for a bug.
 | `links` | 8767 | Note links: autocomplete, citation cards, side panels, the item pane |
 | `list_perf` | 8779 | 10,000 items: fast list, few rows in the DOM, quick selection, small changes without a full reload |
 | `multipdf` | 8788 | Items with several PDFs: citations, cards and menus |
+| `portable_touch` | 8809 | Portable iPad/iPhone touch taps, PDF viewport, note editing/save and Settings search in Chromium/WebKit |
+| `passkey_ui` | 8810 | Passkey feature detection, cancellation and service errors with explicit credential/service stubs in Chromium/WebKit |
 | `notes` | 8765 | The notes editor |
 | `note_commands` | 8809 | The command palette while a note is open: images, figures and galleries (several images chosen or pasted at once, with and without Extended Markdown), citations, links, tasks, tables, modes, the note's own commands, none in the library |
 | `notes_history` | 8811 | The notes history: a note's versions (the user's close together as one row, an AI change from another process apart), what a version changed and how it differs from now, putting one back (recorded as a restore), leaving a note records its edits, a change made outside Synapse, the history of all notes, marking a milestone, what changed since and restoring it, Settings → Backups, a phone-width screen |

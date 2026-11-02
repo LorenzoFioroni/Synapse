@@ -17,7 +17,10 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright
 
+BROWSER = os.environ.get("SYNAPSE_E2E_BROWSER", "chromium")
+
 APP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 PORT = 8765
 BASE = f"http://127.0.0.1:{PORT}/"
 DATA = tempfile.mkdtemp(prefix="zc-notes-e2e-")
@@ -71,7 +74,7 @@ async def main():
     srv = start_server()
     time.sleep(1.5)
     async with async_playwright() as p:
-        b = await p.chromium.launch()
+        b = await getattr(p, BROWSER).launch()
         ctx = await b.new_context(viewport={"width": 1440, "height": 900})
         errs = []
 

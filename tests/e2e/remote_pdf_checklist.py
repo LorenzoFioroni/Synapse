@@ -31,12 +31,13 @@ SERVER = f"""
 import sys, socket
 sys.path.insert(0, {str(APP)!r})
 from backend import create_app
-from backend.online import remote_pdf
+from backend.online import http
 from backend.config import Config
 PDF = open({str(PDF)!r}, 'rb').read()
 IPS = {{'journal.example': '93.184.216.34', 'router.example': '192.168.1.1'}}
+real_gai = socket.getaddrinfo
 def gai(host, *a, **k):
-    if host not in IPS: raise socket.gaierror('unknown')
+    if host not in IPS: return real_gai(host, *a, **k)
     return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (IPS[host], 0))]
 class R:
     def __init__(self, body): self.status_code, self.headers, self.body = 200, {{}}, body
@@ -44,8 +45,8 @@ class R:
     def iter_content(self, n): yield self.body
     def __enter__(self): return self
     def __exit__(self, *a): return False
-remote_pdf.socket.getaddrinfo = gai
-remote_pdf.requests.get = lambda url, **k: R(PDF)
+http.socket.getaddrinfo = gai
+http.requests.Session.send = lambda self, request, **k: R(PDF)
 app = create_app(Config.from_env({DATA!r}), start_indexer=False)
 s = app.extensions['synapse']
 for title, url in [('Remote paper', 'https://journal.example/paper.pdf'), ('Router page', 'http://router.example/')]:
@@ -62,14 +63,20 @@ def check(name, cond, extra=""):
 
 async def main():
     guard(PORT)
-    srv = subprocess.Popen([sys.executable, "-c", SERVER], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log = tempfile.TemporaryFile(mode="w+")
+    srv = subprocess.Popen([sys.executable, "-c", SERVER], stdout=log, stderr=subprocess.STDOUT)
     try:
         for _ in range(100):
             try:
                 requests.get(BASE + "/api/settings", timeout=1)
                 break
-            except Exception:
+            except requests.RequestException:
+                if srv.poll() is not None:
+                    log.seek(0)
+                    raise RuntimeError("Fixture server failed:\n" + log.read()) from None
                 time.sleep(0.2)
+        else:
+            raise RuntimeError("Fixture server did not become ready")
         items = {i["title"]: i for i in requests.get(BASE + "/api/items").json()["items"]}
         async with async_playwright() as p:
             browser = await p.chromium.launch()
@@ -106,6 +113,8 @@ async def main():
             await browser.close()
     finally:
         srv.kill()
+        srv.wait()
+        log.close()
     print(f"\n{sum(results)}/{len(results)} checks passed")
     sys.exit(0 if all(results) else 1)
 
