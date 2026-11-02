@@ -175,7 +175,9 @@ async def main():
                     and await center.locator("progress").count() == 0
                     and await bell.get_attribute("aria-label") == "Notifications, 1 unread",
                 )
-                await page.screenshot(path="/private/tmp/synapse-notifications.png")
+                if shots := os.environ.get("SHOTS"):
+                    Path(shots).mkdir(parents=True, exist_ok=True)
+                    await page.screenshot(path=str(Path(shots) / "notifications.png"))
                 await page.evaluate("Notification.permission='denied'")
                 await page.evaluate(
                     "import('/js/notifications/center.js').then(m=>m.notify('No permission', {desktop:true}))"

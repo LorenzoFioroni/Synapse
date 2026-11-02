@@ -114,7 +114,7 @@ Chromium's native app-window launcher on macOS.
 | `citeTarget.test.mjs` | `views/notes/citeTarget.js` and `viewer/locate.js`: where a citation points in a PDF, finding a quote |
 | `diff.test.mjs` | `views/notes/diff.js` |
 | `embed.test.mjs` | `views/notes/embed.js` and `linkData.js`: what an embedded note shows, with its own link data |
-| `equations.test.mjs` | `equations.js`, `mathClick.js`, `macros.js` and math in `render.js` |
+| `equations.test.mjs` | `equations.js`, `mathClick.js`, `mathFit.js` (padding-aware fitting and minimum-scale scrolling), `macros.js` and math in `render.js` |
 | `figures.test.mjs` | `plugins/extended-markdown/frontend/figures/figures.js`: which images are figures, numbering, labels; figures in `render.js` and the Markdown export |
 | `crossref.test.mjs` | `views/notes/crossref.js`: `\ref`, `\eqref`, `\cref`, `\Cref`: kinds, plurals, ranges, unknown names |
 | `gallery.test.mjs` | `plugins/extended-markdown/frontend/figures/gallery.js`: reading gallery blocks, the figure caption, Markdown export; galleries in `render.js`, with the `figures` hook set and without it |
@@ -293,7 +293,7 @@ uv version pinned in `tools/requirements-uv.txt`:
 4. `python -m pytest -q --cov --durations=20 -o faulthandler_timeout=60`, which includes the
    JavaScript tests and prints the coverage report in the log (nothing is uploaded).
 
-The browser checklists do not run in CI.
+Browser checklists run in the separate nightly/manual Browser checks workflow, with Chromium and a portable WebKit subset (see above).
 
 ## Coverage
 
@@ -423,7 +423,12 @@ These tests need no real provider network access and can run as small sequential
 ### Reliable tab, scroll and plugin checks
 
 The tab checklist chooses Control on macOS and Alt elsewhere for app tab shortcuts, and uses
-Cmd/Ctrl for editor undo. The render checklist waits for the requested note's text and measures
+Cmd/Ctrl for editor undo. Writing uses Cmd+Shift+Z on macOS and Ctrl+Y elsewhere for redo.
+Notes waits for the active path after moves and creation; graph clicks wait for the simulation
+and re-read positions after hovering. Device revocation waits on the replacement sign-in DOM
+across navigation. Screenshots go under `SHOTS`, including notifications, without host-specific
+paths. These waits keep the same assertions on slower Linux CI workers.
+The render checklist waits for the requested note's text and measures
 only its visible editor; hidden editors retain other tabs' histories and scroll positions.
 
 Playwright closes a headless target without dispatching `pagehide`. The shutdown check therefore

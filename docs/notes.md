@@ -319,7 +319,7 @@ only shows colours of folders that exist. Colours are checked (`#rrggbb`).
 | `richRender.ts` | Mermaid (loaded on demand from `vendor/mermaid/`), code highlighting, filling embedded notes into the page. |
 | `embed.ts`, `linkData.ts` | What an embedded note shows; what a note links to (`/api/notes/links` as maps for the renderer). No DOM. |
 | `equations.ts`, `macros.ts` | Equation numbering, `\label`/`\eqref`, and math macros (physics package, Settings, `\newcommand`). |
-| `mathClick.ts`, `mathFit.ts` | Clicking into rendered math; shrinking wide equations. |
+| `mathClick.ts`, `mathFit.ts` | Clicking into rendered math; shrinking wide equations, remeasuring fixed tag padding and font rounding before falling back to scrolling at the minimum scale. |
 | `readView.ts` | Read mode, following `[[links]]` (offering to create missing notes), going to a line. |
 | `sidePanel.ts`, `panels.ts` | Status, breadcrumbs and details panel; showing and hiding the side panels. |
 | `citeCard.ts`, `citeTarget.ts` | Citation hover cards; where in the PDF a citation points (quoted words or a snapshot's region). |

@@ -14,11 +14,22 @@ export function fitEquations(root: HTMLElement): boolean {
     d.style.removeProperty('--eq-scale');
     const main = html.querySelector(':scope > .eq-main');
     const tag = html.querySelector<HTMLElement>(':scope > .katex-tag:not(.eq-ghost)');
-    const need = main ? main.scrollWidth + (tag ? tag.offsetWidth : 0) : html.scrollWidth;
+    const width = () => main ? main.scrollWidth + (tag ? tag.offsetWidth : 0) : html.scrollWidth;
+    const need = width();
     const room = box.clientWidth - 2;
     let scale = '';
     if (need > room + 1 && room > 0) scale = String(Math.max(MIN_SCALE, Math.floor((room / need) * 1000) / 1000));
-    if (scale) d.style.setProperty('--eq-scale', scale);
+    if (scale) {
+      d.style.setProperty('--eq-scale', scale);
+      // Fixed tag padding and font hinting do not shrink in proportion to font size.
+      // Measure the fitted result too, retaining the minimum scale and scroll fallback.
+      for (let i = 0; i < 3; i++) {
+        const fitted = width();
+        if (fitted <= room + 1 || Number(scale) <= MIN_SCALE) break;
+        scale = String(Math.max(MIN_SCALE, Math.floor((Number(scale) * room / fitted) * 1000) / 1000));
+        d.style.setProperty('--eq-scale', scale);
+      }
+    }
     if (scale !== old) changed = true;
   }
   return changed;

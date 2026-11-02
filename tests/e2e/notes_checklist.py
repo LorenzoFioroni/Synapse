@@ -203,11 +203,11 @@ async def main():
         await A.click('#notes-view [data-act="new-folder"]')
         await A.fill(".dialog input", "Projects")
         await A.keyboard.press("Enter")
-        await A.wait_for_timeout(500)
+        await A.locator('.nt-row.folder[data-folder="Projects"]').wait_for()
         await A.click('.nt-row.note[data-path="Renamed idea.md"]', button="right")
         await A.click(".menu >> text=Move to folder…")
         await A.click('.menu .menu-item:has-text("Projects")')
-        await A.wait_for_timeout(800)
+        await A.wait_for_function("() => window.zcNotes.path() === 'Projects/Renamed idea.md'")
         check(
             "move to folder",
             os.path.exists(f"{D}/Projects/Renamed idea.md") and "Projects" in await A.text_content(".note-crumbs"),
@@ -217,6 +217,7 @@ async def main():
         await A.fill(".dialog input", "Second")
         await A.keyboard.press("Enter")
         await A.wait_for_timeout(800)
+        await A.wait_for_function("() => window.zcNotes.path() === 'Projects/Second.md'")
         check("Ctrl+N creates the note in the current folder", os.path.exists(f"{D}/Projects/Second.md"))
 
         # 6. trash + undo

@@ -100,19 +100,15 @@ async def ids(page, which):
     return set(await page.evaluate(f"window.zcGraph.{which}()?.nodes().map((n) => n.id) || []"))
 
 
-async def settled(page, which, timeout=8):
-    """Wait until the nodes have positions (the simulation has started)."""
-    end = time.time() + timeout
-    while time.time() < end:
-        ok = await page.evaluate(
-            f"(() => {{ const g = window.zcGraph.{which}(); const ns = g?.nodes() || [];"
-            f" return ns.length > 0 && ns.every((n) => Number.isFinite(n.x)); }})()"
-        )
-        if ok:
-            await page.wait_for_timeout(900)
-            return True
-        await asyncio.sleep(0.15)
-    return False
+async def settled(page, which, timeout=15):
+    """Wait for the simulation to finish before targeting a node by its position."""
+    await page.mouse.move(0, 0)
+    await page.wait_for_function(
+        f"() => {{ const g = window.zcGraph.{which}(); const ns = g?.nodes() || [];"
+        f" return ns.length > 0 && ns.every((n) => Number.isFinite(n.x)) && !g.awake(); }}",
+        timeout=timeout * 1000,
+    )
+    return True
 
 
 async def click_node(page, which, host_sel, node_id, shift=False):
@@ -120,7 +116,11 @@ async def click_node(page, which, host_sel, node_id, shift=False):
     box = await page.locator(host_sel).bounding_box()
     x, y = box["x"] + pos["x"], box["y"] + pos["y"]
     await page.mouse.move(x, y, steps=4)
-    await page.wait_for_timeout(200)
+    await page.wait_for_function(
+        "selector => document.querySelector(selector)?.style.cursor === 'pointer'", arg=host_sel
+    )
+    pos = await page.evaluate(f"window.zcGraph.{which}().screenOf({node_id!r})")
+    x, y = box["x"] + pos["x"], box["y"] + pos["y"]
     if shift:
         await page.keyboard.down("Shift")
     await page.mouse.click(x, y)

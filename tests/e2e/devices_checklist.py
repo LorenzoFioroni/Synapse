@@ -233,10 +233,8 @@ async def main():
             r = await ipad.evaluate("() => fetch('/api/items').then(r => r.status)")
             check("a removed device is locked out at once", r == 401, r)
             await ipad.evaluate("() => import('/js/api.js').then(m => m.api.stats()).catch(() => 0)")
-            ok = await wait_for(
-                lambda: ipad.evaluate('() => document.body.textContent.includes("isn\'t paired")'), timeout=8
-            )
-            check("… and its open page turns into 'pair this device'", ok)
+            await ipad.get_by_text("isn't paired", exact=False).wait_for(timeout=8000)
+            check("… and its open page turns into 'pair this device'", True)
 
             # -- a used link does not pair again ---------------------------------------------
             await ipad.goto(link)
