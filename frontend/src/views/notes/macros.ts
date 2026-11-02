@@ -5,7 +5,7 @@
 //
 //  - commands of the physics package (\vb, \dv, \pdv, \qty, \abs, \expval, \mel, \comm, …),
 //    switchable in Settings; KaTeX knows none of them, so nothing it draws today changes;
-//  - your own definitions in Settings → General → Math macros, for every note;
+//  - your own definitions in Settings → Notes → Math macros, for every note;
 //  - \newcommand / \renewcommand / \def / \DeclareMathOperator written in any formula of a note,
 //    for all formulas of that note (wherever they are; the defining formula shows nothing else).
 //

@@ -16,9 +16,11 @@ import { bindPasskeys, refreshPasskeys } from './settings/passkeys.js';
 import { SECTIONS_EVENT, bindPlugins, refreshPlugins } from './settings/plugins.js';
 import { refreshExportFormats } from './settings/exportFormats.js';
 import { mountPluginSections } from './settings/pluginSections.js';
+import { mountSettingsSearch, type SettingsSearch } from './settings/search.js';
 import { TOKENS, flashSaved, settingsHtml } from './settings/page.js';
 
 let view: HTMLElement | null = null;
+let settingsSearch: SettingsSearch | null = null;
 on('export-formats', () => { if (view) refreshExportFormats(view); });
 let unmountPluginSections: (() => void) | null = null;
 let statsTimer: ReturnType<typeof setInterval> | undefined;
@@ -54,6 +56,7 @@ export function openSettings(sectionId: string | null = null): void {
   page.id = 'settings-view';
   page.innerHTML = settingsHtml(s, meta);
   document.body.appendChild(page);
+  settingsSearch = mountSettingsSearch(page, setNav);
   bind(page);
   paintDesktopNotifications(page);
   refreshPreview(s.citekey_pattern);
@@ -67,9 +70,9 @@ export function openSettings(sectionId: string | null = null): void {
   pendingNav = null;
   page.addEventListener(SECTIONS_EVENT, (e) => {
     if (pendingNav && page.querySelector(`#set-${CSS.escape(pendingNav)}`)) setNav(pendingNav);
-    else if ((e as CustomEvent<{ activeRemoved?: boolean }>).detail?.activeRemoved) setNav('general');   // its plugin was turned off
+    else if ((e as CustomEvent<{ activeRemoved?: boolean }>).detail?.activeRemoved && !settingsSearch?.filtering) setNav('general');   // its plugin was turned off
   });
-  unmountPluginSections = mountPluginSections(page, () => setNav('general'));
+  unmountPluginSections = mountPluginSections(page, () => { if (!settingsSearch?.filtering) setNav('general'); });
   statsTimer = setInterval(refreshStats, 2000);
   const sel = page.querySelector<HTMLSelectElement>('[data-key="_preset"]')!;
   sel.value = presetMatch ? presetMatch.pattern : 'custom';
@@ -78,6 +81,8 @@ export function openSettings(sectionId: string | null = null): void {
 
 export function closeSettings(): void {
   if (!view) return;
+  settingsSearch?.dispose();
+  settingsSearch = null;
   unmountPluginSections?.();
   unmountPluginSections = null;
   clearInterval(statsTimer);
@@ -95,7 +100,7 @@ let pendingNav: string | null = null;
 function setNav(id: string, scroll = true): void {
   if (!view) return;
   if (scroll && !view.querySelector(`#set-${CSS.escape(id)}`)) { pendingNav = id; return; }
-  if (scroll) pendingNav = null;
+  if (scroll) { pendingNav = null; settingsSearch?.reveal(id); }
   view.querySelector('.settings-nav')!.classList.toggle('plugins-expanded', id === 'plugins' || id.startsWith('plugin-'));
   view.querySelectorAll<HTMLElement>('[data-nav]').forEach((b) => b.classList.toggle('active', b.dataset.nav === id));
   if (scroll) view.querySelector(`#set-${CSS.escape(id)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -148,9 +153,9 @@ function bind(view: HTMLElement): void {
   });
   const content = view.querySelector('.settings-content')!;
   content.addEventListener('scroll', debounce(() => {
-    const secs = [...view.querySelectorAll('.settings-section')];
+    const secs = [...view.querySelectorAll<HTMLElement>('.settings-section')].filter((section) => !section.hidden);
     const cur = secs.find((s) => s.getBoundingClientRect().bottom > 140) || secs[0];
-    setNav(cur.id.replace('set-', ''), false);
+    if (cur) setNav(cur.id.replace('set-', ''), false);
   }, 60));
 
   view.addEventListener('change', async (e) => {

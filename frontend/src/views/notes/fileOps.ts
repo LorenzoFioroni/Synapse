@@ -236,7 +236,7 @@ export async function showTrash(): Promise<void> {
   await openDialog({
     title: 'Deleted notes',
     subtitle: `Deleted notes are kept in the .trash folder inside your notes folder${retention && retention !== 'never'
-      ? ` and deleted for good ${RETENTION_LABELS[retention]} (Settings → General).` : '.'}`,
+      ? ` and deleted for good ${RETENTION_LABELS[retention]} (Settings → Notes).` : '.'}`,
     wide: true,
     render: (b) => {
       b.innerHTML = trashed.length ? `<div class="trash-list">${trashed.map((t, i) => `<div class="trash-row"><span class="mono">${escapeHtml(t.path)}</span>

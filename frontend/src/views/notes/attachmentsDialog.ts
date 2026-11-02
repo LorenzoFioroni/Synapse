@@ -1,7 +1,7 @@
 // The attachments of notes (images in the notes folder's attachments/): which notes show each
 // one, inserting one into the open note (an image can be used by several notes), and the
 // attachment trash — images no note uses any more, restorable until they are deleted for good
-// (Settings → General → Empty the notes trash). See backend/notes/attachments.py.
+// (Settings → Notes → Empty the notes trash). See backend/notes/attachments.py.
 
 import { api } from '../../api.js';
 import { icon } from '../../icons.js';

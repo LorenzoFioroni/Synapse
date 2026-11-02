@@ -153,6 +153,28 @@ excluding frontmatter; they update while editing, on remote refresh and when swi
 `note-status` announces active note text, save-state and tab changes to the shell. Background
 indexing continues to report through notifications in every workspace.
 
+## Settings organization and search
+
+`settings/page.ts` renders General appearance/library controls separately from Notes. The Notes
+section owns `notes_enabled`, `notes_trash_retention`, `notes_width`, `notes_equation_numbers`,
+`notes_math_physics` and `notes_math_macros`. Keys, values, defaults and immediate saving stay
+unchanged; there is no settings migration. Notes preferences remain reachable when Notes is off.
+
+`settings/search.ts` owns filtering and its observer lifecycle. Search settings matches all query
+words against section labels and help text, ignoring case and accents. Built-in sections and
+plugin-owned or contributed sections participate. Fields' saved values and macro-validation
+output are excluded. Matching sections and navigation entries remain visible; controls keep the
+same DOM, values and listeners. Matching plugin navigation is visible even when its group would
+normally be collapsed. The result count and empty state announce the outcome. Clearing search
+restores the section/scroll position from before the search. Cmd/Ctrl+F focuses Settings search;
+Escape in the search field clears a query. Explicit navigation to a filtered-out section clears
+the filter so a deep link cannot land in hidden content.
+
+A scoped MutationObserver rechecks results when plugins mount, redraw or remove controls and
+sections. It disconnects before Settings closes. Removing a matching plugin keeps the query;
+the remaining matches or the empty state replace it. The scroll observer ignores hidden sections
+and handles zero results. Search and navigation fit the phone layout too.
+
 ## State and actions
 
 ### `store.ts`: the state

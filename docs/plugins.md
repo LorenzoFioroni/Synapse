@@ -108,7 +108,9 @@ Tasks records its destination before loading, and a delayed load cannot focus or
 
 A plugin's custom Settings sections are kept in step with the registry while Settings is open.
 Stopping one disposes and removes its controls; starting it again mounts one fresh section. If the
-selected section disappears, Settings selects General. Unrelated sections keep their mounted state.
+selected section disappears, Settings selects General. During a Settings search, the query is
+kept and the remaining matching sections or the empty state are shown instead. Unrelated
+sections keep their mounted state.
 Autocompletion also clears visible and pending suggestions when stopped; an older status request
 cannot overwrite a newer check.
 

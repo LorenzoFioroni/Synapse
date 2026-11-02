@@ -789,3 +789,7 @@ refresh note lists, search, links and backlinks and notify all windows through t
 A clean open editor loads changed text; unsaved text is retained in its local draft and the
 existing conflict dialog asks which version to keep. An outside deletion offers to close the
 note or save the editor text again. Refreshes wait while typing or another dialog is open.
+
+Notes preferences are grouped under **Settings → Notes**: enable Notes, trash retention, note
+width, equation numbers, physics commands and math macros. Settings search finds their labels
+and help text; existing values and immediate saving are unchanged.
