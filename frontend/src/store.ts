@@ -26,6 +26,7 @@ export interface AppEvents {
   tasks: void;                      // tasks were loaded or changed (plugins/tasks/frontend/taskData.ts)
   'tasks-count': { open: number; overdue: number } | null;   // for the sidebar; null: turned off
   'open-tasks': { task?: string | null; note?: string | null } | undefined;   // the Tasks page, a task selected or a note's tasks shown
+  'note-status': void;             // active note text, save state or tab changed
   'notes-count': number | null;     // null: notes are turned off
   'focus-list': void;
   'open-note': { path: string; line?: number | null };

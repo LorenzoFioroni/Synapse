@@ -239,6 +239,11 @@ never mix.
   | `{journal}` | prl |
   | `{doi}` | physrevlett114220601 |
 
+- **Workspace controls** follow what you are doing: Library keeps item actions and search;
+  Notes offers new notes/folders, note export and note search; Tasks keeps its own search and
+  creation controls. The footer shows library counts, the open note's word count and save state,
+  or open/overdue task counts. Phone menus follow the workspace too.
+
 - **Add items** by DOI, arXiv ID or ISBN (several at once), by dropping PDFs (the
   DOI/arXiv id on the first pages is used to fetch metadata), or manually.
   When creating items through `POST /api/items`, unsupported field names return HTTP 400

@@ -1,6 +1,7 @@
 // What is shown around the open note: its save status, the breadcrumbs above it (with links back
 // to the paper for a paper note), and the details panel on the right (cited papers, backlinks,
 // unresolved links, outline, note info).
+import { emit } from '../../store.js';
 import { icon } from '../../icons.js';
 import type { NoteHistory } from '../../types.js';
 import { aiName, escapeHtml, formatDate } from '../../util.js';
@@ -8,7 +9,7 @@ import { shortAuthors } from './library.js';
 import type { SaveStatus } from './noteSession.js';
 import { itemInfo, stemOf, taskHooks, ws } from './workspace.js';
 
-const STATUS: Record<SaveStatus, [string, string]> = {
+export const NOTE_STATUS: Record<SaveStatus, [string, string]> = {
   saved: ['Saved', 'ok'],
   dirty: ['Edited', ''],
   saving: ['Saving…', ''],
@@ -17,8 +18,9 @@ const STATUS: Record<SaveStatus, [string, string]> = {
 };
 
 export function paintStatus(status: SaveStatus): void {
+  emit('note-status');
   const el = ws.root.querySelector<HTMLElement>('.note-status')!;
-  const [label, cls] = STATUS[status] || ['', ''];
+  const [label, cls] = NOTE_STATUS[status] || ['', ''];
   el.className = `note-status ${cls}`;
   el.innerHTML = status === 'conflict'
     ? `${icon('alert', 'icon-sm')} ${label} <button class="btn btn-sm" data-act="show-conflict">Resolve…</button>`

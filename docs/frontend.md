@@ -131,6 +131,28 @@ the tab keys to the page around (`window.zcTabs`); see [the app window](desktop.
 The viewer modules do not use `api.ts`: `viewer/annotations/model.ts` has a small `api()` of its
 own (with its own `X-Synapse-Client` id), and `notesBridge.ts` calls `fetch` directly.
 
+## Workspace shell
+
+`views/toolbar.ts` owns toolbar actions, library search and the phone More menu;
+`views/statusbar.ts` owns the footer. `main.ts` wires navigation and global shortcuts.
+
+| Workspace | Toolbar | Footer |
+| --- | --- | --- |
+| Library (including folders, Trash and plugin paper lists) | Item creation, identifier lookup, import/export, library search and list/detail controls | Existing item/filter and selection counts |
+| Notes | New note/folder, note export, note search and note panel controls | Active note body word count and its live save state; “No note open” for an empty tab |
+| Tasks | Task panel controls; the Tasks page keeps its own search and creation UI | Total open tasks and overdue count from `tasks-count` |
+| Plugin page | Shared navigation, notifications and Settings | No library counts |
+
+The Notes search uses the existing name/content filter, moved out of the notes list into the
+shared toolbar. Focusing it reveals the notes list and keeps a hidden list open while searching.
+Its query and the applied library query survive workspace switches independently.
+Pending debounced library input is cancelled on leaving Library, so it cannot switch the user
+back while typing in Notes or Tasks. Phone menus expose actions for the active workspace too.
+Note word counts use whitespace-separated Markdown body tokens containing a letter or number,
+excluding frontmatter; they update while editing, on remote refresh and when switching tabs.
+`note-status` announces active note text, save-state and tab changes to the shell. Background
+indexing continues to report through notifications in every workspace.
+
 ## State and actions
 
 ### `store.ts`: the state
@@ -186,7 +208,8 @@ expects something else. To add an event, add it to `AppEvents` and to the table 
 | `columns` | none | `itemlist/columns.ts` | `itemlist.ts` (head and body) |
 | `settings` | none | `settingsView.ts` | sidebar, rows (density), `notesView.ts`, `main.ts` |
 | `indexer` | none | `main.ts` | sidebar, status bar |
-| `workspace` | none | `notesView.ts` (Notes opened or closed) | sidebar, `itemlist.ts`, `notes/panels.ts`, `main.ts` |
+| `workspace` | none | Notes, Tasks or plugin page navigation | sidebar, item list, note panels, toolbar, status bar, `main.ts` |
+| `note-status` | none | `notesView.ts`, `notes/sidePanel.ts` | toolbar (export availability), status bar (active note body and save state) |
 | `notes-count` | number or null | `notesView.ts`, `notes/tree.ts` | sidebar, `itemlist.ts` |
 | `focus-list` | none | `notesView.ts`, `settingsView.ts` | `itemlist.ts` |
 | `open-note` | `{ path, line? }` | item pane, `itemlist/menus.ts` | `main.ts` |
@@ -267,7 +290,9 @@ them. It waits while a field, a dialog or the editor is in use. See
 
 | Module | Role |
 |---|---|
-| `main.ts` | Entry point: updates and dismisses `#startup-screen` while it loads the schema, settings and library, then calls each view's `init…`, the toolbar, search, status bar, resizer, drawer, shortcuts, and the handlers for the events above. |
+| `main.ts` | Entry point: loads schema/settings/library, initializes views, and wires navigation, shortcuts, resizer and drawer. |
+| `views/toolbar.ts` | Workspace actions, independent library/notes search inputs and the phone More menu. |
+| `views/statusbar.ts` | Workspace counts and note save state; background indexing job notifications. |
 | `afterAdd.ts` | What runs after items are added (metadata, PDF, references, tags), per the never / always / ask settings. |
 | `tabs/model.ts`, `tabs/tabs.ts` | The app's own tabs: the first tab (Library or Tasks), note tabs and PDF tabs. `model.ts` has the tabs without a DOM (opening, the preview tab, closing and where it goes, reopening, renamed and deleted notes, order, saving); `tabs.ts` draws the bar (`#tabbar`), holds a viewer frame per PDF tab (`#tab-views`), has the notes workspace show a note tab's note (`TabsHost`, from `main.ts`), the tab keys (`tabShortcut`), the menus and dragging tabs between windows. See [the app window](desktop.md). |
 | `presence.ts` | Says hello to the server while the page is open, for a server that stops with its last window. |

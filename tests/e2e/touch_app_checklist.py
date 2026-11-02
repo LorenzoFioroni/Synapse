@@ -282,7 +282,7 @@ async def main():
             viewport = await page.evaluate("({ w: innerWidth, scroll: document.documentElement.scrollWidth })")
             check("phone: the app has no horizontal page overflow", viewport["scroll"] <= viewport["w"], viewport)
             toolbar = await page.locator("#toolbar").bounding_box()
-            search = await page.locator("#toolbar .search").bounding_box()
+            search = await page.locator("#toolbar .library-search").bounding_box()
             check(
                 "phone: the toolbar wraps search onto a full-width second row",
                 toolbar["height"] >= 80 and search["width"] > viewport["w"] * 0.85,
