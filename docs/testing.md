@@ -167,7 +167,13 @@ python tests/e2e/run.py notes render --retries 1    # some, retrying a failed on
 
 `SHOTS` names a folder for screenshots; the checklists that take them say so in their docstring.
 `run.py` runs the checklists one at a time (`--list` prints their names), shows the last lines of
-a failed one, and exits with status 1 if any failed.
+a failed one, and exits with status 1 if any failed. Each checklist must print a final
+`n/m passed` (or `n/m checks passed`) summary and exit with status 0 only when every check
+passes. The runner rejects a missing summary, unequal counts or any nonzero exit status.
+`task_indexes` reports four checks: the existing note index, notes created by another client,
+notes created in this window, and page errors. Run it with `python tests/e2e/run.py task_indexes`;
+a healthy run reports `4/4` and `1/1 checklists passed`. Fatal setup or browser errors still
+exit nonzero even if they prevent the summary from being printed.
 
 **`_guard.py`.** Every checklist calls `guard(PORT)` before it starts its server. It refuses to
 run when the port is already in use, since a server already listening there would be someone
@@ -231,6 +237,12 @@ looking for a bug.
 write `{"pdf_open_in": "browser"}` into their data folder's `settings.json` before starting;
 `tabs` covers the app's own tabs.
 
+`touch_app` waits for `#startup-screen` to disappear before its raw CDP landscape touch
+input. Library rows may already exist underneath the overlay; unlike Playwright locator
+clicks, CDP gestures do not wait for the target to receive events. The checklist keeps its
+finger enlargement assertion and also checks shrinking, width restoration after reload and
+desktop mouse resizing, alongside the existing phone navigation checks.
+
 Each checklist has a port of its own, so a new one needs an unused port. The touch checklists
 simulate Pencil, palm and pinch input; the real behaviour still needs a try on an iPad.
 
@@ -242,11 +254,11 @@ uv version pinned in `tools/requirements-uv.txt`:
 
 1. `npm ci`, `npm run check` (type check) and `npm run build` in `frontend/`;
 2. Install `requirements.txt` in a fresh runtime virtual environment, check it with `pip check`
-   and `server.py --help`, then install the hashed `requirements-dev.txt` in the test environment;
-3. `ruff check .`, `ruff format --check .` and `mypy`;
-4. `python -m pytest -q --cov` on all matrix entries except macOS/Python 3.13 (which runs
-   `python -m pytest -q` to avoid a `pytest-cov` SQLite data-file failure in that runtime),
-   including the JavaScript tests; coverage is printed in the log and not uploaded.
+   and `server.py --help`, then install the hashed `requirements-dev.txt` in the test environment
+   and run `pip check`;
+3. `ruff check .`, `ruff format --check .`, `mypy` and `python tools/typecheck_plugins.py`;
+4. `python -m pytest -q --cov --durations=20 -o faulthandler_timeout=60`, which includes the
+   JavaScript tests and prints the coverage report in the log (nothing is uploaded).
 
 The browser checklists do not run in CI.
 
@@ -272,11 +284,31 @@ findings and `ruff format .` formats.
 The frontend and the browser extension are type-checked with `tsc` (`npm run check`; see
 [frontend](frontend.md)). The Python code is type-checked with **mypy**, configured in
 `pyproject.toml` (`[tool.mypy]`): it checks `backend/`, `server.py` and `mcp_server.py`. Code
-without annotations is not checked inside, so annotations can be added one module at a time, but
-everything that is annotated must type-check. Two things it asks for that are easy to forget: an
+inside functions without annotations is checked too, through `check_untyped_defs = true`.
+Annotations can still be added one module at a time; unannotated parameters remain dynamically
+typed, so this is not strict mode and does not require every function to have a signature.
+Two things it asks for that are easy to forget: an
 empty container that will be filled needs its type (`out: list[str] = []`), and a value that may
 be `None` (a regex match, `dict.get`) must be checked before use. A class with a method named
 `list` must write the built-in type as `builtins.list[...]` in its annotations.
+
+Bundled Python plugins have a separate check, also run in each CI Python job:
+
+```bash
+python tools/typecheck_plugins.py                 # all bundled Python plugins
+python tools/typecheck_plugins.py arxiv-today     # selected plugin folder names
+```
+
+The command discovers every plugin folder containing Python files, without importing its code.
+Each plugin's Python sources are copied to a temporary `synapse_bundled.<folder>` package and
+checked in a separate mypy process, with the repository on `MYPYPATH` for the real public
+`backend.plugins` API. Relative imports retain their layout; packages named `backend` or
+`server` cannot shadow the host or other plugins. Runtime paths and manifests do not change.
+The `synapse_bundled.*` mypy override checks unannotated bodies too. Source diagnostics point
+back to the original plugin files. All selected plugins are checked; any failure makes the
+command exit nonzero, and unknown names are rejected. It works offline after development
+requirements are installed. Plain `mypy` also checks the runner itself. The runner's tests
+cover package isolation, public API types and errors in unannotated, unimported modules.
 
 `.pre-commit-config.yaml` runs `ruff check --fix`, `ruff format`, mypy and the frontend type
 check on each commit, once installed with `pre-commit install`. It uses the tools already
@@ -284,7 +316,7 @@ installed, so committing needs no network.
 
 ## Before committing
 
-From `CLAUDE.md`:
+From `AGENTS.md`:
 
 ```bash
 pip install --require-hashes --only-binary=:all: -r requirements-dev.txt
@@ -292,6 +324,7 @@ pip install --require-hashes --only-binary=:all: -r requirements-dev.txt
 ruff check .
 ruff format .
 mypy
+python tools/typecheck_plugins.py
 python -m pytest -q
 ```
 

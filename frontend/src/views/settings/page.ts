@@ -221,8 +221,8 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
         </div></section>
 
       <section class="settings-section" id="set-plugins"><h2>Plugins</h2>
-        <p class="lead">Core plugins are optional parts of Synapse. Contributed plugins add features from bundled or installed packages;
-          like any program you install, they run with full access to your library and this computer, so turn on only ones you trust.</p>
+        <p class="lead">Plugins add optional features. Some come bundled with Synapse; others are installed by you.
+          Like any program you install, they run with full access to your library and this computer, so turn on only ones you trust.</p>
         <div class="card">
           <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text">
             <div class="s-desc" data-plugins-desc>Loading…</div></div>

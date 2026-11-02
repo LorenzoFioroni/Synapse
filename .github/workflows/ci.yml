@@ -61,4 +61,5 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
+      - run: python tools/typecheck_plugins.py
       - run: python -m pytest -q --cov --durations=20 -o faulthandler_timeout=60

@@ -1,18 +1,18 @@
 // arXiv Today in the app: dismissing papers from its feed, opening their PDF on arXiv, fetching
 // now, and the morning's notification. The feed and its day variants are an item source (backend).
 
-/** @typedef {import('../../../frontend/src/plugins/api').PluginContext} PluginContext */
-/** @typedef {import('../../../frontend/src/plugins/api').PluginItem} PluginItem */
+import type { PluginContext, PluginItem } from '../../../frontend/src/plugins/api.js';
 
-/** @param {PluginContext} p */
-export function activate(p) {
-  /** @param {PluginItem[]} items */
-  const fromLists = (items) => items.length > 0 && items.every((i) => String(i._source || '').startsWith(`${p.id}.`));
-  /** @param {PluginItem} i */
-  const arxivOf = (i) => String(i.arxiv || /^arxiv:(.+)$/i.exec(String(i.archive_id || ''))?.[1] || '');
+interface NewsResponse {
+  news: { day: string; count: number; connected: number } | null;
+}
 
-  /** @param {PluginItem[]} items @param {boolean} undo */
-  async function dismiss(items, undo = false) {
+export function activate(p: PluginContext): void {
+  const fromLists = (items: PluginItem[]) =>
+    items.length > 0 && items.every((i) => String(i._source || '').startsWith(`${p.id}.`));
+  const arxivOf = (i: PluginItem) => String(i.arxiv || /^arxiv:(.+)$/i.exec(String(i.archive_id || ''))?.[1] || '');
+
+  async function dismiss(items: PluginItem[], undo = false): Promise<void> {
     const ids = items.map(arxivOf).filter(Boolean);
     if (!ids.length) return;
     await p.backend.post('/dismiss', { ids, undo });
@@ -48,12 +48,11 @@ export function activate(p) {
 
   // the morning's notification, once a day's papers are scored (in one window: the first to ask)
   let asking = false;
-  async function news() {
+  async function news(): Promise<void> {
     if (asking) return;
     asking = true;
     try {
-      /** @type {{ news: { day: string, count: number, connected: number } | null }} */
-      const r = await p.backend.post('/news');
+      const r = await p.backend.post<NewsResponse>('/news');
       const n = r.news;
       if (n && n.count) {
         const papers = n.count === 1 ? 'One new paper' : `${n.count} new papers`;

@@ -10,6 +10,8 @@ and contact address from Settings → Online Services, as Synapse's own lookups 
 
 from __future__ import annotations
 
+from http.client import responses
+
 from backend.plugins import HttpError, Plugin
 
 OPENALEX = "https://api.openalex.org/works"
@@ -52,7 +54,21 @@ def activate(plugin: Plugin) -> None:
         if not want:
             return {}
         ids = list(want)
-        r = plugin.http.post(S2_BATCH, params={"fields": "citationCount,url"}, json={"ids": ids})
+        r = plugin.http.post(
+            S2_BATCH, params={"fields": "citationCount,url"}, json={"ids": ids}, raise_for_status=False
+        )
+        if r.status >= 400:
+            if r.status == 400:
+                try:
+                    body = r.json()
+                except ValueError:
+                    body = None
+                # An entirely unindexed batch is returned as 400 instead of a list of nulls.
+                if isinstance(body, dict) and body.get("error") == "No valid paper ids given":
+                    return {}
+            raise HttpError(
+                f"api.semanticscholar.org answered {r.status} {responses.get(r.status, '')}".strip(), r.status
+            )
         out = {}
         for ident, w in zip(ids, r.json(), strict=False):  # one answer per id, null when unknown
             if w and w.get("citationCount") is not None:

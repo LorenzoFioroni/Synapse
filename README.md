@@ -202,6 +202,8 @@ never mix.
 
 - **Responsive on phones and tablets**: compact, touch-sized navigation keeps the library,
   item details, notes, tasks and Settings usable one pane at a time on narrow screens.
+  On tablets and desktop, drag the item-pane divider with a finger or mouse; its width is
+  remembered after reload. Phone item details use the full view.
 
 - **Notification center**: a bell beside Settings keeps unread notices and long-running jobs,
   with a red count on the bell and browser tab icon. Info, Success, Warning and Error are separate
@@ -460,9 +462,11 @@ asks first and lists what the plugin may do (read the library, connect to sites,
 AI apps). A plugin runs with full access to your library and computer, like any program you
 install, so turn on only plugins you trust. Each plugin that is on has a section of its own in
 Settings (listed under Plugins, opened by the **Settings** button on its row or "Settings:
-<plugin>" in the command palette) with its settings, its log and a Restart button; a plugin that keeps failing is turned off and Settings says why. If one keeps
-the app from working, start it with `python server.py --safe-mode` (only core plugins run) and turn it
-off.
+<plugin>" in the command palette) with its settings, its log and a Restart button; a plugin that keeps failing is turned off and Settings says why.
+Bundled and installed plugins share one list, with bundled rows labelled "comes with Synapse".
+If a plugin keeps the app from working, start with `python server.py --safe-mode` to use the basic
+library and notes while diagnosing it. Safe mode stops bundled and installed plugins, preserves
+their settings and enabled choices, and disables their controls until you restart normally.
 
 All bundled optional feature plugins now use the public API as **contributed plugins**.
 Tasks starts on and retains its records, history and note-link integrity in core.
@@ -503,6 +507,8 @@ Three plugins come with Synapse, off until you turn them on:
 
 - **Citation Counts** adds a *Citations* column from OpenAlex and Semantic Scholar, refreshed
   weekly, and lets you search for `citations:>100`.
+  A batch not yet indexed by Semantic Scholar still uses the OpenAlex fallback; papers neither
+  service knows keep an unknown count and are checked again weekly.
 - **Metadata Check** compares every identifiable library record with current metadata every
   three days (or as often as you set), flags fields to review, and identifies journal versions of
   arXiv preprints. **Run Now** checks everything at once, with progress in the notification center.
@@ -569,8 +575,13 @@ python mcp_server.py --config     # prints the exact entries for your paths
 Whatever an AI app changes is shown with its name: "Codex edited this note", "Claude changed this
 task", and in each note's history, all with Undo.
 
-**From another computer.** An AI app on another computer of your network reaches the library
-through the running app instead (start it with `--lan`). On the computer running Synapse, open
+**From another computer.** An AI app reaches the library through the running app instead.
+Use `python server.py --lan` for another computer on the same network, or
+`python server.py --public-url https://synapse.example.com` behind an HTTPS tunnel
+([remote setup](docs/remote-access.md)). These are alternatives: do not combine `--lan` and
+`--public-url`. Settings → AI Access shows both setup options when access is local-only;
+when configured, it shows the advertised MCP address, using the public URL for a tunnel.
+On the computer running Synapse, open
 **Settings → AI Access → New Token…**, name it, pick the app (Claude Code, Codex or another) and
 run what it shows on the other computer. For Claude Code:
 
@@ -665,6 +676,7 @@ pip install --require-hashes --only-binary=:all: -r requirements-dev.txt
 ruff check .                    # lint
 ruff format .                   # format
 mypy                            # type-check the Python code
+python tools/typecheck_plugins.py   # type-check bundled Python plugins in isolation
 python -m pytest                # backend + JavaScript unit tests (the JS part needs Node.js)
 pre-commit install              # optional: ruff, mypy and the type check on every commit
 ```
@@ -676,7 +688,10 @@ and release plugin resources between tests; see [Testing](docs/testing.md).
 
 Browser checklists (need Playwright; each uses a throw-away data folder).
 `python tests/e2e/run.py` runs them all and prints a summary, `python tests/e2e/run.py notes render`
-only those, and `--retries 1` gives a failed one a second try. Or run one directly:
+only those, and `--retries 1` gives a failed one a second try. Each checklist reports its
+passed/total count and exits nonzero on failure; the runner rejects a missing summary.
+`python tests/e2e/run.py task_indexes` checks the Tasks note index and reports `4/4` when healthy.
+Or run one directly:
 
 ```bash
 pip install playwright requests && playwright install chromium

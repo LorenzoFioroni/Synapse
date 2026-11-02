@@ -448,6 +448,8 @@ async def main():
             page.on("pageerror", lambda e: errors.append(str(e)))
             await page.goto(BASE)
             await page.wait_for_selector(".row[data-id]")
+            # Raw CDP touch input bypasses Playwright's actionability waits.
+            await page.locator("#startup-screen").wait_for(state="hidden")
             f = Finger(await ctx.new_cdp_session(page))
             left = await page.evaluate("document.getElementById('sidebar').getBoundingClientRect().left")
             check(
@@ -460,6 +462,28 @@ async def main():
             await f.drag((x, y), (x - 120, y))
             w1 = await page.evaluate("document.getElementById('item-pane').offsetWidth")
             check("the item pane can be resized with a finger", w1 > w0 + 80, f"{w0} → {w1}px")
+            x, y = await centre(page, "#resizer-right")
+            await f.drag((x, y), (x + 60, y))
+            w2 = await page.evaluate("document.getElementById('item-pane').offsetWidth")
+            check("a finger drag can narrow the item pane again", w2 < w1 - 40, f"{w1} → {w2}px")
+            await page.reload()
+            await page.locator("#startup-screen").wait_for(state="hidden")
+            restored = await page.evaluate("document.getElementById('item-pane').offsetWidth")
+            check("the touch-resized width survives reload", restored == w2, f"{w2} → {restored}px")
+
+            mouse = await browser.new_page(viewport={"width": 1440, "height": 900})
+            mouse.on("pageerror", lambda e: errors.append(str(e)))
+            await mouse.goto(BASE)
+            await mouse.locator("#startup-screen").wait_for(state="hidden")
+            before = await mouse.evaluate("document.getElementById('item-pane').offsetWidth")
+            x, y = await centre(mouse, "#resizer-right")
+            await mouse.mouse.move(x, y)
+            await mouse.mouse.down()
+            await mouse.mouse.move(x - 100, y, steps=10)
+            await mouse.mouse.up()
+            after = await mouse.evaluate("document.getElementById('item-pane').offsetWidth")
+            check("the item pane still resizes with a mouse", after > before + 80, f"{before} → {after}px")
+            await mouse.close()
 
             # ---- the viewer: long press on a link previews it --------------------------------------------------
             q = urlencode(

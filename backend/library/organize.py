@@ -157,7 +157,7 @@ class FolderRepository:
             if r[0] != exclude:
                 raise OrganizeError(f"A folder named “{name}” already exists here")
 
-    def create(self, name: str, parent_id: int | None = None) -> dict:
+    def create(self, name: str | None, parent_id: int | None = None) -> dict:
         name = _clean_name(name, "Folder")
         with self.db.session() as c:
             if parent_id is not None and not c.execute("SELECT 1 FROM folders WHERE id = ?", (parent_id,)).fetchone():
@@ -354,7 +354,7 @@ class SmartFolderRepository:
             raise OrganizeError(f"Unknown search scope: {mode}")
         return query
 
-    def create(self, name: str, query: str, mode: str = "all") -> dict:
+    def create(self, name: str | None, query: str | None, mode: str = "all") -> dict:
         name = _clean_name(name, "Smart folder")
         query = self._validate(query, mode)
         with self.db.session() as c:

@@ -122,23 +122,25 @@ async def main():
 
             desc = await page.text_content("[data-plugins-desc]")
             check("the section says where plugins go", str(plugins) in desc, desc)
-            core_names = await page.eval_on_selector_all(
-                "#set-plugins .plugin-group:first-child .p-name", "els => els.map(e => e.textContent)"
+            names = await page.eval_on_selector_all(
+                "#set-plugins .plugin-row .p-name", "els => els.map(e => e.textContent)"
             )
-            contributed_names = await page.eval_on_selector_all(
-                "#set-plugins .plugin-group:last-child .p-name", "els => els.map(e => e.textContent)"
-            )
-            # the two installed here, and those that come with Synapse (plugins/)
             manifests = [json.loads(m.read_text()) for m in (APP / "plugins").glob("*/manifest.json")]
-            want_core = sorted([m["name"] for m in manifests if m.get("core")], key=str.lower)
-            want_contributed = sorted(
-                ["Broken One", "Hello Library", "Recently Added", *[m["name"] for m in manifests if not m.get("core")]],
-                key=str.lower,
+            want = sorted(
+                ["Broken One", "Hello Library", "Recently Added", *[m["name"] for m in manifests]], key=str.lower
             )
             check(
-                "core and contributed plugins are listed separately",
-                core_names == want_core and contributed_names == want_contributed,
-                (core_names, contributed_names),
+                "bundled and installed plugins share one list without a stale core group",
+                names == want
+                and await page.locator("#set-plugins .plugin-group").count() == 1
+                and await page.locator("#set-plugins .plugin-group h3").inner_text() == "Plugins",
+                names,
+            )
+            lead = await page.inner_text("#set-plugins .lead")
+            check(
+                "the lead describes bundled and installed plugins",
+                "bundled with Synapse" in lead and "installed by you" in lead,
+                lead,
             )
             check(
                 "the plugin sublist expands only in the Plugins area",
