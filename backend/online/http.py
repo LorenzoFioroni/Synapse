@@ -48,13 +48,17 @@ class HostGaps:
         self._lock = threading.Lock()
 
     def wait(self, key: str, gap: float) -> None:
-        """Take the next free turn for ``key`` and sleep until it; the one after waits ``gap`` more."""
-        with self._lock:
-            now = time.monotonic()
-            at = max(now, self._next.get(key, 0.0))
-            self._next[key] = at + gap
-        if at > now:
-            time.sleep(at - now)
+        """Wait for a turn, spacing it from the previous caller's actual release time."""
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                delay = self._next.get(key, 0.0) - now
+                if delay <= 0:
+                    self._next[key] = now + gap
+                    return
+            # Sleeping can finish late, or another caller can take the turn first.
+            # Recheck without holding the lock so other services remain independent.
+            time.sleep(delay)
 
 
 HOST_GAPS = HostGaps()

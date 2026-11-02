@@ -247,8 +247,8 @@ never mix.
 - **Retrieve Metadata** works on one item or a whole selection: one review dialog
   with a section per article, word-level diffs that wrap long text with a checkbox per field, and the
   article's unchanged metadata below. Nothing is saved until you apply; replacing an
-  existing citation key is opt-in. Several lookups run at once (arXiv requests are spaced out),
-  and they can be stopped, or continue in the background with a progress notification and a
+  existing citation key is opt-in. Several lookups run at once (arXiv requests stay spaced out
+  even after delayed wake-ups), and they can be stopped, or continue in the background with a progress notification and a
   *Review* button when done. Articles with updates are listed first, those not found next, and
   the ones already up to date are folded away at the end.
   OpenAlex author enrichment uses the names credited on the paper, with author-profile names

@@ -46,7 +46,9 @@ features fail with a message and the rest of the app works as before.
   apart. arXiv's API terms ask for one request every three seconds, and Synapse runs several
   lookups side by side. The turns are taken from `HOST_GAPS`, a process-wide line per service that
   plugins' requests (`plugin.http`) wait in too, so Synapse and its plugins together keep the
-  spacing; `spacing(host, default)` puts all of arXiv's hosts in one line.
+  spacing; `spacing(host, default)` puts all of arXiv's hosts in one line. Each turn starts
+  a fresh interval from the actual release time. A delayed wake-up cannot cause catch-up bursts;
+  waiting callers recheck the deadline, without blocking requests to other services.
 
 **Contact e-mail and API keys.** They live in the settings (Settings → Online Services):
 `contact_email`, `openalex_api_key` and `semantic_scholar_api_key`. `http.py` does not read
