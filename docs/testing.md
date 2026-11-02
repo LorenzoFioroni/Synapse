@@ -424,7 +424,8 @@ These tests need no real provider network access and can run as small sequential
 
 The tab checklist chooses Control on macOS and Alt elsewhere for app tab shortcuts, and uses
 Cmd/Ctrl for editor undo. Writing uses Cmd+Shift+Z on macOS and Ctrl+Y elsewhere for redo.
-Notes waits for the active path after moves and creation; graph clicks wait for the simulation
+Notes waits for the active path after renames, moves and creation, and for completed tree/toast
+updates after trash and undo; graph clicks wait for the simulation
 and re-read positions after hovering. Device revocation waits on the replacement sign-in DOM
 across navigation. Screenshots go under `SHOTS`, including notifications, without host-specific
 paths. These waits keep the same assertions on slower Linux CI workers.

@@ -188,7 +188,7 @@ async def main():
         await A.keyboard.press("F2")
         await A.fill(".dialog input", "Renamed idea")
         await A.keyboard.press("Enter")
-        await A.wait_for_timeout(800)
+        await A.wait_for_function("() => window.zcNotes.path() === 'Renamed idea.md'")
         check(
             "rename moves the file and keeps it open",
             os.path.exists(f"{D}/Renamed idea.md")
@@ -216,21 +216,21 @@ async def main():
         await A.keyboard.press("ControlOrMeta+n")
         await A.fill(".dialog input", "Second")
         await A.keyboard.press("Enter")
-        await A.wait_for_timeout(800)
         await A.wait_for_function("() => window.zcNotes.path() === 'Projects/Second.md'")
         check("Ctrl+N creates the note in the current folder", os.path.exists(f"{D}/Projects/Second.md"))
 
         # 6. trash + undo
         await A.click('.nt-row.note[data-path="Projects/Second.md"]', button="right")
         await A.click(".menu >> text=Move to Trash")
-        await A.wait_for_timeout(600)
+        await A.locator('.toast-action:has-text("Undo")').wait_for()
+        await A.locator('.nt-row.note[data-path="Projects/Second.md"]').wait_for(state="detached")
         check(
             "trash moves the file to .trash",
             not os.path.exists(f"{D}/Projects/Second.md")
             and any("Second.md" in f for _, _, fs in os.walk(f"{D}/.trash") for f in fs),
         )
         await A.click('.toast-action:has-text("Undo")')
-        await A.wait_for_timeout(800)
+        await A.locator('.nt-row.note[data-path="Projects/Second.md"]').wait_for()
         check("undo restores it", os.path.exists(f"{D}/Projects/Second.md"))
 
         # 7. server down while typing: draft kept, saved after restart (in a new tab)
