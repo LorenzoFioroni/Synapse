@@ -10,6 +10,43 @@ from backend.config import Config  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
+def _local_network(monkeypatch):
+    from backend.access import lan
+
+    # Access-control tests simulate remote devices, not the runner's network or Bonjour DNS.
+    monkeypatch.setattr(lan, "own_addresses", lambda: [])
+    monkeypatch.setattr(lan, "local_hostname", lambda: "synapse-test.local")
+
+
+@pytest.fixture(autouse=True)
+def _stop_plugin_hosts(monkeypatch):
+    from backend.access.authdb import AuthTable
+    from backend.plugins import PluginHost
+
+    hosts = []
+    auth_tables = []
+    initialize = PluginHost.__init__
+    initialize_auth = AuthTable.__init__
+
+    def tracked(host, *args, **kwargs):
+        initialize(host, *args, **kwargs)
+        hosts.append(host)
+
+    def tracked_auth(table, *args, **kwargs):
+        initialize_auth(table, *args, **kwargs)
+        auth_tables.append(table)
+
+    # Include hosts made by module-specific fixtures and by tests that build their own apps.
+    monkeypatch.setattr(PluginHost, "__init__", tracked)
+    monkeypatch.setattr(AuthTable, "__init__", tracked_auth)
+    yield
+    for host in reversed(hosts):
+        host.stop()
+    for table in auth_tables:
+        table.close()
+
+
+@pytest.fixture(autouse=True)
 def _no_arxiv_spacing(monkeypatch):
     from backend.online import http
 

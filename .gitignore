@@ -3,6 +3,7 @@ data/
 
 # Local environments and caches
 .venv/
+.venv-runtime/
 virtual_env/
 __pycache__/
 *.pyc

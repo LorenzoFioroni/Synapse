@@ -38,7 +38,7 @@ scripts; the app itself runs offline).
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install --require-hashes --only-binary=:all: -r requirements.txt
 (cd frontend && npm ci)           # once, and again when frontend/package-lock.json changes
 python server.py                  # http://127.0.0.1:8000 opens in your browser
 python server.py --port 5050 --no-browser
@@ -46,6 +46,10 @@ python server.py --data-dir ~/MyLibrary
 python server.py --window         # in a window of its own, like a program
 python server.py --make-shortcut  # an icon on the Desktop that does that (see below)
 ```
+
+The requirements files pin direct and transitive Python dependencies, with hashes and platform
+markers. CI installs the same runtime pins. To change dependencies, edit the `.in` inputs and
+regenerate the locks; see [Python dependencies](docs/dependencies.md).
 
 `server.py` compiles the web app's scripts (`frontend/src` → `frontend/js`) whenever they changed,
 for example after a `git pull`.
@@ -243,8 +247,8 @@ never mix.
 - **Retrieve Metadata** works on one item or a whole selection: one review dialog
   with a section per article, word-level diffs that wrap long text with a checkbox per field, and the
   article's unchanged metadata below. Nothing is saved until you apply; replacing an
-  existing citation key is opt-in. Several lookups run at once (arXiv requests are spaced out),
-  and they can be stopped, or continue in the background with a progress notification and a
+  existing citation key is opt-in. Several lookups run at once (arXiv requests stay spaced out
+  even after delayed wake-ups), and they can be stopped, or continue in the background with a progress notification and a
   *Review* button when done. Articles with updates are listed first, those not found next, and
   the ones already up to date are folded away at the end.
   OpenAlex author enrichment uses the names credited on the paper, with author-profile names
@@ -667,7 +671,7 @@ the backend.
 ## Tests
 
 ```bash
-pip install -r requirements-dev.txt
+pip install --require-hashes --only-binary=:all: -r requirements-dev.txt
 (cd frontend && npm ci && npm run check)   # type-check the frontend and the browser extension
 ruff check .                    # lint
 ruff format .                   # format
@@ -678,6 +682,9 @@ pre-commit install              # optional: ruff, mypy and the type check on eve
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of these on every pull request.
+CI limits each test job to twenty minutes, cancels obsolete runs of the same workflow/ref, and
+reports slow tests and stalled threads. Unit/API tests fake LAN discovery and window launches
+and release plugin resources between tests; see [Testing](docs/testing.md).
 
 Browser checklists (need Playwright; each uses a throw-away data folder).
 `python tests/e2e/run.py` runs them all and prints a summary, `python tests/e2e/run.py notes render`

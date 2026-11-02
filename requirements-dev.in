@@ -1,0 +1,11 @@
+# Everything needed to work on Synapse: the app's own dependencies plus the test and lint tools.
+# Edit here, then run python tools/lock_requirements.py.
+# Runtime constraints keep CI and server installs on the same dependency versions.
+-r requirements.in
+-c requirements.txt
+pytest>=9.0.3
+pytest-cov>=5   # coverage: python -m pytest --cov
+mypy>=1.10      # type check: mypy (settings in pyproject.toml)
+ruff>=0.15
+pre-commit>=4  # optional: runs ruff and the type check on each commit (pre-commit install)
+# browser checklists in tests/e2e (optional): pip install playwright

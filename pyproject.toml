@@ -1,5 +1,5 @@
 # Project tooling only: Synapse is run from the checkout (python server.py), not installed.
-# Runtime dependencies stay in requirements.txt, development ones in requirements-dev.txt.
+# Edit dependency ranges in requirements.in and requirements-dev.in; their .txt files are generated locks.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

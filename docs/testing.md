@@ -26,6 +26,13 @@ Chromium and cover what only a page can show: drawing, dragging, touch, several 
 
 ### Fixtures and helpers (`tests/conftest.py`)
 
+- `_local_network` (autouse) supplies a fixed Bonjour name and no LAN addresses. Device and
+  access-control tests must not resolve the runner's real hostname; tests of a particular LAN
+  address override this fixture's stand-ins with `monkeypatch`.
+- `_stop_plugin_hosts` (autouse) stops every plugin host constructed during a test, including
+  hosts made by module-specific fixtures. This closes log handlers and stops workers/providers
+  before the next test, rather than accumulating open files and threads across the suite. It
+  also closes persistent authentication-table connections created during the test.
 - `app` builds a fresh app on a throw-away data folder:
   `create_app(Config.from_env(tmp_path / "data"), start_indexer=False)`. It turns off background
   reference fetching and automatic PDF finding (`references_auto`, `add_fetch_references`,
@@ -82,6 +89,20 @@ These check rules of the code base rather than behaviour:
 - **`test_branding.py`** keeps one name and one icon: no old name in user-facing files, the page
   title, the extension's name and ping, the data folder variable (`SYNAPSE_DATA_DIR`, with the old
   name still accepted), and valid icon files at the right sizes.
+
+`tests/plugins/test_connection_lifetimes.py` retains SQLite connection objects while exercising
+field storage and job queues, and verifies that successful operations close them and failed
+transactions both roll back and close. Holding the objects prevents garbage collection from
+masking a leaked handle.
+
+### CI limits and diagnostics
+
+CI limits lock verification to five minutes and each test job to twenty minutes, and cancels
+obsolete runs of the same workflow/ref. Pytest reports its twenty slowest tests and dumps thread
+stacks when a test takes more than sixty seconds, so a stall is visible before the job times out.
+Coverage runs on every OS/Python matrix entry, including macOS with Python 3.13.
+The desktop CLI test replaces window launching in-process; `BROWSER=true` alone does not stop
+Chromium's native app-window launcher on macOS.
 
 ## JavaScript unit tests
 
@@ -227,14 +248,17 @@ simulate Pencil, palm and pinch input; the real behaviour still needs a try on a
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request, on Ubuntu with
-Python 3.10 and 3.13 and Node.js 22:
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request, on Ubuntu and macOS with
+Python 3.10 and 3.13 and Node.js 22. A separate job checks the generated Python locks with the
+uv version pinned in `tools/requirements-uv.txt`:
 
 1. `npm ci`, `npm run check` (type check) and `npm run build` in `frontend/`;
-2. `pip install -r requirements-dev.txt`;
+2. Install `requirements.txt` in a fresh runtime virtual environment, check it with `pip check`
+   and `server.py --help`, then install the hashed `requirements-dev.txt` in the test environment
+   and run `pip check`;
 3. `ruff check .`, `ruff format --check .`, `mypy` and `python tools/typecheck_plugins.py`;
-4. `python -m pytest -q --cov`, which includes the JavaScript tests and prints the coverage
-   report in the log (nothing is uploaded).
+4. `python -m pytest -q --cov --durations=20 -o faulthandler_timeout=60`, which includes the
+   JavaScript tests and prints the coverage report in the log (nothing is uploaded).
 
 The browser checklists do not run in CI.
 
@@ -295,7 +319,7 @@ installed, so committing needs no network.
 From `AGENTS.md`:
 
 ```bash
-pip install -r requirements-dev.txt
+pip install --require-hashes --only-binary=:all: -r requirements-dev.txt
 (cd frontend && npm ci && npm run check)   # the frontend and the browser extension
 ruff check .
 ruff format .

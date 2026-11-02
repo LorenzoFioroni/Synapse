@@ -391,15 +391,22 @@ def test_make_shortcut_option_keeps_the_other_options(tmp_path):
     assert not (tmp_path / "lib").exists(), "making the shortcut starts nothing"
 
 
-def test_window_option_with_synapse_running_only_opens_the_window(tmp_path):
+def test_window_option_with_synapse_running_only_opens_the_window(tmp_path, monkeypatch, capsys):
+    import server
+
+    opened = []
+    monkeypatch.setattr(window, "open_window", lambda url: opened.append(url) or "opened test window")
     srv, url = serve(json.dumps({"name": "Synapse"}).encode())
     try:
         port = srv.server_address[1]
-        r = run_server("--window", "--port", str(port), "--data-dir", str(tmp_path / "lib"), home=tmp_path)
+        monkeypatch.setattr(
+            sys, "argv", ["server.py", "--window", "--port", str(port), "--data-dir", str(tmp_path / "lib")]
+        )
+        server.main()
     finally:
         srv.shutdown()
-    assert r.returncode == 0, r.stderr
-    assert "already running" in r.stdout
+    assert opened == [f"http://127.0.0.1:{port}/"]
+    assert "already running" in capsys.readouterr().out
     assert not (tmp_path / "lib").exists()
 
 

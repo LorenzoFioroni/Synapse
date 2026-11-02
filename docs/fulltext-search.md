@@ -8,7 +8,7 @@ see [architecture](architecture.md); for the files on disk, see [storage](storag
 
 `backend/pdf/text.py` turns a PDF into text. It uses PyMuPDF (`fitz`) when it is installed,
 because it is faster and more accurate, and falls back to `pypdf`, which is always installed
-(`requirements.txt` lists PyMuPDF as optional). If PyMuPDF fails on a file, `pypdf` gets a try.
+(`requirements.in` lists PyMuPDF as optional). If PyMuPDF fails on a file, `pypdf` gets a try.
 
 | Function | Returns | Used by |
 |---|---|---|

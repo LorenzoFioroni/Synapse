@@ -91,11 +91,14 @@ Password Manager); no more pairing.
 You need a domain whose DNS is on Cloudflare (the free plan is enough).
 
 1. **Synapse.** Clone the repository on the server, then as in the README:
-   `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` and
+   `python3 -m venv .venv && .venv/bin/pip install --require-hashes --only-binary=:all: -r requirements.txt` and
    `cd frontend && npm ci`. Node is needed once to build the frontend; Git is needed for the notes
    history. To move your library over, stop Synapse on both computers and copy the `data` folder
    (`rsync -a ~/Documents/Applications/Synapse/data/ server:Synapse/data/`). Use one copy from then
    on: the two would not stay in sync.
+   The runtime lock includes transitive versions and hashes, and CI verifies the same pins on
+   Linux and macOS with Python 3.10 and 3.13. After pulling a dependency update, rerun the locked
+   install in the service's virtual environment before restarting. See [dependency maintenance](dependencies.md).
 2. **Run it as a service** that starts with the computer. `~/.config/systemd/user/synapse.service`:
 
    ```ini

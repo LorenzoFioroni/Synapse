@@ -476,6 +476,10 @@ log.
 
 ### Storing data
 
+The host closes SQLite connections used by per-item field storage and background job queues
+after each operation, including failures; their transaction scopes commit on success and roll
+back on error. They do not retain connections until garbage collection.
+
 Prefer `plugin.storage.sqlite` for records. Its `migrations` list brings the schema from version
 `i` to `i + 1` (kept in `PRAGMA user_version`); only ever append to it, so every user's database
 can be updated. Before migrating a database that already holds data, Synapse makes a backup (as
