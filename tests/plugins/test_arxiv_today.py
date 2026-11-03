@@ -349,3 +349,55 @@ def test_delayed_feed_is_checked_again_until_current_day_arrives(client, svc, fe
     count = len(feed.urls)
     retry.run()
     assert not plugin.jobs.pending() and len(feed.urls) == count
+
+
+def test_following_updates_retained_feed_without_scoring_or_fetching(client, svc, feed, plugin):
+    before = client.get(FEED).get_json()["items"]
+    assert all("highlight" not in item for item in before)
+    urls = list(feed.urls)
+    since = svc.changes.seq
+    assert (
+        client.put(
+            f"/api/plugin-host/{PID}/settings", json={"followed_authors": ["  JANE   DÓE  ", "Ann Other"]}
+        ).status_code
+        == 200
+    )
+    assert "sources" in svc.changes.since(since, svc.changes.epoch, None)["changes"]
+    after = client.get(FEED).get_json()["items"]
+    assert [i["id"] for i in after] == [i["id"] for i in before]
+    assert [i["_f"] for i in after] == [i["_f"] for i in before]
+    assert after[0]["highlight"] == {"label": "Following", "text": "Following: Jane Doe; Ann Other"}
+    assert after[0]["reasons"][0] == {"kind": "following", "text": "Following: Jane Doe; Ann Other", "items": []}
+    assert "highlight" not in after[1]
+    day = date.today().isoformat()
+    assert (
+        client.get(FEED.replace(".feed", f".feed~{day}")).get_json()["items"][0]["highlight"] == after[0]["highlight"]
+    )
+    item = client.post("/api/outside/add", json={"paper": after[0]}).get_json()["item"]
+    listed = client.get(FEED).get_json()["items"][0]
+    assert listed["id"] == item["id"] and listed["highlight"] == after[0]["highlight"]
+    assert "highlight" not in client.get(f"/api/items/{item['id']}").get_json()
+    client.put(f"/api/plugin-host/{PID}/settings", json={"followed_authors": []})
+    cleared = client.get(PAST).get_json()["items"]
+    assert all("highlight" not in i and all(r["kind"] != "following" for r in i.get("reasons", [])) for i in cleared)
+    assert feed.urls == urls
+
+
+@pytest.mark.parametrize(
+    ("authors", "followed", "expected"),
+    [
+        (["Jane Doe"], ["Jane Doe"], ["Jane Doe"]),
+        (["Jane Doe"], ["DOE, jane"], ["Jane Doe"]),
+        (["José de la Cruz"], [" jose  de la cruz "], ["José de la Cruz"]),
+        (["Jane Doe", "John Doe", "J. Doe"], ["Jane Doe"], ["Jane Doe"]),
+        (["Jane Doe"], ["Doe"], []),
+        (["Jane Doe"], ["Ann Other", "", "  "], []),
+        (["Jane Doe", "Jane Doe"], ["Jane Doe", "Jane Doe"], ["Jane Doe"]),
+        ([], ["Jane Doe"], []),
+    ],
+)
+def test_followed_name_matching(authors, followed, expected):
+    import importlib
+
+    following = importlib.import_module("plugins.arxiv-today.backend.following")
+    assert following.followed_names(authors, followed) == expected

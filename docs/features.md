@@ -341,7 +341,10 @@ Three plugins come with Synapse, off until you turn them on:
   that day's papers arrive. Day labels follow the calendar even without a new fetch. Set **Your
   author names** to distinguish citations to your authored library papers: these score 6 instead
   of 3. Shared authors contribute 0.5 per library paper, capped at 1.5. Similarity is local TF-IDF
-  on titles and abstracts.
+  on titles and abstracts. Set **Followed authors** to a comma-separated list of full publication
+  names to show a gold **Following** badge on their papers across retained feed days. Hover over
+  the badge or open the paper to see the matched names. Matching ignores case, accents and extra
+  spaces; add name variants separately. Following does not change scores or ordering.
   OS notification delivery requires the app to be open; background phone push is not supported.
 
 A plugin can offer a **list of papers** that are not in your library yet (today's arXiv papers,

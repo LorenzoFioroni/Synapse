@@ -162,12 +162,17 @@ async def main():
                 "authors": ["Jane Doe"],
                 "year": 2026,
                 "abstract": "We study tensor networks.",
+                "highlight": {"label": "Following", "text": 'Following: Jane <Doe> & "Ann"'},
                 "reasons": [
                     {"kind": "cites", "text": "Cites one of your papers", "items": [mine["id"]]},
                     "Listed today",
                 ],
             },
-            {"doi": "10.5555/mine", "reasons": ["Already yours"]},
+            {
+                "doi": "10.5555/mine",
+                "reasons": ["Already yours"],
+                "highlight": {"label": "Following", "text": "Following: Jane Doe"},
+            },
             {"doi": "10.5555/apple", "title": "Apple of discord", "year": 2025},
             {"arxiv": "2610.00003", "title": "Cherry picking", "year": 2026},
         ]
@@ -190,6 +195,12 @@ async def main():
                 lambda: page.evaluate("document.querySelectorAll('.items-body .row[data-id]').length === 4")
             )
             check("it shows the papers", ok)
+            check("source badges show on outside and library papers", await page.locator(".row-highlight").count() == 2)
+            check(
+                "source badge tooltip escapes author names",
+                await page.locator('.row[data-id="x:arxiv:2610.00002"] .row-highlight').get_attribute("title")
+                == 'Following: Jane <Doe> & "Ann"',
+            )
             check(
                 "variants use a second pane, not extra main-sidebar rows",
                 await page.locator("#sidebar [data-view^='source:lists-demo.today']").count() == 1

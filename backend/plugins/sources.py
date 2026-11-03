@@ -107,6 +107,8 @@ class SourceList:
                     continue
                 seen.add(mine["id"])
                 item = {**mine, "_rank": rank, "_source": full_id}
+                if rec.get("highlight"):
+                    item["highlight"] = rec["highlight"]
                 if rec.get("reasons"):
                     item["reasons"] = rec["reasons"]  # why the plugin lists it, also for a library paper
                 out.append(item)

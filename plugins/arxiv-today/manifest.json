@@ -28,6 +28,13 @@
       "default": []
     },
     {
+      "key": "followed_authors",
+      "type": "multi",
+      "label": "Followed authors",
+      "description": "People whose papers get a Following badge in the feed. Enter full names in Given Family order, comma-separated. Matching ignores case, accents and extra spaces; add each published name variant separately. This does not change scores.",
+      "default": []
+    },
+    {
       "key": "cross_lists",
       "type": "bool",
       "label": "Include cross-lists",

@@ -24,6 +24,8 @@ export interface PluginItem {
   /** A paper from a plugin's list that is not in the library (its id is "x:<key>"): item-pane
       sections are shown for it too. */
   _outside?: boolean;
+  /** Source-only title badge and its explanatory tooltip. */
+  highlight?: { label: string; text: string };
   [field: string]: unknown;
 }
 

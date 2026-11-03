@@ -86,3 +86,6 @@
   .row.snippet .cell { display: block; padding: 2px 14px 10px 42px; }
   .list-empty { inset: 36px 0 0; }
 }
+
+/* A source can flag papers while preserving the row's selection and hover colours. */
+.row-highlight { flex: none; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 6px; border-radius: 8px; background: #f7d879; color: #493500; font-size: 10px; font-weight: 650; line-height: 16px; }

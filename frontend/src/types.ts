@@ -61,6 +61,7 @@ export interface Item {
   categories?: string;     // outside papers: arXiv categories, "quant-ph, cond-mat.str-el"
   _source?: string;        // in a plugin's list: its id ("<plugin>.<source>")
   _rank?: number;          // in a plugin's list: the position the plugin gave it
+  highlight?: { label: string; text: string }; // source-only badge and tooltip
   reasons?: Reason[];      // in a plugin's list: why it is there
   _lean?: boolean;         // set by the frontend: a list entry without the abstract (the pane fetches it)
   [field: string]: unknown;

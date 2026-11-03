@@ -156,6 +156,21 @@ def test_records():
         record({"title": "No identifier"})
 
 
+@pytest.mark.parametrize(
+    ("highlight", "expected"),
+    [
+        ({"label": "Following", "text": "Following: Jane Doe"}, {"label": "Following", "text": "Following: Jane Doe"}),
+        ({"label": "Notice"}, {"label": "Notice", "text": "Notice"}),
+        ({"label": "a" * 50, "text": "b" * 400}, {"label": "a" * 40, "text": "b" * 300}),
+        ({"label": ""}, None),
+        ("Following", None),
+    ],
+)
+def test_source_highlight_is_bounded_plain_text(highlight, expected):
+    paper = record({"doi": "10.1/example", "highlight": highlight})
+    assert paper.get("highlight") == expected
+
+
 # ------------------------------------------------------------------ lists in the app
 def test_a_source_lists_library_items_and_outside_papers(client, svc, plugin):
     mine = client.post("/api/items", json={"title": "Mine", "doi": "10.1/mine", "abstract": "Long"}).get_json()

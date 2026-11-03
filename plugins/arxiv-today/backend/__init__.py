@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 from backend.plugins import Plugin, PluginError
 
 from . import listing
+from .following import followed_names
 from .store import SCHEMA
 
 RESCORE_DAYS = 3  # how many recent days a rescoring covers (older ones keep their scores)
@@ -58,16 +59,21 @@ def activate(plugin: Plugin) -> None:
 
     def record(r: dict) -> dict:
         """A stored paper as a list entry (an outside paper, see docs/plugins.md)."""
+        authors = json.loads(r["authors"])
+        matches = followed_names(authors, plugin.settings["followed_authors"])
+        why = json.loads(r["reasons"]) or (["Not scored yet"] if r["score"] is None else [])
+        following = "Following: " + "; ".join(matches)
         return {
+            **({"highlight": {"label": "Following", "text": following}} if matches else {}),
             "arxiv": r["arxiv"],
             "title": r["title"],
-            "authors": json.loads(r["authors"]),
+            "authors": authors,
             "abstract": r["abstract"],
             "categories": json.loads(r["categories"]),
             "date": r["day"],
             "year": int(r["day"][:4]),
             "item_type": "preprint",
-            "reasons": json.loads(r["reasons"]) or (["Not scored yet"] if r["score"] is None else []),
+            "reasons": ([{"kind": "following", "text": following}] if matches else []) + why,
         }
 
     def stored(arxiv: str) -> bool:
@@ -234,6 +240,8 @@ def activate(plugin: Plugin) -> None:
     def settings_changed(changed: dict) -> None:
         if {"categories", "cross_lists", "replacements"} & set(changed):
             plugin.jobs.enqueue("listing", key="listing")
+        if "followed_authors" in changed:
+            plugin.refresh_sources()
         if "author_names" in changed:
             plugin.jobs.enqueue("score", plugin.settings["keep_days"], key="score-all")
         if "keep_days" in changed:

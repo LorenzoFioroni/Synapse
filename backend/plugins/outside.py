@@ -48,7 +48,8 @@ def record(d: dict, source: str | None = None) -> dict:
     """A plugin's dict as an outside record. It needs a DOI or an arXiv id (``doi``, ``arxiv``);
     besides ``title``, ``authors`` (string or list), ``year``, ``abstract``, ``journal``, ``date``,
     ``categories`` (list), ``item_type``, ``url``, it may carry ``reasons`` (why it is listed:
-    lines of text, or the reasons of ``plugin.services.connections``) and ``extra`` (a dict the plugin gets back)."""
+    lines of text, or the reasons of ``plugin.services.connections``), ``highlight`` (a title badge
+    with ``label`` and tooltip ``text``), and ``extra`` (a dict the plugin gets back)."""
     if not isinstance(d, dict):
         raise PluginError("A paper is a dict with at least a doi or an arxiv id")
     try:
@@ -83,6 +84,12 @@ def record(d: dict, source: str | None = None) -> dict:
         out["categories"] = ", ".join(cats) if isinstance(cats, list | tuple) else str(cats)
     if d.get("reasons"):
         out["reasons"] = reasons(d["reasons"])
+    highlight = d.get("highlight")
+    if isinstance(highlight, dict) and highlight.get("label"):
+        out["highlight"] = {
+            "label": str(highlight["label"])[:40],
+            "text": str(highlight.get("text") or highlight["label"])[:300],
+        }
     if isinstance(d.get("extra"), dict):
         out["extra_data"] = d["extra"]
     return out

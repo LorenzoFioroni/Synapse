@@ -54,13 +54,14 @@ function cellHtml(colId: string, it: Item): string {
       const n = (it.attachments || []).length;
       const open = state.expanded.has(it.id);
       const hit = hitBadge(state.hits[it.id]?.fulltext);
+      const highlight = it.highlight ? `<span class="row-highlight" title="${escapeHtml(it.highlight.text)}" aria-label="${escapeHtml(it.highlight.text)}">${escapeHtml(it.highlight.label)}</span>` : '';
       if (it._outside) {
         // a paper from a plugin's list, not in the library: "+" adds it where the twisty would be
         return `<button class="row-add" data-act="add" title="Add to My Library">${icon('plus', 'icon-sm')}</button>`
-          + `${typeIcon(it.item_type || '', 'icon-sm type-icon')}<span class="t">${escapeHtml(it.title || 'Untitled')}</span>${hit}`;
+          + `${typeIcon(it.item_type || '', 'icon-sm type-icon')}<span class="t">${escapeHtml(it.title || 'Untitled')}</span>${hit}${highlight}`;
       }
       return `<span class="twisty ${n ? '' : 'none'} ${open ? 'open' : ''}" data-act="toggle">${icon('chevron', 'icon-sm')}</span>`
-        + `${typeIcon(it.item_type || '', 'icon-sm type-icon')}<span class="t">${escapeHtml(it.title || 'Untitled')}</span>${hit}${colourDots(it)}`;
+        + `${typeIcon(it.item_type || '', 'icon-sm type-icon')}<span class="t">${escapeHtml(it.title || 'Untitled')}</span>${hit}${highlight}${colourDots(it)}`;
     }
     case 'tags': return escapeHtml((it.tags || []).join(', '));
     case 'folder': return escapeHtml(itemFolderPaths(it).join(', '));
