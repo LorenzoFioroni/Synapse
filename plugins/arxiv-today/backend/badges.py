@@ -15,7 +15,12 @@ def paper_badges(authors: list[str], reasons: list, followed: list[str]) -> list
         )
     if any(isinstance(reason, dict) and reason.get("kind") == "cites_own" for reason in reasons):
         badges.append(
-            {"label": "Cites you", "text": "Cites a paper you authored in your library", "tone": "teal", "icon": "link"}
+            {
+                "label": "Cites you",
+                "text": "Cites a paper you authored in your library",
+                "tone": "red",
+                "icon": "megaphone",
+            }
         )
     return badges
 
@@ -45,8 +50,8 @@ def day_variants(rows: list[dict], followed: list[str]) -> list[dict]:
                 {
                     "label": label,
                     "text": text,
-                    "tone": "gold" if following else "teal",
-                    "icon": "star" if following else "link",
+                    "tone": "gold" if following else "red",
+                    "icon": "star" if following else "megaphone",
                 }
             )
         entry["highlights"] = sorted(badges, key=lambda b: b["label"] != "Following")

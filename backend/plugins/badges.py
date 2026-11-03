@@ -12,8 +12,8 @@ def highlights(value) -> list[dict]:
             {
                 "label": str(badge["label"])[:40],
                 "text": str(badge.get("text") or badge["label"])[:300],
-                "tone": badge.get("tone") if badge.get("tone") in ("gold", "teal") else "gold",
-                "icon": badge.get("icon") if badge.get("icon") in ("star", "link") else "star",
+                "tone": badge.get("tone") if badge.get("tone") in ("gold", "teal", "red") else "gold",
+                "icon": badge.get("icon") if badge.get("icon") in ("star", "link", "megaphone") else "star",
             }
         )
     return out

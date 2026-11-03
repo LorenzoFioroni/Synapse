@@ -458,7 +458,7 @@ def test_the_suggested_reading_example(client, svc, no_web):
 def test_multiple_source_badges_are_bounded_and_sanitized():
     badges = [
         {"label": "Following", "tone": "gold", "icon": "star"},
-        {"label": "Cites you", "tone": "teal", "icon": "link"},
+        {"label": "Cites you", "tone": "red", "icon": "megaphone"},
         {"label": "Unknown", "tone": "<style>", "icon": "<svg>"},
     ]
     paper = record({"doi": "10.1/example", "highlights": badges})

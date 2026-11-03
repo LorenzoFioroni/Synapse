@@ -411,10 +411,10 @@ def test_following_and_authored_citations_have_independent_paper_and_day_badges(
     paper = client.get(FEED).get_json()["items"][0]
     assert [(b["label"], b["tone"], b["icon"]) for b in paper["highlights"]] == [
         ("Following", "gold", "star"),
-        ("Cites you", "teal", "link"),
+        ("Cites you", "red", "megaphone"),
     ]
     source = client.get("/api/plugin-sources").get_json()["sources"][0]
-    assert [b["label"] for b in source["highlights"]] == ["Following", "Cites you"]
+    assert "highlights" not in source  # main navigation derives only today's variant in the browser
     assert [b["text"] for b in source["variants"][0]["highlights"]] == [
         "1 paper by authors you follow",
         "1 paper citing you",
@@ -428,6 +428,9 @@ def test_following_and_authored_citations_have_independent_paper_and_day_badges(
     source = client.get("/api/plugin-sources").get_json()["sources"][0]
     assert "highlights" not in source and "highlights" not in source["variants"][0]
     client.post(f"/api/plugins/{PID}/dismiss", json={"ids": ["2610.00001"], "undo": True})
-    assert client.get("/api/plugin-sources").get_json()["sources"][0]["highlights"][0]["label"] == "Cites you"
+    assert (
+        client.get("/api/plugin-sources").get_json()["sources"][0]["variants"][0]["highlights"][0]["label"]
+        == "Cites you"
+    )
     client.put(f"/api/plugin-host/{PID}/settings", json={"author_names": []})
     assert wait(lambda: "highlights" not in client.get(FEED).get_json()["items"][0])

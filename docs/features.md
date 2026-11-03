@@ -344,10 +344,10 @@ Three plugins come with Synapse, off until you turn them on:
   on titles and abstracts. Add full publication names to **Followed authors**, one per row, to
   show a gold **Following** badge on their papers across retained feed days. Hover over
   the badge or open the paper to see the matched names. Matching ignores case, accents and extra
-  spaces; add name variants separately. A teal **Cites you** badge marks citations to your
+  spaces; add name variants separately. A Synapse red **Cites you** badge marks citations to your
   authored library papers, identified through **Your author names**. Both badges can appear
-  together on papers, retained days, and the main feed entry. Day indicators use a white star
-  on yellow for Following and a white link on teal for Cites you. Hover for counts.
+  together on papers and retained days; the main feed entry shows only today's indicators.
+  Day indicators use a white star on yellow for Following and a white megaphone on Synapse red for Cites you. Hover for counts.
   Categories and author lists share Add/Remove row controls; Enter adds a row.
   These badges do not change scores or ordering.
   OS notification delivery requires the app to be open; background phone push is not supported.

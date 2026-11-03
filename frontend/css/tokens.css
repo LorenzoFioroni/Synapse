@@ -1,6 +1,7 @@
 /* Design tokens: colours, spacing, typography. Light is the default; dark
    applies with the OS setting unless the user picked a theme in Settings. */
 :root {
+  --synapse-red: #cc2936;
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --fs: 13px;

@@ -534,8 +534,8 @@ export interface ItemFieldValue extends PluginField {
 export interface SourceBadge {
   label: string;
   text: string;
-  tone?: 'gold' | 'teal';
-  icon?: 'star' | 'link';
+  tone?: 'gold' | 'teal' | 'red';
+  icon?: 'star' | 'link' | 'megaphone';
 }
 
 /** A list of papers a running plugin offers, shown in the sidebar (backend/plugins/sources.py). */
@@ -547,7 +547,6 @@ export interface PluginSource {
   plugin: string;
   plugin_name: string;
   badge: string | null;
-  highlights?: SourceBadge[];
   variants?: { id: string; title: string; badge: string | null; highlights?: SourceBadge[] }[];
 }
 

@@ -77,15 +77,6 @@ class SourceList:
                 variants = self._variants(pid, s)
                 if variants:
                     described["variants"] = variants
-                    badges: dict[str, dict] = {}
-                    for variant in variants:
-                        for badge in variant.get("highlights", []):
-                            if len(badges) < 8:
-                                badges.setdefault(
-                                    badge["label"], {**badge, "text": f"{badge['label']} in retained days"}
-                                )
-                    if badges:
-                        described["highlights"] = list(badges.values())
                 out.append(described)
         return out
 
