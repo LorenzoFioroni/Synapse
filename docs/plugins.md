@@ -243,7 +243,7 @@ These are contributed plugins, off until turned on; safe mode stops them:
   or ordering. An empty list turns the Following badges off. A Synapse red **Cites you** badge marks
   papers with a matched citation to a library paper identified by **Your author names**. Papers
   can carry both badges. Retained days and the main arXiv Feed entry show matching circular
-  indicators: yellow with a white star for Following, Synapse red with a white megaphone for Cites you.
+  indicators: yellow with a white star for Following, Synapse red with a solid white megaphone for Cites you.
   Only today's badges also appear in the main sidebar; older days keep their own indicators.
   Day tooltips report paper counts. Dismissed papers do not contribute; Undo restores them.
   **Your author names** accepts publication names in Given Family order. A citation only earns

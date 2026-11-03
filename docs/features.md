@@ -347,7 +347,7 @@ Three plugins come with Synapse, off until you turn them on:
   spaces; add name variants separately. A Synapse red **Cites you** badge marks citations to your
   authored library papers, identified through **Your author names**. Both badges can appear
   together on papers and retained days; the main feed entry shows only today's indicators.
-  Day indicators use a white star on yellow for Following and a white megaphone on Synapse red for Cites you. Hover for counts.
+  Day indicators use a white star on yellow for Following and a solid white megaphone on Synapse red for Cites you. Hover for counts.
   Categories and author lists share Add/Remove row controls; Enter adds a row.
   These badges do not change scores or ordering.
   OS notification delivery requires the app to be open; background phone push is not supported.

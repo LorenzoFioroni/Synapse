@@ -1,7 +1,7 @@
 // Inline SVG icons (stroke-based, 16px grid). Usage: icon('search')
 const P: Record<string, string> = {
   search: '<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>',
-  megaphone: '<path d="M6 5.5 13 2.5v10L6 9.5H2v-4zM4 9.5l1 4h2l-1-4M15 5v5"/>',
+  megaphone: '<path d="M2 5h4l7-3v10L6 9H2zM4 10h3l1 4H5z" fill="currentColor" stroke="none"/>',
   star: '<path d="m8 1.5 2 4.1 4.5.7-3.2 3.1.7 4.5L8 11.8l-4 2.1.8-4.5L1.5 6.3 6 5.6Z" fill="currentColor" stroke="none"/>',
   plus: '<path d="M8 3v10M3 8h10"/>',
   wand: '<path d="M3 13l7-7"/><path d="M11 2v2M14 5h-2M13.5 2.5l-1.2 1.2M9 3.2l.6.9M12.8 7l-.9-.6"/>',

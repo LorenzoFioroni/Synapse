@@ -243,9 +243,9 @@ async def main():
                 await page.locator(f"{ENTRY} .source-badge.compact").count() == 2,
             )
             check(
-                "citation badge uses Synapse red and a megaphone",
+                "citation badge uses Synapse red and a solid white megaphone",
                 await page.locator(".source-variant-item .source-badge.red").evaluate(
-                    "el => getComputedStyle(el).backgroundColor === 'rgb(204, 41, 54)' && el.querySelector('svg path').getAttribute('d').startsWith('M6 5.5')"
+                    "el => getComputedStyle(el).backgroundColor === 'rgb(204, 41, 54)' && getComputedStyle(el.querySelector('svg path')).fill === 'rgb(255, 255, 255)' && getComputedStyle(el.querySelector('svg path')).stroke === 'none'"
                 ),
             )
             check(
