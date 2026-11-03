@@ -17,21 +17,21 @@
       "key": "categories",
       "type": "multi",
       "label": "Categories",
-      "description": "arXiv categories or archives, comma-separated: quant-ph, cond-mat.str-el, hep-th, cs.LG …",
+      "description": "Add one arXiv category or archive per row: quant-ph, cond-mat.str-el, hep-th, cs.LG …",
       "default": []
     },
     {
       "key": "author_names",
       "type": "multi",
       "label": "Your author names",
-      "description": "Names you publish under, in Given Family order (comma-separated aliases). Citations to matched library papers you authored score 6 instead of 3. Matching uses surname and first initial; namesakes can match.",
+      "description": "Names you publish under, in Given Family order, one alias per row. Citations to matched library papers you authored score 6 instead of 3. Matching uses surname and first initial; namesakes can match.",
       "default": []
     },
     {
       "key": "followed_authors",
       "type": "multi",
       "label": "Followed authors",
-      "description": "People whose papers get a Following badge in the feed. Enter full names in Given Family order, comma-separated. Matching ignores case, accents and extra spaces; add each published name variant separately. This does not change scores.",
+      "description": "People whose papers get a Following badge in the feed. Enter full names in Given Family order, one name per row. Matching ignores case, accents and extra spaces; add each published name variant separately. This does not change scores.",
       "default": []
     },
     {

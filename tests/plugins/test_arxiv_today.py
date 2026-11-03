@@ -401,3 +401,33 @@ def test_followed_name_matching(authors, followed, expected):
 
     following = importlib.import_module("plugins.arxiv-today.backend.following")
     assert following.followed_names(authors, followed) == expected
+
+
+def test_following_and_authored_citations_have_independent_paper_and_day_badges(client, svc, plugin):
+    client.put(
+        f"/api/plugin-host/{PID}/settings", json={"followed_authors": ["Jane Doe"], "author_names": ["Jane Doe"]}
+    )
+    assert wait(lambda: any(r["kind"] == "cites_own" for r in client.get(FEED).get_json()["items"][0]["reasons"]))
+    paper = client.get(FEED).get_json()["items"][0]
+    assert [(b["label"], b["tone"], b["icon"]) for b in paper["highlights"]] == [
+        ("Following", "gold", "star"),
+        ("Cites you", "teal", "link"),
+    ]
+    source = client.get("/api/plugin-sources").get_json()["sources"][0]
+    assert [b["label"] for b in source["highlights"]] == ["Following", "Cites you"]
+    assert [b["text"] for b in source["variants"][0]["highlights"]] == [
+        "1 paper by authors you follow",
+        "1 paper citing you",
+    ]
+    item = client.post("/api/outside/add", json={"paper": paper}).get_json()["item"]
+    added = client.get(FEED).get_json()["items"][0]
+    assert added["id"] == item["id"] and added["highlights"] == paper["highlights"]
+    client.put(f"/api/plugin-host/{PID}/settings", json={"followed_authors": []})
+    assert [b["label"] for b in client.get(FEED).get_json()["items"][0]["highlights"]] == ["Cites you"]
+    client.post(f"/api/plugins/{PID}/dismiss", json={"ids": ["2610.00001"]})
+    source = client.get("/api/plugin-sources").get_json()["sources"][0]
+    assert "highlights" not in source and "highlights" not in source["variants"][0]
+    client.post(f"/api/plugins/{PID}/dismiss", json={"ids": ["2610.00001"], "undo": True})
+    assert client.get("/api/plugin-sources").get_json()["sources"][0]["highlights"][0]["label"] == "Cites you"
+    client.put(f"/api/plugin-host/{PID}/settings", json={"author_names": []})
+    assert wait(lambda: "highlights" not in client.get(FEED).get_json()["items"][0])

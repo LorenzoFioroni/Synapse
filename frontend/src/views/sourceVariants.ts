@@ -2,6 +2,7 @@
 // second pane beside the item list, like the note selector beside the note editor and graph.
 import * as A from '../actions.js';
 import { currentSource, on, state } from '../store.js';
+import { sourceBadges } from '../ui/sourceBadges.js';
 import { escapeHtml } from '../util.js';
 
 export function isToday(id: string, now = new Date()): boolean {
@@ -23,6 +24,7 @@ export function initSourceVariants(root: HTMLElement): void {
         <button class="source-variant-item ${variant.id === selected ? 'active' : ''}" data-source-variant="${escapeHtml(variant.id)}">
           <span class="source-variant-name">${escapeHtml(isToday(variant.id) ? 'Today' : variant.title)}</span>
           ${isToday(variant.id) ? `<span class="source-variant-date">${escapeHtml(variant.title)}</span>` : ''}
+          ${sourceBadges(variant.highlights, true)}
           <span class="source-variant-count">${escapeHtml(variant.badge || '')}</span>
         </button>`).join('')}</div>`;
   };

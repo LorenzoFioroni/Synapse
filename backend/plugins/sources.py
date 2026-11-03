@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from werkzeug.exceptions import NotFound
 
+from .badges import highlights
 from .errors import PluginError
 from .fields import keys_of
 from .outside import record
@@ -39,13 +40,15 @@ class SourceList:
         for v in got[:400]:
             if not isinstance(v, dict) or not str(v.get("id") or "").strip():
                 raise PluginError(f"Each variant of item source {src.id} needs an id and title")
-            out.append(
-                {
-                    "id": str(v["id"])[:80],
-                    "title": str(v.get("title") or v["id"])[:80],
-                    "badge": str(v["badge"])[:12] if v.get("badge") not in (None, "", 0) else None,
-                }
-            )
+            entry: dict = {
+                "id": str(v["id"])[:80],
+                "title": str(v.get("title") or v["id"])[:80],
+                "badge": str(v["badge"])[:12] if v.get("badge") not in (None, "", 0) else None,
+            }
+            badges = highlights(v.get("highlights"))
+            if badges:
+                entry["highlights"] = badges
+            out.append(entry)
         return out
 
     def describe(self) -> list[dict]:
@@ -74,6 +77,15 @@ class SourceList:
                 variants = self._variants(pid, s)
                 if variants:
                     described["variants"] = variants
+                    badges: dict[str, dict] = {}
+                    for variant in variants:
+                        for badge in variant.get("highlights", []):
+                            if len(badges) < 8:
+                                badges.setdefault(
+                                    badge["label"], {**badge, "text": f"{badge['label']} in retained days"}
+                                )
+                    if badges:
+                        described["highlights"] = list(badges.values())
                 out.append(described)
         return out
 
@@ -107,6 +119,8 @@ class SourceList:
                     continue
                 seen.add(mine["id"])
                 item = {**mine, "_rank": rank, "_source": full_id}
+                if rec.get("highlights"):
+                    item["highlights"] = rec["highlights"]
                 if rec.get("highlight"):
                     item["highlight"] = rec["highlight"]
                 if rec.get("reasons"):

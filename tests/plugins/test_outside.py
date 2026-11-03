@@ -453,3 +453,15 @@ def test_the_suggested_reading_example(client, svc, no_web):
     assert client.get("/api/plugin-sources").get_json()["sources"][0]["badge"] == "1"
     assert client.get(f"/api/items/{added['id']}/fields").get_json()["fields"][0]["value"] > 0  # the score came along
     assert mine
+
+
+def test_multiple_source_badges_are_bounded_and_sanitized():
+    badges = [
+        {"label": "Following", "tone": "gold", "icon": "star"},
+        {"label": "Cites you", "tone": "teal", "icon": "link"},
+        {"label": "Unknown", "tone": "<style>", "icon": "<svg>"},
+    ]
+    paper = record({"doi": "10.1/example", "highlights": badges})
+    assert [b["label"] for b in paper["highlights"]] == ["Following", "Cites you", "Unknown"]
+    assert paper["highlights"][-1] == {"label": "Unknown", "text": "Unknown", "tone": "gold", "icon": "star"}
+    assert len(record({"doi": "10.1/example", "highlights": badges * 10})["highlights"]) == 8

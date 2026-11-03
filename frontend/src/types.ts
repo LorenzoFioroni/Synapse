@@ -61,7 +61,8 @@ export interface Item {
   categories?: string;     // outside papers: arXiv categories, "quant-ph, cond-mat.str-el"
   _source?: string;        // in a plugin's list: its id ("<plugin>.<source>")
   _rank?: number;          // in a plugin's list: the position the plugin gave it
-  highlight?: { label: string; text: string }; // source-only badge and tooltip
+  highlight?: SourceBadge; // legacy single source badge
+  highlights?: SourceBadge[];
   reasons?: Reason[];      // in a plugin's list: why it is there
   _lean?: boolean;         // set by the frontend: a list entry without the abstract (the pane fetches it)
   [field: string]: unknown;
@@ -529,6 +530,14 @@ export interface ItemFieldValue extends PluginField {
   source_url: string | null;
 }
 
+/** A paper or navigation badge, shared by source records and retained days. */
+export interface SourceBadge {
+  label: string;
+  text: string;
+  tone?: 'gold' | 'teal';
+  icon?: 'star' | 'link';
+}
+
 /** A list of papers a running plugin offers, shown in the sidebar (backend/plugins/sources.py). */
 export interface PluginSource {
   id: string;              // "<plugin>.<source>"; its view is "source:<id>"
@@ -538,7 +547,8 @@ export interface PluginSource {
   plugin: string;
   plugin_name: string;
   badge: string | null;
-  variants?: { id: string; title: string; badge: string | null }[];
+  highlights?: SourceBadge[];
+  variants?: { id: string; title: string; badge: string | null; highlights?: SourceBadge[] }[];
 }
 
 /** Why a plugin lists a paper; ``items``: the library papers involved (those it cites, say). */

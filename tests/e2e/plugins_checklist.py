@@ -206,12 +206,46 @@ async def main():
                 lambda: asyncio.to_thread(lambda: plugin("recently-added")["values"]["keep_days"] == 30)
             )
             check("a number setting is saved", ok)
-            await page.fill(f'{SEC} [data-pset="skip_tags"]', "draft, old")
-            await page.press(f'{SEC} [data-pset="skip_tags"]', "Tab")
+            rows = f'{SEC} [data-pset="skip_tags"]'
+            await page.click(f"{rows} [data-list-add]")
+            await page.locator(f"{rows} input").last.fill("draft")
+            await page.locator(f"{rows} input").last.press("Enter")
+            await page.locator(f"{rows} input").last.fill("old")
+            await page.locator(f"{rows} input").last.press("Tab")
             ok = await wait_for(
                 lambda: asyncio.to_thread(lambda: plugin("recently-added")["values"]["skip_tags"] == ["draft", "old"])
             )
-            check("a list setting is saved", ok)
+            check("list rows save entries and Enter adds a row", ok)
+            check(
+                "saved list rows stay visible while a row control has focus",
+                await page.locator(f"{rows} input").count() == 2
+                and await page.locator(f"{rows} .string-list-rows").evaluate(
+                    "el => el.getBoundingClientRect().height >= 60"
+                ),
+            )
+            await shot(page, "editable-list-rows")
+            await page.locator(f"{rows} [data-list-remove]").first.click()
+            check(
+                "removing a row persists immediately",
+                await wait_for(
+                    lambda: asyncio.to_thread(lambda: plugin("recently-added")["values"]["skip_tags"] == ["old"])
+                ),
+            )
+            await page.locator(f"{rows} input").first.fill("Doe, Jane")
+            await page.locator(f"{rows} input").first.press("Tab")
+            check(
+                "commas remain inside one list entry",
+                await wait_for(
+                    lambda: asyncio.to_thread(lambda: plugin("recently-added")["values"]["skip_tags"] == ["Doe, Jane"])
+                ),
+            )
+            await page.locator(f"{rows} [data-list-remove]").first.click()
+            check(
+                "a list can be cleared",
+                await wait_for(
+                    lambda: asyncio.to_thread(lambda: plugin("recently-added")["values"]["skip_tags"] == [])
+                ),
+            )
             await page.fill(f'{SEC} [data-pset="keep_days"]', "0")
             await page.press(f'{SEC} [data-pset="keep_days"]', "Tab")
             ok = await wait_for(lambda: page.evaluate("!!document.querySelector('.toast')"))

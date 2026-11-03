@@ -234,12 +234,17 @@ These are contributed plugins, off until turned on; safe mode stops them:
   Day labels use the browser's calendar date and refresh every minute and on visibility changes;
   the newest stored day is only labelled Today if its date is today.
   Cross-lists are in by default, replacements not.
-  **Followed authors** accepts comma-separated full publication names in Given Family order.
+  **Followed authors** accepts full publication names, one per editable row. **Categories** and
+  **Your author names** use the same Add/Remove list editor; Enter adds another row.
   Matching papers show a gold **Following** badge beside their title, with the matched names in
   its tooltip and in *Why It Is Here*, including papers already added to the library. Matching
   ignores case, accents and extra whitespace, but requires the full name (add published variants
   separately). Changes apply immediately to all retained days, offline, without altering scores
-  or ordering. An empty list turns the badges off.
+  or ordering. An empty list turns the Following badges off. A teal **Cites you** badge marks
+  papers with a matched citation to a library paper identified by **Your author names**. Papers
+  can carry both badges. Retained days and the main arXiv Feed entry show matching circular
+  indicators: yellow with a white star for Following, teal with a white link for Cites you.
+  Day tooltips report paper counts. Dismissed papers do not contribute; Undo restores them.
   **Your author names** accepts publication names in Given Family order. A citation only earns
   the stronger authored signal after matching a reference to an existing library paper whose
   author matches a configured name (surname and first initial, accent/case normalized; namesakes
@@ -332,7 +337,7 @@ Each setting has a `key` (lowercase, `_`), a `type`, a `label`, an optional `des
 | `int`, `float` | a number | `min`, `max` |
 | `text` | a string (≤ 10,000 characters) | |
 | `choice` | one of `options` | `options`: `["a", "b"]` or `[["a", "Label A"], …]` |
-| `multi` | a list of strings | `options` (then the user ticks them) or none (a comma-separated field) |
+| `multi` | a list of strings | `options` (then the user ticks them) or none (editable rows with Add/Remove and Enter to add) |
 
 ### The `plugin` object
 
@@ -572,9 +577,12 @@ def feed(day=None) -> list[dict]:
 - **A paper** is a dict with a `doi` or an `arxiv` id (a `PluginError` otherwise) and any of
   `title`, `authors` (a list of names or "Family, Given; …"), `year`, `date`, `abstract`, `journal`,
   `volume`, `pages`, `publisher`, `url`, `item_type`, `categories`, `reasons`, `extra` (a dict).
-  An optional `highlight: {"label": "Following", "text": "Following: Jane Doe"}` adds a gold
-  title badge (label capped at 40 characters, tooltip at 300). It and the reasons are preserved
-  when a source paper matches a library item; the badge belongs only to that source view.
+  Optional `highlights: [{"label": "Following", "text": "Following: Jane Doe", "tone": "gold",
+  "icon": "star"}]` adds multiple title badges (up to 8; labels capped at 40 characters, tooltips
+  at 300). Tones are `gold` or `teal`, icons `star` or `link`. The legacy single `highlight`
+  remains supported. Badges and reasons survive matching a library item, within the source view.
+  Variants may return the same `highlights` array for compact circular day indicators; the main
+  source entry shows the distinct badges present across its variants.
   Synapse gives it the id `x:<key>` (`x:arxiv:2610.01234`) and a `url` (arXiv's or doi.org's).
   `plugin.services.lookup` returns papers in this shape. The list keeps the plugin's order (at most
   2000 papers), shows each paper once, and the badge is the short text or count `badge()` returns.

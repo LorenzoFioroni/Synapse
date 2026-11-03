@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 from backend.plugins import Plugin, PluginError
 
 from . import listing
-from .following import followed_names
+from .badges import day_variants, paper_badges
 from .store import SCHEMA
 
 RESCORE_DAYS = 3  # how many recent days a rescoring covers (older ones keep their scores)
@@ -60,11 +60,15 @@ def activate(plugin: Plugin) -> None:
     def record(r: dict) -> dict:
         """A stored paper as a list entry (an outside paper, see docs/plugins.md)."""
         authors = json.loads(r["authors"])
-        matches = followed_names(authors, plugin.settings["followed_authors"])
         why = json.loads(r["reasons"]) or (["Not scored yet"] if r["score"] is None else [])
-        following = "Following: " + "; ".join(matches)
+        badges = paper_badges(authors, why, plugin.settings["followed_authors"])
+        following = next((b["text"] for b in badges if b["label"] == "Following"), None)
         return {
-            **({"highlight": {"label": "Following", "text": following}} if matches else {}),
+            **(
+                {"highlight": {"label": badges[0]["label"], "text": badges[0]["text"]}, "highlights": badges}
+                if badges
+                else {}
+            ),
             "arxiv": r["arxiv"],
             "title": r["title"],
             "authors": authors,
@@ -73,7 +77,7 @@ def activate(plugin: Plugin) -> None:
             "date": r["day"],
             "year": int(r["day"][:4]),
             "item_type": "preprint",
-            "reasons": ([{"kind": "following", "text": following}] if matches else []) + why,
+            "reasons": ([{"kind": "following", "text": following}] if following else []) + why,
         }
 
     def stored(arxiv: str) -> bool:
@@ -258,13 +262,8 @@ def activate(plugin: Plugin) -> None:
         return rows[0]["n"] if day else 0
 
     def feed_days() -> list[dict]:
-        rows = db.query(
-            "SELECT day, SUM(seen = 0 AND dismissed = 0) AS unseen FROM papers GROUP BY day ORDER BY day DESC"
-        )
-        return [
-            {"id": r["day"], "title": date.fromisoformat(r["day"]).strftime("%d %b %Y"), "badge": r["unseen"]}
-            for r in rows
-        ]
+        rows = db.query("SELECT day, authors, reasons, seen, dismissed FROM papers ORDER BY day DESC")
+        return day_variants(rows, plugin.settings["followed_authors"])
 
     @plugin.item_source(
         "feed",

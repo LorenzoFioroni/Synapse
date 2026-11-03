@@ -23,7 +23,7 @@ TypeScript frontend. Everything runs on your machine.
   and use only letters, digits and `_ - : . / +`; an edit that breaks this is refused, and an
   import gives such entries a usable key and tells you which ones changed.
 - 🧩 **Make it yours** — extend Synapse with plugins, including arXiv feeds that highlight
-  authors you follow, and choose light or dark mode.
+  authors you follow and papers that cite you, and choose light or dark mode.
 - 📱 **Take research around the house** — use the responsive interface on a paired phone
   or tablet over your local network.
 - 🛟 **Keep a way back** — automatic library and notes backups, note version history,

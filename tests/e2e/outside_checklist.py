@@ -46,7 +46,7 @@ def activate(plugin: Plugin):
         return sum(1 for p in store.get("papers", []) if not plugin.library.find(doi=p.get("doi"), arxiv=p.get("arxiv")))
 
     @plugin.item_source("today", title="Today's List", icon="calendar", description="Papers for today", badge=unread,
-                        variants=lambda: [{"id": "today", "title": "26 Oct 2026"},
+                        variants=lambda: [{"id": "today", "title": "26 Oct 2026", "highlights": store.get("highlights", [])},
                                           {"id": "yesterday", "title": "25 Oct 2026"}])
     def today(day=None):
         return store.get("papers", [])
@@ -162,7 +162,10 @@ async def main():
                 "authors": ["Jane Doe"],
                 "year": 2026,
                 "abstract": "We study tensor networks.",
-                "highlight": {"label": "Following", "text": 'Following: Jane <Doe> & "Ann"'},
+                "highlights": [
+                    {"label": "Following", "text": 'Following: Jane <Doe> & "Ann"', "tone": "gold", "icon": "star"},
+                    {"label": "Cites you", "text": "Cites a paper you authored", "tone": "teal", "icon": "link"},
+                ],
                 "reasons": [
                     {"kind": "cites", "text": "Cites one of your papers", "items": [mine["id"]]},
                     "Listed today",
@@ -176,7 +179,7 @@ async def main():
             {"doi": "10.5555/apple", "title": "Apple of discord", "year": 2025},
             {"arxiv": "2610.00003", "title": "Cherry picking", "year": 2026},
         ]
-        api("/api/plugins/lists-demo/set", "POST", {"papers": papers})
+        api("/api/plugins/lists-demo/set", "POST", {"papers": papers, "highlights": papers[0]["highlights"]})
 
         async with async_playwright() as p:
             browser = await p.chromium.launch()
@@ -195,12 +198,31 @@ async def main():
                 lambda: page.evaluate("document.querySelectorAll('.items-body .row[data-id]').length === 4")
             )
             check("it shows the papers", ok)
-            check("source badges show on outside and library papers", await page.locator(".row-highlight").count() == 2)
+            check("source badges show on outside and library papers", await page.locator(".row-highlight").count() == 3)
             check(
                 "source badge tooltip escapes author names",
-                await page.locator('.row[data-id="x:arxiv:2610.00002"] .row-highlight').get_attribute("title")
+                await page.locator('.row[data-id="x:arxiv:2610.00002"] .row-highlight.gold').get_attribute("title")
                 == 'Following: Jane <Doe> & "Ann"',
             )
+            check(
+                "both badges show on the day and main sidebar",
+                await page.locator('.source-variant-item[data-source-variant="today"] .source-badge.compact').count()
+                == 2
+                and await page.locator(f"{ENTRY} .source-badge.compact").count() == 2,
+            )
+            check(
+                "navigation badges share paper colours and use white icons",
+                await page.locator(".source-variant-item .source-badge.gold").first.evaluate(
+                    "el => getComputedStyle(el).backgroundColor === getComputedStyle(document.querySelector('.row-highlight.gold')).backgroundColor && getComputedStyle(el.querySelector('svg')).color === 'rgb(255, 255, 255)'"
+                ),
+            )
+            check(
+                "main-sidebar badge icons stay white when selected",
+                await page.locator(f"{ENTRY} .source-badge.gold svg").evaluate(
+                    "el => getComputedStyle(el).color === 'rgb(255, 255, 255)'"
+                ),
+            )
+            await shot(page, "following-and-cites-you")
             check(
                 "variants use a second pane, not extra main-sidebar rows",
                 await page.locator("#sidebar [data-view^='source:lists-demo.today']").count() == 1

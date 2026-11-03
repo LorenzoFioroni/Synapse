@@ -26,6 +26,7 @@ export interface PluginItem {
   _outside?: boolean;
   /** Source-only title badge and its explanatory tooltip. */
   highlight?: { label: string; text: string };
+  highlights?: { label: string; text: string; tone?: 'gold' | 'teal'; icon?: 'star' | 'link' }[];
   [field: string]: unknown;
 }
 

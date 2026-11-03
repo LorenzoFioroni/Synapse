@@ -14,7 +14,7 @@
       "key": "papers",
       "type": "multi",
       "label": "Papers",
-      "description": "arXiv ids or DOIs, comma-separated (2310.01234, 10.1103/PhysRevLett.130.010601).",
+      "description": "arXiv ids or DOIs, one per row (2310.01234, 10.1103/PhysRevLett.130.010601).",
       "default": []
     }
   ]

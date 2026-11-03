@@ -5,6 +5,7 @@ the list is ``x:<key>`` so it never clashes with a library item's."""
 
 from __future__ import annotations
 
+from .badges import highlights
 from .errors import PluginError
 from .fields import key_of
 
@@ -90,6 +91,9 @@ def record(d: dict, source: str | None = None) -> dict:
             "label": str(highlight["label"])[:40],
             "text": str(highlight.get("text") or highlight["label"])[:300],
         }
+    badges = highlights(d.get("highlights"))
+    if badges:
+        out["highlights"] = badges
     if isinstance(d.get("extra"), dict):
         out["extra_data"] = d["extra"]
     return out

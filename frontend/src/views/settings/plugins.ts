@@ -8,6 +8,7 @@ import { settingsSections } from '../../extend.js';
 import { syncPlugins } from '../../plugins/host.js';
 import { icon } from '../../icons.js';
 import { confirmDialog, openDialog } from '../../ui/dialog.js';
+import { bindStringLists, stringList, stringListValues } from '../../ui/stringList.js';
 import { toast, toastError } from '../../ui/toast.js';
 import type { PluginInfo, PluginSetting, PluginsOverview } from '../../types.js';
 import { escapeHtml, formatDate } from '../../util.js';
@@ -65,7 +66,7 @@ function settingControl(p: PluginInfo, s: PluginSetting): string {
         const chosen = new Set(Array.isArray(v) ? v.map(String) : []);
         return `<div class="p-multi" ${attrs}>${s.options.map(([o, label]) => `<label class="check"><input type="checkbox" value="${escapeHtml(o)}" ${chosen.has(o) ? 'checked' : ''}> ${escapeHtml(label)}</label>`).join('')}</div>`;
       }
-      return `<input class="input" type="text" ${attrs} value="${escapeHtml(Array.isArray(v) ? v.join(', ') : '')}" placeholder="Separate with commas" spellcheck="false">`;
+      return stringList(s.label, Array.isArray(v) ? v.map(String) : [], attrs);
     default:
       return `<input class="input" type="text" ${attrs} value="${escapeHtml(String(v ?? ''))}" spellcheck="false">`;
   }
@@ -176,7 +177,8 @@ function renderSections(view: HTMLElement, data: PluginsOverview, force = false)
     section.querySelector('h2')!.innerHTML = `${escapeHtml(p.name)}${p.running ? '' : ` <span class="badge warn">${escapeHtml(STATUS[p.status])}</span>`}`;
     section.querySelector('.lead')!.textContent = p.description || '';
     const generic = section.querySelector<HTMLElement>('.plugin-generic')!;
-    const typing = generic.contains(document.activeElement) && document.activeElement!.matches('input[type=text], input[type=number]');
+    const active = document.activeElement;
+    const typing = !!active && generic.contains(active) && (active.matches('input[type=text], input[type=number]') || !!active.closest('.string-list'));
     if (force || !typing) generic.innerHTML = sectionBodyHtml(p, data.safe_mode, drawnByFrontend(p.id));
     if (after.nextElementSibling !== section) after.after(section);
     after = section;
@@ -236,24 +238,32 @@ async function toggle(view: HTMLElement, p: PluginInfo, input: HTMLInputElement)
   syncPlugins();   // this window's own change is not in the change feed
 }
 
+const pendingSettings = new Map<string, Promise<void>>();
+
 async function saveSetting(view: HTMLElement, id: string, el: HTMLElement): Promise<void> {
   const holder = el.closest<HTMLElement>('[data-pset]')!;
   const key = holder.dataset.pset!;
   let value: unknown;
   if (holder.classList.contains('p-multi')) value = [...holder.querySelectorAll<HTMLInputElement>('input:checked')].map((i) => i.value);
   else if (holder.dataset.ptype === 'bool') value = (holder as HTMLInputElement).checked;
-  else if (holder.dataset.ptype === 'multi') value = (holder as HTMLInputElement).value;
+  else if (holder.classList.contains('string-list')) value = stringListValues(holder);
   else if (holder.dataset.ptype === 'int' || holder.dataset.ptype === 'float') value = (holder as HTMLInputElement).value === '' ? null : Number((holder as HTMLInputElement).value);
   else value = (holder as HTMLInputElement | HTMLSelectElement).value;
-  try {
-    const res = await asAdmin(() => api.setPluginSettings(id, { [key]: value }));
-    if (!res) { await refreshPlugins(view, true); return; }   // passkey not given: show the saved value again
-    const p = find(id);
-    if (p) p.values = res.values;
-    flashSaved(holder.closest('.p-setting'));
-  } catch (e) {
-    toastError(e);
-    await refreshPlugins(view, true);
+  const save = (pendingSettings.get(id) || Promise.resolve()).catch(() => {}).then(async () => {
+    try {
+      const res = await asAdmin(() => api.setPluginSettings(id, { [key]: value }));
+      if (!res) { await refreshPlugins(view, true); return; }   // passkey not given: show the saved value again
+      const p = find(id);
+      if (p) p.values = res.values;
+      flashSaved(holder.closest('.p-setting'));
+    } catch (e) {
+      toastError(e);
+      await refreshPlugins(view, true);
+    }
+  });
+  pendingSettings.set(id, save);
+  try { await save; } finally {
+    if (pendingSettings.get(id) === save) pendingSettings.delete(id);
   }
 }
 
@@ -277,6 +287,7 @@ function showLog(p: PluginInfo): void {
 export function bindPlugins(view: HTMLElement, go: (navId: string) => void): void {
   view.querySelector<HTMLButtonElement>('[data-plugins-rescan]')!.onclick = () => refreshPlugins(view);
   const content = view.querySelector<HTMLElement>('.settings-content')!;
+  bindStringLists(content);
   // the generic parts only: what a plugin's frontend draws in its section is its own
   const ours = (el: Element) => !!el.closest('[data-plugin-list], .plugin-generic');
   content.addEventListener('change', (e) => {

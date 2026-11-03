@@ -7,6 +7,7 @@
 // on a tag to tag them, on Trash to delete them. Drag a folder onto another to nest it, or onto the
 // "Folders" heading to move it to the top level. PDFs dropped on a folder are
 // added as new items in that folder.
+import { sourceBadges } from '../ui/sourceBadges.js';
 import * as A from '../actions.js';
 import { badges, navigation, pages } from '../extend.js';
 import { icon } from '../icons.js';
@@ -114,7 +115,7 @@ function paintPages() {
     return `<button class="side-item ${entry.active() ? 'active' : ''}" data-navigation="${escapeHtml(entry.id)}">${icon(entry.icon)}<span class="nm">${escapeHtml(entry.title)}</span><span class="count">${badge?.warning ? `<b class="overdue" title="${escapeHtml(badge.warningTitle || '')}">${escapeHtml(badge.warning)}</b> ` : ''}${escapeHtml(badge?.text || '')}</span></button>`;
   }).join('');
   root.querySelector<HTMLElement>('[data-sources]')!.innerHTML = state.sources.map((s) => `
-    <button class="side-item ${inLibrary() && (state.view === `source:${s.id}` || state.view.startsWith(`source:${s.id}~`)) ? 'active' : ''}" data-view="source:${escapeHtml(s.id)}" title="${escapeHtml(`${s.description ? `${s.description}\n` : ''}(${s.plugin_name})`)}">${icon(s.icon || 'list')}<span class="nm">${escapeHtml(s.title)}</span><span class="count">${escapeHtml(s.badge || '')}</span></button>`).join('');
+    <button class="side-item ${inLibrary() && (state.view === `source:${s.id}` || state.view.startsWith(`source:${s.id}~`)) ? 'active' : ''}" data-view="source:${escapeHtml(s.id)}" title="${escapeHtml(`${s.description ? `${s.description}\n` : ''}(${s.plugin_name})`)}">${icon(s.icon || 'list')}<span class="nm">${escapeHtml(s.title)}</span>${sourceBadges(s.highlights, true)}<span class="count">${escapeHtml(s.badge || '')}</span></button>`).join('');
   const shown = pageOpen() ? currentPageId() : null;
   root.querySelector<HTMLElement>('[data-pages]')!.innerHTML = list.map((p) => `
     <button class="side-item ${shown === p.id ? 'active' : ''}" data-page="${escapeHtml(p.id)}" title="${escapeHtml(p.source ? `${p.title} (${p.source})` : p.title)}">${icon(p.icon || 'plugin')}<span class="nm">${escapeHtml(p.title)}</span><span class="count">${escapeHtml(badges.get(p.id) || '')}</span></button>`).join('');
