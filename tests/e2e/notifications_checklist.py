@@ -215,7 +215,7 @@ async def main():
 
                 async def news(route):
                     nonlocal news_sent
-                    payload = None if news_sent else {"day": "2026-10-24", "count": 7, "connected": 2}
+                    payload = None if news_sent else {"day": "2026-10-24", "count": 7, "read": 2, "skim": 3}
                     news_sent = True
                     await route.fulfill(json={"news": payload})
 
@@ -224,7 +224,7 @@ async def main():
                 r.raise_for_status()
                 await page.evaluate("window.zcPlugins.sync()")
                 await page.wait_for_function(
-                    "() => ([...document.querySelectorAll('.notification-message')].some(e=>e.textContent.includes('7 new papers')))"
+                    "() => ([...document.querySelectorAll('.notification-message')].some(e=>e.textContent.includes('7 new papers: 2 to read, 3 to skim')))"
                 )
                 check("arXiv ready notice uses notification center", await page.locator("#toasts .toast").count() == 0)
                 check(

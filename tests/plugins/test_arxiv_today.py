@@ -156,7 +156,7 @@ def test_dismiss_and_news(client, svc, plugin):
     client.post(f"/api/plugins/{PID}/dismiss", json={"ids": ["2610.00002"], "undo": True})
     assert len(client.get(TODAY).get_json()["items"]) == 2
     news = client.post(f"/api/plugins/{PID}/news").get_json()["news"]
-    assert news == {"day": date.today().isoformat(), "count": 2, "connected": 1}
+    assert news == {"day": date.today().isoformat(), "count": 2, "read": 0, "skim": 0}
     assert client.post(f"/api/plugins/{PID}/news").get_json()["news"] is None  # once
 
 
@@ -187,7 +187,7 @@ def test_claude(client, svc, plugin):
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/call",
-            "params": {"name": f"{PID}__today", "arguments": {"min_score": 1}},
+            "params": {"name": f"{PID}__today", "arguments": {"min_score": 20}},
         }
     )["result"]
     data = r.get("structuredContent") or json.loads(r["content"][0]["text"])
@@ -296,13 +296,15 @@ def test_the_rss_parser():
 
 def test_authored_library_papers_have_a_stronger_citation_signal(client, svc, plugin):
     before = client.get(FEED).get_json()["items"][0]
-    assert next(r for r in before["reasons"] if r["kind"] == "cites")["text"] == "Cites 1 paper in your library"
+    cites = next(r for r in before["reasons"] if r["kind"] == "cites")["text"]
+    assert cites == "Cites “Tensor network methods for quantum circuits” (added lately)"
+    assert before["reasons"][0]["kind"] == "match" and before["reasons"][0]["text"].startswith("Match ")
     assert client.put(f"/api/plugin-host/{PID}/settings", json={"author_names": ["Jane Doe"]}).status_code == 200
     assert wait(lambda: any(r["kind"] == "cites_own" for r in client.get(FEED).get_json()["items"][0]["reasons"]))
     after = client.get(FEED).get_json()["items"][0]
     reason = next(r for r in after["reasons"] if r["kind"] == "cites_own")
     assert reason["text"] == "Cites 1 paper you authored"
-    assert after["_f"][f"{PID}.score"] == before["_f"][f"{PID}.score"] + 3
+    assert after["_f"][f"{PID}.score"] >= 70 > before["_f"][f"{PID}.score"]  # in the Read tier now
     assert not any(r["kind"] == "cites" for r in after["reasons"])
 
 
@@ -362,7 +364,7 @@ def test_following_updates_retained_feed_without_scoring_or_fetching(client, svc
         ).status_code
         == 200
     )
-    assert "sources" in svc.changes.since(since, svc.changes.epoch, None)["changes"]
+    assert wait(lambda: "sources" in svc.changes.since(since, svc.changes.epoch, None)["changes"])
     after = client.get(FEED).get_json()["items"]
     assert [i["id"] for i in after] == [i["id"] for i in before]
     assert [i["_f"] for i in after] == [i["_f"] for i in before]
@@ -434,3 +436,62 @@ def test_following_and_authored_citations_have_independent_paper_and_day_badges(
     )
     client.put(f"/api/plugin-host/{PID}/settings", json={"author_names": []})
     assert wait(lambda: "highlights" not in client.get(FEED).get_json()["items"][0])
+
+
+def _feed_db(svc):
+    import importlib
+
+    from backend.plugins.storage import SqliteStore
+
+    store = importlib.import_module("plugins.arxiv-today.backend.store")
+    return SqliteStore(svc.config.plugin_data_dir / PID / "feed.sqlite", store.SCHEMA)
+
+
+def test_the_match_has_a_background_and_a_tier(client, svc, plugin):
+    db = _feed_db(svc)
+    assert db.query("SELECT COUNT(*) AS n FROM bg_papers")[0]["n"] == 2
+    assert [r["key"] for r in db.query("SELECT key FROM bg_refs")] == ["doi:10.1/mine"]
+    assert {r["key"] for r in db.query("SELECT key FROM bg_authors WHERE arxiv = '2610.00001'")} == {
+        "doe|j",
+        "doe|jane",
+        "other|a",
+        "other|ann",
+    }
+    rows = {r["arxiv"]: r for r in db.query("SELECT arxiv, score, tier, score_v1 FROM papers")}
+    assert rows["2610.00001"]["tier"] == "rest" and rows["2610.00001"]["score_v1"] > 0
+    first = client.get(FEED).get_json()["items"][0]
+    assert first["reasons"][0]["text"] == (
+        f"Match {rows['2610.00001']['score']:.0f} · Rest (earlier score: {rows['2610.00001']['score_v1']:g})"
+    )
+
+
+def test_an_upgraded_feed_keeps_its_earlier_scores(client, svc, feed, bundled):
+    import importlib
+
+    from backend.plugins.storage import SqliteStore
+
+    store = importlib.import_module("plugins.arxiv-today.backend.store")
+    old = SqliteStore(svc.config.plugin_data_dir / PID / "feed.sqlite", store.SCHEMA[:1])
+    day = (date.today() - timedelta(days=1)).isoformat()
+    with old.session() as c:
+        c.execute(
+            "INSERT INTO papers (arxiv, day, kind, title, authors, refs, score) VALUES (?, ?, 'new', ?, ?, ?, 7.5)",
+            ("2610.00009", day, "Kept", json.dumps(["Jane Doe"]), json.dumps([{"doi": "10.1/mine"}])),
+        )
+    svc.plugins.private_network = True
+    client.put(f"/api/plugin-host/{PID}/settings", json={"categories": ["quant-ph"]})
+    assert client.post(f"/api/plugin-host/{PID}/enable").get_json()["plugin"]["running"]
+    db = _feed_db(svc)
+    assert db.query("SELECT score_v1 FROM papers WHERE arxiv = '2610.00009'")[0]["score_v1"] is not None
+    assert [r["key"] for r in db.query("SELECT key FROM bg_refs WHERE arxiv = '2610.00009'")] == ["doi:10.1/mine"]
+
+
+def test_claude_compares_the_match_with_the_earlier_score(client, svc, plugin):
+    client.post("/api/outside/add", json={"paper": client.get(FEED).get_json()["items"][0]})
+    server = build_server(svc)
+    r = server.handle(
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": f"{PID}__match_report", "arguments": {}}}
+    )["result"]
+    data = r.get("structuredContent") or json.loads(r["content"][0]["text"])
+    assert data["papers"] == 2 and data["added"]["papers"] == 1
+    assert data["added"]["median_rank_match"] == 1

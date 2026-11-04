@@ -332,16 +332,16 @@ Three plugins come with Synapse, off until you turn them on:
   **Review Changes** opens the metadata review dialog from stored results: apply selected fields,
   edit values, reject suggestions, or ignore a paper altogether. Rejected values stay hidden until
   they change; Settings lists rejected suggestions and ignored papers so you can restore them.
-- **arXiv Feed** lists each morning's arXiv papers in the categories you choose, ranked by how
-  they connect to your library (library references they cite, shared authors, title/abstract similarity), with
-  a notification ("12 new papers, 3 connected to your library"), a **+** to add a paper and
+- **arXiv Feed** lists each morning's arXiv papers in the categories you choose, ranked by how well
+  they match you (0–100): the specific library papers they cite (a textbook everyone cites counts
+  little, a niche paper you keep notes on a lot), rare references they share with your library,
+  shared authors matched by full name, and topics that stand out from the day. Papers from 70 are
+  to **Read**, from 35 to **Skim**. It brings a notification ("12 new papers: 3 to read, 4 to skim"), a **+** to add a paper and
   Dismiss for the rest. It stays one entry in the main sidebar; opening it shows a second sidebar
   for choosing today or any retained day. Earlier days stay for a month, and Claude can ask for
   them. Empty or delayed feeds are checked again every 30 minutes on announcement weekdays until
   that day's papers arrive. Day labels follow the calendar even without a new fetch. Set **Your
-  author names** to distinguish citations to your authored library papers: these score 6 instead
-  of 3. Shared authors contribute 0.5 per library paper, capped at 1.5. Similarity is local TF-IDF
-  on titles and abstracts. Add full publication names to **Followed authors**, one per row, to
+  author names** so that papers citing your own library papers get a strong boost. Add full publication names to **Followed authors**, one per row, to
   show a gold **Following** badge on their papers across retained feed days. Hover over
   the badge or open the paper to see the matched names. Matching ignores case, accents and extra
   spaces; add name variants separately. A Synapse red **Cites you** badge marks citations to your

@@ -216,15 +216,15 @@ These are contributed plugins, off until turned on; safe mode stops them:
 - **arXiv Today** (`plugins/arxiv-today`): the papers announced on arXiv in the categories you
   choose in its settings, under one **arXiv Feed** entry. Opening it shows a separate sidebar beside
   the papers for the retained announcement days (latest first, 30 days by default), without
-  crowding the main sidebar. They are ranked by how they connect to your library (`plugin.services.connections`),
-  with the reasons in the item pane; each paper's reference list is read from its HTML version on
-  arXiv in the background (one request every 3 seconds), so papers citing library references rise to the top
-  as the morning goes on. A notification says "12 new papers, 3 connected to your library" once a
-  day is scored. Right-click a paper to **Dismiss** it (⌘⌥D / Ctrl+Alt+D) or open its PDF on
+  crowding the main sidebar. They are ranked by their **match** (below), with the reasons in the
+  item pane; each paper's reference list is read from its HTML version on arXiv in the background
+  (one request every 3 seconds), so the match sharpens as the morning goes on. A notification
+  says "12 new papers: 3 to read, 4 to skim" once a day is scored. Right-click a paper to **Dismiss** it (⌘⌥D / Ctrl+Alt+D) or open its PDF on
   arXiv; ⌘⌥T / Ctrl+Alt+T shows the list, and the palette has **arXiv: Fetch Today's Papers
-  Now**. Its fields *arXiv Score*, *Announced* and *arXiv Categories* are columns and filters
-  (`categories:quant-ph`, `score:>3`) and stay with a paper you add. Claude can ask for a day's
-  papers with its tool `arxiv-today__today`. The feed (rss.arxiv.org) is read after each
+  Now**. Its fields *arXiv Match*, *Announced* and *arXiv Categories* are columns and filters
+  (`categories:quant-ph`, `score:>70`) and stay with a paper you add. Claude can ask for a day's
+  papers with its tool `arxiv-today__today`, and compare the match with the earlier score on the
+  kept days with `arxiv-today__match_report`. The feed (rss.arxiv.org) is read after each
   announcement (Monday to Friday, 00:30 US Eastern), at the next start when the computer was off,
   and when the categories change. If arXiv's cache serves a feed dated for the new day but
   listing only earlier papers, the plugin asks arXiv directly past the cache. A half-hourly check keeps retrying during announcement weekdays
@@ -246,16 +246,34 @@ These are contributed plugins, off until turned on; safe mode stops them:
   indicators: yellow with a white star for Following, Synapse red with a solid white megaphone for Cites you.
   Only today's badges also appear in the main sidebar; older days keep their own indicators.
   Day tooltips report paper counts. Dismissed papers do not contribute; Undo restores them.
-  **Your author names** accepts publication names in Given Family order. A citation only earns
-  the stronger authored signal after matching a reference to an existing library paper whose
-  author matches a configured name (surname and first initial, accent/case normalized; namesakes
-  can match). Authored citations score 6, other library citations 3 without double counting,
-  and shared authors 0.5 per library paper capped at 1.5. **arXiv Score** controls ordering and
-  the notification threshold. Changing author names rescores all retained days, as does plugin
-  activation so previously stored scores adopt the current weights. Title/abstract similarity remains
-  local TF-IDF cosine similarity (up to 10 points), labelled explicitly with a search icon.
-  Broad references and reviews currently receive the same citation weight as other library papers;
-  automatic popularity discounts and per-reference overrides are not implemented.
+  **Your author names** accepts publication names in Given Family order; library papers by
+  these names are yours (full first names must agree when both sides have them; with initials
+  only, namesakes can match).
+
+  *The match* (`backend/scoring.py`) is 0–100, how likely you are to want to read the paper:
+  `100 · σ(−2.5 + Σ weight × feature)`, so no evidence gives 8. It rests on how *specific* and how
+  *personal* a paper's links to the library are, not on how many there are. Each library paper is
+  an anchor weighted by **interest** × **specificity**². Interest starts at 1 and is multiplied by
+  3 for a paper you wrote, 2 when a note cites it or is its paper note (2.5 when that note changed in
+  the last 60 days), and 1.5 when it was added in the last 90 days or from the feed, capped at 4.
+  Specificity is how rarely the papers announced in your categories cite it (from 0 to 1), counted
+  on the reference lists the plugin read over the last 180 days (`background.py`, kept longer than
+  the listings; filled from the kept listings on the first start) and shrunk toward 0.5 while
+  that background is small, so a textbook everyone cites counts little and a niche paper a lot.
+  Six features, each with diminishing returns: the anchors a paper cites (log(1 + Σ interest ×
+  specificity²), weight 3.5); papers you authored that it cites (weight 5, enough for Read on its
+  own, and the **Cites you** badge); rare references it shares with your library's own reference
+  lists, also works outside the library (weight 1.5); its authors who wrote library papers,
+  matched by full name and discounted by how common the name is among announced papers (weight
+  1.5); title and abstract against the library (TF-IDF, top five, weighted by interest), counted
+  only where it stands out from that day (a z-score above 1.5, weight 0.8); and −0.4 for
+  cross-lists. A library paper is never compared with itself. Papers from 70 are in the **Read**
+  tier and from 35 in **Skim** (settings *Read from match*, *Skim from match*); the first reason
+  in the item pane names the match and tier, the others the evidence, strongest first. Followed
+  authors do not change the match. While the new match is checked, the earlier score
+  (`plugin.services.connections`) is still computed and shown beside it, and the report tool
+  compares where added and dismissed papers ranked under each. Changing author names or the
+  tier edges rescores all retained days, as does starting the plugin.
   OS notices require an open running page; background phone push is not supported.
   Its TypeScript frontend (`frontend/main.ts`) imports public Plugin API types and is included
   in `npm run check`. The host bundles it when enabled; no generated bundle is committed.

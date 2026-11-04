@@ -1,16 +1,23 @@
 {
   "id": "arxiv-today",
   "name": "arXiv Today",
-  "version": "1.0.2",
-  "api": "^1.0",
+  "version": "1.1.0",
+  "api": "^1.9",
   "author": "Synapse",
-  "description": "Each morning, the papers announced on arXiv in your categories, ranked by how they connect to your library (the papers they cite, shared authors, similar topics), with a + to add one. Earlier days stay for a month, and AI apps can ask for them too.",
+  "description": "Each morning, the papers announced on arXiv in your categories, ranked by how well they match you: the specific papers of your library they cite, the references they share with it, shared authors and topics. Earlier days stay for a month, and AI apps can ask for them too.",
   "backend": "backend",
   "frontend": "frontend/main.ts",
   "permissions": {
-    "network": ["rss.arxiv.org"],
-    "library": ["read"],
-    "mcp": true
+    "network": [
+      "rss.arxiv.org"
+    ],
+    "library": [
+      "read"
+    ],
+    "mcp": true,
+    "notes": [
+      "read"
+    ]
   },
   "settings": [
     {
@@ -24,7 +31,7 @@
       "key": "author_names",
       "type": "multi",
       "label": "Your author names",
-      "description": "Names you publish under, in Given Family order, one alias per row. Citations to matched library papers you authored score 6 instead of 3. Matching uses surname and first initial; namesakes can match.",
+      "description": "Names you publish under, in Given Family order, one alias per row. Papers citing your own library papers get the Cites you badge and a strong boost. Full first names are matched when both sides have them; with initials only, namesakes can match.",
       "default": []
     },
     {
@@ -56,11 +63,20 @@
       "default": true
     },
     {
-      "key": "min_score",
+      "key": "read_from",
       "type": "float",
-      "label": "Connected from score",
-      "description": "Notification threshold: authored library citations score 6, other library citations 3, shared authors 0.5 per library paper capped at 1.5.",
-      "default": 3,
+      "label": "Read from match",
+      "description": "Papers with a match (0–100) from this value are in the Read tier, counted first in the morning notification.",
+      "default": 70,
+      "min": 1,
+      "max": 100
+    },
+    {
+      "key": "skim_from",
+      "type": "float",
+      "label": "Skim from match",
+      "description": "Papers with a match from this value (and under Read) are in the Skim tier; the rest come last.",
+      "default": 35,
       "min": 0,
       "max": 100
     },
