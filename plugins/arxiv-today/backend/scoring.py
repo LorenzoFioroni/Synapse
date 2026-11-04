@@ -487,3 +487,11 @@ def score(
 
 
 TIER_TEXT = {"read": "Read", "skim": "Skim", "rest": "Rest"}
+FEATURE_LABELS = {
+    "anchors": "Library papers it cites",
+    "own": "Your papers it cites",
+    "shared": "Rare references shared with your library",
+    "people": "Authors in your library",
+    "topic": "Topic, against the day",
+    "cross": "Cross-list",
+}

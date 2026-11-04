@@ -273,7 +273,24 @@ These are contributed plugins, off until turned on; safe mode stops them:
   authors do not change the match. While the new match is checked, the earlier score
   (`plugin.services.connections`) is still computed and shown beside it, and the report tool
   compares where added and dismissed papers ranked under each. Changing author names or the
-  tier edges rescores all retained days, as does starting the plugin.
+  tier edges rescores all retained days, as does starting the plugin. The item pane's **arXiv
+  Match** section shows the match, its tier and one bar per kind of evidence (what it added, in
+  log-odds).
+
+  *Learning* (`backend/learning.py`, setting **Learn from what I do**, on by default): each night at
+  03:20 (the server's time) the plugin turns what you did into labels and refits how much each
+  kind of evidence counts. A paper added to the library on or after its announcement is wanted
+  (strength 1); one opened, shown in the item pane for 4 seconds or its PDF opened from the feed, is
+  probably wanted (0.3); a dismissed one is not wanted (1); one listed above a paper you opened, and
+  never opened itself, was passed over (not wanted, 0.3). Papers below the last one you opened get
+  no label, and a day you never opened teaches nothing. Labels are kept a year, longer than the
+  listings. The fit is a logistic regression with the baseline held fixed, so the tiers keep their
+  meaning; wanted and unwanted labels weigh the same in total, and an L2 prior (worth about ten
+  labels) pulls the weights toward the hand-set ones. Weights stay between 0 and three times their
+  hand-set value (the cross-list penalty between that and 0). It needs three wanted and three
+  unwanted labels before it learns at all; then the retained days are rescored. The plugin's
+  Settings section lists the hand-set and learned weights, with **Learn Now** and **Reset to
+  Hand-set**.
   OS notices require an open running page; background phone push is not supported.
   Its TypeScript frontend (`frontend/main.ts`) imports public Plugin API types and is included
   in `npm run check`. The host bundles it when enabled; no generated bundle is committed.

@@ -336,7 +336,8 @@ Three plugins come with Synapse, off until you turn them on:
   they match you (0–100): the specific library papers they cite (a textbook everyone cites counts
   little, a niche paper you keep notes on a lot), rare references they share with your library,
   shared authors matched by full name, and topics that stand out from the day. Papers from 70 are
-  to **Read**, from 35 to **Skim**. It brings a notification ("12 new papers: 3 to read, 4 to skim"), a **+** to add a paper and
+  to **Read**, from 35 to **Skim**. Each night it learns from what you add, open, dismiss or pass
+  over how much each kind of evidence counts for you. It brings a notification ("12 new papers: 3 to read, 4 to skim"), a **+** to add a paper and
   Dismiss for the rest. It stays one entry in the main sidebar; opening it shows a second sidebar
   for choosing today or any retained day. Earlier days stay for a month, and Claude can ask for
   them. Empty or delayed feeds are checked again every 30 minutes on announcement weekdays until
