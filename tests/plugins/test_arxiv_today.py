@@ -349,3 +349,89 @@ def test_delayed_feed_is_checked_again_until_current_day_arrives(client, svc, fe
     count = len(feed.urls)
     retry.run()
     assert not plugin.jobs.pending() and len(feed.urls) == count
+
+
+def test_following_updates_retained_feed_without_scoring_or_fetching(client, svc, feed, plugin):
+    before = client.get(FEED).get_json()["items"]
+    assert all("highlight" not in item for item in before)
+    urls = list(feed.urls)
+    since = svc.changes.seq
+    assert (
+        client.put(
+            f"/api/plugin-host/{PID}/settings", json={"followed_authors": ["  JANE   DÓE  ", "Ann Other"]}
+        ).status_code
+        == 200
+    )
+    # the settings handler runs on the plugin's worker, after the request returns
+    assert wait(lambda: "sources" in svc.changes.since(since, svc.changes.epoch, None)["changes"])
+    after = client.get(FEED).get_json()["items"]
+    assert [i["id"] for i in after] == [i["id"] for i in before]
+    assert [i["_f"] for i in after] == [i["_f"] for i in before]
+    assert after[0]["highlight"] == {"label": "Following", "text": "Following: Jane Doe; Ann Other"}
+    assert after[0]["reasons"][0] == {"kind": "following", "text": "Following: Jane Doe; Ann Other", "items": []}
+    assert "highlight" not in after[1]
+    day = date.today().isoformat()
+    assert (
+        client.get(FEED.replace(".feed", f".feed~{day}")).get_json()["items"][0]["highlight"] == after[0]["highlight"]
+    )
+    item = client.post("/api/outside/add", json={"paper": after[0]}).get_json()["item"]
+    listed = client.get(FEED).get_json()["items"][0]
+    assert listed["id"] == item["id"] and listed["highlight"] == after[0]["highlight"]
+    assert "highlight" not in client.get(f"/api/items/{item['id']}").get_json()
+    client.put(f"/api/plugin-host/{PID}/settings", json={"followed_authors": []})
+    cleared = client.get(PAST).get_json()["items"]
+    assert all("highlight" not in i and all(r["kind"] != "following" for r in i.get("reasons", [])) for i in cleared)
+    assert feed.urls == urls
+
+
+@pytest.mark.parametrize(
+    ("authors", "followed", "expected"),
+    [
+        (["Jane Doe"], ["Jane Doe"], ["Jane Doe"]),
+        (["Jane Doe"], ["DOE, jane"], ["Jane Doe"]),
+        (["José de la Cruz"], [" jose  de la cruz "], ["José de la Cruz"]),
+        (["Jane Doe", "John Doe", "J. Doe"], ["Jane Doe"], ["Jane Doe"]),
+        (["Jane Doe"], ["Doe"], []),
+        (["Jane Doe"], ["Ann Other", "", "  "], []),
+        (["Jane Doe", "Jane Doe"], ["Jane Doe", "Jane Doe"], ["Jane Doe"]),
+        ([], ["Jane Doe"], []),
+    ],
+)
+def test_followed_name_matching(authors, followed, expected):
+    import importlib
+
+    following = importlib.import_module("plugins.arxiv-today.backend.following")
+    assert following.followed_names(authors, followed) == expected
+
+
+def test_following_and_authored_citations_have_independent_paper_and_day_badges(client, svc, plugin):
+    client.put(
+        f"/api/plugin-host/{PID}/settings", json={"followed_authors": ["Jane Doe"], "author_names": ["Jane Doe"]}
+    )
+    assert wait(lambda: any(r["kind"] == "cites_own" for r in client.get(FEED).get_json()["items"][0]["reasons"]))
+    paper = client.get(FEED).get_json()["items"][0]
+    assert [(b["label"], b["tone"], b["icon"]) for b in paper["highlights"]] == [
+        ("Following", "gold", "star"),
+        ("Cites you", "red", "megaphone"),
+    ]
+    source = client.get("/api/plugin-sources").get_json()["sources"][0]
+    assert "highlights" not in source  # main navigation derives only today's variant in the browser
+    assert [b["text"] for b in source["variants"][0]["highlights"]] == [
+        "1 paper by authors you follow",
+        "1 paper citing you",
+    ]
+    item = client.post("/api/outside/add", json={"paper": paper}).get_json()["item"]
+    added = client.get(FEED).get_json()["items"][0]
+    assert added["id"] == item["id"] and added["highlights"] == paper["highlights"]
+    client.put(f"/api/plugin-host/{PID}/settings", json={"followed_authors": []})
+    assert [b["label"] for b in client.get(FEED).get_json()["items"][0]["highlights"]] == ["Cites you"]
+    client.post(f"/api/plugins/{PID}/dismiss", json={"ids": ["2610.00001"]})
+    source = client.get("/api/plugin-sources").get_json()["sources"][0]
+    assert "highlights" not in source and "highlights" not in source["variants"][0]
+    client.post(f"/api/plugins/{PID}/dismiss", json={"ids": ["2610.00001"], "undo": True})
+    assert (
+        client.get("/api/plugin-sources").get_json()["sources"][0]["variants"][0]["highlights"][0]["label"]
+        == "Cites you"
+    )
+    client.put(f"/api/plugin-host/{PID}/settings", json={"author_names": []})
+    assert wait(lambda: "highlights" not in client.get(FEED).get_json()["items"][0])

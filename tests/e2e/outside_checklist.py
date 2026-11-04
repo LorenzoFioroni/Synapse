@@ -46,7 +46,7 @@ def activate(plugin: Plugin):
         return sum(1 for p in store.get("papers", []) if not plugin.library.find(doi=p.get("doi"), arxiv=p.get("arxiv")))
 
     @plugin.item_source("today", title="Today's List", icon="calendar", description="Papers for today", badge=unread,
-                        variants=lambda: [{"id": "today", "title": "26 Oct 2026"},
+                        variants=lambda: [{"id": "today", "title": "26 Oct 2026", "highlights": store.get("highlights", [])},
                                           {"id": "yesterday", "title": "25 Oct 2026"}])
     def today(day=None):
         return store.get("papers", [])
@@ -162,16 +162,24 @@ async def main():
                 "authors": ["Jane Doe"],
                 "year": 2026,
                 "abstract": "We study tensor networks.",
+                "highlights": [
+                    {"label": "Following", "text": 'Following: Jane <Doe> & "Ann"', "tone": "gold", "icon": "star"},
+                    {"label": "Cites you", "text": "Cites a paper you authored", "tone": "red", "icon": "megaphone"},
+                ],
                 "reasons": [
                     {"kind": "cites", "text": "Cites one of your papers", "items": [mine["id"]]},
                     "Listed today",
                 ],
             },
-            {"doi": "10.5555/mine", "reasons": ["Already yours"]},
+            {
+                "doi": "10.5555/mine",
+                "reasons": ["Already yours"],
+                "highlight": {"label": "Following", "text": "Following: Jane Doe"},
+            },
             {"doi": "10.5555/apple", "title": "Apple of discord", "year": 2025},
             {"arxiv": "2610.00003", "title": "Cherry picking", "year": 2026},
         ]
-        api("/api/plugins/lists-demo/set", "POST", {"papers": papers})
+        api("/api/plugins/lists-demo/set", "POST", {"papers": papers, "highlights": papers[0]["highlights"]})
 
         async with async_playwright() as p:
             browser = await p.chromium.launch()
@@ -190,6 +198,24 @@ async def main():
                 lambda: page.evaluate("document.querySelectorAll('.items-body .row[data-id]').length === 4")
             )
             check("it shows the papers", ok)
+            check("source badges show on outside and library papers", await page.locator(".row-highlight").count() == 3)
+            check(
+                "source badge tooltip escapes author names",
+                await page.locator('.row[data-id="x:arxiv:2610.00002"] .row-highlight.gold').get_attribute("title")
+                == 'Following: Jane <Doe> & "Ann"',
+            )
+            check(
+                "retained-day badges do not leak from non-calendar variants",
+                await page.locator('.source-variant-item[data-source-variant="today"] .source-badge.compact').count()
+                == 2
+                and await page.locator(f"{ENTRY} .source-badge.compact").count() == 0,
+            )
+            check(
+                "navigation badges share paper colours and use white icons",
+                await page.locator(".source-variant-item .source-badge.gold").first.evaluate(
+                    "el => getComputedStyle(el).backgroundColor === getComputedStyle(document.querySelector('.row-highlight.gold')).backgroundColor && getComputedStyle(el.querySelector('svg')).color === 'rgb(255, 255, 255)'"
+                ),
+            )
             check(
                 "variants use a second pane, not extra main-sidebar rows",
                 await page.locator("#sidebar [data-view^='source:lists-demo.today']").count() == 1
@@ -204,22 +230,47 @@ async def main():
                 const {state, emit} = await import('/js/store.js');
                 const now = new Date();
                 const day = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-                state.sources.find(s => s.id === 'lists-demo.today').variants[0] = {id: day, title: day};
+                const variants = state.sources.find(s => s.id === 'lists-demo.today').variants;
+                variants[0] = {...variants[0], id: day, title: day};
                 emit('sources');
             }""")
             check(
                 "a variant dated today gets the Today label",
                 "Today" in (await page.text_content(".source-variant-item.active") or ""),
             )
+            check(
+                "today's badges appear in the main sidebar",
+                await page.locator(f"{ENTRY} .source-badge.compact").count() == 2,
+            )
+            check(
+                "citation badge uses Synapse red and a solid white megaphone",
+                await page.locator(".source-variant-item .source-badge.red").evaluate(
+                    "el => getComputedStyle(el).backgroundColor === 'rgb(204, 41, 54)' && getComputedStyle(el.querySelector('svg path')).fill === 'rgb(255, 255, 255)' && getComputedStyle(el.querySelector('svg path')).stroke === 'none'"
+                ),
+            )
+            check(
+                "main-sidebar badge icons stay white when selected",
+                await page.locator(f"{ENTRY} .source-badge.gold svg").evaluate(
+                    "el => getComputedStyle(el).color === 'rgb(255, 255, 255)'"
+                ),
+            )
+            await shot(page, "following-and-cites-you")
             await page.evaluate("""async () => {
                 const {state} = await import('/js/store.js');
-                state.sources.find(s => s.id === 'lists-demo.today').variants[0] = {id: '2020-01-01', title: '01 Jan 2020'};
+                const variants = state.sources.find(s => s.id === 'lists-demo.today').variants;
+                variants[0] = {...variants[0], id: '2020-01-01', title: '01 Jan 2020'};
                 document.dispatchEvent(new Event('visibilitychange'));
             }""")
             check(
                 "returning to an old feed updates its date without a fetch",
                 "01 Jan 2020" in (await page.text_content(".source-variant-item.active") or "")
                 and "Today" not in (await page.text_content(".source-variant-item.active") or ""),
+            )
+            check(
+                "old days retain both badges while the main sidebar clears",
+                await page.locator(f"{ENTRY} .source-badge.compact").count() == 0
+                and await page.locator('.source-variant-item[data-source-variant="2020-01-01"] .source-badge').count()
+                == 2,
             )
             await page.click('.source-variant-item[data-source-variant="yesterday"]')
             check(

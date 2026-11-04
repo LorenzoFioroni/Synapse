@@ -212,3 +212,13 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
   #toasts { left: 8px; right: 8px; bottom: calc(var(--statusbar-h, 28px) + 8px); transform: none; }
   .toast { min-width: 0; width: 100%; max-width: 100%; }
 }
+
+/* Source badges remain distinct from unread counts and can appear together. */
+.source-badges { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.source-badge { display: inline-flex; align-items: center; justify-content: center; flex: none; white-space: nowrap; }
+.source-badge.gold { background: #f7d879; color: #493500; }
+.source-badge.red { background: var(--synapse-red); color: #fff; }
+.source-badge.teal { background: #287c82; color: #fff; }
+.source-badge.row-highlight { padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 650; line-height: 16px; }
+.source-badge.compact { width: 16px; height: 16px; border-radius: 50%; color: #fff; }
+.source-badge.compact .icon, .side-item .source-badge.compact .icon { width: 11px; height: 11px; margin: 0; color: inherit; }

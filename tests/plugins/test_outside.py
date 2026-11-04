@@ -156,6 +156,21 @@ def test_records():
         record({"title": "No identifier"})
 
 
+@pytest.mark.parametrize(
+    ("highlight", "expected"),
+    [
+        ({"label": "Following", "text": "Following: Jane Doe"}, {"label": "Following", "text": "Following: Jane Doe"}),
+        ({"label": "Notice"}, {"label": "Notice", "text": "Notice"}),
+        ({"label": "a" * 50, "text": "b" * 400}, {"label": "a" * 40, "text": "b" * 300}),
+        ({"label": ""}, None),
+        ("Following", None),
+    ],
+)
+def test_source_highlight_is_bounded_plain_text(highlight, expected):
+    paper = record({"doi": "10.1/example", "highlight": highlight})
+    assert paper.get("highlight") == expected
+
+
 # ------------------------------------------------------------------ lists in the app
 def test_a_source_lists_library_items_and_outside_papers(client, svc, plugin):
     mine = client.post("/api/items", json={"title": "Mine", "doi": "10.1/mine", "abstract": "Long"}).get_json()
@@ -438,3 +453,15 @@ def test_the_suggested_reading_example(client, svc, no_web):
     assert client.get("/api/plugin-sources").get_json()["sources"][0]["badge"] == "1"
     assert client.get(f"/api/items/{added['id']}/fields").get_json()["fields"][0]["value"] > 0  # the score came along
     assert mine
+
+
+def test_multiple_source_badges_are_bounded_and_sanitized():
+    badges = [
+        {"label": "Following", "tone": "gold", "icon": "star"},
+        {"label": "Cites you", "tone": "red", "icon": "megaphone"},
+        {"label": "Unknown", "tone": "<style>", "icon": "<svg>"},
+    ]
+    paper = record({"doi": "10.1/example", "highlights": badges})
+    assert [b["label"] for b in paper["highlights"]] == ["Following", "Cites you", "Unknown"]
+    assert paper["highlights"][-1] == {"label": "Unknown", "text": "Unknown", "tone": "gold", "icon": "star"}
+    assert len(record({"doi": "10.1/example", "highlights": badges * 10})["highlights"]) == 8

@@ -26,7 +26,7 @@
       "key": "skip_tags",
       "type": "multi",
       "label": "Ignore items tagged",
-      "description": "Items with any of these tags are not remembered (comma-separated).",
+      "description": "Items with any of these tags are not remembered (one per row).",
       "default": []
     }
   ]

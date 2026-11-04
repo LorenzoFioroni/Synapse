@@ -547,3 +547,9 @@ The Tasks contributed plugin (`plugins/tasks/frontend/index.ts`) registers throu
 `tasksPage.ts` and its note integration to internal hooks. On unload it removes its DOM, listeners, popups and
 renderers and invalidates pending loads. Plugin startup completes before task deep links open;
 plugin changes are applied before the change feed dispatches task or note refreshes.
+
+Plugin settings use `ui/stringList.ts` for free-form `multi` settings: editable rows, Add/Remove
+controls, Enter to add a row, and array saves preserving commas inside entries. Option-backed
+`multi` settings retain checkboxes. Saves are serialized per plugin to preserve edit order.
+`ui/sourceBadges.ts` renders shared paper badges and compact sidebar/day indicators with
+multiple badges per entry.

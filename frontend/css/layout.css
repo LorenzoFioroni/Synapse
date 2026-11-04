@@ -123,14 +123,15 @@ body { display: flex; flex-direction: column; }
 }
 .source-variants-list { display: flex; flex-direction: column; gap: 2px; }
 .source-variant-item {
-  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; width: 100%; min-height: 36px;
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 5px; width: 100%; min-height: 36px;
   padding: 5px 9px; border: none; border-radius: 6px; background: none; color: var(--text); text-align: left;
 }
 .source-variant-item:hover { background: var(--bg-hover); }
 .source-variant-item.active { background: var(--accent-soft); color: var(--accent); }
 .source-variant-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
 .source-variant-date { grid-column: 1; color: var(--text-3); font-size: var(--fs-xs); }
-.source-variant-count { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--text-3); font-size: var(--fs-xs); }
+.source-variant-item > .source-badges { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.source-variant-count { grid-column: 3; grid-row: 1 / span 2; align-self: center; color: var(--text-3); font-size: var(--fs-xs); }
 #items-pane.drag-over::after {
   content: "Drop PDFs to add them to your library"; position: absolute; inset: 8px; border: 2px dashed var(--accent);
   border-radius: 12px; background: color-mix(in srgb, var(--accent-soft) 70%, transparent); display: grid; place-items: center;
