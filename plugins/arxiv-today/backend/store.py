@@ -50,4 +50,19 @@ SCHEMA = [
     );
     CREATE INDEX bg_authors_key ON bg_authors (key);
     """,
+    # learning (learning.py): what the user did with each paper, the features it was scored on,
+    # and the labels taken from them, kept a year (longer than the listings)
+    """
+    ALTER TABLE papers ADD COLUMN opened_at TEXT;
+    ALTER TABLE papers ADD COLUMN passed INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE papers ADD COLUMN features TEXT;
+    CREATE TABLE labels (
+        arxiv TEXT PRIMARY KEY,
+        day TEXT NOT NULL,
+        y REAL NOT NULL,                 -- 1: wanted, 0: not wanted
+        strength REAL NOT NULL,
+        features TEXT NOT NULL           -- JSON, as scoring.score gives them
+    );
+    CREATE INDEX labels_day ON labels (day);
+    """,
 ]

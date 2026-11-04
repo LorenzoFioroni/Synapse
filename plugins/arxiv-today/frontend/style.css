@@ -1,0 +1,14 @@
+/* arXiv Today: the match breakdown in the item pane, and the learned weights in Settings */
+[data-plugin="arxiv-today"] .at-dim { color: var(--text-2); font-size: 12px; margin: 4px 0; }
+[data-plugin="arxiv-today"] .at-head { margin: 0 0 8px; font-size: 13px; }
+[data-plugin="arxiv-today"] .at-part { display: grid; grid-template-columns: minmax(0, 1fr) 72px 36px; gap: 8px; align-items: center; font-size: 12px; padding: 2px 0; }
+[data-plugin="arxiv-today"] .at-label { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-plugin="arxiv-today"] .at-bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+[data-plugin="arxiv-today"] .at-bar > span { display: block; height: 100%; background: var(--accent); }
+[data-plugin="arxiv-today"] .at-bar > span.at-neg { background: var(--text-2); }
+[data-plugin="arxiv-today"] .at-value { text-align: right; font-variant-numeric: tabular-nums; }
+[data-plugin="arxiv-today"] .at-toggle { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+[data-plugin="arxiv-today"] .at-weights { border-collapse: collapse; font-size: 12px; margin: 8px 0; }
+[data-plugin="arxiv-today"] .at-weights th, [data-plugin="arxiv-today"] .at-weights td { text-align: left; padding: 3px 16px 3px 0; border-bottom: 1px solid var(--border); }
+[data-plugin="arxiv-today"] .at-weights td:not(:first-child) { font-variant-numeric: tabular-nums; }
+[data-plugin="arxiv-today"] .at-buttons { display: flex; gap: 8px; flex-wrap: wrap; }

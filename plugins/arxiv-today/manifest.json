@@ -1,7 +1,7 @@
 {
   "id": "arxiv-today",
   "name": "arXiv Today",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "api": "^1.9",
   "author": "Synapse",
   "description": "Each morning, the papers announced on arXiv in your categories, ranked by how well they match you: the specific papers of your library they cite, the references they share with it, shared authors and topics. Earlier days stay for a month, and AI apps can ask for them too.",
@@ -81,6 +81,13 @@
       "max": 100
     },
     {
+      "key": "learn",
+      "type": "bool",
+      "label": "Learn from what I do",
+      "description": "Each night, adjust how much each kind of evidence counts from the papers you add, open, dismiss or pass over (listed above one you opened). Days you never opened teach nothing.",
+      "default": true
+    },
+    {
       "key": "notify",
       "type": "bool",
       "label": "Tell me when new papers arrive",
@@ -95,5 +102,6 @@
       "min": 1,
       "max": 365
     }
-  ]
+  ],
+  "styles": "frontend/style.css"
 }

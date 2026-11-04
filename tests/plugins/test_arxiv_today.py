@@ -496,3 +496,30 @@ def test_claude_compares_the_match_with_the_earlier_score(client, svc, plugin):
     data = r.get("structuredContent") or json.loads(r["content"][0]["text"])
     assert data["papers"] == 2 and data["added"]["papers"] == 1
     assert data["added"]["median_rank_match"] == 1
+
+
+def test_opening_a_paper_passes_the_ones_above_it(client, svc, plugin):
+    db = _feed_db(svc)
+    order = [i["arxiv"] for i in client.get(FEED).get_json()["items"]]
+    assert order == ["2610.00001", "2610.00002"]
+    assert client.post(f"/api/plugins/{PID}/opened", json={"id": "2610.00002"}).get_json() == {
+        "opened": True,
+        "passed": 1,
+    }
+    rows = {r["arxiv"]: r for r in db.query("SELECT arxiv, opened_at, passed FROM papers")}
+    assert rows["2610.00001"]["passed"] == 1 and rows["2610.00001"]["opened_at"] is None
+    assert rows["2610.00002"]["opened_at"] and not rows["2610.00002"]["passed"]
+    # opening the passed paper later makes it opened, not passed over
+    client.post(f"/api/plugins/{PID}/opened", json={"id": "2610.00001"})
+    assert db.query("SELECT opened_at FROM papers WHERE arxiv = '2610.00001'")[0]["opened_at"]
+
+    explain = client.get(f"/api/plugins/{PID}/explain?id=2610.00001").get_json()
+    assert explain["tier"] == "rest" and {p["id"] for p in explain["parts"]} >= {"anchors", "people"}
+    assert next(p for p in explain["parts"] if p["id"] == "anchors")["value"] > 0
+
+    client.post(f"/api/plugins/{PID}/model/learn")
+    assert wait(lambda: client.get(f"/api/plugins/{PID}/model").get_json()["labels"] == 2)
+    model = client.get(f"/api/plugins/{PID}/model").get_json()
+    assert model["checked_at"] and model["fitted_at"] is None  # too few labels to learn from
+    assert model["wanted"] == 2 and model["learning"] is True
+    assert all(w["learned"] is None for w in model["weights"])

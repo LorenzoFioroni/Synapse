@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 from backend.plugins import Plugin, PluginError, scholarly
 
-from . import background, listing, report, scoring
+from . import background, learning, listing, report, scoring
 from .badges import day_variants, paper_badges
 from .store import SCHEMA
 
@@ -243,7 +243,19 @@ def activate(plugin: Plugin) -> None:
             for r in rows
         ]
         refs = {p["key"]: json.loads(r["refs"]) for p, r in zip(papers, rows, strict=True) if r["refs"]}
-        matched = {k: plugin.services.match(v) for k, v in refs.items()}
+        matched = {
+            k: plugin.services.match(
+                [
+                    {
+                        **r,
+                        "doi": scholarly.norm_doi(r.get("doi")),
+                        "arxiv_id": scholarly.norm_arxiv(r.get("arxiv_id")),
+                    }
+                    for r in v
+                ]
+            )
+            for k, v in refs.items()
+        }
         lib, bg = library_side([a for p in papers for a in p["authors"]])
         result = scoring.score(
             papers,
@@ -251,6 +263,7 @@ def activate(plugin: Plugin) -> None:
             bg,
             refs=refs,
             matched=matched,
+            weights=weights(),
             read_from=plugin.settings["read_from"],
             skim_from=plugin.settings["skim_from"],
         )
@@ -262,14 +275,72 @@ def activate(plugin: Plugin) -> None:
         )
         with db.session() as c:
             c.executemany(
-                "UPDATE papers SET score = ?, tier = ?, reasons = ?, score_v1 = ? WHERE arxiv = ?",
+                "UPDATE papers SET score = ?, tier = ?, reasons = ?, score_v1 = ?, features = ? WHERE arxiv = ?",
                 [
-                    (res["score"], res["tier"], json.dumps(res["reasons"]), old["score"], r["arxiv"])
+                    (
+                        res["score"],
+                        res["tier"],
+                        json.dumps(res["reasons"]),
+                        old["score"],
+                        json.dumps(res["features"]),
+                        r["arxiv"],
+                    )
                     for r, res, old in zip(rows, result, earlier, strict=True)
                 ],
             )
         plugin.fields.set_many("score", {p["key"]: res["score"] for p, res in zip(papers, result, strict=True)})
         plugin.refresh_sources()
+
+    model = plugin.storage.json("model")
+
+    def weights() -> dict[str, float] | None:
+        """The learned weights while learning is on, else the hand-set ones (None)."""
+        return (model.get("weights") or None) if plugin.settings["learn"] else None
+
+    def library_added() -> dict[str, str]:
+        """arXiv id -> when the library item with it was added."""
+        out = {}
+        for item in plugin.library.items():
+            arx = scholarly.norm_arxiv(scholarly.identifiers(item)[1])
+            if arx:
+                out[arx] = str(item.get("date_added") or "")
+        return out
+
+    def collect_labels() -> int:
+        """Labels from the papers kept now into ``labels`` (which outlives the listings)."""
+        added = library_added()
+        rows = db.query("SELECT * FROM papers WHERE features IS NOT NULL")
+        found = []
+        for r in rows:
+            got = learning.label(dict(r), added.get(r["arxiv"]))
+            if got:
+                found.append((r["arxiv"], r["day"], got[0], got[1], r["features"]))
+        with db.session() as c:
+            # a paper with no label any more (an Undo) drops it
+            c.executemany("DELETE FROM labels WHERE arxiv = ?", [(r["arxiv"],) for r in rows])
+            c.executemany("INSERT INTO labels (arxiv, day, y, strength, features) VALUES (?, ?, ?, ?, ?)", found)
+            cutoff = (date.today() - timedelta(days=learning.KEEP_DAYS)).isoformat()
+            c.execute("DELETE FROM labels WHERE day < ?", (cutoff,))
+        return len(found)
+
+    @plugin.job("learn")
+    def learn() -> None:
+        collect_labels()
+        samples = [(json.loads(r["features"]), r["y"], r["strength"]) for r in db.query("SELECT * FROM labels")]
+        learned = learning.fit(samples)
+        wanted = sum(1 for _, y, _ in samples if y >= 0.5)
+        model.update({"checked_at": _now(), "labels": len(samples), "wanted": wanted})
+        if learned:
+            model.update({"fitted_at": _now(), "weights": learned})
+        if learned:
+            plugin.log.info("Learned weights from %d labels: %s", len(samples), learned)
+            if plugin.settings["learn"]:
+                plugin.jobs.enqueue("score", plugin.settings["keep_days"], key="score-all")
+        else:
+            plugin.log.info("Not enough labels to learn from yet (%d, %d wanted)", len(samples), wanted)
+
+    # at night, so a day's reading has been seen (the server's local time)
+    plugin.schedule("learning", lambda: plugin.jobs.enqueue("learn", key="learn"), cron="20 3 * * *")
 
     def forget_old() -> None:
         background.forget(db, (date.today() - timedelta(days=background.BACKGROUND_DAYS)).isoformat())
@@ -311,7 +382,7 @@ def activate(plugin: Plugin) -> None:
             plugin.jobs.enqueue("listing", key="listing")
         if "followed_authors" in changed:
             plugin.refresh_sources()
-        if {"author_names", "read_from", "skim_from"} & set(changed):
+        if {"author_names", "read_from", "skim_from", "learn"} & set(changed):
             plugin.jobs.enqueue("score", plugin.settings["keep_days"], key="score-all")
         if "keep_days" in changed:
             forget_old()
@@ -379,6 +450,76 @@ def activate(plugin: Plugin) -> None:
             )
         plugin.refresh_sources()
         return {"changed": n}
+
+    @plugin.route("/opened", methods=["POST"])
+    def opened():
+        """A paper was looked at (shown for a while, or its PDF opened): the unopened papers listed
+        above it in its day were passed over."""
+        from flask import request
+
+        arxiv = str((request.get_json(silent=True) or {}).get("id") or "")
+        rows = db.query("SELECT day, opened_at FROM papers WHERE arxiv = ?", (arxiv,))
+        if not rows:
+            return {"opened": False}
+        day = rows[0]["day"]
+        order = [
+            r["arxiv"]
+            for r in db.query(
+                "SELECT arxiv FROM papers WHERE day = ? AND dismissed = 0 ORDER BY score IS NULL, score DESC, arxiv",
+                (day,),
+            )
+        ]
+        above = order[: order.index(arxiv)] if arxiv in order else []
+        with db.session() as c:
+            c.execute("UPDATE papers SET opened_at = COALESCE(opened_at, ?) WHERE arxiv = ?", (_now(), arxiv))
+            c.executemany("UPDATE papers SET passed = 1 WHERE arxiv = ? AND opened_at IS NULL", [(a,) for a in above])
+        return {"opened": True, "passed": len(above)}
+
+    @plugin.route("/explain")
+    def explain():
+        """What a paper's match rests on: each kind of evidence and how much it added."""
+        from flask import request
+
+        arxiv = str(request.args.get("id") or "")
+        rows = db.query("SELECT score, tier, score_v1, features FROM papers WHERE arxiv = ?", (arxiv,))
+        if not rows or rows[0]["features"] is None:
+            return {"score": None}
+        r = rows[0]
+        w = {**scoring.WEIGHTS, **(weights() or {})}
+        features = json.loads(r["features"])
+        parts = [
+            {"id": k, "label": scoring.FEATURE_LABELS[k], "value": round(w[k] * features.get(k, 0.0), 2)}
+            for k in scoring.WEIGHTS
+        ]
+        return {"score": r["score"], "tier": r["tier"], "earlier": r["score_v1"], "parts": parts}
+
+    @plugin.route("/model")
+    def model_info():
+        """The weights in use, learned and hand-set, for the settings page."""
+        learned = model.get("weights") or {}
+        return {
+            "learning": bool(plugin.settings["learn"]),
+            "fitted_at": model.get("fitted_at") if model.get("weights") else None,
+            "checked_at": model.get("checked_at"),
+            "labels": model.get("labels", 0),
+            "wanted": model.get("wanted", 0),
+            "needed": learning.MIN_EACH,
+            "weights": [
+                {"id": k, "label": scoring.FEATURE_LABELS[k], "default": v, "learned": learned.get(k)}
+                for k, v in scoring.WEIGHTS.items()
+            ],
+        }
+
+    @plugin.route("/model/reset", methods=["POST"])
+    def model_reset():
+        """Forget the learned weights (the labels stay, so the next night learns again)."""
+        model.update({"weights": None, "fitted_at": None})
+        plugin.jobs.enqueue("score", plugin.settings["keep_days"], key="score-all")
+        return model_info()
+
+    @plugin.route("/model/learn", methods=["POST"])
+    def model_learn():
+        return {"queued": plugin.jobs.enqueue("learn", key="learn")}
 
     @plugin.route("/fetch", methods=["POST"])
     def fetch_now():
