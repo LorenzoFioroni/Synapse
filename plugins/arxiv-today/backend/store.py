@@ -25,4 +25,29 @@ SCHEMA = [
         notified INTEGER NOT NULL DEFAULT 0
     );
     """,
+    # the match (scoring.py): what announced papers cite and who writes them, kept longer than the
+    # listings (BACKGROUND_DAYS), and the score of the earlier model, shown for comparison
+    """
+    ALTER TABLE papers ADD COLUMN score_v1 REAL;
+    ALTER TABLE papers ADD COLUMN tier TEXT;
+    UPDATE papers SET score_v1 = score;
+    CREATE TABLE bg_papers (
+        arxiv TEXT PRIMARY KEY,
+        day TEXT NOT NULL,
+        refs INTEGER NOT NULL DEFAULT -1     -- references read; -1: not yet
+    );
+    CREATE INDEX bg_papers_day ON bg_papers (day);
+    CREATE TABLE bg_refs (
+        arxiv TEXT NOT NULL,
+        key TEXT NOT NULL,               -- doi:… | arxiv:… | t:<title words>
+        PRIMARY KEY (arxiv, key)
+    );
+    CREATE INDEX bg_refs_key ON bg_refs (key);
+    CREATE TABLE bg_authors (
+        arxiv TEXT NOT NULL,
+        key TEXT NOT NULL,               -- family|initial and family|first name
+        PRIMARY KEY (arxiv, key)
+    );
+    CREATE INDEX bg_authors_key ON bg_authors (key);
+    """,
 ]

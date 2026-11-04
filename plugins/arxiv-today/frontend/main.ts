@@ -4,7 +4,7 @@
 import type { PluginContext, PluginItem } from '../../../frontend/src/plugins/api.js';
 
 interface NewsResponse {
-  news: { day: string; count: number; connected: number } | null;
+  news: { day: string; count: number; read: number; skim: number } | null;
 }
 
 export function activate(p: PluginContext): void {
@@ -56,8 +56,10 @@ export function activate(p: PluginContext): void {
       const n = r.news;
       if (n && n.count) {
         const papers = n.count === 1 ? 'One new paper' : `${n.count} new papers`;
-        const connected = n.connected ? `, ${n.connected} connected to your library` : '';
-        p.notify(`${papers}${connected}`, { type: 'success', sourceId: 'feed', desktop: true });
+        const tiers = [n.read ? `${n.read} to read` : '', n.skim ? `${n.skim} to skim` : ''].filter(Boolean);
+        p.notify(tiers.length ? `${papers}: ${tiers.join(', ')}` : papers, {
+          type: 'success', sourceId: 'feed', desktop: true,
+        });
       }
     } finally {
       asking = false;

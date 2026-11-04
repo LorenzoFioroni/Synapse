@@ -7,10 +7,11 @@ How a day arrives:
    papers, then scores them at once from authors and topics.
 2. ``refs`` (a job per paper) reads its reference list, from its HTML version on arXiv first
    (the other services rarely know a new paper's references yet), and queues a rescoring.
-3. ``score`` asks ``plugin.services.connections`` how each recent paper connects to the library
-   and stores the score (also as the field ``score``) and the reasons the item pane shows.
-The frontend asks ``/news`` when the lists change, and says "12 new papers, 3 connected to your
-library" once a day is scored.
+3. ``score`` gives each recent paper its match (0–100, ``scoring.py``) from how specifically and
+   how personally it connects to the library, and stores it (also as the field ``score``) with
+   its tier and the reasons the item pane shows.
+The frontend asks ``/news`` when the lists change, and says "12 new papers: 3 to read, 4 to
+skim" once a day is scored.
 """
 
 from __future__ import annotations
@@ -20,9 +21,9 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from backend.plugins import Plugin, PluginError
+from backend.plugins import Plugin, PluginError, scholarly
 
-from . import listing
+from . import background, listing, report, scoring
 from .badges import day_variants, paper_badges
 from .store import SCHEMA
 
@@ -35,9 +36,11 @@ CATCH_UP_TRIES = 12
 
 def activate(plugin: Plugin) -> None:
     db = plugin.storage.sqlite("feed", migrations=SCHEMA)
+    if background.backfill(db):
+        plugin.log.info("Filled the scoring background from the listings kept so far")
 
     plugin.fields.declare(
-        "score", type="float", label="arXiv Score", description="How the paper connects to your library"
+        "score", type="float", label="arXiv Match", description="0–100: how likely you are to want to read it"
     )
     plugin.fields.declare("announced", type="date", label="Announced", description="When arXiv announced it")
     plugin.fields.declare("categories", type="text", label="arXiv Categories")
@@ -61,6 +64,11 @@ def activate(plugin: Plugin) -> None:
         """A stored paper as a list entry (an outside paper, see docs/plugins.md)."""
         authors = json.loads(r["authors"])
         why = json.loads(r["reasons"]) or (["Not scored yet"] if r["score"] is None else [])
+        if r["score"] is not None and r["tier"]:
+            line = f"Match {r['score']:.0f} · {scoring.TIER_TEXT.get(r['tier'], r['tier'])}"
+            if r["score_v1"] is not None:
+                line += f" (earlier score: {r['score_v1']:g})"
+            why = [{"kind": "match", "text": line, "items": []}, *why]
         badges = paper_badges(authors, why, plugin.settings["followed_authors"])
         following = next((b["text"] for b in badges if b["label"] == "Following"), None)
         return {
@@ -155,6 +163,7 @@ def activate(plugin: Plugin) -> None:
                 )
                 if cur.rowcount:
                     added.append(e["arxiv"])
+                    background.record_paper(c, e["arxiv"], day, e["authors"])
             c.execute(
                 "INSERT INTO days (day, fetched_at, categories) VALUES (?, ?, ?) "
                 "ON CONFLICT (day) DO UPDATE SET fetched_at = excluded.fetched_at, categories = excluded.categories",
@@ -183,9 +192,34 @@ def activate(plugin: Plugin) -> None:
         keep = [{k: r.get(k) for k in ("doi", "arxiv_id", "title", "year")} for r in refs]
         with db.session() as c:
             c.execute("UPDATE papers SET refs = ? WHERE arxiv = ?", (json.dumps(keep), arxiv))
+            background.record_refs(c, arxiv, keep)
         # rescore now and then while reference lists come in, and at once after the last one
         more = any(j["name"] == "refs" and j["key"] != f"refs:{arxiv}" for j in plugin.jobs.pending())
         plugin.jobs.enqueue("score", key="score", delay=30 if more else 0)
+
+    def library_side(names: list[str]) -> tuple[scoring.Library, scoring.Background]:
+        items = plugin.library.items()
+        graph = plugin.library.citation_graph()
+        try:
+            notes, links = plugin.notes.list(), plugin.notes.links()
+        except PluginError:  # an older manifest without "notes": ["read"]
+            notes, links = [], []
+        keys = set().union(*(scoring.item_keys(i) for i in items)) if items else set()
+        for n in graph.get("nodes", []):
+            if not n.get("in_library"):
+                keys |= scoring.ref_keys({"doi": n.get("doi"), "arxiv_id": n.get("arxiv_id"), "title": n.get("title")})
+        bg = background.load(db, keys, names)
+        from_feed = {r["arxiv"] for r in db.query("SELECT arxiv FROM papers")}
+        lib = scoring.build_library(
+            items,
+            notes=notes,
+            links=links,
+            graph=graph,
+            author_names=plugin.settings["author_names"],
+            from_feed=from_feed,
+            background=bg,
+        )
+        return lib, bg
 
     @plugin.job("score")
     def score(days: int = RESCORE_DAYS) -> None:
@@ -196,18 +230,49 @@ def activate(plugin: Plugin) -> None:
         rows = db.query("SELECT * FROM papers WHERE day >= ? AND dismissed = 0", (since,))
         if not rows:
             return
-        papers = [{**record(r), "key": f"arxiv:{r['arxiv']}"} for r in rows]
-        refs = {f"arxiv:{r['arxiv']}": json.loads(r["refs"]) for r in rows if r["refs"]}
-        result = plugin.services.connections(papers, refs=refs, author_names=plugin.settings["author_names"])
+        papers = [
+            {
+                "key": f"arxiv:{r['arxiv']}",
+                "arxiv": r["arxiv"],
+                "title": r["title"],
+                "abstract": r["abstract"],
+                "authors": json.loads(r["authors"]),
+                "kind": r["kind"],
+                "day": r["day"],
+            }
+            for r in rows
+        ]
+        refs = {p["key"]: json.loads(r["refs"]) for p, r in zip(papers, rows, strict=True) if r["refs"]}
+        matched = {k: plugin.services.match(v) for k, v in refs.items()}
+        lib, bg = library_side([a for p in papers for a in p["authors"]])
+        result = scoring.score(
+            papers,
+            lib,
+            bg,
+            refs=refs,
+            matched=matched,
+            read_from=plugin.settings["read_from"],
+            skim_from=plugin.settings["skim_from"],
+        )
+        # the earlier model, shown beside the match while the new one is checked
+        earlier = plugin.services.connections(
+            [{**record(r), "key": p["key"]} for p, r in zip(papers, rows, strict=True)],
+            refs=refs,
+            author_names=plugin.settings["author_names"],
+        )
         with db.session() as c:
             c.executemany(
-                "UPDATE papers SET score = ?, reasons = ? WHERE arxiv = ?",
-                [(res["score"], json.dumps(res["reasons"]), r["arxiv"]) for r, res in zip(rows, result, strict=True)],
+                "UPDATE papers SET score = ?, tier = ?, reasons = ?, score_v1 = ? WHERE arxiv = ?",
+                [
+                    (res["score"], res["tier"], json.dumps(res["reasons"]), old["score"], r["arxiv"])
+                    for r, res, old in zip(rows, result, earlier, strict=True)
+                ],
             )
         plugin.fields.set_many("score", {p["key"]: res["score"] for p, res in zip(papers, result, strict=True)})
         plugin.refresh_sources()
 
     def forget_old() -> None:
+        background.forget(db, (date.today() - timedelta(days=background.BACKGROUND_DAYS)).isoformat())
         cutoff = (date.today() - timedelta(days=plugin.settings["keep_days"])).isoformat()
         old = [r["arxiv"] for r in db.query("SELECT arxiv FROM papers WHERE day < ?", (cutoff,))]
         if not old:
@@ -246,7 +311,7 @@ def activate(plugin: Plugin) -> None:
             plugin.jobs.enqueue("listing", key="listing")
         if "followed_authors" in changed:
             plugin.refresh_sources()
-        if "author_names" in changed:
+        if {"author_names", "read_from", "skim_from"} & set(changed):
             plugin.jobs.enqueue("score", plugin.settings["keep_days"], key="score-all")
         if "keep_days" in changed:
             forget_old()
@@ -334,8 +399,9 @@ def activate(plugin: Plugin) -> None:
         if waiting:
             return {"news": None}
         stats = db.query(
-            "SELECT COUNT(*) AS n, SUM(score >= ?) AS connected FROM papers WHERE day = ? AND dismissed = 0",
-            (plugin.settings["min_score"], day),
+            "SELECT COUNT(*) AS n, SUM(tier = 'read') AS read, SUM(tier = 'skim') AS skim "
+            "FROM papers WHERE day = ? AND dismissed = 0",
+            (day,),
         )[0]
         if not stats["n"]:  # a day recorded without papers (an unfinished feed): nothing to tell yet
             return {"news": None}
@@ -343,13 +409,15 @@ def activate(plugin: Plugin) -> None:
             # Multiple windows may ask together; only the one claiming the day publishes it.
             if not c.execute("UPDATE days SET notified = 1 WHERE day = ? AND notified = 0", (day,)).rowcount:
                 return {"news": None}
-        return {"news": {"day": day, "count": stats["n"] or 0, "connected": stats["connected"] or 0}}
+        return {"news": {"day": day, "count": stats["n"] or 0, "read": stats["read"] or 0, "skim": stats["skim"] or 0}}
 
     # ------------------------------------------------------------------ Claude
     @plugin.mcp_tool(
-        "Papers announced on arXiv in the user's categories, best connected to their library first, with "
-        "why each connects (library papers it cites, shared authors, title/abstract similarity). `day` is "
-        "YYYY-MM-DD (default: the latest announcement); `category` keeps papers listed in it.",
+        "Papers announced on arXiv in the user's categories, best match first. `score` is the match "
+        "(0–100: how likely the user wants to read it), `tier` read | skim | rest, `why` what it rests on "
+        "(specific library papers it cites, references it shares with the library, shared authors, "
+        "topic). `day` is YYYY-MM-DD (default: the latest announcement); `category` keeps papers listed "
+        "in it; `min_score` is a match.",
         title="arXiv papers of the day",
     )
     def today(category: str | None = None, min_score: float = 0, day: str | None = None, limit: int = 30) -> dict:
@@ -370,6 +438,7 @@ def activate(plugin: Plugin) -> None:
                 "authors": json.loads(r["authors"]),
                 "categories": json.loads(r["categories"]),
                 "score": r["score"],
+                "tier": r["tier"],
                 "why": [x.get("text") for x in json.loads(r["reasons"])],
                 "in_library": in_library(r["arxiv"]),
                 "url": f"https://arxiv.org/abs/{r['arxiv']}",
@@ -377,6 +446,19 @@ def activate(plugin: Plugin) -> None:
             for r in rows[: max(1, min(limit, 200))]
         ]
         return {"day": day, "total": len(rows), "papers": papers}
+
+    @plugin.mcp_tool(
+        "How the match compares with the earlier score over the days kept: where the papers the user "
+        "added to their library and the ones they dismissed ranked under each (within their day), how "
+        "many papers fall in each tier, and the papers whose rank changed most, with the reasons. For "
+        "checking and tuning the match.",
+        title="arXiv match report",
+    )
+    def match_report(days: int = 30, top: int = 10) -> dict:
+        since = (date.today() - timedelta(days=max(1, days))).isoformat()
+        rows = db.query("SELECT * FROM papers WHERE day >= ?", (since,))
+        mine = {scholarly.norm_arxiv(scholarly.identifiers(i)[1]) for i in plugin.library.items()}
+        return report.compare(rows, {a for a in mine if a}, top=max(1, min(top, 50)))
 
     # Stored reasons and scores must also reflect scoring changes after an upgrade.
     plugin.jobs.enqueue("score", plugin.settings["keep_days"], key="score-all")

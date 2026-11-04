@@ -6,8 +6,9 @@ replaces the one here.
 
 - [`citation-counts`](citation-counts): how often each paper is cited (OpenAlex, Semantic
   Scholar), as a column, a search filter and a row in the item pane.
-- [`arxiv-today`](arxiv-today): each day's arXiv papers in your categories, ranked by how they
-  connect to your library, with a + to add one.
+- [`arxiv-today`](arxiv-today): each day's arXiv papers in your categories, ranked by how well
+  they match you (specific, current links to your library) into Read, Skim and the rest, with a +
+  to add one.
 
 Examples to copy are in [docs/examples](../docs/examples).
 
