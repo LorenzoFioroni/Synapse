@@ -32,13 +32,13 @@ def day_variants(rows: list[dict], followed: list[str]) -> list[dict]:
     for row in rows:
         day = row["day"]
         entry = days.setdefault(day, {"id": day, "title": date.fromisoformat(day).strftime("%d %b %Y"), "badge": 0})
-        count = counts.setdefault(day, {})
+        per_label = counts.setdefault(day, {})
         if row["dismissed"]:
             continue
         entry["badge"] += not row["seen"]
         for badge in paper_badges(json.loads(row["authors"]), json.loads(row["reasons"]), followed):
             label = badge["label"]
-            count[label] = count.get(label, 0) + 1
+            per_label[label] = per_label.get(label, 0) + 1
     for day, entry in days.items():
         badges = []
         for label, count in counts[day].items():
