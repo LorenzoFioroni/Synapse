@@ -364,6 +364,7 @@ def test_following_updates_retained_feed_without_scoring_or_fetching(client, svc
         ).status_code
         == 200
     )
+    # the settings handler runs on the plugin's worker, after the request returns
     assert wait(lambda: "sources" in svc.changes.since(since, svc.changes.epoch, None)["changes"])
     after = client.get(FEED).get_json()["items"]
     assert [i["id"] for i in after] == [i["id"] for i in before]
