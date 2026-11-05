@@ -1,4 +1,4 @@
-"""Access tokens for AI apps that use the library over the network (the MCP endpoint, ``/mcp``).
+"""Access tokens for AI apps (``/mcp``) and remote browser saves (``/api/connector/``).
 
 Claude Code on another computer cannot pair like a browser, so it sends a token with every
 request instead: ``Authorization: Bearer syn_…``. Tokens are made on the computer running Synapse

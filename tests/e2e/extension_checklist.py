@@ -92,6 +92,9 @@ async def main():
             status = await options.inner_text("#status")
             check("the options page saves the address and connects", "Connected" in status, status)
 
+            configured = await options.evaluate("chrome.storage.sync.get('server')")
+            assert configured["server"] == BASE, "Refuse to open a popup against any non-test library"
+
             # the popup acts on the active tab; ?tabId= points it at the article instead
             tab_id = await options.evaluate(
                 f"chrome.tabs.query({{url: 'http://127.0.0.1:{SITE}/*'}}).then(t => t[0].id)"
@@ -121,6 +124,55 @@ async def main():
                 and saved[0].get("tags") == ["from-extension"],
                 saved[:1],
             )
+            # Exercise remote setup without depending on an external server or a native
+            # permission prompt. Backend tests cover real bearer validation behind a proxy.
+            await options.evaluate("""() => {
+                window.requestedOrigins = [];
+                chrome.permissions.request = async ({origins}) => {
+                    window.requestedOrigins.push(...origins);
+                    return true;
+                };
+                window.remoteRequests = [];
+                window.fetch = async (url, opts) => {
+                    window.remoteRequests.push({url, token: opts.headers.get('Authorization'),
+                        credentials: opts.credentials, redirect: opts.redirect});
+                    return new Response(JSON.stringify({app: 'synapse', counts: {library: 3}}));
+                };
+            }""")
+            await options.fill("#server", "https://synapse.example")
+            await options.click("#save")
+            check("remote setup requires a token", "Paste an access token" in await options.inner_text("#status"))
+            await options.fill("#token", "syn_browser_test")
+            await options.click("#save")
+            await options.wait_for_function("() => document.querySelector('#status').textContent.includes('✓')")
+            remote = await options.evaluate("window.remoteRequests[0]")
+            check(
+                "remote setup requests the selected server permission",
+                await options.evaluate("window.requestedOrigins") == ["https://synapse.example/*"],
+            )
+            check(
+                "remote ping uses bearer authentication without cookies or redirects",
+                remote
+                == {
+                    "url": "https://synapse.example/api/connector/ping",
+                    "token": "Bearer syn_browser_test",
+                    "credentials": "omit",
+                    "redirect": "error",
+                },
+            )
+            stored = await options.evaluate("chrome.storage.local.get('connection')")
+            check(
+                "the token is stored with its server locally",
+                stored["connection"] == {"server": "https://synapse.example", "token": "syn_browser_test"},
+            )
+            synced = await options.evaluate("chrome.storage.sync.get(null)")
+            check("the token is not synced", "syn_browser_test" not in str(synced))
+            await options.fill("#server", BASE)
+            check("changing servers clears the token field", await options.input_value("#token") == "")
+            await options.click("#save")
+            await options.wait_for_function("() => document.querySelector('#status').textContent.includes('✓')")
+            stored = await options.evaluate("chrome.storage.local.get('connection')")
+            check("switching back to localhost removes the saved token", stored["connection"]["token"] == "")
             check("no JavaScript errors", errors == [], errors[:3])
             await ctx.close()
     finally:

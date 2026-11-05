@@ -14,7 +14,8 @@ in [`architecture.md`](architecture.md).
 | `manifest.json` | | Manifest V3: the popup, the icons, the options page and the shortcut. |
 | `extract.js` | the web page | `extractCitation` (reads the metadata) and `fetchPdfInPage` (fetches the PDF). |
 | `popup.html`, `popup.js`, `popup.css` | the popup | Talks to the library, shows the form, saves. |
-| `options.html`, `options.js` | the options page | The library's address. |
+| `options.html`, `options.js` | the options page | The library address, server permission and access token. |
+| `connection.js` | popup and options | Validates addresses, loads server-bound credentials and sends authenticated requests. |
 | `tsconfig.json` | | Type-checking only (see [Type-checking](#type-checking)). |
 
 The extension is plain JavaScript in ES modules, with no build: Chrome loads the folder as it is,
@@ -26,8 +27,11 @@ so **Load unpacked** works straight from the repository.
 |---|---|
 | `activeTab` | Access to the current tab, only after the user clicks the button or presses the shortcut. |
 | `scripting` | Runs `extract.js` functions in that tab. |
-| `storage` | The library address (`chrome.storage.sync`) and the last folder (`chrome.storage.local`). |
-| `host_permissions`: `http://127.0.0.1/*`, `http://localhost/*` | Lets the popup call the library on this computer. |
+| `storage` | The library address (`chrome.storage.sync`), server-bound token and last folder (`chrome.storage.local`). |
+| `host_permissions`: `http://127.0.0.1/*`, `http://localhost/*`, `http://[::1]/*` | Lets the popup call the library on this computer. |
+
+Remote HTTPS servers use `optional_host_permissions: https://*/*`. Options requests only the
+chosen server’s origin when the user clicks Save. Tokens never enter Chrome Sync.
 
 The shortcut is the `_execute_action` command, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> by
 default. Apart from fetching the PDF inside the page (below), the extension talks only to the
@@ -127,7 +131,16 @@ the server tries to download it itself.
    with `allow_duplicate: true` and the earlier answers). **Open in Library** opens
    `<server>/#item=<id>`, reusing a library tab if one is open.
 
-`options.js` stores the address (adding `http://` if it is missing) and checks it with a ping.
+`options.js` validates and stores the address and checks it with a ping. A missing scheme means
+HTTP for loopback names and HTTPS otherwise. Remote servers require HTTPS and an access token
+from Settings → AI Access. Save requests optional host permission for that origin. The token
+is stored with its server in local extension storage; it is loaded only for a matching address.
+Editing the address clears the token field. One server is active at a time.
+
+`connection.js` adds `Authorization: Bearer …` to every connector call when configured. Fetches
+omit cookies and reject redirects so credentials cannot follow a redirected server address.
+The popup displays authentication errors with a link to its settings. Localhost still works
+without a token, including older local servers.
 
 ## The connector API
 
@@ -228,8 +241,14 @@ The blueprint's `after_request` hook adds `Access-Control-Allow-Origin` (and all
 methods) for `chrome-extension://` and `moz-extension://` origins only. No other origin gets CORS
 headers, so websites cannot read the ping's folders and tags.
 
-The guard accepts extension origins for requests that change something only on this computer,
-and only under `/api/connector/` (`CONNECTOR_PREFIX` in `backend/access/guard.py`). Anywhere else
+The guard accepts extension origins without a token on this computer only, and only under
+`/api/connector/` (`CONNECTOR_PREFIX` in `backend/access/guard.py`). Remote connector calls
+from extension origins (or clients without an Origin) require an existing AI Access bearer token,
+validated by the guard before bypassing device-cookie checks. Host validation still applies,
+and website origins cannot use connector bearer authentication. OPTIONS preflights from
+extensions expose no data and need no token; CORS allows the Authorization header, including
+on authentication failures. Tokens remain the existing revocable AI Access tokens (also valid
+at `/mcp`), without a new schema or changes to their creation/revocation API. Anywhere else
 an extension origin gets 403, so another installed extension cannot edit or delete the library.
 A new endpoint the extension must call therefore belongs in this blueprint. See
 [The guard](sync-and-devices.md#the-guard).
@@ -270,7 +289,8 @@ this side: keep them in step with `connector.py`.
 - `tests/test_guard.py`: `test_browser_extension_can_save`, and `test_extensions_only_reach_the_connector`
   (an extension origin is refused outside `/api/connector/`).
 - `tests/test_branding.py`: the ping names (above).
-- `tests/e2e/extension_checklist.py`, run by hand: loads the extension into Chromium, saves the
+- `tests/e2e/extension_checklist.py`, run by hand: checks remote setup with mocked network/permission
+  responses (server-bound local token storage, no token sync, switching back to localhost), and loads the extension into Chromium, saves the
   address in the options page, opens `tests/e2e/fixtures/article.html`, checks that the popup reads
   its title and DOI, and saves it with a tag. It needs `pip install playwright` and full Chromium.
 

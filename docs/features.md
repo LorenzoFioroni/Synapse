@@ -112,6 +112,9 @@ see the [README](../README.md); for code ownership, see the [architecture map](a
   Cmd+T: edit tags).
 - **Browser button** (`browser_extension/`, see its README): saves the article you are
   reading — DOI/arXiv pages, publisher pages, PDFs — with folder, tags and the PDF.
+  Supports localhost without a token, or a remote HTTPS server configured in the extension’s
+  Options with an access token from **Settings → AI Access**. See
+  [extension setup](../browser_extension/README.md#remote-server).
 - **Trash** with Undo, **Duplicate Items** view with "keep this one, trash the others".
 - **Backups** (Settings → Backups): the library database, settings and all notes with their images,
   daily or weekly while the app runs, and before emptying the Trash, deleting items for good,

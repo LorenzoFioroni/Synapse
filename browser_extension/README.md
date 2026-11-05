@@ -1,6 +1,6 @@
 # Save to Library — Chrome extension
 
-A toolbar button that saves the page you are reading to your local Synapse
+A toolbar button that saves the page you are reading to your local or remote Synapse
 library: journal article pages, arXiv, bioRxiv, publisher landing pages, PDFs
 opened in the browser, or any web page.
 
@@ -14,6 +14,23 @@ opened in the browser, or any web page.
 
 If you run the library on another port (`--port 5050`), set the address in the
 extension's options (right-click the button → Options).
+
+## Remote server
+
+Reload the extension in `chrome://extensions` after updating it. Right-click the button →
+**Options**, enter the server’s HTTPS address (for example `https://synapse.example.com`),
+and paste an access token from Synapse’s **Settings → AI Access → New Token…**. Name the
+token “Browser extension”. Click **Save** and allow Chrome to connect to that server;
+**Connected** confirms the setup. The server must also be updated to support connector tokens.
+
+The token is kept in this browser’s local extension storage, never Chrome Sync. The address
+is synced, so each browser needs its own token and server permission. Changing the address
+clears the token field. Tokens are the same access tokens used by AI apps and also grant MCP
+access; revoke the extension’s token in AI Access if it is no longer needed. Browser sign-in
+cookies are not used by the extension. Remote connections require HTTPS; localhost may use HTTP.
+
+To switch back to a local server, enter `http://127.0.0.1:8000` (or its configured port),
+leave the token empty, and save. One server is active at a time.
 
 ## What it does
 
@@ -35,7 +52,8 @@ extension's options (right-click the button → Options).
 
 Permissions: `activeTab` + `scripting` to read the current page only when you
 click the button, `storage` for the settings, and access to `127.0.0.1` /
-`localhost` to talk to the library. Nothing is sent anywhere else.
+`localhost` to talk to a local library. For remote libraries, optional HTTPS host permission
+is requested only for the server you enter. Citation data and PDFs are sent to that server.
 
 ## Changing it
 

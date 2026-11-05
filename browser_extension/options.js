@@ -1,21 +1,41 @@
-// Options page: the address of the library (default: this computer, port 8000).
-const DEFAULT_SERVER = 'http://127.0.0.1:8000';
+import { loadConnection, serverAddress, libraryFetch } from './connection.js';
+
 const input = /** @type {HTMLInputElement} */ (document.getElementById('server'));
+const tokenInput = /** @type {HTMLInputElement} */ (document.getElementById('token'));
+const saveButton = /** @type {HTMLButtonElement} */ (document.getElementById('save'));
 const status = /** @type {HTMLElement} */ (document.getElementById('status'));
 
-chrome.storage.sync.get('server').then((stored) => { input.value = /** @type {{ server?: string }} */ (stored).server || DEFAULT_SERVER; });
+loadConnection().then((connection) => {
+  input.value = connection.server;
+  tokenInput.value = connection.token;
+}).catch((error) => { status.textContent = String(error.message); }).finally(() => {
+  input.disabled = false;
+  tokenInput.disabled = false;
+  saveButton.disabled = false;
+});
 
-/** @type {HTMLElement} */ (document.getElementById('save')).onclick = async () => {
-  let v = input.value.trim().replace(/\/+$/, '') || DEFAULT_SERVER;
-  if (!/^https?:\/\//.test(v)) v = `http://${v}`;
-  input.value = v;
-  await chrome.storage.sync.set({ server: v });
-  status.textContent = 'Saved — checking…';
+// A token entered for one server must not silently follow a changed address.
+input.addEventListener('input', () => { tokenInput.value = ''; });
+
+saveButton.onclick = async () => {
   try {
-    const r = await fetch(`${v}/api/connector/ping`);
-    const d = await r.json();
-    status.innerHTML = ['synapse', 'zotero-clone'].includes(d.app) ? `<span style="color:var(--ok)">✓ Connected (${d.counts.library} items)</span>` : 'Saved, but that address is not the library.';
-  } catch {
-    status.innerHTML = '<span style="color:var(--err)">Saved, but the library is not reachable there right now.</span>';
+    const { server, local, permission } = serverAddress(input.value);
+    const token = tokenInput.value.trim();
+    if (!local && !token) throw new Error('Paste an access token from Synapse’s Settings → AI Access.');
+    // Call request before any await so Chrome sees the Save button's user gesture.
+    if (server.startsWith('https:') && !await chrome.permissions.request({ origins: [permission] })) {
+      throw new Error('Connection permission was declined. Allow access to this server to save.');
+    }
+    await chrome.storage.local.set({ connection: { server, token } });
+    await chrome.storage.sync.set({ server });
+    input.value = server;
+    status.textContent = 'Saved — checking…';
+    const response = await libraryFetch(server, token, '/api/connector/ping');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `Server returned ${response.status}.`);
+    status.textContent = ['synapse', 'zotero-clone'].includes(data.app)
+      ? `✓ Connected (${data.counts.library} items)` : 'Saved, but that address is not the library.';
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : 'Could not connect to the library.';
   }
 };

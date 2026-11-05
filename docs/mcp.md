@@ -287,7 +287,9 @@ Claude Code (`claude mcp add --transport http … --header "Authorization: Beare
 (`export SYNAPSE_TOKEN=…` and `codex mcp add synapse --url … --bearer-token-env-var SYNAPSE_TOKEN`,
 since Codex reads the token from an environment variable), and any other app (the URL and the
 header to enter). `last_used` and `last_addr` are updated at most once a minute. Removing a token
-locks its app out at the next request.
+locks its app out at the next request. These same tokens also authenticate remote browser saves
+through `/api/connector/`; create a separate named token for the extension so it can be revoked
+independently. See [browser extension](browser-extension.md).
 
 | Endpoint | Who | What |
 |---|---|---|
