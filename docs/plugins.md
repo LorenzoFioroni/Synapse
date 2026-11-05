@@ -5,11 +5,13 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.10**, which also accepts plugins targeting 1.0–1.9. Reference
+This page documents API **1.11**, which also accepts plugins targeting 1.0–1.10. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
 `"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`. Named reference sub-sources and the reference record
-contract require `"^1.5"`. Metadata review, progress jobs, library editing and field scheduling helpers require `"^1.6"`. Notes reads and visualizations require `"^1.7"`.
+contract require `"^1.5"`. Metadata review, progress jobs, library editing and field scheduling helpers require `"^1.6"`. Notes reads and visualizations require `"^1.7"`. The phone layout's additions (a page's
+`phone` layout, `p.capture`, `p.editor.toolbar`, `role: 'dismiss'` and a paper's `group`) require
+`"^1.11"`.
 What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
@@ -617,6 +619,11 @@ def feed(day=None) -> list[dict]:
   "icon": "star"}]` adds multiple title badges (up to 8; labels capped at 40 characters, tooltips
   at 300). Tones are `gold`, `red` or `teal`; icons `star`, `megaphone` or `link`. The legacy single `highlight`
   remains supported. Badges and reasons survive matching a library item, within the source view.
+  API 1.11 adds `group`: a short heading (at most 40 characters) the paper is shown under, such as
+  a tier; papers of one group should come one after another. The list then has a heading per group
+  (on the desktop while it is in the plugin's own order, a row that folds the group with a click,
+  remembered per list; on a phone, cards for the first group and rows for the others). It reaches
+  the item as `_group`, also for a paper already in the library.
   Variants may return the same `highlights` array for compact circular day indicators; the main
   source entry shows only the browser's current calendar-day variant's badges. Older retained
   days keep their own badges, including when no feed exists today. Navigation refreshes at
@@ -772,10 +779,10 @@ export function activate(p) {
 | `p.editor.suggestions.register({ready, complete, delay, includeContext})` | API 1.3: register a plain-text ghost suggestion provider. `ready()` gates requests; `complete(prefix, suffix, signal)` resolves to text, with up to 6,000 characters before and 2,000 after the cursor. API 1.10 optionally adds `includeContext: true`: `complete` receives a fourth argument `{title, headings, excerpts}`, containing bounded source text before the cursor. The combined field lengths are at most 1,100 characters; excerpts are relevant earlier definitions/notation, not other notes. Older three-argument providers retain the same nearby-text inputs and need no changes. `delay` defaults to 350 ms. The newest registration is active; disposing it restores the preceding one. Registration/disposal cancels requests and clears visible text in retained editors. CodeMirror stays private. |
 | `p.editor.onOpened(fn)` | API 1.3: disposable event when a note editor opens. Also initialize at activation, since an editor may already exist. |
 | `p.settingsPage.open()` | API 1.3: show this plugin's Settings section. |
-| `p.pages.register({id, title, icon, mount})` | A page: an entry under **Plugins** in the sidebar; when chosen, the page takes the place of the library (as Tasks does) and `mount(el)` draws it. `p.pages.setBadge(id, value)` puts a count on the entry, `p.pages.open(id)` shows it. |
+| `p.pages.register({id, title, icon, mount, phone})` | API 1.11 adds `phone(el, nav)`: the page on a phone (see [The phone layout](#the-phone-layout-111)); `mount` may then be left out for a page that exists only on phones. A page: an entry under **Plugins** in the sidebar; when chosen, the page takes the place of the library (as Tasks does) and `mount(el)` draws it. `p.pages.setBadge(id, value)` puts a count on the entry, `p.pages.open(id)` shows it. |
 | `p.commands.register({id, title, key, when, run})` | A command in the palette, named after the plugin. `key` like `Mod-Alt-r` (Mod: ⌘ on a Mac, Ctrl elsewhere) needs Mod or Alt and cannot be one of Synapse's keys; a key that cannot be used is left out (the console says why). |
 | `p.itemPane.register({id, title, when, mount})` | A section at the end of the item pane, for the items `when(item)` accepts; `mount(el, item)` runs once the selection rests. Papers from a list (`item._outside`) get sections too. |
-| `p.itemActions.register({id, title, icon, outside, when, run})` | An entry in the item menu for the selected items, also in the palette. With `outside: true` it is also offered for papers from a list that are not in the library (`item._outside`); without it, it is left out while one is selected. |
+| `p.itemActions.register({id, title, icon, outside, role, when, run})` | API 1.11 adds `role: 'dismiss'` for an action that takes papers off the plugin's list: a phone runs it for "Not for me" and a swipe to the left. An entry in the item menu for the selected items, also in the palette. With `outside: true` it is also offered for papers from a list that are not in the library (`item._outside`); without it, it is left out while one is selected. |
 | `p.sources.open(id)`, `p.sources.refresh()` | Show one of the plugin's lists (leaving Notes, Tasks or a page); ask for the lists again at once after changing them from this window (other windows hear it through the change feed). |
 | `p.notify(message, {type, desktop, sourceId, action, transient, timeout})` | A notification in the center, named after the plugin; severity and optional OS delivery are independent. |
 | `p.backend.get/post/put/delete(path, …)` | The plugin's own routes (`/api/plugins/<id><path>`), with the page's sign-in; resolves to the JSON answer. |
@@ -785,6 +792,8 @@ export function activate(p) {
 | `p.settingsPage.register({id, title, icon, shows, mount})` | A part of the plugin's own section in Settings, above the settings drawn from the manifest, for what those cannot show: a status, a test button, a list to pick from. `shows` names manifest settings the part draws itself, which are then not listed again. A title other than the plugin's name is shown as the part's heading. `mount(el)` runs each time Settings opens. (`after`, which placed a section of its own, is still accepted and ignored.) |
 | `p.ui` | `icon(name)`, `escapeHtml(text)`, `confirm(…)`, `prompt(…)`, `formatDate(iso, withTime)`: the app's own. |
 | `p.onUnload(fn)` | Runs when the plugin stops. |
+| `p.capture.register({id, title, icon, run})` | API 1.11: an entry in the phone's **+** sheet, under From plugins. |
+| `p.editor.toolbar.register({id, title, icon, label, run(view)})` | API 1.11: a button above the keyboard while a note is edited on a phone; `label` (a few characters) replaces the icon; `run` gets the note's CodeMirror `EditorView`. |
 
 Rules for a plugin's frontend:
 
@@ -807,6 +816,32 @@ Rules for a plugin's frontend:
   (`frontend/node_modules`, after `npm ci`), else one on the PATH. A build error turns the plugin
   off with esbuild's message. Bundling also avoids the cache problem above. The bundle is in the
   plugin's data folder (`.build/`).
+
+### The phone layout (1.11)
+
+Phones get a layout of their own ([phone](phone.md)): Library and Notes are Synapse's, and every
+plugin destination sits in a **Plugins** tab, one of them pinned to the tab bar by the reader. A
+plugin's list of papers needs nothing more: the phone draws it as cards and rows, grouped by the
+papers' `group`, with Add, PDF and "Not for me" (the action with `role: 'dismiss'`). Item sections,
+fields and item actions appear on a paper's page. A page needs a phone layout of its own:
+
+```js
+p.pages.register({
+  id: 'board', title: 'Board', icon: 'list',
+  mount: (el) => drawWide(el),                 // the desktop (may be left out)
+  phone: (el, nav) => {                        // a phone
+    el.innerHTML = '<button class="more">More</button>';
+    el.querySelector('.more').onclick = () => nav.push({ title: 'Detail', mount: (box) => { box.textContent = '…'; } });
+  },
+});
+p.capture.register({ id: 'idea', title: 'Idea', icon: 'sparkle', run: () => p.ui.prompt('Idea').then(save) });
+p.editor.toolbar.register({ id: 'stamp', title: 'Insert a date', label: '§', run: (view) => insertDate(view) });
+```
+
+`nav` offers `push({title, mount})` (a screen of the page's own, with a back button), `back()`,
+`openNote(path)` and `openItem(id)`. The phone keeps a page's screens while its tab is shown; the
+cleanup a `mount` or `phone` function returns runs when its screen goes. The Tasks plugin is an
+example (`plugins/tasks/frontend/phoneView.ts`).
 
 ## How the host works
 

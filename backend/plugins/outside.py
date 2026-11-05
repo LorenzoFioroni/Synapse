@@ -50,7 +50,9 @@ def record(d: dict, source: str | None = None) -> dict:
     besides ``title``, ``authors`` (string or list), ``year``, ``abstract``, ``journal``, ``date``,
     ``categories`` (list), ``item_type``, ``url``, it may carry ``reasons`` (why it is listed:
     lines of text, or the reasons of ``plugin.services.connections``), ``highlight`` (a title badge
-    with ``label`` and tooltip ``text``), and ``extra`` (a dict the plugin gets back)."""
+    with ``label`` and tooltip ``text``), ``group`` (a short heading the phone layout shows the
+    paper under, like a tier; papers of one group should come together) and ``extra`` (a dict the
+    plugin gets back)."""
     if not isinstance(d, dict):
         raise PluginError("A paper is a dict with at least a doi or an arxiv id")
     try:
@@ -94,6 +96,8 @@ def record(d: dict, source: str | None = None) -> dict:
     badges = highlights(d.get("highlights"))
     if badges:
         out["highlights"] = badges
+    if d.get("group"):
+        out["_group"] = str(d["group"])[:40]
     if isinstance(d.get("extra"), dict):
         out["extra_data"] = d["extra"]
     return out

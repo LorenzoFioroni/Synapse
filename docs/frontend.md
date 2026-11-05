@@ -312,7 +312,14 @@ them. It waits while a field, a dialog or the editor is in use. See
 
 | Module | Role |
 |---|---|
-| `main.ts` | Entry point: loads schema/settings/library, initializes views, and wires navigation, shortcuts, resizer and drawer. |
+| `main.ts` | Entry point: loads schema/settings/library, initializes views, and wires navigation, shortcuts, resizer and drawer. On a phone (`phone/layout.ts`) it hands over to `phone/main.ts` instead. |
+| `phone/layout.ts` | Which layout the page gets: the phone layout on a small touch screen, unless the device chose otherwise (`zc.layout`, `?layout=`); `switchLayout` reloads into the other one. |
+| `phone/main.ts` | The phone layout's entry: settings, plugins, the change feed, the shell, what other parts ask for (an item, a note, a plugin's list), the settings button's menu and the **+** sheet. |
+| `phone/shell.ts` | The tab bar (Library, Notes, +, the pinned plugin destination, Plugins), a stack of screens per tab, back (button, browser Back, edge swipe), choosing the pinned tab. |
+| `phone/library.ts`, `phone/reader.ts` | The Library tab, a paper's page (with what plugins add), its details and references; a PDF over the screen. |
+| `phone/notes.ts` | The Notes tab; a note for reading, its editor with the bar above the keyboard, a citation's sheet. |
+| `phone/plugins.ts` | The Plugins tab; a plugin's list of papers (cards, rows, groups, swipes); a plugin's page drawn by its `phone` layout. |
+| `phone/ui.ts`, `phone/model.ts` | Headers, sheets, cards, rows and swiping; the decisions without a DOM (unit-tested). |
 | `views/toolbar.ts` | Workspace actions, independent library/notes search inputs and the phone More menu. |
 | `views/statusbar.ts` | Workspace counts and note save state; background indexing job notifications. |
 | `afterAdd.ts` | What runs after items are added (metadata, PDF, references, tags), per the never / always / ask settings. |
@@ -320,7 +327,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `presence.ts` | Says hello to the server while the page is open, for a server that stops with its last window. |
 | `windowColor.ts` | The window's title bar colour (`theme-color`): neutral, or the shown note's folder colour (see [the app window](desktop.md#folder-colours)). |
 | `windows.ts` | Opening a place of the app in a new window (`openNewWindow`) and the address that names it (`placeHash`, `readPlace`); `main.ts` opens it (`openFromHash`). See [the app window](desktop.md#windows). |
-| `extend.ts` | The extension points: registries of core workspace navigation, commands, pages, item-pane sections and item actions that the views read and plugins (and `main.ts`, for Synapse's own commands) register into; keys (`parseKey`, `keyMatches`, `keyLabel`, `keyProblem`) and the palette's ranking. No DOM, unit-tested. |
+| `extend.ts` | The extension points: registries of core workspace navigation, commands, pages (with an optional phone layout), item-pane sections, item actions (an optional `role`), the phone's capture entries and editor buttons that the views read and plugins (and `main.ts`, for Synapse's own commands) register into; keys (`parseKey`, `keyMatches`, `keyLabel`, `keyProblem`) and the palette's ranking. No DOM, unit-tested. |
 | `plugins/host.ts` | Plugins' frontends: loads each running plugin's module and styles, gives it its `PluginContext`, takes everything back when it stops (see [plugins](plugins.md#the-frontend)). |
 | `plugins/api.ts` | The `PluginContext` and the other types promised to plugins (types only; plugin authors copy it). |
 | `icons.ts` | Inline SVG icons: `icon(name, cls)` and `typeIcon(itemType)`. |

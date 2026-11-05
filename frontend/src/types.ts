@@ -64,6 +64,7 @@ export interface Item {
   highlight?: SourceBadge; // legacy single source badge
   highlights?: SourceBadge[];
   reasons?: Reason[];      // in a plugin's list: why it is there
+  _group?: string;         // in a plugin's list: the group it is shown under (a tier, say)
   _lean?: boolean;         // set by the frontend: a list entry without the abstract (the pane fetches it)
   [field: string]: unknown;
 }

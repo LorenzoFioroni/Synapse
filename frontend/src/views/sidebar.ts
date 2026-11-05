@@ -110,7 +110,7 @@ function paintNotes() {
 
 /** What plugins added to the list (Tasks, Graph, lists of papers, pages), with their badges. */
 function paintPages() {
-  const list = pages.all();
+  const list = pages.all().filter((page) => page.mount);   // pages for phones only are not listed here
   const links = navigation.all().filter((entry) => !entry.when || entry.when());
   root.querySelector<HTMLElement>('[data-navigation]')!.innerHTML = links.map((entry) => {
     const badge = entry.badge?.();

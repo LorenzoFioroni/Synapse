@@ -34,6 +34,11 @@
 .items-scroll:focus .row.selected .pdf-dot, .items-scroll:focus .row.selected .type-icon, .items-scroll:focus-within .row.selected .pdf-dot, .items-scroll:focus-within .row.selected .type-icon { color: inherit; }
 .items-scroll:focus .row.selected .badge { background: rgba(255,255,255,.22); color: inherit; }
 .row.cut { opacity: .5; }
+/* a group's heading in a plugin's list (its tiers, say): click to fold the group (rows.ts) */
+.row.group-head { grid-template-columns: 1fr; height: calc(var(--row-h) + 8px); cursor: pointer; background: var(--bg-app); border-bottom: 1px solid var(--border); }
+.row.group-head:hover { background: var(--bg-hover); }
+.row.group-head .cell { display: flex; align-items: center; gap: 6px; padding-left: 8px; padding-top: 6px; color: var(--text); font-weight: 600; }
+.row.group-head .gh-count { color: var(--text-2); font-weight: 500; font-size: var(--fs-sm); }
 
 .cell { padding: 0 10px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
 .cell.c-title { color: var(--text); display: flex; align-items: center; gap: 6px; font-weight: 500; padding-left: 6px; }

@@ -37,6 +37,7 @@ import {
 import { tasksPage } from './tasksPage.js';
 import { initToolbar, focusLibrarySearch, setMode, clearSearch, openIdentifier, exportSelectionOrAll } from './views/toolbar.js';
 import { initStatusBar } from './views/statusbar.js';
+import { pageLayout, phoneScreen, switchLayout } from './phone/layout.js';
 
 function startupStatus(text: string): void {
   const el = document.querySelector<HTMLElement>('#startup-screen .startup-status');
@@ -386,6 +387,8 @@ function registerCoreCommands(): void {
   add('settings-plugins', 'Settings: Plugins', () => openSettings('plugins'));
   add('settings-backups', 'Settings: Backups', () => openSettings('backups'));
   add('new-window', 'New Window', () => openNewWindow());
+  // a touch screen that got the desktop layout (a tablet, or a phone told to): try the phone's
+  add('phone-layout', 'Use the Phone Layout', () => switchLayout('phone'), undefined, () => matchMedia('(pointer: coarse)').matches || phoneScreen());
   add('new-note', 'New Note…', async () => { await switchWorkspace('notes'); await newNote(); }, undefined, notesOn);
   add('new-notes-folder', 'New Notes Folder…', async () => { await switchWorkspace('notes'); await newNotesFolder(); }, undefined, notesOn);
   add('notes-trash', 'Deleted Notes…', async () => { await switchWorkspace('notes'); await showNotesTrash(); }, undefined, notesOn);
@@ -396,4 +399,6 @@ function registerCoreCommands(): void {
   });
 }
 
-boot();
+// a phone gets its own layout (phone/), sharing the store, the actions and the plugins
+if (pageLayout() === 'phone') void import('./phone/main.js').then((m) => m.bootPhone());
+else void boot();

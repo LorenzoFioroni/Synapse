@@ -464,6 +464,7 @@ def test_the_match_has_a_background_and_a_tier(client, svc, plugin):
     assert first["reasons"][0]["text"] == (
         f"Match {rows['2610.00001']['score']:.0f} · Rest (earlier score: {rows['2610.00001']['score_v1']:g})"
     )
+    assert first["_group"] == "Rest"  # the phone groups the feed by tier
 
 
 def test_an_upgraded_feed_keeps_its_earlier_scores(client, svc, feed, bundled):

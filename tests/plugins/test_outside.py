@@ -177,8 +177,14 @@ def test_a_source_lists_library_items_and_outside_papers(client, svc, plugin):
     set_list(
         client,
         papers=[
-            {"arxiv": "2610.00002", "title": "New one", "abstract": "Kept for the pane", "reasons": ["Because"]},
-            {"doi": "10.1/MINE", "reasons": ["Yours"]},
+            {
+                "arxiv": "2610.00002",
+                "title": "New one",
+                "abstract": "Kept for the pane",
+                "reasons": ["Because"],
+                "group": "Read",
+            },
+            {"doi": "10.1/MINE", "reasons": ["Yours"], "group": "Skim"},
             {"arxiv": "2610.00002"},  # twice: listed once
         ],
     )
@@ -200,6 +206,8 @@ def test_a_source_lists_library_items_and_outside_papers(client, svc, plugin):
     assert out["_outside"] and out["abstract"] == "Kept for the pane" and out["_rank"] == 0
     assert out["reasons"] == [{"text": "Because", "kind": "", "items": []}]
     assert lib["_rank"] == 1 and lib["_source"] == "lists.today" and lib["reasons"][0]["text"] == "Yours"
+    # the group a phone shows each under (a tier), also for a paper already in the library
+    assert out["_group"] == "Read" and lib["_group"] == "Skim"
     assert "abstract" not in lib  # a library item stays lean
     # the search works on them as on any list
     found = client.get("/api/items?view=source:lists.today&q=new").get_json()["items"]

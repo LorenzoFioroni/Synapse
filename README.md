@@ -25,8 +25,9 @@ TypeScript frontend. Everything runs on your machine.
 - 🧩 **Make it yours** — extend Synapse with plugins, including an arXiv feed that ranks
   each morning's papers by how well they match your library and highlights authors you follow and
   papers that cite you, and choose light or dark mode.
-- 📱 **Take research around the house** — use the responsive interface on a paired phone
-  or tablet over your local network.
+- 📱 **Take research around the house** — a paired phone gets an interface of its own (tabs at
+  the bottom, papers and notes to read and write, your plugins' lists one tap away); tablets use
+  the full interface with touch.
 - 🛟 **Keep a way back** — automatic library and notes backups, note version history,
   and Trash with Undo.
 
@@ -107,6 +108,13 @@ device sees only a "pair this device" page — the library, PDFs and notes stay 
 computer running Synapse never needs pairing. Both devices must be on the same network, and the
 computer must be awake (System Settings → Energy, or `caffeinate -s python server.py --lan`).
 If the `.local` address in the QR code doesn't open, pick the IP address instead.
+
+On a phone Synapse has a layout of its own: Library, Notes, a **+** button to add a paper, a note
+or a task, the plugin list you use most (long-press its tab to choose another) and **Plugins** for
+the rest. Notes open for reading; **Edit** brings a bar of helpers above the keyboard (cite, link,
+math, images). A paper's ⋯ button has everything its right-click menu has on the computer. To use
+the full layout on a phone instead, choose **Use the Desktop Layout** from the settings button
+(back again with **Use the Phone Layout** in the More menu). See [the phone layout](docs/phone.md).
 
 `--debug` only works without `--lan`: Flask's debugger must never be reachable from the network.
 

@@ -233,6 +233,7 @@ inventing ids). The writing rules tell the AI that `- [ ]` is a checkbox and `{{
 | `taskList.ts`, `tasksView.ts`, `tasksState.ts` | The Tasks page: rows, selection, keyboard, row menu, drag and drop and the page's own Undo; the views column, search, sort, group, quick add, the detail pane; what is remembered in the browser (`zc.tasks.view`). |
 | `noteTasks.ts` | Tasks in notes: the live-preview hooks, the popups (a task; *New task*), <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd>, the side panel, reloading the notes of tasks after a save, and tasks for the Markdown export. |
 | `notePicker.ts` | Choosing a note ("Show in a note…"). |
+| `phoneView.ts`, `phoneGroups.ts` | Tasks on a phone ([phone layout](phone.md)): a page with only a `phone` layout (Today, Upcoming, All; round boxes to tick; the note a task is in; quick add reading a day at the end), each task opening in `taskForm.ts` as a screen of its own; "Task" in the **+** sheet (`p.capture`), **Make this line a task** above the keyboard (`p.editor.toolbar`, the same as <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd>), and the page's badge (open tasks due today or overdue). `phoneGroups.ts` has no DOM. |
 
 The notes code never imports the tasks code: `noteTasks.ts` fills in `taskHooks`
 (a plugin-owned object handed to public `p.tasks.register`) at start-up — `preview` (drawing a task line in the live preview:

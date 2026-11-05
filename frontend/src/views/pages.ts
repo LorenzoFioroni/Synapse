@@ -35,7 +35,7 @@ function teardown(): void {
 
 export async function openPage(id: string, { push = true } = {}): Promise<void> {
   const page = pages.get(id);
-  if (!page) return;
+  if (!page?.mount) return;   // a page for phones only
   await beforeOpen();
   if (pages.get(id) !== page) return;
   cancelWaiting();
@@ -50,7 +50,7 @@ export async function openPage(id: string, { push = true } = {}): Promise<void> 
   store(OPEN_KEY, id);
   const body = root.querySelector<HTMLElement>('.page-body')!;
   try {
-    const r = page.mount(body);
+    const r = page.mount!(body);
     if (typeof r === 'function') current.cleanup = r;
   } catch (e) {
     body.innerHTML = `<div class="empty-state">${icon('alert')}<h3>This page could not be shown</h3><p>${escapeHtml((e as Error).message)}</p></div>`;

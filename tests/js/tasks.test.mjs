@@ -180,3 +180,15 @@ test('"{{task" autocomplete: every word must match; titles starting with it firs
   assert.equal(searchTasks(all, '').length, 5);
   assert.equal(searchTasks(all, '', 2).length, 2);
 });
+
+test('a phone shows open tasks due today, in the next week, or all, by day', async () => {
+  const { phoneGroups } = await pluginModule('tasks/frontend/phoneGroups.ts');
+  const now = new Date(2026, 10, 5, 12);
+  const t = (id, due, o = {}) => ({ id, title: id, body: '', status: 'open', due, parent_id: null, position: 0, ...o });
+  const tasks = [t('late', '2026-11-03'), t('today', '2026-11-05'), t('fri', '2026-11-06'), t('later', '2026-12-01'),
+    t('none', null), t('done', '2026-11-05', { status: 'done' }), t('kid', '2026-11-05', { parent_id: 'today' })];
+  const show = (seg) => phoneGroups(tasks, {}, seg, now).map((g) => [g.label, g.tasks.map((x) => x.id)]);
+  assert.deepEqual(show('today'), [['Overdue', ['late']], ['Today', ['today']]]);   // the sub-task goes with its parent
+  assert.deepEqual(show('upcoming'), [['Tomorrow', ['fri']]]);
+  assert.deepEqual(show('all'), [['Overdue', ['late']], ['Today', ['today']], ['Tomorrow', ['fri']], ['Later', ['later']], ['No date', ['none']]]);
+});
