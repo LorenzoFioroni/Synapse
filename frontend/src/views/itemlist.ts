@@ -77,7 +77,7 @@ function bindBody(): void {
 
   body.addEventListener('mousedown', (e) => {
     const row = at(e, '.row');
-    if (!row || e.button !== 0) return;
+    if (!row || e.button !== 0 || row.classList.contains('group-head')) return;   // a heading folds its group (rows.ts)
     if (row.dataset.att || row.classList.contains('snippet')) return;
     const id = row.dataset.id!;
     if (at(e, '[data-act="toggle"]')) { toggleExpand(id); return; }
@@ -154,7 +154,7 @@ function bindKeyboard(): void {
         A.select(order.slice(s, t + 1), { cursor: id });
       } else A.select([id], { anchor: id, cursor: id });
     };
-    const page = Math.max(1, Math.floor(scroller.clientHeight / (body.querySelector<HTMLElement>('.row')?.offsetHeight || 28)) - 1);
+    const page = Math.max(1, Math.floor(scroller.clientHeight / (body.querySelector<HTMLElement>('.row[data-id]')?.offsetHeight || 28)) - 1);
     const folder = currentFolderId();
     switch (e.key) {
       case 'ArrowDown': e.preventDefault(); move(idx < 0 ? 0 : idx + 1, e.shiftKey); break;

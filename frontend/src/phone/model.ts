@@ -67,17 +67,7 @@ export function hubBadge(dests: Destination[], pin: Destination | null): string 
   return sum > 0 ? String(sum) : text ? '•' : null;
 }
 
-/** Runs of consecutive items with the same ``_group`` (a plugin's tiers, say), in list order. */
-export function groupRuns<T extends Pick<Item, '_group'>>(items: T[]): { group: string | null; items: T[] }[] {
-  const out: { group: string | null; items: T[] }[] = [];
-  for (const it of items) {
-    const g = it._group || null;
-    const last = out[out.length - 1];
-    if (last && last.group === g) last.items.push(it);
-    else out.push({ group: g, items: [it] });
-  }
-  return out;
-}
+export { groupRuns } from '../store.js';
 
 /** Family names, as the list shows them: one, two, or the first "et al.". */
 export function familyNames(authors: string | null | undefined): string {

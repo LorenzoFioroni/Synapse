@@ -68,7 +68,7 @@ What plugins already declare shows up without phone-specific code:
 | What a plugin declares | Where a phone shows it |
 |---|---|
 | A list of papers (`@plugin.item_source`) | A destination in the Plugins tab (and the pinned tab). The papers of its first group are **cards** (badges, the plugin's score, its first reason, Add / PDF / Not for me); later groups are **rows** to swipe: right adds, left dismisses. Its variants (days, say) are chips. |
-| A paper's `group` in such a list | The heading the paper is shown under (arXiv Today's Read, Skim, Rest). |
+| A paper's `group` in such a list | The heading the paper is shown under (arXiv Today's Read, Skim, Rest). The desktop list shows the same headings, each folding its group. |
 | An item action with `role: 'dismiss'` | "Not for me" and the swipe to the left. |
 | Item sections, per-item fields, item actions | A paper's page under **From plugins**; actions in its ⋯ sheet. |
 | A page with a `phone` layout (`p.pages.register({…, phone})`) | A destination. A page with only a desktop `mount` is listed as needing a larger screen. |

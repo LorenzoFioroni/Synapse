@@ -216,6 +216,41 @@ async def main():
             check("a narrow mouse window keeps the desktop layout", not await page.locator("#phone").count())
             await page.close()
 
+            # ---- the same groups on the desktop: headings in the list, folded with a click -------
+            page = await browser.new_page(viewport={"width": 1300, "height": 900})
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            await page.goto(BASE)
+            await page.wait_for_selector(".row[data-id]", timeout=15000)
+            await page.locator('#sidebar [data-view="source:phone-demo.feed"]').click()
+            await page.wait_for_selector(".items-body .row.group-head")
+
+            async def desk():
+                return await page.evaluate("""() => [...document.querySelectorAll('.items-body .row.group-head, .items-body .row[data-id]')]
+                    .map(r => r.classList.contains('group-head') ? '# ' + r.textContent.trim() : r.querySelector('.c-title .t').textContent)""")
+
+            rows = await desk()
+            check(
+                "desktop: a plugin's groups head its list",
+                rows[0] == "# Read2" and rows[3] == "# Skim2" and len(rows) == 6,
+                rows,
+            )
+            await shot(page, "00-desktop-groups")
+            await page.locator('.row.group-head[data-group="Read"]').click()
+            ok = await wait_for(
+                lambda: page.evaluate("document.querySelectorAll('.items-body .row[data-id]').length === 2")
+            )
+            check("… a click on a heading folds its group", ok, await desk())
+            await page.reload()
+            await page.wait_for_selector(".row[data-id]", timeout=15000)
+            await page.locator('#sidebar [data-view="source:phone-demo.feed"]').click()
+            await page.wait_for_selector(".items-body .row.group-head")
+            check("… and it stays folded", len(await desk()) == 4, await desk())
+            await page.locator('.row.group-head[data-group="Read"]').click()
+            await page.locator('.head-cell[data-col="title"]').click()
+            ok = await wait_for(lambda: page.evaluate("!document.querySelector('.items-body .row.group-head')"))
+            check("… sorting by a column drops the headings", ok)
+            await page.close()
+
             # ---- a phone gets the phone layout ------------------------------------------------
             ctx = await browser.new_context(**p.devices["Pixel 5"])
             page = await ctx.new_page()

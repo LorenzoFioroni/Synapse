@@ -322,6 +322,18 @@ export function itemTypeLabel(key: string | null | undefined): string {
   return t ? t.label : (key || 'Journal Article');
 }
 
+/** In a plugin's list: runs of consecutive items with the same ``_group`` (a plugin's tiers, say), in list order. */
+export function groupRuns<T extends Pick<Item, '_group'>>(items: T[]): { group: string | null; items: T[] }[] {
+  const out: { group: string | null; items: T[] }[] = [];
+  for (const it of items) {
+    const g = it._group || null;
+    const last = out[out.length - 1];
+    if (last && last.group === g) last.items.push(it);
+    else out.push({ group: g, items: [it] });
+  }
+  return out;
+}
+
 export function sortedItems(): Item[] {
   const sort = viewSort();
   if (!sort) return [...state.items].sort((a, b) => (a._rank ?? 0) - (b._rank ?? 0));   // the plugin's order

@@ -1,11 +1,11 @@
 // The item list's rows. The list is virtualised: only the rows in and near the viewport are in the
-// DOM, between two spacers that stand for the rest. Each item is a "group" (its row, its
-// attachment rows when expanded, its full-text snippet), whose height is estimated and then
-// measured.
+// DOM, between two spacers that stand for the rest. Each entry (its heading when it starts a group
+// of a plugin's list, its row, its attachment rows when expanded, its full-text snippet) has a
+// height that is estimated and then measured. A folded group is an entry with its heading alone.
 import { icon, typeIcon } from '../../icons.js';
-import { FIELD_COL, byId, fieldText, itemFolderPaths, itemTypeLabel, on, sortedItems, state, tagColor } from '../../store.js';
+import { FIELD_COL, byId, fieldText, groupRuns, itemFolderPaths, itemTypeLabel, on, sortedItems, state, tagColor, viewSort } from '../../store.js';
 import type { Item } from '../../types.js';
-import { escapeHtml, formatDate, hitBadge, plural, shortAuthors } from '../../util.js';
+import { escapeHtml, formatDate, hitBadge, plural, shortAuthors, storage, store } from '../../util.js';
 import { sourceBadges } from '../../ui/sourceBadges.js';
 import { visibleCols } from './columns.js';
 import { emptyState } from './empty.js';
@@ -15,11 +15,18 @@ const OVERSCAN = 600;            // px of rows kept above and below the viewport
 let pane: HTMLElement, scroller: HTMLElement, head: HTMLElement, body: HTMLElement;
 /** The ids in display order (also in state.order, for actions: the DOM only holds the rows on screen). */
 export let order: string[] = [];
-let shown: Item[] = [];          // the items in display order
-let heights: number[] = [];      // height of each group
-let offsets = [0];               // offsets[i] = top of group i; offsets[n] = total height
-let range: [number, number] | null = null;   // first and last group in the DOM
+/** The heading of a group of a plugin's list (its tiers, say), drawn before the group's first row. */
+interface Head { group: string; count: number; folded: boolean }
+/** One entry of the list: an item, maybe after its group's heading; or a folded group's heading alone. */
+interface Entry { it: Item | null; head: Head | null }
+let shown: Entry[] = [];         // the entries in display order
+let heights: number[] = [];      // height of each entry
+let offsets = [0];               // offsets[i] = top of entry i; offsets[n] = total height
+let range: [number, number] | null = null;   // first and last entry in the DOM
 let posIndex = new Map<string, number>();     // id → index in `shown`
+const FOLD_KEY = 'zc.foldedGroups';
+const folded = new Set<string>(storage<string[]>(FOLD_KEY, []));
+const foldKey = (group: string) => `${state.view.split('~', 1)[0]}|${group}`;
 let painted = new Set<string>();              // ids of the rows drawn as selected
 
 export function initRows(els: { pane: HTMLElement; scroller: HTMLElement; head: HTMLElement; body: HTMLElement }): void {
@@ -34,6 +41,10 @@ export function initRows(els: { pane: HTMLElement; scroller: HTMLElement; head: 
   }, { passive: true });
   new ResizeObserver(() => renderWindow()).observe(scroller);
   on('settings', () => { if (shown.length && Math.abs(heights[0] - estimate(shown[0])) > 0.5) renderBody(); });   // row density
+  body.addEventListener('click', (e) => {
+    const head = (e.target as Element).closest<HTMLElement>('.row.group-head');
+    if (head) toggleGroup(head.dataset.group || '');
+  });
   on('selection', paintSelection);
   on('item-updated', (id) => updateRow(id as string));
 }
@@ -85,6 +96,15 @@ function colourDots(it: Item): string {
   return `<span class="row-dots">${dots.map(([t, c]) => `<span class="tag-dot" style="background:${c}" title="${escapeHtml(t)}"></span>`).join('')}</span>`;
 }
 
+function headHtml(h: Head, index: number): string {
+  return `<div class="row group-head${h.folded ? ' folded' : ''}" role="row" data-index="${index}" data-group="${escapeHtml(h.group)}" aria-expanded="${!h.folded}" title="${h.folded ? 'Show' : 'Hide'} these papers">`
+    + `<div class="cell"><span class="twisty ${h.folded ? '' : 'open'}">${icon('chevron', 'icon-sm')}</span><span class="gh-name">${escapeHtml(h.group)}</span><span class="gh-count">${h.count}</span></div></div>`;
+}
+
+function entryHtml(e: Entry, index: number): string {
+  return (e.head ? headHtml(e.head, index) : '') + (e.it ? rowHtml(e.it, index) : '');
+}
+
 function rowHtml(it: Item, index = 0): string {
   const cells = visibleCols().map((c) => {
     const title = c.id === 'creator' ? ` title="${escapeHtml(it.authors || '')}"` : (c.id === 'title' ? ` title="${escapeHtml(it.title || '')}"` : '');
@@ -107,9 +127,12 @@ function rowHeight(): number {
   return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--row-h')) || 28;
 }
 
-function estimate(it: Item): number {
+function estimate(e: Entry): number {
   const h = rowHeight();
-  let total = h;
+  let total = e.head ? h + 8 : 0;
+  const it = e.it;
+  if (!it) return total;
+  total += h;
   if (state.expanded.has(it.id)) total += (it.attachments || []).length * (h - 2);
   if (state.hits[it.id]?.fulltext && state.query) total += 44;
   return total;
@@ -143,7 +166,7 @@ function renderWindow(force = false): void {
   const extra = Math.ceil(OVERSCAN / rowHeight());                  // a margin, so small scrolls re-render nothing
   const first = Math.max(0, s - extra), last = Math.min(shown.length - 1, e + extra);
   let html = `<div class="vspace" style="height:${offsets[first]}px"></div>`;
-  for (let i = first; i <= last; i++) html += rowHtml(shown[i], i);
+  for (let i = first; i <= last; i++) html += entryHtml(shown[i], i);
   html += `<div class="vspace" style="height:${offsets[shown.length] - offsets[last + 1]}px"></div>`;
   body.innerHTML = html;
   range = [first, last];
@@ -159,7 +182,8 @@ function measure(): void {
   const flush = () => { if (i >= 0 && Math.abs(heights[i] - h) > 0.5) { heights[i] = h; changed = true; } };
   for (const el of body.children as HTMLCollectionOf<HTMLElement>) {
     if (el.classList.contains('vspace')) continue;
-    if (el.dataset.index !== undefined) { flush(); i = Number(el.dataset.index); h = 0; }
+    // an entry's heading and its row both carry its index
+    if (el.dataset.index !== undefined && Number(el.dataset.index) !== i) { flush(); i = Number(el.dataset.index); h = 0; }
     h += el.offsetHeight;
   }
   flush();
@@ -170,11 +194,33 @@ function measure(): void {
   if (bottom?.classList.contains('vspace')) bottom.style.height = `${offsets[shown.length] - offsets[range[1] + 1]}px`;
 }
 
+/** The items as entries: in a plugin's list, in the plugin's own order, its groups get headings
+ *  and may be folded (remembered per list and group). */
+function entriesOf(items: Item[]): Entry[] {
+  if (!state.view.startsWith('source:') || viewSort() || !items.some((i) => i._group)) return items.map((it) => ({ it, head: null }));
+  const out: Entry[] = [];
+  for (const run of groupRuns(items)) {
+    const group = run.group || 'Other';
+    const head: Head = { group, count: run.items.length, folded: folded.has(foldKey(group)) };
+    if (head.folded) { out.push({ it: null, head }); continue; }
+    run.items.forEach((it, k) => out.push({ it, head: k === 0 ? head : null }));
+  }
+  return out;
+}
+
+/** Fold or unfold a group of the plugin's list shown. */
+export function toggleGroup(group: string): void {
+  const key = foldKey(group);
+  if (folded.has(key)) folded.delete(key); else folded.add(key);
+  store(FOLD_KEY, [...folded]);
+  renderBody();
+}
+
 export function renderBody(): void {
-  shown = sortedItems();
-  order = shown.map((i) => i.id);
+  shown = entriesOf(sortedItems());
+  order = shown.flatMap((e) => (e.it ? [e.it.id] : []));
   state.order = order;
-  posIndex = new Map(order.map((id, i) => [id, i]));
+  posIndex = new Map(shown.flatMap((e, i) => (e.it ? [[e.it.id, i] as [string, number]] : [])));
   heights = shown.map(estimate);
   computeOffsets();
   pane.querySelector('.list-empty')?.remove();
@@ -187,8 +233,8 @@ function updateRow(id: string): void {
   const i = posIndex.get(id);
   const it = byId(id);
   if (i === undefined || !it) return;
-  shown[i] = it;
-  heights[i] = estimate(it);
+  shown[i] = { ...shown[i], it };
+  heights[i] = estimate(shown[i]);
   computeOffsets();
   const row = body.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
   if (!row) { renderWindow(true); return; }   // off screen: only the spacers change
@@ -210,7 +256,7 @@ const rowEl = (id: string) => body.querySelector(`.row[data-id="${CSS.escape(id)
 function scrollToRow(id: string): void {
   const i = posIndex.get(id);
   if (i === undefined) return;
-  const top = body.offsetTop + offsets[i], bottom = top + rowHeight();
+  const top = body.offsetTop + offsets[i] + (shown[i].head ? rowHeight() + 8 : 0), bottom = top + rowHeight();
   const headH = head.offsetHeight;
   if (top - headH < scroller.scrollTop) scroller.scrollTop = top - headH;
   else if (bottom > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = bottom - scroller.clientHeight;

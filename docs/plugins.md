@@ -619,9 +619,11 @@ def feed(day=None) -> list[dict]:
   "icon": "star"}]` adds multiple title badges (up to 8; labels capped at 40 characters, tooltips
   at 300). Tones are `gold`, `red` or `teal`; icons `star`, `megaphone` or `link`. The legacy single `highlight`
   remains supported. Badges and reasons survive matching a library item, within the source view.
-  API 1.11 adds `group`: a short heading (at most 40 characters) the phone layout shows the paper
-  under, such as a tier; papers of one group should come one after another. It reaches the item
-  as `_group`, also for a paper already in the library.
+  API 1.11 adds `group`: a short heading (at most 40 characters) the paper is shown under, such as
+  a tier; papers of one group should come one after another. The list then has a heading per group
+  (on the desktop while it is in the plugin's own order, a row that folds the group with a click,
+  remembered per list; on a phone, cards for the first group and rows for the others). It reaches
+  the item as `_group`, also for a paper already in the library.
   Variants may return the same `highlights` array for compact circular day indicators; the main
   source entry shows only the browser's current calendar-day variant's badges. Older retained
   days keep their own badges, including when no feed exists today. Navigation refreshes at
