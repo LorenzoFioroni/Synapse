@@ -20,6 +20,9 @@ The server has no accounts. Three checks decide whether a request goes ahead:
   extension origin, and it must not be able to edit or delete the library. From another device
   only the app's own pages are allowed (``Origin``, or ``Sec-Fetch-Site: same-origin``).
 
+Remote connector calls from extensions or clients without an Origin may instead use a dedicated
+connector-scoped bearer token. Only connector endpoints accept this exception; website origins are refused.
+
 Reading (GET) needs no Origin check: the browser does not let other origins read the answers,
 and the Host check stops rebinding.
 
@@ -170,6 +173,30 @@ def install(
             if not host_allowed(request.host, hosts, lan_mode):
                 return jsonify(error=f"Requests for host '{request.host}' are not accepted."), 403
             return _ai_app()
+        origin = request.headers.get("Origin")
+        extension = origin is not None and origin.startswith(EXTENSION_SCHEMES)
+        if request.path.startswith(CONNECTOR_PREFIX) and (
+            request.headers.get("Authorization") or (extension and not local)
+        ):
+            if not host_allowed(request.host, hosts, lan_mode):
+                return jsonify(error=f"Requests for host '{request.host}' are not accepted."), 403
+            if origin is not None and not extension:
+                return jsonify(error="The connector does not accept token requests from websites."), 403
+            # A preflight carries no token and exposes no library data.
+            if request.method == "OPTIONS" and extension:
+                return None
+            entry = current_app.extensions["synapse"].tokens.check(
+                bearer(request.headers.get("Authorization")), addr, scope="connector"
+            )
+            if entry is None:
+                resp = jsonify(
+                    error="Set a valid browser token in the extension settings (Settings → AI Access → New Browser Token in Synapse)."
+                )
+                resp.status_code = 401
+                resp.headers["WWW-Authenticate"] = 'Bearer realm="Synapse connector"'
+                return resp
+            g.access_token = entry
+            return None
         why = refusal(
             request.host,
             request.method,

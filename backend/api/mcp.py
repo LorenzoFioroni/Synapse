@@ -52,7 +52,8 @@ def new_token():
     if (refused := admin.refusal("Access tokens can only be made on the computer running Synapse.")) is not None:
         return refused
     try:
-        entry, token = svc().tokens.create(str(body().get("name") or ""))
+        data = body()
+        entry, token = svc().tokens.create(str(data.get("name") or ""), scope=str(data.get("scope", "mcp")))
     except TokenError as e:
         return error(str(e), e.status)
     return jsonify(token=token, entry=entry, tokens=svc().tokens.list()), 201

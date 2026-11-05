@@ -250,3 +250,17 @@ def test_factory_refuses_public_url_with_lan(tmp_path):
     with pytest.raises(ValueError, match="loopback-only"):
         create_app(cfg, start_indexer=False)
     assert not cfg.data_dir.exists()
+
+
+def test_browser_extension_through_tunnel(app):
+    c = app.test_client()
+    svc = app.extensions["synapse"]
+    entry, token = svc.tokens.create("Browser extension", scope="connector")
+    headers = {"Origin": "chrome-extension://abc", "Authorization": f"Bearer {token}"}
+    assert tunnel(c, "GET", "/api/connector/ping", headers={"Origin": headers["Origin"]}).status_code == 401
+    assert tunnel(c, "GET", "/api/connector/ping", headers=headers).status_code == 200
+    saved = tunnel(c, "POST", "/api/connector/save", headers=headers, json={"title": "From remote browser"})
+    assert saved.status_code == 201
+    assert svc.tokens.list()[0]["last_addr"] == VISITOR
+    svc.tokens.revoke(entry["id"])
+    assert tunnel(c, "GET", "/api/connector/ping", headers=headers).status_code == 401

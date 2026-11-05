@@ -1,5 +1,5 @@
-// Settings → AI Access: access tokens for AI apps (Claude Code, Codex, any MCP client) that use the
-// library from another computer through the MCP endpoint, /mcp. See backend/access/tokens.py and backend/mcp/http.py.
+// Settings → AI Access: separate tokens for MCP clients and browser saves, with shared
+// administrative confirmation and revocation. See backend/access/tokens.py.
 import { api } from '../../api.js';
 import { asAdmin } from './confirm.js';
 import { icon } from '../../icons.js';
@@ -11,7 +11,7 @@ import { relTime } from './devices.js';
 
 let overview: AccessTokensOverview | null = null;
 /** A token just made: shown until Settings closes, because the server does not keep it. */
-let fresh: { token: string; name: string; index: number; app: App } | null = null;
+let fresh: { token: string; name: string; index: number; app: App; scope: 'mcp' | 'connector' } | null = null;
 
 type App = 'claude' | 'codex' | 'other';
 const APPS: [App, string][] = [['claude', 'Claude Code'], ['codex', 'Codex'], ['other', 'Other app']];
@@ -34,6 +34,15 @@ const HINTS: Record<App, string> = {
 
 function renderFresh(box: HTMLElement): void {
   if (!fresh || !overview) { box.innerHTML = ''; return; }
+  if (fresh.scope === 'connector') {
+    box.innerHTML = `<div class="s-title">Browser token for ${escapeHtml(fresh.name)}</div>
+      <div class="s-desc">Allows saving and filing items only, until you remove it here.
+      Copy it now and paste it into the browser extension’s Options for one-time setup.</div>
+      <pre class="mono ai-command">${escapeHtml(fresh.token)}</pre>
+      <button class="btn btn-sm" data-ai-copy-token>${icon('copy')} Copy Token</button>
+      <button class="btn btn-sm" data-ai-done>Done</button>`;
+    return;
+  }
   const eps = overview.endpoints;
   const ep = eps[fresh.index] || eps[0];
   const choices = eps.length > 1 ? `<div class="pair-addrs">Address: ${eps.map((l, i) =>
@@ -67,10 +76,11 @@ export async function refreshAiAccess(view: HTMLElement): Promise<void> {
     + (st.this_computer ? '' : st.can_confirm ? ' You confirm with your passkey before making or removing a token.'
       : ' Tokens are made on the computer running Synapse, or on a device signed in with a passkey.');
   const admin = st.this_computer || st.can_confirm;
-  control.innerHTML = admin ? `<button class="btn" data-ai-new>${icon('plus')} New Token…</button>` : '';
+  control.innerHTML = admin ? `<button class="btn" data-ai-new>${icon('plus')} New Token…</button> <button class="btn" data-connector-new>${icon('plus')} New Browser Token…</button>` : '';
   renderFresh(view.querySelector<HTMLElement>('[data-ai-fresh]')!);
   list.innerHTML = st.tokens.length ? st.tokens.map((t) => `<div class="backup-row" data-ai-token="${escapeHtml(t.id)}">
       <div class="b-main"><div class="b-when">${escapeHtml(t.name)}</div>
+        <div class="b-what">${t.scope === 'connector' ? 'Browser extension · save and file only' : 'AI app · MCP access'}</div>
         <div class="b-what">Made ${escapeHtml(formatDate(t.created, true))} · last used ${escapeHtml(relTime(t.last_used))}${t.last_addr ? ` from ${escapeHtml(t.last_addr)}` : ''}</div></div>
       ${admin ? '<button class="btn btn-sm" data-ai-remove>Remove…</button>' : ''}</div>`).join('')
     : '<div class="s-desc">No tokens yet.</div>';
@@ -87,14 +97,16 @@ async function copy(text: string, what: string): Promise<void> {
 
 export function bindAiAccess(view: HTMLElement): void {
   view.querySelector('[data-ai-control]')!.addEventListener('click', async (e) => {
-    if (!(e.target as Element).closest('[data-ai-new]')) return;
-    const name = await promptDialog('Name', { title: 'New access token', placeholder: 'Work laptop — Codex', confirm: 'Make Token',
-      hint: 'Which computer or app will use it, so you know which one to remove later.' });
+    const target = e.target as Element;
+    if (!target.closest('[data-ai-new], [data-connector-new]')) return;
+    const browser = !!target.closest('[data-connector-new]');
+    const name = await promptDialog('Name', { title: browser ? 'New browser token' : 'New access token', placeholder: browser ? 'Browser extension' : 'Work laptop — Codex', confirm: 'Make Token',
+      hint: browser ? 'Allows saving and filing items only. Works until you remove it here; no periodic replacement needed.' : 'Which computer or app will use it, so you know which one to remove later.' });
     if (!name || !name.trim()) return;
     try {
-      const res = await asAdmin(() => api.newAccessToken(name.trim()));
+      const res = await asAdmin(() => api.newAccessToken(name.trim(), browser ? 'connector' : 'mcp'));
       if (!res) return;
-      fresh = { token: res.token, name: res.entry.name, index: 0, app: /codex/i.test(res.entry.name) ? 'codex' : 'claude' };
+      fresh = { scope: res.entry.scope || 'mcp', token: res.token, name: res.entry.name, index: 0, app: /codex/i.test(res.entry.name) ? 'codex' : 'claude' };
     } catch (err) { toastError(err); return; }
     refreshAiAccess(view);
   });

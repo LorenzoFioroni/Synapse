@@ -22,9 +22,9 @@ def allow_extension_origins(resp):
     """The extension normally reaches 127.0.0.1/localhost through its host permissions;
     CORS for extension origins also lets it talk to a library running elsewhere."""
     origin = request.headers.get("Origin", "")
-    if origin.startswith(("chrome-extension://", "moz-extension://")):
+    if origin.startswith(("chrome-extension://", "moz-extension://", "safari-web-extension://")):
         resp.headers["Access-Control-Allow-Origin"] = origin
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return resp
 

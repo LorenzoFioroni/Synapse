@@ -98,7 +98,7 @@ export const api = {
   confirm: (credential: Record<string, unknown>) => request<{ until: number }>('POST', '/api/passkeys/confirm', { credential }),
 
   accessTokens: () => request<AccessTokensOverview>('GET', '/api/mcp/tokens'),
-  newAccessToken: (name: string) => request<{ token: string; entry: AccessToken }>('POST', '/api/mcp/tokens', { name }),
+  newAccessToken: (name: string, scope: 'mcp' | 'connector' = 'mcp') => request<{ token: string; entry: AccessToken }>('POST', '/api/mcp/tokens', { name, scope }),
   removeAccessToken: (id: string) => request('DELETE', `/api/mcp/tokens/${encodeURIComponent(id)}`),
   plugins: () => request<PluginsOverview>('GET', '/api/plugin-host'),
   pluginFields: () => request<{ fields: PluginField[] }>('GET', '/api/plugin-fields'),

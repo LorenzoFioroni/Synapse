@@ -3,6 +3,7 @@
 // 2. check the local library is running and load its folders/tags
 // 3. let the user adjust title / folder / tags, then save
 import { extractCitation, fetchPdfInPage } from './extract.js';
+import { DEFAULT_SERVER, loadConnection, libraryFetch } from './connection.js';
 
 /** @typedef {import('./extract.js').Citation} Citation */
 /**
@@ -35,11 +36,11 @@ const find = (id, type) => { const e = document.getElementById(id); return e ins
  */
 const get = (id, type) => { const e = find(id, type); if (!e) throw new Error(`#${id} is missing`); return e; };
 
-const DEFAULT_SERVER = 'http://127.0.0.1:8000';
 const MAX_PDF_BYTES = 60 * 1024 * 1024;
 const view = get('view', HTMLElement);
 const conn = get('conn', HTMLElement);
 let server = DEFAULT_SERVER;
+let token = '';
 /** @type {Citation} */
 let page;
 /** @type {Library} */
@@ -68,15 +69,18 @@ get('settings', HTMLElement).onclick = () => chrome.runtime.openOptionsPage();
  * @returns {Promise<{ ok: boolean; status: number; data: any }>}
  */
 async function api(path, opts = {}) {
-  const res = await fetch(server + path, opts);
+  const res = await libraryFetch(server, token, path, opts);
   let data = null;
   try { data = await res.json(); } catch { /* empty */ }
   return { ok: res.ok, status: res.status, data };
 }
 
 async function init() {
-  const stored = /** @type {{ server?: string }} */ (await chrome.storage.sync.get('server'));
-  server = (stored.server || DEFAULT_SERVER).replace(/\/+$/, '');
+  try {
+    ({ server, token } = await loadConnection());
+  } catch (error) {
+    return showOffline(error instanceof Error ? error.message : 'Check the extension settings.');
+  }
   [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const forced = new URLSearchParams(location.search).get('tabId');   // used by the automated tests
   if (forced) tab = await chrome.tabs.get(Number(forced));
@@ -89,7 +93,7 @@ async function init() {
   ]);
   if (ping.status !== 'fulfilled' || !ping.value.ok || !['synapse', 'zotero-clone'].includes(ping.value.data?.app)) {
     conn.className = 'conn off';
-    return showOffline();
+    return showOffline(ping.status === 'fulfilled' ? ping.value.data?.error : undefined);
   }
   conn.className = 'conn ok';
   conn.title = `Connected to ${server}`;
@@ -99,11 +103,12 @@ async function init() {
   renderForm();
 }
 
-function showOffline() {
+/** @param {string} [error] */
+function showOffline(error) {
   view.innerHTML = `<div class="result">
-      <div class="big err">!</div><h2>Library not running</h2>
+      <div class="big err">!</div><h2>Library unavailable</h2>
       <p>Couldn't reach <code>${esc(server)}</code>.</p>
-      <p>Start it with <code>python server.py</code> in the app folder, then retry.</p>
+      <p>${esc(error || 'Check the server is running, then check its address, connection permission and access token in Settings.')}</p>
       <div class="actions"><button class="btn" id="opts">Change address…</button><button class="btn primary" id="retry">Retry</button></div></div>`;
   get('retry', HTMLElement).onclick = () => { view.innerHTML = '<div class="center"><span class="spinner"></span> Connecting…</div>'; init(); };
   get('opts', HTMLElement).onclick = () => chrome.runtime.openOptionsPage();
