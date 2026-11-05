@@ -70,9 +70,11 @@ This works the same over the LAN with `--cert`: any device signed in over HTTPS 
 ## Browser extension
 
 The Save to Library extension can connect directly to the public HTTPS address. Update both
-server and extension, then enter the address and a token from **Settings → AI Access** in the
+server and extension, then enter the address and a browser token from **Settings → AI Access → New Browser Token…** in the
 extension’s Options, save, and allow Chrome’s server permission. This uses bearer authentication
-instead of browser pairing cookies. Localhost remains available without a token. See
+instead of browser pairing cookies. Browser tokens cannot access MCP and remain valid until revoked.
+The extension saves the token locally, restricted to trusted extension pages, so setup survives
+browser restarts and extension updates. Localhost remains available without a token. See
 [browser extension setup](../browser_extension/README.md#remote-server).
 
 ## Pairing the first device: `--pairing-link`

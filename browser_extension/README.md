@@ -19,15 +19,26 @@ extension's options (right-click the button → Options).
 
 Reload the extension in `chrome://extensions` after updating it. Right-click the button →
 **Options**, enter the server’s HTTPS address (for example `https://synapse.example.com`),
-and paste an access token from Synapse’s **Settings → AI Access → New Token…**. Name the
+and paste a browser token from Synapse’s **Settings → AI Access → New Browser Token…**. Name the
 token “Browser extension”. Click **Save** and allow Chrome to connect to that server;
 **Connected** confirms the setup. The server must also be updated to support connector tokens.
 
-The token is kept in this browser’s local extension storage, never Chrome Sync. The address
-is synced, so each browser needs its own token and server permission. Changing the address
-clears the token field. Tokens are the same access tokens used by AI apps and also grant MCP
-access; revoke the extension’s token in AI Access if it is no longer needed. Browser sign-in
-cookies are not used by the extension. Remote connections require HTTPS; localhost may use HTTP.
+The token is saved in this browser’s local extension storage, accessible only to trusted
+extension pages, never page-injected scripts or Chrome Sync. It survives browser restarts and
+extension updates, so setup is needed only once. The address is synced, so each browser needs
+its own token and server permission. Changing the address clears the token field.
+
+Browser tokens allow only connector saves and filing; they cannot use MCP or other library APIs.
+They have no automatic expiration. Revoke the extension’s token with **Remove…** in AI Access
+if you stop using this browser or suspect it has been compromised. AI tokens do not work for
+the browser button. Browser sign-in cookies are not used by the extension. Remote connections
+require HTTPS; localhost may use HTTP.
+
+Persistent extension storage is not an OS credential vault: someone who compromises this
+browser profile may steal its token. Connector-only scope limits the access that token grants.
+
+Updating from an earlier build removes its persisted extension token. Create a dedicated browser
+token and revoke any general AI token you previously used for the button if it is no longer needed.
 
 To switch back to a local server, enter `http://127.0.0.1:8000` (or its configured port),
 leave the token empty, and save. One server is active at a time.

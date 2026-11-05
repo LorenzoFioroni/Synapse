@@ -31,7 +31,8 @@ so **Load unpacked** works straight from the repository.
 | `host_permissions`: `http://127.0.0.1/*`, `http://localhost/*`, `http://[::1]/*` | Lets the popup call the library on this computer. |
 
 Remote HTTPS servers use `optional_host_permissions: https://*/*`. Options requests only the
-chosen server’s origin when the user clicks Save. Tokens never enter Chrome Sync.
+chosen server’s origin when the user clicks Save. Tokens never enter Chrome Sync. Local extension
+storage is restricted to `TRUSTED_CONTEXTS` before credentials are read or written, preventing content scripts from accessing it.
 
 The shortcut is the `_execute_action` command, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> by
 default. Apart from fetching the PDF inside the page (below), the extension talks only to the
@@ -132,9 +133,13 @@ the server tries to download it itself.
    `<server>/#item=<id>`, reusing a library tab if one is open.
 
 `options.js` validates and stores the address and checks it with a ping. A missing scheme means
-HTTP for loopback names and HTTPS otherwise. Remote servers require HTTPS and an access token
-from Settings → AI Access. Save requests optional host permission for that origin. The token
-is stored with its server in local extension storage; it is loaded only for a matching address.
+HTTP for loopback names and HTTPS otherwise. Remote servers require HTTPS and a browser token
+from Settings → AI Access → New Browser Token. Save requests optional host permission for that origin. The token
+is stored with its server in persistent local extension storage; it is loaded only for a matching
+address and an explicit `scope: "connector"` marker. It survives browser restarts and extension
+updates. Stored credentials from earlier builds without this marker are removed; users must
+create a dedicated browser token instead of reusing their old AI token. The marker is only a
+client migration aid; the server validates the actual stored token scope.
 Editing the address clears the token field. One server is active at a time.
 
 `connection.js` adds `Authorization: Bearer …` to every connector call when configured. Fetches
@@ -243,12 +248,14 @@ headers, so websites cannot read the ping's folders and tags.
 
 The guard accepts extension origins without a token on this computer only, and only under
 `/api/connector/` (`CONNECTOR_PREFIX` in `backend/access/guard.py`). Remote connector calls
-from extension origins (or clients without an Origin) require an existing AI Access bearer token,
+from extension origins (or clients without an Origin) require a valid `connector`-scope bearer token,
 validated by the guard before bypassing device-cookie checks. Host validation still applies,
 and website origins cannot use connector bearer authentication. OPTIONS preflights from
 extensions expose no data and need no token; CORS allows the Authorization header, including
-on authentication failures. Tokens remain the existing revocable AI Access tokens (also valid
-at `/mcp`), without a new schema or changes to their creation/revocation API. Anywhere else
+on authentication failures. Browser tokens have no automatic expiry, are individually revocable,
+and are rejected by `/mcp`; AI tokens are rejected by the connector. `/api/mcp/tokens` accepts optional `scope: "connector"` for issuance and otherwise
+keeps its existing MCP default. Both scopes use its existing admin confirmation and revocation
+checks. See [storage](storage.md#the-other-databases) for the additive schema migration. Anywhere else
 an extension origin gets 403, so another installed extension cannot edit or delete the library.
 A new endpoint the extension must call therefore belongs in this blueprint. See
 [The guard](sync-and-devices.md#the-guard).
@@ -290,7 +297,7 @@ this side: keep them in step with `connector.py`.
   (an extension origin is refused outside `/api/connector/`).
 - `tests/test_branding.py`: the ping names (above).
 - `tests/e2e/extension_checklist.py`, run by hand: checks remote setup with mocked network/permission
-  responses (server-bound local token storage, no token sync, switching back to localhost), and loads the extension into Chromium, saves the
+  responses (persistent server-bound token storage across browser restarts, content-script isolation, no token sync, switching back to localhost), and loads the extension into Chromium, saves the
   address in the options page, opens `tests/e2e/fixtures/article.html`, checks that the popup reads
   its title and DOI, and saves it with a tag. It needs `pip install playwright` and full Chromium.
 

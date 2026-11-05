@@ -8,7 +8,7 @@ TypeScript frontend. Everything runs on your machine.
 - 🏠 **Local first, offline ready** — keep your library, PDFs and Markdown notes on your own machine.
 - 📚 **Build your library in seconds** — add papers by DOI, arXiv ID or ISBN, drop in PDFs,
   or save articles with the browser extension.
-  The extension supports localhost or a remote HTTPS server with an AI Access token;
+  The extension supports localhost or a remote HTTPS server with a dedicated browser token;
   see [extension setup](browser_extension/README.md#remote-server).
 - 🔎 **Find the passage you remember** — search metadata and PDF full text, then organise
   your collection with folders, coloured tags and smart folders.

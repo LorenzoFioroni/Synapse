@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { serverAddress, loadConnection, libraryFetch } from '../../browser_extension/connection.js';
+import { serverAddress, loadConnection, libraryFetch, credentialStorage } from '../../browser_extension/connection.js';
 
 test('local addresses preserve HTTP and remote addresses use HTTPS', () => {
   assert.equal(serverAddress('').server, 'http://127.0.0.1:8000');
@@ -19,7 +19,8 @@ test('tokens are loaded only for the server they were saved for', async () => {
   let server = 'https://synapse.example';
   globalThis.chrome = { storage: {
     sync: { get: async () => ({ server }) },
-    local: { get: async () => ({ connection: { server: 'https://synapse.example', token: 'secret' } }) },
+    local: { setAccessLevel: async () => {}, remove: async () => {},
+      get: async () => ({ connection: { server: 'https://synapse.example', token: 'secret', scope: 'connector' } }) },
   } };
   assert.equal((await loadConnection()).token, 'secret');
   server = 'https://other.example';
@@ -43,4 +44,19 @@ test('library requests authenticate without cookies or following redirects', asy
   } finally {
     globalThis.fetch = previous;
   }
+});
+
+
+test('credential storage blocks content scripts and discards legacy AI tokens', async () => {
+  const calls = [];
+  globalThis.chrome = { storage: {
+    sync: { get: async () => ({ server: 'https://synapse.example' }) },
+    local: { setAccessLevel: async (value) => calls.push(['local', value]),
+      get: async () => ({ connection: { server: 'https://synapse.example', token: 'old-ai-token' } }),
+      remove: async (key) => calls.push(['remove', key]) },
+  } };
+  assert.equal(await credentialStorage(), chrome.storage.local);
+  assert.equal((await loadConnection()).token, '');
+  assert.deepEqual(calls, [['local', { accessLevel: 'TRUSTED_CONTEXTS' }],
+    ['local', { accessLevel: 'TRUSTED_CONTEXTS' }], ['remove', 'connection']]);
 });

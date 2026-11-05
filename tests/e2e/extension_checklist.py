@@ -141,8 +141,15 @@ async def main():
             }""")
             await options.fill("#server", "https://synapse.example")
             await options.click("#save")
-            check("remote setup requires a token", "Paste an access token" in await options.inner_text("#status"))
-            await options.fill("#token", "syn_browser_test")
+            check("remote setup requires a token", "Paste a browser token" in await options.inner_text("#status"))
+            await options.fill("#token", "syn_general_ai_token")
+            await options.click("#save")
+            check(
+                "general AI tokens are refused before contacting a server",
+                "Paste a browser token" in await options.inner_text("#status")
+                and await options.evaluate("window.remoteRequests.length") == 0,
+            )
+            await options.fill("#token", "syn_connector_test")
             await options.click("#save")
             await options.wait_for_function("() => document.querySelector('#status').textContent.includes('✓')")
             remote = await options.evaluate("window.remoteRequests[0]")
@@ -155,20 +162,50 @@ async def main():
                 remote
                 == {
                     "url": "https://synapse.example/api/connector/ping",
-                    "token": "Bearer syn_browser_test",
+                    "token": "Bearer syn_connector_test",
                     "credentials": "omit",
                     "redirect": "error",
                 },
             )
             stored = await options.evaluate("chrome.storage.local.get('connection')")
             check(
-                "the token is stored with its server locally",
-                stored["connection"] == {"server": "https://synapse.example", "token": "syn_browser_test"},
+                "the browser token is stored with its server locally",
+                stored["connection"]
+                == {"server": "https://synapse.example", "token": "syn_connector_test", "scope": "connector"},
             )
+            isolated = await options.evaluate(
+                """async (tabId) => {
+                const [result] = await chrome.scripting.executeScript({target: {tabId}, func: async () => {
+                    try { await chrome.storage.local.get('connection'); return false; }
+                    catch { return true; }
+                }});
+                return result.result;
+            }""",
+                tab_id,
+            )
+            check("content scripts cannot read the stored token", isolated)
             synced = await options.evaluate("chrome.storage.sync.get(null)")
-            check("the token is not synced", "syn_browser_test" not in str(synced))
+            check("the token is not synced", "syn_connector_test" not in str(synced))
             await options.fill("#server", BASE)
             check("changing servers clears the token field", await options.input_value("#token") == "")
+            # Restart Chrome with the same profile and verify one-time setup survives a browser restart.
+            await ctx.close()
+            ctx = await p.chromium.launch_persistent_context(
+                PROFILE,
+                headless=True,
+                channel="chromium",
+                args=[f"--disable-extensions-except={EXT}", f"--load-extension={EXT}"],
+            )
+            options = await ctx.new_page()
+            options.on("pageerror", lambda e: errors.append(str(e)))
+            await options.goto(f"{ext}/options.html")
+            await options.wait_for_selector("#server:enabled")
+            check(
+                "browser restart keeps both the address and the browser token",
+                await options.input_value("#server") == "https://synapse.example"
+                and await options.input_value("#token") == "syn_connector_test",
+            )
+            await options.fill("#server", BASE)
             await options.click("#save")
             await options.wait_for_function("() => document.querySelector('#status').textContent.includes('✓')")
             stored = await options.evaluate("chrome.storage.local.get('connection')")

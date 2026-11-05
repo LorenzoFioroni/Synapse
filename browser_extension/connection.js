@@ -16,10 +16,21 @@ export function serverAddress(value) {
   return { server: url.origin, local, permission: `${url.protocol}//${url.hostname}/*` };
 }
 
+export async function credentialStorage() {
+  // Only trusted extension pages may read credentials; page-injected scripts cannot.
+  await chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+  return chrome.storage.local;
+}
+
 export async function loadConnection() {
   const stored = /** @type {{ server?: string }} */ (await chrome.storage.sync.get('server'));
   const connection = serverAddress(stored.server || DEFAULT_SERVER);
-  const saved = /** @type {{ connection?: { server: string, token: string } }} */ (await chrome.storage.local.get('connection'));
+  const saved = /** @type {{ connection?: { server: string, token: string, scope?: string } }} */ (await (await credentialStorage()).get('connection'));
+  // Earlier builds stored general AI tokens. Require a dedicated browser token instead.
+  if (saved.connection && saved.connection.scope !== 'connector') {
+    await chrome.storage.local.remove('connection');
+    return { ...connection, token: '' };
+  }
   return { ...connection, token: saved.connection?.server === connection.server ? saved.connection.token : '' };
 }
 

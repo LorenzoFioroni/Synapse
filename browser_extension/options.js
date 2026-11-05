@@ -1,4 +1,4 @@
-import { loadConnection, serverAddress, libraryFetch } from './connection.js';
+import { loadConnection, serverAddress, libraryFetch, credentialStorage } from './connection.js';
 
 const input = /** @type {HTMLInputElement} */ (document.getElementById('server'));
 const tokenInput = /** @type {HTMLInputElement} */ (document.getElementById('token'));
@@ -21,12 +21,14 @@ saveButton.onclick = async () => {
   try {
     const { server, local, permission } = serverAddress(input.value);
     const token = tokenInput.value.trim();
-    if (!local && !token) throw new Error('Paste an access token from Synapse’s Settings → AI Access.');
+    if ((!local && !token) || (token && !token.startsWith('syn_connector_'))) {
+      throw new Error('Paste a browser token from Synapse’s Settings → AI Access → New Browser Token.');
+    }
     // Call request before any await so Chrome sees the Save button's user gesture.
     if (server.startsWith('https:') && !await chrome.permissions.request({ origins: [permission] })) {
       throw new Error('Connection permission was declined. Allow access to this server to save.');
     }
-    await chrome.storage.local.set({ connection: { server, token } });
+    await (await credentialStorage()).set({ connection: { server, token, scope: 'connector' } });
     await chrome.storage.sync.set({ server });
     input.value = server;
     status.textContent = 'Saved — checking…';

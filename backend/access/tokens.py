@@ -1,4 +1,4 @@
-"""Access tokens for AI apps (``/mcp``) and remote browser saves (``/api/connector/``).
+"""Scoped access tokens for AI apps (``/mcp``) and browser saves (``/api/connector/``).
 
 Claude Code on another computer cannot pair like a browser, so it sends a token with every
 request instead: ``Authorization: Bearer syn_…``. Tokens are made on the computer running Synapse
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import builtins
 import secrets
+import sqlite3
 import time
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from .authdb import AuthTable, hash_secret, now_iso
 PREFIX = "syn_"  # tells a Synapse token apart in a config file
 NAME_MAX = 60
 TOUCH_EVERY = 60  # seconds between "last used" updates
+SCOPES = {"mcp", "connector"}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS access_tokens (
@@ -26,7 +28,8 @@ CREATE TABLE IF NOT EXISTS access_tokens (
     token_hash TEXT NOT NULL UNIQUE,
     created TEXT NOT NULL,
     last_used TEXT,
-    last_addr TEXT
+    last_addr TEXT,
+    scope TEXT NOT NULL DEFAULT 'mcp'
 );
 """
 
@@ -45,7 +48,7 @@ def bearer(header: str | None) -> str | None:
 
 def public(row: dict) -> dict:
     """A token as the API shows it (never its hash)."""
-    return {k: row.get(k) for k in ("id", "name", "created", "last_used", "last_addr")}
+    return {k: row.get(k) for k in ("id", "name", "created", "last_used", "last_addr", "scope")}
 
 
 class AccessTokens(AuthTable):
@@ -56,33 +59,52 @@ class AccessTokens(AuthTable):
         self.clock = clock
         self._touched: dict[str, float] = {}
 
-    def create(self, name: str) -> tuple[dict, str]:
+    def _conn(self) -> sqlite3.Connection:
+        opening = self._db is None
+        db = super()._conn()
+        if opening:
+            try:
+                # Serialize first-open migrations across the app and other processes.
+                with db:
+                    db.execute("BEGIN IMMEDIATE")
+                    columns = {row["name"] for row in db.execute("PRAGMA table_info(access_tokens)")}
+                    if "scope" not in columns:
+                        db.execute("ALTER TABLE access_tokens ADD COLUMN scope TEXT NOT NULL DEFAULT 'mcp'")
+            except Exception:
+                db.close()
+                self._db = None
+                raise
+        return db
+
+    def create(self, name: str, *, scope: str = "mcp") -> tuple[dict, str]:
         """A new token. Returns (its entry, the token itself, which is not kept)."""
         name = (name or "").strip()[:NAME_MAX]
         if not name:
             raise TokenError("Give the token a name, such as the computer or app that will use it.")
-        token = PREFIX + secrets.token_urlsafe(32)
+        if scope not in SCOPES:
+            raise TokenError("Choose an AI app or browser extension token.")
+        token = PREFIX + ("connector_" if scope == "connector" else "") + secrets.token_urlsafe(32)
         tok_id = secrets.token_hex(8)
         with self._lock:
             db = self._conn()
             db.execute(
-                "INSERT INTO access_tokens (id, name, token_hash, created) VALUES (?, ?, ?, ?)",
-                (tok_id, name, hash_secret(token), now_iso()),
+                "INSERT INTO access_tokens (id, name, token_hash, created, scope) VALUES (?, ?, ?, ?, ?)",
+                (tok_id, name, hash_secret(token), now_iso(), scope),
             )
             db.commit()
             row = db.execute("SELECT * FROM access_tokens WHERE id = ?", (tok_id,)).fetchone()
         return public(dict(row)), token
 
-    def check(self, token: str | None, addr: str | None = None) -> dict | None:
+    def check(self, token: str | None, addr: str | None = None, *, scope: str = "mcp") -> dict | None:
         """The entry of this token (noting that it was used), or None."""
         if not token:
             return None
         with self._lock:
             db = self._conn()
             row = db.execute("SELECT * FROM access_tokens WHERE token_hash = ?", (hash_secret(token),)).fetchone()
-            if row is None:
-                return None
             now = self.clock()
+            if row is None or row["scope"] != scope:
+                return None
             if now - self._touched.get(row["id"], 0) >= TOUCH_EVERY:
                 self._touched[row["id"]] = now
                 db.execute(

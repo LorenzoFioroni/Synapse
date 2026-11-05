@@ -10,9 +10,9 @@
   <label class="f" for="server" style="margin-top:0">Library address</label>
   <div class="row"><input type="url" id="server" disabled placeholder="http://127.0.0.1:8000" spellcheck="false"><button class="btn primary" id="save" disabled>Save</button></div>
   <div class="hint" style="text-align:left">Use http://127.0.0.1:8000 locally, or your remote server’s HTTPS address. Saving a remote address asks permission to connect to that server.</div>
-  <label class="f" for="token">Access token (remote server)</label>
-  <input type="password" id="token" disabled autocomplete="off" spellcheck="false" placeholder="syn_…">
-  <div class="hint" style="text-align:left">In Synapse, open Settings → AI Access → New Token and name it “Browser extension”. Paste it here. The token stays in this browser and is not synced. Leave it empty for localhost.</div>
+  <label class="f" for="token">Browser token (remote server)</label>
+  <input type="password" id="token" disabled autocomplete="off" spellcheck="false" placeholder="syn_connector_…">
+  <div class="hint" style="text-align:left">In Synapse, open Settings → AI Access → New Browser Token and name it “Browser extension”. Paste it here. The token stays in this browser and is not synced. It keeps working across restarts until you revoke it in Synapse. Leave it empty for localhost.</div>
   <div id="status" role="status"></div>
   <script type="module" src="options.js"></script>
 </body>

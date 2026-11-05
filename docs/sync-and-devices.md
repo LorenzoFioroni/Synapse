@@ -233,9 +233,9 @@ which is all the extension uses: `ping`, `save` and `file`. Every installed exte
 extension origin, so accepting them elsewhere would let any extension edit or delete the library.
 Requests that change something elsewhere with an extension origin answer 403, whatever the
 extension. For a remote library, the extension requests permission for its HTTPS server and sends
-an AI Access bearer token on every connector call. The guard accepts a valid token only under
+a dedicated, revocable browser bearer token on every connector call. The guard accepts a valid token only under
 `/api/connector/` for extension origins or clients with no Origin; a paired browser cookie does
-not replace the token. Missing or revoked tokens return 401. CORS preflights require no token
+not replace the token. Missing, revoked or wrong-scope tokens return 401. CORS preflights require no token
 and expose no data. The connector API is described in [`browser-extension.md`](browser-extension.md).
 
 ## LAN mode and pairing
@@ -431,8 +431,8 @@ What is protected:
   newest code works, once, for at most 5 minutes, and Cancel voids it. A passkey sign-in needs a
   signature from a private key that never leaves the user's authenticator, over a fresh challenge.
 - **AI apps** reach only `/mcp`, and only with an access token made on the computer running
-  Synapse (or on a device after a passkey confirmation). A token gives the MCP tools and connector endpoints for browser saves; other API routes still
-  require a signed-in device.
+  Synapse (or on a device after a passkey confirmation). An MCP token gives only the MCP tools. Dedicated browser tokens give only connector access.
+  Both types remain valid until revoked. Other API routes still require a signed-in device.
 - **Stored secrets** are hashes. A copy of `auth.db` does not give anyone a working token.
 - **Pages from another device** must also pass the Origin check, so a paired device's browser
   cannot be used for CSRF either.

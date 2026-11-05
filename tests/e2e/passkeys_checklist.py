@@ -281,6 +281,38 @@ async def main():
             r = http.post(remote_url, json=init, headers={"Authorization": f"Bearer {token}"})
             check("removing the token locks the app out", ok and r.status_code == 401, r.status_code)
 
+            # -- browser tokens use a separate, revocable scope ---------------------------------------
+            await mac.click("[data-connector-new]")
+            await fill_prompt(mac, "Browser extension")
+            await mac.wait_for_selector("[data-ai-fresh] pre")
+            browser_token = (await mac.text_content("[data-ai-fresh] pre")).strip()
+            explanation = await mac.inner_text("[data-ai-fresh]")
+            check(
+                "browser setup shows a dedicated browser token",
+                browser_token.startswith("syn_connector_")
+                and "until you remove" in explanation
+                and "saving and filing" in explanation,
+            )
+            entries = http.get(f"{LOCAL}/api/mcp/tokens").json()["tokens"]
+            check(
+                "Settings lists browser scope",
+                len(entries) == 1 and entries[0]["scope"] == "connector",
+            )
+            browser_headers = {"Authorization": f"Bearer {browser_token}", "Origin": "chrome-extension://test"}
+            ping = http.get(f"https://{ip}:{PORT}/api/connector/ping", headers=browser_headers)
+            denied = http.post(remote_url, json=init, headers={"Authorization": f"Bearer {browser_token}"})
+            check(
+                "the browser token reaches the connector but cannot use MCP",
+                ping.status_code == 200 and denied.status_code == 401,
+            )
+            await mac.click("[data-ai-done]")
+            await mac.click("[data-ai-remove]")
+            await mac.wait_for_selector("text=Remove the token")
+            await mac.click(".dialog button:has-text('Remove')")
+            ok = await wait_for(lambda: mac.evaluate("() => !document.querySelector('[data-ai-token]')"))
+            denied = http.get(f"https://{ip}:{PORT}/api/connector/ping", headers=browser_headers)
+            check("removing the browser token revokes connector access", ok and denied.status_code == 401)
+
             # -- removing the passkey ------------------------------------------------------------------
             await mac.click('.settings-nav [data-nav="devices"]')
             await mac.click("[data-passkey-remove]")

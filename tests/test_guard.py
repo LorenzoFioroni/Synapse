@@ -203,7 +203,7 @@ def test_unpaired_devices_can_fetch_only_standalone_auth_scripts(client, built_f
 
 @pytest.mark.parametrize("origin", [None, "chrome-extension://abc", "moz-extension://abc"])
 def test_remote_connector_token(client, svc, origin):
-    entry, token = svc.tokens.create("Browser extension")
+    entry, token = svc.tokens.create("Browser extension", scope="connector")
     headers = {"Authorization": f"Bearer {token}"}
     if origin:
         headers["Origin"] = origin
@@ -241,7 +241,7 @@ def test_remote_extension_requires_token(client, token):
 
 
 def test_connector_token_does_not_bypass_host_or_website_checks(client, svc):
-    _, token = svc.tokens.create("Browser extension")
+    _, token = svc.tokens.create("Browser extension", scope="connector")
     for extra in [{"Host": "evil.example"}, {"Origin": "https://evil.example"}]:
         headers = {"Authorization": f"Bearer {token}", **extra}
         assert client.get("/api/connector/ping", headers=headers).status_code == 403

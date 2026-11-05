@@ -617,6 +617,7 @@ export interface PasskeysOverview extends AdminState {
 
 /** An access token for an AI app using the MCP endpoint (backend/access/tokens.py). */
 export interface AccessToken {
+  scope?: 'mcp' | 'connector';
   id: string;
   name: string;
   created: string;
