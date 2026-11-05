@@ -49,8 +49,40 @@ export interface PageSpec {
   title: string;
   /** One of the app's icon names (e.g. 'calendar', 'list', 'globe'); a puzzle piece by default. */
   icon?: string;
-  /** Draw the page into `el` (inside an element with data-plugin="<plugin id>"). */
-  mount: (el: HTMLElement) => Cleanup;
+  /** Draw the page into `el` (inside an element with data-plugin="<plugin id>") in the desktop
+      layout. Leave it out for a page that exists on phones only. */
+  mount?: (el: HTMLElement) => Cleanup;
+  /** Draw the page on a phone (the phone layout lists it in its Plugins tab and may pin it to the
+      tab bar). `nav` pushes screens of the page's own and opens notes and papers. Without it,
+      phones list the page as needing a larger screen. */
+  phone?: (el: HTMLElement, nav: PhoneNav) => Cleanup;
+}
+
+/** What a page's phone layout can ask of the phone shell. */
+export interface PhoneNav {
+  /** Show a screen of the page's own on top, with a back button. */
+  push(screen: { title: string; mount: (el: HTMLElement) => Cleanup }): void;
+  back(): void;
+  openNote(path: string): void;
+  openItem(id: string): void;
+}
+
+/** Something to make from the phone's "+" sheet. */
+export interface CaptureSpec {
+  id: string;
+  title: string;
+  icon?: string;
+  run: () => unknown;
+}
+
+/** A button above the keyboard while a note is edited on a phone. */
+export interface EditorButtonSpec {
+  id: string;
+  title: string;
+  icon?: string;
+  /** Short text instead of the icon, e.g. "[@". */
+  label?: string;
+  run: (view: import('@codemirror/view').EditorView) => unknown;
 }
 
 export interface ItemSectionSpec {
@@ -70,6 +102,9 @@ export interface ItemActionSpec {
   /** Also offered for papers from a list that are not in the library (`item._outside`); without
       it, the action is left out whenever such a paper is selected. */
   outside?: boolean;
+  /** 'dismiss': the action takes papers off the plugin's list; phones run it for "Not for me" and
+      for a swipe to the left. */
+  role?: 'dismiss';
   when?: (items: PluginItem[]) => boolean;
   run: (items: PluginItem[]) => unknown;
 }
@@ -196,7 +231,11 @@ export interface PluginContext {
     suggestions: { register(source: SuggestionSource): Dispose };
     /** Called when a note editor opens; activation should also check existing editors. */
     onOpened(fn: () => void): Dispose;
+    /** Buttons above the keyboard while a note is edited on a phone. */
+    toolbar: { register(spec: EditorButtonSpec): Dispose };
   };
+  /** Entries in the phone's "+" sheet (after a note, a PDF and a paper by identifier). */
+  capture: { register(spec: CaptureSpec): Dispose };
   commands: { register(spec: CommandSpec): Dispose };
   pages: {
     register(spec: PageSpec): Dispose;

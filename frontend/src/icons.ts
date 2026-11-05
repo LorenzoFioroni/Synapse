@@ -4,6 +4,8 @@ const P: Record<string, string> = {
   megaphone: '<path d="M2 5h4l7-3v10L6 9H2zM4 10h3l1 4H5z" fill="currentColor" stroke="none"/>',
   star: '<path d="m8 1.5 2 4.1 4.5.7-3.2 3.1.7 4.5L8 11.8l-4 2.1.8-4.5L1.5 6.3 6 5.6Z" fill="currentColor" stroke="none"/>',
   plus: '<path d="M8 3v10M3 8h10"/>',
+  more: '<path d="M3.5 8h.01M8 8h.01M12.5 8h.01" stroke-width="2.4"/>',
+  image: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M3 12l3.5-3.5 2.5 2.5 1.5-1.5L13 12"/>',
   wand: '<path d="M3 13l7-7"/><path d="M11 2v2M14 5h-2M13.5 2.5l-1.2 1.2M9 3.2l.6.9M12.8 7l-.9-.6"/>',
   import: '<path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 11v2h10v-2"/>',
   export: '<path d="M8 10V2M5 5l3-3 3 3"/><path d="M3 11v2h10v-2"/>',

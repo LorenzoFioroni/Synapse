@@ -35,6 +35,8 @@ async def main():
             browser = await browser_type(p).launch()
             for profile in ["iPad Pro 11", "iPhone 13"]:
                 context = await browser.new_context(**p.devices[profile])
+                # the desktop layout on a phone too (phones get their own by default; phone_checklist.py)
+                await context.add_init_script("localStorage.setItem('zc.layout', 'desktop')")
                 page = await context.new_page()
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))

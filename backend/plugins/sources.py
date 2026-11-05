@@ -116,6 +116,8 @@ class SourceList:
                     item["highlight"] = rec["highlight"]
                 if rec.get("reasons"):
                     item["reasons"] = rec["reasons"]  # why the plugin lists it, also for a library paper
+                if rec.get("_group"):
+                    item["_group"] = rec["_group"]
                 out.append(item)
             else:
                 out.append({**rec, "_rank": rank})

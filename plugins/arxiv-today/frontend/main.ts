@@ -46,7 +46,7 @@ export function activate(p: PluginContext): void {
   }
 
   p.itemActions.register({
-    id: 'dismiss', title: 'Dismiss from arXiv Today', icon: 'close', outside: true,
+    id: 'dismiss', title: 'Dismiss from arXiv Today', icon: 'close', outside: true, role: 'dismiss',
     when: fromLists, run: (items) => dismiss(items),
   });
   const opened = (arxiv: string) => { p.backend.post('/opened', { id: arxiv }).catch(() => undefined); };

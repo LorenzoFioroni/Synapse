@@ -86,6 +86,7 @@ def activate(plugin: Plugin) -> None:
             "year": int(r["day"][:4]),
             "item_type": "preprint",
             "reasons": ([{"kind": "following", "text": following}] if following else []) + why,
+            **({"group": scoring.TIER_TEXT.get(r["tier"], r["tier"])} if r["tier"] else {}),
         }
 
     def stored(arxiv: str) -> bool:

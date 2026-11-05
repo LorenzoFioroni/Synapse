@@ -7,9 +7,13 @@ import { noteHooksChanged } from '../views/notes/hooks.js';
 import { renderDefaults } from '../views/notes/render.js';
 import type { TaskIntegration } from './task-runtime.js';
 let active: TaskIntegration | null = null;
+let provider: string | null = null;
+/** The plugin that provides Tasks now (its id), or null. */
+export const activeTaskProvider = (): string | null => provider;
 export function registerTaskIntegration(owner: string, integration: TaskIntegration): () => void {
   if (active) throw new Error('A Tasks interface is already registered');
   active = integration;
+  provider = owner;
   const before = { taskHtml: renderDefaults.taskHtml, taskBlockHtml: renderDefaults.taskBlockHtml };
   Object.assign(taskHooks, integration.notes);
   Object.assign(renderDefaults, integration.render);
@@ -27,6 +31,7 @@ export function registerTaskIntegration(owner: string, integration: TaskIntegrat
   return () => {
     if (active !== integration) return;
     active = null;
+    provider = null;
     off('tasks-count', changed); remove();
     integration.destroy();
     for (const key of Object.keys(taskHooks) as (keyof typeof taskHooks)[]) taskHooks[key] = null;

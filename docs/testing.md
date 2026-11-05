@@ -244,6 +244,7 @@ CDP-specific gesture/authenticator scenarios stay on Chromium.
 | `links` | 8767 | Note links: autocomplete, citation cards, side panels, the item pane |
 | `list_perf` | 8779 | 10,000 items: fast list, few rows in the DOM, quick selection, small changes without a full reload |
 | `multipdf` | 8788 | Items with several PDFs: citations, cards and menus |
+| `phone` | 8824 | The phone layout in a Pixel 5 profile: the tab bar (Library, Notes, +, a pinned plugin list, Plugins), a narrow mouse window keeping the desktop layout, library rows and a paper's page, menus as sheets, the PDF over the screen and Back, a note read then edited with the bar above the keyboard (plugin buttons too), a citation's sheet, a plugin's grouped list as cards and rows (Add, Not for me, a swipe), the Plugins tab with a phone page and a desktop-only one, choosing the pinned tab, Tasks on a phone, the + sheet with plugin entries, a plugin turned off, switching to the desktop layout and back |
 | `portable_touch` | 8809 | Portable iPad/iPhone touch taps, PDF viewport, note editing/save and Settings search in Chromium/WebKit |
 | `passkey_ui` | 8810 | Passkey feature detection, cancellation and service errors with explicit credential/service stubs in Chromium/WebKit |
 | `notes` | 8765 | The notes editor |

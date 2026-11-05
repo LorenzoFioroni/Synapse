@@ -18,9 +18,14 @@ export interface MenuItem {
 }
 
 let current: HTMLElement | null = null;
+let backdrop: HTMLElement | null = null;
+/** Phones show every menu as a sheet from the bottom of the screen (phone/main.ts sets this). */
+let asSheets = false;
+export function menusAsSheets(on: boolean): void { asSheets = on; }
 
 export function closeMenu() {
   if (current) { current.remove(); current = null; document.removeEventListener('keydown', onKey, true); }
+  if (backdrop) { backdrop.remove(); backdrop = null; }
 }
 
 function onKey(e: KeyboardEvent) {
@@ -62,6 +67,17 @@ export function openMenu(entries: MenuEntry[], at: { x: number; y: number } | El
     });
     el.appendChild(b);
   }
+  if (asSheets) {
+    // a sheet: the entries from the bottom edge, over a dimmed page that closes it when tapped
+    backdrop = h('<div class="menu-sheet-backdrop"></div>');
+    backdrop.addEventListener('click', (ev) => { ev.stopPropagation(); closeMenu(); });
+    el.classList.add('menu-sheet');
+    el.insertBefore(h('<div class="sheet-grabber" aria-hidden="true"></div>'), el.firstChild);
+    document.body.append(backdrop, el);
+    current = el;
+    document.addEventListener('keydown', onKey, true);
+    return el;
+  }
   document.body.appendChild(el);
   let x: number, y: number;
   if (at instanceof Element) {
@@ -77,6 +93,8 @@ export function openMenu(entries: MenuEntry[], at: { x: number; y: number } | El
   return el;
 }
 
-document.addEventListener('pointerdown', (e) => { if (current && !current.contains(e.target as Node)) closeMenu(); });
+// a sheet's backdrop closes it on click, so the tap that closes it does not reach the page beneath
+document.addEventListener('pointerdown', (e) => { if (current && !current.contains(e.target as Node) && e.target !== backdrop) closeMenu(); });
 window.addEventListener('blur', closeMenu);
-window.addEventListener('resize', closeMenu);
+// (a sheet stays: on a phone the window resizes whenever the keyboard comes or goes)
+window.addEventListener('resize', () => { if (!asSheets) closeMenu(); });

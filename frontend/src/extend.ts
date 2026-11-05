@@ -28,7 +28,44 @@ export interface Page {
   icon?: string;
   source?: string;
   owner?: string;
-  mount: (el: HTMLElement) => Cleanup;
+  /** The page in the desktop layout (a sidebar entry); without it the page exists on phones only. */
+  mount?: (el: HTMLElement) => Cleanup;
+  /** The page in the phone layout (phone/), with what it may do there; without it phones list the
+   *  page as needing a larger screen. */
+  phone?: (el: HTMLElement, nav: PhoneNav) => Cleanup;
+}
+
+/** What a page's phone layout can ask of the phone shell (phone/shell.ts). */
+export interface PhoneNav {
+  /** Show a screen of its own on top (with a back button titled after this page). */
+  push(screen: { title: string; mount: (el: HTMLElement) => Cleanup }): void;
+  /** Go back one screen. */
+  back(): void;
+  openNote(path: string): void;
+  openItem(id: string): void;
+}
+
+/** Something to make from the phone's "+" sheet (a task, say), beside a note, a PDF or a paper. */
+export interface CaptureEntry {
+  id: string;
+  title: string;
+  icon?: string;
+  source?: string;
+  owner?: string;
+  run: () => unknown;
+}
+
+/** A button in the bar above the keyboard while a note is edited on a phone. */
+export interface EditorButton {
+  id: string;
+  title: string;
+  icon?: string;
+  /** Short text shown instead of an icon (e.g. "[@"). */
+  label?: string;
+  source?: string;
+  owner?: string;
+  /** ``view`` is the CodeMirror EditorView of the note being edited. */
+  run: (view: import('@codemirror/view').EditorView) => unknown;
 }
 
 export interface ItemSection {
@@ -48,6 +85,8 @@ export interface ItemAction {
   owner?: string;
   /** Also for papers from a plugin's list that are not in the library. */
   outside?: boolean;
+  /** 'dismiss': takes papers off the plugin's list; phones run it for "Not for me" and a swipe to the left. */
+  role?: 'dismiss';
   when?: (items: Item[]) => boolean;
   run: (items: Item[]) => unknown;
 }
@@ -115,6 +154,8 @@ export const pages = new Registry<Page>();
 export const itemSections = new Registry<ItemSection>();
 export const itemActions = new Registry<ItemAction>();
 export const settingsSections = new Registry<SettingsSection>();
+export const captures = new Registry<CaptureEntry>();
+export const editorButtons = new Registry<EditorButton>();
 /** Badges on pages' sidebar entries (a count or a short text), by page id. */
 export const badges = new Map<string, string>();
 

@@ -4,7 +4,7 @@
 // turned one on or off. A plugin's module is loaded again when the plugin restarts (its start time
 // is part of the URL). See docs/plugins.md.
 import { type ApiError, api } from '../api.js';
-import { type Dispose, badges, commands, itemActions, itemSections, keyProblem, pages, parseKey, settingsSections } from '../extend.js';
+import { type Dispose, badges, captures, commands, editorButtons, itemActions, itemSections, keyProblem, pages, parseKey, settingsSections } from '../extend.js';
 import { icon } from '../icons.js';
 import * as A from '../actions.js';
 import { currentSource, emit, on, selectedItems, state, syncFieldColumns } from '../store.js';
@@ -130,7 +130,15 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
         noteHooks.editorOpened.add(opened);
         return keep(() => { noteHooks.editorOpened.delete(opened); });
       },
+      toolbar: { register: (spec) => keep(editorButtons.register({
+        id: full(spec.id), title: spec.title, icon: spec.icon, label: spec.label, source: src, owner: pid,
+        run: (view) => guarded(info, `editor button ${spec.id}`, spec.run)(view),
+      })) },
     },
+    capture: { register: (spec) => keep(captures.register({
+      id: full(spec.id), title: spec.title, icon: spec.icon, source: src, owner: pid,
+      run: guarded(info, `capture ${spec.id}`, spec.run),
+    })) },
     commands: {
       register: (spec) => {
         let key = spec.key;
@@ -146,10 +154,14 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
       },
     },
     pages: {
-      register: (spec) => keep(pages.register({
-        id: full(spec.id), title: spec.title, icon: spec.icon, source: src, owner: pid,
-        mount: (el) => guarded(info, `page ${spec.id}`, spec.mount)(el),
-      })),
+      register: (spec) => {
+        if (!spec.mount && !spec.phone) throw new Error(`Page ${spec.id} needs mount or phone`);
+        return keep(pages.register({
+          id: full(spec.id), title: spec.title, icon: spec.icon, source: src, owner: pid,
+          mount: spec.mount ? (el) => guarded(info, `page ${spec.id}`, spec.mount!)(el) : undefined,
+          phone: spec.phone ? (el, nav) => guarded(info, `page ${spec.id}`, spec.phone!)(el, nav) : undefined,
+        }));
+      },
       setBadge: (pageId, value) => {
         if (rec.disposed) return;
         const id = full(pageId);
@@ -172,6 +184,7 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
         const fits = (items: Item[]) => !!spec.outside || !items.some((i) => i._outside);
         const action = {
           id, title: spec.title, icon: spec.icon, source: src, owner: pid, outside: !!spec.outside,
+          role: spec.role === 'dismiss' ? 'dismiss' as const : undefined,
           when: (items: Item[]) => fits(items) && (!spec.when || !!guarded(info, `action ${spec.id}`, spec.when)(copy(items) as PluginItem[])),
           run: (items: Item[]) => guarded(info, `action ${spec.id}`, spec.run)(copy(items) as PluginItem[]),
         };

@@ -34,7 +34,7 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
 |---|---|
 | `server.py` | Starts the web app: parses the flags, builds a `Config`, calls `backend.create_app`, and serves it with Werkzeug's threaded server, over HTTPS with `--cert`/`--key`. `--window` opens it in a window of its own, `--quit-when-closed` stops it with its last window and `--make-shortcut` makes a desktop icon that does both (see [the app window](desktop.md)). |
 | `mcp_server.py` | The MCP server that AI apps (Claude Desktop, Claude Code, Codex …) start themselves. It reads the same `data/` folder. New notes it writes go into `notes/ai/`; changes it makes to existing notes are hash-checked and recorded so they can be undone (see [MCP](mcp.md)). |
-| `frontend/index.html` | The single-page app. It loads `js/main.js` as an ES module. |
+| `frontend/index.html` | The single-page app. It loads `js/main.js` as an ES module, which builds the desktop layout, or on a phone hands over to the phone layout (`phone/main.ts`, see [phone](phone.md)). |
 | `frontend/viewer.html` | The PDF viewer, opened in one of the app's own tabs (a frame in `index.html`) or in a browser tab of its own. It loads pdf.js and `js/viewer/viewer.js` (the viewer), then its add-ons `notesBridge`, `links` and `annotations`. |
 | `frontend/pair.html` | The page the pairing QR code opens on another device; its standalone script is `src/access/pair.ts`. |
 | `frontend/signin.html` | What a device that is not signed in sees instead of any page: how to pair, and **Sign In with a Passkey**, driven by standalone `src/access/signin.ts`. |
@@ -145,7 +145,12 @@ once, `npm ci` in `frontend/`.
 
 The JavaScript unit tests (`tests/js/*.test.mjs`) run on the built `js/`; pytest builds it first.
 
-The shell is responsive down to phone widths. At 700px and below the toolbar wraps, secondary
+Phones get a layout of their own (`frontend/src/phone/`, see [the phone layout](phone.md)): a
+tab bar, screens pushed on top, sheets, and plugin destinations in a Plugins tab. It shares the
+store, the actions, the API client and the plugins with the desktop layout described next.
+
+The desktop shell is responsive down to phone widths (a phone told to use it, a narrow window).
+At 700px and below the toolbar wraps, secondary
 actions move to its More menu, configured library columns remain available in the list's own
 horizontal scroller, and item, note and task details use one full-width pane at a time. Settings
 uses a horizontally scrolling section strip.
@@ -181,11 +186,15 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   `settings/search.ts` filters built-in and dynamic plugin sections without rebuilding controls.
   Backups, devices, passkeys, AI Access, plugin lifecycle and export formats have modules under
   `views/settings/`. Notes preferences have their own section.
+- `phone/*` is the phone layout: `layout.ts` decides which layout a page gets, `shell.ts` the tab
+  bar and stacks of screens, `library.ts`, `notes.ts`, `reader.ts` and `plugins.ts` the screens,
+  `ui.ts` shared pieces, `model.ts` the decisions without a DOM. See [phone](phone.md).
 - `plugins/*` bridges public plugin contributions into the app. `host.ts` owns frontend lifecycle;
   suggestion, Markdown, graph/notes, task and progress bridges connect plugins to the existing
   views. Bundled plugin implementations live under top-level `plugins/`, as mapped above. See
   [Frontend](frontend.md) and [Plugin authoring](plugin-authoring.md) for individual modules.
-- `extend.ts` holds the extension points the views read: workspace navigation (Tasks and the public Notes visualization bridge,
+- `extend.ts` holds the extension points the views read (also the phone's: a page's `phone`
+  layout, `captures` for the + sheet, `editorButtons` above the keyboard, an action's `role`): workspace navigation (Tasks and the public Notes visualization bridge,
   registered and disposed with their plugins), commands (the command palette,
   `views/palette.ts`), pages (`views/pages.ts`, listed in the sidebar), item-pane sections and item
   actions. `plugins/host.ts` loads plugins' frontends and registers what they add there; the types

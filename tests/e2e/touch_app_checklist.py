@@ -275,6 +275,9 @@ async def main():
 
             # ---- phone: one useful pane at a time -----------------------------------------------
             ctx = await browser.new_context(**p.devices["Pixel 5"])
+            # the desktop layout squeezed onto a phone, as chosen with "Use the Desktop Layout"
+            # (phones get their own layout by default: phone_checklist.py)
+            await ctx.add_init_script("localStorage.setItem('zc.layout', 'desktop')")
             page = await ctx.new_page()
             page.on("pageerror", lambda e: errors.append(str(e)))
             await page.goto(BASE)

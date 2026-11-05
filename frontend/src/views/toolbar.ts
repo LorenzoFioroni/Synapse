@@ -3,6 +3,7 @@ import * as A from '../actions.js';
 import { icon } from '../icons.js';
 import { on, state } from '../store.js';
 import { initNotifications } from '../notifications/center.js';
+import { phoneScreen, switchLayout } from '../phone/layout.js';
 import { openMenu, closeMenu } from '../ui/menu.js';
 import type { SearchMode } from '../types.js';
 import { debounce, modLabel } from '../util.js';
@@ -146,6 +147,8 @@ function openMobileMenu(anchor: HTMLElement): void {
       run: () => notesOpen() ? notesPanelButton('pane') : tasksPage.isOpen() ? tasksPage.panelButton('pane') : toggleItemPane() },
     'sep',
     { label: 'Settings', icon: 'gear', run: () => openSettings() },
+    // the desktop layout on a phone (chosen there): the way back to the phone's own
+    phoneScreen() && { label: 'Use the Phone Layout', icon: 'tablet', run: () => switchLayout('phone') },
   ], anchor);
 }
 

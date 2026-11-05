@@ -54,8 +54,9 @@ and MCP tools call the same domain functions. Return JSON from routes and call t
 
 | Feature | Extension point |
 |---|---|
-| A standalone screen | `p.pages.register`; open with `p.pages.open` |
-| A list of papers | Backend `@plugin.item_source`, frontend `p.sources.open` |
+| A standalone screen | `p.pages.register`; open with `p.pages.open`. Give it a `phone` layout too (API 1.11), or phones list it as needing a larger screen |
+| A list of papers | Backend `@plugin.item_source`, frontend `p.sources.open`; on phones it is drawn for you (papers' `group`, an action with `role: 'dismiss'`) |
+| Something quick to add on a phone | `p.capture.register` (the **+** sheet), `p.editor.toolbar.register` (above the keyboard while writing a note) |
 | An item attribute | `plugin.fields.declare`, with stored or refreshed values |
 | Contextual details or actions | `p.itemPane.register`, `p.itemActions.register` |
 | A command or shortcut | `p.commands.register` (respect reserved keys) |
