@@ -244,6 +244,8 @@ def install(
             "script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
             "object-src 'none'; base-uri 'none'; frame-ancestors 'self'"
         )
+        # A file is only ever what its declared type says: no guessing a page or script from bytes.
+        resp.headers["X-Content-Type-Options"] = "nosniff"
         return resp
 
     @app.after_request

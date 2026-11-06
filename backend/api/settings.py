@@ -5,10 +5,12 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 
 from ..library import citekeys
-from ..settings import DEFAULTS, SEARCH_MODES, SettingsError
-from . import body, error, svc
+from ..settings import ADMIN_KEYS, DEFAULTS, SEARCH_MODES, SettingsError
+from . import admin, body, error, svc
 
 bp = Blueprint("settings", __name__, url_prefix="/api/settings")
+
+BACKUP_REFUSED = "Backup settings can only be changed on the computer running Synapse."
 
 SAMPLE = {
     "authors": "Cui, Jian; Cirac, J. Ignacio; Bañuls, Mari Carmen",
@@ -28,8 +30,12 @@ def get_settings():
 
 @bp.put("")
 def put_settings():
+    changes, settings = body(), svc().settings
+    if any(k in changes and changes[k] != settings.get(k) for k in ADMIN_KEYS):
+        if (refused := admin.refusal(BACKUP_REFUSED)) is not None:
+            return refused
     try:
-        return jsonify(settings=svc().settings.update(body()))
+        return jsonify(settings=settings.update(changes))
     except SettingsError as e:
         return error(str(e))
 

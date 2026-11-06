@@ -13,6 +13,7 @@ import { bindBackups, refreshBackups } from './settings/backups.js';
 import { bindAiAccess, forgetFreshToken, refreshAiAccess } from './settings/aiAccess.js';
 import { bindDevices, cancelPairing, refreshDevices } from './settings/devices.js';
 import { bindPasskeys, refreshPasskeys } from './settings/passkeys.js';
+import { asAdmin } from './settings/confirm.js';
 import { SECTIONS_EVENT, bindPlugins, refreshPlugins } from './settings/plugins.js';
 import { refreshExportFormats } from './settings/exportFormats.js';
 import { mountPluginSections } from './settings/pluginSections.js';
@@ -35,9 +36,29 @@ export function applyAppearance(s: Settings = state.settings): void {
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyAppearance());
 
+/** Put the controls of these settings back to the saved values (after a change was not saved). */
+function showSaved(keys: string[]): void {
+  if (!view) return;
+  const saved = state.settings as unknown as Record<string, unknown>;
+  for (const k of keys) {
+    const v = saved[k];
+    view.querySelectorAll<HTMLInputElement | HTMLSelectElement>(`[data-key="${CSS.escape(k)}"]`).forEach((el) => {
+      if (el instanceof HTMLInputElement && el.type === 'checkbox') el.checked = !!v;
+      else el.value = String(v ?? '');
+    });
+    view.querySelectorAll<HTMLElement>(`[data-seg="${CSS.escape(k)}"] button`).forEach((b) => b.classList.toggle('active', b.dataset.v === String(v)));
+  }
+}
+
 async function save(changes: Partial<Settings>, el?: Element): Promise<boolean> {
   try {
-    const res = await api.saveSettings(changes);
+    // Backup settings need a passkey confirmation when this is not the computer Synapse runs on.
+    const res = await asAdmin(() => api.saveSettings(changes));
+    if (!res) {
+      showSaved(Object.keys(changes));
+      toast('Not saved: changing this from another device needs your passkey.', { type: 'error' });
+      return false;
+    }
     state.settings = res.settings;
     applyAppearance();
     emit('settings');

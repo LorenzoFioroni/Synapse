@@ -185,8 +185,8 @@ python server.py --pairing-link   # on that computer (over SSH): a one-time link
 `--lan` or a non-loopback `--host` is refused so direct network access cannot bypass the tunnel.
 Every request through the tunnel needs a signed-in device, whatever address it comes from. Pair
 your phone with the link, add a passkey there, and sign your other devices in with it. Pairing more
-devices, making AI access tokens and removing devices or passkeys work from a signed-in device after
-confirming with the passkey (Face ID / Touch ID). The full setup, with a systemd service and the
+devices, making AI access tokens, removing devices or passkeys, changing plugins and changing the
+backup settings work from a signed-in device after confirming with the passkey (Face ID / Touch ID). The full setup, with a systemd service and the
 Cloudflare steps: [docs/remote-access.md](docs/remote-access.md).
 
 Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):

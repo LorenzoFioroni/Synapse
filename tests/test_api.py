@@ -258,3 +258,44 @@ def test_create_accepts_empty_item(client):
     r = client.post("/api/items", json={})
     assert r.status_code == 201
     assert r.get_json()["title"] == ""
+
+
+def test_only_pdfs_are_attached_and_shown(client, svc, tmp_path):
+    """An HTML page or script uploaded as an "attachment" would run with the user's session if it
+    were served from the app's origin as what it is."""
+    item = client.post("/api/items", json={"title": "Plain title"}).get_json()
+    pdf = make_pdf(tmp_path / "paper.pdf", "Some text")
+
+    def upload(url, *files):
+        data = {"file": [(io.BytesIO(content), name) for name, content in files]}
+        return client.post(url, data=data, content_type="multipart/form-data")
+
+    page = b"<html><script>fetch('/api/settings')</script></html>"
+    for url in (f"/api/items/{item['id']}/attachments", "/api/items/from_pdf"):
+        r = upload(url, ("paper.pdf", pdf.read_bytes()), ("page.html", page))
+        assert r.status_code == 415 and "page.html" in r.get_json()["error"]
+    assert client.get(f"/api/items/{item['id']}").get_json()["attachments"] == []
+    assert len(client.get("/api/items").get_json()["items"]) == 1  # from_pdf made no item either
+    assert list(svc.config.pdf_dir.iterdir()) == []  # nothing of the refused batch was kept
+
+    r = upload(f"/api/items/{item['id']}/attachments", ("x.html", b"%PDF-1.4" + pdf.read_bytes()[8:]))
+    url = r.get_json()["attachments"][0]["url"]
+    assert url.endswith("_x.pdf")  # the stored name never carries another type
+    resp = client.get(f"/pdfs/{url}")
+    assert resp.status_code == 200 and resp.mimetype == "application/pdf"
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+    assert "attachment" not in resp.headers.get("Content-Disposition", "")
+
+    # a file left in the folder from before uploads were checked is only offered as a download
+    (svc.config.pdf_dir / "old_page.html").write_bytes(page)
+    resp = client.get("/pdfs/old_page.html")
+    assert resp.status_code == 200 and resp.mimetype == "application/octet-stream"
+    assert resp.headers["Content-Disposition"].startswith("attachment")
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+    assert client.get("/pdfs/../library.db").status_code == 404
+    assert client.get("/pdfs/missing.pdf").status_code == 404
+
+
+def test_every_response_says_nosniff(client):
+    for url in ("/", "/api/settings", "/api/items"):
+        assert client.get(url).headers["X-Content-Type-Options"] == "nosniff"

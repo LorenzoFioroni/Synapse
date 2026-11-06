@@ -7,6 +7,7 @@ import { confirmDialog } from '../../ui/dialog.js';
 import { toast, toastError } from '../../ui/toast.js';
 import { escapeHtml, formatBytes, formatDate, plural } from '../../util.js';
 import { installHtml, openVaultHistory } from '../notes/historyView.js';
+import { asAdmin } from './confirm.js';
 import { flashSaved } from './page.js';
 
 /** Whether the notes history is on (it needs Git), in the open Settings page ``view``. */
@@ -50,7 +51,12 @@ export function bindBackups(view: HTMLElement): void {
     const errEl = view.querySelector<HTMLElement>('[data-backup-dir-error]')!;
     errEl.hidden = true;
     try {
-      const res = await api.saveSettings({ backup_dir: bdir.value.trim() });
+      // a passkey confirmation first when this is not the computer Synapse runs on
+      const res = await asAdmin(() => api.saveSettings({ backup_dir: bdir.value.trim() }));
+      if (!res) {
+        bdir.value = state.settings.backup_dir;
+        throw new Error('Not saved: changing the backup folder from another device needs your passkey.');
+      }
       state.settings = res.settings;
       flashSaved(bdir.closest('.setting'));
       refreshBackups(view);

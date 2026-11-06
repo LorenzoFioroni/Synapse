@@ -428,6 +428,28 @@ def test_plugin_changes_need_confirmation_from_another_device(mac, ipad):
     assert secure(ipad, "POST", "/api/plugin-host/graph/enable", remote=True).status_code != 403
 
 
+def test_backup_settings_need_confirmation_from_another_device(mac, ipad, tmp_path):
+    # With a stolen device cookie, the backup folder could copy the whole library elsewhere, and
+    # "keep 1" would prune the backups right before deleting things.
+    auth = Authenticator()
+    add_passkey(mac, auth)
+    assert sign_in(ipad, auth).status_code == 201
+    elsewhere = str(tmp_path / "elsewhere")
+    for change in ({"backup_dir": elsewhere}, {"backup_keep": 1}, {"backup_interval": "off"}):
+        r = secure(ipad, "PUT", "/api/settings", remote=True, json=change)
+        assert r.status_code == 403 and r.get_json().get("confirm") is True, change
+    assert not (tmp_path / "elsewhere").exists()
+    s = secure(ipad, "GET", "/api/settings", remote=True).get_json()["settings"]
+    # other settings, and sending the backup settings unchanged, need no confirmation
+    unchanged = {k: s[k] for k in ("backup_dir", "backup_keep", "backup_interval")}
+    assert secure(ipad, "PUT", "/api/settings", remote=True, json={**unchanged, "theme": "dark"}).status_code == 200
+    # the computer running Synapse, and a confirmed device, may change them
+    assert secure(mac, "PUT", "/api/settings", json={"backup_keep": 14}).status_code == 200
+    assert confirm(ipad, auth).status_code == 200
+    r = secure(ipad, "PUT", "/api/settings", remote=True, json={"backup_keep": 30})
+    assert r.status_code == 200 and r.get_json()["settings"]["backup_keep"] == 30
+
+
 def test_admin_actions_from_a_device_need_a_confirmation(lan_app, mac, ipad):
     auth = Authenticator()
     add_passkey(mac, auth)

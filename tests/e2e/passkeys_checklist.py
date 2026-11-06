@@ -220,6 +220,11 @@ async def main():
                 " body: JSON.stringify({ name: 'x' }) }).then(r => r.json())"
             )
             check("… nor make an access token without confirming", r.get("confirm") is True, r)
+            r = await ipad.evaluate(
+                "() => fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' },"
+                " body: JSON.stringify({ backup_keep: 1 }) }).then(r => r.json())"
+            )
+            check("… nor change the backup settings without confirming", r.get("confirm") is True, r)
             # Settings → Plugins asks for the passkey like the other pages (it used to show only the refusal)
             await ipad.evaluate("() => import('/js/views/settingsView.js').then(m => m.openSettings('plugins'))")
             toggle = '.plugin-row[data-plugin="graph"] .switch'
@@ -233,6 +238,15 @@ async def main():
             await ipad.click(".dialog-backdrop:last-of-type button:has-text('Turn On')")
             ok = await wait_for(lambda: ipad.evaluate(graph_on))
             check("… and on again", ok)
+            await ipad.keyboard.press("Escape")
+            # Settings → Backups: changing how many backups to keep saves from the iPad (confirmed above)
+            await ipad.evaluate("() => import('/js/views/settingsView.js').then(m => m.openSettings('backups'))")
+            await ipad.wait_for_selector('[data-key="backup_keep"]')
+            await ipad.select_option('[data-key="backup_keep"]', "14")
+            keep = "() => fetch('/api/settings').then(r => r.json()).then(o => o.settings.backup_keep)"
+            ok = await wait_for(lambda: ipad.evaluate(f"() => ({keep})().then(k => k === 14)"))
+            refused = await ipad.locator(".toast", has_text="passkey").count()
+            check("the iPad changes the backup settings in Settings", ok and not refused, refused)
             await ipad.keyboard.press("Escape")
             await ipad.evaluate("() => import('/js/views/settingsView.js').then(m => m.openSettings('ai'))")
             await ipad.wait_for_selector("[data-ai-new]")

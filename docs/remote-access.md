@@ -53,8 +53,8 @@ The public name is accepted by the Host check, and changes must come from
 
 On a server you don't sit at, the actions that were reserved for "the computer running Synapse" —
 pairing a device, making or removing an access token, adding or removing passkeys, removing other
-devices, and changing plugins (enabling, disabling or reconfiguring them, which runs or changes code
-on the server) — can be done from a signed-in device, **after confirming with a passkey** (Face ID,
+devices, changing plugins (enabling, disabling or reconfiguring them, which runs or changes code
+on the server), and changing the backup settings (folder, schedule, how many to keep) — can be done from a signed-in device, **after confirming with a passkey** (Face ID,
 Touch ID). The server answers such a request with 403 and `confirm: true`; the app asks the browser
 for one of Synapse's passkeys (`POST /api/passkeys/confirm/options`, then `/api/passkeys/confirm`)
 and tries once more. The confirmation is remembered for that device for 5 minutes

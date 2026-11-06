@@ -221,9 +221,16 @@ them again. That is fine because the index is derived data.
 ## Attachments on disk
 
 Attached files sit flat in `pdfs/`, named with a random hex prefix so names never clash: uploads
-are `<hex>_<original name>` (made safe by `secure_filename`), PDFs found online
-`<hex>_downloaded.pdf`, and PDFs from the browser extension `<hex>_connector.pdf`. They are served
-at `/pdfs/<file name>`.
+are `<hex>_<original name>.pdf` (made safe by `secure_filename`, any other extension replaced), PDFs
+found online `<hex>_downloaded.pdf`, and PDFs from the browser extension `<hex>_connector.pdf`. They
+are served at `/pdfs/<file name>`.
+
+Only PDFs are kept: an upload whose first kilobyte has no `%PDF-` header is refused (415) before any
+file of the batch is saved (`backend/pdf/files.py`; downloads are checked the same way in
+`online/remote_pdf.py`). `/pdfs/` serves a PDF as `application/pdf` and anything else found in the
+folder (from before uploads were checked) only as a download, always with
+`X-Content-Type-Options: nosniff` (sent on every response). Attachments come from the app's own
+origin, so an HTML page or script served as itself would run with the signed-in user's session.
 
 Items have a Trash (`papers.deleted_at`), but attached files do not. Moving an item to the Trash
 keeps its files. Deleting an attachment, deleting items for good or emptying the Trash removes
@@ -246,6 +253,10 @@ lists every key with its default value, and its type decides how `update()` coer
 in `update()` (for example `backup_dir` must be an absolute folder that can be written to, and
 the `annotation_color_…` and `annotation_fill_…` keys must be colours like `#ffcc00`, stored in
 lower case).
+
+The backup settings (`ADMIN_KEYS`: `backup_dir`, `backup_interval`, `backup_keep`) can be changed
+only on the computer running Synapse, or from another device after a passkey confirmation
+(`api/settings.py`, see [Remote access](remote-access.md)); sending them unchanged needs none.
 
 - Reading: the file is merged over `DEFAULTS`; unknown keys are ignored, and a file that cannot
   be read or parsed gives the defaults.

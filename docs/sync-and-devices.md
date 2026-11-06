@@ -448,8 +448,8 @@ What is assumed:
   README says to use `--lan` without `--cert` only on a trusted network.
 - **A paired device is trusted with the library.** It has the same API as this computer, apart
   from making or cancelling pairing codes, renaming or removing other devices, adding or removing
-  passkeys, making or removing access tokens, and changing plugins (enabling, disabling or
-  reconfiguring them), which need a fresh passkey confirmation. The one exception is enrolling a
+  passkeys, making or removing access tokens, changing plugins (enabling, disabling or
+  reconfiguring them) and changing the backup settings, which need a fresh passkey confirmation. The one exception is enrolling a
   passkey straight after pairing — the window a just-paired device uses to add its first one
   (`Devices.recently_paired`).
 - **Whoever holds a passkey is the user.** Anyone who has it (a shared iCloud account, say) can
@@ -472,7 +472,7 @@ What is assumed:
 | Which hosts or origins are accepted | `host_allowed`, `allowed_origin` and `refusal` in `backend/access/guard.py` |
 | What an unpaired device may open | `PAIRING_PATHS` in `guard.py` (and keep `frontend/pair.html` and `frontend/signin.html` self-contained) |
 | Which requests count as coming through a proxy | `ProxyMiddleware` and `FORWARD_HEADERS` in `backend/access/proxy.py` |
-| Which actions need a passkey confirmation | the `admin.refusal` calls in `backend/api/` (`devices.py`, `passkeys.py`, `mcp.py`, `plugins.py`); how long one lasts: `CONFIRM_TTL` in `backend/access/confirm.py` |
+| Which actions need a passkey confirmation | the `admin.refusal` calls in `backend/api/` (`devices.py`, `passkeys.py`, `mcp.py`, `plugins.py`, and `ADMIN_KEYS` in `settings.py`); how long one lasts: `CONFIRM_TTL` in `backend/access/confirm.py` |
 | How a just-paired device adds its first passkey | `Devices.recently_paired` / `PASSKEY_ENROLL_GRACE` in `backend/access/devices.py`, used by `_may_add` in `backend/api/passkeys.py` |
 | Where passkeys work, what is asked of the authenticator | `relying_party` and `registration_options` in `backend/access/passkeys.py` |
 | Key types, checks of the browser's answer | `backend/access/webauthn.py` |

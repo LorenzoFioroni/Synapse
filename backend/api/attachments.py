@@ -5,20 +5,34 @@ from __future__ import annotations
 import os
 import uuid
 
-from flask import Blueprint, Response, jsonify, request, send_from_directory
+from flask import Blueprint, Response, abort, jsonify, request, send_from_directory
+from werkzeug.security import safe_join
 from werkzeug.utils import secure_filename
 
 from ..online import remote_pdf
 from ..online.http import BROWSER_UA
+from ..pdf.files import HEADER_WINDOW, file_is_pdf, looks_like_pdf
 from ..pdf.text import clean_text, extract_text, find_identifier
 from . import body, error, svc
 
 bp = Blueprint("attachments", __name__)
 
 
+def _not_pdfs(files) -> str | None:
+    """Why these uploads are refused, or None. Checked before any is saved, so a refused batch adds
+    nothing."""
+    for f in files:
+        head = f.stream.read(HEADER_WINDOW)
+        f.stream.seek(0)
+        if not looks_like_pdf(head):
+            return f"“{f.filename or 'The file'}” is not a PDF. Only PDF files can be attached."
+    return None
+
+
 def _save_upload(file) -> tuple[str, str]:
     safe = secure_filename(file.filename or "file.pdf") or "file.pdf"
-    filename = f"{uuid.uuid4().hex}_{safe}"
+    stem = os.path.splitext(safe)[0] or "file"
+    filename = f"{uuid.uuid4().hex}_{stem}.pdf"  # the stored name never carries another type
     file.save(os.path.join(svc().config.pdf_dir, filename))
     return file.filename or safe, filename
 
@@ -30,6 +44,8 @@ def upload(item_id):
     if not files:
         return error("No file uploaded")
     s.papers.get(item_id)  # 404 early
+    if refused := _not_pdfs(files):
+        return error(refused, 415)
     created = []
     for f in files:
         name, filename = _save_upload(f)
@@ -45,6 +61,8 @@ def items_from_pdfs():
     files = request.files.getlist("file")
     if not files:
         return error("No file uploaded")
+    if refused := _not_pdfs(files):
+        return error(refused, 415)
     from ..online.http import LookupFailed
     from ..online.metadata import known_authors, lookup
 
@@ -110,7 +128,18 @@ def find_pdf(item_id):
 # ------------------------------------------------------------------ files
 @bp.get("/pdfs/<path:filename>")
 def serve_pdf(filename):
-    return send_from_directory(svc().config.pdf_dir, filename)
+    # Only PDFs are shown in the browser. Anything else in the folder (a file kept from before
+    # uploads were checked) is only offered as a download, so it can never run as a page or script.
+    folder = svc().config.pdf_dir
+    path = safe_join(str(folder), filename)
+    if path is None or not os.path.isfile(path):
+        abort(404)
+    if file_is_pdf(path):
+        resp = send_from_directory(folder, filename, mimetype="application/pdf")
+    else:
+        resp = send_from_directory(folder, filename, mimetype="application/octet-stream", as_attachment=True)
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
 
 
 @bp.get("/api/attachments/<int:att_id>/remote")

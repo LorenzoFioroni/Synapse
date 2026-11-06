@@ -13,6 +13,11 @@ SEARCH_MODES = {
     "fulltext": "All Fields & Full Text",
 }
 
+# Changed only on the computer running Synapse, or after a passkey confirmation (api.admin): with
+# them a stolen device cookie could send a full copy of the library to another folder, or prune the
+# backups down to one right before deleting things.
+ADMIN_KEYS = ("backup_dir", "backup_interval", "backup_keep")
+
 DEFAULTS: dict = {
     # Citation keys
     "citekey_pattern": "{auth}{Title}{year}",
