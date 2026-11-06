@@ -625,7 +625,8 @@ def feed(day=None) -> list[dict]:
   remembered per list; on a phone, cards for the first group and rows for the others). It reaches
   the item as `_group`, also for a paper already in the library.
   Variants may return the same `highlights` array for compact circular day indicators; the main
-  source entry shows only the browser's current calendar-day variant's badges. Older retained
+  source entry shows only the browser's current calendar-day variant's badges (on a phone too:
+  beside the list's tab or its row in the Plugins tab, and on each day's chip). Older retained
   days keep their own badges, including when no feed exists today. Navigation refreshes at
   least once a minute and when the window becomes visible.
   Synapse gives it the id `x:<key>` (`x:arxiv:2610.01234`) and a `url` (arXiv's or doi.org's).

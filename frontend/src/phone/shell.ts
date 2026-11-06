@@ -8,7 +8,8 @@ import { icon } from '../icons.js';
 import { on, state } from '../store.js';
 import { openMenu } from '../ui/menu.js';
 import { escapeHtml as esc, storage, store } from '../util.js';
-import { type Destination, type TabId, destinations, hubBadge, pinned, tabSlots } from './model.js';
+import { sourceBadges } from '../ui/sourceBadges.js';
+import { type Destination, type TabId, destinations, hubBadge, hubMarks, pinned, tabSlots } from './model.js';
 
 /** A screen: what its back button is called on the screen above it, and how it draws itself. */
 export interface Screen {
@@ -98,10 +99,12 @@ export function paintTabs(): void {
   const label: Record<TabId, string> = { library: 'Library', notes: 'Notes', add: 'Add', pin: pin?.title || '', plugins: 'Plugins' };
   const iconOf: Record<TabId, string> = { library: 'library', notes: 'edit', add: 'plus', pin: pin?.icon || 'plugin', plugins: 'plugin' };
   const badgeOf = (t: TabId) => (t === 'pin' ? pin?.badge : t === 'plugins' ? hubBadge(dests, pin) : null) || '';
+  // today's Following / Cites you … as on the desktop sidebar, on the pinned tab and on Plugins
+  const marksOf = (t: TabId) => sourceBadges(t === 'pin' ? (pin?.marks || []).slice(0, 3) : t === 'plugins' ? hubMarks(dests, pin) : [], true);
   bar.innerHTML = slots.map((t) => (t === 'add'
     ? `<button class="ph-add" data-slot="add" aria-label="Add">${icon('plus')}</button>`
     : `<button class="ph-tab${t === active ? ' on' : ''}" data-slot="${t}"${t === active ? ' aria-current="page"' : ''}>
-        <span class="ph-tab-icon">${icon(iconOf[t])}${badgeOf(t) ? `<span class="ph-tab-badge">${esc(badgeOf(t).slice(0, 4))}</span>` : ''}</span>
+        <span class="ph-tab-icon">${icon(iconOf[t])}${badgeOf(t) ? `<span class="ph-tab-badge">${esc(badgeOf(t).slice(0, 4))}</span>` : ''}${marksOf(t) ? `<span class="ph-tab-marks">${marksOf(t)}</span>` : ''}</span>
         <span class="ph-tab-label">${esc(shortLabel(label[t]))}</span></button>`)).join('');
   bar.dataset.slots = String(slots.length);
   // what the pinned tab shows changed (chosen elsewhere, or its plugin stopped): start it afresh

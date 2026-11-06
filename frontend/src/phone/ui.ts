@@ -103,10 +103,12 @@ export function cardHtml(it: Item, { dismiss = false } = {}): string {
     </div></article>`;
 }
 
-/** A paper as a row: title (two lines at most), authors · year · where, and its badges. */
+/** A paper as a row: its badges from a plugin's list (Following, Cites you …), title (two lines at
+ *  most), authors · year · where, and marks on the right. */
 export function rowHtml(it: Item, { extra = '', marks = '' } = {}): string {
+  const badges = badgesHtml(it);
   return `<div class="ph-row-wrap" data-id="${esc(it.id)}"><button class="ph-row" data-id="${esc(it.id)}">
-    <span class="ph-row-main"><span class="ph-row-title">${esc(it.title || 'Untitled')}</span>
+    <span class="ph-row-main">${badges ? `<span class="ph-badges small">${badges}</span>` : ''}<span class="ph-row-title">${esc(it.title || 'Untitled')}</span>
     <span class="ph-row-meta">${esc(extra || itemMeta(it))}</span></span>
     ${marks ? `<span class="ph-row-marks">${marks}</span>` : ''}</button></div>`;
 }

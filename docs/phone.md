@@ -30,7 +30,9 @@ turning a phone or resizing a window never swaps the layout under the reader.
 - **The tab bar**: Library, Notes, the **+** button, one **pinned** plugin destination and
   **Plugins**. Without any plugin list or page usable on a phone it is Library · + · Notes. Its
   badges come from the plugins (a list's badge, a page's `setBadge`); the Plugins tab adds up the
-  badges of what is not pinned.
+  badges of what is not pinned. Beside a list's icon go the same small yellow, red and teal marks
+  as on the desktop sidebar (Following, Cites you …: today's variant's `highlights`), so a
+  paper by someone you follow shows from any tab; the marks of lists not pinned go on Plugins.
 - **The pinned tab** is the reader's choice (long-press it, or Plugins → **Tab next to Notes**;
   stored per device as `zc.phone.pin`). By default it is the first plugin destination usable on a
   phone. When its plugin stops, the next one takes its place.
@@ -67,7 +69,7 @@ What plugins already declare shows up without phone-specific code:
 
 | What a plugin declares | Where a phone shows it |
 |---|---|
-| A list of papers (`@plugin.item_source`) | A destination in the Plugins tab (and the pinned tab). The papers of its first group are **cards** (badges, the plugin's score, its first reason, Add / PDF / Not for me); later groups are **rows** to swipe: right adds, left dismisses. Its variants (days, say) are chips. |
+| A list of papers (`@plugin.item_source`) | A destination in the Plugins tab (and the pinned tab). The papers of its first group are **cards** (badges, the plugin's score, its first reason, Add / PDF / Not for me); later groups are **rows** to swipe: right adds, left dismisses, with the papers' badges above their titles. Its variants (days, say) are chips, each with its own badges. |
 | A paper's `group` in such a list | The heading the paper is shown under (arXiv Today's Read, Skim, Rest). The desktop list shows the same headings, each folding its group. |
 | An item action with `role: 'dismiss'` | "Not for me" and the swipe to the left. |
 | Item sections, per-item fields, item actions | A paper's page under **From plugins**; actions in its ⋯ sheet. |
