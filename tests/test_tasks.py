@@ -253,7 +253,8 @@ def test_convert_checkbox_list(svc, store):
     assert tasks["Reproduce $N = 20$"]["parent_id"] == ising["id"] and tasks["Reproduce $N = 20$"]["status"] == "done"
     assert tasks["Check $\\chi$"]["parent_id"] == tasks["Simulate $N = 100$"]["id"]
     ids = [
-        tasks[k]["id"] for k in ("Add plot $\\chi$ vs $\\varepsilon$", "Discuss the Ising model", "Move to the Potts model")
+        tasks[k]["id"]
+        for k in ("Add plot $\\chi$ vs $\\varepsilon$", "Discuss the Ising model", "Move to the Potts model")
     ]
     assert out["text"] == (
         f"## TODOs\n{token(ids[0])}\n{token(ids[1])}\n\n{token(ids[2])}\n\nPlain text stays.\n```\n- [ ] in code\n```\n"
