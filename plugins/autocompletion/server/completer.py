@@ -24,9 +24,12 @@ WARM_EVERY = 300.0  # at most one "load the model now" request per this many sec
 
 
 class Completer:
-    def __init__(self, values: Callable[[], dict], client: Callable[[str], Ollama]):
+    def __init__(self, values: Callable[[], dict], client: Callable[[str], Ollama], server_url: str | None = None):
         self.values = values  # the plugin's settings: model, length, url
         self._client = client
+        # Ollama's address as whoever started Synapse set it (``--local-service ollama=…``, e.g. Ollama
+        # in a container of its own): it takes the place of the url setting.
+        self.server_url = server_url
         self._run = threading.Lock()  # one generation at a time
         self._lock = threading.Lock()  # guards the fields below
         self._seq = 0
@@ -38,7 +41,8 @@ class Completer:
     def _config(self) -> tuple[bool, str, str, str]:
         """(on, Ollama's address, the model, the length). The plugin running means it is on."""
         v = self.values()
-        return True, str(v.get("url") or ""), str(v.get("model") or ""), str(v.get("length") or "line")
+        url = self.server_url or str(v.get("url") or "")
+        return True, url, str(v.get("model") or ""), str(v.get("length") or "line")
 
     def forget(self) -> None:
         """The settings changed: ask Ollama again before the next suggestion."""
@@ -64,7 +68,7 @@ class Completer:
         assert st is not None
         if warm and enabled and st["ok"]:
             self._warm(url, model)
-        return {**st, "enabled": enabled, "url": url, "model": model}
+        return {**st, "enabled": enabled, "url": url, "url_from_server": bool(self.server_url), "model": model}
 
     def _forget_status(self) -> None:
         with self._lock:
@@ -73,7 +77,7 @@ class Completer:
     def _probe(self, url: str, model: str) -> dict:
         out = {"ok": False, "reason": "", "message": "", "models": [], "version": "", "fim": False, "thinking": False}
         try:
-            url = local_url(url)
+            url = local_url(url, self.server_url)
         except ValueError as e:
             return {**out, "reason": "bad_url", "message": str(e)}
         if not model or len(model) > 200 or any(c.isspace() for c in model):
@@ -117,7 +121,7 @@ class Completer:
 
         def run() -> None:
             try:
-                self._client(local_url(url)).load(model)
+                self._client(local_url(url, self.server_url)).load(model)
             except Unavailable as e:
                 log.info("Could not load %s in Ollama: %s", model, e)
 
@@ -147,7 +151,7 @@ class Completer:
                 model, prefix, suffix, fim=fim, thinking=bool(st["thinking"]), length=length, context=context
             )
             try:
-                raw = self._client(local_url(url)).generate(payload)
+                raw = self._client(local_url(url, self.server_url)).generate(payload)
             except Unavailable as e:
                 self._forget_status()  # look again before the next request
                 return {"text": "", "reason": e.reason, "message": str(e)}

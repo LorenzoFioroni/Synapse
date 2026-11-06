@@ -16,7 +16,8 @@ With `--public-url`, Synapse requires loopback-only listening (`127.0.0.1`, `loc
 It refuses `--lan` and any other `--host` before starting: direct network access could bypass the
 tunnel and treat a request from the server's own LAN address as this computer, without sign-in.
 The application factory also rejects a configuration combining `public_url` with `lan`.
-Without `--public-url`, LAN access works as before.
+Without `--public-url`, LAN access works as before. In Docker, where Synapse must listen on the
+container's network, `--container` takes the place of loopback listening: see [Docker](docker.md).
 
 When Synapse is local-only, **Settings → AI Access** describes both setup options: `--lan`
 for the same network, or `--public-url https://synapse.example.com` behind an HTTPS tunnel,
@@ -98,7 +99,9 @@ Password Manager); no more pairing.
 
 ## Setting it up on Linux with Cloudflare Tunnel
 
-You need a domain whose DNS is on Cloudflare (the free plan is enough).
+You need a domain whose DNS is on Cloudflare (the free plan is enough). The steps below run
+Synapse and `cloudflared` as services of the computer; [Docker](docker.md) runs both, and Ollama,
+in containers instead.
 
 1. **Synapse.** Clone the repository on the server, then as in the README:
    `python3 -m venv .venv && .venv/bin/pip install --require-hashes --only-binary=:all: -r requirements.txt` and

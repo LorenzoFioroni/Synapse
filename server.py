@@ -8,6 +8,8 @@ Run:   python server.py                 (http://127.0.0.1:8000, opens your brows
                                          (HTTPS, needed to sign devices in with passkeys)
        python server.py --public-url https://synapse.example.com
                                          (behind Cloudflare Tunnel or another HTTPS proxy; see docs/remote-access.md)
+       python server.py --container --public-url https://synapse.example.com
+                                         (in a container behind a tunnel: what the Docker image runs; see docs/docker.md)
        python server.py --pairing-link   (a one-time link that pairs a device with the running server)
        python server.py --window         (in a window of its own, like a program, not a browser tab)
        python server.py --make-shortcut  (an icon on the Desktop that does that; see docs/desktop.md)
@@ -23,6 +25,7 @@ from __future__ import annotations
 import _thread
 import argparse
 import logging
+import os
 import threading
 import time
 import webbrowser
@@ -30,7 +33,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from backend import create_app
-from backend.config import Config
+from backend.config import Config, LocalServiceError, parse_local_service
 from backend.frontend import BuildError, ensure_built
 
 
@@ -93,6 +96,22 @@ def main() -> None:
         help="the HTTPS address a tunnel or reverse proxy (such as Cloudflare Tunnel) serves Synapse at, "
         "e.g. https://synapse.example.com. Requests that come through it always need a signed-in "
         "device; see docs/remote-access.md",
+    )
+    ap.add_argument(
+        "--container",
+        action="store_true",
+        help="run in a container behind a tunnel (the Docker image starts Synapse so; see docs/docker.md): "
+        "listen on the container's network but answer only to loopback and the --public-url name, and keep "
+        "new files private. Needs --public-url",
+    )
+    ap.add_argument(
+        "--local-service",
+        action="append",
+        default=[],
+        metavar="NAME=URL",
+        help="a service running next to Synapse that plugins with the loopback permission may use as if it "
+        "were on this computer, e.g. ollama=http://ollama:11434 for Autocompletion when Ollama runs in "
+        "its own container (also SYNAPSE_LOCAL_SERVICES)",
     )
     ap.add_argument(
         "--pairing-link",
@@ -162,6 +181,9 @@ def main() -> None:
             raise SystemExit(str(e)) from e
         return
 
+    if a.container:
+        container_mode(a)
+
     public_url = None
     if a.public_url:
         from backend.access.proxy import PublicUrlError, parse_public_url
@@ -178,7 +200,7 @@ def main() -> None:
         a.host = "0.0.0.0"
     wildcard = a.host in ("0.0.0.0", "::")
     loopback_only = a.host in ("127.0.0.1", "localhost", "::1")
-    if public_url and (a.lan or not loopback_only):
+    if public_url and not a.container and (a.lan or not loopback_only):
         raise SystemExit(
             "--public-url cannot be combined with --lan or a non-loopback --host: "
             "direct network access would bypass the tunnel. Use --host 127.0.0.1, localhost or ::1."
@@ -202,7 +224,7 @@ def main() -> None:
         from backend.plugins import PluginError
         from backend.plugins.scaffold import create
 
-        parent = Path(a.dev_plugins).expanduser() if a.dev_plugins else Config.from_env(a.data_dir).plugins_dir
+        parent = Path(a.dev_plugins).expanduser() if a.dev_plugins else make_config(a).plugins_dir
         try:
             folder = create(a.new_plugin, parent.resolve())
         except PluginError as e:
@@ -222,9 +244,12 @@ def main() -> None:
         if running is False:
             raise SystemExit(f"Port {a.port} is used by another program. Choose another one with --port.")
 
-    config = Config.from_env(a.data_dir)
+    config = make_config(a)
     config.allowed_hosts = set(a.allow_host)
-    config.lan = not loopback_only
+    # In a container the wildcard is the container's own network, which only the tunnel reaches:
+    # no LAN names or addresses are accepted, as when listening on loopback.
+    config.lan = not loopback_only and not a.container
+    config.container = a.container
     config.public_url = public_url
     config.safe_mode = a.safe_mode
     config.dev_plugins_dir = Path(a.dev_plugins).expanduser().resolve() if a.dev_plugins else None
@@ -253,10 +278,13 @@ def main() -> None:
             print("Tip: pip install segno  (shows the pairing QR code; without it only the link works)")
     if public_url:
         print(f"Public address: {public_url}/  — requests through it need a signed-in device.", flush=True)
-        print(
-            "Pair the first device with:  python server.py --pairing-link"
-            + (f" --port {a.port}" if a.port != 8000 else "")
-        )
+        port = f" --port {a.port}" if a.port != 8000 else ""
+        if a.container:
+            print(
+                f"Pair the first device from the host with:  docker compose exec synapse python server.py --pairing-link{port}"
+            )
+        else:
+            print(f"Pair the first device with:  python server.py --pairing-link{port}")
     if a.window:
         from backend.desktop.window import open_window
 
@@ -269,10 +297,52 @@ def main() -> None:
     app.run(host=a.host, port=a.port, debug=a.debug, threaded=True, use_reloader=a.debug, ssl_context=tls)
 
 
+# Options that make no sense, or would open a way around the tunnel, inside a container.
+CONTAINER_REFUSES = (
+    ("lan", "--lan"),
+    ("cert", "--cert"),
+    ("key", "--key"),
+    ("window", "--window"),
+    ("debug", "--debug"),
+    ("allow_host", "--allow-host"),
+    ("make_shortcut", "--make-shortcut"),
+    ("quit_when_closed", "--quit-when-closed"),
+)
+
+
+def container_mode(a: argparse.Namespace) -> None:
+    """``--container``: refuse what does not fit a container behind a tunnel, then listen on the
+    container's network."""
+    given = [flag for attr, flag in CONTAINER_REFUSES if getattr(a, attr)]
+    if a.host != "127.0.0.1":
+        given.append("--host")
+    if given:
+        raise SystemExit(
+            f"--container cannot be combined with {', '.join(given)}: in a container Synapse is reached "
+            "only through its tunnel, which needs none of them."
+        )
+    if not a.public_url:
+        raise SystemExit(
+            "--container needs --public-url, the HTTPS address the tunnel serves (like https://synapse.example.com)."
+        )
+    # The data folder is bind-mounted from the host: what Synapse writes there is readable only by its
+    # owner, as the files in a home folder should be.
+    os.umask(0o077)
+    a.host = "0.0.0.0"  # the container's own network, which the tunnel's container connects through
+    a.no_browser = True
+
+
+def make_config(a: argparse.Namespace) -> Config:
+    try:
+        config = Config.from_env(a.data_dir)
+        config.local_services.update(parse_local_service(s) for s in a.local_service)
+    except LocalServiceError as e:
+        raise SystemExit(str(e)) from e
+    return config
+
+
 def make_shortcut(a: argparse.Namespace) -> None:
     """``--make-shortcut``: the shortcut starts the server with the options given with it."""
-    import os
-
     from backend.desktop.shortcut import ShortcutError
     from backend.desktop.shortcut import make_shortcut as make
 

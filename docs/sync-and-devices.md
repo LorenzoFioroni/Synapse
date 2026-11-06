@@ -457,7 +457,9 @@ What is assumed:
 - **A proxy in front is declared or announces itself.** "This computer" is judged by the
   connection's address, so a proxy on the same machine must either be named with `--public-url` or
   add a forwarding header (`X-Forwarded-For` and the like; Cloudflare Tunnel, nginx and Caddy do).
-  A proxy that does neither would make every request look local.
+  A proxy that does neither would make every request look local. In Docker (`--container`) the
+  tunnel runs in a container of its own, so its requests never come from this computer at all
+  ([Docker](docker.md)).
 - **`--debug` is for development, on this computer only.** `server.py` refuses it with `--lan`
   or a non-loopback `--host`, because the debugger runs before the guard.
 

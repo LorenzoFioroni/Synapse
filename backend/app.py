@@ -27,6 +27,8 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
     config = config or Config.from_env()
     if config.public_url and config.lan:
         raise ValueError("public_url requires loopback-only listening; LAN access would bypass the tunnel")
+    if config.container and (config.lan or not config.public_url):
+        raise ValueError("container mode is reached through a tunnel: it needs public_url and no LAN access")
     app = Flask(__name__, static_folder=None)
     app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024
     services = Services(config)
@@ -35,7 +37,9 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
     from .access import guard
     from .access.proxy import ProxyMiddleware
 
-    app.wsgi_app = ProxyMiddleware(app.wsgi_app, config.public_url)  # type: ignore[method-assign]
+    app.wsgi_app = ProxyMiddleware(  # type: ignore[method-assign]
+        app.wsgi_app, config.public_url, private_peers=config.container
+    )
     guard.install(app, config.allowed_hosts, config.lan, public_url=config.public_url)
 
     from flask import g

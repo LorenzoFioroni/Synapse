@@ -8,10 +8,46 @@ folder can be backed up or moved as a whole.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 APP_ROOT = Path(__file__).resolve().parent.parent
+
+SERVICE_NAME = re.compile(r"[a-z][a-z0-9-]{0,39}")
+
+
+class LocalServiceError(ValueError):
+    pass
+
+
+def parse_local_service(text: str) -> tuple[str, str]:
+    """``ollama=http://ollama:11434`` → ``("ollama", "http://ollama:11434")``: a name and an http(s)
+    origin (no path, query or credentials)."""
+    name, sep, url = (text or "").strip().partition("=")
+    name = name.strip().lower()
+    if not sep or not SERVICE_NAME.fullmatch(name):
+        raise LocalServiceError(f"--local-service {text!r}: write NAME=URL, like ollama=http://ollama:11434.")
+    try:
+        parts = urlsplit(url.strip())
+        port = parts.port
+    except ValueError as e:
+        raise LocalServiceError(f"--local-service {name}: {url!r} is not an address.") from e
+    if parts.scheme.lower() not in ("http", "https") or not parts.hostname:
+        raise LocalServiceError(
+            f"--local-service {name}: the address starts with http:// or https:// and names a host."
+        )
+    if parts.path not in ("", "/") or parts.query or parts.fragment or parts.username or parts.password:
+        raise LocalServiceError(f"--local-service {name}: the address alone, like http://ollama:11434 (no path).")
+    host = parts.hostname.lower()
+    netloc = f"[{host}]" if ":" in host else host
+    return name, f"{parts.scheme.lower()}://{netloc}" + (f":{port}" if port is not None else "")
+
+
+def parse_local_services(text: str | None) -> dict[str, str]:
+    """``SYNAPSE_LOCAL_SERVICES``: ``NAME=URL`` entries separated by commas or spaces."""
+    return dict(parse_local_service(item) for item in re.split(r"[\s,]+", text or "") if item)
 
 
 @dataclass
@@ -31,12 +67,25 @@ class Config:
     safe_mode: bool = False
     # ``--dev-plugins DIR``: plugins being written, loaded from DIR and reloaded when a file changes.
     dev_plugins_dir: Path | None = None
+    # ``--container``: running in a container behind a tunnel (docs/docker.md). It listens on the
+    # container's network but, as with loopback listening, answers only to loopback and the public
+    # name; the tunnel's container, on a private network, may report the visitor's address.
+    container: bool = False
+    # ``--local-service NAME=URL`` or SYNAPSE_LOCAL_SERVICES: services the deployment runs next to
+    # Synapse, such as Ollama in its own container. Plugins with the "loopback" permission may reach
+    # exactly these origins as if they were on this computer (backend/plugins/http.py). They come only
+    # from whoever starts the server, never from Settings: a signed-in device must not be able to point
+    # the server at addresses inside its network.
+    local_services: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls, data_dir: str | os.PathLike | None = None) -> Config:
         # SYNAPSE_DATA_DIR; ZCLONE_DATA_DIR is the old name, still accepted
         d = data_dir or os.environ.get("SYNAPSE_DATA_DIR") or os.environ.get("ZCLONE_DATA_DIR") or (APP_ROOT / "data")
-        return cls(Path(d).expanduser().resolve())
+        return cls(
+            Path(d).expanduser().resolve(),
+            local_services=parse_local_services(os.environ.get("SYNAPSE_LOCAL_SERVICES")),
+        )
 
     @property
     def other_devices(self) -> bool:

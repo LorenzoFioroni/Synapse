@@ -18,6 +18,7 @@ tunnel even though the tunnel speaks plain HTTP to Synapse. Passkeys and secure 
 
 from __future__ import annotations
 
+import ipaddress
 from urllib.parse import urlsplit
 
 from .lan import host_name, is_this_computer, parse_ip
@@ -61,11 +62,24 @@ def public_host(public_url: str | None) -> str | None:
     return urlsplit(public_url).hostname if public_url else None
 
 
-def _client(environ: dict) -> str:
+# In a container (``--container``) the tunnel runs in a container of its own and connects from the
+# private network Docker makes. ``ipaddress.is_private`` would also cover the documentation ranges.
+PRIVATE_NETWORKS = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"))
+
+
+def _trusted_proxy(addr: str, private_peers: bool) -> bool:
+    if is_this_computer(addr):
+        return True
+    ip = parse_ip(addr)
+    return private_peers and ip is not None and any(ip in net for net in PRIVATE_NETWORKS)
+
+
+def _client(environ: dict, private_peers: bool = False) -> str:
     """The visitor's address as the proxy reports it, if the request came from a proxy on this
-    computer; else the connection's address. Only for display (devices' "last used from")."""
+    computer (or, with ``private_peers``, on a private network: the tunnel's container); else the
+    connection's address. Only for display (devices' "last used from")."""
     addr = environ.get("REMOTE_ADDR") or ""
-    if not is_this_computer(addr):
+    if not _trusted_proxy(addr, private_peers):
         return addr  # a proxy elsewhere could put anything in its headers
     for key in ("HTTP_CF_CONNECTING_IP", "HTTP_X_REAL_IP"):
         value = (environ.get(key) or "").strip()
@@ -77,17 +91,20 @@ def _client(environ: dict) -> str:
 
 class ProxyMiddleware:
     """Marks proxied requests (``environ["synapse.proxied"]``), records the visitor's address
-    (``environ["synapse.client_addr"]``) and makes requests for the public host HTTPS."""
+    (``environ["synapse.client_addr"]``) and makes requests for the public host HTTPS.
+    ``private_peers``: also take the visitor's address from proxies on private networks
+    (``--container``)."""
 
-    def __init__(self, app, public_url: str | None = None):
+    def __init__(self, app, public_url: str | None = None, private_peers: bool = False):
         self.app = app
         self.host = public_host(public_url)
+        self.private_peers = private_peers
 
     def __call__(self, environ, start_response):
         for_public = self.host is not None and host_name(environ.get("HTTP_HOST", "")) == self.host
         proxied = for_public or any(environ.get(h) for h in FORWARD_HEADERS)
         environ[PROXIED] = proxied
-        environ[CLIENT_ADDR] = _client(environ) if proxied else (environ.get("REMOTE_ADDR") or "")
+        environ[CLIENT_ADDR] = _client(environ, self.private_peers) if proxied else (environ.get("REMOTE_ADDR") or "")
         if for_public:
             environ["wsgi.url_scheme"] = "https"
         return self.app(environ, start_response)

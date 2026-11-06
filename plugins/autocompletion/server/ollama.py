@@ -117,24 +117,28 @@ class Ollama:
 DEFAULT_URL = "http://127.0.0.1:11434"  # Ollama's own default
 
 
-def local_url(value: str) -> str:
+def local_url(value: str, server: str | None = None) -> str:
     """The Ollama address, cleaned: http(s) on this computer only (localhost, 127.x.x.x, ::1),
     so a note's text is never sent elsewhere and the server cannot be pointed at other hosts.
-    Empty means the default. Raises ValueError for any other address."""
+    ``server`` is the address whoever started Synapse gave it (``--local-service ollama=…``), which
+    is accepted too. Empty means the default. Raises ValueError for any other address."""
     v = (value or "").strip().rstrip("/") or DEFAULT_URL
     if "://" not in v:
         v = "http://" + v
     try:
         u = urlsplit(v)
         host = (u.hostname or "").lower()
-        u.port  # noqa: B018 - raises ValueError on a port that is not a number
+        port = u.port
     except ValueError as e:
         raise ValueError("Ollama address: something like http://127.0.0.1:11434") from e
     try:
-        loopback = host == "localhost" or ipaddress.ip_address(host).is_loopback
+        here = host == "localhost" or ipaddress.ip_address(host).is_loopback
     except ValueError:
-        loopback = False
-    if u.scheme not in ("http", "https") or not loopback or u.username or u.password:
+        here = False
+    if server and not here:
+        s = urlsplit(server)
+        here = (u.scheme, host, port) == (s.scheme, (s.hostname or "").lower(), s.port)
+    if u.scheme not in ("http", "https") or not here or u.username or u.password:
         raise ValueError("Ollama address: only a model on this computer is supported (localhost or 127.0.0.1)")
     if u.path not in ("", "/") or u.query or u.fragment:
         raise ValueError("Ollama address: just the address and port, e.g. http://127.0.0.1:11434")

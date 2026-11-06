@@ -1,7 +1,8 @@
 """``plugin.http``: how plugins reach the web. Only declared public hosts or explicitly
-permitted loopback addresses, spaced requests per host (shared by every plugin and Synapse, so
-together they cannot flood one service), a polite User-Agent, the user's keys for the scholarly services Synapse itself uses,
-answers cached by ETag / Last-Modified, and readable errors."""
+permitted loopback addresses (with the services the deployment names, ``--local-service``), spaced
+requests per host (shared by every plugin and Synapse, so together they cannot flood one service),
+a polite User-Agent, the user's keys for the scholarly services Synapse itself uses, answers cached
+by ETag / Last-Modified, and readable errors."""
 
 from __future__ import annotations
 
@@ -81,6 +82,19 @@ def loopback(host: str) -> bool:
         return False
 
 
+def _origin(url: str) -> tuple[str, str, int | None] | None:
+    """(scheme, host, port) with the scheme's default port filled in; None for no http(s) address."""
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return None
+    scheme = parts.scheme.lower()
+    if scheme not in ("http", "https") or not parts.hostname:
+        return None
+    return scheme, parts.hostname.lower(), port if port is not None else (443 if scheme == "https" else 80)
+
+
 def service_credentials(host: str, settings) -> tuple[dict, dict]:
     """(query parameters, headers) for a request to one of the scholarly services Synapse itself
     uses, from Settings → Online Services: OpenAlex's key and polite-pool address, Semantic
@@ -111,13 +125,16 @@ class _Cached:
 class PluginHttp:
     """What ``plugin.http`` is. ``user_agent()`` and ``credentials(host)`` (the services' keys, see
     ``service_credentials``) are asked at each request: Settings may change. ``private`` lets tests
-    reach a server on this computer."""
+    reach a server on this computer. ``services`` are the deployment's local services (name →
+    origin, ``Config.local_services``): with the "loopback" permission their exact origins count as
+    this computer."""
 
     pid: str
     hosts: list[str]
     user_agent: Callable[[], str]
     private: bool = False
     credentials: Callable[[str], tuple[dict, dict]] | None = None
+    services: dict[str, str] = field(default_factory=dict)
     _gaps: dict[str, float] = field(default_factory=dict)
     _cache: OrderedDict = field(default_factory=OrderedDict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -125,6 +142,15 @@ class PluginHttp:
     def limit(self, host: str, seconds: float) -> None:
         """Ask ``host`` at most once every ``seconds`` (more than the default, never less)."""
         self._gaps[host.lower()] = max(float(seconds), 0.0)
+
+    def local_service(self, name: str) -> str | None:
+        """The address of a service the deployment runs next to Synapse (``--local-service
+        ollama=http://ollama:11434`` → ``"http://ollama:11434"`` for ``"ollama"``), or None."""
+        return self.services.get(name.lower())
+
+    def _is_service(self, url: str) -> bool:
+        origin = _origin(url)
+        return origin is not None and any(origin == _origin(s) for s in self.services.values())
 
     def get(self, url: str, params: dict | None = None, **kw) -> Response:
         return self.request("GET", url, params=params, **kw)
@@ -162,7 +188,7 @@ class PluginHttp:
                 hdrs.setdefault("If-Modified-Since", cached.modified)
         for _ in range(MAX_REDIRECTS + 1):
             host = self._check(url)
-            local = loopback(host) and ("loopback" in self.hosts or self.private)
+            local = (loopback(host) or self._is_service(url)) and ("loopback" in self.hosts or self.private)
             if local and host == "localhost":
                 # Use a literal address: DNS cannot redirect note text off this computer.
                 parts = urlsplit(url)
@@ -230,7 +256,7 @@ class PluginHttp:
         host = (parts.hostname or "").lower()
         if parts.scheme not in ("http", "https") or not host:
             raise HttpError(f"Only http(s) addresses can be fetched: {url}")
-        local = loopback(host)
+        local = loopback(host) or self._is_service(url)
         if local and "loopback" in self.hosts:
             if parts.username or parts.password:
                 raise HttpError("Loopback addresses cannot contain credentials")
