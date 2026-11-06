@@ -132,6 +132,36 @@ def test_other_hosts_are_refused(mod, bad):
         mod.ollama.local_url(bad)
 
 
+def test_the_servers_address_is_accepted(mod):
+    server = "http://ollama:11434"  # --local-service ollama=http://ollama:11434
+    assert mod.ollama.local_url("http://ollama:11434/", server) == server
+    assert mod.ollama.local_url("http://127.0.0.1:11434", server) == "http://127.0.0.1:11434"
+    for bad in ("http://ollama:22", "https://ollama:11434", "http://other:11434", "http://ollama:11434/api"):
+        with pytest.raises(ValueError):
+            mod.ollama.local_url(bad, server)
+    with pytest.raises(ValueError):
+        mod.ollama.local_url(server)  # not without the server's word
+
+
+def test_the_servers_ollama_address_wins_over_settings(tmp_path, bundled):
+    with FakeOllama() as fake:
+        cfg = Config.from_env(tmp_path / "data")
+        cfg.local_services = {"ollama": fake.url}
+        c = create_app(cfg, start_indexer=False).test_client()
+        assert c.post(f"/api/plugin-host/{PID}/enable").get_json()["plugin"]["running"]
+        r = c.put(f"/api/plugin-host/{PID}/settings", json={"url": f"http://127.0.0.1:{free_port()}"})
+        assert r.status_code == 200
+        st = c.get(f"{BASE}/status?fresh=1").get_json()
+        assert st["ok"] is True and st["url"] == fake.url and st["url_from_server"] is True
+        c.post(f"{BASE}/complete", json={"prefix": "The cat sat on the", "suffix": ""})
+        assert any(path == "/api/generate" for path, _ in fake.requests)
+
+
+def test_settings_say_when_the_address_is_their_own(client, on):
+    on(f"http://127.0.0.1:{free_port()}")
+    assert client.get(f"{BASE}/status?fresh=1").get_json()["url_from_server"] is False
+
+
 # ------------------------------------------------------------------ status: the safeguards
 
 

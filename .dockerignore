@@ -1,0 +1,26 @@
+# What the image never contains: the library, secrets, and what is rebuilt inside it (Dockerfile).
+data/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+compose.override.yaml
+.git/
+**/node_modules/
+frontend/js/
+tests/
+**/__pycache__/
+*.pyc
+.venv/
+.venv-*/
+virtual_env/
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store
+server.log
+.claude/
+.claude_sync/
+Claude outputs/
+browser-results/

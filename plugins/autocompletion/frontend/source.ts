@@ -14,6 +14,7 @@ export interface AssistStatus {
   reason: AssistReason;
   message: string;
   url: string;
+  url_from_server?: boolean;   // set where Synapse runs (--local-service ollama=…), not in Settings
   model: string;
   models: string[];      // installed in Ollama
   version: string;       // Ollama's

@@ -18,10 +18,12 @@ function statusHtml(st: AssistStatus, { icon, escapeHtml }: PluginContext['ui'])
   }
   const steps: string[] = [];
   if (st.reason === 'unreachable') {
-    steps.push('Install Ollama from <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com</a> and start it (on a Mac it runs in the menu bar).');
+    steps.push(st.url_from_server
+      ? `Start Ollama where Synapse’s server expects it: <span class="mono">${escapeHtml(st.url)}</span>.`
+      : 'Install Ollama from <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com</a> and start it (on a Mac it runs in the menu bar).');
   }
   if (st.reason === 'unreachable' || st.reason === 'no_model') {
-    steps.push(`Install the model in Terminal: <span class="mono">${escapeHtml(pull(st.model))}</span>
+    steps.push(`Install the model ${st.url_from_server ? 'where Ollama runs' : 'in Terminal'}: <span class="mono">${escapeHtml(pull(st.model))}</span>
       <button class="btn btn-ghost btn-sm" data-ai-copy="${escapeHtml(pull(st.model))}">${icon('copy', 'icon-sm')} Copy</button>`);
   }
   if (st.reason === 'unsupported') steps.push('Choose another model below.');
@@ -56,15 +58,16 @@ export function mountSettings(p: PluginContext, el: HTMLElement, src: Source): (
       <div class="setting"><div class="s-text"><div class="s-title">Suggestion length</div><div class="s-desc">How far a suggestion goes.</div></div>
         <div class="s-control">${saved}<div class="segmented" data-ai-length><button data-v="line">Rest of the line</button><button data-v="paragraph">Paragraph</button></div></div></div>
       <div class="setting stack"><div class="s-text"><div class="s-title">Ollama address ${saved}</div>
-        <div class="s-desc">Where Ollama listens; only addresses on this computer are accepted.</div></div>
+        <div class="s-desc" data-ai-url-desc>Where Ollama listens; only addresses on this computer are accepted.</div></div>
         <input class="input mono" type="text" data-ai-url spellcheck="false" autocomplete="off" placeholder="http://127.0.0.1:11434"></div>
     </div>`;
   const model = el.querySelector<HTMLInputElement>('[data-ai-model]')!;
   const url = el.querySelector<HTMLInputElement>('[data-ai-url]')!;
   const length = el.querySelector<HTMLElement>('[data-ai-length]')!;
+  let serverUrl: string | null = null;   // the server's own address replaces the setting
   const showValues = (v: Record<string, unknown>) => {
     model.value = String(v.model ?? '');
-    url.value = String(v.url ?? '');
+    url.value = serverUrl ?? String(v.url ?? '');
     length.querySelectorAll<HTMLElement>('button').forEach((b) => b.classList.toggle('active', b.dataset.v === v.length));
   };
 
@@ -76,6 +79,11 @@ export function mountSettings(p: PluginContext, el: HTMLElement, src: Source): (
       const st = await p.backend.get<AssistStatus>('/status', { fresh: fresh ? 1 : undefined });
       if (!alive || request !== statusRequest) return;
       src.known(st);
+      if (st.url_from_server) {
+        serverUrl = url.value = st.url;
+        url.disabled = true;
+        el.querySelector('[data-ai-url-desc]')!.textContent = 'Set where Synapse’s server runs (--local-service ollama=…), so it cannot be changed here.';
+      }
       box.innerHTML = statusHtml(st, p.ui);
       el.querySelector('#ai-models')!.innerHTML = st.models.map((m) => `<option value="${escapeHtml(m)}"></option>`).join('');
       el.querySelector('[data-ai-installed]')!.innerHTML = st.models.length

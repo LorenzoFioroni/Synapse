@@ -5,7 +5,7 @@ suggestion shows in grey after the cursor ("ghost text"), as in code editors. It
 (`plugins/autocompletion`, see [plugins](plugins.md)): off until turned on in
 Settings → Plugins, and only local models served by [Ollama](https://ollama.com) are supported:
 nothing is sent to another computer. Safe mode stops it; switching it off preserves its settings.
-It requires Plugin API 1.10 and declares the explicit `loopback` network permission.
+It requires Plugin API 1.12 and declares the explicit `loopback` network permission.
 
 | Key | What it does |
 |---|---|
@@ -36,8 +36,19 @@ The plugin's settings (its manifest; they took over the values of Synapse's form
 | Setting | Default | What it is |
 |---|---|---|
 | `model` | `qwen2.5-coder:1.5b` | The Ollama model (`name:tag`; no tag means `:latest`) |
-| `url` | `http://127.0.0.1:11434` | Ollama's address. Only `localhost`, `127.x.x.x` and `::1` are accepted (`local_url` in `server/ollama.py`): any other address makes the status say so, and nothing is sent |
+| `url` | `http://127.0.0.1:11434` | Ollama's address. Only `localhost`, `127.x.x.x` and `::1` are accepted (`local_url` in `server/ollama.py`): any other address makes the status say so, and nothing is sent. When the server is started with the local service `ollama` (below), that address is used instead |
 | `length` | `line` | `line`: the rest of the line · `paragraph`: up to the end of the paragraph (at most 12 lines) |
+
+### Ollama in another container
+
+In [Docker](docker.md), Ollama is a container of its own, at `http://ollama:11434`, which is not
+an address on this computer. Whoever starts the server names it:
+`--local-service ollama=http://ollama:11434`, or `SYNAPSE_LOCAL_SERVICES`, as `compose.yaml`
+does. The plugin then uses `plugin.http.local_service("ollama")` in place of its `url` setting.
+`/status` answers `url_from_server: true`, and Settings → Autocompletion shows the address
+read-only. `plugin.http` reaches exactly that origin, as if it were loopback. The address never
+comes from Settings: a device with a stolen cookie must not be able to send note text, or the
+server's requests, to another address.
 
 ## Safeguards
 
@@ -138,7 +149,7 @@ counts as typing it, so the rest stays.
 ## Tests
 
 - `tests/plugins/test_autocompletion.py`: the plugin (off by default, settings carried over from
-  Synapse's, a turned-off plugin has no routes), its settings (only addresses on this computer), every status (Ollama not
+  Synapse's, a turned-off plugin has no routes), its settings (only addresses on this computer, or the server's own), every status (Ollama not
   running, something else on the port, model missing, embedding model, no fill-in-the-middle),
   nothing sent while off or while the model is missing, the request sent, superseded requests,
   and `clean` on typical answers. It uses `tests/fake_ollama.py`, a stand-in for Ollama's API.

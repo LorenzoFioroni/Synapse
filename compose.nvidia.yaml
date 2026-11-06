@@ -1,0 +1,11 @@
+# Ollama on an NVIDIA GPU: add to compose.yaml with COMPOSE_FILE=compose.yaml:compose.nvidia.yaml in
+# .env. Needs the NVIDIA Container Toolkit on the host (docs/docker.md).
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

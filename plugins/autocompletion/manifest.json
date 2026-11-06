@@ -1,8 +1,8 @@
 {
   "id": "autocompletion",
   "name": "Autocompletion",
-  "version": "1.2.0",
-  "api": "^1.10",
+  "version": "1.3.0",
+  "api": "^1.12",
   "author": "Synapse",
   "description": "Suggestions as you write a note, in grey after the cursor (Tab accepts), from a model running on this computer in Ollama: your notes are not sent anywhere else.",
   "enabled_by_default": false,
@@ -39,7 +39,7 @@
       "key": "url",
       "type": "text",
       "label": "Ollama address",
-      "description": "Where Ollama listens; only addresses on this computer are accepted.",
+      "description": "Where Ollama listens; only addresses on this computer are accepted. When the server is started with --local-service ollama=URL, that address is used instead.",
       "default": "http://127.0.0.1:11434",
       "from_setting": "notes_ai_url"
     }

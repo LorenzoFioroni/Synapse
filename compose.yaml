@@ -1,0 +1,75 @@
+# Synapse in Docker, reached only through Cloudflare Tunnel: see docs/docker.md.
+#
+#   cp .env.example .env      then fill it in
+#   docker compose up -d --build
+#
+# Ollama for Autocompletion: COMPOSE_PROFILES=ollama in .env; with an NVIDIA GPU also
+# COMPOSE_FILE=compose.yaml:compose.nvidia.yaml.
+
+name: synapse
+
+services:
+  synapse:
+    build: .
+    image: synapse:local
+    restart: unless-stopped
+    # The owner of the data folder on the host: git refuses a repository owned by someone else, and
+    # the files Synapse writes stay yours. Make the folder before the first start (Docker would make
+    # a missing one as root).
+    user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
+    command: ["--public-url", "${SYNAPSE_PUBLIC_URL:?set SYNAPSE_PUBLIC_URL in .env}"]
+    environment:
+      # Plugin schedules and backups follow the local wall clock; the container's is UTC otherwise.
+      TZ: ${TZ:-UTC}
+      # Autocompletion asks this Ollama, which only the Synapse containers can reach.
+      SYNAPSE_LOCAL_SERVICES: ${SYNAPSE_LOCAL_SERVICES:-ollama=http://ollama:11434}
+    volumes:
+      - ${SYNAPSE_DATA:-./data}:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    # No ports: the tunnel is the only way in. Docker's published ports bypass the host's firewall;
+    # if you ever publish one, bind it to 127.0.0.1.
+    networks: [tunnel, models]
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.7
+    restart: unless-stopped
+    # The tunnel's route in the Cloudflare dashboard points at http://synapse:8000.
+    command: tunnel --no-autoupdate --metrics 127.0.0.1:2000 run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    depends_on:
+      synapse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [tunnel]
+
+  ollama:
+    image: ollama/ollama:0.40.12
+    profiles: [ollama]
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    # models: Synapse's requests, never the tunnel's. downloads: ollama pull.
+    networks: [models, downloads]
+
+networks:
+  tunnel: {}
+  models:
+    internal: true
+  downloads: {}
+
+volumes:
+  ollama: {}

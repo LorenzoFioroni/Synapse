@@ -201,3 +201,43 @@ def test_web_permission_cannot_reach_loopback_through_redirect(server, monkeypat
     with pytest.raises(PluginError):
         c.get("https://example.com/start")
     assert not Handler.hits
+
+
+def test_local_services_count_as_this_computer(monkeypatch):
+    """--local-service ollama=http://ollama:11434: exactly that origin, for the loopback permission only."""
+    sent = []
+
+    class Answer:
+        status_code = 200
+        headers: dict = {}
+        encoding = "utf-8"
+        reason = "OK"
+
+        def iter_content(self, size):
+            yield b'{"ok": true}'
+
+        def close(self):
+            pass
+
+    def local_request(method, url, **kw):
+        sent.append(url)
+        return Answer()
+
+    monkeypatch.setattr(H, "_local_request", local_request)
+    monkeypatch.setattr(online_http, "public_request", lambda *a, **kw: pytest.fail("must not go to the web"))
+    services = {"ollama": "http://ollama:11434"}
+    c = PluginHttp("ai", ["loopback"], lambda: "test", services=services)
+    assert c.local_service("ollama") == "http://ollama:11434" and c.local_service("other") is None
+    assert c.get("http://ollama:11434/api/tags").json() == {"ok": True}
+    assert c.post("http://OLLAMA:11434/api/generate", json={}).status == 200
+    assert sent == ["http://ollama:11434/api/tags", "http://OLLAMA:11434/api/generate"]
+    for url in ("http://ollama:22/", "https://ollama:11434/", "http://ollama/", "http://ollama.evil:11434/"):
+        with pytest.raises(PluginError):
+            c.get(url)
+    with pytest.raises(HttpError, match="credentials"):
+        c.get("http://user:pw@ollama:11434/")
+    # without the loopback permission the service is just another host
+    web = PluginHttp("web", ["example.com"], lambda: "test", services=services)
+    with pytest.raises(PluginError, match="ollama"):
+        web.get("http://ollama:11434/api/tags")
+    assert len(sent) == 2

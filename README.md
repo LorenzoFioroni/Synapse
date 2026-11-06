@@ -189,6 +189,17 @@ devices, making AI access tokens, removing devices or passkeys, changing plugins
 backup settings work from a signed-in device after confirming with the passkey (Face ID / Touch ID). The full setup, with a systemd service and the
 Cloudflare steps: [docs/remote-access.md](docs/remote-access.md).
 
+Or run it all in Docker: Synapse, the tunnel and, for autocompletion, Ollama (on an NVIDIA GPU if
+there is one), restarted by Docker after a reboot and reached only through the tunnel:
+
+```bash
+cp .env.example .env              # the public address, the tunnel's token, the data folder
+docker compose up -d --build
+docker compose exec synapse python server.py --pairing-link
+```
+
+See [docs/docker.md](docs/docker.md).
+
 Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
 
 | File | What |
@@ -324,6 +335,7 @@ For how the code fits together and where new code goes, see
 ├── tests/                 pytest suite, js/ unit tests, e2e/ browser checklists
 ├── plugins/               plugins that come with Synapse, off until turned on (Citation Counts, arXiv Today)
 ├── docs/                  technical documentation
+├── Dockerfile, compose*.yaml, .env.example   Synapse, its tunnel and Ollama in Docker (docs/docker.md)
 └── data/                  your library (git-ignored)
 ```
 

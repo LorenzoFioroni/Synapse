@@ -28,3 +28,10 @@ frontend/node_modules/
 
 # HTTPS certificates and their private keys for --lan --cert/--key (mkcert writes them here)
 *.pem
+
+# Docker deployment: secrets and local changes to compose.yaml (docs/docker.md)
+.env
+.env.*
+!.env.example
+compose.override.yaml
+*.key

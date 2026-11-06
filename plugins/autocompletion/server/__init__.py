@@ -1,4 +1,5 @@
-"""Autocompletion in notes, from a model served by Ollama on this computer (a contributed plugin).
+"""Autocompletion in notes, from a model served by Ollama on this computer, or where the server was told
+Ollama runs (``--local-service ollama=URL``; a contributed plugin).
 
 `ollama.py` is the HTTP client (and checks that Ollama's address is on this computer),
 `prompt.py` turns the text around the cursor into a request and cleans what comes back, and
@@ -20,7 +21,11 @@ MAX_TEXT = 200_000  # characters of either side sent per request (only the end n
 
 
 def activate(plugin: Plugin) -> None:
-    completer = Completer(lambda: plugin.settings.all(), client=lambda url: Ollama(url, plugin.http))
+    completer = Completer(
+        lambda: plugin.settings.all(),
+        client=lambda url: Ollama(url, plugin.http),
+        server_url=plugin.http.local_service("ollama"),
+    )
 
     @plugin.settings.on_change
     def changed(values: dict) -> None:

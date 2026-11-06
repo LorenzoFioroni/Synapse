@@ -5,13 +5,13 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.11**, which also accepts plugins targeting 1.0–1.10. Reference
+This page documents API **1.12**, which also accepts plugins targeting 1.0–1.11. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
 `"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`. Named reference sub-sources and the reference record
 contract require `"^1.5"`. Metadata review, progress jobs, library editing and field scheduling helpers require `"^1.6"`. Notes reads and visualizations require `"^1.7"`. The phone layout's additions (a page's
 `phone` layout, `p.capture`, `p.editor.toolbar`, `role: 'dismiss'` and a paper's `group`) require
-`"^1.11"`.
+`"^1.11"`. Local services (`plugin.http.local_service`) require `"^1.12"`.
 What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
@@ -165,8 +165,8 @@ installed plugins under **Plugins**.
   preserves library records; lookups still work when another matching provider is enabled.
   Existing enabled/disabled choices survive the conversion. See [references](references.md).
 - **Autocompletion** (`plugins/autocompletion`, off by default or as previously configured): local
-  Ollama suggestions through `plugin.http` with `network: ["loopback"]` and the public editor
-  suggestion API. It stops in safe mode; settings survive. Legacy `notes_ai_*` settings are
+  Ollama suggestions through `plugin.http` with `network: ["loopback"]` (and the server's local
+  service `ollama`, API 1.12) and the public editor suggestion API. It stops in safe mode; settings survive. Legacy `notes_ai_*` settings are
   carried over once by the host for the bundled plugin only. See [autocompletion](autocompletion.md).
 - **Open-Access PDFs** (`plugins/open-access-pdfs`): where Find Available PDF looks, Unpaywall and
   arXiv by identifier and by title (its two PDF sources, see
@@ -423,7 +423,7 @@ def activate(plugin: Plugin) -> None:
 | `@plugin.schedule(name, cron=…, every=…, tz=None, catch_up=True)` | Runs the function on a cron rule or every so often, in the web app (see [Background work](#background-work)). Also `plugin.schedule(name, fn, …)`. |
 | `@plugin.job(name, retries=3)` / `plugin.jobs.enqueue(name, *args, key=None, delay=0)` | A job handler, and queuing work for it; `plugin.jobs.pending()` lists what waits. |
 | `plugin.fields` | `declare(name, type=…, label=…, refresher=…, refresh=…)`, `set(paper, name, value)`, `set_many(name, {paper: value})`, `get(paper, name)`, `key(paper)`, `clear(name, papers=None)`: values attached to papers (see [Per-item fields](#per-item-fields)). |
-| `plugin.http` | `get(url, params=…)`, `post(url, json=…)`, `request(method, url, …)`, `limit(host, seconds)`: the web, within the manifest's `network` (see [Reaching the web](#reaching-the-web)). |
+| `plugin.http` | `get(url, params=…)`, `post(url, json=…)`, `request(method, url, …)`, `limit(host, seconds)`: the web, within the manifest's `network` (see [Reaching the web](#reaching-the-web)). `local_service(name)` (API 1.12): the address of a service the server was started with, or `None`. |
 | `@plugin.item_source(id, title=…, icon="list", description="", badge=None)`, `plugin.refresh_sources()` | A list of papers in the sidebar, and saying it changed (see [Papers outside the library](#papers-outside-the-library)). |
 | `@plugin.metadata_source(id, title=…, kinds=("doi", "arxiv", "isbn", "title", "pmid"), order=100)` | `fn(query)` receives `kind`, normalized `value`, and the contact `email`. Return an item dict in Synapse's field format, or `None` for no match. Lower order runs first; the first nonempty result wins. Raise `PluginError` for an unavailable source or a readable lookup problem; later sources are still tried. The bundled Metadata Sources plugin uses order 100. Sources are removed when their plugin stops and listed as `metadata_sources` in its info. Use `plugin.http` and declare network permission for a third-party provider. |
 | `@plugin.pdf_source(id, title=…, by_title=False, order=100)` | Where Find Available PDF may look: `fn(paper)` gets `{"title", "doi", "arxiv"}` and returns PDF URLs, best first; Synapse downloads them in turn and keeps the first that is the paper (it checks the DOI, the arXiv stamp or the title in its text). Sources `by_title` are asked only when those going by identifier found nothing for a paper with an arXiv id. Lower `order` first (Open-Access PDFs uses 10). For an institutional repository or a proxy, say. |
@@ -716,6 +716,12 @@ of this):
   are refused, and each redirect is checked again. Loopback calls have no default rate gap; a
   plugin can still request one with `limit`. Status and model-generation timeouts may be a
   `(connect, read)` pair, as in requests. Ordinary host permissions still refuse private addresses.
+- API 1.12 adds **local services**: services the deployment runs next to Synapse, named by whoever
+  starts the server (`--local-service ollama=http://ollama:11434` or `SYNAPSE_LOCAL_SERVICES`, never
+  Settings), such as Ollama in a container of its own ([Docker](docker.md)). With the `"loopback"`
+  permission their exact origins (scheme, host and port) are reached like loopback; other ports of
+  that host are not. `plugin.http.local_service("ollama")` returns the address, or `None` when the
+  server names no such service.
 - Requests to one host are spaced (0.5 s; more with `plugin.http.limit(host, seconds)`), across
   all plugins, so two plugins cannot overload one service. All of arXiv's hosts share one line, 3 s
   apart as its API terms ask, with Synapse's own requests to arXiv (`backend/online/http.py`
