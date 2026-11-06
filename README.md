@@ -392,3 +392,15 @@ The notes editor (CodeMirror 6) is vendored as a pre-built bundle in `frontend/v
 to rebuild it from the pinned versions: `cd tools/cm6 && npm ci && ./build.sh`. The renderer
 (markdown-it, KaTeX, Mermaid) likewise lives in `frontend/vendor/md/` and `frontend/vendor/mermaid/`
 (`tools/md`), and the graph library (force-graph) in `frontend/vendor/force-graph/` (`tools/graph`).
+
+## License
+
+Synapse is free software: you can redistribute it and/or modify it under the terms of the GNU
+General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. It is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
+
+The libraries vendored under `frontend/vendor/` keep their own licences (Apache-2.0, MIT, BSD, ISC
+and others), listed with their versions in [`frontend/vendor/README.md`](frontend/vendor/README.md)
+and in the `LICENSE*` files next to them.

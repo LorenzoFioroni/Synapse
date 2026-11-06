@@ -1,6 +1,7 @@
 {
   "name": "synapse-frontend",
   "private": true,
+  "license": "GPL-3.0-or-later",
   "description": "Build of the Synapse web app: TypeScript in src/ is compiled to js/ (not committed). The @codemirror, @lezer, katex, markdown-it (@types) and force-graph packages are here for their types only: the app uses the bundles in vendor/ (built by tools/), pinned to the same versions. @types/chrome types the browser extension (type-checked JavaScript, see ../browser_extension/tsconfig.json).",
   "type": "module",
   "scripts": {
