@@ -81,6 +81,15 @@ def setup():
         "| small $\\mu$ | [@cuiVariational2015]; \\cref{eq:energy} and \\cref{sec:method} |\n\nEnd.\n"
     )
     requests.post(f"{BASE}/api/notes/note", json={"path": "Table math.md", "title": "Table math", "text": table})
+    # tables in callouts: only lines that keep the callout's ">" belong to the table (as in GFM)
+    callouts = (
+        "# Callout tables\n\n> [!note] Quoted\n>| a | b |\n>|---|---|\n>| 1 | 2 |\n\n"
+        "> [!note] Lazy\n>| c | d |\n|---|---|\n| 5 | 6 |\n>\n> After the lazy one.\n\n"
+        "> [!note] Cut\n>| e | f |\n>|---|---|\n>| 7 | 8 |\n| 9 | 10 |\n\nEnd.\n"
+    )
+    requests.post(
+        f"{BASE}/api/notes/note", json={"path": "Callout tables.md", "title": "Callout tables", "text": callouts}
+    )
     contents = (
         "# Contents\n\n\\tableofcontents\n\n##* Hidden detail $x^2$\n\n"
         + "\n\n".join(f"Filler paragraph {i}." for i in range(1, 201))
@@ -350,6 +359,36 @@ async def main():
             )
             labels = await page.locator(".cm-lp-chip.cite").all_text_contents()
             check("live: [@key, p. 1]: is a citation", any("Cui & Cirac 2015, p. 1" in l for l in labels), labels)
+
+            # ---- tables in callouts: live preview draws what the read view draws
+            await page.click('.nt-row.note[data-path="Callout tables.md"]')
+            await page.click('[data-mode="live"]')
+            await wait_for(lambda: count(page, ".cm-lp-table table"))
+            await page.locator(".cm-lp-table").first.wait_for()
+            heads = await page.locator(".cm-lp-table th").all_text_contents()
+            cells = await page.locator(".cm-lp-table td").all_text_contents()
+            lines = await page.locator(".note-editor-view:not([hidden]) .cm-line").all_text_contents()
+            outside = await page.evaluate(
+                """() => [...document.querySelectorAll('.note-editor-view:not([hidden]) .cm-line')]
+                  .filter((l) => !l.closest('.cm-lp-callout-block')).map((l) => l.textContent)"""
+            )
+            check(
+                'live: a callout table missing ">" on its rows shows as source, like the read view',
+                heads == ["a", "b", "e", "f"]
+                and cells == ["1", "2", "7", "8"]
+                and any(l.startswith("|---|") for l in lines)
+                and "| 9 | 10 |" in outside
+                and "| 5 | 6 |" not in outside,
+                [heads, cells, outside],
+            )
+            await page.click('[data-mode="read"]')
+            await page.wait_for_selector(".note-read table")
+            read_heads = await page.locator(".note-read th").all_text_contents()
+            read_cells = await page.locator(".note-read td").all_text_contents()
+            check(
+                "read: the same callout tables", read_heads == heads and read_cells == cells, [read_heads, read_cells]
+            )
+            await page.click('[data-mode="live"]')
 
             # ---- starred headings and live table-of-contents navigation
             await page.click('.nt-row.note[data-path="Contents.md"]')
