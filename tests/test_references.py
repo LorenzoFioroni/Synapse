@@ -390,3 +390,29 @@ def test_library_index_is_reused_until_the_library_changes(svc, monkeypatch):
     assert len(calls) == 3
     index, items = svc.citations._library_index()
     assert "abstract" not in next(iter(items.values()))
+
+
+def test_panes_asked_at_once_share_one_read_of_the_library(svc, monkeypatch):
+    """Arrowing through the list asks for several item panes at once. The library is read once for
+    all of them: a save has to wait for every read of the library to finish."""
+    import threading
+    import time
+
+    ids = [svc.papers.create({"title": f"Paper {i}", "abstract": "long " * 50})["id"] for i in range(6)]
+    calls, kwargs = [], []
+    real = svc.papers.list
+
+    def slow_list(*a, **k):
+        calls.append(1)
+        kwargs.append(k)
+        time.sleep(0.2)  # long enough for every pane to ask while the first read runs
+        return real(*a, **k)
+
+    monkeypatch.setattr(svc.papers, "list", slow_list)
+    threads = [threading.Thread(target=svc.citations.item_view, args=(i,)) for i in ids]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(calls) == 1
+    assert "abstract" in kwargs[0]["leave_out"]  # not read at all, not only dropped

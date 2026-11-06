@@ -41,3 +41,13 @@ def test_ids_empty_gives_just_counts(client):
     make(client)
     res = client.get("/api/items?ids=").get_json()
     assert res["items"] == [] and res["counts"]["library"] == 1
+
+
+def test_reading_the_library_without_some_columns(client, svc):
+    make(client, title="Read lean", abstract="Long text " * 100, doi="10.1/y")
+    full = svc.papers.list()[0]
+    lean = svc.papers.list(leave_out=("abstract",))[0]
+    assert full["abstract"] and "abstract" not in lean
+    assert {k: v for k, v in full.items() if k != "abstract"} == lean
+    # never part of a listing: the viewer's annotations and the legacy folder column
+    assert "annotations" not in full and "folder_id" not in full

@@ -108,6 +108,12 @@ commits on success, rolls back on error and always closes. Every connection turn
 points at the change feed. A failure in `on_write` is swallowed, because telling other windows
 must never undo a saved change.
 
+The database uses SQLite's default rollback journal, so a write commits only once every read in
+progress has finished. Whole-library reads therefore read only the columns they need
+(`PaperRepository.list(leave_out=…)`; listings never read the viewer's `annotations`), and are
+not repeated in parallel: otherwise saving an item while several are being read can take seconds
+on a slow computer.
+
 All SQL for items lives in the `library/` package. HTTP endpoints never build queries.
 
 ### Tables
