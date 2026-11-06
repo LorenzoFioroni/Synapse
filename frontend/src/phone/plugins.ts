@@ -9,6 +9,7 @@ import { off, on, state } from '../store.js';
 import type { Item } from '../types.js';
 import { toastError } from '../ui/toast.js';
 import { escapeHtml as esc } from '../util.js';
+import { sourceBadges } from '../ui/sourceBadges.js';
 import { openSettings } from '../views/settingsView.js';
 import { dismissAction, itemScreen, readPdf } from './library.js';
 import { type Destination, groupRuns, itemMeta } from './model.js';
@@ -28,7 +29,7 @@ export function pluginsScreen(): Screen {
         const row = (d: Destination) => `<button class="ph-dest${d.phone ? '' : ' off'}" data-dest="${esc(d.id)}"${d.phone ? '' : ' aria-disabled="true"'}>
           <span class="ph-dest-icon">${icon(d.icon)}</span>
           <span class="grow"><span class="ph-row-title">${esc(d.title)}</span><span class="ph-row-meta">${esc(d.phone ? d.pluginName : `${d.pluginName} · needs a larger screen`)}</span></span>
-          ${d.id === pin?.id ? '<span class="ph-tag small">In tab bar</span>' : ''}
+          ${d.id === pin?.id ? '<span class="ph-tag small">In tab bar</span>' : ''}${sourceBadges(d.marks, true)}
           ${d.badge ? `<span class="ph-count badge">${esc(d.badge)}</span>` : ''}${d.phone ? chevron() : ''}</button>`;
         el.innerHTML = `<div class="ph-scroll">
           ${rootHeader('Plugins', { actions: roundButton('gear', 'Settings', 'data-act="settings"') })}
@@ -120,7 +121,7 @@ function sourceScreen(sourceId: string, root: boolean): Screen {
         const variants = s?.variants || [];
         const chosen = variant ?? variants[0]?.id ?? null;
         el.querySelector('.ph-variants')!.innerHTML = variants.map((v) => `<button class="ph-chip${v.id === chosen ? ' on' : ''}" data-variant="${esc(v.id)}" role="listitem">
-          ${esc(v.title)}${v.badge ? ` <span class="ph-chip-badge">${esc(v.badge)}</span>` : ''}</button>`).join('');
+          ${esc(v.title)}${sourceBadges(v.highlights || [], true)}${v.badge ? ` <span class="ph-chip-badge">${esc(v.badge)}</span>` : ''}</button>`).join('');
       };
       const dismissable = (it: Item) => !!dismissAction([it]);
       const paint = () => {

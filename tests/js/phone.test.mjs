@@ -87,3 +87,21 @@ test('short times for lists of notes', () => {
   assert.equal(shortWhen(at(new Date(2026, 9, 20, 9, 0)), now), '20 Oct');
   assert.equal(shortWhen(at(new Date(2025, 9, 20, 9, 0)), now), '20 Oct 2025');
 });
+
+test("a list's badges of today travel with it, and the Plugins tab collects those not pinned", async () => {
+  const { hubMarks } = await import('../../frontend/js/phone/model.js');
+  const now = new Date(2026, 10, 6, 9);
+  const cites = { label: 'Cites you', text: 'cites you', tone: 'red', icon: 'megaphone' };
+  const follow = { label: 'Following', text: 'by someone you follow', tone: 'gold', icon: 'star' };
+  const feed = { ...sources[0], variants: [{ id: '2026-11-06', title: 'Today', badge: '4', highlights: [follow, cites] },
+    { id: '2026-11-05', title: 'Yesterday', badge: null, highlights: [follow] }] };
+  const other = { ...sources[0], id: 'x.list', title: 'Other', variants: [{ id: '2026-11-06', title: 'Today', badge: null, highlights: [{ ...follow, text: 'another' }] }] };
+  const d = destinations([feed, other], pages, new Map(), now);
+  assert.deepEqual(d[0].marks.map((m) => m.label), ['Following', 'Cites you']);   // today's only, as the desktop sidebar
+  assert.deepEqual(d[2].marks, []);                                               // pages have none
+  assert.deepEqual(destinations([feed], [], new Map(), new Date(2026, 10, 8)).map((x) => x.marks), [[]]);   // no day for today
+  // the feed pinned: Plugins shows the other list's; nothing pinned: one of each kind, red first
+  assert.deepEqual(hubMarks(d, d[0]).map((m) => m.text), ['another']);
+  assert.deepEqual(hubMarks(d, null).map((m) => m.label), ['Cites you', 'Following']);
+  assert.deepEqual(hubMarks(d, d[1]).map((m) => m.label), ['Cites you', 'Following']);
+});

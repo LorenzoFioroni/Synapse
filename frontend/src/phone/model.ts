@@ -1,7 +1,8 @@
 // The phone shell's decisions without a DOM (unit-tested in tests/js/phone.test.mjs): which
 // plugin lists and pages it offers, what the tab bar holds, the Plugins tab's badge, a list's
 // groups, a row's second line and what a swipe means.
-import type { Item, PluginSource } from '../types.js';
+import type { Item, PluginSource, SourceBadge } from '../types.js';
+import { todaySourceBadges } from '../ui/sourceBadges.js';
 
 /** A plugin's list of papers or page, as the phone offers it. */
 export interface Destination {
@@ -11,6 +12,8 @@ export interface Destination {
   title: string;
   icon: string;
   badge: string | null;
+  /** Today's badges of its papers (Following, Cites you …), as the desktop sidebar shows them. */
+  marks: SourceBadge[];
   plugin: string;
   pluginName: string;
   /** Usable on a phone (a list always is; a page when it draws a phone layout). */
@@ -20,14 +23,15 @@ export interface Destination {
 export interface PageLike { id: string; title: string; icon?: string; owner?: string; source?: string; phone?: unknown }
 
 /** The lists and pages of the running plugins (lists first, as the desktop sidebar has them). */
-export function destinations(sources: PluginSource[], pages: PageLike[], badges: Map<string, string>): Destination[] {
+export function destinations(sources: PluginSource[], pages: PageLike[], badges: Map<string, string>, now: Date = new Date()): Destination[] {
   return [
     ...sources.map((s): Destination => ({
       id: `source:${s.id}`, kind: 'source', title: s.title, icon: s.icon || 'list', badge: s.badge || null,
+      marks: todaySourceBadges(s.variants, now),
       plugin: s.plugin, pluginName: s.plugin_name || s.plugin, phone: true,
     })),
     ...pages.map((p): Destination => ({
-      id: `page:${p.id}`, kind: 'page', title: p.title, icon: p.icon || 'plugin', badge: badges.get(p.id) || null,
+      id: `page:${p.id}`, kind: 'page', title: p.title, icon: p.icon || 'plugin', badge: badges.get(p.id) || null, marks: [],
       plugin: p.owner || '', pluginName: p.source || p.owner || '', phone: !!p.phone,
     })),
   ];
@@ -65,6 +69,21 @@ export function hubBadge(dests: Destination[], pin: Destination | null): string 
     if (Number.isFinite(n)) sum += n; else text = true;
   }
   return sum > 0 ? String(sum) : text ? '•' : null;
+}
+
+/** The Plugins tab's badges: those of the usable destinations not pinned, one of each kind (the
+ *  same tone and icon), red first, then gold and teal, at most three. */
+export function hubMarks(dests: Destination[], pin: Destination | null): SourceBadge[] {
+  const seen = new Map<string, SourceBadge>();
+  for (const d of dests) {
+    if (!d.phone || d.id === pin?.id) continue;
+    for (const m of d.marks) {
+      const key = `${m.tone || 'gold'}|${m.icon || 'star'}`;
+      if (!seen.has(key)) seen.set(key, m);
+    }
+  }
+  const rank = (m: SourceBadge) => ({ red: 0, gold: 1, teal: 2 })[m.tone || 'gold'] ?? 1;
+  return [...seen.values()].sort((a, b) => rank(a) - rank(b)).slice(0, 3);
 }
 
 export { groupRuns } from '../store.js';

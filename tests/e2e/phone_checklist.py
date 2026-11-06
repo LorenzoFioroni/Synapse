@@ -40,10 +40,19 @@ from backend.plugins import Plugin
 def activate(plugin: Plugin):
     store = plugin.storage.json("feed")
 
+    def days():
+        # today (with the badges of its papers, as arXiv Today sends them) and a day before it
+        from datetime import date, timedelta
+        today = date.today()
+        marks = store.get("marks", [])
+        return [{"id": today.isoformat(), "title": "Today", "badge": len(store.get("papers", [])) or None, "highlights": marks},
+                {"id": (today - timedelta(days=1)).isoformat(), "title": "Yesterday", "highlights": store.get("old_marks", [])}]
+
     @plugin.item_source("feed", title="Phone Feed", icon="today", description="Papers for the phone",
-                        badge=lambda: len(store.get("papers", [])) or None)
-    def feed():
-        return store.get("papers", [])
+                        badge=lambda: len(store.get("papers", [])) or None, variants=days)
+    def feed(day=None):
+        from datetime import date
+        return store.get("papers", []) if day in (None, date.today().isoformat()) else []
 
     @plugin.route("/set", methods=["POST"])
     def set_feed():
@@ -109,7 +118,20 @@ PAPERS = [
         "group": "Skim",
         "reasons": ["Topic"],
     },
-    {"arxiv": "2611.00004", "title": "Skim row two", "authors": ["Eve Fox"], "year": 2026, "group": "Skim"},
+    {
+        "arxiv": "2611.00004",
+        "title": "Skim row two",
+        "authors": ["Eve Fox"],
+        "year": 2026,
+        "group": "Skim",
+        "highlights": [{"label": "Following", "text": "By Eve Fox, whom you follow", "tone": "gold", "icon": "star"}],
+    },
+]
+
+
+MARKS = [
+    {"label": "Cites you", "text": "A paper today cites yours", "tone": "red", "icon": "megaphone"},
+    {"label": "Following", "text": "A paper today is by someone you follow", "tone": "gold", "icon": "star"},
 ]
 
 
@@ -167,7 +189,7 @@ def setup():
     )
     api("/api/plugin-host/tasks/enable", "POST")
     api("/api/plugin-host/phone-demo/enable", "POST")
-    api("/api/plugins/phone-demo/set", "POST", {"papers": PAPERS})
+    api("/api/plugins/phone-demo/set", "POST", {"papers": PAPERS, "marks": MARKS, "old_marks": [MARKS[1]]})
     return cui, note["path"], key
 
 
@@ -280,6 +302,18 @@ async def main():
                 pin_label == "Phone Feed" and await page.locator('[data-slot="pin"] .ph-tab-badge').inner_text() == "4",
                 pin_label,
             )
+            marks = await page.eval_on_selector_all(
+                '[data-slot="pin"] .ph-tab-marks .source-badge', "els => els.map(e => e.getAttribute('aria-label'))"
+            )
+            check(
+                "… and today's Cites you / Following on it, as on the desktop sidebar",
+                marks == [MARKS[0]["text"], MARKS[1]["text"]],
+                marks,
+            )
+            check(
+                "… not on Plugins while the list with them is pinned",
+                not await page.locator('[data-slot="plugins"] .ph-tab-marks').count(),
+            )
             await shot(page, "01-library")
 
             # ---- the library -------------------------------------------------------------------
@@ -386,6 +420,15 @@ async def main():
                 await page.locator(".ph-card").count() == 2
                 and await page.locator(".ph-source-list .ph-row-wrap").count() == 2,
             )
+            row_badge = page.locator(".ph-row-wrap").filter(has_text="Skim row two").locator(".ph-badge")
+            check(
+                "a row of a later group shows its badges too",
+                await row_badge.count() == 1 and "Following" in await row_badge.inner_text(),
+            )
+            chip_marks = await page.eval_on_selector_all(
+                ".ph-variants .ph-chip", "els => els.map(e => e.querySelectorAll('.source-badge').length)"
+            )
+            check("the day chips show each day's badges", chip_marks == [2, 1], chip_marks)
             first = page.locator(".ph-card").first
             check(
                 "a card shows the badge and the score",
@@ -450,6 +493,16 @@ async def main():
                 )
             )
             check("choosing another pinned tab puts it in the tab bar", ok)
+            plug_marks = await page.locator('[data-slot="plugins"] .ph-tab-marks .source-badge').count()
+            check(
+                "… and today's badges of the list it left move to Plugins",
+                plug_marks == 2 and not await page.locator('[data-slot="pin"] .ph-tab-marks').count(),
+                plug_marks,
+            )
+            check(
+                "… and to its row there",
+                await page.locator('.ph-dest[data-dest="source:phone-demo.feed"] .source-badge').count() == 2,
+            )
 
             # ---- Tasks on a phone ------------------------------------------------------------------
             await page.locator('[data-slot="pin"]').tap()

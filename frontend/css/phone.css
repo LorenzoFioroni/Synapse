@@ -366,3 +366,18 @@ body.phone #notification-center { left: 8px; right: 8px; width: auto; max-width:
 body.phone .ph-bell { display: none; }
 .ph-tag.add.wide { width: auto; padding: 0 12px; color: var(--text-2); }
 .ph-note-ref small .cite { padding: 0 5px; border-radius: 6px; background: var(--accent-soft); font-size: 12.5px; }
+
+/* today's Following / Cites you … on a tab and in the Plugins tab, as on the desktop sidebar */
+.ph-tab-marks { position: absolute; right: calc(100% - 7px); bottom: -4px; display: flex; }
+.ph-tab-marks .source-badges { gap: 0; }
+.ph-tab-marks .source-badge.compact { width: 15px; height: 15px; border: 2px solid var(--bg-elev); box-sizing: content-box; }
+.ph-tab-marks .source-badge.compact + .source-badge.compact { margin-left: -6px; }
+.ph-tab-marks .source-badge.compact .icon { width: 9px; height: 9px; }
+.ph-dest .source-badges, .ph-chip .source-badges { gap: 3px; }
+.ph-dest .source-badge.compact { width: 20px; height: 20px; }
+.ph-dest .source-badge.compact .icon { width: 12px; height: 12px; }
+.ph-chip .source-badge.compact { width: 16px; height: 16px; }
+.ph-chip .source-badge.compact .icon { width: 10px; height: 10px; }
+.ph-badges.small { margin-bottom: 1px; }
+.ph-badges.small .ph-badge { height: 20px; padding: 0 7px; font-size: 11.5px; }
+.ph-badges.small .ph-badge .icon { width: 11px; height: 11px; }
