@@ -237,6 +237,7 @@ CDP-specific gesture/authenticator scenarios stay on Chromium.
 | `writing` | 8841 | Live/Source formatting keys and delimiter pairing; native mouse-drag reflow across wrapped math/code at three widths; nested callouts with tables, source editing and underline rendering |
 | `export` | 8792 | Exporting a note: a self-contained HTML page that works offline, portable Markdown, PDF through the print dialog |
 | `extension` | 8789, 8790 | The browser extension: options page connects, the popup reads an article's citation tags and saves it with a tag |
+| `find_pdfs` | 8851, 8852 | The extension's Find Missing PDFs against a fake publisher: a browser check, a redirect by script, a login page, the wrong paper, no PDF link |
 | `gallery` | 8794 | Figure numbers and `\cref` (read mode, live preview, exports); galleries: the carousel in read mode and the live preview, editing its source, autocomplete in captions, exported as one figure with panels (HTML, PDF, Markdown); galleries switched off and on in Extended Markdown's settings, then the whole plugin off and on, in the open note |
 | `graph` | 8787 | Local and global graph in Notes, Show in Graph, Cmd/Ctrl+Shift+G, Back/Forward |
 | `lazy_viewer` | 8778 | A 300-page PDF: pages drawn only near the viewport, fast jumps and zoom, annotations on far pages |
