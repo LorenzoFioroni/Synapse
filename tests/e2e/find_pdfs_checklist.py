@@ -17,6 +17,7 @@ and a fake publisher on port 8852, whose DOIs stand for the cases met on real si
 
 import asyncio
 import http.server
+import re
 import shutil
 import subprocess
 import sys
@@ -90,8 +91,12 @@ class Publisher(http.server.BaseHTTPRequestHandler):
         cleared = "cleared=1" in (self.headers.get("Cookie") or "")
         path = self.path.split("?")[0]
         if path.startswith("/doi/10.5555/"):  # the resolver: on to the publisher's page
+            suffix = path.rsplit("/", 1)[1]
+            if not re.fullmatch(r"[a-z]+", suffix):
+                self.send(b"bad request", "text/plain", 400)
+                return
             self.send_response(302)
-            self.send_header("Location", "/article/" + path.rsplit("/", 1)[1])
+            self.send_header("Location", "/article/" + suffix)
             self.end_headers()
         elif path == "/article/check":
             self.send(article("check", "/pdf/check") if cleared else CHECK_PAGE, status=200 if cleared else 403)
