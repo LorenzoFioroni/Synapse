@@ -153,3 +153,27 @@ export async function fetchPdfInPage(pdfUrl, maxBytes) {
     return { error: String((e instanceof Error && e.message) || e) };
   }
 }
+
+/**
+ * Where a tab of "Find missing PDFs" has got to: a PDF, an article page and the PDF links it
+ * names, or a site's browser check still running (Cloudflare and the like answer with an
+ * interstitial that runs JavaScript, then reloads the page it stood in for).
+ * @typedef {{ url: string; isPdf: boolean; challenge: boolean; pdfUrls: string[] }} PageState
+ * @returns {PageState}
+ */
+export function pageState() {
+  const isPdf = document.contentType === 'application/pdf';
+  /** @param {string | null | undefined} u */
+  const abs = (u) => { try { return u ? new URL(u, location.href).href : ''; } catch { return ''; } };
+  /** @type {string[]} */
+  const pdfUrls = [];
+  if (!isPdf) {
+    document.querySelectorAll('meta[name="citation_pdf_url" i]').forEach((m) => pdfUrls.push(abs(m.getAttribute('content'))));
+    document.querySelectorAll('link[rel~="alternate"][type="application/pdf" i]').forEach((l) => pdfUrls.push(abs(l.getAttribute('href'))));
+  }
+  const text = `${document.title} ${(document.body?.innerText || '').slice(0, 1500)}`.toLowerCase();
+  const challenge = !isPdf && !pdfUrls.length && (
+    /just a moment|checking your browser|client challenge|verify you are human|verifying you are human|attention required|are you a robot/.test(text)
+    || !!document.querySelector('#challenge-form, #challenge-running, .cf-turnstile, iframe[src*="challenges.cloudflare.com"], #px-captcha, #captcha-box'));
+  return { url: location.href, isPdf, challenge, pdfUrls: [...new Set(pdfUrls.filter((u) => /^https?:/.test(u)))] };
+}

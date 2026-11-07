@@ -9,7 +9,8 @@ TypeScript frontend. Everything runs on your machine.
 - 📚 **Build your library in seconds** — add papers by DOI, arXiv ID or ISBN, drop in PDFs,
   or save articles with the browser extension.
   The extension supports localhost or a remote HTTPS server with a dedicated browser token;
-  see [extension setup](browser_extension/README.md#remote-server).
+  see [extension setup](browser_extension/README.md#remote-server). Its Find Missing PDFs fetches
+  publishers' PDFs through your browser, with your institution's access.
 - 🔎 **Find the passage you remember** — search metadata and PDF full text, then organise
   your collection with folders, coloured tags and smart folders.
 - 🖍️ **Read, highlight, capture** — annotate PDFs with highlights, drawings and comments,
@@ -400,6 +401,7 @@ python tests/e2e/claude_edits_checklist.py  # Claude's note edits: appear live, 
 python tests/e2e/notes_history_checklist.py # notes history: versions grouped, diffs, restore, outside changes, milestones
 python tests/e2e/equations_checklist.py  # equation numbers, \eqref, macros, clicks into formulas, panels and width
 python tests/e2e/extension_checklist.py  # the browser button: options, reading an article page, saving it
+python tests/e2e/find_pdfs_checklist.py  # the extension's Find Missing PDFs against a fake publisher
 ```
 
 The notes editor (CodeMirror 6) is vendored as a pre-built bundle in `frontend/vendor/cm6/`;

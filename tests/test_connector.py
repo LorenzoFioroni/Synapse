@@ -274,3 +274,52 @@ def test_page_pdf_link_is_downloaded_only_from_public_addresses(client, monkeypa
     ).get_json()
     assert public["pdf"] == "downloaded" and fetched == ["https://journal.example/paper.pdf"]
     assert public["item"]["attachments"][0]["name"] == "Full Text PDF"
+
+
+def test_missing_pdfs_lists_publisher_dois_without_a_pdf(client, svc, tmp_path):
+    physics = client.post("/api/folders", json={"name": "Physics"}).get_json()
+    sub = client.post("/api/folders", json={"name": "Optics", "parent_id": physics["id"]}).get_json()
+    want = client.post("/api/items", json={"title": "Wanted", "doi": "10.1103/a", "folder_id": sub["id"]}).get_json()
+    other = client.post("/api/items", json={"title": "Elsewhere", "doi": "10.1038/b"}).get_json()
+    client.post("/api/items", json={"title": "No DOI"})
+    client.post("/api/items", json={"title": "arXiv", "doi": "10.48550/arXiv.2101.00001"})
+    has = client.post("/api/items", json={"title": "Has PDF", "doi": "10.1103/c"}).get_json()
+    name = make_pdf(svc.config.pdf_dir / "c.pdf", "Has PDF").name
+    svc.papers.add_attachment(has["id"], "Full Text PDF", name, "pdf")
+
+    r = client.get("/api/connector/missing-pdfs").get_json()
+    assert {i["id"] for i in r["items"]} == {want["id"], other["id"]} and r["total"] == 2
+    assert r["items"][0].keys() == {"id", "title", "doi", "year"}
+    # a folder counts with its subfolders
+    r = client.get(f"/api/connector/missing-pdfs?folder_id={physics['id']}").get_json()
+    assert [i["id"] for i in r["items"]] == [want["id"]]
+    assert client.get("/api/connector/missing-pdfs?limit=1").get_json()["total"] == 2
+    assert len(client.get("/api/connector/missing-pdfs?limit=1").get_json()["items"]) == 1
+    assert client.get("/api/connector/missing-pdfs?folder_id=x").status_code == 400
+    assert client.get("/api/connector/missing-pdfs?limit=x").status_code == 400
+
+
+def test_attach_pdf_checks_the_paper(client, tmp_path):
+    item = client.post("/api/items", json={"title": "Quench instabilities", "doi": "10.1103/w2vx-t1mr"}).get_json()
+
+    def send(data: bytes):
+        return client.post(
+            "/api/connector/attach-pdf",
+            data={"id": item["id"], "file": (io.BytesIO(data), "paper.pdf")},
+            content_type="multipart/form-data",
+        )
+
+    assert send(b"<html>Sign in</html>").get_json()["status"] == "not-a-pdf"
+    other = make_pdf(tmp_path / "other.pdf", "Something else entirely, doi 10.1038/zzz").read_bytes()
+    assert send(other).get_json()["status"] == "wrong-paper"
+    right = make_pdf(tmp_path / "right.pdf", "Phys. Rev. Lett. doi:10.1103/w2vx-t1mr").read_bytes()
+    r = send(right).get_json()
+    assert r["status"] == "attached" and r["item"]["attachments"][0]["name"] == "Full Text PDF"
+    # never a second PDF, never over the first
+    assert send(right).get_json()["status"] == "has-pdf"
+    assert len(client.get(f"/api/items/{item['id']}").get_json()["attachments"]) == 1
+    assert client.post("/api/connector/attach-pdf", data={}, content_type="multipart/form-data").status_code == 400
+    assert (
+        client.post("/api/connector/attach-pdf", data={"id": "nope"}, content_type="multipart/form-data").status_code
+        == 404
+    )

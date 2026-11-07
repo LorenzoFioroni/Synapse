@@ -195,6 +195,11 @@ Find Available PDF in the item menu calls `A.findPdf`; several items go through 
 already have an attachment. Items saved with the browser button use `Services.find_pdf_later`, a
 background thread; `_pdf_lock` lets only one such search run at a time.
 
+Publishers' sites that put a browser check in front of their PDFs (Cloudflare and the like) refuse
+these downloads from the server. The browser extension's Find Missing PDFs fetches them in the
+user's browser instead and sends them to `POST /api/connector/attach-pdf`, which runs the same
+`verify_pdf`; see [browser extension](browser-extension.md#find_pdfsjs-missing-pdfs-through-the-browser).
+
 ## PDFs behind a web link
 
 An attachment can be a web address instead of a file. The frontend opens it through

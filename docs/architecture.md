@@ -39,7 +39,7 @@ This page is the map. Each subsystem gets its own page under `docs/` (see
 | `frontend/pair.html` | The page the pairing QR code opens on another device; its standalone script is `src/access/pair.ts`. |
 | `frontend/signin.html` | What a device that is not signed in sees instead of any page: how to pair, and **Sign In with a Passkey**, driven by standalone `src/access/signin.ts`. |
 | `/mcp` | The MCP tools over HTTP, served by the web app, for an AI app on another computer with an access token (`api/mcp.py`, `mcp/http.py`). |
-| `browser_extension/` | The Chrome extension that saves the page you are on to the library. It is plain JavaScript (ES modules) that Chrome loads as it is, with no build; JSDoc comments type it and `npm run check` in `frontend/` type-checks it with `browser_extension/tsconfig.json`. |
+| `browser_extension/` | The Chrome extension that saves the page you are on to the library, and fetches missing PDFs through the browser (Find Missing PDFs). It is plain JavaScript (ES modules) that Chrome loads as it is, with no build; JSDoc comments type it and `npm run check` in `frontend/` type-checks it with `browser_extension/tsconfig.json`. |
 
 ## Backend
 

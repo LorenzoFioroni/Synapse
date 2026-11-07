@@ -69,6 +69,31 @@ def file_existing():
     return jsonify(item=item)
 
 
+@bp.get("/missing-pdfs")
+def missing_pdfs():
+    """The extension's "Find missing PDFs" page: items with a DOI and no PDF."""
+    try:
+        limit = int(request.args.get("limit") or 50)
+    except ValueError:
+        return error("limit must be a number")
+    try:
+        result = connector.missing_pdfs(svc(), request.args.get("folder_id"), limit)
+    except connector.BadRequest as e:
+        return error(str(e))
+    return jsonify(**result)
+
+
+@bp.post("/attach-pdf")
+def attach_pdf():
+    """A PDF the extension fetched in the browser for an existing item (multipart: id, file)."""
+    upload = request.files.get("file")
+    try:
+        result = connector.attach_pdf(svc(), request.form.get("id") or "", upload.read() if upload else None)
+    except connector.BadRequest as e:
+        return error(str(e))
+    return jsonify(**result)
+
+
 @bp.post("/save")
 def save():
     page, upload = _payload()
