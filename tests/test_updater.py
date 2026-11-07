@@ -57,7 +57,8 @@ class FakeDocker:
             if "working_dir" in fmt:
                 return 0, self.where + "\n"
             if ".Config.Env" in fmt:
-                return 0, f"PATH=/usr/bin\nSYNAPSE_COMMIT={self.running}\n"
+                # As a Docker that ignored the format would answer: the whole environment.
+                return 0, f"PATH=/usr/bin\nSYNAPSE_UPDATER_TOKEN={TOKEN}\nSYNAPSE_COMMIT={self.running}\n"
             if "Health" in fmt:
                 return 0, ("healthy" if self.new_healthy or self.rolled_back else "unhealthy") + "\n"
         return 0, ""
@@ -98,6 +99,16 @@ def test_it_builds_exactly_the_branch_tip_and_restarts(make):
     assert cmds.index("docker image tag synapse:local synapse:local-previous") < next(
         i for i, c in enumerate(cmds) if " build " in c
     )
+
+
+def test_the_log_never_shows_the_containers_environment(make, U):
+    for running in (OLD, NEW):  # an update, and nothing to do
+        updater, docker = make(running=running)
+        updater.start()
+        log = "\n".join(updater.public()["log"])
+        assert TOKEN not in log and "SYNAPSE_UPDATER_TOKEN" not in log
+        asked = [c for c, _ in docker.calls if ".Config.Env" in " ".join(c)]
+        assert asked and all(c[3] == U.COMMIT_FORMAT for c in asked)
 
 
 def test_nothing_happens_when_it_runs_the_tip_already(make):

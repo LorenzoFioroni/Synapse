@@ -76,7 +76,9 @@ with nothing but "now":
   healthy. If they are not, it tags the previous image back and restarts them again.
   - A failed build changes nothing.
   - `GET /status` reports the state (`idle`, `running`, `done`, `current`, `failed`) with a message
-    and the last lines of the commands' output, which Settings shows under Details.
+    and the last lines of the commands' output, which Settings shows under Details. Signed-in
+    devices can read it, so it never holds a container's environment, where the token is: the
+    updater asks Docker for `SYNAPSE_COMMIT` alone and leaves that command's output out of the log.
 - **Not itself.** The updater only updates the Synapse services. Rebuild it with
   `docker compose up -d --build`.
 
