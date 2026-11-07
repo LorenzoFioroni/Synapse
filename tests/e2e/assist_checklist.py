@@ -267,7 +267,8 @@ async def main():
                 "[...document.querySelectorAll('.ai-steps a')].map((a) => new URL(a.href).hostname)"
             )
             check(
-                "Settings: Ollama not running, with what to do", ok and "ollama.com" in hosts and "ollama pull" in steps
+                "Settings: Ollama not running, with what to do",
+                ok and any(h == "ollama.com" for h in hosts) and "ollama pull" in steps,
             )
             await page.fill("[data-ai-url]", "http://192.168.1.5:11434")
             await page.press("[data-ai-url]", "Enter")
