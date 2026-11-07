@@ -20,7 +20,10 @@ and can be turned off without rewriting user data:
 - `metadata-sources/` and `reference-sources/`: the online metadata and reference providers.
 - `extended-markdown/`: galleries and numbered figures, inline and collapsible spoilers.
 - `graph/`: the notes and citation graph.
-- [`open-access-pdfs`](open-access-pdfs): where Find Available PDF looks (a PDF source).
+- [`publisher-pdfs`](publisher-pdfs): Find Available PDF tries the publisher's PDF first (a PDF
+  source; on a university's network or VPN the subscription gives the version of record).
+- [`open-access-pdfs`](open-access-pdfs): where Find Available PDF looks next, Unpaywall and arXiv
+  (a PDF source).
 - [`export-formats`](export-formats): the library exports (export writers).
 
 `metadata-check/` and `autocompletion/` start off (Autocompletion follows the old

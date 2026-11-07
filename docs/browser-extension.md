@@ -12,8 +12,9 @@ in [`architecture.md`](architecture.md).
 | File | Runs in | What it does |
 |---|---|---|
 | `manifest.json` | | Manifest V3: the popup, the icons, the options page and the shortcut. |
-| `extract.js` | the web page | `extractCitation` (reads the metadata) and `fetchPdfInPage` (fetches the PDF). |
+| `extract.js` | the web page | `extractCitation` (reads the metadata), `fetchPdfInPage` (fetches the PDF) and `pageState` (where a Find Missing PDFs tab has got to). |
 | `popup.html`, `popup.js`, `popup.css` | the popup | Talks to the library, shows the form, saves. |
+| `find_pdfs.html`, `find_pdfs.js` | a window of its own | Find Missing PDFs: the publisher's PDF of items that have none, fetched in this browser (see [below](#find_pdfsjs-missing-pdfs-through-the-browser)). |
 | `options.html`, `options.js` | the options page | The library address, server permission and access token. |
 | `connection.js` | popup and options | Validates addresses, loads server-bound credentials and sends authenticated requests. |
 | `tsconfig.json` | | Type-checking only (see [Type-checking](#type-checking)). |
@@ -31,12 +32,14 @@ so **Load unpacked** works straight from the repository.
 | `host_permissions`: `http://127.0.0.1/*`, `http://localhost/*`, `http://[::1]/*` | Lets the popup call the library on this computer. |
 
 Remote HTTPS servers use `optional_host_permissions: https://*/*`. Options requests only the
-chosen server’s origin when the user clicks Save. Tokens never enter Chrome Sync. Local extension
+chosen server’s origin when the user clicks Save. Find Missing PDFs requests all of
+`https://*/*` when the user clicks **Find PDFs**, the first time: it reads pages of whatever
+publisher a DOI leads to. It can be withdrawn in `chrome://extensions` (the next run asks again). Tokens never enter Chrome Sync. Local extension
 storage is restricted to `TRUSTED_CONTEXTS` before credentials are read or written, preventing content scripts from accessing it.
 
 The shortcut is the `_execute_action` command, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> by
-default. Apart from fetching the PDF inside the page (below), the extension talks only to the
-library.
+default. Apart from fetching the PDF inside the page (below) and the pages Find Missing PDFs
+opens, the extension talks only to the library.
 
 ## extract.js: reading the page
 
@@ -147,6 +150,58 @@ omit cookies and reject redirects so credentials cannot follow a redirected serv
 The popup displays authentication errors with a link to its settings. Localhost still works
 without a token, including older local servers.
 
+## find_pdfs.js: missing PDFs through the browser
+
+Publishers give their PDFs to readers on a subscribing network (a university's network or VPN),
+but many put a browser check in front of their sites (Cloudflare "Just a moment…", Springer's
+"Client Challenge", ScienceDirect's redirect by script) that a program on the server does not pass:
+Find Available PDF in the app then gets a 403 or a page instead of the PDF. This page fetches
+them in the user's browser instead, which passes those checks as it does when the user opens the
+paper, and with the browser's access (campus network, VPN, the user's sign-ins). That is why the
+browser has to be on the subscribing network, not the server. Zotero does the same with its
+hidden browser and its Connector.
+
+The popup's download icon opens `find_pdfs.html` in a window of its own (`chrome.windows.create`,
+type `popup`): the popup closes when it loses focus, and a hidden tab's timers are throttled. The
+page:
+
+1. `GET /api/connector/missing-pdfs` (with the chosen folder): up to 50 items with a DOI and no
+   PDF, newest first.
+2. On **Find PDFs**: requests `https://*/*` (above), then opens one background tab (inactive, in
+   the last focused window) and goes through the items one at a time, with `PAUSE_MS` (5 s)
+   between them: publishers block institutions whose readers download in bulk.
+3. For each item: load `https://doi.org/<doi>` in the tab and wait for it (`navigate`, at most
+   `LOAD_MS`); then `settle` runs `pageState` in the tab every second until the page shows a PDF
+   or PDF links, or has not changed for `STEADY_POLLS` (4) polls (pages built by script add
+   their links late), for at most `SETTLE_MS` (25 s). The PDF links, in order: what the page
+   names (`citation_pdf_url`, `<link rel="alternate" type="application/pdf">`); the PDF address
+   of publishers that name none, from the page's URL as Zotero's translators do (APS:
+   `/abstract/` → `/pdf/`; Atypon sites such as science.org, ACS, Wiley, Taylor & Francis:
+   `/doi/…` → `/doi/pdfdirect/`, `/doi/pdf/`, `/doi/pdfplus/`, `/doi/epdf/`, each one the page
+   links to); then up to four links that say PDF in their address or label, not supplementary
+   material. A browser check runs its JavaScript and reloads the
+   page by itself meanwhile; `pageState` recognises one by its title or text ("Just a moment",
+   "Checking your browser", "Client Challenge", …) or its elements (`#challenge-form`,
+   `.cf-turnstile`, a `challenges.cloudflare.com` frame, `#captcha-box`, …), and while it is
+   there the page keeps waiting. One that needs a click stays in its tab for the user; the item
+   then ends as `blocked`, for **Retry**.
+4. Each PDF link is tried with `fetchPdfInPage` from the article page (its cookies, its
+   origin), then by `fetch` from the extension page (host permission, so no CORS limit). Only
+   after all links failed so, the first `OPEN_LINKS` (3) are opened in the tab: once it shows a
+   PDF, that URL is fetched from there (ScienceDirect's link is a page that moves on to the PDF
+   by script); when it shows a page, that page's own PDF links not tried yet are (an Atypon
+   reader, `/doi/epdf/`, links the file).
+5. A PDF goes to `POST /api/connector/attach-pdf`, which attaches it only if it is the paper. A
+   PDF of another paper moves on to the next link.
+
+The outcome of each item is shown in its row: `attached`, `has-pdf`, `wrong-paper`,
+`no-access` (only pages came back, usually a login or purchase page), `no-link`, `blocked` or
+`error`. Under a failed item the row says what came back, for each link (`HTTP 403`, "not a
+PDF: the page “Sign in”", "a PDF of another paper"), or which page had no PDF link, so a user
+can tell a missing subscription from a page this code does not read. At the end, **Retry**
+runs the items not found again, and the tab is closed. `?resolver=` (the DOI resolver) and
+`?pause=` exist for the automated checklist.
+
 ## The connector API
 
 All endpoints are under `/api/connector`. The extension sends no `X-Synapse-Client` header, so
@@ -240,6 +295,21 @@ For the "already in your library" screen. The body is `{id, folder_id, tags}`. I
 existing item to the folder and the tags, and answers `{item}`. `folder_id` is read as in `/save`
 (the popup sends a string): a malformed one gives 400, and an unknown item id gives 404.
 
+### `GET /missing-pdfs`
+
+For Find Missing PDFs. Items not in the trash with a DOI that is not an arXiv DOI (the app
+downloads arXiv itself) and no PDF attachment, newest first. Query: `folder_id` (that folder and
+its subfolders; malformed → 400) and `limit` (default 50, at most 200). Answers
+`{items: [{id, title, doi, year}], total}`, `total` counting all of them.
+
+### `POST /attach-pdf`
+
+Multipart with `id` and `file`: a PDF the extension fetched for an existing item. It is attached as
+"Full Text PDF" only if the item has no PDF yet and `verify_pdf` (the check Find Available PDF
+makes: the DOI, the arXiv stamp or the title in the first two pages) says it is the paper.
+Answers `{status, item}`, `status` being `attached`, `has-pdf`, `wrong-paper` or `not-a-pdf`.
+No `id` gives 400, an unknown one 404. It never replaces or adds to a PDF the item has.
+
 ### CORS and the guard
 
 The blueprint's `after_request` hook adds `Access-Control-Allow-Origin` (and allowed headers and
@@ -270,6 +340,8 @@ unpacked extension when they think of it, not when they update the app. So:
   looks up unless the user set metadata lookup to "never").
 - Keep the 409 shape: the popup reads `duplicate_of`, `title` and `folder_ids`.
 - The popup must cope with an older library. It treats a missing `on_add` as "never ask".
+- Find Missing PDFs must too: a 404 from `/missing-pdfs` (a library from before it) shows
+  "Update Synapse first" instead of the server's error.
 - Both sides accept both names of the app. The server answers `app: "synapse"`, and `popup.js`
   and `options.js` accept `['synapse', 'zotero-clone'].includes(…)`, the older name.
   `test_extension_accepts_both_ping_names` in `tests/test_branding.py` checks that exact text, and
@@ -290,7 +362,9 @@ this side: keep them in step with `connector.py`.
 - `tests/test_connector.py`: the ping, saving from page metadata without the network, online
   metadata winning, an uploaded PDF, a DOI read from a PDF, duplicates and `allow_duplicate`,
   `/file`, the `on_add` settings, the background PDF search, the page's PDF link fetched only from
-  public addresses, and CORS for extension origins only.
+  public addresses, and CORS for extension origins only; `/missing-pdfs` (folders, arXiv DOIs and
+  items with a PDF left out, the limit) and `/attach-pdf` (a login page, the wrong paper, never a
+  second PDF).
 - `tests/js/extract.test.mjs`: `extractCitation` with a faked page (malformed `%`-escapes in a PDF
   URL, an escaped DOI).
 - `tests/test_guard.py`: `test_browser_extension_can_save`, and `test_extensions_only_reach_the_connector`
@@ -300,6 +374,12 @@ this side: keep them in step with `connector.py`.
   responses (persistent server-bound token storage across browser restarts, content-script isolation, no token sync, switching back to localhost), and loads the extension into Chromium, saves the
   address in the options page, opens `tests/e2e/fixtures/article.html`, checks that the popup reads
   its title and DOI, and saves it with a tag. It needs `pip install playwright` and full Chromium.
+- `tests/e2e/find_pdfs_checklist.py`, run by hand: Find Missing PDFs against a fake publisher on
+  127.0.0.1: a browser check that sets a cookie and reloads, a PDF behind a redirect by script, a
+  reader page whose download link gives the PDF, a link known only by its "Download PDF" label
+  (not the supplementary PDF next to it), a login page, a PDF of another paper and a page without
+  a PDF link; four PDFs attached, three to retry with what came back, the tab closed. It also
+  checks the links `pageState` derives on APS and science.org pages (served by the test).
 
 See [`testing.md`](testing.md) for how the suites run.
 

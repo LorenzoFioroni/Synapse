@@ -61,6 +61,11 @@ const TYPE_LABELS = { journalArticle: 'Journal Article', preprint: 'Preprint', c
   bookSection: 'Book Section', thesis: 'Thesis', report: 'Report', webpage: 'Web Page', dataset: 'Dataset' };
 
 get('settings', HTMLElement).onclick = () => chrome.runtime.openOptionsPage();
+// A window of its own: the popup closes as soon as it loses focus, a run takes minutes.
+get('findPdfs', HTMLElement).onclick = async () => {
+  await chrome.windows.create({ url: chrome.runtime.getURL('find_pdfs.html'), type: 'popup', width: 600, height: 720 });
+  window.close();
+};
 
 /**
  * A request to the library; never throws for an HTTP error (``ok`` says).

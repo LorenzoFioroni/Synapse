@@ -1,6 +1,7 @@
-"""Download an open-access PDF of an item and verify it is the right paper. Where to look comes
-from the plugins' PDF sources (``@plugin.pdf_source``; Unpaywall and arXiv are the plugin
-plugins/open-access-pdfs, on by default)."""
+"""Download a PDF of an item and verify it is the right paper. Where to look comes from the
+plugins' PDF sources (``@plugin.pdf_source``): the publisher's own copy is plugins/publisher-pdfs,
+Unpaywall and arXiv plugins/open-access-pdfs, both on by default. A candidate may be an article's
+web page: its PDF link is followed (``article_page``)."""
 
 from __future__ import annotations
 
@@ -14,10 +15,13 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
+from requests.cookies import RequestsCookieJar
+
 from ..library.identifiers import clean_doi
 from ..pdf.text import extract_text
+from . import article_page
 from .http import BROWSER_UA, arxiv_wait
-from .remote_pdf import fetch_pdf
+from .remote_pdf import RemoteError, fetch, is_pdf
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +66,7 @@ def _unique(urls: list) -> list[str]:
     return uniq
 
 
-NO_SOURCES = "No PDF sources are on: turn on Open-Access PDFs in Settings → Plugins."
+NO_SOURCES = "No PDF sources are on: turn on Publisher PDFs or Open-Access PDFs in Settings → Plugins."
 
 
 def find_and_download(
@@ -74,20 +78,17 @@ def find_and_download(
     candidates: Callable[[bool], list[str]] | None = None,
 ) -> dict:
     """Returns {"status": "success", "filename": ...} or {"status": "not_found", "message": ...}.
-    ``candidates(by_title)`` gives the URLs to try (the plugins' PDF sources). ``email`` is kept
+    ``candidates(by_title)`` gives the URLs to try (the plugins' PDF sources): those by
+    identifier, then those searching by title, asked only when needed. ``email`` is kept
     for callers that pass it; the sources read the contact address themselves."""
     doi = clean_doi(doi)
     if candidates is None:
         return {"status": "not_found", "message": NO_SOURCES}
-    if arxiv_id:
-        # The arXiv copy is known: try the sources that go by identifier first; the searches by
-        # title only run if none of those is the paper.
-        first = candidates(False)
-        later = lambda: [u for u in candidates(True) if u not in first]  # noqa: E731
-    else:
-        first, later = _unique(candidates(False) + candidates(True)), list
+    # The sources that go by DOI or arXiv id come first; the searches by title only run if none
+    # of those is the paper (a title search finds other papers too, and costs requests).
+    first = _unique(candidates(False))
     found = _download_first(first, title, doi, arxiv_id, pdf_dir)
-    rest = [] if found else later()
+    rest = [] if found else [u for u in _unique(candidates(True)) if u not in first]
     found = found or _download_first(rest, title, doi, arxiv_id, pdf_dir)
     if found:
         return found
@@ -103,9 +104,7 @@ def _download_first(urls: list[str], title, doi, arxiv_id, pdf_dir) -> dict | No
     """Download the candidates in order; the first that is the right paper is kept."""
     for url in urls:
         try:
-            if urllib.parse.urlparse(url).hostname in ("arxiv.org", "export.arxiv.org"):
-                arxiv_wait()  # batch Find PDF: keep arXiv requests apart
-            content = fetch_pdf(url, BROWSER_UA)
+            content = _fetch_candidate(url)
             fd, tmp = tempfile.mkstemp(suffix=".pdf")
             with os.fdopen(fd, "wb") as fh:
                 fh.write(content)
@@ -117,3 +116,27 @@ def _download_first(urls: list[str], title, doi, arxiv_id, pdf_dir) -> dict | No
         except Exception as e:
             log.info("Download failed for %s: %s", url, e)
     return None
+
+
+# A DOI's page can take a refresh page (Elsevier) and the article page before the PDF.
+PAGE_HOPS = 3
+
+
+def _fetch_candidate(url: str) -> bytes:
+    """The PDF at ``url``; when it is an article's page, the PDF the page names. The cookies the
+    sites set travel along: publishers check them between the page and the PDF. Behind a
+    subscription the PDF link leads to a login page instead, which ends the attempt."""
+    cookies = RequestsCookieJar()
+    seen = {url}
+    for _ in range(PAGE_HOPS + 1):
+        if urllib.parse.urlparse(url).hostname in ("arxiv.org", "export.arxiv.org"):
+            arxiv_wait()  # batch Find PDF: keep arXiv requests apart
+        final, data = fetch(url, BROWSER_UA, cookies=cookies)
+        if is_pdf(data):
+            return data
+        pdf, refresh = article_page.links(data, final)
+        url = next((u for u in (pdf, refresh) if u and u not in seen), "")
+        if not url:
+            break
+        seen.add(url)
+    raise RemoteError("The link does not lead to a PDF.", 415)

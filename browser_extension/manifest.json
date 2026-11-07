@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Save to Synapse",
   "short_name": "Save to Library",
-  "version": "1.2.0",
+  "version": "1.3.1",
   "minimum_chrome_version": "102",
   "description": "Save the paper you're reading (DOI, arXiv, journal pages, PDFs) to your Synapse library.",
   "action": {

@@ -92,8 +92,11 @@ see the [README](../README.md); for code ownership, see the [architecture map](a
   Shift-click a node, or **Centre graph here** on a paper's card, to move the centre. Clicking a
   paper shows a card (paper note, Show in Library, PDF, Add to Library). It is a contributed plugin
   (**Graph**, also under **Plugins** in the sidebar): turn it off in Settings → Plugins if you don't use it.
-- **Find Available PDF** (single or batch) looks for open-access copies (Unpaywall,
-  arXiv: the plugin Open-Access PDFs, on by default; other plugins can add places to look) and checks the file is really the right paper. Batch runs skip items
+- **Find Available PDF** (single or batch) takes the publisher's own PDF first (the plugin
+  Publisher PDFs: on your university's network or VPN, where the subscription gives access, you get
+  the published version), then open-access copies (Unpaywall, arXiv: the plugin Open-Access PDFs);
+  both are on by default, and other plugins can add places to look. It checks the file is really
+  the right paper. Batch runs skip items
   that already have a PDF, show progress, and can select the ones that weren't found.
   These downloads, web-linked PDFs and plugins' public HTTP requests connect only to validated
   public DNS addresses, including after redirects, while preserving HTTPS certificate verification.
@@ -290,7 +293,7 @@ their settings and enabled choices, and disables their controls until you restar
 
 All bundled optional feature plugins now use the public API as **contributed plugins**.
 Tasks starts on and retains its records, history and note-link integrity in core.
-**Open-Access PDFs** (where Find Available PDF looks),
+**Publisher PDFs** and **Open-Access PDFs** (where Find Available PDF looks),
 **Export Formats** (the library exports), **Metadata Sources** (scholarly lookups) and
 **Reference Sources** (citation lists) are contributed plugins built only on the public plugin
 API, as yours would be; they come with Synapse and start on, but safe mode stops them like any other
