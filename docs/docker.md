@@ -176,6 +176,12 @@ Dropbox, register a Web application with the redirect URI shown in Settings, ent
 credentials there, then use **Connect account**. Authorization takes place in your browser and
 returns to Synapse's public HTTPS address. No command needs to be run inside Docker.
 
+For FTP/FTPS, WebDAV or S3 servers using a private CA or self-signed certificate, upload the
+trusted PEM certificate/bundle under **Trusted certificate**, then save and test the connection.
+The file stays on the data volume and applies only to that backup connection; no image rebuild
+or change to the container's system certificate store is needed. Keep the original certificate
+separately, since remote connection files are excluded from backup archives.
+
 Use **Test connection** to check upload, download and deletion. Synapse stores configuration and
 tokens under `/data/backup-remote/`, on the existing persistent data volume, so a container rebuild
 keeps the connection. These credentials are omitted from backup archives and masked in Settings.

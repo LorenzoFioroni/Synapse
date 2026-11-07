@@ -122,7 +122,7 @@ export const api = {
   backupNow: () => request('POST', '/api/backups'),
   restoreBackup: (name: string, source: 'local' | 'remote' = 'local') => request<BackupStatus & { restored: string; safety_backup: string }>('POST', '/api/backups/restore', { name, source }),
   remoteBackupSetup: () => request<RemoteBackupSetup>('GET', '/api/backups/remote'),
-  saveRemoteBackup: (data: { provider: string; folder: string; namespace?: string; options: Record<string, string>; password_obscured?: boolean }) => request<{ configuration: RemoteBackupConfiguration }>('PUT', '/api/backups/remote', data),
+  saveRemoteBackup: (data: { provider: string; folder: string; namespace?: string; options: Record<string, string>; password_obscured?: boolean; ca_certificate?: string | null }) => request<{ configuration: RemoteBackupConfiguration }>('PUT', '/api/backups/remote', data),
   remoteBackupSets: () => request<{ sets: string[] }>('GET', '/api/backups/remote/sets'),
   testRemoteBackup: () => request('POST', '/api/backups/remote/test'),
   authorizeRemoteBackup: () => request<{ url: string }>('POST', '/api/backups/remote/authorize'),

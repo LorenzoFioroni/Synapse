@@ -366,6 +366,28 @@ resets after saving; leaving the password blank keeps the saved credential in ei
 The original password cannot be verified until connecting to the remote server. No command needs
 to be run inside Docker.
 
+**Trusted certificates.** FTP/FTPS, WebDAV and S3 connections offer **Trusted certificate** in
+Settings. Upload a PEM certificate or bundle such as `ca-certificates.crt` (maximum 1 MiB), then
+save the connection. Single self-signed server certificates and bundles of CA certificates are
+accepted; malformed files, private keys and server-side file paths are rejected. Export certificates
+through a trusted administration interface or obtain them from your administrator.
+
+The upload applies only to this rclone remote through `override.ca_cert`; it does not change the
+server's system trust or browser/cloud authorization. TLS certificate, hostname and expiry checks
+remain enabled. Settings shows the saved certificate count and normalized bundle's SHA-256 hash;
+certificate contents and storage paths are not returned by the API. With no new selection, saving
+other settings keeps the certificate. Upload another file to replace it, or choose **Remove
+certificate**, then save to return to default trust. Changing storage provider clears the old bundle.
+
+Certificates are stored in private, content-addressed `backup-remote/ca-<sha256>.pem` files on the
+data volume and survive restarts and container rebuilds. Replaced/removed files are cleaned up
+after saving the connection. They are excluded from backup archives, so keep the original file for
+recovery on a fresh server. No Docker commands, mounted certificate paths or container rebuild
+are needed. The existing administrative confirmation protects upload, replacement and removal.
+The `/remote` save request accepts optional `ca_certificate` (PEM text); omit it to keep the
+current bundle, or send `null` to remove it. Responses report `trusted_certificate` as
+`{sha256, count}` or `null`.
+
 **Cloud authorization.** Google, Microsoft and Dropbox need a registered **Web** application;
 enter its client ID/key and secret in Settings. Register the exact redirect URI shown there
 (`https://<Synapse host>/api/backups/remote/callback`, using `--public-url` on a server). Settings

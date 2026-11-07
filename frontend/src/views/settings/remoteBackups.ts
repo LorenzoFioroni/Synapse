@@ -4,6 +4,7 @@ import type { RemoteBackupSetup } from '../../types.js';
 import { toast, toastError } from '../../ui/toast.js';
 import { escapeHtml } from '../../util.js';
 import { asAdmin } from './confirm.js';
+import { bindRemoteCertificate } from './remoteCertificate.js';
 
 const guides: Record<string, string> = {
   drive: 'https://developers.google.com/identity/protocols/oauth2/web-server',
@@ -27,6 +28,7 @@ export async function bindRemoteBackups(view: HTMLElement, changed: () => void):
   host.innerHTML = `${!config.available ? '<p class="form-error">rclone is missing on this server. Use the Synapse Docker image, which includes it.</p>' : ''}
     <label>Storage provider <select class="select" data-remote-provider>${setup.providers.map((p) => `<option value="${p.id}" ${p.id === config.provider ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select></label>
     <div data-remote-fields></div>
+    <div data-remote-certificate></div>
     <label>Destination folder <input class="input mono" data-remote-folder value="${escapeHtml(config.folder || '')}" placeholder="Synapse backups (S3: bucket/folder)"></label>
     <p class="s-desc">Synapse creates its own subfolder here and only removes its own old backups. Local and remote copies each keep the selected number of backups.</p>
     <div><label>Backup set <select class="select" data-remote-namespace><option value="${escapeHtml(config.namespace || '')}">${escapeHtml(config.namespace || 'New backup set')}</option></select></label>
@@ -41,6 +43,8 @@ export async function bindRemoteBackups(view: HTMLElement, changed: () => void):
     </div><p class="s-desc" data-remote-auth-state></p><p class="form-error" data-remote-error hidden></p>`;
   const select = host.querySelector<HTMLSelectElement>('[data-remote-provider]')!;
   const fields = host.querySelector<HTMLElement>('[data-remote-fields]')!;
+  const certificateHost = host.querySelector<HTMLElement>('[data-remote-certificate]')!;
+  let certificate: ReturnType<typeof bindRemoteCertificate> | undefined;
   function paintFields(): void {
     const provider = setup.providers.find((p) => p.id === select.value)!;
     const same = config.provider === provider.id;
@@ -57,6 +61,9 @@ export async function bindRemoteBackups(view: HTMLElement, changed: () => void):
       return `<div style="margin-top:10px"><label for="${id}">${escapeHtml(label)}${required ? ' *' : ''}</label>${control}${key === 'pass' ? '<label><input type="checkbox" data-remote-password-obscured> Already obscured by rclone</label><p class="s-desc">Check this only when pasting the output of rclone obscure. Leave the password blank to keep the saved password.</p>' : ''}</div>`;
     }).join('');
     if (provider.id === 'ftp') fields.insertAdjacentHTML('beforeend', '<p class="s-desc">Choose the TLS mode required by your FTP server. Destination folders are relative to your FTP home directory unless they start with /.</p>');
+    certificateHost.hidden = !provider.custom_ca;
+    certificateHost.replaceChildren();
+    certificate = provider.custom_ca ? bindRemoteCertificate(certificateHost, same ? config.trusted_certificate : null) : undefined;
     const info = host.querySelector<HTMLElement>('[data-remote-auth-info]')!;
     info.hidden = !provider.oauth;
     info.innerHTML = `Register a Web application with your provider and enter its application credentials above. Set its redirect URI to <code>${escapeHtml(setup.callback)}</code>, then choose Connect account. <a href="${guides[provider.id] || '#'}" target="_blank" rel="noopener noreferrer">Provider application setup</a>.
@@ -70,10 +77,13 @@ export async function bindRemoteBackups(view: HTMLElement, changed: () => void):
   async function save(): Promise<boolean> {
     const options: Record<string, string> = {};
     host.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('[data-remote-option]').forEach((el) => { options[el.dataset.remoteOption!] = el.value; });
-    const response = await asAdmin(() => api.saveRemoteBackup({ provider: select.value, folder: host.querySelector<HTMLInputElement>('[data-remote-folder]')!.value, namespace: host.querySelector<HTMLSelectElement>('[data-remote-namespace]')!.value, options, password_obscured: host.querySelector<HTMLInputElement>('[data-remote-password-obscured]')?.checked || false }));
+    const data = { provider: select.value, folder: host.querySelector<HTMLInputElement>('[data-remote-folder]')!.value, namespace: host.querySelector<HTMLSelectElement>('[data-remote-namespace]')!.value, options, password_obscured: host.querySelector<HTMLInputElement>('[data-remote-password-obscured]')?.checked || false, ca_certificate: await certificate?.read() };
+    if (data.provider !== select.value) throw new Error('The storage provider changed. Save the connection again.');
+    const response = await asAdmin(() => api.saveRemoteBackup(data));
     if (!response) return false;
     setup.configuration = response.configuration;
     Object.assign(config, response.configuration);
+    certificate?.saved(config.trusted_certificate);
     const namespace = host.querySelector<HTMLSelectElement>('[data-remote-namespace]')!;
     if (!namespace.value) namespace.innerHTML = `<option value="${escapeHtml(config.namespace!)}">${escapeHtml(config.namespace!)}</option>`;
     host.querySelectorAll<HTMLInputElement>('[data-remote-option][type="password"]').forEach((el) => { el.value = ''; el.placeholder = 'Saved; leave blank to keep'; });

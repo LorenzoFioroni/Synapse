@@ -5,8 +5,10 @@ from __future__ import annotations
 import base64
 import binascii
 import configparser
+import csv
 import io
 import json
+import logging
 import os
 import re
 import tempfile
@@ -15,8 +17,11 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .certificates import parse_ca_certificate
 from .errors import BackupError
 from .rclone import Rclone
+
+log = logging.getLogger(__name__)
 
 # An explicit list avoids accepting backend options that can execute commands or read server files.
 PROVIDERS: list[dict] = [
@@ -51,6 +56,7 @@ PROVIDERS: list[dict] = [
         "id": "s3",
         "name": "S3 / S3-compatible storage",
         "oauth": False,
+        "custom_ca": True,
         "fields": [
             ("provider", "S3 provider (AWS, Other, …)", False, True),
             ("access_key_id", "Access key ID", True, True),
@@ -63,6 +69,7 @@ PROVIDERS: list[dict] = [
         "id": "webdav",
         "name": "WebDAV / Nextcloud",
         "oauth": False,
+        "custom_ca": True,
         "fields": [
             ("url", "WebDAV URL", False, True),
             ("vendor", "Vendor (other, nextcloud, owncloud, …)", False, False),
@@ -74,6 +81,7 @@ PROVIDERS: list[dict] = [
         "id": "ftp",
         "name": "FTP / FTPS",
         "oauth": False,
+        "custom_ca": True,
         "fields": [
             ("host", "Host", False, True),
             ("port", "Port (optional; default 21, or 990 for implicit TLS)", False, False),
@@ -170,6 +178,7 @@ class RemoteStorage:
             "known_hosts": (self.root / "known_hosts").read_text("utf-8")
             if (self.root / "known_hosts").exists()
             else "",
+            "trusted_certificate": meta.get("trusted_certificate"),
         }
 
     def save(self, data: dict) -> dict:
@@ -190,11 +199,17 @@ class RemoteStorage:
                 raise BackupError("Choose whether the password is already obscured by rclone.")
             if password_obscured and not any(f[0] == "pass" for f in provider["fields"]):
                 raise BackupError("This provider does not use an rclone-obscured password.")
+            certificate = None
+            if data.get("ca_certificate") is not None:
+                if not provider.get("custom_ca"):
+                    raise BackupError("This provider does not use uploaded TLS certificates.")
+                certificate = parse_ca_certificate(data["ca_certificate"])
             previous = self.metadata()
             namespace = data.get("namespace") or previous.get("namespace") or "synapse-" + uuid.uuid4().hex
             if not isinstance(namespace, str) or not re.fullmatch(r"synapse-[a-f0-9]{32}", namespace):
                 raise BackupError("Choose a Synapse backup set from the remote folder.")
-            old = self._options() if previous.get("provider") == provider["id"] else {}
+            stored_options = self._options()
+            old = stored_options if previous.get("provider") == provider["id"] else {}
             options = {"type": provider["id"]}
             for key, label, secret, required in provider["fields"]:
                 choices = provider.get("choices", {}).get(key)
@@ -269,16 +284,37 @@ class RemoteStorage:
                 options["disable_site_permission"] = "true"
             if provider["id"] == "onedrive" and options.get("drive_id") and not options.get("drive_type"):
                 raise BackupError("Enter the drive type together with its drive ID.")
+            trusted_certificate = None
+            if certificate is not None:
+                path = self.root / f"ca-{certificate.sha256}.pem"
+                write_private(path, certificate.pem)
+                # Rclone reads this option as a CSV list, even when there is only one file.
+                ca_option = io.StringIO()
+                csv.writer(ca_option, lineterminator="").writerow([str(path)])
+                options["override.ca_cert"] = ca_option.getvalue()
+                trusted_certificate = certificate.summary
+            elif "ca_certificate" not in data and old.get("override.ca_cert"):
+                options["override.ca_cert"] = old["override.ca_cert"]
+                trusted_certificate = previous.get("trusted_certificate")
             self._write_options(options)
             meta = {
                 "provider": provider["id"],
                 "folder": folder,
                 "namespace": namespace,
+                "trusted_certificate": trusted_certificate,
                 "revision": previous.get("revision")
                 if old == options and previous.get("folder") == folder and previous.get("namespace") == namespace
                 else uuid.uuid4().hex,
             }
             write_private(self.root / "destination.json", json.dumps(meta))
+            previous_ca = previous.get("trusted_certificate")
+            if isinstance(previous_ca, dict) and previous_ca != trusted_certificate:
+                digest = previous_ca.get("sha256", "")
+                if isinstance(digest, str) and re.fullmatch(r"[a-f0-9]{64}", digest):
+                    try:
+                        (self.root / f"ca-{digest}.pem").unlink(missing_ok=True)
+                    except OSError:
+                        log.warning("An unused remote backup certificate could not be removed")
             self.oauth.cancel()
             return self.configuration()
 
