@@ -8,6 +8,8 @@ TypeScript frontend. Everything runs on your machine.
 - 🏠 **Local first, offline ready** — keep your library, PDFs and Markdown notes on your own machine.
 - 📚 **Build your library in seconds** — add papers by DOI, arXiv ID or ISBN, drop in PDFs,
   or save articles with the browser extension.
+  **Find Available PDF** gets the publisher's version when your network has access (a
+  university's network or VPN) and an open-access copy otherwise.
   The extension supports localhost or a remote HTTPS server with a dedicated browser token;
   see [extension setup](browser_extension/README.md#remote-server). Its Find Missing PDFs fetches
   publishers' PDFs through your browser, with your institution's access.

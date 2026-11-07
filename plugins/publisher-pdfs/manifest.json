@@ -1,0 +1,13 @@
+{
+  "id": "publisher-pdfs",
+  "name": "Publisher PDFs",
+  "version": "1.0.0",
+  "api": "^1.13",
+  "author": "Synapse",
+  "description": "Find Available PDF tries the publisher's own PDF (the version of record) before any open-access copy: the PDF links publishers give Crossref, and the PDF named on the article's page. Behind a subscription this works where your network has access, such as on your university's network or VPN; elsewhere Find Available PDF moves on to the next source.",
+  "enabled_by_default": true,
+  "backend": "server",
+  "permissions": {
+    "network": ["api.crossref.org"]
+  }
+}
