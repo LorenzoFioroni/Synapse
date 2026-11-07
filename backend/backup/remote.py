@@ -341,7 +341,8 @@ class RemoteStorage:
 
     def test(self) -> None:
         with self.lock, tempfile.TemporaryDirectory() as tmp:
-            probe = Path(tmp) / (".synapse-test-" + uuid.uuid4().hex)
+            # FTP servers may accept dotfiles but hide them from rclone's post-upload lookup.
+            probe = Path(tmp) / ("synapse-test-" + uuid.uuid4().hex)
             probe.write_bytes(b"Synapse backup connection test\n")
             target = self.destination() + "/" + probe.name
             self.rclone.run("copyto", str(probe), target)

@@ -366,9 +366,26 @@ def test_recovery_finds_existing_backup_sets(client, svc, storage):
     assert client.get("/api/backups/remote/archives").get_json()["backups"][0]["name"] == entry["name"]
 
 
-def test_test_connection_checks_read_write_and_delete(client, svc, storage):
+@pytest.mark.parametrize("hide_dotfiles", [False, True])
+def test_test_connection_checks_read_write_and_delete(client, svc, storage, monkeypatch, hide_dotfiles):
+    original_run = svc.backups.remote.rclone.run
+
+    def run(*args, **kwargs):
+        result = original_run(*args, **kwargs)
+        if (
+            hide_dotfiles
+            and args[0] == "copyto"
+            and args[2].startswith("remote:")
+            and Path(args[2]).name.startswith(".")
+        ):
+            # Some FTP servers accept STOR but omit dotfiles from the following metadata lookup.
+            raise BackupError("update getinfo: object not found")
+        return result
+
+    monkeypatch.setattr(svc.backups.remote.rclone, "run", run)
     assert client.post("/api/backups/remote/test").status_code == 200
-    assert not list(storage[0].rglob(".synapse-test-*"))
+    assert [call[0] for call in storage[1]] == ["copyto", "copyto", "deletefile"]
+    assert not any(path.is_file() for path in storage[0].rglob("*"))
 
 
 def test_backup_destination_setting_and_remote_changes_need_admin_on_another_device(app):

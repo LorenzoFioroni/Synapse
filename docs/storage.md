@@ -348,7 +348,8 @@ S3-compatible storage, WebDAV/Nextcloud, SFTP and FTP/FTPS. Arbitrary rclone fla
 server-side credential file paths and existing external rclone configurations are not accepted.
 WebDAV/S3 endpoints use HTTPS. SFTP requires the server's trusted `known_hosts` entry and a
 password or pasted private key (unencrypted PEM). The Test Connection button uploads, reads back
-and deletes a unique probe file.
+and deletes a unique, visible `synapse-test-<random ID>` probe file. The visible name allows the
+check to work on FTP servers that omit dotfiles from directory listings.
 
 **FTP/FTPS.** Choose FTP / FTPS and enter the host, username, password, port and destination
 folder in Settings. Connection security offers **Explicit TLS** (the default), **Implicit TLS**

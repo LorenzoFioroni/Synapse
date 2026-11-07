@@ -208,6 +208,7 @@ FTP offers explicit TLS, implicit TLS and plain FTP. Password connections also a
 `rclone obscure` value by selecting **Already obscured by rclone** beside the password.
 FTP/FTPS, WebDAV and S3 connections can upload a trusted PEM certificate or bundle (for example,
 `ca-certificates.crt`) directly in Settings, including for servers using a private certificate authority.
+Test connection checks upload, download and deletion, including on FTP servers that hide dotfiles.
 Cloud accounts use browser sign-in with Web application credentials entered in Settings.
 Remote backups retain local safety copies and retry failed uploads; remote archives can be
 restored from the same page, including on a fresh installation. PDFs are still excluded.
