@@ -78,6 +78,7 @@ def test_ftp_security_and_ports_round_trip(
         "pass": "obscured-password",
         "tls": tls,
         "explicit_tls": explicit_tls,
+        **({"disable_tls13": "true"} if security != "plain" else {}),
     }
     saved = RemoteStorage(svc.backups.remote.root, BackupOAuth()).configuration()
     assert saved["options"]["security"] == security
@@ -95,6 +96,17 @@ def test_ftp_defaults_to_explicit_tls(client, svc, monkeypatch):
     assert client.put("/api/backups/remote", json=data).status_code == 200
     assert svc.backups.remote._options()["explicit_tls"] == "true"
     assert svc.backups.remote._options()["tls"] == "false"
+
+
+def test_existing_ftps_connections_get_the_tls13_workaround(svc):
+    remote = svc.backups.remote
+    remote._write_options({"type": "ftp", "host": "backup.example", "explicit_tls": "true", "tls": "false"})
+    assert "disable_tls13" not in remote._options()
+    remote._migrate_ftp_tls()
+    assert remote._options()["disable_tls13"] == "true"
+    remote._write_options({"type": "ftp", "host": "backup.example", "explicit_tls": "false", "tls": "false"})
+    remote._migrate_ftp_tls()
+    assert "disable_tls13" not in remote._options()
 
 
 @pytest.mark.parametrize("provider", ["ftp", "webdav", "sftp"])

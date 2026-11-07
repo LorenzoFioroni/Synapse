@@ -113,6 +113,10 @@ PROVIDERS: list[dict] = [
 ]
 
 
+def _ftp_uses_tls(options: dict) -> bool:
+    return options.get("tls") == "true" or options.get("explicit_tls") == "true"
+
+
 def write_private(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     path.parent.chmod(0o700)
@@ -131,6 +135,16 @@ class RemoteStorage:
         self.oauth = oauth
         self.rclone = Rclone(root / "rclone.conf")
         self.lock = threading.RLock()
+        self._migrate_ftp_tls()
+
+    def _migrate_ftp_tls(self) -> None:
+        # Connections saved before this option existed would otherwise keep failing large uploads.
+        try:
+            options = self._options()
+            if options.get("type") == "ftp" and "disable_tls13" not in options and _ftp_uses_tls(options):
+                self._write_options({**options, "disable_tls13": "true"})
+        except OSError:
+            log.warning("The remote backup configuration could not be updated")
 
     def metadata(self) -> dict:
         try:
@@ -271,6 +285,10 @@ class RemoteStorage:
                 options["tls"] = str(security == "implicit").lower()
                 options["explicit_tls"] = str(security == "explicit").lower()
                 options.setdefault("port", "990" if security == "implicit" else "21")
+                if security != "plain":
+                    # Some FTPS servers (e.g. FRITZ!Box) reset the TLS 1.3 data connection at the end of
+                    # a large upload, which a small connection-test file never reveals.
+                    options["disable_tls13"] = "true"
             if provider["id"] == "sftp" and not (options.get("pass") or options.get("key_pem")):
                 raise BackupError("Enter an SFTP password or private key.")
             if provider["oauth"] and all(options.get(k) == old.get(k) for k in ("client_id", "client_secret")):

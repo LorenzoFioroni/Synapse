@@ -356,7 +356,10 @@ folder in Settings. Connection security offers **Explicit TLS** (the default), *
 and **Plain FTP (unencrypted)**. Explicit TLS writes `tls = false` and `explicit_tls = true`;
 implicit TLS writes `tls = true` and `explicit_tls = false`; plain FTP sets both to false.
 An empty port uses 21 for explicit TLS/plain FTP or 990 for implicit TLS; a custom port is kept.
-TLS certificates are verified. Folder paths are relative to the FTP account's home directory
+TLS modes also write `disable_tls13 = true` (existing FTPS connections get it when the server
+starts): some servers, such as the FRITZ!Box, reset the TLS 1.3 data connection at the end of a
+large upload, so the small test file passes while real backups fail. TLS certificates are
+verified. Folder paths are relative to the FTP account's home directory
 unless they start with `/`. Choose **Test connection** after saving to check access.
 
 For FTP, WebDAV and SFTP passwords, paste the ordinary password and leave **Already obscured by
