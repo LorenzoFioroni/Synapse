@@ -101,6 +101,16 @@ def test_requirements_are_checked():
             deps.check([bad], core)
 
 
+def test_requirement_syntax_is_checked_without_backtracking():
+    for good in ("a", "a>=1", "a[x,y]>=1.0, <2", "a == 1.*", "a>=1,"):
+        assert deps.is_requirement(good), good
+    for bad in ("", "a>=", "a>=1 <2", "a,b", ">=1", "a>=1,,<2"):
+        assert not deps.is_requirement(bad), bad
+    start = time.monotonic()
+    assert not deps.is_requirement("a>=0" + " <!" * 50_000)
+    assert time.monotonic() - start < 2
+
+
 def test_a_manifest_with_bad_requirements_is_invalid(tmp_path):
     (tmp_path / "demo").mkdir()
     with pytest.raises(ManifestError, match="Synapse's own"):

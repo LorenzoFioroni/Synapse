@@ -1,5 +1,7 @@
 """The public scholarly helpers preserve Synapse's offline identifier and name conventions."""
 
+import time
+
 import pytest
 
 from backend.plugins import scholarly
@@ -24,6 +26,14 @@ def test_doi_cleaning_and_matching(value, clean, normalized):
 )
 def test_arxiv_identifiers(value, expected):
     assert scholarly.norm_arxiv(value) == expected
+
+
+def test_arxiv_identifiers_are_found_in_linear_time():
+    start = time.monotonic()
+    assert scholarly.norm_arxiv("-" * 200_000) is None
+    scholarly.norm_arxiv("-" * 200_000 + "x")
+    assert time.monotonic() - start < 2
+    assert scholarly.norm_arxiv("see cond-mat/0501001") == "cond-mat/0501001"
 
 
 def test_arxiv_record_and_pattern():

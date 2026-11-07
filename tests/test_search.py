@@ -1,3 +1,5 @@
+import time
+
 from backend.library.search import parse_query, search
 
 PAPERS = [
@@ -205,3 +207,11 @@ def test_haystack_follows_attachment_names_even_within_one_second():
     paper = {**paper, "attachments": [{"name": "New"}]}  # same date_modified (it has one-second steps)
     assert ids(search([paper], "old", "all")) == []
     assert ids(search([paper], "new", "all")) == ["x"]
+
+
+def test_a_long_query_is_parsed_in_linear_time():
+    start = time.monotonic()
+    assert parse_query("A" * 200_000)
+    assert parse_query("A:" * 100_000)
+    assert time.monotonic() - start < 2
+    assert parse_query("x" * 100 + ":v") == [("x" * 100 + ":v", False, None)]

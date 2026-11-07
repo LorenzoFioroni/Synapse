@@ -49,7 +49,7 @@ def normalize(s) -> str:
 FILTER_KEYS = {"tag", "tags", "folder", "type", "year", "has", "author", "title", "journal", "doi", "key"}
 FIELD_ALIASES = {"author": "authors", "key": "citation_key", "journal": "journal", "title": "title", "doi": "doi"}
 
-_TOKEN = re.compile(r'(-?)(?:([A-Za-z_][A-Za-z0-9_.-]*):)?(?:"([^"]*)"|(\S+))')
+_TOKEN = re.compile(r'(-?)(?:([A-Za-z_][A-Za-z0-9_.-]{0,63}):)?(?:"([^"]*)"|(\S+))')
 
 
 def parse_query(q: str, extra_keys=()) -> list[tuple]:

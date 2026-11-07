@@ -66,3 +66,12 @@ def test_completion_stays_inside_existing_closer(prompt, fim, prefix, suffix, ra
 def test_plain_completion_keeps_its_existing_text_overlap_handling(prompt):
     assert prompt.clean(" the state", "We obtain", "state", "line", fim=False) == " the"
     assert prompt.clean(" the state", "We obtain", "state", "line", fim=True) == " the state"
+
+
+def test_long_whitespace_suffix_is_trimmed_quickly(prompt):
+    import time
+
+    start = time.monotonic()
+    prompt.trim("text", "", "\t" * 200_000 + "x", fim=False)
+    prompt.trim("text", "", " \t" * 100_000 + ".", fim=True)
+    assert time.monotonic() - start < 2

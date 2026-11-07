@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 _BOUNDARY = re.compile(r"\${1,2}|\*{1,3}|_{1,3}|~~|\+\+|`+|[)\]}\"']")
-_PUNCTUATION = re.compile(r"[\s.,;:!?…]+$")
+_PUNCTUATION = re.compile(r"[\s.,;:!?…]+")
 _BRACKETS = {"(": ")", "[": "]", "{": "}"}
 
 

@@ -18,11 +18,28 @@ from .errors import PluginError
 DIR = ".python"
 MARKER = ".installed.json"
 # a requirement: a name, optional extras, optional version specifiers — no URLs, paths or pip options
-REQ_RE = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9._,-]+\])?\s*((==|!=|<=|>=|~=|<|>)\s*[A-Za-z0-9.*+!-]+\s*,?\s*)*$"
-)
+_HEAD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9._,-]+\])?")
+_SPEC_RE = re.compile(r"(==|!=|<=|>=|~=|<|>)\s*[A-Za-z0-9.*+!-]+")
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
 TIMEOUT = 600
+
+
+def is_requirement(req: str) -> bool:
+    """Whether ``req`` is a name, optional extras and comma-separated version specifiers.
+
+    The specifiers are checked one by one: a single pattern for the whole list backtracks
+    exponentially on a long malformed one.
+    """
+    head = _HEAD_RE.match(req)
+    if not head:
+        return False
+    specs = req[head.end() :].strip()
+    if not specs:
+        return True
+    parts = [p.strip() for p in specs.split(",")]
+    if parts[-1] == "":  # a trailing comma
+        parts.pop()
+    return bool(parts) and all(_SPEC_RE.fullmatch(p) for p in parts)
 
 
 def name_of(req: str) -> str:
@@ -49,7 +66,7 @@ def check(reqs: Sequence[str], core: set[str]) -> list[str]:
     out = []
     for r in reqs:
         r = str(r).strip()
-        if not REQ_RE.match(r):
+        if not is_requirement(r):
             raise PluginError(f'"python": {r!r} is not a package requirement like "scirate>=0.0.7"')
         if name_of(r) in core:
             raise PluginError(f'"python": {name_of(r)} is one of Synapse\'s own packages; use the version it has')
