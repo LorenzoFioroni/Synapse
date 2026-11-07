@@ -382,3 +382,18 @@ def test_cookie_refreshed_while_in_use(lan_app, mac, ipad):
 )
 def test_guess_name(ua, name):
     assert devmod.guess_name(ua) == name
+
+
+def test_device_cookie_refuses_values_that_are_not_tokens():
+    import pytest
+    from flask import Flask, Response
+
+    from backend.access.guard import set_device_cookie
+
+    with Flask(__name__).test_request_context():
+        resp = Response()
+        set_device_cookie(resp, "abc-DEF_123")
+        assert "synapse_device=abc-DEF_123" in resp.headers["Set-Cookie"]
+        for bad in ("", "a;b", "a\r\nSet-Cookie: x=y", "a b", "é", "x" * 200):
+            with pytest.raises(ValueError):
+                set_device_cookie(Response(), bad)

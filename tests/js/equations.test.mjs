@@ -83,7 +83,8 @@ test('clicks into formulas find the typed token', () => {
 
 const math = (tex, macros) => lib.katex.renderToString(tex, { throwOnError: false, strict: 'ignore', output: 'mathml', macros: { ...macros } });
 const ok = (html) => !/katex-error|#cc0000/.test(html);
-const shown = (html) => html.replace(/<annotation[^]*?<\/annotation>/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, '');
+const stripped = (html, re) => { for (let prev = null; prev !== html;) { prev = html; html = html.replace(re, ''); } return html; };
+const shown = (html) => stripped(stripped(html, /<annotation[^]*?<\/annotation>/g), /<[^>]+>/g).replace(/\s+/g, '');
 
 test('macros: definitions are read and taken out of the formula', () => {
   const p = parseDefinitions('a \\newcommand{\\x}[2]{#2} b \\renewcommand*\\y{Y} \\providecommand{\\z}{Z} \\def\\w#1#2{#1#2} \\DeclareMathOperator*{\\argmax}{arg\\,max} \\newcommand{\\o}[2][1]{#1+#2} c \\newcommand{bad}');

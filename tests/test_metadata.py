@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -203,7 +204,7 @@ CROSSREF_UNRELATED = {
 def fake_net(calls, arxiv_feed=None, crossref=CROSSREF_UNRELATED):
     def get(url, params=None, **kw):
         calls.append((url, params))
-        if "arxiv.org" in url:
+        if urlsplit(url).hostname == "export.arxiv.org":
             return XmlResp(atom(arxiv_feed if arxiv_feed is not None else [PREPRINT]))
         if "crossref" in url:
             return FakeResp(crossref)
@@ -366,7 +367,9 @@ def test_failed_arxiv_fallback_preserves_crossref_no_match(monkeypatch):
     monkeypatch.setattr(
         network,
         "get",
-        lambda url, **kwargs: FakeResp({}, 503) if "arxiv.org" in url else FakeResp({"message": {"items": []}}),
+        lambda url, **kwargs: (
+            FakeResp({}, 503) if urlsplit(url).hostname == "export.arxiv.org" else FakeResp({"message": {"items": []}})
+        ),
     )
     with pytest.raises(metadata.LookupFailed, match="No match found on Crossref"):
         metadata.lookup(title="A research paper with no matching result")

@@ -100,7 +100,7 @@ export function insertLink(cm: CM) {
           if (url) return { range: cm.EditorSelection.range(url.from, url.to) };
         }
       }
-      const text = state.sliceDoc(range.from, range.to).replace(/\n/g, ' ').replace(/[[\]]/g, '\\$&');
+      const text = state.sliceDoc(range.from, range.to).replace(/\n/g, ' ').replace(/[[\]\\]/g, '\\$&');
       const insert = `[${text}](https://)`;
       const from = range.from + (text ? text.length + 3 : 1);
       return { changes: { from: range.from, to: range.to, insert },

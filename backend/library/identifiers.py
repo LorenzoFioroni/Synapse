@@ -11,8 +11,9 @@ import unicodedata
 
 # An arXiv DOI (10.48550/arXiv.2101.00001) names the arXiv preprint.
 ARXIV_DOI = re.compile(r"^10\.48550/arxiv\.(.+)$", re.I)
-# New-style (2101.00001) and old-style (hep-th/9901001) arXiv ids, without the version.
-ARXIV_ID = re.compile(r"(\d{4}\.\d{4,5}|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?", re.I)
+# New-style (2101.00001) and old-style (hep-th/9901001) arXiv ids, without the version. The bound on the
+# archive name keeps a search through long runs of hyphens linear.
+ARXIV_ID = re.compile(r"(\d{4}\.\d{4,5}|[a-z\-]{1,32}(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?", re.I)
 
 
 def clean_doi(doi: str | None) -> str:

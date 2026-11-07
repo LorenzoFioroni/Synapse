@@ -91,6 +91,11 @@ test('link shortcut wraps labels, selects the URL and edits existing links', () 
   assert.equal(e.view.state.sliceDoc(e.selection().from, e.selection().to), 'https://example.org');
 });
 
+test('link shortcut escapes backslashes in the label so they cannot escape the bracket', () => {
+  const e = editor('a\\b]', 0, 4); insertLink(cm)(e.view);
+  assert.equal(e.text(), '[a\\\\b\\]](https://)');
+});
+
 test('dollars and backticks pair, surround selections, skip their generated closer and delete empty pairs', () => {
   for (const ch of ['$', '`']) {
     const e = editor(); e.type(ch); assert.equal(e.text(), ch + ch); assert.equal(e.selection().head, 1);
