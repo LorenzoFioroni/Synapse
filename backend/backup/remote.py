@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import configparser
 import io
 import json
@@ -69,6 +71,25 @@ PROVIDERS: list[dict] = [
         ],
     },
     {
+        "id": "ftp",
+        "name": "FTP / FTPS",
+        "oauth": False,
+        "fields": [
+            ("host", "Host", False, True),
+            ("port", "Port (optional; default 21, or 990 for implicit TLS)", False, False),
+            ("user", "Username", False, True),
+            ("pass", "Password", True, True),
+            ("security", "Connection security", False, True),
+        ],
+        "choices": {
+            "security": [
+                ("explicit", "Explicit TLS (FTPS)"),
+                ("implicit", "Implicit TLS (FTPS)"),
+                ("plain", "Plain FTP (unencrypted)"),
+            ],
+        },
+    },
+    {
         "id": "sftp",
         "name": "SFTP",
         "oauth": False,
@@ -129,6 +150,14 @@ class RemoteStorage:
         meta, options = self.metadata(), self._options()
         provider = next((p for p in PROVIDERS if p["id"] == meta.get("provider")), None)
         fields = provider["fields"] if provider else []
+        if options.get("type") == "ftp":
+            options["security"] = (
+                "implicit"
+                if options.get("tls") == "true"
+                else "explicit"
+                if options.get("explicit_tls") == "true"
+                else "plain"
+            )
         return {
             **meta,
             "available": self.rclone.available,
@@ -156,6 +185,11 @@ class RemoteStorage:
             values = data.get("options")
             if not isinstance(values, dict) or set(values) - {f[0] for f in provider["fields"]}:
                 raise BackupError("The remote connection contains unsupported options.")
+            password_obscured = data.get("password_obscured", False)
+            if not isinstance(password_obscured, bool):
+                raise BackupError("Choose whether the password is already obscured by rclone.")
+            if password_obscured and not any(f[0] == "pass" for f in provider["fields"]):
+                raise BackupError("This provider does not use an rclone-obscured password.")
             previous = self.metadata()
             namespace = data.get("namespace") or previous.get("namespace") or "synapse-" + uuid.uuid4().hex
             if not isinstance(namespace, str) or not re.fullmatch(r"synapse-[a-f0-9]{32}", namespace):
@@ -163,10 +197,14 @@ class RemoteStorage:
             old = self._options() if previous.get("provider") == provider["id"] else {}
             options = {"type": provider["id"]}
             for key, label, secret, required in provider["fields"]:
-                value = values.get(key, "")
+                choices = provider.get("choices", {}).get(key)
+                value = values.get(key, choices[0][0] if choices else "")
                 if not isinstance(value, str) or len(value) > 20000 or "\x00" in value:
                     raise BackupError(f"Invalid {label}.")
-                value = value.strip()
+                if key != "pass" or password_obscured:
+                    value = value.strip()
+                if choices and value not in {choice[0] for choice in choices}:
+                    raise BackupError(f"Choose a supported {label}.")
                 if key == "key_pem":
                     value = value.replace("\r\n", "\n").replace("\n", "\\n")
                 if not value and secret:
@@ -186,8 +224,8 @@ class RemoteStorage:
                         or parts.fragment
                     ):
                         raise BackupError(f"{label} must be an HTTPS address without embedded credentials.")
-                if key == "port" and value and (not value.isdigit() or not 1 <= int(value) <= 65535):
-                    raise BackupError("SFTP port must be between 1 and 65535.")
+                if key == "port" and value and (not re.fullmatch(r"[0-9]{1,5}", value) or not 1 <= int(value) <= 65535):
+                    raise BackupError("Port must be between 1 and 65535.")
                 if key == "host" and value and not re.fullmatch(r"[a-zA-Z0-9.:-]+", value):
                     raise BackupError("Enter a host name or IP address without a URL or path.")
                 if key == "drive_type" and value and value not in ("personal", "business", "documentLibrary"):
@@ -197,10 +235,27 @@ class RemoteStorage:
                         write_private(self.root / "known_hosts", value + "\n")
                         options["known_hosts_file"] = str(self.root / "known_hosts")
                     continue
-                if key == "pass" and value and value != old.get(key):
-                    value = self.rclone.run("obscure", "-", input=value).strip()
+                if key == "pass" and value and values.get(key):
+                    if password_obscured:
+                        try:
+                            if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+                                raise ValueError
+                            decoded = base64.b64decode(value + "=" * (-len(value) % 4), altchars=b"-_", validate=True)
+                            if len(decoded) < 16:
+                                raise ValueError
+                        except (ValueError, binascii.Error) as e:
+                            raise BackupError(
+                                "Paste the output of rclone obscure, or uncheck the obscured password option."
+                            ) from e
+                    else:
+                        value = self.rclone.run("obscure", "-", input=value).strip()
                 if value:
                     options[key] = value
+            if provider["id"] == "ftp":
+                security = options.pop("security")
+                options["tls"] = str(security == "implicit").lower()
+                options["explicit_tls"] = str(security == "explicit").lower()
+                options.setdefault("port", "990" if security == "implicit" else "21")
             if provider["id"] == "sftp" and not (options.get("pass") or options.get("key_pem")):
                 raise BackupError("Enter an SFTP password or private key.")
             if provider["oauth"] and all(options.get(k) == old.get(k) for k in ("client_id", "client_secret")):
