@@ -33,6 +33,10 @@ SOURCE_RE = re.compile(r"(https://[^#\s]+?)(?:#([^:\s]+))?")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}")
 LOG_LINES = 40
 COMMAND_TIMEOUT = 1800  # seconds: building from scratch downloads the base images
+# docker inspect --format: the value of SYNAPSE_COMMIT and nothing else of the environment
+COMMIT_FORMAT = (
+    '{{range .Config.Env}}{{if eq (index (split . "=") 0) "SYNAPSE_COMMIT"}}{{index (split . "=") 1}}{{end}}{{end}}'
+)
 ROLLBACK_WAIT = 120.0  # seconds the previous version gets to be healthy again, whatever UPDATER_HEALTH_TIMEOUT says
 
 
@@ -103,10 +107,13 @@ class Updater:
     def previous(self) -> str:
         return f"{self.settings.image}-previous"
 
-    def _cmd(self, *args: str, env: dict[str, str] | None = None, check: bool = True) -> str:
+    def _cmd(self, *args: str, env: dict[str, str] | None = None, check: bool = True, private: bool = False) -> str:
+        """Run a command; its output goes to the log Settings shows, unless ``private`` (anything
+        that could print a container's environment, whose secrets signed-in devices must not see)."""
         code, out = self.run(list(args), self.settings.project_dir, env or {})
         lines = [line for line in out.splitlines() if line.strip()]
-        self.state["log"] = (self.state.get("log", []) + [f"$ {' '.join(args)}", *lines])[-LOG_LINES:]
+        shown = ["(output not shown)"] if private and lines else lines
+        self.state["log"] = (self.state.get("log", []) + [f"$ {' '.join(args)}", *shown])[-LOG_LINES:]
         if check and code != 0:
             raise UpdaterError(f"{' '.join(args[:3])} failed: {lines[-1] if lines else f'exit {code}'}")
         return out if code == 0 else ""
@@ -152,14 +159,14 @@ class Updater:
             )
 
     def running_commit(self, service: str) -> str | None:
-        """The commit the service's container was built from (its image's SYNAPSE_COMMIT)."""
+        """The commit the service's container was built from (its image's SYNAPSE_COMMIT). Docker is
+        asked for that variable alone: the others hold secrets, such as this updater's token."""
         for cid in self._containers(service):
-            env = self._cmd(
-                "docker", "inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", cid, check=False
-            )
-            for line in env.splitlines():
-                if line.startswith("SYNAPSE_COMMIT="):
-                    return line.split("=", 1)[1].strip() or None
+            out = self._cmd("docker", "inspect", "--format", COMMIT_FORMAT, cid, check=False, private=True)
+            values = [w.split("=", 1)[1] if w.startswith("SYNAPSE_COMMIT=") else w for w in out.split()]
+            found = [v for v in values if COMMIT_RE.fullmatch(v)]
+            if found:
+                return found[-1]
         return None
 
     # ------------------------------------------------------------------ updating
