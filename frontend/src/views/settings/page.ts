@@ -24,6 +24,7 @@ const SECTIONS: [string, string, string][] = [
   ['devices', 'Devices', 'tablet'],
   ['ai', 'AI Access', 'sparkle'],
   ['plugins', 'Plugins', 'plugin'],
+  ['updates', 'Updates', 'refresh'],
   ['library', 'Library & Shortcuts', 'database'],
 ];
 
@@ -242,6 +243,15 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
             <div class="s-desc" data-plugins-desc>Loading…</div></div>
             <div class="s-control"><button class="btn" data-plugins-rescan>${icon('refresh')} Look Again</button></div></div>
             <div class="plugin-list" data-plugin-list></div></div>
+        </div></section>
+
+      <section class="settings-section" id="set-updates"><h2>Updates</h2>
+        <p class="lead" data-update-lead>Newer versions of Synapse.</p>
+        <div class="card">
+          <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Version</div>
+            <div class="s-desc" data-update-desc>Loading…</div></div>
+            <div class="s-control"><button class="btn" data-update-check>${icon('refresh')} Check for Updates</button></div></div>
+            <div data-update-body></div></div>
         </div></section>
 
       <section class="settings-section" id="set-library"><h2>Library &amp; Shortcuts</h2><p class="lead" data-data-dir></p>

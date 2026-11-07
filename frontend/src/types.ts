@@ -460,6 +460,36 @@ export interface BackupStatus {
   keep: number;
 }
 
+/** A commit on the branch Synapse's code comes from (GET /api/updates). */
+export interface UpdateCommit { commit: string; short: string; title: string; date: string; url: string }
+
+/** What the deployment's updater is doing (docker/updater/updater.py). */
+export interface UpdaterState {
+  state: 'idle' | 'running' | 'done' | 'failed' | 'current' | 'unknown';
+  message: string;
+  commit?: string | null;
+  started?: string | null;
+  finished?: string | null;
+  log?: string[];
+}
+
+/** GET /api/updates: newer code on GitHub, and whether this server can install it (backend/online/updates.py). */
+export interface UpdateStatus {
+  available: boolean;                 // the deployment says where the code comes from (SYNAPSE_SOURCE)
+  source: { repo: string; branch: string; url: string } | null;
+  current: { commit: string; short: string } | null;
+  container: boolean;
+  behind: number | null;              // new commits on the branch; null when this build's commit is unknown
+  commits: UpdateCommit[];            // newest first, at most 20
+  latest: UpdateCommit | null;
+  diverged: boolean;
+  compare_url: string;
+  checked: string | null;
+  error: string | null;
+  can_install: boolean;               // an updater installs updates (Update Now)
+  install: UpdaterState | null;
+}
+
 /** A setting a plugin declares in its manifest (backend/plugins/manifest.py). */
 export interface PluginSetting {
   key: string;

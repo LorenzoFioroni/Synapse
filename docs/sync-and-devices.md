@@ -449,7 +449,7 @@ What is assumed:
 - **A paired device is trusted with the library.** It has the same API as this computer, apart
   from making or cancelling pairing codes, renaming or removing other devices, adding or removing
   passkeys, making or removing access tokens, changing plugins (enabling, disabling or
-  reconfiguring them) and changing the backup settings, which need a fresh passkey confirmation. The one exception is enrolling a
+  reconfiguring them), changing the backup settings and installing an update of Synapse, which need a fresh passkey confirmation. The one exception is enrolling a
   passkey straight after pairing — the window a just-paired device uses to add its first one
   (`Devices.recently_paired`).
 - **Whoever holds a passkey is the user.** Anyone who has it (a shared iCloud account, say) can

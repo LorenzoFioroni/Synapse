@@ -357,6 +357,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `settingsView.ts` | The Settings page: binds the controls and saves each change; `applyAppearance`. |
 | `settings/page.ts` | The Settings markup (`settingsHtml`). |
 | `settings/backups.ts`, `settings/devices.ts` | Settings → Backups and Settings → Devices (pairing). |
+| `settings/updates.ts`, `updates.ts` | Settings → Updates (the version, newer commits, Check for Updates, Update Now and waiting for the restart) and the bell's "update available" ([updates](updates.md)). |
 | `settings/passkeys.ts` | Settings → Devices → Passkeys: adding one with `navigator.credentials.create`, removing one. |
 | `settings/aiAccess.ts` | Settings → AI Access: access tokens for `/mcp`, shown once with what to run for Claude Code or Codex, or the URL and header for another app. |
 | `settings/plugins.ts` | Settings → Plugins: the plugins found, turning them on (after a confirmation listing their access) and off, a Settings button on each that is on. Each plugin that is on gets a section of its own (`#set-plugin-<id>`, an entry under Plugins in the navigation): its settings drawn from the manifest (less those its frontend draws, `shows`), tools for other computers, what it offers, Restart and the log. `pluginsChanged()` redraws them when the change feed names `plugins`. See [plugins](plugins.md). |

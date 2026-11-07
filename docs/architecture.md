@@ -65,7 +65,7 @@ Two objects tie the backend together:
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
 | `mcp/` | The MCP server: the JSON-RPC layer (`protocol.py`), its HTTP transport (`http.py`), the library tools (`tools/`, one mixin per family), their schemas (`server.py`) and the instructions given to the AI app (`instructions.py`). | none (it uses the other packages) |
 | `pdf/` | PDF files on disk: text extraction (`text.py`), the full-text index (`fulltext.py`), and for the MCP tools page rendering (`render.py`), finding figures and equations (`regions.py`) and PNG encoding (`png.py`). | `fulltext.db` |
-| `online/` | Lookups on the web: normalizing metadata queries (`metadata.py`; providers come from plugins), downloading and checking open-access PDFs (`pdf_finder.py`; where to look comes from plugins' PDF sources) and PDFs behind an attachment's web link (`remote_pdf.py`). `http.py` has what they share: timeout, User-Agent, the error type, the arXiv request spacing and the shared public-address validator and pinned HTTP/TLS transport. | none |
+| `online/` | Lookups on the web: normalizing metadata queries (`metadata.py`; providers come from plugins), downloading and checking open-access PDFs (`pdf_finder.py`; where to look comes from plugins' PDF sources) and PDFs behind an attachment's web link (`remote_pdf.py`), and newer code for Synapse itself on GitHub, installed through the deployment's updater (`updates.py`, see [updates](updates.md)). `http.py` has what they share: timeout, User-Agent, the error type, the arXiv request spacing and the shared public-address validator and pinned HTTP/TLS transport. | none |
 | `references/` | The citation graph: reference fetching through injected plugin providers (`sources.py`); scholarly HTTP and arXiv parsing live in `plugins/reference-sources/server/`, stored (`store.py`), fetched in the background and matched to library items (`service.py`), and how a paper outside the library connects to it (`connections.py`). | `citations.db` |
 | `access/` | Who may use the server: other websites never (`guard.py`), other devices only once paired (`devices.py`) or signed in with a passkey (`passkeys.py`, checked by `webauthn.py`), AI apps at `/mcp` with MCP-scoped tokens and remote browser saves with revocable connector-scoped tokens (`tokens.py`); requests through a tunnel or proxy never count as this computer (`proxy.py`, `--public-url`); administrative actions from a device after a passkey confirmation (`confirm.py`); `--pairing-link` (`pairing_link.py`); `authdb.py` is what the `auth.db` tables share; `lan.py` finds this computer's network addresses and names. See [`remote-access.md`](remote-access.md). | `auth.db` |
 | `config.py`, `settings.py` | Paths of the data folder, how the server was started (`--public-url`, `--container`, the local services of `--local-service`), and the user's preferences. | `settings.json` |
@@ -184,7 +184,7 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   modules. See [Notes](notes.md) and the [frontend module map](frontend.md).
 - `settingsView.ts` coordinates Settings; `settings/page.ts` renders its sections and
   `settings/search.ts` filters built-in and dynamic plugin sections without rebuilding controls.
-  Backups, devices, passkeys, AI Access, plugin lifecycle and export formats have modules under
+  Backups, updates, devices, passkeys, AI Access, plugin lifecycle and export formats have modules under
   `views/settings/`. Notes preferences have their own section.
 - `phone/*` is the phone layout: `layout.ts` decides which layout a page gets, `shell.ts` the tab
   bar and stacks of screens, `library.ts`, `notes.ts`, `reader.ts` and `plugins.ts` the screens,
@@ -278,6 +278,7 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
 | [References](references.md) | Metadata lookup, finding PDFs, the citation graph, and what the Adding Items settings trigger. |
 | [Sync and devices](sync-and-devices.md) | The change feed, the viewer and app tabs, the guard, LAN pairing and the security model. |
 | [Remote access](remote-access.md) | Running Synapse behind an HTTPS tunnel (`--public-url`, Cloudflare Tunnel), `--pairing-link`, confirming administrative actions with a passkey. |
+| [Updates](updates.md) | Settings → Updates: newer commits on the GitHub branch Synapse comes from, and installing them with the deployment's updater container. |
 | [Docker](docker.md) | The image and `compose.yaml`: Synapse, its tunnel and Ollama in containers; `--container`, local services (`--local-service`) for Ollama in its own container, networks, two libraries on one server. |
 | [The app window](desktop.md) | `--window`, the server that stops with its window, the desktop shortcut, and the app's own tabs for PDFs. |
 | [MCP](mcp.md) | The MCP server, its tools and the rules it enforces. |

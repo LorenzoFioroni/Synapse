@@ -38,6 +38,7 @@ import { tasksPage } from './tasksPage.js';
 import { initToolbar, focusLibrarySearch, setMode, clearSearch, openIdentifier, exportSelectionOrAll } from './views/toolbar.js';
 import { initStatusBar } from './views/statusbar.js';
 import { pageLayout, phoneScreen, switchLayout } from './phone/layout.js';
+import { watchUpdates } from './updates.js';
 
 function startupStatus(text: string): void {
   const el = document.querySelector<HTMLElement>('#startup-screen .startup-status');
@@ -113,6 +114,7 @@ async function boot() {
   try { await Promise.all([A.loadItems(), new Promise(resolve => setTimeout(resolve, 1000))]); } finally { finishStartup(); }
   initChanges();   // show what other windows and devices change
   pluginsStarted = initPluginHost();   // task deep links wait for the plugin's page
+  watchUpdates();   // the bell says when Synapse can be updated
   focusList();
   pollStats();
   openFromHash();

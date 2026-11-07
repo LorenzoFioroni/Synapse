@@ -28,7 +28,10 @@ COPY --from=frontend /app/frontend/node_modules/esbuild/bin/esbuild /usr/local/b
 # The app folder belongs to root and stays read-only to Synapse; readable whatever the checkout's umask.
 RUN chmod -R a+rX,go-w /app && esbuild --version
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
+# The commit this image is built from, for Settings → Updates (the updater passes it, docs/updates.md).
+ARG SYNAPSE_COMMIT=
+ENV SYNAPSE_COMMIT=${SYNAPSE_COMMIT} \
+    PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     SYNAPSE_DATA_DIR=/data \
     HOME=/tmp
@@ -36,7 +39,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 USER 1000:1000
 EXPOSE 8000
 # Loopback inside the container is "this computer": the web app manifest answers without a sign-in.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=2m --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=2m --start-interval=2s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/manifest.webmanifest', timeout=4)"]
 # `docker stop` stops it as Ctrl+C does in a terminal.
 STOPSIGNAL SIGINT

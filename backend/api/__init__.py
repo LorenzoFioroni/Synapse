@@ -46,6 +46,7 @@ def register_blueprints(app: Flask) -> None:
         references,
         settings,
         tasks,
+        updates,
         window,
     )
 
@@ -68,5 +69,6 @@ def register_blueprints(app: Flask) -> None:
         tasks,
         window,
         plugins,
+        updates,
     ):
         app.register_blueprint(module.bp)

@@ -186,7 +186,7 @@ python server.py --pairing-link   # on that computer (over SSH): a one-time link
 Every request through the tunnel needs a signed-in device, whatever address it comes from. Pair
 your phone with the link, add a passkey there, and sign your other devices in with it. Pairing more
 devices, making AI access tokens, removing devices or passkeys, changing plugins and changing the
-backup settings work from a signed-in device after confirming with the passkey (Face ID / Touch ID). The full setup, with a systemd service and the
+backup settings, and installing an update, work from a signed-in device after confirming with the passkey (Face ID / Touch ID). The full setup, with a systemd service and the
 Cloudflare steps: [docs/remote-access.md](docs/remote-access.md).
 
 Or run it all in Docker: Synapse, the tunnel and, for autocompletion, Ollama (on an NVIDIA GPU if
@@ -198,7 +198,9 @@ docker compose up -d --build
 docker compose exec synapse python server.py --pairing-link
 ```
 
-See [docs/docker.md](docs/docker.md).
+See [docs/docker.md](docs/docker.md). Built from GitHub, Settings → Updates shows newer commits, and
+with the updater container **Update Now** installs them: a backup, a rebuild and a restart, with the
+previous version kept to fall back on ([docs/updates.md](docs/updates.md)).
 
 Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
 

@@ -4,7 +4,7 @@ import type {
   AccessToken, AccessTokensOverview, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, HistoryDiff, HistoryLog, HistoryStatus, HistoryVersion, ImportEntry, ImportPreview, Item, RenamedKey,
   ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, Milestone, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
   ItemFieldValue, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginSource, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
-  TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview,
+  TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview, UpdaterState, UpdateStatus,
 } from './types.js';
 import { openNewWindow, openPageInNewWindow } from './windows.js';
 
@@ -121,6 +121,9 @@ export const api = {
   backups: () => request<BackupStatus>('GET', '/api/backups'),
   backupNow: () => request('POST', '/api/backups'),
   restoreBackup: (name: string) => request<BackupStatus & { restored: string; safety_backup: string }>('POST', '/api/backups/restore', { name }),
+  // updates of Synapse itself (Settings → Updates)
+  updates: (refresh = false) => request<UpdateStatus>('GET', refresh ? '/api/updates?refresh=1' : '/api/updates'),
+  installUpdate: () => request<UpdateStatus & { started: UpdaterState }>('POST', '/api/updates/install'),
   // autocompletion in notes (a model in Ollama on this computer)
   citekeyPreview: (pattern: string) => request<{ pattern: string; examples: string[] }>('GET', `/api/settings/citekey_preview?${qs({ pattern })}`),
 

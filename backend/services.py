@@ -84,6 +84,19 @@ class Services:
 
         self.backups = Backups(self)
         self.presence = Presence()  # the open windows, when the server stops with the last one
+        from .config import APP_ROOT
+        from .online.updates import Updates
+
+        # Newer code on GitHub, installed by the deployment's updater (Settings → Updates).
+        self.updates = Updates(
+            config.update_source,
+            config.commit,
+            config.updater_url,
+            config.updater_token,
+            before_install=lambda: self.backups.create("before updating Synapse"),
+            app_root=APP_ROOT,
+            container=config.container,
+        )
         # Plugins (backend/plugins/), started by create_app (or mcp_server.py), not here. They hear
         # about changes to items and notes through the listeners below.
         from .plugins import LibraryReader, PluginHost

@@ -19,7 +19,7 @@ sort = "Cover"
 
 # Type checking of the Python code: mypy (CI runs it), including unannotated function bodies.
 [tool.mypy]
-files = ["backend", "server.py", "mcp_server.py", "tools/typecheck_plugins.py"]
+files = ["backend", "server.py", "mcp_server.py", "tools/typecheck_plugins.py", "docker/updater/updater.py"]
 python_version = "3.10"
 check_untyped_defs = true
 ignore_missing_imports = true   # optional libraries without type information (fitz, pypdfium2, segno …)
