@@ -1,0 +1,44 @@
+# Temporary: CodeQL with the default suite, results printed to the log (never uploaded).
+name: sec-scan
+on:
+  push:
+    branches: ["claude/sec-scan-*"]
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@v4
+        with:
+          upload: never
+          output: sarif-out
+      - name: Print results
+        run: |
+          python3 - <<'PY'
+          import json, glob
+          for f in glob.glob("sarif-out/*.sarif"):
+              d = json.load(open(f))
+              for run in d["runs"]:
+                  for r in run.get("results", []):
+                      loc = r["locations"][0]["physicalLocation"]
+                      path = loc["artifactLocation"]["uri"]; line = loc.get("region", {}).get("startLine")
+                      msg = r["message"]["text"].replace("\n", " ")[:160]
+                      flows = r.get("codeFlows") or []
+                      srcs = set()
+                      for cf in flows:
+                          for tf in cf.get("threadFlows", []):
+                              l0 = tf["locations"][0]["location"]["physicalLocation"]
+                              srcs.add(f'{l0["artifactLocation"]["uri"]}:{l0.get("region",{}).get("startLine")}')
+                      print(f"RESULT {r['ruleId']} {path}:{line} | {msg} | sources={sorted(srcs)[:60]}")
+          PY
