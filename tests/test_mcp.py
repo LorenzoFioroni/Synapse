@@ -244,7 +244,7 @@ def test_tool_crash_is_a_tool_error():
     server = Server("t", "0")
     server.add(Tool("boom", "Boom", "d", {"type": "object", "properties": {}}, boom))
     err, texts = call(server, "boom")
-    assert err and "kaputt" in texts[0]
+    assert err and "RuntimeError" in texts[0] and "kaputt" not in texts[0]  # the details stay in the log
 
 
 def test_stdio_loop_keeps_stdout_clean():
@@ -991,3 +991,22 @@ def test_notes_cannot_show_tasks_that_do_not_exist(lib, svc):
     tid = svc.task_store.create("Real")["id"]
     err, texts = call(server, "edit_note", note="crispr", append=f"\n{token(tid)}\n")
     assert not err, texts
+
+
+def test_unexpected_errors_do_not_reach_the_client(monkeypatch):
+    from backend.mcp.protocol import Server, Tool
+
+    def broken():
+        raise OSError("/home/someone/private/library.sqlite: disk I/O error")
+
+    server = Server("test", "1")
+    server.add(Tool("broken", "Broken", "Always fails.", {"type": "object", "properties": {}}, broken))
+    err, texts = call(server, "broken")
+    assert err and "OSError" in texts[0] and "private" not in texts[0]
+
+    def failing_ping(self, params):
+        raise RuntimeError("token=private-secret")
+
+    monkeypatch.setattr(Server, "_m_ping", failing_ping)
+    reply = server.handle({"jsonrpc": "2.0", "id": 2, "method": "ping"})
+    assert "RuntimeError" in reply["error"]["message"] and "private-secret" not in reply["error"]["message"]

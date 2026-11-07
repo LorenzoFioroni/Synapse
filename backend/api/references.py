@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+
 from flask import Blueprint, jsonify
 
 from ..library.repository import NotFound
 from ..online.http import LookupFailed
 from ..references.sources import FetchFailed
 from . import body, error, svc
+
+log = logging.getLogger(__name__)
 
 bp = Blueprint("references", __name__, url_prefix="/api")
 
@@ -29,8 +33,9 @@ def fetch_references(item_id):
         return error(str(e), 502)
     except LookupFailed as e:
         return error(str(e), 404)
-    except Exception as e:  # network trouble
-        return error(f"Could not fetch references: {e}", 502)
+    except Exception as e:  # network trouble; its text can hold request URLs with API keys
+        log.exception("Fetching the references of %s failed", item_id)
+        return error(f"Could not fetch references ({type(e).__name__}).", 502)
 
 
 @bp.post("/references/queue")

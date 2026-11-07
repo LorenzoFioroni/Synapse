@@ -224,7 +224,8 @@ class PluginHttp:
             except (requests.ConnectionError, requests.Timeout) as e:
                 raise Offline(f"{host} could not be reached: {type(e).__name__}") from e
             except requests.RequestException as e:
-                raise HttpError(f"{host}: {e}") from e
+                # Not str(e): it can quote the URL, and its query can hold an API key.
+                raise HttpError(f"{host}: {type(e).__name__}") from e
             if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("Location"):
                 url = urljoin(url, r.headers["Location"])
                 r.close()

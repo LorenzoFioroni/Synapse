@@ -152,8 +152,12 @@ class Server:
         except _ProtocolError as e:
             return error_reply(rid, e.code, str(e))
         except Exception as e:  # never crash the server on one bad request
+            # The client may be an AI app on another computer: an unexpected exception's text can
+            # carry file paths, SQL or URLs with keys, so it stays in the log.
             log.exception("MCP request %s failed", method)
-            return error_reply(rid, INTERNAL_ERROR, f"Internal error: {e}")
+            return error_reply(
+                rid, INTERNAL_ERROR, f"Internal error ({type(e).__name__}); details are in Synapse's log."
+            )
 
     # ------------------------------------------------------------------ methods
     def _m_initialize(self, params: dict) -> dict:
@@ -203,7 +207,8 @@ class Server:
             return {"content": [{"type": "text", "text": str(e)}], "isError": True}
         except Exception as e:
             log.error("Tool %s failed:\n%s", name, traceback.format_exc())
-            return {"content": [{"type": "text", "text": f"The tool failed: {type(e).__name__}: {e}"}], "isError": True}
+            text = f"The tool failed unexpectedly ({type(e).__name__}); details are in Synapse's log."
+            return {"content": [{"type": "text", "text": text}], "isError": True}
 
 
 class _ProtocolError(Exception):

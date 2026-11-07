@@ -44,7 +44,7 @@ class PluginServices:
         except LookupFailed as e:
             raise PluginError(str(e)) from e
         except requests.RequestException as e:
-            raise Offline(f"The lookup of {identifier} could not reach the web: {e}") from e
+            raise Offline(f"The lookup of {identifier} could not reach the web ({type(e).__name__}).") from e
         arx = norm_arxiv(meta.get("archive_id")) or norm_arxiv(identifier if "arxiv" in identifier.lower() else None)
         return record({**meta, "arxiv": arx})
 
@@ -57,7 +57,7 @@ class PluginServices:
         except LookupFailed as e:
             raise PluginError(str(e)) from e
         except requests.RequestException as e:
-            raise Offline(f"The item lookup could not reach the web: {e}") from e
+            raise Offline(f"The item lookup could not reach the web ({type(e).__name__}).") from e
 
     def references(self, paper: dict, *, new: bool = False) -> list[dict]:
         """The works ``paper`` cites (each with ``doi``, ``arxiv_id``, ``title``, ``year``, ``raw``
