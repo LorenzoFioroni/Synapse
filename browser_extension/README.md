@@ -28,7 +28,8 @@ extension pages, never page-injected scripts or Chrome Sync. It survives browser
 extension updates, so setup is needed only once. The address is synced, so each browser needs
 its own token and server permission. Changing the address clears the token field.
 
-Browser tokens allow only connector saves and filing; they cannot use MCP or other library APIs.
+Browser tokens allow only the connector: saving, filing, and Find Missing PDFs (listing the items
+without a PDF and attaching a verified PDF to one); they cannot use MCP or other library APIs.
 They have no automatic expiration. Revoke the extension’s token with **Remove…** in AI Access
 if you stop using this browser or suspect it has been compromised. AI tokens do not work for
 the browser button. Browser sign-in cookies are not used by the extension. Remote connections
@@ -61,8 +62,23 @@ leave the token empty, and save. One server is active at a time.
 - Duplicates (same DOI, or same title and year) are detected: open the existing
   item or save anyway.
 
+## Find Missing PDFs
+
+The download icon in the popup opens a window that fetches the publisher's PDF of library items
+that have a DOI and none. Each paper opens in a background tab of this browser, so the access
+this browser has (campus network, VPN, your sign-ins) is used, and publishers' "checking your
+browser" pages pass as when you open the paper yourself; the library attaches a PDF only if it is
+that paper. This is what to use when Find Available PDF in the app gets nothing from publishers
+because of such checks. The browser must be on the subscribing network (the server need not).
+
+- It asks once for access to all HTTPS sites: the DOIs lead to any publisher.
+- One paper every few seconds, at most 50 per run (newest first; run it again for the rest):
+  publishers block institutions that download in bulk.
+- If a site wants you to confirm you are human, do it in its tab, then **Retry**.
+- Keep the window open while it runs.
+
 Permissions: `activeTab` + `scripting` to read the current page only when you
-click the button, `storage` for the settings, and access to `127.0.0.1` /
+click the button (and the pages Find Missing PDFs opens, with the HTTPS access it asks for), `storage` for the settings, and access to `127.0.0.1` /
 `localhost` to talk to a local library. For remote libraries, optional HTTPS host permission
 is requested only for the server you enter. Citation data and PDFs are sent to that server.
 

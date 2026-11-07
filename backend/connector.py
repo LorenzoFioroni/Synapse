@@ -198,6 +198,75 @@ def save(s: Services, page: dict, pdf_bytes: bytes | None) -> dict:
     return {"item": s.papers.get(created["id"]), "source": source, "pdf": pdf}
 
 
+MISSING_PDFS_MAX = 200
+
+
+def missing_pdfs(s: Services, folder=None, limit: int = 50) -> dict:
+    """Items that have a publisher DOI and no PDF, newest first, for the extension's "Find missing
+    PDFs" page: it opens each DOI in the user's browser, where the institution's access and the
+    publishers' browser checks work as they do for the user. arXiv DOIs are left out (the
+    library downloads arXiv itself). Returns ``{items: [{id, title, doi, year}], total}``.
+    Raises :class:`BadRequest` for a malformed ``folder_id``."""
+    from .library.identifiers import clean_doi
+
+    folder = folder_id(folder)
+    limit = max(1, min(int(limit), MISSING_PDFS_MAX))
+    inside = s.folders.descendants(folder) if folder is not None else None
+    out = []
+    for p in s.papers.list():
+        doi = clean_doi(p.get("doi"))
+        if not doi or doi.lower().startswith("10.48550/") or _has_pdf(p):
+            continue
+        if inside is not None and not inside.intersection(p.get("folder_ids") or []):
+            continue
+        out.append(
+            {
+                "id": p["id"],
+                "title": p.get("title") or "",
+                "doi": doi,
+                "year": p.get("year"),
+                "_at": p.get("date_added") or "",
+            }
+        )
+    out.sort(key=lambda r: r.pop("_at"), reverse=True)
+    return {"items": out[:limit], "total": len(out)}
+
+
+def _has_pdf(item: dict) -> bool:
+    return any(
+        a.get("type") == "pdf" or str(a.get("filename") or "").lower().endswith(".pdf")
+        for a in item.get("attachments") or []
+    )
+
+
+def attach_pdf(s: Services, item_id: str, pdf_bytes: bytes | None) -> dict:
+    """Attach a PDF the extension fetched for an existing item, if it is that paper (the check
+    Find Available PDF makes) and the item has no PDF yet. Returns ``{status, item}`` with status
+    ``attached``, ``not-a-pdf``, ``wrong-paper`` or ``has-pdf``. Raises :class:`BadRequest`
+    without an item id."""
+    from .library.identifiers import identifiers
+    from .online.pdf_finder import verify_pdf
+
+    if not item_id:
+        raise BadRequest("Which item? The request has no id.")
+    item = s.papers.get(item_id)
+    if _has_pdf(item):
+        return {"status": "has-pdf", "item": item}
+    if not pdf_bytes or pdf_bytes[:5] != b"%PDF-":
+        return {"status": "not-a-pdf", "item": item}
+    _, arxiv_id = identifiers(item)
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
+        tmp.write(pdf_bytes)
+        tmp.flush()
+        if not verify_pdf(tmp.name, item.get("title"), item.get("doi"), arxiv_id):
+            return {"status": "wrong-paper", "item": item}
+    filename = f"{uuid.uuid4().hex}_connector.pdf"
+    (s.config.pdf_dir / filename).write_bytes(pdf_bytes)
+    s.papers.add_attachment(item["id"], "Full Text PDF", filename, "pdf")
+    s.attachments_changed()
+    return {"status": "attached", "item": s.papers.get(item["id"])}
+
+
 def file_existing(s: Services, item_id: str, folder, tags) -> dict:
     """Add an item that is already in the library to a folder and/or tag it (the extension's
     "already in your library" screen). Returns the item. Raises :class:`BadRequest` for a
