@@ -204,7 +204,11 @@ could not fetch the PDF itself) is downloaded the same way (`backend/connector.p
 makes the server fetch a URL, it is careful not to become a way into the local network:
 
 - Only `http` and `https`. Every address the host resolves to must be public
-  (`ipaddress.is_global`, not multicast; IPv4-mapped IPv6 is unwrapped first).
+  (`is_public_address`: `ipaddress.is_global`, not multicast). An IPv4 address carried inside an
+  IPv6 one (IPv4-mapped, NAT64 `64:ff9b::/96`, 6to4, Teredo, IPv4-compatible) must be public
+  itself, so `64:ff9b::7f00:1` or `2002:7f00:1::` cannot reach this computer. NAT64 addresses of
+  public hosts stay allowed (DNS64 answers with them on IPv6-only networks); the local-use NAT64
+  prefix `64:ff9b:1::/48` and site-local `fec0::/10` are refused.
 - Find Available PDF uses the same guarded downloader for its candidate URLs, with the same
   redirect checks, 100 MB size cap and PDF header check, before verifying the paper identity.
 - The validator and transport live in `backend/online/http.py`, shared with `plugin.http`.
