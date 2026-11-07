@@ -144,6 +144,11 @@ class Config:
         return self.data_dir / "backups"
 
     @property
+    def backup_remote_dir(self) -> Path:
+        # Account credentials and delivery receipts stay outside backup archives.
+        return self.data_dir / "backup-remote"
+
+    @property
     def auth_db_path(self) -> Path:
         # Paired devices (hashed tokens). Not part of backups.
         return self.data_dir / "auth.db"

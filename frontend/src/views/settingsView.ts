@@ -26,6 +26,7 @@ let settingsSearch: SettingsSearch | null = null;
 on('export-formats', () => { if (view) refreshExportFormats(view); });
 let unmountPluginSections: (() => void) | null = null;
 let statsTimer: ReturnType<typeof setInterval> | undefined;
+let unbindBackups: (() => void) | undefined;
 
 export function applyAppearance(s: Settings = state.settings): void {
   const root = document.documentElement;
@@ -109,6 +110,8 @@ export function closeSettings(): void {
   unmountPluginSections?.();
   unmountPluginSections = null;
   clearInterval(statsTimer);
+  unbindBackups?.();
+  unbindBackups = undefined;
   cancelPairing();
   forgetFreshToken();
   view.remove();
@@ -262,7 +265,7 @@ function bind(view: HTMLElement): void {
   bindDevices(view);
   bindPasskeys(view);
   bindAiAccess(view);
-  bindBackups(view);
+  unbindBackups = bindBackups(view);
   bindUpdates(view);
   bindPlugins(view, (id) => setNav(id));
 
@@ -275,7 +278,8 @@ function bind(view: HTMLElement): void {
   view.querySelector<HTMLElement>('[data-export]')!.onclick = async () => (await import('./exportDialog.js')).openExport(null);
   view.querySelector<HTMLElement>('[data-reset]')!.onclick = async () => {
     if (!(await confirmDialog('Reset all settings to their defaults?', { confirm: 'Reset' }))) return;
-    const res = await api.resetSettings();
+    const res = await asAdmin(() => api.resetSettings());
+    if (!res) return;
     state.settings = res.settings;
     applyAppearance();
     emit('settings');
