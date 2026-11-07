@@ -94,6 +94,38 @@ class _Address:
     sockaddr: tuple
 
 
+# IPv6 forms that carry an IPv4 address. ``is_global`` judges the IPv6 prefix, not the IPv4 address
+# inside it, and its answer for these prefixes differs between Python versions; so the embedded
+# address is checked on its own. DNS64 resolvers answer with NAT64 addresses for every IPv4-only
+# host on IPv6-only networks, so a NAT64 address of a public host stays allowed.
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
+_NAT64_LOCAL = ipaddress.ip_network("64:ff9b:1::/48")  # RFC 8215 local use: the embedding varies
+_IPV4_COMPATIBLE = ipaddress.ip_network("::/96")  # deprecated ::a.b.c.d
+_SITE_LOCAL = ipaddress.ip_network("fec0::/10")  # deprecated, but still not the public internet
+
+
+def is_public_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Whether ``ip`` is on the public internet, including any IPv4 address embedded in it."""
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped:
+            return is_public_address(ip.ipv4_mapped)
+        if ip in _NAT64_LOCAL or ip in _SITE_LOCAL:
+            return False
+        embedded: list[ipaddress.IPv4Address] = []
+        if ip in _NAT64 or ip in _IPV4_COMPATIBLE:
+            embedded.append(ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF))
+        if ip.sixtofour:
+            embedded.append(ip.sixtofour)
+        if ip.teredo:
+            embedded.extend(ip.teredo)
+        if ip in _NAT64:
+            # The NAT64 prefix itself is not "global" for every Python; the IPv4 address decides.
+            return all(is_public_address(v4) for v4 in embedded)
+        if not all(is_public_address(v4) for v4 in embedded):
+            return False
+    return ip.is_global and not ip.is_multicast
+
+
 def resolve_public_url(url: str) -> tuple[_Address, ...]:
     """Resolve once, retaining the socket addresses only if every answer is public."""
     try:
@@ -111,10 +143,7 @@ def resolve_public_url(url: str) -> tuple[_Address, ...]:
     addresses = []
     for family, socktype, protocol, _, sockaddr in infos:
         ip = ipaddress.ip_address(str(sockaddr[0]).split("%")[0])
-        mapped = getattr(ip, "ipv4_mapped", None)
-        if mapped:
-            ip = mapped
-        if family not in (socket.AF_INET, socket.AF_INET6) or not ip.is_global or ip.is_multicast:
+        if family not in (socket.AF_INET, socket.AF_INET6) or not is_public_address(ip):
             raise PublicAddressError("Links to this computer or the local network are not opened.")
         addresses.append(_Address(family, socktype, protocol, sockaddr))
     if not addresses:

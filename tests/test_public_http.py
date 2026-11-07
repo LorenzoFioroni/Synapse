@@ -289,3 +289,30 @@ def test_invalid_web_urls_never_connect(pinned_network, url):
     with pytest.raises((http.PublicAddressError, requests.RequestException)):
         http.public_request("GET", url, timeout=2)
     assert not lookups and not connections
+
+
+@pytest.mark.parametrize(
+    "address,public",
+    [
+        ("93.184.216.34", True),
+        ("2606:4700:4700::1111", True),
+        ("::ffff:93.184.216.34", True),
+        ("64:ff9b::5db8:d822", True),  # DNS64 answer for a public IPv4 host
+        ("::ffff:127.0.0.1", False),
+        ("64:ff9b::7f00:1", False),  # NAT64 to 127.0.0.1
+        ("64:ff9b::a9fe:a9fe", False),  # NAT64 to 169.254.169.254
+        ("64:ff9b:1::a00:1", False),
+        ("2002:7f00:1::", False),  # 6to4 of 127.0.0.1
+        ("2002:c0a8:101::", False),  # 6to4 of 192.168.1.1
+        ("::127.0.0.1", False),
+        ("::10.0.0.1", False),
+        ("2001:0:4136:e378:8000:63bf:3fff:fdd2", False),  # Teredo
+        ("fec0::1", False),
+        ("fc00::1", False),
+        ("fe80::1", False),
+    ],
+)
+def test_embedded_ipv4_addresses_are_judged_by_the_ipv4_address(address, public):
+    import ipaddress
+
+    assert http.is_public_address(ipaddress.ip_address(address)) is public

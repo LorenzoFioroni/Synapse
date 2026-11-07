@@ -70,7 +70,10 @@ Errors are split in two kinds:
   (`-32700`), or an internal error (`-32603`). One bad request never stops the server.
 - **Tool errors** are results with `isError: true` and a readable text. A tool raises
   `ToolError` for a problem the model can fix (an unknown key, a bad page range). Any other
-  exception in a tool is logged to stderr and reported the same way, as "The tool failed: …".
+  exception in a tool is logged to stderr with its traceback and reported the same way, but only
+  by its type ("The tool failed unexpectedly (OSError); …"): its text can carry file paths, SQL or
+  URLs with API keys, and the client may be an AI app on another computer. Internal errors
+  (`-32603`) likewise name only the exception type.
 
 `check_args()` validates the arguments against the tool's flat schema before the call: unknown
 names, required ones, basic types, `enum` and integer `minimum` and `maximum`. It is lenient where
