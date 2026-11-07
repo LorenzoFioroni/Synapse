@@ -70,6 +70,8 @@ body.page { width: auto; min-width: 380px; }
 .rows .what { flex: 1; min-width: 0; }
 .rows .what b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rows .what small { color: var(--text3); }
+.rows .what .why { display: block; margin-top: 2px; font-size: 11px; overflow-wrap: anywhere; }
+.rows .what .why:empty { display: none; }
 .rows .st { flex: none; max-width: 45%; text-align: right; color: var(--text3); font-size: 12px; }
 .rows .st.ok { color: var(--ok); } .rows .st.warn { color: var(--warn); } .rows .st.err { color: var(--err); } .rows .st.busy { color: var(--accent); }
 .summary { margin-top: 10px; color: var(--text2); }
