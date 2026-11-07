@@ -27,18 +27,17 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, glob
+          def where(l):
+              p = l["physicalLocation"]
+              return f'{p["artifactLocation"]["uri"]}:{p.get("region", {}).get("startLine")}'
           for f in glob.glob("sarif-out/*.sarif"):
               d = json.load(open(f))
               for run in d["runs"]:
                   for r in run.get("results", []):
-                      loc = r["locations"][0]["physicalLocation"]
-                      path = loc["artifactLocation"]["uri"]; line = loc.get("region", {}).get("startLine")
-                      msg = r["message"]["text"].replace("\n", " ")[:160]
-                      flows = r.get("codeFlows") or []
-                      srcs = set()
-                      for cf in flows:
+                      print(f"RESULT {r['ruleId']} {where(r['locations'][0])} | {r['message']['text'][:120]!r}")
+                      for rl in r.get("relatedLocations", []):
+                          print(f"  SOURCE {where(rl)}")
+                      for cf in (r.get("codeFlows") or [])[:3]:
                           for tf in cf.get("threadFlows", []):
-                              l0 = tf["locations"][0]["location"]["physicalLocation"]
-                              srcs.add(f'{l0["artifactLocation"]["uri"]}:{l0.get("region",{}).get("startLine")}')
-                      print(f"RESULT {r['ruleId']} {path}:{line} | {msg} | sources={sorted(srcs)[:60]}")
+                              print("  PATH " + " -> ".join(where(x["location"]) for x in tf["locations"]))
           PY
