@@ -241,3 +241,15 @@ def test_local_services_count_as_this_computer(monkeypatch):
     with pytest.raises(PluginError, match="ollama"):
         web.get("http://ollama:11434/api/tags")
     assert len(sent) == 2
+
+
+def test_request_errors_do_not_quote_the_url(monkeypatch):
+    import requests
+
+    def fail(*args, **kwargs):
+        raise requests.exceptions.InvalidURL("https://api.example/works?api_key=private-secret")
+
+    monkeypatch.setattr(H, "_local_request", fail)
+    with pytest.raises(HttpError) as error:
+        client().get("http://127.0.0.1:9/works", params={"api_key": "private-secret"})
+    assert "InvalidURL" in str(error.value) and "private-secret" not in str(error.value)
