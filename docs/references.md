@@ -14,7 +14,8 @@ features fail with a message and the rest of the app works as before.
 | `backend/online/http.py` | What every lookup shares: timeout, User-Agent headers, `LookupFailed`, arXiv request spacing. |
 | `backend/online/metadata.py` | Query classification, author normalization and routing to plugin metadata sources. |
 | `plugins/metadata-sources/server/providers.py` | Crossref, OpenAlex, arXiv and Open Library requests, title fallback and author enrichment. |
-| `backend/online/pdf_finder.py` | Finds an open-access PDF, downloads it and checks it is the right paper. |
+| `backend/online/pdf_finder.py` | Finds a PDF of a paper (the publisher's or an open-access copy), downloads it and checks it is the right paper. |
+| `backend/online/article_page.py` | Reads an article's web page for the PDF it names (`citation_pdf_url`) or the page a meta refresh moves on to. |
 | `backend/online/remote_pdf.py` | Downloads the PDF behind an attachment that is stored as a web link. |
 | `backend/library/identifiers.py` | DOIs and arXiv ids: cleaning, normalising, finding them in an item. Offline. |
 | `backend/references/sources.py` | Validates reference-fetch requests and delegates to injected providers. |
@@ -30,8 +31,8 @@ features fail with a message and the rest of the app works as before.
 
 `backend/online/http.py` holds what the lookups share:
 
-- `TIMEOUT` (15 s) for API requests. The PDF code uses its own limits: `pdf_finder.py` waits 10 s
-  for Unpaywall and arXiv searches and 20 s per download; `remote_pdf.py` has
+- `TIMEOUT` (15 s) for API requests. The PDF code uses its own limits: the PDF sources wait 10 s
+  for Unpaywall, Crossref and arXiv searches; `remote_pdf.py` has
   `TIMEOUT = 30`.
 - `api_headers(email)` returns a User-Agent of the form
   `Synapse/2.0 (https://github.com/…; mailto:<email>)`. Crossref and OpenAlex ask clients to name
@@ -154,7 +155,7 @@ The review is `frontend/src/views/metadataReview.ts`:
   arXiv id (`referencesQueued`) are not queued again, so only those that got their identifier
   from the lookup are.
 
-## Open-access PDFs
+## Finding a PDF
 
 `Services.find_pdf(item_id)` (`backend/services.py`) takes the item's arXiv id from
 `identifiers()`, calls `pdf_finder.find_and_download`, and attaches a found file as "Full Text PDF".
@@ -163,11 +164,25 @@ It then calls `attachments_changed()` so the full-text index picks the file up.
 Where to look comes from the plugins' **PDF sources** (`@plugin.pdf_source`, see
 [plugins](plugins.md#the-plugin-object)), gathered by `PluginHost.pdf_candidates(paper,
 by_title=…)`: sources by identifier and sources searching by title, lower `order` first, each URL
-once. With no source running (the plugin below turned off, and no other), Find Available PDF
-says so. The plugin **Open-Access PDFs** (`plugins/open-access-pdfs/server/finder.py`), which comes
-with Synapse and is on by default, has Synapse's two sources, best first. It is a contributed
-plugin: it uses only the public plugin API, asking Unpaywall and arXiv through `plugin.http` (its
-manifest names `api.unpaywall.org` and `export.arxiv.org`).
+once. With no source running (both plugins below turned off, and no other), Find Available PDF
+says so. Two plugins come with Synapse, on by default, and use only the public plugin API.
+
+**Publisher PDFs** (`plugins/publisher-pdfs/server/finder.py`, order 5) asks for the version of
+record first. Publishers give the PDF without a login to readers whose network has a subscription
+(a university's network or its VPN), so where Synapse runs on such a network the published version
+wins over any preprint or accepted manuscript. Elsewhere a paywalled attempt ends at a login page,
+which is not a PDF, and the open-access sources follow. For a DOI that is not an arXiv DOI:
+
+1. The full-text links the publisher deposited with Crossref (`api.crossref.org/works/<doi>`,
+   the manifest's only host), those with `content-type` `application/pdf` that are not an
+   accepted manuscript (`content-version` `am`). Text-mining APIs that need a key
+   (`api.elsevier.com`, `api.wiley.com`) are left out; Wiley's `/doi/pdf/` viewer becomes
+   `/doi/pdfdirect/`, the file.
+2. `https://doi.org/<doi>`: the article page, which Synapse follows to its PDF (below). This
+   covers publishers that deposit no PDF link (APS, Elsevier, Optica, …).
+
+**Open-Access PDFs** (`plugins/open-access-pdfs/server/finder.py`, order 10) asks Unpaywall and
+arXiv through `plugin.http` (its manifest names `api.unpaywall.org` and `export.arxiv.org`):
 
 1. For a preprint (an arXiv id, and no DOI or only an arXiv DOI): `arxiv.org/pdf/<id>`.
 2. For a DOI that is not an arXiv DOI: Unpaywall's `best_oa_location.url_for_pdf`. Unpaywall
@@ -178,17 +193,29 @@ manifest names `api.unpaywall.org` and `export.arxiv.org`).
    arXiv API over https, in arXiv's line of `plugin.http`). Google Scholar is not asked: it
    has no API, and its robots.txt forbids programs to read its result pages.
 
-When the item has an arXiv id, `find_and_download` tries the sources by identifier (steps 1–3)
-first and asks the title searches only if none of those was the paper; otherwise it tries them all
-in one go.
+`find_and_download` tries the sources by identifier first (the publisher's links and page, then
+steps 1–3) and asks the title searches only if none of those was the paper: a title search finds
+other papers too, and costs requests.
 
-`_download_first` downloads the candidates in order. A response counts only if it is a PDF (by
-`Content-Type` or the `%PDF` header). `verify_pdf` then reads the first two pages and accepts the
+`_download_first` tries the candidates in order. `_fetch_candidate` downloads one with
+`remote_pdf.fetch`; when the answer is a web page rather than a PDF, `article_page.links` reads
+it for the PDF it names (the `citation_pdf_url` meta tag that publishers write for Google Scholar,
+or a `<link rel="alternate" type="application/pdf">`) or, failing that, the page a meta refresh
+moves on to (Elsevier's `linkinghub.elsevier.com`). Up to three such pages are followed, never one
+twice. The cookies the sites set travel from one request to the next, as in a browser, because
+publishers check them between the article page and the PDF. A response counts only if it is a
+PDF (the `%PDF` header). `verify_pdf` then reads the first two pages and accepts the
 file when they contain the DOI, the arXiv stamp (`arXiv:<id>`) or, failing both, the title (fuzzy
 match of at least 85, with `rapidfuzz` when it is installed and a `difflib` fallback otherwise).
 The check exists because candidates are often the wrong paper or a publisher's login page. A
 verified file is saved as `<uuid>_downloaded.pdf` in the PDF folder. The result is
-`{"status": "success", "filename", "source"}` or `{"status": "not_found", "message"}`.
+`{"status": "success", "filename", "source"}` (`source`: the candidate it came from) or
+`{"status": "not_found", "message"}`.
+
+Whose network counts is the server's: Find Available PDF reaches the publisher from the computer
+Synapse runs on, so a subscription works when that computer is on the university's network or VPN
+(a Synapse on a home server does not share a laptop's VPN). Requests bypass environment proxies
+(see below), so an HTTP proxy such as EZproxy is not used.
 
 Find Available PDF in the item menu calls `A.findPdf`; several items go through `A.findPdfs`
 (`frontend/src/actions.ts`), one after another with 400 ms between them, skipping items that
@@ -209,8 +236,9 @@ makes the server fetch a URL, it is careful not to become a way into the local n
   itself, so `64:ff9b::7f00:1` or `2002:7f00:1::` cannot reach this computer. NAT64 addresses of
   public hosts stay allowed (DNS64 answers with them on IPv6-only networks); the local-use NAT64
   prefix `64:ff9b:1::/48` and site-local `fec0::/10` are refused.
-- Find Available PDF uses the same guarded downloader for its candidate URLs, with the same
-  redirect checks, 100 MB size cap and PDF header check, before verifying the paper identity.
+- Find Available PDF uses the same guarded downloader for its candidate URLs and the article pages
+  it follows, with the same redirect checks and 100 MB size cap, and the PDF header check before
+  verifying the paper identity.
 - The validator and transport live in `backend/online/http.py`, shared with `plugin.http`.
   DNS answers are retained and sockets connect directly to those exact addresses, preventing a
   second DNS lookup from redirecting the connection into a private network. All returned addresses
