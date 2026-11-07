@@ -189,6 +189,7 @@ export interface Settings {
   backup_interval: 'off' | 'daily' | 'weekly';
   backup_keep: number;
   backup_dir: string;
+  backup_destination: 'local' | 'remote';
 }
 
 export interface SettingsResponse {
@@ -448,6 +449,7 @@ export interface Backup {
   items: number | null;
   notes: number | null;
   damaged?: boolean;       // the manifest cannot be read
+  uploaded?: boolean;
 }
 
 /** GET /api/backups. */
@@ -458,6 +460,27 @@ export interface BackupStatus {
   error: string | null;
   interval: Settings['backup_interval'];
   keep: number;
+  destination: 'local' | 'remote';
+  remote: RemoteBackupConfiguration;
+  delivery: { running: boolean; pending: number; last_uploaded: { name: string; created: string } | null; error: string | null; warning: string | null };
+}
+
+export interface RemoteBackupConfiguration {
+  provider?: string;
+  folder?: string;
+  namespace?: string;
+  available: boolean;
+  configured: boolean;
+  authorized: boolean;
+  options: Record<string, string>;
+  stored_secrets: string[];
+  known_hosts: string;
+}
+
+export interface RemoteBackupSetup {
+  configuration: RemoteBackupConfiguration;
+  providers: { id: string; name: string; oauth: boolean; fields: [string, string, boolean, boolean][] }[];
+  callback: string;
 }
 
 /** A commit on the branch Synapse's code comes from (GET /api/updates). */

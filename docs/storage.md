@@ -30,6 +30,7 @@ data/
 ├── notes_index.db      links, tags, headings and search index of the notes (derived)
 ├── citations.db        reference lists fetched online (a cache)
 ├── backups/            library-*.tar.gz and notes-*.tar.gz
+├── backup-remote/      rclone credentials, destination and upload receipts (not in archives)
 ├── settings.json       preferences
 ├── auth.db             paired devices (hashed tokens), passkeys (public keys), access tokens (hashed)
 ├── plugins/            plugins the user installed, one folder each (code; see plugins.md)
@@ -62,9 +63,9 @@ Each file has one owner. Other code goes through that owner, with the few except
 | `fields.db` | `FieldStore` in `backend/plugins/fields.py` | `SCHEMA` there (`CREATE TABLE IF NOT EXISTS`) | source of truth for what plugins set; in backups |
 | `plugin-data/<id>/` | each plugin, through `plugin.storage` (`backend/plugins/storage.py`) | the plugin's own `migrations`, in `PRAGMA user_version` | source of truth |
 | `plugins/` | the user (installing a plugin); read by `PluginHost.scan` | `manifest.json`, `backend/plugins/manifest.py` | code, not in backups |
-| `backups/` | `Backups` in `backend/backup.py`; `Rekeyer.backup` in `backend/notes/rekey.py` | none | copies |
+| `backups/` | `Backups` in `backend/backup/`; `Rekeyer.backup` in `backend/notes/rekey.py` | none | copies |
 
-The exceptions: `backend/backup.py` copies `library.db` with raw `sqlite3` (the online backup
+The exceptions: `backend/backup/` copies `library.db` with raw `sqlite3` (the online backup
 API), `backend/changes.py` watches the modification time of `library.db` and `notes_index.db` to
 notice writes from another process, and `_page_count` in `backend/mcp/tools/common.py` reads page
 counts from the `documents` table of `fulltext.db`.
@@ -260,9 +261,10 @@ in `update()` (for example `backup_dir` must be an absolute folder that can be w
 the `annotation_color_…` and `annotation_fill_…` keys must be colours like `#ffcc00`, stored in
 lower case).
 
-The backup settings (`ADMIN_KEYS`: `backup_dir`, `backup_interval`, `backup_keep`) can be changed
+The backup settings (`ADMIN_KEYS`: `backup_dir`, `backup_interval`, `backup_keep`, `backup_destination`) can be changed
 only on the computer running Synapse, or from another device after a passkey confirmation
 (`api/settings.py`, see [Remote access](remote-access.md)); sending them unchanged needs none.
+Resetting preferences needs the same confirmation when it would change these values.
 
 - Reading: the file is merged over `DEFAULTS`; unknown keys are ignored, and a file that cannot
   be read or parsed gives the defaults.
@@ -277,7 +279,7 @@ only on the computer running Synapse, or from another device after a passkey con
 
 ## Backups
 
-`Backups` in `backend/backup.py` writes one archive per backup, `library-YYYYMMDD-HHMMSS.tar.gz`
+`Backups` in `backend/backup/` writes one archive per backup, `library-YYYYMMDD-HHMMSS.tar.gz`
 (with `-1`, `-2` … for several in one second), into `backup_dir` or `data/backups/`. Each holds:
 
 | Entry | How |
@@ -322,7 +324,7 @@ archive is known to be good:
    the restore stops.
 4. Copy `library.db` into the live file through the backup API, so open connections stay valid,
    then run `migrate()`.
-5. Copy `settings.json`, but keep the current `backup_interval`, `backup_keep` and `backup_dir`,
+5. Copy `settings.json`, but keep the current `backup_interval`, `backup_keep`, `backup_dir` and `backup_destination`,
    so the backup folder does not move away from the backups just listed.
 6. Swap `notes/`: the live folder is renamed aside, the restored one moved in (a rename, because
    the temporary folder is on the same disk), and the old one deleted only on success.
@@ -332,7 +334,83 @@ archive is known to be good:
 7. Rebuild the notes index, schedule a sweep of note attachments and, when
    `fulltext_auto_index` is on, sync the full-text index.
 
-The endpoints are in `backend/api/backups.py`.
+### Remote storage with rclone
+
+Settings → Backups → **Destination: Remote (rclone)** adds an offsite copy of the same archives.
+Local is the default for existing installations. Remote mode still writes to `backup_dir` (or
+`data/backups/`), so the local safety backups work offline. The archive contents do not change;
+PDFs still need a separate backup. Rclone is included in the Docker image (pinned to 1.76.0).
+For a checkout deployment, install rclone on the server before choosing remote storage.
+
+All connection details are entered in Settings; no rclone commands or files need to be prepared
+inside Docker. Supported connection forms are Google Drive, Microsoft OneDrive, Dropbox,
+S3-compatible storage, WebDAV/Nextcloud and SFTP. Arbitrary rclone flags, executable commands,
+server-side credential file paths and existing external rclone configurations are not accepted.
+WebDAV/S3 endpoints use HTTPS. SFTP requires the server's trusted `known_hosts` entry and a
+password or pasted private key (unencrypted PEM). The Test Connection button uploads, reads back
+and deletes a unique probe file.
+
+**Cloud authorization.** Google, Microsoft and Dropbox need a registered **Web** application;
+enter its client ID/key and secret in Settings. Register the exact redirect URI shown there
+(`https://<Synapse host>/api/backups/remote/callback`, using `--public-url` on a server). Settings
+links to each provider's application registration guide. Enable the Google Drive API and use a
+published consent application for ongoing access; the scope is `drive.file`, so an existing
+root folder must be accessible to that application. For Microsoft, grant delegated
+`Files.ReadWrite`, `User.Read` and `offline_access` and use a registration accepting the account
+being connected. The default OneDrive is discovered after sign-in; another drive may be specified
+by ID and type. For Dropbox, enable file metadata/content read and write permissions in the app.
+
+**Connect account** opens the provider's sign-in page in the user's browser, which returns to
+Synapse's HTTPS callback. No localhost callback, SSH tunnel, local rclone installation or pasted
+token is needed. The authorization uses PKCE and a random, expiring, single-use state tied to
+the initiating device and the saved connection. It may finish after the short administrative
+confirmation expires, but still needs that signed-in device. Restarting Synapse forgets unfinished
+authorizations. Connecting again replaces the saved authorization; rclone refreshes tokens during
+subsequent transfers. Storage access itself always goes through rclone.
+
+**Credentials.** `backup-remote/rclone.conf` stores the account credentials and tokens;
+`destination.json` stores the provider, folder, backup set and connection revision;
+`delivery.json` stores pending uploads, successful delivery receipts, errors and retention warnings.
+SFTP's trusted host entries live in `known_hosts`. The directory has mode 0700 and files 0600.
+Credentials are readable by the server account; rclone password obscuring is not encryption.
+They are excluded from Synapse archives and never returned by the API: Settings only reports
+which secret fields are saved. Leaving a secret field blank preserves it. Protect the server's
+data volume as you would the library. Connection changes, tests and starting authorization require
+administrative confirmation from another device. Restoring an archive preserves the current
+connection and destination mode.
+
+**Delivery and retention.** `Delivery` has its own worker; network operations never run under the
+archive lock. Completed local archives are queued durably and retried every minute while the app
+runs, independently of the daily/weekly schedule. Retained local files are reconciled with receipts
+after restart, including a crash after publishing an archive but before queuing it. Settings shows
+pending uploads, last successful upload, failures and a Retry Uploads button. The local backup
+can succeed while the offsite copy is pending. Local retention bounds the pending files too; if
+an outage lasts beyond that window, older pending backups are discarded with a visible warning.
+An archive actively being uploaded is protected from pruning until its transfer finishes.
+
+The remote destination is `<folder>/synapse-<random backup-set ID>/`. An upload first writes a
+`.part` object and then publishes the completed archive. Only names matching Synapse's library
+archive format are listed or pruned in this dedicated set. Rclone copy/move operations are used;
+there is no directory sync. Remote retention runs after successful delivery and on later retries,
+keeps the selected count independently of local retention, and leaves unrelated files and other
+backup sets alone. Changing the connection requeues retained local archives for the new destination.
+Local mode pauses remote work and leaves offsite backups intact. Only the web app starts the
+worker; the standalone MCP server can create a backup and queue it for the app to upload later.
+Stopping `server.py` cancels the worker and terminates outstanding rclone processes; pending work
+is retried after the next start.
+
+**Recovery.** Refresh List loads remote archives without downloading all of them. Selecting
+Restore downloads the chosen archive into temporary storage and uses the same validation,
+safety backup, migrations and restore path as local recovery. On a fresh installation, enter the
+connection and folder, authorize the account, choose **Find existing backup sets**, select the
+previous set and save. You can then list and restore its archives. Keep the provider's application
+credentials available independently of the lost server; Synapse's archives do not contain them.
+
+The endpoints are in `backend/api/backups.py`: existing status/create/restore calls remain valid;
+restore accepts optional `source: "remote"`. `/remote` reads/saves the masked connection;
+`/remote/test`, `/remote/authorize`, `/remote/callback`, `/remote/sets`, `/remote/archives` and
+`/remote/retry` drive setup, authorization and recovery. Responses are never cached.
+
 
 ## Changing the schema
 

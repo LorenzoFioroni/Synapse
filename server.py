@@ -294,7 +294,10 @@ def main() -> None:
         threading.Thread(target=_open_when_ready, args=(url, webbrowser.open), daemon=True).start()
     # Werkzeug's threaded server (one thread per connection) is plenty for one person's devices,
     # and it serves HTTPS too.
-    app.run(host=a.host, port=a.port, debug=a.debug, threaded=True, use_reloader=a.debug, ssl_context=tls)
+    try:
+        app.run(host=a.host, port=a.port, debug=a.debug, threaded=True, use_reloader=a.debug, ssl_context=tls)
+    finally:
+        app.extensions["synapse"].backups.stop()
 
 
 # Options that make no sense, or would open a way around the tunnel, inside a container.

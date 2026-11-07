@@ -42,6 +42,9 @@ def put_settings():
 
 @bp.post("/reset")
 def reset_settings():
+    if any(svc().settings.get(k) != DEFAULTS[k] for k in ADMIN_KEYS):
+        if (refused := admin.refusal(BACKUP_REFUSED)) is not None:
+            return refused
     return jsonify(settings=svc().settings.reset())
 
 

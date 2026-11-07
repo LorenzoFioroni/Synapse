@@ -198,6 +198,14 @@ docker compose up -d --build
 docker compose exec synapse python server.py --pairing-link
 ```
 
+Settings → Backups offers **Local** or **Remote (rclone)** storage. Configure the provider,
+credentials and destination entirely in Settings; the Docker image includes rclone. Supported
+providers include Google Drive, OneDrive, Dropbox, S3-compatible storage, WebDAV and SFTP.
+Cloud accounts use browser sign-in with Web application credentials entered in Settings.
+Remote backups retain local safety copies and retry failed uploads; remote archives can be
+restored from the same page, including on a fresh installation. PDFs are still excluded.
+See [backup setup and recovery](docs/storage.md#remote-storage-with-rclone).
+
 See [docs/docker.md](docs/docker.md). Built from GitHub, Settings → Updates shows newer commits, and
 with the updater container **Update Now** installs them: a backup, a rebuild and a restart, with the
 previous version kept to fall back on ([docs/updates.md](docs/updates.md)).

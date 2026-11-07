@@ -8,6 +8,7 @@ through the network's gateway (172.18.0.1).
 
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -127,6 +128,8 @@ def started(monkeypatch):
     monkeypatch.setattr(os, "umask", lambda mask: seen.setdefault("umask", mask))
 
     class App:
+        extensions = {"synapse": SimpleNamespace(backups=SimpleNamespace(stop=lambda: seen.update(stopped=True)))}
+
         def run(self, **kwargs):
             seen["run"] = kwargs
 
@@ -139,6 +142,7 @@ def started(monkeypatch):
     def start(*args):
         monkeypatch.setattr(sys, "argv", ["server.py", *args])
         server.main()
+        assert seen["stopped"]
         return seen["config"], seen["run"], seen.get("umask")
 
     return start

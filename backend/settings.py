@@ -16,7 +16,7 @@ SEARCH_MODES = {
 # Changed only on the computer running Synapse, or after a passkey confirmation (api.admin): with
 # them a stolen device cookie could send a full copy of the library to another folder, or prune the
 # backups down to one right before deleting things.
-ADMIN_KEYS = ("backup_dir", "backup_interval", "backup_keep")
+ADMIN_KEYS = ("backup_dir", "backup_interval", "backup_keep", "backup_destination")
 
 DEFAULTS: dict = {
     # Citation keys
@@ -73,10 +73,11 @@ DEFAULTS: dict = {
     "annotation_fill_box": "#ffff00",  # when a box is filled
     "annotation_color_draw": "#000000",
     "annotation_snap_words": True,  # highlights and underlines take whole words
-    # Backups of library.db, settings and notes (not the PDFs): see backend/backup.py
+    # Backups of library.db, settings and notes (not the PDFs): see backend/backup/
     "backup_interval": "daily",  # off | daily | weekly
     "backup_keep": 14,  # newest archives kept
     "backup_dir": "",  # empty: data/backups
+    "backup_destination": "local",  # local | remote (rclone, with a local safety copy)
 }
 
 ASK_CHOICES = ("never", "always", "ask")
@@ -95,6 +96,7 @@ CHOICES = {
     "notes_equation_numbers": {"labelled", "all"},
     "pdf_open_in": {"tabs", "browser"},
     "backup_interval": {"off", "daily", "weekly"},
+    "backup_destination": {"local", "remote"},
 }
 
 

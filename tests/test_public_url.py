@@ -7,6 +7,7 @@ connecting from 127.0.0.1 over plain HTTP, naming the public host.
 
 import socket
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -231,6 +232,8 @@ def test_public_url_accepts_loopback_listening(monkeypatch, host):
     monkeypatch.setattr(server, "ensure_built", lambda _: None)
 
     class App:
+        extensions = {"synapse": SimpleNamespace(backups=SimpleNamespace(stop=lambda: None))}
+
         def run(self, **kwargs):
             assert kwargs["host"] == host
 
