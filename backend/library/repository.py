@@ -11,6 +11,7 @@ import logging
 import os
 import sqlite3
 import uuid
+from collections.abc import Collection
 from pathlib import Path
 
 from ..settings import SettingsStore
@@ -82,10 +83,12 @@ class PaperRepository:
         self._item_listeners: list = []
 
     # ------------------------------------------------------------------ reads
-    def list(self, view: str = "library") -> builtins.list[dict]:
-        """Items for a view: library, trash or duplicates (folder views are filtered in the API)."""
+    def list(self, view: str = "library", leave_out: Collection[str] = ()) -> builtins.list[dict]:
+        """Items for a view: library, trash or duplicates (folder views are filtered in the API).
+        ``leave_out`` names columns not to read: the read holds the database, and a save waits for
+        every read to finish, so a whole-library read that has no use for abstracts skips them."""
         if view == "duplicates":
-            papers = self.list()
+            papers = self.list(leave_out=leave_out)
             group_of = {pid: n for n, g in enumerate(self.duplicate_groups(papers)) for pid in g}
             out = [p for p in papers if p["id"] in group_of]
             for p in out:
@@ -93,7 +96,10 @@ class PaperRepository:
             return out
         where = "deleted_at IS NOT NULL" if view == "trash" else "deleted_at IS NULL"
         with self.db.session() as c:
-            papers = [dict(r) for r in c.execute(f"SELECT * FROM papers WHERE {where}")]
+            # annotations are large and only needed by the viewer; folder_id is a legacy column
+            skip = {"annotations", "folder_id", *leave_out}
+            cols = ", ".join(r["name"] for r in c.execute("PRAGMA table_info(papers)") if r["name"] not in skip)
+            papers = [dict(r) for r in c.execute(f"SELECT {cols} FROM papers WHERE {where}")]
             atts: dict[str, list] = {}
             for r in c.execute("SELECT * FROM attachments ORDER BY id"):
                 atts.setdefault(r["paper_id"], []).append(dict(r))
@@ -102,8 +108,6 @@ class PaperRepository:
             tags = tags_by_paper(c)
             folders = folders_by_paper(c)
         for p in papers:
-            p.pop("annotations", None)  # large and only needed by the viewer
-            p.pop("folder_id", None)  # legacy column
             p["attachments"] = atts.get(p["id"], [])
             p["tags"] = tags.get(p["id"], [])
             p["folder_ids"] = folders.get(p["id"], [])

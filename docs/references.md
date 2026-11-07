@@ -294,7 +294,10 @@ migration step; see [storage](storage.md) before changing it.
 A cited work is matched to a library item by DOI, then arXiv id, then `title_key` with years at
 most one apart (a preprint and its journal version are often a year apart). The lookup tables of
 the library are cached until a signature of the `papers` table changes, because the item pane asks
-for them each time an item is selected.
+for them each time an item is selected. They are built under a lock, so panes asked for at once
+(arrowing through the list) share one read of the library instead of each reading it, and that
+read leaves out abstracts (`papers.list(leave_out=("abstract",))`): a save waits for every read
+of the library to finish (see [storage](storage.md#the-library-database)).
 
 `item_view(item_id)` is what the item pane shows: the references (each with `library_id` when it
 is in the library), the library items citing this one, the fetch info, `can_fetch` and `queued`.

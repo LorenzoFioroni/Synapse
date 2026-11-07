@@ -44,6 +44,7 @@ class Citations:
         self._queue: queue.Queue[str] = queue.Queue()
         self._pending: set[str] = set()
         self._lock = threading.Lock()
+        self._index_lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self.running: str | None = None
         self.last_error: str | None = None
@@ -133,17 +134,25 @@ class Citations:
         cached = self._index_cache
         if cached and cached[0] == sig:
             return cached[1], cached[2]
-        index, items = self._build_library_index()
-        self._index_cache = (sig, index, items)
-        return index, items
+        # Selecting items quickly asks for several panes at once: build the index once and let
+        # the others wait for it, instead of reading the whole library in parallel (a save waits
+        # for all of those reads to finish).
+        with self._index_lock:
+            sig = self._library_signature()
+            cached = self._index_cache
+            if cached and cached[0] == sig:
+                return cached[1], cached[2]
+            index, items = self._build_library_index()
+            self._index_cache = (sig, index, items)
+            return index, items
 
     def _build_library_index(self):
         by_doi: dict[str, str] = {}
         by_arxiv: dict[str, str] = {}
         by_title: dict[str, list[tuple[str, int | None]]] = {}
         items: dict[str, dict] = {}
-        for p in self.papers.list():
-            items[p["id"]] = {k: v for k, v in p.items() if k != "abstract"}  # kept in memory: no abstracts
+        for p in self.papers.list(leave_out=("abstract",)):  # kept in memory: no abstracts
+            items[p["id"]] = p
             doi, arx = identifiers(p)
             if doi:
                 by_doi.setdefault(doi, p["id"])

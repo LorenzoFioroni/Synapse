@@ -136,8 +136,16 @@ async def main():
             await page.wait_for_function(f"() => window.zcPlugins?.loaded().includes('{PID}')", timeout=20000)
             await page.locator(f"#sidebar [data-view^='source:{PID}.feed']").first.click()
             rows = page.locator(".row[data-id]")
-            await rows.first.wait_for()
-            ids = [await rows.nth(i).get_attribute("data-id") for i in range(await rows.count())]
+            # the library's rows stay on screen until the feed has loaded: wait for the feed's own
+            ids_js = "() => [...document.querySelectorAll('.row[data-id]')].map((r) => r.dataset.id)"
+            try:
+                await page.wait_for_function(
+                    f"() => ({ids_js})().length === {len(PAPERS)} && ({ids_js})().every((id) => id.startsWith('x:'))",
+                    timeout=15000,
+                )
+            except Exception:
+                pass  # the check below says what was shown
+            ids = await page.evaluate(ids_js)
             check(
                 "the feed is ordered by match",
                 ids == [f"x:arxiv:{a}" for a, *_ in PAPERS],
