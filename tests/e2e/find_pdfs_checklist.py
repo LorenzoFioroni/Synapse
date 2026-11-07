@@ -10,9 +10,16 @@ and a fake publisher on port 8852, whose DOIs stand for the cases met on real si
 * ``10.5555/check``: a browser check ("Just a moment…") that sets a cookie and reloads, then the
   article page; its PDF is only given with that cookie (Cloudflare-style).
 * ``10.5555/script``: the PDF link leads to a page that moves on by script (ScienceDirect-style).
+* ``10.5555/atypon``: no ``citation_pdf_url``; the page links its reader (``/doi/epdf/``), whose
+  "Download PDF" link gives the PDF (science.org-style).
+* ``10.5555/anchor``: no ``citation_pdf_url``, only a "Download PDF" link (and a supplementary PDF,
+  which is left alone).
 * ``10.5555/login``: the PDF link gives a login page (no subscription).
 * ``10.5555/wrong``: a PDF of another paper.
 * ``10.5555/nolink``: an article page without a PDF link.
+
+It also checks the PDF links ``pageState`` derives on APS and science.org article pages, served by
+the test in place of the real sites (no request leaves the machine).
 """
 
 import asyncio
@@ -43,10 +50,13 @@ DATA = tempfile.mkdtemp(prefix="zc-findpdfs-e2e-")
 PROFILE = tempfile.mkdtemp(prefix="zc-findpdfs-profile-")
 TMP = Path(tempfile.mkdtemp(prefix="zc-findpdfs-pdfs-"))
 results = []
+hits = {"suppl": 0}
 
 PAPERS = {
     "check": "Behind a Browser Check",
     "script": "Behind a Script Redirect",
+    "atypon": "Behind a Reader Page",
+    "anchor": "Linked Only by Its Label",
     "login": "Behind a Login",
     "wrong": "The Paper Asked For",
     "nolink": "Without a PDF Link",
@@ -90,15 +100,38 @@ class Publisher(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         cleared = "cleared=1" in (self.headers.get("Cookie") or "")
         path = self.path.split("?")[0]
-        if path.startswith("/doi/10.5555/"):  # the resolver: on to the publisher's page
-            suffix = path.rsplit("/", 1)[1]
-            if not re.fullmatch(r"[a-z]+", suffix):
-                self.send(b"bad request", "text/plain", 400)
+        if path.startswith("/resolve/10.5555/"):  # the resolver: on to the publisher's page
+            key = path.rsplit("/", 1)[1]
+            if key not in PAPERS:  # only the test's own DOIs (no request text in the header)
+                self.send(b"not found", "text/plain", 404)
                 return
-            safe_suffix = suffix.replace("\r", "").replace("\n", "")
             self.send_response(302)
-            self.send_header("Location", "/article/" + safe_suffix)
+            self.send_header("Location", "/doi/abs/10.5555/atypon" if key == "atypon" else f"/article/{key}")
             self.end_headers()
+        elif path == "/doi/abs/10.5555/atypon":
+            page = article("atypon", None).replace(
+                b"</h1>", b'</h1><a href="/doi/epdf/10.5555/atypon" class="btn">View PDF</a>'
+            )
+            self.send(page)
+        elif path in ("/doi/epdf/10.5555/atypon", "/doi/pdf/10.5555/atypon") and "download=true" not in self.path:
+            self.send(
+                b'<!doctype html><html><head><title>Reader</title></head><body><div id="viewer"></div>'
+                b'<a href="/doi/pdf/10.5555/atypon?download=true" aria-label="Download PDF"><i></i></a></body></html>'
+            )
+        elif path == "/doi/pdf/10.5555/atypon":
+            self.send(PDFS["atypon"], "application/pdf")
+        elif path == "/article/anchor":
+            page = article("anchor", None).replace(
+                b"</h1>",
+                b'</h1><a href="/files/suppl.pdf">Supplementary material (PDF)</a>'
+                b'<a href="/files/anchor-paper">Download PDF</a>',
+            )
+            self.send(page)
+        elif path == "/files/suppl.pdf":
+            hits["suppl"] += 1
+            self.send(PDFS["wrong"], "application/pdf")
+        elif path == "/files/anchor-paper":
+            self.send(PDFS["anchor"], "application/pdf")
         elif path == "/article/check":
             self.send(article("check", "/pdf/check") if cleared else CHECK_PAGE, status=200 if cleared else 403)
         elif path == "/pdf/check":
@@ -148,7 +181,7 @@ async def main():
             item = requests.post(BASE + "/api/items", json={"title": title, "doi": f"10.5555/{key}"}).json()
             ids[item["id"]] = key
         listed = requests.get(BASE + "/api/connector/missing-pdfs").json()
-        check("the library lists the five items without a PDF", listed["total"] == 5, listed["total"])
+        check("the library lists the seven items without a PDF", listed["total"] == 7, listed["total"])
 
         async with async_playwright() as p:
             ctx = await p.chromium.launch_persistent_context(
@@ -178,33 +211,78 @@ async def main():
             check("an older library is told apart", "Update Synapse first" in told, told.splitlines()[:1])
             await old.close()
 
+            # the links pageState derives from APS and science.org article pages
+            site_page = await ctx.new_page()
+            state_js = re.search(r"export function pageState\(\) \{.*?\n\}\n", (EXT / "extract.js").read_text(), re.S)
+            fake = {
+                "https://journals.aps.org/prl/abstract/10.1103/x19r-pzyb": "<title>APS</title><h1>A letter</h1>",
+                "https://www.science.org/doi/10.1126/science.abd4385": '<title>Science</title><a href="/doi/epdf/'
+                '10.1126/science.abd4385">PDF</a><a href="/doi/pdf/10.1126/science.abd4385?download=true">Download</a>',
+            }
+            await ctx.route(
+                re.compile(r"https://(journals\.aps\.org|www\.science\.org)/.*"),
+                lambda route: route.fulfill(content_type="text/html", body=fake.get(route.request.url, "nothing")),
+            )
+            derived = {}
+            for url in fake:
+                await site_page.goto(url)
+                derived[url] = await site_page.evaluate(
+                    f"(() => {{ {state_js.group(0).removeprefix('export ')} return pageState(); }})()"
+                )
+            await ctx.unroute(re.compile(r"https://(journals\.aps\.org|www\.science\.org)/.*"))
+            await site_page.close()
+            aps, sci = (derived[u]["pdfUrls"] for u in fake)
+            check(
+                "an APS abstract page gives its /pdf/ link",
+                aps == ["https://journals.aps.org/prl/pdf/10.1103/x19r-pzyb"],
+                aps,
+            )
+            check(
+                "a science.org page gives /doi/pdf/ before the reader",
+                sci[:2]
+                == [
+                    "https://www.science.org/doi/pdf/10.1126/science.abd4385",
+                    "https://www.science.org/doi/epdf/10.1126/science.abd4385",
+                ],
+                sci,
+            )
+
             page = await ctx.new_page()
             page.on("pageerror", lambda e: errors.append(str(e)))
-            await page.goto(f"{ext}/find_pdfs.html?resolver={PUB}/doi/&pause=0")
+            await page.goto(f"{ext}/find_pdfs.html?resolver={PUB}/resolve/&pause=0")
             await page.wait_for_selector("#start", timeout=10000)
             rows = await page.locator(".rows li").count()
-            check("the page lists them", rows == 5, rows)
+            check("the page lists them", rows == 7, rows)
             await page.click("#start")
             await page.wait_for_function(
                 "() => /attached of/.test(document.querySelector('.summary')?.textContent || '')", timeout=240000
             )
-            statuses = {}
+            statuses, why = {}, {}
             for li in await page.locator(".rows li").all():
-                statuses[ids[await li.get_attribute("data-id")]] = await li.locator(".st").inner_text()
+                key = ids[await li.get_attribute("data-id")]
+                statuses[key] = await li.locator(".st").inner_text()
+                why[key] = await li.locator(".why").inner_text()
             print("   ", statuses)
+            print("   ", why)
             check("past a browser check, with its cookie", "attached" in statuses["check"])
             check("past a redirect by script", "attached" in statuses["script"])
-            check("a login page is not attached", "login page" in statuses["login"])
+            check("through a reader page to its download link", "attached" in statuses["atypon"])
+            check("by a link labelled PDF", "attached" in statuses["anchor"])
+            check("not the supplementary PDF", hits["suppl"] == 0, hits)
+            check("a login page is not attached", "No access" in statuses["login"])
+            check("  and the row says what came back", "Sign in" in why["login"], why["login"])
             check("a PDF of another paper is not attached", "not of this paper" in statuses["wrong"])
+            check("  and the row says so", "another paper" in why["wrong"], why["wrong"])
             check("an article page without a PDF link", "No PDF link" in statuses["nolink"])
+            check("  and the row names the page", "Without a PDF Link" in why["nolink"], why["nolink"])
             summary = await page.inner_text(".summary")
-            check("the summary counts them", "2 PDFs attached of 5 tried" in summary, summary)
+            check("the summary counts them", "4 PDFs attached of 7 tried" in summary, summary)
             check("the three not found can be retried", "Retry 3" in await page.inner_text("#start"))
             tabs = [pg.url for pg in ctx.pages]
             check("the background tab is closed afterwards", not any(u.startswith(PUB) for u in tabs), tabs)
 
             left = requests.get(BASE + "/api/connector/missing-pdfs").json()
-            check("the library has the two PDFs", left["total"] == 3, left["total"])
+            check("the library has the four PDFs", left["total"] == 3, left["total"])
             check("no page errors", not errors, errors)
             await ctx.close()
     finally:

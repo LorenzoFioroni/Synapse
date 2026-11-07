@@ -142,10 +142,15 @@ export function extractCitation() {
 export async function fetchPdfInPage(pdfUrl, maxBytes) {
   try {
     const r = await fetch(pdfUrl, { credentials: 'include' });
-    if (!r.ok) return { error: `HTTP ${r.status}` };
+    if (!r.ok) return { error: `HTTP ${r.status}${r.headers.get('cf-mitigated') ? ', a browser check' : ''}` };
     const buf = new Uint8Array(await r.arrayBuffer());
     if (buf.length > maxBytes) return { error: 'too large' };
-    if (!(buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46)) return { error: 'not a PDF (probably a login page)' };
+    if (!(buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46)) {
+      // usually a login or purchase page; its title says which
+      const type = (r.headers.get('content-type') || '?').split(';')[0];
+      const title = type.includes('html') ? new TextDecoder().decode(buf.subarray(0, 50000)).match(/<title[^>]*>([^<]*)/i)?.[1]?.trim() : '';
+      return { error: `not a PDF: ${title ? `the page “${title.slice(0, 80)}”` : type}` };
+    }
     let bin = '';
     for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
     return { b64: btoa(bin), size: buf.length };
@@ -158,22 +163,57 @@ export async function fetchPdfInPage(pdfUrl, maxBytes) {
  * Where a tab of "Find missing PDFs" has got to: a PDF, an article page and the PDF links it
  * names, or a site's browser check still running (Cloudflare and the like answer with an
  * interstitial that runs JavaScript, then reloads the page it stood in for).
- * @typedef {{ url: string; isPdf: boolean; challenge: boolean; pdfUrls: string[] }} PageState
+ * @typedef {{ url: string; title: string; isPdf: boolean; challenge: boolean; pdfUrls: string[] }} PageState
  * @returns {PageState}
  */
 export function pageState() {
   const isPdf = document.contentType === 'application/pdf';
+  const here = location.href;
   /** @param {string | null | undefined} u */
-  const abs = (u) => { try { return u ? new URL(u, location.href).href : ''; } catch { return ''; } };
+  const abs = (u) => { try { return u ? new URL(u, here).href : ''; } catch { return ''; } };
   /** @type {string[]} */
   const pdfUrls = [];
   if (!isPdf) {
+    // 1. What the page names as its PDF.
     document.querySelectorAll('meta[name="citation_pdf_url" i]').forEach((m) => pdfUrls.push(abs(m.getAttribute('content'))));
     document.querySelectorAll('link[rel~="alternate"][type="application/pdf" i]').forEach((l) => pdfUrls.push(abs(l.getAttribute('href'))));
+    // 2. Publishers that do not name it, by the URL of their article pages (as Zotero's translators):
+    // APS (journals.aps.org/prl/abstract/10.1103/… → /prl/pdf/10.1103/…)
+    const aps = here.match(/^(https?:\/\/journals\.aps\.org\/[^/]+\/)(?:abstract|supplemental|references|cited-by)\/([^?#]+)/);
+    if (aps) pdfUrls.push(`${aps[1]}pdf/${aps[2]}`);
+    // and the Atypon sites (science.org, ACS, Wiley, Taylor & Francis, SIAM, PNAS, …): /doi/10.… →
+    // /doi/pdf/10.…, for each kind of PDF link the page has; the reader (epdf) last.
+    const atypon = here.match(/^(https?:\/\/[^/]+)\/doi\/(?:(?:abs|abstract|full|figure|ref|citedby|book|epdf|reader)\/)?(10\.[^?#]+)/);
+    if (atypon) {
+      for (const kind of ['pdfdirect', 'pdf', 'pdfplus', 'epdf']) {
+        if (document.querySelector(`a[href*="/doi/${kind}/"]`)) pdfUrls.push(`${atypon[1]}/doi/${kind}/${atypon[2]}`);
+      }
+    }
+    // 3. Links that say PDF (by their address or their label), not the supplementary material; a
+    // few, since the library checks each PDF is the paper.
+    let found = 0;
+    for (const a of document.querySelectorAll('a[href]')) {
+      if (found >= 4) break;
+      const href = a.getAttribute('href') || '';
+      if (/^(#|javascript:|mailto:)/i.test(href)) continue;
+      const label = `${a.textContent || ''} ${a.getAttribute('aria-label') || ''} ${a.getAttribute('title') || ''}`;
+      const byUrl = /\.pdf(?:$|[?#])|\/(?:pdf|epdf|pdfdirect|pdfft|pdfplus)(?:\/|$|[?#])/i.test(href);
+      if (!byUrl && !/\bpdf\b/i.test(label)) continue;
+      if (/suppl|supporting|appendix|erratum|guideline|instructions|licen[cs]e|permission|bibtex|\bris\b/i.test(`${label} ${href}`)) continue;
+      pdfUrls.push(abs(href));
+      found++;
+    }
   }
   const text = `${document.title} ${(document.body?.innerText || '').slice(0, 1500)}`.toLowerCase();
+  // a page with PDF links is the article, whatever its text says
   const challenge = !isPdf && !pdfUrls.length && (
     /just a moment|checking your browser|client challenge|verify you are human|verifying you are human|attention required|are you a robot/.test(text)
     || !!document.querySelector('#challenge-form, #challenge-running, .cf-turnstile, iframe[src*="challenges.cloudflare.com"], #px-captcha, #captcha-box'));
-  return { url: location.href, isPdf, challenge, pdfUrls: [...new Set(pdfUrls.filter((u) => /^https?:/.test(u)))] };
+  return {
+    url: here,
+    title: document.title,
+    isPdf,
+    challenge,
+    pdfUrls: [...new Set(pdfUrls.filter((u) => /^https?:/.test(u) && u !== here))],
+  };
 }

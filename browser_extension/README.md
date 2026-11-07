@@ -76,6 +76,9 @@ because of such checks. The browser must be on the subscribing network (the serv
   publishers block institutions that download in bulk.
 - If a site wants you to confirm you are human, do it in its tab, then **Retry**.
 - Keep the window open while it runs.
+- Under a paper it did not get, the row says what the publisher gave (a sign-in page, `HTTP 403`,
+  the article page without a PDF link). A sign-in page usually means this browser is not on the
+  subscribing network: try once by hand, on the VPN.
 
 Permissions: `activeTab` + `scripting` to read the current page only when you
 click the button (and the pages Find Missing PDFs opens, with the HTTPS access it asks for), `storage` for the settings, and access to `127.0.0.1` /
