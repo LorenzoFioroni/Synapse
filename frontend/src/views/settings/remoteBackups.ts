@@ -48,11 +48,15 @@ export async function bindRemoteBackups(view: HTMLElement, changed: () => void):
       const value = same && !secret ? (key === 'known_hosts' ? config.known_hosts : config.options[key]) || '' : '';
       const stored = same && config.stored_secrets.includes(key);
       const id = `remote-backup-${key}`;
-      const control = ['key_pem', 'known_hosts'].includes(key)
+      const choices = provider.choices?.[key];
+      const control = choices
+        ? `<select class="select" id="${id}" data-remote-option="${key}">${choices.map(([choice, text]) => `<option value="${escapeHtml(choice)}" ${choice === value ? 'selected' : ''}>${escapeHtml(text)}</option>`).join('')}</select>`
+        : ['key_pem', 'known_hosts'].includes(key)
         ? `<textarea class="input mono" rows="3" id="${id}" data-remote-option="${key}" spellcheck="false" autocomplete="off" placeholder="${stored ? 'Saved; leave blank to keep' : ''}">${escapeHtml(value)}</textarea>`
         : `<input class="input" type="${secret ? 'password' : 'text'}" id="${id}" data-remote-option="${key}" value="${escapeHtml(value)}" spellcheck="false" autocomplete="off" placeholder="${stored ? 'Saved; leave blank to keep' : ''}">`;
-      return `<div style="margin-top:10px"><label for="${id}">${escapeHtml(label)}${required ? ' *' : ''}</label>${control}</div>`;
+      return `<div style="margin-top:10px"><label for="${id}">${escapeHtml(label)}${required ? ' *' : ''}</label>${control}${key === 'pass' ? '<label><input type="checkbox" data-remote-password-obscured> Already obscured by rclone</label><p class="s-desc">Check this only when pasting the output of rclone obscure. Leave the password blank to keep the saved password.</p>' : ''}</div>`;
     }).join('');
+    if (provider.id === 'ftp') fields.insertAdjacentHTML('beforeend', '<p class="s-desc">Choose the TLS mode required by your FTP server. Destination folders are relative to your FTP home directory unless they start with /.</p>');
     const info = host.querySelector<HTMLElement>('[data-remote-auth-info]')!;
     info.hidden = !provider.oauth;
     info.innerHTML = `Register a Web application with your provider and enter its application credentials above. Set its redirect URI to <code>${escapeHtml(setup.callback)}</code>, then choose Connect account. <a href="${guides[provider.id] || '#'}" target="_blank" rel="noopener noreferrer">Provider application setup</a>.
@@ -65,8 +69,8 @@ export async function bindRemoteBackups(view: HTMLElement, changed: () => void):
   const error = host.querySelector<HTMLElement>('[data-remote-error]')!;
   async function save(): Promise<boolean> {
     const options: Record<string, string> = {};
-    host.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[data-remote-option]').forEach((el) => { options[el.dataset.remoteOption!] = el.value; });
-    const response = await asAdmin(() => api.saveRemoteBackup({ provider: select.value, folder: host.querySelector<HTMLInputElement>('[data-remote-folder]')!.value, namespace: host.querySelector<HTMLSelectElement>('[data-remote-namespace]')!.value, options }));
+    host.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('[data-remote-option]').forEach((el) => { options[el.dataset.remoteOption!] = el.value; });
+    const response = await asAdmin(() => api.saveRemoteBackup({ provider: select.value, folder: host.querySelector<HTMLInputElement>('[data-remote-folder]')!.value, namespace: host.querySelector<HTMLSelectElement>('[data-remote-namespace]')!.value, options, password_obscured: host.querySelector<HTMLInputElement>('[data-remote-password-obscured]')?.checked || false }));
     if (!response) return false;
     setup.configuration = response.configuration;
     Object.assign(config, response.configuration);
@@ -76,6 +80,8 @@ export async function bindRemoteBackups(view: HTMLElement, changed: () => void):
     host.querySelector<HTMLTextAreaElement>('[data-remote-option="key_pem"]')?.setAttribute('placeholder', 'Saved; leave blank to keep');
     const key = host.querySelector<HTMLTextAreaElement>('[data-remote-option="key_pem"]');
     if (key) key.value = '';
+    const obscured = host.querySelector<HTMLInputElement>('[data-remote-password-obscured]');
+    if (obscured) obscured.checked = false;
     changed();
     return true;
   }

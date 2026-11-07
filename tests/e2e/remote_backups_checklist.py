@@ -3,6 +3,7 @@ archive delivery/recovery is covered with real rclone in tests/test_remote_backu
 """
 
 import asyncio
+import configparser
 import json
 import os
 import subprocess
@@ -139,6 +140,71 @@ async def main():
                     "credentials never appear in the status response",
                     "example-client-secret" not in json.dumps(requests.get(BASE + "/api/backups").json()),
                 )
+                await page.select_option("[data-remote-provider]", "ftp")
+                check(
+                    "FTP defaults to explicit TLS",
+                    await page.input_value('[data-remote-option="security"]') == "explicit",
+                )
+                obscured = "QW4tZXhhbXBsZS1JVjEyMy1jaXBoZXJ0ZXh0"
+                for name, value in {
+                    "host": "backup.example",
+                    "port": "47406",
+                    "user": "backup-user",
+                    "pass": obscured,
+                }.items():
+                    await page.fill(f'[data-remote-option="{name}"]', value)
+                await page.fill("[data-remote-folder]", "Backups")
+                await page.check("[data-remote-password-obscured]")
+                await page.wait_for_timeout(4500)
+                check(
+                    "polling preserves imported password and format choice",
+                    await page.is_checked("[data-remote-password-obscured]")
+                    and await page.input_value('[data-remote-option="pass"]') == obscured,
+                )
+                async with page.expect_response(
+                    lambda r: r.url.endswith("/api/backups/remote") and r.request.method == "PUT"
+                ) as saved:
+                    await page.click("[data-remote-save]")
+                check("FTP connection saves without a terminal", (await saved.value).status == 200)
+                await expect(page.locator('[data-remote-option="pass"]')).to_have_value("")
+                check(
+                    "password format resets after saving", not await page.is_checked("[data-remote-password-obscured]")
+                )
+                parser = configparser.ConfigParser(interpolation=None)
+                parser.read(Path(data) / "backup-remote/rclone.conf")
+                check(
+                    "explicit FTPS and imported password are persisted correctly",
+                    parser["remote"]["tls"] == "false"
+                    and parser["remote"]["explicit_tls"] == "true"
+                    and parser["remote"]["port"] == "47406"
+                    and parser["remote"]["pass"] == obscured,
+                )
+                await page.click("#settings-view [data-close]")
+                await page.keyboard.press("Meta+," if sys.platform == "darwin" else "Control+,")
+                await page.click('.settings-nav [data-nav="backups"]')
+                await page.wait_for_selector('[data-remote-option="security"]')
+                check(
+                    "FTP security and custom port survive reopening",
+                    await page.input_value('[data-remote-option="security"]') == "explicit"
+                    and await page.input_value('[data-remote-option="port"]') == "47406",
+                )
+                await page.select_option('[data-remote-option="security"]', "implicit")
+                await page.fill('[data-remote-option="port"]', "")
+                async with page.expect_response(
+                    lambda r: r.url.endswith("/api/backups/remote") and r.request.method == "PUT"
+                ) as saved:
+                    await page.click("[data-remote-save]")
+                check("FTP security can change while keeping a saved password", (await saved.value).status == 200)
+                parser.read(Path(data) / "backup-remote/rclone.conf")
+                check(
+                    "implicit FTPS uses its default port and preserves the password",
+                    parser["remote"]["tls"] == "true"
+                    and parser["remote"]["explicit_tls"] == "false"
+                    and parser["remote"]["port"] == "990"
+                    and parser["remote"]["pass"] == obscured,
+                )
+                if shots:
+                    await page.screenshot(path=str(Path(shots) / "ftp-backup-settings.png"))
                 check("no JavaScript errors", not errors)
                 await browser.close()
         finally:

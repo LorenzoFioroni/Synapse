@@ -479,7 +479,7 @@ export interface RemoteBackupConfiguration {
 
 export interface RemoteBackupSetup {
   configuration: RemoteBackupConfiguration;
-  providers: { id: string; name: string; oauth: boolean; fields: [string, string, boolean, boolean][] }[];
+  providers: { id: string; name: string; oauth: boolean; fields: [string, string, boolean, boolean][]; choices?: Record<string, [string, string][]> }[];
   callback: string;
 }
 

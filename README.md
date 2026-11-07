@@ -203,7 +203,9 @@ docker compose exec synapse python server.py --pairing-link
 
 Settings → Backups offers **Local** or **Remote (rclone)** storage. Configure the provider,
 credentials and destination entirely in Settings; the Docker image includes rclone. Supported
-providers include Google Drive, OneDrive, Dropbox, S3-compatible storage, WebDAV and SFTP.
+providers include Google Drive, OneDrive, Dropbox, S3-compatible storage, WebDAV, SFTP and FTP/FTPS.
+FTP offers explicit TLS, implicit TLS and plain FTP. Password connections also accept an existing
+`rclone obscure` value by selecting **Already obscured by rclone** beside the password.
 Cloud accounts use browser sign-in with Web application credentials entered in Settings.
 Remote backups retain local safety copies and retry failed uploads; remote archives can be
 restored from the same page, including on a fresh installation. PDFs are still excluded.

@@ -36,6 +36,158 @@ def drive():
     }
 
 
+def ftp(security="explicit", port="47406"):
+    return {
+        "provider": "ftp",
+        "folder": "Backups",
+        "options": {
+            "host": "backup.example",
+            "port": port,
+            "user": "backup-user",
+            "pass": "test-password",
+            "security": security,
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "security,tls,explicit_tls,default_port",
+    [("explicit", "false", "true", "21"), ("implicit", "true", "false", "990"), ("plain", "false", "false", "21")],
+)
+@pytest.mark.parametrize("custom_port", [True, False])
+def test_ftp_security_and_ports_round_trip(
+    client, svc, monkeypatch, security, tls, explicit_tls, default_port, custom_port
+):
+    calls = []
+
+    def obscure(*args, **kwargs):
+        calls.append((args, kwargs))
+        return "obscured-password\n"
+
+    monkeypatch.setattr(svc.backups.remote.rclone, "run", obscure)
+    data = ftp(security, "47406" if custom_port else "")
+    response = client.put("/api/backups/remote", json=data)
+    assert response.status_code == 200, response.text
+    assert calls == [(("obscure", "-"), {"input": "test-password"})]
+    options = svc.backups.remote._options()
+    assert options == {
+        "type": "ftp",
+        "host": "backup.example",
+        "port": "47406" if custom_port else default_port,
+        "user": "backup-user",
+        "pass": "obscured-password",
+        "tls": tls,
+        "explicit_tls": explicit_tls,
+    }
+    saved = RemoteStorage(svc.backups.remote.root, BackupOAuth()).configuration()
+    assert saved["options"]["security"] == security
+    assert saved["stored_secrets"] == ["pass"]
+    assert "test-password" not in response.text and "obscured-password" not in response.text
+    data["options"]["pass"] = ""
+    assert client.put("/api/backups/remote", json=data).get_json()["configuration"]["revision"] == saved["revision"]
+    assert len(calls) == 1
+
+
+def test_ftp_defaults_to_explicit_tls(client, svc, monkeypatch):
+    monkeypatch.setattr(svc.backups.remote.rclone, "run", lambda *a, **kw: "obscured")
+    data = ftp()
+    del data["options"]["security"]
+    assert client.put("/api/backups/remote", json=data).status_code == 200
+    assert svc.backups.remote._options()["explicit_tls"] == "true"
+    assert svc.backups.remote._options()["tls"] == "false"
+
+
+@pytest.mark.parametrize("provider", ["ftp", "webdav", "sftp"])
+def test_existing_obscured_password_is_preserved_without_running_rclone(client, svc, monkeypatch, provider):
+    # Rclone's unpadded URL-safe base64 format includes a 16-byte IV.
+    obscured = "QW4tZXhhbXBsZS1JVjEyMy1jaXBoZXJ0ZXh0"
+    data = ftp()
+    data.update(provider=provider, password_obscured=True)
+    data["options"] = {
+        "ftp": data["options"],
+        "webdav": {"url": "https://backup.example/dav", "user": "backup-user"},
+        "sftp": {"host": "backup.example", "user": "backup-user", "known_hosts": "backup.example ssh-ed25519 AAAA"},
+    }[provider]
+    data["options"]["pass"] = obscured
+
+    def unexpected(*a, **kw):
+        pytest.fail("An imported password must not be obscured again")
+
+    monkeypatch.setattr(svc.backups.remote.rclone, "run", unexpected)
+    response = client.put("/api/backups/remote", json=data)
+    assert response.status_code == 200, response.text
+    assert svc.backups.remote._options()["pass"] == obscured
+    assert obscured not in response.text
+    assert "password_obscured" not in svc.backups.remote._options()
+    revision = response.get_json()["configuration"]["revision"]
+    data["options"]["pass"] = ""
+    for flag in (False, True):
+        data["password_obscured"] = flag
+        assert client.put("/api/backups/remote", json=data).get_json()["configuration"]["revision"] == revision
+        assert svc.backups.remote._options()["pass"] == obscured
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"security": "invalid"},
+        {"security": ""},
+        {"port": "65536"},
+        {"port": "0"},
+        {"port": "not-a-port"},
+        {"port": "9" * 5000},
+        {"port": "２１"},
+        {"host": "ftp://backup.example/path"},
+        {"tls": "true"},
+        {"explicit_tls": "true"},
+        {"pass": "bad\npassword"},
+    ],
+)
+def test_invalid_ftp_settings_preserve_saved_connection(client, svc, monkeypatch, change):
+    client.put("/api/backups/remote", json=s3())
+    before = svc.backups.remote.rclone.config.read_bytes()
+    monkeypatch.setattr(svc.backups.remote.rclone, "run", lambda *a, **kw: "obscured")
+    data = ftp()
+    data["options"].update(change)
+    assert client.put("/api/backups/remote", json=data).status_code == 400
+    assert svc.backups.remote.rclone.config.read_bytes() == before
+
+
+@pytest.mark.parametrize("password", ["short", "not base64!", "a" * 25, "YWJj", "A" * 22 + "="])
+def test_malformed_obscured_password_is_rejected(client, svc, password):
+    client.put("/api/backups/remote", json=s3())
+    before = svc.backups.remote.rclone.config.read_bytes()
+    data = ftp()
+    data["options"]["pass"] = password
+    data["password_obscured"] = True
+    response = client.put("/api/backups/remote", json=data)
+    assert response.status_code == 400
+    assert password not in response.text
+    assert svc.backups.remote.rclone.config.read_bytes() == before
+
+
+@pytest.mark.parametrize("flag", ["true", 1, None, []])
+def test_password_format_requires_a_boolean(client, flag):
+    assert client.put("/api/backups/remote", json={**ftp(), "password_obscured": flag}).status_code == 400
+
+
+@pytest.mark.skipif(shutil.which("rclone") is None, reason="optional real-rclone integration test")
+def test_real_rclone_password_can_be_imported_or_obscured(svc):
+    remote = svc.backups.remote
+    data = ftp()
+    password = " test-password-with-spaces "
+    data["options"]["pass"] = password
+    remote.save(data)
+    obscured = remote._options()["pass"]
+    assert obscured != password
+    data.update(password_obscured=True)
+    data["options"]["pass"] = obscured
+    revision = remote.metadata()["revision"]
+    remote.save(data)
+    assert remote._options()["pass"] == obscured
+    assert remote.metadata()["revision"] == revision
+
+
 @pytest.fixture
 def storage(svc, tmp_path, monkeypatch):
     """An in-memory rclone transport with real local files and the public Settings configuration."""

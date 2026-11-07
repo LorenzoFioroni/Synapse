@@ -344,11 +344,27 @@ For a checkout deployment, install rclone on the server before choosing remote s
 
 All connection details are entered in Settings; no rclone commands or files need to be prepared
 inside Docker. Supported connection forms are Google Drive, Microsoft OneDrive, Dropbox,
-S3-compatible storage, WebDAV/Nextcloud and SFTP. Arbitrary rclone flags, executable commands,
+S3-compatible storage, WebDAV/Nextcloud, SFTP and FTP/FTPS. Arbitrary rclone flags, executable commands,
 server-side credential file paths and existing external rclone configurations are not accepted.
 WebDAV/S3 endpoints use HTTPS. SFTP requires the server's trusted `known_hosts` entry and a
 password or pasted private key (unencrypted PEM). The Test Connection button uploads, reads back
 and deletes a unique probe file.
+
+**FTP/FTPS.** Choose FTP / FTPS and enter the host, username, password, port and destination
+folder in Settings. Connection security offers **Explicit TLS** (the default), **Implicit TLS**
+and **Plain FTP (unencrypted)**. Explicit TLS writes `tls = false` and `explicit_tls = true`;
+implicit TLS writes `tls = true` and `explicit_tls = false`; plain FTP sets both to false.
+An empty port uses 21 for explicit TLS/plain FTP or 990 for implicit TLS; a custom port is kept.
+TLS certificates are verified. Folder paths are relative to the FTP account's home directory
+unless they start with `/`. Choose **Test connection** after saving to check access.
+
+For FTP, WebDAV and SFTP passwords, paste the ordinary password and leave **Already obscured by
+rclone** unchecked; Synapse obscures it on the server. To reuse the output of `rclone obscure`,
+paste that value and check the box. It is validated for rclone's encoding and saved unchanged,
+without obscuring it a second time. The checkbox applies only to the newly entered password and
+resets after saving; leaving the password blank keeps the saved credential in either case.
+The original password cannot be verified until connecting to the remote server. No command needs
+to be run inside Docker.
 
 **Cloud authorization.** Google, Microsoft and Dropbox need a registered **Web** application;
 enter its client ID/key and secret in Settings. Register the exact redirect URI shown there
