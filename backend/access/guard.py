@@ -34,6 +34,8 @@ refused.
 
 from __future__ import annotations
 
+import re
+
 from flask import Flask, Response, current_app, g, jsonify, request
 
 from . import lan
@@ -149,7 +151,14 @@ def not_paired() -> Response:
     return Response(_signin_page(), status=401, mimetype="text/html", headers={"Cache-Control": "no-store"})
 
 
+_TOKEN_SHAPE = re.compile(r"[A-Za-z0-9_-]{1,128}")  # what secrets.token_urlsafe produces
+
+
 def set_device_cookie(resp: Response, token: str) -> None:
+    """Give the device its cookie. Tokens are URL-safe by construction; anything else is refused
+    rather than written into a header."""
+    if not _TOKEN_SHAPE.fullmatch(token):
+        raise ValueError("Not a device token.")
     resp.set_cookie(
         COOKIE, token, max_age=COOKIE_MAX_AGE, httponly=True, samesite="Lax", secure=request.is_secure, path="/"
     )
