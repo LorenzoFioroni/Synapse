@@ -81,8 +81,10 @@ class Services:
         self.confirmations = Confirmations()  # devices that just confirmed with a passkey (admin actions)
         self._mcp_http: HttpTransport | None = None
         from .backup import Backups
+        from .backup.remote import RemoteStorage
+        from .online.backup_oauth import BackupOAuth
 
-        self.backups = Backups(self)
+        self.backups = Backups(self, RemoteStorage(config.backup_remote_dir, BackupOAuth()))
         self.presence = Presence()  # the open windows, when the server stops with the last one
         from .config import APP_ROOT
         from .online.updates import Updates

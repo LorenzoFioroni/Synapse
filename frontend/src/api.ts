@@ -4,7 +4,7 @@ import type {
   AccessToken, AccessTokensOverview, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, HistoryDiff, HistoryLog, HistoryStatus, HistoryVersion, ImportEntry, ImportPreview, Item, RenamedKey,
   ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, Milestone, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
   ItemFieldValue, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginSource, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
-  TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview, UpdaterState, UpdateStatus,
+  TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview, UpdaterState, UpdateStatus, RemoteBackupSetup, RemoteBackupConfiguration, Backup,
 } from './types.js';
 import { openNewWindow, openPageInNewWindow } from './windows.js';
 
@@ -120,7 +120,14 @@ export const api = {
   pluginLog: (id: string) => request<{ lines: string[] }>('GET', `/api/plugin-host/${encodeURIComponent(id)}/log`),
   backups: () => request<BackupStatus>('GET', '/api/backups'),
   backupNow: () => request('POST', '/api/backups'),
-  restoreBackup: (name: string) => request<BackupStatus & { restored: string; safety_backup: string }>('POST', '/api/backups/restore', { name }),
+  restoreBackup: (name: string, source: 'local' | 'remote' = 'local') => request<BackupStatus & { restored: string; safety_backup: string }>('POST', '/api/backups/restore', { name, source }),
+  remoteBackupSetup: () => request<RemoteBackupSetup>('GET', '/api/backups/remote'),
+  saveRemoteBackup: (data: { provider: string; folder: string; namespace?: string; options: Record<string, string> }) => request<{ configuration: RemoteBackupConfiguration }>('PUT', '/api/backups/remote', data),
+  remoteBackupSets: () => request<{ sets: string[] }>('GET', '/api/backups/remote/sets'),
+  testRemoteBackup: () => request('POST', '/api/backups/remote/test'),
+  authorizeRemoteBackup: () => request<{ url: string }>('POST', '/api/backups/remote/authorize'),
+  remoteBackups: () => request<{ backups: Backup[] }>('GET', '/api/backups/remote/archives'),
+  retryRemoteBackups: () => request('POST', '/api/backups/remote/retry'),
   // updates of Synapse itself (Settings → Updates)
   updates: (refresh = false) => request<UpdateStatus>('GET', refresh ? '/api/updates?refresh=1' : '/api/updates'),
   installUpdate: () => request<UpdateStatus & { started: UpdaterState }>('POST', '/api/updates/install'),

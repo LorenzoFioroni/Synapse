@@ -195,15 +195,23 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
           The PDFs of your items are not included — back up <span class="mono">data/pdfs</span> separately.</p>
         <div class="card">
           ${segmentedRow('backup_interval', 'Back up automatically', 'When the app is running. Also before emptying the Trash, deleting items for good, importing and regenerating citation keys.', [['off', 'Off'], ['daily', 'Daily'], ['weekly', 'Weekly']])}
+          <div class="setting"><div class="s-text"><div class="s-title">Destination</div><div class="s-desc">Remote storage uses rclone on the server. A local copy is kept for offline recovery and upload retries.</div></div>
+            <select class="select" data-backup-destination aria-label="Backup destination"><option value="local" ${s.backup_destination === 'local' ? 'selected' : ''}>Local</option><option value="remote" ${s.backup_destination === 'remote' ? 'selected' : ''}>Remote (rclone)</option></select></div>
           ${selectRow('backup_keep', 'Keep', 'Older backups are deleted.', [[7, 'Last 7 backups'], [14, 'Last 14 backups'], [30, 'Last 30 backups'], [90, 'Last 90 backups']])}
           <div class="setting stack"><div class="s-text"><div class="s-title">Backup folder ${saved}</div>
             <div class="s-desc">Leave empty to use the backups folder inside your data folder. A folder synced by iCloud Drive or Dropbox keeps a copy off this computer.</div></div>
             <input class="input mono" type="text" data-backup-dir spellcheck="false" autocomplete="off" placeholder="Default: data/backups" value="${escapeHtml(s.backup_dir || '')}">
             <div class="form-error" data-backup-dir-error hidden></div></div>
+          <div class="setting stack" data-remote-backup hidden><div data-remote-backup-form>Loading remote storage settings…</div></div>
           <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Backups</div>
             <div class="s-desc" data-backup-desc>Loading…</div></div>
             <div class="s-control"><button class="btn" data-backup-now>${icon('download')} Back Up Now</button></div></div>
             <div class="backup-list" data-backup-list></div></div>
+          <div class="setting stack" data-remote-backup-archives hidden>
+            <div class="s-title">Remote backups <button class="btn btn-sm" data-remote-backup-refresh>Refresh list</button></div>
+            <div class="s-desc" data-remote-backup-status></div>
+            <div class="backup-list" data-remote-backup-list></div>
+          </div>
           <div class="setting"><div class="s-text"><div class="s-title">Notes history</div>
             <div class="s-desc" data-history-desc>Loading…</div></div>
             <div class="s-control"><button class="btn" data-history-open>${icon('restore')} Notes History…</button></div></div>

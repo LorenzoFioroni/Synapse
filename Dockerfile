@@ -12,10 +12,12 @@ RUN npm run build
 
 
 FROM python:3.13-slim-trixie
+COPY --from=rclone/rclone:1.76.0 /usr/local/bin/rclone /usr/local/bin/rclone
+COPY docker/rclone-LICENSE /usr/local/share/licenses/rclone/LICENSE
 # git keeps the notes history; tini passes stop signals on to Python and reaps the programs it
 # starts (git, esbuild, pip).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git tini \
+    && apt-get install -y --no-install-recommends git tini ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY requirements.txt ./

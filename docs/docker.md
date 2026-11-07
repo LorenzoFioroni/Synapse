@@ -6,7 +6,7 @@ it stops, so no terminal has to stay open. The repository has what this needs:
 
 | File | What it is |
 |---|---|
-| `Dockerfile` | The image: the frontend built with Node.js, then Python, Git, tini and esbuild. It starts `python server.py --container`. |
+| `Dockerfile` | The image: the frontend built with Node.js, then Python, Git, tini, esbuild and rclone. It starts `python server.py --container`. |
 | `compose.yaml` | One Synapse, its tunnel (`cloudflared`) and, with the `ollama` profile, Ollama for [autocompletion](autocompletion.md). |
 | `compose.nvidia.yaml` | Adds an NVIDIA GPU to Ollama. |
 | `docker/updater/` | The updater: with the `updater` profile, it installs updates when you press Update Now in Settings → Updates ([updates](updates.md)). |
@@ -167,3 +167,19 @@ it), or in a folder of its own with its own `compose.yaml` and `.env` that build
 Tests: `tests/test_container.py` (`--container`, the guard behind a tunnel container, local
 services), `tests/plugins/test_http.py` and `tests/plugins/test_autocompletion.py` (local services
 in `plugin.http` and Autocompletion).
+
+## Offsite backups
+
+The image includes rclone 1.76.0. In Settings → Backups choose **Remote (rclone)**, select a
+provider, enter the connection details and folder, and save. For Google Drive, OneDrive or
+Dropbox, register a Web application with the redirect URI shown in Settings, enter its application
+credentials there, then use **Connect account**. Authorization takes place in your browser and
+returns to Synapse's public HTTPS address. No command needs to be run inside Docker.
+
+Use **Test connection** to check upload, download and deletion. Synapse stores configuration and
+tokens under `/data/backup-remote/`, on the existing persistent data volume, so a container rebuild
+keeps the connection. These credentials are omitted from backup archives and masked in Settings.
+Local archives stay under `/data/backups/` unless a different writable folder is selected;
+failed uploads are retried while the server is running. SFTP/WebDAV targets must be reachable
+from the Synapse container. See [storage](storage.md#remote-storage-with-rclone) for provider
+requirements, retention, error handling and recovery on a fresh server.

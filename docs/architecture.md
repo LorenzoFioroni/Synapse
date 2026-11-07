@@ -65,12 +65,12 @@ Two objects tie the backend together:
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |
 | `mcp/` | The MCP server: the JSON-RPC layer (`protocol.py`), its HTTP transport (`http.py`), the library tools (`tools/`, one mixin per family), their schemas (`server.py`) and the instructions given to the AI app (`instructions.py`). | none (it uses the other packages) |
 | `pdf/` | PDF files on disk: text extraction (`text.py`), the full-text index (`fulltext.py`), and for the MCP tools page rendering (`render.py`), finding figures and equations (`regions.py`) and PNG encoding (`png.py`). | `fulltext.db` |
-| `online/` | Lookups on the web: normalizing metadata queries (`metadata.py`; providers come from plugins), downloading and checking a PDF of a paper (`pdf_finder.py`; where to look comes from plugins' PDF sources, and an article's page leads to its PDF through `article_page.py`) and PDFs behind an attachment's web link (`remote_pdf.py`), and newer code for Synapse itself on GitHub, installed through the deployment's updater (`updates.py`, see [updates](updates.md)). `http.py` has what they share: timeout, User-Agent, the error type, the arXiv request spacing and the shared public-address validator and pinned HTTP/TLS transport. | none |
+| `online/` | Lookups on the web: normalizing metadata queries (`metadata.py`; providers come from plugins), downloading and checking a PDF of a paper (`pdf_finder.py`; where to look comes from plugins' PDF sources, and an article's page leads to its PDF through `article_page.py`) and PDFs behind an attachment's web link (`remote_pdf.py`), cloud account authorization for remote backups (`backup_oauth.py`), and newer code for Synapse itself on GitHub, installed through the deployment's updater (`updates.py`, see [updates](updates.md)). `http.py` has what they share: timeout, User-Agent, the error type, the arXiv request spacing and the shared public-address validator and pinned HTTP/TLS transport. | none |
 | `references/` | The citation graph: reference fetching through injected plugin providers (`sources.py`); scholarly HTTP and arXiv parsing live in `plugins/reference-sources/server/`, stored (`store.py`), fetched in the background and matched to library items (`service.py`), and how a paper outside the library connects to it (`connections.py`). | `citations.db` |
 | `access/` | Who may use the server: other websites never (`guard.py`), other devices only once paired (`devices.py`) or signed in with a passkey (`passkeys.py`, checked by `webauthn.py`), AI apps at `/mcp` with MCP-scoped tokens and remote browser saves with revocable connector-scoped tokens (`tokens.py`); requests through a tunnel or proxy never count as this computer (`proxy.py`, `--public-url`); administrative actions from a device after a passkey confirmation (`confirm.py`); `--pairing-link` (`pairing_link.py`); `authdb.py` is what the `auth.db` tables share; `lan.py` finds this computer's network addresses and names. See [`remote-access.md`](remote-access.md). | `auth.db` |
 | `config.py`, `settings.py` | Paths of the data folder, how the server was started (`--public-url`, `--container`, the local services of `--local-service`), and the user's preferences. | `settings.json` |
 | `changes.py` | The change feed that tells other windows and devices what changed. | none |
-| `backup.py` | Automatic backups of the library, the settings and the notes. | `backups/` |
+| `backup/` | Local backup archives and restore (`__init__.py`, `restore.py`); Settings-managed rclone storage (`remote.py`, `rclone.py`), persistent upload retries (`delivery.py`). | `backups/`, `backup-remote/` |
 | `plugins/` | Plugin discovery, lifecycle, public permissions and integration registries. `catalog.py` discovers manifests/defaults; `files.py` coordinates storage writes. See [Plugins](plugins.md) and the ownership table below. | `plugins.json`, `plugin-data/`, `fields.db` |
 | `desktop/` | Running Synapse like a desktop program: opening its window (`window.py`), the open windows that keep a `--quit-when-closed` server running (`presence.py`), the desktop shortcut (`shortcut.py`). See [the app window](desktop.md). | none |
 
@@ -120,7 +120,9 @@ usually belongs in a lower package (shared helpers moved to `library/identifiers
 and `ALLOWED` in the test together.
 
 Components that need something from a higher layer get it passed in. For example, `Services`
-gives `NotesService` the paper repository, and `backup.Backups` receives the services object.
+gives `NotesService` the paper repository, and `backup.Backups` receives the services object. `Services` injects `online.backup_oauth.BackupOAuth`
+into its remote storage: provider authorization stays in `online/`, while all file transfers use
+the server's rclone process. Its credentials live outside archived preferences.
 
 ## Frontend
 
