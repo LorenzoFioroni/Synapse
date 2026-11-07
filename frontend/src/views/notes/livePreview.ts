@@ -32,7 +32,7 @@ import { type Equations, previewWidgets } from './previewWidgets.js';
 import type { TaskPreview } from './workspace.js';
 import { type Figures, type Spoiler, noteHooks } from './hooks.js';
 import { sectionsOf } from './sections.js';
-import { calloutAt, quoteWrappers, tableSource } from './quoteBlocks.js';
+import { calloutAt, quoteEnd, quotedTableEnd, quoteWrappers, tableSource } from './quoteBlocks.js';
 import { previewSelection } from './previewSelection.js';
 
 /** A DOM text node (``Text`` is CodeMirror's document here). */
@@ -246,13 +246,16 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
         const name = node.name;
         if (taken.some(([a, b]) => node.from >= a && node.to <= b)) return false;
         if (name === 'Table') {
-          const from = doc.lineAt(node.from).from, to = doc.lineAt(node.to).to;
+          // in a quote, only the lines the read view counts as the table (the rest stay source)
+          const end = quotedTableEnd(doc, node.node);
+          if (end === null) return false;
+          const from = doc.lineAt(node.from).from, to = doc.lineAt(end).to;
           if (blockActive(from, to) || overlapsTaken(from, to)) lineDecos(from, to, () => 'cm-lp-tablesrc');
           else {
             // drawn by the renderer, so math, citations and links in its cells are rendered too
             const lookup = refLookup(state, eq);
             taken.push([from, to]);
-            out.push(Decoration.replace({ widget: W.table(tableSource(doc, node.node), lookup, `${version}:${eq.sig}`), block: true }).range(from, to));
+            out.push(Decoration.replace({ widget: W.table(tableSource(doc, node.node, end), lookup, `${version}:${eq.sig}`), block: true }).range(from, to));
           }
           return false;
         }
@@ -514,10 +517,11 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
           const first = doc.lineAt(node.from);
           const callout = calloutAt(doc, node.from);
           const type = callout?.type;
-          for (let p = node.from; p <= node.to; p = doc.lineAt(p).to + 1) {
+          const end = quoteEnd(doc, node.node);
+          for (let p = node.from; p <= end; p = doc.lineAt(p).to + 1) {
             const line = doc.lineAt(p);
             lineDeco(p, type ? `cm-lp-callout cm-lp-callout-${type}${line.from === first.from ? ' cm-lp-callout-head' : ''}` : 'cm-lp-quote');
-            if (line.to >= node.to) break;
+            if (line.to >= end) break;
           }
           if (callout && !lineActive(first.from)) {
             const title = callout.title ? '' : callout.fallback;

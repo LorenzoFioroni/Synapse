@@ -28,17 +28,73 @@ export function quoteWrappers(cm: CM, state: EditorState, spans: Span[]) {
     for (let p = node.node.parent; p; p = p.parent) if (p.name === 'Blockquote') depth++;
     ranges.push(cm.BlockWrapper.create({ tagName: 'div', rank: Math.max(0, 100 - depth), attributes: {
       class: callout ? `cm-lp-callout-block cm-lp-callout-${callout.type}` : 'cm-lp-quote-block',
-    } }).range(state.doc.lineAt(node.from).from, node.to));
+    } }).range(state.doc.lineAt(node.from).from, quoteEnd(state.doc, node.node)));
   } });
   return cm.BlockWrapper.set(ranges, true);
 }
 
-/** The renderer sees just the table; its surrounding quotes are editor block wrappers. */
-export function tableSource(doc: Text, node: SyntaxNode): string {
+function quoteDepth(node: SyntaxNode): number {
   let depth = 0;
   for (let p = node.parent; p; p = p.parent) if (p.name === 'Blockquote') depth++;
-  return doc.sliceString(doc.lineAt(node.from).from, doc.lineAt(node.to).to).split('\n').map((line) => {
-    for (let n = 0; n < depth; n++) line = line.replace(/^\s*>[ \t]?/, '');
-    return line;
-  }).join('\n');
+  return depth;
+}
+
+/** A line without its quote's markers, or null when one of them is missing (a "lazy" line). */
+function unquoted(line: string, depth: number): string | null {
+  for (let n = 0; n < depth; n++) {
+    const m = /^\s*>[ \t]?/.exec(line);
+    if (!m) return null;
+    line = line.slice(m[0].length);
+  }
+  return line;
+}
+
+/**
+ * Where a table inside a quote ends, as the read view's renderer (markdown-it) sees it.
+ * CodeMirror's parser lets a quoted table go on over lines that lack the quote's ">", but the
+ * renderer does not: without ">" on the header and delimiter lines there is no table at all
+ * (null), and a row without it ends the table and the quote. Live preview draws only what the
+ * read view draws, so a missing ">" shows up while editing.
+ */
+export function quotedTableEnd(doc: Text, node: SyntaxNode): number | null {
+  const depth = quoteDepth(node);
+  if (!depth) return node.to;
+  const first = doc.lineAt(node.from).number, last = doc.lineAt(node.to).number;
+  for (let n = first; n <= last; n++) {
+    if (unquoted(doc.line(n).text, depth) !== null) continue;
+    return n <= first + 1 ? null : doc.line(n - 1).to;
+  }
+  return node.to;
+}
+
+/**
+ * A row without ">" ends a quoted table and, in the renderer, the quotes it lacks markers for;
+ * the quote's box ends there too.
+ */
+export function quoteEnd(doc: Text, quote: SyntaxNode): number {
+  const depth = quoteDepth(quote) + 1;
+  let end = quote.to;
+  const tables: SyntaxNode[] = [];
+  const walk = (n: SyntaxNode) => {
+    for (let c = n.firstChild; c; c = c.nextSibling) {
+      if (c.name === 'Table') tables.push(c);
+      else if (c.name === 'Blockquote' || c.name.endsWith('List') || c.name === 'ListItem') walk(c);
+    }
+  };
+  walk(quote);
+  for (const table of tables) {
+    const cut = quotedTableEnd(doc, table);
+    if (cut === null) continue;
+    const next = doc.lineAt(cut).number + 1;
+    if (next > doc.lineAt(table.to).number) continue;
+    if (unquoted(doc.line(next).text, depth) === null) end = Math.min(end, cut);
+  }
+  return end;
+}
+
+/** The renderer sees just the table; its surrounding quotes are editor block wrappers. */
+export function tableSource(doc: Text, node: SyntaxNode, to = node.to): string {
+  const depth = quoteDepth(node);
+  return doc.sliceString(doc.lineAt(node.from).from, doc.lineAt(to).to).split('\n')
+    .map((line) => unquoted(line, depth) ?? line).join('\n');
 }

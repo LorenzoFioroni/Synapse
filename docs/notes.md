@@ -387,6 +387,13 @@ and callouts, so paragraphs, tables and nested quotes share a continuous border 
 Tables render without their source `>` prefixes inside that container; editing a table reveals
 its original source while leaving the rest of the callout rendered.
 
+A table in a quote or callout needs the quote's `>` on every line, as in GFM. CodeMirror's parser
+also accepts table lines without it, but the renderer (Read mode, exports) does not: without `>`
+on the header and `|---|` lines there is no table, only text, and a row without it ends the table
+and the quote. Live preview follows the renderer (`quotedTableEnd`, `quoteEnd` in
+`quoteBlocks.ts`, tested in `tests/js/quoteBlocks.test.mjs`), so such lines stay as source while
+you edit instead of looking fine there and breaking in Read mode.
+
 ### Writing shortcuts and paired delimiters
 
 In Live and Source modes, use Cmd on macOS or Ctrl elsewhere:
