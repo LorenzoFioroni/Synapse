@@ -97,4 +97,5 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
         services.attachments.start()
         services.backups.start()
         services.note_service.history.start()  # checkpoints of idle edits, changes made outside
+        services.updates.start()  # newer code on GitHub (Settings → Updates)
     return app

@@ -9,6 +9,7 @@ it stops, so no terminal has to stay open. The repository has what this needs:
 | `Dockerfile` | The image: the frontend built with Node.js, then Python, Git, tini and esbuild. It starts `python server.py --container`. |
 | `compose.yaml` | One Synapse, its tunnel (`cloudflared`) and, with the `ollama` profile, Ollama for [autocompletion](autocompletion.md). |
 | `compose.nvidia.yaml` | Adds an NVIDIA GPU to Ollama. |
+| `docker/updater/` | The updater: with the `updater` profile, it installs updates when you press Update Now in Settings → Updates ([updates](updates.md)). |
 | `.env.example` | The settings `compose.yaml` reads. Copy it to `.env`, which git ignores. |
 
 ## Setting it up
@@ -36,9 +37,14 @@ tunnel** → Cloudflared) and, for Ollama on a GPU, the
 6. **Autocompletion (optional).** Put `COMPOSE_PROFILES=ollama` in `.env` (and
    `COMPOSE_FILE=compose.yaml:compose.nvidia.yaml` for the GPU), run `docker compose up -d`, then
    `docker compose exec ollama ollama pull qwen2.5-coder:1.5b`.
+7. **Updates (optional).** To build from GitHub instead of the checkout, set
+   `SYNAPSE_SOURCE=https://github.com/owner/Synapse.git#main`. Settings → Updates then lists newer
+   commits. Update Now also needs the updater: `SYNAPSE_UPDATER_TOKEN`, `UPDATER_PROJECT_DIR` and
+   the `updater` profile ([updates](updates.md#setting-it-up-docker)).
 
-**Updating:** `git pull && docker compose up -d --build`. `docker compose logs -f synapse` shows the
-server's output.
+**Updating:** Update Now in Settings → Updates, with the updater. Without it, run
+`docker compose up -d --build`, after a `git pull` if Synapse is built from the checkout.
+`docker compose logs -f synapse` shows the server's output.
 
 ## What `--container` changes
 
@@ -117,6 +123,8 @@ host's firewall (ufw); if you ever publish one, bind it to `127.0.0.1`.
 | `tunnel` | Synapse, cloudflared | the tunnel's requests; Synapse's own lookups on the web |
 | `models` (`internal`) | Synapse, Ollama | suggestions; no way out to the internet, and the tunnel cannot reach Ollama (it has no authentication) |
 | `downloads` | Ollama | `ollama pull` |
+| `updates` (`internal`) | Synapse, the updater | Update Now; nothing else can reach the updater, which has the Docker socket |
+| `updater-web` | the updater | `git ls-remote` for the branch's newest commit |
 
 ## Two libraries on one server
 
@@ -126,11 +134,14 @@ each load the model into GPU memory. For a second instance, add a service like `
 own `SYNAPSE_DATA`, `--public-url`, and a tunnel network of its own shared with cloudflared. Then
 add a route for its hostname to `http://<service>:8000`. Joining the `models` network gives it the
 same Ollama. Separate tunnel networks keep the instances from reaching each other. Even on a shared
-network, every request between them would need a sign-in.
+network, every request between them would need a sign-in. One updater can update them all: list
+the services in `UPDATER_SERVICES` and put each on the `updates` network.
 
 Keep a server's own setup (more instances, a published Ollama port, real hostnames) out of the
 repository: in a `compose.override.yaml` next to `compose.yaml` (git ignores it and Compose reads
-it), or in a folder of its own with its own `compose.yaml` that builds from the checkout.
+it), or in a folder of its own with its own `compose.yaml` and `.env` that builds from GitHub
+(`SYNAPSE_SOURCE`). Keeping the library out of a checkout means nothing run there, such as
+`python server.py` while developing, can open it.
 
 ## Backups and moving back
 

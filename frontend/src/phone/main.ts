@@ -23,6 +23,7 @@ import { newNote, noteScreen, notesScreen } from './notes.js';
 import { destinationScreen, pluginsScreen } from './plugins.js';
 import { currentTab, destinationList, initShell, openDestination, pinnedDestination, push, selectTab } from './shell.js';
 import { openSheet } from './ui.js';
+import { watchUpdates } from '../updates.js';
 
 function finishStartup(): void {
   const el = document.getElementById('startup-screen');
@@ -65,6 +66,7 @@ export async function bootPhone(): Promise<void> {
   try { await A.loadItems(); } finally { finishStartup(); }
   initChanges();
   void initPluginHost();
+  watchUpdates();
   window.zcPhone = { tab: currentTab, select: selectTab };   // for tests
 }
 

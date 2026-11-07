@@ -1,5 +1,5 @@
 // Settings page (full-screen view). Changes save immediately. The page's markup is in
-// settings/page.ts; Backups, Devices, Passkeys, AI Access and Plugins have modules of their own in settings/.
+// settings/page.ts; Backups, Updates, Devices, Passkeys, AI Access and Plugins have modules of their own in settings/.
 import * as A from '../actions.js';
 import { api } from '../api.js';
 import { emit, on, state } from '../store.js';
@@ -10,6 +10,7 @@ import type { SearchMode, Settings } from '../types.js';
 import { debounce, escapeHtml, formatBytes, formatDate, plural, store } from '../util.js';
 import { baseMacros } from './notes/macros.js';
 import { bindBackups, refreshBackups } from './settings/backups.js';
+import { bindUpdates, refreshUpdates } from './settings/updates.js';
 import { bindAiAccess, forgetFreshToken, refreshAiAccess } from './settings/aiAccess.js';
 import { bindDevices, cancelPairing, refreshDevices } from './settings/devices.js';
 import { bindPasskeys, refreshPasskeys } from './settings/passkeys.js';
@@ -83,6 +84,7 @@ export function openSettings(sectionId: string | null = null): void {
   refreshPreview(s.citekey_pattern);
   refreshStats();
   refreshBackups(page);
+  refreshUpdates(page);
   refreshDevices(page);
   refreshPasskeys(page);
   refreshAiAccess(page);
@@ -261,6 +263,7 @@ function bind(view: HTMLElement): void {
   bindPasskeys(view);
   bindAiAccess(view);
   bindBackups(view);
+  bindUpdates(view);
   bindPlugins(view, (id) => setNav(id));
 
   view.querySelector<HTMLElement>('[data-rebuild]')!.onclick = async () => {

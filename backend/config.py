@@ -77,14 +77,27 @@ class Config:
     # from whoever starts the server, never from Settings: a signed-in device must not be able to point
     # the server at addresses inside its network.
     local_services: dict[str, str] = field(default_factory=dict)
+    # Updates of Synapse itself (backend/online/updates.py, docs/updates.md), from the environment
+    # only: where the code comes from (SYNAPSE_SOURCE, https://github.com/owner/repo.git#branch), the
+    # commit this copy was built from (SYNAPSE_COMMIT, set by the Docker image) and the updater that
+    # installs updates (SYNAPSE_UPDATER, SYNAPSE_UPDATER_TOKEN).
+    update_source: str | None = None
+    commit: str | None = None
+    updater_url: str | None = None
+    updater_token: str | None = None
 
     @classmethod
     def from_env(cls, data_dir: str | os.PathLike | None = None) -> Config:
         # SYNAPSE_DATA_DIR; ZCLONE_DATA_DIR is the old name, still accepted
         d = data_dir or os.environ.get("SYNAPSE_DATA_DIR") or os.environ.get("ZCLONE_DATA_DIR") or (APP_ROOT / "data")
+        env = os.environ
         return cls(
             Path(d).expanduser().resolve(),
-            local_services=parse_local_services(os.environ.get("SYNAPSE_LOCAL_SERVICES")),
+            local_services=parse_local_services(env.get("SYNAPSE_LOCAL_SERVICES")),
+            update_source=env.get("SYNAPSE_SOURCE") or None,
+            commit=env.get("SYNAPSE_COMMIT") or None,
+            updater_url=env.get("SYNAPSE_UPDATER") or None,
+            updater_token=env.get("SYNAPSE_UPDATER_TOKEN") or None,
         )
 
     @property

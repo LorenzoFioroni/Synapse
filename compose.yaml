@@ -4,14 +4,20 @@
 #   docker compose up -d --build
 #
 # Ollama for Autocompletion: COMPOSE_PROFILES=ollama in .env; with an NVIDIA GPU also
-# COMPOSE_FILE=compose.yaml:compose.nvidia.yaml.
+# COMPOSE_FILE=compose.yaml:compose.nvidia.yaml. Update Now in Settings → Updates: the updater
+# profile (docs/updates.md).
 
 name: synapse
 
 services:
   synapse:
-    build: .
-    image: synapse:local
+    build:
+      # This checkout, or the Git repository in SYNAPSE_SOURCE. The updater builds one exact
+      # commit of it (SYNAPSE_BUILD_SOURCE) and records which (SYNAPSE_COMMIT).
+      context: ${SYNAPSE_BUILD_SOURCE:-${SYNAPSE_SOURCE:-.}}
+      args:
+        SYNAPSE_COMMIT: ${SYNAPSE_COMMIT:-}
+    image: ${SYNAPSE_IMAGE:-synapse:local}
     restart: unless-stopped
     # The owner of the data folder on the host: git refuses a repository owned by someone else, and
     # the files Synapse writes stay yours. Make the folder before the first start (Docker would make
@@ -23,6 +29,10 @@ services:
       TZ: ${TZ:-UTC}
       # Autocompletion asks this Ollama, which only the Synapse containers can reach.
       SYNAPSE_LOCAL_SERVICES: ${SYNAPSE_LOCAL_SERVICES:-ollama=http://ollama:11434}
+      # Settings → Updates: where the code comes from, and the updater that installs it.
+      SYNAPSE_SOURCE: ${SYNAPSE_SOURCE:-}
+      SYNAPSE_UPDATER: ${SYNAPSE_UPDATER_TOKEN:+http://updater:9000}
+      SYNAPSE_UPDATER_TOKEN: ${SYNAPSE_UPDATER_TOKEN:-}
     volumes:
       - ${SYNAPSE_DATA:-./data}:/data
     read_only: true
@@ -32,7 +42,7 @@ services:
     security_opt: [no-new-privileges:true]
     # No ports: the tunnel is the only way in. Docker's published ports bypass the host's firewall;
     # if you ever publish one, bind it to 127.0.0.1.
-    networks: [tunnel, models]
+    networks: [tunnel, models, updates]
 
   cloudflared:
     image: cloudflare/cloudflared:2026.10.7
@@ -65,11 +75,45 @@ services:
     # models: Synapse's requests, never the tunnel's. downloads: ollama pull.
     networks: [models, downloads]
 
+  updater:
+    # Installs updates when Synapse asks (Update Now). The only container with access to Docker:
+    # nothing but Synapse can reach it, and it builds only what is on SYNAPSE_SOURCE's branch.
+    build:
+      context: ${SYNAPSE_SOURCE:-.}
+      dockerfile: docker/updater/Dockerfile
+    image: synapse-updater:local
+    profiles: [updater]
+    restart: unless-stopped
+    environment:
+      UPDATER_TOKEN: ${SYNAPSE_UPDATER_TOKEN:-}
+      SYNAPSE_SOURCE: ${SYNAPSE_SOURCE:-}
+      # This folder's absolute path on the host, where the updater sees it too: Compose run inside
+      # it must mount the same data folders as Compose run here.
+      UPDATER_PROJECT_DIR: ${UPDATER_PROJECT_DIR:-}
+      UPDATER_SERVICES: synapse
+      UPDATER_IMAGE: ${SYNAPSE_IMAGE:-synapse:local}
+      UPDATER_HEALTH_TIMEOUT: ${UPDATER_HEALTH_TIMEOUT:-300}   # seconds before going back to the previous image
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:${UPDATER_PROJECT_DIR:-/updater-project-dir-not-set}:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    # Root, but only to read this folder's files, .env included, which belong to their owner alone.
+    cap_add: [DAC_READ_SEARCH]
+    security_opt: [no-new-privileges:true]
+    # updates: Synapse's requests. updater-web: looking the branch up with git ls-remote.
+    networks: [updates, updater-web]
+
 networks:
   tunnel: {}
   models:
     internal: true
   downloads: {}
+  updates:
+    internal: true
+  updater-web: {}
 
 volumes:
   ollama: {}
