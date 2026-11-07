@@ -265,7 +265,11 @@ async def main():
             # ---- external link: hover shows the address, click opens a new tab
             await links.nth(2).hover()
             await v.wait_for_selector(".zc-link-pop .zc-pop-url", timeout=5000)
-            check("hovering an external link shows the address", "example.org" in await v.text_content(".zc-pop-url"))
+            check(
+                "hovering an external link shows the address",
+                (await v.text_content(".zc-pop-url") or "").strip().removeprefix("https://").split("/")[0]
+                == "example.org",
+            )
             href = await links.nth(2).get_attribute("href")
             tgt = await links.nth(2).get_attribute("target")
             check("external link opens in a new tab", href == "https://example.org/" and tgt == "_blank", (href, tgt))

@@ -166,7 +166,7 @@ def test_http_errors_do_not_expose_credential_query_values():
     try:
         with pytest.raises(HttpError) as error:
             client.get("https://api.openalex.org/works", retries=0)
-        assert "api.openalex.org" in str(error.value) and "private-secret" not in str(error.value)
+        assert str(error.value).startswith("api.openalex.org:") and "private-secret" not in str(error.value)
     finally:
         client.close()
 

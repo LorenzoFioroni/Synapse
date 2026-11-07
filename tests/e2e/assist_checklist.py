@@ -263,8 +263,11 @@ async def main():
             )
             ok = await wait_for(page, "document.querySelector('[data-ai-state]').textContent.includes('not running')")
             steps = await page.evaluate("document.querySelector('.ai-steps')?.textContent || ''")
+            hosts = await page.evaluate(
+                "[...document.querySelectorAll('.ai-steps a')].map((a) => new URL(a.href).hostname)"
+            )
             check(
-                "Settings: Ollama not running, with what to do", ok and "ollama.com" in steps and "ollama pull" in steps
+                "Settings: Ollama not running, with what to do", ok and "ollama.com" in hosts and "ollama pull" in steps
             )
             await page.fill("[data-ai-url]", "http://192.168.1.5:11434")
             await page.press("[data-ai-url]", "Enter")

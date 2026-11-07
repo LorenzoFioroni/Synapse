@@ -77,7 +77,8 @@ def origin(tmp_path):
                     serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
                 )
             )
-            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
             ctx.load_cert_chain(cert_file, key_file)
             ctx.set_servername_callback(lambda sock, name, ctx: names.append(name))
             server.socket = ctx.wrap_socket(server.socket, server_side=True)
