@@ -5,13 +5,13 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.12**, which also accepts plugins targeting 1.0–1.11. Reference
+This page documents API **1.13**, which also accepts plugins targeting 1.0–1.12. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
 `"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`. Named reference sub-sources and the reference record
 contract require `"^1.5"`. Metadata review, progress jobs, library editing and field scheduling helpers require `"^1.6"`. Notes reads and visualizations require `"^1.7"`. The phone layout's additions (a page's
 `phone` layout, `p.capture`, `p.editor.toolbar`, `role: 'dismiss'` and a paper's `group`) require
-`"^1.11"`. Local services (`plugin.http.local_service`) require `"^1.12"`.
+`"^1.11"`. Local services (`plugin.http.local_service`) require `"^1.12"`. PDF sources that return an article's page rather than its PDF require `"^1.13"`.
 What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
@@ -168,9 +168,15 @@ installed plugins under **Plugins**.
   Ollama suggestions through `plugin.http` with `network: ["loopback"]` (and the server's local
   service `ollama`, API 1.12) and the public editor suggestion API. It stops in safe mode; settings survive. Legacy `notes_ai_*` settings are
   carried over once by the host for the bundled plugin only. See [autocompletion](autocompletion.md).
-- **Open-Access PDFs** (`plugins/open-access-pdfs`): where Find Available PDF looks, Unpaywall and
+- **Publisher PDFs** (`plugins/publisher-pdfs`): Find Available PDF tries the publisher's own PDF
+  first, by the PDF links publishers deposit with Crossref and the DOI's article page (its PDF
+  source, order 5, see [references](references.md#finding-a-pdf)); behind a subscription this works
+  where the server's network has access, such as a university's network or VPN. Network permission
+  for `api.crossref.org`; Synapse itself fetches the publisher's pages and PDFs, as it does every
+  candidate. Turn it off if you have no subscription access and want fewer requests per search.
+- **Open-Access PDFs** (`plugins/open-access-pdfs`): where Find Available PDF looks next, Unpaywall and
   arXiv by identifier and by title (its two PDF sources, see
-  [references](references.md#open-access-pdfs)), through `plugin.http` (network permission for
+  [references](references.md#finding-a-pdf)), through `plugin.http` (network permission for
   `api.unpaywall.org` and `export.arxiv.org`). Turned off, or in safe mode, Find Available PDF has
   nowhere to look unless another plugin offers a source.
 - **Export Formats** (`plugins/export-formats`): the existing BibTeX, RIS, EndNote tagged/XML and
@@ -426,7 +432,7 @@ def activate(plugin: Plugin) -> None:
 | `plugin.http` | `get(url, params=…)`, `post(url, json=…)`, `request(method, url, …)`, `limit(host, seconds)`: the web, within the manifest's `network` (see [Reaching the web](#reaching-the-web)). `local_service(name)` (API 1.12): the address of a service the server was started with, or `None`. |
 | `@plugin.item_source(id, title=…, icon="list", description="", badge=None)`, `plugin.refresh_sources()` | A list of papers in the sidebar, and saying it changed (see [Papers outside the library](#papers-outside-the-library)). |
 | `@plugin.metadata_source(id, title=…, kinds=("doi", "arxiv", "isbn", "title", "pmid"), order=100)` | `fn(query)` receives `kind`, normalized `value`, and the contact `email`. Return an item dict in Synapse's field format, or `None` for no match. Lower order runs first; the first nonempty result wins. Raise `PluginError` for an unavailable source or a readable lookup problem; later sources are still tried. The bundled Metadata Sources plugin uses order 100. Sources are removed when their plugin stops and listed as `metadata_sources` in its info. Use `plugin.http` and declare network permission for a third-party provider. |
-| `@plugin.pdf_source(id, title=…, by_title=False, order=100)` | Where Find Available PDF may look: `fn(paper)` gets `{"title", "doi", "arxiv"}` and returns PDF URLs, best first; Synapse downloads them in turn and keeps the first that is the paper (it checks the DOI, the arXiv stamp or the title in its text). Sources `by_title` are asked only when those going by identifier found nothing for a paper with an arXiv id. Lower `order` first (Open-Access PDFs uses 10). For an institutional repository or a proxy, say. |
+| `@plugin.pdf_source(id, title=…, by_title=False, order=100)` | Where Find Available PDF may look: `fn(paper)` gets `{"title", "doi", "arxiv"}` and returns PDF URLs, best first (API 1.13: or an article's web page, whose `citation_pdf_url` Synapse follows); Synapse downloads them in turn and keeps the first that is the paper (it checks the DOI, the arXiv stamp or the title in its text). Sources `by_title` are asked only when those going by identifier found nothing. Lower `order` first (Publisher PDFs uses 5, Open-Access PDFs 10). For an institutional repository or a proxy, say. |
 | `@plugin.reference_source(id, title=…, order=100, subsources=None)` | API 1.1: `fn(query)` receives `item` (a copied library-style record), contact `email` and `fresh` (prefer newly announced-paper sources). Return `{"references": [...]}` or `None`. Lower order first; empty results and failures fall through. No active source raises a readable lookup error. API 1.5 adds declared named sub-sources; fixed host aliases preserve historical bundled names (below). |
 | `@plugin.export_format(id, title=…, extension=…, mimetype=…)` | API 1.1: `fn(items, options) -> str` registers a text export. Options contain `unicode`, `abstract` and citation-key `pattern`. Keys are `<plugin>.<id>` (a core plugin's would keep its bare id). Writers disappear on unload. Extensions and MIME types are validated. Imports remain independent. To write a format Synapse knows, use `backend.plugins.formats` (below). |
 | `plugin.services` | `contact_email()`, `lookup(identifier)`, `references(paper, new=False)`, `match(refs)`, `connections(papers, refs=None, folders=None, author_names=None)`: Synapse's own lookups, reference lists and scoring. |
@@ -722,6 +728,10 @@ of this):
   permission their exact origins (scheme, host and port) are reached like loopback; other ports of
   that host are not. `plugin.http.local_service("ollama")` returns the address, or `None` when the
   server names no such service.
+- API 1.13: a **PDF source** may return an article's web page instead of its PDF (a DOI's
+  `https://doi.org/…`, say). Synapse follows the page's `citation_pdf_url` (or a meta refresh) to
+  the PDF itself, with the cookies the site sets, so the source needs no network permission for
+  the publisher.
 - Requests to one host are spaced (0.5 s; more with `plugin.http.limit(host, seconds)`), across
   all plugins, so two plugins cannot overload one service. All of arXiv's hosts share one line, 3 s
   apart as its API terms ask, with Synapse's own requests to arXiv (`backend/online/http.py`

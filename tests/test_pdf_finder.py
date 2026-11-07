@@ -1,18 +1,21 @@
-"""Find Available PDF uses a known arXiv id first. The network is faked."""
+"""Find Available PDF: the publisher's copy first, then open-access copies; a known arXiv id
+before any title search. The network is faked."""
 
 import json
 import time
 
 import pytest
+from requests.cookies import RequestsCookieJar, create_cookie
 
-from backend.online import http
+from backend.online import article_page, http
 from backend.plugins import http as plugin_http
 from tests.conftest import make_pdf
 
 
 class Resp:
-    def __init__(self, status=200, content=b"", ctype="application/pdf", data=None, text=""):
+    def __init__(self, status=200, content=b"", ctype="application/pdf", data=None, text="", cookies=None):
         self.status_code, self.content, self._data, self.text = status, content, data, text
+        self.cookies = cookies or RequestsCookieJar()
         self.headers = {"Content-Type": ctype}
         self.encoding, self.reason = "utf-8", ""
         if data is not None and not content:  # plugin.http reads the body, not .json()
@@ -42,13 +45,23 @@ class Resp:
         return False
 
 
+class Web(tuple):
+    """(routes, calls) as before, and ``sent``: the cookies each request carried."""
+
+    def __new__(cls, routes, calls, sent):
+        web = super().__new__(cls, (routes, calls))
+        web.sent = sent
+        return web
+
+
 @pytest.fixture
 def web(monkeypatch, tmp_path):
     """routes: {url prefix: Resp or callable}; calls: every URL requested, in order."""
-    routes, calls = {}, []
+    routes, calls, sent = {}, [], []  # sent: the cookies each request carried
 
     def get(url, **kw):
         calls.append(url)
+        sent.append(dict(kw.get("cookies") or {}))
         for prefix, r in routes.items():
             if url.startswith(prefix):
                 return r() if callable(r) else r
@@ -58,7 +71,7 @@ def web(monkeypatch, tmp_path):
         return get(url, **kw)
 
     monkeypatch.setattr(http, "public_request", request)  # no HTTP or DNS in tests
-    return routes, calls
+    return Web(routes, calls, sent)
 
 
 def pdf_bytes(tmp_path, text, name="x.pdf"):
@@ -108,8 +121,10 @@ def test_id_from_an_arxiv_doi(svc, web, tmp_path):
     assert calls == ["https://arxiv.org/pdf/2608.27561"]  # verified by the arXiv stamp, despite the LaTeX title
 
 
-def test_published_paper_prefers_the_publishers_copy(svc, web, tmp_path):
+def test_published_paper_takes_the_open_access_copy_when_the_publisher_refuses(svc, web, tmp_path):
+    """Off the university's network the DOI page ends at a login page: Unpaywall's copy next."""
     routes, calls = web
+    routes["https://doi.org/10.1103/PhysRevLett.1"] = Resp(ctype="text/html", content=b"<html>Log in</html>")
     routes["https://api.unpaywall.org/v2/10.1103/PhysRevLett.1"] = Resp(
         ctype="application/json", data={"best_oa_location": {"url_for_pdf": "https://journals.example/oa.pdf"}}
     )
@@ -117,8 +132,9 @@ def test_published_paper_prefers_the_publishers_copy(svc, web, tmp_path):
     item = svc.papers.create({"title": "Published", "doi": "10.1103/PhysRevLett.1", "extra": "arXiv: 2301.00001"})
     res = svc.find_pdf(item["id"])
     assert res["source"] == "https://journals.example/oa.pdf"
-    assert calls[0].startswith("https://api.unpaywall.org/v2/10.1103/PhysRevLett.1?email=")
-    assert calls[1] == "https://journals.example/oa.pdf"
+    assert calls[0].startswith("https://api.crossref.org/works/10.1103/PhysRevLett.1")
+    assert calls[1].startswith("https://api.unpaywall.org/v2/10.1103/PhysRevLett.1?email=")
+    assert calls[2:] == ["https://doi.org/10.1103/PhysRevLett.1", "https://journals.example/oa.pdf"]
 
 
 def test_published_paper_falls_back_to_arxiv(svc, web, tmp_path):
@@ -154,7 +170,9 @@ def test_items_without_arxiv_id_behave_as_before(svc, web, tmp_path):
     item = svc.papers.create({"title": "No identifiers here", "doi": "10.1/abc"})
     res = svc.find_pdf(item["id"])
     assert res["status"] == "not_found"
-    assert calls[0].startswith("https://api.unpaywall.org/v2/10.1/abc")
+    assert calls[0].startswith("https://api.crossref.org/works/10.1/abc")
+    assert calls[1].startswith("https://api.unpaywall.org/v2/10.1/abc")
+    assert "https://doi.org/10.1/abc" in calls
     assert any("unpaywall.org/v2/search" in c for c in calls)
     assert not any("scholar.google" in c for c in calls)  # never asked
 
@@ -235,12 +253,14 @@ def test_sources_come_from_plugins(client, svc, web, tmp_path):
     item = svc.papers.create({"title": "A Paper Found Through The Proxy", "doi": "10.1/mine"})
     res = svc.find_pdf(item["id"])
     assert res["status"] == "success" and res["source"] == "https://proxy.example/10.1/mine"
-    downloads = [c for c in calls if not c.startswith(("https://api.unpaywall.org", "https://export.arxiv.org"))]
+    apis = ("https://api.unpaywall.org", "https://export.arxiv.org", "https://api.crossref.org")
+    downloads = [c for c in calls if not c.startswith(apis)]
     assert downloads[0] == "https://proxy.example/10.1/mine"  # order 1: tried before Unpaywall's copy
     info = next(p for p in client.get("/api/plugin-host").get_json()["plugins"] if p["id"] == "my-proxy")
     assert info["pdf_sources"] == [{"id": "mine", "title": "My library", "by_title": False}]
     client.post("/api/plugin-host/my-proxy/disable")
     client.post("/api/plugin-host/open-access-pdfs/disable")
+    client.post("/api/plugin-host/publisher-pdfs/disable")
     calls.clear()
     other = svc.papers.create({"title": "Another", "doi": "10.1/other"})
     res = svc.find_pdf(other["id"])
@@ -256,3 +276,121 @@ def test_find_pdf_endpoint_accepts_an_arxiv_id_alone(client, svc, web, tmp_path)
     bare = svc.papers.create({"item_type": "webpage"})
     r = client.post(f"/api/items/{bare['id']}/find_pdf")
     assert r.status_code == 400 and "arXiv ID" in r.get_json()["error"]
+
+
+# The publisher's copy (plugins/publisher-pdfs)
+
+
+def crossref(*links):
+    return Resp(ctype="application/json", data={"message": {"link": list(links)}})
+
+
+def test_the_publishers_pdf_comes_before_the_open_access_copy(svc, web, tmp_path):
+    """On a university's network the publisher hands over the version of record: it wins over
+    Unpaywall's copy and the arXiv preprint."""
+    routes, calls = web
+    vor = "https://link.springer.example/content/pdf/10.1007/s1.pdf"
+    routes["https://api.crossref.org/works/10.1007/s1"] = crossref(
+        {"URL": vor, "content-type": "application/pdf", "content-version": "vor"}
+    )
+    routes["https://api.unpaywall.org/v2/10.1007/s1"] = Resp(
+        ctype="application/json", data={"best_oa_location": {"url_for_pdf": "https://repo.example/am.pdf"}}
+    )
+    routes[vor] = Resp(content=pdf_bytes(tmp_path, "https://doi.org/10.1007/s1 The Published One"))
+    item = svc.papers.create({"title": "The Published One", "doi": "10.1007/s1", "extra": "arXiv: 2301.00002"})
+    res = svc.find_pdf(item["id"])
+    assert res["status"] == "success" and res["source"] == vor
+    downloads = [c for c in calls if not c.startswith(("https://api.", "https://export."))]
+    assert downloads == [vor]  # the open-access copies were never needed
+
+
+def test_the_doi_page_leads_to_the_pdf_it_names(svc, web, tmp_path):
+    """Without a Crossref link: doi.org, the article page's citation_pdf_url, the PDF; the cookie
+    the page set goes along to the PDF."""
+    routes, calls = web
+    jar = RequestsCookieJar()
+    jar.set_cookie(create_cookie("session", "abc", domain="journals.aps.example"))
+    routes["https://doi.org/10.1103/PhysRevX.9"] = Resp(
+        ctype="text/html",
+        cookies=jar,
+        content=b'<html><head><meta name="citation_pdf_url" content="/prx/pdf/10.1103/PhysRevX.9"></head></html>',
+    )
+    routes["https://doi.org/prx/pdf/"] = Resp(content=pdf_bytes(tmp_path, "10.1103/PhysRevX.9"))
+    item = svc.papers.create({"title": "An APS paper", "doi": "10.1103/PhysRevX.9"})
+    res = svc.find_pdf(item["id"])
+    assert res["status"] == "success" and res["source"] == "https://doi.org/10.1103/PhysRevX.9"
+    i = calls.index("https://doi.org/prx/pdf/10.1103/PhysRevX.9")
+    assert web.sent[i] == {"session": "abc"}
+    assert not any("unpaywall.org/v2/search" in c for c in calls)
+
+
+def test_a_refresh_page_is_followed_to_the_article(svc, web, tmp_path):
+    """Elsevier's DOIs go through a page that moves on with a meta refresh."""
+    routes, calls = web
+    routes["https://doi.org/10.1016/j.a.1"] = Resp(
+        ctype="text/html",
+        content=b'<meta HTTP-EQUIV="REFRESH" content="2; url=\'https://hub.example/retrieve?Redirect=x\'">',
+    )
+    routes["https://hub.example/retrieve"] = Resp(
+        ctype="text/html", content=b'<meta name="citation_pdf_url" content="https://sd.example/pdfft?pid=main.pdf">'
+    )
+    routes["https://sd.example/pdfft"] = Resp(content=pdf_bytes(tmp_path, "doi:10.1016/j.a.1"))
+    item = svc.papers.create({"title": "Elsevier", "doi": "10.1016/j.a.1"})
+    assert svc.find_pdf(item["id"])["status"] == "success"
+    assert "https://sd.example/pdfft?pid=main.pdf" in calls
+
+
+def test_pages_that_point_at_each_other_end(svc, web):
+    routes, calls = web
+    routes["https://doi.org/10.1/loop"] = Resp(
+        ctype="text/html", content=b'<meta name="citation_pdf_url" content="https://doi.org/10.1/loop">'
+    )
+    item = svc.papers.create({"title": "Loop", "doi": "10.1/loop"})
+    assert svc.find_pdf(item["id"])["status"] == "not_found"
+    assert calls.count("https://doi.org/10.1/loop") == 1
+
+
+def test_crossref_links_that_cannot_be_a_readers_pdf_are_left_out(svc, web):
+    from backend.config import APP_ROOT
+    from backend.plugins.loading import load_module
+
+    routes, calls = web
+    routes["https://api.crossref.org/works/10.1002/x"] = crossref(
+        {"URL": "https://api.elsevier.com/content/article/PII:1", "content-type": "application/pdf"},
+        {"URL": "https://onlinelibrary.wiley.com/doi/pdf/10.1002/x", "content-type": "application/pdf"},
+        {"URL": "https://pub.example/am.pdf", "content-type": "application/pdf", "content-version": "am"},
+        {"URL": "https://pub.example/x.xml", "content-type": "text/xml"},
+    )
+    module, _ = load_module("publisher-pdfs", APP_ROOT / "plugins" / "publisher-pdfs" / "server")
+    client = plugin_http.PluginHttp("publisher-pdfs", ["api.crossref.org"], lambda: "test")
+    got = module.finder.candidates(client, "10.1002/x", "me+lib@example.org")
+    assert got == ["https://onlinelibrary.wiley.com/doi/pdfdirect/10.1002/x", "https://doi.org/10.1002/x"]
+    assert calls == ["https://api.crossref.org/works/10.1002/x?mailto=me%2Blib%40example.org"]
+    assert module.finder.candidates(client, "10.48550/arXiv.2301.1", None) == []  # arXiv's own copy
+    assert module.finder.candidates(client, None, None) == []
+
+
+def test_the_publisher_plugin_uses_only_the_plugin_api(svc):
+    info = next(p for p in svc.plugins.listing() if p["id"] == "publisher-pdfs")
+    assert info["enabled"] and not info["core"]
+    assert info["permissions"]["network"] == ["api.crossref.org"]
+
+
+@pytest.mark.parametrize(
+    ("page", "pdf", "refresh"),
+    [
+        (b'<META NAME="citation_pdf_url" CONTENT="a/b.pdf">', "https://x.example/p/a/b.pdf", None),
+        (
+            b'<meta property="citation_pdf_url" content="https://cdn.example/1.pdf?x=1&amp;y=2">',
+            "https://cdn.example/1.pdf?x=1&y=2",
+            None,
+        ),
+        (b'<link rel="alternate" type="application/pdf" href="/full.pdf">', "https://x.example/full.pdf", None),
+        (b'<meta http-equiv=refresh content="0;URL=https%3A%2F%2Fy.example%2Fa">', None, "https://y.example/a"),
+        (b'<meta name="citation_pdf_url" content="javascript:alert(1)">', None, None),
+        (b"<html><body>Please log in</body></html>", None, None),
+        (b"\xff\xfe<meta <<<", None, None),
+    ],
+)
+def test_article_page_links(page, pdf, refresh):
+    assert article_page.links(page, "https://x.example/p/index.html") == (pdf, refresh)
