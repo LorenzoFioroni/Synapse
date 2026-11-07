@@ -157,6 +157,21 @@ async def main():
             await setup.goto(f"{ext}/manifest.json")
             await setup.evaluate(f"chrome.storage.sync.set({{server: '{BASE}'}})")
 
+            # a library from before Find Missing PDFs answers its route with Flask's 404
+            old = await ctx.new_page()
+            old.on("pageerror", lambda e: errors.append(str(e)))
+            await old.route(
+                f"{BASE}/api/connector/missing-pdfs*",
+                lambda route: route.fulfill(
+                    status=404, content_type="application/json", body='{"error": "The requested URL was not found"}'
+                ),
+            )
+            await old.goto(f"{ext}/find_pdfs.html")
+            await old.wait_for_selector(".result", timeout=10000)
+            told = await old.inner_text(".result")
+            check("an older library is told apart", "Update Synapse first" in told, told.splitlines()[:1])
+            await old.close()
+
             page = await ctx.new_page()
             page.on("pageerror", lambda e: errors.append(str(e)))
             await page.goto(f"{ext}/find_pdfs.html?resolver={PUB}/doi/&pause=0")

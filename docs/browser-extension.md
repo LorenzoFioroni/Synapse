@@ -329,6 +329,8 @@ unpacked extension when they think of it, not when they update the app. So:
   looks up unless the user set metadata lookup to "never").
 - Keep the 409 shape: the popup reads `duplicate_of`, `title` and `folder_ids`.
 - The popup must cope with an older library. It treats a missing `on_add` as "never ask".
+- Find Missing PDFs must too: a 404 from `/missing-pdfs` (a library from before it) shows
+  "Update Synapse first" instead of the server's error.
 - Both sides accept both names of the app. The server answers `app: "synapse"`, and `popup.js`
   and `options.js` accept `['synapse', 'zotero-clone'].includes(…)`, the older name.
   `test_extension_accepts_both_ping_names` in `tests/test_branding.py` checks that exact text, and

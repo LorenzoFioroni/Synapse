@@ -117,6 +117,13 @@ async function renderForm(folder = '') {
   const q = new URLSearchParams({ limit: String(BATCH), ...(folder ? { folder_id: folder } : {}) });
   const res = await api(`/api/connector/missing-pdfs?${q}`);
   const list = get('list', HTMLElement);
+  if (res.status === 404) {
+    // People update the extension and the library separately: a library from before this page.
+    view.innerHTML = `<div class="result"><div class="big warn">!</div><h2>Update Synapse first</h2>
+      <p>The library at <code>${esc(server)}</code> is older than this extension and cannot find missing PDFs yet.</p>
+      <p>Update it (Settings → Updates, or pull the code and restart the server), then reopen this window.</p></div>`;
+    return;
+  }
   if (!res.ok) {
     list.innerHTML = `<p class="summary">${esc(res.data?.error || `Error ${res.status}`)}</p>`;
     return;
