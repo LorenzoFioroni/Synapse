@@ -11,6 +11,7 @@ import { loadConnection, libraryFetch } from './connection.js';
 /** @typedef {import('./extract.js').PageState} PageState */
 /** @typedef {{ id: string; title: string; doi: string; year?: number | null }} Missing */
 /** @typedef {'attached' | 'wrong-paper' | 'has-pdf' | 'no-access' | 'no-link' | 'blocked' | 'error'} Outcome */
+/** @typedef {{ outcome: Outcome; why?: string }} Found  what happened, and the details shown under the row */
 
 const params = new URLSearchParams(location.search);
 // The automated tests point the DOIs at a local page instead of doi.org.
@@ -19,16 +20,18 @@ const PAUSE_MS = Number(params.get('pause') ?? 5000);   // between papers
 const LOAD_MS = 45000;      // one navigation
 const SETTLE_MS = 25000;    // a browser check, redirects by script
 const POLL_MS = 1000;
+const STEADY_POLLS = 4;     // an article page without PDF links: polls without change before giving up
 const MAX_PDF_BYTES = 60 * 1024 * 1024;
 const BATCH = 50;
+const OPEN_LINKS = 3;       // links opened in the tab, at most (each can take a while)
 
 /** @type {Record<Outcome, [string, 'ok' | 'warn' | 'err']>} */
 const OUTCOMES = {
   attached: ['PDF attached ✓', 'ok'],
   'has-pdf': ['Already has a PDF', 'ok'],
   'wrong-paper': ['A PDF came back, but not of this paper', 'warn'],
-  'no-access': ['No access: the PDF link gave a login page', 'warn'],
-  'no-link': ['No PDF link on the article page', 'warn'],
+  'no-access': ['No access: the PDF links gave a page, not the PDF', 'warn'],
+  'no-link': ['No PDF link found on the article page', 'warn'],
   blocked: ['The site’s browser check did not finish: open the paper once in this browser, then Retry', 'warn'],
   error: ['Error', 'err'],
 };
@@ -140,7 +143,7 @@ async function renderForm(folder = '') {
     <div class="actions"><button class="btn primary" id="start">Find PDFs</button><button class="btn" id="stop" disabled>Stop</button></div>
     <div class="hint">One paper every few seconds. If a site asks you to confirm you are human, do it in its tab.</div>
     <ul class="rows">${items.map((it) => `<li data-id="${esc(it.id)}"><span class="what"><b>${esc(it.title || it.doi)}</b>
-      <small>${esc(it.doi)}${it.year ? ` · ${esc(it.year)}` : ''}</small></span><span class="st">Waiting</span></li>`).join('')}</ul>`;
+      <small>${esc(it.doi)}${it.year ? ` · ${esc(it.year)}` : ''}</small><small class="why"></small></span><span class="st">Waiting</span></li>`).join('')}</ul>`;
   get('start', HTMLButtonElement).onclick = () => start(items);
   get('stop', HTMLButtonElement).onclick = () => { stopping = true; get('stop', HTMLButtonElement).disabled = true; };
 }
@@ -149,11 +152,14 @@ async function renderForm(folder = '') {
  * @param {string} id
  * @param {string} text
  * @param {'ok' | 'warn' | 'err' | 'busy' | ''} [kind]
+ * @param {string} [why]  what the publisher's pages gave, under the item
  */
-function setStatus(id, text, kind = '') {
+function setStatus(id, text, kind = '', why = '') {
   const row = [...document.querySelectorAll('.rows li')].find((li) => li instanceof HTMLElement && li.dataset.id === id);
   const st = row?.querySelector('.st');
   if (st) { st.className = `st ${kind}`; st.innerHTML = kind === 'busy' ? `<span class="spinner"></span> ${esc(text)}` : esc(text); }
+  const detail = row?.querySelector('.why');
+  if (detail && kind !== 'busy') detail.textContent = why;
 }
 
 /** @param {Missing[]} todo */
@@ -178,17 +184,17 @@ async function start(todo) {
       if (n) await sleep(PAUSE_MS);
       if (stopping) break;
       tabId = await workerTab(tabId);
-      /** @type {Outcome} */
-      let outcome;
+      /** @type {Found} */
+      let found;
       try {
-        outcome = await findOne(tabId, it);
+        found = await findOne(tabId, it);
       } catch (e) {
-        console.warn('Find PDF failed for', it.doi, e);
-        outcome = 'error';
+        found = { outcome: 'error', why: String((e instanceof Error && e.message) || e) };
       }
-      outcomes.set(it.id, outcome);
-      const [text, kind] = OUTCOMES[outcome];
-      setStatus(it.id, text, kind);
+      if (found.why) console.info('Find PDF', it.doi, found.outcome, found.why);
+      outcomes.set(it.id, found.outcome);
+      const [text, kind] = OUTCOMES[found.outcome];
+      setStatus(it.id, text, kind, found.why);
     }
   } finally {
     if (tabId !== undefined) await chrome.tabs.remove(tabId).catch(() => {});
@@ -229,64 +235,89 @@ async function workerTab(tabId) {
  * Open the paper, find its PDF and hand it to the library.
  * @param {number} tabId
  * @param {Missing} it
- * @returns {Promise<Outcome>}
+ * @returns {Promise<Found>}
  */
 async function findOne(tabId, it) {
   setStatus(it.id, 'Opening the article…', 'busy');
   await navigate(tabId, RESOLVER + it.doi.split('/').map(encodeURIComponent).join('/'));
   const page = await settle(tabId);
-  if (!page) return 'error';
-  if (page.challenge) return 'blocked';
+  if (!page) return { outcome: 'error', why: 'The article page did not load.' };
+  if (page.challenge) return { outcome: 'blocked', why: `${short(page.url)} “${page.title}”` };
   const links = page.isPdf ? [page.url] : page.pdfUrls;
-  if (!links.length) return 'no-link';
+  if (!links.length) return { outcome: 'no-link', why: `${short(page.url)} “${page.title}”` };
   setStatus(it.id, 'Getting the PDF…', 'busy');
+  const tried = new Set(links);
+  /** @type {string[]} */
+  const notes = [];
   let wrong = false;
-  // From the article page first; opening a link in the tab leaves that page, so that comes last.
-  for (const open of [false, true]) {
-    for (const link of links) {
-      const pdf = await fetchPdf(tabId, link, open);
-      if (pdf === 'blocked') return 'blocked';
-      if (!pdf) continue;
-      setStatus(it.id, 'Checking it is the paper…', 'busy');
-      const fd = new FormData();
-      fd.append('id', it.id);
-      fd.append('file', new Blob([pdf], { type: 'application/pdf' }), 'paper.pdf');
-      const res = await api('/api/connector/attach-pdf', { method: 'POST', body: fd });
-      if (!res.ok) throw new Error(res.data?.error || `Error ${res.status}`);
-      if (res.data.status === 'attached' || res.data.status === 'has-pdf') return res.data.status;
-      wrong ||= res.data.status === 'wrong-paper';
+  /**
+   * Fetch ``link`` from the page the tab shows and hand a PDF to the library.
+   * @param {string} link
+   * @returns {Promise<Outcome | undefined>}  attached or has-pdf when done
+   */
+  const attempt = async (link) => {
+    const got = await fetchPdf(tabId, link);
+    if (typeof got === 'string') { notes.push(`${short(link)}: ${got}`); return; }
+    setStatus(it.id, 'Checking it is the paper…', 'busy');
+    const fd = new FormData();
+    fd.append('id', it.id);
+    fd.append('file', new Blob([got], { type: 'application/pdf' }), 'paper.pdf');
+    const res = await api('/api/connector/attach-pdf', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error(res.data?.error || `Error ${res.status}`);
+    if (res.data.status === 'attached' || res.data.status === 'has-pdf') return res.data.status;
+    wrong ||= res.data.status === 'wrong-paper';
+    notes.push(`${short(link)}: ${res.data.status === 'wrong-paper' ? 'a PDF of another paper' : 'not a PDF'}`);
+  };
+  // From the article page first; opening a link leaves that page, so that comes last.
+  for (const link of links) {
+    const done = await attempt(link);
+    if (done) return { outcome: done };
+  }
+  // Opened in the tab: a PDF behind a redirect by script (ScienceDirect), or a reader page whose
+  // own links lead to the PDF (an Atypon "epdf").
+  for (const link of links.slice(0, OPEN_LINKS)) {
+    await navigate(tabId, link);
+    const opened = await settle(tabId);
+    if (!opened) continue;
+    if (opened.challenge) return { outcome: 'blocked', why: `${short(opened.url)} “${opened.title}”` };
+    const next = opened.isPdf ? [opened.url] : opened.pdfUrls.filter((u) => !tried.has(u));
+    next.forEach((u) => tried.add(u));
+    if (!next.length) notes.push(`opening ${short(link)}: “${opened.title}”`);
+    for (const u of next) {
+      const done = await attempt(u);
+      if (done) return { outcome: done };
     }
   }
-  return wrong ? 'wrong-paper' : 'no-access';
+  return { outcome: wrong ? 'wrong-paper' : 'no-access', why: [...new Set(notes)].join(' · ') };
 }
 
 /**
- * The PDF at ``link``. Without ``open``: fetched as the article page would fetch it (its cookies,
- * its origin), then as this extension page (no CORS limits). With ``open``: opened in the tab, for
- * PDFs behind a redirect by script (ScienceDirect), and fetched from there. ``null`` when what
- * comes back is not a PDF (a login page, say).
+ * The PDF at ``link``, fetched as the page in the tab would fetch it (its cookies, its origin),
+ * then as this extension page (no CORS limits); otherwise why not (a login page, say).
  * @param {number} tabId
  * @param {string} link
- * @param {boolean} open
- * @returns {Promise<Uint8Array<ArrayBuffer> | null | 'blocked'>}
+ * @returns {Promise<Uint8Array<ArrayBuffer> | string>}
  */
-async function fetchPdf(tabId, link, open) {
-  if (!open) {
-    const inPage = await inTab(tabId, fetchPdfInPage, [link, MAX_PDF_BYTES]);
-    if (inPage?.b64) return fromBase64(inPage.b64);
-    try {
-      const r = await fetch(link, { credentials: 'include' });
-      const buf = new Uint8Array(await r.arrayBuffer());
-      if (r.ok && buf.length <= MAX_PDF_BYTES && isPdf(buf)) return buf;
-    } catch { /* a network error, or the site wants its own page: opening it comes next */ }
-    return null;
+async function fetchPdf(tabId, link) {
+  const inPage = await inTab(tabId, fetchPdfInPage, [link, MAX_PDF_BYTES]);
+  if (inPage?.b64) return fromBase64(inPage.b64);
+  try {
+    const r = await fetch(link, { credentials: 'include' });
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (r.ok && buf.length <= MAX_PDF_BYTES && isPdf(buf)) return buf;
+  } catch { /* a network error, or the site wants its own page: opening it comes next */ }
+  return inPage?.error || 'no answer';
+}
+
+/** A link as shown in the details: host and path, shortened. @param {string} url */
+function short(url) {
+  try {
+    const u = new URL(url);
+    const s = u.host.replace(/^www\./, '') + u.pathname;
+    return s.length > 70 ? `${s.slice(0, 67)}…` : s;
+  } catch {
+    return url;
   }
-  await navigate(tabId, link);
-  const page = await settle(tabId);
-  if (page?.challenge) return 'blocked';
-  if (!page?.isPdf) return null;
-  const opened = await inTab(tabId, fetchPdfInPage, [page.url, MAX_PDF_BYTES]);
-  return opened?.b64 ? fromBase64(opened.b64) : null;
 }
 
 /** @param {string} b64 */
@@ -353,7 +384,8 @@ async function settle(tabId) {
     if (state && (state.isPdf || state.pdfUrls.length)) return state;
     steady = state && !state.challenge && state.url === last?.url ? steady + 1 : 0;
     if (state) last = state;
-    if (steady >= 2) return last;
+    // a few seconds without change: pages that build themselves by script add their links late
+    if (steady >= STEADY_POLLS) return last;
     await sleep(POLL_MS);
   }
   return last;

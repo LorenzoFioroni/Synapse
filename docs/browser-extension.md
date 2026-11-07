@@ -172,22 +172,33 @@ page:
    between them: publishers block institutions whose readers download in bulk.
 3. For each item: load `https://doi.org/<doi>` in the tab and wait for it (`navigate`, at most
    `LOAD_MS`); then `settle` runs `pageState` in the tab every second until the page shows a PDF
-   or PDF links (`citation_pdf_url`, `<link rel="alternate" type="application/pdf">`), or stops
-   changing, for at most `SETTLE_MS` (25 s). A browser check runs its JavaScript and reloads the
+   or PDF links, or has not changed for `STEADY_POLLS` (4) polls (pages built by script add
+   their links late), for at most `SETTLE_MS` (25 s). The PDF links, in order: what the page
+   names (`citation_pdf_url`, `<link rel="alternate" type="application/pdf">`); the PDF address
+   of publishers that name none, from the page's URL as Zotero's translators do (APS:
+   `/abstract/` → `/pdf/`; Atypon sites such as science.org, ACS, Wiley, Taylor & Francis:
+   `/doi/…` → `/doi/pdfdirect/`, `/doi/pdf/`, `/doi/pdfplus/`, `/doi/epdf/`, each one the page
+   links to); then up to four links that say PDF in their address or label, not supplementary
+   material. A browser check runs its JavaScript and reloads the
    page by itself meanwhile; `pageState` recognises one by its title or text ("Just a moment",
    "Checking your browser", "Client Challenge", …) or its elements (`#challenge-form`,
    `.cf-turnstile`, a `challenges.cloudflare.com` frame, `#captcha-box`, …), and while it is
    there the page keeps waiting. One that needs a click stays in its tab for the user; the item
    then ends as `blocked`, for **Retry**.
 4. Each PDF link is tried with `fetchPdfInPage` from the article page (its cookies, its
-   origin), then by `fetch` from the extension page (host permission, so no CORS limit), and only
-   after all links failed so, by opening the link in the tab and, once it shows a PDF, fetching
-   that URL from there: ScienceDirect's link is a page that moves on to the PDF by script.
+   origin), then by `fetch` from the extension page (host permission, so no CORS limit). Only
+   after all links failed so, the first `OPEN_LINKS` (3) are opened in the tab: once it shows a
+   PDF, that URL is fetched from there (ScienceDirect's link is a page that moves on to the PDF
+   by script); when it shows a page, that page's own PDF links not tried yet are (an Atypon
+   reader, `/doi/epdf/`, links the file).
 5. A PDF goes to `POST /api/connector/attach-pdf`, which attaches it only if it is the paper. A
    PDF of another paper moves on to the next link.
 
 The outcome of each item is shown in its row: `attached`, `has-pdf`, `wrong-paper`,
-`no-access` (only login pages came back), `no-link`, `blocked` or `error`. At the end, **Retry**
+`no-access` (only pages came back, usually a login or purchase page), `no-link`, `blocked` or
+`error`. Under a failed item the row says what came back, for each link (`HTTP 403`, "not a
+PDF: the page “Sign in”", "a PDF of another paper"), or which page had no PDF link, so a user
+can tell a missing subscription from a page this code does not read. At the end, **Retry**
 runs the items not found again, and the tab is closed. `?resolver=` (the DOI resolver) and
 `?pause=` exist for the automated checklist.
 
@@ -365,8 +376,10 @@ this side: keep them in step with `connector.py`.
   its title and DOI, and saves it with a tag. It needs `pip install playwright` and full Chromium.
 - `tests/e2e/find_pdfs_checklist.py`, run by hand: Find Missing PDFs against a fake publisher on
   127.0.0.1: a browser check that sets a cookie and reloads, a PDF behind a redirect by script, a
-  login page, a PDF of another paper and a page without a PDF link; two PDFs attached, three to
-  retry, the tab closed.
+  reader page whose download link gives the PDF, a link known only by its "Download PDF" label
+  (not the supplementary PDF next to it), a login page, a PDF of another paper and a page without
+  a PDF link; four PDFs attached, three to retry with what came back, the tab closed. It also
+  checks the links `pageState` derives on APS and science.org pages (served by the test).
 
 See [`testing.md`](testing.md) for how the suites run.
 
