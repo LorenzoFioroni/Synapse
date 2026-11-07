@@ -95,8 +95,9 @@ class Publisher(http.server.BaseHTTPRequestHandler):
             if not re.fullmatch(r"[a-z]+", suffix):
                 self.send(b"bad request", "text/plain", 400)
                 return
+            safe_suffix = suffix.replace("\r", "").replace("\n", "")
             self.send_response(302)
-            self.send_header("Location", "/article/" + suffix)
+            self.send_header("Location", "/article/" + safe_suffix)
             self.end_headers()
         elif path == "/article/check":
             self.send(article("check", "/pdf/check") if cleared else CHECK_PAGE, status=200 if cleared else 403)
