@@ -16,6 +16,7 @@ from playwright.async_api import async_playwright, expect
 
 APP = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(APP))
+from tests.certificates import make_certificate  # noqa: E402
 from tests.e2e._guard import guard  # noqa: E402
 
 PORT = 8814
@@ -203,6 +204,96 @@ async def main():
                     and parser["remote"]["port"] == "990"
                     and parser["remote"]["pass"] == obscured,
                 )
+                ca_input = page.locator("[data-remote-ca]")
+                await ca_input.set_input_files(
+                    {"name": "invalid.crt", "mimeType": "text/plain", "buffer": b"not a certificate"}
+                )
+                before = (Path(data) / "backup-remote/rclone.conf").read_bytes()
+                async with page.expect_response(
+                    lambda r: r.url.endswith("/api/backups/remote") and r.request.method == "PUT"
+                ) as saved:
+                    await page.click("[data-remote-save]")
+                check(
+                    "invalid certificate is rejected without changing the connection",
+                    (await saved.value).status == 400
+                    and (Path(data) / "backup-remote/rclone.conf").read_bytes() == before,
+                )
+                certificate = make_certificate()[0]
+                await ca_input.set_input_files(
+                    {"name": "ca-certificates.crt", "mimeType": "text/plain", "buffer": certificate.encode()}
+                )
+                await page.wait_for_timeout(4500)
+                check(
+                    "polling preserves a selected certificate",
+                    "ca-certificates.crt selected" in await page.inner_text("[data-remote-ca-state]"),
+                )
+                async with page.expect_response(
+                    lambda r: r.url.endswith("/api/backups/remote") and r.request.method == "PUT"
+                ) as saved:
+                    await page.click("[data-remote-save]")
+                check("trusted certificate uploads through Settings", (await saved.value).status == 200)
+                await expect(page.locator("[data-remote-ca-state]")).to_contain_text("Saved: 1 certificate")
+                parser.read(Path(data) / "backup-remote/rclone.conf")
+                stored_ca = Path(parser["remote"]["override.ca_cert"])
+                check(
+                    "uploaded certificate is stored privately on the server",
+                    stored_ca.read_text() == certificate and stored_ca.stat().st_mode & 0o777 == 0o600,
+                )
+                await page.click("#settings-view [data-close]")
+                await page.keyboard.press("Meta+," if sys.platform == "darwin" else "Control+,")
+                await page.click('.settings-nav [data-nav="backups"]')
+                await expect(page.locator("[data-remote-ca-state]")).to_contain_text("Saved: 1 certificate")
+                check(
+                    "saved certificate status survives reopening Settings",
+                    await page.input_value("[data-remote-ca]") == "",
+                )
+                if shots:
+                    await page.locator("[data-remote-ca]").scroll_into_view_if_needed()
+                    await page.screenshot(path=str(Path(shots) / "trusted-certificate-settings.png"))
+                async with page.expect_response(
+                    lambda r: r.url.endswith("/api/backups/remote") and r.request.method == "PUT"
+                ) as saved:
+                    await page.click("[data-remote-save]")
+                check(
+                    "saving other settings preserves the certificate",
+                    (await saved.value).status == 200 and stored_ca.exists(),
+                )
+                replacement = make_certificate()[0]
+                await page.locator("[data-remote-ca]").set_input_files(
+                    {"name": "replacement.pem", "mimeType": "text/plain", "buffer": replacement.encode()}
+                )
+                async with page.expect_response(
+                    lambda r: r.url.endswith("/api/backups/remote") and r.request.method == "PUT"
+                ) as saved:
+                    await page.click("[data-remote-save]")
+                parser.read(Path(data) / "backup-remote/rclone.conf")
+                replacement_ca = Path(parser["remote"]["override.ca_cert"])
+                check(
+                    "replacing a certificate updates server trust",
+                    (await saved.value).status == 200
+                    and replacement_ca.read_text() == replacement
+                    and not stored_ca.exists(),
+                )
+                await page.click("[data-remote-ca-remove]")
+                check(
+                    "certificate removal waits for Save connection",
+                    replacement_ca.exists() and "will be removed" in await page.inner_text("[data-remote-ca-state]"),
+                )
+                async with page.expect_response(
+                    lambda r: r.url.endswith("/api/backups/remote") and r.request.method == "PUT"
+                ) as saved:
+                    await page.click("[data-remote-save]")
+                check(
+                    "certificate can be removed through Settings",
+                    (await saved.value).status == 200 and not replacement_ca.exists(),
+                )
+                await expect(page.locator("[data-remote-ca-state]")).to_contain_text("No custom certificate")
+                await page.select_option("[data-remote-provider]", "sftp")
+                check(
+                    "SFTP keeps SSH host verification instead of TLS uploads",
+                    await page.locator("[data-remote-ca]").count() == 0,
+                )
+                await page.select_option("[data-remote-provider]", "ftp")
                 if shots:
                     await page.screenshot(path=str(Path(shots) / "ftp-backup-settings.png"))
                 check("no JavaScript errors", not errors)

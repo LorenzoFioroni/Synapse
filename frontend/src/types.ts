@@ -475,11 +475,12 @@ export interface RemoteBackupConfiguration {
   options: Record<string, string>;
   stored_secrets: string[];
   known_hosts: string;
+  trusted_certificate?: { sha256: string; count: number } | null;
 }
 
 export interface RemoteBackupSetup {
   configuration: RemoteBackupConfiguration;
-  providers: { id: string; name: string; oauth: boolean; fields: [string, string, boolean, boolean][]; choices?: Record<string, [string, string][]> }[];
+  providers: { id: string; name: string; oauth: boolean; custom_ca?: boolean; fields: [string, string, boolean, boolean][]; choices?: Record<string, [string, string][]> }[];
   callback: string;
 }
 

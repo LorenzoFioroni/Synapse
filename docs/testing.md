@@ -226,7 +226,7 @@ CDP-specific gesture/authenticator scenarios stay on Chromium.
 | `assist` | 8793 | Autocompletion: nothing asked without Ollama or the model, Settings lifecycle, ghost text keys and exclusions; bounded Live/Source insertions and long-note definition context through the provider bridge, with acceptance and undo (a stand-in for Ollama, `tests/fake_ollama.py`) |
 | `attachments` | 8772 | Note attachments: the attachment trash, the Attachments dialog, retention, deletion dates |
 | `backups` | 8775 | Settings → Backups: backup at start, Back Up Now, changing the folder, Restore |
-| `remote_backups` | 8814 | Remote connection setup, secret masking, existing-set recovery, cloud authorization popup, draft preservation and FTP/FTPS security with imported obscured passwords (provider calls explicitly stubbed) |
+| `remote_backups` | 8814 | Remote connection setup, secret masking, existing-set recovery, cloud authorization popup, draft preservation, FTP/FTPS security with imported obscured passwords, and trusted certificate upload/replacement/removal (provider calls explicitly stubbed) |
 | `branding` | 8776 | The toolbar icon in light and dark theme, the tab title, the favicons |
 | `changes` | 8784 | Computer and iPad each see the other's changes (items, notes, annotations) without a reload; typing is not interrupted |
 | `citation_spot` | 8791 | A quote's or snapshot's citation opens the PDF at the exact spot and flashes it |
