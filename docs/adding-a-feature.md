@@ -113,5 +113,5 @@ Run `npm run check` in `frontend/` while you work: everything is type-checked in
 - **Docs in the same commit.** Update the subsystem page for the area, `docs/architecture.md` if
   the structure changed, and `README.md` for anything users see.
 
-See [testing](testing.md) for how each kind of test is run, and `CLAUDE.md` for the checks to
-run before committing.
+See [testing](testing.md) for how each kind of test is run, and
+[development](development.md) for setup, targeted checks and final verification.

@@ -1,0 +1,57 @@
+name: Container smoke
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - compose*.yaml
+      - docker/**
+      - requirements.txt
+      - .dockerignore
+      - .github/workflows/container-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate Compose with disposable example configuration
+        env:
+          SYNAPSE_PUBLIC_URL: https://synapse.example.com
+          TUNNEL_TOKEN: example-not-a-real-token
+        run: docker compose config --quiet
+      - name: Build the runtime image
+        run: docker build --tag synapse:smoke .
+      - name: Start with disposable data and no published ports
+        run: |
+          docker run --detach --name synapse-smoke --read-only --tmpfs /tmp --tmpfs /data:uid=1000,gid=1000 --cap-drop ALL --security-opt no-new-privileges synapse:smoke --public-url https://synapse.example.com
+          python - <<'PY'
+          import subprocess, time
+          deadline = time.monotonic() + 180
+          while time.monotonic() < deadline:
+              state = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Health.Status}}", "synapse-smoke"], text=True).strip()
+              if state == "healthy":
+                  break
+              if state == "unhealthy":
+                  raise SystemExit("The disposable container is unhealthy")
+              time.sleep(2)
+          else:
+              raise SystemExit("The disposable container did not become healthy")
+          PY
+      - name: Show failure diagnostics
+        if: failure()
+        run: docker logs synapse-smoke || true
+      - name: Remove the disposable container
+        if: always()
+        run: docker rm --force synapse-smoke || true

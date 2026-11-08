@@ -1,0 +1,18 @@
+title = "Synapse secret scan"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Known citation-key fixtures, including their historical location"
+condition = "AND"
+paths = ['''^(clone_app/)?tests/(js/library\.test\.mjs|test_formats\.py)$''']
+regexTarget = "match"
+regexes = ['''(?:key: '(?:cuiVariational2015|zhangSmith2019)'|citation_key": "mendozaarenasAsymmetry2019")''']
+
+[[allowlists]]
+description = "Mermaid's minified atlas-count expression is code, not a credential"
+condition = "AND"
+paths = ['''^frontend/vendor/mermaid/mermaid\.min\.js$''']
+regexTarget = "match"
+regexes = ['''(?:p\.keyCount,v=p\.atlasCount|m\.keyCount,v=m\.atlasCount)''']

@@ -368,26 +368,30 @@ the backend.
 
 ## Tests
 
+Set up the development environment once using [Development](docs/development.md#setup).
+While editing, run affected tests; after the final code change, verify the installed tools with:
+
 ```bash
-pip install --require-hashes --only-binary=:all: -r requirements-dev.txt
-(cd frontend && npm ci && npm run check)   # type-check the frontend and the browser extension
-ruff check .                    # lint
-ruff format .                   # format
-mypy                            # type-check the Python code
-python tools/typecheck_plugins.py   # type-check bundled Python plugins in isolation
-python -m pytest                # backend + JavaScript unit tests (the JS part needs Node.js)
-pre-commit install              # optional: ruff, mypy and the type check on every commit
+python tools/check.py
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of these on every pull request.
+The command checks lint, formatting and types, builds the frontend and runs the Python/JavaScript
+unit suite, without installing dependencies or fixing source files. Browser checks are separate.
+CI (`.github/workflows/ci.yml`) runs the same checks on every pull request, plus lock/runtime checks.
 CI limits each test job to twenty minutes, cancels obsolete runs of the same workflow/ref, and
 reports slow tests and stalled threads. Unit/API tests fake LAN discovery and window launches
 and release plugin resources between tests; see [Testing](docs/testing.md).
 
-Browser checklists run nightly and on demand through [Browser checks](.github/workflows/browser-checks.yml).
+Browser checklists run automatically for relevant PR changes, nightly and on demand through
+[Browser checks](.github/workflows/browser-checks.yml). PRs select affected checklists, with full
+coverage for unknown/shared application changes; nightly/manual runs stay full.
 Chromium runs every checklist; WebKit covers Notes, portable iPad/iPhone touch flows and passkey
 UI/error paths. Chromium retains raw gesture and virtual-authenticator coverage. Runs retain
 complete logs, available screenshots and a summary; see [Testing](docs/testing.md#browser-checklists).
+
+See [Security checks](docs/security-checks.md) for secret/dependency scans and disposable container
+checks. Coding assistants share [named roles](.agents/README.md), maintained once for Codex and
+Claude. Triage is manually invoked and can file deduplicated GitHub issues; it is not scheduled.
 
 Browser checklists also run locally (need Playwright; each uses a throw-away data folder).
 `python tests/e2e/run.py` runs them all and prints a summary, `python tests/e2e/run.py notes render`

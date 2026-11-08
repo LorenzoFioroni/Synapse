@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "default": "clara",
+  "profiles": {
+    "brief": {
+      "codex": {
+        "model": "gpt-6-luna",
+        "effort": "low"
+      },
+      "claude": {
+        "model": "haiku"
+      }
+    },
+    "standard": {
+      "codex": {
+        "model": "gpt-6.1-sol",
+        "effort": "medium"
+      },
+      "claude": {
+        "model": "sonnet",
+        "effort": "medium"
+      }
+    },
+    "deep": {
+      "codex": {
+        "model": "gpt-6.1-sol",
+        "effort": "high"
+      },
+      "claude": {
+        "model": "opus",
+        "effort": "high"
+      }
+    }
+  },
+  "roles": [
+    {
+      "name": "clara",
+      "description": "Clarifies requests and coordinates delivery; default interface.",
+      "profile": "standard"
+    },
+    {
+      "name": "brie",
+      "description": "Produces a concise task brief from long or ambiguous input.",
+      "profile": "brief"
+    },
+    {
+      "name": "cody",
+      "description": "Implements bounded code changes using existing patterns.",
+      "profile": "standard"
+    },
+    {
+      "name": "archie",
+      "description": "Reviews architecture, migrations and deployment boundaries.",
+      "profile": "deep"
+    },
+    {
+      "name": "seth",
+      "description": "Reviews security-sensitive diffs and scanner findings.",
+      "profile": "deep"
+    },
+    {
+      "name": "vera",
+      "description": "Verifies behavior, targeted tests and relevant browser coverage.",
+      "profile": "standard"
+    },
+    {
+      "name": "iris",
+      "description": "Runs manual repository triage and opens deduplicated actionable issues.",
+      "profile": "brief"
+    }
+  ]
+}

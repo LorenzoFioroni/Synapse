@@ -1,49 +1,44 @@
 # Working on Synapse
 
-Synapse is a local reference manager: a Flask + SQLite backend (`backend/`) and a TypeScript
-browser frontend (`frontend/src`, compiled to `frontend/js`, which is not committed). Start with
-[`docs/architecture.md`](docs/architecture.md). It is the map of the code and says where new code
-goes.
+Synapse is a local reference manager: Flask + SQLite in `backend/`, TypeScript in
+`frontend/src/` (generated `frontend/js/` is not committed).
+Use [Clara](.agents/roles/clara.md) as the default coordinator; delegate only when useful.
+Shared roles and Codex/Claude adapters: [.agents/README.md](.agents/README.md).
 
-## Rules
+## Always
 
-- **Docs go with code.** Every change that adds a feature, or changes behaviour or structure,
-  updates the matching page in `docs/` (and `README.md` for anything user-facing) in the same
-  commit. If no page fits, extend `docs/architecture.md` or add a page and link it from there.
-- **Keep the structure.**
-  - New code goes in the package or module that `docs/architecture.md` assigns to its area.
-  - HTTP endpoints only parse requests and shape responses. The logic lives outside
-    `backend/api/`.
-  - Split a module when it grows a second responsibility instead of letting it sprawl.
-- **Offline first.**
-  - The app must run without a network. Use a library only if it works offline once installed
-    (Python) or vendored under `frontend/vendor/` (frontend, with its licence, version and build
-    script listed in `frontend/vendor/README.md`).
-  - Never load anything from a CDN. `tests/test_offline.py` enforces this.
-- **Don't break users' data.** The `data/` layout, the database schemas (migrate, never rewrite),
-  the notes format and the HTTP API used by the browser extension and the MCP server are
-  contracts. Change them only deliberately, with a migration.
-- **Comments explain why**, not history. Put the issue or PR reference in the commit message, not
-  the code.
+- Keep changes small and focused. Reuse existing patterns; avoid unrelated refactoring,
+  dependencies and abstractions. Comments explain why, not history.
+- Keep the UI lean, modern and consistent. Reuse components and design tokens; preserve
+  responsive layouts, keyboard access, touch support and both themes.
+- This repository is public. Never commit credentials, real environment files, library data,
+  private hostnames or personal configuration. Use safe examples; keep secrets out of logs,
+  API responses and frontend code. Preserve authentication and administrative confirmations.
+- Preserve standalone execution and Docker on remote servers behind Cloudflare Tunnel.
+  Support independent instances on one host: configurable paths/addresses, separate data and
+  authentication, and no unnecessary published ports or localhost assumptions.
+- Offline first: no CDN or new mandatory runtime network dependency. Frontend libraries are
+  vendored with licence, version and build instructions in `frontend/vendor/README.md`.
+- Preserve data layouts, database schemas, notes and extension/MCP APIs. Migrate deliberately;
+  never rewrite users' data. Keep API handlers thin and logic in its owning component.
+- Update the matching `docs/` page with behaviour or structure changes, and `README.md` for
+  user-facing changes. Split modules by responsibility, not just size.
 
-## Checks before committing
+## Read only what the task needs
 
-```bash
-pip install -r requirements-dev.txt
-(cd frontend && npm ci && npm run check)   # type-check the frontend and the browser extension
-ruff check .                 # lint (ruff check --fix . fixes most findings)
-ruff format .                # format; CI runs ruff format --check .
-mypy                         # type-check the Python code (pyproject.toml)
-python tools/typecheck_plugins.py   # type-check bundled Python plugins in isolation
-python -m pytest -q          # includes the JavaScript unit tests when Node is installed
-```
+| Task | Guidance |
+|---|---|
+| Package boundaries | [Architecture](docs/architecture.md) |
+| UI | [Frontend](docs/frontend.md#styling); [phone](docs/phone.md) |
+| Data or migrations | [Storage](docs/storage.md); the affected subsystem page |
+| Deployment or access | [Docker](docs/docker.md), [remote access](docs/remote-access.md); [updates](docs/updates.md) for updater changes |
+| Plugins | [Plugin authoring](docs/plugin-authoring.md) |
+| Setup and verification | [Development](docs/development.md); [testing](docs/testing.md) for test details |
 
-`pre-commit install` runs ruff, mypy and the type check on every commit (`.pre-commit-config.yaml`).
+## Work and finish
 
-The browser checklists in `tests/e2e/` run nightly/manually in Browser checks CI and can run locally.
-Install their pinned tools with `pip install -r tools/requirements-e2e.txt`:
-`python tests/e2e/run.py <name> …` runs the named ones (`--list` shows them; no name runs all).
-Run the ones that cover UI you changed.
-
-`python tests/e2e/run.py --browser webkit` runs the supported portable subset. Use
-`--output-dir browser-results` to retain full logs/screenshots and a summary.
+Small tasks need only relevant files and checks. Set up tools once per environment; reinstall
+only when dependencies change. During editing, run affected tests. At completion, run
+`python tools/check.py` for code/workflow changes and browser checklists for UI touched.
+Review the diff, available CI results and CodeQL/security feedback; fix issues caused by the
+change and report any remaining failures or unavailable checks accurately.

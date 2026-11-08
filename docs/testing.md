@@ -11,6 +11,10 @@ Synapse has three kinds of tests:
 The first two are fast and need no network and no browser. The checklists drive the real app in
 Chromium and cover what only a page can show: drawing, dragging, touch, several tabs.
 
+For one-time setup, targeted development checks and final verification, see the
+[development workflow](development.md). `python tools/check.py` runs the installed local checks
+without reinstalling dependencies; this page describes individual tests and tools.
+
 ## pytest
 
 `pyproject.toml` sets `testpaths = ["tests"]` and keeps pytest out of `tests/e2e`, `frontend`,
@@ -297,7 +301,18 @@ uv version pinned in `tools/requirements-uv.txt`:
 4. `python -m pytest -q --cov --durations=20 -o faulthandler_timeout=60`, which includes the
    JavaScript tests and prints the coverage report in the log (nothing is uploaded).
 
-Browser checklists run in the separate nightly/manual Browser checks workflow, with Chromium and a portable WebKit subset (see above).
+Browser checklists run in the separate Browser checks workflow, with Chromium and a portable
+WebKit subset. PRs automatically select affected areas with `tools/browser_scope.py`; documentation
+alone starts no browser job. Settings, notes, viewer, extension, backup, access and autocompletion
+changes select their related checklists; unknown/shared application changes and runner/dependency
+changes fall back to all checklists. Renamed/deleted files are considered. WebKit receives only its
+supported subset. Nightly/manual runs retain full coverage. Artifacts retain per-checklist logs,
+screenshots and summaries; there are no automatic retries.
+
+`tests/test_browser_scope.py` checks targeted selection, fallback and portable coverage.
+`tests/test_agent_config.py` checks that shared roles and generated Codex/Claude adapters stay in
+sync, detects drift without writing and preserves unrelated Claude settings. CI also runs the
+generator's `--check` mode. [Security checks](security-checks.md) run in a separate workflow.
 
 ## Coverage
 
@@ -351,22 +366,11 @@ cover package isolation, public API types and errors in unannotated, unimported 
 check on each commit, once installed with `pre-commit install`. It uses the tools already
 installed, so committing needs no network.
 
-## Before committing
+## Final verification
 
-From `AGENTS.md`:
-
-```bash
-pip install --require-hashes --only-binary=:all: -r requirements-dev.txt
-(cd frontend && npm ci && npm run check)   # the frontend and the browser extension
-ruff check .
-ruff format .
-mypy
-python tools/typecheck_plugins.py
-python -m pytest -q
-```
-
-Then run the browser checklists that cover the UI you changed, for example
-`python tests/e2e/run.py notes render`.
+Follow [Development](development.md#final-verification): run `python tools/check.py` after the
+final code change, then browser checklists covering the UI touched, for example
+`python tests/e2e/run.py notes render`. Setup is separate and need not be repeated for each run.
 
 ## Writing tests
 
@@ -375,6 +379,11 @@ component directly when you can: build it on `tmp_path`, or reach it through the
 Test an endpoint through `client`. Fake every network call with `monkeypatch` as the existing
 tests for `online/` and `references/` do; a test must pass offline. Use `make_pdf` when you need a
 PDF with known text.
+
+For concurrent work, use events/barriers and bounded waits, release blocked workers in `finally`,
+and collect their results so exceptions fail the test. The autocompletion supersession test holds
+the first model response until both later requests have registered; it does not assume thread
+ordering from short sleeps.
 
 **An architectural rule.** A new backend package goes into `ALLOWED` in `tests/test_layers.py`
 and into the layers diagram in `architecture.md`. New frontend code needs nothing: `test_offline.py`
