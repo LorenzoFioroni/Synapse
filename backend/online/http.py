@@ -4,6 +4,7 @@ the spacing of requests, and the public-web transport shared by PDF links and pl
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
 import threading
 import time
@@ -126,6 +127,16 @@ def is_public_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool
     return ip.is_global and not ip.is_multicast
 
 
+# What a public-web request may look like once requests has normalized it: http(s), a host name or
+# IP literal and an optional port, then printable ASCII without backslashes. No user name or
+# password: parsers disagree about where such an authority ends, so the host that was checked could
+# differ from the one the request names.
+_PLAIN_URL = (
+    r"(?i)https?://(?:[a-z0-9._-]+|\[[0-9a-f:.]+\])(?::[0-9]{1,5})?"
+    r"(?:[/?#][\x21-\x5b\x5d-\x7e]*)?"
+)
+
+
 def resolve_public_url(url: str) -> tuple[_Address, ...]:
     """Resolve once, retaining the socket addresses only if every answer is public."""
     try:
@@ -203,6 +214,8 @@ def public_request(method: str, url: str, **kwargs) -> requests.Response:
     """
     # Validate requests' normalized URL, including IDNA and percent-encoded hostnames.
     url = requests.Request(method, url).prepare().url or url
+    if not re.fullmatch(_PLAIN_URL, url):
+        raise PublicAddressError("Only plain http(s) addresses can be fetched (no user name or password).", 400)
     addresses = resolve_public_url(url)
     with requests.Session() as session:
         # A proxy could resolve the hostname again or route to an unchecked destination.

@@ -245,6 +245,9 @@ makes the server fetch a URL, it is careful not to become a way into the local n
   it follows, with the same redirect checks and 100 MB size cap, and the PDF header check before
   verifying the paper identity.
 - The validator and transport live in `backend/online/http.py`, shared with `plugin.http`.
+  The URL, as requests normalizes it, must be plain http(s): a host name or IP literal, an optional
+  port, and printable ASCII after it. A user name or password in the address is refused before any
+  DNS lookup, since parsers disagree about where such an authority ends.
   DNS answers are retained and sockets connect directly to those exact addresses, preventing a
   second DNS lookup from redirecting the connection into a private network. All returned addresses
   must pass validation before any connection, including when DNS mixes public and private answers.
