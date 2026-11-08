@@ -1,0 +1,43 @@
+# Temporary: CodeQL with the default suite, results printed to the log (never uploaded).
+name: sec-scan
+on:
+  push:
+    branches: ["claude/sec-scan-*"]
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@v4
+        with:
+          upload: never
+          output: sarif-out
+      - name: Print results
+        run: |
+          python3 - <<'PY'
+          import json, glob
+          def where(l):
+              p = l["physicalLocation"]
+              return f'{p["artifactLocation"]["uri"]}:{p.get("region", {}).get("startLine")}'
+          for f in glob.glob("sarif-out/*.sarif"):
+              d = json.load(open(f))
+              for run in d["runs"]:
+                  for r in run.get("results", []):
+                      print(f"RESULT {r['ruleId']} {where(r['locations'][0])} | {r['message']['text'][:120]!r}")
+                      for rl in r.get("relatedLocations", []):
+                          print(f"  SOURCE {where(rl)}")
+                      for cf in (r.get("codeFlows") or [])[:3]:
+                          for tf in cf.get("threadFlows", []):
+                              print("  PATH " + " -> ".join(where(x["location"]) for x in tf["locations"]))
+          PY
