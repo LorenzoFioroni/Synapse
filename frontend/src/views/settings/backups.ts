@@ -103,7 +103,7 @@ export function bindBackups(view: HTMLElement): () => void {
   view.querySelector<HTMLButtonElement>('[data-backup-now]')!.onclick = async (e) => {
     const b = e.currentTarget as HTMLButtonElement;
     b.disabled = true;
-    try { await api.backupNow(); toast('Backup made', { type: 'success' }); } catch (err) { toastError(err); }
+    try { if (await asAdmin(() => api.backupNow())) toast('Backup made', { type: 'success' }); } catch (err) { toastError(err); }
     b.disabled = false;
     refreshBackups(view);
   };
@@ -119,7 +119,8 @@ export function bindBackups(view: HTMLElement): () => void {
     restoring = true;
     btn.disabled = true;
     try {
-      const res = await api.restoreBackup(row.dataset.backup!, row.dataset.source as 'local' | 'remote');
+      const res = await asAdmin(() => api.restoreBackup(row.dataset.backup!, row.dataset.source as 'local' | 'remote'));
+      if (!res) { btn.disabled = false; restoring = false; return; }   // the passkey prompt was cancelled
       toast(`Backup restored. The state before it is saved as ${res.safety_backup}.`, { type: 'success' });
       setTimeout(() => location.reload(), 800);
     } catch (err) { toastError(err); btn.disabled = false; restoring = false; }

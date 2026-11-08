@@ -11,6 +11,10 @@ from . import admin, body, error, svc
 
 bp = Blueprint("backups", __name__, url_prefix="/api/backups")
 REFUSED = "Remote backup connections can only be changed on the computer running Synapse."
+# A manual backup prunes the oldest ones (here and offsite), and a restore replaces the library,
+# settings, notes and which plugins are on: with a stolen device cookie alone, a few backups in a row
+# would push every good one out, and a restore would undo administrative changes.
+BACKUP_REFUSED = "Backups can only be made and restored on the computer running Synapse."
 
 
 def _callback() -> str:
@@ -43,6 +47,8 @@ def status():
 
 @bp.post("")
 def create():
+    if (refused := admin.refusal(BACKUP_REFUSED)) is not None:
+        return refused
     try:
         entry = svc().backups.create("manual")
     except BackupError as e:
@@ -52,6 +58,8 @@ def create():
 
 @bp.post("/restore")
 def restore():
+    if (refused := admin.refusal(BACKUP_REFUSED)) is not None:
+        return refused
     data = body()
     name = str(data.get("name") or "")
     try:

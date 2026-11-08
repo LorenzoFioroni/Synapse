@@ -306,7 +306,10 @@ before risky operations: emptying the Trash, deleting items for good, imports an
 more than ten citation keys. It skips the backup if one was made in the last ten minutes
 (`BEFORE_EVERY`), and a failure never stops the operation. Any backup counts as the newest, so a
 backup made before an operation also postpones the next scheduled one. `migrate_legacy` calls
-`create()` directly.
+`create()` directly. **Back Up Now** (`POST /api/backups`) and restoring (`POST /api/backups/restore`)
+are administrative actions: on another device they need a passkey confirmation first
+([remote access](remote-access.md#administrative-actions-from-your-devices)), since each manual
+backup prunes the oldest archives and a restore replaces the library, settings and plugin state.
 
 The `notes-*.tar.gz` archives are different: `Rekeyer.backup` writes them into the same folder
 (`backup_dir` or `data/backups/`, read at each backup) before rewriting notes for a citation-key
