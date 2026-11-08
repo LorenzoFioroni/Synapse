@@ -2,7 +2,10 @@
 
 **Settings → Updates** shows which version of Synapse runs and the newer commits on the GitHub
 branch it comes from. Where the server runs the updater ([Docker](docker.md)), **Update Now**
-installs them. The bell also says when there is an update, once per new version on each device.
+installs them. A persistent spinner notice covers checking, the backup before installation, installing
+and reconnecting after the restart, even if you move away from Settings. Failure or a 15-minute
+wait ends the notice with an explanation; reloading checks the server again. The bell also says
+when there is an update, once per new version on each device.
 
 ## Where the code comes from
 
@@ -117,3 +120,6 @@ commit and names it. The same updater can update several Synapse services built 
   builds exactly the branch tip, does nothing when current, leaves a failed build unchanged, goes
   back from an unhealthy version, refuses another folder, runs one update at a time, and its HTTP
   API needs the token.
+- `tests/e2e/operation_feedback_checklist.py` defers credential and update service stubs to check
+  pending feedback, administrative cancellation without retry, backup failure, restart/reconnection
+  and terminal update failure cleanup. No real passkeys or updater are used.

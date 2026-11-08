@@ -3,6 +3,7 @@
 // Synapse. The server answers such a request with 403 and ``confirm: true``; the app then asks the
 // browser for the passkey and tries once more. See backend/access/confirm.py.
 import { api, ApiError } from '../../api.js';
+import { withPendingStatus } from '../../ui/pending.js';
 
 export function b64url(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
@@ -27,23 +28,25 @@ export function needsConfirmation(e: unknown): boolean {
 
 /** Ask the browser for one of Synapse's passkeys and tell the server. False when cancelled. */
 export async function confirmWithPasskey(): Promise<boolean> {
-  const o = await api.confirmOptions();
-  let cred: PublicKeyCredential | null;
-  try {
-    cred = await navigator.credentials.get({ publicKey: {
-      challenge: fromB64url(o.challenge), rpId: o.rpId, allowCredentials: [],
-      userVerification: o.userVerification, timeout: o.timeout } }) as PublicKeyCredential | null;
-  } catch (e) {
-    if ((e as Error).name === 'NotAllowedError') return false;   // cancelled, or no passkey here
-    throw e;
-  }
-  if (!cred) return false;
-  const r = cred.response as AuthenticatorAssertionResponse;
-  await api.confirm({
-    id: cred.id, clientDataJSON: b64url(r.clientDataJSON), authenticatorData: b64url(r.authenticatorData),
-    signature: b64url(r.signature), userHandle: r.userHandle ? b64url(r.userHandle) : null,
+  return withPendingStatus('Confirm with your passkey in your browser or password manager to continue…', async () => {
+    const o = await api.confirmOptions();
+    let cred: PublicKeyCredential | null;
+    try {
+      cred = await navigator.credentials.get({ publicKey: {
+        challenge: fromB64url(o.challenge), rpId: o.rpId, allowCredentials: [],
+        userVerification: o.userVerification, timeout: o.timeout } }) as PublicKeyCredential | null;
+    } catch (e) {
+      if ((e as Error).name === 'NotAllowedError') return false;   // cancelled, or no passkey here
+      throw e;
+    }
+    if (!cred) return false;
+    const r = cred.response as AuthenticatorAssertionResponse;
+    await api.confirm({
+      id: cred.id, clientDataJSON: b64url(r.clientDataJSON), authenticatorData: b64url(r.authenticatorData),
+      signature: b64url(r.signature), userHandle: r.userHandle ? b64url(r.userHandle) : null,
+    });
+    return true;
   });
-  return true;
 }
 
 /** Run ``action``; if the server wants a passkey confirmation first, get it and run it again.

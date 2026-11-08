@@ -135,8 +135,9 @@ purpose.
 #### Signing in with a passkey
 
 Pairing needs the computer at hand. With a passkey, a device signs itself in: on the "This device
-isn't paired" page, tap **Sign In with a Passkey**. A passkey saved in iCloud Keychain or Google
-Password Manager reaches your other devices by itself; a security key or a phone nearby works too.
+isn't paired" page, tap **Sign In with a Passkey**. Synapse shows when it is waiting for your
+browser or password manager, including when adding a passkey or confirming an administrative action.
+A passkey saved in iCloud Keychain or Google Password Manager reaches your other devices by itself; a security key or a phone nearby works too.
 
 Browsers only use passkeys on HTTPS pages opened by a name (not an IP address), so Synapse needs a
 certificate your devices trust. [mkcert](https://github.com/FiloSottile/mkcert) makes one, offline:
@@ -214,8 +215,9 @@ Remote backups retain local safety copies and retry failed uploads; remote archi
 restored from the same page, including on a fresh installation. PDFs are still excluded.
 See [backup setup and recovery](docs/storage.md#remote-storage-with-rclone).
 
-See [docs/docker.md](docs/docker.md). Built from GitHub, Settings → Updates shows newer commits, and
-with the updater container **Update Now** installs them: a backup, a rebuild and a restart, with the
+See [docs/docker.md](docs/docker.md). Settings → Updates shows loading feedback while checking,
+preparing a backup, installing and reconnecting after a restart. Built from GitHub, it shows newer
+commits, and with the updater container **Update Now** installs them: a backup, a rebuild and a restart, with the
 previous version kept to fall back on ([docs/updates.md](docs/updates.md)).
 
 Your library lives in `data/` (or `--data-dir` / `SYNAPSE_DATA_DIR`):
@@ -402,6 +404,7 @@ Or run one directly:
 
 ```bash
 pip install playwright requests && playwright install chromium
+python tests/e2e/operation_feedback_checklist.py # pending passkeys and updates, with safe service stubs
 python tests/e2e/notes_checklist.py      # editor, saving, conflicts, files
 python tests/e2e/render_checklist.py     # live preview and read mode (tests/e2e/kitchen-sink.md)
 python tests/e2e/links_checklist.py      # autocomplete, citation cards, side panels, item pane
