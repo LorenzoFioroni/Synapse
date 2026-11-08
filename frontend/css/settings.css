@@ -109,10 +109,33 @@
 .saved-pill.show { opacity: 1; }
 .backup-list { display: flex; flex-direction: column; max-height: 320px; overflow: auto; }
 .backup-list:empty { display: none; }
-.backup-row { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-top: 1px solid var(--border); }
+.backup-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border); }
 .backup-row .b-main { flex: 1; min-width: 0; }
 .backup-row .b-when { font-weight: 550; }
-.backup-row .b-what { color: var(--text-2); font-size: var(--fs-xs); }
+.backup-row .b-what { color: var(--text-2); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.backup-row .b-where { flex: none; font-size: var(--fs-xs); color: var(--text-2); background: var(--bg-active); border-radius: 5px; padding: 1px 7px; }
+.backup-row .btn { flex: none; }
+
+/* Backups → Remote storage: the connection form, as setting rows */
+.remote-card .setting .s-control .input, .remote-card .setting .s-control .select { width: 280px; }
+.remote-card .setting.stack .input { width: 100%; }
+.remote-card .s-title .req { color: var(--danger); font-weight: 500; }
+.remote-card label.s-title { display: block; }
+.remote-pass .s-control, .remote-namespace .s-control { flex-direction: column; align-items: stretch; width: 280px; }
+.remote-namespace .s-control .btn { align-self: flex-end; }
+.remote-obscured { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-2); }
+.remote-ca-state { overflow-wrap: anywhere; color: var(--text); }
+.file-btn { position: relative; overflow: hidden; cursor: pointer; }
+.file-btn input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.file-btn:focus-within { box-shadow: var(--focus-ring); }
+.remote-auth .s-desc { margin: 0; }
+.remote-auth code { overflow-wrap: anywhere; }
+.remote-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; padding: 12px 18px; border-top: 1px solid var(--border); background: var(--bg-app); border-radius: 0 0 10px 10px; }
+.remote-state { flex: 1 1 220px; min-width: 0; }
+.remote-state .s-desc { color: var(--text-2); font-size: var(--fs-sm); }
+.remote-state .form-error { margin: 4px 0 0; }
+.remote-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+[data-remote-backup] > div > .form-error { margin: 0 0 10px; }
 .shortcuts { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; padding: 16px 18px; font-size: var(--fs-sm); margin: 0; }
 .shortcuts dt { text-align: right; }
 .shortcuts dd { margin: 0; color: var(--text-2); }
@@ -269,8 +292,16 @@
   .status-card { flex-wrap: wrap; }
   .status-card .s-control { width: 100%; }
   .status-card .s-control .btn { flex: 1; justify-content: center; min-height: 40px; }
-  .backup-row { flex-wrap: wrap; }
-  .backup-row .b-main { flex-basis: calc(100% - 44px); }
+  .backup-row { gap: 8px; }
+  .backup-row .b-where { display: none; }
+  .backup-row [data-restore] span { display: none; }
+  .backup-row [data-restore] { min-width: 36px; min-height: 36px; justify-content: center; }
+  .remote-card .setting .s-control .input, .remote-card .setting .s-control .select,
+  .remote-pass .s-control, .remote-namespace .s-control { width: 100%; }
+  .remote-namespace .s-control .btn { align-self: flex-start; }
+  .remote-foot { padding: 12px 14px; }
+  .remote-actions { width: 100%; margin-left: 0; }
+  .remote-actions .btn { flex: 1 1 calc(50% - 8px); justify-content: center; min-height: 40px; }
   .shortcuts { grid-template-columns: minmax(72px, auto) 1fr; padding: 14px; gap: 10px; }
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 14px; }
   .preview-box .ex { flex-direction: column; gap: 2px; }
@@ -290,3 +321,7 @@
 .plugin-settings .p-control .string-list-row .input { width: 0; min-width: 0; flex: 1; }
 .string-list-row .icon-btn { flex: none; }
 @media (max-width: 700px) { .string-list { width: 100%; } }
+/* the form's rows sit in wrappers (fields, certificate): keep a line under every one */
+.remote-card .setting { border-bottom: 1px solid var(--border); }
+.remote-card .remote-foot { border-top: 0; }
+.remote-card .setting[hidden], .remote-card [hidden] > .setting { display: none; }

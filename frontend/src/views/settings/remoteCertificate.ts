@@ -3,12 +3,12 @@ import type { RemoteBackupConfiguration } from '../../types.js';
 const MAX_CA_BYTES = 1024 * 1024;
 
 export function bindRemoteCertificate(host: HTMLElement, savedCertificate: RemoteBackupConfiguration['trusted_certificate']) {
-  host.innerHTML = `<div style="margin-top:10px">
-    <label for="remote-backup-ca">Trusted certificate (optional)</label>
-    <input class="input" type="file" id="remote-backup-ca" data-remote-ca accept=".pem,.crt,.cer,.txt">
-    <p class="s-desc">Upload a PEM certificate or bundle such as ca-certificates.crt (up to 1 MiB). Use certificates from a source you trust. Applies only to this backup connection; server identity checks remain enabled.</p>
-    <p class="s-desc" data-remote-ca-state role="status" style="overflow-wrap:anywhere"></p>
-    <button class="btn btn-sm" type="button" data-remote-ca-remove>Remove certificate</button>
+  host.innerHTML = `<div class="setting remote-row remote-cert">
+    <div class="s-text"><label class="s-title" for="remote-backup-ca">Trusted certificate</label>
+      <div class="s-desc">Optional. A PEM certificate or bundle such as ca-certificates.crt (up to 1 MiB), from a source you trust. Only for this connection; server identity checks stay on.</div>
+      <div class="s-desc remote-ca-state" data-remote-ca-state role="status"></div></div>
+    <div class="s-control"><label class="btn btn-sm file-btn">Choose File…<input type="file" id="remote-backup-ca" data-remote-ca accept=".pem,.crt,.cer,.txt"></label>
+      <button class="btn btn-sm" type="button" data-remote-ca-remove>Remove</button></div>
   </div>`;
   const input = host.querySelector<HTMLInputElement>('[data-remote-ca]')!;
   const status = host.querySelector<HTMLElement>('[data-remote-ca-state]')!;

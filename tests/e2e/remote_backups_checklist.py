@@ -52,6 +52,7 @@ async def main():
                 errors = []
                 page.on("pageerror", lambda e: errors.append(str(e)))
                 await page.goto(BASE)
+                await page.wait_for_selector("#startup-screen", state="hidden")
                 await page.keyboard.press("Meta+," if sys.platform == "darwin" else "Control+,")
                 await page.click('.settings-nav [data-nav="backups"]')
                 await page.wait_for_selector("[data-backup-destination]")
@@ -248,7 +249,7 @@ async def main():
                     await page.input_value("[data-remote-ca]") == "",
                 )
                 if shots:
-                    await page.locator("[data-remote-ca]").scroll_into_view_if_needed()
+                    await page.locator("[data-remote-certificate]").scroll_into_view_if_needed()
                     await page.screenshot(path=str(Path(shots) / "trusted-certificate-settings.png"))
                 async with page.expect_response(
                     lambda r: r.url.endswith("/api/backups/remote") and r.request.method == "PUT"
