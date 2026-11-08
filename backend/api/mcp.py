@@ -6,7 +6,7 @@ from __future__ import annotations
 from flask import Blueprint, Response, g, jsonify, request
 
 from ..access.tokens import TokenError
-from . import admin, body, error, svc
+from . import admin, body, error, failure, svc
 from .devices import addresses
 
 bp = Blueprint("mcp", __name__)
@@ -55,7 +55,7 @@ def new_token():
         data = body()
         entry, token = svc().tokens.create(str(data.get("name") or ""), scope=str(data.get("scope", "mcp")))
     except TokenError as e:
-        return error(str(e), e.status)
+        return failure(e, e.status)
     return jsonify(token=token, entry=entry, tokens=svc().tokens.list()), 201
 
 

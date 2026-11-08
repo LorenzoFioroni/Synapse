@@ -150,7 +150,7 @@ class Server:
                 return error_reply(rid, INVALID_PARAMS, "params must be an object")
             return {"jsonrpc": "2.0", "id": rid, "result": handler(params)}
         except _ProtocolError as e:
-            return error_reply(rid, e.code, str(e))
+            return error_reply(rid, e.code, e.message)
         except Exception as e:  # never crash the server on one bad request
             # The client may be an AI app on another computer: an unexpected exception's text can
             # carry file paths, SQL or URLs with keys, so it stays in the log.
@@ -215,6 +215,7 @@ class _ProtocolError(Exception):
     def __init__(self, code: int, message: str):
         super().__init__(message)
         self.code = code
+        self.message = message
 
 
 def error_reply(rid, code: int, message: str) -> dict:
@@ -276,7 +277,7 @@ def serve_stdio(server: Server, stdin=None, stdout=None) -> None:
             try:
                 message = json.loads(line)
             except json.JSONDecodeError as e:
-                reply = error_reply(None, PARSE_ERROR, f"Parse error: {e}")
+                reply = error_reply(None, PARSE_ERROR, f"Parse error at line {e.lineno}, column {e.colno}.")
             else:
                 reply = server.handle(message)
             if reply is not None:

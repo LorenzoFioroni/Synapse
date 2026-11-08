@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, request
 from werkzeug.datastructures import FileStorage
 
 from .. import connector
-from . import error, svc
+from . import error, failure, svc
 
 bp = Blueprint("connector", __name__, url_prefix="/api/connector")
 
@@ -65,7 +65,7 @@ def file_existing():
     try:
         item = connector.file_existing(svc(), str(d.get("id") or ""), d.get("folder_id"), d.get("tags"))
     except connector.BadRequest as e:
-        return error(str(e))
+        return failure(e)
     return jsonify(item=item)
 
 
@@ -79,7 +79,7 @@ def missing_pdfs():
     try:
         result = connector.missing_pdfs(svc(), request.args.get("folder_id"), limit)
     except connector.BadRequest as e:
-        return error(str(e))
+        return failure(e)
     return jsonify(**result)
 
 
@@ -90,7 +90,7 @@ def attach_pdf():
     try:
         result = connector.attach_pdf(svc(), request.form.get("id") or "", upload.read() if upload else None)
     except connector.BadRequest as e:
-        return error(str(e))
+        return failure(e)
     return jsonify(**result)
 
 
@@ -101,7 +101,7 @@ def save():
     try:
         result = connector.save(svc(), page, pdf_bytes)
     except connector.BadRequest as e:  # nothing to save, or a malformed field
-        return error(str(e))
+        return failure(e)
     except connector.Duplicate as e:
         existing = e.item
         return jsonify(

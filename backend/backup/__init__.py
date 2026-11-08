@@ -58,6 +58,16 @@ def _order(p: Path) -> tuple:
     return (m.group(1), int(m.group(2) or 0)) if m else ("", 0)
 
 
+def _reason(e: Exception) -> str:
+    """Why a backup failed, for Settings on any device: Synapse's own message, an OSError's
+    reason without the paths it names, or else only the error's type (the log has the rest)."""
+    if isinstance(e, BackupError):
+        return str(e)
+    if isinstance(e, OSError) and e.strerror:
+        return f"{e.strerror}."
+    return f"{type(e).__name__} (see Synapse's log)."
+
+
 INTERVALS = {"off": None, "daily": timedelta(days=1), "weekly": timedelta(weeks=1)}
 BEFORE_EVERY = timedelta(minutes=10)  # backups before risky operations: at most this often
 CHECK_EVERY_S = 15 * 60  # how often the scheduler looks at the clock
@@ -160,7 +170,7 @@ class Backups(Restore):
                 self.last_error = None
                 return entry
             except Exception as e:
-                self.last_error = f"Backup failed: {e}"
+                self.last_error = f"Backup failed: {_reason(e)}"
                 log.exception("Backup failed")
                 raise BackupError(self.last_error) from e
 

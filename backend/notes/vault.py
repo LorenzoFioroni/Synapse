@@ -43,11 +43,16 @@ class NoteMoved(NoteMissing):
 
     def __init__(self, path: str, to: str):
         super().__init__(path)
+        self.path = path
         self.to = to
 
 
 class NoteExists(VaultError):
     status = 409
+
+    def __init__(self, path: str):
+        super().__init__(path)
+        self.path = path
 
 
 class Conflict(VaultError):

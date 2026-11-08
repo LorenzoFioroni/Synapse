@@ -12,7 +12,7 @@ from ..formats.exporting import options, prepare
 from ..library.fields import EDITABLE_KEYS
 from ..library.repository import DuplicateFinder
 from ..plugins import PluginError
-from . import body, error, svc
+from . import body, error, failure, svc
 
 bp = Blueprint("io", __name__, url_prefix="/api")
 
@@ -42,7 +42,7 @@ def import_preview():
     try:
         fmt, entries = formats.parse(text, fmt, filename)
     except formats.FormatError as e:
-        return error(str(e))
+        return failure(e)
     finder = DuplicateFinder(s.papers.list())
     for entry in entries:
         entry["duplicate_of"] = finder.find(entry)
@@ -91,7 +91,7 @@ def export():
     try:
         f, text = s.plugins.export_items(fmt, items, options(s.settings))
     except PluginError as e:
-        return error(str(e))
+        return failure(e)
     if args.get("download", "1") in ("0", "false", False):
         return jsonify(text=text, format=fmt, count=len(items))
     name = (

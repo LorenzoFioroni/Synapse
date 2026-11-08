@@ -5,7 +5,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify
 
 from ..library.organize import OrganizeError
-from . import body, error, ids_from_body, svc
+from . import body, error, failure, ids_from_body, svc
 
 bp = Blueprint("organize", __name__, url_prefix="/api")
 
@@ -14,7 +14,7 @@ def _guard(fn):
     try:
         return fn()
     except OrganizeError as e:
-        return error(str(e))
+        return failure(e)
 
 
 def _int_or_none(v):

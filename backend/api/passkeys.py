@@ -7,7 +7,7 @@ from flask import Blueprint, g, jsonify, request
 from ..access.guard import set_device_cookie
 from ..access.passkeys import PasskeyError, relying_party
 from ..access.proxy import client_addr
-from . import admin, body, error, svc
+from . import admin, body, error, failure, message_of, svc
 
 bp = Blueprint("passkeys", __name__, url_prefix="/api/passkeys")
 
@@ -29,7 +29,7 @@ def overview():
     try:
         rp_id, why = _site()[0], None
     except PasskeyError as e:
-        rp_id, why = None, str(e)
+        rp_id, why = None, message_of(e)
     return jsonify(
         **admin.state(),
         rp_id=rp_id,
@@ -61,7 +61,7 @@ def register_options():
             return refused
         return jsonify(svc().passkeys.registration_options(rp_id, origin, str(body().get("name") or "")))
     except PasskeyError as e:
-        return error(str(e), e.status)
+        return failure(e, e.status)
 
 
 @bp.post("/register")
@@ -72,7 +72,7 @@ def register():
             return refused
         passkey = svc().passkeys.register(rp_id, origin, _credential(), client_addr(request.environ))
     except PasskeyError as e:
-        return error(str(e), e.status)
+        return failure(e, e.status)
     return jsonify(passkey=passkey), 201
 
 
@@ -82,7 +82,7 @@ def login_options():
         rp_id, origin = _site()
         return jsonify(svc().passkeys.login_options(rp_id, origin))
     except PasskeyError as e:
-        return error(str(e), e.status)
+        return failure(e, e.status)
 
 
 @bp.post("/login")
@@ -99,7 +99,7 @@ def login():
             client_addr(request.environ),
         )
     except PasskeyError as e:
-        return error(str(e), e.status)
+        return failure(e, e.status)
     resp = jsonify(device=device)
     resp.status_code = 201
     set_device_cookie(resp, token)
@@ -116,7 +116,7 @@ def confirm_options():
         rp_id, origin = _site()
         return jsonify(svc().passkeys.login_options(rp_id, origin, purpose="confirm"))
     except PasskeyError as e:
-        return error(str(e), e.status)
+        return failure(e, e.status)
 
 
 @bp.post("/confirm")
@@ -128,7 +128,7 @@ def confirm():
         rp_id, origin = _site()
         svc().passkeys.confirm(rp_id, origin, _credential(), client_addr(request.environ))
     except PasskeyError as e:
-        return error(str(e), e.status)
+        return failure(e, e.status)
     return jsonify(until=svc().confirmations.confirm(device["id"]))
 
 

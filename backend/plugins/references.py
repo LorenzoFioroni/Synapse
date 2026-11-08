@@ -69,7 +69,8 @@ def resolve(sources: list[tuple[str, bool, ReferenceSource]], run: Callable, que
                     name = str(result.get("source") or source.id) if core else f"{pid}.{source.id}"
                 return name, result["references"]
         except Exception as e:
-            errors.append(f"{pid}.{source.id}: {e}")
+            reason = str(e) if isinstance(e, PluginError) else type(e).__name__  # faults are logged
+            errors.append(f"{pid}.{source.id}: {reason}")
     if errors:
         raise FetchFailed("Could not get the references (" + "; ".join(errors) + ").")
     return "none", []

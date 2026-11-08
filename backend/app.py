@@ -68,7 +68,9 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
 
     @app.errorhandler(CitationKeyError)
     def citation_key_error(e):
-        return jsonify(error=str(e)), 400
+        from .api import failure
+
+        return failure(e)
 
     @app.errorhandler(NotFound)
     def not_found(e):
