@@ -549,6 +549,11 @@ markup; an unknown name falls back to `doc`. To add one, add its paths to `P`.
    errors with `toastError`.
 4. Run `npm run check`.
 
+`ui/pending.ts` owns short-lived, persistent status notices for browser prompts and server work.
+`withPendingStatus(message, action)` clears its spinner notice in `finally`, including rejection or
+cancellation. Longer jobs use `pendingStatus` and update its text as the server restarts; each
+caller must close its own notice. These reuse toast/spinner styles without adding notification history.
+
 ### Adding a view or dialog
 
 1. A dialog gets its own module in `src/views/` that exports one `open…` function built on

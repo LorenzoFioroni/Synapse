@@ -4,6 +4,7 @@ import { api } from '../../api.js';
 import { icon } from '../../icons.js';
 import { confirmDialog, promptDialog } from '../../ui/dialog.js';
 import { toast, toastError } from '../../ui/toast.js';
+import { withPendingStatus } from '../../ui/pending.js';
 import type { PasskeysOverview } from '../../types.js';
 import { escapeHtml, formatDate } from '../../util.js';
 import { asAdmin, b64url, fromB64url } from './confirm.js';
@@ -61,11 +62,13 @@ async function addPasskey(view: HTMLElement): Promise<void> {
       excludeCredentials: (o.excludeCredentials || []).map((c: { type: 'public-key'; id: string }) => ({ ...c, id: fromB64url(c.id) })),
       timeout: o.timeout,
     };
-    const cred = await navigator.credentials.create({ publicKey }) as PublicKeyCredential | null;
-    if (!cred) return;
-    const r = cred.response as AuthenticatorAttestationResponse;
-    await api.addPasskey({ id: cred.id, clientDataJSON: b64url(r.clientDataJSON), attestationObject: b64url(r.attestationObject) });
-    toast('Passkey added', { type: 'success' });
+    await withPendingStatus('Save your new passkey in your browser or password manager…', async () => {
+      const cred = await navigator.credentials.create({ publicKey }) as PublicKeyCredential | null;
+      if (!cred) return;
+      const r = cred.response as AuthenticatorAttestationResponse;
+      await api.addPasskey({ id: cred.id, clientDataJSON: b64url(r.clientDataJSON), attestationObject: b64url(r.attestationObject) });
+      toast('Passkey added', { type: 'success' });
+    });
   } catch (e) {
     if ((e as Error).name === 'NotAllowedError') return;   // cancelled in the browser's dialog
     if ((e as Error).name === 'InvalidStateError') toastError(new Error('This device already has a passkey for Synapse.'));

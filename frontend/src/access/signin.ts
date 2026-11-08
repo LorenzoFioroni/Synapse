@@ -30,16 +30,21 @@
     : /iPhone/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android device' : '';
   const button = document.getElementById('go') as HTMLButtonElement;
   const error = document.getElementById('error')!;
+  const status = document.getElementById('status')!;
   button.onclick = async () => {
     button.disabled = true;
     error.hidden = true;
+    status.hidden = false;
+    status.textContent = 'Preparing passkey sign-in…';
     try {
       const options = await post('/api/passkeys/login/options');
+      status.textContent = 'Sign in with your passkey in your browser or password manager…';
       const credential = await navigator.credentials.get({ publicKey: {
         challenge: dec(options.challenge), rpId: options.rpId, allowCredentials: [],
         userVerification: options.userVerification, timeout: options.timeout,
       } }) as PublicKeyCredential | null;
       if (!credential) throw new Error('Signing in was cancelled.');
+      status.textContent = 'Completing sign-in…';
       const response = credential.response as AuthenticatorAssertionResponse;
       await post('/api/passkeys/login', { name, credential: {
         id: credential.id, clientDataJSON: enc(response.clientDataJSON), authenticatorData: enc(response.authenticatorData),
@@ -51,6 +56,8 @@
         ? 'Signing in was cancelled, or this device has no passkey for Synapse.'
         : (e instanceof Error && e.message) || 'Signing in failed.';
       error.hidden = false;
+    } finally {
+      status.hidden = true;
       button.disabled = false;
     }
   };

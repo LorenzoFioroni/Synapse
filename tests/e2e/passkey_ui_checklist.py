@@ -61,7 +61,7 @@ async def main():
 
             await context.route("**/*", route)
             await context.add_init_script(
-                "Object.defineProperty(window, 'PublicKeyCredential', {value: function(){}}); Object.defineProperty(navigator, 'credentials', {value: {get: async () => { throw new DOMException('Cancelled', 'NotAllowedError'); }}});"
+                "Object.defineProperty(window, 'PublicKeyCredential', {value: function(){}}); Object.defineProperty(navigator, 'credentials', {value: {get: () => new Promise((resolve, reject) => { window.cancelPasskey = () => reject(new DOMException('Cancelled', 'NotAllowedError')); })}});"
             )
             page = await context.new_page()
             errors = []
@@ -72,7 +72,16 @@ async def main():
                 "named HTTPS offers sign-in with a credential stub", not await page.locator("#nopasskey").is_visible()
             )
             await page.locator("#go").tap()
+            await page.wait_for_function("() => !!window.cancelPasskey")
+            check(
+                "pending passkey explains where to act",
+                await page.locator("#status").is_visible()
+                and "password manager" in await page.locator("#status").inner_text()
+                and await page.locator("#go").is_disabled(),
+            )
+            await page.evaluate("window.cancelPasskey()")
             await page.wait_for_selector("#error", state="visible")
+            check("cancellation clears pending sign-in status", not await page.locator("#status").is_visible())
             check(
                 "credential cancellation has actionable feedback",
                 "cancelled" in await page.locator("#error").inner_text() and await page.locator("#go").is_enabled(),
@@ -83,7 +92,10 @@ async def main():
                 "() => document.querySelector('#error').textContent.includes('service unavailable')"
             )
             check(
-                "service errors restore the sign-in button", await page.locator("#go").is_enabled() and len(calls) == 2
+                "service errors restore the sign-in button",
+                await page.locator("#go").is_enabled()
+                and len(calls) == 2
+                and not await page.locator("#status").is_visible(),
             )
             await screenshot(page, "passkey-error.png")
             for url in ["http://synapse.test/", "https://192.0.2.1/"]:

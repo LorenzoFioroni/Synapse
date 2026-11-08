@@ -61,7 +61,9 @@ replaces the library and which plugins are on) and installing an
 update of Synapse ([updates](updates.md)) — can be done from a signed-in device, **after confirming with a passkey** (Face ID,
 Touch ID). The server answers such a request with 403 and `confirm: true`; the app asks the browser
 for one of Synapse's passkeys (`POST /api/passkeys/confirm/options`, then `/api/passkeys/confirm`)
-and tries once more. The confirmation is remembered for that device for 5 minutes
+and tries once more. A persistent status notice directs you to your browser or password manager
+while it waits, and disappears on completion, failure or cancellation. Adding a passkey has the
+same guidance; the standalone sign-in page shows preparation, passkey and sign-in stages. The confirmation is remembered for that device for 5 minutes
 (`backend/access/confirm.py`, in memory). A stolen device cookie alone can therefore not hand out new
 access. Enrolling a passkey is the one bootstrap: a device may add a passkey only straight after it
 pairs (`Devices.recently_paired`, a few minutes — the first passkey has nothing to confirm with yet)

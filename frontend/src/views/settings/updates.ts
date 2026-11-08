@@ -7,6 +7,7 @@ import { icon } from '../../icons.js';
 import type { UpdateStatus } from '../../types.js';
 import { confirmDialog } from '../../ui/dialog.js';
 import { toast, toastError } from '../../ui/toast.js';
+import { pendingStatus, withPendingStatus } from '../../ui/pending.js';
 import { escapeHtml, formatDate, plural } from '../../util.js';
 import { asAdmin } from './confirm.js';
 import { setNavBadge } from './page.js';
@@ -44,7 +45,7 @@ function commitRow(c: UpdateStatus['commits'][number]): string {
 function bodyHtml(st: UpdateStatus): string {
   const job = st.install;
   if (job?.state === 'running') {
-    return `<div class="s-desc">${icon('refresh', 'icon-sm')} ${escapeHtml(job.message || 'Installing the update…')}
+    return `<div class="s-desc"><span class="spinner" aria-hidden="true"></span> ${escapeHtml(job.message || 'Installing the update…')}
       Synapse restarts in about a minute; this page reloads by itself.</div>`;
   }
   const out: string[] = [];
@@ -105,22 +106,29 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function waitForNewVersion(view: HTMLElement, target: string | null): Promise<void> {
   if (waiting) return;
   waiting = true;
+  const status = pendingStatus('Installing the update… Synapse will restart; keep this page open.');
   try {
     for (const until = Date.now() + GIVE_UP_MS; Date.now() < until;) {
       await sleep(POLL_MS);
       let st: UpdateStatus;
-      try { st = await api.updates(); } catch { continue; }   // restarting
+      try { st = await api.updates(); } catch { status.set('Waiting for Synapse to reconnect after the update…'); continue; }   // restarting
       const arrived = !!target && st.current?.commit === target;
       if (arrived || (st.install && st.install.state !== 'running')) {
         if (arrived || st.install?.state === 'done') {
           if (view.isConnected) { toast('Synapse was updated. Reloading…', { type: 'success' }); setTimeout(() => location.reload(), 800); }
           else toast('Synapse was updated. Reload the page to use the new version.', { type: 'success', action: { label: 'Reload', run: () => location.reload() } });
-        } else if (view.isConnected) paint(view, st);
+        } else {
+          if (view.isConnected) paint(view, st);
+          if (st.install?.state === 'failed') toast(st.install.message || 'The update failed.', { type: 'error' });
+          else toast(st.install?.message || 'Synapse is already up to date.');
+        }
         return;
       }
+      status.set(st.install?.message || 'Installing the update… Synapse will restart; keep this page open.');
       if (view.isConnected) paint(view, st);
     }
-  } finally { waiting = false; }
+    toast('Still waiting for Synapse. Reload the page to check the update status.', { type: 'error' });
+  } finally { status.close(); waiting = false; }
 }
 
 async function install(view: HTMLElement, button: HTMLButtonElement): Promise<void> {
@@ -132,7 +140,7 @@ async function install(view: HTMLElement, button: HTMLButtonElement): Promise<vo
   button.disabled = true;
   try {
     // a passkey confirmation first when this is not the computer Synapse runs on
-    const res = await asAdmin(() => api.installUpdate());
+    const res = await withPendingStatus('Preparing the update and making a backup…', () => asAdmin(() => api.installUpdate()));
     if (!res) { toast('Not updated: updating from another device needs your passkey.', { type: 'error' }); return; }
     shown = res;
     if (res.started.state === 'current') { toast(res.started.message, { type: 'success' }); paint(view, res); return; }
@@ -145,8 +153,8 @@ export function bindUpdates(view: HTMLElement): void {
   view.querySelector<HTMLButtonElement>('[data-update-check]')!.onclick = async (e) => {
     const b = e.currentTarget as HTMLButtonElement;
     b.disabled = true;
-    await refreshUpdates(view, true);
-    b.disabled = false;
+    try { await withPendingStatus('Checking for updates…', () => refreshUpdates(view, true)); }
+    finally { b.disabled = false; }
   };
   view.querySelector<HTMLElement>('[data-update-body]')!.addEventListener('click', (e) => {
     const b = (e.target as Element).closest<HTMLButtonElement>('[data-update-install]');
