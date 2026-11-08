@@ -61,6 +61,8 @@ PAPERS = {
     "wrong": "The Paper Asked For",
     "nolink": "Without a PDF Link",
 }
+# Where the resolver sends each test DOI, fixed in advance.
+REDIRECTS = {k: "/doi/abs/10.5555/atypon" if k == "atypon" else f"/article/{k}" for k in PAPERS}
 PDFS = {k: make_pdf(TMP / f"{k}.pdf", f"doi:10.5555/{k} {t}").read_bytes() for k, t in PAPERS.items()}
 PDFS["wrong"] = make_pdf(TMP / "other.pdf", "doi:10.9999/other Another Paper").read_bytes()
 
@@ -101,12 +103,12 @@ class Publisher(http.server.BaseHTTPRequestHandler):
         cleared = "cleared=1" in (self.headers.get("Cookie") or "")
         path = self.path.split("?")[0]
         if path.startswith("/resolve/10.5555/"):  # the resolver: on to the publisher's page
-            key = path.rsplit("/", 1)[1]
-            if key not in PAPERS:  # only the test's own DOIs (no request text in the header)
+            location = REDIRECTS.get(path.rsplit("/", 1)[1])
+            if location is None:  # only the test's own DOIs: the header never holds request text
                 self.send(b"not found", "text/plain", 404)
                 return
             self.send_response(302)
-            self.send_header("Location", "/doi/abs/10.5555/atypon" if key == "atypon" else f"/article/{key}")
+            self.send_header("Location", location)
             self.end_headers()
         elif path == "/doi/abs/10.5555/atypon":
             page = article("atypon", None).replace(
