@@ -5,6 +5,7 @@ request sent to Ollama, and cleaning the model's answer."""
 import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -319,30 +320,52 @@ def test_completion_accepts_bounded_earlier_note_context(client, on):
         assert sent["prompt"].endswith("The reset is $") and sent["suffix"] == "$."
 
 
-def test_a_newer_request_supersedes_a_waiting_one(svc, on):
-    with FakeOllama(reply=lambda p: " x", delay=0.3) as fake:
+def test_a_newer_request_supersedes_a_waiting_one(svc, on, monkeypatch):
+    generating, release = threading.Event(), threading.Event()
+    registered = {name: threading.Event() for name in ("b", "c")}
+    caller = threading.local()
+
+    def reply(payload):
+        if payload["prompt"] == "a ":
+            generating.set()
+            assert release.wait(10), "the first generation was not released"
+        return " x"
+
+    with FakeOllama(reply=reply) as fake:
         on(fake.url)
         c = completer(svc)
         c.status()
-        out = {}
+        original_status = c.status
+
+        def status():
+            result = original_status()
+            # complete() registers its sequence before checking status. The first generation
+            # stays blocked until both later requests have registered, regardless of scheduling.
+            if caller.name in registered:
+                registered[caller.name].set()
+            return result
+
+        monkeypatch.setattr(c, "status", status)
 
         def ask(name):
-            out[name] = c.complete(f"{name} ", "")
+            caller.name = name
+            return c.complete(f"{name} ", "")
 
-        first = threading.Thread(target=ask, args=("a",))
-        first.start()
-        time.sleep(0.1)  # a is generating
-        second = threading.Thread(target=ask, args=("b",))
-        second.start()
-        time.sleep(0.05)  # b waits for a
-        third = threading.Thread(target=ask, args=("c",))
-        third.start()
-        for t in (first, second, third):
-            t.join()
-        assert out["a"]["text"] == "x"
-        assert out["b"]["reason"] == "superseded"
-        assert out["c"]["text"] == "x"
-        assert len(fake.generated()) == 2
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            try:
+                first = pool.submit(ask, "a")
+                assert generating.wait(10), "the first request did not reach Ollama"
+                second = pool.submit(ask, "b")
+                assert registered["b"].wait(10), "the second request did not register"
+                third = pool.submit(ask, "c")
+                assert registered["c"].wait(10), "the newest request did not register"
+                release.set()
+                assert first.result(timeout=10) == {"text": "x", "reason": ""}
+                assert second.result(timeout=10) == {"text": "", "reason": "superseded"}
+                assert third.result(timeout=10) == {"text": "x", "reason": ""}
+                assert [p["prompt"] for p in fake.generated()] == ["a ", "c "]
+            finally:
+                release.set()
 
 
 def test_failed_generation_rechecks_status(mod, svc, on):
