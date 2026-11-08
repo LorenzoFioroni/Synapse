@@ -177,7 +177,7 @@ async def main():
 
             await page.keyboard.press(f"{MOD}+,")
             await page.locator("[data-nav=plugins]").click()
-            await page.locator(f"[data-nav='plugin-{PID}']").click()
+            await page.locator(f".plugin-row[data-plugin='{PID}'] [data-popen]").click()
             part = page.locator(f"#set-plugin-{PID} .at-weights")
             await part.wait_for()
             text = await page.locator(f"#set-plugin-{PID}").inner_text()

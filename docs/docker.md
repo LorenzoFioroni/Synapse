@@ -170,7 +170,7 @@ in `plugin.http` and Autocompletion).
 
 ## Offsite backups
 
-The image includes rclone 1.76.0. In Settings → Backups choose **Remote (rclone)**, select a
+The image includes rclone 1.76.0. In Settings → Backups choose **This computer + remote (rclone)**, select a
 provider, enter the connection details and folder, and save. For Google Drive, OneDrive or
 Dropbox, register a Web application with the redirect URI shown in Settings, enter its application
 credentials there, then use **Connect account**. Authorization takes place in your browser and

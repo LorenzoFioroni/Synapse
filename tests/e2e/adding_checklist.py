@@ -197,8 +197,11 @@ async def main():
 
             # ---- Settings → Adding Items
             await page.keyboard.press(f"{mod}+,")
-            await page.wait_for_selector("#set-adding")
-            labels = await page.eval_on_selector_all("#set-adding .s-title", "els => els.map((e) => e.textContent)")
+            await page.wait_for_selector("#set-adding", state="attached")
+            await page.click('.settings-nav [data-nav="adding"]')
+            labels = await page.eval_on_selector_all(
+                "#set-adding .setting:has(.segmented) .s-title", "els => els.map((e) => e.textContent)"
+            )
             check(
                 "Settings has an Adding Items section with four never/ask/always choices",
                 len(labels) == 4 and await page.locator("#set-adding .segmented button").count() == 12,

@@ -31,12 +31,12 @@ What exists today:
 - Turning one on asks first and lists what it may do (read the library, connect to sites, offer
   tools to AI apps). A plugin runs with full access to the library and the computer, like any
   program you install: turn on only plugins you trust.
-- A plugin that is on has a **section of its own** in Settings, listed under Plugins in the
-  Settings navigation and opened by the **Settings** button on its row (or "Settings: <name>" in
-  the command palette): its settings (drawn from its manifest, saved as you change them, and
+- Each plugin has a **page of its own** in Settings, shown beside the Plugins list when you pick
+  its row (or with "Settings: <name>" in the command palette): its switch and what it may do,
+  and while it is on its settings (drawn from its manifest, saved as you change them, and
   whatever its frontend draws there), whether its tools are also offered to AI apps on other
   computers (`/mcp`, off by default), what it serves and listens to, **Restart** (to load changed
-  code) and its **Log**. A plugin that is off has only its row (and **Log** when it failed).
+  code) and its **Log**. A plugin that is off shows what it may do and its log.
 - A plugin that fails while starting, or fails three times within ten minutes, is turned off and
   Settings says why. Turning it on again tries again.
 - Enabling, disabling, restarting or reconfiguring a plugin runs or changes code on the computer
@@ -110,7 +110,8 @@ Tasks records its destination before loading, and a delayed load cannot focus or
 
 A plugin's custom Settings sections are kept in step with the registry while Settings is open.
 Stopping one disposes and removes its controls; starting it again mounts one fresh section. If the
-selected section disappears, Settings selects General. During a Settings search, the query is
+selected section disappears (a plugin's page goes when the plugin is removed), Settings shows
+General, or the Plugins list beside another plugin. During a Settings search, the query is
 kept and the remaining matching sections or the empty state are shown instead. Unrelated
 sections keep their mounted state.
 Autocompletion also clears visible and pending suggestions when stopped; an older status request

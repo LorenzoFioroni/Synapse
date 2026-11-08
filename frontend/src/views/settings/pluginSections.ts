@@ -3,8 +3,8 @@
 // makes those once the plugins are listed); a part with no plugin behind it gets a section of its
 // own. Each mount owns its DOM and cleanup; the other parts keep their controls and pending edits.
 import { type SettingsSection, settingsSections } from '../../extend.js';
-import { icon } from '../../icons.js';
 import { escapeHtml } from '../../util.js';
+import { navItemHtml } from './page.js';
 import { SECTIONS_EVENT, refreshPlugins } from './plugins.js';
 
 interface Mounted {
@@ -52,13 +52,12 @@ export function mountPluginSections(page: HTMLElement, onActiveRemoved: () => vo
     const section = document.createElement('section');
     section.className = 'settings-section';
     section.id = `set-${id}`;
-    section.innerHTML = `<h2>${escapeHtml(spec.title)}${spec.source ? ` <span class="ip-source">${escapeHtml(spec.source)}</span>` : ''}</h2><div class="plugin-section"></div>`;
+    section.innerHTML = `<div class="page-crumb">Extend</div><h2>${escapeHtml(spec.title)}${spec.source ? ` <span class="ip-source">${escapeHtml(spec.source)}</span>` : ''}</h2><div class="plugin-section"></div>`;
     const after = spec.after ? page.querySelector(`#set-${CSS.escape(spec.after)}`) : null;
     if (after) after.after(section); else page.querySelector('#set-plugins')!.before(section);
-    const nav = document.createElement('button');
-    nav.className = 'side-item';
-    nav.dataset.nav = id;
-    nav.innerHTML = `${icon(spec.icon || 'plugin')}<span>${escapeHtml(spec.title)}</span>`;
+    const tpl = document.createElement('template');
+    tpl.innerHTML = navItemHtml(id, spec.title, spec.icon || 'plugin');
+    const nav = tpl.content.firstElementChild as HTMLButtonElement;
     const navAfter = spec.after ? page.querySelector(`.settings-nav [data-nav="${CSS.escape(spec.after)}"]`) : null;
     if (navAfter) navAfter.after(nav); else page.querySelector('.settings-nav [data-nav="plugins"]')!.before(nav);
     return { spec, holder: section.querySelector<HTMLElement>('.plugin-section')!, section, nav };

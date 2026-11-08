@@ -1,5 +1,8 @@
 // Settings page (full-screen view). Changes save immediately. The page's markup is in
 // settings/page.ts; Backups, Updates, Devices, Passkeys, AI Access and Plugins have modules of their own in settings/.
+// One section is shown at a time (its navigation entry is active); Plugins shows its list beside the
+// page of the plugin chosen in it. On phones Settings opens on the navigation as a list, and a
+// section replaces it until Back.
 import * as A from '../actions.js';
 import { api } from '../api.js';
 import { emit, on, state } from '../store.js';
@@ -20,6 +23,7 @@ import { refreshExportFormats } from './settings/exportFormats.js';
 import { mountPluginSections } from './settings/pluginSections.js';
 import { mountSettingsSearch, type SettingsSearch } from './settings/search.js';
 import { TOKENS, flashSaved, settingsHtml } from './settings/page.js';
+import { paintNavValues } from './settings/navValues.js';
 
 let view: HTMLElement | null = null;
 let settingsSearch: SettingsSearch | null = null;
@@ -27,6 +31,12 @@ on('export-formats', () => { if (view) refreshExportFormats(view); });
 let unmountPluginSections: (() => void) | null = null;
 let statsTimer: ReturnType<typeof setInterval> | undefined;
 let unbindBackups: (() => void) | undefined;
+/** The section shown, and the plugin last shown beside the Plugins list. */
+let currentId = 'general';
+let lastPlugin: string | null = null;
+
+/** A phone-sized window: Settings is a list of sections, then one section at a time. */
+const narrow = (): boolean => matchMedia('(max-width: 700px)').matches;
 
 export function applyAppearance(s: Settings = state.settings): void {
   const root = document.documentElement;
@@ -64,6 +74,7 @@ async function save(changes: Partial<Settings>, el?: Element): Promise<boolean> 
     state.settings = res.settings;
     applyAppearance();
     emit('settings');
+    if (view) paintNavValues(view);
     flashSaved(el?.closest('.setting') || view);
     return true;
   } catch (e) { toastError(e); return false; }
@@ -78,8 +89,10 @@ export function openSettings(sectionId: string | null = null): void {
   view = page;
   page.id = 'settings-view';
   page.innerHTML = settingsHtml(s, meta);
+  page.classList.toggle('at-root', narrow() && !sectionId);
   document.body.appendChild(page);
-  settingsSearch = mountSettingsSearch(page, setNav);
+  paintNavValues(page);
+  settingsSearch = mountSettingsSearch(page, (id) => show(id), () => currentId);
   bind(page);
   paintDesktopNotifications(page);
   refreshPreview(s.citekey_pattern);
@@ -92,15 +105,17 @@ export function openSettings(sectionId: string | null = null): void {
   refreshPlugins(page);
   refreshExportFormats(page);
   pendingNav = null;
-  page.addEventListener(SECTIONS_EVENT, (e) => {
-    if (pendingNav && page.querySelector(`#set-${CSS.escape(pendingNav)}`)) setNav(pendingNav);
-    else if ((e as CustomEvent<{ activeRemoved?: boolean }>).detail?.activeRemoved && !settingsSearch?.filtering) setNav('general');   // its plugin was turned off
+  page.addEventListener(SECTIONS_EVENT, () => {
+    if (pendingNav && page.querySelector(`#set-${CSS.escape(pendingNav)}`)) setNav(pendingNav, false);
+    // the plugins' pages came (or one went): show the chosen one beside the list again
+    else if (pluginMode(currentId) || !page.querySelector(`#set-${CSS.escape(currentId)}`)) show(currentId);
   });
-  unmountPluginSections = mountPluginSections(page, () => { if (!settingsSearch?.filtering) setNav('general'); });
+  unmountPluginSections = mountPluginSections(page, () => show('general'));
   statsTimer = setInterval(refreshStats, 2000);
   const sel = page.querySelector<HTMLSelectElement>('[data-key="_preset"]')!;
   sel.value = presetMatch ? presetMatch.pattern : 'custom';
-  setNav(sectionId || 'general', !!sectionId);
+  lastPlugin = null;
+  setNav(sectionId || 'general', false);
 }
 
 export function closeSettings(): void {
@@ -123,13 +138,50 @@ export const settingsOpen = (): boolean => !!view;
 /** A section asked for before it was there: a plugin's, which comes once the plugins are listed. */
 let pendingNav: string | null = null;
 
-function setNav(id: string, scroll = true): void {
+const pluginMode = (id: string): boolean => id === 'plugins' || id.startsWith('plugin-');
+
+/** Go to section ``id`` (a navigation id: ``general``, ``plugins``, ``plugin-<id>``…), leaving a
+ *  search. A plugin's page that is not there yet is shown once the plugins are listed. */
+function setNav(id: string, fromNav = true): void {
   if (!view) return;
-  if (scroll && !view.querySelector(`#set-${CSS.escape(id)}`)) { pendingNav = id; return; }
-  if (scroll) { pendingNav = null; settingsSearch?.reveal(id); }
-  view.querySelector('.settings-nav')!.classList.toggle('plugins-expanded', id === 'plugins' || id.startsWith('plugin-'));
-  view.querySelectorAll<HTMLElement>('[data-nav]').forEach((b) => b.classList.toggle('active', b.dataset.nav === id));
-  if (scroll) view.querySelector(`#set-${CSS.escape(id)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (settingsSearch?.filtering) settingsSearch.clear();
+  if (!view.querySelector(`#set-${CSS.escape(id)}`)) {
+    pendingNav = id;
+    if (!pluginMode(id)) return;
+  } else pendingNav = null;
+  show(id);
+  if (!fromNav) return;
+  view.classList.remove('at-root');
+  view.querySelector('.settings-content')!.scrollTop = 0;
+}
+
+/** Show section ``id`` (or, for Plugins, the list beside the chosen plugin's page). */
+function show(id: string): void {
+  if (!view) return;
+  const inner = view.querySelector<HTMLElement>('.settings-inner')!;
+  if (!pluginMode(id) && !view.querySelector(`#set-${CSS.escape(id)}`)) id = 'general';
+  currentId = id;
+  let pluginPage: string | null = null;
+  if (pluginMode(id)) {
+    const pages = [...view.querySelectorAll<HTMLElement>('.plugin-settings')].map((x) => x.id.slice(4));
+    if (id !== 'plugins' && pages.includes(id)) lastPlugin = id;
+    const firstOn = view.querySelector<HTMLElement>('.plugin-row[data-state="on"]')?.dataset.plugin;
+    pluginPage = lastPlugin && pages.includes(lastPlugin) ? lastPlugin
+      : firstOn && pages.includes(`plugin-${firstOn}`) ? `plugin-${firstOn}` : (pages[0] ?? null);
+  }
+  const shown = new Set(pluginMode(id) ? ['plugins', pluginPage] : [id]);
+  view.querySelectorAll<HTMLElement>('.settings-section').forEach((sec) => sec.classList.toggle('current', shown.has(sec.id.slice(4))));
+  inner.classList.toggle('plugins-mode', pluginMode(id));
+  // phones show the list or the plugin's page, not both
+  inner.dataset.pluginView = id === 'plugins' ? 'list' : pluginMode(id) ? 'page' : '';
+  view.querySelectorAll<HTMLElement>('.plugin-row').forEach((row) => row.classList.toggle('selected', !!pluginPage && pluginPage === `plugin-${row.dataset.plugin}`));
+  const back = view.querySelector<HTMLElement>('[data-settings-back]')!;
+  back.lastChild!.textContent = id.startsWith('plugin-') ? ' Plugins' : ' Settings';
+  const navId = pluginMode(id) ? 'plugins' : id;
+  view.querySelectorAll<HTMLElement>('.settings-nav [data-nav]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.nav === navId);
+    if (b.dataset.nav === navId) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
 }
 
 const refreshPreview = debounce(async (pattern: string) => {
@@ -177,12 +229,17 @@ function bind(view: HTMLElement): void {
     const b = (e.target as Element).closest<HTMLElement>('[data-nav]');
     if (b) setNav(b.dataset.nav!);
   });
-  const content = view.querySelector('.settings-content')!;
-  content.addEventListener('scroll', debounce(() => {
-    const secs = [...view.querySelectorAll<HTMLElement>('.settings-section')].filter((section) => !section.hidden);
-    const cur = secs.find((s) => s.getBoundingClientRect().bottom > 140) || secs[0];
-    if (cur) setNav(cur.id.replace('set-', ''), false);
-  }, 60));
+  view.querySelector<HTMLElement>('[data-settings-back]')!.onclick = () => {
+    if (settingsSearch?.filtering) { settingsSearch.clear(); view.classList.add('at-root'); return; }
+    if (currentId.startsWith('plugin-')) { setNav('plugins'); return; }
+    view.classList.add('at-root');
+  };
+  view.addEventListener('click', (e) => {
+    const b = (e.target as Element).closest<HTMLButtonElement>('[data-reset-page]');
+    if (b) void resetPage(b.closest<HTMLElement>('.settings-section')!);
+    const open = (e.target as Element).closest<HTMLElement>('[data-open-section]');
+    if (open) setNav(open.dataset.openSection!);
+  });
 
   view.addEventListener('change', async (e) => {
     const el = e.target as HTMLInputElement | HTMLSelectElement;
@@ -277,15 +334,34 @@ function bind(view: HTMLElement): void {
   view.querySelector<HTMLElement>('[data-import]')!.onclick = () => emit('open-import');
   view.querySelector<HTMLElement>('[data-export]')!.onclick = async () => (await import('./exportDialog.js')).openExport(null);
   view.querySelector<HTMLElement>('[data-reset]')!.onclick = async () => {
-    if (!(await confirmDialog('Reset all settings to their defaults?', { confirm: 'Reset' }))) return;
+    if (!(await confirmDialog('Reset all settings to their defaults?', { confirm: 'Reset All', danger: true, detail: 'Every page of Settings goes back to its defaults. Your library, notes and plugins are not changed.' }))) return;
     const res = await asAdmin(() => api.resetSettings());
     if (!res) return;
     state.settings = res.settings;
     applyAppearance();
     emit('settings');
-    openSettings();
+    openSettings('library');
     toast('Settings reset', { type: 'success' });
   };
+}
+
+/** Put the settings that have a control in ``section`` back to their defaults. */
+async function resetPage(section: HTMLElement): Promise<void> {
+  const defaults = state.settingsMeta.defaults as unknown as Record<string, unknown> | undefined;
+  if (!defaults) return;
+  const keys = new Set<string>();
+  section.querySelectorAll<HTMLElement>('[data-key], [data-seg]').forEach((el) => keys.add(el.dataset.key || el.dataset.seg!));
+  if (section.querySelector('[data-pattern]')) keys.add('citekey_pattern');
+  if (section.querySelector('[data-backup-destination]')) keys.add('backup_destination');
+  if (section.querySelector('[data-backup-dir]')) keys.add('backup_dir');
+  const current = state.settings as unknown as Record<string, unknown>;
+  const changes = Object.fromEntries([...keys].filter((k) => k in defaults && JSON.stringify(defaults[k]) !== JSON.stringify(current[k])).map((k) => [k, defaults[k]]));
+  const title = section.querySelector('h2')?.textContent?.trim() || 'this page';
+  if (!Object.keys(changes).length) { toast(`${title} already uses the defaults`); return; }
+  if (!(await confirmDialog(`Reset ${title} to its defaults?`, { confirm: 'Reset', detail: `${plural(Object.keys(changes).length, 'setting')} on this page change back. Settings on other pages stay as they are.` }))) return;
+  if (!(await save(changes as Partial<Settings>))) return;
+  openSettings(section.id.slice(4));
+  toast(`${title} reset`, { type: 'success' });
 }
 
 function paintDesktopNotifications(page: HTMLElement): void {

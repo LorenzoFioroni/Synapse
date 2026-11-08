@@ -12,6 +12,21 @@ import { asAdmin } from './confirm.js';
 import { flashSaved } from './page.js';
 import { bindRemoteBackups, showRemoteBackups } from './remoteBackups.js';
 
+/** Backups shown before Show all. */
+const RECENT = 3;
+
+/** How long ago ``iso`` was, in words. */
+function ago(iso: string): string {
+  const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (!Number.isFinite(mins)) return formatDate(iso, true);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${plural(mins, 'minute')} ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${plural(hours, 'hour')} ago`;
+  const days = Math.round(hours / 24);
+  return days < 30 ? `${plural(days, 'day')} ago` : formatDate(iso);
+}
+
 function backupRows(backups: Backup[], source: 'local' | 'remote'): string {
   return backups.map((b) => `<div class="backup-row" data-backup="${escapeHtml(b.name)}" data-source="${source}">
     <div class="b-main"><div class="b-when">${escapeHtml(formatDate(b.created, true))}${b.damaged ? ' · <span class="form-error">cannot be read</span>' : ''}</div>
@@ -55,10 +70,21 @@ export async function refreshBackups(view: HTMLElement, history = true): Promise
   try {
     const st = await api.backups();
     if (!view.isConnected) return;
-    const last = st.last ? `Last backup ${formatDate(st.last.created, true)}` : 'No backup yet';
-    desc.innerHTML = `${escapeHtml(last)} · in <span class="mono">${escapeHtml(st.dir)}</span>`
-      + (st.destination === 'remote' ? `<div>${st.delivery.running ? 'Uploading…' : `${st.delivery.pending} pending uploads`}${st.delivery.last_uploaded ? ` · Last upload ${escapeHtml(formatDate(st.delivery.last_uploaded.created, true))}` : ''}</div>` : '')
-      + [st.error, st.destination === 'remote' ? st.delivery.error : null, st.delivery.warning].filter(Boolean).map((error) => `<div class="form-error">${escapeHtml(error!)}</div>`).join('');
+    const problems = [st.error, st.destination === 'remote' ? st.delivery.error : null, st.delivery.warning].filter(Boolean) as string[];
+    const stale = !st.last || (st.interval !== 'off' && Date.now() - Date.parse(st.last.created) > (st.interval === 'weekly' ? 8 : 2) * 86_400_000);
+    const card = view.querySelector<HTMLElement>('[data-backup-status]')!;
+    card.classList.toggle('warn', stale || problems.length > 0);
+    view.querySelector('[data-backup-status-icon]')!.innerHTML = icon(stale || problems.length ? 'alert' : 'check');
+    view.querySelector('[data-backup-status-title]')!.textContent = st.last ? `Backed up ${ago(st.last.created)}` : 'No backup yet';
+    const where = `${plural(st.backups.length, 'backup')} kept in <span class="mono">${escapeHtml(st.dir)}</span>`;
+    const upload = st.destination === 'remote'
+      ? ` · ${st.delivery.running ? 'uploading…' : st.delivery.pending ? `${st.delivery.pending} waiting to upload` : st.delivery.last_uploaded ? `last uploaded ${escapeHtml(ago(st.delivery.last_uploaded.created))}` : 'nothing uploaded yet'}`
+      : '';
+    desc.innerHTML = `${st.last ? escapeHtml(formatDate(st.last.created, true)) + ' · ' : ''}${where}${upload}`
+      + problems.map((error) => `<div class="form-error">${escapeHtml(error)}</div>`).join('');
+    const more = view.querySelector<HTMLButtonElement>('[data-backup-more]')!;
+    more.hidden = st.backups.length <= RECENT;
+    if (!more.hidden) more.textContent = list.classList.contains('collapsed') ? `Show all ${st.backups.length}` : 'Show fewer';
     list.innerHTML = backupRows(st.backups, 'local');
     const auth = view.querySelector<HTMLElement>('[data-remote-auth-state]');
     if (auth) auth.textContent = st.remote.authorized ? 'Connection saved and authorized. Test the connection to check access.' : st.remote.configured ? 'Connection saved. Connect your account to authorize backups.' : 'Save your remote connection details to get started.';
@@ -84,6 +110,10 @@ export function bindBackups(view: HTMLElement): () => void {
   if (state.settings.backup_destination === 'remote') void refreshRemoteBackups(view);
   const timer = setInterval(() => { if (view.isConnected && !restoring) void refreshBackups(view, false); }, 4000);
   view.querySelector<HTMLButtonElement>('[data-history-open]')!.onclick = () => openVaultHistory();
+  view.querySelector<HTMLButtonElement>('[data-backup-more]')!.onclick = () => {
+    view.querySelector('[data-backup-list]')!.classList.toggle('collapsed');
+    void refreshBackups(view, false);
+  };
   const bdir = view.querySelector<HTMLInputElement>('[data-backup-dir]')!;
   bdir.addEventListener('change', async () => {
     const errEl = view.querySelector<HTMLElement>('[data-backup-dir-error]')!;

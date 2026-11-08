@@ -88,11 +88,14 @@ async def main():
             check("a backup is made when the app starts", ok)
 
             await page.keyboard.press(f"{mod}+,")
-            await page.wait_for_selector("#set-backups")
+            await page.wait_for_selector("#set-backups", state="attached")
             await page.click('.settings-nav [data-nav="backups"]')
             await page.wait_for_selector("#set-backups .backup-row")
             desc = await page.text_content("[data-backup-desc]")
-            check("the section shows the last backup and the folder", "Last backup" in desc and DATA in desc, desc)
+            title = await page.text_content("[data-backup-status-title]")
+            check(
+                "the section shows the last backup and the folder", "Backed up" in title and DATA in desc, (title, desc)
+            )
             what = await page.text_content("#set-backups .backup-row .b-what")
             check("each backup says what it holds", "1 item" in what and "0 notes" in what, what)
             await page.wait_for_timeout(700)  # smooth scroll to the section

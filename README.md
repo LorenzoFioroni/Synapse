@@ -201,7 +201,7 @@ docker compose up -d --build
 docker compose exec synapse python server.py --pairing-link
 ```
 
-Settings → Backups offers **Local** or **Remote (rclone)** storage. Configure the provider,
+Settings → Backups offers **This computer** or **This computer + remote (rclone)** storage. Configure the provider,
 credentials and destination entirely in Settings; the Docker image includes rclone. Supported
 providers include Google Drive, OneDrive, Dropbox, S3-compatible storage, WebDAV, SFTP and FTP/FTPS.
 FTP offers explicit TLS, implicit TLS and plain FTP. Password connections also accept an existing

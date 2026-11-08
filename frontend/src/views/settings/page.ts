@@ -1,5 +1,6 @@
-// The Settings page's markup: its sections and the rows that make them up. The page reads the
-// settings when it is built; settingsView.ts binds the controls and saves each change.
+// The Settings page's markup: the grouped navigation, and one page (section) per entry, of which
+// one is shown at a time. The page reads the settings when it is built; settingsView.ts binds the
+// controls, saves each change and switches pages.
 import { icon } from '../../icons.js';
 import { state } from '../../store.js';
 import type { Settings, SettingsResponse } from '../../types.js';
@@ -10,23 +11,57 @@ const tabMod = isMac ? '⌃' : 'Alt+';   // the tab keys (tabs/tabs.ts)
 const PHYSICS_SHOWN = ['\\vb', '\\dv', '\\pdv', '\\qty', '\\abs', '\\norm', '\\expval', '\\mel', '\\comm', '\\dd', '\\grad', '\\mqty']
   .map((c) => `<span class="mono">${c}</span>`).join(', ');
 
-const SECTIONS: [string, string, string][] = [
-  ['general', 'General', 'palette'],
-  ['notes', 'Notes', 'edit'],
-  ['notifications', 'Notifications', 'bell'],
-  ['citekeys', 'Citation Keys', 'key'],
-  ['search', 'Search & Full Text', 'search'],
-  ['viewer', 'PDF Viewer', 'pdf'],
-  ['adding', 'Adding Items', 'plus'],
-  ['io', 'Import & Export', 'export'],
-  ['online', 'Online Services', 'globe'],
-  ['backups', 'Backups', 'restore'],
-  ['devices', 'Devices', 'tablet'],
-  ['ai', 'AI Access', 'sparkle'],
-  ['plugins', 'Plugins', 'plugin'],
-  ['updates', 'Updates', 'refresh'],
-  ['library', 'Library & Shortcuts', 'database'],
+/** A navigation entry: id (its section is ``#set-<id>``), label, icon, and the tile colour on phones. */
+type NavEntry = [string, string, string, string];
+
+/** The navigation, in groups. Plugins' own pages are reached from Plugins, not listed here. */
+export const NAV_GROUPS: [string, NavEntry[]][] = [
+  ['Preferences', [
+    ['general', 'General', 'palette', '#5b6576'],
+    ['notes', 'Notes', 'edit', '#d4880f'],
+    ['viewer', 'PDF Viewer', 'pdf', '#e0402a'],
+    ['notifications', 'Notifications', 'bell', '#c2410c'],
+  ]],
+  ['Library', [
+    ['adding', 'Adding Items', 'plus', '#2f6fed'],
+    ['citekeys', 'Citation Keys', 'key', '#7a5af5'],
+    ['search', 'Search & Full Text', 'search', '#0f8b8d'],
+    ['io', 'Import & Export', 'export', '#2563a8'],
+    ['online', 'Online Services', 'globe', '#0e7490'],
+  ]],
+  ['Data & access', [
+    ['backups', 'Backups', 'restore', '#1f9d55'],
+    ['devices', 'Devices', 'tablet', '#3a4352'],
+    ['ai', 'AI Access', 'sparkle', '#b3202c'],
+  ]],
+  ['Extend', [
+    ['plugins', 'Plugins', 'plugin', '#4a5363'],
+  ]],
+  ['About', [
+    ['library', 'Library', 'database', '#6b5b45'],
+    ['updates', 'Updates', 'refresh', '#2f6fed'],
+    ['shortcuts', 'Keyboard Shortcuts', 'keyboard', '#5b6576'],
+  ]],
 ];
+
+/** The group a section belongs to, shown above its title. */
+const GROUP_OF = new Map(NAV_GROUPS.flatMap(([group, entries]) => entries.map(([id]) => [id, group] as [string, string])));
+
+/** One navigation entry. Its value (phones) and badge are filled in later (settingsView.ts). */
+export function navItemHtml(id: string, label: string, ic: string, color = '#5b6576', extra = ''): string {
+  return `<button class="side-item" data-nav="${escapeHtml(id)}"${extra}><span class="nav-ico" style="--tile:${escapeHtml(color)}">${icon(ic)}</span>`
+    + `<span class="nav-label">${escapeHtml(label)}</span><span class="nav-value" data-nav-value></span>`
+    + `<span class="nav-badge" data-nav-badge hidden></span><span class="nav-count" data-nav-count hidden></span>`
+    + `<span class="nav-chevron">${icon('chevron')}</span></button>`;
+}
+
+/** Show ``text`` as the badge of a navigation entry (empty: no badge). */
+export function setNavBadge(view: ParentNode, id: string, text: string): void {
+  const badge = view.querySelector<HTMLElement>(`.settings-nav [data-nav="${CSS.escape(id)}"] [data-nav-badge]`);
+  if (!badge) return;
+  badge.textContent = text;
+  badge.hidden = !text;
+}
 
 export const TOKENS = ['{auth}', '{Auth}', '{AUTH}', '{authEtAl}', '{AuthEtAl}', '{authors2}', '{year}', '{yy}', '{title}', '{Title}', '{shorttitle}', '{ShortTitle}', '{journal}', '{doi}'];
 
@@ -43,271 +78,326 @@ const saved = `<span class="saved-pill">${icon('check', 'icon-sm')} Saved</span>
 type Key = keyof Settings | '_preset';
 type Options = [string | number, string][];
 const setting = (key: Key): unknown => (key === '_preset' ? undefined : state.settings[key]);
+const desc = (text: string) => (text ? `<div class="s-desc">${text}</div>` : '');
 
-function switchRow(key: Key, title: string, desc: string): string {
-  return `<div class="setting"><div class="s-text"><div class="s-title">${title}</div><div class="s-desc">${desc}</div></div>
-    <div class="s-control">${saved}<label class="switch"><input type="checkbox" data-key="${key}" ${setting(key) ? 'checked' : ''}><span></span></label></div></div>`;
+function switchRow(key: Key, title: string, text = ''): string {
+  return `<div class="setting"><div class="s-text"><div class="s-title">${title}</div>${desc(text)}</div>
+    <div class="s-control">${saved}<label class="switch"><input type="checkbox" data-key="${key}" aria-label="${escapeHtml(title)}" ${setting(key) ? 'checked' : ''}><span></span></label></div></div>`;
 }
 
-function selectRow(key: Key, title: string, desc: string, options: Options): string {
-  return `<div class="setting"><div class="s-text"><div class="s-title">${title}</div><div class="s-desc">${desc}</div></div>
-    <div class="s-control">${saved}<select class="select" data-key="${key}">${options.map(([v, l]) => `<option value="${v}" ${String(setting(key)) === String(v) ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}</select></div></div>`;
+function selectRow(key: Key, title: string, text: string, options: Options): string {
+  return `<div class="setting"><div class="s-text"><div class="s-title">${title}</div>${desc(text)}</div>
+    <div class="s-control">${saved}<select class="select" data-key="${key}" aria-label="${escapeHtml(title)}">${options.map(([v, l]) => `<option value="${v}" ${String(setting(key)) === String(v) ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}</select></div></div>`;
 }
 
-function segmentedRow(key: Key, title: string, desc: string, options: Options): string {
-  return `<div class="setting"><div class="s-text"><div class="s-title">${title}</div><div class="s-desc">${desc}</div></div>
-    <div class="s-control">${saved}<div class="segmented" data-seg="${key}">${options.map(([v, l]) => `<button data-v="${v}" class="${setting(key) === v ? 'active' : ''}">${l}</button>`).join('')}</div></div></div>`;
+function segmentedRow(key: Key, title: string, text: string, options: Options): string {
+  return `<div class="setting"><div class="s-text"><div class="s-title">${title}</div>${desc(text)}</div>
+    <div class="s-control">${saved}<div class="segmented" data-seg="${key}" role="group" aria-label="${escapeHtml(title)}">${options.map(([v, l]) => `<button data-v="${v}" class="${setting(key) === v ? 'active' : ''}">${l}</button>`).join('')}</div></div></div>`;
 }
 
-function colorRow(key: Key, title: string, desc: string): string {
-  return `<div class="setting"><div class="s-text"><div class="s-title">${title}</div><div class="s-desc">${desc}</div></div>
-    <div class="s-control">${saved}<input type="color" class="color-input" data-key="${key}" value="${escapeHtml(String(setting(key) || '#000000'))}"></div></div>`;
+function colorRow(key: Key, title: string, text: string): string {
+  return `<div class="setting"><div class="s-text"><div class="s-title">${title}</div>${desc(text)}</div>
+    <div class="s-control">${saved}<input type="color" class="color-input" data-key="${key}" aria-label="${escapeHtml(title)} colour" value="${escapeHtml(String(setting(key) || '#000000'))}"></div></div>`;
+}
+
+/** A section's top: its group, title and one-line lead. */
+function head(id: string, title: string, lead = '', leadAttrs = ''): string {
+  return `<div class="page-crumb">${escapeHtml(GROUP_OF.get(id) || '')}</div><h2>${title}</h2>${lead || leadAttrs ? `<p class="lead"${leadAttrs}>${lead}</p>` : ''}`;
+}
+
+const sub = (title: string) => `<h3 class="sec-h">${title}</h3>`;
+
+/** Reset this page: the settings with a control on it go back to their defaults. */
+const resetFoot = `<div class="page-foot"><button class="link-btn" data-reset-page>Reset this page</button></div>`;
+
+/** The theme as three pictures to pick from (saved like any segmented control). */
+function themeTiles(): string {
+  const tile = (v: string, label: string, art: string) => `<button data-v="${v}" class="theme-tile ${state.settings.theme === v ? 'active' : ''}" aria-label="${label} theme">
+      <span class="theme-art theme-art-${v}" aria-hidden="true">${art}</span><span class="theme-name">${label}</span></button>`;
+  const lines = '<i></i><i></i><i class="hl"></i>';
+  return `<div class="setting stack"><div class="s-text"><div class="s-title">Theme ${saved}</div></div>
+    <div class="theme-tiles" data-seg="theme" role="group" aria-label="Theme">
+      ${tile('system', 'System', `<span class="half light">${lines}</span><span class="half dark">${lines}</span>`)}
+      ${tile('light', 'Light', `<span class="side"></span><span class="body">${lines}</span>`)}
+      ${tile('dark', 'Dark', `<span class="side"></span><span class="body">${lines}</span>`)}
+    </div></div>`;
+}
+
+function shortcuts(rows: [string, string][]): string {
+  return `<div class="card"><dl class="shortcuts">${rows.map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('')}</dl></div>`;
 }
 
 /** The whole page for settings ``s``. */
 export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): string {
   return `
-    <div class="settings-top"><button class="btn btn-ghost" data-close>${icon('arrowLeft')} Back to Library</button>
-      <h1>Settings</h1><span class="spacer"></span><button class="btn btn-ghost btn-sm" data-reset>Reset to defaults</button></div>
-    <div class="settings-search-row" role="search">
-      <div class="settings-search-field">${icon('search')}
-        <input type="search" data-settings-search placeholder="Search settings…" aria-label="Search settings" autocomplete="off" spellcheck="false">
-        <button class="icon-btn" data-settings-search-clear title="Clear settings search" aria-label="Clear settings search" hidden>${icon('close', 'icon-sm')}</button>
-      </div>
-      <span class="settings-search-summary" data-settings-search-summary role="status" aria-live="polite" hidden></span>
-    </div>
+    <div class="settings-top"><button class="btn btn-ghost" data-close>${icon('arrowLeft')} Library</button>
+      <span class="settings-top-sep"></span><h1>Settings</h1><span class="spacer"></span>
+      <span class="settings-autosave">${icon('check', 'icon-sm')} Changes save as you make them</span></div>
     <div class="settings-main">
-      <nav class="settings-nav">${SECTIONS.map(([id, label, ic]) => `<button class="side-item" data-nav="${id}">${icon(ic)}<span>${label}</span></button>`).join('')}</nav>
+      <nav class="settings-nav" aria-label="Settings sections">
+        <div class="settings-search-row" role="search">
+          <div class="settings-search-field">${icon('search')}
+            <input type="search" data-settings-search placeholder="Search settings" aria-label="Search settings" autocomplete="off" spellcheck="false">
+            <button class="icon-btn" data-settings-search-clear title="Clear settings search" aria-label="Clear settings search" hidden>${icon('close', 'icon-sm')}</button>
+          </div>
+          <span class="settings-search-summary" data-settings-search-summary role="status" aria-live="polite" hidden></span>
+        </div>
+        <div class="settings-nav-list">
+        ${NAV_GROUPS.map(([group, entries]) => `<div class="nav-group"><div class="nav-group-title">${group}</div><div class="nav-group-items">
+          ${entries.map(([id, label, ic, color]) => navItemHtml(id, label, ic, color)).join('')}</div></div>`).join('')}
+        </div>
+      </nav>
       <div class="settings-content"><div class="settings-inner">
+      <button class="settings-back" data-settings-back>${icon('arrowLeft')} Settings</button>
       <div class="settings-search-empty" data-settings-search-empty hidden><h2>No matching settings</h2><p>Try different words or clear the search.</p></div>
 
-      <section class="settings-section" id="set-general"><h2>General</h2><p class="lead">How the library looks and behaves.</p>
+      <section class="settings-section" id="set-general">${head('general', 'General', 'How the library looks and behaves on this computer.')}
+        ${sub('Appearance')}
         <div class="card">
-          ${segmentedRow('theme', 'Theme', 'Follow your system, or force light or dark.', [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']])}
-          ${segmentedRow('density', 'Row density', 'Compact fits more items on screen.', [['comfortable', 'Comfortable'], ['compact', 'Compact']])}
-          <div class="setting"><div class="s-text"><div class="s-title">Font size</div><div class="s-desc">Base text size of the interface.</div></div>
-            <div class="s-control">${saved}<input type="range" min="11" max="18" step="1" value="${s.font_size}" data-key="font_size" style="width:140px">
-            <span class="mono" data-fs-label style="width:36px">${s.font_size}px</span></div></div>
-          ${switchRow('open_pdf_on_double_click', 'Double-click opens the PDF', 'When off, double-clicking an item starts editing its title.')}
-          ${switchRow('confirm_trash', 'Ask before moving to the Trash', 'Items in the Trash can always be restored, and an Undo button appears after deleting.')}
-          ${switchRow('show_subfolder_items', 'Show items from subfolders', 'A folder also lists the items of the folders inside it.')}
-        </div></section>
+          ${themeTiles()}
+          ${segmentedRow('density', 'Row density', '', [['comfortable', 'Comfortable'], ['compact', 'Compact']])}
+          <div class="setting"><div class="s-text"><div class="s-title">Text size</div></div>
+            <div class="s-control">${saved}<span class="fs-small" aria-hidden="true">A</span><input type="range" min="11" max="18" step="1" value="${s.font_size}" data-key="font_size" aria-label="Text size" class="fs-range">
+            <span class="fs-big" aria-hidden="true">A</span><span class="mono fs-label" data-fs-label>${s.font_size}px</span></div></div>
+        </div>
+        ${sub('Items')}
+        <div class="card">
+          ${switchRow('open_pdf_on_double_click', 'Double-click opens the PDF', 'Otherwise double-click renames the item.')}
+          ${switchRow('show_subfolder_items', 'Folders include their subfolders’ items')}
+          ${switchRow('confirm_trash', 'Ask before moving to the Trash', 'You can always Undo, or restore from the Trash.')}
+        </div>
+        ${resetFoot}</section>
 
-      <section class="settings-section" id="set-notes"><h2>Notes</h2>
-        <p class="lead">Markdown notes for papers and ideas: editing, equations and deleted-note retention.</p>
+      <section class="settings-section" id="set-notes">${head('notes', 'Notes', 'Markdown notes for papers and ideas, stored as files in your data folder.')}
         <div class="card">
-          ${switchRow('notes_enabled', 'Notes', 'Markdown notes for papers and ideas, stored as files in your data folder. Turn off to hide Notes in the sidebar and the item pane.')}
-          ${selectRow('notes_trash_retention', 'Empty the notes trash', 'Deleted notes, and images no note uses any more, are deleted for good after this long.',
+          ${switchRow('notes_enabled', 'Notes', 'When off, Notes is hidden in the sidebar and the item pane.')}
+          ${segmentedRow('notes_width', 'Note width', 'Full uses the whole note pane.', [['readable', 'Readable'], ['full', 'Full']])}
+          ${selectRow('notes_trash_retention', 'Empty the notes trash', 'Deleted notes, and images no note uses, are deleted for good after this long.',
     [['never', 'Never'], ['1d', 'After 1 day'], ['1w', 'After 1 week'], ['2w', 'After 2 weeks'], ['1m', 'After 1 month'], ['6m', 'After 6 months']])}
-          ${segmentedRow('notes_width', 'Note width', 'A readable column, or the whole width of the note pane (more room when the notes list is hidden).', [['readable', 'Readable'], ['full', 'Full']])}
-          ${selectRow('notes_equation_numbers', 'Equation numbers', 'A $$ equation gets a number when it has a \\label{name} (refer to it with \\eqref{name}); equation and align environments are numbered as in LaTeX, and \\tag{…} sets a number. Or number every display equation.',
+        </div>
+        ${sub('Equations')}
+        <div class="card">
+          ${selectRow('notes_equation_numbers', 'Equation numbers', 'Labelled: a $$ equation with a \\label{name} is numbered (cite it with \\eqref{name}), as are equation and align environments.',
     [['labelled', 'Labelled equations'], ['all', 'Every display equation']])}
-          ${switchRow('notes_math_physics', 'Physics package commands', `In formulas: ${PHYSICS_SHOWN}… as in the LaTeX physics package.`)}
+          ${switchRow('notes_math_physics', 'Physics package commands', `${PHYSICS_SHOWN}… as in LaTeX.`)}
           <div class="setting stack"><div class="s-text"><div class="s-title">Math macros ${saved}</div>
-            <div class="s-desc">Your own commands for every note, one per line, e.g. <span class="mono">\\newcommand{\\R}{\\mathbb{R}}</span> or <span class="mono">\\DeclareMathOperator{\\Var}{Var}</span>. A \\newcommand written in a note's formula works in all formulas of that note.</div></div>
-            <textarea class="input mono" data-key="notes_math_macros" rows="4" spellcheck="false" placeholder="\\newcommand{\\R}{\\mathbb{R}}">${escapeHtml(s.notes_math_macros || '')}</textarea>
+            <div class="s-desc">For every note, one per line, e.g. <span class="mono">\\newcommand{\\R}{\\mathbb{R}}</span>. A \\newcommand in a note’s formula works in the whole note.</div></div>
+            <textarea class="input mono" data-key="notes_math_macros" rows="4" spellcheck="false" aria-label="Math macros" placeholder="\\newcommand{\\R}{\\mathbb{R}}">${escapeHtml(s.notes_math_macros || '')}</textarea>
             <div class="s-desc" data-macro-check></div></div>
-        </div></section>
+        </div>
+        ${resetFoot}</section>
 
-      <section class="settings-section" id="set-notifications"><h2>Notifications</h2>
-        <p class="lead">Choose whether important Synapse notices may also appear through your operating system.</p>
+      <section class="settings-section" id="set-viewer">${head('viewer', 'PDF Viewer', 'Where PDFs open, and how annotating them starts.')}
+        <div class="card">
+          ${segmentedRow('pdf_open_in', 'Open PDFs in', `Switch tabs with <kbd>Ctrl</kbd><kbd>Tab</kbd>, close one with <kbd>${tabMod}W</kbd>.`, [['tabs', 'Synapse Tabs'], ['browser', 'Browser Tabs']])}
+          ${switchRow('annotation_snap_words', 'Highlight whole words', 'Hold Alt (⌥) while selecting to take exactly the characters you select.')}
+        </div>
+        ${sub('Annotation colours')}
+        <p class="sec-lead">The colour each tool starts with. To recolour an annotation, select it in the viewer.</p>
+        <div class="card">
+          ${colorRow('annotation_color_highlight', 'Highlight', '')}
+          ${colorRow('annotation_color_underline', 'Underline', '')}
+          ${colorRow('annotation_color_text', 'Text box', '')}
+          ${colorRow('annotation_color_box', 'Box border', '')}
+          ${colorRow('annotation_fill_box', 'Box fill', 'A filled box without a border highlights an area of the page.')}
+          ${colorRow('annotation_color_draw', 'Drawing', 'Pen, Pencil or finger.')}
+        </div>
+        ${resetFoot}</section>
+
+      <section class="settings-section" id="set-notifications">${head('notifications', 'Notifications', 'Whether important notices may also appear through your operating system.')}
         <div class="card"><div class="setting"><div class="s-text"><div class="s-title">OS notifications</div>
           <div class="s-desc" data-desktop-notifications-desc></div></div>
           <div class="s-control"><button class="btn" data-desktop-notifications></button></div></div></div>
-        <p class="lead" style="margin-top:12px">This preference belongs to this browser profile. Notification history and every running job remain available from the bell.</p>
+        <p class="sec-lead">This belongs to this browser profile. Every notice and running job stays available from the bell.</p>
       </section>
 
-      <section class="settings-section" id="set-citekeys"><h2>Citation Keys</h2>
-        <p class="lead">Keys are used by BibTeX/LaTeX (<span class="mono">\\cite{key}</span>). Duplicates get a, b, c… suffixes automatically.</p>
+      <section class="settings-section" id="set-adding">${head('adding', 'Adding Items', 'What happens right after items are added. <b>Ask</b> puts a ticked checkbox where you add them.')}
         <div class="card">
-          ${selectRow('_preset', 'Style', 'Pick a common style, or write your own pattern below.', [...(meta.citekeyPresets || []).map((p): [string, string] => [p.pattern, p.label]), ['custom', 'Custom pattern…']])}
+          ${segmentedRow('add_fetch_metadata', 'Retrieve metadata for imported items', 'Look up imported entries online, then review the changes. Items added by identifier or PDF are always looked up.', ASK)}
+          ${segmentedRow('add_find_pdf', 'Find an available PDF', 'For new items that have none, in the background.', ASK)}
+          ${segmentedRow('add_fetch_references', 'Fetch reference lists', 'The papers a new item cites, for References and the citation graph. Needs a DOI or arXiv ID.', ASK)}
+          ${segmentedRow('import_tags', 'Turn imported keywords into tags', 'Otherwise they stay in the Keywords field.', ASK)}
+        </div>
+        ${sub('Browser button')}
+        <div class="card"><div class="setting"><div class="s-text"><div class="s-title">Save to Library (Chrome)</div>
+          <div class="s-desc">Save the article you’re reading with one click. In <span class="mono">chrome://extensions</span> turn on Developer mode,
+          choose “Load unpacked” and pick the <span class="mono">browser_extension</span> folder.</div></div></div></div>
+        ${resetFoot}</section>
+
+      <section class="settings-section" id="set-citekeys">${head('citekeys', 'Citation Keys', 'The keys BibTeX and LaTeX cite (<span class="mono">\\cite{key}</span>). Duplicates get a, b, c… automatically.')}
+        <div class="card">
+          ${selectRow('_preset', 'Style', '', [...(meta.citekeyPresets || []).map((p): [string, string] => [p.pattern, p.label]), ['custom', 'Custom pattern…']])}
           <div class="setting stack"><div class="s-text"><div class="s-title">Pattern</div>
-            <div class="s-desc">Tokens in braces are replaced; the case of the token name sets the case of the output.</div></div>
-            <div class="pattern-row"><input class="input" data-pattern value="${escapeHtml(s.citekey_pattern)}" spellcheck="false"></div>
+            <div class="s-desc">Tokens in braces are replaced; the token’s case sets the output’s case.</div></div>
+            <div class="pattern-row"><input class="input" data-pattern aria-label="Citation key pattern" value="${escapeHtml(s.citekey_pattern)}" spellcheck="false"></div>
             <div class="token-list">${TOKENS.map((t) => `<button class="token" data-token="${t}">${t}</button>`).join('')}</div>
             <div class="preview-box" data-preview></div><div class="form-error" data-pattern-error hidden></div></div>
-          ${switchRow('citekey_auto', 'Generate keys for new items', 'Applies to items added manually, by identifier or from PDFs, and to imported entries without a key.')}
-          <div class="setting"><div class="s-text"><div class="s-title">Regenerate all keys</div><div class="s-desc">Rewrite the citation key of every item with the current pattern.</div></div>
+          ${switchRow('citekey_auto', 'Generate keys for new items', 'Also for imported entries without a key.')}
+          <div class="setting"><div class="s-text"><div class="s-title">Regenerate all keys</div><div class="s-desc">Rewrite every item’s key with the current pattern.</div></div>
             <div class="s-control"><button class="btn" data-regen-all>${icon('refresh')} Regenerate…</button></div></div>
-        </div></section>
+        </div>
+        ${resetFoot}</section>
 
-      <section class="settings-section" id="set-search"><h2>Search &amp; Full Text</h2>
-        <p class="lead">The full-text index is stored separately from your library (<span class="mono">data/fulltext.db</span>) and can be rebuilt at any time.</p>
+      <section class="settings-section" id="set-search">${head('search', 'Search &amp; Full Text', 'The full-text index (<span class="mono">data/fulltext.db</span>) is kept apart from your library and can be rebuilt any time.')}
         <div class="card">
-          ${selectRow('default_search_mode', 'Default search scope', 'Used when the app opens. You can switch scope from the search box at any time.', Object.entries(meta.searchModes || {}))}
-          ${switchRow('fulltext_auto_index', 'Index PDFs automatically', 'Extract text from new attachments in the background so they can be searched.')}
-          <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Full-text index</div>
+          <div class="setting stack"><div class="setting-line"><div class="s-text"><div class="s-title">Full-text index</div>
             <div class="s-desc" data-index-desc>Loading…</div></div>
             <div class="s-control"><button class="btn" data-rebuild>${icon('refresh')} Rebuild Index</button></div></div>
             <div class="progress" data-index-progress hidden><div style="width:0"></div></div></div>
-        </div></section>
-
-      <section class="settings-section" id="set-viewer"><h2>PDF Viewer</h2>
-        <div class="card">
-          ${segmentedRow('pdf_open_in', 'Open PDFs in', `Tabs inside Synapse, beside the note tabs (each window has its own, and a reload brings them back), or a browser tab of their own. Switch tabs with <kbd>Ctrl</kbd><kbd>Tab</kbd>, close one with <kbd>${tabMod}W</kbd> or a middle click.`, [['tabs', 'Synapse Tabs'], ['browser', 'Browser Tabs']])}
+          ${switchRow('fulltext_auto_index', 'Index PDFs automatically', 'So the text of new attachments can be searched.')}
+          ${selectRow('default_search_mode', 'Default search scope', 'When the app opens. Switch it from the search box any time.', Object.entries(meta.searchModes || {}))}
         </div>
-        <p class="lead" style="margin-top:18px">The colour each annotation tool starts with. A tool keeps the colour you last used it with on a device, until you change its colour here.
-          To change the colour of an annotation, select it in the viewer.</p>
-        <div class="card">
-          ${colorRow('annotation_color_highlight', 'Highlight', 'Highlighting text.')}
-          ${colorRow('annotation_color_underline', 'Underline', 'Underlining text.')}
-          ${colorRow('annotation_color_text', 'Text', 'Text boxes.')}
-          ${colorRow('annotation_color_box', 'Box border', 'Rectangles drawn on the page.')}
-          ${colorRow('annotation_fill_box', 'Box fill', 'The colour a box is filled with: a filled box without a border highlights an area of the page. Whether a box has a border, a fill or both is chosen in the viewer.')}
-          ${colorRow('annotation_color_draw', 'Drawing', 'Freehand drawings with the pen, the Pencil or a finger.')}
-          ${switchRow('annotation_snap_words', 'Highlight whole words', 'Highlights and underlines take the whole of the first and last word you select. Hold Alt (⌥) while selecting to take exactly the characters you select.')}
-        </div></section>
+        ${resetFoot}</section>
 
-      <section class="settings-section" id="set-adding"><h2>Adding Items</h2>
-        <p class="lead">What happens right after items are added — by identifier, by dropping PDFs, by importing a file or with the browser button.
-          <b>Ask</b> shows a checkbox, ticked, where you add the items, so you decide each time. You can always run these later from the item menu.</p>
+      <section class="settings-section" id="set-io">${head('io', 'Import &amp; Export', 'BibTeX, RIS, EndNote (.enw and XML) and CSL JSON, both ways.')}
         <div class="card">
-          ${segmentedRow('add_fetch_metadata', 'Retrieve metadata for imported items', 'Look up imported entries online (Crossref, arXiv) in the background, then review the proposed changes. Items added by identifier or from PDFs are always looked up. The browser button asks with its own “Complete metadata online” checkbox, unticked when this is Never.', ASK)}
-          ${segmentedRow('add_find_pdf', 'Find an available PDF', 'Look for an open-access PDF of new items that have none, in the background.', ASK)}
-          ${segmentedRow('add_fetch_references', 'Fetch reference lists', 'Fetch the list of papers a new item cites, in the background. They appear in the item pane under References and build the citation graph. Needs a DOI or arXiv ID.', ASK)}
-          ${segmentedRow('import_tags', 'Turn imported keywords into tags', 'Keywords in BibTeX/RIS/EndNote files become tags. When not, they stay in the Keywords field. Exports always write tags back as keywords.', ASK)}
-        </div></section>
-
-      <section class="settings-section" id="set-io"><h2>Import &amp; Export</h2><p class="lead">BibTeX, RIS, EndNote (tagged .enw and XML) and CSL JSON are supported in both directions.</p>
-        <div class="card">
-          ${selectRow('export_format', 'Default export format', 'Pre-selected in the Export dialog.', [['export-formats.bibtex', 'BibTeX'], ['export-formats.ris', 'RIS'], ['export-formats.endnote', 'EndNote (.enw)'], ['export-formats.endnote_xml', 'EndNote XML'], ['export-formats.csljson', 'CSL JSON']])}
-          ${switchRow('bibtex_unicode', 'Keep Unicode in BibTeX', 'On: write “Bañuls” as is (biber/BibLaTeX). Off: escape as “Ba{\\~{n}}uls” for classic BibTeX.')}
-          ${switchRow('export_abstract', 'Include abstracts when exporting', 'Turn off for smaller .bib files.')}
-          ${switchRow('import_skip_duplicates', 'Untick duplicates when importing', 'Entries whose DOI or title+year already exist start unticked in the import preview.')}
-          <div class="setting"><div class="s-text"><div class="s-title">Transfer</div><div class="s-desc">Bring references in or take your whole library elsewhere.</div></div>
+          <div class="setting"><div class="s-text"><div class="s-title">Transfer</div><div class="s-desc">Bring references in, or take your whole library elsewhere.</div></div>
             <div class="s-control"><button class="btn" data-import>${icon('import')} Import…</button><button class="btn" data-export>${icon('export')} Export Library…</button></div></div>
-        </div></section>
+          ${selectRow('export_format', 'Default export format', '', [['export-formats.bibtex', 'BibTeX'], ['export-formats.ris', 'RIS'], ['export-formats.endnote', 'EndNote (.enw)'], ['export-formats.endnote_xml', 'EndNote XML'], ['export-formats.csljson', 'CSL JSON']])}
+          ${switchRow('bibtex_unicode', 'Keep Unicode in BibTeX', 'For biber/BibLaTeX. Off: “Bañuls” is written “Ba{\\~{n}}uls” for classic BibTeX.')}
+          ${switchRow('export_abstract', 'Include abstracts when exporting', 'Off makes smaller .bib files.')}
+          ${switchRow('import_skip_duplicates', 'Untick duplicates when importing', 'Entries whose DOI or title and year are already in the library.')}
+        </div>
+        ${resetFoot}</section>
 
-      <section class="settings-section" id="set-online"><h2>Online Services</h2><p class="lead">Used for Retrieve Metadata, Add by Identifier, Find Available PDF and reference lists (Crossref, OpenAlex, arXiv, Open Library, Unpaywall, Semantic Scholar).</p>
+      <section class="settings-section" id="set-online">${head('online', 'Online Services', 'Crossref, OpenAlex, arXiv, Open Library, Unpaywall and Semantic Scholar: for metadata, PDFs and reference lists.')}
         <div class="card">
           <div class="setting stack"><div class="s-text"><div class="s-title">Contact e-mail ${saved}</div>
-            <div class="s-desc">Crossref, OpenAlex and Unpaywall ask clients to identify themselves; with an e-mail you get faster, more reliable responses. It is only sent to the scholarly services Synapse looks things up in (Crossref, OpenAlex, Unpaywall, Semantic Scholar).</div></div>
-            <input class="input" type="email" data-email placeholder="you@university.edu" value="${escapeHtml(s.contact_email)}"></div>
-          ${switchRow('references_auto', 'Fetch reference lists with Retrieve Metadata', 'When metadata of existing items is retrieved, also fetch the list of papers they cite, in the background. For new items see Adding Items. You can always fetch them from the item menu.')}
+            <div class="s-desc">Gets faster, more reliable answers from Crossref, OpenAlex and Unpaywall. Only sent to the scholarly services.</div></div>
+            <input class="input" type="email" data-email aria-label="Contact e-mail" placeholder="you@university.edu" value="${escapeHtml(s.contact_email)}"></div>
+          ${switchRow('references_auto', 'Fetch reference lists with Retrieve Metadata', 'For existing items. New items follow Adding Items.')}
           <div class="setting stack"><div class="s-text"><div class="s-title">API keys for reference lists (optional) ${saved}</div>
-            <div class="s-desc">Reference lists come from Semantic Scholar, then OpenAlex, then Crossref. Without a key, OpenAlex allows only a few lookups a day and Semantic Scholar shares a rate limit with everyone. Free keys: openalex.org/settings/api and semanticscholar.org/product/api. Each key is only sent to its own service.</div></div>
-            <input class="input" type="text" data-apikey="openalex_api_key" placeholder="OpenAlex API key" spellcheck="false" autocomplete="off" value="${escapeHtml(s.openalex_api_key || '')}">
-            <input class="input" type="text" data-apikey="semantic_scholar_api_key" placeholder="Semantic Scholar API key" spellcheck="false" autocomplete="off" value="${escapeHtml(s.semantic_scholar_api_key || '')}" style="margin-top:6px"></div>
-        </div></section>
+            <div class="s-desc">Without a key, OpenAlex allows only a few lookups a day and Semantic Scholar shares a rate limit with everyone. Free keys:
+              openalex.org/settings/api and semanticscholar.org/product/api. Each key only goes to its own service.</div></div>
+            <input class="input" type="text" data-apikey="openalex_api_key" aria-label="OpenAlex API key" placeholder="OpenAlex API key" spellcheck="false" autocomplete="off" value="${escapeHtml(s.openalex_api_key || '')}">
+            <input class="input" type="text" data-apikey="semantic_scholar_api_key" aria-label="Semantic Scholar API key" placeholder="Semantic Scholar API key" spellcheck="false" autocomplete="off" value="${escapeHtml(s.semantic_scholar_api_key || '')}"></div>
+        </div>
+        ${resetFoot}</section>
 
-      <section class="settings-section" id="set-backups"><h2>Backups</h2>
-        <p class="lead">A backup holds the library database (items, folders, tags, annotations), your settings and all notes with their images.
-          The PDFs of your items are not included — back up <span class="mono">data/pdfs</span> separately.</p>
+      <section class="settings-section" id="set-backups">${head('backups', 'Backups', 'Your library, settings and notes. PDFs are not included: back up <span class="mono">data/pdfs</span> separately.')}
+        <div class="card status-card" data-backup-status>
+          <span class="status-ico" data-backup-status-icon>${icon('check')}</span>
+          <div class="s-text"><div class="status-title" data-backup-status-title>Loading…</div><div class="s-desc" data-backup-desc></div></div>
+          <div class="s-control"><button class="btn btn-primary" data-backup-now>${icon('download')} Back Up Now</button></div>
+        </div>
+        ${sub('Schedule')}
         <div class="card">
-          ${segmentedRow('backup_interval', 'Back up automatically', 'When the app is running. Also before emptying the Trash, deleting items for good, importing and regenerating citation keys.', [['off', 'Off'], ['daily', 'Daily'], ['weekly', 'Weekly']])}
-          <div class="setting"><div class="s-text"><div class="s-title">Destination</div><div class="s-desc">Remote storage uses rclone on the server. A local copy is kept for offline recovery and upload retries.</div></div>
-            <select class="select" data-backup-destination aria-label="Backup destination"><option value="local" ${s.backup_destination === 'local' ? 'selected' : ''}>Local</option><option value="remote" ${s.backup_destination === 'remote' ? 'selected' : ''}>Remote (rclone)</option></select></div>
+          ${segmentedRow('backup_interval', 'Back up automatically', 'Also right before emptying the Trash, deleting items for good, importing and regenerating keys.', [['off', 'Off'], ['daily', 'Daily'], ['weekly', 'Weekly']])}
           ${selectRow('backup_keep', 'Keep', 'Older backups are deleted.', [[7, 'Last 7 backups'], [14, 'Last 14 backups'], [30, 'Last 30 backups'], [90, 'Last 90 backups']])}
+        </div>
+        ${sub('Where')}
+        <div class="card">
+          <div class="setting"><div class="s-text"><div class="s-title">Destination</div><div class="s-desc">Remote copies are uploaded with rclone; a local copy is always kept for offline restores and retries.</div></div>
+            <div class="s-control">${saved}<select class="select" data-backup-destination aria-label="Backup destination"><option value="local" ${s.backup_destination === 'local' ? 'selected' : ''}>This computer</option><option value="remote" ${s.backup_destination === 'remote' ? 'selected' : ''}>This computer + remote (rclone)</option></select></div></div>
           <div class="setting stack"><div class="s-text"><div class="s-title">Backup folder ${saved}</div>
-            <div class="s-desc">Leave empty to use the backups folder inside your data folder. A folder synced by iCloud Drive or Dropbox keeps a copy off this computer.</div></div>
-            <input class="input mono" type="text" data-backup-dir spellcheck="false" autocomplete="off" placeholder="Default: data/backups" value="${escapeHtml(s.backup_dir || '')}">
+            <div class="s-desc">Empty: the backups folder in your data folder. A folder synced by iCloud Drive or Dropbox keeps a copy off this computer.</div></div>
+            <input class="input mono" type="text" data-backup-dir aria-label="Backup folder" spellcheck="false" autocomplete="off" placeholder="Default: data/backups" value="${escapeHtml(s.backup_dir || '')}">
             <div class="form-error" data-backup-dir-error hidden></div></div>
           <div class="setting stack" data-remote-backup hidden><div data-remote-backup-form>Loading remote storage settings…</div></div>
-          <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Backups</div>
-            <div class="s-desc" data-backup-desc>Loading…</div></div>
-            <div class="s-control"><button class="btn" data-backup-now>${icon('download')} Back Up Now</button></div></div>
-            <div class="backup-list" data-backup-list></div></div>
-          <div class="setting stack" data-remote-backup-archives hidden>
-            <div class="s-title">Remote backups <button class="btn btn-sm" data-remote-backup-refresh>Refresh list</button></div>
+        </div>
+        <h3 class="sec-h"><span>Recent backups</span><button class="link-btn" data-backup-more hidden></button></h3>
+        <div class="card"><div class="setting stack backups-recent"><div class="backup-list collapsed" data-backup-list></div></div></div>
+        <div class="card" data-remote-backup-archives hidden><div class="setting stack">
+            <div class="s-title setting-line">Remote backups <button class="btn btn-sm" data-remote-backup-refresh>Refresh list</button></div>
             <div class="s-desc" data-remote-backup-status></div>
             <div class="backup-list" data-remote-backup-list></div>
-          </div>
-          <div class="setting"><div class="s-text"><div class="s-title">Notes history</div>
+          </div></div>
+        ${sub('Notes history')}
+        <div class="card"><div class="setting"><div class="s-text"><div class="s-title">Every version of your notes</div>
             <div class="s-desc" data-history-desc>Loading…</div></div>
-            <div class="s-control"><button class="btn" data-history-open>${icon('restore')} Notes History…</button></div></div>
-        </div></section>
+            <div class="s-control"><button class="btn" data-history-open>${icon('restore')} Notes History…</button></div></div></div>
+        ${resetFoot}</section>
 
-      <section class="settings-section" id="set-devices"><h2>Devices</h2>
-        <p class="lead">Use the library from an iPad or a phone on the same network. Each device is paired once and stays paired until you remove it here.
-          This computer never needs pairing.</p>
+      <section class="settings-section" id="set-devices">${head('devices', 'Devices', 'Use the library from an iPad or a phone. Each device is paired once and stays paired until you remove it; this computer never needs pairing.')}
         <div class="card">
           <div class="setting stack" data-device-add><div class="s-desc">Loading…</div></div>
           <div class="setting stack"><div class="s-text"><div class="s-title">Paired devices</div>
             <div class="s-desc" data-devices-desc></div></div>
             <div class="backup-list" data-device-list></div></div>
-          <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Passkeys</div>
+          <div class="setting stack"><div class="setting-line"><div class="s-text"><div class="s-title">Passkeys</div>
             <div class="s-desc" data-passkeys-desc>Loading…</div></div>
             <div class="s-control" data-passkey-control></div></div>
             <div class="backup-list" data-passkey-list></div></div>
         </div></section>
 
-      <section class="settings-section" id="set-ai"><h2>AI Access</h2>
-        <p class="lead">Let AI apps on another computer (Claude Code, Codex, any app that speaks MCP) use the library over the network.
-          On this computer, an AI app can start Synapse's MCP server itself instead: run <span class="mono">python mcp_server.py --config</span>
-          for the setup of Claude and Codex. What an AI app changes in notes and tasks is shown with its name.</p>
+      <section class="settings-section" id="set-ai">${head('ai', 'AI Access', `Let AI apps on another computer (Claude Code, Codex, any MCP app) use the library over the network.
+          On this computer an AI app can start Synapse’s MCP server itself: <span class="mono">python mcp_server.py --config</span> sets up Claude and Codex.`)}
         <div class="card">
-          <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Access tokens</div>
+          <div class="setting stack"><div class="setting-line"><div class="s-text"><div class="s-title">Access tokens</div>
             <div class="s-desc" data-ai-desc>Loading…</div></div>
             <div class="s-control" data-ai-control></div></div>
             <div data-ai-fresh></div>
             <div class="backup-list" data-ai-list></div></div>
+        </div>
+        <p class="sec-lead">What an AI app changes in notes and tasks is shown with its name.</p></section>
+
+      <section class="settings-section" id="set-plugins">${head('plugins', 'Plugins', 'Optional features. Some are bundled with Synapse, others installed by you; like any program they run with full access to your library and this computer, so turn on only ones you trust.')}
+        <div class="plugin-filters" role="group" aria-label="Show plugins">
+          <button class="chip active" data-pfilter="all">All</button><button class="chip" data-pfilter="on">On</button><button class="chip" data-pfilter="off">Off</button><button class="chip" data-pfilter="mine">Installed by you</button>
+        </div>
+        <div class="card plugin-card">
+          <div class="plugin-list" data-plugin-list></div>
+          <div class="plugin-foot"><div class="s-desc" data-plugins-desc>Loading…</div>
+            <button class="btn btn-sm" data-plugins-rescan>${icon('refresh')} Look Again</button></div>
         </div></section>
 
-      <section class="settings-section" id="set-plugins"><h2>Plugins</h2>
-        <p class="lead">Plugins add optional features. Some come bundled with Synapse; others are installed by you.
-          Like any program you install, they run with full access to your library and this computer, so turn on only ones you trust.</p>
-        <div class="card">
-          <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text">
-            <div class="s-desc" data-plugins-desc>Loading…</div></div>
-            <div class="s-control"><button class="btn" data-plugins-rescan>${icon('refresh')} Look Again</button></div></div>
-            <div class="plugin-list" data-plugin-list></div></div>
-        </div></section>
+      <section class="settings-section" id="set-library">${head('library', 'Library', '', ' data-data-dir')}
+        <div class="card"><div class="stat-grid" data-stats></div></div>
+        ${sub('Start over')}
+        <div class="card"><div class="setting"><div class="s-text"><div class="s-title">Reset all settings</div>
+          <div class="s-desc">Every setting on every page goes back to its default. Your library, notes and plugins are not touched.</div></div>
+          <div class="s-control"><button class="btn btn-danger" data-reset>Reset All…</button></div></div></div>
+      </section>
 
-      <section class="settings-section" id="set-updates"><h2>Updates</h2>
-        <p class="lead" data-update-lead>Newer versions of Synapse.</p>
+      <section class="settings-section" id="set-updates">${head('updates', 'Updates', 'Newer versions of Synapse.', ' data-update-lead')}
         <div class="card">
-          <div class="setting stack"><div style="display:flex;align-items:center;gap:12px"><div class="s-text"><div class="s-title">Version</div>
+          <div class="setting stack"><div class="setting-line"><div class="s-text"><div class="s-title">Version</div>
             <div class="s-desc" data-update-desc>Loading…</div></div>
             <div class="s-control"><button class="btn" data-update-check>${icon('refresh')} Check for Updates</button></div></div>
             <div data-update-body></div></div>
         </div></section>
 
-      <section class="settings-section" id="set-library"><h2>Library &amp; Shortcuts</h2><p class="lead" data-data-dir></p>
-        <div class="card"><div class="stat-grid" data-stats></div></div>
-        <h2 style="margin-top:22px;font-size:15px">Browser button</h2>
-        <div class="card"><div class="setting"><div class="s-text"><div class="s-title">Save to Library (Chrome)</div>
-          <div class="s-desc">Save the article you're reading with one click. In Chrome open <span class="mono">chrome://extensions</span>, turn on Developer mode,
-          choose “Load unpacked” and select the <span class="mono">browser_extension</span> folder.</div></div></div></div>
-        <h2 style="margin-top:22px;font-size:15px">Keyboard shortcuts</h2>
-        <div class="card"><dl class="shortcuts">
-          <dt><kbd>${modLabel}F</kbd></dt><dd>Search</dd>
-          <dt><kbd>${modLabel}N</kbd></dt><dd>New item</dd>
-          <dt><kbd>${modLabel}⇧N</kbd></dt><dd>Add item by identifier</dd>
-          <dt><kbd>${modLabel}I</kbd></dt><dd>Import…</dd>
-          <dt><kbd>${modLabel}E</kbd></dt><dd>Export selected items (or the library)…</dd>
-          <dt><kbd>${modLabel},</kbd></dt><dd>Settings</dd>
-          <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Move selection (with <kbd>⇧</kbd> to extend)</dd>
-          <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Collapse / expand attachments</dd>
-          <dt><kbd>↵</kbd></dt><dd>Open PDF</dd>
-          <dt><kbd>⌫</kbd></dt><dd>Move to Trash — inside a folder: remove from that folder (<kbd>${modLabel}⌫</kbd> moves to Trash)</dd>
-          <dt><kbd>${modLabel}C</kbd></dt><dd>Copy BibTeX of the selected items</dd>
-          <dt><kbd>${modLabel}⇧C</kbd></dt><dd>Copy citation keys</dd>
-          <dt><kbd>${modLabel}T</kbd></dt><dd>Edit tags of the selected items</dd>
-          <dt><kbd>${modLabel}A</kbd></dt><dd>Select all</dd>
-          <dt><kbd>Esc</kbd></dt><dd>Clear search / close dialogs</dd>
-          <dt><kbd>${modLabel}⇧L</kbd></dt><dd>Switch between Library and Notes</dd>
-          <dt>Back / Forward</dt><dd>Return to the previous note or library view (mouse buttons, <kbd>${modLabel}[</kbd> / <kbd>Alt←</kbd>)</dd>
-        </dl></div>
-        <h2 style="margin-top:22px;font-size:15px">Tabs</h2>
-        <div class="card"><dl class="shortcuts">
-          <dt><kbd>Ctrl Tab</kbd> <kbd>Ctrl ⇧Tab</kbd></dt><dd>Next / previous tab (in the app window; a browser keeps these for its own tabs)</dd>
-          <dt><kbd>${tabMod}1</kbd> … <kbd>${tabMod}9</kbd></dt><dd>Go to a tab (1: Library or Tasks, 9: the last one)</dd>
-          <dt><kbd>${tabMod}W</kbd>, middle click</dt><dd>Close the tab</dd>
-          <dt><kbd>${tabMod}⇧T</kbd></dt><dd>Reopen the last closed tab</dd>
-          <dt>Double-click a tab</dt><dd>Keep a note's preview tab (italic title): the next note opens in a tab of its own (typing in the note keeps it too)</dd>
-          <dt>Drag a tab</dt><dd>Change the order; onto another Synapse window to move it there, outside every window for a new one; right-click for more</dd>
-        </dl></div>
-        <h2 style="margin-top:22px;font-size:15px">In the notes list</h2>
-        <div class="card"><dl class="shortcuts">
-          <dt>${modLabel}-click, ⇧-click</dt><dd>Select several notes and folders (or <kbd>⇧↑</kbd> <kbd>⇧↓</kbd>)</dd>
-          <dt><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></dt><dd>Move; fold and unfold folders</dd>
-          <dt><kbd>↵</kbd>, click</dt><dd>Open the note (in the preview tab)</dd>
-          <dt>Double-click</dt><dd>Open the note in a tab that stays</dd>
-          <dt><kbd>F2</kbd></dt><dd>Rename the note or folder</dd>
-          <dt><kbd>⌫</kbd></dt><dd>Move the selection to the notes trash (with Undo)</dd>
-          <dt><kbd>${modLabel}N</kbd></dt><dd>New note</dd>
-          <dt><kbd>${modLabel}E</kbd></dt><dd>Read / edit the open note</dd>
-        </dl></div></section>
+      <section class="settings-section" id="set-shortcuts">${head('shortcuts', 'Keyboard Shortcuts', `Open Settings with <kbd>${modLabel},</kbd>.`)}
+        ${sub('Library')}
+        ${shortcuts([
+    [`<kbd>${modLabel}F</kbd>`, 'Search'],
+    [`<kbd>${modLabel}N</kbd>`, 'New item'],
+    [`<kbd>${modLabel}⇧N</kbd>`, 'Add item by identifier'],
+    [`<kbd>${modLabel}I</kbd>`, 'Import…'],
+    [`<kbd>${modLabel}E</kbd>`, 'Export selected items (or the library)…'],
+    ['<kbd>↑</kbd> <kbd>↓</kbd>', 'Move selection (with <kbd>⇧</kbd> to extend)'],
+    ['<kbd>←</kbd> <kbd>→</kbd>', 'Collapse / expand attachments'],
+    ['<kbd>↵</kbd>', 'Open PDF'],
+    ['<kbd>⌫</kbd>', `Move to Trash — inside a folder: remove from that folder (<kbd>${modLabel}⌫</kbd> moves to Trash)`],
+    [`<kbd>${modLabel}C</kbd>`, 'Copy BibTeX of the selected items'],
+    [`<kbd>${modLabel}⇧C</kbd>`, 'Copy citation keys'],
+    [`<kbd>${modLabel}T</kbd>`, 'Edit tags of the selected items'],
+    [`<kbd>${modLabel}A</kbd>`, 'Select all'],
+    ['<kbd>Esc</kbd>', 'Clear search / close dialogs'],
+    [`<kbd>${modLabel}⇧L</kbd>`, 'Switch between Library and Notes'],
+    ['Back / Forward', `Return to the previous note or library view (mouse buttons, <kbd>${modLabel}[</kbd> / <kbd>Alt←</kbd>)`],
+  ])}
+        ${sub('Tabs')}
+        ${shortcuts([
+    ['<kbd>Ctrl Tab</kbd> <kbd>Ctrl ⇧Tab</kbd>', 'Next / previous tab (in the app window; a browser keeps these for its own tabs)'],
+    [`<kbd>${tabMod}1</kbd> … <kbd>${tabMod}9</kbd>`, 'Go to a tab (1: Library or Tasks, 9: the last one)'],
+    [`<kbd>${tabMod}W</kbd>, middle click`, 'Close the tab'],
+    [`<kbd>${tabMod}⇧T</kbd>`, 'Reopen the last closed tab'],
+    ['Double-click a tab', 'Keep a note’s preview tab (italic title): the next note opens in a tab of its own'],
+    ['Drag a tab', 'Change the order; onto another Synapse window to move it there, outside every window for a new one; right-click for more'],
+  ])}
+        ${sub('Notes list')}
+        ${shortcuts([
+    [`${modLabel}-click, ⇧-click`, 'Select several notes and folders (or <kbd>⇧↑</kbd> <kbd>⇧↓</kbd>)'],
+    ['<kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd>', 'Move; fold and unfold folders'],
+    ['<kbd>↵</kbd>, click', 'Open the note (in the preview tab)'],
+    ['Double-click', 'Open the note in a tab that stays'],
+    ['<kbd>F2</kbd>', 'Rename the note or folder'],
+    ['<kbd>⌫</kbd>', 'Move the selection to the notes trash (with Undo)'],
+    [`<kbd>${modLabel}N</kbd>`, 'New note'],
+    [`<kbd>${modLabel}E</kbd>`, 'Read / edit the open note'],
+  ])}
+      </section>
       </div></div>
     </div>`;
 }

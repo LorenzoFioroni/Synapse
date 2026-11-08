@@ -203,9 +203,9 @@ async def main():
 
             # Settings: the interval, Run Now and the ignored list
             await page.keyboard.press(f"{MOD}+,")
-            await page.wait_for_selector("#set-plugins")
+            await page.wait_for_selector("#set-plugins", state="attached")
             await page.click('.settings-nav [data-nav="plugins"]')
-            await page.click(f'.settings-nav [data-nav="plugin-{PID}"]')
+            await page.click(f'.plugin-row[data-plugin="{PID}"] [data-popen]')
             sec = f"#set-plugin-{PID}"
             await page.wait_for_selector(f"{sec} [data-mc-run]")
             await page.wait_for_selector(f"{sec} .mc-ignored")

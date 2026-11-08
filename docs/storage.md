@@ -339,7 +339,7 @@ archive is known to be good:
 
 ### Remote storage with rclone
 
-Settings → Backups → **Destination: Remote (rclone)** adds an offsite copy of the same archives.
+Settings → Backups → **Destination: This computer + remote (rclone)** adds an offsite copy of the same archives.
 Local is the default for existing installations. Remote mode still writes to `backup_dir` (or
 `data/backups/`), so the local safety backups work offline. The archive contents do not change;
 PDFs still need a separate backup. Rclone is included in the Docker image (pinned to 1.76.0).
