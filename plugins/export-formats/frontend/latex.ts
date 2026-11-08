@@ -166,7 +166,7 @@ export async function latexProject(root: SourceNote, linked: boolean, input: Lat
         case 'link_open': {
           const href = t.attrGet('href') || '';
           const safe = /^(https?:|mailto:)/i.test(href) && !/[{}\\%\r\n]/.test(href);
-          links.push(safe); if (safe) out += `\\href{${href.replace(/#/g, '\\#')}}{`;
+          links.push(safe); if (safe) out += `\\href{${href.replace(/[\\#]/g, '\\$&')}}{`;
           break;
         }
         case 'link_close': if (links.pop()) out += '}'; break;

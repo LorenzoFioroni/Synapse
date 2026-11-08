@@ -121,3 +121,13 @@ test('providecommand preserves a configured macro and long paths use short expor
   assert.match(note, /\\providecommand\{\\foo\}\{B\}/);
   assert.ok(!note.includes('renewcommand'));
 });
+
+
+test('external links retain anchors while unsafe TeX targets stay plain text', async () => {
+  const project = await latexProject({ path: 'root.md', title: 'Title', text: '[Source](https://example.org/paper#results) and [Readable](https://example.org/%5Cinput%7Bsecret%7D).' }, false, inputs({}));
+  const main = project.files.get('main.tex');
+  assert.ok(main.includes('\\href{https://example.org/paper\\#results}{Source}'));
+  assert.equal((main.match(/\\href\{/g) || []).length, 1);
+  assert.ok(main.includes('and Readable.'));
+  assert.ok(!main.includes('input%7Bsecret'));
+});
