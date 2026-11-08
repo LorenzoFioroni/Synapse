@@ -37,6 +37,8 @@ COMMAND_TIMEOUT = 1800  # seconds: building from scratch downloads the base imag
 COMMIT_FORMAT = (
     '{{range .Config.Env}}{{if eq (index (split . "=") 0) "SYNAPSE_COMMIT"}}{{index (split . "=") 1}}{{end}}{{end}}'
 )
+# A user name and password (a token) in an address, as a private repository's SYNAPSE_SOURCE has.
+USERINFO_RE = re.compile(r"(?i)\b(https?://)[^/@\s]+@")
 ROLLBACK_WAIT = 120.0  # seconds the previous version gets to be healthy again, whatever UPDATER_HEALTH_TIMEOUT says
 
 
@@ -79,6 +81,12 @@ class Settings:
             image=env.get("UPDATER_IMAGE", "synapse:local"),
             health_timeout=float(env.get("UPDATER_HEALTH_TIMEOUT", "300")),
         )
+
+
+def redact(text: str) -> str:
+    """``text`` without the credentials of any address in it: what Synapse is told goes to every
+    signed-in device (Settings → Updates)."""
+    return USERINFO_RE.sub(r"\1***@", text)
 
 
 def now() -> str:
@@ -258,9 +266,11 @@ class Updater:
 
     def public(self) -> dict:
         s = self.state
-        return {k: s.get(k) for k in ("state", "message", "commit", "started", "finished", "log")} | {
-            "branch": self.settings.branch,
-        }
+        out = {k: s.get(k) for k in ("state", "message", "commit", "started", "finished", "log")}
+        if isinstance(out["message"], str):
+            out["message"] = redact(out["message"])
+        out["log"] = [redact(line) for line in out["log"] or []]
+        return out | {"branch": self.settings.branch}
 
 
 def handler(updater: Updater) -> type[BaseHTTPRequestHandler]:

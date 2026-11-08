@@ -79,6 +79,9 @@ with nothing but "now":
     and the last lines of the commands' output, which Settings shows under Details. Signed-in
     devices can read it, so it never holds a container's environment, where the token is: the
     updater asks Docker for `SYNAPSE_COMMIT` alone and leaves that command's output out of the log.
+    Credentials in an address (a private repository's `SYNAPSE_SOURCE`, `https://user:token@…`)
+    are shown as `https://***@…` in the message and the log; Synapse's own update check does not
+    repeat an address it cannot use either.
 - **Not itself.** The updater only updates the Synapse services. Rebuild it with
   `docker compose up -d --build`.
 

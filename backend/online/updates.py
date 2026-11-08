@@ -67,8 +67,10 @@ def parse_source(text: str | None) -> Source | None:
         return None
     m = SOURCE_RE.fullmatch(text)
     if not m:
+        # Not the value itself: a private repository's address can hold a token, and this message
+        # reaches every signed-in device.
         raise UpdateError(
-            f"SYNAPSE_SOURCE is {text!r}: update checks need a GitHub repository, like "
+            "SYNAPSE_SOURCE is not a public GitHub repository address: update checks need one like "
             "https://github.com/owner/Synapse.git#main."
         )
     return Source(m.group(1), m.group(2), m.group(3) or "main")
