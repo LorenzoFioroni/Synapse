@@ -16,5 +16,5 @@
     "paths": { "@codemirror/*": ["node_modules/@codemirror/*"], "force-graph": ["node_modules/force-graph"], "markdown-it": ["node_modules/@types/markdown-it/index.d.mts"] },
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "../plugins/autocompletion/frontend", "../plugins/metadata-check/frontend", "../plugins/graph/frontend", "../plugins/extended-markdown/frontend", "../plugins/tasks/frontend", "../plugins/arxiv-today/frontend"]
+  "include": ["src", "../plugins/autocompletion/frontend", "../plugins/metadata-check/frontend", "../plugins/graph/frontend", "../plugins/extended-markdown/frontend", "../plugins/tasks/frontend", "../plugins/export-formats/frontend", "../plugins/arxiv-today/frontend"]
 }

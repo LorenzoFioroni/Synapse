@@ -5,7 +5,7 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.13**, which also accepts plugins targeting 1.0–1.12. Reference
+This page documents API **1.14**, which also accepts plugins targeting 1.0–1.13. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
 `"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`. Named reference sub-sources and the reference record
@@ -1138,3 +1138,24 @@ Markdown/task SDK types; use those declarations together for TypeScript integrat
 `notes-count` UI event for this window's own writes, and notes/library change notifications
 for other clients, so its private picker/completion indexes stay current without sharing the
 mutable workspace. Pending index responses are generation-checked and ignored after unload.
+
+
+### Note export contributions (1.14)
+
+`p.notes.exports.register({id, title, icon?, run(note)})` adds an entry to Notes → Export.
+`run` receives a plain `{path, title, text}` snapshot using the editor's current text when open,
+including unsaved changes. The host prefixes the ID with the plugin ID, catches invocation
+errors and removes the entry when the plugin unloads. The returned disposer removes it early.
+An export menu left open across plugin removal cannot invoke a retired provider.
+
+The public task/editor SDK also exports `exportNoteFile(path)` (the saved note),
+`exportBibliography(ids)` (the existing BibTeX clipboard writer), `exportMathSettings()`
+(`{physics, macros}`), `splitFrontmatter`, `noteSection` and `downloadBlob`. Together with
+`noteIndex`, `citationIndex`, `loadMD` and `createRenderer`, these let a plugin build an offline
+export without importing private workspace/store modules. The Markdown SDK exports
+`parseDefinitions` for the same macro parsing used by the host.
+
+The bundled Export Formats plugin registers a LaTeX project download here. Its ordinary
+bibliographic writers and their `/api/export` responses remain text-only; project ZIPs are
+built in the browser with no runtime dependency or extra server route. See
+[Exporting a note](notes.md#exporting-a-note) for files, options and conversion limits.

@@ -6,6 +6,7 @@
 // gallery becomes one figure with its panels side by side, (a), (b), …, and one caption (Extended
 // Markdown, plugins/extended-markdown/frontend/figures/exportStatic.ts). Everything is built here from files the
 // app already serves, so it works offline.
+import { noteExports } from './exportProviders.js';
 import { api } from '../../api.js';
 import type { Item, NoteLinks } from '../../types.js';
 import { openMenu } from '../../ui/menu.js';
@@ -31,18 +32,25 @@ const FORMATS: { format: ExportFormat; label: string; icon: string }[] = [
 
 /** The menu of formats for the note at ``path``, below an element or at a point. */
 export function exportMenu(path: string, at: { x: number; y: number } | Element): void {
-  openMenu([{ section: 'Export as' }, ...FORMATS.map((f) => ({ label: f.label, icon: f.icon, run: () => exportNote(path, f.format) }))], at);
+  openMenu([{ section: 'Export as' }, ...FORMATS.map((f) => ({ label: f.label, icon: f.icon, run: () => exportNote(path, f.format) })),
+    ...[...noteExports].map(([id, f]) => ({ label: f.title, icon: f.icon || 'doc', run: () => exportNote(path, id) }))], at);
 }
 
 const MAX_EMBED_DEPTH = 3;   // as in read mode (richRender.ts)
 
 /** Export the note at ``path`` (the open note as it is in the editor, saved or not). */
-export async function exportNote(path: string, format: ExportFormat): Promise<void> {
+export async function exportNote(path: string, format: string): Promise<void> {
   try {
     const open = ws.session?.path === path;
     const res = open ? null : await api.getNote(path);
     const text = (open ? ws.session!.text : res!.text).replace(/\r\n?/g, '\n');
     const title = (open ? ws.info?.title : res!.info?.title) || stemOf(path);
+    if (!FORMATS.some(f => f.format === format)) {
+      const provider = noteExports.get(format);
+      if (!provider) throw new Error('This note export is no longer available.');
+      await provider.run({ path, title, text });
+      return;
+    }
     const links = await api.noteLinks(path).catch(() => null);
     const file = fileName(title);
     if (format === 'md') {

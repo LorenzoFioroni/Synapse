@@ -199,6 +199,14 @@ export interface NotesVisualizationSpec {
   destroy(): void;
 }
 
+export interface NoteExportSpec {
+  id: string;
+  title: string;
+  icon?: string;
+  /** Current editor text when open, otherwise the saved note. */
+  run(note: { path: string; title: string; text: string }): Promise<void>;
+}
+
 export interface PluginContext {
   tasks: { register(integration: import('./task-runtime.js').TaskIntegration): Dispose };
   markdown: import('./markdown.js').MarkdownApi;
@@ -220,6 +228,7 @@ export interface PluginContext {
     enabled(): boolean;
     current(): string | null;
     open(path: string): Promise<void>;
+    exports: { register(spec: NoteExportSpec): Dispose };
     /** One visualization at a time, alongside and in place of the note editor. */
     visualizations: {
       register(spec: NotesVisualizationSpec): Dispose;
