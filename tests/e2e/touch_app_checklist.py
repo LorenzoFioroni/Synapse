@@ -383,7 +383,7 @@ async def main():
                 "({ page: document.getElementById('settings-view').scrollWidth, viewport: innerWidth, nav: getComputedStyle(document.querySelector('.settings-nav')).display, control: getComputedStyle(document.querySelector('.setting')).flexDirection })"
             )
             check(
-                "phone: Settings uses a horizontal section strip and stacked controls",
+                "phone: Settings opens on its list of pages, with stacked controls",
                 settings["page"] <= settings["viewport"]
                 and settings["nav"] == "flex"
                 and settings["control"] == "column",

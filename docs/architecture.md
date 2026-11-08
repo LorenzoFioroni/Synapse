@@ -184,8 +184,9 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
   `workspace.ts` shares state/hooks; `noteSession.ts` owns saving, drafts and conflicts. Tree,
   file operations, read mode, side panels, editor formatting and exports each have their own
   modules. See [Notes](notes.md) and the [frontend module map](frontend.md).
-- `settingsView.ts` coordinates Settings; `settings/page.ts` renders its sections and
-  `settings/search.ts` filters built-in and dynamic plugin sections without rebuilding controls.
+- `settingsView.ts` coordinates Settings, one section (page) at a time; `settings/page.ts` renders
+  its grouped navigation and sections and `settings/search.ts` shows the matching rows of built-in
+  and dynamic plugin sections without rebuilding controls.
   Backups, updates, devices, passkeys, AI Access, plugin lifecycle and export formats have modules under
   `views/settings/`. Notes preferences have their own section.
 - `phone/*` is the phone layout: `layout.ts` decides which layout a page gets, `shell.ts` the tab

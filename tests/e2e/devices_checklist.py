@@ -113,7 +113,7 @@ async def main():
             await mac.goto(BASE)
             await mac.wait_for_selector(".row[data-id]")
             await mac.keyboard.press(f"{mod}+,")
-            await mac.wait_for_selector("#set-devices")
+            await mac.wait_for_selector("#set-devices", state="attached")
             await mac.click('.settings-nav [data-nav="devices"]')
             await mac.wait_for_selector("[data-pair-new]")
             add_text = await mac.text_content("[data-device-add]")

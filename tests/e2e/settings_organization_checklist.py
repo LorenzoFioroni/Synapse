@@ -98,7 +98,7 @@ async def main():
                 await page.goto(BASE)
                 await page.wait_for_selector("#startup-screen", state="hidden")
                 await page.click('#toolbar [data-a="settings"]')
-                await page.wait_for_selector("#set-plugin-search-demo [data-pending]")
+                await page.wait_for_selector("#set-plugin-search-demo [data-pending]", state="attached")
                 keys = [
                     "notes_enabled",
                     "notes_trash_retention",
@@ -156,9 +156,16 @@ async def main():
                     and not await page.locator("#set-general").is_visible(),
                 )
                 check(
-                    "navigation follows search",
-                    await page.locator('.settings-nav [data-nav="notes"]').is_visible()
-                    and not await page.locator('.settings-nav [data-nav="general"]').is_visible(),
+                    "navigation follows search: counts on matching pages, others dimmed",
+                    await page.locator('.settings-nav [data-nav="notes"] [data-nav-count]').inner_text() == "1"
+                    and "nav-miss" in (await page.locator('.settings-nav [data-nav="general"]').get_attribute("class"))
+                    and "nav-miss"
+                    not in (await page.locator('.settings-nav [data-nav="notes"]').get_attribute("class")),
+                )
+                check(
+                    "only the matching row of a page is shown",
+                    await page.locator('[data-key="notes_equation_numbers"]').is_visible()
+                    and not await page.locator('[data-key="notes_math_macros"]').is_visible(),
                 )
                 check(
                     "matching preferences remain editable",
@@ -179,7 +186,7 @@ async def main():
                 check(
                     "unmatched input has a safe empty state",
                     await page.locator("[data-settings-search-empty]").is_visible()
-                    and "0 sections" in await page.locator("[data-settings-search-summary]").inner_text(),
+                    and "No settings" in await page.locator("[data-settings-search-summary]").inner_text(),
                 )
                 await page.keyboard.press("Escape")
                 check(
@@ -192,12 +199,12 @@ async def main():
                 await page.fill("[data-settings-search]", "calibration mode")
                 await page.wait_for_selector("#set-plugin-search-demo", state="visible")
                 check(
-                    "plugin settings are searchable with visible navigation",
-                    await page.locator('.settings-nav [data-nav="plugin-search-demo"]').is_visible(),
+                    "plugin settings are searchable and count for Plugins",
+                    await page.locator('.settings-nav [data-nav="plugins"] [data-nav-count]').is_visible(),
                 )
-                await page.fill("#set-plugin-search-demo [data-pending]", "unfinished edit")
+                # a row that does not match is hidden, not rebuilt: its pending edit survives
                 await page.locator("#set-plugin-search-demo [data-pending]").evaluate(
-                    "(el) => { window.settingsTestInput = el; }"
+                    "(el) => { el.value = 'unfinished edit'; window.settingsTestInput = el; }"
                 )
                 await page.fill("[data-settings-search]", "theme")
                 await page.fill("[data-settings-search]", "calibration")
@@ -219,14 +226,34 @@ async def main():
                     not await page.locator("[data-settings-search-empty]").is_visible(),
                 )
                 session.post(BASE + "/api/plugin-host/search-demo/disable").raise_for_status()
-                await page.wait_for_selector("#set-plugin-search-demo", state="detached")
+                await page.wait_for_selector("[data-zephyr]", state="detached")
                 await page.wait_for_selector("[data-settings-search-empty]", state="visible")
                 check(
                     "plugin removal keeps the query and updates results",
                     await page.input_value("[data-settings-search]") == "zephyr integration",
                 )
                 await page.click("[data-settings-search-clear]")
-                check("clear button restores ordinary sections", await page.locator("#set-general").is_visible())
+                check(
+                    "clear button returns to the page shown before the search",
+                    await page.locator("#set-plugins").is_visible()
+                    and not await page.locator("#set-general").is_visible(),
+                )
+                await page.click('.settings-nav [data-nav="general"]')
+                await page.locator('.theme-tile[data-v="dark"]').click()
+                await page.wait_for_function("() => document.documentElement.dataset.theme === 'dark'")
+                await page.locator('[data-seg="density"] [data-v="compact"]').click()
+                await page.wait_for_function("() => document.documentElement.dataset.density === 'compact'")
+                await page.locator("#set-general [data-reset-page]").click()
+                await page.wait_for_selector(".dialog")
+                await page.click(".dialog button:has-text('Reset')")
+                await page.wait_for_selector("#set-general.current")
+                after = session.get(BASE + "/api/settings").json()["settings"]
+                check(
+                    "Reset this page resets only that page",
+                    after["theme"] == "system"
+                    and after["density"] == "comfortable"
+                    and after["notes_trash_retention"] == "2w",
+                )
                 await page.click("[data-close]")
                 await page.click('#toolbar [data-a="settings"]')
                 check("reopening starts with no search", await page.input_value("[data-settings-search]") == "")
@@ -237,11 +264,23 @@ async def main():
                     and await page.input_value('[data-key="notes_equation_numbers"]') == "all",
                 )
                 await page.set_viewport_size({"width": 390, "height": 844})
+                check(
+                    "phone: a page has Back to the list of pages",
+                    await page.locator("[data-settings-back]").is_visible()
+                    and not await page.locator('.settings-nav [data-nav="notes"]').is_visible(),
+                )
+                await page.click("[data-settings-back]")
+                check(
+                    "phone: the list of pages shows values",
+                    await page.locator('.settings-nav [data-nav="notes"]').is_visible()
+                    and await page.locator('.settings-nav [data-nav="general"] [data-nav-value]').inner_text()
+                    == "System",
+                )
                 await page.fill("[data-settings-search]", "note width")
                 check(
-                    "phone search and Notes navigation remain usable",
+                    "phone search shows the matching rows",
                     await page.locator("[data-settings-search]").is_visible()
-                    and await page.locator('.settings-nav [data-nav="notes"]').is_visible(),
+                    and await page.locator('[data-seg="notes_width"]').is_visible(),
                 )
                 check(
                     "phone Settings has no page overflow",

@@ -180,7 +180,7 @@ async def main():
             await mac.wait_for_selector(".row[data-id]")
             mac_cdp, mac_auth = await authenticator(mac)
             await mac.keyboard.press(f"{mod}+,")
-            await mac.wait_for_selector("#set-devices")
+            await mac.wait_for_selector("#set-devices", state="attached")
             await mac.click('.settings-nav [data-nav="devices"]')
             await mac.wait_for_selector("[data-passkey-add]")
             desc = await mac.text_content("[data-passkeys-desc]")

@@ -252,7 +252,7 @@ async def main():
 
             # 5. Settings says the history is on
             await page.keyboard.press(f"{MOD}+,")
-            await page.wait_for_selector("#set-backups")
+            await page.wait_for_selector("#set-backups", state="attached")
             await page.click('.settings-nav [data-nav="backups"]')
             await page.wait_for_selector("[data-history-desc]")
             await wait_for(page, "!document.querySelector('[data-history-desc]').textContent.includes('Loading')")

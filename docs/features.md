@@ -47,9 +47,17 @@ see the [README](../README.md); for code ownership, see the [architecture map](a
   | `{journal}` | prl |
   | `{doi}` | physrevlett114220601 |
 
-- **Find preferences** with Search settings (or Cmd/Ctrl+F while Settings is open).
-  Matching built-in and plugin sections stay editable. Notes has its own section for enabling
-  notes, trash retention, width, equation numbering, physics commands and math macros.
+- **Settings** shows one page at a time, chosen in a navigation grouped as Preferences, Library,
+  Data & access, Extend and About. Every change saves at once; **Reset this page** at the foot of
+  a page puts that page's settings back to their defaults (Settings → Library resets them all).
+  Backups opens with how things stand (when the last backup was, Back Up Now) and the three most
+  recent backups. On a phone Settings starts as a list of its pages, with the current value of
+  some beside them, and each page opens in its place with Back.
+- **Find preferences** with the search at the top of the Settings navigation (or Cmd/Ctrl+F, or
+  `/`, while Settings is open). The matching rows of every page are shown together under their
+  page's title, still editable, with **Open page →**; the navigation counts the matches of each
+  page. Notes has its own page for enabling notes, trash retention, width, equation numbering,
+  physics commands and math macros.
 
 - **Workspace controls** follow what you are doing: Library keeps item actions and search;
   Notes offers new notes/folders, note export and note search; Tasks keeps its own search and
@@ -232,7 +240,7 @@ see the [README](../README.md); for code ownership, see the [architecture map](a
   dollars. Long notes retain the title, current section and relevant earlier definitions alongside
   recent text, within the existing model context budget. See [docs/autocompletion.md](autocompletion.md).
 - Sortable, resizable, re-orderable columns; light/dark theme; compact density;
-  keyboard navigation (see Settings → Library & Shortcuts).
+  keyboard navigation (see Settings → Keyboard Shortcuts).
 - Built-in PDF viewer with highlights, underlines, boxes (with a border, a fill or both: a filled
   box without a border highlights an area of the page), text boxes and drawings (pdf.js is bundled, so it works offline). Each annotation is saved on its own, for the PDF it was
   made on (an item's second PDF keeps its own), with the highlighted words; two tabs on one PDF never
@@ -283,10 +291,11 @@ Plugins add features without changing Synapse itself. To install one, put its fo
 `data/plugins/`, open **Settings → Plugins**, press **Look Again** and turn it on. Turning it on
 asks first and lists what the plugin may do (read the library, connect to sites, offer tools to
 AI apps). A plugin runs with full access to your library and computer, like any program you
-install, so turn on only plugins you trust. Each plugin that is on has a section of its own in
-Settings (listed under Plugins, opened by the **Settings** button on its row or "Settings:
-<plugin>" in the command palette) with its settings, its log and a Restart button; a plugin that keeps failing is turned off and Settings says why.
-Bundled and installed plugins share one list, with bundled rows labelled "comes with Synapse".
+install, so turn on only plugins you trust. Settings → Plugins lists them (All, On, Off or
+Installed by you) beside the page of the one you pick (or "Settings: <plugin>" in the command
+palette): what it may do, its switch, and while it is on its settings, its log and a Restart
+button; a plugin that keeps failing is turned off and Settings says why.
+Bundled and installed plugins share one list; a plugin's page says whether it comes with Synapse.
 If a plugin keeps the app from working, start with `python server.py --safe-mode` to use the basic
 library and notes while diagnosing it. Safe mode stops bundled and installed plugins, preserves
 their settings and enabled choices, and disables their controls until you restart normally.

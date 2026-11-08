@@ -155,25 +155,37 @@ indexing continues to report through notifications in every workspace.
 
 ## Settings organization and search
 
-`settings/page.ts` renders General appearance/library controls separately from Notes. The Notes
-section owns `notes_enabled`, `notes_trash_retention`, `notes_width`, `notes_equation_numbers`,
+`settings/page.ts` renders the grouped navigation (`NAV_GROUPS`) and one section per entry;
+`settingsView.ts` shows one at a time (`.current`; the entry is `.active`). Plugins is shown as its
+list beside the chosen plugin's section (`.settings-inner.plugins-mode`, `plugin-<id>` ids
+highlight Plugins). Each built-in page with settings ends with **Reset this page**, which saves
+`state.settingsMeta.defaults` for the keys that have a control on it (`[data-key]`, `[data-seg]`,
+plus the citation-key pattern and backup destination/folder); Settings → Library keeps Reset All.
+Below 700px wide Settings opens on the navigation (`#settings-view.at-root`), drawn as grouped
+lists with tiles and the values from `settings/navValues.ts`; a page replaces it, with a Back
+button (from a plugin's page, back to Plugins).
+
+General keeps appearance and item behaviour; the Notes section owns `notes_enabled`, `notes_trash_retention`, `notes_width`, `notes_equation_numbers`,
 `notes_math_physics` and `notes_math_macros`. Keys, values, defaults and immediate saving stay
 unchanged; there is no settings migration. Notes preferences remain reachable when Notes is off.
 
 `settings/search.ts` owns filtering and its observer lifecycle. Search settings matches all query
 words against section labels and help text, ignoring case and accents. Built-in sections and
 plugin-owned or contributed sections participate. Fields' saved values and macro-validation
-output are excluded. Matching sections and navigation entries remain visible; controls keep the
-same DOM, values and listeners. Matching plugin navigation is visible even when its group would
-normally be collapsed. The result count and empty state announce the outcome. Clearing search
-restores the section/scroll position from before the search. Cmd/Ctrl+F focuses Settings search;
-Escape in the search field clears a query. Explicit navigation to a filtered-out section clears
-the filter so a deep link cannot land in hidden content.
+output are excluded. While searching, every matching section is shown (`.search-hit`) under its
+title with an **Open page →** link (`[data-open-section]`); within it, rows (`.setting`,
+`.plugin-row`) that match on their own are shown alone and the others get `.search-miss`, while a
+section that matches only as a whole is shown entire. Controls keep the same DOM, values and
+listeners. Navigation entries show their count of matches (a plugin's section counts for
+Plugins) and entries without one are dimmed (`.nav-miss`). The summary ("N settings on M pages")
+and empty state announce the outcome. Clearing search returns to the page shown before it.
+Cmd/Ctrl+F or `/` focuses Settings search; Escape in the search field clears a query. Going to a
+page (navigation, Open page) clears the filter.
 
 A scoped MutationObserver rechecks results when plugins mount, redraw or remove controls and
 sections. It disconnects before Settings closes. Removing a matching plugin keeps the query;
-the remaining matches or the empty state replace it. The scroll observer ignores hidden sections
-and handles zero results. Search and navigation fit the phone layout too.
+the remaining matches or the empty state replace it. On phones the search stays above the
+navigation list and its results replace the list.
 
 ## State and actions
 
@@ -354,13 +366,14 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `importDialog.ts`, `exportDialog.ts` | Import with preview and duplicate flags; export to the formats. |
 | `identifierDialog.ts` | Add items by DOI, arXiv id or ISBN. |
 | `metadataReview.ts` | Retrieve Metadata: the `LookupJob` (parallel, cancellable, can run in the background) and the shared review dialog, also used by Metadata Check. Each diff row wraps its text and inline word highlights together beside its +/− marker, including after editing a suggestion. |
-| `settingsView.ts` | The Settings page: binds the controls and saves each change; `applyAppearance`. |
-| `settings/page.ts` | The Settings markup (`settingsHtml`). |
+| `settingsView.ts` | The Settings page: binds the controls and saves each change, shows one section at a time, Reset this page; `applyAppearance`. |
+| `settings/page.ts` | The Settings markup (`settingsHtml`), the grouped navigation (`NAV_GROUPS`, `navItemHtml`, `setNavBadge`). |
+| `settings/navValues.ts` | The current value beside some navigation entries (General · System…), shown on phones. |
 | `settings/backups.ts`, `settings/devices.ts` | Settings → Backups and Settings → Devices (pairing). |
 | `settings/updates.ts`, `updates.ts` | Settings → Updates (the version, newer commits, Check for Updates, Update Now and waiting for the restart) and the bell's "update available" ([updates](updates.md)). |
 | `settings/passkeys.ts` | Settings → Devices → Passkeys: adding one with `navigator.credentials.create`, removing one. |
 | `settings/aiAccess.ts` | Settings → AI Access: access tokens for `/mcp`, shown once with what to run for Claude Code or Codex, or the URL and header for another app. |
-| `settings/plugins.ts` | Settings → Plugins: the plugins found, turning them on (after a confirmation listing their access) and off, a Settings button on each that is on. Each plugin that is on gets a section of its own (`#set-plugin-<id>`, an entry under Plugins in the navigation): its settings drawn from the manifest (less those its frontend draws, `shows`), tools for other computers, what it offers, Restart and the log. `pluginsChanged()` redraws them when the change feed names `plugins`. See [plugins](plugins.md). |
+| `settings/plugins.ts` | Settings → Plugins: the list of plugins found (filter chips; a row opens the plugin's page; its switch turns it on, after a confirmation listing its access, or off) and the Plugins badge ("N on"). Each plugin that can be read has a section (`#set-plugin-<id>`) shown beside the list: its name, switch, what it may do and any problem, then, while it is on, its settings drawn from the manifest (less those its frontend draws, `shows`), tools for other computers, what it offers, Restart and the log. `pluginsChanged()` redraws them when the change feed names `plugins`. See [plugins](plugins.md). |
 
 **`views/notes/`: the notes workspace.** [Notes](notes.md) covers it in depth. In short:
 `notesView.ts` sets the workspace up and opens and closes notes; `workspace.ts` is the shared

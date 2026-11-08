@@ -9,6 +9,7 @@ import { confirmDialog } from '../../ui/dialog.js';
 import { toast, toastError } from '../../ui/toast.js';
 import { escapeHtml, formatDate, plural } from '../../util.js';
 import { asAdmin } from './confirm.js';
+import { setNavBadge } from './page.js';
 
 const POLL_MS = 3000;   // while an update is installed: is the new version answering yet?
 const GIVE_UP_MS = 15 * 60_000;
@@ -81,6 +82,7 @@ function paint(view: HTMLElement, st: UpdateStatus): void {
   view.querySelector<HTMLElement>('[data-update-desc]')!.innerHTML = versionHtml(st);
   view.querySelector<HTMLElement>('[data-update-body]')!.innerHTML = bodyHtml(st);
   view.querySelector<HTMLButtonElement>('[data-update-check]')!.hidden = !st.available;
+  setNavBadge(view, 'updates', st.behind ? 'New' : '');
 }
 
 let shown: UpdateStatus | null = null;

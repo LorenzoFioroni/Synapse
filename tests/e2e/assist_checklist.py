@@ -458,34 +458,29 @@ async def main():
             # Settings stays open while the plugin is stopped and started in another window.
             fake.models[:] = ["qwen2.5-coder:1.5b"]
             await page.keyboard.press(f"{MOD}+,")
-            nav = '.settings-nav [data-nav="plugin-autocompletion"]'
+            row = '.plugin-row[data-plugin="autocompletion"] [data-popen]'
             section = "#set-plugin-autocompletion"
             for cycle in range(2):
                 await page.click('.settings-nav [data-nav="plugins"]')
-                await page.click(nav)
+                await page.click(row)
                 s.post(BASE + "/api/plugin-host/autocompletion/disable").raise_for_status()
                 await page.evaluate("window.zcPlugins.sync()")
-                gone = await wait_for(
-                    page,
-                    f"!document.querySelector('{nav}') && !document.querySelector('{section}')",
-                )
+                gone = await wait_for(page, f"!document.querySelector('{section} [data-ai-state]')")
                 check(
                     f"Off removes its open Settings controls ({cycle + 1})",
                     gone and await page.locator("#settings-view").count() == 1,
                 )
                 check(
-                    "Settings selects General after its current plugin section disappears",
-                    await page.locator('.settings-nav [data-nav="general"]').evaluate(
-                        "el => el.classList.contains('active')"
-                    ),
+                    "Its page stays shown beside the list, now off",
+                    await page.locator(f"{section}.current").count() == 1
+                    and not await page.locator(f"{section} .p-title [data-ptoggle]").is_checked(),
                 )
                 s.post(BASE + "/api/plugin-host/autocompletion/enable").raise_for_status()
                 await page.evaluate("window.zcPlugins.sync()")
                 await wait_for(page, f"!!document.querySelector('{section} [data-ai-state]')")
                 check(
                     f"On restores exactly one Settings section ({cycle + 1})",
-                    await page.locator(nav).count() == 1
-                    and await page.locator(section).count() == 1
+                    await page.locator(section).count() == 1
                     and await page.locator(f"{section} [data-ai-state]").count() == 1,
                 )
             await page.keyboard.press("Escape")

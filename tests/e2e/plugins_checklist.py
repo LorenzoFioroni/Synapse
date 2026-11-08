@@ -71,10 +71,9 @@ SEC = "#set-plugin-recently-added"
 async def open_plugins(page):
     await page.wait_for_function("() => (!!window.zcPlugins)")
     await page.keyboard.press(f"{mod}+,")
-    await page.wait_for_selector("#set-plugins")
+    await page.wait_for_selector("#set-plugins", state="attached")
     await page.click('.settings-nav [data-nav="plugins"]')
     await page.wait_for_selector(f"#set-plugins {ROW}")
-    await page.wait_for_timeout(600)  # smooth scroll to the section
 
 
 async def main():
@@ -142,25 +141,29 @@ async def main():
                 "bundled with Synapse" in lead and "installed by you" in lead,
                 lead,
             )
+            badge = await page.inner_text('.settings-nav [data-nav="plugins"] [data-nav-badge]')
             check(
-                "the plugin sublist expands only in the Plugins area",
-                await page.locator(".settings-nav").evaluate("el => el.classList.contains('plugins-expanded')")
-                and await page.is_visible(".settings-nav [data-plugin-nav]"),
+                "plugins have no entries of their own in the navigation; Plugins counts those on",
+                await page.locator(".settings-nav [data-plugin-nav]").count() == 0 and badge.endswith(" on"),
+                badge,
+            )
+            check(
+                "a plugin's page is shown beside the list",
+                await page.locator(".settings-inner.plugins-mode .plugin-settings.current").count() == 1,
             )
             await page.click('.settings-nav [data-nav="general"]')
-            await page.wait_for_timeout(600)
+            await page.wait_for_timeout(300)
             check(
-                "away from Plugins the sidebar keeps only its top-level entry",
-                await page.is_hidden(".settings-nav [data-plugin-nav]")
-                and await page.is_visible('.settings-nav [data-nav="plugins"]'),
+                "away from Plugins only that page is shown",
+                await page.is_hidden("#set-plugins") and await page.is_visible("#set-general"),
             )
             await page.click('.settings-nav [data-nav="plugins"]')
-            await page.wait_for_timeout(600)
-            bundled = await page.text_content('[data-plugin="citation-counts"]')
+            await page.wait_for_timeout(300)
+            bundled = await page.text_content("#set-plugin-citation-counts .p-meta")
             check("one comes with Synapse", "comes with Synapse" in bundled, bundled[:200])
             toggle = f"{ROW} [data-ptoggle]"
             check("a new plugin is off", not await page.is_checked(toggle))
-            perms = await page.text_content(f"{ROW} .p-perms")
+            perms = await page.text_content(f"{SEC} .p-perms")
             check(
                 "what it may do is shown", "Reads your library" in perms and "Offers tools to AI apps" in perms, perms
             )
@@ -186,17 +189,19 @@ async def main():
 
             # its settings, drawn from the manifest, in a section of its own that its row's button opens
             check(
-                "a plugin that is on has a Settings button",
+                "its row opens its page",
                 await wait_for(lambda: page.is_visible(f"{ROW} [data-popen]")),
             )
             check("its row has no settings of its own", await page.locator(f"{ROW} [data-pset]").count() == 0)
             await page.click(f"{ROW} [data-popen]")
             await page.wait_for_selector(f'{SEC} [data-pset="keep_days"]')
             check(
-                "the section is in the navigation, under Plugins",
+                "its page is shown beside the list, with Plugins active in the navigation",
                 await wait_for(
                     lambda: page.evaluate(
-                        "document.querySelector('.settings-nav [data-nav=\"plugin-recently-added\"]')?.classList.contains('active')"
+                        "document.querySelector('.settings-nav [data-nav=\"plugins\"]')?.classList.contains('active')"
+                        " && document.querySelector('#set-plugin-recently-added').classList.contains('current')"
+                        " && document.querySelector('.plugin-row[data-plugin=\"recently-added\"]').classList.contains('selected')"
                     )
                 ),
             )
@@ -282,7 +287,7 @@ async def main():
             await page.click(".dialog button:has-text('Close')")
 
             # a plugin that cannot start
-            brow = '[data-plugin="broken-one"]'
+            brow = '.plugin-row[data-plugin="broken-one"]'
             await page.click(f"{brow} .switch")
             await page.click(".dialog button:has-text('Turn On')")
             ok = await wait_for(lambda: page.is_visible(f"{brow} .form-error"))

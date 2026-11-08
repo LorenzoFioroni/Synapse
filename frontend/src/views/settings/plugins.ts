@@ -1,8 +1,7 @@
-// Settings → Plugins: the plugins found in the plugins folder and turning them on and off. Each
-// plugin that is on gets a section of its own further down the page (and an entry under Plugins in
-// the navigation): its settings, drawn from what its manifest declares, the sections its frontend
-// adds (pluginSections.ts mounts those inside), what it offers, Restart and its log. A row's
-// Settings button goes to that section. See docs/plugins.md.
+// Settings → Plugins: the plugins found in the plugins folder, as a list beside the page of the
+// one chosen in it. Each plugin's page says what it may do and, while it is on, holds its
+// settings, drawn from what its manifest declares, the sections its frontend adds (pluginSections.ts
+// mounts those inside), what it offers, Restart and its log. See docs/plugins.md.
 import { api } from '../../api.js';
 import { settingsSections } from '../../extend.js';
 import { syncPlugins } from '../../plugins/host.js';
@@ -13,10 +12,12 @@ import { toast, toastError } from '../../ui/toast.js';
 import type { PluginInfo, PluginSetting, PluginsOverview } from '../../types.js';
 import { escapeHtml, formatDate } from '../../util.js';
 import { asAdmin } from './confirm.js';
-import { flashSaved } from './page.js';
+import { flashSaved, setNavBadge } from './page.js';
 
 let current: HTMLElement | null = null;
 let last: PluginsOverview | null = null;
+/** Which plugins the list shows (the chips above it). */
+let filter: 'all' | 'on' | 'off' | 'mine' = 'all';
 
 const STATUS: Record<PluginInfo['status'], string> = {
   on: 'On', off: 'Off', failed: 'Turned off after a failure', incompatible: 'Needs another version of Synapse',
@@ -26,8 +27,17 @@ const STATUS: Record<PluginInfo['status'], string> = {
 /** The id of a plugin's section in Settings (its navigation entry is ``plugin-<id>``). */
 export const pluginNavId = (id: string): string => `plugin-${id}`;
 
-/** Does the plugin have a section of its own? Those that are on (or were, until they failed). */
+/** Can the plugin's settings be changed? Those that are on (or were, until they failed). */
 export const hasSection = (p: PluginInfo): boolean => p.enabled && p.status !== 'invalid';
+
+/** Does the plugin have a page beside the list? Every one that can be read. */
+const hasPage = (p: PluginInfo): boolean => p.status !== 'invalid';
+
+const sourceWords = (p: PluginInfo): string => (p.core ? 'core plugin: part of Synapse' : p.source === 'bundled' ? 'comes with Synapse'
+  : p.source === 'dev' ? 'being written (restarts when its files change)' : p.replaces_bundled ? 'replaces the one that comes with Synapse' : 'installed by you');
+const problemHtml = (p: PluginInfo): string => (p.problem ? `<div class="form-error">${escapeHtml(STATUS[p.status])}: ${escapeHtml(p.problem)}${p.failed_at ? ` (${escapeHtml(formatDate(p.failed_at, true))})` : ''}</div>` : '');
+const usable = (p: PluginInfo, safeMode: boolean): boolean => p.status !== 'invalid' && p.status !== 'incompatible' && (!safeMode || !!p.core);
+const toggleHtml = (p: PluginInfo, safeMode: boolean): string => `<label class="switch" title="${p.enabled ? 'Turn off' : 'Turn on'}"><input type="checkbox" data-ptoggle aria-label="${escapeHtml(p.name)}" ${p.enabled && p.status !== 'failed' ? 'checked' : ''} ${usable(p, safeMode) ? '' : 'disabled'}><span></span></label>`;
 
 /** The event the Settings page hears when the plugins' sections were added, removed or redrawn. */
 export const SECTIONS_EVENT = 'plugin-sections';
@@ -92,9 +102,9 @@ function sectionBodyHtml(p: PluginInfo, safeMode: boolean, drawnElsewhere: Set<s
     p.schedules?.length ? `Runs ${p.schedules.map((x) => `<span class="mono">${escapeHtml(x.name)}</span> (${escapeHtml(x.rule)})`).join(', ')}` : '',
     p.jobs ? `${p.jobs} job${p.jobs === 1 ? '' : 's'} waiting` : '',
   ].filter(Boolean);
-  const problem = p.problem ? `<div class="form-error">${escapeHtml(STATUS[p.status])}: ${escapeHtml(p.problem)}${p.failed_at ? ` (${escapeHtml(formatDate(p.failed_at, true))})` : ''}</div>` : '';
-  return `${problem}
-    ${settings || remote ? `<div class="card">${settings}${remote}</div>` : ''}
+  const off = !hasSection(p) && p.settings?.length ? `<p class="sec-lead">Turn it on to change its settings.</p>` : '';
+  return `${off}
+    ${hasSection(p) && (settings || remote) ? `<div class="card">${settings}${remote}</div>` : ''}
     <div class="card p-about">
       ${offers.length ? `<div class="p-offers">${offers.map((o) => `<div>${o}</div>`).join('')}</div>` : ''}
       <div class="p-foot"><span class="mono p-folder" title="${escapeHtml(p.folder)}">${escapeHtml(p.folder)}</span>
@@ -103,31 +113,35 @@ function sectionBodyHtml(p: PluginInfo, safeMode: boolean, drawnElsewhere: Set<s
     </div>`;
 }
 
+/** A row of the list: name, one line about it, a problem if any, and its switch. */
 function rowHtml(p: PluginInfo, safeMode: boolean): string {
-  const usable = p.status !== 'invalid' && p.status !== 'incompatible' && (!safeMode || p.core);
-  const perms = permissionWords(p);
-  const meta = [p.author && `by ${escapeHtml(p.author)}`, p.version && `version ${escapeHtml(p.version)}`,
-    p.core ? 'core plugin: part of Synapse' : p.source === 'bundled' ? 'comes with Synapse' : p.source === 'dev' ? 'being written (restarts when its files change)' : p.replaces_bundled ? 'replaces the one that comes with Synapse' : ''].filter(Boolean).join(' · ');
-  const problem = p.problem ? `<div class="form-error">${escapeHtml(STATUS[p.status])}: ${escapeHtml(p.problem)}${p.failed_at ? ` (${escapeHtml(formatDate(p.failed_at, true))})` : ''}</div>` : '';
-  const button = hasSection(p)
-    ? `<button class="btn btn-ghost btn-sm" data-popen title="This plugin's settings, what it offers and its log">${icon('gear', 'icon-sm')} Settings</button>`
-    : p.problem ? `<button class="btn btn-ghost btn-sm" data-plog>${icon('text', 'icon-sm')} Log</button>` : '';
-  return `<div class="plugin-row" data-plugin="${escapeHtml(p.id)}">
+  const state = p.enabled && p.status !== 'failed' ? 'on' : 'off';
+  const mine = !p.core && p.source !== 'bundled';
+  const badge = p.running ? '' : p.enabled && safeMode && !p.core ? '<span class="badge warn">Safe mode</span>'
+    : p.status !== 'on' && p.status !== 'off' ? `<span class="badge warn">${escapeHtml(STATUS[p.status])}</span>` : '';
+  return `<div class="plugin-row" data-plugin="${escapeHtml(p.id)}" data-state="${state}"${mine ? ' data-mine' : ''}>
     <div class="p-head">
-      <span class="p-icon">${icon('plugin')}</span>
-      <div class="p-main">
-        <div class="p-name">${escapeHtml(p.name)}${p.running ? '' : p.enabled && safeMode && !p.core ? ' <span class="badge warn">Safe mode</span>' : ''}</div>
-        ${p.description ? `<div class="p-desc">${escapeHtml(p.description)}</div>` : ''}
-        ${meta ? `<div class="p-meta">${meta}</div>` : ''}
-        ${perms.length ? `<div class="p-perms">${perms.map((w) => `<span>${escapeHtml(w)}</span>`).join('')}</div>` : ''}
-        ${problem}
-      </div>
-      <div class="p-side">
-        ${button}
-        <label class="switch" title="${p.enabled ? 'Turn off' : 'Turn on'}"><input type="checkbox" data-ptoggle ${p.enabled && p.status !== 'failed' ? 'checked' : ''} ${usable ? '' : 'disabled'}><span></span></label>
-      </div>
+      <button class="p-main" ${hasPage(p) ? 'data-popen' : 'data-plog'} title="${hasPage(p) ? 'Its settings, what it may do and its log' : 'Its log'}">
+        <span class="p-name">${escapeHtml(p.name)}${badge ? ` ${badge}` : ''}</span>
+        ${p.description ? `<span class="p-desc">${escapeHtml(p.description)}</span>` : ''}
+      </button>
+      <div class="p-side">${toggleHtml(p, safeMode)}</div>
     </div>
+    ${problemHtml(p)}
   </div>`;
+}
+
+/** The top of a plugin's page: who made it, its switch, what it does and may do. */
+function headHtml(p: PluginInfo, safeMode: boolean): string {
+  const perms = permissionWords(p);
+  const meta = [p.author && `by ${escapeHtml(p.author)}`, p.version && `version ${escapeHtml(p.version)}`, sourceWords(p)].filter(Boolean).join(' · ');
+  return `<div class="p-title"><span class="p-tile">${icon('plugin')}</span>
+      <div class="p-main"><h2>${escapeHtml(p.name)}${p.running || p.status === 'off' ? '' : ` <span class="badge warn">${escapeHtml(STATUS[p.status])}</span>`}</h2>
+        <div class="p-meta">${meta}</div></div>
+      ${toggleHtml(p, safeMode)}</div>
+    ${p.description ? `<p class="lead">${escapeHtml(p.description)}</p>` : ''}
+    ${perms.length ? `<div class="p-perms" aria-label="What it may do">${perms.map((w) => `<span>${escapeHtml(w)}</span>`).join('')}</div>` : ''}
+    ${problemHtml(p)}`;
 }
 
 /** The manifest settings a plugin's frontend draws in its own part of the section (``shows``). */
@@ -139,11 +153,14 @@ function render(view: HTMLElement, data: PluginsOverview, force = false): void {
   const desc = view.querySelector<HTMLElement>('[data-plugins-desc]')!;
   const list = view.querySelector<HTMLElement>('[data-plugin-list]')!;
   desc.innerHTML = (data.safe_mode ? `<div class="form-error">Synapse was started in safe mode (<span class="mono">--safe-mode</span>): no plugin runs until it is started normally.</div>` : '')
-    + `Put a plugin's folder in <span class="mono">${escapeHtml(data.dir)}</span>, then press Look Again. Plugin API ${escapeHtml(data.api)}.`;
+    + `Add one: put its folder in <span class="mono">${escapeHtml(data.dir)}</span>, then Look Again. Plugin API ${escapeHtml(data.api)}.`;
   list.innerHTML = `<section class="plugin-group">
     <h3>Plugins</h3><div class="plugin-group-list">${data.plugins.length
       ? data.plugins.map((p) => rowHtml(p, data.safe_mode)).join('')
       : '<div class="p-empty">No plugins installed.</div>'}</div></section>`;
+  const on = data.plugins.filter((p) => p.enabled && p.status !== 'failed').length;
+  setNavBadge(view, 'plugins', `${on} on`);
+  applyFilter(view);
   renderSections(view, data, force);
 }
 
@@ -151,18 +168,10 @@ function render(view: HTMLElement, data: PluginsOverview, force = false): void {
  *  (``.plugin-custom``) and is not redrawn while one of its fields is being typed in. */
 function renderSections(view: HTMLElement, data: PluginsOverview, force = false): void {
   const anchor = view.querySelector<HTMLElement>('#set-plugins')!;
-  const navAnchor = view.querySelector<HTMLElement>('.settings-nav [data-nav="plugins"]')!;
-  const sections = data.plugins.filter(hasSection);
-  const wanted = [...sections.filter((p) => p.core), ...sections.filter((p) => !p.core)];
+  const wanted = data.plugins.filter(hasPage);
   const keep = new Set(wanted.map((p) => pluginNavId(p.id)));
-  let activeRemoved = false;
   view.querySelectorAll<HTMLElement>('.plugin-settings').forEach((s) => { if (!keep.has(s.dataset.section!)) s.remove(); });
-  view.querySelectorAll<HTMLElement>('.settings-nav [data-plugin-nav]').forEach((b) => {
-    if (keep.has(b.dataset.nav!)) return;
-    activeRemoved ||= b.classList.contains('active');
-    b.remove();
-  });
-  let after: Element = anchor, navAfter: Element = navAnchor;
+  let after: Element = anchor;
   for (const p of wanted) {
     const id = pluginNavId(p.id);
     let section = view.querySelector<HTMLElement>(`#set-${CSS.escape(id)}`);
@@ -172,29 +181,25 @@ function renderSections(view: HTMLElement, data: PluginsOverview, force = false)
       section.id = `set-${id}`;
       section.dataset.section = id;
       section.dataset.plugin = p.id;
-      section.innerHTML = `<h2></h2><p class="lead"></p><div class="plugin-custom"></div><div class="plugin-generic"></div>`;
+      section.innerHTML = `<div class="p-detail-head"></div><div class="plugin-custom"></div><div class="plugin-generic"></div>`;
     }
-    section.querySelector('h2')!.innerHTML = `${escapeHtml(p.name)}${p.running ? '' : ` <span class="badge warn">${escapeHtml(STATUS[p.status])}</span>`}`;
-    section.querySelector('.lead')!.textContent = p.description || '';
+    section.querySelector('.p-detail-head')!.innerHTML = headHtml(p, data.safe_mode);
     const generic = section.querySelector<HTMLElement>('.plugin-generic')!;
     const active = document.activeElement;
     const typing = !!active && generic.contains(active) && (active.matches('input[type=text], input[type=number]') || !!active.closest('.string-list'));
     if (force || !typing) generic.innerHTML = sectionBodyHtml(p, data.safe_mode, drawnByFrontend(p.id));
     if (after.nextElementSibling !== section) after.after(section);
     after = section;
-
-    let nav = view.querySelector<HTMLElement>(`.settings-nav [data-nav="${CSS.escape(id)}"]`);
-    if (!nav) {
-      nav = document.createElement('button');
-      nav.className = 'side-item sub';
-      nav.dataset.nav = id;
-      nav.dataset.pluginNav = p.id;
-    }
-    nav.innerHTML = `${icon('plugin')}<span>${escapeHtml(p.name)}</span>`;
-    if (navAfter.nextElementSibling !== nav) navAfter.after(nav);
-    navAfter = nav;
   }
-  view.dispatchEvent(new CustomEvent(SECTIONS_EVENT, { detail: { activeRemoved } }));
+  view.dispatchEvent(new CustomEvent(SECTIONS_EVENT));
+}
+
+/** Show the rows the chosen chip asks for. */
+function applyFilter(view: HTMLElement): void {
+  view.querySelectorAll<HTMLElement>('[data-pfilter]').forEach((c) => c.classList.toggle('active', c.dataset.pfilter === filter));
+  view.querySelectorAll<HTMLElement>('[data-plugin-list] .plugin-row').forEach((row) => {
+    row.hidden = filter === 'on' ? row.dataset.state !== 'on' : filter === 'off' ? row.dataset.state !== 'off' : filter === 'mine' ? !row.hasAttribute('data-mine') : false;
+  });
 }
 
 /** Show the plugins in the open Settings page ``view``; ``force`` redraws a section being typed in
@@ -286,10 +291,17 @@ function showLog(p: PluginInfo): void {
 /** Wire the list and the sections; ``go`` shows a section of the page (a row's Settings button). */
 export function bindPlugins(view: HTMLElement, go: (navId: string) => void): void {
   view.querySelector<HTMLButtonElement>('[data-plugins-rescan]')!.onclick = () => refreshPlugins(view);
+  filter = 'all';
+  view.querySelector('.plugin-filters')!.addEventListener('click', (e) => {
+    const chip = (e.target as Element).closest<HTMLElement>('[data-pfilter]');
+    if (!chip) return;
+    filter = chip.dataset.pfilter as typeof filter;
+    applyFilter(view);
+  });
   const content = view.querySelector<HTMLElement>('.settings-content')!;
   bindStringLists(content);
   // the generic parts only: what a plugin's frontend draws in its section is its own
-  const ours = (el: Element) => !!el.closest('[data-plugin-list], .plugin-generic');
+  const ours = (el: Element) => !!el.closest('[data-plugin-list], .plugin-generic, .p-detail-head');
   content.addEventListener('change', (e) => {
     const el = e.target as HTMLInputElement;
     if (!ours(el)) return;
