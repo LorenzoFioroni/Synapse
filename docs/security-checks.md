@@ -44,6 +44,14 @@ analysis completion and actual findings/review comments. Shared policy and tests
 recurring patterns (SSRF, HTML handling, permissions and credential/error redaction) rather than
 just hiding scanner warnings.
 
+The device-cookie renewal path intentionally reissues an authenticated token. Before renewal,
+`Devices.check` requires its SHA-256 to match a registered device; pairing and passkey sign-in
+generate new tokens on the server. `set_device_cookie` also rejects values outside a complete
+URL-safe token match before constructing the header. A `py/cookie-injection` report on that
+path needs this data-flow review: an unknown or tampered cookie must receive 401 without a
+replacement cookie. `tests/test_devices.py` covers that refusal and checks renewal preserves
+the token, lifetime, HttpOnly, SameSite, path and HTTPS Secure attributes.
+
 The [container smoke workflow](../.github/workflows/container-smoke.yml) builds deployment PRs,
 validates Compose with example values and starts the image with disposable tmpfs data, no published
 ports and the normal hardening options. It waits for the health check and removes the container.

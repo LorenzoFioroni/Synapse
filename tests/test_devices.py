@@ -360,15 +360,50 @@ def test_backups_leave_devices_out(lan_app, mac, ipad):
         assert not any("auth" in n for n in tar.getnames())
 
 
-def test_cookie_refreshed_while_in_use(lan_app, mac, ipad):
-    pair(mac, ipad)
+@pytest.mark.parametrize("scheme", ["http", "https"])
+def test_cookie_refreshed_while_in_use(lan_app, mac, ipad, scheme):
+    from http.cookies import SimpleCookie
+
+    _, paired = pair(mac, ipad)
+    original = SimpleCookie(paired.headers["Set-Cookie"])[devmod.COOKIE].value
     store = lan_app.extensions["synapse"].devices
     t = [store.clock() + devmod.TOUCH_EVERY + 5]
     store.clock = lambda: t[0]
-    r = remote(ipad, "GET", "/api/items")
-    assert r.status_code == 200 and devmod.COOKIE in (r.headers.get("Set-Cookie") or "")
-    r = remote(ipad, "GET", "/api/items")  # within a minute: no new cookie
+    r = remote(ipad, "GET", "/api/items", base_url=f"{scheme}://{LAN_HOST}")
+    assert r.status_code == 200
+    cookies = r.headers.getlist("Set-Cookie")
+    assert len(cookies) == 1
+    renewed = SimpleCookie(cookies[0])[devmod.COOKIE]
+    assert renewed.value == original
+    assert renewed["max-age"] == str(devmod.COOKIE_MAX_AGE)
+    assert renewed["httponly"] and renewed["samesite"] == "Lax" and renewed["path"] == "/"
+    assert bool(renewed["secure"]) == (scheme == "https")
+    r = remote(ipad, "GET", "/api/items", base_url=f"{scheme}://{LAN_HOST}")  # within a minute: no new cookie
+    assert r.status_code == 200
     assert devmod.COOKIE not in (r.headers.get("Set-Cookie") or "")
+
+
+@pytest.mark.parametrize("value", ["unknown_url-safe_token", "a;b", "a b", "é", "x" * 200])
+def test_unknown_device_cookie_is_never_refreshed(ipad, value):
+    ipad.set_cookie(devmod.COOKIE, value, domain=LAN_HOST.split(":")[0])
+    r = remote(ipad, "GET", "/api/items")
+    assert r.status_code == 401
+    assert not r.headers.getlist("Set-Cookie")
+
+
+def test_tampered_device_cookie_is_never_refreshed(lan_app, mac, ipad):
+    from http.cookies import SimpleCookie
+
+    _, paired = pair(mac, ipad)
+    token = SimpleCookie(paired.headers["Set-Cookie"])[devmod.COOKIE].value
+    replacement = "A" if token[0] != "A" else "B"
+    ipad.set_cookie(devmod.COOKIE, replacement + token[1:], domain=LAN_HOST.split(":")[0])
+    store = lan_app.extensions["synapse"].devices
+    now = store.clock() + devmod.TOUCH_EVERY + 5
+    store.clock = lambda: now
+    r = remote(ipad, "GET", "/api/items")
+    assert r.status_code == 401
+    assert not r.headers.getlist("Set-Cookie")
 
 
 @pytest.mark.parametrize(
