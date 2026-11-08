@@ -316,3 +316,15 @@ def test_embedded_ipv4_addresses_are_judged_by_the_ipv4_address(address, public)
     import ipaddress
 
     assert http.is_public_address(ipaddress.ip_address(address)) is public
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://user:secret@journal.example/pdf", "https://journal.example@127.0.0.1/pdf", "ftp://journal.example/pdf"],
+)
+def test_addresses_with_credentials_or_other_schemes_are_refused_before_dns(pinned_network, url):
+    *_, lookups, connections, _ = pinned_network
+    with pytest.raises(http.PublicAddressError) as refused:
+        http.public_request("GET", url, timeout=2)
+    assert refused.value.status == 400
+    assert lookups == [] and connections == []
