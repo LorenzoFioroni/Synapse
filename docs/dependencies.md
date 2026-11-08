@@ -29,6 +29,11 @@ artifacts or dependencies missing from the lock. Wheel-only installation avoids 
 unlocked source-build toolchain. CI verifies these commands on macOS and Linux, with Python 3.10
 and 3.13. Other supported Python versions use the corresponding markers in the same files.
 
+Optional `pre-commit` hooks are installed only on Python 3.11+: their `virtualenv` dependency
+otherwise selects an unpatched `filelock` on 3.10. Synapse, pytest, lint and typing still support
+Python 3.10. Use those checks directly on 3.10, or a separate 3.11+ environment for hooks. PyYAML
+is an explicit development dependency for agent-adapter tests, independent of the optional hooks.
+
 Repeat the locked install after pulling a dependency change, before restarting the service.
 Installing with pip does not remove unrelated packages already in an environment; recreate the
 virtual environment when an exact clean environment is needed. Optional PyMuPDF/Pillow and browser

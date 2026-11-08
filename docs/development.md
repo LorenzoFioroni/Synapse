@@ -23,8 +23,11 @@ Installation needs the package registries; checks below do not install tools. Se
 
 Optional setup:
 
-- `pre-commit install` enables the existing local formatting/type-check hooks. They use installed
-  tools and do not replace final verification.
+- On Python 3.11+, `pre-commit install` enables the existing local formatting/type-check hooks.
+  They use installed tools and do not replace final verification. The hooks' environment tooling
+  has no patched `filelock` release for Python 3.10, so it is omitted from that development lock
+  branch. On 3.10, run the same checks directly, or install hooks from a separate Python 3.11+
+  development environment; Synapse itself and the normal checks still support 3.10.
 - For browser checks, run `python -m pip install -r tools/requirements-e2e.txt` and
   `python -m playwright install chromium` (also `webkit` for portable coverage). See
   [browser checklists](testing.md#browser-checklists) for platform requirements.

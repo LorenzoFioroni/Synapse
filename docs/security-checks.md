@@ -27,7 +27,9 @@ Python jobs run on 3.10 and 3.13 to cover the lock's conditional versions. They 
 development lock (which includes runtime dependencies), plus pinned browser and resolver tools with
 wheels only, then snapshot every resolved package/version. An isolated `pip-audit==2.10.1` audits
 that snapshot without resolving it again or modifying Synapse. Known Python vulnerabilities fail
-the job. The scanner itself lives outside the audited application environment.
+the job. The scanner itself runs on Python 3.13 outside the audited application environment, even
+when the snapshot was resolved on 3.10. Optional pre-commit tooling is omitted on 3.10 because its
+filelock dependency has no compatible patched release; application and test coverage remain.
 
 Each of the four npm lockfiles (`frontend`, `tools/cm6`, `tools/graph`, `tools/md`) is audited with
 `npm audit --package-lock-only --ignore-scripts --audit-level=high`, without installing packages.
