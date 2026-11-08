@@ -307,3 +307,11 @@ def test_the_environment_configures_updates(tmp_path, monkeypatch):
         "http://updater:9000",
         "secret-token-value",
     )
+
+
+def test_an_unusable_source_is_named_without_its_credentials():
+    from backend.online.updates import UpdateError, parse_source
+
+    with pytest.raises(UpdateError) as refused:
+        parse_source("https://owner:ghp_secret@github.com/owner/Synapse.git#main")
+    assert "ghp_secret" not in str(refused.value)

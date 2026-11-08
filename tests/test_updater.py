@@ -194,3 +194,15 @@ def test_the_http_api_needs_the_token(U, make):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_a_token_in_the_source_address_never_reaches_synapse(make, U):
+    # A private repository's SYNAPSE_SOURCE carries credentials; Settings shows the log to every device.
+    updater, docker = make()
+    secret = "ghp_" + "s" * 36
+    updater.settings.repo = f"https://owner:{secret}@github.com/owner/Synapse.git"
+    updater.start()
+    answer = json.dumps(updater.public())
+    assert secret not in answer and "https://***@github.com/owner/Synapse.git" in answer
+    assert any(secret in " ".join(c) for c, _ in docker.calls)  # git itself still gets the address
+    assert U.redact("fetch https://x@h/a and http://u:p@h/b") == "fetch https://***@h/a and http://***@h/b"
