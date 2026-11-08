@@ -82,7 +82,7 @@ const desc = (text: string) => (text ? `<div class="s-desc">${text}</div>` : '')
 
 function switchRow(key: Key, title: string, text = ''): string {
   return `<div class="setting"><div class="s-text"><div class="s-title">${title}</div>${desc(text)}</div>
-    <div class="s-control">${saved}<label class="switch"><input type="checkbox" data-key="${key}" aria-label="${escapeHtml(title.replace(/<[^>]*>/g, ''))}" ${setting(key) ? 'checked' : ''}><span></span></label></div></div>`;
+    <div class="s-control">${saved}<label class="switch"><input type="checkbox" data-key="${key}" aria-label="${escapeHtml(title)}" ${setting(key) ? 'checked' : ''}><span></span></label></div></div>`;
 }
 
 function selectRow(key: Key, title: string, text: string, options: Options): string {
