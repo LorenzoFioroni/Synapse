@@ -6,8 +6,6 @@ import { api } from './api.js';
 import { byId, state } from './store.js';
 import type { AskChoice, Item } from './types.js';
 import { escapeHtml } from './util.js';
-import { requestPublisherPdfs } from './publisherPdfs.js';
-import { toast } from './ui/toast.js';
 
 export type AfterAddKind = 'metadata' | 'pdf' | 'references' | 'tags';
 
@@ -60,14 +58,5 @@ export async function runAfterAdd(ids: string[], { metadata = false, pdf = false
     // the others are queued above already
     retrieveInBackground(ids, { references, referencesQueued: withId });
   }
-  if (pdf) {
-    const publisherIds = ids.filter((id) => {
-      const it = byId(id);
-      return it?.doi && !it.doi.toLowerCase().startsWith('10.48550/') && !it.attachments?.some((a) => a.type === 'pdf');
-    });
-    const browser = await requestPublisherPdfs(publisherIds);
-    if (browser) toast('Looking for publisher PDFs in the browser extension.');
-    const remaining = browser ? ids.filter((id) => !publisherIds.includes(id)) : ids;
-    if (remaining.length) A.findPdfs(remaining, { auto: true });
-  }
+  if (pdf) A.findPdfs(ids, { auto: true });
 }

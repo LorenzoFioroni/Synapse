@@ -9,6 +9,7 @@ from flask import Blueprint, Response, abort, jsonify, request, send_from_direct
 from werkzeug.security import safe_join
 from werkzeug.utils import secure_filename
 
+from .. import connector
 from ..online import remote_pdf
 from ..online.http import BROWSER_UA
 from ..pdf.files import HEADER_WINDOW, file_is_pdf, looks_like_pdf
@@ -123,6 +124,17 @@ def find_pdf(item_id):
     if result["status"] == "success":
         return jsonify(status="success", attachment=result["attachment"], source=result.get("source"))
     return jsonify(result)
+
+
+@bp.post("/api/items/find-publisher-pdfs")
+def request_browser_pdfs():
+    data = body()
+    if not isinstance(data, dict):
+        return error("The request must be an object containing item IDs.")
+    try:
+        return jsonify(accepted=connector.request_browser_pdfs(svc(), data.get("ids")))
+    except connector.BadRequest as exc:
+        return failure(exc)
 
 
 # ------------------------------------------------------------------ files

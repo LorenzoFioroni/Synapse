@@ -96,6 +96,9 @@ async function api(path, opts = {}) {
 async function init() {
   try {
     ({ server, token } = await loadConnection());
+    if (params.has('library') && params.get('library') !== server) {
+      throw new Error('The library connection changed. Start the PDF request again from the intended library.');
+    }
     const ping = await api('/api/connector/ping');
     if (!ping.ok) throw new Error(ping.data?.error || `Error ${ping.status}`);
     if (requestedIds && !ping.data.capabilities?.publisher_pdfs) throw new Error('Update Synapse to search the items selected in the app.');

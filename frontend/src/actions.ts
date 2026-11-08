@@ -7,6 +7,7 @@ import { progressToast, toast, toastError } from './ui/toast.js';
 import type { Attachment, Counts, Item, Sidebar, SmartFolder, Tag } from './types.js';
 import { plural } from './util.js';
 import { type ApiError, api, openAttachment } from './api.js';
+import { publisherPdfIds, requestPublisherPdfs } from './publisherPdfs.js';
 
 let loadSeq = 0;
 
@@ -239,10 +240,24 @@ export function openPdf(itemOrId: Item | string | undefined, att?: Attachment): 
   else toast('This item has no PDF yet. Try “Find Available PDF” or add one.', { timeout: 5000 });
 }
 
+async function requestBrowserPdfs(items: Item[]): Promise<string[]> {
+  const ids = publisherPdfIds(items);
+  if (!ids.length || ids.length > 200) return [];
+  if (await requestPublisherPdfs(ids)) return ids;
+  try {
+    if ((await api.requestPublisherPdfs(ids)).accepted) return ids;
+  } catch { /* An older server or unavailable receiver leaves normal retrieval in place. */ }
+  return [];
+}
+
 export async function findPdf(id: string): Promise<void> {
   const item = byId(id);
   const job = progressToast(`Searching for a PDF of “${(item?.title || 'item').slice(0, 60)}”…`);
   try {
+    if ((await requestBrowserPdfs(item ? [item] : [])).length) {
+      job.finish('Looking for publisher PDFs in the browser extension.');
+      return;
+    }
     const res = await api.findPdf(id);
     if (res.status === 'success') {
       job.finish('PDF found and attached', { type: 'success' });
@@ -254,14 +269,20 @@ export async function findPdf(id: string): Promise<void> {
 }
 
 /**
- * Find PDFs for several items, one after another (gentle on Unpaywall/arXiv).
+ * Ask the browser for eligible publisher PDFs, then search remaining items on the server.
  * Items that already have an attachment are skipped. Cancellable.
  */
 export async function findPdfs(ids: string[], { auto = false } = {}): Promise<void> {
   const items = ids.map(byId).filter((i): i is Item => !!i);
-  const todo = items.filter((i) => !(i.attachments || []).length);
+  let todo = items.filter((i) => !(i.attachments || []).length);
   const skipped = items.length - todo.length;
   if (!todo.length) { if (!auto) toast(`All ${plural(items.length, 'selected item')} already have a PDF`); return; }
+  const inBrowser = new Set(await requestBrowserPdfs(todo));
+  if (inBrowser.size) {
+    toast('Looking for publisher PDFs in the browser extension.');
+    todo = todo.filter((it) => !inBrowser.has(it.id));
+  }
+  if (!todo.length) return;
   let cancelled = false;
   const pt = progressToast('Finding PDFs…', { onCancel: () => { cancelled = true; } });
   const found: string[] = [], missing: string[] = [], failed: string[] = [];
@@ -280,6 +301,7 @@ export async function findPdfs(ids: string[], { auto = false } = {}): Promise<vo
   }
   const notFound = [...missing, ...failed];
   const parts = [`Found ${plural(found.length, 'PDF')}`];
+  if (inBrowser.size) parts.push(`${inBrowser.size} searching in browser`);
   if (notFound.length) parts.push(`${notFound.length} not found`);
   if (skipped) parts.push(`${skipped} already had one`);
   if (cancelled) parts.push('stopped early');

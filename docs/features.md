@@ -101,8 +101,14 @@ see the [README](../README.md); for code ownership, see the [architecture map](a
   Shift-click a node, or **Centre graph here** on a paper's card, to move the centre. Clicking a
   paper shows a card (paper note, Show in Library, PDF, Add to Library). It is a contributed plugin
   (**Graph**, also under **Plugins** in the sidebar): turn it off in Settings → Plugins if you don't use it.
-- **Find Available PDF** (single or batch) takes the publisher's own PDF first (the plugin
-  Publisher PDFs: on your university's network or VPN, where the subscription gives access, you get
+- **Find Available PDF** (single or batch) first asks the browser extension for publisher DOI
+  items without a PDF, using that browser's campus/VPN access and publisher sign-ins. It opens
+  the extension's finder when the connected extension accepts; other sources follow a failed
+  publisher attempt. From a phone, an already-connected computer can accept instead: enable
+  **Handle PDF retrieval from my other devices** in that computer's extension options. It must
+  accept within five seconds; unavailable browsers leave no job for a later reconnect. Without
+  an accepting browser, it searches from the server's network, taking the publisher's own PDF
+  first (the plugin Publisher PDFs: on your university's network or VPN, where the subscription gives access, you get
   the published version), then open-access copies (Unpaywall, arXiv: the plugin Open-Access PDFs);
   both are on by default, and other plugins can add places to look. It checks the file is really
   the right paper. Batch runs skip items

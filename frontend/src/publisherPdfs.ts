@@ -1,5 +1,12 @@
 // The extension reads publisher pages with this browser's institutional access. No extension ID,
 // bearer token or publisher URL crosses this DOM bridge; the worker validates its library origin.
+import type { Item } from './types.js';
+
+export function publisherPdfIds(items: Item[]): string[] {
+  return items.filter((it) => it.doi && !it.doi.toLowerCase().startsWith('10.48550/')
+    && !it.attachments?.some((a) => a.type === 'pdf')).map((it) => it.id);
+}
+
 export function requestPublisherPdfs(ids: string[]): Promise<boolean> {
   if (document.documentElement.getAttribute('data-synapse-extension') !== 'pdfs' || !ids.length || ids.length > 200) return Promise.resolve(false);
   return new Promise((resolve) => {

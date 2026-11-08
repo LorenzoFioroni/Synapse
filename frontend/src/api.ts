@@ -75,6 +75,7 @@ export const api = {
     return request<{ created: PdfImport[] }>('POST', '/api/items/from_pdf', fd);
   },
   findPdf: (id: string) => request<FindPdfResult>('POST', `/api/items/${id}/find_pdf`),
+  requestPublisherPdfs: (ids: string[]) => request<{ accepted: boolean }>('POST', '/api/items/find-publisher-pdfs', { ids }, AbortSignal.timeout(8000)),
 
   uploadAttachments: (id: string, files: Iterable<File>) => { const fd = new FormData(); [...files].forEach((f) => fd.append('file', f)); return request('POST', `/api/items/${id}/attachments`, fd); },
   renameAttachment: (attId: number, name: string) => request<Attachment>('PATCH', `/api/attachments/${attId}`, { name }),

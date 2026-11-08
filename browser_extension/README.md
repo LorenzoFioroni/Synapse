@@ -86,8 +86,8 @@ because of such checks. The browser must be on the subscribing network (the serv
 
 ### Starting from Synapse
 
-Reload this extension after updating it, then reload your Synapse page. When **Find available PDFs**
-is selected while adding/importing up to 200 items, Synapse asks the extension to try publisher
+Reload this extension after updating it, then reload your Synapse page. **Find Available PDF**
+(single or batch) and PDF lookup while adding/importing up to 200 items ask the extension to try publisher
 PDFs for those DOI items first. The finder opens with just those items. Its first run asks you to
 click **Find PDFs** to grant publisher access; subsequent app requests start automatically if that
 access is still granted. Keep its window open and use **Next batch** for more than 50 selected items.
@@ -100,10 +100,29 @@ cannot connect or the server is older, the app keeps using its normal PDF source
 is shared with the Synapse page or publisher. The extension registers its small library-page bridge
 only on the configured host; it independently rejects requests from another origin or a subframe.
 
+### Retrieval from your phone or another device
+
+On the computer with campus/VPN access, open this extension's **Options**, enable
+**Handle PDF retrieval from my other devices**, and **Save**. Grant publisher access when asked.
+Keep that browser running and connected to the configured library. Synapse and the extension
+must both support live PDF requests (extension 1.5 or newer).
+
+**Find Available PDF** on your phone can then open the finder on that computer and use its
+browser session and institutional access. The phone itself does not need the VPN. Interactive
+CAPTCHAs or expired publisher sign-ins may still need attention on the computer.
+
+This is an immediate handoff: the computer must already be listening, and has five seconds to
+accept. With no available receiver, or if acceptance fails, the app uses its server sources.
+There is no offline queue and nothing is fetched later merely because a browser reconnects.
+Uncheck the option and save to stop receiving. The choice stays in this browser, bound to its
+configured library; it is not synced to other computers. Normal same-browser retrieval works
+without enabling this option.
+
 Permissions: `activeTab` + `scripting` to read the current page only when you
 click the button (and the pages Find Missing PDFs opens, with the HTTPS access it asks for), `storage` for the settings, and access to `127.0.0.1` /
-`localhost` to talk to a local library. For remote libraries, optional HTTPS host permission
-is requested only for the server you enter. Citation data and PDFs are sent to that server.
+`localhost` to talk to a local library. Saving a remote connection asks for that server's HTTPS
+permission; enabling cross-device PDF retrieval also asks for publisher HTTPS access. Citation
+data and PDFs are sent to the configured library.
 
 ## Changing it
 

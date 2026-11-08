@@ -13,6 +13,8 @@
   <label class="f" for="token">Browser token (remote server)</label>
   <input type="password" id="token" disabled autocomplete="off" spellcheck="false" placeholder="syn_connector_…">
   <div class="hint" style="text-align:left">In Synapse, open Settings → AI Access → New Browser Token and name it “Browser extension”. Paste it here. The token stays in this browser and is not synced. It keeps working across restarts until you revoke it in Synapse. Leave it empty for localhost.</div>
+  <div class="checks"><label><input type="checkbox" id="pdf-receiver" disabled> Handle PDF retrieval from my other devices</label></div>
+  <div class="hint" style="text-align:left">While this browser is connected, your phone can use its campus/VPN access and publisher sign-ins. Saving asks permission to read publisher pages. Requests expire promptly if this browser cannot accept them; nothing waits for a later reconnect. Interactive CAPTCHAs may need your attention here.</div>
   <div id="status" role="status"></div>
   <script type="module" src="options.js"></script>
 </body>
