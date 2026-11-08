@@ -36,8 +36,10 @@ class HttpTransport:
             return 400, error_reply(None, INVALID_REQUEST, f"Unsupported MCP protocol version: {protocol_version}")
         try:
             message = json.loads(body)
-        except (ValueError, UnicodeDecodeError) as e:
-            return 400, error_reply(None, PARSE_ERROR, f"Parse error: {e}")
+        except json.JSONDecodeError as e:
+            return 400, error_reply(None, PARSE_ERROR, f"Parse error at line {e.lineno}, column {e.colno}.")
+        except (ValueError, UnicodeDecodeError):
+            return 400, error_reply(None, PARSE_ERROR, "Parse error: the request is not UTF-8 JSON.")
         with self._lock:
             if self._server is None:
                 self._server = self._build()

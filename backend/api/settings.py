@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request
 
 from ..library import citekeys
 from ..settings import ADMIN_KEYS, DEFAULTS, SEARCH_MODES, SettingsError
-from . import admin, body, error, svc
+from . import admin, body, failure, svc
 
 bp = Blueprint("settings", __name__, url_prefix="/api/settings")
 
@@ -37,7 +37,7 @@ def put_settings():
     try:
         return jsonify(settings=settings.update(changes))
     except SettingsError as e:
-        return error(str(e))
+        return failure(e)
 
 
 @bp.post("/reset")

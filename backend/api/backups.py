@@ -7,7 +7,7 @@ from flask import Blueprint, Response, g, jsonify, request
 from ..backup import BackupError
 from ..backup.remote import PROVIDERS
 from ..online.backup_oauth import CALLBACK, AuthorizationError
-from . import admin, body, error, svc
+from . import admin, body, error, failure, svc
 
 bp = Blueprint("backups", __name__, url_prefix="/api/backups")
 REFUSED = "Remote backup connections can only be changed on the computer running Synapse."
@@ -26,7 +26,7 @@ def _owner() -> str:
 @bp.errorhandler(BackupError)
 @bp.errorhandler(AuthorizationError)
 def remote_error(exc):
-    return error(str(exc))
+    return failure(exc)
 
 
 @bp.after_request
@@ -46,7 +46,7 @@ def create():
     try:
         entry = svc().backups.create("manual")
     except BackupError as e:
-        return error(str(e), 500)
+        return failure(e, 500)
     return jsonify(backup=entry, **svc().backups.status()), 201
 
 
@@ -59,7 +59,7 @@ def restore():
             return error("Choose a local or remote backup.")
         result = svc().backups.restore_remote(name) if data.get("source") == "remote" else svc().backups.restore(name)
     except BackupError as e:
-        return error(str(e))
+        return failure(e)
     return jsonify(**result, **svc().backups.status())
 
 

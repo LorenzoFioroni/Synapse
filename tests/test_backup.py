@@ -163,7 +163,9 @@ def test_unwritable_folder_fails_without_touching_data(svc, library, tmp_path, m
     monkeypatch.setattr(type(svc.backups), "dir", property(lambda self: blocked / "sub"))
     with pytest.raises(BackupError):
         svc.backups.create("manual")
-    assert "Backup failed" in svc.backups.status()["error"]
+    error = svc.backups.status()["error"]
+    assert "Backup failed" in error
+    assert str(tmp_path) not in error  # any signed-in device sees it: the reason, not the server's paths
     assert sorted(p["id"] for p in svc.papers.list()) == before
     assert (svc.config.notes_dir / "ideas" / "plan.md").exists()
 

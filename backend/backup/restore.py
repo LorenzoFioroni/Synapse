@@ -89,7 +89,9 @@ class Restore:
                     tar.extractall(dest, members=members, filter="data")
                 else:  # Python without extraction filters: entries were checked above
                     tar.extractall(dest, members=members)
-        except (tarfile.TarError, OSError, EOFError) as e:
+        except OSError as e:  # its text names paths on the server
+            raise BackupError(f"The backup cannot be read: {e.strerror or type(e).__name__}.") from e
+        except (tarfile.TarError, EOFError) as e:
             raise BackupError(f"The backup cannot be read: {e}") from e
 
     @staticmethod

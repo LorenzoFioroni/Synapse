@@ -8,7 +8,7 @@ from werkzeug.exceptions import HTTPException
 
 from ..plugins import PluginError
 from ..plugins.outside import record as outside_record
-from . import admin, body, error, svc
+from . import admin, body, error, failure, svc
 
 # Enabling, disabling or reconfiguring a plugin runs or changes code on this computer and lasts, like
 # pairing a device or making an access token, so another device may do it only after confirming with a
@@ -32,7 +32,7 @@ def update_item(pid: str, item_id: str):
     try:
         return jsonify(_host().update_item(pid, item_id, body()))
     except PluginError as e:
-        return error(str(e))
+        return failure(e)
 
 
 @bp.post("/plugin-host/<pid>/enable")
@@ -42,7 +42,7 @@ def enable(pid: str):
     try:
         return jsonify(plugin=_host().enable(pid))
     except PluginError as e:
-        return error(str(e))
+        return failure(e)
 
 
 @bp.post("/plugin-host/<pid>/disable")
@@ -52,7 +52,7 @@ def disable(pid: str):
     try:
         return jsonify(plugin=_host().disable(pid))
     except PluginError as e:
-        return error(str(e))
+        return failure(e)
 
 
 @bp.post("/plugin-host/<pid>/restart")
@@ -62,7 +62,7 @@ def restart(pid: str):
     try:
         return jsonify(plugin=_host().restart(pid))
     except PluginError as e:
-        return error(str(e))
+        return failure(e)
 
 
 @bp.put("/plugin-host/<pid>/settings")
@@ -72,7 +72,7 @@ def settings(pid: str):
     try:
         return jsonify(values=_host().set_settings(pid, body()))
     except PluginError as e:
-        return error(str(e))
+        return failure(e)
 
 
 @bp.put("/plugin-host/<pid>/remote-mcp")
@@ -82,7 +82,7 @@ def remote_mcp(pid: str):
     try:
         return jsonify(plugin=_host().set_remote_mcp(pid, bool(body().get("on"))))
     except PluginError as e:
-        return error(str(e))
+        return failure(e)
 
 
 @bp.get("/plugin-host/<pid>/log")
@@ -91,7 +91,7 @@ def plugin_log(pid: str):
         lines = max(1, min(int(request.args.get("lines", 500)), 2000))
         return jsonify(lines=_host().log_lines(pid, lines))
     except (PluginError, ValueError) as e:
-        return error(str(e))
+        return failure(e)
 
 
 @bp.get("/plugin-fields")
@@ -118,7 +118,7 @@ def add_outside():
         rec = paper if paper.get("_outside") else outside_record(paper)
         item, dup = svc().add_paper(rec, folder_id=data.get("folder_id"), tags=data.get("tags") or [])
     except PluginError as e:
-        return error(str(e))
+        return failure(e)
     return jsonify(item=item, duplicate=dup), (200 if dup else 201)
 
 
@@ -147,7 +147,7 @@ def plugin_route(pid: str, rest: str):
         fn, args = host.route(pid, "/" + rest, request.method)
         result = host.run(pid, f"{request.method} /{rest}", fn, **args)
     except PluginError as e:
-        return error(str(e))
+        return failure(e)
     except HTTPException as e:
         return error(e.description or e.name, e.code or 500)
     except Exception:

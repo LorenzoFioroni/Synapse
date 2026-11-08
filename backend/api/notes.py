@@ -9,7 +9,7 @@ from flask import Blueprint, jsonify, request, send_from_directory
 from ..changes import CLIENT_HEADER
 from ..notes.history import GitError
 from ..notes.vault import ATTACHMENTS, Conflict, NoteExists, NoteMoved, VaultError
-from . import body, error, svc
+from . import body, error, failure, message_of, svc
 
 bp = Blueprint("notes", __name__, url_prefix="/api")
 
@@ -31,15 +31,15 @@ def guarded(fn):
         try:
             return fn(*a, **kw)
         except Conflict as e:
-            return jsonify(error=str(e), conflict=True, current_hash=e.current_hash), 409
+            return jsonify(error=f"{e.path} was changed elsewhere", conflict=True, current_hash=e.current_hash), 409
         except NoteExists as e:
-            return jsonify(error=f"A note already exists at {e}", exists=True, path=str(e)), 409
+            return jsonify(error=f"A note already exists at {e.path}", exists=True, path=e.path), 409
         except NoteMoved as e:
-            return jsonify(error=f"{e} was moved to {e.to}", moved_to=e.to), 404
+            return jsonify(error=f"{e.path} was moved to {e.to}", moved_to=e.to), 404
         except VaultError as e:
-            return error(str(e) if e.args else type(e).__name__, e.status)
+            return error(message_of(e) if e.args else type(e).__name__, e.status)
         except ValueError as e:
-            return error(str(e))
+            return failure(e)
 
     return wrapper
 

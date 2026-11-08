@@ -5,7 +5,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify
 
 from ..library.annotations import AnnotationError
-from . import body, error, svc
+from . import body, error, failure, svc
 
 bp = Blueprint("annotations", __name__, url_prefix="/api")
 
@@ -22,7 +22,7 @@ def create(att_id):
     try:
         ann = svc().annotations.create(att_id, body())
     except AnnotationError as e:
-        return error(str(e))
+        return failure(e)
     return jsonify(annotation=ann), 201
 
 
@@ -31,7 +31,7 @@ def update(ann_id):
     try:
         ann = svc().annotations.update(ann_id, body())
     except AnnotationError as e:
-        return error(str(e))
+        return failure(e)
     except KeyError:
         return error("This annotation no longer exists.", 404)
     return jsonify(annotation=ann)

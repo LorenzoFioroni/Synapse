@@ -13,7 +13,7 @@ from ..online import remote_pdf
 from ..online.http import BROWSER_UA
 from ..pdf.files import HEADER_WINDOW, file_is_pdf, looks_like_pdf
 from ..pdf.text import clean_text, extract_text, find_identifier
-from . import body, error, svc
+from . import body, error, failure, message_of, svc
 
 bp = Blueprint("attachments", __name__)
 
@@ -85,7 +85,7 @@ def items_from_pdfs():
             elif ident.get("arxiv"):
                 meta = lookup(sources=s.plugins.lookup_metadata, identifier="arXiv:" + ident["arxiv"], known=known)
         except LookupFailed as e:
-            note = str(e)
+            note = message_of(e)
         if not meta:
             meta = {"title": os.path.splitext(name)[0].replace("_", " ")}
             if ident.get("doi"):
@@ -152,5 +152,5 @@ def remote_attachment(att_id):
     try:
         data = remote_pdf.fetch_pdf(att["url"], BROWSER_UA)
     except remote_pdf.RemoteError as e:
-        return error(str(e), e.status)
+        return failure(e, e.status)
     return Response(data, mimetype="application/pdf")

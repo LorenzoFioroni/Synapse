@@ -54,5 +54,6 @@ def lookup(sources: list[tuple[str, MetadataSource]], run: Callable, query: dict
                 raise PluginError("A metadata source must return an item object or None")
             return dict(result)
         except Exception as e:
-            errors.append(str(e))
+            # A PluginError is written for the user; any other error is a fault of the plugin (logged).
+            errors.append(str(e) if isinstance(e, PluginError) else f"{pid}: {type(e).__name__}")
     raise LookupFailed(errors[-1] if errors else "No metadata source found a match.")

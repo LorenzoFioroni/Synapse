@@ -314,4 +314,8 @@ conflict instead of overwriting (see [notes](notes.md)). The change feed is desc
   another module has a public name.
 - **Errors.** Components raise their own exception types (`LookupFailed`, `AnnotationError`,
   `VaultError` and so on) with a message that can be shown to the user. The API turns them into
-  JSON errors. When one exception is turned into another, chain it with `raise ... from e`.
+  JSON errors with `api.failure(e)`, which shows only the one message an error was raised with
+  (`api.message_of`; anything else, such as an `OSError`'s file name, answers a generic text). An
+  answer can reach another device or an AI app, so a message never quotes the text of an unexpected
+  exception: name its type, and leave the details to the log. When one exception is turned into
+  another, chain it with `raise ... from e`.

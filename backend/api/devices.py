@@ -10,7 +10,7 @@ from ..access import lan
 from ..access.devices import COOKIE, PairingError
 from ..access.guard import set_device_cookie
 from ..access.proxy import client_addr, is_proxied, public_host
-from . import admin, body, error, svc
+from . import admin, body, error, failure, svc
 
 bp = Blueprint("devices", __name__, url_prefix="/api/devices")
 
@@ -120,7 +120,7 @@ def pair():
             client_addr(request.environ),
         )
     except PairingError as e:
-        return error(str(e), e.status)
+        return failure(e, e.status)
     resp = jsonify(device=device)
     resp.status_code = 201
     set_device_cookie(resp, token)
@@ -145,7 +145,7 @@ def rename(dev_id):
     try:
         device = svc().devices.rename(dev_id, str(body().get("name") or ""))
     except PairingError as e:
-        return error(str(e), e.status)
+        return failure(e, e.status)
     if device is None:
         return error("No such device.", 404)
     return jsonify(device=device)

@@ -261,7 +261,7 @@ AI app ──POST /mcp, Authorization: Bearer syn_…──► guard: host, Orig
 
 **Requests.** Each POST carries one JSON-RPC message or a batch, and the answer is the reply as
 `application/json` (200), or an empty 202 when the body held only notifications. A body that is
-not JSON answers 400 with a parse error. A `MCP-Protocol-Version` header naming a version not in
+not JSON answers 400 with a parse error that says where (line and column), not the decoder's text. A `MCP-Protocol-Version` header naming a version not in
 `PROTOCOL_VERSIONS` answers 400. GET and DELETE answer 405: there is no event stream (every tool
 answers at once) and no session, because the server keeps no state between requests.
 

@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify
 
 from ..online.http import LookupFailed
 from ..online.metadata import compute_changes, known_authors, lookup, lookup_for_item
-from . import body, error, svc
+from . import body, error, failure, svc
 
 bp = Blueprint("metadata", __name__, url_prefix="/api")
 
@@ -18,7 +18,7 @@ def lookup_for_item_endpoint(item_id):
     try:
         item, fetched = lookup_for_item(s, item_id)
     except LookupFailed as e:
-        return error(str(e), 404)
+        return failure(e, 404)
     return jsonify(current=item, fetched=fetched, changes=compute_changes(item, fetched))
 
 
@@ -36,7 +36,7 @@ def create_from_identifier():
             email=s.settings.get("contact_email"),
         )
     except LookupFailed as e:
-        return error(str(e), 404)
+        return failure(e, 404)
     dup = s.papers.find_duplicate(meta)
     if dup and not body().get("allow_duplicate"):
         return jsonify(duplicate_of=dup, metadata=meta), 409

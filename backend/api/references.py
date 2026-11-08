@@ -9,7 +9,7 @@ from flask import Blueprint, jsonify
 from ..library.repository import NotFound
 from ..online.http import LookupFailed
 from ..references.sources import FetchFailed
-from . import body, error, svc
+from . import body, error, failure, svc
 
 log = logging.getLogger(__name__)
 
@@ -30,9 +30,9 @@ def fetch_references(item_id):
     except NotFound:
         raise
     except FetchFailed as e:  # the services failed: try again later
-        return error(str(e), 502)
+        return failure(e, 502)
     except LookupFailed as e:
-        return error(str(e), 404)
+        return failure(e, 404)
     except Exception as e:  # network trouble; its text can hold request URLs with API keys
         log.exception("Fetching the references of %s failed", item_id)
         return error(f"Could not fetch references ({type(e).__name__}).", 502)

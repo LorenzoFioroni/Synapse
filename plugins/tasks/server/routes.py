@@ -17,6 +17,12 @@ def register(plugin: Plugin) -> None:
     def error(message, status=400):
         return jsonify(error=message), status
 
+    def failure(e: Exception, status: int = 400):
+        # Task and note errors are raised with one sentence for the user; nothing else is shown.
+        args = e.args
+        shown = args[0] if len(args) == 1 and isinstance(args[0], str) and args[0].strip() else type(e).__name__
+        return error(shown, status)
+
     def _notes_changed() -> None:
         """A {{task:…}} line was written into or taken out of a note."""
         plugin.tasks.notes_changed(request.headers.get(task_api.CLIENT_HEADER))
@@ -27,11 +33,11 @@ def register(plugin: Plugin) -> None:
             try:
                 return fn(*a, **kw)
             except task_api.TaskMissing as e:
-                return error(str(e), 404)
+                return failure(e, 404)
             except task_api.TaskError as e:
-                return error(str(e))
+                return failure(e)
             except task_api.NoteError as e:
-                return error(str(e) if e.args else type(e).__name__, e.status)
+                return failure(e, e.status)
 
         return wrapper
 

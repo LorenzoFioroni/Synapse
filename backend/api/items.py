@@ -8,7 +8,7 @@ from ..library import search as search_mod
 from ..library.fields import schema_payload, validate_create_fields
 from ..library.repository import NotFound
 from ..plugins import PluginError
-from . import body, error, ids_from_body, svc
+from . import body, error, failure, ids_from_body, svc
 
 bp = Blueprint("items", __name__, url_prefix="/api")
 
@@ -78,7 +78,7 @@ def list_items():
     try:
         items, smart_q, smart_mode = items_for_view(s, view, library)
     except PluginError as e:  # a plugin's list failed: say why, the page keeps what it shows
-        return error(str(e), 502)
+        return failure(e, 502)
     ctx = search_context(s)
     hits: dict[str, dict] = {}
     notes = notes_matcher(s) if q or smart_q else None
@@ -135,7 +135,7 @@ def create_item():
     try:
         validate_create_fields(data)
     except ValueError as e:
-        return error(str(e))
+        return failure(e)
     item = svc().papers.create(data)
     return jsonify(item), 201
 
