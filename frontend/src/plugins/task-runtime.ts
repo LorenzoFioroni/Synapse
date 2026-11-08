@@ -1,7 +1,7 @@
 // Public task/editor SDK. These functions share the host's engines and event/history identity;
 // plugins own their data cache, widgets, views and lifecycle instead of importing app modules.
 export { icon } from '../icons.js';
-export { escapeHtml, aiName, aiOwner, formatDate, h, modKey, modLabel, plural, storage, store } from '../util.js';
+export { downloadBlob, escapeHtml, aiName, aiOwner, formatDate, h, modKey, modLabel, plural, storage, store } from '../util.js';
 export { openDialog, promptDialog } from '../ui/dialog.js';
 export { openMenu } from '../ui/menu.js';
 export { toast, toastError } from '../ui/toast.js';
@@ -41,3 +41,10 @@ export const fallbackTaskHtml = renderDefaults.taskHtml;
 export const fallbackTaskBlockHtml = renderDefaults.taskBlockHtml;
 
 export const noteIndexSnapshot = () => structuredClone(ws.overview);
+
+// Read-only inputs for portable note exports; the host keeps its API client private.
+export const exportNoteFile = (path: string) => api.getNote(path);
+export const exportBibliography = (ids: string[]) => api.clipboardBibtex(ids);
+export { splitFrontmatter } from '../views/notes/mdscan.js';
+export { section as noteSection } from '../views/notes/embed.js';
+export const exportMathSettings = () => ({ physics: state.settings.notes_math_physics !== false, macros: state.settings.notes_math_macros || '' });

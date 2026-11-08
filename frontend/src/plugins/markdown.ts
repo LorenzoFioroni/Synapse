@@ -17,3 +17,5 @@ export interface MarkdownApi {
 import { renderDefaults } from '../views/notes/render.js';
 import type { TaskBlockOptions } from '../views/notes/render.js';
 export const renderTaskBlock = (ids: string[], options: TaskBlockOptions): string => renderDefaults.taskBlockHtml(ids, options);
+
+export { parseDefinitions } from '../views/notes/macros.js';

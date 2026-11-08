@@ -9,6 +9,7 @@ Starts its own server on port 8792 with a throw-away data folder; your library i
 """
 
 import asyncio
+import io
 import os
 import re
 import shutil
@@ -16,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import zipfile
 from pathlib import Path
 
 import requests
@@ -130,7 +132,8 @@ async def main():
             await page.click('.note-head [data-act="export"]')
             labels = await page.locator(".menu .menu-item").all_text_contents()
             check(
-                "Export offers PDF, HTML and Markdown", [x.strip() for x in labels] == ["PDF…", "HTML page", "Markdown"]
+                "Export offers built-in formats and plugin LaTeX",
+                [x.strip() for x in labels] == ["PDF…", "HTML page", "Markdown", "LaTeX project…"],
             )
             name, html = await download(page, lambda: page.click(".menu >> text=HTML page"))
             check("HTML file named after the note", name == "Report.html", name)
@@ -234,6 +237,47 @@ async def main():
             _, md2 = await download(page, lambda: page.click(".menu >> text=Markdown"))
             check("the editor's text, saved or not", "Fresh line." in md2)
 
+            # ---- LaTeX: current editor text, figures, references, optional linked project
+            for linked in (False, True):
+                await page.click('.note-head [data-act="export"]')
+                await page.click(".menu >> text=LaTeX project…")
+                box = page.get_by_role("checkbox", name="Include linked notes")
+                check("linked notes default off", not await box.is_checked())
+                if linked:
+                    await box.focus()
+                    await page.keyboard.press("Space")
+                await page.set_viewport_size({"width": 560, "height": 800})
+                bounds = await page.get_by_role("dialog", name="Export LaTeX").bounding_box()
+                check("LaTeX dialog fits narrow layout", bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 560)
+                await page.locator(".dialog-backdrop").evaluate(
+                    "el => Promise.all(el.getAnimations({subtree: true}).map(a => a.finished))"
+                )
+                if SHOTS:
+                    await page.screenshot(path=f"{SHOTS}/export-latex-{linked}.png")
+                async with page.expect_download() as export:
+                    await page.get_by_role("button", name="Download", exact=True).click()
+                result = await export.value
+                with zipfile.ZipFile(io.BytesIO(Path(await result.path()).read_bytes())) as archive:
+                    check("LaTeX archive integrity", archive.testzip() is None)
+                    names = archive.namelist()
+                    tex = archive.read("main.tex").decode()
+                    bib = archive.read("references.bib").decode()
+                    check("LaTeX uses unsaved editor text", "Fresh line." in tex)
+                    check(
+                        "LaTeX contains figures and cited bibliography",
+                        any(n.startswith("figures/") for n in names) and "smith2021" in bib and "lee2019" in bib,
+                    )
+                    check(
+                        "LaTeX file count follows option",
+                        len([n for n in names if n.endswith(".tex")]) == (2 if linked else 1),
+                    )
+                    check(
+                        "LaTeX includes linked input or inline embed",
+                        "\\input{notes/" in tex if linked else "The embedded part cites" in tex,
+                    )
+                await page.set_viewport_size({"width": 1400, "height": 900})
+                await page.evaluate("document.documentElement.dataset.theme = 'light'")
+
             # ---- PDF: the print dialog of a hidden frame
             await page.click('.note-head [data-act="export"]')
             await page.click(".menu >> text=PDF…")
@@ -250,6 +294,20 @@ async def main():
             check("…from a frame, not the app", 'id="notes-view"' not in printed and "<title>Report</title>" in printed)
             check("print styles included", "@media print" in printed)
             await page.wait_for_timeout(300)
+            # Provider removal and reactivation update the note menu in the existing window.
+            for enabled in (False, True):
+                action = "enable" if enabled else "disable"
+                s.post(BASE + f"/api/plugin-host/export-formats/{action}").raise_for_status()
+                await page.evaluate("window.zcPlugins.sync()")
+                await page.click('.note-head [data-act="export"]')
+                choices = await page.locator(".menu .menu-item").all_text_contents()
+                check(
+                    "LaTeX availability follows plugin lifecycle",
+                    ("LaTeX project…" in [c.strip() for c in choices]) == enabled,
+                    choices,
+                )
+                check("built-in note exports stay available", "HTML page" in [c.strip() for c in choices])
+                await page.keyboard.press("Escape")
             check("no console errors", not errors, errors[:5])
             await b.close()
     finally:

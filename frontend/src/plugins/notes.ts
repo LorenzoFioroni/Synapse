@@ -1,5 +1,6 @@
 // Public Notes visualization registration, bridged to the workspace's layout and history.
 // The workspace owns navigation; plugins receive only their main host and lifecycle callbacks.
+import { noteExports } from '../views/notes/exportProviders.js';
 import { navigation } from '../extend.js';
 import { navUpdate } from '../nav.js';
 import { state } from '../store.js';
@@ -42,6 +43,16 @@ export function notesContext(owner: string, stopped: () => boolean, keep: (off: 
       const notes = await import('../views/notes/notesView.js');
       live();
       await notes.openNotes(path);
+    },
+    exports: {
+      register(spec) {
+        live();
+        const id = `${owner}.${spec.id}`;
+        if (noteExports.has(id)) throw new Error(`Note export already registered: ${id}`);
+        const entry = { ...spec, run: async (note: Parameters<typeof spec.run>[0]) => { live(); await spec.run({ ...note }); } };
+        noteExports.set(id, entry);
+        return keep(() => { if (noteExports.get(id) === entry) noteExports.delete(id); });
+      },
     },
     visualizations: {
       register(spec: NotesVisualizationSpec) {

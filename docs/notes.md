@@ -669,6 +669,24 @@ the library list as the fallback (as in read mode).
   levels and never in a cycle; `exportNote.ts` loads them first. It ends with
   `## References` (`referenceMarkdown`). Image paths are kept as they are in the notes folder.
 
+- **LaTeX project…** The Export Formats plugin contributes this choice while enabled. Download
+  a ZIP containing `main.tex`, `references.bib`, local images under `figures/` and build instructions
+  in `README.txt`. By default there is one `.tex` file: embeds (including heading selections) are
+  inlined up to three levels, with cycles stopped; ordinary note links become text. Enable
+  **Include linked notes** to recursively include reachable wiki links and embeds as separate
+  `notes/note-N.tex` files, loaded once with `\input` from the main file. Heading links become
+  internal hyperlinks; embedded heading links in this mode point into the complete linked note.
+  Traversal stops with an error above 500 notes. Other notes use their saved text.
+  Compile with LuaLaTeX, Biber, LuaLaTeX, LuaLaTeX using a local TeX installation with the named
+  packages. Citations use `biblatex`; the `.bib` contains only cited records from the active library (Trash is excluded), including
+  citations in captions and embedded/linked notes. Math, the configured physics package and
+  user macros, headings, emphasis, footnotes, lists, tables, local figures and galleries are
+  converted from the host Markdown tokens. GIF/WebP images become PNG (the first decoded frame).
+  Mermaid stays source code; remote images are not downloaded; unresolved notes/references and
+  unavailable content are recorded in `README.txt`. Task references are exported as IDs.
+  The plugin owns conversion and the dependency-free ZIP writer in
+  `plugins/export-formats/frontend/`; `exportProviders.ts` holds only lifecycle registrations.
+
 **References.** `exportNote.ts` loads the full library items of the cited keys with one
 `GET /api/items?ids=…` (`fullItems`), since the citation index has only authors, year, title and
 journal. If that request fails, the entries are made from the index. `referenceParts`
