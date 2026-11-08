@@ -28,10 +28,15 @@ function ago(iso: string): string {
 }
 
 function backupRows(backups: Backup[], source: 'local' | 'remote'): string {
-  return backups.map((b) => `<div class="backup-row" data-backup="${escapeHtml(b.name)}" data-source="${source}">
+  return backups.map((b) => {
+    const why = !b.reason ? '' : b.reason === 'scheduled' ? 'Automatic' : b.reason === 'manual' ? 'Made by hand' : escapeHtml(b.reason.replace(/^./, (c) => c.toUpperCase()));
+    const where = source === 'remote' ? 'Remote' : b.uploaded ? 'Local + remote' : 'Local';
+    return `<div class="backup-row" data-backup="${escapeHtml(b.name)}" data-source="${source}">
     <div class="b-main"><div class="b-when">${escapeHtml(formatDate(b.created, true))}${b.damaged ? ' · <span class="form-error">cannot be read</span>' : ''}</div>
-      <div class="b-what">${b.items != null ? `${plural(b.items, 'item')} · ${plural(b.notes ?? 0, 'note')} · ` : ''}${formatBytes(b.size)}${b.uploaded ? ' · uploaded' : ''}${b.reason && b.reason !== 'manual' && b.reason !== 'scheduled' ? ` · ${escapeHtml(b.reason)}` : ''}</div></div>
-    <button class="btn btn-sm" data-restore ${b.damaged ? 'disabled' : ''}>${icon('restore')} Restore…</button></div>`).join('');
+      <div class="b-what">${why ? `${why} · ` : ''}${b.items != null ? `${plural(b.items, 'item')} · ${plural(b.notes ?? 0, 'note')} · ` : ''}${formatBytes(b.size)}</div></div>
+    <span class="b-where">${where}</span>
+    <button class="btn btn-sm" data-restore ${b.damaged ? 'disabled' : ''} aria-label="Restore the backup of ${escapeHtml(formatDate(b.created, true))}">${icon('restore')}<span>Restore…</span></button></div>`;
+  }).join('');
 }
 
 async function refreshRemoteBackups(view: HTMLElement): Promise<void> {

@@ -293,15 +293,14 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
             <div class="s-desc">Empty: the backups folder in your data folder. A folder synced by iCloud Drive or Dropbox keeps a copy off this computer.</div></div>
             <input class="input mono" type="text" data-backup-dir aria-label="Backup folder" spellcheck="false" autocomplete="off" placeholder="Default: data/backups" value="${escapeHtml(s.backup_dir || '')}">
             <div class="form-error" data-backup-dir-error hidden></div></div>
-          <div class="setting stack" data-remote-backup hidden><div data-remote-backup-form>Loading remote storage settings…</div></div>
         </div>
+        <div data-remote-backup hidden>${sub('Remote storage')}<div data-remote-backup-form><div class="card"><div class="setting"><div class="s-desc">Loading remote storage settings…</div></div></div></div></div>
         <h3 class="sec-h"><span>Recent backups</span><button class="link-btn" data-backup-more hidden></button></h3>
         <div class="card"><div class="setting stack backups-recent"><div class="backup-list collapsed" data-backup-list></div></div></div>
-        <div class="card" data-remote-backup-archives hidden><div class="setting stack">
-            <div class="s-title setting-line">Remote backups <button class="btn btn-sm" data-remote-backup-refresh>Refresh list</button></div>
-            <div class="s-desc" data-remote-backup-status></div>
-            <div class="backup-list" data-remote-backup-list></div>
-          </div></div>
+        <div data-remote-backup-archives hidden>
+          <h3 class="sec-h"><span>On the remote</span><button class="link-btn" data-remote-backup-refresh>Refresh</button></h3>
+          <div class="card"><div class="setting stack backups-recent"><div class="s-desc" data-remote-backup-status></div>
+            <div class="backup-list" data-remote-backup-list></div></div></div></div>
         ${sub('Notes history')}
         <div class="card"><div class="setting"><div class="s-text"><div class="s-title">Every version of your notes</div>
             <div class="s-desc" data-history-desc>Loading…</div></div>

@@ -345,8 +345,9 @@ Local is the default for existing installations. Remote mode still writes to `ba
 PDFs still need a separate backup. Rclone is included in the Docker image (pinned to 1.76.0).
 For a checkout deployment, install rclone on the server before choosing remote storage.
 
-All connection details are entered in Settings; no rclone commands or files need to be prepared
-inside Docker. Supported connection forms are Google Drive, Microsoft OneDrive, Dropbox,
+All connection details are entered in Settings → Backups → Remote storage (one row per field, with
+Save connection, Test connection and Retry uploads at its foot); no rclone commands or files need
+to be prepared inside Docker. Supported connection forms are Google Drive, Microsoft OneDrive, Dropbox,
 S3-compatible storage, WebDAV/Nextcloud, SFTP and FTP/FTPS. Arbitrary rclone flags, executable commands,
 server-side credential file paths and existing external rclone configurations are not accepted.
 WebDAV/S3 endpoints use HTTPS. SFTP requires the server's trusted `known_hosts` entry and a

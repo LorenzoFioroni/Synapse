@@ -12,6 +12,20 @@ const guides: Record<string, string> = {
   dropbox: 'https://www.dropbox.com/developers/apps',
 };
 
+/** A row of the connection form, laid out like every other setting. */
+function row(id: string, title: string, hint: string, control: string, kind = ''): string {
+  return `<div class="setting remote-row${kind === 'stack' ? ' stack' : ''}${kind && kind !== 'stack' ? ` ${kind}` : ''}">
+    <div class="s-text"><label class="s-title" for="${id}">${title}</label>${hint ? `<div class="s-desc">${hint}</div>` : ''}</div>
+    <div class="s-control">${control}</div></div>`;
+}
+
+/** "Port (optional; default 22)" → the title "Port" and the hint "Optional; default 22". */
+export function splitLabel(label: string, required: boolean): { title: string; hint: string } {
+  const m = /^(.*?)\s*\((.*)\)$/.exec(label);
+  const title = escapeHtml(m ? m[1] : label) + (required ? ' <span class="req" aria-hidden="true">*</span>' : '');
+  return { title, hint: m ? escapeHtml(m[2].charAt(0).toUpperCase() + m[2].slice(1)) + '.' : '' };
+}
+
 export function showRemoteBackups(view: HTMLElement, remote: boolean): void {
   view.querySelector<HTMLElement>('[data-remote-backup]')!.hidden = !remote;
   view.querySelector<HTMLElement>('[data-remote-backup-archives]')!.hidden = !remote;
@@ -26,21 +40,27 @@ export async function bindRemoteBackups(view: HTMLElement, changed: () => void):
   } catch (err) { host.textContent = (err as Error).message; return; }
   const config = setup.configuration;
   host.innerHTML = `${!config.available ? '<p class="form-error">rclone is missing on this server. Use the Synapse Docker image, which includes it.</p>' : ''}
-    <label>Storage provider <select class="select" data-remote-provider>${setup.providers.map((p) => `<option value="${p.id}" ${p.id === config.provider ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select></label>
-    <div data-remote-fields></div>
-    <div data-remote-certificate></div>
-    <label>Destination folder <input class="input mono" data-remote-folder value="${escapeHtml(config.folder || '')}" placeholder="Synapse backups (S3: bucket/folder)"></label>
-    <p class="s-desc">Synapse creates its own subfolder here and only removes its own old backups. Local and remote copies each keep the selected number of backups.</p>
-    <div><label>Backup set <select class="select" data-remote-namespace><option value="${escapeHtml(config.namespace || '')}">${escapeHtml(config.namespace || 'New backup set')}</option></select></label>
-      <button class="btn btn-sm" data-remote-find-sets>Find existing backup sets</button>
-      <p class="s-desc">When recovering on a new installation, save and connect your account, then find and select the previous backup set.</p></div>
-    <div class="s-desc" data-remote-auth-info hidden></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-      <button class="btn" data-remote-save>Save connection</button>
-      <button class="btn" data-remote-connect hidden>Connect account</button>
-      <button class="btn" data-remote-test>Test connection</button>
-      <button class="btn" data-remote-retry>Retry uploads</button>
-    </div><p class="s-desc" data-remote-auth-state></p><p class="form-error" data-remote-error hidden></p>`;
+    <div class="card remote-card">
+      ${row('remote-backup-provider', 'Storage provider', '<span data-remote-provider-hint></span>',
+        `<select class="select" id="remote-backup-provider" data-remote-provider>${setup.providers.map((p) => `<option value="${p.id}" ${p.id === config.provider ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select>`)}
+      <div data-remote-fields></div>
+      <div data-remote-certificate></div>
+      ${row('remote-backup-folder', 'Destination folder', 'Synapse makes its own subfolder here and only removes its own old backups.',
+        `<input class="input mono" id="remote-backup-folder" data-remote-folder value="${escapeHtml(config.folder || '')}" placeholder="Synapse backups (S3: bucket/folder)" spellcheck="false" autocomplete="off">`)}
+      ${row('remote-backup-namespace', 'Backup set', 'Recovering on a new installation? Save and connect first, then find and pick the previous set.',
+        `<select class="select" id="remote-backup-namespace" data-remote-namespace><option value="${escapeHtml(config.namespace || '')}">${escapeHtml(config.namespace || 'New backup set')}</option></select>
+         <button class="btn btn-sm" data-remote-find-sets>Find existing sets</button>`, 'remote-namespace')}
+      <div class="setting remote-auth" data-remote-auth-info hidden></div>
+      <div class="remote-foot">
+        <div class="remote-state"><div class="s-desc" data-remote-auth-state></div><p class="form-error" data-remote-error hidden></p></div>
+        <div class="remote-actions">
+          <button class="btn btn-ghost" data-remote-retry>Retry uploads</button>
+          <button class="btn" data-remote-connect hidden>Connect account</button>
+          <button class="btn" data-remote-test>Test connection</button>
+          <button class="btn btn-primary" data-remote-save>Save connection</button>
+        </div>
+      </div>
+    </div>`;
   const select = host.querySelector<HTMLSelectElement>('[data-remote-provider]')!;
   const fields = host.querySelector<HTMLElement>('[data-remote-fields]')!;
   const certificateHost = host.querySelector<HTMLElement>('[data-remote-certificate]')!;
@@ -53,22 +73,30 @@ export async function bindRemoteBackups(view: HTMLElement, changed: () => void):
       const stored = same && config.stored_secrets.includes(key);
       const id = `remote-backup-${key}`;
       const choices = provider.choices?.[key];
+      const { title, hint } = splitLabel(label, required);
+      const keep = stored ? 'Saved; leave blank to keep' : '';
+      if (['key_pem', 'known_hosts'].includes(key)) {
+        return row(id, title, hint, `<textarea class="input mono" rows="3" id="${id}" data-remote-option="${key}" spellcheck="false" autocomplete="off" placeholder="${keep}">${escapeHtml(value)}</textarea>`, 'stack');
+      }
       const control = choices
         ? `<select class="select" id="${id}" data-remote-option="${key}">${choices.map(([choice, text]) => `<option value="${escapeHtml(choice)}" ${choice === value ? 'selected' : ''}>${escapeHtml(text)}</option>`).join('')}</select>`
-        : ['key_pem', 'known_hosts'].includes(key)
-        ? `<textarea class="input mono" rows="3" id="${id}" data-remote-option="${key}" spellcheck="false" autocomplete="off" placeholder="${stored ? 'Saved; leave blank to keep' : ''}">${escapeHtml(value)}</textarea>`
-        : `<input class="input" type="${secret ? 'password' : 'text'}" id="${id}" data-remote-option="${key}" value="${escapeHtml(value)}" spellcheck="false" autocomplete="off" placeholder="${stored ? 'Saved; leave blank to keep' : ''}">`;
-      return `<div style="margin-top:10px"><label for="${id}">${escapeHtml(label)}${required ? ' *' : ''}</label>${control}${key === 'pass' ? '<label><input type="checkbox" data-remote-password-obscured> Already obscured by rclone</label><p class="s-desc">Check this only when pasting the output of rclone obscure. Leave the password blank to keep the saved password.</p>' : ''}</div>`;
+        : `<input class="input" type="${secret ? 'password' : 'text'}" id="${id}" data-remote-option="${key}" value="${escapeHtml(value)}" spellcheck="false" autocomplete="off" placeholder="${keep}">`;
+      if (key === 'pass') {
+        return row(id, title, [hint, 'Tick “Already obscured” only when pasting the output of <span class="mono">rclone obscure</span>.'].filter(Boolean).join(' '),
+          `${control}<label class="check remote-obscured"><input type="checkbox" data-remote-password-obscured> Already obscured by rclone</label>`, 'remote-pass');
+      }
+      return row(id, title, hint, control);
     }).join('');
-    if (provider.id === 'ftp') fields.insertAdjacentHTML('beforeend', '<p class="s-desc">Choose the TLS mode required by your FTP server. Destination folders are relative to your FTP home directory unless they start with /.</p>');
+    host.querySelector('[data-remote-provider-hint]')!.textContent = provider.id === 'ftp'
+      ? 'Pick the TLS mode your FTP server requires. Folders are relative to your FTP home folder unless they start with /.' : '';
     certificateHost.hidden = !provider.custom_ca;
     certificateHost.replaceChildren();
     certificate = provider.custom_ca ? bindRemoteCertificate(certificateHost, same ? config.trusted_certificate : null) : undefined;
     const info = host.querySelector<HTMLElement>('[data-remote-auth-info]')!;
     info.hidden = !provider.oauth;
-    info.innerHTML = `Register a Web application with your provider and enter its application credentials above. Set its redirect URI to <code>${escapeHtml(setup.callback)}</code>, then choose Connect account. <a href="${guides[provider.id] || '#'}" target="_blank" rel="noopener noreferrer">Provider application setup</a>.
+    info.innerHTML = `<div class="s-desc">Register a Web application with your provider and enter its application credentials above. Set its redirect URI to <code>${escapeHtml(setup.callback)}</code>, then choose Connect account. <a href="${guides[provider.id] || '#'}" target="_blank" rel="noopener noreferrer">Provider application setup</a>.
       ${provider.id === 'onedrive' ? 'Allow delegated Files.ReadWrite, User.Read and offline_access permissions.' : ''}
-      ${provider.id === 'drive' ? 'Enable the Google Drive API and publish the consent app for lasting access.' : ''}`;
+      ${provider.id === 'drive' ? 'Enable the Google Drive API and publish the consent app for lasting access.' : ''}</div>`;
     host.querySelector<HTMLElement>('[data-remote-connect]')!.hidden = !provider.oauth;
   }
   select.onchange = paintFields;

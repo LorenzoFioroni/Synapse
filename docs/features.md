@@ -51,7 +51,8 @@ see the [README](../README.md); for code ownership, see the [architecture map](a
   Data & access, Extend and About. Every change saves at once; **Reset this page** at the foot of
   a page puts that page's settings back to their defaults (Settings → Library resets them all).
   Backups opens with how things stand (when the last backup was, Back Up Now) and the three most
-  recent backups. On a phone Settings starts as a list of its pages, with the current value of
+  recent backups, each saying why it was made and whether it is local or also uploaded; with
+  remote storage, its connection form and the backups found on the remote follow in the same style. On a phone Settings starts as a list of its pages, with the current value of
   some beside them, and each page opens in its place with Back.
 - **Find preferences** with the search at the top of the Settings navigation (or Cmd/Ctrl+F, or
   `/`, while Settings is open). The matching rows of every page are shown together under their
