@@ -472,8 +472,10 @@ async def main():
                 )
                 check(
                     "Its page stays shown beside the list, now off",
-                    await page.locator(f"{section}.current").count() == 1
-                    and not await page.locator(f"{section} .p-title [data-ptoggle]").is_checked(),
+                    await wait_for(
+                        page,
+                        f"!!document.querySelector('{section}.current') && !document.querySelector('{section} .p-title [data-ptoggle]').checked",
+                    ),
                 )
                 s.post(BASE + "/api/plugin-host/autocompletion/enable").raise_for_status()
                 await page.evaluate("window.zcPlugins.sync()")
