@@ -177,6 +177,12 @@ export function pageState() {
     // 1. What the page names as its PDF.
     document.querySelectorAll('meta[name="citation_pdf_url" i]').forEach((m) => pdfUrls.push(abs(m.getAttribute('content'))));
     document.querySelectorAll('link[rel~="alternate"][type="application/pdf" i]').forEach((l) => pdfUrls.push(abs(l.getAttribute('href'))));
+    // Publisher readers often embed the PDF instead of linking to it. Blob URLs can only be
+    // read from the page that owns them; fetchPdfInPage handles that case.
+    document.querySelectorAll('embed[type="application/pdf" i], object[type="application/pdf" i], iframe[src]').forEach((el) => {
+      const src = el.getAttribute('src') || el.getAttribute('data') || '';
+      if (el.tagName !== 'IFRAME' || /\.pdf(?:[?#]|$)/i.test(src)) pdfUrls.push(abs(src));
+    });
     // 2. Publishers that do not name it, by the URL of their article pages (as Zotero's translators):
     // APS (journals.aps.org/prl/abstract/10.1103/… → /prl/pdf/10.1103/…)
     const aps = here.match(/^(https?:\/\/journals\.aps\.org\/[^/]+\/)(?:abstract|supplemental|references|cited-by)\/([^?#]+)/);
@@ -214,6 +220,6 @@ export function pageState() {
     title: document.title,
     isPdf,
     challenge,
-    pdfUrls: [...new Set(pdfUrls.filter((u) => /^https?:/.test(u) && u !== here))],
+    pdfUrls: [...new Set(pdfUrls.filter((u) => /^(?:https?:|blob:)/.test(u) && u !== here))],
   };
 }

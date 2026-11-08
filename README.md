@@ -12,7 +12,9 @@ TypeScript frontend. Everything runs on your machine.
   university's network or VPN) and an open-access copy otherwise.
   The extension supports localhost or a remote HTTPS server with a dedicated browser token;
   see [extension setup](browser_extension/README.md#remote-server). Its Find Missing PDFs fetches
-  publishers' PDFs through your browser, with your institution's access.
+  publishers' PDFs through your browser, with your institution's access. Searches resume across
+  batches, so failed papers do not block older items. When adding items with PDF lookup enabled,
+  an updated extension can try the publisher first, then let Synapse try other enabled sources.
 - 🔎 **Find the passage you remember** — search metadata and PDF full text, then organise
   your collection with folders, coloured tags and smart folders.
 - 🖍️ **Read, highlight, capture** — annotate PDFs with highlights, drawings and comments,

@@ -394,3 +394,112 @@ def test_the_publisher_plugin_uses_only_the_plugin_api(svc):
 )
 def test_article_page_links(page, pdf, refresh):
     assert article_page.links(page, "https://x.example/p/index.html") == (pdf, refresh)
+
+
+def _verification_pdf(tmp_path, pages, *, ligatures=False):
+    """Real PDF pages, including line breaks and a Unicode font map for extracted ligatures."""
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import DecodedStreamObject, NameObject
+
+    writer = PdfWriter()
+    for i, lines in enumerate(pages):
+        page = PdfReader(make_pdf(tmp_path / f"page-{i}.pdf", "")).pages[0]
+        content = DecodedStreamObject()
+        text = b"BT /F1 12 Tf 20 250 Td "
+        for n, line in enumerate(lines.split("\n")):
+            if n:
+                text += b" 0 -16 Td "
+            escaped = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+            text += b"(" + escaped.encode("latin-1") + b") Tj"
+        content.set_data(text + b" ET")
+        page[NameObject("/Contents")] = content
+        if ligatures:
+            mapping = {i: i for i in range(32, 127)} | {1: 0xFB03, 2: 0xFB00}
+            cmap = DecodedStreamObject()
+            entries = "\n".join(f"<{code:02x}> <{unicode:04x}>" for code, unicode in mapping.items())
+            cmap.set_data(
+                (
+                    "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+                    "/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def "
+                    "/CMapName /TestMap def /CMapType 2 def "
+                    "1 begincodespacerange <00> <ff> endcodespacerange "
+                    f"{len(mapping)} beginbfchar\n{entries}\nendbfchar "
+                    "endcmap CMapName currentdict /CMap defineresource pop end end"
+                ).encode()
+            )
+            page["/Resources"]["/Font"]["/F1"][NameObject("/ToUnicode")] = cmap
+        writer.add_page(page)
+    path = tmp_path / "verification.pdf"
+    writer.write(path)
+    return str(path)
+
+
+def test_verification_normalizes_real_pdf_ligatures_and_hyphenated_lines(tmp_path):
+    from backend.online.pdf_finder import pdf_verification
+    from backend.pdf.text import extract_text
+
+    path = _verification_pdf(tmp_path, ["O\x01ce a\x01nity e\x01cient di\x02usion"], ligatures=True)
+    assert "\ufb03" in extract_text(path)[0]  # exercise extraction, not a mocked text return
+    assert pdf_verification(path, "Office affinity efficient diffusion", None)["status"] == "verified"
+    path = _verification_pdf(tmp_path, ["Superconduc-\nting phase transi-\ntions in corre-\nlated materials"])
+    assert (
+        pdf_verification(path, "Superconducting phase transitions in correlated materials", None)["status"]
+        == "verified"
+    )
+
+
+def test_verification_reads_past_publisher_covers_but_stays_bounded(tmp_path):
+    from backend.online.pdf_finder import VERIFY_MAX_PAGES, pdf_verification, verify_pdf
+
+    title = "Quantum dynamics of strongly correlated materials"
+    path = _verification_pdf(tmp_path, ["Publisher cover", "Terms of access", title])
+    assert verify_pdf(path, title, "10.1234/article")
+    path = _verification_pdf(tmp_path, ["Publisher cover"] * VERIFY_MAX_PAGES + [title])
+    assert pdf_verification(path, title, "10.1234/article")["status"] == "unverified"
+
+
+def test_verification_distinguishes_contradictory_identity_from_insufficient_evidence(tmp_path):
+    from backend.online.pdf_finder import pdf_verification, verify_pdf
+
+    title = "Quantum dynamics of strongly correlated materials"
+    path = _verification_pdf(tmp_path, ["A different study doi:10.1234/article-different"])
+    result = pdf_verification(path, title, "10.1234/article")
+    assert result["status"] == "wrong-paper" and result["reason"]
+    assert not verify_pdf(path, title, "10.1234/article")  # identifier prefixes cannot prove identity
+    path = _verification_pdf(tmp_path, ["Institutional access notice"])
+    result = pdf_verification(path, title, "10.1234/article")
+    assert result["status"] == "unverified" and result["reason"]
+    path = _verification_pdf(tmp_path, [""])
+    result = pdf_verification(path, title, "10.1234/article")
+    assert result["status"] == "unverified" and "readable text" in result["reason"]
+    assert not verify_pdf(path, title, "10.1234/article")
+
+
+@pytest.mark.parametrize(
+    "printed",
+    [
+        "doi:10.1234/long-\nidentifier.",
+        "https://doi.org/10.1234/\nlong-identifier;",
+        "doi:10.1234/long-identi\nfier)",
+        "(doi:10.1234/long-identifier).",
+    ],
+)
+def test_verification_matches_wrapped_dois_and_terminal_punctuation(tmp_path, printed):
+    from backend.online.pdf_finder import verify_pdf
+
+    path = _verification_pdf(tmp_path, [printed])
+    assert verify_pdf(path, "The library title is absent from the PDF", "https://doi.org/10.1234/long-identifier")
+
+
+def test_later_reference_does_not_override_a_different_opening_identifier(tmp_path):
+    from backend.online.pdf_finder import pdf_verification
+
+    path = _verification_pdf(tmp_path, ["doi:10.1234/different", "Paper body", "Reference doi:10.1234/expected"])
+    assert pdf_verification(path, "The library title", "10.1234/expected")["status"] == "wrong-paper"
+
+
+def test_verification_does_not_accept_a_prefix_of_an_arxiv_identifier(tmp_path):
+    from backend.online.pdf_finder import verify_pdf
+
+    path = _verification_pdf(tmp_path, ["arXiv:2403.051479"])
+    assert not verify_pdf(path, None, None, "2403.05147")

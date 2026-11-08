@@ -17,6 +17,7 @@ in [`architecture.md`](architecture.md).
 | `find_pdfs.html`, `find_pdfs.js` | a window of its own | Find Missing PDFs: the publisher's PDF of items that have none, fetched in this browser (see [below](#find_pdfsjs-missing-pdfs-through-the-browser)). |
 | `options.html`, `options.js` | the options page | The library address, server permission and access token. |
 | `connection.js` | popup and options | Validates addresses, loads server-bound credentials and sends authenticated requests. |
+| `background.js`, `bridge.js`, `library.js` | worker and isolated library content script | Registers the bridge for the configured library and validates scoped item-ID requests from the app. No credentials cross the page bridge. |
 | `tsconfig.json` | | Type-checking only (see [Type-checking](#type-checking)). |
 
 The extension is plain JavaScript in ES modules, with no build: Chrome loads the folder as it is,
@@ -165,8 +166,12 @@ The popup's download icon opens `find_pdfs.html` in a window of its own (`chrome
 type `popup`): the popup closes when it loses focus, and a hidden tab's timers are throttled. The
 page:
 
-1. `GET /api/connector/missing-pdfs` (with the chosen folder): up to 50 items with a DOI and no
-   PDF, newest first.
+1. `GET /api/connector/missing-pdfs` (with the chosen folder and saved cursor): up to 50 items with
+   a DOI and no PDF. Ordering is stable by descending `(date_added, id)`. Each completed attempt
+   saves its cursor under a separate local-storage key for that exact server and folder. Failed
+   papers remain eligible for retry but do not block **Next batch** or the next visit. Stop leaves
+   untried items available to continue; **Start from newest** resets the cursor. Reaching the end
+   clears it for a future full pass.
 2. On **Find PDFs**: requests `https://*/*` (above), then opens one background tab (inactive, in
    the last focused window) and goes through the items one at a time, with `PAUSE_MS` (5 s)
    between them: publishers block institutions whose readers download in bulk.
@@ -194,13 +199,38 @@ page:
 5. A PDF goes to `POST /api/connector/attach-pdf`, which attaches it only if it is the paper. A
    PDF of another paper moves on to the next link.
 
-The outcome of each item is shown in its row: `attached`, `has-pdf`, `wrong-paper`,
+Embedded PDF objects and PDF iframes are candidates too, including page-owned blobs fetched inside
+their page. Chrome's native PDF viewer may refuse script injection; its original tab URL is then
+fetched through the extension and still checked for PDF bytes and paper identity before attachment.
+
+The outcome of each item is shown in its row: `attached`, `has-pdf`, `wrong-paper`, `unverified`,
 `no-access` (only pages came back, usually a login or purchase page), `no-link`, `blocked` or
 `error`. Under a failed item the row says what came back, for each link (`HTTP 403`, "not a
 PDF: the page “Sign in”", "a PDF of another paper"), or which page had no PDF link, so a user
 can tell a missing subscription from a page this code does not read. At the end, **Retry**
-runs the items not found again, and the tab is closed. `?resolver=` (the DOI resolver) and
-`?pause=` exist for the automated checklist.
+runs the items not found again, and the tab is closed. Article titles link to the publisher for
+manual review. `?resolver=` (the DOI resolver), `?pause=` and `?batch=` exist for the automated
+checklist.
+
+### Requests from the app
+
+`frontend/src/afterAdd.ts` first asks `publisherPdfs.ts` to hand eligible new DOI items to the
+extension when PDF lookup was selected by the user or the existing Adding Items policy. The
+isolated content script relays only item IDs and an acknowledgement ID. The worker requires the
+browser-supplied sender to be the configured library's exact origin (scheme, host and port) and
+top frame, bounds/validates the IDs, and verifies the connector connection and
+`capabilities.publisher_pdfs` before accepting. It constructs the finder URL itself; pages cannot
+supply URLs, credentials or another library. The content script is registered dynamically only
+for the configured host's existing permission, and updated when the server or permissions change.
+Because Chrome host match patterns do not distinguish ports, the worker's exact-origin check is
+required. Credentials remain in trusted extension storage, and never enter the library page.
+
+The finder lists just those IDs and starts automatically only if publisher permission was granted
+previously; otherwise the user clicks Find PDFs. After a failed publisher attempt,
+`POST /api/connector/find-pdf` queues other enabled sources. Failed queue requests pause visibly
+and retain retry; closing the finder cancels untried work. Without a usable extension connection,
+the app keeps its existing server-source follow-ups. Non-publisher identifiers and imports over
+200 eligible DOI items also use the normal sources.
 
 ## The connector API
 
@@ -220,6 +250,7 @@ Tells the extension that the library is running and fills its pickers.
 | `tags` | tag names |
 | `counts` | `{library, trash, duplicates}` |
 | `on_add` | Settings → "When an item is added": `fetch_metadata`, `find_pdf`, `fetch_references`, each `"never"`, `"always"` or `"ask"` |
+| `capabilities` | Optional feature flags; `publisher_pdfs` and `pdf_pagination` are true on servers supporting scoped app requests and resumable batches. |
 
 The popup shows a checkbox for `find_pdf` and `fetch_references` when they are `"ask"`. Whether to
 look up online is always the user's choice in the popup ("Complete metadata online"), so
@@ -299,15 +330,30 @@ existing item to the folder and the tags, and answers `{item}`. `folder_id` is r
 
 For Find Missing PDFs. Items not in the trash with a DOI that is not an arXiv DOI (the app
 downloads arXiv itself) and no PDF attachment, newest first. Query: `folder_id` (that folder and
-its subfolders; malformed → 400) and `limit` (default 50, at most 200). Answers
-`{items: [{id, title, doi, year}], total}`, `total` counting all of them.
+its subfolders; malformed → 400), `limit` (default 50, at most 200), optional `ids` (1–200
+comma-separated item IDs), and an optional opaque `cursor`. Answers
+`{items: [{id, title, doi, year, cursor}], total, next_cursor}`. The total counts eligible items
+before cursor filtering; `next_cursor` is null at the end. Per-item cursors resume after individual
+completed attempts, even if the boundary item was deleted or acquired a PDF. Invalid or oversized
+IDs/cursors give 400. Omitting the optional filters preserves the original listing contract.
+
+### `POST /find-pdf`
+
+JSON `{id}` queues the configured PDF sources for an existing item after an app-requested browser
+attempt. Answers `{status: "searching"}` or `{status: "has-pdf"}` without adding a second PDF.
+Malformed/missing IDs give 400; unknown items give 404. It accepts no caller-supplied URL.
 
 ### `POST /attach-pdf`
 
 Multipart with `id` and `file`: a PDF the extension fetched for an existing item. It is attached as
 "Full Text PDF" only if the item has no PDF yet and `verify_pdf` (the check Find Available PDF
-makes: the DOI, the arXiv stamp or the title in the first two pages) says it is the paper.
-Answers `{status, item}`, `status` being `attached`, `has-pdf`, `wrong-paper` or `not-a-pdf`.
+makes: the DOI, the arXiv stamp or the title in the opening pages) says it is the paper. Typography,
+ligatures and wrapped identifiers/titles are normalized. The first two pages are checked first;
+indeterminate cover pages allow a bounded look through five pages, but contradictory opening-page
+identity is never overridden by a later reference. Caller-supplied identity fields are ignored.
+Answers `{status, item}`, `status` being `attached`, `has-pdf`, `wrong-paper`, `unverified` or
+`not-a-pdf`. `wrong-paper` and `unverified` add a readable `reason`; unreadable/scanned PDFs remain
+unattached for manual review.
 No `id` gives 400, an unknown one 404. It never replaces or adds to a PDF the item has.
 
 ### CORS and the guard

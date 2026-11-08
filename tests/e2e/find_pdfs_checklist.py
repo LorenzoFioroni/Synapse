@@ -24,6 +24,7 @@ the test in place of the real sites (no request leaves the machine).
 
 import asyncio
 import http.server
+import os
 import re
 import shutil
 import subprocess
@@ -60,11 +61,14 @@ PAPERS = {
     "login": "Behind a Login",
     "wrong": "The Paper Asked For",
     "nolink": "Without a PDF Link",
+    "embedded": "Inside a Publisher Reader",
+    "scanned": "An Image-only Article",
 }
 # Where the resolver sends each test DOI, fixed in advance.
 REDIRECTS = {k: "/doi/abs/10.5555/atypon" if k == "atypon" else f"/article/{k}" for k in PAPERS}
 PDFS = {k: make_pdf(TMP / f"{k}.pdf", f"doi:10.5555/{k} {t}").read_bytes() for k, t in PAPERS.items()}
 PDFS["wrong"] = make_pdf(TMP / "other.pdf", "doi:10.9999/other Another Paper").read_bytes()
+PDFS["scanned"] = make_pdf(TMP / "scanned.pdf", "").read_bytes()
 
 
 def check(name, cond, extra=""):
@@ -156,6 +160,18 @@ class Publisher(http.server.BaseHTTPRequestHandler):
             self.send(PDFS["wrong"], "application/pdf")
         elif path == "/article/nolink":
             self.send(article("nolink", None))
+        elif path == "/article/embedded":
+            self.send(
+                article("embedded", None).replace(
+                    b"</body>", b'<object type="application/pdf" data="/pdf/embedded"></object></body>'
+                )
+            )
+        elif path == "/pdf/embedded":
+            self.send(PDFS["embedded"], "application/pdf")
+        elif path == "/article/scanned":
+            self.send(article("scanned", "/pdf/scanned"))
+        elif path == "/pdf/scanned":
+            self.send(PDFS["scanned"], "application/pdf")
         else:
             self.send(b"not found", "text/plain", 404)
 
@@ -183,7 +199,7 @@ async def main():
             item = requests.post(BASE + "/api/items", json={"title": title, "doi": f"10.5555/{key}"}).json()
             ids[item["id"]] = key
         listed = requests.get(BASE + "/api/connector/missing-pdfs").json()
-        check("the library lists the seven items without a PDF", listed["total"] == 7, listed["total"])
+        check("the library lists the items without a PDF", listed["total"] == len(PAPERS), listed["total"])
 
         async with async_playwright() as p:
             ctx = await p.chromium.launch_persistent_context(
@@ -254,7 +270,7 @@ async def main():
             await page.goto(f"{ext}/find_pdfs.html?resolver={PUB}/resolve/&pause=0")
             await page.wait_for_selector("#start", timeout=10000)
             rows = await page.locator(".rows li").count()
-            check("the page lists them", rows == 7, rows)
+            check("the page lists them", rows == len(PAPERS), rows)
             await page.click("#start")
             await page.wait_for_function(
                 "() => /attached of/.test(document.querySelector('.summary')?.textContent || '')", timeout=240000
@@ -270,21 +286,137 @@ async def main():
             check("past a redirect by script", "attached" in statuses["script"])
             check("through a reader page to its download link", "attached" in statuses["atypon"])
             check("by a link labelled PDF", "attached" in statuses["anchor"])
+            check("from an embedded publisher reader", "attached" in statuses["embedded"])
+            check("a scanned PDF is labelled unverified, not wrong-paper", "needs review" in statuses["scanned"])
             check("not the supplementary PDF", hits["suppl"] == 0, hits)
             check("a login page is not attached", "No access" in statuses["login"])
             check("  and the row says what came back", "Sign in" in why["login"], why["login"])
             check("a PDF of another paper is not attached", "not of this paper" in statuses["wrong"])
-            check("  and the row says so", "another paper" in why["wrong"], why["wrong"])
+            check("  and the row says so", "different paper identifier" in why["wrong"], why["wrong"])
             check("an article page without a PDF link", "No PDF link" in statuses["nolink"])
             check("  and the row names the page", "Without a PDF Link" in why["nolink"], why["nolink"])
             summary = await page.inner_text(".summary")
-            check("the summary counts them", "4 PDFs attached of 7 tried" in summary, summary)
-            check("the three not found can be retried", "Retry 3" in await page.inner_text("#start"))
+            check("the summary counts them", f"5 PDFs attached of {len(PAPERS)} tried" in summary, summary)
+            check("the four not found can be retried", "Retry 4" in await page.inner_text("#start"))
             tabs = [pg.url for pg in ctx.pages]
             check("the background tab is closed afterwards", not any(u.startswith(PUB) for u in tabs), tabs)
 
             left = requests.get(BASE + "/api/connector/missing-pdfs").json()
-            check("the library has the four PDFs", left["total"] == 3, left["total"])
+            check("the library has the five PDFs", left["total"] == 4, left["total"])
+
+            # Stop after the first completed attempt, then reload: the next batch starts after
+            # that item, even though it failed and therefore is still missing its PDF.
+            batches = await ctx.new_page()
+            batches.on("pageerror", lambda e: errors.append(str(e)))
+            batch_url = f"{ext}/find_pdfs.html?resolver={PUB}/resolve/&pause=0&batch=2"
+            await batches.goto(batch_url)
+            await batches.wait_for_selector(".rows li")
+            first = await batches.locator(".rows li").first.get_attribute("data-id")
+            await batches.evaluate("""() => {
+                const watcher = new MutationObserver(() => {
+                    if (document.querySelector('.rows .st.warn, .rows .st.err, .rows .st.ok')) {
+                        document.querySelector('#stop').click(); watcher.disconnect();
+                    }
+                });
+                watcher.observe(document.querySelector('.rows'), {subtree:true, childList:true, attributes:true});
+            }""")
+            await batches.click("#start")
+            await batches.wait_for_function(
+                "() => document.querySelector('#start')?.textContent.includes('Continue 1')", timeout=120000
+            )
+            check("Stop preserves the untried part of a batch", "Continue 1" in await batches.inner_text("#start"))
+            await batches.reload()
+            await batches.wait_for_selector(".rows li")
+            resumed = await batches.locator(".rows li").evaluate_all("els => els.map(e => e.dataset.id)")
+            check("reopening advances past a failed paper", first not in resumed and len(resumed) == 2, resumed)
+            await batches.click("#start")
+            await batches.wait_for_function("() => !document.querySelector('#next').disabled", timeout=120000)
+            await batches.click("#next")
+            await batches.wait_for_selector(".rows li")
+            older = await batches.locator(".rows li").evaluate_all("els => els.map(e => e.dataset.id)")
+            check(
+                "next batch reaches older items without repeating failures", not set(older).intersection(resumed), older
+            )
+            await batches.close()
+
+            # The installed content script and worker handle the real app follow-up; no extension
+            # ID, bearer token or publisher URL is provided to the library page.
+            library = await ctx.new_page()
+            library.on("pageerror", lambda e: errors.append(str(e)))
+            await library.goto(BASE)
+            await library.wait_for_selector('html[data-synapse-extension="pdfs"]')
+            chosen = next(i for i, key in ids.items() if key == "scanned")
+            async with ctx.expect_page() as opened:
+                await library.evaluate(
+                    """async (id) => {
+                    const actions = await import('/js/actions.js');
+                    await actions.refreshItems([id], {added:true});
+                    const {runAfterAdd} = await import('/js/afterAdd.js');
+                    await runAfterAdd([id], {pdf:true});
+                }""",
+                    chosen,
+                )
+            requested = await opened.value
+            await requested.wait_for_selector(".rows li")
+            scoped = await requested.locator(".rows li").evaluate_all("els => els.map(e => e.dataset.id)")
+            check(
+                "adding in Synapse opens the publisher search for exactly the chosen item", scoped == [chosen], scoped
+            )
+            check(
+                "app-triggered search offers other sources only after publisher access", "fallback=1" in requested.url
+            )
+            await requested.close()
+            await library.close()
+
+            # A failed server fallback must stay visible and retryable, rather than being counted
+            # as a completed background search. All queue responses are faked; no source contacts
+            # a real publisher during this test.
+            retry = await ctx.new_page()
+            retry.on("pageerror", lambda e: errors.append(str(e)))
+            await retry.route(
+                f"{BASE}/api/connector/find-pdf",
+                lambda route: route.fulfill(
+                    status=503, content_type="application/json", body='{"error":"Temporarily unavailable"}'
+                ),
+            )
+            await retry.goto(f"{ext}/find_pdfs.html?resolver={PUB}/resolve/&pause=0&fallback=1&ids={chosen}")
+            await retry.wait_for_selector("#start")
+            await retry.click("#start")
+            await retry.wait_for_function(
+                "() => document.querySelector('.run-progress')?.textContent.includes('Search paused')", timeout=120000
+            )
+            check(
+                "failed fallback pauses with its error and a retry",
+                "Temporarily unavailable" in await retry.inner_text(".why")
+                and await retry.locator("#start").is_enabled(),
+            )
+            await retry.unroute(f"{BASE}/api/connector/find-pdf")
+            await retry.route(
+                f"{BASE}/api/connector/find-pdf",
+                lambda route: route.fulfill(content_type="application/json", body='{"status":"searching"}'),
+            )
+            await retry.click("#start")
+            await retry.wait_for_function(
+                "() => document.querySelector('.why')?.textContent.includes('Other enabled PDF sources are now being tried')",
+                timeout=120000,
+            )
+            check(
+                "retry can queue other sources after the publisher attempt",
+                "now being tried" in await retry.inner_text(".why"),
+            )
+            await retry.close()
+
+            if os.environ.get("SHOTS"):
+                shots = Path(os.environ["SHOTS"])
+                shots.mkdir(parents=True, exist_ok=True)
+                await page.screenshot(path=str(shots / "publisher-pdfs-light.png"), full_page=True)
+                await page.emulate_media(color_scheme="dark")
+                await page.set_viewport_size({"width": 390, "height": 844})
+                await page.screenshot(path=str(shots / "publisher-pdfs-phone-dark.png"), full_page=True)
+                check(
+                    "phone results fit without horizontal overflow",
+                    await page.evaluate("() => document.documentElement.scrollWidth <= innerWidth"),
+                )
             check("no page errors", not errors, errors)
             await ctx.close()
     finally:

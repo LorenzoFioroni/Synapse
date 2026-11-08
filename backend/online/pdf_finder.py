@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import tempfile
+import unicodedata
 import urllib.parse
 import uuid
 from collections.abc import Callable
@@ -17,8 +18,8 @@ from pathlib import Path
 
 from requests.cookies import RequestsCookieJar
 
-from ..library.identifiers import clean_doi
-from ..pdf.text import extract_text
+from ..library.identifiers import ARXIV_ID, clean_doi, norm_doi
+from ..pdf.text import DOI_RE, clean_text, extract_text
 from . import article_page
 from .http import BROWSER_UA, arxiv_wait
 from .remote_pdf import RemoteError, fetch, is_pdf
@@ -43,18 +44,68 @@ def _ratio(a: str, b: str) -> float:
         return best * 100
 
 
-def verify_pdf(path: str, title: str | None, doi: str | None, arxiv_id: str | None = None) -> bool:
-    text, _ = extract_text(path, max_pages=2)
-    low = text.lower()
-    if doi and re.sub(r"[^a-z0-9]", "", doi.lower()) in re.sub(r"[^a-z0-9]", "", low):
-        return True
-    # arXiv stamps "arXiv:1412.6980v9 [cs.LG] …" in the margin of the first page
-    if arxiv_id and re.search(r"arxiv:\s*" + re.escape(arxiv_id.lower()) + r"(?:v\d+)?\b", low):
-        return True
+# Publishers sometimes prepend a cover or access page. Keep extraction bounded rather than
+# reading the reference list at the end of an arbitrarily long document.
+VERIFY_MAX_PAGES = 5
+
+
+def _title_text(value: str) -> str:
+    text = clean_text(value).casefold().replace("\u00ad", "")
+    # Typography and line wrapping must not make an otherwise identical title fail.
+    return re.sub(r"[\W_]+", "", text)
+
+
+def pdf_verification(path: str, title: str | None, doi: str | None, arxiv_id: str | None = None) -> dict:
+    """Verified, contradictory identity, or indeterminate; never attach indeterminate PDFs."""
+    text, pages = extract_text(path, max_pages=2)
+    result = _verify_text(text, title, doi, arxiv_id)
+    # A later reference must not override contradictory identity on the opening pages.
+    if result["status"] == "unverified" and pages > 2:
+        text, _ = extract_text(path, max_pages=VERIFY_MAX_PAGES)
+        return _verify_text(text, title, doi, arxiv_id)
+    return result
+
+
+def _verify_text(text: str, title: str | None, doi: str | None, arxiv_id: str | None) -> dict:
+    low = unicodedata.normalize("NFKC", text).casefold().replace("\u00ad", "")
+    found_dois = {norm_doi(m.group(1).rstrip(".,;)]}")) for m in DOI_RE.finditer(low)}
+    expected_doi = norm_doi(doi)
+    if expected_doi:
+        # PDF layout may wrap a DOI anywhere, including after a meaningful hyphen. Preserve
+        # punctuation and require a complete identifier, not a prefix of another paper's DOI.
+        pattern = r"(?<![a-z0-9])" + r"\s*".join(re.escape(c) for c in expected_doi)
+        end = r"(?=$|[\s\"'<>]|[.,;:)\]}]+(?=\s|$))"
+        if re.search(pattern + end, low):
+            return {"status": "verified"}
+    # arXiv stamps include the version, but the library stores the unversioned identifier.
+    found_arxiv = {
+        m.group(1).lower() for m in re.finditer(r"arxiv:\s*" + ARXIV_ID.pattern + r"(?![a-z0-9])", low, re.I)
+    }
+    if arxiv_id and arxiv_id.lower() in found_arxiv:
+        return {"status": "verified"}
     if title:
-        t = re.sub(r"\s+", "", title.lower())[:150]
-        return _ratio(t, re.sub(r"\s+", "", low)) >= 85
-    return False
+        expected_title = _title_text(title)[:150]
+        if expected_title and _ratio(expected_title, _title_text(low)) >= 85:
+            return {"status": "verified"}
+    if not low.strip():
+        return {
+            "status": "unverified",
+            "reason": "No readable text could be extracted. This may be a scanned or damaged PDF; review it manually.",
+        }
+    if (expected_doi and len(found_dois) == 1) or (arxiv_id and len(found_arxiv) == 1):
+        return {
+            "status": "wrong-paper",
+            "reason": "The PDF contains a different paper identifier and its title did not match the library item.",
+        }
+    return {
+        "status": "unverified",
+        "reason": "The readable PDF text did not establish this item's title or identifier. Review the PDF manually.",
+    }
+
+
+def verify_pdf(path: str, title: str | None, doi: str | None, arxiv_id: str | None = None) -> bool:
+    """Compatibility helper for PDF sources: only positively verified PDFs may be kept."""
+    return pdf_verification(path, title, doi, arxiv_id)["status"] == "verified"
 
 
 def _unique(urls: list) -> list[str]:

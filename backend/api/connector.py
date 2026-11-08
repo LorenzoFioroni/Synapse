@@ -36,6 +36,7 @@ def ping():
     return jsonify(
         app="synapse",
         version=VERSION,
+        capabilities={"publisher_pdfs": True, "pdf_pagination": True},
         folders=s.folders.tree(),
         tags=[t["name"] for t in s.tags.list()],
         counts=s.papers.counts(),
@@ -77,7 +78,21 @@ def missing_pdfs():
     except ValueError:
         return error("limit must be a number")
     try:
-        result = connector.missing_pdfs(svc(), request.args.get("folder_id"), limit)
+        result = connector.missing_pdfs(
+            svc(), request.args.get("folder_id"), limit, request.args.get("cursor"), request.args.get("ids")
+        )
+    except connector.BadRequest as e:
+        return failure(e)
+    return jsonify(**result)
+
+
+@bp.post("/find-pdf")
+def find_pdf():
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict) or not isinstance(data.get("id"), str) or not data["id"].strip():
+        return error("Which item? The request has no valid id.")
+    try:
+        result = connector.find_pdf(svc(), data["id"])
     except connector.BadRequest as e:
         return failure(e)
     return jsonify(**result)
