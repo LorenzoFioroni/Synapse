@@ -450,6 +450,24 @@ def test_backup_settings_need_confirmation_from_another_device(mac, ipad, tmp_pa
     assert r.status_code == 200 and r.get_json()["settings"]["backup_keep"] == 30
 
 
+def test_making_and_restoring_backups_need_confirmation_from_another_device(mac, ipad):
+    # Each manual backup prunes the oldest (here and offsite): with a stolen cookie alone, a few in a
+    # row would push every good backup out. A restore replaces the library and which plugins are on.
+    auth = Authenticator()
+    add_passkey(mac, auth)
+    assert sign_in(ipad, auth).status_code == 201
+    made = secure(mac, "POST", "/api/backups")
+    assert made.status_code == 201
+    name = made.get_json()["backup"]["name"]
+    for path, payload in (("/api/backups", None), ("/api/backups/restore", {"name": name})):
+        r = secure(ipad, "POST", path, remote=True, json=payload)
+        assert r.status_code == 403 and r.get_json().get("confirm") is True, path
+    assert [b["name"] for b in secure(ipad, "GET", "/api/backups", remote=True).get_json()["backups"]] == [name]
+    assert confirm(ipad, auth).status_code == 200
+    assert secure(ipad, "POST", "/api/backups", remote=True).status_code == 201
+    assert secure(ipad, "POST", "/api/backups/restore", remote=True, json={"name": name}).status_code == 200
+
+
 def test_admin_actions_from_a_device_need_a_confirmation(lan_app, mac, ipad):
     auth = Authenticator()
     add_passkey(mac, auth)
