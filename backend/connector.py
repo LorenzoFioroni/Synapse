@@ -14,6 +14,8 @@ online lookups, PDF text, the citation queue and the background PDF search.
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import os
 import re
@@ -199,23 +201,69 @@ def save(s: Services, page: dict, pdf_bytes: bytes | None) -> dict:
 
 
 MISSING_PDFS_MAX = 200
+_ITEM_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+_CURSOR_MAX = 512
 
 
-def missing_pdfs(s: Services, folder=None, limit: int = 50) -> dict:
-    """Items that have a publisher DOI and no PDF, newest first, for the extension's "Find missing
-    PDFs" page: it opens each DOI in the user's browser, where the institution's access and the
-    publishers' browser checks work as they do for the user. arXiv DOIs are left out (the
-    library downloads arXiv itself). Returns ``{items: [{id, title, doi, year}], total}``.
-    Raises :class:`BadRequest` for a malformed ``folder_id``."""
+def _missing_cursor(boundary: tuple[str, str]) -> str:
+    data = json.dumps([1, *boundary], separators=(",", ":")).encode()
+    return base64.urlsafe_b64encode(data).decode().rstrip("=")
+
+
+def _cursor_boundary(cursor: str | None) -> tuple[str, str] | None:
+    if cursor is None:
+        return None
+    try:
+        if len(cursor) > _CURSOR_MAX or not re.fullmatch(r"[A-Za-z0-9_-]+", cursor):
+            raise ValueError
+        data = json.loads(base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True))
+        if (
+            not isinstance(data, list)
+            or len(data) != 3
+            or type(data[0]) is not int
+            or data[0] != 1
+            or not isinstance(data[1], str)
+            or len(data[1]) > 128
+            or any(ord(c) < 32 for c in data[1])
+            or not isinstance(data[2], str)
+            or not _ITEM_ID.fullmatch(data[2])
+        ):
+            raise ValueError
+        return data[1], data[2]
+    except (ValueError, UnicodeError):
+        raise BadRequest("Invalid missing-PDF cursor.") from None
+
+
+def _missing_ids(ids: str | None) -> set[str] | None:
+    if ids is None:
+        return None
+    if len(ids) > MISSING_PDFS_MAX * 129:
+        raise BadRequest("ids must contain 1 to 200 item IDs.")
+    values = ids.split(",")
+    if not 1 <= len(values) <= MISSING_PDFS_MAX or any(not _ITEM_ID.fullmatch(v) for v in values):
+        raise BadRequest("ids must contain 1 to 200 nonempty item IDs separated by commas.")
+    return set(values)
+
+
+def missing_pdfs(s: Services, folder=None, limit: int = 50, cursor: str | None = None, ids: str | None = None) -> dict:
+    """Publisher DOI items without PDFs, descending by (date_added, id).
+
+    Opaque item cursors resume after a completed attempt, even if that item was removed or
+    acquired a PDF. ``total`` counts eligible items within folder/ids before the cursor.
+    """
     from .library.identifiers import clean_doi
 
     folder = folder_id(folder)
+    boundary = _cursor_boundary(cursor)
+    selected = _missing_ids(ids)
     limit = max(1, min(int(limit), MISSING_PDFS_MAX))
     inside = s.folders.descendants(folder) if folder is not None else None
     out = []
     for p in s.papers.list():
         doi = clean_doi(p.get("doi"))
         if not doi or doi.lower().startswith("10.48550/") or _has_pdf(p):
+            continue
+        if selected is not None and p["id"] not in selected:
             continue
         if inside is not None and not inside.intersection(p.get("folder_ids") or []):
             continue
@@ -225,11 +273,20 @@ def missing_pdfs(s: Services, folder=None, limit: int = 50) -> dict:
                 "title": p.get("title") or "",
                 "doi": doi,
                 "year": p.get("year"),
-                "_at": p.get("date_added") or "",
+                "_key": (p.get("date_added") or "", p["id"]),
             }
         )
-    out.sort(key=lambda r: r.pop("_at"), reverse=True)
-    return {"items": out[:limit], "total": len(out)}
+    total = len(out)
+    out.sort(key=lambda r: r["_key"], reverse=True)
+    remaining = [p for p in out if boundary is None or p["_key"] < boundary]
+    page = remaining[:limit]
+    for p in page:
+        p["cursor"] = _missing_cursor(p.pop("_key"))
+    return {
+        "items": page,
+        "total": total,
+        "next_cursor": page[-1]["cursor"] if len(remaining) > limit else None,
+    }
 
 
 def _has_pdf(item: dict) -> bool:
@@ -242,10 +299,10 @@ def _has_pdf(item: dict) -> bool:
 def attach_pdf(s: Services, item_id: str, pdf_bytes: bytes | None) -> dict:
     """Attach a PDF the extension fetched for an existing item, if it is that paper (the check
     Find Available PDF makes) and the item has no PDF yet. Returns ``{status, item}`` with status
-    ``attached``, ``not-a-pdf``, ``wrong-paper`` or ``has-pdf``. Raises :class:`BadRequest`
+    ``attached``, ``not-a-pdf``, ``wrong-paper``, ``unverified`` or ``has-pdf``. Raises :class:`BadRequest`
     without an item id."""
     from .library.identifiers import identifiers
-    from .online.pdf_finder import verify_pdf
+    from .online.pdf_finder import pdf_verification
 
     if not item_id:
         raise BadRequest("Which item? The request has no id.")
@@ -258,13 +315,25 @@ def attach_pdf(s: Services, item_id: str, pdf_bytes: bytes | None) -> dict:
     with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
         tmp.write(pdf_bytes)
         tmp.flush()
-        if not verify_pdf(tmp.name, item.get("title"), item.get("doi"), arxiv_id):
-            return {"status": "wrong-paper", "item": item}
+        verification = pdf_verification(tmp.name, item.get("title"), item.get("doi"), arxiv_id)
+        if verification["status"] != "verified":
+            return {**verification, "item": item}
     filename = f"{uuid.uuid4().hex}_connector.pdf"
     (s.config.pdf_dir / filename).write_bytes(pdf_bytes)
     s.papers.add_attachment(item["id"], "Full Text PDF", filename, "pdf")
     s.attachments_changed()
     return {"status": "attached", "item": s.papers.get(item["id"])}
+
+
+def find_pdf(s: Services, item_id: str) -> dict:
+    """Queue the configured PDF sources for an existing item after a browser attempt."""
+    if not item_id:
+        raise BadRequest("Which item? The request has no id.")
+    item = s.papers.get(item_id)
+    if _has_pdf(item):
+        return {"status": "has-pdf"}
+    s.find_pdf_later(item["id"])
+    return {"status": "searching"}
 
 
 def file_existing(s: Services, item_id: str, folder, tags) -> dict:

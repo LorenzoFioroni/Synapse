@@ -9,8 +9,8 @@ import { fetchPdfInPage, pageState } from './extract.js';
 import { loadConnection, libraryFetch } from './connection.js';
 
 /** @typedef {import('./extract.js').PageState} PageState */
-/** @typedef {{ id: string; title: string; doi: string; year?: number | null }} Missing */
-/** @typedef {'attached' | 'wrong-paper' | 'has-pdf' | 'no-access' | 'no-link' | 'blocked' | 'error'} Outcome */
+/** @typedef {{ id: string; title: string; doi: string; year?: number | null; cursor?: string }} Missing */
+/** @typedef {'attached' | 'wrong-paper' | 'unverified' | 'has-pdf' | 'no-access' | 'no-link' | 'blocked' | 'error'} Outcome */
 /** @typedef {{ outcome: Outcome; why?: string }} Found  what happened, and the details shown under the row */
 
 const params = new URLSearchParams(location.search);
@@ -22,14 +22,17 @@ const SETTLE_MS = 25000;    // a browser check, redirects by script
 const POLL_MS = 1000;
 const STEADY_POLLS = 4;     // an article page without PDF links: polls without change before giving up
 const MAX_PDF_BYTES = 60 * 1024 * 1024;
-const BATCH = 50;
+const BATCH = Math.max(1, Math.min(50, Number(params.get('batch')) || 50));
 const OPEN_LINKS = 3;       // links opened in the tab, at most (each can take a while)
+const requestedIds = params.get('ids') || '';
+const fallback = params.get('fallback') === '1';
 
 /** @type {Record<Outcome, [string, 'ok' | 'warn' | 'err']>} */
 const OUTCOMES = {
   attached: ['PDF attached ✓', 'ok'],
   'has-pdf': ['Already has a PDF', 'ok'],
   'wrong-paper': ['A PDF came back, but not of this paper', 'warn'],
+  unverified: ['PDF needs review: its identity could not be confirmed', 'warn'],
   'no-access': ['No access: the PDF links gave a page, not the PDF', 'warn'],
   'no-link': ['No PDF link found on the article page', 'warn'],
   blocked: ['The site’s browser check did not finish: open the paper once in this browser, then Retry', 'warn'],
@@ -62,6 +65,21 @@ let items = [];
 const outcomes = new Map();
 let running = false;
 let stopping = false;
+/** @type {string | null} */
+let nextCursor = null;
+let total = 0;
+let loadedFolder = '';
+let loadSeq = 0;
+
+const progressKey = () => JSON.stringify([server, loadedFolder]);
+/** @param {string | null} cursor */
+async function saveProgress(cursor) {
+  if (requestedIds) return;
+  // Separate storage keys avoid read/modify/write races between windows and capture this folder
+  // before any asynchronous work can let navigation select another one.
+  const key = `pdfProgress:${progressKey()}`;
+  if (cursor) await chrome.storage.local.set({ [key]: cursor }); else await chrome.storage.local.remove(key);
+}
 
 /**
  * @param {string} path
@@ -80,6 +98,7 @@ async function init() {
     ({ server, token } = await loadConnection());
     const ping = await api('/api/connector/ping');
     if (!ping.ok) throw new Error(ping.data?.error || `Error ${ping.status}`);
+    if (requestedIds && !ping.data.capabilities?.publisher_pdfs) throw new Error('Update Synapse to search the items selected in the app.');
     folders = ping.data.folders || [];
   } catch (e) {
     conn.className = 'conn off';
@@ -89,7 +108,10 @@ async function init() {
   }
   conn.className = 'conn ok';
   conn.title = `Connected to ${server}`;
-  renderForm();
+  await renderForm();
+  // A library request can start unattended only after the user granted publisher access before.
+  if (params.get('auto') === '1' && items.length
+    && await chrome.permissions.contains({ origins: ['https://*/*'] })) void start(items);
 }
 
 /** @param {string} selected */
@@ -107,18 +129,29 @@ function folderOptions(selected) {
   return out.join('');
 }
 
-async function renderForm(folder = '') {
+/** @param {string} [folder] @param {string | null} [cursor] */
+async function renderForm(folder = '', cursor = undefined) {
+  const seq = ++loadSeq;
+  loadedFolder = folder;
   view.innerHTML = `
     <p class="intro">Opens each paper’s DOI in a background tab of this browser and attaches the publisher’s PDF,
       using the access this browser has (campus network, VPN, your sign-ins). Keep this window open while it runs.</p>
+    ${requestedIds ? '<p class="hint">Selected by Synapse when adding items. Publisher access is tried first; other enabled PDF sources follow if needed.</p>' : ''}
     <label class="f" for="folder">Items without a PDF in</label>
-    <select id="folder">${folderOptions(folder)}</select>
+    <select id="folder" ${requestedIds ? 'disabled' : ''}>${folderOptions(folder)}</select>
     <div id="list"><div class="center"><span class="spinner"></span> Loading…</div></div>`;
   get('folder', HTMLSelectElement).onchange = (e) => {
     if (e.target instanceof HTMLSelectElement) renderForm(e.target.value);
   };
-  const q = new URLSearchParams({ limit: String(BATCH), ...(folder ? { folder_id: folder } : {}) });
+  if (cursor === undefined && !requestedIds) {
+    const key = `pdfProgress:${progressKey()}`;
+    const saved = await chrome.storage.local.get(key);
+    cursor = typeof saved[key] === 'string' ? saved[key] : null;
+  }
+  const q = new URLSearchParams({ limit: String(BATCH), ...(folder ? { folder_id: folder } : {}),
+    ...(requestedIds ? { ids: requestedIds } : {}), ...(cursor ? { cursor } : {}) });
   const res = await api(`/api/connector/missing-pdfs?${q}`);
+  if (seq !== loadSeq) return;
   const list = get('list', HTMLElement);
   if (res.status === 404) {
     // People update the extension and the library separately: a library from before this page.
@@ -132,20 +165,27 @@ async function renderForm(folder = '') {
     return;
   }
   items = res.data.items;
+  nextCursor = res.data.next_cursor || null;
+  total = res.data.total;
   outcomes.clear();
   if (!items.length) {
+    if (cursor && total) { await saveProgress(null); return renderForm(folder, null); }
     list.innerHTML = '<p class="summary">Every item with a DOI here has a PDF.</p>';
     return;
   }
-  const more = res.data.total > items.length ? ` (the ${items.length} newest of ${res.data.total}; run again for the rest)` : '';
+  const more = total > items.length ? ` (${items.length} in this batch of ${total}; progress is remembered)` : '';
   list.innerHTML = `
     <p class="summary">${items.length} item${items.length === 1 ? '' : 's'} with a DOI and no PDF${esc(more)}.</p>
-    <div class="actions"><button class="btn primary" id="start">Find PDFs</button><button class="btn" id="stop" disabled>Stop</button></div>
+    <div class="actions"><button class="btn primary" id="start">Find PDFs</button><button class="btn" id="stop" disabled>Stop after this paper</button></div>
+    <div class="actions"><button class="btn" id="next" disabled>Next batch</button><button class="btn" id="restart">Start from newest</button></div>
+    <div class="summary run-progress" role="status" aria-live="polite"></div>
     <div class="hint">One paper every few seconds. If a site asks you to confirm you are human, do it in its tab.</div>
-    <ul class="rows">${items.map((it) => `<li data-id="${esc(it.id)}"><span class="what"><b>${esc(it.title || it.doi)}</b>
+    <ul class="rows">${items.map((it) => `<li data-id="${esc(it.id)}"><span class="what"><b><a href="https://doi.org/${esc(it.doi)}" target="_blank" rel="noopener noreferrer">${esc(it.title || it.doi)}</a></b>
       <small>${esc(it.doi)}${it.year ? ` · ${esc(it.year)}` : ''}</small><small class="why"></small></span><span class="st">Waiting</span></li>`).join('')}</ul>`;
   get('start', HTMLButtonElement).onclick = () => start(items);
   get('stop', HTMLButtonElement).onclick = () => { stopping = true; get('stop', HTMLButtonElement).disabled = true; };
+  get('next', HTMLButtonElement).onclick = () => renderForm(folder, nextCursor);
+  get('restart', HTMLButtonElement).onclick = async () => { await saveProgress(null); await renderForm(folder, null); };
 }
 
 /**
@@ -164,23 +204,30 @@ function setStatus(id, text, kind = '', why = '') {
 
 /** @param {Missing[]} todo */
 async function start(todo) {
+  if (running) return;
+  running = true;
+  const startBtn = get('start', HTMLButtonElement);
+  startBtn.disabled = true;
   // Pages of any publisher: asked for here, on the click, since Chrome grants it only then.
   const local = RESOLVER.startsWith('http://127.0.0.1');   // the tests' pages, already allowed
   if (!local && !(await chrome.permissions.request({ origins: ['https://*/*'] }).catch(() => false))) {
+    running = false;
+    startBtn.disabled = false;
     get('list', HTMLElement).insertAdjacentHTML('afterbegin', '<p class="summary">The extension needs access to publishers’ pages to read the PDF links.</p>');
     return;
   }
-  running = true;
   stopping = false;
-  const startBtn = get('start', HTMLButtonElement);
-  startBtn.disabled = true;
   get('stop', HTMLButtonElement).disabled = false;
   get('folder', HTMLSelectElement).disabled = true;
+  get('next', HTMLButtonElement).disabled = true;
+  get('restart', HTMLButtonElement).disabled = true;
   /** @type {number | undefined} */
   let tabId;
+  let runError = '';
   try {
     for (const [n, it] of todo.entries()) {
       if (stopping) break;
+      get('list', HTMLElement).querySelector('.run-progress')?.replaceChildren(`Paper ${n + 1} of ${todo.length} · publisher first`);
       if (n) await sleep(PAUSE_MS);
       if (stopping) break;
       tabId = await workerTab(tabId);
@@ -191,28 +238,51 @@ async function start(todo) {
       } catch (e) {
         found = { outcome: 'error', why: String((e instanceof Error && e.message) || e) };
       }
-      if (found.why) console.info('Find PDF', it.doi, found.outcome, found.why);
+      const firstVisit = !outcomes.has(it.id);
       outcomes.set(it.id, found.outcome);
       const [text, kind] = OUTCOMES[found.outcome];
       setStatus(it.id, text, kind, found.why);
+      if (fallback && !['attached', 'has-pdf'].includes(found.outcome)) {
+        const queued = await api('/api/connector/find-pdf', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: it.id }),
+        });
+        if (!queued.ok) {
+          outcomes.set(it.id, 'error');
+          const message = `Other PDF sources could not start: ${queued.data?.error || `Error ${queued.status}`}`;
+          setStatus(it.id, 'Could not start other PDF sources — retry', 'err', message);
+          throw new Error(message);
+        }
+        setStatus(it.id, text, kind, `${found.why || ''} Other enabled PDF sources are now being tried in Synapse.`);
+      }
+      // Saving the boundary of each completed item also handles Stop/closing halfway through a batch.
+      if (firstVisit && it.cursor) await saveProgress(it.cursor);
     }
+  } catch (e) {
+    runError = `Search paused: ${e instanceof Error ? e.message : String(e)}. You can continue or retry.`;
   } finally {
     if (tabId !== undefined) await chrome.tabs.remove(tabId).catch(() => {});
     running = false;
-    finish();
+    await finish(runError);
   }
 }
 
-function finish() {
+/** @param {string} [error] */
+async function finish(error = '') {
   const done = [...outcomes.values()];
   const attached = done.filter((o) => o === 'attached').length;
   const failed = items.filter((it) => outcomes.has(it.id) && !['attached', 'has-pdf'].includes(String(outcomes.get(it.id))));
   const startBtn = get('start', HTMLButtonElement);
   get('stop', HTMLButtonElement).disabled = true;
-  get('folder', HTMLSelectElement).disabled = false;
-  startBtn.disabled = !failed.length;
-  startBtn.textContent = failed.length ? `Retry ${failed.length} not found` : 'Done';
-  startBtn.onclick = () => start(failed);
+  const untried = items.filter((it) => !outcomes.has(it.id));
+  if (!untried.length && !nextCursor) await saveProgress(null);
+  get('folder', HTMLSelectElement).disabled = !!requestedIds;
+  startBtn.disabled = !failed.length && !untried.length;
+  startBtn.textContent = untried.length ? `Continue ${untried.length} remaining` : failed.length ? `Retry ${failed.length} not found` : 'Done';
+  startBtn.onclick = () => start(untried.length ? untried : failed);
+  get('restart', HTMLButtonElement).disabled = false;
+  get('next', HTMLButtonElement).disabled = !!untried.length || !nextCursor;
+  get('next', HTMLButtonElement).textContent = nextCursor ? 'Next batch →' : 'All batches visited';
+  get('list', HTMLElement).querySelector('.run-progress')?.replaceChildren(error || (stopping ? 'Stopped. You can continue where you left off.' : nextCursor ? 'Continue with the next batch; failed papers will not block it.' : 'Batch finished. Failed PDFs remain available for review or retry.'));
   get('list', HTMLElement).querySelector('.summary')?.replaceChildren(
     `${attached} PDF${attached === 1 ? '' : 's'} attached of ${done.length} tried.`);
 }
@@ -250,6 +320,7 @@ async function findOne(tabId, it) {
   /** @type {string[]} */
   const notes = [];
   let wrong = false;
+  let unverified = false;
   /**
    * Fetch ``link`` from the page the tab shows and hand a PDF to the library.
    * @param {string} link
@@ -266,7 +337,8 @@ async function findOne(tabId, it) {
     if (!res.ok) throw new Error(res.data?.error || `Error ${res.status}`);
     if (res.data.status === 'attached' || res.data.status === 'has-pdf') return res.data.status;
     wrong ||= res.data.status === 'wrong-paper';
-    notes.push(`${short(link)}: ${res.data.status === 'wrong-paper' ? 'a PDF of another paper' : 'not a PDF'}`);
+    unverified ||= res.data.status === 'unverified';
+    notes.push(`${short(link)}: ${res.data.reason || (res.data.status === 'wrong-paper' ? 'a PDF of another paper' : 'not a PDF')}`);
   };
   // From the article page first; opening a link leaves that page, so that comes last.
   for (const link of links) {
@@ -288,7 +360,7 @@ async function findOne(tabId, it) {
       if (done) return { outcome: done };
     }
   }
-  return { outcome: wrong ? 'wrong-paper' : 'no-access', why: [...new Set(notes)].join(' · ') };
+  return { outcome: unverified ? 'unverified' : wrong ? 'wrong-paper' : 'no-access', why: [...new Set(notes)].join(' · ') };
 }
 
 /**
@@ -378,9 +450,16 @@ async function settle(tabId) {
   /** @type {PageState | undefined} */
   let last;
   let steady = 0;
+  let unreadable = 0;
   while (Date.now() < end) {
     const tab = await chrome.tabs.get(tabId);
     const state = tab.status === 'complete' ? await inTab(tabId, pageState, []) : undefined;
+    // Chrome's built-in PDF viewer forbids script injection. Its original tab URL can still
+    // be fetched by the extension; fetchPdf checks the bytes before anything is uploaded.
+    unreadable = tab.status === 'complete' && !state ? unreadable + 1 : 0;
+    if (unreadable >= 2 && tab.url && /^https?:/.test(tab.url)) {
+      return { url: tab.url, title: tab.title || '', isPdf: true, challenge: false, pdfUrls: [] };
+    }
     if (state && (state.isPdf || state.pdfUrls.length)) return state;
     steady = state && !state.challenge && state.url === last?.url ? steady + 1 : 0;
     if (state) last = state;

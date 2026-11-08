@@ -1,7 +1,7 @@
 // extractCitation runs in the page, so it reads the globals `document` and `location`: fake them.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { extractCitation } from '../../browser_extension/extract.js';
+import { extractCitation, pageState } from '../../browser_extension/extract.js';
 
 /** @param {string} href  @param {{ contentType?: string, title?: string }} doc */
 function onPage(href, doc = {}) {
@@ -24,4 +24,20 @@ test('a PDF whose URL has malformed %-escapes is still read', () => {
 test('a well-formed escaped DOI in a page URL is decoded', () => {
   onPage('https://example.org/doi/10.1234%2Fxyz.5');
   assert.equal(extractCitation().doi, '10.1234/xyz.5');
+});
+
+test('publisher readers expose embedded PDFs, including page-owned blobs', () => {
+  onPage('https://publisher.example/reader');
+  const embedded = [
+    { tagName: 'EMBED', src: 'blob:https://publisher.example/local-pdf' },
+    { tagName: 'OBJECT', data: '/article.pdf' },
+    { tagName: 'IFRAME', src: '/paper.pdf?download=1' },
+    { tagName: 'IFRAME', src: '/unrelated-frame' },
+    { tagName: 'EMBED', src: 'file:///private.pdf' },
+  ].map((attrs) => ({ ...attrs, getAttribute: (name) => attrs[name] || null }));
+  document.querySelectorAll = (selector) => selector.startsWith('embed[') ? embedded : [];
+  assert.deepEqual(pageState().pdfUrls, [
+    'blob:https://publisher.example/local-pdf', 'https://publisher.example/article.pdf',
+    'https://publisher.example/paper.pdf?download=1',
+  ]);
 });

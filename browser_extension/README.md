@@ -72,13 +72,33 @@ that paper. This is what to use when Find Available PDF in the app gets nothing 
 because of such checks. The browser must be on the subscribing network (the server need not).
 
 - It asks once for access to all HTTPS sites: the DOIs lead to any publisher.
-- One paper every few seconds, at most 50 per run (newest first; run it again for the rest):
-  publishers block institutions that download in bulk.
+- One paper every few seconds, in batches of 50: publishers block institutions that download in
+  bulk. **Next batch** reaches older items even when the current papers fail. Completed attempts
+  are remembered for this library and folder; reopening continues after them. **Start from newest**
+  resets that position. **Stop after this paper** leaves the rest available to continue.
 - If a site wants you to confirm you are human, do it in its tab, then **Retry**.
 - Keep the window open while it runs.
 - Under a paper it did not get, the row says what the publisher gave (a sign-in page, `HTTP 403`,
   the article page without a PDF link). A sign-in page usually means this browser is not on the
   subscribing network: try once by hand, on the VPN.
+- Article titles open the publisher for review. A PDF with insufficient readable identity is
+  labelled **needs review**, rather than being declared the wrong paper; it is not attached.
+
+### Starting from Synapse
+
+Reload this extension after updating it, then reload your Synapse page. When **Find available PDFs**
+is selected while adding/importing up to 200 items, Synapse asks the extension to try publisher
+PDFs for those DOI items first. The finder opens with just those items. Its first run asks you to
+click **Find PDFs** to grant publisher access; subsequent app requests start automatically if that
+access is still granted. Keep its window open and use **Next batch** for more than 50 selected items.
+If the publisher attempt fails, other enabled PDF sources are queued in Synapse. Items without a
+publisher DOI and larger imports use Synapse's normal PDF sources.
+
+Both Synapse and the extension must be updated. The extension must be configured for this exact
+library address (scheme, host and port), with a working browser token for a remote server. If it
+cannot connect or the server is older, the app keeps using its normal PDF sources. No browser token
+is shared with the Synapse page or publisher. The extension registers its small library-page bridge
+only on the configured host; it independently rejects requests from another origin or a subframe.
 
 Permissions: `activeTab` + `scripting` to read the current page only when you
 click the button (and the pages Find Missing PDFs opens, with the HTTPS access it asks for), `storage` for the settings, and access to `127.0.0.1` /

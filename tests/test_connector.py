@@ -1,6 +1,8 @@
 import io
 import json
 
+import pytest
+
 from tests.conftest import make_pdf
 
 
@@ -8,6 +10,7 @@ def test_ping(client):
     client.post("/api/folders", json={"name": "Physics"})
     r = client.get("/api/connector/ping").get_json()
     assert r["app"] == "synapse" and r["folders"][0]["name"] == "Physics"
+    assert r["capabilities"] == {"publisher_pdfs": True, "pdf_pagination": True}
 
 
 def test_save_from_page_metadata_without_network(client, monkeypatch):
@@ -289,7 +292,7 @@ def test_missing_pdfs_lists_publisher_dois_without_a_pdf(client, svc, tmp_path):
 
     r = client.get("/api/connector/missing-pdfs").get_json()
     assert {i["id"] for i in r["items"]} == {want["id"], other["id"]} and r["total"] == 2
-    assert r["items"][0].keys() == {"id", "title", "doi", "year"}
+    assert r["items"][0].keys() == {"id", "title", "doi", "year", "cursor"}
     # a folder counts with its subfolders
     r = client.get(f"/api/connector/missing-pdfs?folder_id={physics['id']}").get_json()
     assert [i["id"] for i in r["items"]] == [want["id"]]
@@ -323,3 +326,120 @@ def test_attach_pdf_checks_the_paper(client, tmp_path):
         client.post("/api/connector/attach-pdf", data={"id": "nope"}, content_type="multipart/form-data").status_code
         == 404
     )
+
+
+def test_missing_pdfs_keyset_reaches_older_items_even_when_first_page_fails(client, svc):
+    ids = svc.papers.create_many([{"title": f"Paper {i}", "doi": f"10.1234/{i}"} for i in range(57)])
+    # A whole import can share a timestamp. The ID breaks ties independently of insertion order.
+    with svc.papers.db.session() as db:
+        db.execute("UPDATE papers SET date_added = ?", ("2025-01-01T00:00:00Z",))
+    first = client.get("/api/connector/missing-pdfs").get_json()
+    assert first["total"] == 57 and len(first["items"]) == 50
+    assert [p["id"] for p in first["items"]] == sorted(ids, reverse=True)[:50]
+    assert first["next_cursor"] == first["items"][-1]["cursor"]
+    # Failed downloads leave every item eligible; a cursor still advances past them.
+    second = client.get("/api/connector/missing-pdfs", query_string={"cursor": first["next_cursor"]}).get_json()
+    assert second["total"] == 57 and second["next_cursor"] is None
+    assert [p["id"] for p in second["items"]] == sorted(ids, reverse=True)[50:]
+    # Stop midway through a page: resume immediately after the last completed attempt.
+    resumed = client.get("/api/connector/missing-pdfs", query_string={"cursor": first["items"][2]["cursor"]}).get_json()
+    assert [p["id"] for p in resumed["items"]] == sorted(ids, reverse=True)[3:53]
+
+
+def test_missing_pdfs_cursor_survives_completed_item_removal_and_new_arrivals(client, svc, tmp_path):
+    ids = svc.papers.create_many([{"title": f"Paper {i}", "doi": f"10.1234/{i}"} for i in range(4)])
+    with svc.papers.db.session() as db:
+        for i, pid in enumerate(ids):
+            db.execute("UPDATE papers SET date_added = ? WHERE id = ?", (f"2025-01-0{i + 1}", pid))
+    page = client.get("/api/connector/missing-pdfs?limit=2").get_json()
+    assert [p["id"] for p in page["items"]] == ids[::-1][:2]
+    # The boundary is a value, not a lookup of an item that might disappear or gain a PDF.
+    svc.papers.add_attachment(ids[-1], "PDF", make_pdf(tmp_path / "done.pdf", "Paper 3").name, "pdf")
+    with svc.papers.db.session() as db:
+        db.execute("DELETE FROM papers WHERE id = ?", (ids[-2],))
+    newest = svc.papers.create({"title": "Just added", "doi": "10.1234/new"})
+    remaining = client.get("/api/connector/missing-pdfs", query_string={"cursor": page["next_cursor"]}).get_json()
+    assert remaining["total"] == 3 and remaining["next_cursor"] is None
+    assert [p["id"] for p in remaining["items"]] == ids[1::-1]
+    assert newest["id"] not in {p["id"] for p in remaining["items"]}
+    end = client.get(
+        "/api/connector/missing-pdfs", query_string={"cursor": remaining["items"][-1]["cursor"]}
+    ).get_json()
+    assert end == {"items": [], "total": 3, "next_cursor": None}
+
+
+def test_missing_pdfs_ids_filter_intersects_folder_and_eligibility(client, svc):
+    folder = svc.folders.create("Selected")
+    ids = svc.papers.create_many(
+        [
+            {"title": "Wanted", "doi": "10.1234/a", "folder_id": folder["id"]},
+            {"title": "Outside folder", "doi": "10.1234/b"},
+            {"title": "No DOI", "folder_id": folder["id"]},
+            {"title": "Not selected", "doi": "10.1234/c", "folder_id": folder["id"]},
+        ]
+    )
+    selected = ",".join(ids[:3])
+    result = client.get(
+        "/api/connector/missing-pdfs", query_string={"ids": selected, "folder_id": folder["id"]}
+    ).get_json()
+    assert result["total"] == 1 and result["next_cursor"] is None
+    assert [p["id"] for p in result["items"]] == ids[:1]
+    assert client.get("/api/connector/missing-pdfs?ids=nonexistent").get_json()["items"] == []
+    assert client.get("/api/connector/missing-pdfs", query_string={"ids": ",".join([ids[0]] * 200)}).status_code == 200
+
+    first = client.get("/api/connector/missing-pdfs", query_string={"ids": selected, "limit": 1}).get_json()
+    second = client.get(
+        "/api/connector/missing-pdfs", query_string={"ids": selected, "cursor": first["next_cursor"]}
+    ).get_json()
+    assert first["total"] == second["total"] == 2
+    assert {first["items"][0]["id"], second["items"][0]["id"]} == set(ids[:2])
+    assert second["next_cursor"] is None
+
+
+@pytest.mark.parametrize("ids", ["", "a,", ",a", "a,,b", " a", "a/b", "x" * 129, ",".join(["a"] * 201)])
+def test_missing_pdfs_rejects_invalid_ids(client, ids):
+    assert client.get("/api/connector/missing-pdfs", query_string={"ids": ids}).status_code == 400
+
+
+@pytest.mark.parametrize("cursor", ["", "%%%", "a" * 513, "e30", "WzIsIiIsImEiXQ", "WzEsMCwiYSJd"])
+def test_missing_pdfs_rejects_invalid_cursors(client, cursor):
+    assert client.get("/api/connector/missing-pdfs", query_string={"cursor": cursor}).status_code == 400
+
+
+def test_attach_pdf_unverified_requires_manual_review_and_ignores_caller_identity(client, svc, tmp_path):
+    from pypdf import PdfWriter
+
+    item = svc.papers.create({"title": "The actual library title", "doi": "10.1234/expected"})
+    scanned = tmp_path / "scanned.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=300, height=300)
+    writer.write(scanned)
+    for data in (scanned.read_bytes(), make_pdf(tmp_path / "unknown.pdf", "Unidentified text").read_bytes()):
+        r = client.post(
+            "/api/connector/attach-pdf",
+            data={
+                "id": item["id"],
+                "title": "Unidentified text",
+                "doi": "10.1234/caller-claim",
+                "file": (io.BytesIO(data), "paper.pdf"),
+            },
+            content_type="multipart/form-data",
+        ).get_json()
+        assert r["status"] == "unverified" and r["reason"]
+        assert not r["item"]["attachments"]
+    assert not svc.papers.get(item["id"])["attachments"]
+
+
+def test_connector_pdf_fallback_queues_only_an_existing_item_without_pdf(client, svc, monkeypatch, tmp_path):
+    queued = []
+    monkeypatch.setattr(svc, "find_pdf_later", queued.append)
+    item = svc.papers.create({"title": "Try the configured PDF sources"})
+    assert client.post("/api/connector/find-pdf", json={"id": item["id"]}).get_json() == {"status": "searching"}
+    assert queued == [item["id"]]
+    svc.papers.add_attachment(item["id"], "PDF", make_pdf(tmp_path / "attached.pdf", "Paper").name, "pdf")
+    assert client.post("/api/connector/find-pdf", json={"id": item["id"]}).get_json() == {"status": "has-pdf"}
+    assert queued == [item["id"]]
+    for invalid in ({}, {"id": " "}, {"id": 1}, ["id"]):
+        assert client.post("/api/connector/find-pdf", json=invalid).status_code == 400
+    assert client.post("/api/connector/find-pdf", json={"id": "unknown"}).status_code == 404
+    assert queued == [item["id"]]
