@@ -62,6 +62,11 @@ The note screen uses the same pieces as the desktop's notes: `NoteSession` (savi
 conflicts), `createEditor`, `createRenderer`, and the notes workspace state (`ws`) for citations,
 links and tasks while that note is shown.
 
+A paper's page lists every attached PDF, including a single attachment. Tap its name to read it,
+or its **⋯** button to rename it or **Delete Attachment**. Deleting asks for confirmation and
+removes the file from disk while keeping the paper. Papers in Trash show PDFs without these
+editing actions.
+
 ## Plugins on a phone
 
 Library and Notes are Synapse's own; everything else comes from plugins, which may be on or off.

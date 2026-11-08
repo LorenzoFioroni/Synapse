@@ -168,6 +168,10 @@ body.phone .grow { flex: 1; min-width: 0; }
 .ph-link-row > span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .ph-link-row small, .ph-link-row > small { font-size: 13px; color: var(--text-2); }
 .ph-link-row > .icon { color: var(--accent); }
+.ph-attachment { display: flex; align-items: center; padding-right: 4px; border-top: 1px solid var(--ph-sep); }
+.ph-attachment > .ph-link-row { flex: 1; min-width: 0; padding-top: 10px; padding-bottom: 10px; border-top: none; }
+.ph-attachment > .ph-link-row > span { overflow-wrap: anywhere; }
+.ph-attachment > .ph-nav-btn { flex: none; }
 .ph-chev, .ph-link-row > .ph-chev { flex: none; display: flex; color: var(--text-3); margin-left: auto; }
 .ph-chev .icon { width: 16px; height: 16px; }
 .ph-count { font-size: 14px; color: var(--text-2); }
