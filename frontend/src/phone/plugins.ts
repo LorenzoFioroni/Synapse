@@ -15,7 +15,7 @@ import { dismissAction, itemScreen, readPdf } from './library.js';
 import { type Destination, groupRuns, itemMeta } from './model.js';
 import { noteScreen } from './notes.js';
 import { type Screen, back, choosePin, destinationList, paintTabs, pinnedDestination, push } from './shell.js';
-import { cardHtml, chevron, navBar, rootHeader, roundButton, rowHtml, swipeRows } from './ui.js';
+import { cardHtml, chevron, navBar, rootHeader, rowHtml, settingsButton, swipeRows } from './ui.js';
 
 export function pluginsScreen(): Screen {
   return {
@@ -32,7 +32,7 @@ export function pluginsScreen(): Screen {
           ${d.id === pin?.id ? '<span class="ph-tag small">In tab bar</span>' : ''}${sourceBadges(d.marks, true)}
           ${d.badge ? `<span class="ph-count badge">${esc(d.badge)}</span>` : ''}${d.phone ? chevron() : ''}</button>`;
         el.innerHTML = `<div class="ph-scroll">
-          ${rootHeader('Plugins', { actions: roundButton('gear', 'Settings', 'data-act="settings"') })}
+          ${rootHeader('Plugins', { actions: settingsButton() })}
           ${usable.length ? `<h2 class="ph-section-label">Lists and pages</h2><div class="ph-group">${usable.map(row).join('')}</div>`
             : `<div class="ph-empty">${icon('plugin')}<h3>No plugin lists here</h3><p>Plugins with a list of papers or a page of their own show up here.</p></div>`}
           ${other.length ? `<div class="ph-group">${other.map(row).join('')}</div>` : ''}
@@ -76,7 +76,7 @@ function pageScreen(id: string, root: boolean): Screen {
     key: `page:${id}`,
     mount(el, ctx) {
       const p = pages.get(id);
-      el.innerHTML = `${root ? `<div class="ph-scroll ph-page-scroll">${rootHeader(p?.title || 'Page', { actions: roundButton('gear', 'Settings', 'data-act="settings"') })}` : `${navBar(ctx.backLabel, p?.title || '')}<div class="ph-scroll ph-page-scroll">`}
+      el.innerHTML = `${root ? `<div class="ph-scroll ph-page-scroll">${rootHeader(p?.title || 'Page', { actions: settingsButton() })}` : `${navBar(ctx.backLabel, p?.title || '')}<div class="ph-scroll ph-page-scroll">`}
         <div class="ph-page-body"${p?.owner ? ` data-plugin="${esc(p.owner)}"` : ''}></div></div>`;
       el.querySelector('[data-act="settings"]')?.addEventListener('click', () => { void import('./main.js').then((m) => m.settingsMenu()); });
       const body = el.querySelector<HTMLElement>('.ph-page-body')!;
@@ -116,7 +116,7 @@ function sourceScreen(sourceId: string, root: boolean): Screen {
         const s = src() || s0;
         el.querySelector('.ph-head-slot')!.innerHTML = rootHeader(s?.title || 'List', {
           kicker: s?.plugin_name || '',
-          actions: root ? roundButton('gear', 'Settings', 'data-act="settings"') : '',
+          actions: root ? settingsButton() : '',
         });
         const variants = s?.variants || [];
         const chosen = variant ?? variants[0]?.id ?? null;

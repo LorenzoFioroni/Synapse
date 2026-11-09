@@ -16,8 +16,9 @@ TypeScript frontend. Everything runs on your machine.
   batches, so failed papers do not block older items. **Find Available PDF** and new-item PDF
   lookups try publisher DOI items through the requesting browser's extension, or a connected
   computer whose extension has **Handle PDF retrieval from my other devices** enabled. This lets
-  a phone use that computer's campus/VPN access. A receiver must accept within five seconds;
-  requests never wait for a later reconnect. Otherwise retrieval uses the server's network.
+  a phone automatically start a search using that computer's campus/VPN access. A receiver must
+  accept within five seconds. Requests never wait for a later reconnect. Otherwise retrieval uses
+  the server's network.
 - 🔎 **Find the passage you remember** — search metadata and PDF full text, then organise
   your collection with folders, coloured tags and smart folders.
 - 🖍️ **Read, highlight, capture** — annotate PDFs with highlights, drawings and comments,
@@ -125,8 +126,9 @@ or a task, the plugin list you use most (long-press its tab to choose another) a
 the rest. Notes open for reading; **Edit** brings a bar of helpers above the keyboard (cite, link,
 math, images). A paper's ⋯ button has everything its right-click menu has on the computer.
 Each attached PDF has its own **⋯** menu to rename or delete the file; deleting asks for
-confirmation and keeps the paper. To use the full layout on a phone instead, choose
-**Use the Desktop Layout** from the settings button
+confirmation and keeps the paper. **Find PDF** shows search progress and the outcome above the
+tab bar. The phone menu button shows the unread notification count. To use the full layout on a
+phone instead, choose **Use the Desktop Layout** from that menu
 (back again with **Use the Phone Layout** in the More menu). See [the phone layout](docs/phone.md).
 
 `--debug` only works without `--lan`: Flask's debugger must never be reachable from the network.

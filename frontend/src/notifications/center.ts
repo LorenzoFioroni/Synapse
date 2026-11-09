@@ -13,6 +13,8 @@ const actions = new Map<string, NoticeAction>();
 const cancels = new Map<string, () => void>();
 let panel: HTMLElement | null = null;
 let bell: HTMLButtonElement | null = null;
+let returnFocus: HTMLElement | null = null;
+let updateUnread: ((count: number) => void) | undefined;
 const owner = newId();
 const history = new History({
   read: () => {
@@ -27,6 +29,8 @@ const history = new History({
   remove: id => { memory.delete(id); actions.delete(id); cancels.delete(id); try { localStorage.removeItem(PREFIX + id); } catch { /* memory fallback */ } },
 }, render);
 let ownerTracking = false;
+
+export const unreadNotifications = (): number => history.unread;
 
 export function notify(message: string, options: NoticeOptions = {}): string {
   const n: Notice = { id: newId(), message, level: options.type || 'info', status: 'done', time: Date.now(), read: false, source: options.source, target: options.target, desktop: options.desktop };
@@ -58,23 +62,25 @@ export function startJob(message: string, onCancel?: (() => void) | null): Job {
 }
 function closeCenter(): void {
   if (!panel) return;
-  panel.hidden = true; bell?.setAttribute('aria-expanded', 'false'); bell?.focus();
+  panel.hidden = true; bell?.setAttribute('aria-expanded', 'false'); returnFocus?.focus();
 }
-export function openCenter(): void {
+export function openCenter(trigger: HTMLElement | null = bell): void {
   if (!panel) return;
-  panel.style.top = `${(bell?.getBoundingClientRect().bottom || 48) + 8}px`;
+  returnFocus = trigger;
+  panel.style.top = `${(trigger?.getBoundingClientRect().bottom || 48) + 8}px`;
   panel.hidden = false; bell?.setAttribute('aria-expanded', 'true');
   panel.querySelector<HTMLButtonElement>('[data-n="close"]')?.focus();
 }
-export function initNotifications(button: HTMLButtonElement): void {
+export function initNotifications(button: HTMLButtonElement | null, onUnread?: (count: number) => void): void {
   ownerTracking = monitorOwners(owner, history, () => { ownerTracking = false; render(); });
   bell = button;
+  updateUnread = onUnread;
   panel = h(`<section id="notification-center" role="dialog" aria-labelledby="notification-heading" hidden>
     <header><h2 id="notification-heading">Notifications</h2><button class="icon-btn" data-n="close" aria-label="Close notifications">${icon('close')}</button></header>
     <div class="notification-tools"><button data-n="read">Mark all read</button><button data-n="clear">Clear completed</button></div>
     <div class="notification-list" role="list"></div></section>`);
   document.body.append(panel);
-  bell.onclick = () => { if (panel!.hidden) openCenter(); else closeCenter(); };
+  if (bell) bell.onclick = () => { if (panel!.hidden) openCenter(); else closeCenter(); };
   panel.onclick = e => {
     const b = (e.target as Element).closest<HTMLButtonElement>('button'); if (!b) return;
     const id = b.closest<HTMLElement>('[data-notice]')?.dataset.notice;
@@ -97,18 +103,22 @@ export function initNotifications(button: HTMLButtonElement): void {
     }
   };
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !panel!.hidden) { e.preventDefault(); e.stopImmediatePropagation(); closeCenter(); } }, true);
-  document.addEventListener('pointerdown', e => { if (!panel!.hidden && !panel!.contains(e.target as Node) && !bell!.contains(e.target as Node)) { panel!.hidden = true; bell!.setAttribute('aria-expanded', 'false'); } });
+  document.addEventListener('pointerdown', e => { if (!panel!.hidden && !panel!.contains(e.target as Node) && !bell?.contains(e.target as Node)) { panel!.hidden = true; bell?.setAttribute('aria-expanded', 'false'); } });
   window.addEventListener('storage', e => { if (!e.key || e.key.startsWith(PREFIX)) { if (e.key) memory.delete(e.key.slice(PREFIX.length)); else memory.clear(); history.reload(); } });
   on('sources', render);
   window.addEventListener('pagehide', () => history.interrupt(owner));
   render();
 }
 function render(): void {
-  if (!bell || !panel) return;
+  if (!panel) return;
   const count = history.unread;
-  bell.setAttribute('aria-label', `Notifications${count ? `, ${count} unread` : ''}`);
-  bell.querySelector<HTMLElement>('.notification-badge')!.textContent = count > 99 ? '99+' : String(count);
-  bell.querySelector<HTMLElement>('.notification-badge')!.hidden = !count;
+  if (bell) {
+    bell.setAttribute('aria-label', `Notifications${count ? `, ${count} unread` : ''}`);
+    const unread = bell.querySelector<HTMLElement>('.notification-badge')!;
+    unread.textContent = count > 99 ? '99+' : String(count);
+    unread.hidden = !count;
+  }
+  updateUnread?.(count);
   badge(count); faviconBadge(count);
   panel.querySelector('[data-n="read"]')!.toggleAttribute('disabled', !count);
   const list = panel.querySelector('.notification-list')!;

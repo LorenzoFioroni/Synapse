@@ -6,7 +6,7 @@ import { api } from '../api.js';
 import { initChanges } from '../changes.js';
 import { captures } from '../extend.js';
 import { icon } from '../icons.js';
-import { initNotifications, openCenter } from '../notifications/center.js';
+import { initNotifications, openCenter, unreadNotifications } from '../notifications/center.js';
 import { initPluginHost } from '../plugins/host.js';
 import { activeTaskProvider } from '../plugins/taskHost.js';
 import { on, state } from '../store.js';
@@ -22,7 +22,7 @@ import { libraryScreen, itemScreen } from './library.js';
 import { newNote, noteScreen, notesScreen } from './notes.js';
 import { destinationScreen, pluginsScreen } from './plugins.js';
 import { currentTab, destinationList, initShell, openDestination, pinnedDestination, push, selectTab } from './shell.js';
-import { openSheet } from './ui.js';
+import { openSheet, updateSettingsBadges } from './ui.js';
 import { watchUpdates } from '../updates.js';
 
 function finishStartup(): void {
@@ -48,13 +48,7 @@ export async function bootPhone(): Promise<void> {
   applyAppearance();
   menusAsSheets(true);
   installLongPress();
-  // the notification center belongs to a bell; the phone opens it from the settings button
-  const bell = document.createElement('button');
-  bell.className = 'ph-bell';
-  bell.hidden = true;
-  bell.innerHTML = '<span class="notification-badge" hidden></span>';
-  document.body.appendChild(bell);
-  initNotifications(bell);
+  initNotifications(null, updateSettingsBadges);
 
   initShell({
     library: () => libraryScreen(),
@@ -93,10 +87,11 @@ function wireEvents(): void {
 
 /** The settings button of every tab: Settings, notifications, and the desktop layout. */
 export function settingsMenu(): void {
-  const unread = Number(document.querySelector('.ph-bell .notification-badge')?.textContent || 0);
+  const unread = unreadNotifications();
+  const trigger = document.querySelector<HTMLElement>('#phone .ph-tab-view:not([hidden]) .ph-screen:not([hidden]) .ph-head-actions > .notification-bell');
   openMenu([
     { label: 'Settings', icon: 'gear', run: () => openSettings() },
-    { label: unread ? `Notifications (${unread})` : 'Notifications', icon: 'bell', run: () => openCenter() },
+    { label: unread ? `Notifications (${unread})` : 'Notifications', icon: 'bell', run: () => openCenter(trigger) },
     'sep',
     { label: 'Use the Desktop Layout', icon: 'columns', run: () => switchLayout('desktop') },
   ], { x: 0, y: innerHeight });

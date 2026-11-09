@@ -256,9 +256,10 @@ timed-out offers return the app to its ordinary server sources; a later reconnec
 an expired request. Acceptance means the finder opened, not that a PDF was found.
 
 The receiving worker validates IDs, checks that the offer is still active immediately before
-opening a finder, and acknowledges the window. Expired/unacknowledged windows are closed. A
-phone can therefore use a connected computer's browser session and campus/VPN connection;
-interactive CAPTCHAs may still require attention at that computer. This remains subject to
+opening a window, and loads the finder only after the server confirms the acknowledgement.
+The finder starts with the publisher access already granted during setup. A phone can therefore
+use a connected computer's browser session and campus/VPN connection. Interactive CAPTCHAs may
+still require attention at that computer. This remains subject to
 browser suspension/disconnection: only an acknowledged immediate handoff counts as accepted.
 
 ## The connector API

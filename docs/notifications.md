@@ -6,6 +6,8 @@ dismiss one, or clear completed entries. Running jobs stay visible until they fi
 closes the panel and returns focus to the bell. The small browser-tab favicons also show the count,
 while the 192 px install/launcher icon remains stable; installed-app icons use the browser's
 Badging API when available.
+On phones the menu button on each tab's first screen shows the unread badge and opens the menu
+with **Notifications**.
 
 Info, Success, Warning and Error describe severity. **OS delivery is separate from severity**:
 arXiv Today's papers-ready notice is Success and requests OS delivery. OS delivery is considered
@@ -21,6 +23,8 @@ provide delivery while the installed app is closed or suspended.
 PDF searches/imports, bulk reference fetching, adding papers, background metadata retrieval
 and full-text indexing report progress in the center, including their result and available
 Cancel/Review actions. Short confirmations and time-sensitive Undo messages may still use toasts.
+On the phone layout, a single-paper PDF search also shows a spinner and its outcome above the
+tab bar.
 
 ## Ownership and persistence
 

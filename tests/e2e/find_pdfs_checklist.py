@@ -462,22 +462,31 @@ async def main():
             phone.on("pageerror", lambda e: errors.append(str(e)))
             await phone.route(f"{BASE}/api/items/*/find_pdf", server_search)
             await phone.goto(BASE)
-            await phone.wait_for_selector(".ph-list, .row[data-id]")
+            await phone.wait_for_selector(".ph-list")
             check(
                 "the phone browser has no local extension",
                 await phone.get_attribute("html", "data-synapse-extension") is None,
             )
             await phone.evaluate("async ids => (await import('/js/actions.js')).refreshItems(ids, {added:true})", batch)
             server_searches.clear()
+            await phone.locator(f'.ph-row[data-id="{chosen}"]').tap()
             async with ctx.expect_page() as opened:
-                await phone.evaluate("async id => (await import('/js/actions.js')).findPdf(id)", chosen)
+                await phone.get_by_role("button", name="Find PDF", exact=True).tap()
             from_phone = await opened.value
             await from_phone.wait_for_selector(".rows li")
+            handoff = phone.locator("#toasts").get_by_text("Looking for publisher PDFs in the browser extension.")
+            await handoff.wait_for()
+            check("the phone reports the browser handoff", not await phone.locator("#toasts .operation-status").count())
             check(
                 "phone retrieval opens the connected desktop extension for the requested item",
                 await from_phone.locator(".rows li").evaluate_all("els => els.map(e => e.dataset.id)") == [chosen],
             )
             check("accepted phone retrieval does not also run on the server", not server_searches, server_searches)
+            await from_phone.locator("#start").filter(has_text="Retry").wait_for(timeout=15000)
+            check(
+                "phone retrieval runs without a click on the desktop",
+                "Other enabled PDF sources are now being tried" in await from_phone.locator(".why").inner_text(),
+            )
             await from_phone.close()
             await wait_receiver(True)
             async with ctx.expect_page() as opened:

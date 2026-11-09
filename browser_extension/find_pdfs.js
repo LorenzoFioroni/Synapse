@@ -113,8 +113,7 @@ async function init() {
   conn.title = `Connected to ${server}`;
   await renderForm();
   // A library request can start unattended only after the user granted publisher access before.
-  if (params.get('auto') === '1' && items.length
-    && await chrome.permissions.contains({ origins: ['https://*/*'] })) void start(items);
+  if (params.get('auto') === '1' && items.length) void start(items, { automatic: true });
 }
 
 /** @param {string} selected */
@@ -205,18 +204,21 @@ function setStatus(id, text, kind = '', why = '') {
   if (detail && kind !== 'busy') detail.textContent = why;
 }
 
-/** @param {Missing[]} todo */
-async function start(todo) {
+/** @param {Missing[]} todo @param {{automatic?: boolean}} [options] */
+async function start(todo, { automatic = false } = {}) {
   if (running) return;
   running = true;
   const startBtn = get('start', HTMLButtonElement);
   startBtn.disabled = true;
-  // Pages of any publisher: asked for here, on the click, since Chrome grants it only then.
+  // Chrome requires a user gesture for request(), even when access was granted earlier.
+  const permission = { origins: ['https://*/*'] };
   const local = RESOLVER.startsWith('http://127.0.0.1');   // the tests' pages, already allowed
-  if (!local && !(await chrome.permissions.request({ origins: ['https://*/*'] }).catch(() => false))) {
+  const allowed = automatic ? await chrome.permissions.contains(permission).catch(() => false)
+    : local || await chrome.permissions.request(permission).catch(() => false);
+  if (!allowed) {
     running = false;
     startBtn.disabled = false;
-    get('list', HTMLElement).insertAdjacentHTML('afterbegin', '<p class="summary">The extension needs access to publishers’ pages to read the PDF links.</p>');
+    if (!automatic) get('list', HTMLElement).insertAdjacentHTML('afterbegin', '<p class="summary">The extension needs access to publishers’ pages to read the PDF links.</p>');
     return;
   }
   stopping = false;
