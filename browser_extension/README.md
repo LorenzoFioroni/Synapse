@@ -107,9 +107,9 @@ On the computer with campus/VPN access, open this extension's **Options**, enabl
 Keep that browser running and connected to the configured library. Synapse and the extension
 must both support live PDF requests (extension 1.5 or newer).
 
-**Find Available PDF** on your phone can then open the finder on that computer and use its
-browser session and institutional access. The phone itself does not need the VPN. Interactive
-CAPTCHAs or expired publisher sign-ins may still need attention on the computer.
+**Find Available PDF** on your phone then starts the finder on that computer using its browser
+session and institutional access. The phone itself does not need the VPN. Interactive CAPTCHAs
+or expired publisher sign-ins may still need attention on the computer.
 
 This is an immediate handoff: the computer must already be listening, and has five seconds to
 accept. With no available receiver, or if acceptance fails, the app uses its server sources.

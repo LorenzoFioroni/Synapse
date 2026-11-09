@@ -435,22 +435,86 @@ async def main():
                 and await page.locator(".ph-attachment").count() == 0
                 and await page.locator(".ph-item h1").is_visible(),
             )
-            # Keep the PDF available for the citation checks below.
-            with open(PDF, "rb") as fh:
-                requests.post(
-                    f"{BASE}/api/items/{cui['id']}/attachments",
-                    files={"file": ("paper.pdf", fh, "application/pdf")},
-                    timeout=30,
-                ).raise_for_status()
-            await page.locator('.ph-action[data-act="read"]').wait_for()
+            # Hold the lookup response until the tap's feedback has been checked.
+            lookup_url = f"{BASE}/api/items/{cui['id']}/find_pdf"
+            release_lookup = asyncio.Event()
+
+            async def no_pdf(route):
+                await release_lookup.wait()
+                await route.fulfill(json={"status": "not_found", "message": "No open-access copy was found online."})
+
+            await page.route(lookup_url, no_pdf)
+            pending = page.locator("#toasts .operation-status").filter(has_text="Searching for a PDF…")
+            try:
+                await page.get_by_role("button", name="Find PDF", exact=True).tap()
+                await pending.wait_for()
+                await pending.evaluate("el => Promise.all(el.getAnimations().map(a => a.finished))")
+                banner = await pending.bounding_box()
+                tabbar = await page.locator(".ph-tabbar").bounding_box()
+                check(
+                    "Find PDF shows a spinner above the phone tab bar",
+                    await pending.locator(".spinner").is_visible() and banner["y"] + banner["height"] <= tabbar["y"],
+                )
+                await shot(page, "02-find-pdf-pending")
+            finally:
+                release_lookup.set()
+            result = page.locator("#toasts").get_by_text("No open-access copy was found online.", exact=True)
+            await result.wait_for()
+            check("the search message gives way to the result", not await pending.count())
+            check(
+                "the PDF search result is kept in notification history",
+                await page.locator("#notification-center").get_by_text(await result.inner_text(), exact=True).count()
+                == 1,
+            )
+            await result.locator("..").get_by_role("button", name="Dismiss").tap()
+            await page.unroute(lookup_url)
+
+            # Simulate a successful lookup and keep the PDF for the citation checks below.
+            async def found_pdf(route):
+                with open(PDF, "rb") as fh:
+                    response = requests.post(
+                        f"{BASE}/api/items/{cui['id']}/attachments",
+                        files={"file": ("paper.pdf", fh, "application/pdf")},
+                        timeout=30,
+                    )
+                response.raise_for_status()
+                await route.fulfill(json={"status": "success", "attachment": response.json()["attachments"][0]})
+
             await page.evaluate("document.documentElement.dataset.theme = 'light'")
+            await page.route(lookup_url, found_pdf)
+            await page.locator('.ph-nav [data-act="more"]').tap()
+            await page.get_by_role("menuitem", name="Find Available PDF", exact=True).tap()
+            await page.locator("#toasts").get_by_text("PDF found and attached", exact=True).wait_for()
+            await page.locator('.ph-action[data-act="read"]').wait_for()
+            check("finding a PDF from the phone menu reports success and restores Read", not await pending.count())
+            await page.unroute(lookup_url)
             await page.locator(".ph-screen:not([hidden]) [data-ph=back]").tap()
             ok = await wait_for(lambda: page.locator(".ph-search").is_visible())
             check("the back button returns to the list", ok)
 
+            # The menu badge is visible on each tab and updates when notices are read.
+            phone_menu = page.locator('.ph-tab-view:not([hidden]) .ph-screen:not([hidden]) [data-act="settings"]')
+            badge = phone_menu.locator(".notification-badge")
+            await badge.wait_for()
+            count = await badge.inner_text()
+            check("unread notifications appear on the Library menu", count == "2")
+            await shot(page, "02-notifications-badge")
+
             # ---- notes -------------------------------------------------------------------------
             await page.locator('[data-slot="notes"]').tap()
             await page.wait_for_selector(".ph-note-row")
+            check("the Notes menu shows the same unread count", await badge.inner_text() == count)
+            await phone_menu.tap()
+            await page.get_by_role("menuitem", name=f"Notifications ({count})", exact=True).tap()
+            center = page.get_by_role("dialog", name="Notifications", exact=True)
+            await center.get_by_role("button", name="Mark all read").tap()
+            await badge.wait_for(state="hidden")
+            await center.get_by_role("button", name="Close notifications").tap()
+            check(
+                "marking notifications read clears the badge and closing returns focus to the menu",
+                await phone_menu.get_attribute("aria-label") == "Settings and notifications"
+                and await phone_menu.evaluate("el => el === document.activeElement"),
+            )
             await page.locator(f'.ph-note-row[data-note="{note_path}"]').tap()
             await page.wait_for_selector(".ph-prose .cite")
             check(

@@ -26,7 +26,7 @@ import { citeInfo, equationMode, folderColor, itemInfo, noteMacros, parentOf, re
 import { familyNames, shortWhen } from './model.js';
 import { readerScreen } from './reader.js';
 import { type Screen, back, push, selectTab } from './shell.js';
-import { chevron, navBar, navButton, openSheet, rootHeader, roundButton } from './ui.js';
+import { chevron, navBar, navButton, openSheet, rootHeader, roundButton, settingsButton } from './ui.js';
 
 const drafts = {
   get: (k: string) => storage(k, null),
@@ -64,7 +64,7 @@ export function notesScreen(): Screen {
     key: 'notes',
     mount(el) {
       el.innerHTML = `<div class="ph-scroll">
-        ${rootHeader('Notes', { actions: `${roundButton('edit', 'New note', 'data-act="new"')}${roundButton('gear', 'Settings', 'data-act="settings"')}` })}
+        ${rootHeader('Notes', { actions: `${roundButton('edit', 'New note', 'data-act="new"')}${settingsButton()}` })}
         <label class="ph-search">${icon('search')}<input type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false"></label>
         <div class="ph-notes-body"></div></div>`;
       const box = el.querySelector<HTMLElement>('.ph-notes-body')!;

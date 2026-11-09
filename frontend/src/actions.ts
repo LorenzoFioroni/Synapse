@@ -3,7 +3,8 @@
 import { byId, currentFolderId, emit, folderById, folderDescendants, selectedItems, state } from './store.js';
 import { confirmDialog } from './ui/dialog.js';
 import { notify } from './notifications/center.js';
-import { progressToast, toast, toastError } from './ui/toast.js';
+import { pendingStatus } from './ui/pending.js';
+import { progressToast, toast, toastError, type ToastType } from './ui/toast.js';
 import type { Attachment, Counts, Item, Sidebar, SmartFolder, Tag } from './types.js';
 import { plural } from './util.js';
 import { type ApiError, api, openAttachment } from './api.js';
@@ -253,19 +254,27 @@ async function requestBrowserPdfs(items: Item[]): Promise<string[]> {
 export async function findPdf(id: string): Promise<void> {
   const item = byId(id);
   const job = progressToast(`Searching for a PDF of “${(item?.title || 'item').slice(0, 60)}”…`);
+  const pending = document.body.classList.contains('phone') ? pendingStatus('Searching for a PDF…') : null;
+  const finish = (message: string, type: ToastType | 'warning') => {
+    job.finish(message, { type });
+    if (pending) {
+      pending.close();
+      toast(message, { type: type === 'warning' ? 'info' : type });
+    }
+  };
   try {
     if ((await requestBrowserPdfs(item ? [item] : [])).length) {
-      job.finish('Looking for publisher PDFs in the browser extension.');
+      finish('Looking for publisher PDFs in the browser extension.', 'info');
       return;
     }
     const res = await api.findPdf(id);
     if (res.status === 'success') {
-      job.finish('PDF found and attached', { type: 'success' });
+      finish('PDF found and attached', 'success');
       state.expanded.add(id);
       await refreshItems([id]);
       emit('items');
-    } else job.finish(res.message || 'No PDF found', { type: 'warning' });
-  } catch (e) { job.finish((e as Error).message, { type: 'error' }); }
+    } else finish(res.message || 'No PDF found', res.status === 'error' ? 'error' : 'warning');
+  } catch (e) { finish((e as Error).message, 'error'); }
 }
 
 /**

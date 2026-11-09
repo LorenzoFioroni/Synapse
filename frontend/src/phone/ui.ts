@@ -1,6 +1,7 @@
 // Small pieces the phone screens share: their headers, sheets that rise from the bottom, rows and
 // cards of papers, and swiping a row.
 import { icon } from '../icons.js';
+import { unreadNotifications } from '../notifications/center.js';
 import type { Item } from '../types.js';
 import { escapeHtml as esc, h } from '../util.js';
 import { itemMeta, swipeAction } from './model.js';
@@ -22,6 +23,24 @@ export function navBar(back: string, title = '', actions = ''): string {
 
 export const roundButton = (name: string, label: string, attrs = ''): string =>
   `<button class="ph-round" aria-label="${esc(label)}" title="${esc(label)}" ${attrs}>${icon(name)}</button>`;
+
+const menuLabel = (count: number): string => `Settings and notifications${count ? `, ${count} unread` : ''}`;
+const badgeText = (count: number): string => count > 99 ? '99+' : String(count);
+
+export function settingsButton(): string {
+  const count = unreadNotifications();
+  return `<button class="ph-round notification-bell" data-act="settings" aria-haspopup="menu" aria-label="${menuLabel(count)}" title="Settings and notifications">
+    ${icon('menu')}<span class="notification-badge" aria-hidden="true"${count ? '' : ' hidden'}>${badgeText(count)}</span></button>`;
+}
+
+export function updateSettingsBadges(count: number): void {
+  for (const button of document.querySelectorAll('#phone .ph-head-actions > .notification-bell')) {
+    const badge = button.querySelector<HTMLElement>('.notification-badge')!;
+    badge.hidden = !count;
+    badge.textContent = badgeText(count);
+    button.setAttribute('aria-label', menuLabel(count));
+  }
+}
 
 export const navButton = (name: string, label: string, attrs = ''): string =>
   `<button class="ph-nav-btn" aria-label="${esc(label)}" title="${esc(label)}" ${attrs}>${icon(name)}</button>`;

@@ -47,6 +47,7 @@ turning a phone or resizing a window never swaps the layout under the reader.
 What other parts of the app ask for (`show-item`, `open-note`, `open-view`, `open-page`,
 `open-tasks`, `open-settings`) is done the phone's way, on top of the tab shown (`phone/main.ts`).
 Settings is the desktop's Settings page, which is already laid out for narrow screens.
+The menu button on each tab's first screen shows the unread count for **Notifications**.
 
 ## The screens
 
@@ -66,6 +67,12 @@ A paper's page lists every attached PDF, including a single attachment. Tap its 
 or its **⋯** button to rename it or **Delete Attachment**. Deleting asks for confirmation and
 removes the file from disk while keeping the paper. Papers in Trash show PDFs without these
 editing actions.
+
+**Find PDF** shows a spinner above the tab bar while Synapse starts a publisher search or
+looks for a copy on the server. The message then shows whether the search moved to the browser
+extension, a PDF was attached, or the search returned without a PDF. A connected extension that
+handles requests from other devices starts the publisher search automatically. The message also
+appears in **Notifications** in the phone menu.
 
 ## Plugins on a phone
 

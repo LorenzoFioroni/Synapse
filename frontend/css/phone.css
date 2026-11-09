@@ -367,7 +367,6 @@ body.phone .grow { flex: 1; min-width: 0; }
 /* what the desktop overlays become on a phone */
 body.phone #toasts { left: 12px; right: 12px; bottom: calc(var(--ph-tabbar-h) + env(safe-area-inset-bottom) + 12px); transform: none; }
 body.phone #notification-center { left: 8px; right: 8px; width: auto; max-width: none; top: max(12px, env(safe-area-inset-top)) !important; }
-body.phone .ph-bell { display: none; }
 .ph-tag.add.wide { width: auto; padding: 0 12px; color: var(--text-2); }
 .ph-note-ref small .cite { padding: 0 5px; border-radius: 6px; background: var(--accent-soft); font-size: 12.5px; }
 

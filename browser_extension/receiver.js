@@ -62,11 +62,19 @@ async function receive(controller) {
         let opened;
         try {
           const query = new URLSearchParams({ ids: ids.join(','), auto: '1', fallback: '1', library: server });
+          // Keep the window idle until the server accepts the handoff. The finder can start as
+          // soon as it loads, so a late acknowledgement must not race the server's fallback.
           opened = await chrome.windows.create({
-            url: chrome.runtime.getURL(`find_pdfs.html?${query}`), type: 'popup', width: 650, height: 760,
+            url: 'about:blank', type: 'popup', width: 650, height: 760,
           });
+          const tabId = opened?.tabs?.[0]?.id;
+          if (tabId === undefined) throw new Error('Could not open the PDF finder');
           const ack = await api('/api/connector/browser-pdfs/ack', { client, id: job.id, accepted: true }, 3000);
-          if (!ack.active && opened?.id !== undefined) await chrome.windows.remove(opened.id);
+          if (!ack.active) {
+            if (opened?.id !== undefined) await chrome.windows.remove(opened.id);
+            continue;
+          }
+          await chrome.tabs.update(tabId, { url: chrome.runtime.getURL(`find_pdfs.html?${query}`) });
         } catch {
           if (opened?.id !== undefined) await chrome.windows.remove(opened.id).catch(() => {});
           await api('/api/connector/browser-pdfs/ack', { client, id: job.id, accepted: false }, 3000).catch(() => {});

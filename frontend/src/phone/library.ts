@@ -19,7 +19,7 @@ import { fetchReferencesBulk } from '../views/referencesSection.js';
 import { familyNames } from './model.js';
 import { readerScreen } from './reader.js';
 import { type Screen, back, push } from './shell.js';
-import { chevron, navBar, navButton, rootHeader, roundButton, rowHtml } from './ui.js';
+import { chevron, navBar, navButton, rootHeader, rowHtml, settingsButton } from './ui.js';
 import { ensureNoteLib, noteScreen } from './notes.js';
 import { ws } from '../views/notes/workspace.js';
 
@@ -70,7 +70,7 @@ export function libraryScreen(): Screen {
       const paintHead = () => {
         el.querySelector('.ph-head-slot')!.innerHTML = rootHeader(viewTitle(state.view), {
           kicker: state.view === 'library' ? '' : 'Library',
-          actions: roundButton('gear', 'Settings', 'data-act="settings"'),
+          actions: settingsButton(),
         });
         const sort = SORTS.find((s) => sortCol(s[0]) === state.sort.col || s[0] === state.sort.col);
         el.querySelector('[data-act="sort"]')!.innerHTML = `${esc(sort?.[1] || 'Sorted')}${icon('chevronDown')}`;
