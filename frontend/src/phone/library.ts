@@ -12,7 +12,7 @@ import { type MenuEntry, openMenu } from '../ui/menu.js';
 import { toast, toastError } from '../ui/toast.js';
 import { copyText, debounce, escapeHtml as esc, storage, store } from '../util.js';
 import { openExport } from '../views/exportDialog.js';
-import { copyBibtex, copyKeys, itemMenu, pickFiles } from '../views/itemlist/menus.js';
+import { copyBibtex, copyKeys, deleteAttachment, itemMenu, pickFiles, renameAttachment } from '../views/itemlist/menus.js';
 import { openMetadataReview } from '../views/metadataReview.js';
 import { addSelectionToFolder, editTagsDialog, pickFolder } from '../views/organizeDialogs.js';
 import { fetchReferencesBulk } from '../views/referencesSection.js';
@@ -303,7 +303,10 @@ function itemHtml(it: Item): string {
       <div class="ph-tags">${chips.join('')}${chips.length
         ? `<button class="ph-tag add" data-act="organize" aria-label="Add to a folder or tag">${icon('plus')}</button>`
         : `<button class="ph-tag add wide" data-act="organize">${icon('plus')}Add to a folder or tag</button>`}</div>
-      ${(it.attachments || []).length > 1 ? (it.attachments || []).map((a) => `<button class="ph-link-row" data-att="${a.id}">${icon('pdf')}<span>${esc(a.name || 'PDF')}</span>${chevron()}</button>`).join('') : ''}
+      ${(it.attachments || []).map((a) => `<div class="ph-attachment">
+        <button class="ph-link-row" data-att="${a.id}">${icon('pdf')}<span>${esc(a.name || 'PDF')}</span>${chevron()}</button>
+        ${it.deleted_at ? '' : navButton('more', `Actions for ${a.name || 'PDF'}`, `data-att-menu="${a.id}" aria-haspopup="menu"`)}
+      </div>`).join('')}
       <button class="ph-link-row" data-act="refs">${icon('link')}<span>References and citations</span>${chevron()}</button>
       <button class="ph-link-row" data-act="details">${icon('info')}<span>All details <small>${esc(it.citation_key || '')}</small></span>${chevron()}</button>
     </section>`}
@@ -372,6 +375,16 @@ async function onItemClick(e: MouseEvent, it: Item, el: HTMLElement): Promise<vo
   const t = e.target as Element;
   const note = t.closest<HTMLElement>('[data-note]');
   if (note) { push(noteScreen(note.dataset.note!, { line: note.dataset.line ? Number(note.dataset.line) : null })); return; }
+  const attMenu = t.closest<HTMLElement>('[data-att-menu]');
+  if (attMenu) {
+    const a = it.attachments?.find((x) => String(x.id) === attMenu.dataset.attMenu);
+    if (a && !it.deleted_at) openMenu([
+      { label: 'Rename…', icon: 'edit', run: () => renameAttachment(a) },
+      'sep',
+      { label: 'Delete Attachment', icon: 'trash', danger: true, run: () => deleteAttachment(a) },
+    ], attMenu);
+    return;
+  }
   const att = t.closest<HTMLElement>('[data-att]');
   if (att) { const a = it.attachments?.find((x) => String(x.id) === att.dataset.att); if (a) push(readerScreen(it, a)); return; }
   const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;

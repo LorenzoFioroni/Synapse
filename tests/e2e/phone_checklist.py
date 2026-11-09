@@ -358,6 +358,92 @@ async def main():
                 )
             )
             check("the phone's Back leaves the PDF", ok)
+
+            # ---- PDF attachment actions -------------------------------------------------------
+            original = api(f"/api/items/{cui['id']}")["attachments"][0]
+            check("a single PDF has a visible attachment row", await page.locator(".ph-attachment").count() == 1)
+            att_menu = page.locator(f'[data-att-menu="{original["id"]}"]')
+            box = await att_menu.bounding_box()
+            check("its action button has a touch target of at least 44px", box["width"] >= 44 and box["height"] >= 44)
+            await att_menu.focus()
+            await page.keyboard.press("Enter")
+            await page.get_by_role("menuitem", name="Delete Attachment", exact=True).tap()
+            dialog = page.get_by_role("dialog", name="Delete attachment", exact=True)
+            await dialog.wait_for()
+            check(
+                "deleting explains that the file is removed from disk", "removed from disk" in await dialog.inner_text()
+            )
+            await dialog.get_by_role("button", name="Cancel", exact=True).tap()
+            check(
+                "cancelling keeps the PDF and the paper",
+                api(f"/api/items/{cui['id']}")["attachments"] == [original]
+                and await page.locator(".ph-attachment").count() == 1,
+            )
+
+            with open(PDF, "rb") as fh:
+                uploaded = requests.post(
+                    f"{BASE}/api/items/{cui['id']}/attachments",
+                    files={"file": ("supplement.pdf", fh, "application/pdf")},
+                    timeout=30,
+                ).json()["attachments"][0]
+            await page.locator(f'[data-att-menu="{uploaded["id"]}"]').wait_for()
+            check("each of several PDFs has its own action menu", await page.locator("[data-att-menu]").count() == 2)
+            await page.locator(f'[data-att-menu="{uploaded["id"]}"]').tap()
+            await page.get_by_role("menuitem", name="Rename…", exact=True).tap()
+            long_name = 'Supplement <methods> & "results" ' + "long-filename-" * 8 + ".pdf"
+            dialog = page.get_by_role("dialog", name="Rename Attachment", exact=True)
+            await dialog.locator("input").fill(long_name)
+            await dialog.get_by_role("button", name="Rename", exact=True).tap()
+            await page.locator(f'[data-att="{uploaded["id"]}"] > span').filter(has_text=long_name).wait_for()
+            check(
+                "renaming updates the correct PDF, with special characters rendered as text",
+                api(f"/api/items/{cui['id']}")["attachments"][1]["name"] == long_name
+                and await page.locator(f'[data-att="{uploaded["id"]}"] > span').first.text_content() == long_name,
+            )
+            for theme in ("light", "dark"):
+                await page.evaluate("t => document.documentElement.dataset.theme = t", theme)
+                await page.locator(f'[data-att-menu="{uploaded["id"]}"]').tap()
+                await page.locator(".menu-sheet").evaluate("el => Promise.all(el.getAnimations().map(a => a.finished))")
+                await shot(page, f"02-attachment-menu-{theme}")
+                box = await page.evaluate("({ w: innerWidth, s: document.documentElement.scrollWidth })")
+                check(f"long PDF names and their menu fit in {theme} mode", box["s"] <= box["w"])
+                await page.keyboard.press("Escape")
+            await page.locator(f'[data-att-menu="{uploaded["id"]}"]').tap()
+            await page.get_by_role("menuitem", name="Delete Attachment", exact=True).tap()
+            await (
+                page.get_by_role("dialog", name="Delete attachment", exact=True)
+                .get_by_role("button", name="Delete", exact=True)
+                .tap()
+            )
+            await page.locator(f'[data-att-menu="{uploaded["id"]}"]').wait_for(state="detached")
+            check(
+                "deleting one PDF keeps the other attachment and the paper",
+                api(f"/api/items/{cui['id']}")["attachments"] == [original]
+                and await page.locator(".ph-attachment").count() == 1,
+            )
+            await page.locator(f'[data-att-menu="{original["id"]}"]').tap()
+            await page.get_by_role("menuitem", name="Delete Attachment", exact=True).tap()
+            await (
+                page.get_by_role("dialog", name="Delete attachment", exact=True)
+                .get_by_role("button", name="Delete", exact=True)
+                .tap()
+            )
+            await page.locator('.ph-action[data-act="find-pdf"]').wait_for()
+            check(
+                "deleting the last PDF keeps the paper and replaces Read with Find PDF",
+                api(f"/api/items/{cui['id']}")["attachments"] == []
+                and await page.locator(".ph-attachment").count() == 0
+                and await page.locator(".ph-item h1").is_visible(),
+            )
+            # Keep the PDF available for the citation checks below.
+            with open(PDF, "rb") as fh:
+                requests.post(
+                    f"{BASE}/api/items/{cui['id']}/attachments",
+                    files={"file": ("paper.pdf", fh, "application/pdf")},
+                    timeout=30,
+                ).raise_for_status()
+            await page.locator('.ph-action[data-act="read"]').wait_for()
+            await page.evaluate("document.documentElement.dataset.theme = 'light'")
             await page.locator(".ph-screen:not([hidden]) [data-ph=back]").tap()
             ok = await wait_for(lambda: page.locator(".ph-search").is_visible())
             check("the back button returns to the list", ok)
