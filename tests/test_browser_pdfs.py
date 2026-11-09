@@ -70,16 +70,35 @@ def test_disconnect_removes_listener_and_cancels_its_unaccepted_offer():
         assert not broker._offers
 
 
-def test_receiver_capacity_is_bounded_without_a_fast_poll_loop(monkeypatch):
+def test_receiver_capacity_is_bounded_without_a_fast_poll_loop(client, svc, monkeypatch):
     monkeypatch.setattr("backend.online.browser_pdfs.MAX_BROWSERS", 1)
-    broker = BrowserPdfs()
+    broker = svc.browser_pdfs
     with ThreadPoolExecutor(1) as pool:
         receiver = pool.submit(broker.poll, "desktop", timeout=1)
-        listening(broker)
-        with pytest.raises(ValueError, match="occupied"):
-            broker.poll("another", timeout=0)
-        broker.leave("desktop")
+        try:
+            listening(broker)
+            busy = client.get("/api/connector/browser-pdfs?client=desktop")
+            assert busy.status_code == 400
+            assert busy.get_json() == {"error": "This browser is already listening or accepting a request."}
+            full = client.get("/api/connector/browser-pdfs?client=another")
+            assert full.status_code == 400
+            assert full.get_json() == {"error": "All browser receiver slots are occupied."}
+        finally:
+            broker.leave("desktop")
         assert receiver.result(timeout=1) is None
+
+
+def test_poll_does_not_expose_unexpected_value_error(app, client, svc, monkeypatch, caplog):
+    def fail(client_id):
+        raise ValueError("Internal receiver details")
+
+    monkeypatch.setitem(app.config, "PROPAGATE_EXCEPTIONS", False)
+    monkeypatch.setattr(svc.browser_pdfs, "poll", fail)
+    response = client.get("/api/connector/browser-pdfs?client=desktop")
+
+    assert response.status_code == 500
+    assert "Internal receiver details" not in response.get_data(as_text=True)
+    assert "Internal receiver details" in caplog.text
 
 
 def test_each_instance_has_its_own_receiver_and_busy_browsers_cannot_accumulate_jobs():
@@ -160,7 +179,9 @@ def test_handoff_endpoints_preserve_origin_and_scope_boundaries(client):
     for path in ("claim", "ack"):
         assert client.post(f"/api/connector/browser-pdfs/{path}", json=[]).status_code == 400
         assert client.post(f"/api/connector/browser-pdfs/{path}", json={"id": [], "client": {}}).status_code == 400
-    assert client.get("/api/connector/browser-pdfs?client=/invalid").status_code == 400
+    invalid = client.get("/api/connector/browser-pdfs?client=/invalid")
+    assert invalid.status_code == 400
+    assert invalid.get_json() == {"error": "Invalid browser client ID."}
 
 
 def test_remote_connector_tokens_can_receive_but_cannot_dispatch(client, svc):

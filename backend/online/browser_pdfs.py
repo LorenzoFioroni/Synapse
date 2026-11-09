@@ -13,6 +13,18 @@ ACCEPT_SECONDS = 5.0
 MAX_BROWSERS = 16
 
 
+class InvalidBrowserClient(ValueError):
+    """The client ID does not match the browser receiver format."""
+
+
+class BrowserClientBusy(ValueError):
+    """The client is already polling or accepting an offer."""
+
+
+class BrowserReceiverLimit(ValueError):
+    """All receiver slots are occupied."""
+
+
 @dataclass
 class _Offer:
     client: str
@@ -34,12 +46,12 @@ class BrowserPdfs:
 
     def poll(self, client: str, *, timeout: float = POLL_SECONDS) -> dict | None:
         if not isinstance(client, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", client):
-            raise ValueError("Invalid browser client ID.")
+            raise InvalidBrowserClient
         with self._condition:
             if client in self._listeners or any(o.client == client for o in self._offers.values()):
-                raise ValueError("This browser is already listening or accepting a request.")
+                raise BrowserClientBusy
             if len(self._listeners) + len(self._offers) >= MAX_BROWSERS:
-                raise ValueError("All browser receiver slots are occupied.")
+                raise BrowserReceiverLimit
             self._listeners.add(client)
             self._condition.notify_all()
             deadline = time.monotonic() + timeout

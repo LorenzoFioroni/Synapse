@@ -10,6 +10,7 @@ from flask import Blueprint, jsonify, request
 from werkzeug.datastructures import FileStorage
 
 from .. import connector
+from ..online.browser_pdfs import BrowserClientBusy, BrowserReceiverLimit, InvalidBrowserClient
 from . import error, failure, svc
 
 bp = Blueprint("connector", __name__, url_prefix="/api/connector")
@@ -102,11 +103,16 @@ def find_pdf():
 @bp.get("/browser-pdfs")
 def poll_browser_pdfs():
     try:
-        response = jsonify(job=svc().browser_pdfs.poll(request.args.get("client", "")))
-        response.headers["Cache-Control"] = "no-store"
-        return response
-    except ValueError as exc:
-        return error(str(exc))
+        job = svc().browser_pdfs.poll(request.args.get("client", ""))
+    except InvalidBrowserClient:
+        return error("Invalid browser client ID.")
+    except BrowserClientBusy:
+        return error("This browser is already listening or accepting a request.")
+    except BrowserReceiverLimit:
+        return error("All browser receiver slots are occupied.")
+    response = jsonify(job=job)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @bp.post("/browser-pdfs/leave")
