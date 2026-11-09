@@ -36,7 +36,8 @@ def ping():
     return jsonify(
         app="synapse",
         version=VERSION,
-        capabilities={"publisher_pdfs": True, "pdf_pagination": True},
+        capabilities={"publisher_pdfs": True, "pdf_pagination": True, "live_pdf_requests": True},
+        browser_pdf_available=s.browser_pdfs.available,
         folders=s.folders.tree(),
         tags=[t["name"] for t in s.tags.list()],
         counts=s.papers.counts(),
@@ -96,6 +97,45 @@ def find_pdf():
     except connector.BadRequest as e:
         return failure(e)
     return jsonify(**result)
+
+
+@bp.get("/browser-pdfs")
+def poll_browser_pdfs():
+    try:
+        response = jsonify(job=svc().browser_pdfs.poll(request.args.get("client", "")))
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except ValueError as exc:
+        return error(str(exc))
+
+
+@bp.post("/browser-pdfs/leave")
+def leave_browser_pdfs():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("client"), str):
+        return error("A browser client ID is required.")
+    svc().browser_pdfs.leave(data["client"])
+    return jsonify(ok=True)
+
+
+@bp.post("/browser-pdfs/claim")
+def claim_browser_pdfs():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not all(isinstance(data.get(k), str) for k in ("client", "id")):
+        return error("A browser client and request ID are required.")
+    return jsonify(remaining=svc().browser_pdfs.claim(data["client"], data["id"]))
+
+
+@bp.post("/browser-pdfs/ack")
+def acknowledge_browser_pdfs():
+    data = request.get_json(silent=True)
+    if (
+        not isinstance(data, dict)
+        or not all(isinstance(data.get(k), str) for k in ("client", "id"))
+        or type(data.get("accepted")) is not bool
+    ):
+        return error("A browser client, request ID and acceptance are required.")
+    return jsonify(active=svc().browser_pdfs.acknowledge(data["client"], data["id"], data["accepted"]))
 
 
 @bp.post("/attach-pdf")

@@ -296,6 +296,17 @@ def _has_pdf(item: dict) -> bool:
     )
 
 
+def request_browser_pdfs(s: Services, ids) -> bool:
+    if (
+        not isinstance(ids, list)
+        or not 1 <= len(ids) <= MISSING_PDFS_MAX
+        or any(not isinstance(i, str) or not _ITEM_ID.fullmatch(i) for i in ids)
+    ):
+        raise BadRequest("ids must contain 1 to 200 item IDs.")
+    selected = missing_pdfs(s, limit=MISSING_PDFS_MAX, ids=",".join(ids))
+    return s.browser_pdfs.request([p["id"] for p in selected["items"]])
+
+
 def attach_pdf(s: Services, item_id: str, pdf_bytes: bytes | None) -> dict:
     """Attach a PDF the extension fetched for an existing item, if it is that paper (the check
     Find Available PDF makes) and the item has no PDF yet. Returns ``{status, item}`` with status

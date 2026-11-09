@@ -1,5 +1,6 @@
 import { loadConnection, libraryFetch } from './connection.js';
 import { libraryPdfRequest } from './bridge.js';
+import { refreshPdfReceiver } from './receiver.js';
 
 async function syncBridge() {
   const { server } = await loadConnection();
@@ -19,10 +20,12 @@ chrome.runtime.onInstalled.addListener(refreshBridge);
 chrome.runtime.onStartup.addListener(refreshBridge);
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'sync' && changes.server) refreshBridge();
+  if ((area === 'sync' && changes.server) || (area === 'local' && (changes.connection || changes.pdfReceiver))) refreshPdfReceiver();
 });
-chrome.permissions.onAdded.addListener(refreshBridge);
-chrome.permissions.onRemoved.addListener(refreshBridge);
+chrome.permissions.onAdded.addListener(() => { refreshBridge(); refreshPdfReceiver(); });
+chrome.permissions.onRemoved.addListener(() => { refreshBridge(); refreshPdfReceiver(); });
 refreshBridge();
+refreshPdfReceiver();
 
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (message?.type !== 'find-publisher-pdfs') return;
@@ -35,7 +38,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     const ping = await libraryFetch(server, token, '/api/connector/ping', { signal: AbortSignal.timeout(3000) });
     const data = await ping.json();
     if (!ping.ok || data.app !== 'synapse' || !data.capabilities?.publisher_pdfs) { reply({ accepted: false }); return; }
-    const query = new URLSearchParams({ ids: ids.join(','), auto: '1', fallback: '1' });
+    const query = new URLSearchParams({ ids: ids.join(','), auto: '1', fallback: '1', library: server });
     await chrome.windows.create({
       url: chrome.runtime.getURL(`find_pdfs.html?${query}`), type: 'popup', width: 650, height: 760,
     });

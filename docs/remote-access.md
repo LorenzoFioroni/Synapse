@@ -83,6 +83,14 @@ The extension saves the token locally, restricted to trusted extension pages, so
 browser restarts and extension updates. Localhost remains available without a token. See
 [browser extension setup](../browser_extension/README.md#remote-server).
 
+For PDF retrieval from your phone through a computer's browser, enable **Handle PDF retrieval
+from my other devices** in that computer's extension options and save. Keep its browser connected
+to this library and on the campus network or VPN. The phone needs only its normal Synapse sign-in;
+the computer supplies publisher access. The browser must already be listening and accept within
+five seconds. Otherwise Synapse uses its server sources; there is no job waiting for a later
+reconnect. Interactive CAPTCHAs can still require attention on the computer. Both the server and
+extension must be updated; this uses the existing HTTPS connection and opens no extra ports.
+
 ## Pairing the first device: `--pairing-link`
 
 With no screen on the server, ask the running Synapse for a one-time pairing link from a terminal

@@ -41,5 +41,6 @@ test('the worker takes over only after this library supports authenticated scope
   const url = new URL(opened[0].url);
   assert.equal(url.searchParams.get('ids'), 'chosen-item');
   assert.equal(url.searchParams.get('fallback'), '1');
+  assert.equal(url.searchParams.get('library'), 'https://library.example');
   assert.equal(url.searchParams.has('token'), false);
 });

@@ -15,9 +15,10 @@ in [`architecture.md`](architecture.md).
 | `extract.js` | the web page | `extractCitation` (reads the metadata), `fetchPdfInPage` (fetches the PDF) and `pageState` (where a Find Missing PDFs tab has got to). |
 | `popup.html`, `popup.js`, `popup.css` | the popup | Talks to the library, shows the form, saves. |
 | `find_pdfs.html`, `find_pdfs.js` | a window of its own | Find Missing PDFs: the publisher's PDF of items that have none, fetched in this browser (see [below](#find_pdfsjs-missing-pdfs-through-the-browser)). |
-| `options.html`, `options.js` | the options page | The library address, server permission and access token. |
+| `options.html`, `options.js` | the options page | The library address, server permission, access token and opt-in live PDF receiver. |
 | `connection.js` | popup and options | Validates addresses, loads server-bound credentials and sends authenticated requests. |
 | `background.js`, `bridge.js`, `library.js` | worker and isolated library content script | Registers the bridge for the configured library and validates scoped item-ID requests from the app. No credentials cross the page bridge. |
+| `receiver.js` | worker | Opt-in immediate requests from other devices; waits only while connected, checks expiry and opens the finder. |
 | `tsconfig.json` | | Type-checking only (see [Type-checking](#type-checking)). |
 
 The extension is plain JavaScript in ES modules, with no build: Chrome loads the folder as it is,
@@ -214,8 +215,11 @@ checklist.
 
 ### Requests from the app
 
-`frontend/src/afterAdd.ts` first asks `publisherPdfs.ts` to hand eligible new DOI items to the
-extension when PDF lookup was selected by the user or the existing Adding Items policy. The
+The app's single and batch **Find Available PDF** actions in `frontend/src/actions.ts` first ask
+`publisherPdfs.ts` to hand eligible DOI items without a PDF to the extension. New-item follow-ups
+in `afterAdd.ts` use the same actions when PDF lookup was selected by the user or the existing
+Adding Items policy. Publisher DOI items are sent to the browser; arXiv DOI and title-only items
+use the server's configured sources. Batch actions still skip entries with attachments. The
 isolated content script relays only item IDs and an acknowledgement ID. The worker requires the
 browser-supplied sender to be the configured library's exact origin (scheme, host and port) and
 top frame, bounds/validates the IDs, and verifies the connector connection and
@@ -228,9 +232,34 @@ required. Credentials remain in trusted extension storage, and never enter the l
 The finder lists just those IDs and starts automatically only if publisher permission was granted
 previously; otherwise the user clicks Find PDFs. After a failed publisher attempt,
 `POST /api/connector/find-pdf` queues other enabled sources. Failed queue requests pause visibly
-and retain retry; closing the finder cancels untried work. Without a usable extension connection,
-the app keeps its existing server-source follow-ups. Non-publisher identifiers and imports over
+and retain retry; closing the finder cancels untried work. If the requesting browser has no usable
+extension, the app asks the server to offer the IDs to an already-listening browser (below).
+Without an accepting browser it keeps its existing server searches. Non-publisher identifiers and requests over
 200 eligible DOI items also use the normal sources.
+
+### Live requests from another device
+
+Extension options have an opt-in **Handle PDF retrieval from my other devices**. Saving grants
+publisher host access and stores the choice locally, bound to the configured server. With that
+option and permissions, `receiver.js` long-polls the connector for up to 20 seconds at a time.
+The worker reloads its trusted connection/settings between polls; changing the server, token,
+option or permissions aborts the old receiver. The poll duration stays below Chrome's
+[30-second fetch-response limit](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle).
+No new port, service, push provider or runtime dependency is needed.
+
+The app's `POST /api/items/find-publisher-pdfs` accepts 1–200 item IDs, filters them to existing
+eligible publisher DOI items without PDFs, and returns `{accepted}`. Only a browser already
+waiting can receive an offer. `Services.browser_pdfs` (`online/browser_pdfs.py`) is a per-instance,
+bounded in-memory rendezvous: it waits at most five seconds for acknowledgement and removes the
+offer afterwards. It stores nothing in the library database or on disk. Missing, declined and
+timed-out offers return the app to its ordinary server sources; a later reconnect cannot claim
+an expired request. Acceptance means the finder opened, not that a PDF was found.
+
+The receiving worker validates IDs, checks that the offer is still active immediately before
+opening a finder, and acknowledges the window. Expired/unacknowledged windows are closed. A
+phone can therefore use a connected computer's browser session and campus/VPN connection;
+interactive CAPTCHAs may still require attention at that computer. This remains subject to
+browser suspension/disconnection: only an acknowledged immediate handoff counts as accepted.
 
 ## The connector API
 
@@ -250,7 +279,8 @@ Tells the extension that the library is running and fills its pickers.
 | `tags` | tag names |
 | `counts` | `{library, trash, duplicates}` |
 | `on_add` | Settings → "When an item is added": `fetch_metadata`, `find_pdf`, `fetch_references`, each `"never"`, `"always"` or `"ask"` |
-| `capabilities` | Optional feature flags; `publisher_pdfs` and `pdf_pagination` are true on servers supporting scoped app requests and resumable batches. |
+| `capabilities` | Optional flags: `publisher_pdfs`, `pdf_pagination`, and `live_pdf_requests` for scoped requests, resumable batches and immediate cross-device handoff. |
+| `browser_pdf_available` | Whether a browser is currently waiting; acknowledgement is still required before a handoff is accepted. |
 
 The popup shows a checkbox for `find_pdf` and `fetch_references` when they are `"ask"`. Whether to
 look up online is always the user's choice in the popup ("Complete metadata online"), so
@@ -343,6 +373,23 @@ JSON `{id}` queues the configured PDF sources for an existing item after an app-
 attempt. Answers `{status: "searching"}` or `{status: "has-pdf"}` without adding a second PDF.
 Malformed/missing IDs give 400; unknown items give 404. It accepts no caller-supplied URL.
 
+### Live browser request endpoints
+
+- `GET /browser-pdfs?client=ID`: register one waiting receiver for up to 20 seconds and return
+  `{job: null}` or `{job: {id, ids}}`. Client IDs are bounded, and the instance permits at most
+  16 waiting/accepting browsers. A busy client cannot accumulate another job.
+- `POST /browser-pdfs/claim`: JSON `{client, id}` returns `{remaining}` (seconds). Zero means
+  expired, already acknowledged, unknown, or assigned to another browser. Check this immediately
+  before opening a finder.
+- `POST /browser-pdfs/ack`: JSON `{client, id, accepted: boolean}` returns `{active}`. Only the
+  assigned browser may acknowledge a still-active offer. If acceptance is late, close the finder.
+- `POST /browser-pdfs/leave`: JSON `{client}` releases a waiting receiver and declines its
+  unaccepted offer when its settings or connection change. Poll responses are never cached.
+
+These use the same connector authentication and origin rules as other extension endpoints.
+The app-only dispatch endpoint is outside `/api/connector`; connector tokens cannot dispatch
+requests or access the rest of the app. Requests carry item IDs, never publisher URLs or credentials.
+
 ### `POST /attach-pdf`
 
 Multipart with `id` and `file`: a PDF the extension fetched for an existing item. It is attached as
@@ -424,8 +471,12 @@ this side: keep them in step with `connector.py`.
   127.0.0.1: a browser check that sets a cookie and reloads, a PDF behind a redirect by script, a
   reader page whose download link gives the PDF, a link known only by its "Download PDF" label
   (not the supplementary PDF next to it), a login page, a PDF of another paper and a page without
-  a PDF link; four PDFs attached, three to retry with what came back, the tab closed. It also
-  checks the links `pageState` derives on APS and science.org pages (served by the test).
+  a PDF link; successful attachments, retries and closed tabs. It also checks the links
+  `pageState` derives on APS and science.org pages (served by the test), manual single/batch
+  handoffs, server fallbacks, opt-in options, and a separate phone browser using a live desktop
+  receiver. Disabling and reconnecting the receiver must never replay an offline request.
+- `tests/test_browser_pdfs.py`: unavailable receivers, acknowledgement ownership, expiry,
+  instance isolation, busy receivers, input validation, and app/connector origin boundaries.
 
 See [`testing.md`](testing.md) for how the suites run.
 

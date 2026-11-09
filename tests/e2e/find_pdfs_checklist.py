@@ -24,6 +24,7 @@ the test in place of the real sites (no request leaves the machine).
 
 import asyncio
 import http.server
+import json
 import os
 import re
 import shutil
@@ -47,6 +48,7 @@ PORT, SITE = 8851, 8852
 BASE = f"http://127.0.0.1:{PORT}"
 PUB = f"http://127.0.0.1:{SITE}"
 EXT = APP / "browser_extension"
+TEST_EXT = Path(tempfile.mkdtemp(prefix="zc-findpdfs-extension-")).resolve()
 DATA = tempfile.mkdtemp(prefix="zc-findpdfs-e2e-")
 PROFILE = tempfile.mkdtemp(prefix="zc-findpdfs-profile-")
 TMP = Path(tempfile.mkdtemp(prefix="zc-findpdfs-pdfs-"))
@@ -179,6 +181,12 @@ class Publisher(http.server.BaseHTTPRequestHandler):
 async def main():
     guard(PORT)
     guard(SITE)
+    # Headless Chrome cannot display the optional host-permission prompt. Pregrant the
+    # publisher hosts in this disposable copy; production retains its opt-in permission.
+    shutil.copytree(EXT, TEST_EXT, dirs_exist_ok=True)
+    manifest = json.loads((TEST_EXT / "manifest.json").read_text())
+    manifest["host_permissions"].append("https://*/*")
+    (TEST_EXT / "manifest.json").write_text(json.dumps(manifest))
     srv = subprocess.Popen(
         [sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
         cwd=APP,
@@ -206,10 +214,17 @@ async def main():
                 PROFILE,
                 headless=True,
                 channel="chromium",
-                args=[f"--disable-extensions-except={EXT}", f"--load-extension={EXT}"],
+                args=[f"--disable-extensions-except={TEST_EXT}", f"--load-extension={TEST_EXT}"],
             )
             errors = []
-            ext = f"chrome-extension://{extension_id(EXT)}"
+            ext = f"chrome-extension://{extension_id(TEST_EXT)}"
+            await ctx.route(
+                "https://doi.org/**", lambda route: route.fulfill(content_type="text/html", body="Publisher")
+            )
+            await ctx.route(
+                f"{BASE}/api/connector/find-pdf",
+                lambda route: route.fulfill(content_type="application/json", body='{"status":"searching"}'),
+            )
             setup = await ctx.new_page()
             await setup.goto(f"{ext}/manifest.json")
             await setup.evaluate(f"chrome.storage.sync.set({{server: '{BASE}'}})")
@@ -366,6 +381,133 @@ async def main():
                 "app-triggered search offers other sources only after publisher access", "fallback=1" in requested.url
             )
             await requested.close()
+
+            # Manual retrieval must use the same bridge. Intercept sources so none of these
+            # checks makes a real publisher request or queues a real server-side lookup.
+            server_searches = []
+
+            async def server_search(route):
+                server_searches.append(route.request.url.split("/")[-2])
+                await route.fulfill(content_type="application/json", body='{"status":"not_found"}')
+
+            await library.route(f"{BASE}/api/items/*/find_pdf", server_search)
+            async with ctx.expect_page() as opened:
+                await library.evaluate("async id => (await import('/js/actions.js')).findPdf(id)", chosen)
+            manual = await opened.value
+            await manual.wait_for_selector(".rows li")
+            check(
+                "manual single retrieval opens the extension for the existing item",
+                await manual.locator(".rows li").evaluate_all("els => els.map(e => e.dataset.id)") == [chosen],
+            )
+            check("accepted manual retrieval does not also search on the server", not server_searches, server_searches)
+            await manual.close()
+
+            arxiv = requests.post(
+                BASE + "/api/items", json={"title": "An arXiv Item", "doi": "10.48550/arXiv.2401.12345"}
+            ).json()["id"]
+            other = next(i for i, key in ids.items() if key == "wrong")
+            attached = next(i for i, key in ids.items() if key == "check")
+            batch = [chosen, other, arxiv, attached]
+            await library.evaluate(
+                "async ids => (await import('/js/actions.js')).refreshItems(ids, {added:true})", batch
+            )
+            async with ctx.expect_page() as opened:
+                await library.evaluate("async ids => (await import('/js/actions.js')).findPdfs(ids)", batch)
+            manual_batch = await opened.value
+            await manual_batch.wait_for_selector(".rows li")
+            check(
+                "manual batch hands only missing publisher DOI items to the extension",
+                set(await manual_batch.locator(".rows li").evaluate_all("els => els.map(e => e.dataset.id)"))
+                == {chosen, other},
+            )
+            check(
+                "mixed batch searches arXiv on the server and skips existing PDFs",
+                server_searches == [arxiv],
+                server_searches,
+            )
+            await manual_batch.close()
+
+            await library.evaluate("document.documentElement.removeAttribute('data-synapse-extension')")
+            await library.evaluate("async id => (await import('/js/actions.js')).findPdf(id)", chosen)
+            check(
+                "manual single retrieval falls back without an extension",
+                server_searches == [arxiv, chosen],
+                server_searches,
+            )
+            await library.evaluate("async id => (await import('/js/actions.js')).findPdfs([id])", other)
+            check(
+                "manual batch retrieval falls back without an extension",
+                server_searches == [arxiv, chosen, other],
+                server_searches,
+            )
+
+            # A separate browser has no extension (as on a phone). Only an already-listening
+            # receiver may take its request; switching the receiver off must leave no later job.
+            async def wait_receiver(available):
+                until = time.monotonic() + 25
+                while time.monotonic() < until:
+                    if requests.get(BASE + "/api/connector/ping").json()["browser_pdf_available"] is available:
+                        return
+                    await asyncio.sleep(0.05)
+                raise AssertionError(f"Browser receiver availability did not become {available}")
+
+            await setup.goto(f"{ext}/options.html")
+            await setup.wait_for_selector("#save:enabled")
+            await setup.check("#pdf-receiver")
+            await setup.click("#save")
+            await setup.wait_for_function("() => document.querySelector('#status').textContent.includes('Connected')")
+            await wait_receiver(True)
+            phone_browser = await p.chromium.launch()
+            phone = await phone_browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
+            phone.on("pageerror", lambda e: errors.append(str(e)))
+            await phone.route(f"{BASE}/api/items/*/find_pdf", server_search)
+            await phone.goto(BASE)
+            await phone.wait_for_selector(".ph-list, .row[data-id]")
+            check(
+                "the phone browser has no local extension",
+                await phone.get_attribute("html", "data-synapse-extension") is None,
+            )
+            await phone.evaluate("async ids => (await import('/js/actions.js')).refreshItems(ids, {added:true})", batch)
+            server_searches.clear()
+            async with ctx.expect_page() as opened:
+                await phone.evaluate("async id => (await import('/js/actions.js')).findPdf(id)", chosen)
+            from_phone = await opened.value
+            await from_phone.wait_for_selector(".rows li")
+            check(
+                "phone retrieval opens the connected desktop extension for the requested item",
+                await from_phone.locator(".rows li").evaluate_all("els => els.map(e => e.dataset.id)") == [chosen],
+            )
+            check("accepted phone retrieval does not also run on the server", not server_searches, server_searches)
+            await from_phone.close()
+            await wait_receiver(True)
+            async with ctx.expect_page() as opened:
+                await phone.evaluate("async ids => (await import('/js/actions.js')).findPdfs(ids)", batch)
+            phone_batch = await opened.value
+            await phone_batch.wait_for_selector(".rows li")
+            check(
+                "phone batch sends publisher DOI items to desktop and arXiv to the server",
+                set(await phone_batch.locator(".rows li").evaluate_all("els => els.map(e => e.dataset.id)"))
+                == {chosen, other}
+                and server_searches == [arxiv],
+            )
+            await phone_batch.close()
+            await setup.uncheck("#pdf-receiver")
+            await setup.click("#save")
+            await wait_receiver(False)
+            before = len(ctx.pages)
+            await phone.evaluate("async id => (await import('/js/actions.js')).findPdf(id)", other)
+            check(
+                "phone retrieval falls back when no desktop receiver is ready",
+                server_searches == [arxiv, other],
+                server_searches,
+            )
+            await setup.check("#pdf-receiver")
+            await setup.click("#save")
+            await wait_receiver(True)
+            check("reconnecting a browser does not replay an offline phone request", len(ctx.pages) == before)
+            await setup.uncheck("#pdf-receiver")
+            await setup.click("#save")
+            await phone_browser.close()
             await library.close()
 
             # A failed server fallback must stay visible and retryable, rather than being counted
@@ -423,7 +565,7 @@ async def main():
         site.shutdown()
         srv.terminate()
         srv.wait(timeout=10)
-        for d in (DATA, PROFILE, TMP):
+        for d in (DATA, PROFILE, TMP, TEST_EXT):
             shutil.rmtree(d, ignore_errors=True)
     print(f"\n{sum(results)}/{len(results)} passed")
     sys.exit(0 if all(results) else 1)

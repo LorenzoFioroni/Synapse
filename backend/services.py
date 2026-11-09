@@ -31,6 +31,9 @@ class Services:
         self.db = Database(config.db_path)
         self.db.migrate()
         self.settings = SettingsStore(config.settings_path)
+        from .online.browser_pdfs import BrowserPdfs
+
+        self.browser_pdfs = BrowserPdfs()
         from .changes import ChangeFeed
 
         self.changes = ChangeFeed(

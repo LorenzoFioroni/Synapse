@@ -74,6 +74,11 @@ Two objects tie the backend together:
 | `plugins/` | Plugin discovery, lifecycle, public permissions and integration registries. `catalog.py` discovers manifests/defaults; `files.py` coordinates storage writes. See [Plugins](plugins.md) and the ownership table below. | `plugins.json`, `plugin-data/`, `fields.db` |
 | `desktop/` | Running Synapse like a desktop program: opening its window (`window.py`), the open windows that keep a `--quit-when-closed` server running (`presence.py`), the desktop shortcut (`shortcut.py`). See [the app window](desktop.md). | none |
 
+The per-instance live PDF rendezvous is `online/browser_pdfs.py`, owned by `Services.browser_pdfs`.
+It connects app PDF actions to an already-listening browser extension through authenticated
+connector endpoints. Offers expire after five seconds and are never persisted; it is separate
+from server downloads and does not change the library schema.
+
 ### Bundled plugin ownership
 
 Bundled plugins use the public API exported by `backend.plugins` and `frontend/src/plugins/api.ts`.
