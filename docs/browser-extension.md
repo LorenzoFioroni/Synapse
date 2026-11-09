@@ -378,7 +378,8 @@ Malformed/missing IDs give 400; unknown items give 404. It accepts no caller-sup
 
 - `GET /browser-pdfs?client=ID`: register one waiting receiver for up to 20 seconds and return
   `{job: null}` or `{job: {id, ids}}`. Client IDs are bounded, and the instance permits at most
-  16 waiting/accepting browsers. A busy client cannot accumulate another job.
+  16 waiting/accepting browsers. An invalid ID, a busy client, or full receiver slots return
+  HTTP 400 with a fixed message. Unexpected failures return HTTP 500 with details in the server log.
 - `POST /browser-pdfs/claim`: JSON `{client, id}` returns `{remaining}` (seconds). Zero means
   expired, already acknowledged, unknown, or assigned to another browser. Check this immediately
   before opening a finder.
