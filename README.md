@@ -24,8 +24,9 @@ TypeScript frontend. Everything runs on your machine.
 - 🖍️ **Read, highlight, capture** — annotate PDFs with highlights, drawings and comments,
   and send quotes or snapshots straight into your notes.
 - 📝 **Write notes that connect** — live Markdown preview, LaTeX maths, diagrams, images,
-  paper citations and links between notes. Export Formats adds LaTeX projects with figures and
-  a BibTeX bibliography; optionally include linked notes as a multifile project.
+  paper citations and links between notes. Export Formats adds LaTeX projects that build with
+  pdfLaTeX, with figures, galleries, tables and a BibTeX bibliography; optionally include linked
+  notes as a multifile project.
 - 🕸️ **See the bigger picture** — explore a graph of your notes, papers and citation links.
 - ✅ **Turn ideas into action** — track tasks, due dates and subtasks right alongside your notes.
 - 🤖 **Bring your AI tools** — connect Claude, Codex and other AI apps through MCP;
