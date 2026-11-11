@@ -1,12 +1,14 @@
 // Optional note export alongside the plugin's existing reference writers.
 import type { PluginContext } from '../../../frontend/src/plugins/api.js';
 import {
-  citationIndex, createRenderer, downloadBlob, exportBibliography, exportNoteFile,
-  exportMathSettings, loadMD, noteIndex, noteSection, openDialog, splitFrontmatter,
+  citationIndex, createRenderer, downloadBlob, equationMode, exportBibliography, exportNoteFile,
+  exportMathSettings, loadMD, noteIndex, noteSection, openDialog, splitFrontmatter, storage, store,
 } from '../../../frontend/src/plugins/task-runtime.js';
 import { imageSrc } from '../../../frontend/src/plugins/markdown.js';
 import { latexProject, noteResolver } from './latex.js';
 import { zipFiles } from './zip.js';
+
+const COLUMNS_KEY = 'zc.export.latexGalleryColumns';
 
 async function localImage(source: string): Promise<{ bytes: Uint8Array; extension: string } | null> {
   const url = imageSrc(source);
@@ -37,19 +39,27 @@ export function activate(p: PluginContext): void {
     id: 'latex', title: 'LaTeX project…', icon: 'doc',
     async run(note) {
       let linked = false;
+      // remembered on this device: a choice of layout, not of content
+      let columns: number = [1, 2, 3, 4].find(n => n === storage<number>(COLUMNS_KEY, 0)) ?? 0;
       const accepted = await openDialog({
         title: 'Export LaTeX',
-        subtitle: 'Download a ZIP with main.tex, figures and references.bib.',
+        subtitle: 'Download a ZIP with main.tex, figures and references.bib, for pdfLaTeX.',
         render(body, close) {
           closeDialog = () => close(null);
           body.innerHTML = '<label class="checkbox"><input type="checkbox" name="linked-notes"> Include linked notes</label>'
-            + '<p class="field-hint">Includes all reachable linked and embedded notes as separate files in one project. With this off, embedded notes are included in main.tex.</p>';
-          body.querySelector('input')!.addEventListener('change', e => { linked = (e.target as HTMLInputElement).checked; });
+            + '<p class="field-hint">Includes all reachable linked and embedded notes as separate files in one project. With this off, embedded notes are included in main.tex.</p>'
+            + '<label class="field-label" for="latex-gallery-columns" style="margin-top:16px">Gallery images per row</label>'
+            + `<select class="select" id="latex-gallery-columns" name="gallery-columns">${[[0, 'Automatic (up to three)'], [1, 'One'], [2, 'Two'], [3, 'Three'], [4, 'Four']]
+              .map(([value, text]) => `<option value="${value}"${value === columns ? ' selected' : ''}>${text}</option>`).join('')}</select>`
+            + '<p class="field-hint">A gallery becomes one figure, its panels marked (a), (b), … and their captions added to the figure\'s.</p>';
+          body.querySelector<HTMLInputElement>('input[name="linked-notes"]')!.addEventListener('change', e => { linked = (e.target as HTMLInputElement).checked; });
+          body.querySelector<HTMLSelectElement>('select')!.addEventListener('change', e => { columns = Number((e.target as HTMLSelectElement).value) || 0; });
         },
         buttons: [{ label: 'Cancel', value: false }, { label: 'Download', kind: 'primary', value: true }],
       });
       closeDialog = null;
       if (!accepted || stopped) return;
+      store(COLUMNS_KEY, columns);
       const [lib, listing, citations] = await Promise.all([loadMD(), noteIndex(), citationIndex()]);
       const renderer = createRenderer(lib);
       // Keep raw equation labels, references and macro definitions for TeX rather than KaTeX.
@@ -65,7 +75,8 @@ export function activate(p: PluginContext): void {
           return { path, text: file.text, title: file.info?.title || path.replace(/\.md$/i, '').split('/').pop()! };
         },
         image: localImage,
-        math: exportMathSettings(),
+        math: { ...exportMathSettings(), numbering: equationMode() },
+        galleryColumns: columns,
         bibliography: async keys => {
           const ids = [...new Set(keys.map(key => byKey.get(key)?.id).filter((id): id is string => !!id))];
           const result = ids.length ? await exportBibliography(ids) : { text: '' };

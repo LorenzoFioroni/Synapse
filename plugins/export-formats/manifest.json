@@ -1,11 +1,11 @@
 {
   "id": "export-formats",
   "name": "Export Formats",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "api": "^1.14",
   "author": "Synapse",
   "enabled_by_default": true,
   "backend": "server",
-  "description": "Export library records as BibTeX, RIS, EndNote or CSL JSON, and notes as LaTeX projects with figures, bibliography and optional linked notes.",
+  "description": "Export library records as BibTeX, RIS, EndNote or CSL JSON, and notes as pdfLaTeX projects with figures, galleries, tables, bibliography and optional linked notes.",
   "frontend": "frontend/index.ts"
 }

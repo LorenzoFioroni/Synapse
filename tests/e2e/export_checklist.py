@@ -246,6 +246,12 @@ async def main():
                 if linked:
                     await box.focus()
                     await page.keyboard.press("Space")
+                columns = page.get_by_label("Gallery images per row")
+                if linked:
+                    check("gallery layout is remembered", await columns.input_value() == "2")
+                else:
+                    check("gallery layout defaults to automatic", await columns.input_value() == "0")
+                    await columns.select_option("2")
                 await page.set_viewport_size({"width": 560, "height": 800})
                 bounds = await page.get_by_role("dialog", name="Export LaTeX").bounding_box()
                 check("LaTeX dialog fits narrow layout", bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 560)
@@ -274,6 +280,15 @@ async def main():
                     check(
                         "LaTeX includes linked input or inline embed",
                         "\\input{notes/" in tex if linked else "The embedded part cites" in tex,
+                    )
+                    readme = archive.read("README.txt").decode()
+                    check(
+                        "LaTeX targets pdfLaTeX with plain citations and the chosen gallery layout",
+                        "\\usepackage[T1]{fontenc}" in tex
+                        and "\\cite[p.~4]{smith2021}" in tex
+                        and "latexmk -pdf" in readme
+                        and "2 images per row" in readme,
+                        readme,
                     )
                 await page.set_viewport_size({"width": 1400, "height": 900})
                 await page.evaluate("document.documentElement.dataset.theme = 'light'")

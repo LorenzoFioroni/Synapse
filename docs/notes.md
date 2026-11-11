@@ -675,17 +675,51 @@ the library list as the fallback (as in read mode).
   inlined up to three levels, with cycles stopped; ordinary note links become text. Enable
   **Include linked notes** to recursively include reachable wiki links and embeds as separate
   `notes/note-N.tex` files, loaded once with `\input` from the main file. Heading links become
-  internal hyperlinks; embedded heading links in this mode point into the complete linked note.
-  Traversal stops with an error above 500 notes. Other notes use their saved text.
-  Compile with LuaLaTeX, Biber, LuaLaTeX, LuaLaTeX using a local TeX installation with the named
-  packages. Citations use `biblatex`; the `.bib` contains only cited records from the active library (Trash is excluded), including
-  citations in captions and embedded/linked notes. Math, the configured physics package and
-  user macros, headings, emphasis, footnotes, lists, tables, local figures and galleries are
-  converted from the host Markdown tokens. GIF/WebP images become PNG (the first decoded frame).
-  Mermaid stays source code; remote images are not downloaded; unresolved notes/references and
-  unavailable content are recorded in `README.txt`. Task references are exported as IDs.
-  The plugin owns conversion and the dependency-free ZIP writer in
+  internal hyperlinks; embedded heading links in this mode point into the complete linked note,
+  and linked notes follow the main text as appendix sections. Traversal stops with an error above
+  500 notes. Other notes use their saved text. **Gallery images per row** (Automatic, or one to
+  four; remembered on the device) sets how galleries are laid out.
+
+  The project is meant to read as a LaTeX note rather than a copy of the page. Build it with
+  pdfLaTeX and Biber (`latexmk -pdf main.tex`). Conversion works on the host Markdown tokens:
+  - The note's title heading (the app's rule: a first-level heading followed by deeper ones)
+    becomes `\title`, and the levels below it `\section`, `\subsection`, … Math in headings gets a
+    plain-text PDF bookmark. Note macros go to the preamble (macros of embedded and linked notes
+    stay in a group), after the configured physics package and user macros.
+  - A `$$` formula is numbered as in the app: `equation` when it has a `\label`, a `\tag` or the
+    Settings number every equation, else `\[ … \]`. `align`, `gather`, `alignat`, `flalign` and
+    `equation` written as the whole formula stay top-level environments; inside a formula they become
+    `aligned`, `gathered` or `alignedat`, and their labels and tags move to the equation (one
+    `\label` per number, further labels refer to it). Line breaks outside an environment get
+    `aligned` or `gathered`. A display right below a line of text stays in its paragraph. Unicode
+    symbols KaTeX accepts in formulas (α, ≤, ²) become commands; `\cancel`, `\bm`, `\mathscr` and
+    KaTeX's `\R`-style shorthands load what they need (`plugins/export-formats/frontend/texMath.ts`).
+  - Citation groups become `\cite{a,b}` (`\cite[p.~4]{key}` with a locator, `\cite[see][…]{key}`
+    with a prefix), numbered in order of citation with `biblatex`'s `numeric-comp` style. The `.bib`
+    contains only cited records from the active library (Trash is excluded), including citations
+    in captions and embedded/linked notes; without citations there is no bibliography.
+  - Captioned figures float with their caption and `\label`; `![|350](…)` widths are kept relative
+    to the note column (700 px is the line). A captioned gallery is one figure: its panels side by
+    side and centred, each marked (a), (b), … under its image, and one caption, the gallery's
+    followed by the panels' ("Caption. (a) First. (b) Second."). Panel labels refer to "1(b)". A
+    gallery without a caption is centred images in place.
+  - Tables are framed (`|` rules, `\hline` between rows) with the Markdown column alignment, scaled
+    down only when wider than the line, and always end their paragraph. A paragraph wholly in
+    italics right below a table (at most one blank line between) is its caption, above it in a
+    floating `table`, with its `\label`; other tables stay centred in place.
+  - Code blocks are `verbatim` with tabs expanded; box-drawing characters (─ │ ┌ …) are drawn by
+    `pmboxdraw`. Characters pdfLaTeX's T1 fonts lack are declared with `newunicodechar` (symbols
+    as math, scripts as `\textsuperscript`); one with no rendering (an emoji) prints as
+    `[U+1F600]` and is listed in `README.txt` (`texText.ts`).
+  - Task lists use ☐/☒ item marks; callouts are quotes with their title; footnotes, emphasis,
+    underline, strikethrough, links (`\url` for bare addresses) and note links are kept.
+
+  GIF/WebP images become PNG (the first decoded frame). Mermaid stays source code; remote images
+  are not downloaded; unresolved notes/references and unavailable content are recorded in
+  `README.txt`. Task references are exported as IDs. The plugin owns conversion
+  (`latex.ts`, `texMath.ts`, `texText.ts`) and the dependency-free ZIP writer in
   `plugins/export-formats/frontend/`; `exportProviders.ts` holds only lifecycle registrations.
+  `tests/js/latex.test.mjs` also compiles a project when `pdflatex` is installed.
 
 **References.** `exportNote.ts` loads the full library items of the cited keys with one
 `GET /api/items?ids=…` (`fullItems`), since the citation index has only authors, year, title and
