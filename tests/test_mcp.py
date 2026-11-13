@@ -394,13 +394,66 @@ def test_get_citation_graph(lib):
     missing = r["most_cited_not_in_library"]
     assert missing[0]["doi"] == "10.9999/ext" and sorted(missing[0]["cited_by"]) == ["doe2019", "smith2021"]
     assert r["most_cited_in_library"][0]["key"] == "doe2019"
-    r = call_json(server, "get_citation_graph", papers=["smith2021"])
+    r = call_json(server, "get_citation_graph", papers=["smith2021"], include_edges=True)
     nodes = {n["node"]: n for n in r["nodes"]}
     assert nodes["smith2021"]["distance"] == 0 and nodes["doe2019"]["distance"] == 1
     assert "smith2021 -> doe2019" in r["edges"] and "doe2019 -> doi:10.9999/ext" in r["edges"]
-    assert r["cited_by_several"][0]["node"] == "doi:10.9999/ext"
+    assert r["cited_by_several"][0]["node"] == "doi:10.9999/ext" and r["cited_by_several"][0]["cited_by_count"] == 2
     r = call_json(server, "get_citation_graph", papers=["lee2020"], depth=2)
     assert r["seeds_without_reference_list"] == ["lee2020"]
+
+
+def test_get_citation_graph_is_bounded(lib):
+    r = call_json(lib["server"], "get_citation_graph", papers=["smith2021"])
+    assert "edges" not in r and r["edges_total"] == 3  # the list is opt-in; the count is not
+    r = call_json(lib["server"], "get_citation_graph", papers=["smith2021"], limit=2, include_edges=True)
+    assert [n["node"] for n in r["nodes"]] == ["smith2021", "doe2019"]  # nearest first, seeds always
+    assert r["edges"] == ["smith2021 -> doe2019"] and "showing 2 of 3 nodes" in r["truncated"]
+    # shared foundations come from the whole neighbourhood, not from the listed nodes
+    assert r["cited_by_several"][0]["node"] == "doi:10.9999/ext"
+
+
+def test_get_note_section(lib, svc):
+    server = lib["server"]
+    text = (
+        "# Long note\n\nIntro cites [@doe2019].\n\n## Method\n\nUses [@smith2021, p. 2].\n\n"
+        "### Detail\n\nMore [[other]].\n\n## Results\n\nNothing cited here.\n"
+    )
+    svc.note_service.create(path="long.md", title="Long note", text=text)
+    err, texts = call(server, "get_note", note="long", section="## Method")
+    assert not err, texts
+    summary = json.loads(texts[0])
+    assert summary["section"] == "## Method" and summary["outline"][1] == "## Method"
+    assert [c["key"] for c in summary["cited_papers"]] == ["smith2021"]
+    assert "Uses [@smith2021, p. 2]" in texts[1] and "### Detail" in texts[1]  # sub-sections belong to it
+    assert "Intro" not in texts[1] and "Results" not in texts[1]
+    assert summary["links_to_notes"][0]["resolves_to"] == "other.md"  # the link is in "Detail"
+    summary = json.loads(call(server, "get_note", note="long", section="results")[1][0])
+    assert summary["cited_papers"] == []  # present, and empty
+    err, texts = call(server, "get_note", note="long", section="Nope")
+    assert err and "matches no heading" in texts[0] and "## Method" in texts[0]
+    whole = json.loads(call(server, "get_note", note="long")[1][0])
+    assert {c["key"] for c in whole["cited_papers"]} == {"doe2019", "smith2021"}
+    assert set(whole["cited_papers"][0]["paper"]) <= {"title", "year", "has_pdf"}  # the rest is in get_paper
+
+
+def test_search_library_paging_and_dates(lib):
+    server = lib["server"]
+    r = call_json(server, "search_library", query="has:abstract OR author:doe", scope="items")
+    assert "OR and AND are not operators" in r["warnings"][0]
+    r = call_json(server, "search_library", query="sort:added", scope="items")
+    assert r["items"] == [] and "sort:" in r["warnings"][0] and "Filters:" in r["warnings"][0]
+    r = call_json(server, "search_library", query="added:7d", scope="items", sort="added")
+    assert r["items_total"] == 4 and "warnings" not in r and r["items"][0]["added"]
+    assert call_json(server, "search_library", query="added:<2020", scope="items")["items"] == []
+    r = call_json(server, "search_library", query="year:2020-", scope="items", sort="year", limit=2)
+    assert [i["key"] for i in r["items"]] == ["fig2024", "smith2021"] and r["next_offset"] == 2
+    r = call_json(server, "search_library", query="year:2020-", scope="items", sort="year", limit=2, offset=2)
+    assert [i["key"] for i in r["items"]] == ["lee2020"] and "next_offset" not in r
+    r = call_json(server, "search_library", query="open", scope="items", abstracts=True)
+    assert r["items"][0]["abstract"] == "We study open systems."
+    r = call_json(server, "list_collections")
+    assert r["item_types"]["Book"] == 1 and "added:" in r["search_syntax"]
 
 
 def test_write_note(lib, svc):

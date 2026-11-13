@@ -184,7 +184,7 @@ function openModeMenu(anchor: HTMLElement): void {
     ...(Object.entries(modes) as [SearchMode, string][]).map(([k, label]) => ({ label, checked: state.mode === k, run: () => { setMode(k); searchInput.focus(); } })),
     'sep',
     { section: 'Filters (combine with text)' },
-    ...[['tag:name', 'Tagged with…'], ['folder:name', 'In folder (or subfolder)…'], ['year:2018-2022', 'Year or range (also >2015)'],
+    ...[['tag:name', 'Tagged with…'], ['folder:name', 'In folder (or subfolder)…'], ['year:2018-2022', 'Year or range (also >2015)'], ['added:14d', 'Added in the last 14 days (or added:2026-10)'],
       ['type:book', 'Item type…'], ['has:pdf', 'Has a PDF'], ['author:name', 'Author…'],
       ...state.fieldDefs.map((f) => [`${fieldFilterName(f)}:${['int', 'float'].includes(f.type) ? '>10' : 'value'}`, `${f.label} (${f.plugin_name})`]),
     ].map(([f, label]) => ({

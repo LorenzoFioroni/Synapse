@@ -215,3 +215,41 @@ def test_a_long_query_is_parsed_in_linear_time():
     assert parse_query("A:" * 100_000)
     assert time.monotonic() - start < 2
     assert parse_query("x" * 100 + ":v") == [("x" * 100 + ":v", False, None)]
+
+
+def test_year_ranges_may_be_open():
+    papers = [{"id": str(y), "title": "t", "year": y, "attachments": []} for y in (1999, 2010, 2024)]
+    ids = lambda q: [p["id"] for p in search(papers, q)[0]]  # noqa: E731
+    assert ids("year:2010-") == ["2010", "2024"]
+    assert ids("year:-2010") == ["1999", "2010"]
+    assert ids("year:2000-2020") == ["2010"]
+
+
+def test_added_filter():
+    papers = [
+        {"id": "a", "title": "t", "date_added": "2026-10-11T11:44:12Z", "attachments": []},
+        {"id": "b", "title": "t", "date_added": "2026-11-02T08:00:00Z", "attachments": []},
+        {"id": "c", "title": "t", "date_added": "", "attachments": []},
+    ]
+    ids = lambda q: [p["id"] for p in search(papers, q)[0]]  # noqa: E731
+    assert ids("added:2026-10") == ["a"]
+    assert ids("added:2026") == ["a", "b"]
+    assert ids("added:>2026-10") == ["b"]  # a partial date stands for its whole period
+    assert ids("added:>=2026-10-12") == ["b"]
+    assert ids("added:<2026-11-01") == ["a"]
+    assert ids("added:2026-10-01..2026-10-31") == ["a"]
+    assert ids("-added:2026-10") == ["b", "c"]
+    assert ids("added:garbage") == []
+    from datetime import datetime, timezone
+
+    from backend.library.search import _added_matches
+
+    now = datetime(2026, 11, 13, tzinfo=timezone.utc)
+    assert _added_matches("2026-11-02", "14d", now) and not _added_matches("2026-10-11", "2w", now)
+
+
+def test_unknown_filters_are_reported():
+    from backend.library.search import unknown_filters
+
+    assert unknown_filters('sort:added tag:x "a b" arXiv:2205.03415') == ["arXiv:", "sort:"]
+    assert unknown_filters("citations:>100", extra_keys=["citations"]) == []

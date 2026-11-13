@@ -19,7 +19,8 @@ any can be negated with ``-``):
 
     tag:quantum   tag:"open systems"   tag:none
     folder:Transport   folder:"Physics/Transport"   folder:none
-    type:book   type:journal   year:2020   year:2018-2022   year:>2015   year:<=2000
+    type:book   type:journal   year:2020   year:2018-2022   year:>2015   year:<=2000   year:2020-   year:-2000
+    added:2026-10   added:>2026-10-15   added:2026-01..2026-03   added:14d   (when the item was added)
     has:pdf   has:doi   has:abstract   (any field: has:<field>)
     author:cirac   title:lindblad   journal:"physical review"   doi:10.1103   key:cui2015
 
@@ -34,6 +35,7 @@ from __future__ import annotations
 import functools
 import re
 import unicodedata
+from datetime import datetime, timedelta, timezone
 
 from .fields import ALL_SEARCH_KEYS, BASIC_SEARCH_KEYS
 
@@ -46,10 +48,17 @@ def normalize(s) -> str:
     return " ".join(s.casefold().split())
 
 
-FILTER_KEYS = {"tag", "tags", "folder", "type", "year", "has", "author", "title", "journal", "doi", "key"}
+FILTER_KEYS = {"tag", "tags", "folder", "type", "year", "added", "has", "author", "title", "journal", "doi", "key"}
 FIELD_ALIASES = {"author": "authors", "key": "citation_key", "journal": "journal", "title": "title", "doi": "doi"}
 
 _TOKEN = re.compile(r'(-?)(?:([A-Za-z_][A-Za-z0-9_.-]{0,63}):)?(?:"([^"]*)"|(\S+))')
+
+
+def _tokens(q: str):
+    """(negated, field, value) for each term of ``q``; ``field`` is whatever precedes a colon."""
+    for m in _TOKEN.finditer(q or ""):
+        neg, field, quoted, bare = bool(m.group(1)), m.group(2), m.group(3), m.group(4)
+        yield neg, field, quoted if quoted is not None else bare
 
 
 def parse_query(q: str, extra_keys=()) -> list[tuple]:
@@ -57,15 +66,19 @@ def parse_query(q: str, extra_keys=()) -> list[tuple]:
     more filter names (plugins' fields)."""
     out = []
     known = FILTER_KEYS | {k.lower() for k in extra_keys}
-    for m in _TOKEN.finditer(q or ""):
-        neg, field, quoted, bare = bool(m.group(1)), m.group(2), m.group(3), m.group(4)
-        value = quoted if quoted is not None else bare
+    for neg, field, value in _tokens(q):
         if field and field.lower() not in known:
             value, field = f"{field}:{value}", None  # e.g. arXiv:2205.03415 is plain text
         if value in (None, "", "-"):
             continue
         out.append((value, neg, field.lower() if field else None))
     return out
+
+
+def unknown_filters(q: str, extra_keys=()) -> list[str]:
+    """Prefixes of ``q`` that look like filters but are searched as plain text (``sort:added``)."""
+    known = FILTER_KEYS | {k.lower() for k in extra_keys}
+    return sorted({f"{f}:" for _, f, _ in _tokens(q) if f and f.lower() not in known})
 
 
 def has_filters(q: str) -> bool:
@@ -108,10 +121,41 @@ def _year_matches(value, spec: str) -> bool:
     spec = spec.replace(" ", "")
     if r := re.fullmatch(r"(\d{4})-(\d{4})", spec):
         return int(r.group(1)) <= y <= int(r.group(2))
+    if r := re.fullmatch(r"(\d{4})-", spec):  # 2020-: that year and later
+        return y >= int(r.group(1))
+    if r := re.fullmatch(r"-(\d{4})", spec):  # -2000: that year and earlier
+        return y <= int(r.group(1))
     if r := re.fullmatch(r"(>=|<=|>|<)(\d{4})", spec):
         op, v = r.group(1), int(r.group(2))
         return {">": y > v, "<": y < v, ">=": y >= v, "<=": y <= v}[op]
     return spec.isdigit() and y == int(spec)
+
+
+_DATE = r"\d{4}(?:-\d{2}(?:-\d{2})?)?"
+
+
+def _added_matches(value, spec: str, now: datetime | None = None) -> bool:
+    """``added:`` takes a day, month or year (``2026-10``), a comparison (``>2026-10-15``),
+    a range (``2026-01..2026-03``) or a recent period (``14d``, ``2w``). Dates are UTC; a
+    partial date stands for the whole period."""
+    d = str(value or "")[:10]
+    if not d:
+        return False
+    spec = spec.replace(" ", "")
+    if r := re.fullmatch(r"(\d{1,4})([dw])", spec):
+        days = int(r.group(1)) * (7 if r.group(2) == "w" else 1)
+        since = (now or datetime.now(timezone.utc)) - timedelta(days=days)
+        return d >= since.strftime("%Y-%m-%d")
+    if r := re.fullmatch(rf"({_DATE})\.\.({_DATE})", spec):
+        a, b = r.groups()
+        return a <= d[: len(a)] and d[: len(b)] <= b
+    if r := re.fullmatch(rf"(>=|<=|>|<)({_DATE})", spec):
+        op, v = r.groups()
+        part = d[: len(v)]
+        return {">": part > v, "<": part < v, ">=": part >= v, "<=": part <= v}[op]
+    if re.fullmatch(_DATE, spec):
+        return d.startswith(spec)
+    return False
 
 
 @functools.lru_cache(maxsize=8)
@@ -149,6 +193,8 @@ def _filter_matches(p: dict, field: str, value: str, ctx: dict) -> bool:
         return names[0].startswith(v) or names[1].startswith(v) or v in names[1]
     if field == "year":
         return _year_matches(p.get("year"), value)
+    if field == "added":
+        return _added_matches(p.get("date_added"), value)
     if field == "has":
         if v in ("pdf", "attachment", "file"):
             return bool(p.get("attachments"))

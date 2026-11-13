@@ -28,10 +28,12 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "search_library",
             "Search the library",
             "Search the user's library: items (metadata, PDF full text and what notes say about them) and notes. "
-            'Supports filters: folder:"Physics/Transport" tag:x year:2018-2022 author:name has:pdf type:book, '
-            "the fields plugins add (e.g. citations:>100, citations:none), "
-            '-term to exclude, "quoted phrases"; all terms must match. Returns items with citation keys and '
-            "a matching snippet, and notes with paths. Use list_collections to see folder and tag names.",
+            'Supports filters: folder:"Physics/Transport" tag:x year:2018-2022 (also 2020- or >2015) '
+            "added:2026-10 (also >2026-10-15, 2026-01..2026-03, 14d for the last 14 days) author:name has:pdf "
+            "type:book, the fields plugins add (e.g. citations:>100, citations:none), "
+            '-term to exclude, "quoted phrases"; all terms must match (there is no OR). Returns items with citation '
+            "keys and a matching snippet, and notes with paths; an unknown filter is searched as text and reported "
+            "under warnings. Use list_collections to see folder, tag and type names.",
             {
                 "type": "object",
                 "properties": {
@@ -47,6 +49,20 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                         "minimum": 1,
                         "maximum": 100,
                         "description": "Maximum results per kind (default 20).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Skip this many results per kind (use next_offset from the previous call).",
+                    },
+                    "sort": {
+                        "type": "string",
+                        "enum": ["relevance", "added", "year"],
+                        "description": "Order of items: relevance (default), newest added first, or newest year first.",
+                    },
+                    "abstracts": {
+                        "type": "boolean",
+                        "description": "Include the start of each item's abstract (default false).",
                     },
                 },
                 "required": ["query"],
@@ -70,11 +86,18 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "Read a note",
             'Read a Markdown note by path ("projects/crispr.md") or title. Returns its text, the papers it cites '
             "(resolved to library items, with the line and page locator of each citation), its links to other notes "
-            "and the notes linking to it. In notes, [@key] cites a paper and [[Title]] links a note.",
+            "and the notes linking to it. In notes, [@key] cites a paper and [[Title]] links a note. A long note "
+            "is better read one section at a time: its outline lists the headings, and section returns only the "
+            "text (and citations, links, images) under one of them.",
             {
                 "type": "object",
                 "properties": {
                     "note": {"type": "string", "description": "Path in the notes folder, file name, or title."},
+                    "section": {
+                        "type": "string",
+                        "description": 'A heading of the note, e.g. "## Threshold" (the # marks are optional). '
+                        "Default: the whole note.",
+                    },
                 },
                 "required": ["note"],
             },
@@ -278,7 +301,11 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 200,
-                        "description": "Length of the ranked lists (default 40).",
+                        "description": "Length of the ranked lists and of the node list, nearest first (default 40).",
+                    },
+                    "include_edges": {
+                        "type": "boolean",
+                        "description": "Also list who cites whom among the listed nodes (long; default false).",
                     },
                 },
             },

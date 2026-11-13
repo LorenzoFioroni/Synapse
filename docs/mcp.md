@@ -96,9 +96,9 @@ use it), an input schema and `read_only`. `read_only` sets the `readOnlyHint` an
 
 | Tool | Mixin | What it does | Writes |
 |---|---|---|---|
-| `search_library` | `library.py` | Searches items (metadata, PDF full text, what notes say) and notes, with the search box's filters. | no |
-| `list_collections` | `library.py` | Folders with counts, tags, smart folders, notes folders and overall counts. | no |
-| `get_note` | `notes.py` | A note's text and outline, the papers it cites (line and page), its links, backlinks and images, and the user's math macros. | no |
+| `search_library` | `library.py` | Searches items (metadata, PDF full text, what notes say) and notes, with the search box's filters. `offset` and `next_offset` page through results, `sort` orders by relevance, date added or year, `abstracts` adds the start of each abstract, and `warnings` names a filter that was searched as plain text (`sort:`) or an `OR` that is not an operator. | no |
+| `list_collections` | `library.py` | Folders with counts, item types, tags, smart folders, notes folders and overall counts. | no |
+| `get_note` | `notes.py` | A note's text and outline, the papers it cites (line and page; each with title, year and PDF flag, the rest is in `get_paper`; `cited_papers` is empty rather than missing), its links, backlinks and images, and the user's math macros. `section` returns only the text, citations, links and images under one heading. | no |
 | `view_image` | `images.py` | Images stored with the notes: one by path, or all of a note's (at most 6 per call); an image in a gallery comes with its panel label and the gallery's caption. | no |
 | `get_paper` | `papers.py` | Metadata, abstract, PDFs with page counts, the paper note, notes citing it, a summary of its reference list. | no |
 | `search_in_paper` | `papers.py` | The pages of a PDF that contain some words, best first, with snippets. | no |
@@ -106,7 +106,7 @@ use it), an input schema and `read_only`. `read_only` sets the `readOnlyHint` an
 | `view_page` | `papers.py` | An image of one page with a 0–1 grid, and proposed regions for figures, tables and equations. | no |
 | `snapshot` | `papers.py` | Cuts a figure, table, equation or rectangle into a PNG in `notes/attachments/` and returns the Markdown for it. | yes |
 | `get_references` | `citations.py` | What a paper cites (library items marked) and/or the library items citing it. | no |
-| `get_citation_graph` | `citations.py` | The neighbourhood of some papers (1 or 2 steps), or a library-wide overview of the most cited works. | no |
+| `get_citation_graph` | `citations.py` | The neighbourhood of some papers (1 or 2 steps), or a library-wide overview of the most cited works. `limit` caps the node list (nearest first) as well as the ranked lists; shared foundations are still counted over the whole neighbourhood. Who-cites-whom edges are listed only with `include_edges`; `edges_total` always gives their number. | no |
 | `write_note` | `notes.py` | Saves a new note under `notes/ai/`. | yes |
 | `edit_note` | `notes.py` | Changes an existing note: exact replacements, an append, or the whole text. | yes |
 | `undo_note_edit` | `notes.py` | Takes the last AI edit back out of a note, keeping the user's later edits (refused when they touch the same lines). | yes |

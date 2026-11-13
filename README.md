@@ -315,7 +315,7 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 
 | Tool | What it gives |
 | --- | --- |
-| `search_library` | items and notes matching a query (same syntax as the search box: `folder:`, `tag:`, `year:`…), with snippets |
+| `search_library` | items and notes matching a query (same syntax as the search box: `folder:`, `tag:`, `year:`, `added:`…), with snippets; pages with `offset` |
 | `list_collections` | folders, tags, smart folders and notes folders with counts |
 | `get_note` | a note's text, the papers it cites (with line and page), its links and backlinks, the images it shows |
 | `view_image` | the images of a note (pasted pictures, snapshots — with the page and region they came from), or one by its path; large ones are scaled down when Pillow is installed |

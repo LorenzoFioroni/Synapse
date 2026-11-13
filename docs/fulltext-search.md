@@ -135,7 +135,8 @@ field is searchable without touching the search code.
 | `folder:"Physics/Transport"` | In a folder with this path, starting at the top level. |
 | `folder:none`, `folder:unfiled` | In no folder. |
 | `type:book`, `type:journal` | A whole type key or label (`book`, `"book section"`) means that type only. Anything else matches types whose key or label starts with the value, or whose label contains it. |
-| `year:2020`, `year:2018-2022`, `year:>2015`, `year:<=2000` | By year (the first four digits of `year`). |
+| `year:2020`, `year:2018-2022`, `year:>2015`, `year:<=2000`, `year:2020-`, `year:-2000` | By year (the first four digits of `year`). `2020-` is that year and later, `-2000` that year and earlier. |
+| `added:2026-10`, `added:>2026-10-15`, `added:2026-01..2026-03`, `added:14d` | By date added (UTC). A year, month or day matches that whole period; `>`, `>=`, `<`, `<=` compare at the precision given; `a..b` is a range; `14d` / `2w` is the last 14 days / 2 weeks. |
 | `has:pdf` (or `attachment`, `file`), `has:tag`, `has:folder`, `has:<field>` | Has any attachment, tag or folder, or a non-empty field. |
 | `author:`, `title:`, `journal:`, `doi:`, `key:` | The value appears in that field (`key` is `citation_key`). |
 
