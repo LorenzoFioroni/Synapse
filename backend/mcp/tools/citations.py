@@ -57,7 +57,9 @@ class CitationToolsMixin(ToolsBase):
             )
         return out
 
-    def get_citation_graph(self, papers: list | None = None, depth: int = 1, limit: int = 40):
+    def get_citation_graph(
+        self, papers: list | None = None, depth: int = 1, limit: int = 40, include_edges: bool = False
+    ):
         g = self.s.citations.graph()
         items = {p["id"]: p for p in self.s.papers.list()}
         nodes = {n["id"]: n for n in g["nodes"]}
@@ -125,10 +127,14 @@ class CitationToolsMixin(ToolsBase):
                         dist[m] = d
                         nxt.append(m)
             frontier = nxt
-        cap = 400
-        keep = sorted(dist, key=lambda n: (dist[n], not nodes[n]["in_library"], n))[:cap]
+        # Shared foundations are counted over the whole neighbourhood; only the listing is cut to `limit`.
+        edges = [(e["source"], e["target"]) for e in g["edges"] if e["source"] in dist and e["target"] in dist]
+        degree: dict[str, int] = {}
+        for a, b in edges:
+            degree[a] = degree.get(a, 0) + 1
+            degree[b] = degree.get(b, 0) + 1
+        keep = sorted(dist, key=lambda n: (dist[n], not nodes[n]["in_library"], -degree.get(n, 0), n))[:limit]
         kept = set(keep)
-        edges = [(e["source"], e["target"]) for e in g["edges"] if e["source"] in kept and e["target"] in kept]
         in_sub_citers: dict[str, set[str]] = {}
         for a, b in edges:
             in_sub_citers.setdefault(b, set()).add(a)
@@ -140,23 +146,30 @@ class CitationToolsMixin(ToolsBase):
             for s in seeds
             if s in nodes and s not in self.s.citations.store.fetched_ids() and not any(e[0] == s for e in edges)
         ]
+        shown = [(a, b) for a, b in edges if a in kept and b in kept]
         return drop_empty(
             {
                 "seeds": [label(s) for s in seeds],
                 "depth": depth,
                 "nodes": [{**describe(n), "node": label(n), "distance": dist[n]} for n in keep],
-                "edges": [f"{label(a)} -> {label(b)}" for a, b in edges][:1000],
-                "edges_meaning": "a -> b: a cites b",
+                "edges": [f"{label(a)} -> {label(b)}" for a, b in shown][:1000] if include_edges else None,
+                "edges_meaning": "a -> b: a cites b" if include_edges else None,
+                "edges_total": len(edges),
                 "cited_by_several": [
                     {
                         "node": label(n),
                         "title": nodes[n].get("title"),
                         "in_library": nodes[n]["in_library"],
-                        "cited_by": sorted(label(c) for c in cs),
+                        "cited_by_count": len(cs),
+                        "cited_by": sorted(label(c) for c in cs)[:10],
                     }
                     for n, cs in shared[:limit]
                 ],
-                "truncated": f"kept {cap} of {len(dist)} nodes" if len(dist) > cap else None,
+                "truncated": (
+                    f"showing {len(keep)} of {len(dist)} nodes (nearest first; raise limit for more)"
+                    if len(dist) > limit
+                    else None
+                ),
                 "seeds_without_reference_list": no_refs or None,
             }
         )

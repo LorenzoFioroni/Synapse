@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import html
 import re
 import sqlite3
@@ -11,7 +12,7 @@ from collections import OrderedDict
 from pathlib import PurePosixPath
 
 from ...library.fields import ITEM_TYPE_LABELS
-from ...library.identifiers import identifiers
+from ...library.identifiers import identifiers, norm_arxiv, norm_doi
 from ...notes.vault import InvalidPath
 from ...pdf.text import extract_pages
 from ..protocol import ToolError
@@ -20,6 +21,7 @@ AI_FOLDER = "ai"
 MAX_PAGES_PER_READ = 10
 MAX_CHARS_PER_READ = 80_000
 MAX_NOTE_CHARS = 100_000
+CITATION_CONTEXT_CHARS = 160
 MAX_PAPER_NOTE_CHARS = 20_000
 MAX_IMAGES_PER_VIEW = 6
 
@@ -28,13 +30,23 @@ def drop_empty(d: dict) -> dict:
     return {k: v for k, v in d.items() if v not in (None, "", [], {})}
 
 
-def short_authors(authors: str | None, keep: int = 4) -> str | None:
+def short_authors(authors: str | None, keep: int = 4, include: list[str] | None = None) -> str | None:
+    """The first authors; ``include``: names (as searched) to show even when they are in the cut part."""
     if not authors:
         return None
     parts = [a.strip() for a in re.split(r";|\band\b", authors) if a.strip()]
     if len(parts) <= keep + 1:
         return "; ".join(parts)
-    return "; ".join(parts[:keep]) + f"; … ({len(parts)} authors)"
+    hidden = [a for a in parts[keep:] if any(n.casefold() in a.casefold() for n in include or [] if n.strip())]
+    more = f"{len(parts)} authors" + (f", incl. {'; '.join(hidden)}" if hidden else "")
+    return "; ".join(parts[:keep]) + f"; … ({more})"
+
+
+_DOI_REF = re.compile(r"^(?:doi:\s*|https?://(?:dx\.)?doi\.org/)?10\.\d{4,9}/\S+$", re.I)
+_ARXIV_REF = re.compile(
+    r"^(?:arxiv:\s*|https?://arxiv\.org/(?:abs|pdf)/)?(?:\d{4}\.\d{4,5}|[a-z\-]{1,32}(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?(?:\.pdf)?$",
+    re.I,
+)
 
 
 def snippet_text(snip: str) -> str:
@@ -130,10 +142,23 @@ class ToolsBase:
                 out[k] = p
         return out
 
+    def _by_identifier(self, ref: str, items: dict[str, dict]) -> dict | None:
+        """The item with this DOI or arXiv id (a library item before a trashed one)."""
+        if _DOI_REF.match(ref):
+            want, index = norm_doi(ref), 0
+        elif _ARXIV_REF.match(ref):
+            want, index = norm_arxiv(re.sub(r"\.pdf$", "", ref, flags=re.I)), 1
+        else:
+            return None
+        found = [p for p in items.values() if want and identifiers(p)[index] == want]
+        return min(found, key=lambda p: bool(p["_trashed"])) if found else None
+
     def _paper(self, ref: str, items: dict[str, dict] | None = None) -> dict:
         items = items if items is not None else self._items()
-        r = str(ref or "").strip()
-        r = re.sub(r"^\[?-?@", "", r).split(",")[0].rstrip("]").strip()
+        raw = str(ref or "").strip()
+        if (hit := self._by_identifier(raw, items)) is not None:
+            return hit
+        r = re.sub(r"^\[?-?@", "", raw).split(",")[0].rstrip("]").strip()
         if r in items:
             return items[r]
         keys = self._by_key(items)
@@ -142,7 +167,9 @@ class ToolsBase:
         folded = {k.casefold(): p for k, p in keys.items()}
         if r.casefold() in folded:
             return folded[r.casefold()]
-        raise ToolError(f"No item with citation key or id '{ref}'. Use search_library to find it.")
+        close = difflib.get_close_matches(r.casefold(), list(folded), n=3, cutoff=0.6)
+        hint = f" Did you mean {', '.join(folded[c]['citation_key'] for c in close)}?" if close else ""
+        raise ToolError(f"No item with citation key or id '{ref}'.{hint} Use search_library to find it.")
 
     def _pdfs(self, p: dict) -> list[dict]:
         out = []
@@ -152,14 +179,14 @@ class ToolsBase:
                 out.append(a)
         return out
 
-    def _brief(self, p: dict) -> dict:
+    def _brief(self, p: dict, authors_like: list[str] | None = None) -> dict:
         doi, arx = identifiers(p)
         return drop_empty(
             {
                 "key": p.get("citation_key"),
                 "id": None if p.get("citation_key") else p["id"],
                 "title": p.get("title"),
-                "authors": short_authors(p.get("authors")),
+                "authors": short_authors(p.get("authors"), include=authors_like),
                 "year": p.get("year"),
                 "type": ITEM_TYPE_LABELS.get(p.get("item_type") or "", p.get("item_type")),
                 "venue": p.get("journal"),

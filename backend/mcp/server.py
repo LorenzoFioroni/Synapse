@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from .instructions import INSTRUCTIONS, WRITING_RULES
+from .prompts import PROMPTS
 from .protocol import Server, Tool, ToolError
+from .resources import TEMPLATES, Resources
 from .tools import LibraryTools
 from .tools.common import MAX_IMAGES_PER_VIEW, MAX_PAGES_PER_READ
 
@@ -14,9 +16,13 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
     t = LibraryTools(services)
     server = Server(name="synapse", version=version, instructions=INSTRUCTIONS, before_call=t.refresh)
     server.extra = lambda: _plugin_tools(services, remote)
+    resources = Resources(t)
+    server.resource_list, server.resource_read, server.resource_templates = resources.listed, resources.read, TEMPLATES
+    server.prompts = {p.name: p for p in PROMPTS}
     paper_arg = {
         "type": "string",
-        "description": 'Citation key of the item (e.g. "smith2021"; "[@smith2021]" also works) or its item id.',
+        "description": 'Citation key of the item (e.g. "smith2021"; "[@smith2021]" also works), its item id, '
+        "or its DOI or arXiv id.",
     }
     att_arg = {
         "type": "integer",
@@ -28,10 +34,12 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "search_library",
             "Search the library",
             "Search the user's library: items (metadata, PDF full text and what notes say about them) and notes. "
-            'Supports filters: folder:"Physics/Transport" tag:x year:2018-2022 author:name has:pdf type:book, '
-            "the fields plugins add (e.g. citations:>100, citations:none), "
-            '-term to exclude, "quoted phrases"; all terms must match. Returns items with citation keys and '
-            "a matching snippet, and notes with paths. Use list_collections to see folder and tag names.",
+            'Supports filters: folder:"Physics/Transport" tag:x year:2018-2022 (also 2020- or >2015) '
+            "added:2026-10 (also >2026-10-15, 2026-01..2026-03, 14d for the last 14 days) author:name has:pdf "
+            "type:book, the fields plugins add (e.g. citations:>100, citations:none), "
+            '-term to exclude, "quoted phrases"; all terms must match (there is no OR). Returns items with citation '
+            "keys and a matching snippet, and notes with paths; an unknown filter is searched as text and reported "
+            "under warnings. Use list_collections to see folder, tag and type names.",
             {
                 "type": "object",
                 "properties": {
@@ -48,6 +56,20 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                         "maximum": 100,
                         "description": "Maximum results per kind (default 20).",
                     },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Skip this many results per kind (use next_offset from the previous call).",
+                    },
+                    "sort": {
+                        "type": "string",
+                        "enum": ["relevance", "added", "year"],
+                        "description": "Order of items: relevance (default), newest added first, or newest year first.",
+                    },
+                    "abstracts": {
+                        "type": "boolean",
+                        "description": "Include the start of each item's abstract (default false).",
+                    },
                 },
                 "required": ["query"],
             },
@@ -59,8 +81,17 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "list_collections",
             "List folders, tags and notes folders",
             "The library's folders (with item counts), tags, smart folders (saved searches) and notes folders, "
-            "plus overall counts. Use the names in search_library filters.",
-            {"type": "object", "properties": {}},
+            "plus overall counts. Use the names in search_library filters. With include_notes, every note with "
+            "its title, type, author, size and last update.",
+            {
+                "type": "object",
+                "properties": {
+                    "include_notes": {
+                        "type": "boolean",
+                        "description": "Also list every note (path, title, size in bytes, last update; default false).",
+                    },
+                },
+            },
             t.list_collections,
         )
     )
@@ -70,11 +101,18 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "Read a note",
             'Read a Markdown note by path ("projects/crispr.md") or title. Returns its text, the papers it cites '
             "(resolved to library items, with the line and page locator of each citation), its links to other notes "
-            "and the notes linking to it. In notes, [@key] cites a paper and [[Title]] links a note.",
+            "and the notes linking to it. In notes, [@key] cites a paper and [[Title]] links a note. A long note "
+            "is better read one section at a time: its outline lists the headings, and section returns only the "
+            "text (and citations, links, images) under one of them.",
             {
                 "type": "object",
                 "properties": {
                     "note": {"type": "string", "description": "Path in the notes folder, file name, or title."},
+                    "section": {
+                        "type": "string",
+                        "description": 'A heading of the note, e.g. "## Threshold" (the # marks are optional). '
+                        "Default: the whole note.",
+                    },
                 },
                 "required": ["note"],
             },
@@ -115,6 +153,28 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "attach to it (plugin_fields, e.g. a citation count).",
             {"type": "object", "properties": {"paper": paper_arg}, "required": ["paper"]},
             t.get_paper,
+        )
+    )
+    server.add(
+        Tool(
+            "get_paper_outline",
+            "Get a paper's outline",
+            "The sections of a paper's PDF with the PDF page each starts on (from the PDF's bookmarks, else its "
+            "printed table of contents), and its figure and table captions with their pages. Use it on a long "
+            "paper to see its structure, then read_paper the pages you need.",
+            {
+                "type": "object",
+                "properties": {
+                    "paper": paper_arg,
+                    "attachment": att_arg,
+                    "captions": {
+                        "type": "boolean",
+                        "description": "Also list the figure and table captions (default true).",
+                    },
+                },
+                "required": ["paper"],
+            },
+            t.get_paper_outline,
         )
     )
     server.add(
@@ -278,7 +338,11 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 200,
-                        "description": "Length of the ranked lists (default 40).",
+                        "description": "Length of the ranked lists and of the node list, nearest first (default 40).",
+                    },
+                    "include_edges": {
+                        "type": "boolean",
+                        "description": "Also list who cites whom among the listed nodes (long; default false).",
                     },
                 },
             },

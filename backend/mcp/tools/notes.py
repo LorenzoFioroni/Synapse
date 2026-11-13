@@ -12,18 +12,33 @@ from ...notes.service import now_iso, ulid
 from ...notes.vault import Conflict, NoteExists, slugify
 from ..notecheck import NoteChecker
 from ..protocol import Parts, ToolError
-from .common import AI_FOLDER, MAX_NOTE_CHARS, drop_empty
+from .common import AI_FOLDER, CITATION_CONTEXT_CHARS, MAX_NOTE_CHARS, drop_empty
 from .images import ImageToolsMixin
 
 
 class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
     """get_note, write_note, edit_note, undo_note_edit."""
 
-    def get_note(self, note: str):
+    def get_note(self, note: str, section: str = ""):
         path = self._note_path(note)
         got = self.s.note_service.get(path)
         info = got["info"] or {}
         links = self.s.note_service.links(path)
+        first, last = self._section_lines(info.get("headings") or [], section) if section else (1, None)
+
+        def inside(line: int) -> bool:
+            return line >= first and (last is None or line <= last)
+
+        links = {**links, "outgoing": [l for l in links["outgoing"] if inside(l["line"])]}
+        links["cited"] = (
+            [
+                c
+                for c in links["cited"]
+                if any(l["kind"] == "cite" and l["target"] == c["key"] for l in links["outgoing"])
+            ]
+            if section
+            else links["cited"]
+        )
         items = self._items()
         keys = self._by_key(items)
         cited = []
@@ -31,7 +46,12 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
             p = keys.get(c["key"])
             cites = [
                 drop_empty(
-                    {"line": l["line"], "locator": l.get("locator"), "page": l.get("page"), "context": l.get("context")}
+                    {
+                        "line": l["line"],
+                        "locator": l.get("locator"),
+                        "page": l.get("page"),
+                        "context": (l.get("context") or "")[:CITATION_CONTEXT_CHARS] or None,
+                    }
                 )
                 for l in links["outgoing"]
                 if l["kind"] == "cite" and l["target"] == c["key"]
@@ -40,7 +60,12 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                 drop_empty(
                     {
                         "key": c["key"],
-                        "paper": self._brief(p) if p else None,
+                        # The rest (authors, DOI, venue) is in get_paper; a long note cites hundreds of papers.
+                        "paper": drop_empty(
+                            {"title": p.get("title"), "year": p.get("year"), "has_pdf": bool(self._pdfs(p))}
+                        )
+                        if p
+                        else None,
                         "not_in_library": None if p else True,
                         "citations": cites,
                     }
@@ -86,20 +111,40 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                 "modified": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime)),
                 "about_paper": self._brief(paper) if paper else info.get("paper"),
                 "outline": [("#" * h["level"]) + " " + h["text"] for h in info.get("headings") or []],
-                "cited_papers": cited,
+                "section": section or None,
                 "links_to_notes": notes_out,
                 "linked_from": backlinks,
-                "images": self._note_images(got["text"]) or None,
+                "images": [i for i in self._note_images(got["text"]) if inside(i["line"])] or None,
                 "tasks": self._note_tasks(links["outgoing"]) or None,
                 "math_macros": self._math_macros() or None,
             }
         )
+        summary["cited_papers"] = cited  # kept when empty: a missing key reads as "not computed"
         if summary.get("images"):
             summary["images_hint"] = "view_image(note=…) shows these images (paths are inside the notes folder)."
         text = got["text"]
+        if section:
+            text = "\n".join(text.replace("\r\n", "\n").split("\n")[first - 1 : last])
         if len(text) > MAX_NOTE_CHARS:
             text = text[:MAX_NOTE_CHARS] + f"\n\n[… note cut at {MAX_NOTE_CHARS} characters of {len(got['text'])}]"
-        return Parts([summary, f"Text of {path}:\n\n{text}"])
+        what = f"Section '{section}' of {path} (lines {first}-{last or 'end'})" if section else f"Text of {path}"
+        return Parts([summary, f"{what}:\n\n{text}"])
+
+    @staticmethod
+    def _section_lines(headings: list[dict], section: str) -> tuple[int, int | None]:
+        """First and last line (1-based) of the section under a heading, up to the next heading of the
+        same or a higher level. ``section`` is the heading text, with or without its ``#``s."""
+        want = re.sub(r"^#+\s*", "", section).strip().casefold()
+        found = [h for h in headings if h["text"].strip().casefold() == want] or [
+            h for h in headings if want and want in h["text"].casefold()
+        ]
+        if len(found) != 1:
+            outline = "; ".join(("#" * h["level"]) + " " + h["text"] for h in headings) or "the note has no headings"
+            why = "is ambiguous" if found else "matches no heading"
+            raise ToolError(f"'{section}' {why}. Headings: {outline}")
+        h = found[0]
+        later = [x["line"] for x in headings if x["line"] > h["line"] and x["level"] <= h["level"]]
+        return h["line"], (min(later) - 1 if later else None)
 
     def _note_tasks(self, outgoing: list[dict]) -> list[dict]:
         """The tasks the note shows ({{task:ID}} lines), with what the line displays."""

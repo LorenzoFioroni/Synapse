@@ -12,6 +12,7 @@ from pathlib import Path
 from .render import open_pdf
 
 # ============================================================================ figures
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f]")  # pdfium marks a line-end hyphen with U+0002
 CAPTION = re.compile(r"^\s*(fig(?:ure)?\.?|table)\s*([A-Z]?\d+[a-z]?|[IVX]+)\b\s*[.:|]?", re.I)
 
 
@@ -22,7 +23,7 @@ def _captions(page) -> list[dict]:
         out = []
         for i in range(tp.count_rects()):
             l, b, r, t = tp.get_rect(i)
-            text = tp.get_text_bounded(l, b, r, t).strip()
+            text = _CONTROL.sub("", tp.get_text_bounded(l, b, r, t)).strip()
             m = CAPTION.match(text)
             if not m:
                 continue
@@ -79,6 +80,19 @@ def _overlap_x(a, b) -> float:
     return min(a[2], b[2]) - max(a[0], b[0])
 
 
+def _coverage(texts: list[tuple], within: tuple) -> float:
+    """How much horizontal length the text boxes cover, counting only the part above ``within``'s columns
+    (its left and right edge) once."""
+    spans = sorted((max(t[0], within[0] - 20), min(t[2], within[2] + 20)) for t in texts)
+    total, end = 0.0, -1e9
+    for a, b in spans:
+        if b <= a:
+            continue
+        total += b - max(a, end)
+        end = max(end, b)
+    return total
+
+
 def figure_regions(path: Path | str, page_no: int) -> list[dict]:
     """Figure and table captions on a page, each with a proposed region (without the caption)
     when one can be found from what the page draws. Best effort: check it on the page image."""
@@ -116,11 +130,19 @@ def figure_regions(path: Path | str, page_no: int) -> list[dict]:
             )
             box = None
             for g in cand:
-                gap = g[1] - (box[3] if box else ct_)
+                bottom = box[3] if box else ct_
+                gap = g[1] - bottom
                 if gap > 60:
                     break
                 if _overlap_x(g, box or c["box"]) < -10:
                     continue  # beside it, e.g. in the other column
+                # a line of body text in between ends the figure: what is drawn above it (the radical of a
+                # formula, a rule) belongs to the text. Math splits a line into many small text objects,
+                # so a line is recognised by how much of the column the objects between cover.
+                width = max(150.0, (box[2] - box[0]) if box else 0.0)
+                between = [t for t in texts if t[1] >= bottom - 1 and t[3] <= g[1] + 1]
+                if _coverage(between, box or c["box"]) >= 0.7 * width:
+                    break
                 box = g if box is None else _union([box, g])
             if box and (box[2] - box[0]) > 20 and (box[3] - box[1]) > 20:
                 # labels and tick numbers drawn as text around the plot
@@ -172,6 +194,21 @@ MATH_FONT = re.compile(
 )
 
 
+def _decode_units(units: list[int]) -> list[str]:
+    """One string per UTF-16 code unit pdfium counts as a character: the character itself, or "" for
+    the second half of a surrogate pair. Math italic letters (U+1D400…) are such pairs and are common in
+    LaTeX PDFs; their text is one Python character but two pdfium characters."""
+    out = []
+    for i, u in enumerate(units):
+        if 0xD800 <= u < 0xDC00 and i + 1 < len(units) and 0xDC00 <= units[i + 1] < 0xE000:
+            out.append(chr(0x10000 + ((u - 0xD800) << 10) + (units[i + 1] - 0xDC00)))
+        elif 0xDC00 <= u < 0xE000 and i and 0xD800 <= units[i - 1] < 0xDC00:
+            out.append("")
+        else:
+            out.append(chr(u))
+    return out
+
+
 def _chars(page) -> list[tuple]:
     """The page's visible characters in reading order: (char, l, b, r, t, line, math), PDF units, tight boxes."""
     import ctypes
@@ -180,15 +217,18 @@ def _chars(page) -> list[tuple]:
 
     tp = page.get_textpage()
     try:
-        text = tp.get_text_range()
         buf, flags = ctypes.create_string_buffer(128), ctypes.c_int()
         fonts: dict[bytes, bool] = {}
         out, line = [], 0
-        for i in range(min(len(text), tp.count_chars())):
-            ch = text[i]
+        # By index, not from get_text_range(): that text has one character per code point, the boxes one per
+        # UTF-16 unit, so every astral character (math italic letters) shifted all the boxes after it.
+        units = [raw.FPDFText_GetUnicode(tp.raw, i) for i in range(tp.count_chars())]
+        for i, ch in enumerate(_decode_units(units)):
+            if not ch:
+                continue
             if ch == "\n":
                 line += 1
-            if ch.isspace() or ch == "￾":
+            if ch.isspace() or ord(ch[0]) < 32 or ch == "￾":
                 continue
             l, b, r, t = tp.get_charbox(i)
             if r - l <= 0 and t - b <= 0:
@@ -241,9 +281,12 @@ def _equation_numbers(chars: list[tuple]) -> list[dict]:
         h = max(t - b, 1.0)
         em = max(6.0, h / 0.75)  # parentheses span ~0.75 em
         row = [c for c in chars if id(c) not in mine and min(c[4], t) - max(c[2], b) > 0.3 * min(h, (c[4] - c[2]) or h)]
+        left = [c for c in row if l - 250 < c[3] <= l + 0.5]
         gap_left = l - max((c[3] for c in row if c[3] <= l + 0.5), default=-1e9)
         gap_right = min((c[1] for c in row if c[1] >= r - 0.5), default=1e9) - r
-        if gap_left >= 0.8 * em and gap_right >= 1.0 * em:
+        # A long equation can run up to its number; a "(3)" ending a line of prose is not one.
+        tight = gap_left >= 0.3 * em and bool(left) and _mathiness(left) >= 0.5
+        if (gap_left >= 0.8 * em or tight) and gap_right >= 1.0 * em:
             out.append({"number": m.group(1), "box": (l, b, r, t), "em": em, "chars": num})
     return out
 

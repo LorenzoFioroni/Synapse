@@ -1,4 +1,4 @@
-"""Tools for papers and their PDFs: get_paper, search_in_paper, read_paper, view_page, snapshot."""
+"""Tools for papers and their PDFs: get_paper, get_paper_outline, search_in_paper, read_paper, view_page, snapshot."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from ...library import search as search_mod
 from ...library.fields import FIELDS, ITEM_TYPE_LABELS
 from ...library.identifiers import identifiers
 from ...library.repository import NotFound
+from ...pdf import outline as pdfoutline
 from ...pdf import regions as pdfregions
 from ...pdf import render as pdfrender
 from ..protocol import Image, Parts, ToolError
@@ -24,7 +25,7 @@ from .common import (
 
 
 class PaperToolsMixin(ToolsBase):
-    """get_paper, search_in_paper, read_paper, view_page, snapshot."""
+    """get_paper, get_paper_outline, search_in_paper, read_paper, view_page, snapshot."""
 
     def get_paper(self, paper: str):
         items = self._items()
@@ -102,6 +103,35 @@ class PaperToolsMixin(ToolsBase):
         if len(note_text) > MAX_PAPER_NOTE_CHARS:
             note_text = note_text[:MAX_PAPER_NOTE_CHARS] + "\n\n[… cut; read the rest with get_note]"
         return Parts([drop_empty(out), f"The user's paper note ({out['paper_note']}):\n\n{note_text}"])
+
+    def get_paper_outline(self, paper: str, attachment: int | None = None, captions: bool = True):
+        p = self._paper(paper)
+        att = self._pdf_for(p, attachment)
+        path = self.s.papers.attachment_path(att)
+        pages = self._pages(att)
+        entries, source, matched = pdfoutline.bookmarks(path), "the PDF's bookmarks", True
+        if not entries:
+            entries, matched = pdfoutline.contents_page_outline(pages)
+            source = "the printed table of contents"
+        out: dict = {"paper": self._label(p), "title": p.get("title"), "pages_total": len(pages)}
+        if entries:
+            out["outline_from"] = source
+            out["outline"] = [f"{'  ' * (e['level'] - 1)}{e['title']} (p. {e['page']})" for e in entries]
+            if not matched:
+                out["warning"] = (
+                    "The page numbers are the printed ones and could not be matched to PDF pages: "
+                    "check with search_in_paper before relying on them."
+                )
+        else:
+            out["outline_note"] = (
+                "No bookmarks or table of contents were found. Use search_in_paper for a heading's words, "
+                "or read_paper on the first pages."
+            )
+        if captions:
+            found = pdfoutline.captions(pages)
+            if found:
+                out["figures_and_tables"] = found
+        return out
 
     def search_in_paper(self, paper: str, query: str, max_results: int = 8, attachment: int | None = None):
         p = self._paper(paper)

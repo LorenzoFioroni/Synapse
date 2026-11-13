@@ -318,11 +318,12 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 
 | Tool | What it gives |
 | --- | --- |
-| `search_library` | items and notes matching a query (same syntax as the search box: `folder:`, `tag:`, `year:`…), with snippets |
+| `search_library` | items and notes matching a query (same syntax as the search box: `folder:`, `tag:`, `year:`, `added:`…), with snippets; pages with `offset` |
 | `list_collections` | folders, tags, smart folders and notes folders with counts |
 | `get_note` | a note's text, the papers it cites (with line and page), its links and backlinks, the images it shows |
 | `view_image` | the images of a note (pasted pictures, snapshots — with the page and region they came from), or one by its path; large ones are scaled down when Pillow is installed |
 | `get_paper` | metadata, abstract, PDFs and page counts, your paper note, notes citing it, reference-list summary |
+| `get_paper_outline` | a PDF's sections with their PDF pages (bookmarks or printed contents page) and its figure and table captions |
 | `search_in_paper` | the pages of a PDF containing some words, with snippets |
 | `read_paper` | the text of some PDF pages (up to 10 per call), marked by page |
 | `view_page` | an image of a page with a 0–1 grid; figures, tables and numbered equations with proposed regions |
@@ -334,6 +335,11 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 | `undo_note_edit` | takes the last AI edit back out of a note, keeping what you changed since (unless you changed the same lines) |
 | `list_tasks`, `get_task` | your tasks (open ones unless asked), filtered like the Tasks page; one task with its details, sub-tasks and the notes that show it |
 | `create_task`, `update_task`, `delete_task` | make, change (title, details, open/done, due date, parent) or delete tasks, and put a new task's line in a note — marked as the AI app's (with its name), undoable in the app |
+
+The server also offers your notes, papers and folder overview as MCP *resources* (`synapse://note/…`,
+`synapse://paper/<key>`, `synapse://collections`) that an AI app can attach by reference, and four
+*prompts* — review a folder, summarise a paper into a note, compare papers, find missing literature —
+which an app that supports prompts lists for you to pick. They show the same data as the tools.
 
 Page numbers are PDF pages counted from 1, so the AI can cite `[@key, p. N]` and the citation opens
 the right page in the app. The AI app is told the notes syntax (KaTeX math, quotes as `> words [@key, p. N]`,

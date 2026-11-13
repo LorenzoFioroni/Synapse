@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -182,7 +183,11 @@ def test_initialize_and_list(lib):
     )
     res = r["result"]
     assert res["protocolVersion"] == "2025-06-18"
-    assert res["capabilities"] == {"tools": {"listChanged": False}}
+    assert res["capabilities"] == {
+        "tools": {"listChanged": False},
+        "resources": {"subscribe": False, "listChanged": False},
+        "prompts": {"listChanged": False},
+    }
     assert res["serverInfo"]["name"] == "synapse"
     assert "[@key, p. N]" in res["instructions"]
     r = server.handle({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": "1999-01-01"}})
@@ -197,6 +202,7 @@ def test_initialize_and_list(lib):
         "get_note",
         "view_image",
         "get_paper",
+        "get_paper_outline",
         "search_in_paper",
         "read_paper",
         "view_page",
@@ -341,6 +347,212 @@ def test_get_paper(lib):
     assert doe["key"] == "doe2019" and doe["cited_by_in_library"] == ["smith2021"] and "pdfs" not in doe
 
 
+def _attach_pdf(svc, key: str, path: Path):
+    item = svc.papers.create({"title": f"Paper {key}", "authors": "Out, Line", "year": 2022, "citation_key": key})
+    svc.papers.add_attachment(item["id"], "Full Text PDF", path.name)
+    return item
+
+
+def _toc_pdf(path: Path, contents: list[str], headings: dict[int, str], n: int = 9) -> Path:
+    """A PDF whose page 2 is a table of contents and whose pages carry the given headings (page -> text)."""
+    streams = []
+    for page in range(1, n + 1):
+        lines = ["Title page"] if page == 1 else ["CONTENTS"] + contents if page == 2 else []
+        if page in headings:
+            lines = [headings[page], "Some body text of the section."]
+        streams.append("".join(_text(72, 720 - 16 * i, t) for i, t in enumerate(lines or [f"Page {page} text"])))
+    return make_stream_pdf(path, streams)
+
+
+def test_get_paper_outline_from_bookmarks(svc, tmp_path):
+    from pypdf import PdfReader, PdfWriter
+
+    base = make_pages_pdf(tmp_path / "plain.pdf", [f"Page {n}" for n in range(1, 9)])
+    w = PdfWriter()
+    w.append(PdfReader(str(base)))
+    intro = w.add_outline_item("Introduction", 0)
+    w.add_outline_item("Setup", 2, parent=intro)
+    w.add_outline_item("Results", 5)
+    with open(svc.config.pdf_dir / "marks.pdf", "wb") as f:
+        w.write(f)
+    _attach_pdf(svc, "marks2022", svc.config.pdf_dir / "marks.pdf")
+    r = call_json(build_server(svc), "get_paper_outline", paper="marks2022")
+    assert r["outline_from"] == "the PDF's bookmarks" and r["pages_total"] == 8
+    assert r["outline"] == ["Introduction (p. 1)", "  Setup (p. 3)", "Results (p. 6)"]
+    assert "warning" not in r and "figures_and_tables" not in r
+
+
+def test_get_paper_outline_from_a_printed_contents_page(svc):
+    contents = [
+        "I. Introduction 3",
+        "A. Background 3",
+        "1. Details 4",
+        "II. Methods 5",
+        "III. Results 6",
+        "Conclusion 8",
+    ]
+    headings = {
+        4: "I. INTRODUCTION",
+        5: "1. Details of the model",
+        6: "II. Methods",
+        7: "III. Results",
+        9: "Conclusion",
+    }
+    # printed page = PDF page - 1: "Background" is a run-in heading on the Introduction's page (PDF page 4)
+    _toc_pdf(svc.config.pdf_dir / "toc.pdf", contents, headings)
+    _attach_pdf(svc, "toc2022", svc.config.pdf_dir / "toc.pdf")
+    r = call_json(build_server(svc), "get_paper_outline", paper="toc2022")
+    assert r["outline_from"] == "the printed table of contents" and "warning" not in r
+    assert r["outline"] == [
+        "I. Introduction (p. 4)",
+        "  A. Background (p. 4)",
+        "    1. Details (p. 5)",
+        "II. Methods (p. 6)",
+        "III. Results (p. 7)",
+        "Conclusion (p. 9)",
+    ]
+    # headings that cannot be found: the printed numbers are given, with a warning
+    _toc_pdf(svc.config.pdf_dir / "toc2.pdf", contents, {})
+    _attach_pdf(svc, "toc2023", svc.config.pdf_dir / "toc2.pdf")
+    r = call_json(build_server(svc), "get_paper_outline", paper="toc2023")
+    assert "could not be matched" in r["warning"] and r["outline"][0] == "I. Introduction (p. 3)"
+
+
+def rpc(server, method, **params):
+    reply = server.handle({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+    return reply.get("result"), reply.get("error")
+
+
+def test_resources_list_and_templates(lib):
+    server = lib["server"]
+    res, err = rpc(server, "resources/list")
+    assert not err
+    by_uri = {r["uri"]: r for r in res["resources"]}
+    assert "synapse://collections" in by_uri and "synapse://note/projects/crispr.md" in by_uri
+    assert by_uri["synapse://note/projects/crispr.md"]["title"] == "Crispr project"
+    res, _ = rpc(server, "resources/templates/list")
+    assert {t["uriTemplate"] for t in res["resourceTemplates"]} == {
+        "synapse://paper/{key}",
+        "synapse://note/{path}{?section}",
+    }
+
+
+def test_resources_read(lib, svc):
+    server = lib["server"]
+    res, err = rpc(server, "resources/read", uri="synapse://collections")
+    assert not err and json.loads(res["contents"][0]["text"])["library"]["items"] == 4
+    res, _ = rpc(server, "resources/read", uri="synapse://note/projects/crispr.md")
+    (content,) = res["contents"]
+    assert content["mimeType"] == "text/markdown" and "[@smith2021, p. 2]" in content["text"]
+    svc.note_service.create(path="a b.md", title="Spaced", text="# Spaced\n\n## One\n\nfirst\n\n## Two\n\nsecond\n")
+    res, _ = rpc(server, "resources/read", uri="synapse://note/a%20b.md?section=Two")
+    assert "second" in res["contents"][0]["text"] and "first" not in res["contents"][0]["text"]
+    res, _ = rpc(server, "resources/read", uri="synapse://paper/smith2021")
+    paper = json.loads(res["contents"][0]["text"])
+    assert paper["paper"]["key"] == "smith2021" and paper["outline"]["pages_total"] == 12
+    res, _ = rpc(server, "resources/read", uri="synapse://paper/doe2019")  # no PDF: metadata only
+    assert "outline" not in json.loads(res["contents"][0]["text"])
+    for bad in (
+        "synapse://paper/nobody1900",
+        "synapse://note/nothing.md",
+        "synapse://note/../../etc/passwd",
+        "synapse://elsewhere/x",
+        "file:///etc/passwd",
+    ):
+        res, err = rpc(server, "resources/read", uri=bad)
+        assert err and err["code"] == -32002, bad
+    assert rpc(server, "resources/read", uri=5)[1]["code"] == -32602
+
+
+def test_prompts(lib):
+    server = lib["server"]
+    res, _ = rpc(server, "prompts/list")
+    names = [p["name"] for p in res["prompts"]]
+    assert names == ["review_folder", "summarise_paper", "compare_papers", "find_missing_literature"]
+    assert [a["name"] for a in res["prompts"][0]["arguments"] if a["required"]] == ["folder"]
+    res, err = rpc(
+        server, "prompts/get", name="review_folder", arguments={"folder": "Physics/Transport", "focus": "noise"}
+    )
+    assert not err
+    (message,) = res["messages"]
+    text = message["content"]["text"]
+    assert message["role"] == "user" and 'folder:"Physics/Transport"' in text and "Focus on noise" in text
+    assert "[@key, p. N]" in text
+    res, _ = rpc(server, "prompts/get", name="summarise_paper", arguments={"paper": "[@smith2021]"})
+    assert (
+        "[@smith2021]" in res["messages"][0]["content"]["text"] and "[[@" not in res["messages"][0]["content"]["text"]
+    )
+    res, _ = rpc(server, "prompts/get", name="find_missing_literature")  # every argument is optional
+    assert "get_citation_graph(limit=20)" in res["messages"][0]["content"]["text"]
+    assert (
+        "smith2021, doe2019"
+        in rpc(server, "prompts/get", name="find_missing_literature", arguments={"scope": "smith2021, doe2019"})[0][
+            "messages"
+        ][0]["content"]["text"]
+    )
+    assert rpc(server, "prompts/get", name="review_folder")[1]["code"] == -32602  # folder is required
+    assert (
+        rpc(server, "prompts/get", name="review_folder", arguments={"folder": "x", "bogus": "1"})[1]["code"] == -32602
+    )
+    assert rpc(server, "prompts/get", name="nope")[1]["code"] == -32602
+
+
+def test_prompts_only_name_tools_that_exist(lib):
+    """The prompts are instructions to call tools: a renamed tool must not leave one pointing nowhere."""
+    server = lib["server"]
+    tools = set(server.all_tools())
+    for p in server.prompts.values():
+        args = {a["name"]: "x" for a in p.arguments}
+        text = p.fn(**args)
+        mentioned = {w for w in re.findall(r"\b([a-z]+(?:_[a-z]+)+)\b", text) if w != "next_offset"}
+        assert mentioned <= tools, (p.name, mentioned - tools)
+
+
+def test_get_paper_outline_without_structure(lib):
+    r = call_json(lib["server"], "get_paper_outline", paper="fig2024")
+    assert "outline" not in r and "No bookmarks" in r["outline_note"]
+    assert [(c["label"], c["page"]) for c in r["figures_and_tables"]] == [("Figure 2", 2), ("Table 1", 2)]
+    assert "figures_and_tables" not in call_json(lib["server"], "get_paper_outline", paper="fig2024", captions=False)
+    err, texts = call(lib["server"], "get_paper_outline", paper="lee2020")
+    assert err and "no PDF" in texts[0]
+
+
+def test_get_paper_by_doi_or_arxiv_id_and_near_misses(lib, svc):
+    svc.papers.create({"title": "Preprint", "citation_key": "arx2024", "doi": "10.48550/arXiv.2401.01234"})
+    server = lib["server"]
+    for ref in ("10.1000/smith", "doi:10.1000/SMITH", "https://doi.org/10.1000/smith"):
+        assert call_json(server, "get_paper", paper=ref)["key"] == "smith2021", ref
+    for ref in (
+        "2401.01234",
+        "arXiv:2401.01234v2",
+        "https://arxiv.org/abs/2401.01234",
+        "https://arxiv.org/pdf/2401.01234.pdf",
+    ):
+        assert call_json(server, "get_paper", paper=ref)["key"] == "arx2024", ref
+    err, texts = call(server, "get_paper", paper="smith2012")
+    assert err and "Did you mean smith2021?" in texts[0] and "search_library" in texts[0]
+    err, texts = call(server, "get_paper", paper="10.9999/unknown")
+    assert err and "Did you mean" not in texts[0]
+
+
+def test_search_shows_the_matched_author_among_many(lib, svc):
+    names = "; ".join(f"Author{n}, A" for n in range(1, 9)) + "; Zedler, Zoe; Last, Lee"
+    svc.papers.create({"title": "Big collaboration", "authors": names, "year": 2023, "citation_key": "big2023"})
+    server = lib["server"]
+    plain = call_json(server, "search_library", query="collaboration", scope="items")["items"][0]["authors"]
+    assert "Zedler" not in plain and "(10 authors)" in plain
+    shown = call_json(server, "search_library", query="author:zedler", scope="items")["items"][0]["authors"]
+    assert "(10 authors, incl. Zedler, Zoe)" in shown
+
+
+def test_list_collections_can_list_the_notes(lib):
+    r = call_json(lib["server"], "list_collections")
+    assert "note_list" not in r
+    rows = {n["path"]: n for n in call_json(lib["server"], "list_collections", include_notes=True)["note_list"]}
+    assert rows["projects/crispr.md"]["title"] == "Crispr project" and rows["projects/crispr.md"]["bytes"] > 50
+    assert "other.md" in rows
+
+
 def test_search_in_paper(lib):
     server = lib["server"]
     r = call_json(server, "search_in_paper", paper="smith2021", query='"master equation" lindblad')
@@ -394,13 +606,66 @@ def test_get_citation_graph(lib):
     missing = r["most_cited_not_in_library"]
     assert missing[0]["doi"] == "10.9999/ext" and sorted(missing[0]["cited_by"]) == ["doe2019", "smith2021"]
     assert r["most_cited_in_library"][0]["key"] == "doe2019"
-    r = call_json(server, "get_citation_graph", papers=["smith2021"])
+    r = call_json(server, "get_citation_graph", papers=["smith2021"], include_edges=True)
     nodes = {n["node"]: n for n in r["nodes"]}
     assert nodes["smith2021"]["distance"] == 0 and nodes["doe2019"]["distance"] == 1
     assert "smith2021 -> doe2019" in r["edges"] and "doe2019 -> doi:10.9999/ext" in r["edges"]
-    assert r["cited_by_several"][0]["node"] == "doi:10.9999/ext"
+    assert r["cited_by_several"][0]["node"] == "doi:10.9999/ext" and r["cited_by_several"][0]["cited_by_count"] == 2
     r = call_json(server, "get_citation_graph", papers=["lee2020"], depth=2)
     assert r["seeds_without_reference_list"] == ["lee2020"]
+
+
+def test_get_citation_graph_is_bounded(lib):
+    r = call_json(lib["server"], "get_citation_graph", papers=["smith2021"])
+    assert "edges" not in r and r["edges_total"] == 3  # the list is opt-in; the count is not
+    r = call_json(lib["server"], "get_citation_graph", papers=["smith2021"], limit=2, include_edges=True)
+    assert [n["node"] for n in r["nodes"]] == ["smith2021", "doe2019"]  # nearest first, seeds always
+    assert r["edges"] == ["smith2021 -> doe2019"] and "showing 2 of 3 nodes" in r["truncated"]
+    # shared foundations come from the whole neighbourhood, not from the listed nodes
+    assert r["cited_by_several"][0]["node"] == "doi:10.9999/ext"
+
+
+def test_get_note_section(lib, svc):
+    server = lib["server"]
+    text = (
+        "# Long note\n\nIntro cites [@doe2019].\n\n## Method\n\nUses [@smith2021, p. 2].\n\n"
+        "### Detail\n\nMore [[other]].\n\n## Results\n\nNothing cited here.\n"
+    )
+    svc.note_service.create(path="long.md", title="Long note", text=text)
+    err, texts = call(server, "get_note", note="long", section="## Method")
+    assert not err, texts
+    summary = json.loads(texts[0])
+    assert summary["section"] == "## Method" and summary["outline"][1] == "## Method"
+    assert [c["key"] for c in summary["cited_papers"]] == ["smith2021"]
+    assert "Uses [@smith2021, p. 2]" in texts[1] and "### Detail" in texts[1]  # sub-sections belong to it
+    assert "Intro" not in texts[1] and "Results" not in texts[1]
+    assert summary["links_to_notes"][0]["resolves_to"] == "other.md"  # the link is in "Detail"
+    summary = json.loads(call(server, "get_note", note="long", section="results")[1][0])
+    assert summary["cited_papers"] == []  # present, and empty
+    err, texts = call(server, "get_note", note="long", section="Nope")
+    assert err and "matches no heading" in texts[0] and "## Method" in texts[0]
+    whole = json.loads(call(server, "get_note", note="long")[1][0])
+    assert {c["key"] for c in whole["cited_papers"]} == {"doe2019", "smith2021"}
+    assert set(whole["cited_papers"][0]["paper"]) <= {"title", "year", "has_pdf"}  # the rest is in get_paper
+
+
+def test_search_library_paging_and_dates(lib):
+    server = lib["server"]
+    r = call_json(server, "search_library", query="has:abstract OR author:doe", scope="items")
+    assert "OR and AND are not operators" in r["warnings"][0]
+    r = call_json(server, "search_library", query="sort:added", scope="items")
+    assert r["items"] == [] and "sort:" in r["warnings"][0] and "Filters:" in r["warnings"][0]
+    r = call_json(server, "search_library", query="added:7d", scope="items", sort="added")
+    assert r["items_total"] == 4 and "warnings" not in r and r["items"][0]["added"]
+    assert call_json(server, "search_library", query="added:<2020", scope="items")["items"] == []
+    r = call_json(server, "search_library", query="year:2020-", scope="items", sort="year", limit=2)
+    assert [i["key"] for i in r["items"]] == ["fig2024", "smith2021"] and r["next_offset"] == 2
+    r = call_json(server, "search_library", query="year:2020-", scope="items", sort="year", limit=2, offset=2)
+    assert [i["key"] for i in r["items"]] == ["lee2020"] and "next_offset" not in r
+    r = call_json(server, "search_library", query="open", scope="items", abstracts=True)
+    assert r["items"][0]["abstract"] == "We study open systems."
+    r = call_json(server, "list_collections")
+    assert r["item_types"]["Book"] == 1 and "added:" in r["search_syntax"]
 
 
 def test_write_note(lib, svc):
@@ -812,6 +1077,55 @@ def _overlap(a, b) -> float:
 
 
 @needs_pdfium
+def test_figure_region_stops_at_a_line_of_text(tmp_path):
+    """A formula's radical drawn just above the figure, with a line of text (split in pieces, as math
+    does) between them, is not part of the figure."""
+    s = "q 0 0 0 RG 1 w 120 430 380 170 re S Q\n" + "q 0.2 0.4 0.8 rg 160 431 40 120 re f Q\n"
+    s += "".join(_text(120 + 70 * k, 632, "with collapse") for k in range(5))  # the line, in pieces
+    s += "q 0 rg 200 645 10 1 re f Q\n"  # the overbar of a square root in the text above
+    s += _text(100, 405, "Figure 4: Phase diagram of the model.")
+    pdf = make_stream_pdf(tmp_path / "radical.pdf", [s])
+    (fig,) = pdfregions.figure_regions(pdf, 1)
+    x, y, w, h = fig["rect"]
+    assert fig["label"] == "Figure 4" and y >= 0.23 and abs(y + h - (792 - 430 + 3) / 792) < 0.02  # starts at the chart
+
+
+@needs_pdfium
+def test_hyphen_markers_stay_out_of_captions(tmp_path):
+    pdf = make_stream_pdf(
+        tmp_path / "hyph.pdf", [_text(100, 405, "Figure 1: A very inter-") + _text(100, 391, "esting caption.")]
+    )
+    (fig,) = pdfregions.figure_regions(pdf, 1)
+    assert not any(ord(c) < 32 for c in fig["caption"]), repr(fig["caption"])
+
+
+def test_decode_units_joins_surrogate_pairs():
+    # pdfium counts UTF-16 units: the math italic kappa (U+1D705) is two of them, one character of text
+    units = [ord("a"), 0xD835, 0xDF05, ord("b")]
+    assert pdfregions._decode_units(units) == ["a", "\U0001d705", "", "b"]
+    assert pdfregions._decode_units([0xDF05, ord("c")]) == ["\udf05", "c"]  # a stray half is kept as it is
+
+
+@needs_pdfium
+def test_a_long_equation_may_run_up_to_its_number(tmp_path):
+    """A number 6 pt after a line of mathematics is an equation number; the same gap after prose is not."""
+    eq = "= + = + = + = + = + ,"
+    x = 72 + 11 * 6.4 + eq.count(" ") * 3.06 + 6  # Helvetica 11: "=" and "+" are 6.4 wide, a space 3.06
+    pdf = make_stream_pdf(
+        tmp_path / "tight.pdf",
+        [
+            _text(72, 700, "Body text of the paragraph that introduces the model and its parameters.")
+            + _text(72, 650, eq)
+            + _text(x, 650, "(3)")
+            + _text(72, 600, "The systems are described by Eqs.")
+            + _text(222, 600, "(3)")
+        ],
+    )
+    numbers = pdfregions._equation_numbers(pdfregions._chars(pdfrender.open_pdf(pdf)[0]))
+    assert [(n["number"], round(n["box"][1])) for n in numbers] == [("3", 648)]
+
+
+@needs_pdfium
 def test_equation_regions():
     one = {e["number"]: e["rect"] for e in pdfregions.equation_regions(EQ_PDF, 1)}
     # two columns; "Eq. (1)", "see (1)." and "Equation (5) closes…" in the text are not equations
@@ -928,7 +1242,7 @@ def test_stdio_server_end_to_end(lib, svc):
     assert p.returncode == 0, p.stderr
     replies = [json.loads(l) for l in p.stdout.splitlines()]
     assert [r["id"] for r in replies] == [1, 2, 3]
-    assert len(replies[1]["result"]["tools"]) == 19
+    assert len(replies[1]["result"]["tools"]) == 20
     assert "tensor networks" in replies[2]["result"]["content"][0]["text"]
 
 
@@ -980,6 +1294,8 @@ def test_task_tools(lib, svc):
     err, texts = call(server, "update_task", task=tid, due="soon")
     assert err and "not a date" in texts[0]
     assert call_json(server, "delete_task", task=tid)["deleted"] == [tid, sub]
+    again = call_json(server, "delete_task", task=tid)
+    assert again["deleted"] == [] and "already in the trash" in again["note"]
     err, texts = call(server, "get_task", task="nope2345")
     assert err
 
