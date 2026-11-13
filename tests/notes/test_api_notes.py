@@ -92,13 +92,14 @@ def test_paper_note_links_and_backlinks(client, svc):
     assert idx[key]["trashed"] is False
 
 
-def test_move_reports_broken_links(client):
+def test_move_updates_the_links_it_would_break(client):
     create(client, title="Target")
     src = create(client, title="Source", text="see [[Target]]")
     r = client.post("/api/notes/move", json={"path": "Target.md", "to": "sub/Target.md"})
-    assert r.json["broken_links"] == []  # name unchanged: link still works
+    assert r.json["broken_links"] == [] and r.json["updated_links"] == []  # name unchanged: link still works
     r = client.post("/api/notes/move", json={"path": "sub/Target.md", "to": "sub/Renamed.md"})
-    assert [b["path"] for b in r.json["broken_links"]] == [src["path"]]
+    assert r.json["broken_links"] == [] and r.json["updated_links"] == [{"path": src["path"], "count": 1}]
+    assert "see [[Renamed]]" in client.get("/api/notes/note", query_string={"path": src["path"]}).json["text"]
 
 
 def test_image_upload(client, svc):
@@ -194,7 +195,9 @@ def test_delete_and_rename_folders(client):
     r = client.post("/api/notes/folder/move", json={"path": "proj", "to": "projects"})
     assert r.status_code == 200 and r.json["path"] == "projects"
     assert {m["to"] for m in r.json["moved"]} == {"projects/Target.md", "projects/sub/Plan.md"}
-    assert [(b["path"], b["target"]) for b in r.json["broken_links"]] == [(src["path"], "proj/Target")]
+    assert r.json["broken_links"] == [] and r.json["updated_links"] == [{"path": src["path"], "count": 1}]
+    text = client.get("/api/notes/note", query_string={"path": src["path"]}).json["text"]
+    assert "[[projects/Target]] and [[Plan]]" in text
     paths = {n["path"] for n in client.get("/api/notes").json["notes"]}
     assert paths == {"projects/Target.md", "projects/sub/Plan.md", "Source.md"}
 

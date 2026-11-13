@@ -212,6 +212,28 @@ async def main():
             "move to folder",
             os.path.exists(f"{D}/Projects/Renamed idea.md") and "Projects" in await A.text_content(".note-crumbs"),
         )
+        # a note that links to it by path follows a rename, and the toast says so
+        await A.evaluate(
+            """() => fetch('/api/notes/note', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ title: 'Linker', text: 'See [[Projects/Renamed idea#Section A|the idea]].' }) })"""
+        )
+        await A.click('.nt-row.note[data-path="Projects/Renamed idea.md"]')
+        await A.keyboard.press("F2")
+        await A.fill(".dialog input", "Final idea")
+        await A.keyboard.press("Enter")
+        await A.locator('.toast:has-text("Updated 1 link in 1 note.")').wait_for()
+        check(
+            "renaming rewrites the path link in another note",
+            "[[Projects/Final idea#Section A|the idea]]" in disk("Linker.md"),
+            disk("Linker.md"),
+        )
+        await A.wait_for_function("() => window.zcNotes.path() === 'Projects/Final idea.md'")
+        await A.click('.nt-row.note[data-path="Projects/Final idea.md"]')
+        await A.keyboard.press("F2")
+        await A.fill(".dialog input", "Renamed idea")
+        await A.keyboard.press("Enter")
+        await A.wait_for_function("() => window.zcNotes.path() === 'Projects/Renamed idea.md'")
+        check("and back again", "[[Projects/Renamed idea#Section A|the idea]]" in disk("Linker.md"))
         # new note while inside a folder goes into that folder
         await A.keyboard.press("ControlOrMeta+n")
         await A.fill(".dialog input", "Second")

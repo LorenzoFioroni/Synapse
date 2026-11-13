@@ -64,6 +64,7 @@ class Change:
     paths: list[str] | None
     commit: str | None = None
     extra: dict = field(default_factory=dict)
+    body: str | None = None  # the entry's description, when only known at the end of the operation
 
 
 def _title(path: str) -> str:
@@ -450,7 +451,7 @@ class NoteHistory(HistoryReader):
                         kind=kind,
                         name=name,
                         subject=subject,
-                        body=body,
+                        body=rec.body if rec.body is not None else body,
                         agent=agent if by == "ai" else None,
                         device=(device or THIS_COMPUTER) if by == "human" else None,
                     )

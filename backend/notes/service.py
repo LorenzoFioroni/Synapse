@@ -21,6 +21,7 @@ from .history import NoteHistory
 from .history.reading import MILESTONE_PREFIX
 from .index import NotesIndex
 from .rekey import Rekeyer
+from .relink import Relink, Relinker
 from .vault import ATTACHMENTS, Conflict, NoteExists, Vault, slugify
 
 log = logging.getLogger(__name__)
@@ -111,6 +112,7 @@ class NotesService:
         self.papers = papers
         default = vault.root.parent / "backups"  # data/backups
         self.rekeyer = Rekeyer(vault, index, backups_dir or default, fallback_dir=default)
+        self.relinker = Relinker(vault, index, self.rekeyer.backup)  # links of moved notes
         self.on_change: Callable[[], None] | None = None  # called after notes are saved, deleted or restored
         # called with (path, hash, by) after a note is written: by is "app" or "ai" (plugins hear it)
         self.saved_listeners: list[Callable[[str, str, str], None]] = []
@@ -449,28 +451,50 @@ class NotesService:
         self._changed()
         return {"restored": back, "trashed": gone, "trash_id": trash_id, "commit": rec.commit}
 
+    def _link_plan(self, moves: dict[str, str]) -> Relink:
+        """The links the move would break (a move must not fail because of them)."""
+        try:
+            return self.relinker.plan(moves)
+        except Exception:
+            log.exception("Could not look for links to the moved notes")
+            return Relink(moves)
+
+    def _fix_links(self, plan: Relink, rec) -> dict:
+        """After a move and its re-indexing: rewrite the links it broke, record the notes in the
+        history entry and report ``updated_links`` and the ``broken_links`` left."""
+        try:
+            updated, unfixed = self.relinker.apply(plan)
+        except Exception:
+            log.exception("Could not update the links to the moved notes")
+            updated, unfixed = [], [{"path": p, "target": "", "line": 0} for p in plan.sources]
+        if updated:
+            rec.paths = [*(rec.paths or []), *(u["path"] for u in updated)]
+            n = sum(u["count"] for u in updated)
+            rec.body = (
+                f"Updated {n} link{'s' if n != 1 else ''} in {len(updated)} note{'s' if len(updated) != 1 else ''}."
+            )
+        return {"updated_links": updated, "broken_links": unfixed}
+
     def move(self, path: str, to: str, base_hash: str | None = None) -> dict:
         src = self.vault.clean_rel(path)
         dst = self.vault.clean_rel(to)
-        linked_before = self.index.backlinks(src)
         moved = Path(src).parent != Path(dst).parent
+        plan = self._link_plan({src: dst}) if src != dst else Relink({})
         with self.history.change(
             kind="rename",
             subject=f"{'Moved' if moved else 'Renamed'} {Path(src).stem} to {dst if moved else Path(dst).stem}",
             device=current_device(),
-            paths=[src, dst],
-        ):
+            paths=[src, dst, *plan.sources],  # notes with links to fix: what waits for them is saved first
+        ) as rec:
             self.vault.move(src, dst, expected_hash=base_hash)
-        self.index.remove(src)
-        self.index.update(dst)
+            self.index.remove(src)
+            self.index.update(dst)
+            rec.paths = [src, dst]
+            fixed = self._fix_links(plan, rec)
         self.history.legacy.moved([(src, dst)])
-        # Links by name keep working if only the folder changed; report the ones that broke.
-        broken = [
-            b
-            for b in linked_before
-            if b["path"] != dst and next(iter(self.index.resolve(b["target"], from_path=b["path"])), None) != dst
-        ]
-        return {"path": dst, "broken_links": broken}
+        if fixed["updated_links"]:
+            self._changed()
+        return {"path": dst, **fixed}
 
     def make_folder(self, path: str) -> dict:
         return {"path": self.vault.make_folder(path)}
@@ -520,29 +544,26 @@ class NotesService:
 
     def move_folder(self, path: str, to: str) -> dict:
         src = self.vault.clean_rel(path, suffix=None)
-        before = {n: self.index.backlinks(n) for n in self.vault.notes_in(src)}
+        dst = self.vault.clean_rel(to, suffix=None)
+        inside = self.vault.notes_in(src)
+        plan = self._link_plan({n: dst + n[len(src) :] for n in inside}) if dst != src else Relink({})
         with self.history.change(
-            kind="rename", subject=f"Moved the folder {src} to {to}", device=current_device(), paths=list(before)
+            kind="rename",
+            subject=f"Moved the folder {src} to {to}",
+            device=current_device(),
+            paths=[*inside, *plan.sources],
         ) as rec:
             moved = self.vault.move_folder(src, to)
+            self.history.legacy.moved(moved)
+            self.folder_colors.moved(src, dst)
+            for old, _ in moved:
+                self.index.remove(old)
+            self._reindex(new for _, new in moved)
             rec.paths = [p for pair in moved for p in pair]
-        self.history.legacy.moved(moved)
-        self.folder_colors.moved(src, self.vault.clean_rel(to, suffix=None))
-        for old, _ in moved:
-            self.index.remove(old)
-        self._reindex(new for _, new in moved)
-        new_of = dict(moved)
-        broken = []
-        for old, links in before.items():
-            for b in links:
-                src_now = new_of.get(b["path"], b["path"])
-                if next(iter(self.index.resolve(b["target"], from_path=src_now)), None) != new_of[old]:
-                    broken.append({**b, "path": src_now})
-        return {
-            "path": self.vault.clean_rel(to, suffix=None),
-            "moved": [{"from": o, "to": n} for o, n in moved],
-            "broken_links": broken,
-        }
+            fixed = self._fix_links(plan, rec)
+        if fixed["updated_links"]:
+            self._changed()
+        return {"path": dst, "moved": [{"from": o, "to": n} for o, n in moved], **fixed}
 
     def key_summary(self) -> dict:
         return self.index.key_summary()
