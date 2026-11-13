@@ -295,3 +295,11 @@ Caption. \\label{fig:g}
     assert.ok(!/^! /m.test(log), log.slice(-2000));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('the title block carries the author and the export date for \\maketitle', async () => {
+  const main = await exportMain('# Root\n\nText\n\n## Part\n', { header: { author: 'Ada & Žnidarič', date: '13 November 2026' } });
+  assert.match(main, /\\author\{Ada \\& [^\n]*\}\n\\date\{13 November 2026\}\n\n\\begin\{document\}\n\\maketitle/);
+  assert.match(main, /\\DeclareUnicodeCharacter|\\newunicodechar|Žnidarič|\\v\{c\}|\\'c|\\v\{Z\}/);
+  const bare = await exportMain('# Root\n\nText\n\n## Part\n');
+  assert.match(bare, /\\author\{\}\n\\date\{\}\n/);
+});

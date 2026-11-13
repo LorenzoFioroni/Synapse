@@ -9,6 +9,7 @@ Starts its own server on port 8792 with a throw-away data folder; your library i
 """
 
 import asyncio
+import datetime
 import io
 import os
 import re
@@ -40,7 +41,13 @@ def check(name, cond, extra=""):
     print(("PASS " if cond else "FAIL ") + name, extra)
 
 
+# the export date, as exportHeader.ts writes it (the browser and this script share a clock)
+TODAY = f"{datetime.date.today().day} {datetime.date.today():%B %Y}"
+AUTHOR = "Ada Lovelace"
+
+
 def seed(s):
+    s.put(BASE + "/api/settings", json={"notes_export_author": AUTHOR}).raise_for_status()
     s.post(
         BASE + "/api/items",
         json={
@@ -82,6 +89,11 @@ def seed(s):
         f"- [x] done task\n- [ ] open task\n\n![Plot|200]({img['path']})\n"
     )
     s.post(BASE + "/api/notes/note", json={"path": "report.md", "title": "Report", "text": report}).raise_for_status()
+    # saved as written: creating a note through the API sets author: human itself
+    s.put(
+        BASE + "/api/notes/note",
+        json={"path": "signed.md", "create": True, "text": "---\ntitle: Signed\nauthor: Grace Hopper\n---\nBody.\n"},
+    ).raise_for_status()
 
 
 async def download(page, run):
@@ -139,6 +151,10 @@ async def main():
             check("HTML file named after the note", name == "Report.html", name)
             check("light theme, whatever the app's", 'data-theme="light"' in html)
             check("a title", "<h1>Report</h1>" in html)
+            check(
+                "byline under the title: author and the export date",
+                f'<h1>Report</h1><p class="export-meta">{AUTHOR} · {TODAY}</p>' in html,
+            )
             article = html[html.index('<article class="prose">') :]
             text = re.sub(r"<[^>]+>", "", article)
             cites = re.findall(r'<a class="cite" href="#([^"]+)"', article)
@@ -213,7 +229,9 @@ async def main():
             check("Markdown file named after the note", name == "Report.md", name)
             check(
                 "front matter dropped, title added",
-                md.startswith("# Report\n\nIntro citing (Smith et al. 2021, p. 4). See the part."),
+                md.startswith(
+                    f"# Report\n\n*{AUTHOR} · {TODAY}*\n\nIntro citing (Smith et al. 2021, p. 4). See the part."
+                ),
                 md[:80],
             )
             check("embed inlined", "# Part\n\nThe embedded part cites (Lee 2019)." in md)
@@ -236,6 +254,16 @@ async def main():
             await page.click('.note-head [data-act="export"]')
             _, md2 = await download(page, lambda: page.click(".menu >> text=Markdown"))
             check("the editor's text, saved or not", "Fresh line." in md2)
+
+            # ---- the author is the note's own (front matter), not the Settings default
+            await page.click('.nt-row.note[data-path="signed.md"]', button="right")
+            await page.click(".menu >> text=Export…")
+            _, signed = await download(page, lambda: page.click(".menu >> text=Markdown"))
+            check(
+                "byline names the front-matter author",
+                signed.startswith(f"# Signed\n\n*Grace Hopper · {TODAY}*\n\nBody."),
+                signed[:80],
+            )
 
             # ---- LaTeX: current editor text, figures, references, optional linked project
             for linked in (False, True):
@@ -280,6 +308,10 @@ async def main():
                     check(
                         "LaTeX includes linked input or inline embed",
                         "\\input{notes/" in tex if linked else "The embedded part cites" in tex,
+                    )
+                    check(
+                        "LaTeX title block: author and export date for \\maketitle",
+                        f"\\author{{{AUTHOR}}}\n\\date{{{TODAY}}}" in tex and "\\maketitle" in tex,
                     )
                     readme = archive.read("README.txt").decode()
                     check(

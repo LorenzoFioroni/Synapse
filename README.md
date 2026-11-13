@@ -24,7 +24,9 @@ TypeScript frontend. Everything runs on your machine.
 - 🖍️ **Read, highlight, capture** — annotate PDFs with highlights, drawings and comments,
   and send quotes or snapshots straight into your notes.
 - 📝 **Write notes that connect** — live Markdown preview, LaTeX maths, diagrams, images,
-  paper citations and links between notes (moving or renaming a note updates the links to it). Export Formats adds LaTeX projects that build with
+  paper citations and links between notes (moving or renaming a note updates the links to it).
+  Exports (PDF, HTML, Markdown, LaTeX) start with the
+  title, the note's author (front matter) and the export date. Export Formats adds LaTeX projects that build with
   pdfLaTeX, with figures, galleries, tables and a BibTeX bibliography; optionally include linked
   notes as a multifile project.
 - 🕸️ **See the bigger picture** — explore a graph of your notes, papers and citation links.

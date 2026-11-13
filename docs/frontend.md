@@ -166,7 +166,7 @@ lists with tiles and the values from `settings/navValues.ts`; a page replaces it
 button (from a plugin's page, back to Plugins).
 
 General keeps appearance and item behaviour; the Notes section owns `notes_enabled`, `notes_trash_retention`, `notes_width`, `notes_equation_numbers`,
-`notes_math_physics` and `notes_math_macros`. Keys, values, defaults and immediate saving stay
+`notes_math_physics`, `notes_math_macros` and `notes_export_author`. Keys, values, defaults and immediate saving stay
 unchanged; there is no settings migration. Notes preferences remain reachable when Notes is off.
 
 `settings/search.ts` owns filtering and its observer lifecycle. Search settings matches all query

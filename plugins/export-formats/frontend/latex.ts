@@ -1,6 +1,6 @@
 // A LaTeX project for pdfLaTeX from the host's Markdown tokens. No renderer HTML or library data
 // is rewritten. The result reads as a LaTeX note rather than a copy of the app: the note's title
-// heading becomes \title, captioned figures and tables float, a gallery is one figure with
+// heading becomes \title (with \author and \date, the export date, for \maketitle), captioned figures and tables float, a gallery is one figure with
 // panels (a), (b), … under one caption, and citations are \cite with a numbered bibliography.
 import type { Token } from 'markdown-it';
 import { parseDefinitions } from '../../../frontend/src/plugins/markdown.js';
@@ -15,6 +15,8 @@ export interface LatexInputs {
   math?: { physics: boolean; macros: string; numbering?: string };
   /** Images per row in a gallery's figure; 0 or absent: up to three, as in the HTML export. */
   galleryColumns?: number;
+  /** The author and export date under the title (\author, \date); without it both stay empty. */
+  header?: { author: string; date: string };
   parse(text: string): Token[];
   body(text: string): string;
   section(text: string, heading: string): string;
@@ -443,7 +445,7 @@ export async function latexProject(root: SourceNote, linked: boolean, input: Lat
   for (const key of bib.missing) warnings.add(`Reference not in the library: ${key}`);
   if (keys.size) files.set('references.bib', bib.text);
   const texts = [...files.values()].filter((v): v is string => typeof v === 'string');
-  const unicode = unicodePreamble([body, commands, title, input.math?.macros || '', bib.text, ...texts]);
+  const unicode = unicodePreamble([body, commands, title, input.header?.author || '', input.math?.macros || '', bib.text, ...texts]);
   if (unicode.missing.length) warnings.add(`Characters pdfLaTeX cannot typeset are shown as their code point: ${unicode.missing.join(' ')}`);
   const preamble = [
     '% Synapse LaTeX export. Build with: latexmk -pdf main.tex',
@@ -467,7 +469,7 @@ export async function latexProject(root: SourceNote, linked: boolean, input: Lat
     '\\usepackage[capitalise,nameinlink]{cleveref}',
     '\\extrafloats{100}',
   ].join('\n') + '\n' + mathPreamble(mathSource) + unicode.preamble + definitions(input.math?.macros || '').commands + commands;
-  files.set('main.tex', `${preamble}\n\\title{${title}}\n\\author{}\n\\date{}\n\n\\begin{document}\n\\maketitle\n\n${body}${keys.size ? '\n\\printbibliography\n' : ''}\\end{document}\n`);
+  files.set('main.tex', `${preamble}\n\\title{${title}}\n\\author{${texEscape(input.header?.author || '')}}\n\\date{${texEscape(input.header?.date || '')}}\n\n\\begin{document}\n\\maketitle\n\n${body}${keys.size ? '\n\\printbibliography\n' : ''}\\end{document}\n`);
   const columns = Math.round(input.galleryColumns || 0);
   files.set('README.txt', 'Synapse LaTeX export\n\nBuild the PDF with pdfLaTeX and Biber:\n\n    latexmk -pdf main.tex\n\n'
     + 'or run pdflatex, biber, pdflatex, pdflatex on main.tex.\nKeep figures/, notes/ and references.bib beside main.tex.\n'

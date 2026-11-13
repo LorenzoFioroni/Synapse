@@ -178,6 +178,7 @@ export interface Settings {
   notes_equation_numbers: 'labelled' | 'all';
   notes_math_physics: boolean;
   notes_math_macros: string;
+  notes_export_author: string;
   annotation_color_highlight: string;
   annotation_color_underline: string;
   annotation_color_text: string;

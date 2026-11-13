@@ -4,6 +4,8 @@ html { background: var(--bg); color-scheme: light; }
 body { margin: 0; font-family: var(--font); color: var(--text); background: var(--bg); -webkit-text-size-adjust: 100%; }
 .prose { padding: 48px 32px 64px; font-size: 15.5px; }
 
+.prose .export-meta { margin: -.3em 0 1.8em; color: var(--text-2); font-size: .95em; }
+
 /* [[links]] are text here; a citation links to its entry in the references */
 .prose .cite, .prose .cite.missing { background: none; color: inherit; padding: 0; font-size: inherit; cursor: auto; }
 .prose a.cite { color: var(--accent); cursor: pointer; }
