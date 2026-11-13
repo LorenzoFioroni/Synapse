@@ -333,6 +333,11 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 | `list_tasks`, `get_task` | your tasks (open ones unless asked), filtered like the Tasks page; one task with its details, sub-tasks and the notes that show it |
 | `create_task`, `update_task`, `delete_task` | make, change (title, details, open/done, due date, parent) or delete tasks, and put a new task's line in a note — marked as the AI app's (with its name), undoable in the app |
 
+The server also offers your notes, papers and folder overview as MCP *resources* (`synapse://note/…`,
+`synapse://paper/<key>`, `synapse://collections`) that an AI app can attach by reference, and four
+*prompts* — review a folder, summarise a paper into a note, compare papers, find missing literature —
+which an app that supports prompts lists for you to pick. They show the same data as the tools.
+
 Page numbers are PDF pages counted from 1, so the AI can cite `[@key, p. N]` and the citation opens
 the right page in the app. The AI app is told the notes syntax (KaTeX math, quotes as `> words [@key, p. N]`,
 snapshots, callouts…), and `write_note` refuses a note — saving nothing — when a `[[link]]` or `#heading`

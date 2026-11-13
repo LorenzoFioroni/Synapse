@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -182,7 +183,11 @@ def test_initialize_and_list(lib):
     )
     res = r["result"]
     assert res["protocolVersion"] == "2025-06-18"
-    assert res["capabilities"] == {"tools": {"listChanged": False}}
+    assert res["capabilities"] == {
+        "tools": {"listChanged": False},
+        "resources": {"subscribe": False, "listChanged": False},
+        "prompts": {"listChanged": False},
+    }
     assert res["serverInfo"]["name"] == "synapse"
     assert "[@key, p. N]" in res["instructions"]
     r = server.handle({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": "1999-01-01"}})
@@ -411,6 +416,96 @@ def test_get_paper_outline_from_a_printed_contents_page(svc):
     _attach_pdf(svc, "toc2023", svc.config.pdf_dir / "toc2.pdf")
     r = call_json(build_server(svc), "get_paper_outline", paper="toc2023")
     assert "could not be matched" in r["warning"] and r["outline"][0] == "I. Introduction (p. 3)"
+
+
+def rpc(server, method, **params):
+    reply = server.handle({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+    return reply.get("result"), reply.get("error")
+
+
+def test_resources_list_and_templates(lib):
+    server = lib["server"]
+    res, err = rpc(server, "resources/list")
+    assert not err
+    by_uri = {r["uri"]: r for r in res["resources"]}
+    assert "synapse://collections" in by_uri and "synapse://note/projects/crispr.md" in by_uri
+    assert by_uri["synapse://note/projects/crispr.md"]["title"] == "Crispr project"
+    res, _ = rpc(server, "resources/templates/list")
+    assert {t["uriTemplate"] for t in res["resourceTemplates"]} == {
+        "synapse://paper/{key}",
+        "synapse://note/{path}{?section}",
+    }
+
+
+def test_resources_read(lib, svc):
+    server = lib["server"]
+    res, err = rpc(server, "resources/read", uri="synapse://collections")
+    assert not err and json.loads(res["contents"][0]["text"])["library"]["items"] == 4
+    res, _ = rpc(server, "resources/read", uri="synapse://note/projects/crispr.md")
+    (content,) = res["contents"]
+    assert content["mimeType"] == "text/markdown" and "[@smith2021, p. 2]" in content["text"]
+    svc.note_service.create(path="a b.md", title="Spaced", text="# Spaced\n\n## One\n\nfirst\n\n## Two\n\nsecond\n")
+    res, _ = rpc(server, "resources/read", uri="synapse://note/a%20b.md?section=Two")
+    assert "second" in res["contents"][0]["text"] and "first" not in res["contents"][0]["text"]
+    res, _ = rpc(server, "resources/read", uri="synapse://paper/smith2021")
+    paper = json.loads(res["contents"][0]["text"])
+    assert paper["paper"]["key"] == "smith2021" and paper["outline"]["pages_total"] == 12
+    res, _ = rpc(server, "resources/read", uri="synapse://paper/doe2019")  # no PDF: metadata only
+    assert "outline" not in json.loads(res["contents"][0]["text"])
+    for bad in (
+        "synapse://paper/nobody1900",
+        "synapse://note/nothing.md",
+        "synapse://note/../../etc/passwd",
+        "synapse://elsewhere/x",
+        "file:///etc/passwd",
+    ):
+        res, err = rpc(server, "resources/read", uri=bad)
+        assert err and err["code"] == -32002, bad
+    assert rpc(server, "resources/read", uri=5)[1]["code"] == -32602
+
+
+def test_prompts(lib):
+    server = lib["server"]
+    res, _ = rpc(server, "prompts/list")
+    names = [p["name"] for p in res["prompts"]]
+    assert names == ["review_folder", "summarise_paper", "compare_papers", "find_missing_literature"]
+    assert [a["name"] for a in res["prompts"][0]["arguments"] if a["required"]] == ["folder"]
+    res, err = rpc(
+        server, "prompts/get", name="review_folder", arguments={"folder": "Physics/Transport", "focus": "noise"}
+    )
+    assert not err
+    (message,) = res["messages"]
+    text = message["content"]["text"]
+    assert message["role"] == "user" and 'folder:"Physics/Transport"' in text and "Focus on noise" in text
+    assert "[@key, p. N]" in text
+    res, _ = rpc(server, "prompts/get", name="summarise_paper", arguments={"paper": "[@smith2021]"})
+    assert (
+        "[@smith2021]" in res["messages"][0]["content"]["text"] and "[[@" not in res["messages"][0]["content"]["text"]
+    )
+    res, _ = rpc(server, "prompts/get", name="find_missing_literature")  # every argument is optional
+    assert "get_citation_graph(limit=20)" in res["messages"][0]["content"]["text"]
+    assert (
+        "smith2021, doe2019"
+        in rpc(server, "prompts/get", name="find_missing_literature", arguments={"scope": "smith2021, doe2019"})[0][
+            "messages"
+        ][0]["content"]["text"]
+    )
+    assert rpc(server, "prompts/get", name="review_folder")[1]["code"] == -32602  # folder is required
+    assert (
+        rpc(server, "prompts/get", name="review_folder", arguments={"folder": "x", "bogus": "1"})[1]["code"] == -32602
+    )
+    assert rpc(server, "prompts/get", name="nope")[1]["code"] == -32602
+
+
+def test_prompts_only_name_tools_that_exist(lib):
+    """The prompts are instructions to call tools: a renamed tool must not leave one pointing nowhere."""
+    server = lib["server"]
+    tools = set(server.all_tools())
+    for p in server.prompts.values():
+        args = {a["name"]: "x" for a in p.arguments}
+        text = p.fn(**args)
+        mentioned = {w for w in re.findall(r"\b([a-z]+(?:_[a-z]+)+)\b", text) if w != "next_offset"}
+        assert mentioned <= tools, (p.name, mentioned - tools)
 
 
 def test_get_paper_outline_without_structure(lib):

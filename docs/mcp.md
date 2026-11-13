@@ -22,7 +22,9 @@ and `backend/mcp/`.
 | `backend/mcp/http.py` | `HttpTransport`: the same server over HTTP, for the web app's `/mcp` endpoint. |
 | `backend/api/mcp.py` | The `/mcp` endpoint and the access-token endpoints of Settings → AI Access. |
 | `backend/access/tokens.py` | `AccessTokens`: the tokens an AI app sends to `/mcp`, hashed in `auth.db`. |
-| `backend/mcp/server.py` | `build_server()`: registers every tool with its title, description and argument schema. |
+| `backend/mcp/server.py` | `build_server()`: registers every tool with its title, description and argument schema, and the resources and prompts. |
+| `backend/mcp/resources.py` | `Resources`: notes, papers and the folder overview as `synapse://` resources. |
+| `backend/mcp/prompts.py` | `PROMPTS`: the ready-made requests of the AI app's prompt picker. |
 | `backend/mcp/instructions.py` | `INSTRUCTIONS` (how to use the tools) and `WRITING_RULES` (the note syntax). |
 | `backend/mcp/tools/` | The tools themselves, one mixin per family, combined in `LibraryTools`. |
 | `backend/mcp/notecheck.py` | `NoteChecker`: checks a note before it is saved. |
@@ -57,11 +59,12 @@ transports that call it.
 
 | Method | Answer |
 |---|---|
-| `initialize` | The protocol version the client asked for if it is in `PROTOCOL_VERSIONS`, else the newest; `capabilities: {tools: {listChanged: false}}`; `serverInfo`; `instructions`. |
+| `initialize` | The protocol version the client asked for if it is in `PROTOCOL_VERSIONS`, else the newest; `capabilities` (`tools`, plus `resources` and `prompts` when the server has them, all with `listChanged: false`); `serverInfo`; `instructions`. |
 | `ping` | `{}` |
 | `tools/list` | Every registered tool, in registration order (`Tool.describe()`). |
 | `tools/call` | Runs the tool and returns its content blocks. |
-| `resources/list`, `resources/templates/list`, `prompts/list` | Empty lists, for clients that ask anyway (Codex offers its model resource tools for every server). |
+| `resources/list`, `resources/templates/list`, `resources/read` | The listed resources, the URI templates and the contents of one resource (see [Resources and prompts](#resources-and-prompts)). A URI that names nothing is the error `-32002`. |
+| `prompts/list`, `prompts/get` | The prompts and the text of one, with its arguments filled in. An unknown prompt, an unknown argument or a missing required one is `-32602`. |
 
 Errors are split in two kinds:
 
@@ -150,6 +153,31 @@ Plugins' per-item fields reach the model too: `get_paper` lists their known valu
 Task changes made through the tools are recorded with `by: "ai"` and the app's name in
 `task_history` (see below), so the app shows whose they are and can undo them; `get_note` lists the tasks a note shows, and `NoteChecker` refuses a
 note that shows a task id that does not exist (see [tasks](tasks.md)).
+
+## Resources and prompts
+
+Besides tools, the server offers **resources**, which an AI app can attach by reference (an `@`
+mention or an attachment menu, depending on the app), and **prompts**, ready-made requests the
+user picks (a prompt picker or slash command, depending on the app). Both are read-only and give nothing the
+tools do not: the same data, behind the same access token over `/mcp`.
+
+| Resource | Contents |
+|---|---|
+| `synapse://collections` | What `list_collections` returns, as JSON. |
+| `synapse://note/<path>` | A note's Markdown, up to `MAX_NOTE_CHARS`. `?section=Heading` gives only the text under that heading. The notes are listed (at most `MAX_LISTED_NOTES`, 200); any note is reachable through the template. |
+| `synapse://paper/<key>` | JSON: the item's metadata and abstract (`get_paper`) and its outline (`get_paper_outline`, left out when it has no PDF). Papers are not listed (a library has hundreds); the template reaches them. |
+
+| Prompt | What it asks for |
+|---|---|
+| `review_folder` (`folder`, optional `focus`) | A literature review of a folder, grouped by theme, with page citations; saved only if the user asks. |
+| `summarise_paper` (`paper`) | A summary built on the user's paper note, saved as a note with `write_note`. |
+| `compare_papers` (`papers`, optional `aspect`) | A table of differences with page citations, saying where a paper is silent. |
+| `find_missing_literature` (optional `scope`) | The works several library papers cite that the library lacks, from `get_citation_graph`. |
+
+A prompt is only text: it names the tools to use and how to cite, and nothing runs until the user
+sends it. `test_prompts_only_name_tools_that_exist` fails when a prompt mentions a tool that does
+not exist, so renaming a tool means updating `prompts.py`. Resource URIs are resolved by the
+tools' own lookups (`_note_path`, `_paper`), so they cannot leave the notes folder.
 
 ## Which AI app
 

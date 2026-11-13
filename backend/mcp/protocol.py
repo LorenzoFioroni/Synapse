@@ -6,9 +6,9 @@ JSON-RPC message (or a list of them) and returns the reply to send back, or
 message per line, which is how Claude Desktop and Claude Code start local
 servers. ``http.py`` runs it over HTTP for apps on another computer.
 
-Only what a tools-only server needs is implemented: ``initialize``, ``ping``,
-``tools/list`` and ``tools/call`` (plus empty ``resources/list``,
-``resources/templates/list`` and ``prompts/list`` for clients that ask anyway).
+Implemented: ``initialize``, ``ping``, ``tools/list``, ``tools/call``, and, when the server is given
+them, ``resources/list``, ``resources/templates/list``, ``resources/read``, ``prompts/list`` and
+``prompts/get`` (without any, the resource and prompt lists are empty, for clients that ask anyway).
 Nothing in it is particular to one AI app: Claude, Codex, Cursor … all speak this.
 The app named in ``initialize`` (``Server.client``) is recorded with what the tools change.
 """
@@ -33,6 +33,7 @@ log = logging.getLogger(__name__)
 PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 
 PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR = -32700, -32600, -32601, -32602, -32603
+RESOURCE_NOT_FOUND = -32002
 
 
 class ToolError(Exception):
@@ -97,6 +98,32 @@ def _json(v: Any) -> str:
     return json.dumps(v, ensure_ascii=False, indent=1, default=str)
 
 
+class ResourceNotFound(Exception):
+    """A resource URI that names nothing (readable text for the client)."""
+
+
+@dataclass
+class Prompt:
+    """A ready-made request the user can pick in the AI app; ``fn`` returns its text."""
+
+    name: str
+    title: str
+    description: str
+    arguments: list[dict]  # [{"name", "description", "required"}]
+    fn: Callable[..., str]
+
+    def describe(self) -> dict:
+        return {
+            "name": self.name,
+            "title": self.title,
+            "description": self.description,
+            "arguments": [
+                {"name": a["name"], "description": a["description"], "required": bool(a.get("required"))}
+                for a in self.arguments
+            ],
+        }
+
+
 @dataclass
 class Server:
     name: str
@@ -108,6 +135,11 @@ class Server:
     extra: Callable[[], dict[str, Tool]] | None = None
     # The AI app connected (from initialize's clientInfo): notes and tasks record it with each change
     client: str | None = None
+    prompts: dict[str, Prompt] = field(default_factory=dict)
+    # Resources: the listed ones, the URI templates for the rest, and the reader (raises ResourceNotFound)
+    resource_list: Callable[[], list[dict]] | None = None
+    resource_templates: list[dict] = field(default_factory=list)
+    resource_read: Callable[[str], list[dict]] | None = None
 
     def add(self, tool: Tool) -> None:
         self.tools[tool.name] = tool
@@ -166,12 +198,20 @@ class Server:
         version = asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
         out = {
             "protocolVersion": version,
-            "capabilities": {"tools": {"listChanged": False}},
+            "capabilities": self._capabilities(),
             "serverInfo": {"name": self.name, "title": "Synapse library", "version": self.version},
         }
         if self.instructions:
             out["instructions"] = self.instructions
         return out
+
+    def _capabilities(self) -> dict:
+        caps: dict = {"tools": {"listChanged": False}}
+        if self.resource_read:
+            caps["resources"] = {"subscribe": False, "listChanged": False}
+        if self.prompts:
+            caps["prompts"] = {"listChanged": False}
+        return caps
 
     def _m_ping(self, params: dict) -> dict:
         return {}
@@ -180,13 +220,42 @@ class Server:
         return {"tools": [t.describe() for t in self.all_tools().values()]}
 
     def _m_resources_list(self, params: dict) -> dict:
-        return {"resources": []}
+        return {"resources": self.resource_list() if self.resource_list else []}
 
     def _m_resources_templates_list(self, params: dict) -> dict:
-        return {"resourceTemplates": []}
+        return {"resourceTemplates": self.resource_templates}
+
+    def _m_resources_read(self, params: dict) -> dict:
+        uri = params.get("uri")
+        if not isinstance(uri, str) or not self.resource_read:
+            raise _ProtocolError(INVALID_PARAMS, "uri must be a string")
+        try:
+            return {"contents": self.resource_read(uri)}
+        except ResourceNotFound as e:
+            raise _ProtocolError(RESOURCE_NOT_FOUND, str(e)) from None
 
     def _m_prompts_list(self, params: dict) -> dict:
-        return {"prompts": []}
+        return {"prompts": [p.describe() for p in self.prompts.values()]}
+
+    def _m_prompts_get(self, params: dict) -> dict:
+        name = params.get("name")
+        prompt = self.prompts.get(name) if isinstance(name, str) else None
+        if prompt is None:
+            raise _ProtocolError(INVALID_PARAMS, f"Unknown prompt: {name}")
+        args = params.get("arguments") or {}
+        if not isinstance(args, dict):
+            raise _ProtocolError(INVALID_PARAMS, "arguments must be an object")
+        known = {a["name"] for a in prompt.arguments}
+        if extra := sorted(set(args) - known):
+            raise _ProtocolError(INVALID_PARAMS, f"Unknown argument: {', '.join(extra)}")
+        for a in prompt.arguments:
+            if a.get("required") and not str(args.get(a["name"]) or "").strip():
+                raise _ProtocolError(INVALID_PARAMS, f"Missing required argument: {a['name']}")
+        text = prompt.fn(**{k: str(v) for k, v in args.items() if str(v).strip()})
+        return {
+            "description": prompt.description,
+            "messages": [{"role": "user", "content": {"type": "text", "text": text}}],
+        }
 
     def _m_tools_call(self, params: dict) -> dict:
         name = params.get("name")

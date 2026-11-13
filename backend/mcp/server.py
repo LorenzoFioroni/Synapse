@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from .instructions import INSTRUCTIONS, WRITING_RULES
+from .prompts import PROMPTS
 from .protocol import Server, Tool, ToolError
+from .resources import TEMPLATES, Resources
 from .tools import LibraryTools
 from .tools.common import MAX_IMAGES_PER_VIEW, MAX_PAGES_PER_READ
 
@@ -14,6 +16,9 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
     t = LibraryTools(services)
     server = Server(name="synapse", version=version, instructions=INSTRUCTIONS, before_call=t.refresh)
     server.extra = lambda: _plugin_tools(services, remote)
+    resources = Resources(t)
+    server.resource_list, server.resource_read, server.resource_templates = resources.listed, resources.read, TEMPLATES
+    server.prompts = {p.name: p for p in PROMPTS}
     paper_arg = {
         "type": "string",
         "description": 'Citation key of the item (e.g. "smith2021"; "[@smith2021]" also works) or its item id.',
