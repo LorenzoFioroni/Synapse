@@ -197,6 +197,7 @@ def test_initialize_and_list(lib):
         "get_note",
         "view_image",
         "get_paper",
+        "get_paper_outline",
         "search_in_paper",
         "read_paper",
         "view_page",
@@ -339,6 +340,86 @@ def test_get_paper(lib):
     assert r["references"]["stored"] == 2 and r["references"]["in_library"] == 1
     doe = call_json(lib["server"], "get_paper", paper=lib["doe"]["id"])  # by item id; no PDF, no note
     assert doe["key"] == "doe2019" and doe["cited_by_in_library"] == ["smith2021"] and "pdfs" not in doe
+
+
+def _attach_pdf(svc, key: str, path: Path):
+    item = svc.papers.create({"title": f"Paper {key}", "authors": "Out, Line", "year": 2022, "citation_key": key})
+    svc.papers.add_attachment(item["id"], "Full Text PDF", path.name)
+    return item
+
+
+def _toc_pdf(path: Path, contents: list[str], headings: dict[int, str], n: int = 9) -> Path:
+    """A PDF whose page 2 is a table of contents and whose pages carry the given headings (page -> text)."""
+    streams = []
+    for page in range(1, n + 1):
+        lines = ["Title page"] if page == 1 else ["CONTENTS"] + contents if page == 2 else []
+        if page in headings:
+            lines = [headings[page], "Some body text of the section."]
+        streams.append("".join(_text(72, 720 - 16 * i, t) for i, t in enumerate(lines or [f"Page {page} text"])))
+    return make_stream_pdf(path, streams)
+
+
+def test_get_paper_outline_from_bookmarks(svc, tmp_path):
+    from pypdf import PdfReader, PdfWriter
+
+    base = make_pages_pdf(tmp_path / "plain.pdf", [f"Page {n}" for n in range(1, 9)])
+    w = PdfWriter()
+    w.append(PdfReader(str(base)))
+    intro = w.add_outline_item("Introduction", 0)
+    w.add_outline_item("Setup", 2, parent=intro)
+    w.add_outline_item("Results", 5)
+    with open(svc.config.pdf_dir / "marks.pdf", "wb") as f:
+        w.write(f)
+    _attach_pdf(svc, "marks2022", svc.config.pdf_dir / "marks.pdf")
+    r = call_json(build_server(svc), "get_paper_outline", paper="marks2022")
+    assert r["outline_from"] == "the PDF's bookmarks" and r["pages_total"] == 8
+    assert r["outline"] == ["Introduction (p. 1)", "  Setup (p. 3)", "Results (p. 6)"]
+    assert "warning" not in r and "figures_and_tables" not in r
+
+
+def test_get_paper_outline_from_a_printed_contents_page(svc):
+    contents = [
+        "I. Introduction 3",
+        "A. Background 3",
+        "1. Details 4",
+        "II. Methods 5",
+        "III. Results 6",
+        "Conclusion 8",
+    ]
+    headings = {
+        4: "I. INTRODUCTION",
+        5: "1. Details of the model",
+        6: "II. Methods",
+        7: "III. Results",
+        9: "Conclusion",
+    }
+    # printed page = PDF page - 1: "Background" is a run-in heading on the Introduction's page (PDF page 4)
+    _toc_pdf(svc.config.pdf_dir / "toc.pdf", contents, headings)
+    _attach_pdf(svc, "toc2022", svc.config.pdf_dir / "toc.pdf")
+    r = call_json(build_server(svc), "get_paper_outline", paper="toc2022")
+    assert r["outline_from"] == "the printed table of contents" and "warning" not in r
+    assert r["outline"] == [
+        "I. Introduction (p. 4)",
+        "  A. Background (p. 4)",
+        "    1. Details (p. 5)",
+        "II. Methods (p. 6)",
+        "III. Results (p. 7)",
+        "Conclusion (p. 9)",
+    ]
+    # headings that cannot be found: the printed numbers are given, with a warning
+    _toc_pdf(svc.config.pdf_dir / "toc2.pdf", contents, {})
+    _attach_pdf(svc, "toc2023", svc.config.pdf_dir / "toc2.pdf")
+    r = call_json(build_server(svc), "get_paper_outline", paper="toc2023")
+    assert "could not be matched" in r["warning"] and r["outline"][0] == "I. Introduction (p. 3)"
+
+
+def test_get_paper_outline_without_structure(lib):
+    r = call_json(lib["server"], "get_paper_outline", paper="fig2024")
+    assert "outline" not in r and "No bookmarks" in r["outline_note"]
+    assert [(c["label"], c["page"]) for c in r["figures_and_tables"]] == [("Figure 2", 2), ("Table 1", 2)]
+    assert "figures_and_tables" not in call_json(lib["server"], "get_paper_outline", paper="fig2024", captions=False)
+    err, texts = call(lib["server"], "get_paper_outline", paper="lee2020")
+    assert err and "no PDF" in texts[0]
 
 
 def test_search_in_paper(lib):
@@ -981,7 +1062,7 @@ def test_stdio_server_end_to_end(lib, svc):
     assert p.returncode == 0, p.stderr
     replies = [json.loads(l) for l in p.stdout.splitlines()]
     assert [r["id"] for r in replies] == [1, 2, 3]
-    assert len(replies[1]["result"]["tools"]) == 19
+    assert len(replies[1]["result"]["tools"]) == 20
     assert "tensor networks" in replies[2]["result"]["content"][0]["text"]
 
 

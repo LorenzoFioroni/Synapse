@@ -142,6 +142,28 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
     )
     server.add(
         Tool(
+            "get_paper_outline",
+            "Get a paper's outline",
+            "The sections of a paper's PDF with the PDF page each starts on (from the PDF's bookmarks, else its "
+            "printed table of contents), and its figure and table captions with their pages. Use it on a long "
+            "paper to see its structure, then read_paper the pages you need.",
+            {
+                "type": "object",
+                "properties": {
+                    "paper": paper_arg,
+                    "attachment": att_arg,
+                    "captions": {
+                        "type": "boolean",
+                        "description": "Also list the figure and table captions (default true).",
+                    },
+                },
+                "required": ["paper"],
+            },
+            t.get_paper_outline,
+        )
+    )
+    server.add(
+        Tool(
             "search_in_paper",
             "Search inside a paper's PDF",
             "Find the pages of a paper's PDF that contain some words (case and accents ignored), best pages first, "

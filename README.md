@@ -320,6 +320,7 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 | `get_note` | a note's text, the papers it cites (with line and page), its links and backlinks, the images it shows |
 | `view_image` | the images of a note (pasted pictures, snapshots — with the page and region they came from), or one by its path; large ones are scaled down when Pillow is installed |
 | `get_paper` | metadata, abstract, PDFs and page counts, your paper note, notes citing it, reference-list summary |
+| `get_paper_outline` | a PDF's sections with their PDF pages (bookmarks or printed contents page) and its figure and table captions |
 | `search_in_paper` | the pages of a PDF containing some words, with snippets |
 | `read_paper` | the text of some PDF pages (up to 10 per call), marked by page |
 | `view_page` | an image of a page with a 0–1 grid; figures, tables and numbered equations with proposed regions |
