@@ -946,6 +946,55 @@ def _overlap(a, b) -> float:
 
 
 @needs_pdfium
+def test_figure_region_stops_at_a_line_of_text(tmp_path):
+    """A formula's radical drawn just above the figure, with a line of text (split in pieces, as math
+    does) between them, is not part of the figure."""
+    s = "q 0 0 0 RG 1 w 120 430 380 170 re S Q\n" + "q 0.2 0.4 0.8 rg 160 431 40 120 re f Q\n"
+    s += "".join(_text(120 + 70 * k, 632, "with collapse") for k in range(5))  # the line, in pieces
+    s += "q 0 rg 200 645 10 1 re f Q\n"  # the overbar of a square root in the text above
+    s += _text(100, 405, "Figure 4: Phase diagram of the model.")
+    pdf = make_stream_pdf(tmp_path / "radical.pdf", [s])
+    (fig,) = pdfregions.figure_regions(pdf, 1)
+    x, y, w, h = fig["rect"]
+    assert fig["label"] == "Figure 4" and y >= 0.23 and abs(y + h - (792 - 430 + 3) / 792) < 0.02  # starts at the chart
+
+
+@needs_pdfium
+def test_hyphen_markers_stay_out_of_captions(tmp_path):
+    pdf = make_stream_pdf(
+        tmp_path / "hyph.pdf", [_text(100, 405, "Figure 1: A very inter-") + _text(100, 391, "esting caption.")]
+    )
+    (fig,) = pdfregions.figure_regions(pdf, 1)
+    assert not any(ord(c) < 32 for c in fig["caption"]), repr(fig["caption"])
+
+
+def test_decode_units_joins_surrogate_pairs():
+    # pdfium counts UTF-16 units: the math italic kappa (U+1D705) is two of them, one character of text
+    units = [ord("a"), 0xD835, 0xDF05, ord("b")]
+    assert pdfregions._decode_units(units) == ["a", "\U0001d705", "", "b"]
+    assert pdfregions._decode_units([0xDF05, ord("c")]) == ["\udf05", "c"]  # a stray half is kept as it is
+
+
+@needs_pdfium
+def test_a_long_equation_may_run_up_to_its_number(tmp_path):
+    """A number 6 pt after a line of mathematics is an equation number; the same gap after prose is not."""
+    eq = "= + = + = + = + = + ,"
+    x = 72 + 11 * 6.4 + eq.count(" ") * 3.06 + 6  # Helvetica 11: "=" and "+" are 6.4 wide, a space 3.06
+    pdf = make_stream_pdf(
+        tmp_path / "tight.pdf",
+        [
+            _text(72, 700, "Body text of the paragraph that introduces the model and its parameters.")
+            + _text(72, 650, eq)
+            + _text(x, 650, "(3)")
+            + _text(72, 600, "The systems are described by Eqs.")
+            + _text(222, 600, "(3)")
+        ],
+    )
+    numbers = pdfregions._equation_numbers(pdfregions._chars(pdfrender.open_pdf(pdf)[0]))
+    assert [(n["number"], round(n["box"][1])) for n in numbers] == [("3", 648)]
+
+
+@needs_pdfium
 def test_equation_regions():
     one = {e["number"]: e["rect"] for e in pdfregions.equation_regions(EQ_PDF, 1)}
     # two columns; "Eq. (1)", "see (1)." and "Equation (5) closes…" in the text are not equations
