@@ -9,6 +9,7 @@ import { toast, toastError } from '../../ui/toast.js';
 import type { NoteMoved } from '../../types.js';
 import { escapeHtml, formatDate, h, plural } from '../../util.js';
 import { RETENTION_LABELS } from './attachmentsDialog.js';
+import { moveMessage } from './linkReport.js';
 import type { NoteSession } from './noteSession.js';
 import {
   fKey, nKey, refreshTree, saveCollapsed, selectOnly, selected, tree, treeEl, visibleKeys,
@@ -48,11 +49,11 @@ export async function newFolder(parent = ''): Promise<void> {
   } catch (e) { toastError(e); }
 }
 
-function reportBroken(broken: NoteMoved['broken_links']): void {
-  if (!broken?.length) return;
-  const names = [...new Set(broken.map((b) => stemOf(b.path)))];
-  toast(`${plural(broken.length, 'link')} to the old name in ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''} no longer resolve${broken.length === 1 ? 's' : ''}.`,
-    { timeout: 9000 });
+/** Say what the move did to links; an open note may be one that was rewritten. */
+function reportLinks(res: NoteMoved): void {
+  if (res.updated_links?.length) void ws.session?.checkRemote();
+  const message = moveMessage(res);
+  if (message) toast(message, { timeout: 9000 });
 }
 
 async function moveNote(path: string, to: string, { quiet = false } = {}): Promise<void> {
@@ -68,7 +69,7 @@ async function moveNote(path: string, to: string, { quiet = false } = {}): Promi
     if (tree.sel.delete(nKey(path))) tree.sel.add(nKey(res.path));
     if (tree.cursor === nKey(path)) tree.anchor = tree.cursor = nKey(res.path);
     if (!quiet) await refreshTree();
-    reportBroken(res.broken_links);
+    reportLinks(res);
   } catch (e) { toastError(e); }
 }
 
@@ -133,7 +134,7 @@ async function moveFolder(path: string, to: string, { quiet = false } = {}): Pro
     tree.sel = new Set(keep.sel.map((k) => `${k[0]}:${moved(k.slice(2))}`));
     tree.anchor = tree.cursor = keep.cursor ? `${keep.cursor[0]}:${moved(keep.cursor.slice(2))}` : null;
     if (!quiet) await refreshTree();
-    reportBroken(res.broken_links);
+    reportLinks(res);
   } catch (e) { toastError(e); }
 }
 

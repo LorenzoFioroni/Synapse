@@ -212,14 +212,42 @@ the index is then updated from the file.
 - `save(path, text, base_hash)` is the hash-checked save behind the editor. `base_hash=None`
   creates. A `Conflict` reaches the browser as a 409.
 - `edit(...)` is the save used for AI apps' changes: same check, plus a history entry naming the app (`current_agent()`).
-- `move` and `move_folder` do **not** rewrite links. They collect the backlinks first and return
-  the ones that no longer resolve as `broken_links`. Links by name survive a folder move; a
-  rename breaks them, and the UI says which.
+- `move` and `move_folder` rewrite the links the move would break, as part of the move
+  (`backend/notes/relink.py`, below). They return `updated_links` (`[{path, count}]`, the notes
+  rewritten, by their current path) and `broken_links` (only the links that could not be updated).
 - `links(path)` adds library info to each citation and lists `cited`, `unresolved` and
   `backlinks`. `cite_index()` lists every item with a key, trashed ones flagged, with its PDFs
   and paper note. `item_notes(id)` gives an item's paper notes, citing notes and suggested path.
 - `append_to_paper_note` adds a quote or snapshot from the PDF viewer to the item's paper note,
   creating it if needed, with up to three hash-checked attempts.
+
+### Relinking after a move (`backend/notes/relink.py`)
+
+A link by name (`[[Target]]`) survives a move to another folder, but a link by path
+(`[[proj/Target]]`), any link to a note that was renamed, and a name that would now resolve to
+another note with the same name do not. `Relinker` fixes exactly those, for `NotesService.move`
+and `move_folder` (a folder is the list of its notes):
+
+1. `plan()` runs before the move, while the index still has the old paths. For every note holding
+   a `[[link]]` or `![[embed]]` that resolves to a moved note (the moved notes themselves
+   included: a note may link to itself) it records which targets point at which moved note.
+2. After the file move and the re-indexing, `apply()` takes a backup (`Rekeyer.backup`, at most
+   one a minute) when something needs fixing, then rewrites each such note. Only the target
+   text is replaced (`parser.link_spans`, so code, math, comments and front matter are never
+   touched); `#heading` and `|alias` stay. The new target keeps the form of the old one: a full
+   path stays a full path, a name stays a name, a partial path keeps its folders, and a target
+   gains folders only when it would not resolve to the moved note otherwise (the shortest form
+   that does; `.md` is kept if it was there). Links that still resolve are not touched.
+3. Each note is written with a hash check, retried three times like `Rekeyer.apply`. A note that
+   keeps changing, or any note when no backup can be made, keeps its links: they come back as
+   `broken_links` (`path`, `target`, `line`) and the UI says which.
+
+The rewritten notes join the move's history entry (`Change.paths`, with a description such as
+"Updated 3 links in 2 notes."), so the entry shows in their history, where earlier versions can be restored. When the moved note itself had links to itself, that entry is no longer a pure rename.
+The notes list and open notes refresh as after any change (`_changed`, `checkRemote`).
+`linkReport.ts` (`moveMessage`, `tests/js/linkReport.test.mjs`) words the toast: "Updated 3 links
+in 2 notes." and, for what could not be updated, "1 link in X could not be updated and no
+longer resolves." Tests: `tests/notes/test_relink.py`.
 
 ### Rekeying (`backend/notes/rekey.py`)
 
@@ -260,9 +288,9 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | GET | `/api/notes/note?path=` | Text, hash and index entry of one note. With `&unless=<hash>`, a note that still has that hash answers `{path, hash, unchanged: true}` only. |
 | POST | `/api/notes/note` | Create (`title`, `folder` or `path`, `item_id`, `text`). |
 | PUT | `/api/notes/note` | Save `text` over `hash`; with `create: true`, write a note that must not exist. |
-| POST | `/api/notes/move` | Rename or move a note (`path`, `to`, optional `hash`); returns `broken_links`. |
+| POST | `/api/notes/move` | Rename or move a note (`path`, `to`, optional `hash`); rewrites the links it would break and returns `updated_links` and `broken_links`. |
 | POST | `/api/notes/folder` | Create a folder. |
-| POST | `/api/notes/folder/move` | Rename or move a folder; returns the moved notes and `broken_links`. Its colour and its subfolders' go with it. |
+| POST | `/api/notes/folder/move` | Rename or move a folder; rewrites the links it would break and returns the moved notes, `updated_links` and `broken_links`. Its colour and its subfolders' go with it. |
 | PUT | `/api/notes/folder/color` | `{path, color}`: give a folder a colour (`#rrggbb`), or none (`null` or `""`); answers `folder_colors`. |
 | POST | `/api/notes/trash` | Trash one note (`path`) or several notes and folders together (`paths`, `folders`). |
 | GET | `/api/notes/trash` | Trashed notes with `trashed_at` and `deletes_at`, and the retention. |
@@ -757,6 +785,7 @@ else the item's URL. `referenceHtml` makes it a link, and `referenceMarkdown` wr
 | File safety, naming or the trash | `backend/notes/vault.py`. |
 | Image types, sweeping or retention | `backend/notes/service.py` (`IMAGE_TYPES`) and `backend/notes/attachments.py`. |
 | What a key change rewrites | `backend/notes/rekey.py`. |
+| Links rewritten when notes move | `backend/notes/relink.py`. |
 | Saving behaviour | `noteSession.ts`, with a test in `tests/js/noteSession.test.mjs`. |
 | How notes look when rendered | `render.ts` (tested in `tests/js/render.test.mjs`), `equations.ts`, `macros.ts`, `livePreview.ts`. |
 | Claude's note tools | `backend/mcp/tools/notes.py`; see [mcp.md](mcp.md). |

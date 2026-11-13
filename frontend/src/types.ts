@@ -323,7 +323,13 @@ export interface NoteLinks {
 }
 
 /** A moved note or folder (POST /api/notes/move, /api/notes/folder/move): links that no longer resolve. */
-export interface NoteMoved { path: string; broken_links: { path: string; line: number }[] }
+export interface NoteMoved {
+  path: string;
+  /** Links in other notes that the move made point at the new place: [{path (now), count}]. */
+  updated_links: { path: string; count: number }[];
+  /** Links that could not be updated. */
+  broken_links: { path: string; line: number; target?: string }[];
+}
 
 /** GET /api/items/<id>/notes: the item's paper notes and the notes that cite it (empty without a citation key). */
 export interface ItemNotes {

@@ -16,6 +16,7 @@ import { type CM, createEditor, loadCM, loadMD, type NoteEditor } from '../views
 import { toggleFormat } from '../views/notes/formatting.js';
 import { noteHooks, ghostSource } from '../views/notes/hooks.js';
 import { linkDataOf } from '../views/notes/linkData.js';
+import { moveMessage } from '../views/notes/linkReport.js';
 import { splitFrontmatter } from '../views/notes/mdscan.js';
 import { NoteSession, type SaveStatus } from '../views/notes/noteSession.js';
 import { createRenderer, imageSrc } from '../views/notes/render.js';
@@ -470,6 +471,8 @@ function noteMenu(path: string, session: NoteSession): void {
         await ensureIndexes({ fresh: true });
         back();
         push(noteScreen(res.path));
+        const links = moveMessage(res);
+        if (links) toast(links, { timeout: 9000 });
       } catch (e) { toastError(e); }
     } },
     { label: 'Copy Link', icon: 'link', run: async () => { if (await copyText(`[[${stemOf(path)}]]`)) toast('Link copied', { type: 'success', timeout: 2000 }); } },

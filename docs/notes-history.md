@@ -60,7 +60,7 @@ guard's `g.device`), like the AI app's name comes from `acting_as`.
 | …the note is switched away from or its tab closed | A checkpoint at once (`POST /api/notes/history/checkpoint`, from `checkpointAfterSave` in `notesView.ts`). |
 | …saved next from another device | That device's pending edits are committed first. |
 | An AI app changes a note (`NotesService.edit`, `write_note`) | The note's pending edits are committed first, then the AI change alone, with its summary as the message. |
-| Rename or move (`move`, `move_folder`) | A pure-rename commit, after committing what was pending for the note, so Git always follows the note (`log --follow`). |
+| Rename or move (`move`, `move_folder`) | A pure-rename commit, after committing what was pending for the note, so Git always follows the note (`log --follow`). The notes whose links the move rewrote (`relink.py`) are in the same commit. |
 | Delete, restore from the trash | A commit removing / adding the files. |
 | Citation-key rename (`rename_key`) | One commit for every note it rewrote. |
 | …that brings the notes back to a state of a moment ago (you changed something and undid it, and a checkpoint fell in between) | No version: `_drop_detour` moves the branch back to that state (`reset --soft`), so the versions in between leave the Git history. Only your own edits on the same device, at most `DETOUR_GAP` (30 min) apart and without a milestone on them, are dropped; an AI change, another device's edit, an outside change or a milestone in between keeps them. The whole tree must match, so no other note's change is lost. |
