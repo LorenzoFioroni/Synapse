@@ -58,11 +58,11 @@ export async function exportNote(path: string, format: string): Promise<void> {
     if (format === 'md') {
       const opts = await portableOptions(path, links, new Set([path]), 1);
       const note = portableBody(text, opts);
-      const md = portableMarkdown(title, note, await fullItems(note.keys, opts.citeInfo), exportHeader(state.settings.notes_export_author));
+      const md = portableMarkdown(title, note, await fullItems(note.keys, opts.citeInfo), exportHeader(text, state.settings.notes_export_author));
       downloadBlob(new Blob([md], { type: 'text/markdown;charset=utf-8' }), `${file}.md`);
       return;
     }
-    const html = await htmlDocument(path, title, text, links, exportHeader(state.settings.notes_export_author));
+    const html = await htmlDocument(path, title, text, links, exportHeader(text, state.settings.notes_export_author));
     if (format === 'html') downloadBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), `${file}.html`);
     else printHtml(html);
   } catch (e) {

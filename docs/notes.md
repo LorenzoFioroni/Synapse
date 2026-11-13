@@ -646,12 +646,14 @@ it works offline. The open note is exported as it is in the editor, saved or not
 loaded with `GET /api/notes/note`. Its `/api/notes/links` gives the library items it cites, with
 the library list as the fallback (as in read mode).
 
-Every format puts a **byline** under the title: the author from Settings → Notes → *Author of
-exported notes* (`notes_export_author`, empty: no author) and the **export date**, not the note's
-creation date (`exportHeader.ts`, "13 November 2026"; the author is a single line of at most 200
-characters). HTML and PDF show it as `<p class="export-meta">` after the note's own first heading,
-or after a `<h1>` made from the title; Markdown as an italic line below the `# Title`; LaTeX as
-`\author` and `\date` for `\maketitle`.
+Every format puts a **byline** under the title: the note's author and the **export date**, not
+the note's creation date (`exportHeader.ts`, "13 November 2026"). The author is the front-matter
+`author` as written; `author: ai` gives the AI app in `agent` (`Claude`, …); `author: human` (the
+default) or none gives Settings → Notes → *Default author of exported notes*
+(`notes_export_author`, one line of at most 200 characters; empty: no author, date only). HTML and
+PDF show the byline as `<p class="export-meta">` after the note's own first heading, or after a
+`<h1>` made from the title; Markdown as an italic line below the `# Title`; LaTeX as `\author` and
+`\date` for `\maketitle`.
 
 - **HTML page.** `embedHtml` renders the note as read mode does. It is drawn off screen so that
   `renderEmbeds` (which now waits for its code and diagrams), `highlightCodeBlocks` and

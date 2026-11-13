@@ -48,5 +48,5 @@ export const exportNoteFile = (path: string) => api.getNote(path);
 export const exportBibliography = (ids: string[]) => api.clipboardBibtex(ids);
 export { splitFrontmatter } from '../views/notes/mdscan.js';
 export { section as noteSection } from '../views/notes/embed.js';
-export const exportByline = () => exportHeader(state.settings.notes_export_author);
+export const exportByline = (text: string) => exportHeader(text, state.settings.notes_export_author);
 export const exportMathSettings = () => ({ physics: state.settings.notes_math_physics !== false, macros: state.settings.notes_math_macros || '' });

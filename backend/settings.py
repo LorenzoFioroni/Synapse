@@ -61,7 +61,7 @@ DEFAULTS: dict = {
     "notes_equation_numbers": "labelled",
     "notes_math_physics": True,  # the physics package's commands (\vb, \dv, \qty…) in formulas
     "notes_math_macros": "",  # \newcommand definitions used by every note
-    "notes_export_author": "",  # the author line of exported notes (empty: no author)
+    "notes_export_author": "",  # the author of exported notes whose front matter names none (empty: no author)
     # PDF viewer: where PDFs open. "tabs": the app's own tabs, beside the Synapse tab (also in the
     # app window, python server.py --window); "browser": a browser tab (or window) of their own.
     "pdf_open_in": "tabs",

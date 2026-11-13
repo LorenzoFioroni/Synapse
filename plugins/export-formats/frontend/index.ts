@@ -77,7 +77,7 @@ export function activate(p: PluginContext): void {
         image: localImage,
         math: { ...exportMathSettings(), numbering: equationMode() },
         galleryColumns: columns,
-        header: exportByline(),
+        header: exportByline(note.text),
         bibliography: async keys => {
           const ids = [...new Set(keys.map(key => byKey.get(key)?.id).filter((id): id is string => !!id))];
           const result = ids.length ? await exportBibliography(ids) : { text: '' };

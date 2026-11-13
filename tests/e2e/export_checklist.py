@@ -89,6 +89,11 @@ def seed(s):
         f"- [x] done task\n- [ ] open task\n\n![Plot|200]({img['path']})\n"
     )
     s.post(BASE + "/api/notes/note", json={"path": "report.md", "title": "Report", "text": report}).raise_for_status()
+    # saved as written: creating a note through the API sets author: human itself
+    s.put(
+        BASE + "/api/notes/note",
+        json={"path": "signed.md", "create": True, "text": "---\ntitle: Signed\nauthor: Grace Hopper\n---\nBody.\n"},
+    ).raise_for_status()
 
 
 async def download(page, run):
@@ -249,6 +254,16 @@ async def main():
             await page.click('.note-head [data-act="export"]')
             _, md2 = await download(page, lambda: page.click(".menu >> text=Markdown"))
             check("the editor's text, saved or not", "Fresh line." in md2)
+
+            # ---- the author is the note's own (front matter), not the Settings default
+            await page.click('.nt-row.note[data-path="signed.md"]', button="right")
+            await page.click(".menu >> text=Export…")
+            _, signed = await download(page, lambda: page.click(".menu >> text=Markdown"))
+            check(
+                "byline names the front-matter author",
+                signed.startswith(f"# Signed\n\n*Grace Hopper · {TODAY}*\n\nBody."),
+                signed[:80],
+            )
 
             # ---- LaTeX: current editor text, figures, references, optional linked project
             for linked in (False, True):

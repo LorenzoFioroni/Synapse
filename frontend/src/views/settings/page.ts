@@ -179,7 +179,7 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
           ${segmentedRow('notes_width', 'Note width', 'Full uses the whole note pane.', [['readable', 'Readable'], ['full', 'Full']])}
           ${selectRow('notes_trash_retention', 'Empty the notes trash', 'Deleted notes, and images no note uses, are deleted for good after this long.',
     [['never', 'Never'], ['1d', 'After 1 day'], ['1w', 'After 1 week'], ['2w', 'After 2 weeks'], ['1m', 'After 1 month'], ['6m', 'After 6 months']])}
-          ${textRow('notes_export_author', 'Author of exported notes', 'Printed under the title, with the export date, when a note is exported as PDF, HTML, Markdown or LaTeX. Empty: no author line.', 'Your name')}
+          ${textRow('notes_export_author', 'Default author of exported notes', 'Exports print the note’s author (from its front matter, or the AI app that wrote it) and the export date under the title. This name is used for notes whose author is just “human”. Empty: no author line.', 'Your name')}
         </div>
         ${sub('Equations')}
         <div class="card">
