@@ -61,6 +61,7 @@ DEFAULTS: dict = {
     "notes_equation_numbers": "labelled",
     "notes_math_physics": True,  # the physics package's commands (\vb, \dv, \qty…) in formulas
     "notes_math_macros": "",  # \newcommand definitions used by every note
+    "notes_export_author": "",  # the author line of exported notes (empty: no author)
     # PDF viewer: where PDFs open. "tabs": the app's own tabs, beside the Synapse tab (also in the
     # app window, python server.py --window); "browser": a browser tab (or window) of their own.
     "pdf_open_in": "tabs",
@@ -203,6 +204,10 @@ class SettingsStore:
                     raise SettingsError("A colour looks like #ffcc00")
             if k == "notes_math_macros" and len(v) > 20000:
                 raise SettingsError("Math macros: at most 20,000 characters")
+            if k == "notes_export_author":
+                v = " ".join(v.split())  # one line: it becomes a header line in every format
+                if len(v) > 200:
+                    raise SettingsError("Author name: at most 200 characters")
             if k == "citekey_pattern" and not v:
                 raise SettingsError("Citation key pattern cannot be empty")
             if k == "backup_dir" and v:

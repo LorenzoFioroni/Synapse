@@ -14,12 +14,14 @@ import { toast, toastError } from '../../ui/toast.js';
 import { downloadBlob, escapeHtml as esc } from '../../util.js';
 import { loadMD } from './editor.js';
 import { embedHtml, section } from './embed.js';
+import { type ExportHeader, bylineText, exportHeader } from './exportHeader.js';
 import { noteHooks } from './hooks.js';
 import { linkDataOf } from './linkData.js';
 import { splitFrontmatter } from './mdscan.js';
 import { type Portable, type RefInfo, portableBody, portableMarkdown, referenceHtml, referenceId, referenceKeys } from './portable.js';
 import type { RendererOptions } from './render.js';
 import { highlightCodeBlocks, renderEmbeds, renderMermaidBlocks } from './richRender.js';
+import { state } from '../../store.js';
 import { equationMode, noteMacros, normTarget, stemOf, taskHooks, ws } from './workspace.js';
 
 export type ExportFormat = 'pdf' | 'html' | 'md';
@@ -56,11 +58,11 @@ export async function exportNote(path: string, format: string): Promise<void> {
     if (format === 'md') {
       const opts = await portableOptions(path, links, new Set([path]), 1);
       const note = portableBody(text, opts);
-      const md = portableMarkdown(title, note, await fullItems(note.keys, opts.citeInfo));
+      const md = portableMarkdown(title, note, await fullItems(note.keys, opts.citeInfo), exportHeader(state.settings.notes_export_author));
       downloadBlob(new Blob([md], { type: 'text/markdown;charset=utf-8' }), `${file}.md`);
       return;
     }
-    const html = await htmlDocument(path, title, text, links);
+    const html = await htmlDocument(path, title, text, links, exportHeader(state.settings.notes_export_author));
     if (format === 'html') downloadBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), `${file}.html`);
     else printHtml(html);
   } catch (e) {
@@ -120,7 +122,7 @@ async function portableOptions(path: string, links: Pick<NoteLinks, 'outgoing'> 
 
 /* ---------------------------------------------------------------- HTML */
 /** The note as a standalone HTML page: its styles, fonts and images inside. */
-async function htmlDocument(path: string, title: string, text: string, links: Pick<NoteLinks, 'outgoing'> | null): Promise<string> {
+async function htmlDocument(path: string, title: string, text: string, links: Pick<NoteLinks, 'outgoing'> | null, header: ExportHeader): Promise<string> {
   const citeInfo = infoFor(links);
   const opts: RendererOptions = { citeInfo, equations: equationMode, macros: noteMacros };
   const art = document.createElement('article');
@@ -140,7 +142,14 @@ async function htmlDocument(path: string, title: string, text: string, links: Pi
     const refs = referenceKeys(keys, refInfo);
     staticCopy(art, new Set(refs));
     await inlineImages(art);
-    const body = (art.firstElementChild?.tagName === 'H1' ? '' : `<h1>${esc(title)}</h1>\n`) + art.innerHTML
+    // title, then the byline: the note's own first heading is the title when it has one
+    const byline = document.createElement('p');
+    byline.className = 'export-meta';
+    byline.textContent = bylineText(header);
+    const first = art.firstElementChild;
+    if (first?.tagName === 'H1') first.after(byline);
+    else { const h1 = document.createElement('h1'); h1.textContent = title; art.prepend(h1, byline); }
+    const body = art.innerHTML
       + (refs.length ? `\n<section class="references"><h2>References</h2><ol>${refs
         .map((k) => `<li id="${referenceId(k)}">${referenceHtml(k, refInfo(k)!)}</li>`).join('')}</ol></section>` : '');
     const css = await styles(!!art.querySelector('.katex'));

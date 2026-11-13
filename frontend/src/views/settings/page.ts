@@ -95,6 +95,11 @@ function segmentedRow(key: Key, title: string, text: string, options: Options): 
     <div class="s-control">${saved}<div class="segmented" data-seg="${key}" role="group" aria-label="${escapeHtml(title)}">${options.map(([v, l]) => `<button data-v="${v}" class="${setting(key) === v ? 'active' : ''}">${l}</button>`).join('')}</div></div></div>`;
 }
 
+function textRow(key: Key, title: string, text: string, placeholder = ''): string {
+  return `<div class="setting"><div class="s-text"><div class="s-title">${title}</div>${desc(text)}</div>
+    <div class="s-control">${saved}<input class="input" type="text" data-key="${key}" aria-label="${escapeHtml(title)}" maxlength="200" autocomplete="name" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(String(setting(key) || ''))}"></div></div>`;
+}
+
 function colorRow(key: Key, title: string, text: string): string {
   return `<div class="setting"><div class="s-text"><div class="s-title">${title}</div>${desc(text)}</div>
     <div class="s-control">${saved}<input type="color" class="color-input" data-key="${key}" aria-label="${escapeHtml(title)} colour" value="${escapeHtml(String(setting(key) || '#000000'))}"></div></div>`;
@@ -174,6 +179,7 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
           ${segmentedRow('notes_width', 'Note width', 'Full uses the whole note pane.', [['readable', 'Readable'], ['full', 'Full']])}
           ${selectRow('notes_trash_retention', 'Empty the notes trash', 'Deleted notes, and images no note uses, are deleted for good after this long.',
     [['never', 'Never'], ['1d', 'After 1 day'], ['1w', 'After 1 week'], ['2w', 'After 2 weeks'], ['1m', 'After 1 month'], ['6m', 'After 6 months']])}
+          ${textRow('notes_export_author', 'Author of exported notes', 'Printed under the title, with the export date, when a note is exported as PDF, HTML, Markdown or LaTeX. Empty: no author line.', 'Your name')}
         </div>
         ${sub('Equations')}
         <div class="card">

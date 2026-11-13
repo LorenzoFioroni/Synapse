@@ -1,6 +1,7 @@
 // Run with: node --test tests/js   (also run by tests/test_frontend_js.py)
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { bylineText, exportDate, exportHeader } from '../../frontend/js/views/notes/exportHeader.js';
 import {
   formatAuthors, portableBody, portableMarkdown, referenceHtml, referenceId, referenceLink, referenceMarkdown,
 } from '../../frontend/js/views/notes/portable.js';
@@ -71,4 +72,17 @@ test('the whole export: a title, the body and the references in order of first c
     + '1. Lee, J.-H. (2019). Tensor networks.\n2. Smith, A. M., Doe, J. & Roe, R. (2021). Quantum things. *Phys. Rev. X*, *11*(2), 021001–021010. '
     + '<https://doi.org/10.1103/PhysRevX.11.021001>\n');
   assert.equal(portableMarkdown('Ignored', portableBody('# Own title\n\nNo citations.', { citeInfo }), citeInfo), '# Own title\n\nNo citations.\n');
+});
+
+test('exports carry a byline with the export date under the title', () => {
+  const now = new Date(2026, 10, 13, 12);
+  assert.equal(exportDate(now), '13 November 2026');
+  assert.deepEqual(exportHeader('  Ada   Lovelace ', now), { author: 'Ada Lovelace', date: '13 November 2026' });
+  assert.equal(bylineText(exportHeader('', now)), '13 November 2026');
+  const header = exportHeader('Ada *L*', now);
+  const own = portableBody('# Own title\n\nText.', { citeInfo });
+  assert.equal(portableMarkdown('Ignored', own, citeInfo, header), '# Own title\n\n*Ada \\*L\\* · 13 November 2026*\n\nText.\n');
+  const bare = portableBody('Text.', { citeInfo });
+  assert.equal(portableMarkdown('Note', bare, citeInfo, exportHeader('', now)), '# Note\n\n*13 November 2026*\n\nText.\n');
+  assert.equal(portableMarkdown('Note', portableBody('', { citeInfo }), citeInfo, exportHeader('', now)), '# Note\n\n*13 November 2026*\n');
 });

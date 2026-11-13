@@ -9,6 +9,7 @@ Starts its own server on port 8792 with a throw-away data folder; your library i
 """
 
 import asyncio
+import datetime
 import io
 import os
 import re
@@ -40,7 +41,13 @@ def check(name, cond, extra=""):
     print(("PASS " if cond else "FAIL ") + name, extra)
 
 
+# the export date, as exportHeader.ts writes it (the browser and this script share a clock)
+TODAY = f"{datetime.date.today().day} {datetime.date.today():%B %Y}"
+AUTHOR = "Ada Lovelace"
+
+
 def seed(s):
+    s.put(BASE + "/api/settings", json={"notes_export_author": AUTHOR}).raise_for_status()
     s.post(
         BASE + "/api/items",
         json={
@@ -139,6 +146,10 @@ async def main():
             check("HTML file named after the note", name == "Report.html", name)
             check("light theme, whatever the app's", 'data-theme="light"' in html)
             check("a title", "<h1>Report</h1>" in html)
+            check(
+                "byline under the title: author and the export date",
+                f'<h1>Report</h1><p class="export-meta">{AUTHOR} · {TODAY}</p>' in html,
+            )
             article = html[html.index('<article class="prose">') :]
             text = re.sub(r"<[^>]+>", "", article)
             cites = re.findall(r'<a class="cite" href="#([^"]+)"', article)
@@ -213,7 +224,9 @@ async def main():
             check("Markdown file named after the note", name == "Report.md", name)
             check(
                 "front matter dropped, title added",
-                md.startswith("# Report\n\nIntro citing (Smith et al. 2021, p. 4). See the part."),
+                md.startswith(
+                    f"# Report\n\n*{AUTHOR} · {TODAY}*\n\nIntro citing (Smith et al. 2021, p. 4). See the part."
+                ),
                 md[:80],
             )
             check("embed inlined", "# Part\n\nThe embedded part cites (Lee 2019)." in md)
@@ -280,6 +293,10 @@ async def main():
                     check(
                         "LaTeX includes linked input or inline embed",
                         "\\input{notes/" in tex if linked else "The embedded part cites" in tex,
+                    )
+                    check(
+                        "LaTeX title block: author and export date for \\maketitle",
+                        f"\\author{{{AUTHOR}}}\n\\date{{{TODAY}}}" in tex and "\\maketitle" in tex,
                     )
                     readme = archive.read("README.txt").decode()
                     check(

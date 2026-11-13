@@ -2,7 +2,7 @@
 import type { PluginContext } from '../../../frontend/src/plugins/api.js';
 import {
   citationIndex, createRenderer, downloadBlob, equationMode, exportBibliography, exportNoteFile,
-  exportMathSettings, loadMD, noteIndex, noteSection, openDialog, splitFrontmatter, storage, store,
+  exportByline, exportMathSettings, loadMD, noteIndex, noteSection, openDialog, splitFrontmatter, storage, store,
 } from '../../../frontend/src/plugins/task-runtime.js';
 import { imageSrc } from '../../../frontend/src/plugins/markdown.js';
 import { latexProject, noteResolver } from './latex.js';
@@ -77,6 +77,7 @@ export function activate(p: PluginContext): void {
         image: localImage,
         math: { ...exportMathSettings(), numbering: equationMode() },
         galleryColumns: columns,
+        header: exportByline(),
         bibliography: async keys => {
           const ids = [...new Set(keys.map(key => byKey.get(key)?.id).filter((id): id is string => !!id))];
           const result = ids.length ? await exportBibliography(ids) : { text: '' };

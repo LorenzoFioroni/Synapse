@@ -33,6 +33,11 @@ def test_settings_validation_and_citekey_style(client):
     assert s["notes_width"] == "readable" and s["notes_equation_numbers"] == "labelled"
     assert s["notes_math_physics"] is True and s["notes_math_macros"] == ""
     assert client.put("/api/settings", json={"notes_width": "huge"}).status_code == 400
+    assert s["notes_export_author"] == ""
+    r = client.put("/api/settings", json={"notes_export_author": "  Ada \n Lovelace "}).get_json()["settings"]
+    assert r["notes_export_author"] == "Ada Lovelace"  # one line, trimmed
+    assert client.put("/api/settings", json={"notes_export_author": "x" * 201}).status_code == 400
+    client.put("/api/settings", json={"notes_export_author": ""})
     assert client.put("/api/settings", json={"notes_equation_numbers": "some"}).status_code == 400
     r = client.put("/api/settings", json={"notes_width": "full", "notes_equation_numbers": "all"}).get_json()[
         "settings"
