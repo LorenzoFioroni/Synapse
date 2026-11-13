@@ -40,7 +40,9 @@ class LibraryToolsMixin(ToolsBase):
                 "field_filters": self.s.plugins.fields.search_filters(),  # plugins' fields: citations:>100
             }
             found, hits = search_mod.search(items, query, mode, self.s.fulltext, ctx, notes=matcher)
-            terms = [search_mod.normalize(t) for t, neg, f in search_mod.parse_query(query) if not f and not neg]
+            parsed = search_mod.parse_query(query, ctx["field_filters"])
+            terms = [search_mod.normalize(t) for t, neg, f in parsed if not f and not neg]
+            wanted_authors = [t for t, neg, f in parsed if f == "author" and not neg]
 
             def rank(p):
                 title = search_mod.normalize(p.get("title"))
@@ -57,7 +59,7 @@ class LibraryToolsMixin(ToolsBase):
             out["items"] = [
                 drop_empty(
                     {
-                        **self._brief(p),
+                        **self._brief(p, wanted_authors),
                         "added": (p.get("date_added") or "")[:10] if sort == "added" or "added:" in query else None,
                         "abstract": self._abstract(p) if abstracts else None,
                         "match": snippet_text(hits[p["id"]]["fulltext"]) if p["id"] in hits else None,
@@ -102,7 +104,23 @@ class LibraryToolsMixin(ToolsBase):
             out.append("OR and AND are not operators: every term must match. Run one search per alternative.")
         return out
 
-    def list_collections(self):
+    def _note_row(self, n: dict) -> dict:
+        try:
+            size = self.s.vault.abs(n["path"]).stat().st_size
+        except OSError:
+            size = None
+        return drop_empty(
+            {
+                "path": n["path"],
+                "title": n.get("title"),
+                "type": n.get("type"),
+                "author": n.get("author"),
+                "bytes": size,
+                "updated": n.get("updated"),
+            }
+        )
+
+    def list_collections(self, include_notes: bool = False):
         s = self.s
         paths = s.folders.paths()
         folders = [
@@ -131,6 +149,7 @@ class LibraryToolsMixin(ToolsBase):
             "tags": [{"name": t["name"], "items": t["count"]} for t in s.tags.list()],
             "smart_folders": [{"name": f["name"], "query": f["query"], "scope": f["mode"]} for f in s.smart.list()],
             "note_folders": [{"path": k, "notes": v} for k, v in sorted(note_folders.items())],
+            **({"note_list": [self._note_row(n) for n in notes]} if include_notes else {}),
             "search_syntax": 'folder:"A/B" tag:x year:2018-2022 (also 2020- or >2015) added:2026-10 (also >2026-10-15, '
             '14d) author:name has:pdf type:book; -term excludes; "quoted phrase"; terms are ANDed (no OR)',
         }

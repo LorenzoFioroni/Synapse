@@ -182,6 +182,8 @@ class TaskToolsMixin:
             out = self.tasks.records.delete([tid], by="ai")
         except task_api.TaskError as e:
             raise ToolError(str(e)) from e
+        if not out["ids"]:
+            return {"deleted": [], "note": "That task is already in the trash; nothing changed."}
         return {
             "deleted": out["ids"],
             "note": "Moved to the trash with its sub-tasks; the user can restore it. Lines showing it in notes stay "

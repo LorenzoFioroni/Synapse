@@ -99,11 +99,11 @@ use it), an input schema and `read_only`. `read_only` sets the `readOnlyHint` an
 
 | Tool | Mixin | What it does | Writes |
 |---|---|---|---|
-| `search_library` | `library.py` | Searches items (metadata, PDF full text, what notes say) and notes, with the search box's filters. `offset` and `next_offset` page through results, `sort` orders by relevance, date added or year, `abstracts` adds the start of each abstract, and `warnings` names a filter that was searched as plain text (`sort:`) or an `OR` that is not an operator. | no |
-| `list_collections` | `library.py` | Folders with counts, item types, tags, smart folders, notes folders and overall counts. | no |
+| `search_library` | `library.py` | Searches items (metadata, PDF full text, what notes say) and notes, with the search box's filters. `offset` and `next_offset` page through results, `sort` orders by relevance, date added or year, `abstracts` adds the start of each abstract, and `warnings` names a filter that was searched as plain text (`sort:`) or an `OR` that is not an operator. An `author:` filter shows the matching author even when the long author list is cut. | no |
+| `list_collections` | `library.py` | Folders with counts, item types, tags, smart folders, notes folders and overall counts; `include_notes` adds every note with title, type, author, size in bytes and last update. | no |
 | `get_note` | `notes.py` | A note's text and outline, the papers it cites (line and page; each with title, year and PDF flag, the rest is in `get_paper`; `cited_papers` is empty rather than missing), its links, backlinks and images, and the user's math macros. `section` returns only the text, citations, links and images under one heading. | no |
 | `view_image` | `images.py` | Images stored with the notes: one by path, or all of a note's (at most 6 per call); an image in a gallery comes with its panel label and the gallery's caption. | no |
-| `get_paper` | `papers.py` | Metadata, abstract, PDFs with page counts, the paper note, notes citing it, a summary of its reference list. | no |
+| `get_paper` | `papers.py` | Metadata, abstract, PDFs with page counts, the paper note, notes citing it, a summary of its reference list. The paper is named by citation key, item id, DOI or arXiv id (every tool that takes a paper accepts all four); an unknown key gets "Did you mean …?". | no |
 | `get_paper_outline` | `papers.py` | A PDF's sections with the PDF page each starts on, and its figure and table captions with pages (`backend/pdf/outline.py`). The sections come from the PDF's bookmarks, else from its printed table of contents, whose printed page numbers are matched to PDF pages by locating the headings (a `warning` says when that fails and the printed numbers are given). A PDF with neither gets a hint to use `search_in_paper`. | no |
 | `search_in_paper` | `papers.py` | The pages of a PDF that contain some words, best first, with snippets. | no |
 | `read_paper` | `papers.py` | The text of some PDF pages, marked by page (at most 10 pages or 80,000 characters). | no |
@@ -118,12 +118,13 @@ use it), an input schema and `read_only`. `read_only` sets the `readOnlyHint` an
 | `get_task` | `tasks.py` | One task with its details, sub-tasks, parents and the notes that show it. | no |
 | `create_task` | `tasks.py` | Creates a task (optionally a sub-task), and with `note` adds its `{{task:ID}}` line to that note through the note's history. | yes |
 | `update_task` | `tasks.py` | Changes title, details, status (optionally with the sub-tasks), due date or parent. | yes |
-| `delete_task` | `tasks.py` | Moves a task and its sub-tasks to the tasks trash. | yes |
+| `delete_task` | `tasks.py` | Moves a task and its sub-tasks to the tasks trash; a task already there is reported as such. | yes |
 
 `ToolsBase` in `backend/mcp/tools/common.py` has what the families share:
 
-- `_paper(ref)` finds an item by citation key (also written `[@key]`), by id, or by key ignoring
-  case. Trashed items are found too and marked `in_trash`; a library item wins over a trashed one
+- `_paper(ref)` finds an item by citation key (also written `[@key]`), by id, by key ignoring
+  case, or by DOI or arXiv id (a URL or `doi:` / `arXiv:` prefix is fine), and suggests close keys when
+  nothing matches. Trashed items are found too and marked `in_trash`; a library item wins over a trashed one
   with the same key.
 - `_pdf_for(item, attachment)` picks the PDF (the first one unless an attachment id is given),
   and `_pages(att)` extracts its text, cached for 16 PDFs by file time and size. `_page_count`

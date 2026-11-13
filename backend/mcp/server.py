@@ -21,7 +21,8 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
     server.prompts = {p.name: p for p in PROMPTS}
     paper_arg = {
         "type": "string",
-        "description": 'Citation key of the item (e.g. "smith2021"; "[@smith2021]" also works) or its item id.',
+        "description": 'Citation key of the item (e.g. "smith2021"; "[@smith2021]" also works), its item id, '
+        "or its DOI or arXiv id.",
     }
     att_arg = {
         "type": "integer",
@@ -80,8 +81,17 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "list_collections",
             "List folders, tags and notes folders",
             "The library's folders (with item counts), tags, smart folders (saved searches) and notes folders, "
-            "plus overall counts. Use the names in search_library filters.",
-            {"type": "object", "properties": {}},
+            "plus overall counts. Use the names in search_library filters. With include_notes, every note with "
+            "its title, type, author, size and last update.",
+            {
+                "type": "object",
+                "properties": {
+                    "include_notes": {
+                        "type": "boolean",
+                        "description": "Also list every note (path, title, size in bytes, last update; default false).",
+                    },
+                },
+            },
             t.list_collections,
         )
     )

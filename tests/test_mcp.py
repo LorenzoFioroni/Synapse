@@ -517,6 +517,42 @@ def test_get_paper_outline_without_structure(lib):
     assert err and "no PDF" in texts[0]
 
 
+def test_get_paper_by_doi_or_arxiv_id_and_near_misses(lib, svc):
+    svc.papers.create({"title": "Preprint", "citation_key": "arx2024", "doi": "10.48550/arXiv.2401.01234"})
+    server = lib["server"]
+    for ref in ("10.1000/smith", "doi:10.1000/SMITH", "https://doi.org/10.1000/smith"):
+        assert call_json(server, "get_paper", paper=ref)["key"] == "smith2021", ref
+    for ref in (
+        "2401.01234",
+        "arXiv:2401.01234v2",
+        "https://arxiv.org/abs/2401.01234",
+        "https://arxiv.org/pdf/2401.01234.pdf",
+    ):
+        assert call_json(server, "get_paper", paper=ref)["key"] == "arx2024", ref
+    err, texts = call(server, "get_paper", paper="smith2012")
+    assert err and "Did you mean smith2021?" in texts[0] and "search_library" in texts[0]
+    err, texts = call(server, "get_paper", paper="10.9999/unknown")
+    assert err and "Did you mean" not in texts[0]
+
+
+def test_search_shows_the_matched_author_among_many(lib, svc):
+    names = "; ".join(f"Author{n}, A" for n in range(1, 9)) + "; Zedler, Zoe; Last, Lee"
+    svc.papers.create({"title": "Big collaboration", "authors": names, "year": 2023, "citation_key": "big2023"})
+    server = lib["server"]
+    plain = call_json(server, "search_library", query="collaboration", scope="items")["items"][0]["authors"]
+    assert "Zedler" not in plain and "(10 authors)" in plain
+    shown = call_json(server, "search_library", query="author:zedler", scope="items")["items"][0]["authors"]
+    assert "(10 authors, incl. Zedler, Zoe)" in shown
+
+
+def test_list_collections_can_list_the_notes(lib):
+    r = call_json(lib["server"], "list_collections")
+    assert "note_list" not in r
+    rows = {n["path"]: n for n in call_json(lib["server"], "list_collections", include_notes=True)["note_list"]}
+    assert rows["projects/crispr.md"]["title"] == "Crispr project" and rows["projects/crispr.md"]["bytes"] > 50
+    assert "other.md" in rows
+
+
 def test_search_in_paper(lib):
     server = lib["server"]
     r = call_json(server, "search_in_paper", paper="smith2021", query='"master equation" lindblad')
@@ -1258,6 +1294,8 @@ def test_task_tools(lib, svc):
     err, texts = call(server, "update_task", task=tid, due="soon")
     assert err and "not a date" in texts[0]
     assert call_json(server, "delete_task", task=tid)["deleted"] == [tid, sub]
+    again = call_json(server, "delete_task", task=tid)
+    assert again["deleted"] == [] and "already in the trash" in again["note"]
     err, texts = call(server, "get_task", task="nope2345")
     assert err
 
