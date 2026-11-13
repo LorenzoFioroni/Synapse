@@ -646,6 +646,15 @@ it works offline. The open note is exported as it is in the editor, saved or not
 loaded with `GET /api/notes/note`. Its `/api/notes/links` gives the library items it cites, with
 the library list as the fallback (as in read mode).
 
+Every format puts a **byline** under the title: the note's author and the **export date**, not
+the note's creation date (`exportHeader.ts`, "13 November 2026"). The author is the front-matter
+`author` as written; `author: ai` gives the AI app in `agent` (`Claude`, …); `author: human` (the
+default) or none gives Settings → Notes → *Default author of exported notes*
+(`notes_export_author`, one line of at most 200 characters; empty: no author, date only). HTML and
+PDF show the byline as `<p class="export-meta">` after the note's own first heading, or after a
+`<h1>` made from the title; Markdown as an italic line below the `# Title`; LaTeX as `\author` and
+`\date` for `\maketitle`.
+
 - **HTML page.** `embedHtml` renders the note as read mode does. It is drawn off screen so that
   `renderEmbeds` (which now waits for its code and diagrams), `highlightCodeBlocks` and
   `renderMermaidBlocks` can fill it, with Mermaid in its light theme. Then what only works inside
@@ -683,7 +692,7 @@ the library list as the fallback (as in read mode).
   The project is meant to read as a LaTeX note rather than a copy of the page. Build it with
   pdfLaTeX and Biber (`latexmk -pdf main.tex`). Conversion works on the host Markdown tokens:
   - The note's title heading (the app's rule: a first-level heading followed by deeper ones)
-    becomes `\title`, and the levels below it `\section`, `\subsection`, … Math in headings gets a
+    becomes `\title` (with `\author` and `\date` from the byline, for `\maketitle`), and the levels below it `\section`, `\subsection`, … Math in headings gets a
     plain-text PDF bookmark. Note macros go to the preamble (macros of embedded and linked notes
     stay in a group), after the configured physics package and user macros.
   - A `$$` formula is numbered as in the app: `equation` when it has a `\label`, a `\tag` or the

@@ -1,6 +1,7 @@
 // A note as other programs can show it (exportNote.ts): Markdown without the notes' own syntax,
 // citations written out with a list of references, and the reference entries HTML and PDF
 // exports use. No DOM (tests/js/portable.test.mjs).
+import { type ExportHeader, bylineText } from './exportHeader.js';
 import { noteHooks } from './hooks.js';
 import { scan, splitFrontmatter } from './mdscan.js';
 import { type CiteInfo, citeLabel } from './render.js';
@@ -213,9 +214,11 @@ export function portableBody(text: string, opts: PortableOptions): Portable {
 
 /** The whole export: a title (unless the note starts with one), the body (portableBody) and the
  *  references, from ``refInfo`` (the full library items when they could be loaded). */
-export function portableMarkdown(title: string, note: Portable, refInfo: (key: string) => RefInfo | null): string {
+export function portableMarkdown(title: string, note: Portable, refInfo: (key: string) => RefInfo | null, header?: ExportHeader): string {
   let body = note.markdown.replace(/^\s+/, '').replace(/\s+$/, '');
   if (!/^# /.test(body) && title) body = `# ${title}\n\n${body}`;
+  // the byline sits right under the title heading
+  if (header && /^# /.test(body)) body = body.replace(/^(# [^\n]*)\n*/, `$1\n\n*${bylineText(header).replace(/[\\`*_[\]<>]/g, '\\$&')}*\n\n`).trimEnd();
   const refs = referenceKeys(note.keys, refInfo);
   if (refs.length) body += `\n\n## References\n\n${refs.map((k, i) => `${i + 1}. ${referenceMarkdown(k, refInfo(k)!)}`).join('\n')}`;
   return `${body}\n`;
