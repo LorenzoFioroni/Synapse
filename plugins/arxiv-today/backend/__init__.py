@@ -620,7 +620,7 @@ def activate(plugin: Plugin) -> None:
         mine = {scholarly.norm_arxiv(scholarly.identifiers(i)[1]) for i in plugin.library.items()}
         out = report.compare(rows, {a for a in mine if a}, top=max(1, min(top, 50)))
         if isinstance(out.get("days"), int) and 0 < out["days"] < days:  # only the days scored by both models
-            out["note"] = f"{days} days were asked for; {out['days']} have scores from both models."
+            out["note"] = f"Of the last {days} days, {out['days']} have scores from both models."
         return out
 
     # Stored reasons and scores must also reflect scoring changes after an upgrade.

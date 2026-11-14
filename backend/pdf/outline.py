@@ -22,6 +22,8 @@ _ENTRY = re.compile(r"^(?P<title>\S.*?\S)(?:\s*[.·…]{2,}\s*|\s+)(?P<page>\d{1
 _RUN_IN = re.compile(r"^([A-Z][\w'’,:()/\- ]{2,60}?)\.\s?(?:[—–]|--?)\s?\S")  # "Introduction.—We study …"
 _ROMAN_HEAD = re.compile(r"^[IVX]{1,5}\.\s+[A-Z][A-Z0-9 ,:()/\-]{3,70}$")  # "II. MODEL AND METHODS"
 _NUMBERED_HEAD = re.compile(r"^(?:\d{1,2}(?:\.\d{1,2}){0,2}|[A-Z])\.?\s+([A-Z][A-Za-z0-9 ,:()/\-]{3,70})$")
+_REFERENCES = re.compile(r"^\W*(?:references|bibliography|literature cited|reference list)\W*$", re.I)
+CAPTION_CHARS = 220
 _NUMBER = re.compile(r"^(?P<num>[IVX]+|[A-Z]|\d+(?:\.\d+)*)\.?\s+(?P<rest>\S.*)$")
 
 
@@ -141,9 +143,11 @@ def contents_page_outline(pages: list[str]) -> tuple[list[dict], bool]:
 
 def captions(pages: list[str]) -> list[dict]:
     """Figure and table captions from the page text: {"label", "page", "text"}, the first of each label."""
-    out, seen = [], set()
+    out: list[dict] = []
+    seen: set[str] = set()
     for n, text in enumerate(pages, 1):
-        for line in text.splitlines():
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
             m = CAPTION.match(line)
             if not m:
                 continue
@@ -154,18 +158,34 @@ def captions(pages: list[str]) -> list[dict]:
             label = f"{kind} {m.group(2)}"
             if label not in seen:
                 seen.add(label)
-                out.append({"label": label, "page": n, "text": " ".join(line.split())[:100]})
+                out.append({"label": label, "page": n, "text": _caption_text(lines, i)})
     return out
+
+
+def _caption_text(lines: list[str], i: int) -> str:
+    """A caption's first line and the lines that continue it (up to a blank line or another caption),
+    cut at a word boundary: the first line alone often ends mid-sentence."""
+    text = " ".join(lines[i].split())
+    for nxt in lines[i + 1 : i + 5]:
+        if len(text) >= CAPTION_CHARS or not nxt.strip() or CAPTION.match(nxt):
+            break
+        text += " " + " ".join(nxt.split())
+    if len(text) <= CAPTION_CHARS:
+        return text
+    return text[:CAPTION_CHARS].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
 
 
 def text_headings(pages: list[str]) -> list[dict]:
     """Headings found in the page text, for papers whose bookmarks do not show them (letters, with
     "Introduction.—" run into the paragraph): [{"level", "title", "page"}]. Approximate: a line that looks
     like a heading (a run-in title before a dash, "II. MODEL", "3 Results") and is short."""
-    out, seen = [], set()
+    out: list[dict] = []
+    seen: set[str] = set()
     for n, text in enumerate(pages, 1):
         for line in text.splitlines():
             line = " ".join(line.split())
+            if _REFERENCES.match(line):
+                return out  # what follows is the reference list ("3. Gedik, Observation of …")
             m = _RUN_IN.match(line)
             title, level = (m.group(1), 1) if m else (None, 1)
             if title is None and (_ROMAN_HEAD.match(line) or (_NUMBERED_HEAD.match(line) and not line.endswith("."))):
@@ -174,6 +194,8 @@ def text_headings(pages: list[str]) -> list[dict]:
                 level = num.group(1).count(".") + 1 if num else 1
             if not title or len(title.split()) > 9 or sum(c.isdigit() for c in title) > len(title) // 4:
                 continue
+            if title is line and "," in line and re.match(r"^[A-Z]\.", line):
+                continue  # "N. Gedik, …": a reference's first author, not the heading "A. Model"
             key = _fold(title)
             if key not in seen:
                 seen.add(key)
