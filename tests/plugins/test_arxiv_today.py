@@ -194,6 +194,16 @@ def test_claude(client, svc, plugin):
     assert data["day"] == date.today().isoformat() and data["total"] == 1
     p = data["papers"][0]
     assert p["arxiv"] == "2610.00001" and any("Cites" in w for w in p["why"]) and p["in_library"] is False
+    assert "abstract" not in p and p["library_papers"] and all(" " not in k for k in p["library_papers"])  # keys
+    r = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": f"{PID}__today", "arguments": {"min_score": 20, "abstracts": True}},
+        }
+    )["result"]
+    assert (r.get("structuredContent") or json.loads(r["content"][0]["text"]))["papers"][0]["abstract"]
 
 
 def test_old_days_are_forgotten(client, svc, feed, plugin):

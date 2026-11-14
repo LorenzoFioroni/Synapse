@@ -232,7 +232,8 @@ These are contributed plugins, off until turned on; safe mode stops them:
   arXiv; ⌘⌥T / Ctrl+Alt+T shows the list, and the palette has **arXiv: Fetch Today's Papers
   Now**. Its fields *arXiv Match*, *Announced* and *arXiv Categories* are columns and filters
   (`categories:quant-ph`, `score:>70`) and stay with a paper you add. Claude can ask for a day's
-  papers with its tool `arxiv-today__today`, and compare the match with the earlier score on the
+  papers with its tool `arxiv-today__today` (each paper's `library_papers` are the citation keys behind its
+  reasons; `abstracts` adds the abstracts), and compare the match with the earlier score on the
   kept days with `arxiv-today__match_report`. The feed (rss.arxiv.org) is read after each
   announcement (Monday to Friday, 00:30 US Eastern), at the next start when the computer was off,
   and when the categories change. If arXiv's cache serves a feed dated for the new day but

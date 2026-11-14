@@ -22,7 +22,6 @@ MAX_PAGES_PER_READ = 10
 MAX_CHARS_PER_READ = 80_000
 MAX_NOTE_CHARS = 100_000
 NOTE_READ_CHARS = 30_000  # a longer note is read by section (get_note shows its outline and sizes instead)
-CITATION_CONTEXT_CHARS = 160
 MAX_PAPER_NOTE_CHARS = 20_000
 MAX_IMAGES_PER_VIEW = 6
 

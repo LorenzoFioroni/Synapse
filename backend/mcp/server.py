@@ -33,15 +33,18 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
         Tool(
             "search_library",
             "Search the library",
-            "Search the user's library: items (metadata, PDF full text and what notes say about them) and notes. "
-            'Supports filters: folder:"Physics/Transport" tag:x year:2018-2022 (also 2020- or >2015) '
-            "added:2026-10 (also >2026-10-15, 2026-01..2026-03, 14d for the last 14 days) author:name has:pdf "
-            "has:note (a note mentions it) is:review (a guess from journal, title, abstract) type:book, the fields "
-            "plugins add (e.g. citations:>100, citations:none), "
-            '-term to exclude, "quoted phrases"; all terms must match (there is no OR). Returns items with citation '
+            "Search the user's library: items (metadata, PDF full text and, with scope all, what notes say about "
+            "them) and notes. Filters (all ANDed; a leading - negates): "
+            'folder:"Physics/Transport" (whole names) tag:x year:2018-2022 (also 2020- or >2015) '
+            "added:2026-10 (also >2026-10-15, 2026-01..2026-03, 14d for the last 14 days) author:name title:word "
+            'journal:"physical review" doi: key: type:book has:pdf has:abstract has:note (a note mentions it) '
+            "is:review (a guess from journal, title and abstract; type:review is not a type), the fields plugins "
+            "add (e.g. citations:>100, citations:none), "
+            '"quoted phrases"; -term excludes; there is no OR. Returns items with citation '
             "keys and a matching snippet, and notes with paths; a filter that is unknown or cannot match (a folder "
-            "that does not exist, type:foo, year:abc) is reported under warnings, with suggestions. Use "
-            "list_collections to see folder, tag and type names.",
+            "that does not exist, type:foo, year:abc, venue:) is reported under warnings, with suggestions. A result "
+            "whose hits are only in reference lists ranks like any other: add author: or a phrase to narrow it. "
+            "Use list_collections to see folder, tag and type names, and compact to list many items cheaply.",
             {
                 "type": "object",
                 "properties": {
@@ -70,7 +73,13 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                     },
                     "abstracts": {
                         "type": "boolean",
-                        "description": "Include the start of each item's abstract (default false).",
+                        "description": "Include the start of each item's abstract (default false); get_paper with "
+                        "papers=[…] gives whole abstracts.",
+                    },
+                    "compact": {
+                        "type": "boolean",
+                        "description": "One line per item (key, year, first author, title) and no snippets: for "
+                        "listing a folder or a long result (default false).",
                     },
                 },
                 "required": ["query"],
@@ -83,14 +92,15 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "list_collections",
             "List folders, tags and notes folders",
             "The library's folders (with item counts), tags, smart folders (saved searches) and notes folders, "
-            "plus overall counts. Use the names in search_library filters. With include_notes, every note with "
-            "its title, type, author, size and last update.",
+            "plus overall counts. Use the names in search_library filters. With include_notes it instead returns the "
+            "notes only: every note with its title, type, author, size and last update.",
             {
                 "type": "object",
                 "properties": {
                     "include_notes": {
                         "type": "boolean",
-                        "description": "Also list every note (path, title, size in bytes, last update; default false).",
+                        "description": "Return the notes' inventory instead (path, title, size in bytes, last update; "
+                        "default false).",
                     },
                 },
             },
@@ -161,8 +171,21 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "Get a paper's details",
             "Metadata and abstract of a library item, its PDFs (with page counts), the user's paper note about it, "
             "the lines of other notes that cite it, a summary of its stored reference list, and values plugins "
-            "attach to it (plugin_fields, e.g. a citation count).",
-            {"type": "object", "properties": {"paper": paper_arg}, "required": ["paper"]},
+            "attach to it (plugin_fields, e.g. a citation count). To compare several items give papers=[…] "
+            "(up to 20): each comes back with its whole abstract and nothing else.",
+            {
+                "type": "object",
+                "properties": {
+                    "paper": paper_arg,
+                    "papers": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 20,
+                        "description": "Several items (keys, ids, DOIs or arXiv ids) for a short summary each, "
+                        "instead of paper.",
+                    },
+                },
+            },
             t.get_paper,
         )
     )

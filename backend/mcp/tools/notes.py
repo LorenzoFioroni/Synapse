@@ -12,7 +12,7 @@ from ...notes.service import now_iso, ulid
 from ...notes.vault import Conflict, NoteExists, slugify
 from ..notecheck import NoteChecker
 from ..protocol import Parts, ToolError
-from .common import AI_FOLDER, CITATION_CONTEXT_CHARS, MAX_NOTE_CHARS, NOTE_READ_CHARS, drop_empty
+from .common import AI_FOLDER, MAX_NOTE_CHARS, NOTE_READ_CHARS, drop_empty
 from .images import ImageToolsMixin
 
 
@@ -45,15 +45,9 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
         cited = []
         for c in links["cited"]:
             p = keys.get(c["key"])
+            # Where, not what: the text around a citation is the text this tool returns.
             cites = [
-                drop_empty(
-                    {
-                        "line": l["line"],
-                        "locator": l.get("locator"),
-                        "page": l.get("page"),
-                        "context": None if too_long else (l.get("context") or "")[:CITATION_CONTEXT_CHARS] or None,
-                    }
-                )
+                drop_empty({"line": l["line"], "locator": l.get("locator"), "page": l.get("page")})
                 for l in links["outgoing"]
                 if l["kind"] == "cite" and l["target"] == c["key"]
             ]
@@ -72,19 +66,23 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                     }
                 )
             )
-        notes_out = [
-            drop_empty(
-                {
-                    "target": l["target"],
-                    "resolves_to": l.get("resolved"),
-                    "broken": None if l.get("resolved") else True,
-                    "line": l["line"],
-                    "embed": l["kind"] == "embed" or None,
-                }
-            )
-            for l in links["outgoing"]
-            if l["kind"] in ("note", "embed")
-        ]
+        grouped: dict[tuple, dict] = {}  # one entry per target, with every line that links to it
+        for l in links["outgoing"]:
+            if l["kind"] not in ("note", "embed"):
+                continue
+            key = (l["target"], l.get("resolved"), l["kind"] == "embed")
+            if key not in grouped:
+                grouped[key] = drop_empty(
+                    {
+                        "target": l["target"],
+                        "resolves_to": l.get("resolved"),
+                        "broken": None if l.get("resolved") else True,
+                        "embed": l["kind"] == "embed" or None,
+                    }
+                )
+                grouped[key]["lines"] = []
+            grouped[key]["lines"].append(l["line"])
+        notes_out = list(grouped.values())
         backlinks = [
             drop_empty(
                 {
@@ -115,7 +113,7 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                 "section": section or None,
                 "links_to_notes": notes_out,
                 "linked_from": backlinks,
-                "images": [i for i in self._note_images(got["text"]) if inside(i["line"])] or None,
+                "images": [i for i in self._note_images(got["text"], caption_once=True) if inside(i["line"])] or None,
                 "tasks": self._note_tasks(links["outgoing"]) or None,
                 "math_macros": self._math_macros() or None,
             }
@@ -246,7 +244,8 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
         if same:
             warnings = [
                 *warnings,
-                f"Another note has this title ({same[0]}). Refer to this one by its path, {path}, not by title.",
+                f"{'Another note has' if len(same) == 1 else f'{len(same)} other notes have'} this title "
+                f"({', '.join(same[:5])}). Refer to this one by its path, {path}, not by title.",
             ]
         return drop_empty(
             {

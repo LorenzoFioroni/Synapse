@@ -558,11 +558,18 @@ def activate(plugin: Plugin) -> None:
         "Papers announced on arXiv in the user's categories, best match first. `score` is the match "
         "(0–100: how likely the user wants to read it), `tier` read | skim | rest, `why` what it rests on "
         "(specific library papers it cites, references it shares with the library, shared authors, "
-        "topic). `day` is YYYY-MM-DD (default: the latest announcement); `category` keeps papers listed "
-        "in it; `min_score` is a match.",
+        "topic); `library_papers` are the citation keys of the library items behind it (get_paper gives "
+        "their details). `day` is YYYY-MM-DD (default: the latest announcement); `category` keeps papers "
+        "listed in it; `min_score` is a match; `abstracts` adds each abstract.",
         title="arXiv papers of the day",
     )
-    def today(category: str | None = None, min_score: float = 0, day: str | None = None, limit: int = 30) -> dict:
+    def today(
+        category: str | None = None,
+        min_score: float = 0,
+        day: str | None = None,
+        limit: int = 30,
+        abstracts: bool = False,
+    ) -> dict:
         day = day or latest_day()
         if not day:
             return {"day": None, "papers": [], "note": "Nothing fetched yet: are categories chosen?"}
@@ -573,20 +580,31 @@ def activate(plugin: Plugin) -> None:
         )
         if category:
             rows = [r for r in rows if category in json.loads(r["categories"])]
-        papers = [
-            {
-                "arxiv": r["arxiv"],
-                "title": r["title"],
-                "authors": json.loads(r["authors"]),
-                "categories": json.loads(r["categories"]),
-                "score": r["score"],
-                "tier": r["tier"],
-                "why": [x.get("text") for x in json.loads(r["reasons"])],
-                "in_library": in_library(r["arxiv"]),
-                "url": f"https://arxiv.org/abs/{r['arxiv']}",
-            }
-            for r in rows[: max(1, min(limit, 200))]
-        ]
+        keys = {i["id"]: i.get("citation_key") for i in plugin.library.items() if i.get("citation_key")}
+
+        def behind(reasons: list[dict]) -> list[str]:  # the library items the reasons rest on, by citation key
+            ids = [i for x in reasons for i in x.get("items") or []]
+            return list(dict.fromkeys(keys[i] for i in ids if i in keys))[:8]
+
+        papers = []
+        for r in rows[: max(1, min(limit, 200))]:
+            reasons = json.loads(r["reasons"])
+            papers.append(
+                {
+                    "arxiv": r["arxiv"],
+                    "title": r["title"],
+                    "authors": json.loads(r["authors"]),
+                    "categories": json.loads(r["categories"]),
+                    "score": r["score"],
+                    "tier": r["tier"],
+                    "why": [x.get("text") for x in reasons],
+                    "library_papers": behind(reasons) or None,
+                    "abstract": r["abstract"] if abstracts else None,
+                    "in_library": in_library(r["arxiv"]),
+                    "url": f"https://arxiv.org/abs/{r['arxiv']}",
+                }
+            )
+        papers = [{k: v for k, v in p.items() if v is not None} for p in papers]
         return {"day": day, "total": len(rows), "papers": papers}
 
     @plugin.mcp_tool(

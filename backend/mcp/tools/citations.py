@@ -8,6 +8,7 @@ import unicodedata
 from .common import ToolsBase, drop_empty, short_authors
 
 CITERS_LISTED = 10  # citing keys named per work; the count is always given
+MANY_RECORDS = 6  # records with one title: a work has a few ids (preprint, journal, book); dozens is a mismatch
 
 
 def _title_key(title: str | None) -> str:
@@ -21,6 +22,21 @@ def _title_key(title: str | None) -> str:
 
 class CitationToolsMixin(ToolsBase):
     """get_references, get_citation_graph."""
+
+    @staticmethod
+    def _merge_subtitled(groups: dict[str, list[dict]], citers: dict[str, list[str]], label) -> None:
+        """A work cited by its title alone ("Exploring the Quantum") and with its subtitle ("… Atoms, Cavities,
+        and Photons"): the short title absorbs the longer ones. Only popular short titles of three words or
+        more take part, so that two different works with a common beginning stay apart."""
+
+        def popular(ns):
+            return len({label(c) for n in ns for c in citers.get(n["id"], [])}) >= 5
+
+        for k in sorted((k for k, ns in groups.items() if len(k.split()) >= 3 and popular(ns)), key=len):
+            if k not in groups:
+                continue
+            for other in [o for o in groups if o != k and o.startswith(k + " ")]:
+                groups[k] += groups.pop(other)
 
     def get_references(self, paper: str, direction: str = "cites", in_library_only: bool = False, limit: int = 200):
         items = self._items()
@@ -112,13 +128,17 @@ class CitationToolsMixin(ToolsBase):
             for n in nodes.values():
                 if not n["in_library"] and n["cited_by_library"] >= 1 and len(n.get("title") or "") >= 10:
                     groups.setdefault(_title_key(n.get("title")) or n["id"], []).append(n)
+            self._merge_subtitled(groups, citers, label)
             rows = []
             for k, ns in groups.items():
                 cs = sorted({label(c) for n in ns for c in citers.get(n["id"], [])})
                 if len(cs) >= 2:
                     best = max(ns, key=lambda n: n["cited_by_library"])
                     rows.append((len(cs), best, ns, cs, in_lib.get(k)))
-            rows.sort(key=lambda r: -r[0])
+            # Many records with one title, or none with a DOI or arXiv id, are what a wrong automatic match
+            # looks like: they come after the works that are identified, and say so.
+            weak = lambda ns: len(ns) >= MANY_RECORDS or not any(n.get("doi") or n.get("arxiv_id") for n in ns)
+            rows.sort(key=lambda r: (weak(r[2]), -r[0]))
             cited_lib = sorted(
                 (n for n in nodes.values() if n["in_library"] and n["cited_by_library"]),
                 key=lambda n: -n["cited_by_library"],
@@ -132,7 +152,12 @@ class CitationToolsMixin(ToolsBase):
                             "cited_by_count": count,
                             "cited_by": cs[:CITERS_LISTED],
                             "same_title_in_library": mine,  # another edition, or the reference list matched the wrong work
-                            "also_listed_as": [describe(n["id"]) for n in ns if n is not best] or None,
+                            "check": "matched from reference text only (no DOI or arXiv id, or very many records "
+                            "share this title): may be a wrong match"
+                            if weak(ns)
+                            else None,
+                            "also_listed_as": [describe(n["id"]) for n in ns if n is not best][:2] or None,
+                            "also_listed_as_count": len(ns) - 1 if len(ns) > 3 else None,
                         }
                     )
                     for count, best, ns, cs, mine in rows[:limit]
