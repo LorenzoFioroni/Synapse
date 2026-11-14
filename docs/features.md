@@ -124,7 +124,7 @@ see the [README](../README.md); for code ownership, see the [architecture map](a
   removes items from that folder only; Cmd/Ctrl+Delete moves them to the Trash.
 - **Search filters** combine with text and can be negated with `-`:
   `tag:review`, `tag:"open systems"`, `folder:Physics`, `folder:"Physics/Transport"`,
-  `folder:none`, `type:book`, `year:2020`, `year:2018-2022`, `year:>2015`, `added:2026-10`, `added:14d`, `has:pdf`,
+  `folder:none`, `type:book`, `year:2020`, `year:2018-2022`, `year:>2015`, `added:2026-10`, `added:14d`, `has:pdf`, `has:note`, `is:review` (a guess),
   `author:cirac`, `title:…`, `journal:…`, `key:…`. Save any search as a smart folder.
 - **Cmd/Ctrl+C** copies the BibTeX of the selected items (Cmd+Shift+C: citation keys,
   Cmd+T: edit tags).

@@ -165,8 +165,9 @@ class FulltextIndex:
         out: dict[str, str] = {}
         with self._session() as c:
             if self.fts:
-                words = term.split()
-                q = _fts_quote(term) + ("*" if len(words) == 1 else "")
+                q = (
+                    _fts_quote(term) + "*"
+                )  # the last word is a prefix, also in a phrase ("time crystal" finds "time crystals")
                 try:
                     rows = c.execute(
                         "SELECT paper_id, snippet(content, 0, ?, ?, '…', 14) AS snip FROM content "

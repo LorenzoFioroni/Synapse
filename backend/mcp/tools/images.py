@@ -140,7 +140,7 @@ class ImageToolsMixin(ToolsBase):
             info["snapshot_of"] = region
         return Image(data, mime), info
 
-    def view_image(self, path: str | None = None, note: str | None = None):
+    def view_image(self, path: str | None = None, note: str | None = None, offset: int = 0):
         if not path and not note:
             raise ToolError("Give path (an image path from a note, e.g. attachments/x.png) and/or note.")
         images: list[dict]
@@ -154,26 +154,40 @@ class ImageToolsMixin(ToolsBase):
                 images = found or [{"path": path}]
             elif not images:
                 raise ToolError(f"{npath} shows no images.")
+            elif offset:
+                if offset >= len(images):
+                    raise ToolError(f"{npath} shows {len(images)} images; offset {offset} is past the last.")
+                images = images[offset:]
         else:
             images = [{"path": path}]
         parts: list = []
         skipped = []
-        for img in images:
+        cap_at = None  # index of the first image left out because of the limit
+        captioned: set = set()  # a gallery's caption is the same for all its panels: say it once
+        for idx, img in enumerate(images):
             if img.get("url"):
                 skipped.append(f"line {img['line']}: {img['path'][:80]} (an image on the web)")
                 continue
             if len([x for x in parts if isinstance(x, Image)]) >= MAX_IMAGES_PER_VIEW:
+                cap_at = idx if cap_at is None else cap_at
                 skipped.append(f"line {img.get('line')}: {img['path']}")
                 continue
             rel, p = self._image_file(img["path"])
             block, info = self._image_block(rel, p)
+            g = img.get("gallery")
+            if g and g.get("line") in captioned:
+                img = {**img, "gallery": {k: v for k, v in g.items() if k != "caption"}}
+            elif g:
+                captioned.add(g.get("line"))
             meta = drop_empty({**{k: img.get(k) for k in ("line", "alt", "caption", "gallery")}, **info})
             parts += [meta, block]
         if skipped:
             parts.append(
                 {
                     "not_shown": skipped,
-                    "hint": f"At most {MAX_IMAGES_PER_VIEW} images per call; ask for the others by path."
+                    "next_offset": offset + cap_at if note and not path and cap_at is not None else None,
+                    "hint": f"At most {MAX_IMAGES_PER_VIEW} images per call; view_image(note=…, offset=N) shows the "
+                    "next ones."
                     if any("web" not in s for s in skipped)
                     else None,
                 }

@@ -72,7 +72,20 @@ def extract_pages(path: Path | str) -> list[str]:
         return []
 
 
+_MATH_FONT = str.maketrans({"ð": "(", "Þ": ")", "¼": "=", "þ": "+", "Ð": "−"})
+
+
+def _fix_math_font(text: str) -> str:
+    """Some journals' PDFs (MathTime fonts) put ( ) = + − at the codes of ð Þ ¼ þ Ð, so a formula reads
+    "ε¼0" and "ðt ÞÞ". Undone only where ð and Þ both occur, about equally often: as brackets they pair up."""
+    a, b = text.count("ð"), text.count("Þ")
+    if min(a, b) >= 3 and abs(a - b) <= max(2, 0.2 * max(a, b)):
+        return text.translate(_MATH_FONT)
+    return text
+
+
 def clean_text(text: str) -> str:
+    text = _fix_math_font(text)
     text = unicodedata.normalize("NFKC", text.replace("\x00", ""))  # also splits ligatures (ﬀ -> ff)
     text = re.sub(r"-\n(?=[a-z])", "", text)  # re-join hyphenated line breaks
     text = re.sub(r"[ \t\r\f\v]+", " ", text)

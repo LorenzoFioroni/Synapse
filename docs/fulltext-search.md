@@ -137,10 +137,17 @@ field is searchable without touching the search code.
 | `type:book`, `type:journal` | A whole type key or label (`book`, `"book section"`) means that type only. Anything else matches types whose key or label starts with the value, or whose label contains it. |
 | `year:2020`, `year:2018-2022`, `year:>2015`, `year:<=2000`, `year:2020-`, `year:-2000` | By year (the first four digits of `year`). `2020-` is that year and later, `-2000` that year and earlier. |
 | `added:2026-10`, `added:>2026-10-15`, `added:2026-01..2026-03`, `added:14d` | By date added (UTC). A year, month or day matches that whole period; `>`, `>=`, `<`, `<=` compare at the precision given; `a..b` is a range; `14d` / `2w` is the last 14 days / 2 weeks. |
-| `has:pdf` (or `attachment`, `file`), `has:tag`, `has:folder`, `has:<field>` | Has any attachment, tag or folder, or a non-empty field. |
+| `has:pdf` (or `attachment`, `file`), `has:tag`, `has:folder`, `has:note`, `has:<field>` | Has any attachment, tag or folder, a note that is about it or cites it, or a non-empty field. |
+| `is:review` | A guess at review articles and tutorials: a review journal (Reviews of Modern Physics, Physics Reports, Annual Review…), or "review", "tutorial", "lecture notes", "introduction to"… in the title, or "we review", "pedagogical"… in the abstract. "Physical Review" is not a review journal. |
 | `author:`, `title:`, `journal:`, `doi:`, `key:` | The value appears in that field (`key` is `citation_key`). |
 
 Prefixes not in `FILTER_KEYS` are not filters: `arXiv:2205.03415` is searched as plain text.
+The MCP tool `search_library` warns about them, and about filter values that cannot match anything
+(`filter_problems()`: a folder or tag that does not exist, with the close names; `type:foo`, `year:abc`,
+`added:soon`, `has:foo`, `is:foo`); the search itself is unchanged.
+
+In the full-text index the last word of a phrase is a prefix, as a single word is: `"time crystal"`
+finds "time crystals". In the notes' index, `"quoted phrases"` stay together too.
 
 Matching ignores case and accents: `normalize()` decomposes the text (NFKD), drops combining
 marks and case-folds it, so `banuls` finds "Bañuls". Metadata, filter values and notes are

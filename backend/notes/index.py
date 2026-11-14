@@ -500,8 +500,14 @@ def _like_escape(s: str) -> str:
 
 
 def _fts_query(query: str) -> str:
-    words = re.findall(r"\w+", query or "", re.UNICODE)
-    return " ".join(f'"{w}"*' for w in words)
+    """Words are ANDed and the last letters may be missing; a "quoted phrase" stays together."""
+    parts = re.findall(r'"([^"]*)"|(\w+)', query or "", re.UNICODE)
+    out = []
+    for phrase, word in parts:
+        words = re.findall(r"\w+", phrase or word, re.UNICODE)
+        if words:
+            out.append('"' + " ".join(words) + '"*')
+    return " ".join(out)
 
 
 __all__ = ["NotesIndex", "content_hash"]

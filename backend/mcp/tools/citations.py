@@ -2,7 +2,21 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
+
 from .common import ToolsBase, drop_empty, short_authors
+
+CITERS_LISTED = 10  # citing keys named per work; the count is always given
+
+
+def _title_key(title: str | None) -> str:
+    """A title as one run of letters and digits, without a leading "the": reference lists spell the same
+    book differently (case, punctuation, "The"). Short titles are too generic to compare ("")."""
+    t = unicodedata.normalize("NFKD", str(title or "")).casefold()
+    t = re.sub(r"^the\s+", "", re.sub(r"[^\w\s]", "", "".join(c for c in t if not unicodedata.combining(c))).strip())
+    t = re.sub(r"\s+", " ", t)
+    return t if len(t) >= 12 else ""
 
 
 class CitationToolsMixin(ToolsBase):
@@ -88,10 +102,23 @@ class CitationToolsMixin(ToolsBase):
             citers.setdefault(e["target"], []).append(e["source"])
 
         if not papers:
-            missing = sorted(
-                (n for n in nodes.values() if not n["in_library"] and n["cited_by_library"] >= 2),
-                key=lambda n: -n["cited_by_library"],
-            )
+            in_lib = {
+                k: self._label(items[n["item_id"]])
+                for n in nodes.values()
+                if n["in_library"] and n["item_id"] in items and (k := _title_key(n.get("title")))
+            }
+            # The same work often appears under several ids (editions, a book and its review): group them.
+            groups: dict[str, list[dict]] = {}
+            for n in nodes.values():
+                if not n["in_library"] and n["cited_by_library"] >= 1 and len(n.get("title") or "") >= 10:
+                    groups.setdefault(_title_key(n.get("title")) or n["id"], []).append(n)
+            rows = []
+            for k, ns in groups.items():
+                cs = sorted({label(c) for n in ns for c in citers.get(n["id"], [])})
+                if len(cs) >= 2:
+                    best = max(ns, key=lambda n: n["cited_by_library"])
+                    rows.append((len(cs), best, ns, cs, in_lib.get(k)))
+            rows.sort(key=lambda r: -r[0])
             cited_lib = sorted(
                 (n for n in nodes.values() if n["in_library"] and n["cited_by_library"]),
                 key=lambda n: -n["cited_by_library"],
@@ -99,13 +126,22 @@ class CitationToolsMixin(ToolsBase):
             return {
                 "stats": g["stats"],
                 "most_cited_not_in_library": [
-                    {**describe(n["id"]), "cited_by": [label(c) for c in citers.get(n["id"], [])]}
-                    for n in missing[:limit]
+                    drop_empty(
+                        {
+                            **describe(best["id"]),
+                            "cited_by_count": count,
+                            "cited_by": cs[:CITERS_LISTED],
+                            "same_title_in_library": mine,  # another edition, or the reference list matched the wrong work
+                            "also_listed_as": [describe(n["id"]) for n in ns if n is not best] or None,
+                        }
+                    )
+                    for count, best, ns, cs, mine in rows[:limit]
                 ],
                 "most_cited_in_library": [
                     {**describe(n["id"]), "cited_by_library": n["cited_by_library"]} for n in cited_lib[:limit]
                 ],
-                "note": "Only items whose reference lists were fetched contribute edges.",
+                "note": "Only items whose reference lists were fetched contribute edges. Reference lists are "
+                "matched automatically: check a surprising entry (same_title_in_library) with get_references.",
             }
 
         all_items = self._items()

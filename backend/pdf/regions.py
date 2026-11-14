@@ -13,7 +13,11 @@ from .render import open_pdf
 
 # ============================================================================ figures
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f]")  # pdfium marks a line-end hyphen with U+0002
-CAPTION = re.compile(r"^\s*(fig(?:ure)?\.?|table)\s*([A-Z]?\d+[a-z]?|[IVX]+)\b\s*[.:|]?", re.I)
+# The number may touch the first word of the caption ("Figure 14Luttinger parameter", some journals' LaTeX),
+# but "Fig.19(a)" and "Fig. 27a)" are references, not captions.
+CAPTION = re.compile(
+    r"^\s*(fig(?:ure)?\.?|table)\s*([A-Z]?\d+[a-z]?|[IVX]+)(?:\b|(?=(?-i:[A-Z][a-z])))(?![()])\s*[.:|]?", re.I
+)
 
 
 def _captions(page) -> list[dict]:

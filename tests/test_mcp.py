@@ -708,7 +708,7 @@ def test_write_note_refuses_broken_notes(lib, svc):
     e = write_error(server, "![plot](attachments/missing.png)")
     assert "does not exist" in e
     e = write_error(server, "The limit is t ≲ N − 1.6 and ⟨τ⟩ ≈ 1.607.")
-    assert "KaTeX" in e and "line 10:" in e
+    assert "KaTeX" in e and "line 1:" in e  # counted in the text sent, not in the saved note with its front matter
     assert sorted(p.name for p in (svc.vault.root).rglob("*.md")) == before  # nothing written
 
 
@@ -1289,6 +1289,7 @@ def test_task_tools(lib, svc):
     assert svc.task_store.get(tid)["due"] is None
     assert call_json(server, "list_tasks")["count"] == 0
     assert call_json(server, "list_tasks", include_done=True)["count"] == 2
+    assert call_json(server, "list_tasks", include_done=True)["sub_tasks_among_them"] == 1
     summary = json.loads(call(server, "get_note", note="crispr")[1][0])
     assert summary["tasks"][0]["id"] == tid and summary["tasks"][0]["status"] == "done"
     err, texts = call(server, "update_task", task=tid, due="soon")
@@ -1326,3 +1327,168 @@ def test_unexpected_errors_do_not_reach_the_client(monkeypatch):
     monkeypatch.setattr(Server, "_m_ping", failing_ping)
     reply = server.handle({"jsonrpc": "2.0", "id": 2, "method": "ping"})
     assert "RuntimeError" in reply["error"]["message"] and "private-secret" not in reply["error"]["message"]
+
+
+# ============================================================== second evaluation round
+def test_search_reports_filters_that_cannot_match(lib):
+    server = lib["server"]
+    warned = lambda q: " ".join(call_json(server, "search_library", query=q, scope="items").get("warnings", []))
+    assert 'did you mean "Physics/Transport"' in warned("folder:Transpo")  # part of a name does not match
+    assert "no such tag; did you mean quantum" in warned("tag:quant")
+    assert "types:" in warned("type:review") and "Book" in warned("type:review")
+    assert "year:abc" in warned("year:abc") and "added:soon" in warned("added:soon")
+    assert "has:nothing" in warned("has:nothing") and "only is:review" in warned("is:other")
+    for fine in (
+        "folder:transport",
+        'folder:"physics/transport"',
+        "tag:quantum",
+        "type:book",
+        "year:2020-",
+        "added:7d",
+        "has:abstract",
+        "has:note",
+        "is:review",
+        "tag:none",
+        "folder:none",
+        "-tag:quantum",
+    ):
+        assert warned(fine) == "", fine
+
+
+def test_has_note_and_is_review(lib, svc):
+    server = lib["server"]
+    keys = lambda q: sorted(i["key"] for i in call_json(server, "search_library", query=q, scope="items")["items"])
+    assert keys("has:note") == ["doe2019", "smith2021"]  # both are cited in the project note; smith has a paper note
+    assert keys("has:note -tag:quantum") == ["doe2019"]
+    svc.papers.create({"title": "Tensor networks: a pedagogical review", "year": 2018, "citation_key": "tn2018"})
+    svc.papers.create({"title": "Many-body physics", "journal": "Reviews of Modern Physics", "citation_key": "mb2012"})
+    svc.papers.create({"title": "Noisy circuits", "journal": "Physical Review X", "citation_key": "nc2020"})
+    svc.papers.create(
+        {
+            "title": "Lattices",
+            "abstract": "In this lecture notes style text we review the field.",
+            "citation_key": "la2011",
+        }
+    )
+    assert keys("is:review") == ["la2011", "mb2012", "tn2018"]  # "Physical Review" is a journal, not a review
+
+
+def test_phrases_stay_together_in_notes_and_pdfs(lib):
+    server = lib["server"]
+    r = call_json(server, "search_library", query='"dynamics follow"', scope="notes")
+    assert [n["path"] for n in r["notes"]] == ["projects/crispr.md"]
+    assert call_json(server, "search_library", query='"follow dynamics"', scope="notes")["notes"] == []
+    # the last word of a phrase may be cut short, as a single word may ("time crystal" finds "time crystals")
+    r = call_json(server, "search_library", query='"lindblad master equ"', scope="items")
+    assert [i["key"] for i in r["items"]] == ["smith2021"]
+    assert call_json(server, "search_library", query='"equation master"', scope="items")["items"] == []
+
+
+def test_a_long_note_is_read_by_section(lib, svc):
+    server = lib["server"]
+    body = "".join(f"Line {i} of a long derivation that goes on and on. " * 4 + "\n" for i in range(90))
+    text = f"# Big\n\nIntro [@doe2019].\n\n## Part A\n\n{body}Cites [@smith2021, p. 2].\n\n## Part B\n\n{body}"
+    svc.note_service.create(path="big.md", title="Big", text=text)
+    assert len(text) > 30_000
+    err, texts = call(server, "get_note", note="big")
+    assert not err and len(texts) == 1  # no text block, only the summary
+    r = json.loads(texts[0])
+    assert "too many to read at once" in r["too_long"]
+    assert re.fullmatch(r"## Part A \(lines \d+-\d+, \d+ characters\)", r["outline"][1])
+    assert all(
+        "context" not in c for k in r["cited_papers"] for c in k["citations"]
+    )  # the note's own lines are not repeated
+    err, texts = call(server, "get_note", note="big", section="Part A")
+    assert not err and "Line 59" in texts[1] and "Part B" not in texts[1]
+    assert json.loads(texts[0])["cited_papers"][0]["citations"][0]["context"]
+    err, texts = call(server, "get_note", note="big", full=True)
+    assert not err and "Part B" in texts[1]
+
+
+def test_a_title_two_notes_share_is_not_guessed(lib):
+    server = lib["server"]
+    r = call_json(server, "write_note", title="Crispr project", text="Another take on the same thing.")
+    assert "Another note has this title (projects/crispr.md)" in r["warnings"][0] and r["saved"] in r["warnings"][0]
+    err, texts = call(server, "get_note", note="Crispr project")
+    assert err and "names 2 notes" in texts[0] and "projects/crispr.md" in texts[0] and r["saved"] in texts[0]
+    err, texts = call(server, "edit_note", note="Crispr project", append="x")
+    assert err and "names 2 notes" in texts[0]
+    assert (
+        call(server, "get_note", note=r["saved"])[0] is False
+        and call(server, "get_note", note="projects/crispr")[0] is False
+    )
+
+
+def test_close_keys_prefer_the_same_author_and_year(lib):
+    server = lib["server"]
+    err, texts = call(server, "get_paper", paper="smith2021quantum")
+    assert err and "Did you mean smith2021?" in texts[0]
+    err, texts = call(server, "get_paper", paper="nobody1999thing")
+    assert err and "Did you mean" not in texts[0]
+
+
+def test_write_note_counts_lines_in_the_text_sent(lib):
+    server = lib["server"]
+    e = write_error(server, "First line.\n\nSecond paragraph.\n\nSee [[no such note]] here.\n")
+    assert "line 5:" in e
+    e = write_error(server, "# Own title\n\nok\n\nThe limit is t ≲ N − 1.6.\n")
+    assert "line 5:" in e
+
+
+def test_read_paper_says_when_pages_run_out(lib):
+    err, texts = call(lib["server"], "read_paper", paper="smith2021", pages="11-20")
+    assert not err and "=== Page 12 ===" in texts[0] and "The PDF has 12 pages" in texts[0]
+    assert "do not exist" not in call(lib["server"], "read_paper", paper="smith2021", pages="11-12")[1][0]
+
+
+def test_search_in_paper_snippets_have_no_control_characters(lib, svc):
+    smith = lib["smith"]
+    pdf = svc.config.pdf_dir / "ctl.pdf"
+    make_pages_pdf(pdf, ["A first sentence with the word master\x02 equation inside it"])
+    svc.papers.add_attachment(smith["id"], "Other", "ctl.pdf")
+    att = [a["id"] for a in svc.papers.get(smith["id"])["attachments"]][-1]
+    r = call_json(lib["server"], "search_in_paper", paper="smith2021", query="sentence", attachment=att)
+    assert "\x02" not in r["results"][0]["snippets"][0] and "master" in r["results"][0]["snippets"][0]
+
+
+def test_citation_overview_groups_one_work_and_flags_one_you_have(svc):
+    a = svc.papers.create({"title": "Paper A", "citation_key": "a2020", "doi": "10.1/a"})
+    b = svc.papers.create({"title": "Paper B", "citation_key": "b2020", "doi": "10.1/b"})
+    c = svc.papers.create({"title": "Paper C", "citation_key": "c2021", "doi": "10.1/c"})
+    svc.papers.create({"title": "The Theory of Open Quantum Systems", "citation_key": "breuer2007theory"})
+    book = {"title": "Theory of open quantum systems", "year": 2002}
+    svc.citations.store.save(a["id"], "openalex", [{**book, "doi": "10.2/x"}, {"title": "I and J"}], doi="10.1/a")
+    svc.citations.store.save(b["id"], "openalex", [{**book, "doi": "10.2/y"}], doi="10.1/b")  # same book, another id
+    svc.citations.store.save(c["id"], "openalex", [{"title": "I and J"}, {**book, "doi": "10.2/x"}], doi="10.1/c")
+    r = call_json(build_server(svc), "get_citation_graph")
+    missing = r["most_cited_not_in_library"]
+    assert len(missing) == 1 and missing[0]["title"] == book["title"]  # the two ids are one entry; "I and J" is dropped
+    assert missing[0]["cited_by_count"] == 3 and missing[0]["same_title_in_library"] == "breuer2007theory"
+    assert missing[0]["also_listed_as"][0]["doi"] in ("10.2/x", "10.2/y")
+
+
+def test_list_collections_gives_every_note_an_update_time(lib):
+    rows = call_json(lib["server"], "list_collections", include_notes=True)["note_list"]
+    assert rows and all(r["updated"] for r in rows)
+
+
+def test_view_image_continues_with_an_offset(lib, svc):
+    server = lib["server"]
+    small = pdfpng.png_encode(bytes([200, 30, 30]) * (40 * 20), 40, 20)
+    paths = [svc.note_service.add_image(f"p{i}.png", small)["path"] for i in range(8)]
+    svc.note_service.create(
+        path="many.md", title="Many", text="# Many\n\n" + "\n\n".join(f"![i{i}]({p})" for i, p in enumerate(paths))
+    )
+    err, content = _blocks(server, note="many")
+    assert not err and sum(c["type"] == "image" for c in content) == 6
+    tail = json.loads(content[-1]["text"])
+    assert tail["next_offset"] == 6 and "offset" in tail["hint"]
+    err, content = _blocks(server, note="many", offset=6)
+    assert not err and [json.loads(c["text"])["alt"] for c in content if c["type"] == "text"] == ["i6", "i7"]
+    err, content = _blocks(server, note="many", offset=20)
+    assert err and "past the last" in content[0]["text"]
+    gallery = "```gallery\n" + "\n".join(f"![]({p}) panel" for p in paths[:2]) + "\n\nShared caption\n```\n"
+    svc.note_service.create(path="gal.md", title="Gal", text="# Gal\n\n" + gallery)
+    err, content = _blocks(server, note="gal")
+    metas = [json.loads(c["text"]) for c in content if c["type"] == "text"]
+    assert not err and metas[0]["gallery"].get("caption") == "Shared caption" and "caption" not in metas[1]["gallery"]

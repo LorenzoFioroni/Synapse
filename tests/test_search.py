@@ -253,3 +253,18 @@ def test_unknown_filters_are_reported():
 
     assert unknown_filters('sort:added tag:x "a b" arXiv:2205.03415') == ["arXiv:", "sort:"]
     assert unknown_filters("citations:>100", extra_keys=["citations"]) == []
+
+
+def test_captions_start_at_the_number_even_when_the_title_touches_it():
+    from backend.pdf.regions import CAPTION
+
+    for line, label in (
+        ("Figure 14Luttinger parameter. Thermodynamic limit", "14"),
+        ("Figure 3Tunable-range interaction", "3"),
+        ("FIG. 3. Control of the dynamics", "3"),
+        ("Figure 3 | Two-body correlations", "3"),
+        ("Table II. Parameters", "II"),
+    ):
+        assert CAPTION.match(line).group(2) == label, line
+    for line in ("Fig.19(a). These observations", "Fig. 27a). Therefore", "Fig.11(Koziol et al., 2021)"):
+        assert not CAPTION.match(line), line  # a reference in running text, not a caption

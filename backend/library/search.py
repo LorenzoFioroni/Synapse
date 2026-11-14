@@ -21,7 +21,8 @@ any can be negated with ``-``):
     folder:Transport   folder:"Physics/Transport"   folder:none
     type:book   type:journal   year:2020   year:2018-2022   year:>2015   year:<=2000   year:2020-   year:-2000
     added:2026-10   added:>2026-10-15   added:2026-01..2026-03   added:14d   (when the item was added)
-    has:pdf   has:doi   has:abstract   (any field: has:<field>)
+    has:pdf   has:doi   has:abstract   has:note   (any field: has:<field>)
+    is:review   (a guess: a review journal, or "review", "tutorial", "lecture notes"… in the title or abstract)
     author:cirac   title:lindblad   journal:"physical review"   doi:10.1103   key:cui2015
 
 Plugins add filters of their own through ``ctx["field_filters"]`` (``citations:>100``,
@@ -32,12 +33,13 @@ Unknown prefixes (``arXiv:2205.03415``) are searched as plain text.
 
 from __future__ import annotations
 
+import difflib
 import functools
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
 
-from .fields import ALL_SEARCH_KEYS, BASIC_SEARCH_KEYS
+from .fields import ALL_SEARCH_KEYS, BASIC_SEARCH_KEYS, FIELD_MAP
 
 MODES = ("basic", "all", "fulltext")
 
@@ -48,7 +50,21 @@ def normalize(s) -> str:
     return " ".join(s.casefold().split())
 
 
-FILTER_KEYS = {"tag", "tags", "folder", "type", "year", "added", "has", "author", "title", "journal", "doi", "key"}
+FILTER_KEYS = {
+    "tag",
+    "tags",
+    "folder",
+    "type",
+    "year",
+    "added",
+    "has",
+    "is",
+    "author",
+    "title",
+    "journal",
+    "doi",
+    "key",
+}
 FIELD_ALIASES = {"author": "authors", "key": "citation_key", "journal": "journal", "title": "title", "doi": "doi"}
 
 _TOKEN = re.compile(r'(-?)(?:([A-Za-z_][A-Za-z0-9_.-]{0,63}):)?(?:"([^"]*)"|(\S+))')
@@ -83,6 +99,86 @@ def unknown_filters(q: str, extra_keys=()) -> list[str]:
 
 def has_filters(q: str) -> bool:
     return any(f for _, _, f in parse_query(q))
+
+
+_YEAR_SPECS = (r"\d{4}", r"\d{4}-\d{4}", r"\d{4}-", r"-\d{4}", r"(?:>=|<=|>|<)\d{4}")
+_DATE = r"\d{4}(?:-\d{2}(?:-\d{2})?)?"
+_ADDED_SPECS = (rf"{_DATE}", rf"{_DATE}\.\.{_DATE}", rf"(?:>=|<=|>|<){_DATE}", r"\d{1,4}[dw]")
+_HAS_SPECIAL = {"pdf", "attachment", "file", "tag", "tags", "folder", "folders", "note", "notes"}
+_REVIEW_JOURNAL = re.compile(
+    r"reviews? of |annual review|reports on progress|physics reports|advances in physics|nature reviews|"
+    r"computing surveys|surveys? in ",
+    re.I,
+)
+_REVIEW_TITLE = re.compile(
+    r"\b(review|tutorial|lecture notes|introduction to|primer|overview|colloquium|a guide to|survey)\b", re.I
+)
+_REVIEW_ABSTRACT = re.compile(
+    r"\b(?:we|this|present|the following) (?:\w+ ){0,2}(?:review|tutorial|overview|lecture notes|survey)\b|"
+    r"\bpedagogical\b",
+    re.I,
+)
+
+
+def _is_review(p: dict) -> bool:
+    return bool(
+        _REVIEW_JOURNAL.search(str(p.get("journal") or ""))
+        or _REVIEW_TITLE.search(str(p.get("title") or ""))
+        or _REVIEW_ABSTRACT.search(str(p.get("abstract") or ""))
+    )
+
+
+def _closest(value: str, names, n: int = 3) -> list[str]:
+    """Names that look like ``value`` (a part of a name, or a near spelling)."""
+    v = normalize(value)
+    names = sorted({str(x) for x in names})
+    by_norm = {normalize(x): x for x in names}
+    found = [x for k, x in by_norm.items() if v and v in k]
+    found += [by_norm[k] for k in difflib.get_close_matches(v, by_norm, n=n, cutoff=0.6) if by_norm[k] not in found]
+    return found[:n]
+
+
+def filter_problems(q: str, ctx: dict) -> list[str]:
+    """Values of filters that cannot match anything (``type:review``, ``year:abc``, an unknown folder):
+    the search returns nothing for them without saying why. ``ctx`` also holds ``tag_names``."""
+    out = []
+    folders = {n for names in (ctx.get("folder_paths") or {}).values() for n in names}
+    folders |= {"/".join(names) for names in (ctx.get("folder_paths") or {}).values()}
+    types = ctx.get("type_labels") or {}
+    extra = {k.lower() for k in ctx.get("field_filters") or ()}
+    for _, field, value in _tokens(q):
+        f = (field or "").lower()
+        if f not in FILTER_KEYS or value is None:
+            continue
+        v = normalize(value)
+        bad = None
+        if f == "year" and not any(re.fullmatch(r, value.replace(" ", "")) for r in _YEAR_SPECS):
+            bad = "use 2020, 2018-2022, 2020-, -2000 or >2015"
+        elif f == "added" and not any(re.fullmatch(r, value.replace(" ", "")) for r in _ADDED_SPECS):
+            bad = "use 2026-10, >2026-10-15, 2026-01..2026-03 or 14d (days) / 2w (weeks)"
+        elif f == "has" and v not in _HAS_SPECIAL and FIELD_ALIASES.get(v, v) not in FIELD_MAP and v not in extra:
+            bad = "use has:pdf, has:note, has:tag, has:folder or the name of a field (has:doi, has:abstract…)"
+        elif f == "is" and v != "review":
+            bad = "only is:review exists"
+        elif (
+            f == "type"
+            and v not in _type_names(tuple(types.items()))
+            and not any(normalize(n).startswith(v) or v in normalize(n) for n in types.values())
+        ):
+            bad = "types: " + ", ".join(sorted(types.values()))
+        elif f == "folder" and v not in ("none", "unfiled") and folders:
+            if not any(normalize(n) == v or normalize(n).startswith(v + "/") for n in folders):
+                hint = _closest(value, folders)
+                bad = "folder names must match whole (not a part); " + (
+                    "did you mean " + " or ".join(f'"{h}"' for h in hint) + "?" if hint else "see list_collections"
+                )
+        elif f in ("tag", "tags") and v != "none" and ctx.get("tag_names"):
+            if not any(normalize(t) == v for t in ctx["tag_names"]):
+                hint = _closest(value, ctx["tag_names"])
+                bad = "no such tag" + (f"; did you mean {' or '.join(hint)}?" if hint else "")
+        if bad:
+            out.append(f"{f}:{value} matches nothing: {bad}" + ("" if bad.endswith("?") else "."))
+    return out
 
 
 _hay_cache: dict[tuple, str] = {}
@@ -129,9 +225,6 @@ def _year_matches(value, spec: str) -> bool:
         op, v = r.group(1), int(r.group(2))
         return {">": y > v, "<": y < v, ">=": y >= v, "<=": y <= v}[op]
     return spec.isdigit() and y == int(spec)
-
-
-_DATE = r"\d{4}(?:-\d{2}(?:-\d{2})?)?"
 
 
 def _added_matches(value, spec: str, now: datetime | None = None) -> bool:
@@ -195,7 +288,11 @@ def _filter_matches(p: dict, field: str, value: str, ctx: dict) -> bool:
         return _year_matches(p.get("year"), value)
     if field == "added":
         return _added_matches(p.get("date_added"), value)
+    if field == "is":
+        return v == "review" and _is_review(p)
     if field == "has":
+        if v in ("note", "notes"):
+            return p["id"] in ctx.get("noted_ids", ())
         if v in ("pdf", "attachment", "file"):
             return bool(p.get("attachments"))
         if v in ("tag", "tags"):
@@ -219,6 +316,8 @@ def search(
     if mode not in MODES:
         mode = "basic"
     ctx = ctx or {}
+    if notes is not None and "noted_ids" not in ctx:
+        ctx = {**ctx, "noted_ids": notes.item_ids()}  # for has:note
     parsed = parse_query(query, ctx.get("field_filters") or ())
     if not parsed:
         return papers, {}
