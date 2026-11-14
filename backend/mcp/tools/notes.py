@@ -19,13 +19,19 @@ from .images import ImageToolsMixin
 class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
     """get_note, write_note, edit_note, undo_note_edit."""
 
-    def get_note(self, note: str, section: str = "", full: bool = False):
+    def get_note(self, note: str, section: str = "", full: bool = False, lines: str = ""):
         path = self._note_path(note)
         got = self.s.note_service.get(path)
         info = got["info"] or {}
-        too_long = not section and not full and len(got["text"]) > NOTE_READ_CHARS
+        ranged = bool(section or lines)
+        too_long = not ranged and not full and len(got["text"]) > NOTE_READ_CHARS
         links = self.s.note_service.links(path)
-        first, last = self._section_lines(info.get("headings") or [], section) if section else (1, None)
+        if section:
+            first, last = self._section_lines(info.get("headings") or [], section)
+        elif lines:
+            first, last = self._line_range(lines)
+        else:
+            first, last = 1, None
 
         def inside(line: int) -> bool:
             return line >= first and (last is None or line <= last)
@@ -37,7 +43,7 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                 for c in links["cited"]
                 if any(l["kind"] == "cite" and l["target"] == c["key"] for l in links["outgoing"])
             ]
-            if section
+            if ranged
             else links["cited"]
         )
         items = self._items()
@@ -46,11 +52,10 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
         for c in links["cited"]:
             p = keys.get(c["key"])
             # Where, not what: the text around a citation is the text this tool returns.
-            cites = [
-                drop_empty({"line": l["line"], "locator": l.get("locator"), "page": l.get("page")})
-                for l in links["outgoing"]
-                if l["kind"] == "cite" and l["target"] == c["key"]
-            ]
+            mine = [l for l in links["outgoing"] if l["kind"] == "cite" and l["target"] == c["key"]]
+            at = sorted({l["line"] for l in mine})
+            pages = sorted({l["page"] for l in mine if l.get("page")})
+            other = sorted({str(l["locator"]) for l in mine if l.get("locator") and not l.get("page")})
             cited.append(
                 drop_empty(
                     {
@@ -62,7 +67,9 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                         if p
                         else None,
                         "not_in_library": None if p else True,
-                        "citations": cites,
+                        "lines": at,
+                        "pages": pages,
+                        "locators": other,
                     }
                 )
             )
@@ -110,7 +117,7 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                 "modified": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime)),
                 "about_paper": self._brief(paper) if paper else info.get("paper"),
                 "outline": self._outline(info.get("headings") or [], got["text"] if too_long else None),
-                "section": section or None,
+                "section": section or (f"lines {first}-{last or 'end'}" if lines else None),
                 "links_to_notes": notes_out,
                 "linked_from": backlinks,
                 "images": [i for i in self._note_images(got["text"], caption_once=True) if inside(i["line"])] or None,
@@ -119,21 +126,31 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
             }
         )
         summary["cited_papers"] = cited  # kept when empty: a missing key reads as "not computed"
+        summary["cited_papers_scope"] = f"{'only that part' if ranged else 'the whole note'}: " + (
+            f"{len(cited)} library papers or keys" if cited else "it cites no papers"
+        )
         if summary.get("images"):
             summary["images_hint"] = "view_image(note=…) shows these images (paths are inside the notes folder)."
         text = got["text"]
         if too_long:
             summary["too_long"] = (
                 f"The note has {len(text)} characters, too many to read at once: its text is not included. "
-                "Read the part you need with section='<heading>' (the outline shows each section's size), "
-                "or give full=true for all of it."
+                "Read the part you need with section='<heading>' (the outline shows each section's size) or "
+                "lines='120-300', or give full=true for all of it. cited_papers and images below cover the "
+                "whole note."
             )
             return summary
-        if section:
+        if ranged:
             text = "\n".join(text.replace("\r\n", "\n").split("\n")[first - 1 : last])
         if len(text) > MAX_NOTE_CHARS:
             text = text[:MAX_NOTE_CHARS] + f"\n\n[… note cut at {MAX_NOTE_CHARS} characters of {len(got['text'])}]"
-        what = f"Section '{section}' of {path} (lines {first}-{last or 'end'})" if section else f"Text of {path}"
+        what = (
+            f"Section '{section}' of {path} (lines {first}-{last or 'end'})"
+            if section
+            else f"Lines {first}-{last or 'end'} of {path}"
+            if lines
+            else f"Text of {path}"
+        )
         return Parts([summary, f"{what}:\n\n{text}"])
 
     @staticmethod
@@ -157,6 +174,18 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
             size = sum(len(l) + 1 for l in lines[h["line"] - 1 : end])
             out.append(f"{'#' * h['level']} {h['text']} (lines {h['line']}-{end}, {size} characters)")
         return out
+
+    @staticmethod
+    def _line_range(spec: str) -> tuple[int, int | None]:
+        """ "120-300" → (120, 300); "120-" → (120, None); "120" → (120, 120)."""
+        m = re.fullmatch(r"\s*(\d+)\s*(?:(-|–)\s*(\d*))?\s*", str(spec))
+        if not m or int(m.group(1)) < 1:
+            raise ToolError(f"lines='{spec}' is not a line range: write e.g. '120-300' (line numbers from 1).")
+        first = int(m.group(1))
+        last = (int(m.group(3)) if m.group(3) else None) if m.group(2) else first
+        if last is not None and last < first:
+            raise ToolError(f"lines='{spec}': the end is before the start.")
+        return first, last
 
     @staticmethod
     def _section_lines(headings: list[dict], section: str) -> tuple[int, int | None]:

@@ -14,6 +14,8 @@ import pytest
 from backend.mcp import build_server
 from backend.mcp.protocol import PROTOCOL_VERSIONS, Server, Tool, ToolError, serve_stdio
 from backend.mcp.tools.common import parse_pages
+from backend.mcp.tools.papers import PaperToolsMixin
+from backend.pdf import outline as pdfoutline
 from backend.pdf import png as pdfpng
 from backend.pdf import regions as pdfregions
 from backend.pdf import render as pdfrender
@@ -326,7 +328,7 @@ def test_get_note(lib):
     assert "[@smith2021, p. 2]" in text
     cited = {c["key"]: c for c in summary["cited_papers"]}
     assert cited["smith2021"]["paper"]["title"] == "Open quantum dynamics"
-    assert cited["smith2021"]["citations"][0]["page"] == 2
+    assert cited["smith2021"]["pages"] == [2] and cited["smith2021"]["lines"]
     assert cited["missing2000"]["not_in_library"] is True
     assert summary["links_to_notes"][0]["resolves_to"] == "other.md"
     assert summary["linked_from"][0]["path"] == "other.md"
@@ -1430,12 +1432,12 @@ def test_a_long_note_is_read_by_section(lib, svc):
     r = json.loads(texts[0])
     assert "too many to read at once" in r["too_long"]
     assert re.fullmatch(r"## Part A \(lines \d+-\d+, \d+ characters\)", r["outline"][1])
-    assert all(
-        "context" not in c for k in r["cited_papers"] for c in k["citations"]
-    )  # the note's own lines are not repeated
+    assert all("citations" not in k and k["lines"] for k in r["cited_papers"])  # where, not the text around it
+    assert "the whole note" in r["cited_papers_scope"] and "whole note" in r["too_long"]
     err, texts = call(server, "get_note", note="big", section="Part A")
     assert not err and "Line 59" in texts[1] and "Part B" not in texts[1]
-    assert json.loads(texts[0])["cited_papers"][0]["citations"][0]["line"]
+    assert json.loads(texts[0])["cited_papers"][0]["lines"]
+    assert "only that part" in json.loads(texts[0])["cited_papers_scope"]
     err, texts = call(server, "get_note", note="big", full=True)
     assert not err and "Part B" in texts[1]
 
@@ -1563,7 +1565,7 @@ def test_get_note_is_lean_and_groups_repeated_links(lib, svc):
     links = meta["links_to_notes"]
     assert not err and len(links) == 1 and len(links[0]["lines"]) == 2  # one entry per target, with every line
     assert [("caption" in i["gallery"]) for i in meta["images"]] == [True, False, False]
-    assert all("context" not in c for k in meta["cited_papers"] for c in k["citations"])
+    assert all("citations" not in k for k in meta["cited_papers"])
 
 
 def test_list_collections_gives_every_note_an_update_time(lib):
@@ -1591,3 +1593,149 @@ def test_view_image_continues_with_an_offset(lib, svc):
     err, content = _blocks(server, note="gal")
     metas = [json.loads(c["text"]) for c in content if c["type"] == "text"]
     assert not err and metas[0]["gallery"].get("caption") == "Shared caption" and "caption" not in metas[1]["gallery"]
+
+
+def test_compact_search_keeps_the_sorted_date_and_a_zero_result_says_which_part_rules_it_out(lib):
+    server = lib["server"]
+    r = call_json(
+        server, "search_library", query='folder:"Physics/Transport"', scope="items", compact=True, sort="added"
+    )
+    assert all("[added 20" in i for i in r["items"])
+    assert not any("[added" in i for i in call_json(server, "search_library", query="smith", compact=True)["items"])
+    r = call_json(server, "search_library", query='tag:quantum year:1900 "open quantum"', scope="items")
+    assert r["items_total"] == 0
+    why = next(w for w in r["warnings"] if "Each alone matches" in w)
+    assert "tag:quantum → 1" in why and "year:1900 → 0" in why and '"open quantum" → 1' in why
+    assert "warnings" not in call_json(server, "search_library", query="smith", scope="items")  # no noise otherwise
+
+
+def test_get_note_reads_a_range_of_lines(lib, svc):
+    server = lib["server"]
+    text = "# Ranged\n\n" + "".join(f"Line {i} cites [@doe2019].\n" for i in range(1, 41))
+    svc.note_service.create(path="ranged.md", title="Ranged", text=text)
+    saved = svc.note_service.get("ranged.md")["text"].split("\n")
+    at = lambda i: saved.index(f"Line {i} cites [@doe2019].") + 1  # the line number in the saved note
+    err, texts = call(server, "get_note", note="ranged", lines=f"{at(5)}-{at(8)}")
+    assert not err and f"Lines {at(5)}-{at(8)} of ranged.md" in texts[1]
+    assert [l for l in texts[1].splitlines() if l.startswith("Line ")] == [
+        f"Line {i} cites [@doe2019]." for i in range(5, 9)
+    ]
+    meta = json.loads(texts[0])
+    assert meta["section"] == f"lines {at(5)}-{at(8)}" and "only that part" in meta["cited_papers_scope"]
+    assert meta["cited_papers"][0]["lines"] == [at(i) for i in range(5, 9)]
+    err, texts = call(server, "get_note", note="ranged", lines=f"{at(30)}-")
+    assert not err and "Line 40 cites" in texts[1] and "Line 29 " not in texts[1]
+    for bad in ("abc", "9-3", "0-4"):
+        err, texts = call(server, "get_note", note="ranged", lines=bad)
+        assert err and "lines=" in texts[0]
+
+
+def test_get_paper_takes_the_abstract_from_the_pdf_when_none_is_stored(lib, svc):
+    stream = (
+        _text(72, 740, "A Title of a Paper", 16)
+        + _text(72, 700, "Abstract")
+        + "".join(
+            _text(72, 686 - 14 * i, f"We study the thing in part {i} and find that it is quite remarkable indeed.")
+            for i in range(4)
+        )
+        + _text(72, 600, "Keywords: quantum, thing")
+        + _text(72, 580, "1 Introduction")
+    )
+    make_stream_pdf(svc.config.pdf_dir / "abs.pdf", [stream])
+    svc.papers.add_attachment(
+        svc.papers.create({"title": "Printed", "citation_key": "printed2020"})["id"], "PDF", "abs.pdf"
+    )
+    server = lib["server"]
+    r = call_json(server, "get_paper", papers=["printed2020", "doe2019"])
+    rows = {x["key"]: x for x in r["papers"]}
+    assert "part 3 and find" in rows["printed2020"]["abstract"] and "Keywords" not in rows["printed2020"]["abstract"]
+    assert "approximate" in rows["printed2020"]["abstract_from_pdf"] and "no_abstract" not in rows["printed2020"]
+    assert "abstract" not in rows["doe2019"] and rows["doe2019"]["no_abstract"] == "none stored"  # no PDF either
+    one = call_json(server, "get_paper", paper="printed2020")
+    assert "abstract_from_pdf" in one and "no_abstract" not in one
+
+
+def test_get_paper_lists_each_citing_note_once_and_cuts_a_long_list(lib, svc, monkeypatch):
+    for i in range(3):
+        svc.note_service.create(
+            path=f"cites{i}.md", title=f"Cites {i}", text=f"# C{i}\n\nOne [@doe2019].\n\nTwo [@doe2019, p. 2].\n"
+        )
+    server = lib["server"]
+    r = call_json(server, "get_paper", paper="doe2019")
+    rows = {c["path"]: c for c in r["cited_in_notes"]}
+    assert len(rows["cites0.md"]["lines"]) == 2 and len(r["cited_in_notes"]) == 4
+    assert "cited_in_notes_total" not in r
+    monkeypatch.setattr(PaperToolsMixin, "MAX_CITING_NOTES", 2)
+    r = call_json(server, "get_paper", paper="doe2019")
+    assert len(r["cited_in_notes"]) == 2 and r["cited_in_notes_total"] == 4
+
+
+def test_search_in_paper_prefers_pages_with_the_words_together_and_names_the_section(svc, tmp_path):
+    from pypdf import PdfReader, PdfWriter
+
+    apart = _text(72, 740, "The bond is mentioned here.") + "".join(
+        _text(72, 700 - 14 * i, "Filler text that goes on and on about nothing in particular.") for i in range(12)
+    )
+    apart += _text(72, 400, "Later the dimension appears.")
+    together = _text(72, 720, "We use a bond dimension of 64 for the main numerics.")
+    make_stream_pdf(tmp_path / "base.pdf", [apart, together, _text(72, 720, "Nothing relevant here.")])
+    w = PdfWriter()
+    w.append(PdfReader(str(tmp_path / "base.pdf")))
+    w.add_outline_item("Methods", 0)
+    w.add_outline_item("Numerics", 1)
+    with open(svc.config.pdf_dir / "near.pdf", "wb") as f:
+        w.write(f)
+    _attach_pdf(svc, "near2026", svc.config.pdf_dir / "near.pdf")
+    r = call_json(build_server(svc), "search_in_paper", paper="near2026", query="bond dimension")
+    first, second = r["results"][:2]
+    assert (first["page"], first["section"]) == (2, "Numerics") and "together" in first
+    assert second["page"] == 1 and "together" not in second and second["section"] == "Methods"
+
+
+@needs_pdfium
+def test_an_equation_crop_stops_before_the_sentence_that_follows_it(tmp_path):
+    eq = "= + = + = +"
+    pdf = make_stream_pdf(
+        tmp_path / "eq.pdf",
+        [
+            _text(72, 720, "Body text of the paragraph that introduces the model and its parameters.")
+            + _text(200, 650, eq)
+            + _text(520, 650, "(3)")
+            + _text(72, 634, "Here = + = + = + = + the is")
+        ],
+    )
+    (hit,) = pdfregions.equation_regions(pdf, 1)
+    assert hit["number"] == "3" and hit["rect"][3] < 0.03  # the equation's own line, not the sentence below it
+
+
+def test_outline_text_headings_stop_at_the_references_and_captions_continue():
+    pages = [
+        "Introduction.-We study a chain.",
+        "Model.-We consider spins.\nFigure 1: The phase diagram of the model, with the\nordered phase in blue and the\ndisordered phase in red.\n\nBody text.",
+        "References\nN. Gedik, Observation of Floquet-Bloch states\nA. Model of something, in a journal",
+    ]
+    found = [h["title"] for h in pdfoutline.text_headings(pages)]
+    assert found == ["Introduction", "Model"]
+    cap = pdfoutline.captions(pages)[0]
+    assert cap["text"].endswith("disordered phase in red.") and cap["page"] == 2
+    letter = ["A. Model", "N. Gedik, Observation of Floquet-Bloch states"]
+    assert [h["title"] for h in pdfoutline.text_headings(letter)] == ["A. Model"]
+
+
+@needs_pdfium
+def test_view_page_says_why_a_caption_has_no_region(lib, svc):
+    stream = _text(72, 700, "Body text of the introduction, describing the model in words.") + _text(
+        100, 385, "Figure 1: A vector drawing that has no objects."
+    )
+    path = make_stream_pdf(svc.config.pdf_dir / "v.pdf", [stream])
+    _attach_pdf(svc, "vec2026", path)
+    reply = lib["server"].handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "view_page", "arguments": {"paper": "vec2026", "page": 1}},
+        }
+    )
+    info = json.loads(reply["result"]["content"][1]["text"])
+    assert info["figures"][0]["label"] == "Figure 1" and "pass rect" in info["figures"][0]["no_region"]
