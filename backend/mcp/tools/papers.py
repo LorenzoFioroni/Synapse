@@ -29,8 +29,37 @@ _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f]")  # pdfium marks a line-end hyphen
 class PaperToolsMixin(ToolsBase):
     """get_paper, get_paper_outline, search_in_paper, read_paper, view_page, snapshot."""
 
-    def get_paper(self, paper: str):
+    MAX_PAPERS_AT_ONCE = 20
+
+    def _paper_summary(self, p: dict) -> dict:
+        """What get_paper gives for each item asked for in a batch: metadata and the whole abstract."""
+        return drop_empty(
+            {
+                **self._brief(p),
+                "abstract": " ".join(str(p.get("abstract") or "").split()) or None,
+                "no_abstract": None if p.get("abstract") else "none stored; read_paper page 1 has the PDF's own",
+                "tags": p.get("tags"),
+            }
+        )
+
+    def get_paper(self, paper: str = "", papers: list | None = None):
         items = self._items()
+        if papers:
+            rows = []
+            for ref in papers[: self.MAX_PAPERS_AT_ONCE]:
+                try:
+                    rows.append(self._paper_summary(self._paper(ref, items)))
+                except ToolError as e:
+                    rows.append({"ref": str(ref), "error": str(e)})
+            return drop_empty(
+                {
+                    "papers": rows,
+                    "not_read": [str(r) for r in papers[self.MAX_PAPERS_AT_ONCE :]] or None,
+                    "hint": "A summary per item; get_paper(paper=…) adds notes, references and plugin fields.",
+                }
+            )
+        if not paper:
+            raise ToolError("Give paper (one citation key, id, DOI or arXiv id) or papers (a list of them).")
         p = self._paper(paper, items)
         skip = {"date_modified", "citation_key", "item_type", "doi"}
         meta = {f.key: p.get(f.key) for f in FIELDS if f.key not in skip}
@@ -54,6 +83,8 @@ class PaperToolsMixin(ToolsBase):
                 ],
             }
         )
+        if not p.get("abstract"):
+            out["no_abstract"] = "none stored; read_paper page 1 has the PDF's own"
         note_text = None
         if key:
             pnotes = self.s.notes.paper_notes(key)
@@ -66,20 +97,25 @@ class PaperToolsMixin(ToolsBase):
                 except Exception:
                     note_text = None
             mine = {n["path"] for n in pnotes}
-            out["cited_in_notes"] = [
-                drop_empty(
-                    {
-                        "path": c["path"],
-                        "title": c.get("source_title"),
-                        "link": self._note_link(c["path"], c.get("source_title")),
-                        "line": c["line"],
-                        "locator": c.get("locator"),
-                        "context": c.get("context"),
-                    }
+            seen: set = set()
+            cited_in = []
+            for c in self.s.notes.citing(key):
+                if c["path"] in mine or (c["path"], c["line"]) in seen:  # a line citing it twice shows once
+                    continue
+                seen.add((c["path"], c["line"]))
+                cited_in.append(
+                    drop_empty(
+                        {
+                            "path": c["path"],
+                            "title": c.get("source_title"),
+                            "link": self._note_link(c["path"], c.get("source_title")),
+                            "line": c["line"],
+                            "locator": c.get("locator"),
+                            "context": c.get("context"),
+                        }
+                    )
                 )
-                for c in self.s.notes.citing(key)
-                if c["path"] not in mine
-            ]
+            out["cited_in_notes"] = cited_in
         plugin_fields = self.s.plugins.fields.labelled(p)  # values plugins attach (citation counts …)
         if plugin_fields:
             out["plugin_fields"] = plugin_fields
@@ -116,8 +152,13 @@ class PaperToolsMixin(ToolsBase):
             entries, matched = pdfoutline.contents_page_outline(pages)
             source = "the printed table of contents"
         out: dict = {"paper": self._label(p), "title": p.get("title"), "pages_total": len(pages)}
+        completed = False
+        if len(entries) < pdfoutline.SPARSE:  # a letter: its bookmarks miss the run-in section headings
+            entries, completed = pdfoutline.with_text_headings(entries, pages)
         if entries:
-            out["outline_from"] = source
+            out["outline_from"] = source + (
+                " plus headings recognised in the page text (approximate)" if completed else ""
+            )
             out["outline"] = [f"{'  ' * (e['level'] - 1)}{e['title']} (p. {e['page']})" for e in entries]
             if not matched:
                 out["warning"] = (
@@ -303,10 +344,12 @@ class PaperToolsMixin(ToolsBase):
             hit = find(pg)
             if hit:
                 return pg, hit
+        found = [] if kind == "equation" else [f"{c['label']} (p. {c['page']})" for c in pdfoutline.captions(texts)]
         raise ToolError(
             f"{name} was not found in the PDF. Equations are found by a number in parentheses at "
-            f"the end of their line; figures and tables by their caption. Use view_page on the "
-            f"page and pass rect=[x, y, w, h]."
+            f"the end of their line; figures and tables by their caption"
+            + (f" (captions found: {', '.join(found[:20])}{'…' if len(found) > 20 else ''})" if found else "")
+            + ". Use view_page on the page and pass rect=[x, y, w, h]."
         )
 
     def snapshot(

@@ -58,6 +58,37 @@ def found_on(page_text: str, quote: str) -> bool:
     return len(q) >= HEAD and (q[:HEAD] in t or q[-HEAD:] in t)
 
 
+def changed_words(page_text: str, quote: str) -> list[str]:
+    """Words of ``quote`` that differ from the page's wording, when the quote's start or end is on the
+    page (the viewer finds a quote by those) but the words between are not all the page's. [] if the
+    quote is on the page or nowhere near it."""
+    q = normalise(quote)
+    t = normalise(page_text)
+    if len(q) < HEAD or q in t:
+        return []
+    if q[:HEAD] in t:
+        i = t.index(q[:HEAD])
+        seg = t[i : i + len(q) + 20]
+    elif q[-HEAD:] in t:
+        j = t.index(q[-HEAD:]) + HEAD
+        seg = t[max(j - len(q) - 20, 0) : j]
+    else:
+        return []
+    words = quote.split()
+    spans, pos = [], 0
+    for w in words:  # each word's range in the normalised quote
+        n = len(normalise(w))
+        spans.append((pos, pos + n))
+        pos += n
+    covered = [False] * len(q)
+    for a in difflib.SequenceMatcher(None, q, seg, autojunk=False).get_matching_blocks():
+        for k in range(a.a, a.a + a.size):
+            covered[k] = True
+    # a formula's symbols often differ between the PDF's text and a quote: only words of letters count
+    bad = [w for w, (a, b) in zip(words, spans) if b > a and re.search(r"[A-Za-z]{3}", w) and not all(covered[a:b])]
+    return [re.sub(r"^\W+|\W+$", "", w) for w in bad][:6]
+
+
 def slug_heading(text: str) -> str:
     """As render.js slugHeading."""
     s = "".join(c for c in str(text).lower() if c.isalnum() or c.isspace() or c == "-")
@@ -219,7 +250,14 @@ class NoteChecker:
                     pages = self.t._pages(self.t._pdfs(p)[0])
                 except Exception:
                     continue
-                if c.page > len(pages) or found_on(pages[c.page - 1], quote):
+                if c.page > len(pages):
+                    continue
+                if found_on(pages[c.page - 1], quote):
+                    if diff := changed_words(pages[c.page - 1], quote):  # the start or end matches, the rest drifted
+                        errors.append(
+                            f"{where}: the quote does not match page {c.page} word for word; check "
+                            f"{', '.join(repr(w) for w in diff)} against the PDF's text (read_paper).{why}"
+                        )
                     continue
                 elsewhere = [i for i, t in enumerate(pages, 1) if found_on(t, quote)]
                 if elsewhere:

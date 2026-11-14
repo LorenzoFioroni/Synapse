@@ -233,7 +233,7 @@ def test_protocol_errors(lib):
     assert r["error"]["code"] == -32602
     err, texts = call(server, "get_paper", paper="smith2021", bogus=1)
     assert err and "Unknown argument" in texts[0]
-    err, texts = call(server, "get_paper")
+    err, texts = call(server, "get_paper_outline")
     assert err and "Missing required" in texts[0]
     err, texts = call(server, "get_references", paper="smith2021", direction="sideways")
     assert err and "one of" in texts[0]
@@ -302,9 +302,11 @@ def test_search_library(lib):
     assert {i["key"] for i in r["items"]} == {"smith2021", "doe2019"}
     r = call_json(server, "search_library", query="earlier work", scope="notes")
     assert [n["path"] for n in r["notes"]] == ["projects/crispr.md"]
-    # through the notes: the paper note says "summary"
-    r = call_json(server, "search_library", query="summary", scope="items", fulltext=False)
+    # through the notes: the paper note says "summary" (only when notes are searched too)
+    r = call_json(server, "search_library", query="summary", scope="all", fulltext=False)
     assert [i["key"] for i in r["items"]] == ["smith2021"]
+    r = call_json(server, "search_library", query="summary", scope="items", fulltext=False)
+    assert r["items"] == []
 
 
 def test_list_collections(lib):
@@ -380,6 +382,32 @@ def test_get_paper_outline_from_bookmarks(svc, tmp_path):
     assert r["outline_from"] == "the PDF's bookmarks" and r["pages_total"] == 8
     assert r["outline"] == ["Introduction (p. 1)", "  Setup (p. 3)", "Results (p. 6)"]
     assert "warning" not in r and "figures_and_tables" not in r
+
+
+def test_get_paper_outline_of_a_letter_adds_run_in_headings(svc, tmp_path):
+    from pypdf import PdfReader, PdfWriter
+
+    texts = [
+        "Abstract. We study a thing.",
+        "Introduction.-Quantum systems are interesting and we study them here.",
+        "Model.-We consider a chain of spins. II. MODEL AND METHODS",
+        "Conclusions.-We conclude that it works.",
+        "References",
+    ]
+    base = make_pages_pdf(tmp_path / "letter.pdf", texts)
+    w = PdfWriter()
+    w.append(PdfReader(str(base)))
+    w.add_outline_item("Abstract", 0)
+    w.add_outline_item("References", 4)
+    with open(svc.config.pdf_dir / "letter.pdf", "wb") as f:
+        w.write(f)
+    _attach_pdf(svc, "letter2026", svc.config.pdf_dir / "letter.pdf")
+    r = call_json(build_server(svc), "get_paper_outline", paper="letter2026")
+    assert "approximate" in r["outline_from"] and "the PDF's bookmarks" in r["outline_from"]
+    assert r["outline"][:1] == ["Abstract (p. 1)"] and "Introduction (p. 2)" in r["outline"]
+    assert (
+        "Model (p. 3)" in r["outline"] and "Conclusions (p. 4)" in r["outline"] and "References (p. 5)" in r["outline"]
+    )
 
 
 def test_get_paper_outline_from_a_printed_contents_page(svc):
@@ -654,7 +682,9 @@ def test_search_library_paging_and_dates(lib):
     r = call_json(server, "search_library", query="has:abstract OR author:doe", scope="items")
     assert "OR and AND are not operators" in r["warnings"][0]
     r = call_json(server, "search_library", query="sort:added", scope="items")
-    assert r["items"] == [] and "sort:" in r["warnings"][0] and "Filters:" in r["warnings"][0]
+    assert r["items_total"] == 4 and "taken as the sort argument" in r["warnings"][0]  # sort is an argument
+    r = call_json(server, "search_library", query="venue:nature", scope="items")
+    assert "journal:" in r["warnings"][0] and "Filters:" in r["warnings"][0]
     r = call_json(server, "search_library", query="added:7d", scope="items", sort="added")
     assert r["items_total"] == 4 and "warnings" not in r and r["items"][0]["added"]
     assert call_json(server, "search_library", query="added:<2020", scope="items")["items"] == []
@@ -846,6 +876,11 @@ def test_write_note_checks_quotes(lib, svc):
     assert "on page 2, not 3" in e
     e = write_error(server, "> Words the paper never says anywhere at all [@smith2021, p. 2]")
     assert "not found on page 2" in e
+    # the start is the page's but a word in the middle is not: the viewer would still find it, a reader would be misled
+    e = write_error(
+        server, "> We derive the Lindblad master equation for the reduced classical matrix [@smith2021, p. 2]"
+    )
+    assert "word for word" in e and "'classical'" in e
     e = write_error(server, "> We derive the Lindblad master equation [@smith2021]")
     assert "needs a page" in e
     e = write_error(server, "> [!note] Summary\n> My own summary of the derivation [@smith2021, p. 2]")
@@ -1400,7 +1435,7 @@ def test_a_long_note_is_read_by_section(lib, svc):
     )  # the note's own lines are not repeated
     err, texts = call(server, "get_note", note="big", section="Part A")
     assert not err and "Line 59" in texts[1] and "Part B" not in texts[1]
-    assert json.loads(texts[0])["cited_papers"][0]["citations"][0]["context"]
+    assert json.loads(texts[0])["cited_papers"][0]["citations"][0]["line"]
     err, texts = call(server, "get_note", note="big", full=True)
     assert not err and "Part B" in texts[1]
 
@@ -1465,6 +1500,70 @@ def test_citation_overview_groups_one_work_and_flags_one_you_have(svc):
     assert len(missing) == 1 and missing[0]["title"] == book["title"]  # the two ids are one entry; "I and J" is dropped
     assert missing[0]["cited_by_count"] == 3 and missing[0]["same_title_in_library"] == "breuer2007theory"
     assert missing[0]["also_listed_as"][0]["doi"] in ("10.2/x", "10.2/y")
+
+
+def test_citation_overview_merges_subtitles_and_puts_doubtful_matches_last(svc):
+    papers = [svc.papers.create({"title": f"P{i}", "citation_key": f"p{i}2020", "doi": f"10.1/{i}"}) for i in range(6)]
+    short = {"title": "Exploring the Quantum", "doi": "10.3/q"}
+    long = {"title": "Exploring the Quantum: Atoms, Cavities and Photons", "doi": "10.3/r"}
+    odd = {"title": "Influence of cultivation temperature on fungal strains"}  # no id: only reference text
+    for i, p in enumerate(papers):
+        refs = [odd, short if i < 5 else long]
+        if i < 2:
+            refs.append({"title": "Efficient simulation of many-body systems", "doi": "10.3/e"})
+        svc.citations.store.save(p["id"], "openalex", refs, doi=f"10.1/{i}")
+    rows = call_json(build_server(svc), "get_citation_graph")["most_cited_not_in_library"]
+    titles = [r["title"] for r in rows]
+    assert (
+        titles[0] == "Exploring the Quantum" and rows[0]["cited_by_count"] == 6
+    )  # the subtitled form is the same work
+    assert titles[1].startswith("Efficient") and "check" not in rows[1]
+    assert titles[-1].startswith("Influence") and "may be a wrong match" in rows[-1]["check"]
+    assert (
+        rows[-1]["cited_by_count"] == 6
+        and len(rows[-1]["also_listed_as"]) == 2
+        and rows[-1]["also_listed_as_count"] == 5
+    )
+
+
+def test_get_paper_for_several_items_gives_whole_abstracts(lib, svc):
+    server = lib["server"]
+    long = "word " * 200
+    svc.papers.create({"title": "Long abstract", "citation_key": "long2022", "abstract": long})
+    svc.papers.create({"title": "No abstract", "citation_key": "none2022"})
+    r = call_json(server, "get_paper", papers=["long2022", "none2022", "nokey9999", "smith2021"])
+    rows = {x.get("key") or x["ref"]: x for x in r["papers"]}
+    assert len(rows["long2022"]["abstract"]) > 900 and "no_abstract" in rows["none2022"]
+    assert "No item" in rows["nokey9999"]["error"] and "abstract" in rows["smith2021"]
+    assert "paper_note" not in rows["smith2021"]
+    err, texts = call(server, "get_paper")
+    assert err and "papers" in texts[0]
+    assert "no_abstract" in call_json(server, "get_paper", paper="none2022")
+
+
+def test_compact_search_and_notes_only_inventory(lib):
+    server = lib["server"]
+    r = call_json(server, "search_library", query='folder:"Physics/Transport"', scope="items", compact=True)
+    assert all(isinstance(i, str) for i in r["items"]) and any(i.startswith("smith2021 (") for i in r["items"])
+    assert r["items_total"] == len(r["items"]) and "match" not in json.dumps(r["items"])
+    inv = call_json(server, "list_collections", include_notes=True)
+    assert inv["note_list"] and "folders" not in inv and "tags" not in inv and "hint" in inv
+    assert "folders" in call_json(server, "list_collections")
+
+
+def test_get_note_is_lean_and_groups_repeated_links(lib, svc):
+    server = lib["server"]
+    small = pdfpng.png_encode(bytes([200, 30, 30]) * (40 * 20), 40, 20)
+    paths = [svc.note_service.add_image(f"g{i}.png", small)["path"] for i in range(3)]
+    gallery = "```gallery\n" + "\n".join(f"![]({p}) panel" for p in paths) + "\n\nShared caption\n```\n"
+    text = "# Lean\n\nSee [[crispr]] and again [[crispr]] with [@smith2021, p. 2].\n\n" + gallery
+    svc.note_service.create(path="lean.md", title="Lean", text=text)
+    err, texts = call(server, "get_note", note="lean")
+    meta = json.loads(texts[0])
+    links = meta["links_to_notes"]
+    assert not err and len(links) == 1 and len(links[0]["lines"]) == 2  # one entry per target, with every line
+    assert [("caption" in i["gallery"]) for i in meta["images"]] == [True, False, False]
+    assert all("context" not in c for k in meta["cited_papers"] for c in k["citations"])
 
 
 def test_list_collections_gives_every_note_an_update_time(lib):

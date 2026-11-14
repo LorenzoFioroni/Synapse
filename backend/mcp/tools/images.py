@@ -20,15 +20,17 @@ IMAGE_MAX_BYTES = 3_500_000  # ~4.7 MB as base64, under the usual 5 MB per image
 class ImageToolsMixin(ToolsBase):
     """view_image (images of the notes folder)."""
 
-    def _note_images(self, text: str) -> list[dict]:
+    def _note_images(self, text: str, caption_once: bool = False) -> list[dict]:
         """The images a note shows, in order: {line, path (as written), alt, caption}, and for a
-        panel of a gallery its label and the gallery's line and caption."""
+        panel of a gallery its label and the gallery's line and caption (``caption_once``: only on
+        the gallery's first panel, for overviews)."""
         lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
         panels: dict[tuple[int, str], list[tuple[dict, dict]]] = {}
         for g in gallery.galleries(text):
             for p in g["panels"]:
                 panels.setdefault((p["line"], p["src"]), []).append((p, g))
         out = []
+        said: set[int] = set()
         for l in parser.parse(text).links:
             if l.kind != "image":
                 continue
@@ -38,8 +40,13 @@ class ImageToolsMixin(ToolsBase):
                 p, g = panels[(l.line, l.target)].pop(0)
                 caption = p["caption"] or None
                 in_gallery = drop_empty(
-                    {"line": g["line"], "panel": f"({p['label']})", "caption": g["caption"] or None}
+                    {
+                        "line": g["line"],
+                        "panel": f"({p['label']})",
+                        "caption": None if caption_once and g["line"] in said else g["caption"] or None,
+                    }
                 )
+                said.add(g["line"])
             else:
                 nxt = lines[l.line] if l.line < len(lines) else ""  # the line below (l.line is 1-based)
                 m = re.fullmatch(r"\s*\*(.+)\*\s*", nxt)

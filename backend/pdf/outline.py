@@ -16,8 +16,12 @@ from .regions import CAPTION
 CONTENTS_SEARCH_PAGES = 12  # a table of contents sits in the front matter
 CONTENTS_MAX_PAGES = 4
 MIN_ENTRIES = 4
+SPARSE = 6  # an outline with fewer entries than this (a letter's bookmarks) is completed from the page text
 _CONTENTS = re.compile(r"^\W*(?:table\s+of\s+)?contents\W*$", re.I)
 _ENTRY = re.compile(r"^(?P<title>\S.*?\S)(?:\s*[.·…]{2,}\s*|\s+)(?P<page>\d{1,4})$")
+_RUN_IN = re.compile(r"^([A-Z][\w'’,:()/\- ]{2,60}?)\.\s?(?:[—–]|--?)\s?\S")  # "Introduction.—We study …"
+_ROMAN_HEAD = re.compile(r"^[IVX]{1,5}\.\s+[A-Z][A-Z0-9 ,:()/\-]{3,70}$")  # "II. MODEL AND METHODS"
+_NUMBERED_HEAD = re.compile(r"^(?:\d{1,2}(?:\.\d{1,2}){0,2}|[A-Z])\.?\s+([A-Z][A-Za-z0-9 ,:()/\-]{3,70})$")
 _NUMBER = re.compile(r"^(?P<num>[IVX]+|[A-Z]|\d+(?:\.\d+)*)\.?\s+(?P<rest>\S.*)$")
 
 
@@ -152,3 +156,39 @@ def captions(pages: list[str]) -> list[dict]:
                 seen.add(label)
                 out.append({"label": label, "page": n, "text": " ".join(line.split())[:100]})
     return out
+
+
+def text_headings(pages: list[str]) -> list[dict]:
+    """Headings found in the page text, for papers whose bookmarks do not show them (letters, with
+    "Introduction.—" run into the paragraph): [{"level", "title", "page"}]. Approximate: a line that looks
+    like a heading (a run-in title before a dash, "II. MODEL", "3 Results") and is short."""
+    out, seen = [], set()
+    for n, text in enumerate(pages, 1):
+        for line in text.splitlines():
+            line = " ".join(line.split())
+            m = _RUN_IN.match(line)
+            title, level = (m.group(1), 1) if m else (None, 1)
+            if title is None and (_ROMAN_HEAD.match(line) or (_NUMBERED_HEAD.match(line) and not line.endswith("."))):
+                title = line
+                num = re.match(r"^(\d+(?:\.\d+)*)", line)
+                level = num.group(1).count(".") + 1 if num else 1
+            if not title or len(title.split()) > 9 or sum(c.isdigit() for c in title) > len(title) // 4:
+                continue
+            key = _fold(title)
+            if key not in seen:
+                seen.add(key)
+                out.append({"level": level, "title": title, "page": n})
+    return out
+
+
+def with_text_headings(entries: list[dict], pages: list[str]) -> tuple[list[dict], bool]:
+    """``entries`` (bookmarks or contents) completed with headings from the page text when there are few of
+    them. Returns (entries, completed)."""
+    if len(entries) >= SPARSE:
+        return entries, False
+    found = text_headings(pages)
+    known = {_fold(e["title"]) for e in entries}
+    extra = [h for h in found if _fold(h["title"]) not in known]
+    if len(found) < 2 or not extra:
+        return entries, False
+    return sorted(entries + extra, key=lambda e: e["page"]), True

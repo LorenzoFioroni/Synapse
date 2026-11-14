@@ -318,11 +318,11 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 
 | Tool | What it gives |
 | --- | --- |
-| `search_library` | items and notes matching a query (same syntax as the search box: `folder:`, `tag:`, `year:`, `added:`…), with snippets; pages with `offset` |
+| `search_library` | items and notes matching a query (same syntax as the search box: `folder:`, `tag:`, `year:`, `added:`…), with snippets; pages with `offset`, `compact` lists many items in one line each |
 | `list_collections` | folders, tags, smart folders and notes folders with counts |
 | `get_note` | a note's text, the papers it cites (with line and page), its links and backlinks, the images it shows |
 | `view_image` | the images of a note (pasted pictures, snapshots — with the page and region they came from), or one by its path; large ones are scaled down when Pillow is installed |
-| `get_paper` | metadata, abstract, PDFs and page counts, your paper note, notes citing it, reference-list summary |
+| `get_paper` | metadata, abstract, PDFs and page counts, your paper note, notes citing it, reference-list summary; `papers=[…]` compares several with whole abstracts |
 | `get_paper_outline` | a PDF's sections with their PDF pages (bookmarks or printed contents page) and its figure and table captions |
 | `search_in_paper` | the pages of a PDF containing some words, with snippets |
 | `read_paper` | the text of some PDF pages (up to 10 per call), marked by page |
