@@ -74,6 +74,10 @@ class NoteTextMatcher:
                 for title, text in items:
                     self._entries.append((pid, title, text, normalize(text)))
 
+    def item_ids(self) -> set[str]:
+        """Items a note is about or cites."""
+        return {e[0] for e in self._entries}
+
     def match(self, term: str) -> dict[str, str]:
         import html
         import re

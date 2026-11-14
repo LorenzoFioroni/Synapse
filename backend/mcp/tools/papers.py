@@ -23,6 +23,8 @@ from .common import (
     parse_pages,
 )
 
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f]")  # pdfium marks a line-end hyphen with U+0002
+
 
 class PaperToolsMixin(ToolsBase):
     """get_paper, get_paper_outline, search_in_paper, read_paper, view_page, snapshot."""
@@ -166,7 +168,9 @@ class PaperToolsMixin(ToolsBase):
                     continue
                 used.append(pos)
                 a, b = max(0, pos - 160), min(len(text), pos + 220)
-                snippets.append(("…" if a else "") + " ".join(text[a:b].split()) + ("…" if b < len(text) else ""))
+                snippets.append(
+                    ("…" if a else "") + " ".join(_CONTROL.sub("", text[a:b]).split()) + ("…" if b < len(text) else "")
+                )
                 if len(snippets) == 3:
                     break
             results.append({"page": n, "matched": matched, "occurrences": score[2], "snippets": snippets})
@@ -189,6 +193,7 @@ class PaperToolsMixin(ToolsBase):
         if not texts:
             raise ToolError(f"No text could be extracted from the PDF of '{self._label(p)}'.")
         want = parse_pages(pages, len(texts))
+        beyond = [int(x) for x in re.findall(r"\d+", pages) if int(x) > len(texts)]
         given: list[int] = []
         chars = 0
         parts = [
@@ -202,6 +207,8 @@ class PaperToolsMixin(ToolsBase):
             parts.append(f"=== Page {n} ===\n{t or '[no text on this page]'}")
             given.append(n)
             chars += len(t)
+        if beyond:
+            parts.append(f"[The PDF has {len(texts)} pages; the pages after {len(texts)} you asked for do not exist.]")
         rest = [n for n in want if n not in given]
         if rest:
             parts.append(

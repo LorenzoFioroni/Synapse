@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from collections import Counter
 from pathlib import PurePosixPath
 
@@ -11,7 +12,7 @@ from ...library.fields import ITEM_TYPE_LABELS
 from .common import ToolsBase, drop_empty, snippet_text
 
 ABSTRACT_CHARS = 400
-FILTERS = "folder, tag, author, title, journal, doi, key, type, year, added, has"
+FILTERS = "folder, tag, author, title, journal, doi, key, type, year, added, has, is"
 
 
 class LibraryToolsMixin(ToolsBase):
@@ -28,17 +29,18 @@ class LibraryToolsMixin(ToolsBase):
         abstracts: bool = False,
     ):
         out: dict = {"query": query}
-        if warnings := self._query_warnings(query):
+        ctx = {
+            "folder_paths": self.s.folders.paths(),
+            "type_labels": ITEM_TYPE_LABELS,
+            "field_filters": self.s.plugins.fields.search_filters(),  # plugins' fields: citations:>100
+            "tag_names": [t["name"] for t in self.s.tags.list()],
+        }
+        if warnings := self._query_warnings(query, ctx):
             out["warnings"] = warnings
         if scope in ("all", "items"):
             items = self.s.papers.list()
             mode = "fulltext" if fulltext else "all"
             matcher = self.s.note_service.text_matcher()
-            ctx = {
-                "folder_paths": self.s.folders.paths(),
-                "type_labels": ITEM_TYPE_LABELS,
-                "field_filters": self.s.plugins.fields.search_filters(),  # plugins' fields: citations:>100
-            }
             found, hits = search_mod.search(items, query, mode, self.s.fulltext, ctx, notes=matcher)
             parsed = search_mod.parse_query(query, ctx["field_filters"])
             terms = [search_mod.normalize(t) for t, neg, f in parsed if not f and not neg]
@@ -68,7 +70,9 @@ class LibraryToolsMixin(ToolsBase):
                 for p in found[offset : offset + limit]
             ]
         if scope in ("all", "notes"):
-            words = " ".join(t for t, neg, f in search_mod.parse_query(query) if not f and not neg)
+            words = " ".join(  # a phrase keeps its quotes: the notes' index matches it as a phrase
+                f'"{t}"' if " " in t else t for t, neg, f in search_mod.parse_query(query) if not f and not neg
+            )
             rows = self.s.notes.search(words, limit=offset + limit)[offset:] if words else []
             info = {n["path"]: n for n in self.s.notes.list()}
             out["notes"] = [
@@ -91,10 +95,10 @@ class LibraryToolsMixin(ToolsBase):
         text = " ".join(str(p.get("abstract") or "").split())
         return text if len(text) <= ABSTRACT_CHARS else text[:ABSTRACT_CHARS].rstrip() + "…"
 
-    def _query_warnings(self, query: str) -> list[str]:
+    def _query_warnings(self, query: str, ctx: dict) -> list[str]:
         """Things in the query that did not do what they look like (the search ran regardless)."""
         out = []
-        extra = self.s.plugins.fields.search_filters()
+        extra = ctx["field_filters"]
         if unknown := search_mod.unknown_filters(query, extra):
             out.append(
                 f"{', '.join(unknown)} is not a filter, so it was searched as plain text. "
@@ -102,11 +106,14 @@ class LibraryToolsMixin(ToolsBase):
             )
         if re.search(r"(?:^|\s)(?:OR|AND)(?:\s|$)", query):
             out.append("OR and AND are not operators: every term must match. Run one search per alternative.")
-        return out
+        return out + search_mod.filter_problems(query, ctx)
 
     def _note_row(self, n: dict) -> dict:
+        updated = n.get("updated")
         try:
-            size = self.s.vault.abs(n["path"]).stat().st_size
+            st = self.s.vault.abs(n["path"]).stat()
+            size = st.st_size
+            updated = updated or time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(st.st_mtime))
         except OSError:
             size = None
         return drop_empty(
@@ -116,7 +123,7 @@ class LibraryToolsMixin(ToolsBase):
                 "type": n.get("type"),
                 "author": n.get("author"),
                 "bytes": size,
-                "updated": n.get("updated"),
+                "updated": updated,
             }
         )
 
@@ -150,6 +157,7 @@ class LibraryToolsMixin(ToolsBase):
             "smart_folders": [{"name": f["name"], "query": f["query"], "scope": f["mode"]} for f in s.smart.list()],
             "note_folders": [{"path": k, "notes": v} for k, v in sorted(note_folders.items())],
             **({"note_list": [self._note_row(n) for n in notes]} if include_notes else {}),
-            "search_syntax": 'folder:"A/B" tag:x year:2018-2022 (also 2020- or >2015) added:2026-10 (also >2026-10-15, '
-            '14d) author:name has:pdf type:book; -term excludes; "quoted phrase"; terms are ANDed (no OR)',
+            "search_syntax": 'folder:"A/B" (whole names) tag:x year:2018-2022 (also 2020- or >2015) added:2026-10 (also '
+            ">2026-10-15, 14d) author:name has:pdf has:note is:review (a guess) type:book; -term excludes; "
+            '"quoted phrase"; terms are ANDed (no OR)',
         }

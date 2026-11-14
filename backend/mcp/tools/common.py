@@ -21,6 +21,7 @@ AI_FOLDER = "ai"
 MAX_PAGES_PER_READ = 10
 MAX_CHARS_PER_READ = 80_000
 MAX_NOTE_CHARS = 100_000
+NOTE_READ_CHARS = 30_000  # a longer note is read by section (get_note shows its outline and sizes instead)
 CITATION_CONTEXT_CHARS = 160
 MAX_PAPER_NOTE_CHARS = 20_000
 MAX_IMAGES_PER_VIEW = 6
@@ -167,9 +168,22 @@ class ToolsBase:
         folded = {k.casefold(): p for k, p in keys.items()}
         if r.casefold() in folded:
             return folded[r.casefold()]
-        close = difflib.get_close_matches(r.casefold(), list(folded), n=3, cutoff=0.6)
+        close = self._close_keys(r.casefold(), list(folded))
         hint = f" Did you mean {', '.join(folded[c]['citation_key'] for c in close)}?" if close else ""
         raise ToolError(f"No item with citation key or id '{ref}'.{hint} Use search_library to find it.")
+
+    @staticmethod
+    def _close_keys(want: str, keys: list[str]) -> list[str]:
+        """Keys that look like ``want``. A key is author + year + word: the same author and year come
+        first (the word is the part people misremember), then keys of near spelling."""
+        m = re.match(r"([^\W\d_]+)(\d{4})(.*)", want)
+        same = []
+        if m:
+            author, year, word = m.groups()
+            same = [k for k in keys if k.startswith(author + year)]
+            same.sort(key=lambda k: -difflib.SequenceMatcher(None, word, k[len(author + year) :]).ratio())
+        near = difflib.get_close_matches(want, keys, n=3, cutoff=0.6)
+        return (same + [k for k in near if k not in same])[:3]
 
     def _pdfs(self, p: dict) -> list[dict]:
         out = []
@@ -273,11 +287,12 @@ class ToolsBase:
         except InvalidPath:
             pass
         found = self.s.notes.resolve(r)
+        by_title = [n["path"] for n in self.s.notes.list() if (n.get("title") or "").casefold() == r.casefold()]
+        found = found + [x for x in sorted(by_title, key=len) if x not in found]  # a file name and a title may differ
+        if len(found) > 1:  # never pick one: edit_note would change the wrong note
+            raise ToolError(f"'{ref}' names {len(found)} notes; give the path of one: " + "; ".join(found[:8]))
         if found:
             return found[0]
-        by_title = [n["path"] for n in self.s.notes.list() if (n.get("title") or "").casefold() == r.casefold()]
-        if by_title:
-            return sorted(by_title, key=len)[0]
         hints = [f"{h['path']} ({h['title']})" for h in self.s.notes.search(r, limit=5)]
         raise ToolError(
             f"No note '{ref}'."

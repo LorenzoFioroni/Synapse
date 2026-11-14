@@ -36,10 +36,12 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "Search the user's library: items (metadata, PDF full text and what notes say about them) and notes. "
             'Supports filters: folder:"Physics/Transport" tag:x year:2018-2022 (also 2020- or >2015) '
             "added:2026-10 (also >2026-10-15, 2026-01..2026-03, 14d for the last 14 days) author:name has:pdf "
-            "type:book, the fields plugins add (e.g. citations:>100, citations:none), "
+            "has:note (a note mentions it) is:review (a guess from journal, title, abstract) type:book, the fields "
+            "plugins add (e.g. citations:>100, citations:none), "
             '-term to exclude, "quoted phrases"; all terms must match (there is no OR). Returns items with citation '
-            "keys and a matching snippet, and notes with paths; an unknown filter is searched as text and reported "
-            "under warnings. Use list_collections to see folder, tag and type names.",
+            "keys and a matching snippet, and notes with paths; a filter that is unknown or cannot match (a folder "
+            "that does not exist, type:foo, year:abc) is reported under warnings, with suggestions. Use "
+            "list_collections to see folder, tag and type names.",
             {
                 "type": "object",
                 "properties": {
@@ -102,8 +104,8 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             'Read a Markdown note by path ("projects/crispr.md") or title. Returns its text, the papers it cites '
             "(resolved to library items, with the line and page locator of each citation), its links to other notes "
             "and the notes linking to it. In notes, [@key] cites a paper and [[Title]] links a note. A long note "
-            "is better read one section at a time: its outline lists the headings, and section returns only the "
-            "text (and citations, links, images) under one of them.",
+            "is read one section at a time: above ~30,000 characters get_note returns only the outline (with each "
+            "section's size) and section returns the text (and citations, links, images) under one heading.",
             {
                 "type": "object",
                 "properties": {
@@ -112,6 +114,10 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                         "type": "string",
                         "description": 'A heading of the note, e.g. "## Threshold" (the # marks are optional). '
                         "Default: the whole note.",
+                    },
+                    "full": {
+                        "type": "boolean",
+                        "description": "Return a long note's whole text instead of its outline (default false).",
                     },
                 },
                 "required": ["note"],
@@ -138,6 +144,11 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                     "note": {
                         "type": "string",
                         "description": "A note (path, file name or title): all its images, or with path the one it shows.",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "With note: start at this image (next_offset from the previous call).",
                     },
                 },
             },

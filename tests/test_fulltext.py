@@ -110,3 +110,11 @@ def test_like_fallback_takes_percent_and_underscore_literally(tmp_path, texts, m
     assert index.match("snake_case").keys() == {"p3"}
     assert index.match("C:\\temp").keys() == {"p5"}
     assert "<mark>100%</mark>" in index.match("100%")["p1"]
+
+
+def test_math_font_glyphs_are_turned_back_into_symbols():
+    from backend.pdf.text import clean_text
+
+    garbled = "The dynamics along ε¼0 is given by ðt ÞÞ and ðaÞ, ðbÞ, ðcÞ, so ðx þ yÞ."
+    assert clean_text(garbled) == "The dynamics along ε=0 is given by (t )) and (a), (b), (c), so (x + y)."
+    assert clean_text("Quarter ¼ and one ð alone") == "Quarter 1⁄4 and one ð alone"  # no pairs: left as it is

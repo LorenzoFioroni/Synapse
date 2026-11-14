@@ -84,6 +84,7 @@ class TaskToolsMixin:
         return drop_empty(
             {
                 "count": len(rows),
+                "sub_tasks_among_them": sum(bool(t.get("parent_id")) for t in rows) or None,
                 "tasks": [self._task_out(t, refs, children) for t in rows[:limit]],
                 "more": len(rows) - limit if len(rows) > limit else None,
                 "hint": "In a note a task is the line {{task:ID}}; get_task shows one with its details.",

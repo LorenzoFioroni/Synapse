@@ -600,7 +600,10 @@ def activate(plugin: Plugin) -> None:
         since = (date.today() - timedelta(days=max(1, days))).isoformat()
         rows = db.query("SELECT * FROM papers WHERE day >= ?", (since,))
         mine = {scholarly.norm_arxiv(scholarly.identifiers(i)[1]) for i in plugin.library.items()}
-        return report.compare(rows, {a for a in mine if a}, top=max(1, min(top, 50)))
+        out = report.compare(rows, {a for a in mine if a}, top=max(1, min(top, 50)))
+        if isinstance(out.get("days"), int) and 0 < out["days"] < days:  # only the days scored by both models
+            out["note"] = f"{days} days were asked for; {out['days']} have scores from both models."
+        return out
 
     # Stored reasons and scores must also reflect scoring changes after an upgrade.
     plugin.jobs.enqueue("score", plugin.settings["keep_days"], key="score-all")

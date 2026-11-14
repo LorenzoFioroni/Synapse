@@ -12,17 +12,18 @@ from ...notes.service import now_iso, ulid
 from ...notes.vault import Conflict, NoteExists, slugify
 from ..notecheck import NoteChecker
 from ..protocol import Parts, ToolError
-from .common import AI_FOLDER, CITATION_CONTEXT_CHARS, MAX_NOTE_CHARS, drop_empty
+from .common import AI_FOLDER, CITATION_CONTEXT_CHARS, MAX_NOTE_CHARS, NOTE_READ_CHARS, drop_empty
 from .images import ImageToolsMixin
 
 
 class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
     """get_note, write_note, edit_note, undo_note_edit."""
 
-    def get_note(self, note: str, section: str = ""):
+    def get_note(self, note: str, section: str = "", full: bool = False):
         path = self._note_path(note)
         got = self.s.note_service.get(path)
         info = got["info"] or {}
+        too_long = not section and not full and len(got["text"]) > NOTE_READ_CHARS
         links = self.s.note_service.links(path)
         first, last = self._section_lines(info.get("headings") or [], section) if section else (1, None)
 
@@ -50,7 +51,7 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                         "line": l["line"],
                         "locator": l.get("locator"),
                         "page": l.get("page"),
-                        "context": (l.get("context") or "")[:CITATION_CONTEXT_CHARS] or None,
+                        "context": None if too_long else (l.get("context") or "")[:CITATION_CONTEXT_CHARS] or None,
                     }
                 )
                 for l in links["outgoing"]
@@ -110,7 +111,7 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                 "created": info.get("created"),
                 "modified": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime)),
                 "about_paper": self._brief(paper) if paper else info.get("paper"),
-                "outline": [("#" * h["level"]) + " " + h["text"] for h in info.get("headings") or []],
+                "outline": self._outline(info.get("headings") or [], got["text"] if too_long else None),
                 "section": section or None,
                 "links_to_notes": notes_out,
                 "linked_from": backlinks,
@@ -123,12 +124,41 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
         if summary.get("images"):
             summary["images_hint"] = "view_image(note=…) shows these images (paths are inside the notes folder)."
         text = got["text"]
+        if too_long:
+            summary["too_long"] = (
+                f"The note has {len(text)} characters, too many to read at once: its text is not included. "
+                "Read the part you need with section='<heading>' (the outline shows each section's size), "
+                "or give full=true for all of it."
+            )
+            return summary
         if section:
             text = "\n".join(text.replace("\r\n", "\n").split("\n")[first - 1 : last])
         if len(text) > MAX_NOTE_CHARS:
             text = text[:MAX_NOTE_CHARS] + f"\n\n[… note cut at {MAX_NOTE_CHARS} characters of {len(got['text'])}]"
         what = f"Section '{section}' of {path} (lines {first}-{last or 'end'})" if section else f"Text of {path}"
         return Parts([summary, f"{what}:\n\n{text}"])
+
+    @staticmethod
+    def _shift_lines(message: str, k: int) -> str:
+        """ "line 14: …" counted in the saved note → counted in the text the caller sent (k lines fewer)."""
+        m = re.match(r"(lines? )([\d, …]+)(:.*)", message, re.S)
+        if not m or not k:
+            return message
+        nums = re.sub(r"\d+", lambda n: str(max(int(n.group()) - k, 1)), m.group(2))
+        return m.group(1) + nums + m.group(3)
+
+    @staticmethod
+    def _outline(headings: list[dict], text: str | None) -> list[str]:
+        """The headings as "## Title"; with ``text``, each with its lines and size."""
+        if text is None:
+            return [("#" * h["level"]) + " " + h["text"] for h in headings]
+        lines = text.replace("\r\n", "\n").split("\n")
+        out = []
+        for i, h in enumerate(headings):
+            end = next((x["line"] - 1 for x in headings[i + 1 :] if x["level"] <= h["level"]), len(lines))
+            size = sum(len(l) + 1 for l in lines[h["line"] - 1 : end])
+            out.append(f"{'#' * h['level']} {h['text']} (lines {h['line']}-{end}, {size} characters)")
+        return out
 
     @staticmethod
     def _section_lines(headings: list[dict], section: str) -> tuple[int, int | None]:
@@ -197,6 +227,9 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
         content = frontmatter.set_fields(body, meta)
         checker = NoteChecker(self)
         content, errors, warnings = checker.check(content, path)
+        first = next((l for l in text.split("\n") if l.strip()), "")
+        added = content[: max(content.find(first), 0)].count("\n")  # front matter and title the tool put before it
+        errors, warnings = ([self._shift_lines(m, added) for m in ms] for ms in (errors, warnings))
         if errors:
             raise ToolError(
                 "Nothing was saved: the note has problems that would show as broken in the app. "
@@ -209,6 +242,12 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
         except NoteExists as e:
             raise ToolError(f"A note already exists at {path}; try another title.") from e
         parsed = parser.parse(content, fallback_title=title)
+        same = [n["path"] for n in self.s.notes.list() if n["path"] != path and (n.get("title") or "") == title]
+        if same:
+            warnings = [
+                *warnings,
+                f"Another note has this title ({same[0]}). Refer to this one by its path, {path}, not by title.",
+            ]
         return drop_empty(
             {
                 "saved": path,
