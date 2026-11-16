@@ -19,12 +19,37 @@ from ..protocol import ToolError
 
 AI_FOLDER = "ai"
 MAX_PAGES_PER_READ = 10
-MAX_CHARS_PER_READ = 50_000  # AI apps cut a tool result at about 25,000 tokens
+MAX_CHARS_PER_READ = 40_000  # AI apps refuse a tool result of about 25,000 tokens (protocol.MAX_RESULT_CHARS)
+MAX_CHARS_PER_PAGE = 25_000  # one PDF page as read_paper returns it; a page is normally 3,000-6,000
+MAX_LISTED_CHARS = 35_000  # a list of works (references): the rest is reached with offset
 MAX_NOTE_CHARS = 100_000
 NOTE_READ_CHARS = 30_000  # a longer note is read by section (get_note shows its outline and sizes instead)
 MAX_PAPER_NOTE_CHARS = 20_000
 MAX_IMAGES_PER_VIEW = 6
 NEAR_CHARS = 300  # the words of a search "together": all of them within this many characters
+
+
+def page_for_reading(text: str, limit: int = MAX_CHARS_PER_PAGE) -> tuple[str, str]:
+    """One PDF page's text for read_paper, and what was done to it ("" if nothing). A page that reproduces
+    another one (a figure taken from a journal) repeats whole paragraphs: a line of 30 characters or more
+    is kept once. What is still too long loses its middle."""
+    seen: set[str] = set()
+    kept: list[str] = []
+    for line in text.split("\n"):
+        key = line.strip()
+        if len(key) >= 30:
+            if key in seen:
+                continue
+            seen.add(key)
+        kept.append(line)
+    repeated = text.count("\n") + 1 - len(kept)
+    out = "\n".join(kept)
+    notes = [f"{repeated} repeated lines left out"] if repeated else []
+    if len(out) > limit:
+        head = limit * 2 // 3
+        notes.append(f"{len(out) - limit} characters cut from the middle: the page is too long to give whole")
+        out = f"{out[:head]}\n[… cut …]\n{out[len(out) - (limit - head) :]}"
+    return out, "; ".join(notes)
 
 
 def drop_empty(d: dict) -> dict:

@@ -21,6 +21,7 @@ from .common import (
     ToolsBase,
     drop_empty,
     fold_text,
+    page_for_reading,
     page_ranges,
     parse_pages,
     together,
@@ -321,7 +322,7 @@ class PaperToolsMixin(ToolsBase):
             f"Cite as [@{p.get('citation_key') or '?'}, p. N] with N the page number below."
         ]
         for n in want:
-            t = texts[n - 1].strip()
+            t, changed = page_for_reading(texts[n - 1].strip())
             if len(given) >= MAX_PAGES_PER_READ:
                 why = f"at most {MAX_PAGES_PER_READ} pages per call"
                 break
@@ -331,7 +332,9 @@ class PaperToolsMixin(ToolsBase):
                     f"{MAX_CHARS_PER_READ} a call returns"
                 )
                 break
-            parts.append(f"=== Page {n} ===\n{t or '[no text on this page]'}")
+            parts.append(
+                f"=== Page {n} ===" + (f" [{changed}]" if changed else "") + f"\n{t or '[no text on this page]'}"
+            )
             given.append(n)
             chars += len(t)
         if beyond:

@@ -8,7 +8,7 @@ from .protocol import Server, Tool, ToolError
 from .resources import TEMPLATES, Resources
 from .tools import LibraryTools
 from .tools.citations import AUTO_COMPACT
-from .tools.common import MAX_IMAGES_PER_VIEW, MAX_PAGES_PER_READ
+from .tools.common import MAX_CHARS_PER_READ, MAX_IMAGES_PER_VIEW, MAX_PAGES_PER_READ
 from .tools.editing import FIELDS_FOR_AI, LIBRARY_EDITS
 
 
@@ -138,7 +138,8 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                     "full": {
                         "type": "boolean",
                         "description": "Return a long note's whole text instead of its outline (default false). "
-                        "Above ~50,000 characters the result is more than most AI apps accept: read by lines.",
+                        f"Above ~{MAX_CHARS_PER_READ:,} characters the result is more than most AI apps accept: "
+                        "read by lines.",
                     },
                 },
                 "required": ["note"],
@@ -393,7 +394,13 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 1000,
-                        "description": "Maximum references listed (default 200).",
+                        "description": "Maximum references listed (default 200; a list is also cut where an AI app "
+                        "would refuse it: offset continues).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Skip this many references (use the offset the cut list names).",
                     },
                     "compact": {
                         "type": "boolean",

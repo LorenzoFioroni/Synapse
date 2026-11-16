@@ -171,8 +171,10 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
             return summary
         if ranged:
             text = "\n".join(text.replace("\r\n", "\n").split("\n")[first - 1 : last])
-        if len(text) > MAX_NOTE_CHARS:
-            text = text[:MAX_NOTE_CHARS] + f"\n\n[… note cut at {MAX_NOTE_CHARS} characters of {len(got['text'])}]"
+        if len(text) > MAX_CHARS_PER_READ:  # more is refused by the AI app: read on from where it stops
+            kept = text[:MAX_CHARS_PER_READ].rsplit("\n", 1)[0]
+            at = first + kept.count("\n")
+            text = f"{kept}\n\n[… cut after {len(kept)} of {len(text)} characters, at line {at}: read on with lines='{at + 1}-']"
         what = (
             f"Section '{section}' of {path} (lines {first}-{last or 'end'})"
             if section

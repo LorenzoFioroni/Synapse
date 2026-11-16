@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 
-from .common import ToolsBase, drop_empty, first_author, short_authors
+from .common import MAX_LISTED_CHARS, ToolsBase, drop_empty, first_author, short_authors
 
 CITERS_LISTED = 10  # citing keys named per work; the count is always given
 MANY_RECORDS = 6  # records with one title: a work has a few ids (preprint, journal, book); dozens is a mismatch
 CITERS_COMPACT = 5
+LATE_ARXIV_YEARS = 10  # an arXiv id this many years after the work is a record of another paper
+SHORT_TITLE_WORDS = (
+    3  # titles this short ("Quantum Optics") are shared by many works; sources match books to the wrong one
+)
+SAME_FIRST_AUTHOR = 0.8  # the share of citations that names the first author of the records sharing a title
 AUTO_COMPACT = 40  # more works than this come one per line unless the caller asks for their fields
 
 
@@ -19,6 +25,24 @@ def _outside_line(title, authors, year, doi, arxiv) -> str:
     who = first_author(authors)
     head = f"{who} ({year or 'n.d.'})" if who else f"({year})" if year else ""
     return f"{head}{': ' if head else ''}{' '.join(str(title or '?').split())} [{ident}]"
+
+
+def _arxiv_shown(arxiv, year):
+    """The arXiv id, unless it was assigned years after the work appeared: sources attach the id of another
+    paper to a work they matched wrongly (a 2002 paper with an id of 2025)."""
+    m = re.match(r"(\d\d)\d\d\.\d{4,5}", str(arxiv or ""))
+    try:
+        late = m is not None and 2000 + int(m[1]) - int(year) >= LATE_ARXIV_YEARS
+    except (TypeError, ValueError):
+        late = False
+    return None if late else arxiv
+
+
+def _surname(authors) -> str:
+    name = first_author(authors).removesuffix(" et al.")
+    return re.sub(
+        r"\W+", "", "".join(c for c in unicodedata.normalize("NFKD", name.casefold()) if not unicodedata.combining(c))
+    )
 
 
 def _unread(r: dict) -> bool:
@@ -60,6 +84,7 @@ class CitationToolsMixin(ToolsBase):
         in_library_only: bool = False,
         limit: int = 200,
         compact: bool | None = None,
+        offset: int = 0,
     ):
         items = self._items()
         p = self._paper(paper, items)
@@ -121,9 +146,19 @@ class CitationToolsMixin(ToolsBase):
             out["references_in_library"] = sum(1 for r in view["references"] if r.get("library_id"))
             if f:
                 out["source"] = f.get("source")
-            out["references"] = refs[:limit]
-            if len(refs) > limit:
-                out["references_cut"] = f"showing {limit} of {len(refs)}"
+            shown: list = []
+            size = 0
+            for r in refs[offset : offset + limit]:
+                size += len(r) if isinstance(r, str) else len(json.dumps(r, ensure_ascii=False))
+                if shown and size > MAX_LISTED_CHARS:  # more than an AI app accepts in one result
+                    break
+                shown.append(r)
+            if offset or len(shown) < len(refs):  # said before the list, where it is seen
+                end = offset + len(shown)
+                out["references_cut"] = f"showing {offset + 1}-{end} of {len(refs)}" + (
+                    f"; offset={end} lists the next ones" if end < len(refs) else ""
+                )
+            out["references"] = shown
             if unread:
                 out["not_listed"] = (
                     f"{unread} entries with no author, year, DOI or arXiv id (footnotes, or text the source "
@@ -175,7 +210,7 @@ class CitationToolsMixin(ToolsBase):
                     "authors": short_authors(n.get("authors")),
                     "year": n.get("year"),
                     "doi": n.get("doi"),
-                    "arxiv": n.get("arxiv_id"),
+                    "arxiv": _arxiv_shown(n.get("arxiv_id"), n.get("year")),
                 }
             )
 
@@ -183,7 +218,8 @@ class CitationToolsMixin(ToolsBase):
             n = nodes[nid]
             if n["in_library"] and n["item_id"] in items:
                 return self._one_line(items[n["item_id"]])
-            return _outside_line(n.get("title"), n.get("authors"), n.get("year"), n.get("doi"), n.get("arxiv_id"))
+            arxiv = _arxiv_shown(n.get("arxiv_id"), n.get("year"))
+            return _outside_line(n.get("title"), n.get("authors"), n.get("year"), n.get("doi"), arxiv)
 
         in_lib = {
             k: self._label(items[n["item_id"]])
@@ -208,9 +244,26 @@ class CitationToolsMixin(ToolsBase):
                 if len(cs) >= 2:
                     best = max(ns, key=lambda n: n["cited_by_library"])
                     rows.append((len(cs), best, ns, cs, in_lib.get(k)))
-            # Many records with one title, or none with a DOI or arXiv id, are what a wrong automatic match
-            # looks like: they come after the works that are identified, and say so.
-            weak = lambda ns: len(ns) >= MANY_RECORDS or not any(n.get("doi") or n.get("arxiv_id") for n in ns)
+
+            def firsts(ns) -> dict[str, int]:
+                """First authors the records of one title name, with the citations each has; empty when one of
+                them has nearly all (the records are one work) or only one is named."""
+                shown: dict[str, str] = {}
+                names: dict[str, int] = {}
+                for n in ns:
+                    if who := _surname(n.get("authors")):
+                        shown.setdefault(who, first_author(n["authors"]).removesuffix(" et al."))
+                        names[who] = names.get(who, 0) + n["cited_by_library"]
+                if len(names) < 2 or max(names.values()) >= SAME_FIRST_AUTHOR * sum(names.values()):
+                    return {}
+                return {shown[w]: c for w, c in sorted(names.items(), key=lambda x: -x[1])}
+
+            # Many records with one title, or none with a DOI or arXiv id, or records naming different first
+            # authors, are what a wrong automatic match looks like: they come after the works that are
+            # identified, and say so.
+            weak = lambda ns: (
+                len(ns) >= MANY_RECORDS or not any(n.get("doi") or n.get("arxiv_id") for n in ns) or bool(firsts(ns))
+            )
             rows.sort(key=lambda r: (weak(r[2]), -r[0]))
             # A "missing" work whose title a library item has is that item under another record (an edition, or
             # a reference the source matched to the wrong work): it is listed apart, not as missing.
@@ -226,9 +279,27 @@ class CitationToolsMixin(ToolsBase):
                 "matched from reference text only (no DOI or arXiv id, or very many records share this title): "
                 "may be a wrong match"
             )
+            mixed = (
+                "the records with this title name different first authors (see records): another work with the "
+                "same title, or a reference matched to the wrong record; the first one listed may not be the work"
+            )
+            short = (
+                "a title of three words or fewer: several works have it, and a book is often matched to another "
+                "work of that name"
+            )
+            by_citations = lambda ns: sorted(ns, key=lambda n: -n["cited_by_library"])
+            is_short = lambda best: len(str(best.get("title") or "").split()) <= SHORT_TITLE_WORDS
+
+            def doubt(ns, best) -> str:
+                if who := firsts(ns):
+                    return f" (check: first authors differ: {', '.join(f'{w} {c}x' for w, c in who.items())})"
+                if weak(ns):
+                    return " (check: may be a wrong match)"
+                return " (check: short title, may be another work of that name)" if is_short(best) else ""
+
             if compact:
                 not_in_library: list = [
-                    f"{count}x {line(best['id'])}{' (check: may be a wrong match)' if weak(ns) else ''} "
+                    f"{count}x {line(best['id'])}{doubt(ns, best)} "
                     f"— cited by {', '.join(cs[:CITERS_COMPACT])}{', …' if len(cs) > CITERS_COMPACT else ''}"
                     for count, best, ns, cs, _ in missing[:limit]
                 ]
@@ -240,9 +311,14 @@ class CitationToolsMixin(ToolsBase):
                             **describe(best["id"]),
                             "cited_by_count": count,
                             "cited_by": cs[:CITERS_LISTED],
-                            "check": check if weak(ns) else None,
-                            "also_listed_as": [describe(n["id"]) for n in ns if n is not best][:2] or None,
-                            "also_listed_as_count": len(ns) - 1 if len(ns) > 3 else None,
+                            "check": mixed if firsts(ns) else check if weak(ns) else short if is_short(best) else None,
+                            "records": [f"{n['cited_by_library']}x {line(n['id'])}" for n in by_citations(ns)[:4]]
+                            if firsts(ns)
+                            else None,
+                            "also_listed_as": None
+                            if firsts(ns)
+                            else [describe(n["id"]) for n in ns if n is not best][:2] or None,
+                            "also_listed_as_count": len(ns) - 1 if len(ns) > 3 and not firsts(ns) else None,
                         }
                     )
                     for count, best, ns, cs, _ in missing[:limit]
