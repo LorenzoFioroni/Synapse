@@ -1842,9 +1842,8 @@ def test_compact_references_and_graph(lib, svc):
     assert shared.startswith("2x ") and shared.endswith("External foundation [doi:10.9999/ext] (not in the library)")
     r = call_json(server, "get_citation_graph", compact=True)
     missing = r["most_cited_not_in_library"][0]
-    assert (
-        missing.startswith("2x ") and "External foundation [doi:10.9999/ext] — cited by doe2019, smith2021" in missing
-    )
+    assert missing.startswith("2x ") and "External foundation [doi:10.9999/ext]" in missing
+    assert missing.endswith("— cited by doe2019, smith2021") and "check: short title" in missing  # two words
     assert r["most_cited_in_library"][0].startswith("1x doe2019 (2019) Doe: Earlier results")
 
 
@@ -2217,3 +2216,102 @@ def test_a_caption_is_returned_whole_and_stops_before_the_text_under_it(tmp_path
     assert fig["caption"] == "Figure 1: A caption that runs over three lines of the page before it comes to its end."
     text = ["Figure 1: Real caption.\nFig. 2 (Smith et al., 2021). It is worth noting that this is text.\n"]
     assert [c["label"] for c in pdfoutline.captions(text)] == ["Figure 1"]  # a reference at the start of a line
+
+
+# ======================================================================== bounded results
+def test_page_for_reading_drops_repeated_lines_and_cuts_a_page_that_is_still_too_long():
+    from backend.mcp.tools.common import page_for_reading
+
+    para = "This paragraph of the reproduced page appears again and again."
+    text, note = page_for_reading(f"{para}\nfig\nfig\n{para}\nA different line of the same page, kept.\n{para}")
+    assert text.splitlines() == [para, "fig", "fig", "A different line of the same page, kept."]  # short ones stay
+    assert note == "2 repeated lines left out"
+    text, note = page_for_reading(
+        "".join(f"Line number {i} of a page that is far too long.\n" for i in range(100)), 400
+    )
+    assert len(text) < 450 and text.startswith("Line number 0") and text.rstrip().endswith("long.")
+    assert "[… cut …]" in text and "from the middle" in note
+
+
+def test_read_paper_reproduced_page_comes_once(lib, svc):
+    smith = lib["smith"]
+    pdf = svc.config.pdf_dir / "twice.pdf"
+    para = "A figure reproduced from a journal repeats this whole sentence on the page."
+    make_stream_pdf(pdf, [_text(72, 720, para) + _text(72, 700, para) + _text(72, 680, "Own text of the page.")])
+    svc.papers.add_attachment(smith["id"], "Other", "twice.pdf")
+    att = [a["id"] for a in svc.papers.get(smith["id"])["attachments"]][-1]
+    err, texts = call(lib["server"], "read_paper", paper="smith2021", pages="1", attachment=att)
+    assert not err and texts[0].count(para) == 1 and "[1 repeated lines left out]" in texts[0]
+    assert "Own text of the page." in texts[0]
+
+
+def test_a_result_over_the_limit_is_cut_with_a_hint(monkeypatch):
+    from backend.mcp import protocol
+
+    monkeypatch.setattr(protocol, "MAX_RESULT_CHARS", 100)
+    lines = "".join(f"line {i}\n" for i in range(50))
+    blocks = protocol.text_content(protocol.Parts(["summary", lines, "more"]))
+    assert blocks[0]["text"] == "summary"
+    assert blocks[1]["text"].startswith("line 0") and "result cut after" in blocks[1]["text"]
+    kept = blocks[1]["text"].split("\n\n[")[0]
+    assert kept.splitlines()[-1] in lines.splitlines() and len(kept) <= 100  # cut between lines
+    assert "result cut after 0 of 4" in blocks[2]["text"]
+    assert protocol.text_content("short")[0]["text"] == "short"
+
+
+def test_get_note_cut_at_a_line_says_where_to_go_on(lib, svc, monkeypatch):
+    from backend.mcp.tools import notes as note_tools
+
+    svc.note_service.create(
+        path="long.md", title="Long", text="# Long\n\n" + "".join(f"Row {i} of a long note.\n" for i in range(1, 60))
+    )
+    monkeypatch.setattr(note_tools, "MAX_CHARS_PER_READ", 300)
+    err, texts = call(lib["server"], "get_note", note="long", lines="1-")
+    assert not err
+    body = texts[1]
+    at = int(re.search(r"at line (\d+): read on with lines='(\d+)-'", body).group(2)) - 1
+    saved = svc.note_service.get("long.md")["text"].split("\n")
+    assert body.split("\n\n[…")[0].splitlines()[-1] == saved[at - 1]  # the last line given is line `at`
+    err, texts = call(lib["server"], "get_note", note="long", lines=f"{at + 1}-")
+    assert not err and saved[at] in texts[1]
+
+
+def test_get_references_cut_by_size_says_how_to_continue(lib, svc, monkeypatch):
+    from backend.mcp.tools import citations as cit
+
+    refs = [{"doi": f"10.9/{i}", "title": f"Work number {i}", "year": 2000 + i} for i in range(30)]
+    svc.citations.store.save(lib["smith"]["id"], "openalex", refs, doi="10.1000/smith")
+    monkeypatch.setattr(cit, "MAX_LISTED_CHARS", 600)
+    first = call_json(lib["server"], "get_references", paper="smith2021", compact=True)
+    keys = list(first)
+    assert keys.index("references_cut") < keys.index("references")  # said before the list, not after it
+    assert first["references_cut"].startswith("showing 1-") and "of 30; offset=" in first["references_cut"]
+    n = len(first["references"])
+    assert 0 < n < 30
+    second = call_json(lib["server"], "get_references", paper="smith2021", compact=True, offset=n)
+    assert "Work number" in second["references"][0]
+    assert f"showing {n + 1}-" in second["references_cut"]
+    assert f"Work number {n} [" not in " ".join(first["references"])  # no overlap between the pages
+
+
+def test_citation_overview_flags_records_that_name_other_authors_and_drops_a_late_arxiv_id(svc):
+    papers = [svc.papers.create({"title": f"P{i}", "citation_key": f"p{i}2020", "doi": f"10.1/{i}"}) for i in range(6)]
+    book = "Quantum Measurement and Control"
+    review = {"title": book, "authors": "Kiefer, C.", "year": 2010, "doi": "10.5/review"}  # a book review
+    real = {"title": book, "authors": "Wiseman, H.; Milburn, G.", "year": 2009, "doi": "10.5/book"}
+    greiner = {"title": "Quantum phase transition to a Mott insulator", "authors": "Greiner, M.", "year": 2002}
+    short = {"title": "Quantum Optics", "authors": "Ferry, D.", "year": 2019, "doi": "10.5/qo"}
+    for i, p in enumerate(papers):
+        refs = [review if i < 4 else real, {**greiner, "doi": "10.5/g", "arxiv_id": "2506.21303"}, short]
+        svc.citations.store.save(p["id"], "semanticscholar", refs, doi=f"10.1/{i}")
+    server = build_server(svc)
+    rows = {r["title"]: r for r in call_json(server, "get_citation_graph")["most_cited_not_in_library"]}
+    clear, mixed, brief = rows["Quantum phase transition to a Mott insulator"], rows[book], rows["Quantum Optics"]
+    assert "check" not in clear and "arxiv" not in clear  # an id of 2025 on a work of 2002 belongs to another paper
+    assert "different first authors" in mixed["check"] and "also_listed_as" not in mixed
+    assert mixed["records"][0].startswith("4x Kiefer (2010)") and mixed["records"][1].startswith("2x Wiseman")
+    assert "three words or fewer" in brief["check"]
+    compact = call_json(server, "get_citation_graph", compact=True)["most_cited_not_in_library"]
+    assert compact[-1].count("check: first authors differ: Kiefer 4x, Wiseman 2x") == 1  # the doubtful ones come last
+    assert any("[doi:10.5/g]" in c and "2506" not in c and "(check" not in c for c in compact)
+    assert any("Quantum Optics" in c and "(check: short title" in c for c in compact)

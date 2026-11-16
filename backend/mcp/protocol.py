@@ -67,14 +67,38 @@ class Tool:
         }
 
 
+MAX_RESULT_CHARS = 50_000  # the text of one tool result; the AI apps tried refused 56,000 characters and more
+
+
 def text_content(result: Any) -> list[dict]:
     """Turn a tool's return value into MCP content blocks.
 
     A string is sent as is; a dict/list as indented JSON; an ``Image`` as an image block;
-    ``Parts`` (a list of these) as several blocks."""
-    if isinstance(result, Parts):
-        return [_block(p) for p in result]
-    return [_block(result)]
+    ``Parts`` (a list of these) as several blocks. The text of all blocks together is cut at
+    ``MAX_RESULT_CHARS``."""
+    blocks = [_block(p) for p in result] if isinstance(result, Parts) else [_block(result)]
+    return _within_limit(blocks)
+
+
+def _within_limit(blocks: list[dict]) -> list[dict]:
+    """Backstop for tools that did not bound their own output: an AI app refuses a result of more than
+    about 25,000 tokens, which leaves the model with nothing, while a cut one says what to do."""
+    left = MAX_RESULT_CHARS
+    for b in blocks:
+        text = b.get("text")
+        if text is None or len(text) <= left:
+            left -= len(text or "")
+            continue
+        head = text[: max(left, 0)]
+        newline = head.rfind("\n")
+        if newline > len(head) // 2:
+            head = head[:newline]
+        b["text"] = (
+            f"{head}\n\n[… result cut after {len(head)} of {len(text)} characters: an AI app does not accept more "
+            "from one call. Ask for less: a smaller limit, compact, or a narrower query or range.]"
+        )
+        left = 0
+    return blocks
 
 
 def _block(p: Any) -> dict:
