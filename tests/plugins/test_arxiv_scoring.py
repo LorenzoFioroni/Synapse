@@ -123,6 +123,30 @@ def test_a_common_name_counts_less_than_a_rare_one():
     assert rare["features"]["people"] > 2 * common["features"]["people"]
 
 
+def test_the_author_reason_names_the_authors_and_says_when_only_the_initial_agrees():
+    library = scoring.build_library(
+        [*LIBRARY, item("kim", "Driven cavities", doi="10.1/kim", authors="Kim, J.")],
+        background=BACKGROUND,
+        now=NOW,
+    )
+    sure, unsure, both = run(
+        [
+            paper("a", authors=["Yi Wang"]),
+            paper("b", authors=["Jaewon Kim"]),
+            paper("c", authors=["Yi Wang", "Jaewon Kim", "Ann Author"]),
+        ],
+        {},
+        library=library,
+    )
+    text = lambda res: next(r["text"] for r in res["reasons"] if r["kind"] == "authors")
+    assert text(sure) == "Shares authors with 1 paper in your library (Yi Wang)"
+    # the library knows this author as "J. Kim": any J. Kim matches, so the reason does not claim more
+    assert text(unsure) == "May share authors with 1 paper in your library (same surname and initial only: Jaewon Kim)"
+    assert text(both) == (
+        "Shares authors with 2 papers in your library (Yi Wang; same surname and initial only: Jaewon Kim)"
+    )
+
+
 def test_names_with_latex_accents():
     a, b = scoring.name("Daniel P\\'erez Garc\\'ia"), scoring.name("García, Daniel Pérez")
     assert a is not None and b is not None and a.same(b)

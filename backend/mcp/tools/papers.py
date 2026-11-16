@@ -23,19 +23,11 @@ from .common import (
     fold_text,
     page_ranges,
     parse_pages,
+    together,
 )
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f]")  # pdfium marks a line-end hyphen with U+0002
-NEAR_CHARS = 300  # the words of a search "together": all of them within this many characters
 _NOT_A_SECTION = re.compile(r"\W*(?:abstract|references|bibliography|acknowledge?ments?|contents)\b", re.I)
-
-
-def _together(hits: dict[str, list[int]], matched: list[str]) -> list[int]:
-    """Positions of the rarest word where every other matched word is also within NEAR_CHARS."""
-    rare = min(matched, key=lambda t: len(hits[t]))
-    return [
-        pos for pos in hits[rare] if all(any(abs(q - pos) <= NEAR_CHARS for q in hits[t]) for t in matched if t != rare)
-    ]
 
 
 class PaperToolsMixin(ToolsBase):
@@ -246,7 +238,7 @@ class PaperToolsMixin(ToolsBase):
             phrase_hits = [m.start() for m in re.finditer(re.escape(phrase), folded)] if phrase else []
             phrase_hits = phrase_hits if in_refs else own(phrase_hits)
             total = sum(len(v) for v in hits.values())
-            near = _together(hits, matched) if len(matched) > 1 else []
+            near = together(hits, matched) if len(matched) > 1 else []
             scored.append(
                 (
                     (not in_refs, len(matched), len(phrase_hits), len(near), total),

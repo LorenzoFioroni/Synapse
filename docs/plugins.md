@@ -275,7 +275,8 @@ These are contributed plugins, off until turned on; safe mode stops them:
   own, and the **Cites you** badge); rare references it shares with your library's own reference
   lists, also works outside the library (weight 1.5); its authors who wrote library papers,
   matched by full name and discounted by how common the name is among announced papers (weight
-  1.5); title and abstract against the library (TF-IDF, top five, weighted by interest), counted
+  1.5; the reason names them as announced, and says "may share authors … same surname and initial
+  only" for one the library knows by an initial, where any J. Kim matches); title and abstract against the library (TF-IDF, top five, weighted by interest), counted
   only where it stands out from that day (a z-score above 1.5, weight 0.8); and −0.4 for
   cross-lists. A library paper is never compared with itself. Papers from 70 are in the **Read**
   tier and from 35 in **Skim** (settings *Read from match*, *Skim from match*); the first reason

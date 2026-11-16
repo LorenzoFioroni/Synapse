@@ -24,6 +24,7 @@ MAX_NOTE_CHARS = 100_000
 NOTE_READ_CHARS = 30_000  # a longer note is read by section (get_note shows its outline and sizes instead)
 MAX_PAPER_NOTE_CHARS = 20_000
 MAX_IMAGES_PER_VIEW = 6
+NEAR_CHARS = 300  # the words of a search "together": all of them within this many characters
 
 
 def drop_empty(d: dict) -> dict:
@@ -80,6 +81,14 @@ def fold_text(text: str) -> tuple[str, list[int]]:
             out.append(c)
             idx.append(i)
     return "".join(out), idx
+
+
+def together(hits: dict[str, list[int]], matched: list[str]) -> list[int]:
+    """Positions of the rarest word where every other matched word is also within NEAR_CHARS."""
+    rare = min(matched, key=lambda t: len(hits[t]))
+    return [
+        pos for pos in hits[rare] if all(any(abs(q - pos) <= NEAR_CHARS for q in hits[t]) for t in matched if t != rare)
+    ]
 
 
 def parse_pages(spec: str, n: int) -> list[int]:
@@ -183,13 +192,20 @@ class ToolsBase:
     @staticmethod
     def _close_keys(want: str, keys: list[str]) -> list[str]:
         """Keys that look like ``want``. A key is author + year + word: the same author and year come
-        first (the word is the part people misremember), then keys of near spelling."""
-        m = re.match(r"([^\W\d_]+)(\d{4})(.*)", want)
-        same = []
-        if m:
-            author, year, word = m.groups()
-            same = [k for k in keys if k.startswith(author + year)]
-            same.sort(key=lambda k: -difflib.SequenceMatcher(None, word, k[len(author + year) :]).ratio())
+        first (the word is the part people misremember), then the same author in the nearest years (the
+        year is the next thing to go wrong), then keys of near spelling."""
+        m = re.match(r"([^\W\d_]+)(\d{4})?(.*)", want)
+        same: list[str] = []
+        if m and m.group(1):
+            author, year, word = m.group(1), m.group(2), m.group(3)
+            likeness = lambda k: -difflib.SequenceMatcher(None, word, re.sub(r"^\D+\d{4}", "", k)).ratio()
+            theirs = [k for k in keys if re.fullmatch(re.escape(author) + r"\d{4}.*", k)]
+            if year:
+                same = sorted((k for k in theirs if k.startswith(author + year)), key=likeness)
+                years = lambda k: abs(int(k[len(author) : len(author) + 4]) - int(year))
+                same += sorted((k for k in theirs if k not in same), key=lambda k: (years(k), likeness(k)))
+            else:
+                same = sorted(theirs, key=likeness)
         near = difflib.get_close_matches(want, keys, n=3, cutoff=0.6)
         return (same + [k for k in near if k not in same])[:3]
 

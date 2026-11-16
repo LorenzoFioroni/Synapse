@@ -7,6 +7,7 @@ from .prompts import PROMPTS
 from .protocol import Server, Tool, ToolError
 from .resources import TEMPLATES, Resources
 from .tools import LibraryTools
+from .tools.citations import AUTO_COMPACT
 from .tools.common import MAX_IMAGES_PER_VIEW, MAX_PAGES_PER_READ
 from .tools.editing import FIELDS_FOR_AI, LIBRARY_EDITS
 
@@ -119,7 +120,7 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "and the notes linking to it. In notes, [@key] cites a paper and [[Title]] links a note. A long note "
             "is read one part at a time: above ~30,000 characters get_note returns only the outline (with each "
             "section's size, and cited_papers for the whole note); section or lines returns the text (and "
-            "citations, links, images) of one part.",
+            "citations, links, images) of one part, and search_in_note finds the lines about a subject.",
             {
                 "type": "object",
                 "properties": {
@@ -136,7 +137,8 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                     },
                     "full": {
                         "type": "boolean",
-                        "description": "Return a long note's whole text instead of its outline (default false).",
+                        "description": "Return a long note's whole text instead of its outline (default false). "
+                        "Above ~50,000 characters the result is more than most AI apps accept: read by lines.",
                     },
                 },
                 "required": ["note"],
@@ -146,13 +148,39 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
     )
     server.add(
         Tool(
+            "search_in_note",
+            "Search inside a note",
+            "Find the paragraphs of one note that contain some words (case and accents ignored), best first, each "
+            "with its line numbers, its section and a snippet. Use it on a long note to locate what it says about "
+            "a subject, then read those lines with get_note(lines=…).",
+            {
+                "type": "object",
+                "properties": {
+                    "note": {"type": "string", "description": "Path in the notes folder, file name, or title."},
+                    "query": {"type": "string", "description": 'Words to look for; "quoted phrases" stay together.'},
+                    "max_results": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "description": "Maximum paragraphs to return (default 10).",
+                    },
+                },
+                "required": ["note", "query"],
+            },
+            t.search_in_note,
+        )
+    )
+    server.add(
+        Tool(
             "view_image",
             "Look at images in a note",
             "Show images stored with the notes (pasted pictures, figures cut from PDFs by snapshot): one by its path "
-            'as the note writes it ("attachments/x.png"), or all images of a note (give note, at most '
-            f"{MAX_IMAGES_PER_VIEW} per call). Each comes with its line, alt text and caption; a figure cut from a PDF "
-            "also says which page and region it shows. Use it when a note's image matters for the answer; the files "
-            "are in the app's notes folder and cannot be opened by path from elsewhere.",
+            'as the note writes it ("attachments/x.png"), a few of them (paths), or all images of a note (give '
+            f"note, at most {MAX_IMAGES_PER_VIEW} per call). Each comes with its line, alt text and caption; a figure "
+            "cut from a PDF also says which page and region it shows. For a note with many images, list_only gives "
+            "every image's path and caption without the pictures, to choose which to look at. Use it when a "
+            "note's image matters for the answer; the files are in the app's notes folder and cannot be opened "
+            "by path from elsewhere.",
             {
                 "type": "object",
                 "properties": {
@@ -164,10 +192,21 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                         "type": "string",
                         "description": "A note (path, file name or title): all its images, or with path the one it shows.",
                     },
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": MAX_IMAGES_PER_VIEW,
+                        "description": "Several image paths as written in the note, instead of path.",
+                    },
                     "offset": {
                         "type": "integer",
                         "minimum": 0,
                         "description": "With note: start at this image (next_offset from the previous call).",
+                    },
+                    "list_only": {
+                        "type": "boolean",
+                        "description": "With note: list all its images (line, path, caption) without showing them "
+                        "(default false).",
                     },
                 },
             },
@@ -335,7 +374,8 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "get_references",
             "Get a paper's references",
             "The works a paper cites (its fetched reference list; library items are marked and come with citation keys, "
-            "others with DOI/arXiv ids) and/or the library items that cite it.",
+            "others with DOI/arXiv ids) and/or the library items that cite it. A long list comes one line per work "
+            "unless compact=false.",
             {
                 "type": "object",
                 "properties": {
@@ -357,8 +397,8 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                     },
                     "compact": {
                         "type": "boolean",
-                        "description": "One line per work (key or DOI/arXiv id, year, first author, title): for a "
-                        "long list (default false).",
+                        "description": "One line per work (key or DOI/arXiv id, year, first author, title) instead "
+                        f"of its fields. Default: true when more than {AUTO_COMPACT} works are listed, else false.",
                     },
                 },
                 "required": ["paper"],
@@ -399,7 +439,8 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                     },
                     "compact": {
                         "type": "boolean",
-                        "description": "One line per work instead of its fields (default false).",
+                        "description": "One line per work instead of its fields. Default: true when more than "
+                        f"{AUTO_COMPACT} works are listed, else false.",
                     },
                 },
             },

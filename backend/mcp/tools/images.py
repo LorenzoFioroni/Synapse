@@ -147,18 +147,38 @@ class ImageToolsMixin(ToolsBase):
             info["snapshot_of"] = region
         return Image(data, mime), info
 
-    def view_image(self, path: str | None = None, note: str | None = None, offset: int = 0):
-        if not path and not note:
-            raise ToolError("Give path (an image path from a note, e.g. attachments/x.png) and/or note.")
+    def view_image(
+        self,
+        path: str | None = None,
+        note: str | None = None,
+        offset: int = 0,
+        paths: list | None = None,
+        list_only: bool = False,
+    ):
+        wanted = [str(x) for x in ([path] if path else []) + list(paths or []) if str(x or "").strip()]
+        if not wanted and not note:
+            raise ToolError("Give path (an image path from a note, e.g. attachments/x.png), paths and/or note.")
+        if list_only and not note:
+            raise ToolError("list_only lists the images of a note: give note.")
         images: list[dict]
         if note:
             npath = self._note_path(note)
             text = self.s.vault.read(npath)[0]
-            images = self._note_images(text)
-            if path:
-                want = attachment_name(path) or path
-                found = [i for i in images if i["path"] == path or attachment_name(i["path"]) == want]
-                images = found or [{"path": path}]
+            images = self._note_images(text, caption_once=list_only)
+            if list_only:
+                if not images:
+                    raise ToolError(f"{npath} shows no images.")
+                return {
+                    "note": npath,
+                    "images": images,
+                    "next": "view_image(note=…, paths=[…]) shows the ones you choose "
+                    f"(at most {MAX_IMAGES_PER_VIEW} per call).",
+                }
+            if wanted:
+                names = {attachment_name(w) or w for w in wanted}
+                found = [i for i in images if i["path"] in wanted or attachment_name(i["path"]) in names]
+                shown = {i["path"] for i in found} | {attachment_name(i["path"]) for i in found}
+                images = found + [{"path": w} for w in wanted if w not in shown and attachment_name(w) not in shown]
             elif not images:
                 raise ToolError(f"{npath} shows no images.")
             elif offset:
@@ -166,7 +186,8 @@ class ImageToolsMixin(ToolsBase):
                     raise ToolError(f"{npath} shows {len(images)} images; offset {offset} is past the last.")
                 images = images[offset:]
         else:
-            images = [{"path": path}]
+            images = [{"path": w} for w in wanted]
+        path = wanted[0] if wanted else None
         parts: list = []
         skipped = []
         cap_at = None  # index of the first image left out because of the limit

@@ -78,3 +78,33 @@ def test_abstract_after_the_date_line():
     narrow = "\n".join(["The body is set in two columns."] * 12)
     letter = f"A title\nA. Author\n(Received 20 April 2000)\n{wide}\n{narrow}\n"
     assert abstract_from_text(letter) == " ".join(wide.split())
+
+
+def test_abstract_under_the_authors_without_a_heading_or_a_date_line():
+    wide = [
+        "We describe a fast adaptive Sampling Technique (FAST) for large sparse Linear Problems",
+        "that reorders the unknowns as the iteration proceeds to keep the growth of the fill-in small",
+        "while keeping the computational cost low, and we validate it on several standard problems,",
+        "where it reaches longer simulation times and a higher precision in the computed observables",
+        "than the standard approach.",
+    ]
+    header = (
+        "A long title of a paper that says what the paper is about in many words\n"
+        "Ann Author,1 Bob Other,2 and Carla Third 1, 3\n"
+        "1Institute of Example Studies, via Esempio 12, 12345 Sampletown, Italy\n"
+        "2Laboratoire des Exemples, 54321 Ville-Exemple Cedex, France\n"
+    )
+    body = "\n".join(["The body of the letter is set in two columns."] * 12)
+    assert abstract_from_text(header + "\n".join(wide) + "\n" + body + "\n") == " ".join(wide)
+    # the last line of the abstract fills the page: it ends where the narrower columns start
+    full = wide[:4]
+    full[-1] = "where it reaches longer simulation times and a higher precision in what is computed [1, 2]."
+    assert abstract_from_text(header + "\n".join(full) + "\n" + body + "\n") == " ".join(full)
+    # a caption, or names set with spaces between the letters, do not start an abstract
+    caption = "FIG. 1. The order parameter as a function of the coupling for several sizes of the chain\n" * 4
+    assert abstract_from_text(header + caption) is None
+    spaced = "Ann Author 1,2 , Bob Other1,2,4,J a n eR o e1,3 & Carla Third 1,2 of the group\n"
+    assert abstract_from_text("A title\n" + spaced + "\n".join(wide) + "\n" + body + "\n") == " ".join(wide)
+    assert abstract_from_text("A title\nAnn Author\nInstitute of Physics\n") is None
+    stamp = "\n".join(wide) + " 1 arXiv:2601.20695v1 [cond-mat.str-el] 27 Jan 2026"
+    assert abstract_from_text(header + stamp) == " ".join(wide)  # the stamp up the margin is not part of it

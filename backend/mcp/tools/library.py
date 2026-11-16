@@ -118,6 +118,8 @@ class LibraryToolsMixin(ToolsBase):
                     out.setdefault("warnings", []).append(why)
             if hint := self._author_hint(parsed, found, limit):
                 out.setdefault("warnings", []).append(hint)
+            if terms and (related := self._related_tags(parsed, terms, found, cited, items)):
+                out["related_tags"] = related
             if offset + limit < len(found):
                 out["next_offset"] = offset + limit
             page = found[offset : offset + limit]
@@ -182,6 +184,33 @@ class LibraryToolsMixin(ToolsBase):
         return (
             f"{by} of the {len(found)} items have '{plain[0]}' among their authors: author:{plain[0]} lists only those."
         )
+
+    @staticmethod
+    def _related_tags(parsed: list[tuple], terms: list[str], found: list[dict], cited: dict, items: list) -> list[str]:
+        """The user's tags that stand for the subject searched: a tag named like a search word, or one at
+        least half of whose items the words found. The user may file under another word ("Transport") papers that do not
+        say the one searched ("conductivity"), so the tag finds what the words miss."""
+        if any(f in ("tag", "tags") and not neg for _, neg, f in parsed):
+            return []
+        size: dict[str, int] = {}
+        for p in items:
+            for tag in p.get("tags") or []:
+                size[tag] = size.get(tag, 0) + 1
+        among: dict[str, int] = {}
+        for p in found:
+            if not cited[p["id"]]:
+                for tag in p.get("tags") or []:
+                    among[tag] = among.get(tag, 0) + 1
+        out = []
+        for tag, n in sorted(size.items(), key=lambda kv: (-among.get(kv[0], 0), kv[0].casefold())):
+            name = search_mod.normalize(tag)
+            named = any(t == name or t in name.split() for t in terms)
+            k = among.get(tag, 0)
+            if not (named or (k >= 2 and 2 * k >= n)) or k == n:
+                continue  # a tag whose items were all found has nothing to add
+            value = f'"{tag}"' if " " in tag else tag
+            out.append(f"tag:{value} has {n} item{'s' * (n != 1)}, {k} of them among these results")
+        return out[:3]
 
     @staticmethod
     def _sort_in_query(query: str) -> tuple[str, str | None]:
@@ -266,7 +295,8 @@ class LibraryToolsMixin(ToolsBase):
             return {
                 "notes": len(notes),
                 "note_folders": [{"path": k, "notes": v} for k, v in sorted(per_folder.items())],
-                "note_list": [self._note_row(n) for n in notes],
+                "note_list": sorted((self._note_row(n) for n in notes), key=lambda r: -(r.get("bytes") or 0)),
+                "note_list_order": "largest first",
                 "hint": "Call list_collections without include_notes for folders, tags, item types and search syntax.",
             }
         paths = s.folders.paths()

@@ -174,7 +174,7 @@ per combination (at most `MAX_ALTERNATIVES`), whose results the tool joins.
 | `year:2020`, `year:2018-2022`, `year:>2015`, `year:<=2000`, `year:2020-`, `year:-2000` | By year (the first four digits of `year`). `2020-` is that year and later, `-2000` that year and earlier. |
 | `added:2026-10`, `added:>2026-10-15`, `added:2026-01..2026-03`, `added:14d` | By date added (UTC). A year, month or day matches that whole period; `>`, `>=`, `<`, `<=` compare at the precision given; `a..b` is a range; `14d` / `2w` is the last 14 days / 2 weeks. |
 | `has:pdf` (or `attachment`, `file`), `has:tag`, `has:folder`, `has:note`, `has:<field>` | Has any attachment, tag or folder, a note that is about it or cites it, or a non-empty field. |
-| `is:review` | A guess at review articles and tutorials: a review journal (Reviews of Modern Physics, Physics Reports, Annual Review…), or "review", "tutorial", "lecture notes", "introduction to"… in the title, or "we review", "pedagogical"… in the abstract. "Physical Review" is not a review journal. |
+| `is:review` | A guess at review articles and tutorials: a review journal (Reviews of Modern Physics, Physics Reports, Annual Review…), or "review", "tutorial", "lecture notes", "introduction to"… in the title, or "we review", "pedagogical", "a detailed introduction"… in the abstract, or a journal article whose printed page range ("101-190") spans 40 pages or more (an article number says nothing, and books are not counted). "Physical Review" is not a review journal. |
 | `author:`, `title:`, `journal:`, `doi:`, `key:` | The value appears in that field (`key` is `citation_key`). |
 
 Prefixes not in `FILTER_KEYS` are not filters: `arXiv:2205.03415` is searched as plain text.

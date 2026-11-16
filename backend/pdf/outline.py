@@ -152,8 +152,8 @@ def captions(pages: list[str]) -> list[dict]:
             if not m:
                 continue
             rest = line[m.end() :].lstrip()
-            if rest[:1].islower() and not m.group(0).rstrip().endswith((":", ".", "|")):
-                continue  # "Fig. 3 shows …" in running text
+            if (rest[:1].islower() or rest[:1] == "(") and not m.group(0).rstrip().endswith((":", ".", "|")):
+                continue  # "Fig. 3 shows …" or "Fig. 11 (Smith et al., 2021). …" in running text
             kind = "Table" if m.group(1).lower().startswith("tab") else "Figure"
             label = f"{kind} {m.group(2)}"
             if label not in seen:

@@ -449,6 +449,7 @@ def score(
         # people
         people = 0.0
         met: dict[str, set[str]] = {}
+        unsure: set[str] = set()  # matched by surname and initial only: the library has no first name for them
         for display in p.get("authors") or []:
             a = name(display)
             if not a:
@@ -460,12 +461,24 @@ def score(
             full = a.full if a.full and all(b.first for b, _ in same) else None
             rare = bg.name_rarity(full or a.short)
             people += rare**2 * math.log1p(sum(lib.interest[pid] for pid in ids))
-            met[a.shown] = met.get(a.shown, set()) | ids
+            shown = " ".join(str(display).split())  # the name as announced: a surname alone could be anyone
+            met[shown] = met.get(shown, set()) | ids
+            if not full:
+                unsure.add(shown)
         features["people"] = math.log1p(people)
         if met:
             met_ids = sorted(set().union(*met.values()))
-            shown = ", ".join(sorted(met)[:4]) + (" …" if len(met) > 4 else "")
-            text = f"Shares authors with {_plural(len(met_ids), 'paper')} in your library ({shown})"
+            listed = lambda names: ", ".join(names[:4]) + (" …" if len(names) > 4 else "")
+            sure = sorted(n for n in met if n not in unsure)
+            if sure:
+                text = f"Shares authors with {_plural(len(met_ids), 'paper')} in your library ({listed(sure)}" + (
+                    f"; same surname and initial only: {listed(sorted(unsure))})" if unsure else ")"
+                )
+            else:
+                text = (
+                    f"May share authors with {_plural(len(met_ids), 'paper')} in your library "
+                    f"(same surname and initial only: {listed(sorted(unsure))})"
+                )
             reasons.append((w["people"] * features["people"], {"kind": "authors", "text": text, "items": met_ids}))
 
         # topic
