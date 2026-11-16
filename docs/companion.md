@@ -61,8 +61,9 @@ app ◄─GET /api/ai/jobs/ID?after=N (long poll ≤ 20 s)─ events ◄─POST 
 
 Plain HTTPS requests and long polls: no WebSocket or event stream, so it works behind Cloudflare
 Tunnel with Werkzeug's threaded server, like the live PDF handoff (`online/browser_pdfs.py`). No
-new port. Everything is in memory in `Services.companions`; nothing is saved, a restart ends open
-conversations, and independent instances share nothing.
+new port. The rendezvous is in memory in `Services.companions`: a restart ends open questions, and
+independent instances share nothing. What must survive a restart, the conversations, is in `ai.db`
+(see [Conversations](#conversations)).
 
 **Hub rules** (`hub.py`):
 
@@ -75,9 +76,10 @@ conversations, and independent instances share nothing.
   question". A running job whose companion sends no poll and no events for 60 s ends with an error too,
   and no job lives longer than 15 minutes, however its companion behaves. Cancel, expiry and size limits all end a job the same way: the companion is told
   to stop it, by `cancelled` in its poll answer or in the answer to its next event post.
-- A conversation is pinned to its companion and provider (`resume: true` on follow-ups). One turn at
-  a time per conversation (409). A follow-up whose companion is gone answers 409, "start a new
-  conversation". Conversations are forgotten after a day.
+- A conversation is pinned to its companion and provider, which the store keeps and `ask` passes to the
+  hub with each follow-up (`resume: true`). One turn at a time per conversation (409). A follow-up
+  whose companion is not connected answers 409 naming the computer ("… is on <name>, which is not
+  connected"); one whose companion no longer offers the provider answers 409 too.
 - Event posts: at most 64 events and 256 KB per request, 2 MB of text and 20,000 events per job;
   unknown event types are dropped; consecutive text events merge. Finished jobs stay readable for 10
   minutes (at most 100), then 404.
@@ -86,8 +88,45 @@ conversations, and independent instances share nothing.
 - Request bodies on `/api/companion/*` and `/api/ai/*` are limited to 512 KB (413 beyond).
 - Posting events touches neither the library nor the change feed.
 
-**Events** from the companion: `{type:"text", text}` (a delta), `{type:"tool", name}` (a tool call
-began), `{type:"done"}`, `{type:"error", message}`.
+**Events** from the companion: `{type:"started"}` (its AI tool is running, sent once at spawn),
+`{type:"text", text}` (a delta), `{type:"tool", name}` (a tool call began), `{type:"usage",
+input_tokens, output_tokens, cost_usd?, duration_ms?}` (once, before `done`; numbers only, bounded, anything
+else dropped), `{type:"done"}`, `{type:"error", message}`. Claude's `input_tokens` counts everything sent
+to the model, including what came from its cache; Codex reports no cost.
+
+**Models and efforts.** A companion's providers carry `models: [{id, label}]` and `efforts: [id]`, built
+in per provider (`GET /api/ai/status` shows them; empty means no selector). `ask` takes optional `model`
+and `effort` and answers 400 for a value the chosen companion's provider did not advertise; absent means
+the tool's default. The ids match `[A-Za-z0-9][A-Za-z0-9._\-\[\]]{0,63}` (never a flag-like start). The
+companion looks the value up in its own built-in list again and ignores anything else, so no
+server-chosen string reaches a command line unchecked.
+
+| Provider | Models | Efforts | Checked |
+|---|---|---|---|
+| Claude Code | `fable`, `opus`, `sonnet`, `haiku` | `low`, `medium`, `high`, `xhigh`, `max` | Each alias started a session on the matching model (2.1.325); the CLI warns about and ignores an unknown effort, and fails on an unknown model |
+| Codex | none (account-specific; Codex keeps the user's default) | `low`, `medium`, `high`, `xhigh` | `low` ran; the API's own error names `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
+
+## Conversations
+
+`ai.db` (`backend/companion/store.py`, path `Config.ai_db_path`, in backups, see [storage](storage.md))
+holds each conversation: title, provider, model and effort of its last question, the computer it is pinned
+to (companion id and name), a short context (where the question came from; a selection or quote kept to
+300 characters) and its messages. The server records the user's question when `ask` accepts it (before the
+job can be taken) and the answer when the job ends (`Companions.on_finish`): its text, tool names, usage and
+final state, also when it ends in error or is cancelled, with what arrived. The newest 200 conversations
+are kept, each with at most 400 messages.
+
+| Endpoint | |
+|---|---|
+| `GET /api/ai/conversations?limit=50&q=` | Newest first: `{id, title, created, updated, provider, model, effort, companion: {id, name}, context, available, running}`. `q` searches titles and messages. `available`: a connected companion with that client id offers the provider. `running`: the job still answering, or null. |
+| `GET /api/ai/conversations/<id>` | The same fields plus `messages: [{role, text, tools, usage?, state?, error?, created}]`. |
+| `PATCH /api/ai/conversations/<id>` `{title}` / `DELETE …` | Rename (at most 80 characters) / delete. |
+| `POST /api/ai/ask` with `conversation` | Continues a conversation, after a server restart too; the provider stays, model and effort may change. |
+
+The companion derives Claude's session id from the server URL and the conversation id, so a restarted
+companion on the same computer resumes the same session. When the tool cannot resume (its local session is
+gone: Claude answers "No conversation found"; a restarted Codex has lost its thread), the job ends with an
+`error` event, "This conversation's history is no longer on that computer. Start a new one."
 
 ## What the AI tool receives
 
@@ -107,7 +146,7 @@ Selections are limited to 8,000 characters, the question to 20,000; an unknown n
 claude --print --output-format stream-json --verbose --include-partial-messages
        --tools "" --strict-mcp-config --mcp-config <0600 temp file> --allowedTools mcp__synapse
        --setting-sources "" --disable-slash-commands --append-system-prompt-file <0600 temp file>
-       (--session-id ID | --resume ID)
+       [--model ALIAS] [--effort LEVEL] (--session-id ID | --resume ID)
 ```
 
 The prompt goes to stdin and the working directory is an empty private one (`work-<profile>/` beside

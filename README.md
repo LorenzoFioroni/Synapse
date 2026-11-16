@@ -330,7 +330,8 @@ python synapse_companion.py run                 # leave it running; Codex only w
 python synapse_companion.py extension           # optional: the browser extension folder
 ```
 
-See [the companion guide](docs/companion.md) for how it works and why Codex is opt-in.
+Previous conversations are kept on the server and can be continued later, and you can pick the AI
+agent, model and effort for each question. See [the companion guide](docs/companion.md) for how it works and why Codex is opt-in.
 
 Add `--data DIR` if your library is not in `./data`. Tools:
 

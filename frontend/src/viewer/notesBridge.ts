@@ -185,7 +185,13 @@ function onSelectionEnd() {
 }
 
 /** Opening a cited PDF from the panel: this PDF scrolls to the page; another one opens in a viewer tab. */
+const viewerDock = {
+  available: () => innerWidth > 760,
+  mount(el: HTMLElement) { const m = document.getElementById('main-content')!; m.classList.add('ai-docked'); m.append(el); },
+  unmount() { document.getElementById('main-content')?.classList.remove('ai-docked'); },
+};
 const viewerHost = {
+  dock: viewerDock,
   openPdf(cited: { id: string; title: string }, pdf: { id: number; url: string }, page: number | null) {
     if (item && cited.id === item.id && (!params.get('att') || Number(params.get('att')) === pdf.id)) { gotoSpot({ page: page || 1 }); return; }
     const file = /^https?:/.test(pdf.url) ? `/api/attachments/${pdf.id}/remote` : `/pdfs/${encodeURIComponent(pdf.url)}`;   // as api.ts fileUrl()
@@ -385,6 +391,24 @@ async function init() {
     item = await r.json();
   } catch { return; }
   const tools = document.getElementById('tools-section');
+  // Ask AI without selecting text: the paper and the page in view are the context
+  if (tools) {
+    const ai = document.createElement('button');
+    ai.id = 'zc-ask-btn';
+    ai.className = 'icon-btn';
+    ai.hidden = !aiConfigured();
+    ai.title = 'Ask AI about this paper';
+    ai.setAttribute('aria-label', 'Ask AI about this paper');
+    ai.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z"/></svg>';
+    ai.addEventListener('click', async () => {
+      const { openAskAi } = await import('../ai/panel.js');
+      const att = Number(params.get('att'));
+      const page = parseInt(document.getElementById('page-num-text')?.textContent || '', 10) || 1;
+      openAskAi({ kind: 'paper', item: item!.id, ...(att ? { attachment: att } : {}), page }, viewerHost);
+    });
+    tools.prepend(ai);
+    refreshAiStatus(60_000).then(() => { ai.hidden = !aiConfigured(); });
+  }
   if (tools && item?.citation_key) {
     const b = document.createElement('button');
     b.id = 'zc-snap-btn';

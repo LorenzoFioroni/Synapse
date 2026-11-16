@@ -1,16 +1,20 @@
-// The "Ask AI" panel: a drawer on the right with the question box, the streamed answer, what the AI
-// is reading, a stop button and follow-ups in the same conversation. One component for the app and
-// for the PDF viewer (a tab of the app or a page of its own): each opens it in its own document,
-// with a ``host`` that knows how to open a PDF there. See docs/companion.md.
-//
-// The answer is untrusted model output. It goes through the notes' renderer (markdown-it with raw
-// HTML off, KaTeX), so [@key, p. N] citations and math work; images that are not the app's own
-// are dropped, judged on the resolved address and before insertion (a remote image would leak the conversation in its URL); links open in a new tab
-// with no opener. Until the renderer has loaded the text is shown escaped (textContent).
-import type { CitePdf, CiteEntry } from '../types.js';
+// The "Ask AI" panel: header, the conversation (messages.ts) or the history of earlier ones
+// (history.ts), and the question box (composer.ts). One component for the app and for the PDF
+// viewer (a tab of the app or a page of its own); each opens it in its own document with a ``host``
+// that knows how to open a PDF there and where its docked column is (placement.ts). The answer's
+// handling of untrusted text is described in messages.ts. See docs/companion.md and docs/frontend.md.
+import type { CiteEntry, CitePdf } from '../types.js';
 import { icon } from '../icons.js';
-import { createRenderer, type MdLib, type Renderer } from '../views/notes/render.js';
-import { AiError, MAX_CONTEXT, MAX_PROMPT, type AskContext, type JobEvent, type JobState, ask, cancelJob, follow, isFinal } from './client.js';
+import { createRenderer } from '../views/notes/render.js';
+import {
+  AiError, type AiStatus, type AskContext, type Conversation, type JobEvent, type JobState, type Usage,
+  ask, cancelJob, follow, getConversation, isFinal, renameConversation,
+} from './client.js';
+import { createComposer } from './composer.js';
+import { suggestions } from './context.js';
+import { createHistory } from './history.js';
+import { Thread, type Turn, usageText } from './messages.js';
+import { type Dock, place, remember } from './placement.js';
 import { refreshAiStatus } from './status.js';
 
 /** What differs between the app and the viewer. */
@@ -19,21 +23,19 @@ export interface AskHost {
   openPdf(item: { id: string; title: string }, pdf: CitePdf, page: number | null): void;
   /** Show an item that has no PDF (optional). */
   showItem?(id: string): void;
+  /** The page's column for the docked panel (without it the panel is always a popup). */
+  dock?: Dock;
 }
 
-interface Turn { question: string; text: string; tool: string; state: JobState; error: string; box: HTMLElement; body: HTMLElement; status: HTMLElement }
-
-const THROTTLE_MS = 120;
 const START_COMMAND = 'python synapse_companion.py run';
 
 let el: HTMLElement | null = null;
-let teardown: (() => void) | null = null;
+let current: { context: AskContext | undefined; reset(c: AskContext | undefined): void; focus(): void } | null = null;
 
 /** Open the panel (or point the open one at a new context). */
 export function openAskAi(context: AskContext | undefined, host: AskHost): void {
   if (el) {
-    const same = JSON.stringify(context) === JSON.stringify(current?.context);
-    if (!same) current?.reset(context);
+    if (JSON.stringify(context) !== JSON.stringify(current?.context)) current?.reset(context);
     current?.focus();
     return;
   }
@@ -41,28 +43,9 @@ export function openAskAi(context: AskContext | undefined, host: AskHost): void 
 }
 
 export const askAiOpen = (): boolean => !!el;
-export function closeAskAi(): void { teardown?.(); }
-
-let current: { context: AskContext | undefined; reset(c: AskContext | undefined): void; focus(): void } | null = null;
+export function closeAskAi(): void { el?.dispatchEvent(new Event('ai-close')); }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const snippet = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-
-/** The chip's text: where the question comes from. */
-export function contextLabel(c: AskContext): string {
-  if (c.kind === 'note') {
-    const name = c.path.split('/').pop()!.replace(/\.md$/i, '');
-    return c.selection ? `${name} — “${snippet(c.selection.replace(/\s+/g, ' ').trim(), 60)}”` : name;
-  }
-  const page = c.page ? `p. ${c.page}` : 'PDF';
-  return c.quote ? `${page} — “${snippet(c.quote.replace(/\s+/g, ' ').trim(), 60)}”` : page;
-}
-
-/** The context as the server accepts it: long selections are cut. */
-function limited(c: AskContext): AskContext {
-  if (c.kind === 'note') return c.selection ? { ...c, selection: c.selection.slice(0, MAX_CONTEXT) } : c;
-  return c.quote ? { ...c, quote: c.quote.slice(0, MAX_CONTEXT) } : c;
-}
 
 function mount(initial: AskContext | undefined, host: AskHost): void {
   const prevFocus = document.activeElement as HTMLElement | null;
@@ -71,82 +54,83 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', 'Ask AI');
   root.innerHTML = `
-    <header class="ai-head"><span class="ai-title">${icon('sparkle')} Ask AI</span>
-      <select class="ai-provider" aria-label="AI" hidden></select>
-      <button class="ai-icon" data-new title="New conversation" aria-label="New conversation">${icon('refresh')}</button>
-      <button class="ai-icon" data-close title="Close (Esc)" aria-label="Close">${icon('close')}</button></header>
-    <div class="ai-context" hidden></div>
-    <div class="ai-thread" aria-live="polite"></div>
-    <div class="ai-help" hidden></div>
-    <form class="ai-form">
-      <textarea class="ai-input" rows="2" placeholder="Ask about this…" aria-label="Question" maxlength="${MAX_PROMPT}"></textarea>
-      <div class="ai-actions"><span class="ai-hint">Enter to send, Shift+Enter for a new line</span>
-        <button type="button" class="ai-btn" data-stop hidden>${icon('close', 'icon-sm')} Stop</button>
-        <button type="submit" class="ai-btn primary" data-send>Ask</button></div>
-    </form>`;
+    <header class="ai-head"><button type="button" class="ai-title" data-title title="Rename"><span class="ai-title-icon">${icon('sparkle')}</span><span class="ai-title-text">Ask AI</span></button>
+      <button type="button" class="ai-icon" data-usage title="Usage of this conversation" aria-label="Usage of this conversation" hidden>${icon('usage')}</button>
+      <button type="button" class="ai-icon" data-history title="Earlier conversations" aria-label="Earlier conversations">${icon('restore')}</button>
+      <button type="button" class="ai-icon" data-new title="New conversation" aria-label="New conversation">${icon('plus')}</button>
+      <button type="button" class="ai-icon" data-place></button>
+      <button type="button" class="ai-icon" data-close title="Close (Esc)" aria-label="Close">${icon('close')}</button></header>
+    <div class="ai-total" hidden></div>
+    <div class="ai-body"></div>
+    <div class="ai-help" hidden></div>`;
   const q = <T extends HTMLElement>(s: string) => root.querySelector<T>(s)!;
-  const thread = q('.ai-thread'), input = q<HTMLTextAreaElement>('.ai-input'), help = q('.ai-help'), chip = q('.ai-context');
-  const stop = q<HTMLButtonElement>('[data-stop]'), send = q<HTMLButtonElement>('[data-send]'), provider = q<HTMLSelectElement>('.ai-provider');
+  const body = q('.ai-body'), help = q('.ai-help'), total = q('.ai-total'), titleBtn = q('[data-title]');
+  const titleText = q('.ai-title-text'), placeBtn = q('[data-place]'), usageBtn = q('[data-usage]');
 
   let context = initial;
+  let home = initial;                      // what the panel was opened about: a new conversation starts there
   let conversation: string | undefined;
+  let locked: string | null = null;        // the provider of the open conversation
+  let status: AiStatus | null = null;
+  let title = '';
   let turn: Turn | null = null;
+  let turns: Turn[] = [];
   let abort: AbortController | null = null;
   let job: string | null = null;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let lib: MdLib | null = null, renderer: Renderer | null = null;
-  let cites = new Map<string, CiteEntry>();
   let closed = false;
+  let cites = new Map<string, CiteEntry>();
+  const providerLabels = () => new Map((status?.companions || []).flatMap((c) => c.providers).map((p) => [p.id, p.label]));
 
-  // markdown-it + KaTeX and the citable papers load once the panel is open; answers shown before
-  // that are plain text and are drawn again when these arrive.
-  import('../../vendor/md/md.js').then((m) => {
-    lib = m;
-    renderer = createRenderer(m, { citeInfo: (k) => cites.get(k) || null });
-    paint();
-  }).catch(() => { /* the answers stay plain text */ });
+  const thread = new Thread();
+  const composer = createComposer({
+    onSend: (t) => void submit(t),
+    onStop: () => void stopNow(),
+    onDropContext: () => { context = undefined; paintContext(); composer.focus(); },
+  });
+  const history = createHistory({
+    onOpen: (c) => void openConversation(c),
+    onRenamed: (id, t) => { if (id === conversation) setTitle(t); },
+    onDeleted: (id) => { if (id === conversation) reset(home); },
+    label: (id) => providerLabels().get(id) || id,
+  });
+  body.append(thread.el, history.el);
+  root.append(composer.el);
+  history.el.hidden = true;
+
+  import('../../vendor/md/md.js').then((m) => thread.setRenderer(createRenderer(m, { citeInfo: (k) => cites.get(k) || null })))
+    .catch(() => { /* the answers stay plain text */ });
   fetch('/api/notes/cite_index').then((r) => (r.ok ? r.json() : null)).then((d: { items: CiteEntry[] } | null) => {
-    if (d) { cites = new Map(d.items.map((i) => [i.key, i])); paint(); }
+    if (d) { cites = new Map(d.items.map((i) => [i.key, i])); thread.paintAll(); }
   }).catch(() => {});
 
-  function draw(t: Turn): void {
-    if (renderer && lib) {
-      // built in an inert template and filtered before it is inserted: an image there is not fetched
-      const tpl = document.createElement('template');
-      tpl.innerHTML = renderer.render(t.text);
-      for (const img of tpl.content.querySelectorAll('img')) {
-        let local = false;
-        try {
-          const u = new URL(img.getAttribute('src') || '', location.href);   // ../ segments resolved
-          local = u.origin === location.origin && u.pathname.startsWith('/api/notes/');
-        } catch { /* not an address */ }
-        if (!local) img.replaceWith(document.createTextNode(img.getAttribute('alt') || ''));
-      }
-      for (const a of tpl.content.querySelectorAll<HTMLAnchorElement>('a[href]')) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
-      t.body.replaceChildren(tpl.content);
-    } else t.body.textContent = t.text;
-    t.body.classList.toggle('plain', !renderer);
-    t.box.classList.toggle('streaming', t.state === 'queued' || t.state === 'running');
-    t.status.textContent = t.error || (t.state === 'cancelled' ? 'Stopped.' : t.state === 'queued' ? 'Waiting for your computer…'
-      : t.state === 'running' && t.tool ? `Reading… (${t.tool})` : t.state === 'running' && !t.text ? 'Thinking…' : '');
-    t.status.classList.toggle('error', !!t.error);
-  }
-  const paint = () => { for (const b of thread.querySelectorAll<HTMLElement>('.ai-turn')) { const t = turns.get(b); if (t) draw(t); } };
-  const turns = new WeakMap<HTMLElement, Turn>();
-  const schedule = (t: Turn) => { if (!timer) timer = setTimeout(() => { timer = undefined; draw(t); thread.scrollTop = thread.scrollHeight; }, THROTTLE_MS); };
-
   const busy = () => !!turn && !isFinal(turn.state);
-  function sync(): void {
-    stop.hidden = !busy();
-    send.hidden = busy();
-    chip.querySelector<HTMLElement>('[data-drop]')?.toggleAttribute('hidden', !!conversation);
+  const showingHistory = () => !history.el.hidden;
+
+  function setTitle(t: string): void {
+    title = t;
+    titleText.textContent = t || 'Ask AI';
+    titleBtn.title = conversation ? 'Rename this conversation' : '';
+    titleBtn.toggleAttribute('data-plain', !conversation);
   }
-  function paintContext(): void {
-    chip.hidden = !context;
-    chip.innerHTML = context ? `<span class="ai-chip" title="${esc(contextLabel(context))}"><span class="ai-chip-text">${esc(contextLabel(context))}</span>
-      <button type="button" class="ai-icon" data-drop title="Ask without it" aria-label="Remove context">${icon('close', 'icon-sm')}</button></span>` : '';
-    sync();
+  function paintContext(): void { composer.setContext(context, !conversation); paintEmpty(); }
+  function paintEmpty(): void {
+    if (conversation || turns.length) return;
+    const label = context?.kind === 'note' ? 'Ask about this note' : context?.kind === 'paper' ? 'Ask about this paper' : 'Ask about your library';
+    thread.showEmpty(label, suggestions(context), (t) => void submit(t));
+    composer.placeholder(context ? 'Ask about this…' : 'Ask anything about your library…');
   }
+  function paintTotal(): void {
+    const sum: Usage = { input_tokens: 0, output_tokens: 0, cost_usd: 0, duration_ms: 0 };
+    for (const t of turns) if (t.usage) {
+      sum.input_tokens! += t.usage.input_tokens || 0; sum.output_tokens! += t.usage.output_tokens || 0;
+      sum.cost_usd! += t.usage.cost_usd || 0; sum.duration_ms! += t.usage.duration_ms || 0;
+    }
+    const text = usageText(sum);
+    usageBtn.hidden = !text;
+    if (!text) total.hidden = true;
+    total.textContent = text ? `This conversation: ${text}` : '';
+  }
+  const syncBusy = () => composer.setBusy(busy());
 
   function showHelp(message?: string): void {
     help.hidden = false;
@@ -157,71 +141,97 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
       <button type="button" class="ai-btn" data-recheck>Check again</button>`;
   }
   async function check(): Promise<void> {
-    const st = await refreshAiStatus();
+    status = await refreshAiStatus();
     if (closed) return;
-    const providers = new Map((st?.companions || []).flatMap((c) => c.providers).map((p) => [p.id, p.label]));
-    const keep = provider.value;
-    provider.innerHTML = [...providers].map(([id, label]) => `<option value="${esc(id)}">${esc(label)}</option>`).join('');
-    if (providers.has(keep)) provider.value = keep;
-    provider.hidden = providers.size < 2;
-    if (!st) showHelp('Cannot reach the AI service.');
-    else if (!st.companions.length) showHelp();
+    composer.setAgents(status?.companions || [], locked);
+    if (!status) showHelp('Cannot reach the AI service.');
+    else if (!status.companions.length) showHelp();
     else help.hidden = true;
   }
 
-  function addTurn(question: string): Turn {
-    const box = document.createElement('div');
-    box.className = 'ai-turn';
-    box.innerHTML = `<div class="ai-q"></div><div class="ai-answer prose"></div><div class="ai-status" role="status"></div>`;
-    box.querySelector('.ai-q')!.textContent = question;
-    const t: Turn = { question, text: '', tool: '', state: 'queued', error: '', box, body: box.querySelector('.ai-answer')!, status: box.querySelector('.ai-status')! };
-    turns.set(box, t);
-    thread.appendChild(box);
-    thread.scrollTop = thread.scrollHeight;
-    return t;
+  // ---- placement
+  function applyPlacement(): void {
+    const where = place(root, host.dock);
+    const docked = where === 'dock';
+    placeBtn.hidden = !host.dock?.available() && !docked;
+    placeBtn.innerHTML = icon(docked ? 'newWindow' : 'sidebar');
+    const label = docked ? 'Move to a floating window' : 'Move to the sidebar';
+    placeBtn.title = label;
+    placeBtn.setAttribute('aria-label', label);
+  }
+  window.addEventListener('resize', applyPlacement);
+
+  // ---- views
+  function showHistory(on: boolean): void {
+    history.el.hidden = !on;
+    thread.el.hidden = on;
+    composer.el.hidden = on;
+    q('[data-history]').classList.toggle('active', on);
+    titleText.textContent = on ? 'Earlier conversations' : title || 'Ask AI';
+    if (on) { void history.refresh(); history.focus(); } else composer.focus();
+  }
+
+  // ---- asking
+  function follow_(t: Turn, id: string, ctl: AbortController): Promise<JobState> {
+    return follow(id, (events: JobEvent[], state: JobState) => {
+      for (const e of events) {
+        if (e.type === 'text') { t.text += e.text; t.phase = 'writing'; }
+        else if (e.type === 'tool') { t.tools.push(e.name); t.phase = 'thinking'; }
+        else if (e.type === 'started') { if (t.phase !== 'writing') t.phase = 'thinking'; }
+        else if (e.type === 'usage') t.usage = { input_tokens: e.input_tokens, output_tokens: e.output_tokens, cost_usd: e.cost_usd, duration_ms: e.duration_ms };
+        else if (e.type === 'error') t.error = e.message;
+      }
+      t.state = state;
+      if (state === 'running' && t.phase === 'queued') t.phase = 'thinking';
+      if (isFinal(state)) finish(t, state, state === 'error' && !t.error ? 'The AI could not answer.' : '');
+      else thread.schedule(t);
+    }, ctl.signal);
   }
 
   function finish(t: Turn, state: JobState, error = ''): void {
     t.state = state;
     if (error) t.error = error;
-    clearTimeout(timer);
-    timer = undefined;
-    draw(t);
+    thread.draw(t);
+    thread.toEnd();
     job = null;
     abort = null;
-    sync();
-    if (!closed) input.focus();
+    syncBusy();
+    paintTotal();
+    if (!closed && !showingHistory()) composer.focus();
   }
 
-  async function submit(): Promise<void> {
-    const prompt = input.value.trim();
-    if (!prompt || busy()) return;
-    input.value = '';
+  async function submit(prompt: string): Promise<void> {
+    if (busy()) return;
+    if (showingHistory()) showHistory(false);
     help.hidden = true;
-    const t = addTurn(prompt);
+    const t = thread.addTurn(prompt);
+    turns.push(t);
     turn = t;
-    sync();
+    syncBusy();
     const ctl = new AbortController();
     abort = ctl;
+    const c = composer.choice();
     try {
-      const reply = await ask(prompt, { context: conversation ? undefined : context && limited(context), conversation, provider: provider.hidden ? undefined : provider.value });
-      conversation = reply.conversation;
+      const reply = await ask(prompt, {
+        context: conversation ? undefined : context && limited(context), conversation,
+        provider: conversation ? undefined : c.provider, companion: conversation ? undefined : c.companion, model: c.model, effort: c.effort,
+      });
+      if (!conversation) { conversation = reply.conversation; setTitle(prompt.replace(/\s+/g, ' ').slice(0, 60)); paintContext(); }
+      locked = reply.provider;
+      composer.setAgents(status?.companions || [], locked);
       job = reply.job;
+      t.computer = reply.companion.name;
+      t.phase = 'queued';
+      thread.draw(t);
       if (ctl.signal.aborted) { cancelJob(reply.job).catch(() => {}); return; }
-      sync();
-      await follow(reply.job, (events: JobEvent[], state: JobState) => {
-        for (const e of events) {
-          if (e.type === 'text') { t.text += e.text; t.tool = ''; }
-          else if (e.type === 'tool') t.tool = e.name.replace(/^mcp__synapse__/, '').replace(/_/g, ' ');
-          else if (e.type === 'error') t.error = e.message;
-        }
-        t.state = state;
-        if (isFinal(state)) finish(t, state, state === 'error' && !t.error ? 'The AI could not answer.' : '');
-        else schedule(t);
-      }, ctl.signal);
+      await follow_(t, reply.job, ctl);
     } catch (e) {
       if (ctl.signal.aborted) return;
-      if (e instanceof AiError && e.status === 409) { showHelp(e.message); t.box.remove(); input.value = prompt; turn = null; job = null; sync(); return; }
+      if (e instanceof AiError && e.status === 409) {
+        t.box.remove(); turns.pop(); turn = null; job = null; abort = null;
+        composer.setText(prompt); syncBusy(); showHelp(e.message); paintEmpty();
+        return;
+      }
       finish(t, 'error', (e as Error).message);
     }
   }
@@ -234,36 +244,95 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
     finish(t, 'cancelled');
   }
 
-  function reset(next: AskContext | undefined): void {
-    void stopNow();
-    context = next;
-    conversation = undefined;
+  /** Stop following the answer in progress without stopping it: it stays in the history, running. */
+  function detach(): void {
+    abort?.abort();
+    abort = null;
+    job = null;
     turn = null;
-    thread.innerHTML = '';
+    syncBusy();
+  }
+
+  /** Empty the panel for a new conversation about ``next``. */
+  function reset(next: AskContext | undefined): void {
+    detach();
+    context = next;
+    home = next;
+    conversation = undefined;
+    locked = null;
+    turns = [];
+    turn = null;
+    thread.clear();
+    setTitle('');
+    composer.setAgents(status?.companions || [], null);
     paintContext();
-    check();
-    input.focus();
+    paintTotal();
+    showHistory(false);
+    void check();
+  }
+
+  async function openConversation(c: Conversation): Promise<void> {
+    let full;
+    try { full = await getConversation(c.id); } catch (e) { showHelp((e as Error).message); showHistory(false); return; }
+    detach();
+    conversation = c.id;
+    locked = c.provider;
+    context = undefined;
+    turns = [];
+    turn = null;
+    thread.clear();
+    setTitle(c.title);
+    composer.setAgents(status?.companions || [], locked);
+    paintContext();
+    const msgs = full.messages;
+    const pending = full.running && msgs.length && msgs[msgs.length - 1].role === 'user' ? msgs.pop()! : null;
+    for (let i = 0; i < msgs.length; i++) {
+      if (msgs[i].role !== 'user') continue;
+      const a = msgs[i + 1]?.role === 'assistant' ? msgs[++i] : null;
+      const t = thread.addTurn(msgs[i - (a ? 1 : 0)].text, 'writing', (a?.state as JobState) || 'done');
+      if (a) { t.text = a.text; t.tools = a.tools || []; t.usage = a.usage; t.error = a.error || ''; if (a.state === 'error' && !t.error) t.error = 'The AI could not answer.'; }
+      turns.push(t);
+      thread.draw(t);
+    }
+    if (pending && full.running) {
+      const t = thread.addTurn(pending.text, 'thinking', 'running');
+      turns.push(t);
+      turn = t;
+      job = full.running;
+      const ctl = new AbortController();
+      abort = ctl;
+      t.computer = c.companion?.name || '';
+      void follow_(t, full.running, ctl).catch((e) => { if (!ctl.signal.aborted) finish(t, 'error', (e as Error).message); });
+    }
+    syncBusy();
+    paintTotal();
+    showHistory(false);
+    thread.toEnd();
+    if (!c.available) showHelp(`This conversation is on ${c.companion?.name || 'another computer'}, which is not connected.`);
+    else help.hidden = true;
   }
 
   function close(): void {
+    if (closed) return;
     closed = true;
-    ctlCancel();
-    root.remove();
-    document.removeEventListener('keydown', onKey, true);
-    el = null;
-    current = null;
-    teardown = null;
-    if (prevFocus?.isConnected) prevFocus.focus();
-  }
-  function ctlCancel(): void {
     abort?.abort();
     if (job) cancelJob(job).catch(() => {});   // nobody is reading it any more: free the companion
+    if (root.dataset.placement === 'dock') host.dock?.unmount(root);
+    root.remove();
+    document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('resize', applyPlacement);
+    el = null;
+    current = null;
+    if (prevFocus?.isConnected) prevFocus.focus();
   }
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape' && root.contains(document.activeElement)) { e.preventDefault(); e.stopPropagation(); close(); }
+    if (e.key !== 'Escape' || !root.contains(document.activeElement)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (showingHistory()) showHistory(false); else close();
   };
 
-  thread.addEventListener('click', (e) => {
+  thread.el.addEventListener('click', (e) => {
     const a = (e.target as Element).closest<HTMLAnchorElement>('a');
     if (!a) return;
     e.preventDefault();
@@ -278,22 +347,55 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
     }
     if (/^https?:\/\//i.test(a.href) && !a.classList.contains('wikilink')) window.open(a.href, '_blank', 'noopener,noreferrer');
   });
-  help.addEventListener('click', (e) => { if ((e.target as Element).closest('[data-recheck]')) check(); });
-  chip.addEventListener('click', (e) => { if ((e.target as Element).closest('[data-drop]')) { context = undefined; paintContext(); input.focus(); } });
+  help.addEventListener('click', (e) => { if ((e.target as Element).closest('[data-recheck]')) void check(); });
   q('[data-close]').addEventListener('click', close);
-  q('[data-new]').addEventListener('click', () => reset(context));
-  stop.addEventListener('click', () => void stopNow());
-  q('.ai-form').addEventListener('submit', (e) => { e.preventDefault(); void submit(); });
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); void submit(); }
+  root.addEventListener('ai-close', close);
+  q('[data-new]').addEventListener('click', () => reset(home));
+  q('[data-history]').addEventListener('click', () => showHistory(!showingHistory()));
+  placeBtn.addEventListener('click', () => { remember(root.dataset.placement === 'dock' ? 'popup' : 'dock'); applyPlacement(); composer.focus(); });
+  usageBtn.addEventListener('click', () => { total.hidden = !total.hidden; });
+  titleBtn.addEventListener('click', () => {
+    if (!conversation) return;
+    const field = document.createElement('input');
+    field.className = 'ai-rename';
+    field.value = title;
+    field.setAttribute('aria-label', 'Conversation title');
+    titleBtn.hidden = true;
+    titleBtn.after(field);
+    field.focus();
+    field.select();
+    let done = false;
+    const end = async (ok: boolean) => {
+      if (done) return;
+      done = true;
+      const v = field.value.trim();
+      field.remove();
+      titleBtn.hidden = false;
+      if (ok && v && v !== title && conversation) {
+        try { await renameConversation(conversation, v); setTitle(v); } catch { /* unchanged */ }
+      }
+      composer.focus();
+    };
+    field.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); void end(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); void end(false); }
+    });
+    field.addEventListener('blur', () => void end(true));
   });
   document.addEventListener('keydown', onKey, true);
 
   document.body.appendChild(root);
   el = root;
-  teardown = close;
-  current = { get context() { return context; }, reset, focus: () => input.focus() };
+  current = { get context() { return context; }, reset, focus: () => composer.focus() };
+  setTitle('');
+  applyPlacement();
   paintContext();
   void check();
-  input.focus();
+  composer.focus();
+}
+
+/** The context as the server accepts it: long selections are cut. */
+function limited(c: AskContext): AskContext {
+  const cut = (s?: string) => (s ? s.slice(0, 8000) : s);
+  return c.kind === 'note' ? { ...c, selection: cut(c.selection) } : { ...c, quote: cut(c.quote) };
 }

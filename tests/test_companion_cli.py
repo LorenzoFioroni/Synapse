@@ -37,6 +37,9 @@ def out(o):
 tools = ["mcp__synapse__get_note", "mcp__synapse__search_library"]
 if mode == "badtools":
     tools.append("Bash")
+if mode == "gone":
+    out({{"type": "result", "subtype": "error_during_execution", "is_error": True, "errors": ["No conversation found with session ID: x"]}})
+    sys.exit(1)
 out({{"type": "system", "subtype": "init", "tools": tools}})
 if mode == "badtools":
     time.sleep(0.3)
@@ -50,7 +53,8 @@ if mode == "hang":
 if mode == "fail":
     out({{"type": "result", "is_error": True, "result": "Not logged in"}})
 else:
-    out({{"type": "result", "is_error": False, "result": "Hello"}})
+    out({{"type": "result", "is_error": False, "result": "Hello", "duration_ms": 1234, "total_cost_usd": 0.01,
+         "usage": {{"input_tokens": 2, "cache_creation_input_tokens": 10, "cache_read_input_tokens": 5, "output_tokens": 7}}}})
 """
 
 FAKE_CODEX = r"""#!{python}
@@ -62,7 +66,7 @@ for o in (
     {{"type": "thread.started", "thread_id": "thread-1"}},
     {{"type": "item.started", "item": {{"type": "mcp_tool_call", "tool": "get_note"}}}},
     {{"type": "item.completed", "item": {{"type": "agent_message", "text": "From Codex"}}}},
-    {{"type": "turn.completed"}},
+    {{"type": "turn.completed", "usage": {{"input_tokens": 11, "output_tokens": 3, "cached_input_tokens": 5}}}},
 ):
     print(json.dumps(o), flush=True)
 """
@@ -638,3 +642,111 @@ def test_sigterm_stops_the_ai_tool_at_once(client, svc, live, token, tools, tmp_
     finally:
         proc.kill()
         proc.wait()
+
+
+# ---------------------------------------------------------------------- round 2
+
+
+def test_the_companion_advertises_its_models_and_efforts(client, svc, running, tools):
+    running(allow={"codex"})
+    for _ in range(100):
+        if svc.companions.status():
+            break
+        time.sleep(0.02)
+    providers = {p["id"]: p for p in svc.companions.status()[0]["providers"]}
+    assert [m["id"] for m in providers["claude"]["models"]] == ["fable", "opus", "sonnet", "haiku"]
+    assert providers["claude"]["efforts"] == ["low", "medium", "high", "xhigh", "max"]
+    assert providers["codex"]["models"] == [] and providers["codex"]["efforts"] == ["low", "medium", "high", "xhigh"]
+    assert all(sc.CHOICE.fullmatch(i) for p in (sc.Claude, sc.Codex) for i in [*(m for m, _ in p.models), *p.efforts])
+
+
+def test_model_and_effort_reach_the_command_line_and_nothing_else_does(client, svc, running, tools):
+    running(allow={"codex"})
+    chosen = ask(client, svc, model="sonnet", effort="high")
+    assert collect(client, chosen["job"])[0] == "done"
+    plain = ask(client, svc)
+    collect(client, plain["job"])
+    with_choice, without = calls(tools)
+    argv = with_choice["argv"]
+    assert argv[argv.index("--model") + 1] == "sonnet" and argv[argv.index("--effort") + 1] == "high"
+    assert "--model" not in without["argv"] and "--effort" not in without["argv"]
+    codex = ask(client, svc, provider="codex", effort="low")
+    collect(client, codex["job"])
+    codex_argv = calls(tools)[-1]["argv"]
+    assert 'model_reasoning_effort="low"' in codex_argv and "-m" not in codex_argv
+
+
+def test_a_value_the_companion_does_not_offer_is_ignored():
+    provider = sc.Claude("claude")
+    for bad in ("--dangerous", "opus; rm -rf", "x" * 70, "OPUS", "", None, 5, ["opus"]):
+        assert provider.choice({"model": bad}, "model") is None and provider.choice({"effort": bad}, "effort") is None
+    assert provider.choice({"model": "opus", "effort": "max"}, "model") == "opus"
+    assert provider.choice({"model": "opus", "effort": "max"}, "effort") == "max"
+    assert sc.Codex("codex").choice({"model": "gpt-5"}, "model") is None  # Codex offers no model list
+
+
+def test_a_hostile_job_cannot_put_its_model_on_the_command_line(client, svc, live, token, tools):
+    connect(live, token)
+    profile = sc.load_profile("default")
+    entry = svc.tokens.check(token, scope="companion")
+    claude = sc.Claude("claude")
+    svc.companions.poll(profile["client"], "PC", [claude.advert()], [], token=entry["id"], timeout=0)
+    asked = client.post("/api/ai/ask", json={"prompt": "q", "model": "opus"}).get_json()
+    svc.companions._jobs[asked["job"]].model = "--dangerously-skip-permissions"  # a server gone wrong
+    svc.companions._jobs[asked["job"]].effort = "high; echo"
+    companion = sc.Companion(profile, "PC")
+    thread = threading.Thread(target=companion.run, daemon=True)
+    thread.start()
+    try:
+        assert collect(client, asked["job"])[0] == "done"
+    finally:
+        companion.stop()
+        thread.join(10)
+    argv = calls(tools)[0]["argv"]
+    assert "--model" not in argv and "--effort" not in argv and not any("dangerous" in a or "echo" in a for a in argv)
+
+
+def test_started_and_usage_events_come_from_the_tool(client, svc, running, tools):
+    running()
+    state, events = collect(client, ask(client, svc)["job"])
+    kinds = [e["type"] for e in events]
+    assert state == "done" and kinds[0] == "started" and kinds[-2:] == ["usage", "done"]
+    assert events[-2] == {
+        "type": "usage",
+        "input_tokens": 17,
+        "output_tokens": 7,
+        "cost_usd": 0.01,
+        "duration_ms": 1234,
+    }
+
+
+def test_a_conversation_whose_session_is_gone_says_so(client, svc, running, tools, monkeypatch):
+    running()
+    first = ask(client, svc)
+    collect(client, first["job"])
+    monkeypatch.setenv("FAKE_MODE", "gone")
+    state, events = collect(client, ask(client, svc, conversation=first["conversation"])["job"])
+    assert state == "error" and events[-1] == {"type": "error", "message": sc.NO_HISTORY}
+    stored = client.get(f"/api/ai/conversations/{first['conversation']}").get_json()["messages"]
+    assert stored[-1]["error"] == sc.NO_HISTORY and stored[-1]["state"] == "error"
+
+
+def test_a_restarted_codex_cannot_resume_and_says_so_without_running_anything(client, svc, live, token, tools):
+    first_run = Running(live, token, allow={"codex"})
+    first = ask(client, svc, provider="codex")
+    assert collect(client, first["job"])[0] == "done"
+    first_run.close()
+    second_run = Running(live, token, allow={"codex"})  # a new process: no threads remembered
+    try:
+        state, events = collect(client, ask(client, svc, conversation=first["conversation"])["job"])
+    finally:
+        second_run.close()
+    assert state == "error" and events[-1]["message"] == sc.NO_HISTORY
+    assert len(calls(tools)) == 1  # the tool was started only for the first question
+
+
+def test_codex_reports_its_usage(client, svc, running, tools):
+    running(allow={"codex"})
+    state, events = collect(client, ask(client, svc, provider="codex")["job"])
+    assert state == "done" and events[0] == {"type": "started"}
+    assert {"type": "usage", "input_tokens": 11, "output_tokens": 3} in events

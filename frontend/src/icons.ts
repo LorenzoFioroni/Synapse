@@ -76,6 +76,7 @@ const P: Record<string, string> = {
   outdent: '<path d="M7 4h7M7 8h7M7 12h7M4.5 6L2 8l2.5 2"/>',
   move: '<path d="M2.5 8h9M8.5 5l3 3-3 3"/><path d="M13.5 3v10"/>',
   plugin: '<path d="M3 5.5h2.2a1.6 1.6 0 1 1 3.2 0h2.1v2.2a1.6 1.6 0 1 1 0 3.2V13H3z"/>',
+  usage: '<path d="M3 13V8M8 13V3M13 13V6"/>',
   sparkle: '<path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z"/>',
 };
 

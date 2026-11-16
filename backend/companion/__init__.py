@@ -2,5 +2,6 @@
 services (the user's AI command-line tool, a browser extension folder). See docs/companion.md."""
 
 from .hub import Companions
+from .store import Conversations
 
-__all__ = ["Companions"]
+__all__ = ["Companions", "Conversations"]

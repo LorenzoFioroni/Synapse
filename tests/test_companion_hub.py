@@ -199,28 +199,30 @@ def test_finished_jobs_are_kept_for_a_while_then_forgotten(companions, clock, mo
     assert companions.watch(jobs[-1], 0, timeout=0)["state"] == "cancelled"
 
 
-def test_conversation_is_pinned_to_its_companion_and_provider(companions, clock):
-    connect(companions, "a", providers=CLAUDE + [{"id": "codex", "label": "Codex"}])
+def test_a_follow_up_goes_to_the_pinned_companion_and_provider(companions, clock):
+    both = CLAUDE + [{"id": "codex", "label": "Codex"}]
+    connect(companions, "a", providers=both)
     connect(companions, "b")
     first = companions.ask("1", "s", provider="codex")
-    job = connect(companions, "a")["job"]["id"]
+    pin = (first["companion"]["id"], first["provider"], "My PC")  # what the store keeps
+    job = connect(companions, "a", providers=both)["job"]["id"]
     with pytest.raises(hub.TooBusy):  # still answering
-        companions.ask("2", "s", conversation=first["conversation"])
+        companions.ask("2", "s", conversation=first["conversation"], pin=pin)
+    assert companions.running_job(first["conversation"]) == job
     companions.post_events("a", job, [{"type": "done"}])
-    follow = companions.ask("2", "s", conversation=first["conversation"], provider="claude")
+    assert companions.running_job(first["conversation"]) is None
+    follow = companions.ask("2", "s", conversation=first["conversation"], pin=pin, provider="claude")
     assert (follow["conversation"], follow["provider"], follow["companion"]["id"]) == (
         first["conversation"],
         "codex",
         "a",
     )
-    assert connect(companions, "a")["job"]["resume"] is True
-    with pytest.raises(hub.NoCompanion, match="new conversation"):
-        companions.ask("3", "s", conversation="unknown")
-    # the pinned companion going away ends the conversation
+    assert connect(companions, "a", providers=both)["job"]["resume"] is True
+    # the pinned companion going away: the message names the computer
     clock.now += hub.GRACE_SECONDS + 1
     connect(companions, "b")
-    with pytest.raises(hub.NoCompanion, match="new conversation"):
-        companions.ask("4", "s", conversation=first["conversation"])
+    with pytest.raises(hub.NoCompanion, match="is on My PC, which is not connected"):
+        companions.ask("4", "s", conversation=first["conversation"], pin=pin)
 
 
 def test_bounds_on_companions_events_and_jobs(companions, monkeypatch):
@@ -326,3 +328,138 @@ def test_a_job_has_an_overall_time_limit(companions, clock):
         companions.post_events("pc", job, [{"type": "tool", "name": "x"}])
     seen = companions.watch(job, 0, timeout=0)
     assert seen["state"] == "error" and "took too long" in seen["events"][-1]["message"]
+
+
+# ---------------------------------------------------------------------- round 2
+
+
+RICH = [
+    {
+        "id": "claude",
+        "label": "Claude Code",
+        "models": [{"id": "opus", "label": "Opus"}, {"id": "sonnet", "label": "Sonnet"}],
+        "efforts": ["low", "high"],
+    }
+]
+
+
+def test_providers_advertise_models_and_efforts(companions):
+    companions.poll("pc", "PC", RICH, [], timeout=0)
+    assert companions.status()[0]["providers"] == RICH
+    companions.poll("old", "PC", CLAUDE, [], timeout=0)  # an older companion advertises none
+    assert [c for c in companions.status() if c["id"] == "old"][0]["providers"][0]["models"] == []
+    for bad in (
+        [{"id": "claude", "models": [{"id": "has space"}]}],
+        [{"id": "claude", "models": [{"id": "x" * 65}]}],
+        [{"id": "claude", "models": "opus"}],
+        [{"id": "claude", "efforts": ["--evil"]}],
+        [{"id": "claude", "efforts": ["a"] * 17}],
+    ):
+        with pytest.raises(hub.InvalidCompanion):
+            companions.poll("bad", "PC", bad, [], timeout=0)
+
+
+def test_model_and_effort_must_be_advertised_and_reach_the_job(companions):
+    companions.poll("pc", "PC", RICH, [], timeout=0)
+    for kwargs in ({"model": "haiku"}, {"effort": "max"}, {"model": "opus; rm", "effort": "low"}):
+        with pytest.raises(hub.InvalidChoice):
+            companions.ask("q", "s", **kwargs)
+    assert not companions._jobs  # nothing was queued
+    companions.ask("q", "s", model="opus", effort="high")
+    job = companions.poll("pc", "PC", RICH, [], timeout=0)["job"]
+    assert (job["model"], job["effort"]) == ("opus", "high")
+    companions.post_events("pc", job["id"], [{"type": "done"}])
+    companions.ask("q", "s")
+    plain = companions.poll("pc", "PC", RICH, [], timeout=0)["job"]
+    assert "model" not in plain and "effort" not in plain  # default: nothing is sent
+    # a provider that advertises nothing accepts nothing
+    other = Companions()
+    other.poll("old", "PC", CLAUDE, [], timeout=0)
+    with pytest.raises(hub.InvalidChoice):
+        other.ask("q", "s", model="opus")
+
+
+def test_started_and_usage_events_are_kept_as_bounded_numbers(companions):
+    connect(companions)
+    companions.ask("q", "s")
+    job = connect(companions)["job"]["id"]
+    companions.post_events(
+        "pc",
+        job,
+        [
+            {"type": "started"},
+            {"type": "usage", "input_tokens": 10, "output_tokens": 5, "cost_usd": 0.5, "duration_ms": 1200, "x": "y"},
+            {"type": "usage", "input_tokens": -1, "output_tokens": 5},
+            {"type": "usage", "input_tokens": True, "output_tokens": 5},
+            {"type": "usage", "input_tokens": 10**12, "output_tokens": 5},
+            {"type": "usage", "input_tokens": "3", "output_tokens": 5},
+            {"type": "usage", "input_tokens": 1, "output_tokens": 2, "cost_usd": 10**9, "duration_ms": -5},
+            {"type": "done"},
+        ],
+    )
+    events = companions.watch(job, 0, timeout=0)["events"]
+    assert events == [
+        {"type": "started"},
+        {"type": "usage", "input_tokens": 10, "output_tokens": 5, "cost_usd": 0.5, "duration_ms": 1200},
+        {"type": "usage", "input_tokens": 1, "output_tokens": 2},
+        {"type": "done"},
+    ]
+
+
+def test_finished_jobs_are_reported_with_what_arrived(companions):
+    seen = []
+    companions.on_finish = seen.append
+    connect(companions)
+    first = companions.ask("q", "s")
+    job = connect(companions)["job"]["id"]
+    companions.post_events(
+        "pc",
+        job,
+        [
+            {"type": "tool", "name": "get_note"},
+            {"type": "text", "text": "Hello"},
+            {"type": "usage", "input_tokens": 3, "output_tokens": 4},
+            {"type": "done"},
+        ],
+    )
+    assert seen[-1] == {
+        "job": job,
+        "conversation": first["conversation"],
+        "state": "done",
+        "text": "Hello",
+        "tools": ["get_note"],
+        "usage": {"input_tokens": 3, "output_tokens": 4},
+        "error": None,
+    }
+    second = companions.ask("q2", "s")
+    connect(companions)
+    companions.post_events("pc", second["job"], [{"type": "text", "text": "part"}])
+    companions.cancel(second["job"])
+    assert seen[-1]["state"] == "cancelled" and seen[-1]["text"] == "part"
+    third = companions.ask("q3", "s")
+    companions.post_events("pc", connect(companions)["job"]["id"], [{"type": "error", "message": "Not logged in"}])
+    assert seen[-1]["state"] == "error" and seen[-1]["error"] == "Not logged in" and third["job"] == seen[-1]["job"]
+
+
+def test_a_recording_failure_never_breaks_the_hub(companions):
+    def broken(_summary):
+        raise RuntimeError("disk full")
+
+    companions.on_finish = broken
+    connect(companions)
+    job = companions.ask("q", "s")["job"]
+    assert companions.cancel(job) == "cancelled"
+
+
+def test_the_record_callback_runs_before_the_job_exists_and_can_refuse_it(companions):
+    connect(companions)
+    order = []
+    reply = companions.ask("q", "s", record=lambda r: order.append(("record", r["job"] in companions._jobs)))
+    assert order == [("record", False)] and reply["job"] in companions._jobs
+
+    def refuse(_reply):
+        raise OSError("no space")
+
+    with pytest.raises(OSError):
+        companions.ask("q", "s", record=refuse)
+    assert len(companions._jobs) == 1

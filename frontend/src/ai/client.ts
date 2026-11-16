@@ -3,7 +3,8 @@
 // the server are backend/companion; the contract is in docs/companion.md. Plain fetch, no api.ts:
 // the standalone PDF viewer loads this too and does not share the app's modules.
 
-export interface AiProvider { id: string; label: string }
+/** An agent a companion offers. ``models`` and ``efforts`` may be empty (an older companion): no selector then. */
+export interface AiProvider { id: string; label: string; models?: { id: string; label: string }[]; efforts?: string[] }
 export interface AiCompanion { id: string; name: string; providers: AiProvider[]; busy: number }
 export interface AiStatus { configured: boolean; companions: AiCompanion[] }
 
@@ -12,16 +13,26 @@ export type AskContext =
   | { kind: 'note'; path: string; selection?: string }
   | { kind: 'paper'; item: string; attachment?: number; page?: number; quote?: string };
 
+export interface AskOptions { context?: AskContext; conversation?: string; provider?: string; companion?: string; model?: string; effort?: string }
 export interface AskReply { job: string; conversation: string; provider: string; companion: { id: string; name: string } }
 export type JobState = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
-export type JobEvent = { type: 'text'; text: string } | { type: 'tool'; name: string } | { type: 'done' } | { type: 'error'; message: string };
+export interface Usage { input_tokens?: number; output_tokens?: number; cost_usd?: number; duration_ms?: number }
+export type JobEvent = { type: 'text'; text: string } | { type: 'tool'; name: string } | { type: 'started' } | ({ type: 'usage' } & Usage)
+  | { type: 'done' } | { type: 'error'; message: string };
+
+/** A stored conversation (GET /api/ai/conversations). */
+export interface Conversation {
+  id: string; title: string; created: string; updated: string; provider: string; model?: string | null; effort?: string | null;
+  companion: { id: string; name: string }; context?: AskContext | null; available: boolean; running: string | null;
+}
+export interface StoredMessage { role: 'user' | 'assistant'; text: string; tools?: string[]; usage?: Usage; state?: string; error?: string; created?: string }
 
 export class AiError extends Error {
   status: number;
   constructor(message: string, status: number) { super(message); this.status = status; }
 }
 
-async function call<T>(method: 'GET' | 'POST', url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+async function call<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let res: Response;
   try {
     res = await fetch(url, { method, signal, headers: body === undefined ? undefined : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -40,9 +51,13 @@ export const MAX_CONTEXT = 8000;
 
 export const fetchStatus = (): Promise<AiStatus> => call<AiStatus>('GET', '/api/ai/status');
 
-export function ask(prompt: string, o: { context?: AskContext; conversation?: string; provider?: string }): Promise<AskReply> {
-  return call<AskReply>('POST', '/api/ai/ask', { prompt, context: o.context, conversation: o.conversation, provider: o.provider });
-}
+export const ask = (prompt: string, o: AskOptions): Promise<AskReply> => call<AskReply>('POST', '/api/ai/ask', { prompt, ...o });
+
+export const listConversations = (q = ''): Promise<{ conversations: Conversation[] }> =>
+  call('GET', `/api/ai/conversations?limit=50${q ? `&q=${encodeURIComponent(q)}` : ''}`);
+export const getConversation = (id: string): Promise<Conversation & { messages: StoredMessage[] }> => call('GET', `/api/ai/conversations/${encodeURIComponent(id)}`);
+export const renameConversation = (id: string, title: string): Promise<unknown> => call('PATCH', `/api/ai/conversations/${encodeURIComponent(id)}`, { title });
+export const deleteConversation = (id: string): Promise<unknown> => call('DELETE', `/api/ai/conversations/${encodeURIComponent(id)}`);
 
 export const cancelJob = (job: string): Promise<{ state: JobState }> => call('POST', `/api/ai/jobs/${encodeURIComponent(job)}/cancel`);
 

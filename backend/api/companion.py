@@ -121,18 +121,45 @@ def ai_status():
     )
 
 
+def _text_arg(value) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
 @bp.post("/api/ai/ask")
 def ask():
     s = svc()
     data = body()
+    conversation = _text_arg(data.get("conversation"))
     try:
         text, system = prompt.build(data.get("prompt"), data.get("context"), notes=s.note_service, papers=s.papers)
+        pin = None
+        if conversation:
+            row = s.ai_conversations.get(conversation)
+            if row is None:
+                raise NoCompanion("This conversation is gone. Start a new conversation.")
+            pin = (row["companion"]["id"], row["provider"], row["companion"]["name"])
+        question = data["prompt"].strip()
+
+        def record(reply):
+            s.ai_conversations.record_ask(
+                reply,
+                question,
+                context=data.get("context"),
+                model=_text_arg(data.get("model")),
+                effort=_text_arg(data.get("effort")),
+                job=reply["job"],
+            )
+
         reply = s.companions.ask(
             text,
             system,
-            provider=data.get("provider") if isinstance(data.get("provider"), str) else None,
-            conversation=data.get("conversation") if isinstance(data.get("conversation"), str) else None,
-            companion=data.get("companion") if isinstance(data.get("companion"), str) else None,
+            provider=_text_arg(data.get("provider")),
+            conversation=conversation,
+            companion=_text_arg(data.get("companion")),
+            model=_text_arg(data.get("model")),
+            effort=_text_arg(data.get("effort")),
+            pin=pin,
+            record=record,
         )
     except prompt.UnknownContext as e:
         return failure(e, 404)
@@ -141,6 +168,55 @@ def ask():
     except ValueError as e:
         return failure(e)
     return jsonify(**reply), 201
+
+
+def _with_state(row: dict) -> dict:
+    """A stored conversation with whether it can be continued now and which job is still answering."""
+    hub = svc().companions
+    live = {c["id"]: c for c in hub.status()}
+    comp = live.get(row["companion"]["id"])
+    row["available"] = bool(comp and any(p["id"] == row["provider"] for p in comp["providers"]))
+    row["running"] = hub.running_job(row["id"])
+    return row
+
+
+@bp.get("/api/ai/conversations")
+def conversations():
+    try:
+        limit = int(request.args.get("limit", 50))
+    except ValueError:
+        return error("Invalid limit.")
+    rows = svc().ai_conversations.list(limit, request.args.get("q", ""))
+    return _no_store(jsonify(conversations=[_with_state(r) for r in rows]))
+
+
+@bp.get("/api/ai/conversations/<conv_id>")
+def conversation(conv_id):
+    row = svc().ai_conversations.get(conv_id)
+    if row is None:
+        return error("No such conversation.", 404)
+    return _no_store(jsonify(**_with_state(row)))
+
+
+@bp.patch("/api/ai/conversations/<conv_id>")
+def rename_conversation(conv_id):
+    title = body().get("title")
+    try:
+        done = isinstance(title, str) and svc().ai_conversations.rename(conv_id, title)
+    except ValueError as e:
+        return failure(e)
+    if not done:
+        return (
+            error("No such conversation.", 404) if isinstance(title, str) else error("Give the conversation a title.")
+        )
+    return jsonify(**_with_state(svc().ai_conversations.get(conv_id) or {}))
+
+
+@bp.delete("/api/ai/conversations/<conv_id>")
+def delete_conversation(conv_id):
+    if not svc().ai_conversations.delete(conv_id):
+        return error("No such conversation.", 404)
+    return jsonify(ok=True)
 
 
 @bp.get("/api/ai/jobs/<job_id>")

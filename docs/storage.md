@@ -37,7 +37,8 @@ data/
 ├── plugin-data/        what each plugin stores, in <id>/ (and, not in backups: its log .plugin.log,
 │                       its Python packages .python/, its built frontend .build/, .jobs.sqlite, .schedules.json)
 ├── plugins.json        which plugins are on, their settings, why one was turned off
-└── fields.db           values plugins attach to papers (per-item fields)
+├── fields.db           values plugins attach to papers (per-item fields)
+└── ai.db               Ask AI conversations (companion/store.py)
 ```
 
 `Config.ensure_dirs` creates the folder and `pdfs/`; `Vault.ensure` (`backend/notes/vault.py`)
@@ -60,6 +61,7 @@ Each file has one owner. Other code goes through that owner, with the few except
 | `notes_index.db` | `NotesIndex` in `backend/notes/index.py` | `SCHEMA`, `SCHEMA_VERSION` | derived from `notes/` |
 | `citations.db` | `CitationStore` in `backend/references/store.py` | `SCHEMA` there | cache of online data |
 | `plugins.json` | `StateFile` in `backend/plugins/state.py` | none (unknown keys are ignored) | source of truth |
+| `ai.db` | `Conversations` in `backend/companion/store.py` | `SCHEMA` there (`CREATE TABLE IF NOT EXISTS`) | source of truth for Ask AI conversations (the newest 200, at most 400 messages each); in backups |
 | `fields.db` | `FieldStore` in `backend/plugins/fields.py` | `SCHEMA` there (`CREATE TABLE IF NOT EXISTS`) | source of truth for what plugins set; in backups |
 | `plugin-data/<id>/` | each plugin, through `plugin.storage` (`backend/plugins/storage.py`) | the plugin's own `migrations`, in `PRAGMA user_version` | source of truth |
 | `plugins/` | the user (installing a plugin); read by `PluginHost.scan` | `manifest.json`, `backend/plugins/manifest.py` | code, not in backups |
@@ -291,6 +293,7 @@ Resetting preferences needs the same confirmation when it would change these val
 | `notes-history.bundle` | The notes history (`git bundle --all`), when Git is installed. Restoring keeps the live history and adds the restored notes to it; the bundle rebuilds a history that was missing or empty (see [notes history](notes-history.md#backups)). |
 | `plugins.json` | As it is on disk, if it exists. |
 | `fields.db` | Copied with the backup API, if it exists. |
+| `ai.db` | Copied with the backup API, if it exists. A restore puts it back the same way; a backup made before it existed leaves today's conversations alone. |
 | `plugin-data/` | What plugins store; SQLite files (`.sqlite`, `.db`) copied with the backup API, `-wal`/`-shm` files and dot files (the plugins' logs) left out. |
 
 Left out on purpose: `pdfs/` (large), `fulltext.db` and `notes_index.db` (rebuilt),

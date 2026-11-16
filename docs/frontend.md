@@ -374,7 +374,7 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `settings/passkeys.ts` | Settings → Devices → Passkeys: adding one with `navigator.credentials.create`, removing one. |
 | `settings/aiAccess.ts` | Settings → AI Access: access tokens for `/mcp`, shown once with what to run for Claude Code or Codex, or the URL and header for another app; browser tokens; and companion tokens, shown once with a download button (`/api/ai/companion-script`) and the two commands (`connect`, which asks for the token, and `run`), so the token is in no command line, for the computer that has the AI app. |
 | `ai/client.ts`, `ai/status.ts` | Ask AI's calls (`/api/ai/status`, `ask`, the long-polled job, `cancel`) with plain `fetch` (the viewer shares this code and not `api.ts`), and the cached "is a companion token set up" that decides whether the entry points show. |
-| `ai/panel.ts`, `ai/appHost.ts`, `css/ai.css` | The Ask AI panel, see [Ask AI](#ask-ai). |
+| `ai/*.ts`, `css/ai.css` | The Ask AI panel (placement, history, composer, messages), see [Ask AI](#ask-ai). |
 | `settings/plugins.ts` | Settings → Plugins: the list of plugins found (filter chips; a row opens the plugin's page; its switch turns it on, after a confirmation listing its access, or off) and the Plugins badge ("N on"). Each plugin that can be read has a section (`#set-plugin-<id>`) shown beside the list: its name, switch, what it may do and any problem, then, while it is on, its settings drawn from the manifest (less those its frontend draws, `shows`), tools for other computers, what it offers, Restart and the log. `pluginsChanged()` redraws them when the change feed names `plugins`. See [plugins](plugins.md). |
 
 **`views/notes/`: the notes workspace.** [Notes](notes.md) covers it in depth. In short:
@@ -507,38 +507,62 @@ state and call each other without import cycles. Three patterns are used:
 ## Ask AI
 
 [The companion](companion.md) lets a model on the user's own computer answer questions with
-Synapse's tools. The browser side is one component, `ai/panel.ts`: a drawer on the right (full
-width on a phone) with the context chip (removable until the first answer), the thread, a question
-box (Enter sends, Shift+Enter is a new line, Escape closes and returns focus), Stop, and a New
-Conversation button. Follow-ups pass the conversation id; the context is sent with the first
-question only. With no companion connected the panel shows how to start one
-(`python synapse_companion.py run`) and a Check again button, also when `ask` answers 409.
+Synapse's tools. The browser side is `frontend/src/ai/`, split by responsibility:
 
-**Where it lives.** The panel opens in the document that asked: the app for a note, the viewer
-page for a PDF. The viewer runs in a frame of an app tab and as a page of its own, so hosting it
-in the viewer serves both with one code path; a host object (`AskHost`) supplies the one thing that
-differs, opening a cited PDF (`ai/appHost.ts` goes through `api.openAttachment` and the app's tabs;
-`viewer/notesBridge.ts` scrolls the open PDF, or opens another one as an app tab through `window.zcTabs.open` when it runs in a tab, else in a browser tab). `css/ai.css`
-is loaded by both pages and styles its own buttons from the tokens, because the viewer has no
-`components.css`.
+| Module | Role |
+|---|---|
+| `client.ts`, `status.ts` | The calls (`/api/ai/status`, `ask`, the long-polled job, `cancel`, the conversations) with plain `fetch` (the viewer shares this code and not `api.ts`); the cached "is a companion token set up" that decides whether the entry points show. |
+| `panel.ts` | The orchestrator: header, the conversation or the history, asking, following a job, stopping, opening an earlier conversation (a running one is re-attached), the 409 help. |
+| `messages.ts` | The thread: question bubble, answer, tool chips, the phase text ("Sending…", "Waiting for <computer>…", "Thinking…"), usage line, copy button, the empty state; how untrusted text is drawn (below). |
+| `composer.ts` | The text box, the removable context chip, the agent / model / effort selectors (only what the companions advertise, "Default" first, the last choice remembered), Send / Stop. |
+| `history.ts` | Earlier conversations: search, continue, inline rename, delete with an in-row confirmation, "not connected" and "answering…" marks. |
+| `placement.ts`, `appHost.ts` | Popup or docked, and the page's dock; `appHost.ts` is the app's host (notes). |
+| `context.ts`, `prefs.ts` | The chip text and the suggestions per context; guarded `localStorage`. |
+
+**Two placements, one element.** The panel starts as a small card in the lower right corner (a full
+width bottom sheet on a narrow screen) and a header button moves it into the page's own column;
+the same element is re-parented, so a conversation in progress is untouched. The choice is
+remembered per device (`zc.ai.placement`). Where docking has no room (a window narrower than 1101
+px in notes, 760 px in the viewer, the phone) the panel stays a popup and the button is hidden. A
+host supplies its `Dock` (`placement.ts`):
+
+- **Notes** (`appHost.ts`): the panel is appended to `.notes-side`, the details panel's slot, and
+  `#notes-view.ai-docked` hides everything else in it (the details and the graph card) and shows
+  the slot even where the details were hidden. It is 320 px wide. Closing it or moving it to the
+  popup removes the class, and the details panel is back as `toggleDetails` and the narrow-window
+  rules left it. The list's peek mode is unaffected.
+- **Viewer** (`viewer/notesBridge.ts`): the panel is a flex child of `#main-content` next to
+  `#pdf-container`, which makes room for it (no overlay). This is the same page whether it is a
+  browser tab of its own or a frame in an app tab; in a tab a citation of another paper opens as an
+  app tab through `window.zcTabs.open`.
+
+`css/ai.css` is loaded by both pages and styles its own controls from the tokens, because the viewer
+has no `components.css`.
 
 **Entry points** appear only when `GET /api/ai/status` says `configured` (`ai/status.ts`, cached
 60 s, refreshed when a note opens and after a companion token is made or removed): a button in the
 note's header and the palette command "Ask AI About This Note…" (`views/notes/aiAsk.ts`; the
-selected words of the editor, or of the read view, become `context.selection`), and "Ask AI" in the
-viewer's text-selection toolbar (`viewer/notesBridge.ts`; the quote, cleaned by `cleanQuote`, the
-page and the attachment become the context). Phone entry points are not built yet.
+selected words of the editor, or of the read view, become `context.selection`), and in the viewer an
+"Ask AI" button in the toolbar (the paper and the page in view; no selection needed) and "Ask AI" in
+the text-selection toolbar (`viewer/notesBridge.ts`; the quote, cleaned by `cleanQuote`, the page and
+the attachment). Phone entry points are not built yet.
+
+**Working state.** The question and "Sending…" appear the moment Send is pressed; the phase then
+follows the job (`queued` → "Waiting for <computer>…", `started` / `running` → "Thinking…", tool
+chips, streamed text). A conversation's total usage is behind the header's chart button.
 
 **The answer is untrusted.** Deltas are appended to the turn's text and drawn at most every 120 ms.
 Drawing uses `createRenderer` of the notes (markdown-it with `html: false`, so tags are escaped
-text; KaTeX with `trust: false`), which gives `[@key, p. N]` citations and math. The HTML is built in an inert `<template>` (images there are not fetched), and images
-whose resolved address (`new URL`, so `../` is applied) is not the app's own `/api/notes/` are replaced by their alt text (a remote image
-would send the conversation to another host), links get `rel="noopener noreferrer"` and
-`target="_blank"` (markdown-it already refuses `javascript:` addresses), and Mermaid blocks stay
-source text. Until markdown-it has loaded the text is set with `textContent`. Nothing is ever
-assigned as raw HTML. A citation click uses the panel's own copy of the cite index
-(`/api/notes/cite_index`). `tests/e2e/companion_checklist.py` covers all of this, including a
-hostile answer.
+text; KaTeX with `trust: false`), which gives `[@key, p. N]` citations and math. The HTML is built
+in an inert `<template>` (images there are not fetched), and images whose resolved address
+(`new URL`, so `../` is applied) is not the app's own `/api/notes/` are replaced by their alt text
+(a remote image would send the conversation to another host); links get `rel="noopener noreferrer"`
+and `target="_blank"` (markdown-it already refuses `javascript:` addresses); Mermaid blocks stay
+source text. Until markdown-it has loaded the text is set with `textContent`. Strings from the
+companion or server (computer names, labels, model ids, titles, tool names) are only set as text.
+A citation click uses the panel's own copy of the cite index (`/api/notes/cite_index`).
+`tests/e2e/companion_checklist.py` covers all of this, including a hostile answer and the network
+requests it would cause.
 
 ## Styling
 

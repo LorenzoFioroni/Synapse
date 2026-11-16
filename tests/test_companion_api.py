@@ -228,7 +228,12 @@ def test_status_says_whether_a_token_exists_and_who_is_connected(client, svc):
     status = client.get("/api/ai/status").get_json()
     assert status["configured"] is True
     assert status["companions"] == [
-        {"id": "pc", "name": "My PC", "providers": [{"id": "claude", "label": "Claude Code"}], "busy": 0}
+        {
+            "id": "pc",
+            "name": "My PC",
+            "providers": [{"id": "claude", "label": "Claude Code", "models": [], "efforts": []}],
+            "busy": 0,
+        }
     ]
 
 
@@ -446,3 +451,160 @@ def test_the_script_can_be_downloaded_by_the_app(client, svc, mac):
     token = make_token(mac, "companion")
     assert remote(mac, "GET", "/api/ai/companion-script").status_code == 401
     assert remote(mac, "GET", "/api/ai/companion-script", token).status_code == 401
+
+
+# ---------------------------------------------------------------------- round 2
+
+
+RICH = [
+    {
+        "id": "claude",
+        "label": "Claude Code",
+        "models": [{"id": "opus", "label": "Opus"}, {"id": "sonnet", "label": "Sonnet"}],
+        "efforts": ["low", "high"],
+    }
+]
+
+
+def connect_rich(svc, client="pc", name="My PC"):
+    svc.companions.poll(client, name, RICH, [], timeout=0)
+
+
+def finish(svc, job, text="Answer.", client="pc"):
+    svc.companions.post_events(
+        client,
+        job,
+        [
+            {"type": "started"},
+            {"type": "tool", "name": "get_note"},
+            {"type": "text", "text": text},
+            {"type": "usage", "input_tokens": 7, "output_tokens": 3, "cost_usd": 0.01, "duration_ms": 900},
+            {"type": "done"},
+        ],
+    )
+
+
+def test_status_lists_models_and_efforts(client, svc):
+    connect_rich(svc)
+    provider = client.get("/api/ai/status").get_json()["companions"][0]["providers"][0]
+    assert provider == RICH[0]
+
+
+def test_ask_checks_model_and_effort_against_what_the_computer_offers(client, svc):
+    connect_rich(svc)
+    for payload in ({"model": "haiku"}, {"effort": "max"}, {"model": "opus; rm -rf"}):
+        r = client.post("/api/ai/ask", json={"prompt": "q", **payload})
+        assert r.status_code == 400 and r.get_json()["error"], payload
+    assert client.get("/api/ai/conversations").get_json() == {"conversations": []}  # nothing was recorded
+    ok = client.post("/api/ai/ask", json={"prompt": "q", "model": "sonnet", "effort": "low"})
+    assert ok.status_code == 201
+    job = svc.companions.poll("pc", "My PC", RICH, [], timeout=0)["job"]
+    assert (job["model"], job["effort"]) == ("sonnet", "low")
+    conv = client.get(f"/api/ai/conversations/{ok.get_json()['conversation']}").get_json()
+    assert (conv["model"], conv["effort"]) == ("sonnet", "low")
+
+
+def test_conversation_endpoints(client, svc):
+    connect_rich(svc)
+    note = client.post("/api/notes/note", json={"title": "Ideas"}).get_json()["path"]
+    first = client.post(
+        "/api/ai/ask",
+        json={"prompt": "Summarise this note please", "context": {"kind": "note", "path": note, "selection": "words"}},
+    ).get_json()
+    listing = client.get("/api/ai/conversations").get_json()["conversations"]
+    assert [c["id"] for c in listing] == [first["conversation"]]
+    row = listing[0]
+    assert row["title"] == "Summarise this note please" and row["provider"] == "claude"
+    assert row["companion"] == {"id": "pc", "name": "My PC"} and row["available"] is True
+    assert row["running"] == first["job"]
+    assert row["context"] == {"kind": "note", "path": note, "selection": "words"}
+    svc.companions.poll("pc", "My PC", RICH, [], timeout=0)
+    finish(svc, first["job"])
+    detail = client.get(f"/api/ai/conversations/{first['conversation']}").get_json()
+    assert detail["running"] is None
+    user, assistant = detail["messages"]
+    assert (user["role"], user["text"]) == ("user", "Summarise this note please")
+    assert assistant["text"] == "Answer." and assistant["tools"] == ["get_note"] and assistant["state"] == "done"
+    assert assistant["usage"] == {"input_tokens": 7, "output_tokens": 3, "cost_usd": 0.01, "duration_ms": 900}
+    assert client.get("/api/ai/conversations?q=summarise").get_json()["conversations"][0]["id"] == first["conversation"]
+    assert client.get("/api/ai/conversations?q=zzz").get_json()["conversations"] == []
+    assert client.get("/api/ai/conversations?limit=x").status_code == 400
+    # rename and delete
+    renamed = client.patch(f"/api/ai/conversations/{first['conversation']}", json={"title": "My title"})
+    assert renamed.status_code == 200 and renamed.get_json()["title"] == "My title"
+    assert client.patch(f"/api/ai/conversations/{first['conversation']}", json={"title": " "}).status_code == 400
+    assert client.patch(f"/api/ai/conversations/{first['conversation']}", json={}).status_code == 400
+    assert client.patch("/api/ai/conversations/nope", json={"title": "x"}).status_code == 404
+    assert client.delete(f"/api/ai/conversations/{first['conversation']}").status_code == 200
+    assert client.delete(f"/api/ai/conversations/{first['conversation']}").status_code == 404
+    assert client.get(f"/api/ai/conversations/{first['conversation']}").status_code == 404
+
+
+def test_cancelled_and_failed_answers_are_stored_with_what_arrived(client, svc):
+    connect_rich(svc)
+    first = client.post("/api/ai/ask", json={"prompt": "one"}).get_json()
+    svc.companions.poll("pc", "My PC", RICH, [], timeout=0)
+    svc.companions.post_events("pc", first["job"], [{"type": "text", "text": "half an ans"}])
+    client.post(f"/api/ai/jobs/{first['job']}/cancel")
+    second = client.post("/api/ai/ask", json={"prompt": "two", "conversation": first["conversation"]}).get_json()
+    svc.companions.poll("pc", "My PC", RICH, [], timeout=0)
+    svc.companions.post_events("pc", second["job"], [{"type": "error", "message": "Not logged in"}])
+    messages = client.get(f"/api/ai/conversations/{first['conversation']}").get_json()["messages"]
+    assistant = [m for m in messages if m["role"] == "assistant"]
+    assert [(m["state"], m["text"], m.get("error")) for m in assistant] == [
+        ("cancelled", "half an ans", None),
+        ("error", "", "Not logged in"),
+    ]
+
+
+def test_a_conversation_continues_after_a_restart_with_the_stored_pin(tmp_path):
+    cfg = Config.from_env(tmp_path / "data")
+    first = create_app(cfg, start_indexer=False)
+    s1 = first.extensions["synapse"]
+    connect_rich(s1)
+    asked = first.test_client().post("/api/ai/ask", json={"prompt": "start"}).get_json()
+    s1.companions.poll("pc", "My PC", RICH, [], timeout=0)
+    finish(s1, asked["job"])
+    second = create_app(Config.from_env(tmp_path / "data"), start_indexer=False)
+    s2 = second.extensions["synapse"]
+    c2 = second.test_client()
+    listed = c2.get("/api/ai/conversations").get_json()["conversations"]
+    assert [c["id"] for c in listed] == [asked["conversation"]] and listed[0]["available"] is False
+    gone = c2.post("/api/ai/ask", json={"prompt": "again", "conversation": asked["conversation"]})
+    assert gone.status_code == 409 and "is on My PC, which is not connected" in gone.get_json()["error"]
+    connect_rich(s2)  # the same computer comes back with the same client id
+    assert c2.get("/api/ai/conversations").get_json()["conversations"][0]["available"] is True
+    again = c2.post("/api/ai/ask", json={"prompt": "again", "conversation": asked["conversation"], "model": "opus"})
+    assert again.status_code == 201 and again.get_json()["conversation"] == asked["conversation"]
+    job = s2.companions.poll("pc", "My PC", RICH, [], timeout=0)["job"]
+    assert job["resume"] is True and job["conversation"] == asked["conversation"] and job["model"] == "opus"
+    messages = c2.get(f"/api/ai/conversations/{asked['conversation']}").get_json()["messages"]
+    assert [m["text"] for m in messages if m["role"] == "user"] == ["start", "again"]
+
+
+def test_a_conversation_whose_provider_the_computer_dropped_cannot_continue(client, svc):
+    connect_rich(svc)
+    asked = client.post("/api/ai/ask", json={"prompt": "q"}).get_json()
+    svc.companions.poll("pc", "My PC", RICH, [], timeout=0)
+    finish(svc, asked["job"])
+    svc.companions.poll("pc", "My PC", [{"id": "codex", "label": "Codex"}], [], timeout=0)
+    assert client.get("/api/ai/conversations").get_json()["conversations"][0]["available"] is False
+    r = client.post("/api/ai/ask", json={"prompt": "again", "conversation": asked["conversation"]})
+    assert r.status_code == 409 and "no longer offers claude" in r.get_json()["error"]
+
+
+def test_the_conversations_are_in_backups_and_come_back_with_a_restore(client, svc):
+    connect_rich(svc)
+    asked = client.post("/api/ai/ask", json={"prompt": "keep me"}).get_json()
+    svc.companions.poll("pc", "My PC", RICH, [], timeout=0)
+    finish(svc, asked["job"])
+    made = svc.backups.create("manual")
+    import tarfile
+
+    with tarfile.open(svc.config.backups_dir / made["name"], "r:gz") as tar:
+        assert "ai.db" in tar.getnames()
+    client.delete(f"/api/ai/conversations/{asked['conversation']}")
+    assert client.get("/api/ai/conversations").get_json()["conversations"] == []
+    assert client.post("/api/backups/restore", json={"name": made["name"]}).status_code == 200
+    restored = client.get("/api/ai/conversations").get_json()["conversations"]
+    assert [c["title"] for c in restored] == ["keep me"]

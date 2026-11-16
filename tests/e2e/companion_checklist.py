@@ -42,6 +42,16 @@ def check(name, cond, extra=""):
     print(("PASS " if cond else "FAIL ") + name, extra)
 
 
+PROVIDERS = [
+    {
+        "id": "claude",
+        "label": "Claude",
+        "models": [{"id": "sonnet", "label": "Sonnet"}, {"id": "opus", "label": "Opus"}],
+        "efforts": ["low", "medium", "high"],
+    }
+]
+
+
 class Companion(threading.Thread):
     """The computer's part, played with HTTP calls: polls, then answers according to a word in the question."""
 
@@ -65,9 +75,7 @@ class Companion(threading.Thread):
     def run(self):
         while not self.quit:
             try:
-                r = self.call(
-                    "poll", {"name": "E2E laptop", "providers": [{"id": "claude", "label": "Claude"}], "running": []}
-                )
+                r = self.call("poll", {"name": "E2E laptop", "providers": PROVIDERS, "running": []})
             except requests.RequestException:
                 time.sleep(0.3)
                 continue
@@ -86,6 +94,8 @@ class Companion(threading.Thread):
                     return
             self.post(job, {"type": "done"})
         elif "STREAM" in said:
+            self.post(job, {"type": "started"})
+            time.sleep(0.8)
             self.post(job, {"type": "text", "text": "Thinking about the **state**. "})
             time.sleep(1.0)
             self.post(job, {"type": "tool", "name": "mcp__synapse__get_paper"})
@@ -99,6 +109,10 @@ class Companion(threading.Thread):
                     "![t](https://evil.example/x.png)\n\n![u](../../../traversal.png)\n\n![v](//evil.example/y.png)\n\n[click](javascript:window.__pwn=1)",
                 },
             )
+            self.post(
+                job,
+                {"type": "usage", "input_tokens": 1234, "output_tokens": 56, "cost_usd": 0.0123, "duration_ms": 3400},
+            )
             self.post(job, {"type": "done"})
         else:
             self.post(
@@ -109,6 +123,10 @@ class Companion(threading.Thread):
 
 
 async def shot(page, name):
+    try:
+        print("SHOT", name, await page.evaluate("window.zcTabs && window.zcTabs.list().map(t => t.active)"))
+    except Exception:
+        pass
     if SHOTS:
         os.makedirs(SHOTS, exist_ok=True)
         await page.screenshot(path=f"{SHOTS}/{name}.png")
@@ -249,9 +267,54 @@ async def main():
                 await until(page, "document.querySelector('.ai-help')?.hidden === true"),
             )
 
-            # ---- a streamed answer
+            # ---- the popup: a floating card in the lower right corner; the details panel stays
+            box = await page.locator(".ai-panel").bounding_box()
+            check(
+                "the panel starts as a popup in the lower right corner, inside the window",
+                await page.locator(".ai-panel").get_attribute("data-placement") == "popup"
+                and box["x"] + box["width"] <= 1280
+                and box["y"] + box["height"] <= 800
+                and box["x"] > 700
+                and box["y"] > 150,
+                box,
+            )
+            check("the details panel is still there", await page.locator(".notes-side .ns-details").is_visible())
+            check("the agent selector is hidden with a single agent", await page.locator("[data-agent]").is_hidden())
+            check(
+                "model and effort are offered, Default first",
+                await page.locator("[data-model] option").all_inner_texts() == ["Model: default", "Sonnet", "Opus"]
+                and (await page.locator("[data-effort] option").all_inner_texts())[0] == "Effort: default",
+            )
+            await page.select_option("[data-model]", "opus")
+            await page.select_option("[data-effort]", "high")
+            await shot(page, "2b-popup-empty")
+
+            # ---- the working state shows at once (the server is made slow to answer on purpose)
+            async def slow(route):
+                await asyncio.sleep(1.0)
+                try:
+                    await route.continue_()
+                except Exception:  # noqa: BLE001 - the route was removed meanwhile
+                    pass
+
+            await page.route("**/api/ai/ask", slow)
             await page.fill(".ai-input", "STREAM please")
             await page.keyboard.press("Enter")
+            check(
+                "the question and 'Sending…' appear before the server has answered",
+                await until(
+                    page,
+                    "document.querySelector('.ai-q')?.textContent === 'STREAM please' && document.querySelector('.ai-status')?.textContent === 'Sending…'",
+                    700,
+                ),
+            )
+            await page.unroute("**/api/ai/ask", slow)
+            check(
+                "then 'Waiting for' the computer or 'Thinking…'",
+                await until(
+                    page, "/Waiting for E2E laptop|Thinking/.test(document.querySelector('.ai-status')?.textContent)"
+                ),
+            )
             check("the question is shown", "STREAM please" in await page.inner_text(".ai-q"))
             check(
                 "the first words arrive while the answer is running",
@@ -266,7 +329,7 @@ async def main():
             )
             check(
                 "the tool line names what is being read",
-                await until(page, "document.querySelector('.ai-status')?.textContent.includes('get paper')"),
+                await until(page, "document.querySelector('.ai-tools')?.textContent.includes('get paper')"),
             )
             check("the Stop button is shown while it runs", await page.locator("[data-stop]").is_visible())
             check(
@@ -305,14 +368,20 @@ async def main():
                 "Matrix product operators" in comp.jobs[0]["prompt"],
                 comp.jobs[0]["prompt"][:200],
             )
-            await shot(page, "3-answer")
-            await page.click(".ai-answer a.cite")
             check(
-                "clicking the citation opens the PDF",
-                await until(page, "window.zcTabs && window.zcTabs.list().some(t => t.kind === 'pdf')"),
+                "model and effort reach the companion",
+                (comp.jobs[0].get("model"), comp.jobs[0].get("effort")) == ("opus", "high"),
+                (comp.jobs[0].get("model"), comp.jobs[0].get("effort")),
             )
-            await page.keyboard.press("Control+1")  # back to the Synapse tab (tabs/tabs.ts)
-            await page.wait_for_timeout(300)
+            usage = await page.inner_text(".ai-usage-line")
+            check(
+                "the usage of the answer is shown", "1.2k in" in usage and "56 out" in usage and "$0.01" in usage, usage
+            )
+            await shot(page, "3-answer")
+            await page.emulate_media(color_scheme="dark")
+            await page.wait_for_timeout(400)
+            await shot(page, "3-answer-dark")
+            await page.emulate_media(color_scheme="light")
 
             # ---- stop
             if not await page.locator(".ai-panel").count():
@@ -360,6 +429,162 @@ async def main():
                 (last.get("conversation"), first, last.get("resume")),
             )
             check("a follow-up does not repeat the context", await page.locator(".ai-chip [data-drop]").is_hidden())
+
+            # ---- earlier conversations: list, search, rename, continue
+            await page.click("[data-history]")
+            await page.wait_for_selector(".ai-conv", timeout=5000)
+            check(
+                "history lists the conversation with its title and agent",
+                "STREAM please" in await page.inner_text(".ai-conv-title")
+                and "Claude" in await page.inner_text(".ai-conv-meta"),
+                await page.inner_text(".ai-conv"),
+            )
+            await shot(page, "5-history")
+            await page.fill(".ai-search input", "zzzz")
+            check("searching narrows the list", await until(page, "document.querySelectorAll('.ai-conv').length === 0"))
+            await page.fill(".ai-search input", "")
+            await page.wait_for_selector(".ai-conv")
+            await page.hover(".ai-conv")
+            await page.click("[data-rename]")
+            await page.fill(".ai-rename", "My chat")
+            await page.keyboard.press("Enter")
+            check(
+                "a conversation can be renamed",
+                await until(page, "document.querySelector('.ai-conv-title')?.textContent === 'My chat'"),
+            )
+            titles = [
+                c["title"] for c in requests.get(f"{BASE}/api/ai/conversations", timeout=10).json()["conversations"]
+            ]
+            check("the new title is stored", "My chat" in titles, titles)
+            await page.click(".ai-conv-main")
+            await page.wait_for_selector(".ai-thread:not([hidden])")
+            check("continuing shows the earlier messages", await page.locator(".ai-turn").count() == 3)
+            check("with its title", await page.inner_text(".ai-title-text") == "My chat")
+            check("and the agent locked", await page.locator("[data-agent]").is_hidden())
+            await page.fill(".ai-input", "FOLLOW again")
+            await page.keyboard.press("Enter")
+            check(
+                "a continued conversation is answered in the same conversation",
+                await until(
+                    page,
+                    "document.querySelectorAll('.ai-turn').length === 4 && document.querySelector('.ai-turn:last-child .ai-answer')?.textContent.includes('Follow-up answer')",
+                    12000,
+                )
+                and comp.jobs[-1].get("conversation") == first
+                and comp.jobs[-1].get("resume") is True,
+            )
+
+            # ---- leave an answer running, start another conversation, come back to the running one
+            await page.click("[data-new]")
+            await page.fill(".ai-input", "SLOW second")
+            await page.keyboard.press("Enter")
+            check(
+                "a long answer in a new conversation starts",
+                await until(page, "document.querySelector('.ai-answer')?.textContent.includes('Starting')"),
+            )
+            await page.click("[data-new]")
+            check("a new conversation shows the friendly start", await page.locator(".ai-empty .ai-idea").count() >= 2)
+            await page.click("[data-history]")
+            await page.wait_for_selector(".ai-conv")
+            check(
+                "history marks the running one",
+                await until(
+                    page,
+                    "[...document.querySelectorAll('.ai-conv-meta')].some(m => m.textContent.includes('answering'))",
+                ),
+            )
+            await page.locator(".ai-conv", has_text="SLOW second").locator(".ai-conv-main").click()
+            check(
+                "opening it re-attaches to the answer",
+                await until(
+                    page,
+                    "document.querySelector('.ai-turn:last-child .ai-answer')?.textContent.includes('Starting') && document.querySelector('[data-stop]') && !document.querySelector('[data-stop]').hidden",
+                ),
+            )
+            await page.click("[data-stop]")
+            check(
+                "which can still be stopped",
+                await until(
+                    page, "document.querySelector('.ai-turn:last-child .ai-status')?.textContent === 'Stopped.'"
+                ),
+            )
+
+            # ---- delete (with a confirmation)
+            await page.click("[data-new]")
+            await page.fill(".ai-input", "FOLLOW doomed")
+            await page.keyboard.press("Enter")
+            await until(page, "document.querySelector('.ai-answer')?.textContent.includes('Follow-up answer')", 12000)
+            await page.click("[data-new]")
+            await page.click("[data-history]")
+            await page.wait_for_selector(".ai-conv")
+            n = await page.locator(".ai-conv").count()
+            doomed = page.locator(".ai-conv", has_text="FOLLOW doomed")
+            await doomed.hover()
+            await doomed.locator("[data-delete]").click()
+            check("deleting asks first", await page.locator("[data-yes]").is_visible())
+            await page.click("[data-no]")
+            check("Keep leaves it", await page.locator(".ai-conv").count() == n)
+            await doomed.hover()
+            await doomed.locator("[data-delete]").click()
+            await page.click("[data-yes]")
+            check("Delete removes it", await until(page, f"document.querySelectorAll('.ai-conv').length === {n - 1}"))
+            await page.keyboard.press("Escape")
+            check(
+                "Escape leaves the history, not the panel",
+                await page.locator(".ai-panel").count() == 1 and await page.locator(".ai-history").is_hidden(),
+            )
+
+            # ---- the sidebar: it takes the place of the details panel
+            await page.click("[data-place]")
+            await page.wait_for_timeout(300)
+            geo = await page.evaluate(
+                """() => { const p = document.querySelector('.ai-panel').getBoundingClientRect();
+                  const m = document.querySelector('.notes-main').getBoundingClientRect();
+                  const d = document.querySelector('.notes-side .ns-details');
+                  return { place: document.querySelector('.ai-panel').dataset.placement, left: p.left, right: p.right, w: p.width,
+                    mainRight: m.right, details: d ? getComputedStyle(d).display : null, inSide: !!document.querySelector('.notes-side > .ai-panel'),
+                    top: p.top, bottom: p.bottom }; }"""
+            )
+            check(
+                "docked, the panel sits in the details panel's slot and the note is not covered",
+                geo["place"] == "dock"
+                and geo["inSide"]
+                and geo["details"] == "none"
+                and geo["mainRight"] <= geo["left"] + 1
+                and geo["right"] <= 1280,
+                geo,
+            )
+            await shot(page, "6-dock")
+            await page.emulate_media(color_scheme="dark")
+            await page.wait_for_timeout(400)
+            await shot(page, "6-dock-dark")
+            await page.emulate_media(color_scheme="light")
+            await page.reload()
+            await page.wait_for_selector(".cm-content", timeout=15000)
+            await page.wait_for_selector('[data-act="ask-ai"]:not([hidden])')
+            await page.click('[data-act="ask-ai"]')
+            check(
+                "the placement is remembered",
+                await page.locator(".ai-panel").get_attribute("data-placement") == "dock",
+            )
+            await page.click("[data-place]")
+            check(
+                "moving it back restores the details panel",
+                await page.locator(".ai-panel").get_attribute("data-placement") == "popup"
+                and await page.locator(".notes-side .ns-details").is_visible(),
+            )
+
+            await page.click("[data-history]")
+            await page.locator(".ai-conv", has_text="My chat").locator(".ai-conv-main").click()
+            await page.wait_for_selector(".ai-answer a.cite")
+            await page.click(".ai-answer a.cite")
+            check(
+                "clicking the citation opens the PDF",
+                await until(page, "window.zcTabs && window.zcTabs.list().some(t => t.kind === 'pdf')"),
+            )
+            await until(page, "window.zcTabs.list().some(t => t.kind === 'pdf' && t.active)")
+            await page.click("#tabbar >> text=Review")  # back to the note's tab (tabs/tabs.ts)
+            await page.wait_for_timeout(300)
 
             # ---- Escape closes the panel and gives the focus back
             await page.keyboard.press("Escape")
@@ -422,6 +647,72 @@ async def main():
             await v.keyboard.press("Escape")
             check("Escape closes the viewer's panel", await v.locator(".ai-panel").count() == 0)
 
+            # ---- the viewer without a selection, and docked as a column
+            await v.evaluate("getSelection().removeAllRanges()")
+            await v.wait_for_selector("#zc-ask-btn:not([hidden])", timeout=5000)
+            check("the viewer toolbar has an Ask AI button", True)
+            await v.click("#zc-ask-btn")
+            await v.wait_for_selector(".ai-panel", timeout=5000)
+            chip = await v.inner_text(".ai-chip-text")
+            check(
+                "it opens without a selection, about the page in view", re.fullmatch(r"p\. \d+", chip) is not None, chip
+            )
+            check("as a popup first", await v.locator(".ai-panel").get_attribute("data-placement") == "popup")
+            await shot(v, "7-viewer-popup")
+            before = await v.evaluate("document.getElementById('pdf-container').getBoundingClientRect().width")
+            await v.click("[data-place]")
+            await v.wait_for_timeout(300)
+            geo = await v.evaluate(
+                """() => { const c = document.getElementById('pdf-container').getBoundingClientRect();
+                  const p = document.querySelector('.ai-panel').getBoundingClientRect();
+                  return { w: c.width, right: c.right, left: p.left, pw: p.width, ph: p.height, vh: innerHeight,
+                    inMain: !!document.querySelector('#main-content > .ai-panel') }; }"""
+            )
+            check(
+                "docked, the viewer makes room: a column beside the PDF, no overlay",
+                geo["inMain"] and geo["w"] < before - 300 and geo["right"] <= geo["left"] + 1 and geo["pw"] >= 300,
+                (before, geo),
+            )
+            await shot(v, "7-viewer-dock")
+            await v.emulate_media(color_scheme="dark")
+            await v.wait_for_timeout(400)
+            await shot(v, "7-viewer-dock-dark")
+            await v.emulate_media(color_scheme="light")
+            await v.click("[data-place]")
+            check(
+                "moving it back gives the PDF its width again",
+                await v.evaluate("document.getElementById('pdf-container').getBoundingClientRect().width") == before,
+            )
+            await v.keyboard.press("Escape")
+
+            # ---- the viewer in an app tab: the same panel inside the frame
+            tabbed = await ctx.new_page()
+            await tabbed.goto(f"{BASE}/#note=Review.md")
+            await tabbed.wait_for_selector(".cm-content", timeout=15000)
+            viewer_url = (
+                f"/viewer.html?file=/pdfs/{att['url']}&paper_id={item['id']}&title=Open%20systems&att={att['id']}"
+            )
+            await tabbed.evaluate(f"location.hash = '#pdf=' + encodeURIComponent({viewer_url!r})")
+            frame = None
+            for _ in range(60):
+                frame = next((f for f in tabbed.frames if "/viewer.html" in f.url), None)
+                if frame:
+                    break
+                await tabbed.wait_for_timeout(250)
+            check("the PDF opens in an app tab", frame is not None)
+            if frame:
+                await frame.wait_for_selector("#zc-ask-btn:not([hidden])", timeout=10000)
+                await frame.click("#zc-ask-btn")
+                await frame.wait_for_selector(".ai-panel", timeout=5000)
+                await frame.click("[data-place]")
+                await frame.wait_for_timeout(300)
+                check(
+                    "docked inside the tab's frame, as a column",
+                    await frame.evaluate("!!document.querySelector('#main-content > .ai-panel')"),
+                )
+                await shot(tabbed, "7-viewer-in-tab")
+                await frame.click("[data-place]")
+
             # ---- the phone layout keeps working
             m = await b.new_context(viewport={"width": 390, "height": 760}, has_touch=True, is_mobile=True)
             ph = await m.new_page()
@@ -429,6 +720,29 @@ async def main():
             await ph.goto(BASE)
             await ph.wait_for_timeout(1500)
             check("the phone layout loads", await ph.locator("body").count() == 1)
+            # a narrow window: the panel is a bottom sheet, never a column
+            narrow = await b.new_context(viewport={"width": 390, "height": 760}, has_touch=True)
+            nw = await narrow.new_page()
+            await nw.goto(f"{BASE}/viewer.html?file=/pdfs/{att['url']}&paper_id={item['id']}&title=x&att={att['id']}")
+            await nw.wait_for_selector("#zc-ask-btn:not([hidden])", timeout=15000)
+            await nw.click("#zc-ask-btn")
+            await nw.wait_for_selector(".ai-panel")
+            await nw.wait_for_timeout(500)  # the entrance animation
+            sheet = await nw.evaluate(
+                """() => { const r = document.querySelector('.ai-panel').getBoundingClientRect();
+                  return { l: r.left, r: r.right, b: r.bottom, w: innerWidth, h: innerHeight, place: document.querySelector('.ai-panel').dataset.placement,
+                    toggle: getComputedStyle(document.querySelector('[data-place]')).display }; }"""
+            )
+            check(
+                "on a narrow screen the popup is a full-width bottom sheet without a dock button",
+                sheet["place"] == "popup"
+                and sheet["l"] <= 1
+                and sheet["r"] >= sheet["w"] - 1
+                and sheet["b"] >= sheet["h"] - 1
+                and sheet["toggle"] == "none",
+                sheet,
+            )
+            await shot(nw, "8-phone-sheet")
             check("no page errors", not errors, errors[:5])
             comp.quit = True
             await b.close()

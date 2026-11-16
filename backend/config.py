@@ -140,6 +140,11 @@ class Config:
         return self.data_dir / "citations.db"
 
     @property
+    def ai_db_path(self) -> Path:
+        # Ask AI conversations (backend/companion/store.py). In backups.
+        return self.data_dir / "ai.db"
+
+    @property
     def backups_dir(self) -> Path:
         return self.data_dir / "backups"
 
