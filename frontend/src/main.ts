@@ -3,7 +3,7 @@
 import * as A from './actions.js';
 import { api } from './api.js';
 import { icon } from './icons.js';
-import { emit, on, state } from './store.js';
+import { emit, on, selectedItems, state } from './store.js';
 import { installLongPress } from './ui/longpress.js';
 import { closeMenu } from './ui/menu.js';
 import { toastError } from './ui/toast.js';
@@ -15,7 +15,7 @@ import { type NavEntry, initNav, navPush, navReplace, navSnapshot, navUpdate } f
 import { initChanges } from './changes.js';
 import { startPresence } from './presence.js';
 import {
-  closeNoteTabs, homeUnderneath, initTabs, pdfTabActive, repaintColors, noteEdited, noteModeChanged, notesDeleted as tabsNotesDeleted, notesRenamed as tabsNotesRenamed, openNoteTab, openViewerTab,
+  activePdfWindow, closeNoteTabs, homeUnderneath, initTabs, pdfTabActive, repaintColors, noteEdited, noteModeChanged, notesDeleted as tabsNotesDeleted, notesRenamed as tabsNotesRenamed, openNoteTab, openViewerTab,
   setHomeLabel, showHome, tabShortcut,
 } from './tabs/tabs.js';
 import { type Mode, folderColor, noteTabs } from './views/notes/workspace.js';
@@ -39,6 +39,10 @@ import { initToolbar, focusLibrarySearch, setMode, clearSearch, openIdentifier, 
 import { initStatusBar } from './views/statusbar.js';
 import { pageLayout, phoneScreen, switchLayout } from './phone/layout.js';
 import { watchUpdates } from './updates.js';
+import { addHereSource, askAi, hereChanged, initAskAi } from './ai/appHost.js';
+import { describe } from './ai/context.js';
+import { aiConfigured } from './ai/status.js';
+import { noteHere } from './views/notes/aiAsk.js';
 
 function startupStatus(text: string): void {
   const el = document.querySelector<HTMLElement>('#startup-screen .startup-status');
@@ -89,6 +93,13 @@ async function boot() {
   Object.assign(noteTabs, { open: openNoteTab, edited: noteEdited, modeChanged: noteModeChanged, renamed: tabsNotesRenamed, deleted: tabsNotesDeleted });
   on('settings', () => { if (state.settings.notes_enabled === false) closeNoteTabs(); });
   startPresence();
+  initAskAi();
+  // what Ask AI offers as context: the PDF tab on screen, else the open note, else the selected papers
+  addHereSource(() => { const w = activePdfWindow(); return w ? w.zcViewerHere?.() || [] : null; });
+  addHereSource(() => (notesOpen() ? noteHere() : null));
+  addHereSource(() => (document.body.dataset.workspace || settingsOpen() ? null
+    : selectedItems().slice(0, 3).map((i) => describe({ kind: 'paper', item: i.id }, i.citation_key || i.title))));
+  for (const e of ['selection', 'workspace', 'note-status'] as const) on(e, hereChanged);
 
   on('open-import', (file) => openImport(file instanceof File ? file : null));
   on('open-identifier', () => openIdentifierDialog());
@@ -389,6 +400,7 @@ function registerCoreCommands(): void {
   add('settings-plugins', 'Settings: Plugins', () => openSettings('plugins'));
   add('settings-backups', 'Settings: Backups', () => openSettings('backups'));
   add('new-window', 'New Window', () => openNewWindow());
+  add('ask-ai', 'Ask AI', () => askAi(), undefined, aiConfigured);
   // a touch screen that got the desktop layout (a tablet, or a phone told to): try the phone's
   add('phone-layout', 'Use the Phone Layout', () => switchLayout('phone'), undefined, () => matchMedia('(pointer: coarse)').matches || phoneScreen());
   add('new-note', 'New Note…', async () => { await switchWorkspace('notes'); await newNote(); }, undefined, notesOn);

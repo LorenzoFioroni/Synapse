@@ -53,6 +53,7 @@ def test_a_conversation_records_both_sides_and_its_pin(conversations):
     assert conv["context"] == {"kind": "note", "path": "a.md", "selection": "x" * store_module.CONTEXT_TEXT}
     user, assistant = conv["messages"]
     assert (user["role"], user["text"]) == ("user", "What is this?")
+    assert user["context"] == [conv["context"]] and "context" not in assistant
     assert assistant["text"] == "It is a note." and assistant["tools"] == ["get_note"]
     assert assistant["usage"] == {"input_tokens": 3, "output_tokens": 4} and assistant["state"] == "done"
     assert "error" not in assistant
@@ -153,3 +154,23 @@ def test_only_where_a_question_came_from_is_kept():
         "attachment": 9,
         "quote": "q" * store_module.CONTEXT_TEXT,
     }
+
+
+def test_each_question_keeps_its_own_contexts(conversations):
+    two = [{"kind": "note", "path": "a.md"}, {"kind": "paper", "item": "i1", "page": 2}]
+    ask(conversations, context=two)
+    answer(conversations)
+    ask(conversations, job="j2", context=None)
+    conv = conversations.get("c1")
+    assert conv["messages"][0]["context"] == two and "context" not in conv["messages"][2]
+    assert conv["context"] is None  # the latest question's
+
+
+def test_an_older_database_gains_the_question_context_column(tmp_path):
+    db = sqlite3.connect(tmp_path / "ai.db")
+    db.executescript(store_module.SCHEMA.replace(",\n    context TEXT\n);\nCREATE INDEX", "\n);\nCREATE INDEX", 1))
+    db.close()
+    c = Conversations(tmp_path / "ai.db")
+    ask(c, context={"kind": "note", "path": "a.md"})
+    assert c.get("c1")["messages"][0]["context"] == [{"kind": "note", "path": "a.md"}]
+    c.close()

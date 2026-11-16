@@ -287,6 +287,9 @@ def test_ask_validates_its_input(client, svc):
         ({"prompt": "q", "context": {"kind": "note", "path": "missing.md"}}, 404),
         ({"prompt": "q", "context": {"kind": "paper", "item": "missing"}}, 404),
         ({"prompt": "q", "context": {"kind": "paper", "item": item, "attachment": 999}}, 404),
+        ({"prompt": "q", "context": [{"kind": "note", "path": note}, "note"]}, 400),
+        ({"prompt": "q", "context": [{"kind": "paper", "item": item}] * (prompt.MAX_CONTEXTS + 1)}, 400),
+        ({"prompt": "q", "context": [{"kind": "note", "path": note}, {"kind": "note", "path": "missing.md"}]}, 404),
         ({"prompt": "q", "provider": "codex"}, 409),
     ]
     for payload, status in bad:
@@ -355,6 +358,22 @@ def test_paper_question_names_key_page_attachment_and_quote():
     )
     assert "citation key: smith2020" in text and "title: A paper" in text and "PDF page: 12" in text
     assert "att:9" in text and "<quote>\nthe words\n</quote>" in text
+
+
+def test_several_notes_papers_and_passages_go_with_one_question():
+    text, _ = prompt.build(
+        "Compare",
+        [
+            {"kind": "note", "path": "a.md"},
+            {"kind": "note", "path": "a.md", "selection": "the passage"},
+            {"kind": "paper", "item": "i1", "page": 3, "quote": "the words"},
+        ],
+        notes=FakeNotes(),
+        papers=FakePapers(),
+    )
+    assert text.count("<context>") == 3 and text.count("added a note") == 2 and "added a paper" in text
+    assert "<selection>\nthe passage\n</selection>" in text and "<quote>\nthe words\n</quote>" in text
+    assert prompt.build("q", [], notes=FakeNotes(), papers=FakePapers())[0] == "q"
 
 
 # ---------------------------------------------------------------------- fix round

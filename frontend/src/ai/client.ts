@@ -8,12 +8,12 @@ export interface AiProvider { id: string; label: string; models?: { id: string; 
 export interface AiCompanion { id: string; name: string; providers: AiProvider[]; busy: number }
 export interface AiStatus { configured: boolean; companions: AiCompanion[] }
 
-/** Where the question was asked: a note (and the words selected in it) or a paper's PDF page. */
+/** What a question is about: a note (and words selected in it) or a paper (its PDF page, words selected there). */
 export type AskContext =
   | { kind: 'note'; path: string; selection?: string }
   | { kind: 'paper'; item: string; attachment?: number; page?: number; quote?: string };
 
-export interface AskOptions { context?: AskContext; conversation?: string; provider?: string; companion?: string; model?: string; effort?: string }
+export interface AskOptions { context?: AskContext[]; conversation?: string; provider?: string; companion?: string; model?: string; effort?: string }
 export interface AskReply { job: string; conversation: string; provider: string; companion: { id: string; name: string } }
 export type JobState = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
 export interface Usage { input_tokens?: number; output_tokens?: number; cost_usd?: number; duration_ms?: number }
@@ -23,9 +23,9 @@ export type JobEvent = { type: 'text'; text: string } | { type: 'tool'; name: st
 /** A stored conversation (GET /api/ai/conversations). */
 export interface Conversation {
   id: string; title: string; created: string; updated: string; provider: string; model?: string | null; effort?: string | null;
-  companion: { id: string; name: string }; context?: AskContext | null; available: boolean; running: string | null;
+  companion: { id: string; name: string }; context?: AskContext | AskContext[] | null; available: boolean; running: string | null;
 }
-export interface StoredMessage { role: 'user' | 'assistant'; text: string; tools?: string[]; usage?: Usage; state?: string; error?: string; created?: string }
+export interface StoredMessage { role: 'user' | 'assistant'; text: string; context?: AskContext[]; tools?: string[]; usage?: Usage; state?: string; error?: string; created?: string }
 
 export class AiError extends Error {
   status: number;

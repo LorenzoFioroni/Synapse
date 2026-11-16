@@ -514,39 +514,51 @@ Synapse's tools. The browser side is `frontend/src/ai/`, split by responsibility
 | `client.ts`, `status.ts` | The calls (`/api/ai/status`, `ask`, the long-polled job, `cancel`, the conversations) with plain `fetch` (the viewer shares this code and not `api.ts`); the cached "is a companion token set up" that decides whether the entry points show. |
 | `panel.ts` | The orchestrator: header, the conversation or the history, asking, following a job, stopping, opening an earlier conversation (a running one is re-attached), the 409 help. |
 | `messages.ts` | The thread: question bubble, answer, tool chips, the phase text ("Sending…", "Waiting for <computer>…", "Thinking…"), usage line, copy button, the empty state; how untrusted text is drawn (below). |
-| `composer.ts` | The text box, the removable context chip, the "@" button, the agent / model / effort pickers (icon buttons that open the app's menu; only what the companions advertise, "Default" first, the last choice remembered), Send / Stop as icon buttons. |
+| `composer.ts` | The text box, the context chips (added ones removable, offered ones dashed), the "@" button, the agent / model / effort pickers (icon buttons that open the app's menu; only what the companions advertise, "Default" first, the last choice remembered), Send / Stop as icon buttons. |
 | `mentions.ts` | Citing in a question: `MentionData` (the library items and the notes, fetched on first use) and the keyboard-driven list over the text box. |
 | `history.ts` | Earlier conversations: search, continue, inline rename, delete with an in-row confirmation, "not connected" and "answering…" marks. |
-| `placement.ts`, `appHost.ts` | Popup or docked, and the page's dock; `appHost.ts` is the app's host (notes). |
-| `context.ts`, `prefs.ts` | The chip text and the suggestions per context; guarded `localStorage`. |
+| `placement.ts`, `appHost.ts`, `launcher.ts` | Popup or docked, and the page's dock; `appHost.ts` is the app's host (one panel per window, its dock column, what is on screen, `window.zcAskAi`); `launcher.ts` the floating button. |
+| `context.ts`, `prefs.ts` | Context as chips (`Attached`: the context, its label and icon), the suggestions per context; guarded `localStorage`. |
 
 **Two placements, one element.** The panel starts as a small card in the lower right corner (a full
 width bottom sheet on a narrow screen) and a header button moves it into the page's own column;
 the same element is re-parented, so a conversation in progress is untouched. The choice is
 remembered per device (`zc.ai.placement`). Where docking has no room (a window narrower than 1101
-px in notes, 760 px in the viewer, the phone) the panel stays a popup and the button is hidden. A
+px in the app, 760 px in the viewer, the phone) the panel stays a popup and the button is hidden. A
 host supplies its `Dock` (`placement.ts`):
 
-- **Notes** (`appHost.ts`): the panel is appended to `.notes-side`, the details panel's slot, and
-  `#notes-view.ai-docked` hides everything else in it (the details and the graph card) and shows
-  the slot even where the details were hidden. It is 320 px wide. Closing it or moving it to the
-  popup removes the class, and the details panel is back as `toggleDetails` and the narrow-window
-  rules left it. The list's peek mode is unaffected.
-- **Viewer** (`viewer/notesBridge.ts`): the panel is a flex child of `#main-content` next to
-  `#pdf-container`, which makes room for it (no overlay). This is the same page whether it is a
-  browser tab of its own or a frame in an app tab; in a tab a citation of another paper opens as an
-  app tab through `window.zcTabs.open`.
+- **The app** (`appHost.ts`): one panel for the whole window, in the main document, so it stays
+  open across the library, notes, Tasks, pages and PDF tabs. Docked, it is a full-height column on
+  the right (`body > .ai-panel[data-placement=dock]`, `--ai-dock-w`, 360 px): `body.ai-docked`
+  gets that much right padding and `#tab-views` that much right offset, so every view and PDF tab
+  makes room for it (no overlay). The notes' details panel is untouched.
+- **The viewer in a browser tab of its own** (`viewer/notesBridge.ts`): the panel is a flex child of
+  `#main-content` next to `#pdf-container`. A viewer in an app tab has no panel of its own: it adds
+  to the app's through `window.parent.zcAskAi`.
 
 `css/ai.css` is loaded by both pages and styles its own controls from the tokens, because the viewer
 has no `components.css`.
 
 **Entry points** appear only when `GET /api/ai/status` says `configured` (`ai/status.ts`, cached
-60 s, refreshed when a note opens and after a companion token is made or removed): a button in the
-note's header and the palette command "Ask AI About This Note…" (`views/notes/aiAsk.ts`; the
-selected words of the editor, or of the read view, become `context.selection`), and in the viewer an
-"Ask AI" button in the toolbar (the paper and the page in view; no selection needed) and "Ask AI" in
-the text-selection toolbar (`viewer/notesBridge.ts`; the quote, cleaned by `cleanQuote`, the page and
-the attachment). Phone entry points are not built yet.
+60 s, refreshed when the button mounts and after a companion token is made or removed): the floating
+round button in the lower right corner (`launcher.ts`, `.ai-fab`; hidden while the panel is open),
+the palette commands "Ask AI" and "Ask AI About This Note or the Selection" (`views/notes/aiAsk.ts`),
+and "Ask AI" in the PDF's text-selection toolbar (`viewer/notesBridge.ts`; adds the quote, cleaned by
+`cleanQuote`, with its page and attachment). The viewer in a browser tab of its own has its own
+floating button. Phone entry points are not built yet.
+
+**Context.** A question goes with a list of contexts (at most 8, `MAX_ATTACHED`): notes, papers and
+passages, shown as chips above the text box and removable there. They go with the next question,
+the first or a follow-up, and then show above that question in the thread (stored with it, so an
+earlier conversation shows them too); adding one never starts a new conversation. After the added
+chips come dashed *offered* chips for what is on screen, which add it with one click without taking
+the focus or the selection from where it is: in a note the note and the words selected (editor or
+read view, `noteHere`); in a PDF tab the paper at the page in view and the words selected
+(`window.zcViewerHere` of the tab's frame, `activePdfWindow`); in the library up to three selected
+papers. The host asks its sources in that order (`addHereSource` in `main.ts`) and the panel asks
+again when `zc-ai-here` fires (a tab shown, a note, workspace or library selection change, a PDF
+page or selection change, which the viewer sends to the app window), on `selectionchange` and when
+the pointer enters the panel.
 
 **The question box.** One row of controls that never wraps: the "@" button, the pickers, and Send
 (an arrow icon; Stop is a square icon in its place) at the right with a fixed width. A picker is a

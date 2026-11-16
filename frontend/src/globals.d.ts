@@ -1,6 +1,7 @@
 // Hooks the pages put on `window` for other tabs, other modules and the browser tests.
 import type ForceGraph from 'force-graph';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import type { Attached } from './ai/context.js';
 import type { PageWrapper } from './viewer/viewer.js';
 
 /** What the PDF viewer (viewer.ts) offers its add-ons. */
@@ -71,6 +72,10 @@ declare global {
     zcPhone?: { tab(): string; select(tab: 'library' | 'notes' | 'pin' | 'plugins'): void };
     /** The app's tabs (tabs/tabs.ts). */
     zcTabs?: ZcTabs;
+    /** Ask AI in the app (ai/appHost.ts): open the window's panel, adding context; a viewer tab calls it. */
+    zcAskAi?: (add?: Attached) => void;
+    /** What this viewer shows, as context Ask AI can add: the paper at its page, the words selected (notesBridge.ts). */
+    zcViewerHere?: () => Attached[];
     /** The open PDF's annotations (viewer/annotations.ts), read-only, for the browser tests. */
     zcAnnotations?: { ready: Promise<void>; list(): unknown[]; attachment(): number | null; refresh(): Promise<void> };
   }

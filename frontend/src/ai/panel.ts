@@ -1,7 +1,9 @@
 // The "Ask AI" panel: header, the conversation (messages.ts) or the history of earlier ones
 // (history.ts), and the question box (composer.ts). One component for the app and for the PDF
-// viewer (a tab of the app or a page of its own); each opens it in its own document with a ``host``
-// that knows how to open a PDF there and where its docked column is (placement.ts). The answer's
+// viewer in a browser tab of its own (a viewer in an app tab uses the app's panel); each opens it in
+// its own document with a ``host`` that knows how to open a PDF there, where its docked column is
+// (placement.ts) and what is on screen to offer as context (context.ts). Context is added to the
+// next question, not to the conversation: adding never starts a new one. The answer's
 // handling of untrusted text is described in messages.ts. See docs/companion.md and docs/frontend.md.
 import type { CiteEntry, CitePdf } from '../types.js';
 import { icon } from '../icons.js';
@@ -11,12 +13,12 @@ import {
   ask, cancelJob, follow, getConversation, isFinal, renameConversation,
 } from './client.js';
 import { createComposer } from './composer.js';
-import { suggestions } from './context.js';
+import { type Attached, MAX_ATTACHED, contextKey, describe, emptyTitle, suggestions } from './context.js';
 import { createHistory } from './history.js';
 import { MentionData } from './mentions.js';
 import { Thread, type Turn, usageText } from './messages.js';
 import { type Dock, place, remember } from './placement.js';
-import { refreshAiStatus } from './status.js';
+import { PANEL_EVENT, refreshAiStatus } from './status.js';
 
 /** What differs between the app and the viewer. */
 export interface AskHost {
@@ -28,21 +30,22 @@ export interface AskHost {
   openNote?(path: string): void;
   /** The page's column for the docked panel (without it the panel is always a popup). */
   dock?: Dock;
+  /** What is on screen now (the open note, the PDF page, the words selected), offered as context. */
+  here?(): Attached[];
+  /** Call ``fn`` when ``here`` may have changed; returns what stops it. */
+  watch?(fn: () => void): () => void;
 }
 
 const START_COMMAND = 'python synapse_companion.py run';
 
 let el: HTMLElement | null = null;
-let current: { context: AskContext | undefined; reset(c: AskContext | undefined): void; focus(): void } | null = null;
+let current: { add(a: Attached): void; focus(): void } | null = null;
 
-/** Open the panel (or point the open one at a new context). */
-export function openAskAi(context: AskContext | undefined, host: AskHost): void {
-  if (el) {
-    if (JSON.stringify(context) !== JSON.stringify(current?.context)) current?.reset(context);
-    current?.focus();
-    return;
-  }
-  mount(context, host);
+/** Open the panel (or bring the open one forward), with ``add`` added to the next question. */
+export function openAskAi(host: AskHost, add?: Attached): void {
+  if (!el) mount(host);
+  if (add) current?.add(add);
+  current?.focus();
 }
 
 export const askAiOpen = (): boolean => !!el;
@@ -50,7 +53,7 @@ export function closeAskAi(): void { el?.dispatchEvent(new Event('ai-close')); }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-function mount(initial: AskContext | undefined, host: AskHost): void {
+function mount(host: AskHost): void {
   const prevFocus = document.activeElement as HTMLElement | null;
   const root = document.createElement('aside');
   root.className = 'ai-panel';
@@ -70,8 +73,9 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
   const body = q('.ai-body'), help = q('.ai-help'), total = q('.ai-total'), titleBtn = q('[data-title]');
   const titleText = q('.ai-title-text'), placeBtn = q('[data-place]'), usageBtn = q('[data-usage]');
 
-  let context = initial;
-  let home = initial;                      // what the panel was opened about: a new conversation starts there
+  let attached: Attached[] = [];          // goes with the next question
+  let offered: Attached[] = [];           // what is on screen and not added yet
+  let emptyKey = '';                      // what the empty state shows now
   let conversation: string | undefined;
   let locked: string | null = null;        // the provider of the open conversation
   let status: AiStatus | null = null;
@@ -91,12 +95,13 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
     mentions: data,
     onSend: (t) => void submit(t),
     onStop: () => void stopNow(),
-    onDropContext: () => { context = undefined; paintContext(); composer.focus(); },
+    onDrop: (i) => { attached.splice(i, 1); paintContext(); composer.focus(); },
+    onAdd: (i) => { if (offered[i]) add(offered[i]); },
   });
   const history = createHistory({
     onOpen: (c) => void openConversation(c),
     onRenamed: (id, t) => { if (id === conversation) setTitle(t); },
-    onDeleted: (id) => { if (id === conversation) reset(home); },
+    onDeleted: (id) => { if (id === conversation) reset(); },
     label: (id) => providerLabels().get(id) || id,
   });
   body.append(thread.el, history.el);
@@ -116,13 +121,29 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
     titleBtn.title = conversation ? 'Rename this conversation' : '';
     titleBtn.toggleAttribute('data-plain', !conversation);
   }
-  function paintContext(): void { composer.setContext(context, !conversation); paintEmpty(); }
+  function paintContext(): void {
+    const have = new Set(attached.map((a) => contextKey(a.ctx)));
+    offered = attached.length >= MAX_ATTACHED ? [] : (host.here?.() || []).filter((a) => !have.has(contextKey(a.ctx)));
+    composer.setContext(attached, offered);
+    paintEmpty();
+  }
+  function add(a: Attached): void {
+    if (attached.length >= MAX_ATTACHED || attached.some((x) => contextKey(x.ctx) === contextKey(a.ctx))) return;
+    attached.push(a);
+    paintContext();
+  }
   function paintEmpty(): void {
     if (conversation || turns.length) return;
-    const label = context?.kind === 'note' ? 'Ask about this note' : context?.kind === 'paper' ? 'Ask about this paper' : 'Ask about your library';
-    thread.showEmpty(label, suggestions(context), (t) => void submit(t));
-    composer.placeholder(context ? 'Ask about this…' : 'Ask anything about your library…');
+    // offers are repainted on every selection change: redraw the ideas only when they change (a focused one keeps its focus)
+    const ideas = suggestions(attached), key = [emptyTitle(attached), ...ideas].join('\n');
+    if (key === emptyKey && thread.el.querySelector('.ai-empty')) return;
+    emptyKey = key;
+    thread.showEmpty(emptyTitle(attached), ideas, (t) => void submit(t));
+    composer.placeholder(attached.length ? 'Ask about this…' : 'Ask anything about your library…');
   }
+  /** A stored question's context as chips; a paper is named by its citation key once the library is known. */
+  const chipsOf = (ctx: AskContext[] | undefined): Attached[] =>
+    (ctx || []).map((c) => describe(c, c.kind === 'paper' ? data.items().find((i) => i.id === c.item)?.key : undefined));
   function paintTotal(): void {
     const sum: Usage = { input_tokens: 0, output_tokens: 0, cost_usd: 0, duration_ms: 0 };
     for (const t of turns) if (t.usage) {
@@ -208,7 +229,10 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
     if (busy()) return;
     if (showingHistory()) showHistory(false);
     help.hidden = true;
-    const t = thread.addTurn(prompt);
+    const sent = attached;
+    attached = [];
+    paintContext();
+    const t = thread.addTurn(prompt, 'sending', 'queued', sent);
     turns.push(t);
     turn = t;
     syncBusy();
@@ -217,7 +241,7 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
     const c = composer.choice();
     try {
       const reply = await ask(prompt, {
-        context: conversation ? undefined : context && limited(context), conversation,
+        context: sent.length ? sent.map((a) => limited(a.ctx)) : undefined, conversation,
         provider: conversation ? undefined : c.provider, companion: conversation ? undefined : c.companion, model: c.model, effort: c.effort,
       });
       if (!conversation) { conversation = reply.conversation; setTitle(prompt.replace(/\s+/g, ' ').slice(0, 60)); paintContext(); }
@@ -233,7 +257,8 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
       if (ctl.signal.aborted) return;
       if (e instanceof AiError && e.status === 409) {
         t.box.remove(); turns.pop(); turn = null; job = null; abort = null;
-        composer.setText(prompt); syncBusy(); showHelp(e.message); paintEmpty();
+        attached = [...sent, ...attached].slice(0, MAX_ATTACHED);
+        composer.setText(prompt); syncBusy(); showHelp(e.message); paintContext();
         return;
       }
       finish(t, 'error', (e as Error).message);
@@ -257,11 +282,10 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
     syncBusy();
   }
 
-  /** Empty the panel for a new conversation about ``next``. */
-  function reset(next: AskContext | undefined): void {
+  /** Empty the panel for a new conversation. */
+  function reset(): void {
     detach();
-    context = next;
-    home = next;
+    attached = [];
     conversation = undefined;
     locked = null;
     turns = [];
@@ -281,7 +305,6 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
     detach();
     conversation = c.id;
     locked = c.provider;
-    context = undefined;
     turns = [];
     turn = null;
     thread.clear();
@@ -293,13 +316,14 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
     for (let i = 0; i < msgs.length; i++) {
       if (msgs[i].role !== 'user') continue;
       const a = msgs[i + 1]?.role === 'assistant' ? msgs[++i] : null;
-      const t = thread.addTurn(msgs[i - (a ? 1 : 0)].text, 'writing', (a?.state as JobState) || 'done');
+      const q = msgs[i - (a ? 1 : 0)];
+      const t = thread.addTurn(q.text, 'writing', (a?.state as JobState) || 'done', chipsOf(q.context));
       if (a) { t.text = a.text; t.tools = a.tools || []; t.usage = a.usage; t.error = a.error || ''; if (a.state === 'error' && !t.error) t.error = 'The AI could not answer.'; }
       turns.push(t);
       thread.draw(t);
     }
     if (pending && full.running) {
-      const t = thread.addTurn(pending.text, 'thinking', 'running');
+      const t = thread.addTurn(pending.text, 'thinking', 'running', chipsOf(pending.context));
       turns.push(t);
       turn = t;
       job = full.running;
@@ -325,8 +349,10 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
     root.remove();
     document.removeEventListener('keydown', onKey, true);
     window.removeEventListener('resize', applyPlacement);
+    unwatch?.();
     el = null;
     current = null;
+    window.dispatchEvent(new CustomEvent(PANEL_EVENT, { detail: false }));
     if (prevFocus?.isConnected) prevFocus.focus();
   }
   const onKey = (e: KeyboardEvent) => {
@@ -361,7 +387,7 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
   help.addEventListener('click', (e) => { if ((e.target as Element).closest('[data-recheck]')) void check(); });
   q('[data-close]').addEventListener('click', close);
   root.addEventListener('ai-close', close);
-  q('[data-new]').addEventListener('click', () => reset(home));
+  q('[data-new]').addEventListener('click', () => reset());
   q('[data-history]').addEventListener('click', () => showHistory(!showingHistory()));
   placeBtn.addEventListener('click', () => { remember(root.dataset.placement === 'dock' ? 'popup' : 'dock'); applyPlacement(); composer.focus(); });
   usageBtn.addEventListener('click', () => { total.hidden = !total.hidden; });
@@ -395,9 +421,14 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
   });
   document.addEventListener('keydown', onKey, true);
 
+  // what is on screen changes while the panel is open; also seen when the pointer comes to the panel
+  const unwatch = host.watch?.(paintContext);
+  root.addEventListener('pointerenter', paintContext);
+
   document.body.appendChild(root);
   el = root;
-  current = { get context() { return context; }, reset, focus: () => composer.focus() };
+  current = { add, focus: () => composer.focus() };
+  window.dispatchEvent(new CustomEvent(PANEL_EVENT, { detail: true }));
   setTitle('');
   applyPlacement();
   paintContext();

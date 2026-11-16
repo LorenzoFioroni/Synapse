@@ -1,4 +1,5 @@
-// The question box of the Ask AI panel: the context chip, the text (with the "[@" / "[[" list of
+// The question box of the Ask AI panel: the context chips (what is added, and dashed, what is on
+// screen and can be added with a click, context.ts), the text (with the "[@" / "[[" list of
 // papers and notes, mentions.ts), the agent / model / effort pickers and Send / Stop. A picker is a
 // compact button, an icon and a short value, that opens the app's menu of what the connected
 // companions advertise; the row never wraps, the pickers shrink and truncate before Send does. The
@@ -6,9 +7,9 @@
 // set as text.
 import { icon } from '../icons.js';
 import { type MenuEntry, openMenu } from '../ui/menu.js';
-import { type AiCompanion, type AiProvider, type AskContext, MAX_PROMPT } from './client.js';
+import { type AiCompanion, type AiProvider, MAX_PROMPT } from './client.js';
 import { load, save } from './prefs.js';
-import { contextLabel } from './context.js';
+import { type Attached, contextChip } from './context.js';
 import { type MentionData, attachMentions } from './mentions.js';
 
 export interface Choice { companion?: string; provider?: string; model?: string; effort?: string }
@@ -21,7 +22,8 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export interface Composer {
   el: HTMLElement;
   focus(): void;
-  setContext(c: AskContext | undefined, removable: boolean): void;
+  /** The chips: what goes with the next question, and what could be added (``offered``). */
+  setContext(attached: Attached[], offered: Attached[]): void;
   setBusy(busy: boolean): void;
   /** The connected agents; ``locked`` is the provider of the open conversation (then it cannot change). */
   setAgents(companions: AiCompanion[], locked: string | null): void;
@@ -44,7 +46,8 @@ function levels(on: number, of: number): string {
 }
 
 export function createComposer(h: {
-  onSend(text: string): void; onStop(): void; onDropContext(): void; mentions: MentionData;
+  onSend(text: string): void; onStop(): void; mentions: MentionData;
+  onDrop(index: number): void; onAdd(index: number): void;
 }): Composer {
   const el = document.createElement('form');
   el.className = 'ai-composer';
@@ -71,6 +74,7 @@ export function createComposer(h: {
   let manyComputers = false;
   let lockedTo: string | null = null;
   let agent = '', model = DEFAULT, effort = DEFAULT;
+  let chipsKey = '';                 // what the chip row shows now
   let pressClosed = false;           // the press on a picker closed its own menu: the click must not reopen it
 
   const keyOf = (a: Agent) => `${a.companion}|${a.provider.id}`;
@@ -161,7 +165,13 @@ export function createComposer(h: {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !e.defaultPrevented) { e.preventDefault(); submit(); }
   });
-  chipRow.addEventListener('click', (e) => { if ((e.target as Element).closest('[data-drop]')) h.onDropContext(); });
+  chipRow.addEventListener('click', (e) => {
+    const t = e.target as Element, drop = t.closest<HTMLElement>('[data-drop]'), add = t.closest<HTMLElement>('[data-add]');
+    if (drop) h.onDrop(Number(drop.dataset.drop));
+    else if (add) h.onAdd(Number(add.dataset.add));
+  });
+  // adding must not take the focus or the selection from the note or the PDF it comes from
+  chipRow.addEventListener('pointerdown', (e) => { if ((e.target as Element).closest('[data-add]')) e.preventDefault(); });
   const at = q<HTMLButtonElement>('[data-mention]');
   at.addEventListener('pointerdown', (e) => e.preventDefault());   // the caret stays in the question
   at.addEventListener('click', () => mentions.startCite());
@@ -169,19 +179,27 @@ export function createComposer(h: {
   return {
     el,
     focus: () => input.focus(),
-    setContext(c, removable) {
-      chipRow.hidden = !c;
-      chipRow.replaceChildren();
-      if (!c) return;
-      const chip = document.createElement('span');
-      chip.className = 'ai-chip';
-      chip.title = contextLabel(c);
-      const text = document.createElement('span');
-      text.className = 'ai-chip-text';
-      text.textContent = contextLabel(c);
-      chip.append(text);
-      if (removable) chip.insertAdjacentHTML('beforeend', `<button type="button" class="ai-icon" data-drop title="Ask without it" aria-label="Remove context">${icon('close', 'icon-sm')}</button>`);
-      chipRow.append(chip);
+    setContext(attached, offered) {
+      const key = JSON.stringify([attached.map((a) => a.ctx), offered.map((a) => a.ctx)]);
+      if (key === chipsKey) return;   // unchanged: a focused chip keeps its focus
+      chipsKey = key;
+      chipRow.hidden = !attached.length && !offered.length;
+      chipRow.replaceChildren(
+        ...attached.map((a, i) => {
+          const chip = contextChip(a, 'span');
+          chip.insertAdjacentHTML('beforeend', `<button type="button" class="ai-icon" data-drop="${i}" title="Remove" aria-label="Remove">${icon('close', 'icon-sm')}</button>`);
+          chip.lastElementChild!.setAttribute('aria-label', `Remove ${a.label}`);
+          return chip;
+        }),
+        ...offered.map((a, i) => {
+          const chip = contextChip(a, 'button', 'plus');
+          chip.classList.add('offered');
+          chip.dataset.add = String(i);
+          chip.title = `Add to the question: ${a.title}`;
+          chip.setAttribute('aria-label', `Add ${a.label}`);
+          return chip;
+        }),
+      );
     },
     setBusy(busy) { stop.hidden = !busy; send.hidden = busy; },
     setAgents(companions, locked) {

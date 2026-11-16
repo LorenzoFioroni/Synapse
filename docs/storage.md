@@ -61,7 +61,7 @@ Each file has one owner. Other code goes through that owner, with the few except
 | `notes_index.db` | `NotesIndex` in `backend/notes/index.py` | `SCHEMA`, `SCHEMA_VERSION` | derived from `notes/` |
 | `citations.db` | `CitationStore` in `backend/references/store.py` | `SCHEMA` there | cache of online data |
 | `plugins.json` | `StateFile` in `backend/plugins/state.py` | none (unknown keys are ignored) | source of truth |
-| `ai.db` | `Conversations` in `backend/companion/store.py` | `SCHEMA` there (`CREATE TABLE IF NOT EXISTS`) | source of truth for Ask AI conversations (the newest 200, at most 400 messages each); in backups |
+| `ai.db` | `Conversations` in `backend/companion/store.py` | `SCHEMA` there (`CREATE TABLE IF NOT EXISTS`; `messages.context` is added to an older file with `ALTER TABLE`) | source of truth for Ask AI conversations (the newest 200, at most 400 messages each); in backups |
 | `fields.db` | `FieldStore` in `backend/plugins/fields.py` | `SCHEMA` there (`CREATE TABLE IF NOT EXISTS`) | source of truth for what plugins set; in backups |
 | `plugin-data/<id>/` | each plugin, through `plugin.storage` (`backend/plugins/storage.py`) | the plugin's own `migrations`, in `PRAGMA user_version` | source of truth |
 | `plugins/` | the user (installing a plugin); read by `PluginHost.scan` | `manifest.json`, `backend/plugins/manifest.py` | code, not in backups |

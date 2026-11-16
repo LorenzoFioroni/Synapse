@@ -54,7 +54,7 @@ export function registerNoteCommands(host: NoteCommandsHost): void {
   add('source', 'Source Mode', () => setNoteMode('source'), () => open() && ws.mode !== 'source');
   add('read', 'Read Mode', () => setNoteMode('read'), () => open() && ws.mode !== 'read');
   add('graph', 'Show This Note in the Graph', () => openNotesGraph(`note:${ws.session!.path}`), () => open() && !!noteHooks.graph);
-  add('ask-ai', 'Ask AI About This Note…', () => askAboutNote(), () => open() && aiConfigured());
+  add('ask-ai', 'Ask AI About This Note or the Selection', () => askAboutNote(), () => open() && aiConfigured());
   add('history', 'History of This Note…', () => openNoteHistory());
   add('notes-history', 'Notes History…', () => openVaultHistory(), () => host.shown());
   add('milestone', 'Mark Notes Milestone…', () => markMilestone(), () => host.shown());

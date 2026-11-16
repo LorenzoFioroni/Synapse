@@ -12,6 +12,7 @@
 import { icon } from '../icons.js';
 import type { Renderer } from '../views/notes/render.js';
 import type { JobState, Usage } from './client.js';
+import { type Attached, contextChip } from './context.js';
 
 export type Phase = 'sending' | 'queued' | 'thinking' | 'writing';
 
@@ -94,16 +95,20 @@ export class Thread {
     this.el.append(box);
   }
 
-  addTurn(question: string, phase: Phase = 'sending', state: JobState = 'queued'): Turn {
+  /** A question (with what was added to it, ``context``) and the place for its answer. */
+  addTurn(question: string, phase: Phase = 'sending', state: JobState = 'queued', context: Attached[] = []): Turn {
     this.el.querySelector('.ai-empty')?.remove();
     const box = document.createElement('div');
     box.className = 'ai-turn';
-    box.innerHTML = `<div class="ai-q"></div>
+    box.innerHTML = `<div class="ai-q-context"></div><div class="ai-q"></div>
       <div class="ai-a"><div class="ai-a-head"><span class="ai-a-who">${icon('sparkle', 'icon-sm')} AI</span>
         <button type="button" class="ai-icon ai-copy" data-copy title="Copy the answer" aria-label="Copy the answer" hidden>${icon('copy', 'icon-sm')}</button></div>
         <div class="ai-tools" hidden></div><div class="ai-answer prose"></div>
         <div class="ai-status" role="status"></div><div class="ai-usage-line"></div></div>`;
     const t: Turn = { question, text: '', tools: [], phase, state, error: '', computer: '', box };
+    const ctx = box.querySelector<HTMLElement>('.ai-q-context')!;
+    ctx.append(...context.map((a) => contextChip(a, 'span')));
+    ctx.hidden = !context.length;
     this.turns.set(box, t);
     this.drawQuestion(t);
     this.el.append(box);

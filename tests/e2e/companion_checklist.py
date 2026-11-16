@@ -1,10 +1,14 @@
 """Browser checklist for Ask AI and the companion token: Settings -> AI Access makes a companion
-token and shows the commands for the other computer; "Ask AI" appears in a note and in the PDF
-viewer only once a token exists; with no companion connected the panel says how to start one; a
-scripted companion (plain HTTP calls, no AI) then answers: streamed text, the tool line, a
-rendered citation and math, hostile output shown as inert text, Stop, a follow-up in the same
-conversation, Escape. The question from a note carries the selection, the one from the PDF the
-quoted words and page.
+token and shows the commands for the other computer; the floating Ask AI button (.ai-fab) and the
+palette commands appear only once a token exists; with no companion connected the panel says how to
+start one; a scripted companion (plain HTTP calls, no AI) then answers: streamed text, the tool
+line, a rendered citation and math, hostile output shown as inert text, Stop, follow-ups, Escape.
+Context is a list of chips (the note, the selection, a paper at its page, the quoted words): what is
+on screen is offered as dashed chips, a click adds one, the next question (also a follow-up) carries
+them and shows them above itself, history brings them back. One panel serves the whole app window:
+it stays open across library, note and PDF tabs, docks as a column at the right of the window that
+every view makes room for, and receives the PDF frame's selection ("Ask AI" pill). A PDF viewer in a
+browser tab of its own has its own button and panel.
 
     python tests/e2e/companion_checklist.py
 
@@ -212,12 +216,12 @@ async def main():
             await page.wait_for_selector(".cm-content", timeout=15000)
             await page.wait_for_timeout(600)
             check(
-                "no Ask AI button before a companion token exists",
-                await page.locator('[data-act="ask-ai"]').is_hidden(),
+                "no floating Ask AI button before a companion token exists",
+                await page.locator(".ai-fab").is_hidden(),
             )
             await page.keyboard.press("Control+Shift+P")
             await page.fill(".palette-input", "Ask AI")
-            check("no Ask AI command either", await page.locator(".palette-item").count() == 0)
+            check("no Ask AI commands either", await page.locator(".palette-item").count() == 0)
             await page.keyboard.press("Escape")
 
             # ---- Settings -> AI Access: a companion token and the commands for the other computer
@@ -261,24 +265,69 @@ async def main():
             await page.reload()
             await page.wait_for_selector(".cm-content", timeout=15000)
             check(
-                "the Ask AI button appears in the note",
-                await until(page, "!document.querySelector('[data-act=ask-ai]')?.hidden"),
+                "the floating Ask AI button appears, lower right",
+                await until(page, "!document.querySelector('.ai-fab')?.hidden")
+                and await page.evaluate(
+                    "(() => { const r = document.querySelector('.ai-fab').getBoundingClientRect(); return r.right > innerWidth - 80 && r.bottom > innerHeight - 80 && r.right <= innerWidth && r.bottom <= innerHeight; })()"
+                ),
+            )
+            check(
+                "the per-view buttons are gone (note header, PDF toolbar)",
+                await page.locator('[data-act="ask-ai"]').count() == 0
+                and await page.locator("#zc-ask-btn").count() == 0,
             )
             await page.keyboard.press("Control+Shift+P")
             await page.fill(".palette-input", "Ask AI")
-            check("and the palette command", await page.locator(".palette-item").count() == 1)
+            palette = await page.locator(".palette-item").all_inner_texts()
+            check(
+                "the palette offers Ask AI and Ask AI About This Note or the Selection",
+                len(palette) == 2
+                and any("Ask AI About This Note or the Selection" in t for t in palette)
+                and any(t.strip().startswith("Ask AI") and "About" not in t for t in palette),
+                palette,
+            )
             await page.keyboard.press("Escape")
 
-            # ---- no companion connected: the panel explains how to start one
+            # ---- no companion connected: the panel explains how to start one; the button opens it empty
             await page.click(".cm-content")
             await page.keyboard.press("Control+A")
-            await page.click('[data-act="ask-ai"]')
+            await page.click(".ai-fab")
             await page.wait_for_selector(".ai-panel .ai-help:not([hidden])", timeout=8000)
             helptext = await page.inner_text(".ai-help")
             check(
                 "no companion: the panel says how to start one", "python synapse_companion.py run" in helptext, helptext
             )
-            check("the selection is the context chip", "Review" in await page.inner_text(".ai-chip-text"))
+            check("the button hides while the panel is open", await page.locator(".ai-fab").is_hidden())
+            check(
+                "the panel is in the main document, and the button added no context",
+                await page.locator("body > .ai-panel").count() == 1
+                and await page.locator(".ai-chiprow .ai-chip:not(.offered)").count() == 0,
+            )
+            # the note and the selection are offered as dashed chips (a selection change refreshes them)
+            check(
+                "the note and its selection are offered as dashed chips",
+                await until(page, "document.querySelectorAll('.ai-chip.offered[data-add]').length === 2")
+                and "Review" in await page.locator(".ai-chip.offered").nth(1).inner_text(),
+                await page.locator(".ai-chip.offered").all_inner_texts(),
+            )
+            await page.click(".cm-content")  # the panel took the focus when it opened
+            await page.keyboard.press("Control+A")
+            await until(page, "document.querySelectorAll('.ai-chip.offered').length === 2")
+            await page.locator(".ai-chip.offered").nth(1).click()
+            check(
+                "clicking the offered selection adds a solid chip with a remove button",
+                await until(page, "document.querySelectorAll('.ai-chiprow .ai-chip:not(.offered)').length === 1")
+                and await page.locator(".ai-chiprow .ai-chip:not(.offered) [data-drop]").count() == 1
+                and "Review" in await page.locator(".ai-chiprow .ai-chip:not(.offered) .ai-chip-text").inner_text(),
+            )
+            active = await page.evaluate(
+                "[document.activeElement?.tagName, document.activeElement?.className, !!document.activeElement?.closest('.cm-content')].join('|')"
+            )
+            check(
+                "adding it did not take the focus from the note",
+                active.endswith("|true") and await page.locator(".ai-chip.offered").count() == 1,
+                active,
+            )
             await shot(page, "2-no-companion")
 
             comp = Companion(token, key)
@@ -300,6 +349,9 @@ async def main():
                 and box["x"] > 700
                 and box["y"] > 150,
                 box,
+            )
+            check(
+                "the panel is a body-level popup", await page.evaluate("!!document.querySelector('body > .ai-panel')")
             )
             check("the details panel is still there", await page.locator(".notes-side .ns-details").is_visible())
             check("the agent selector is hidden with a single agent", await page.locator("[data-agent]").is_hidden())
@@ -481,9 +533,28 @@ async def main():
             check("no request to a remote host or outside /api/notes/ for answer images", not stray, stray)
             check("the markup is shown as text", "<script>" in await page.inner_text(".ai-answer"))
             check(
-                "the context went along (the selected note text)",
-                "Matrix product operators" in comp.jobs[0]["prompt"],
-                comp.jobs[0]["prompt"][:200],
+                "the context went along (the note and the selected text)",
+                "Matrix product operators" in comp.jobs[0]["prompt"]
+                and "The user added a note to the question" in comp.jobs[0]["prompt"],
+                comp.jobs[0]["prompt"][:300],
+            )
+            body0 = asks[0].request.post_data_json
+            check(
+                "the request carries context as a list of AskContext objects",
+                isinstance(body0.get("context"), list)
+                and len(body0["context"]) == 1
+                and body0["context"][0]["kind"] == "note"
+                and "selection" in body0["context"][0],
+                body0.get("context"),
+            )
+            check(
+                "after sending, the composer's chips clear and the question shows them above itself",
+                await page.locator(".ai-composer .ai-chip:not(.offered)").count() == 0
+                and await page.locator(".ai-turn .ai-q-context .ai-chip").count() == 1
+                and "Review" in await page.inner_text(".ai-turn .ai-q-context .ai-chip")
+                and await page.evaluate(
+                    "(() => { const c = document.querySelector('.ai-q-context'), q = document.querySelector('.ai-q'); return c.compareDocumentPosition(q) & Node.DOCUMENT_POSITION_FOLLOWING; })()"
+                ),
             )
             check(
                 "model and effort reach the companion",
@@ -526,7 +597,21 @@ async def main():
                 requests.get(f"{BASE}/api/ai/jobs/{job_id}?after=0", timeout=30).json()["state"] == "cancelled",
             )
 
-            # ---- a follow-up stays in the conversation
+            # ---- a follow-up stays in the conversation, and context added now goes with it
+            n_turns = await page.locator(".ai-turn").count()
+            await page.locator(".ai-chip.offered").first.click()
+            check(
+                "adding context in a conversation does not reset it",
+                await page.locator(".ai-turn").count() == n_turns
+                and await page.locator(".ai-chiprow .ai-chip:not(.offered)").count() == 1
+                and await page.locator("[data-stop]").is_hidden(),
+                (
+                    n_turns,
+                    await page.locator(".ai-turn").count(),
+                    await page.locator(".ai-chiprow .ai-chip:not(.offered)").count(),
+                    await page.locator("[data-stop]").is_hidden(),
+                ),
+            )
             await page.fill(".ai-input", "FOLLOW up")
             await page.keyboard.press("Enter")
             check(
@@ -545,7 +630,14 @@ async def main():
                 and last.get("conversation") == first,
                 (last.get("conversation"), first, last.get("resume")),
             )
-            check("a follow-up does not repeat the context", await page.locator(".ai-chip [data-drop]").is_hidden())
+            check(
+                "the follow-up carried the added note, shown above that question only",
+                "The user added a note to the question" in last["prompt"]
+                and isinstance(asks[-1].request.post_data_json.get("context"), list)
+                and await page.locator(".ai-turn:last-child .ai-q-context .ai-chip").count() == 1
+                and await page.locator(".ai-turn:nth-child(2) .ai-q-context .ai-chip").count() == 0
+                and await page.locator(".ai-composer .ai-chip:not(.offered)").count() == 0,
+            )
 
             # ---- earlier conversations: list, search, rename, continue
             await page.click("[data-history]")
@@ -576,6 +668,17 @@ async def main():
             await page.click(".ai-conv-main")
             await page.wait_for_selector(".ai-thread:not([hidden])")
             check("continuing shows the earlier messages", await page.locator(".ai-turn").count() == 3)
+            check(
+                "and each question's context chips",
+                await page.locator(".ai-q-context .ai-chip").count() == 2
+                and await page.locator(".ai-turn:first-child .ai-q-context .ai-chip").count() == 1,
+            )
+            stored = requests.get(f"{BASE}/api/ai/conversations/{first}", timeout=10).json()["messages"]
+            check(
+                "the server stores a context list per message",
+                [len(m.get("context") or []) for m in stored if m["role"] == "user"][:3] == [1, 0, 1],
+                [m.get("context") for m in stored],
+            )
             check("with its title", await page.inner_text(".ai-title-text") == "My chat")
             check("and the agent locked", await page.locator("[data-agent]").is_hidden())
             await page.fill(".ai-input", "FOLLOW again")
@@ -593,6 +696,16 @@ async def main():
 
             # ---- leave an answer running, start another conversation, come back to the running one
             await page.click("[data-new]")
+            await page.locator(".ai-chip.offered").first.click()
+            check(
+                "a chip is added to the new conversation",
+                await page.locator(".ai-chiprow .ai-chip:not(.offered)").count() == 1,
+            )
+            await page.click("[data-new]")
+            check(
+                "New conversation clears the chips",
+                await page.locator(".ai-chiprow .ai-chip:not(.offered)").count() == 0,
+            )
             await page.fill(".ai-input", "SLOW second")
             await page.keyboard.press("Enter")
             check(
@@ -634,13 +747,22 @@ async def main():
             await page.click("[data-new]")
             await page.click("[data-history]")
             await page.wait_for_selector(".ai-conv")
+            await until(
+                page,
+                "[...document.querySelectorAll('.ai-conv-title')].some(t => t.textContent.includes('FOLLOW doomed'))",
+            )
+            await page.wait_for_timeout(600)  # the list is refreshed after it first shows
             n = await page.locator(".ai-conv").count()
             doomed = page.locator(".ai-conv", has_text="FOLLOW doomed")
             await doomed.hover()
             await doomed.locator("[data-delete]").click()
             check("deleting asks first", await page.locator("[data-yes]").is_visible())
             await page.click("[data-no]")
-            check("Keep leaves it", await page.locator(".ai-conv").count() == n)
+            check(
+                "Keep leaves it",
+                await page.locator(".ai-conv").count() == n,
+                (n, await page.locator(".ai-conv").count()),
+            )
             await doomed.hover()
             await doomed.locator("[data-delete]").click()
             await page.click("[data-yes]")
@@ -751,26 +873,38 @@ async def main():
             await page.locator(".menu .menu-item", has_text="Claude").click()
             await page.click("[data-new]")
 
-            # ---- the sidebar: it takes the place of the details panel
+            # ---- the sidebar: a full-height column at the right of the window; every view makes room
             await page.click("[data-place]")
             await page.wait_for_timeout(300)
             geo = await page.evaluate(
-                """() => { const p = document.querySelector('.ai-panel').getBoundingClientRect();
+                """() => { const el = document.querySelector('.ai-panel'), p = el.getBoundingClientRect();
                   const m = document.querySelector('.notes-main').getBoundingClientRect();
+                  const t = document.getElementById('tab-views').getBoundingClientRect();
                   const d = document.querySelector('.notes-side .ns-details');
-                  return { place: document.querySelector('.ai-panel').dataset.placement, left: p.left, right: p.right, w: p.width,
-                    mainRight: m.right, details: d ? getComputedStyle(d).display : null, inSide: !!document.querySelector('.notes-side > .ai-panel'),
-                    top: p.top, bottom: p.bottom }; }"""
+                  return { place: el.dataset.placement, left: p.left, right: p.right, w: p.width, top: p.top, bottom: p.bottom,
+                    direct: el.parentElement === document.body, docked: document.body.classList.contains('ai-docked'),
+                    pad: parseFloat(getComputedStyle(document.body).paddingRight), tabsRight: t.right, mainRight: m.right,
+                    details: d ? getComputedStyle(d).display : null, vh: innerHeight, vw: innerWidth }; }"""
             )
             check(
-                "docked, the panel sits in the details panel's slot and the note is not covered",
+                "docked, the panel is a full-height column at the right of the window (body.ai-docked)",
                 geo["place"] == "dock"
-                and geo["inSide"]
-                and geo["details"] == "none"
-                and geo["mainRight"] <= geo["left"] + 1
-                and geo["right"] <= 1280,
+                and geo["direct"]
+                and geo["docked"]
+                and abs(geo["w"] - 360) < 2
+                and geo["top"] <= 1
+                and geo["bottom"] >= geo["vh"] - 1
+                and geo["right"] >= geo["vw"] - 1,
                 geo,
             )
+            check(
+                "the window makes room: padding on the body, the views end where the column starts, the note is not covered",
+                abs(geo["pad"] - 360) < 2
+                and geo["tabsRight"] <= geo["left"] + 1
+                and geo["mainRight"] <= geo["left"] + 1,
+                geo,
+            )
+            check("the notes' details panel stays visible", geo["details"] not in (None, "none"), geo["details"])
             await page.click("[data-model]")
             await page.locator(".menu .menu-item", has_text="context window").click()
             geo = await one_line(page)
@@ -798,17 +932,19 @@ async def main():
             await page.fill(".ai-input", "")
             await page.reload()
             await page.wait_for_selector(".cm-content", timeout=15000)
-            await page.wait_for_selector('[data-act="ask-ai"]:not([hidden])')
-            await page.click('[data-act="ask-ai"]')
+            await page.wait_for_selector(".ai-fab:not([hidden])")
+            await page.click(".ai-fab")
             check(
                 "the placement is remembered",
-                await page.locator(".ai-panel").get_attribute("data-placement") == "dock",
+                await page.locator(".ai-panel").get_attribute("data-placement") == "dock"
+                and await page.evaluate("document.body.classList.contains('ai-docked')"),
             )
             await page.click("[data-place]")
             check(
-                "moving it back restores the details panel",
+                "moving it back gives the window its room again",
                 await page.locator(".ai-panel").get_attribute("data-placement") == "popup"
-                and await page.locator(".notes-side .ns-details").is_visible(),
+                and await page.locator(".notes-side .ns-details").is_visible()
+                and await page.evaluate("!document.body.classList.contains('ai-docked')"),
             )
 
             await page.click("[data-history]")
@@ -820,14 +956,179 @@ async def main():
                 await until(page, "window.zcTabs && window.zcTabs.list().some(t => t.kind === 'pdf')"),
             )
             await until(page, "window.zcTabs.list().some(t => t.kind === 'pdf' && t.active)")
+
+            # ---- one panel for the whole window: it stays open on the PDF, note and library tabs
+            frame = None
+            for _ in range(60):
+                frame = next((f for f in page.frames if "/viewer.html" in f.url), None)
+                if frame:
+                    break
+                await page.wait_for_timeout(250)
+            check("the PDF opens in an app tab", frame is not None)
+            await frame.wait_for_selector(".textLayer span", timeout=20000)
+            await page.wait_for_timeout(600)
+            check(
+                "the panel stays open on the PDF tab; it lives in the main document, not in the frame",
+                await page.locator("body > .ai-panel").count() == 1
+                and await frame.locator(".ai-panel").count() == 0
+                and await frame.locator(".ai-fab").count() == 0,
+            )
+            offered = lambda: page.locator(".ai-chip.offered").all_inner_texts()  # noqa: E731
+            check(
+                "the PDF tab offers the paper at the current page, not the note",
+                await until(page, "document.querySelectorAll('.ai-chip.offered').length >= 1")
+                and re.search(r"p\. \d+$", (await offered())[0]) is not None
+                and not any("Review" in t for t in await offered()),
+                await offered(),
+            )
+            select_span = """(i) => { const s = document.querySelectorAll('.page-wrapper .textLayer span')[i]; s.scrollIntoView({ block: 'center' });
+              const r = document.createRange(); r.selectNodeContents(s);
+              const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+              document.getElementById('pdf-container').dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+              return sel.toString(); }"""
+            q1 = await frame.evaluate(select_span, 0)
+            check(
+                "selecting words in the PDF offers them as a chip",
+                await until(
+                    page,
+                    "[...document.querySelectorAll('.ai-chip.offered')].some(c => c.textContent.includes('“'))",
+                    4000,
+                ),
+                await offered(),
+            )
+            await frame.wait_for_selector(".zc-pill [data-ask]", timeout=5000)
+            await frame.click(".zc-pill [data-ask]")
+            check(
+                "the selection pill's Ask AI adds the quote to the app's panel (paper, page and quote)",
+                await until(page, "document.querySelectorAll('.ai-chiprow .ai-chip:not(.offered)').length === 1")
+                and "“" in await page.locator(".ai-chiprow .ai-chip:not(.offered)").inner_text()
+                and re.search(
+                    r"p\. \d+", await page.locator(".ai-chiprow .ai-chip:not(.offered)").get_attribute("title")
+                )
+                is not None
+                and q1.strip()[:12] in await page.locator(".ai-chiprow .ai-chip:not(.offered)").get_attribute("title"),
+                await page.locator(".ai-chiprow .ai-chip:not(.offered)").get_attribute("title"),
+            )
+            await frame.evaluate(select_span, 2)
+            await until(
+                page, "[...document.querySelectorAll('.ai-chip.offered')].some(c => c.textContent.includes('“'))", 4000
+            )
+            await page.locator(".ai-chip.offered", has_text="“").first.click()
+            check(
+                "clicking the offered quote adds it as well",
+                await until(page, "document.querySelectorAll('.ai-chiprow .ai-chip:not(.offered)').length === 2"),
+            )
+            await shot(page, "9-pdf-tab-chips")
+            # the panel and its chips follow to the note and to the library
+            await page.click("#tabbar >> text=Review")
+            await page.wait_for_timeout(400)
+            check(
+                "switching to a note tab: the panel and its chips stay; the note is offered",
+                await page.locator("body > .ai-panel").count() == 1
+                and await page.locator(".ai-chiprow .ai-chip:not(.offered)").count() == 2
+                and await until(
+                    page,
+                    "[...document.querySelectorAll('.ai-chip.offered')].some(c => c.textContent.includes('Review'))",
+                ),
+                await offered(),
+            )
+            await page.click("#tabbar .tab.home")
+            await page.wait_for_timeout(400)
+            check(
+                "switching to the library: still the same panel and chips",
+                await page.locator("body > .ai-panel").count() == 1
+                and await page.locator(".ai-chiprow .ai-chip:not(.offered)").count() == 2,
+            )
+            await page.locator(".row[data-id]").first.click()
+            check(
+                "in the library the selected item is offered as a paper chip",
+                await until(
+                    page,
+                    f"[...document.querySelectorAll('.ai-chip.offered')].some(c => c.textContent.trim() === '{key}')",
+                    4000,
+                )
+                and not any("Review" in t for t in await offered()),
+                await offered(),
+            )
+            # docked: every view makes room for the column
+            await page.click("[data-place]")
+            await page.wait_for_timeout(300)
+            room = {}
+            for name_, sel_ in (
+                ("library", "#tabbar .tab.home"),
+                ("note", "#tabbar >> text=Review"),
+                ("pdf", "#tabbar .tab:has-text('Open')"),
+            ):
+                await page.click(sel_)
+                await page.wait_for_timeout(400)
+                room[name_] = await page.evaluate(
+                    """() => { const p = document.querySelector('.ai-panel').getBoundingClientRect();
+                      const v = [...document.querySelectorAll('#tab-views > *')].filter(e => e.getBoundingClientRect().width > 0 && getComputedStyle(e).display !== 'none')
+                        .map(e => e.getBoundingClientRect().right);
+                      return { panelLeft: p.left, tabs: document.getElementById('tab-views').getBoundingClientRect().right, views: v }; }"""
+                )
+            check(
+                "docked: library, note and PDF tabs all end where the column starts",
+                all(
+                    r["tabs"] <= r["panelLeft"] + 1 and all(x <= r["panelLeft"] + 1 for x in r["views"])
+                    for r in room.values()
+                ),
+                room,
+            )
+            check("the chips survive docking", await page.locator(".ai-chiprow .ai-chip:not(.offered)").count() == 2)
+            await shot(page, "9-pdf-tab-docked")
+            await page.click("[data-place]")
             await page.click("#tabbar >> text=Review")  # back to the note's tab (tabs/tabs.ts)
             await page.wait_for_timeout(300)
+            await page.click("[data-new]")  # leave no chips behind
+
+            # the palette command adds the selection, else the note
+            await page.click(".ai-input")
+            await page.keyboard.press("Escape")  # closes the panel
+            await page.click(".cm-content")
+            await page.keyboard.press("Control+Home")
+            await page.keyboard.press("Control+Shift+P")
+            await page.fill(".palette-input", "About This Note")
+            await page.keyboard.press("Enter")
+            await page.wait_for_selector(".ai-panel", timeout=5000)
+            check(
+                "'Ask AI About This Note or the Selection' without a selection adds the note",
+                await until(page, "document.querySelectorAll('.ai-chiprow .ai-chip:not(.offered)').length === 1")
+                and "Review" in await page.locator(".ai-chiprow .ai-chip:not(.offered)").inner_text()
+                and await page.locator(".ai-chiprow .ai-chip:not(.offered)").get_attribute("title")
+                == "Note: Review.md",
+                await page.locator(".ai-chiprow .ai-chip:not(.offered)").get_attribute("title"),
+            )
+            await page.click("[data-new]")
+            await page.keyboard.press("Escape")
+            await page.click(".cm-content")
+            await page.keyboard.press("Control+A")
+            await page.keyboard.press("Control+Shift+P")
+            await page.fill(".palette-input", "About This Note")
+            await page.keyboard.press("Enter")
+            await page.wait_for_selector(".ai-panel", timeout=5000)
+            check(
+                "with a selection it adds the selection",
+                await until(page, "document.querySelectorAll('.ai-chiprow .ai-chip:not(.offered)').length === 1")
+                and "“" in await page.locator(".ai-chiprow .ai-chip:not(.offered)").inner_text(),
+                await page.locator(".ai-chiprow .ai-chip:not(.offered)").all_inner_texts(),
+            )
+            await page.click("[data-new]")
+            await page.keyboard.press("Escape")
+            await page.keyboard.press("Control+Shift+P")
+            await page.fill(".palette-input", "Ask AI")
+            await page.locator(".palette-item").filter(has_not_text="About").first.click()
+            await page.wait_for_selector(".ai-panel", timeout=5000)
+            check(
+                "the plain 'Ask AI' command opens the panel with no context attached",
+                await page.locator(".ai-chiprow .ai-chip:not(.offered)").count() == 0,
+            )
 
             # ---- Escape closes the panel and gives the focus back
             await page.keyboard.press("Escape")
             check("Escape closes the panel", await page.locator(".ai-panel").count() == 0)
 
-            # ---- the PDF viewer: select words, Ask AI
+            # ---- the PDF viewer in a browser tab of its own: its own button and panel; select words, Ask AI
             v = await ctx.new_page()
             v.on("pageerror", lambda e: errors.append(str(e)))
             await v.goto(f"{BASE}/viewer.html?file=/pdfs/{att['url']}&paper_id={item['id']}&title=x&att={att['id']}")
@@ -843,10 +1144,13 @@ async def main():
             quote = await v.evaluate("getSelection().toString()")
             await v.click(".zc-pill [data-ask]")
             await v.wait_for_selector(".ai-panel", timeout=5000)
+            chip_ = v.locator(".ai-chiprow .ai-chip:not(.offered)")
             check(
-                "the viewer's panel names the page and the words",
-                re.match(r"p\. 1 — ", await v.inner_text(".ai-chip-text")) is not None,
-                await v.inner_text(".ai-chip-text"),
+                "the viewer's own panel holds the quote chip (words, with the page in its tooltip)",
+                await chip_.count() == 1
+                and quote.strip()[:10] in await chip_.inner_text()
+                and re.search(r"p\. 1", await chip_.get_attribute("title")) is not None,
+                await chip_.get_attribute("title"),
             )
             await v.fill(".ai-input", "STREAM what is this")
             await v.keyboard.press("Enter")
@@ -860,9 +1164,11 @@ async def main():
             )
             prompt = comp.jobs[-1]["prompt"]
             check(
-                "the quoted words and the page reached the companion",
-                quote.strip()[:20] in prompt and "1" in prompt,
-                prompt[:300],
+                "the quoted words and the page reached the companion as a paper context",
+                quote.strip()[:20] in prompt
+                and "The user added a paper of the library to the question" in prompt
+                and re.search(r"page: ?1\b", prompt, re.I) is not None,
+                prompt[:400],
             )
             await shot(v, "4-viewer")
             before = await v.evaluate("document.getElementById('pdf-container').getBoundingClientRect().width")
@@ -927,15 +1233,22 @@ async def main():
             await v.keyboard.press("Escape")
             check("Escape closes the viewer's panel", await v.locator(".ai-panel").count() == 0)
 
-            # ---- the viewer without a selection, and docked as a column
+            # ---- the viewer without a selection: its own floating button, then docked as a column
             await v.evaluate("getSelection().removeAllRanges()")
-            await v.wait_for_selector("#zc-ask-btn:not([hidden])", timeout=5000)
-            check("the viewer toolbar has an Ask AI button", True)
-            await v.click("#zc-ask-btn")
-            await v.wait_for_selector(".ai-panel", timeout=5000)
-            chip = await v.inner_text(".ai-chip-text")
+            await v.wait_for_selector(".ai-fab:not([hidden])", timeout=5000)
             check(
-                "it opens without a selection, about the page in view", re.fullmatch(r"p\. \d+", chip) is not None, chip
+                "the standalone viewer has its own floating button and no toolbar button",
+                await v.locator("#zc-ask-btn").count() == 0 and await v.locator(".ai-fab").is_visible(),
+            )
+            await v.click(".ai-fab")
+            await v.wait_for_selector(".ai-panel", timeout=5000)
+            check("the button hides while the panel is open", await v.locator(".ai-fab").is_hidden())
+            check(
+                "it opens with no context, offering the paper at the page in view",
+                await v.locator(".ai-chiprow .ai-chip:not(.offered)").count() == 0
+                and await until(v, "document.querySelectorAll('.ai-chip.offered').length === 1")
+                and re.search(r"p\. \d+$", await v.locator(".ai-chip.offered").inner_text()) is not None,
+                await v.locator(".ai-chip.offered").all_inner_texts(),
             )
             check("as a popup first", await v.locator(".ai-panel").get_attribute("data-placement") == "popup")
             await shot(v, "7-viewer-popup")
@@ -965,50 +1278,6 @@ async def main():
             )
             await v.keyboard.press("Escape")
 
-            # ---- the viewer in an app tab: the same panel inside the frame
-            tabbed = await ctx.new_page()
-            await tabbed.goto(f"{BASE}/#note=Review.md")
-            await tabbed.wait_for_selector(".cm-content", timeout=15000)
-            viewer_url = (
-                f"/viewer.html?file=/pdfs/{att['url']}&paper_id={item['id']}&title=Open%20systems&att={att['id']}"
-            )
-            await tabbed.evaluate(f"location.hash = '#pdf=' + encodeURIComponent({viewer_url!r})")
-            frame = None
-            for _ in range(60):
-                frame = next((f for f in tabbed.frames if "/viewer.html" in f.url), None)
-                if frame:
-                    break
-                await tabbed.wait_for_timeout(250)
-            check("the PDF opens in an app tab", frame is not None)
-            if frame:
-                await frame.wait_for_selector("#zc-ask-btn:not([hidden])", timeout=10000)
-                await frame.click("#zc-ask-btn")
-                await frame.wait_for_selector(".ai-panel", timeout=5000)
-                await frame.click("[data-place]")
-                await frame.wait_for_timeout(300)
-                check(
-                    "docked inside the tab's frame, as a column",
-                    await frame.evaluate("!!document.querySelector('#main-content > .ai-panel')"),
-                )
-                await frame.click(".ai-input")
-                await tabbed.keyboard.type("see [[Rev")
-                check(
-                    "in an app tab's frame the notes are listed too",
-                    await until(frame, "document.querySelectorAll('.ai-mentions .ai-mention').length >= 1"),
-                )
-                await tabbed.keyboard.press("Tab")
-                await tabbed.keyboard.press("Enter")
-                await until(frame, "!!document.querySelector('.ai-q a.wikilink')", 8000)
-                await until(frame, "!document.querySelector('.ai-turn.streaming')", 12000)
-                await shot(tabbed, "7-viewer-in-tab")
-                await frame.click(".ai-q a.wikilink")
-                check(
-                    "its [[note]] link opens the note in the app around it",
-                    await until(tabbed, "window.zcTabs.list().find(t => t.active)?.kind !== 'pdf'", 6000)
-                    and await tabbed.locator(".note-head").is_visible(),
-                    await tabbed.evaluate("window.zcTabs.list().map(t => t.kind + ':' + t.active)"),
-                )
-
             # ---- the phone layout keeps working
             m = await b.new_context(viewport={"width": 390, "height": 760}, has_touch=True, is_mobile=True)
             ph = await m.new_page()
@@ -1020,8 +1289,8 @@ async def main():
             narrow = await b.new_context(viewport={"width": 390, "height": 760}, has_touch=True)
             nw = await narrow.new_page()
             await nw.goto(f"{BASE}/viewer.html?file=/pdfs/{att['url']}&paper_id={item['id']}&title=x&att={att['id']}")
-            await nw.wait_for_selector("#zc-ask-btn:not([hidden])", timeout=15000)
-            await nw.click("#zc-ask-btn")
+            await nw.wait_for_selector(".ai-fab:not([hidden])", timeout=15000)
+            await nw.click(".ai-fab")
             await nw.wait_for_selector(".ai-panel")
             await nw.wait_for_timeout(500)  # the entrance animation
             sheet = await nw.evaluate(

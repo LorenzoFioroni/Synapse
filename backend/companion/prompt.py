@@ -15,6 +15,7 @@ from ..notes.vault import VaultError
 MAX_PROMPT = 20_000
 MAX_QUOTE = 8_000
 MAX_MENTIONS = 20  # of each kind: papers and notes the question points to
+MAX_CONTEXTS = 8  # notes, papers and passages added to one question
 
 SYSTEM = """\
 You answer questions for the user of Synapse, their local reference manager, through Synapse's tools \
@@ -54,18 +55,28 @@ def build(prompt, context, *, notes, papers) -> tuple[str, str]:
     if not question:
         raise ValueError("Write a question first.")
     lines = [question]
-    if context is not None:
-        if not isinstance(context, dict):
-            raise ValueError("Invalid context.")
-        kind = context.get("kind")
+    for one in contexts(context):
+        kind = one.get("kind")
         if kind == "note":
-            lines += _note(context, notes)
+            lines += _note(one, notes)
         elif kind == "paper":
-            lines += _paper(context, papers)
+            lines += _paper(one, papers)
         else:
             raise ValueError("Unknown context.")
     lines += _mentions(question, notes, papers)
     return "\n\n".join(lines), SYSTEM
+
+
+def contexts(context) -> list[dict]:
+    """What the question was asked about: none, one {kind…} or a list of them (an older app sends one)."""
+    if context is None:
+        return []
+    items = context if isinstance(context, list) else [context]
+    if len(items) > MAX_CONTEXTS:
+        raise ValueError(f"Add at most {MAX_CONTEXTS} notes, papers or passages to a question.")
+    if not all(isinstance(c, dict) for c in items):
+        raise ValueError("Invalid context.")
+    return items
 
 
 def _line(text: object) -> str:
@@ -82,7 +93,7 @@ def _note(context: dict, notes) -> list[str]:
         raise UnknownContext("No such note.") from e
     info = note.get("info") or {}
     where = f"note: {_line(note['path'])}" + (f"\ntitle: {_line(info['title'])}" if info.get("title") else "")
-    out = ["The user is reading a note (get_note reads it). Where:\n" + _data("context", where)]
+    out = ["The user added a note to the question (get_note reads it):\n" + _data("context", where)]
     if selection:
         out.append("They selected this text in it:\n" + _data("selection", selection))
     return out
@@ -111,7 +122,7 @@ def _paper(context: dict, papers) -> list[str]:
             raise UnknownContext("No such attachment.")
         if len([a for a in item["attachments"] if a.get("type") == "pdf"]) > 1:
             where.append(f"PDF attachment id: {found['id']} (cite it as [@key, p. N, att:{found['id']}])")
-    out = ["The user is reading a paper of the library. Where:\n" + _data("context", "\n".join(where))]
+    out = ["The user added a paper of the library to the question:\n" + _data("context", "\n".join(where))]
     if quote:
         out.append("They selected these words in the PDF:\n" + _data("quote", quote))
     return out

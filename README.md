@@ -319,8 +319,8 @@ like everything else in `--lan`; with `--cert` the address starts with `https://
 must trust the certificate, for Claude Code: `NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem"`).
 
 **Ask AI from Synapse (the Companion).** For a Synapse server you reach remotely, a small program on
-your own computer can answer questions asked inside Synapse (a note, or words selected in a PDF)
-with your own Claude Code, restricted to Synapse's tools; nothing but the answer streams back and
+your own computer can answer questions asked inside Synapse (the round button in the lower right
+corner; add the note, PDF page or selected words you are looking at with one click) with your own Claude Code, restricted to Synapse's tools; nothing but the answer streams back and
 the server needs no API key. It can also install and update the browser extension for you. In
 **Settings → AI Access → New Companion Token…** make a token, then on your computer:
 

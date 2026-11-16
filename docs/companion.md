@@ -110,8 +110,9 @@ server-chosen string reaches a command line unchecked.
 
 `ai.db` (`backend/companion/store.py`, path `Config.ai_db_path`, in backups, see [storage](storage.md))
 holds each conversation: title, provider, model and effort of its last question, the computer it is pinned
-to (companion id and name), a short context (where the question came from; a selection or quote kept to
-300 characters) and its messages. The server records the user's question when `ask` accepts it (before the
+to (companion id and name), a short context of its last question (where it came from; a selection or quote
+kept to 300 characters; one context as an object, several as a list) and its messages, each question with
+its own contexts (a list, in the same short form). The server records the user's question when `ask` accepts it (before the
 job can be taken) and the answer when the job ends (`Companions.on_finish`): its text, tool names, usage and
 final state, also when it ends in error or is cancelled, with what arrived. The newest 200 conversations
 are kept, each with at most 400 messages.
@@ -119,7 +120,7 @@ are kept, each with at most 400 messages.
 | Endpoint | |
 |---|---|
 | `GET /api/ai/conversations?limit=50&q=` | Newest first: `{id, title, created, updated, provider, model, effort, companion: {id, name}, context, available, running}`. `q` searches titles and messages. `available`: a connected companion with that client id offers the provider. `running`: the job still answering, or null. |
-| `GET /api/ai/conversations/<id>` | The same fields plus `messages: [{role, text, tools, usage?, state?, error?, created}]`. |
+| `GET /api/ai/conversations/<id>` | The same fields plus `messages: [{role, text, tools, usage?, state?, error?, context?, created}]` (`context`: the question's list). |
 | `PATCH /api/ai/conversations/<id>` `{title}` / `DELETE …` | Rename (at most 80 characters) / delete. |
 | `POST /api/ai/ask` with `conversation` | Continues a conversation, after a server restart too; the provider stays, model and effort may change. |
 
@@ -130,9 +131,9 @@ gone: Claude answers "No conversation found"; a restarted Codex has lost its thr
 
 ## What the AI tool receives
 
-`prompt.build` (not the API handler) writes the question: the user's words, then where they are (the
-note's path and title, or the paper's citation key, title, PDF page, attachment id when the item has
-several PDFs) between `<context>` tags, and the selected text or quote between `<selection>` /
+`prompt.build` (not the API handler) writes the question: the user's words, then what they added to it
+(`context`: one object or a list of at most `MAX_CONTEXTS`, 8; for each, the note's path and title, or
+the paper's citation key, title, PDF page, attachment id when the item has several PDFs) between `<context>` tags, and the selected text or quote between `<selection>` /
 `<quote>` tags: all data the model must not obey (a tag cannot be closed from inside, titles are one
 line). Papers and notes the user names in the question (`[@key]`, `[@key, p. N]`, `[[note]]`, typed
 with the composer's completion) are found with the notes parser and resolved as notes resolve them,

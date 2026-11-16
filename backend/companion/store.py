@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS messages (
     usage TEXT,
     state TEXT,
     error TEXT,
-    created TEXT NOT NULL
+    created TEXT NOT NULL,
+    context TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_ai_messages ON messages(conversation, id);
 CREATE INDEX IF NOT EXISTS idx_ai_conversations ON conversations(updated);
@@ -52,6 +53,12 @@ CREATE INDEX IF NOT EXISTS idx_ai_conversations ON conversations(updated);
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+def clean_contexts(context) -> list[dict]:
+    """``clean_context`` of each part: a question may come with several notes, papers and passages."""
+    items = context if isinstance(context, list) else [context]
+    return [c for c in map(clean_context, items) if c]
 
 
 def clean_context(context) -> dict | None:
@@ -87,6 +94,10 @@ class Conversations:
             self._db.row_factory = sqlite3.Row
             self._db.execute("PRAGMA foreign_keys = ON")
             self._db.executescript(SCHEMA)
+            # databases made before a question kept its own context
+            if "context" not in {r["name"] for r in self._db.execute("PRAGMA table_info(messages)")}:
+                self._db.execute("ALTER TABLE messages ADD COLUMN context TEXT")
+                self._db.commit()
         return self._db
 
     def close(self) -> None:
@@ -108,7 +119,9 @@ class Conversations:
     ) -> None:
         """The user's question, as the hub accepted it (``reply`` is the hub's answer to ``ask``)."""
         now, conv = now_iso(), reply["conversation"]
-        ctx = json.dumps(clean_context(context)) if clean_context(context) else None
+        kept = clean_contexts(context)
+        ctx = json.dumps(kept) if kept else None  # the question's own, a list
+        conv_ctx = json.dumps(kept[0] if len(kept) == 1 else kept) if kept else None  # one stays a dict, as before
         with self._lock:
             db = self._conn()
             row = db.execute("SELECT id FROM conversations WHERE id = ?", (conv,)).fetchone()
@@ -127,18 +140,18 @@ class Conversations:
                         effort,
                         reply["companion"]["id"],
                         reply["companion"]["name"],
-                        ctx,
+                        conv_ctx,
                     ),
                 )
             else:  # the provider and computer stay; model, effort and context follow the latest question
                 db.execute(
                     "UPDATE conversations SET updated = ?, model = ?, effort = ?, context = ?, companion_name = ? "
                     "WHERE id = ?",
-                    (now, model, effort, ctx, reply["companion"]["name"], conv),
+                    (now, model, effort, conv_ctx, reply["companion"]["name"], conv),
                 )
             db.execute(
-                "INSERT INTO messages (conversation, role, job, text, created) VALUES (?, 'user', ?, ?, ?)",
-                (conv, job, question, now),
+                "INSERT INTO messages (conversation, role, job, text, created, context) VALUES (?, 'user', ?, ?, ?, ?)",
+                (conv, job, question, now, ctx),
             )
             self._prune(db, conv)
             db.commit()
@@ -245,6 +258,7 @@ class Conversations:
                 **({"usage": json.loads(m["usage"])} if m["usage"] else {}),
                 **({"state": m["state"]} if m["state"] else {}),
                 **({"error": m["error"]} if m["error"] else {}),
+                **({"context": json.loads(m["context"])} if m["context"] else {}),
                 "created": m["created"],
             }
             for m in messages

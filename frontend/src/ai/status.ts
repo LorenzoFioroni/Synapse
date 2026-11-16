@@ -21,3 +21,8 @@ export async function refreshAiStatus(maxAge = 0): Promise<AiStatus | null> {
   } catch { /* an old server without /api/ai: the entry points stay hidden */ }
   return status;
 }
+
+/** The window event the panel sends when it opens or closes (detail: open); the floating button hides meanwhile. */
+export const PANEL_EVENT = 'zc-ai-panel';
+/** The window event that says what is on screen may have changed (a tab, a note, a PDF page, a selection). */
+export const HERE_EVENT = 'zc-ai-here';

@@ -1,6 +1,6 @@
 /* The "Ask AI" panel (src/ai/). Also loaded by viewer.html, which has no components.css, so the
    panel styles its own controls from the design tokens. Two placements: a floating popup in the
-   lower right corner, and docked (notes: in the slot of the details panel; viewer: a column). */
+   lower right corner, and docked (a column on the right). The floating button opens it. */
 .ai-panel, .ai-panel * { box-sizing: border-box; }
 .ai-panel {
   display: flex; flex-direction: column; min-height: 0; background: var(--bg-elev); color: var(--text);
@@ -16,10 +16,12 @@
 .ai-panel[data-placement="dock"] { flex: 1 1 auto; width: 100%; height: 100%; background: var(--bg-app); }
 @keyframes ai-in { from { transform: translateY(12px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
 
-/* notes: the panel takes the place of the details panel */
-#notes-view.ai-docked .notes-side { display: flex !important; flex-direction: column; width: 320px; padding: 0; overflow: hidden; }
-#notes-view.ai-docked .notes-side > :not(.ai-panel) { display: none !important; }   /* the details and the graph card */
-/* the viewer: a column the PDF area makes room for */
+/* the app: a column on the right of the window; the page and the PDF tabs make room for it */
+:root { --ai-dock-w: 360px; }
+body.ai-docked { padding-right: var(--ai-dock-w); }
+body.ai-docked #tab-views { right: var(--ai-dock-w); }
+body > .ai-panel[data-placement="dock"] { position: fixed; z-index: 1100; top: 0; right: 0; bottom: 0; width: var(--ai-dock-w); border-left: 1px solid var(--border); }
+/* the viewer in a browser tab of its own: a column the PDF area makes room for */
 #main-content.ai-docked > .ai-panel[data-placement="dock"] { flex: none; width: 360px; border-left: 1px solid var(--border); }
 
 .ai-head { display: flex; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 10px; flex: none; border-bottom: 1px solid var(--border); }
@@ -128,10 +130,21 @@
 
 /* the question box */
 .ai-composer { position: relative; flex: none; padding: 8px 12px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--bg-elev); }
-.ai-chiprow { margin-bottom: 6px; }
-.ai-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; padding: 1px 2px 1px 9px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-size: var(--fs-sm); }
-.ai-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* context: what goes with the next question, then (dashed) what is on screen and can be added */
+.ai-chiprow { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.ai-chip {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-height: 24px; padding: 1px 2px 1px 8px; border: 1px solid transparent;
+  border-radius: 99px; background: var(--accent-soft); color: var(--accent); font: inherit; font-size: var(--fs-sm);
+}
+.ai-chip > .icon { flex: none; }
+.ai-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ai-chip .ai-icon { width: 22px; height: 22px; color: inherit; }
+.ai-chip.offered { padding-right: 9px; border-style: dashed; border-color: var(--border-strong); background: transparent; color: var(--text-3); cursor: pointer; transition: color .12s, border-color .12s, background .12s; }
+.ai-chip.offered:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.ai-chip.offered:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+/* what a question was asked with, above it */
+.ai-q-context { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 90%; align-self: flex-end; margin-bottom: -6px; }
+.ai-q-context .ai-chip { padding-right: 8px; font-size: var(--fs-xs); }
 .ai-input {
   display: block; width: 100%; resize: none; field-sizing: content; min-height: 54px; max-height: 30vh; padding: 8px 10px;
   border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg-input); color: var(--text); font: inherit; line-height: 1.45;
@@ -193,11 +206,24 @@
 .ai-btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 .ai-panel .icon { width: 16px; height: 16px; flex: none; }
 .ai-panel .icon-sm { width: 12px; height: 12px; }
-#zc-ask-btn[hidden] { display: none; }
 
-@media (prefers-reduced-motion: reduce) { .ai-panel[data-placement="popup"], .ai-turn.streaming .ai-status::before { animation: none; } }
+/* the floating button that opens the panel, in the lower right corner over every view */
+.ai-fab {
+  position: fixed; z-index: 1050; right: 18px; bottom: calc(var(--statusbar-h, 0px) + 18px); width: 44px; height: 44px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 50%;
+  background: var(--accent); color: var(--accent-text); box-shadow: var(--shadow-lg); cursor: pointer;
+  transition: transform .12s var(--ease), background .12s;
+}
+.ai-fab:hover { background: var(--accent-hover); transform: scale(1.06); }
+.ai-fab:focus-visible { outline: none; box-shadow: var(--focus-ring), var(--shadow-lg); }
+.ai-fab .icon { width: 20px; height: 20px; }
+.ai-fab[hidden], body.phone .ai-fab { display: none; }
+
+@media (prefers-reduced-motion: reduce) { .ai-panel[data-placement="popup"], .ai-turn.streaming .ai-status::before { animation: none; } .ai-fab { transition: none; } }
 @media (pointer: coarse) {
   .ai-icon { width: 36px; height: 36px; }
+  .ai-chip.offered { min-height: 34px; }
+  .ai-fab { width: 52px; height: 52px; }
   .ai-btn, .ai-pick { min-height: 38px; }
   .ai-pick { min-width: 36px; padding: 0 6px; }
   .ai-send { width: 44px; }
