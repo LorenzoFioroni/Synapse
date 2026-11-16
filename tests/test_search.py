@@ -297,3 +297,18 @@ def test_or_gives_the_alternatives():
     assert alternatives('a OR "b c" OR d') == ["a", '"b c"', "d"]
     assert alternatives("a b") == ["a b"] and alternatives("OR a") == ["OR a"]
     assert alternatives(" OR ".join("abcdefghij")) == [" OR ".join("abcdefghij")]  # too many: left alone
+
+
+def test_is_review_counts_long_journal_articles_and_introductions():
+    def item(i, **kw):
+        return {"id": i, "title": "Phase space dynamics", "item_type": "journalArticle", "attachments": [], **kw}
+
+    papers = [
+        item("long", journal="Journal of Examples", pages="101-190"),  # 90 printed pages
+        item("short", journal="Journal of Examples", pages="101–109"),
+        item("number", journal="Journal of Examples", pages="015005"),  # an article number says nothing
+        item("book", item_type="book", pages="1-400"),  # a book is long, and not a review
+        item("intro", abstract="This paper provides a detailed introduction to the method."),
+        item("plain", abstract="We introduce a detailed model of the chain."),
+    ]
+    assert [p["id"] for p in search(papers, "is:review", "all")[0]] == ["long", "intro"]

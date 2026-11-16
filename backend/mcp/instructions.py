@@ -38,13 +38,15 @@ Markdown notes that cite papers as [@citationkey], and reference lists fetched f
 
 How to work:
 - Start from a note (get_note) or a search (search_library). Papers are named by citation key.
+- A long note comes as an outline: read a part with get_note(section or lines), or find the paragraphs \
+about a subject with search_in_note.
 - get_paper gives metadata, abstract, the user's paper note and where other notes cite the paper.
 - For PDF content, find the relevant pages with search_in_paper (get_paper_outline shows a long paper's \
 structure), then read_paper those pages. Avoid reading whole papers page by page. view_page shows a page as an image (figures, equations, tables).
 - Images in notes (![](attachments/…)) are files of the app's notes folder, not of your computer: \
-see them with view_image (one path, or every image of a note).
+see them with view_image (one path, or every image of a note; list_only lists them first).
 - get_references / get_citation_graph follow the citation graph, also to works not in the library \
-(they come with DOI/arXiv ids you can look up elsewhere); compact=true keeps long lists short.
+(they come with DOI/arXiv ids you can look up elsewhere); long lists come one line per work.
 - A search also finds papers that merely cite the subject: those are marked only_in_references (search_library) \
 or in_reference_list (search_in_paper) and listed last. Prefer the unmarked results.
 - get_annotations shows what the user highlighted or commented on a paper's PDF.

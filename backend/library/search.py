@@ -22,7 +22,8 @@ any can be negated with ``-``):
     type:book   type:journal   year:2020   year:2018-2022   year:>2015   year:<=2000   year:2020-   year:-2000
     added:2026-10   added:>2026-10-15   added:2026-01..2026-03   added:14d   (when the item was added)
     has:pdf   has:doi   has:abstract   has:note   (any field: has:<field>)
-    is:review   (a guess: a review journal, or "review", "tutorial", "lecture notes"… in the title or abstract)
+    is:review   (a guess: a review journal, "review", "tutorial", "lecture notes"… in the title or abstract,
+                or a journal article of 40 printed pages or more)
     author:cirac   title:lindblad   journal:"physical review"   doi:10.1103   key:cui2015
 
 Plugins add filters of their own through ``ctx["field_filters"]`` (``citations:>100``,
@@ -142,9 +143,22 @@ _REVIEW_TITLE = re.compile(
 )
 _REVIEW_ABSTRACT = re.compile(
     r"\b(?:we|this|present|the following) (?:\w+ ){0,2}(?:reviews?|tutorial|overview|lecture notes|surveys?)\b|"
-    r"\bpedagogical\b",
+    r"\bpedagogical\b|"
+    r"\b(?:detailed|comprehensive|self-contained|thorough|systematic|gentle) "
+    r"(?:introduction|review|overview|account|exposition|survey)\b",
     re.I,
 )
+_PAGE_RANGE = re.compile(r"\s*(\d{1,5})\s*[-–—]+\s*(\d{1,5})\s*")
+LONG_ARTICLE_PAGES = 40  # a journal article this long is a review or reads like one
+
+
+def _long_article(p: dict) -> bool:
+    """A journal article whose printed page range ("101-190") spans LONG_ARTICLE_PAGES or more. Article
+    numbers ("015005") say nothing, and a PDF's page count would count supplements."""
+    m = _PAGE_RANGE.fullmatch(str(p.get("pages") or ""))
+    return bool(
+        m and p.get("item_type") == "journalArticle" and int(m.group(2)) - int(m.group(1)) + 1 >= LONG_ARTICLE_PAGES
+    )
 
 
 def _is_review(p: dict) -> bool:
@@ -152,6 +166,7 @@ def _is_review(p: dict) -> bool:
         _REVIEW_JOURNAL.search(str(p.get("journal") or ""))
         or _REVIEW_TITLE.search(str(p.get("title") or ""))
         or _REVIEW_ABSTRACT.search(str(p.get("abstract") or ""))
+        or _long_article(p)
     )
 
 

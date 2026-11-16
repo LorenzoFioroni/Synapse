@@ -20,33 +20,64 @@ CAPTION = re.compile(
 )
 
 
+CAPTION_CHARS = 1500  # a whole caption; longer ones are cut at a word
+
+
 def _captions(page) -> list[dict]:
-    """Text lines that start a figure or table caption: {"kind", "label", "text", "box"} (PDF units)."""
+    """Figure and table captions: {"kind", "label", "text", "box"} (PDF units). ``box`` is the caption's
+    first line (what the figure is looked for above or below); ``text`` is the whole caption, its first line
+    and the lines right under it in the same column, up to the gap that ends the paragraph."""
     tp = page.get_textpage()
     try:
+        rects = [tp.get_rect(i) for i in range(tp.count_rects())]
+        raw = [tp.get_text_bounded(*r) for r in rects]
         out = []
-        for i in range(tp.count_rects()):
-            l, b, r, t = tp.get_rect(i)
-            text = _CONTROL.sub("", tp.get_text_bounded(l, b, r, t)).strip()
+        for i, (l, b, r, t) in enumerate(rects):
+            text = _CONTROL.sub("", raw[i]).strip()
             m = CAPTION.match(text)
             if not m:
                 continue
             # "Fig. 3 shows…" in running text is not a caption: those continue with a lowercase verb
             rest = text[m.end() :].lstrip()
-            if rest[:1].islower() and not m.group(0).rstrip().endswith((":", ".", "|")):
+            # … and so is "Fig. 11 (Smith et al., 2021). It is worth noting…" at the start of a line
+            if (rest[:1].islower() or rest[:1] == "(") and not m.group(0).rstrip().endswith((":", ".", "|")):
                 continue
             kind = "table" if m.group(1).lower().startswith("tab") else "figure"
             out.append(
                 {
                     "kind": kind,
                     "label": f"{'Table' if kind == 'table' else 'Figure'} {m.group(2)}",
-                    "text": text[:160],
+                    "text": _whole_caption(rects, raw, i),
                     "box": (l, b, r, t),
                 }
             )
         return out
     finally:
         tp.close()
+
+
+def _whole_caption(rects: list[tuple], raw: list[str], i: int) -> str:
+    """The caption starting at text line ``i`` with the lines that continue it: each one right below the
+    last (closer than a line's height: a paragraph break is wider), in the same column and not another
+    caption. A line the PDF gives in pieces (a change of font) is put together."""
+    l, b, r, t = rects[i]
+    left, right, height = l, r, t - b
+    text = raw[i].strip()
+    for j in range(i + 1, len(rects)):
+        l2, b2, r2, t2 = rects[j]
+        piece = raw[j].strip()
+        same_line = min(t, t2) - max(b, b2) > 0.5 * min(t - b, t2 - b2) and l2 >= l
+        below = -2 <= b - t2 < 0.8 * height and l2 >= left - 3 and l2 < right and b2 < b
+        if not (same_line or below) or CAPTION.match(_CONTROL.sub("", piece)) or len(text) > CAPTION_CHARS:
+            break
+        # pdfium ends a line broken at a hyphen with U+0002: the word goes on
+        text = text[:-1] + piece if text.endswith("\x02") else f"{text} {piece}"
+        l, b, r, t = (min(l, l2), min(b, b2), max(r, r2), max(t, t2)) if same_line else (l2, b2, r2, t2)
+        right = max(right, r2)
+    text = " ".join(_CONTROL.sub("", text).split())
+    if len(text) <= CAPTION_CHARS:
+        return text
+    return text[:CAPTION_CHARS].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
 
 
 def _objects(page) -> tuple[list[tuple], list[tuple]]:

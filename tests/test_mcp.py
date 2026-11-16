@@ -202,6 +202,7 @@ def test_initialize_and_list(lib):
         "search_library",
         "list_collections",
         "get_note",
+        "search_in_note",
         "view_image",
         "get_paper",
         "get_paper_outline",
@@ -1282,7 +1283,7 @@ def test_stdio_server_end_to_end(lib, svc):
     assert p.returncode == 0, p.stderr
     replies = [json.loads(l) for l in p.stdout.splitlines()]
     assert [r["id"] for r in replies] == [1, 2, 3]
-    assert len(replies[1]["result"]["tools"]) == 21
+    assert len(replies[1]["result"]["tools"]) == 22
     assert "tensor networks" in replies[2]["result"]["content"][0]["text"]
 
 
@@ -1561,12 +1562,16 @@ def test_get_note_is_lean_and_groups_repeated_links(lib, svc):
     small = pdfpng.png_encode(bytes([200, 30, 30]) * (40 * 20), 40, 20)
     paths = [svc.note_service.add_image(f"g{i}.png", small)["path"] for i in range(3)]
     gallery = "```gallery\n" + "\n".join(f"![]({p}) panel" for p in paths) + "\n\nShared caption\n```\n"
-    text = "# Lean\n\nSee [[crispr]] and again [[crispr]] with [@smith2021, p. 2].\n\n" + gallery
+    text = (
+        "# Lean\n\nSee [[crispr]] and again [[crispr]] with [@smith2021, p. 2].\n\nOnce more [[crispr]], "
+        "and [[lean#Lean]] is this note.\n\n" + gallery
+    )
     svc.note_service.create(path="lean.md", title="Lean", text=text)
     err, texts = call(server, "get_note", note="lean")
     meta = json.loads(texts[0])
     links = meta["links_to_notes"]
-    assert not err and len(links) == 1 and len(links[0]["lines"]) == 2  # one entry per target, with every line
+    # one entry per target, with each line once; a link to the note's own heading is not a link to a note
+    assert not err and len(links) == 1 and len(links[0]["lines"]) == 2
     assert [("caption" in i["gallery"]) for i in meta["images"]] == [True, False, False]
     assert all("citations" not in k for k in meta["cited_papers"])
 
@@ -2070,3 +2075,145 @@ def test_highlights(editing, svc, lib):
     assert err and "not on page 3" in texts[0]
     err, texts = call(editing, "add_highlight", paper="smith2021", page=2, quote="Lindblad master", color="yellow")
     assert err and "#ffcc00" in texts[0]
+
+
+# ======================================================================== round 7: sizes, tags, notes, captions
+def test_unknown_key_suggests_the_same_author_before_keys_that_only_look_alike():
+    keys = ["brown2015quantum", "green2016quantum", "smith2021observation", "smith2022emission"]
+    close = PaperToolsMixin._close_keys
+    assert close("smith2019quantum", keys)[:2] == ["smith2021observation", "smith2022emission"]  # nearest year first
+    assert close("smith2022quantum", keys)[0] == "smith2022emission"  # the same year before any other
+    assert close("smith", keys) == ["smith2021observation", "smith2022emission"]  # no year given
+    assert close("nobody1999x", keys) == []
+
+
+def test_a_long_note_names_the_lines_to_read_and_offers_full_only_when_it_fits(lib, svc):
+    server = lib["server"]
+    para = "Line of the note with some words in it, repeated to make the note long.\n"
+    svc.note_service.create(path="huge.md", title="Huge", text="# Huge\n\n" + para * 900)  # ~65,000 characters
+    svc.note_service.create(path="big.md", title="Big", text="# Big\n\n" + para * 500)  # ~36,000 characters
+    huge = call_json(server, "get_note", note="huge")["too_long"]
+    assert "full=true" not in huge and "search_in_note" in huge
+    parts = re.findall(r"'(\d+)-(\d*)'", huge.split("calls:")[1])
+    assert len(parts) == 3 and parts[0][0] == "1" and parts[-1][1] == ""  # the ranges cover the note, in order
+    assert all(int(b[0]) == int(a[1]) + 1 for a, b in zip(parts, parts[1:]))
+    for a, b in parts:  # and each fits one result
+        _, texts = call(server, "get_note", note="huge", lines=f"{a}-{b}")
+        assert len(texts[1]) <= 31_000
+    assert "full=true" in call_json(server, "get_note", note="big")["too_long"]
+
+
+def test_search_in_note_finds_the_paragraphs_with_their_lines_and_section(lib, svc):
+    server = lib["server"]
+    text = (
+        "# Plan\n\nIntroductory words about the bond.\n\n## Method\n\nThe bond dimension is kept small\n"
+        "by truncation of the spectrum.\n\n## Results\n\nThe dimension of the space grows.\n\nNothing else.\n"
+    )
+    svc.note_service.create(path="plan.md", title="Plan", text=text)
+    r = call_json(server, "search_in_note", note="plan", query="bond dimension")
+    best = r["results"][0]
+    assert best["section"] == "## Method" and best["matched"] == ["bond", "dimension"]
+    assert "truncation" in best["snippet"] and r["paragraphs_matching"] == 3 and "lines=" in r["next"]
+    first, last = (int(n) for n in best["lines"].split("-"))
+    assert last == first + 1  # the numbers get_note counts: reading them gives the paragraph
+    assert call(server, "get_note", note="plan", lines=best["lines"])[1][1].endswith("of the spectrum.")
+    # one word only: after the paragraph with both
+    assert {x["lines"] for x in r["results"][1:]} == {str(first - 4), str(last + 4)}
+    r = call_json(server, "search_in_note", note="plan", query='"dimension of the space"')
+    assert [x["lines"] for x in r["results"]] == [str(last + 4)]
+    assert call_json(server, "search_in_note", note="plan", query="title")["results"] == []  # not the front matter
+    r = call_json(server, "search_in_note", note="plan", query="hamiltonian")
+    assert r["results"] == [] and "outline" in r["hint"]
+    err, texts = call(server, "search_in_note", note="plan", query="-bond")
+    assert err and "words" in texts[0]
+
+
+def test_long_reference_lists_come_one_line_per_work_unless_asked_otherwise(lib, svc):
+    server, s = lib["server"], svc
+    big = s.papers.create({"title": "A long review", "authors": "Rev, Ann", "year": 2023, "citation_key": "rev2023"})
+    refs = [
+        {"doi": f"10.7/r{i}", "title": f"Cited work number {i}", "authors": "Old, Al", "year": 2000} for i in range(50)
+    ]
+    s.citations.store.save(big["id"], "crossref", refs, doi="10.7/rev")
+    r = call_json(server, "get_references", paper="rev2023")
+    assert all(isinstance(x, str) for x in r["references"]) and "compact=false" in r["compact"]
+    assert r["references"][0] == "Old (2000): Cited work number 0 [doi:10.7/r0]"
+    r = call_json(server, "get_references", paper="rev2023", compact=False)
+    assert r["references"][0]["doi"] == "10.7/r0" and "compact" not in r  # the fields, when asked for
+    r = call_json(server, "get_references", paper="rev2023", limit=10)
+    assert isinstance(r["references"][0], dict)  # ten works are not a long list
+    r = call_json(server, "get_references", paper="smith2021")
+    assert isinstance(r["references"][0], dict) and "compact" not in r
+    # the citation graph follows the same rule: 51 nodes around the review
+    r = call_json(server, "get_citation_graph", papers=["rev2023"], limit=60)
+    assert isinstance(r["nodes"][0], str) and "compact=false" in r["nodes_meaning"]
+    r = call_json(server, "get_citation_graph", papers=["rev2023"], limit=60, compact=False)
+    assert r["nodes"][0]["key"] == "rev2023"
+
+
+def test_search_names_the_users_tags_that_stand_for_the_subject(lib, svc):
+    server, s = lib["server"], svc
+    made = [
+        s.papers.create({"title": t, "authors": "Tag, Ann", "year": 2024, "citation_key": k})
+        for k, t in (
+            ("a2024", "Conductivity in spin chains"),
+            ("b2024", "Scaling of conductivity"),
+            ("c2024", "Robustness of heat currents"),
+            ("d2024", "Conductivity without a tag"),
+        )
+    ]
+    s.tags.add([p["id"] for p in made[:3]], ["Transport"])
+    r = call_json(server, "search_library", query="conductivity", scope="items")
+    assert r["related_tags"] == [
+        "tag:Transport has 3 items, 2 of them among these results"
+    ]  # c2024 is found by the tag
+    r = call_json(server, "search_library", query="transport robustness", scope="items")
+    assert r["related_tags"] == ["tag:Transport has 3 items, 1 of them among these results"]  # named like a word
+    # nothing to add when the search is the tag's items already (tags are searched like any field)
+    assert "related_tags" not in call_json(server, "search_library", query="transport", scope="items")
+    assert "related_tags" not in call_json(server, "search_library", query="tag:Transport", scope="items")
+    assert "related_tags" not in call_json(server, "search_library", query="smith", scope="items")
+
+
+def test_notes_inventory_lists_the_largest_first(lib, svc):
+    svc.note_service.create(path="tiny.md", title="Tiny", text="# Tiny\n")
+    svc.note_service.create(path="bulky.md", title="Bulky", text="# Bulky\n\n" + "words " * 2000)
+    r = call_json(lib["server"], "list_collections", include_notes=True)
+    sizes = [n["bytes"] for n in r["note_list"]]
+    assert r["note_list"][0]["path"] == "bulky.md" and sizes == sorted(sizes, reverse=True)
+    assert r["note_list_order"] == "largest first"
+
+
+def test_view_image_lists_a_notes_images_and_shows_the_chosen_ones(lib, svc):
+    server = lib["server"]
+    small = pdfpng.png_encode(bytes([200, 30, 30]) * (40 * 20), 40, 20)
+    paths = [svc.note_service.add_image(f"pick{i}.png", small)["path"] for i in range(8)]
+    body = "\n\n".join(f"![i{i}]({p})\n*Caption {i}.*" for i, p in enumerate(paths))
+    svc.note_service.create(path="pick.md", title="Pick", text="# Pick\n\n" + body + "\n")
+    err, texts = call(server, "view_image", note="pick", list_only=True)
+    listed = json.loads(texts[0])
+    assert not err and len(texts) == 1  # no pictures, and all eight although a call shows six
+    assert [i["caption"] for i in listed["images"]] == [f"Caption {i}." for i in range(8)]
+    assert [i["path"] for i in listed["images"]] == paths and "paths=" in listed["next"]
+    err, texts = call(server, "view_image", note="pick", paths=[paths[6], paths[1]])
+    assert not err and texts.count("<image>") == 2
+    assert [json.loads(t)["alt"] for t in texts if t != "<image>"] == ["i1", "i6"]  # in the note's order
+    err, texts = call(server, "view_image", paths=[paths[0], paths[7]])
+    assert not err and texts.count("<image>") == 2  # without the note, too
+    err, texts = call(server, "view_image", list_only=True, path=paths[0])
+    assert err and "give note" in texts[0]
+
+
+@needs_pdfium
+def test_a_caption_is_returned_whole_and_stops_before_the_text_under_it(tmp_path):
+    page = (
+        _text(100, 405, "Figure 1: A caption that runs over")
+        + _text(100, 391, "three lines of the page before it")
+        + _text(100, 377, "comes to its end.")
+        + _text(100, 330, "The body of the paper goes on here.")
+        + _text(100, 250, "Fig. 2 (Smith et al., 2021). It is worth noting that this is running text.")
+    )
+    (fig,) = pdfregions.figure_regions(make_stream_pdf(tmp_path / "cap.pdf", [page]), 1)
+    assert fig["caption"] == "Figure 1: A caption that runs over three lines of the page before it comes to its end."
+    text = ["Figure 1: Real caption.\nFig. 2 (Smith et al., 2021). It is worth noting that this is text.\n"]
+    assert [c["label"] for c in pdfoutline.captions(text)] == ["Figure 1"]  # a reference at the start of a line

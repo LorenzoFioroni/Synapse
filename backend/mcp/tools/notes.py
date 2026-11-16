@@ -6,18 +6,27 @@ import json
 import re
 import time
 
+from ...library import search as search_mod
 from ...library.agent import current_agent
 from ...notes import frontmatter, parser
 from ...notes.service import now_iso, ulid
 from ...notes.vault import Conflict, NoteExists, slugify
 from ..notecheck import NoteChecker
 from ..protocol import Parts, ToolError
-from .common import AI_FOLDER, MAX_NOTE_CHARS, NOTE_READ_CHARS, drop_empty
+from .common import (
+    AI_FOLDER,
+    MAX_CHARS_PER_READ,
+    MAX_NOTE_CHARS,
+    NOTE_READ_CHARS,
+    drop_empty,
+    fold_text,
+    together,
+)
 from .images import ImageToolsMixin
 
 
 class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
-    """get_note, write_note, edit_note, undo_note_edit."""
+    """get_note, search_in_note, write_note, edit_note, undo_note_edit."""
 
     def get_note(self, note: str, section: str = "", full: bool = False, lines: str = ""):
         path = self._note_path(note)
@@ -75,8 +84,8 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
             )
         grouped: dict[tuple, dict] = {}  # one entry per target, with every line that links to it
         for l in links["outgoing"]:
-            if l["kind"] not in ("note", "embed"):
-                continue
+            if l["kind"] not in ("note", "embed") or l.get("resolved") == path:
+                continue  # a link to one of the note's own headings says nothing about other notes
             key = (l["target"], l.get("resolved"), l["kind"] == "embed")
             if key not in grouped:
                 grouped[key] = drop_empty(
@@ -88,7 +97,8 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                     }
                 )
                 grouped[key]["lines"] = []
-            grouped[key]["lines"].append(l["line"])
+            if l["line"] not in grouped[key]["lines"]:
+                grouped[key]["lines"].append(l["line"])
         notes_out = list(grouped.values())
         backlinks = [
             drop_empty(
@@ -143,11 +153,20 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
             summary["images_hint"] = "view_image(note=…) shows these images (paths are inside the notes folder)."
         text = got["text"]
         if too_long:
+            parts = self._read_parts(text)
+            ranges = "', '".join(parts)
             summary["too_long"] = (
                 f"The note has {len(text)} characters, too many to read at once: its text is not included. "
                 "Read the part you need with section='<heading>' (the outline shows each section's size) or "
-                "lines='120-300', or give full=true for all of it. cited_papers covers the whole note; a "
-                "section's read lists its images."
+                "lines='120-300'; search_in_note finds the lines about a subject. All of it takes "
+                f"{len(parts)} calls: lines='{ranges}'"
+                + (
+                    ", or one with full=true. "
+                    if len(text) <= MAX_CHARS_PER_READ
+                    # Not offered: a result this long is cut or refused by the app that asked for it.
+                    else ". "
+                )
+                + "cited_papers covers the whole note; a section's read lists its images."
             )
             return summary
         if ranged:
@@ -162,6 +181,82 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
             else f"Text of {path}"
         )
         return Parts([summary, f"{what}:\n\n{text}"])
+
+    @staticmethod
+    def _read_parts(text: str, size: int = NOTE_READ_CHARS) -> list[str]:
+        """Line ranges that cover the note, each within ``size`` characters ("1-310", "311-640", "641-")."""
+        lines = text.replace("\r\n", "\n").split("\n")
+        parts, start, chars = [], 1, 0
+        for n, line in enumerate(lines, 1):
+            if chars and chars + len(line) + 1 > size:
+                parts.append(f"{start}-{n - 1}")
+                start, chars = n, 0
+            chars += len(line) + 1
+        return [*parts, f"{start}-"]
+
+    def search_in_note(self, note: str, query: str, max_results: int = 10):
+        path = self._note_path(note)
+        got = self.s.note_service.get(path)
+        terms = [search_mod.normalize(t) for t, neg, f in search_mod.parse_query(query) if not neg]
+        terms = list(dict.fromkeys(t for t in terms if t))
+        if not terms:
+            raise ToolError("Give some words to search for.")
+        phrase = search_mod.normalize(query.replace('"', "")) if len(terms) > 1 else None
+        lines = got["text"].replace("\r\n", "\n").split("\n")
+        headings = (got["info"] or {}).get("headings") or []
+        _, body, _ = frontmatter.split(got["text"])
+        header = got["text"][: len(got["text"]) - len(body)].count("\n")  # the front matter is not the note's text
+        # A paragraph (lines up to a blank one) is what is matched: its words belong together.
+        blocks: list[tuple[int, int]] = []
+        start = None
+        for n, line in enumerate([*lines, ""], 1):
+            if line.strip() and start is None:
+                start = n
+            elif not line.strip() and start is not None:
+                if start > header:
+                    blocks.append((start, n - 1))
+                start = None
+        scored = []
+        for first, last in blocks:
+            text = "\n".join(lines[first - 1 : last])
+            folded, idx = fold_text(text)
+            hits = {t: [m.start() for m in re.finditer(re.escape(t), folded)] for t in terms}
+            matched = [t for t in terms if hits[t]]
+            if not matched:
+                continue
+            phrase_hits = [m.start() for m in re.finditer(re.escape(phrase), folded)] if phrase else []
+            near = together(hits, matched) if len(matched) > 1 else []
+            total = sum(len(v) for v in hits.values())
+            at = (phrase_hits or near or hits[matched[0]])[0]
+            scored.append(((len(matched), len(phrase_hits), len(near), total), first, last, matched, text, idx[at]))
+        scored.sort(key=lambda s: (tuple(-v for v in s[0]), s[1]))
+        results = []
+        for score, first, last, matched, text, pos in scored[:max_results]:
+            a, b = max(0, pos - 160), min(len(text), pos + 240)
+            above = [h for h in headings if h["line"] <= first]
+            results.append(
+                drop_empty(
+                    {
+                        "lines": f"{first}-{last}" if last > first else str(first),
+                        "section": ("#" * above[-1]["level"]) + " " + above[-1]["text"] if above else None,
+                        "matched": matched if len(terms) > 1 else None,
+                        "occurrences": score[3],
+                        "snippet": ("…" if a else "") + " ".join(text[a:b].split()) + ("…" if b < len(text) else ""),
+                    }
+                )
+            )
+        out = {
+            "note": path,
+            "title": (got["info"] or {}).get("title"),
+            "lines_total": len(lines),
+            "paragraphs_matching": len(scored),
+            "results": results,
+        }
+        if results:
+            out["next"] = "get_note(note, lines='a-b') reads those lines with what surrounds them."
+        else:
+            out["hint"] = "No paragraph of the note has these words. Try other words, or get_note for its outline."
+        return drop_empty(out) | {"results": results}
 
     @staticmethod
     def _shift_lines(message: str, k: int) -> str:

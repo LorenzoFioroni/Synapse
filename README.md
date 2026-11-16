@@ -321,18 +321,19 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 
 | Tool | What it gives |
 | --- | --- |
-| `search_library` | items and notes matching a query (same syntax as the search box: `folder:`, `tag:`, `year:`, `added:`…), with snippets; pages with `offset`, `compact` lists many items in one line each; `a OR b` finds either; a paper that has the words only in its reference list is marked and listed last |
+| `search_library` | items and notes matching a query (same syntax as the search box: `folder:`, `tag:`, `year:`, `added:`…), with snippets; pages with `offset`, `compact` lists many items in one line each; `a OR b` finds either; a paper that has the words only in its reference list is marked and listed last; `related_tags` names your tags that stand for the subject |
 | `list_collections` | folders, tags, smart folders and notes folders with counts |
 | `get_note` | a note's text, the papers it cites (with lines and pages), its links and backlinks, the images it shows; a long note is read by `section` or `lines` |
-| `view_image` | the images of a note (pasted pictures, snapshots — with the page and region they came from), or one by its path; large ones are scaled down when Pillow is installed |
+| `search_in_note` | the paragraphs of one note containing some words, with their line numbers and section: to find what a long note says about a subject |
+| `view_image` | the images of a note (pasted pictures, snapshots — with the page and region they came from), one or a few by path, or only their list with captions (`list_only`); large ones are scaled down when Pillow is installed |
 | `get_paper` | metadata, abstract, PDFs and page counts, your paper note, notes citing it, reference-list summary; `papers=[…]` compares several with whole abstracts |
 | `get_paper_outline` | a PDF's sections with their PDF pages (bookmarks or printed contents page) and its figure and table captions |
 | `search_in_paper` | the pages of a PDF containing some words (best when they are close together), with snippets and sections; pages that have them only in the reference list come last |
 | `read_paper` | the text of some PDF pages (up to 10 per call), marked by page |
 | `view_page` | an image of a page with a 0–1 grid; figures, tables and numbered equations with proposed regions |
-| `snapshot` | cuts a figure, table or equation — named by its number (`figure="Figure 2"`, `equation="3"`, page found by itself) or as a region — into `notes/attachments/` like the viewer's camera button, and returns the Markdown for it |
-| `get_references` | what a paper cites (library items marked, others with DOI/arXiv) and which library items cite it; `compact` for one line each |
-| `get_citation_graph` | the neighbourhood of some papers, or a library-wide overview of the most cited works you do not have; `compact` for one line each |
+| `snapshot` | cuts a figure, table or equation — named by its number (`figure="Figure 2"`, `equation="3"`, page found by itself) or as a region — into `notes/attachments/` like the viewer's camera button, and returns the Markdown for it with the whole printed caption |
+| `get_references` | what a paper cites (library items marked, others with DOI/arXiv) and which library items cite it; one line each when the list is long (or with `compact`) |
+| `get_citation_graph` | the neighbourhood of some papers, or a library-wide overview of the most cited works you do not have; one line each when the lists are long (or with `compact`) |
 | `get_annotations` | what you highlighted, underlined or commented on a paper's PDF, with pages |
 | `write_note` | saves a new note in `notes/ai/`, or in a notes folder you name (`author: ai`), never overwriting anything — after checking it |
 | `edit_note` | changes an existing note (replace passages, append, or new text) — checked the same way; a version of its own in the note's history |

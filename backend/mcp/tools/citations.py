@@ -10,6 +10,7 @@ from .common import ToolsBase, drop_empty, first_author, short_authors
 CITERS_LISTED = 10  # citing keys named per work; the count is always given
 MANY_RECORDS = 6  # records with one title: a work has a few ids (preprint, journal, book); dozens is a mismatch
 CITERS_COMPACT = 5
+AUTO_COMPACT = 40  # more works than this come one per line unless the caller asks for their fields
 
 
 def _outside_line(title, authors, year, doi, arxiv) -> str:
@@ -58,13 +59,18 @@ class CitationToolsMixin(ToolsBase):
         direction: str = "cites",
         in_library_only: bool = False,
         limit: int = 200,
-        compact: bool = False,
+        compact: bool | None = None,
     ):
         items = self._items()
         p = self._paper(paper, items)
         view = self.s.citations.item_view(p["id"])
         out: dict = {"paper": self._label(p), "title": p.get("title")}
         f = view["fetch"]
+        asked = compact
+        if compact is None:  # a long list in full is more than an AI app accepts in one result
+            cites = direction in ("cites", "both")
+            listed = sum(1 for r in view["references"] if r.get("library_id") or not (in_library_only or _unread(r)))
+            compact = min(listed, limit) * cites + len(view["cited_by"]) * (direction != "cites") > AUTO_COMPACT
         if direction in ("cites", "both"):
             if not f:
                 out["references_note"] = (
@@ -123,7 +129,7 @@ class CitationToolsMixin(ToolsBase):
                     f"{unread} entries with no author, year, DOI or arXiv id (footnotes, or text the source "
                     "took for a reference)"
                 )
-            if not compact and len(out["references"]) > 60:
+            if not compact and len(out["references"]) > AUTO_COMPACT:
                 out["hint"] = "compact=true gives one line per reference."
         if direction in ("cited_by", "both"):
             out["cited_by_in_library"] = [
@@ -134,6 +140,11 @@ class CitationToolsMixin(ToolsBase):
             out["cited_by_note"] = (
                 "Only items of the library are known to cite it (works outside the library are not tracked)."
             )
+        if compact and asked is None:
+            out["compact"] = (
+                "one line per work, as the list is long; compact=false gives each work's fields "
+                "(co-authors, venue, both ids)"
+            )
         return out
 
     def get_citation_graph(
@@ -142,8 +153,9 @@ class CitationToolsMixin(ToolsBase):
         depth: int = 1,
         limit: int = 40,
         include_edges: bool = False,
-        compact: bool = False,
+        compact: bool | None = None,
     ):
+        asked = compact
         g = self.s.citations.graph()
         items = {p["id"]: p for p in self.s.papers.list()}
         nodes = {n["id"]: n for n in g["nodes"]}
@@ -208,6 +220,8 @@ class CitationToolsMixin(ToolsBase):
                 (n for n in nodes.values() if n["in_library"] and n["cited_by_library"]),
                 key=lambda n: -n["cited_by_library"],
             )
+            if compact is None:  # two ranked lists of up to `limit` works each
+                compact = len(missing[:limit]) + len(cited_lib[:limit]) > AUTO_COMPACT
             check = (
                 "matched from reference text only (no DOI or arXiv id, or very many records share this title): "
                 "may be a wrong match"
@@ -248,7 +262,12 @@ class CitationToolsMixin(ToolsBase):
                     "most_cited_in_library": in_library,
                     "note": "Only items whose reference lists were fetched contribute edges. Reference lists are "
                     "matched automatically: check a surprising entry with get_references."
-                    + ("" if compact else " compact=true gives one line per work."),
+                    + ("" if compact else " compact=true gives one line per work.")
+                    + (
+                        " One line per work, as the lists are long: compact=false gives their fields."
+                        if compact and asked is None
+                        else ""
+                    ),
                 }
             )
 
@@ -291,6 +310,8 @@ class CitationToolsMixin(ToolsBase):
             if s in nodes and s not in self.s.citations.store.fetched_ids() and not any(e[0] == s for e in edges)
         ]
         shown = [(a, b) for a, b in edges if a in kept and b in kept]
+        if compact is None:  # the nodes and the works they share
+            compact = len(keep) + len(shared[:limit]) > AUTO_COMPACT
         return drop_empty(
             {
                 "seeds": [label(s) for s in seeds],
@@ -298,7 +319,10 @@ class CitationToolsMixin(ToolsBase):
                 "nodes": [f"{dist[n]}: {line(n)}" for n in keep]
                 if compact
                 else [{**describe(n), "distance": dist[n]} for n in keep],
-                "nodes_meaning": "distance from the seeds: the work" if compact else None,
+                "nodes_meaning": "distance from the seeds: the work"
+                + (" (one line per work, as there are many: compact=false gives their fields)" if asked is None else "")
+                if compact
+                else None,
                 "edges": [f"{label(a)} -> {label(b)}" for a, b in shown][:1000] if include_edges else None,
                 "edges_meaning": "a -> b: a cites b" if include_edges else None,
                 "edges_total": len(edges),
