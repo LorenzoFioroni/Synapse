@@ -11,7 +11,7 @@ import unicodedata
 from collections import OrderedDict
 from pathlib import PurePosixPath
 
-from ...library.fields import ITEM_TYPE_LABELS
+from ...library.fields import ITEM_TYPE_LABELS, first_author
 from ...library.identifiers import identifiers, norm_arxiv, norm_doi
 from ...notes.vault import InvalidPath
 from ...pdf.text import extract_pages
@@ -66,15 +66,6 @@ def short_authors(authors: str | None, keep: int = 4, include: list[str] | None 
     hidden = [a for a in parts[keep:] if any(n.casefold() in a.casefold() for n in include or [] if n.strip())]
     more = f"{len(parts)} authors" + (f", incl. {'; '.join(hidden)}" if hidden else "")
     return "; ".join(parts[:keep]) + f"; … ({more})"
-
-
-def first_author(authors: str | None) -> str:
-    """ "Zhang et al." from an author list ("Zhang, Wei; Li, Na" or "Wei Zhang and Na Li")."""
-    parts = [a.strip() for a in re.split(r";|\band\b", str(authors or "")) if a.strip()]
-    if not parts:
-        return ""
-    first = parts[0]
-    return (first.split(",")[0] if "," in first else first.split()[-1]) + (" et al." if len(parts) > 1 else "")
 
 
 _DOI_REF = re.compile(r"^(?:doi:\s*|https?://(?:dx\.)?doi\.org/)?10\.\d{4,9}/\S+$", re.I)

@@ -9,6 +9,7 @@ import type { TextItem } from 'pdfjs-dist/types/src/display/api.js';
 import type { Item } from '../types.js';
 import { type PdfRegion, writeRegion } from '../views/notes/citeTarget.js';
 import { appTabs } from './inTab.js';
+import { openNewWindow } from '../windows.js';
 import { aiConfigured, refreshAiStatus } from '../ai/status.js';
 import { type Rect, findQuote, parseRect, quoteBoxes } from './locate.js';
 import type { PageWrapper } from './viewer.js';
@@ -202,6 +203,11 @@ const viewerHost = {
     const tabs = appTabs();
     if (tabs) tabs.open({ key: file, url, title: cited.title || 'PDF', spot: { page }, newTab: false });
     else window.open(url, '_blank', 'noopener');
+  },
+  // a note opens in the app: in the page around an app tab (main.ts reads the address), else in a new window
+  openNote(path: string) {
+    if (appTabs()) window.parent.location.hash = `note=${encodeURIComponent(path)}`;
+    else openNewWindow({ note: path });
   },
 };
 

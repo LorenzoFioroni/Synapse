@@ -134,7 +134,11 @@ gone: Claude answers "No conversation found"; a restarted Codex has lost its thr
 note's path and title, or the paper's citation key, title, PDF page, attachment id when the item has
 several PDFs) between `<context>` tags, and the selected text or quote between `<selection>` /
 `<quote>` tags: all data the model must not obey (a tag cannot be closed from inside, titles are one
-line). The system text asks for the Synapse tools,
+line). Papers and notes the user names in the question (`[@key]`, `[@key, p. N]`, `[[note]]`, typed
+with the composer's completion) are found with the notes parser and resolved as notes resolve them,
+then listed between `<mentions>` tags: each paper's key, title, first author, year and cited pages, each
+note's title and path, or "not in the library" / "not found"; at most `MAX_MENTIONS` (20) of each. The
+library is read only when the question names a paper. The system text asks for the Synapse tools,
 note Markdown with `[@key, p. N]` citations, brevity and changes to notes only when asked.
 Selections are limited to 8,000 characters, the question to 20,000; an unknown note or item is a 404.
 

@@ -7,6 +7,7 @@ them from ``GET /api/schema``).
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 
 
@@ -131,3 +132,12 @@ def validate_create_fields(data: dict) -> None:
     unknown = sorted(data.keys() - set(EDITABLE_KEYS) - {"tags", "folder_id", "folder_ids"})
     if unknown:
         raise ValueError(f"Unknown item fields: {', '.join(unknown)}")
+
+
+def first_author(authors: str | None) -> str:
+    """ "Zhang et al." from an author list ("Zhang, Wei; Li, Na" or "Wei Zhang and Na Li")."""
+    parts = [a.strip() for a in re.split(r";|\band\b", str(authors or "")) if a.strip()]
+    if not parts:
+        return ""
+    first = parts[0]
+    return (first.split(",")[0] if "," in first else first.split()[-1]) + (" et al." if len(parts) > 1 else "")

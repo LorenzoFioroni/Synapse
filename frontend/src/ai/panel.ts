@@ -13,6 +13,7 @@ import {
 import { createComposer } from './composer.js';
 import { suggestions } from './context.js';
 import { createHistory } from './history.js';
+import { MentionData } from './mentions.js';
 import { Thread, type Turn, usageText } from './messages.js';
 import { type Dock, place, remember } from './placement.js';
 import { refreshAiStatus } from './status.js';
@@ -23,6 +24,8 @@ export interface AskHost {
   openPdf(item: { id: string; title: string }, pdf: CitePdf, page: number | null): void;
   /** Show an item that has no PDF (optional). */
   showItem?(id: string): void;
+  /** Open a note a [[link]] names (optional; without it such links do nothing). */
+  openNote?(path: string): void;
   /** The page's column for the docked panel (without it the panel is always a popup). */
   dock?: Dock;
 }
@@ -82,7 +85,10 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
   const providerLabels = () => new Map((status?.companions || []).flatMap((c) => c.providers).map((p) => [p.id, p.label]));
 
   const thread = new Thread();
+  const data = new MentionData();   // what a question can cite; fetched on first use, the library part now for the citations in answers
+  data.onLoad = () => { cites = new Map(data.items().map((i) => [i.key, i])); thread.paintAll(); };
   const composer = createComposer({
+    mentions: data,
     onSend: (t) => void submit(t),
     onStop: () => void stopNow(),
     onDropContext: () => { context = undefined; paintContext(); composer.focus(); },
@@ -97,11 +103,9 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
   root.append(composer.el);
   history.el.hidden = true;
 
-  import('../../vendor/md/md.js').then((m) => thread.setRenderer(createRenderer(m, { citeInfo: (k) => cites.get(k) || null })))
+  import('../../vendor/md/md.js').then((m) => thread.setRenderer(createRenderer(m, { citeInfo: (k) => cites.get(k) || null, resolveNote: data.resolveNote })))
     .catch(() => { /* the answers stay plain text */ });
-  fetch('/api/notes/cite_index').then((r) => (r.ok ? r.json() : null)).then((d: { items: CiteEntry[] } | null) => {
-    if (d) { cites = new Map(d.items.map((i) => [i.key, i])); thread.paintAll(); }
-  }).catch(() => {});
+  void data.load('cite');
 
   const busy = () => !!turn && !isFinal(turn.state);
   const showingHistory = () => !history.el.hidden;
@@ -327,6 +331,8 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
   }
   const onKey = (e: KeyboardEvent) => {
     if (e.key !== 'Escape' || !root.contains(document.activeElement)) return;
+    if (document.querySelector('.menu')) return;   // a picker's menu closes itself, not the panel
+    if (composer.closeMentions()) { e.preventDefault(); e.stopPropagation(); return; }
     e.preventDefault();
     e.stopPropagation();
     if (showingHistory()) showHistory(false); else close();
@@ -336,6 +342,11 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
     const a = (e.target as Element).closest<HTMLAnchorElement>('a');
     if (!a) return;
     e.preventDefault();
+    if (a.classList.contains('wikilink')) {
+      const path = a.dataset.path || data.resolveNote(a.dataset.note || '');
+      if (path) host.openNote?.(path);
+      return;
+    }
     if (a.classList.contains('cite')) {
       const it = cites.get(a.dataset.key || '');
       const pdfs = it?.pdfs?.length ? it.pdfs : it?.pdf ? [it.pdf] : [];
@@ -345,7 +356,7 @@ function mount(initial: AskContext | undefined, host: AskHost): void {
       else if (it && host.showItem) host.showItem(it.id);
       return;
     }
-    if (/^https?:\/\//i.test(a.href) && !a.classList.contains('wikilink')) window.open(a.href, '_blank', 'noopener,noreferrer');
+    if (/^https?:\/\//i.test(a.href)) window.open(a.href, '_blank', 'noopener,noreferrer');
   });
   help.addEventListener('click', (e) => { if ((e.target as Element).closest('[data-recheck]')) void check(); });
   q('[data-close]').addEventListener('click', close);

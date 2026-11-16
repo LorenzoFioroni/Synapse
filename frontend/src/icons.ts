@@ -78,6 +78,11 @@ const P: Record<string, string> = {
   plugin: '<path d="M3 5.5h2.2a1.6 1.6 0 1 1 3.2 0h2.1v2.2a1.6 1.6 0 1 1 0 3.2V13H3z"/>',
   usage: '<path d="M3 13V8M8 13V3M13 13V6"/>',
   sparkle: '<path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z"/>',
+  send: '<path d="M8 13V3.5M3.8 7.5L8 3.2l4.2 4.3"/>',
+  stop: '<rect x="4" y="4" width="8" height="8" rx="1.6" fill="currentColor" stroke="none"/>',
+  at: '<circle cx="8" cy="8" r="2.4"/><path d="M10.4 6v2.9c0 1 .7 1.6 1.5 1.6 1 0 1.6-1 1.6-2.5a5.5 5.5 0 1 0-2.2 4.4"/>',
+  chip: '<rect x="4.5" y="4.5" width="7" height="7" rx="1.3"/><path d="M6.5 2v2.5M9.5 2v2.5M6.5 11.5V14M9.5 11.5V14M2 6.5h2.5M2 9.5h2.5M11.5 6.5H14M11.5 9.5H14"/>',
+  bot: '<rect x="3" y="5.5" width="10" height="7.5" rx="2.2"/><path d="M8 5.5V3M6 9v.01M10 9v.01" stroke-width="1.8"/>',
 };
 
 export function icon(name: string, cls = ''): string {

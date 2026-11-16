@@ -331,7 +331,8 @@ python synapse_companion.py extension           # optional: the browser extensio
 ```
 
 Previous conversations are kept on the server and can be continued later, and you can pick the AI
-agent, model and effort for each question. See [the companion guide](docs/companion.md) for how it works and why Codex is opt-in.
+agent, model and effort for each question from small buttons beside the text box. Type `[@` or `[[` (or press the @ button)
+to cite a paper or a note in a question; the AI is told what they are. See [the companion guide](docs/companion.md) for how it works and why Codex is opt-in.
 
 Add `--data DIR` if your library is not in `./data`. Tools:
 

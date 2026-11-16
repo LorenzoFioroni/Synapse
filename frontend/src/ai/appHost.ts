@@ -19,6 +19,7 @@ const host: AskHost = {
   dock: notesDock,
   openPdf: (item, pdf, page) => openAttachment(item, pdf, page),
   showItem: (id) => { location.hash = `item=${id}`; },
+  openNote: (path) => { location.hash = `note=${encodeURIComponent(path)}`; },   // main.ts openFromHash
 };
 
 /** Open the panel (loaded on first use) for ``context``. */

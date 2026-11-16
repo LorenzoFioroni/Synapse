@@ -46,10 +46,20 @@ PROVIDERS = [
     {
         "id": "claude",
         "label": "Claude",
-        "models": [{"id": "sonnet", "label": "Sonnet"}, {"id": "opus", "label": "Opus"}],
+        "models": [
+            {"id": "sonnet", "label": "Sonnet"},
+            {"id": "opus", "label": "Opus"},
+            {"id": "long", "label": "Opus with extended thinking and a context window of one million tokens"},
+        ],
         "efforts": ["low", "medium", "high"],
     }
 ]
+SECOND = {
+    "id": "codex",
+    "label": "Codex",
+    "models": [{"id": "gpt-x", "label": "GPT-X"}, {"id": "gpt-y", "label": "GPT-Y"}],
+    "efforts": ["minimal", "high"],
+}
 
 
 class Companion(threading.Thread):
@@ -75,7 +85,7 @@ class Companion(threading.Thread):
     def run(self):
         while not self.quit:
             try:
-                r = self.call("poll", {"name": "E2E laptop", "providers": PROVIDERS, "running": []})
+                r = self.call("poll", {"name": "E2E laptop", "providers": list(PROVIDERS), "running": []})
             except requests.RequestException:
                 time.sleep(0.3)
                 continue
@@ -128,8 +138,21 @@ async def shot(page, name):
     except Exception:
         pass
     if SHOTS:
+        await page.wait_for_timeout(300)  # entrance animations
         os.makedirs(SHOTS, exist_ok=True)
         await page.screenshot(path=f"{SHOTS}/{name}.png")
+
+
+async def one_line(page):
+    """Where the buttons of the question box are: Send must share the row of the @ button, inside the box."""
+    return await page.evaluate(
+        """() => { const r = (s) => document.querySelector(s).getBoundingClientRect();
+          const row = r('.ai-controls'), at = r('[data-mention]'), send = r('[data-send]'), box = r('.ai-composer');
+          const val = document.querySelector('[data-model] .ai-pick-val');
+          return { rowH: row.height, sameRow: Math.abs((send.top + send.height / 2) - (at.top + at.height / 2)) < 3,
+            inside: send.right <= box.right && send.left >= box.left, sendW: send.width,
+            clipped: !!val && val.scrollWidth > val.clientWidth, noScroll: document.documentElement.scrollWidth <= innerWidth }; }"""
+    )
 
 
 async def until(page, js, t=8000):
@@ -281,13 +304,107 @@ async def main():
             check("the details panel is still there", await page.locator(".notes-side .ns-details").is_visible())
             check("the agent selector is hidden with a single agent", await page.locator("[data-agent]").is_hidden())
             check(
-                "model and effort are offered, Default first",
-                await page.locator("[data-model] option").all_inner_texts() == ["Model: default", "Sonnet", "Opus"]
-                and (await page.locator("[data-effort] option").all_inner_texts())[0] == "Effort: default",
+                "model and effort are icon buttons that show their value, Default until chosen",
+                await page.locator("[data-model] .ai-pick-val").inner_text() == "Default"
+                and "Effort: Default" in (await page.locator("[data-effort]").get_attribute("aria-label")),
             )
-            await page.select_option("[data-model]", "opus")
-            await page.select_option("[data-effort]", "high")
+            await page.click("[data-model]")
+            items = await page.locator(".menu .menu-item").all_inner_texts()
+            check(
+                "the model menu lists the allowed values, Default first and checked",
+                [i.replace("✓", "").strip() for i in items][:3] == ["Default", "Sonnet", "Opus"]
+                and await page.locator(".menu .menu-item .check").first.inner_text() == "✓",
+                items,
+            )
+            await shot(page, "2c-model-menu")
+            await page.keyboard.press("Escape")
+            check(
+                "Escape closes the menu and not the panel",
+                await page.locator(".menu").count() == 0 and await page.locator(".ai-panel").count() == 1,
+            )
+            await page.click("[data-model]")
+            await page.locator(".menu .menu-item", has_text="Opus").first.click()
+            await page.focus("[data-effort]")
+            await page.keyboard.press("Enter")
+            check("a picker opens from the keyboard", await page.locator(".menu .menu-item").count() == 4)
+            await page.keyboard.press("ArrowDown")
+            await page.keyboard.press("ArrowDown")
+            await page.keyboard.press("ArrowDown")
+            await page.keyboard.press("Enter")
+            check(
+                "arrows and Enter choose a value; the buttons show it",
+                await page.locator("[data-model] .ai-pick-val").inner_text() == "Opus"
+                and await page.locator("[data-effort]").get_attribute("aria-label") == "Effort: High"
+                and await page.locator(".menu").count() == 0,
+                await page.locator("[data-effort]").get_attribute("aria-label"),
+            )
             await shot(page, "2b-popup-empty")
+
+            # ---- citing papers and notes: "[@" and "[[" open a list over the question box
+            n_asks = len(asks)
+            await page.click(".ai-input")
+            await page.keyboard.type("see [@")
+            check(
+                "typing [@ lists library items by key, author and title",
+                await until(page, "document.querySelectorAll('.ai-mentions .ai-mention').length === 1")
+                and key in await page.inner_text(".ai-mention-key")
+                and "Doe" in await page.inner_text(".ai-mention-detail")
+                and "Open systems" in await page.inner_text(".ai-mention-title"),
+            )
+            await shot(page, "2d-mentions-popup")
+            await page.keyboard.press("Escape")
+            check(
+                "Escape closes the list and leaves the panel and the text",
+                await page.locator(".ai-mentions").is_hidden()
+                and await page.locator(".ai-panel").count() == 1
+                and await page.input_value(".ai-input") == "see [@",
+            )
+            await page.keyboard.type("Doe")
+            check("typing again reopens it", await until(page, "!document.querySelector('.ai-mentions')?.hidden"))
+            await page.keyboard.press("Enter")
+            check(
+                "Enter inserts [@key] and does not send",
+                await page.input_value(".ai-input") == f"see [@{key}]"
+                and await page.locator(".ai-mentions").is_hidden()
+                and len(asks) == n_asks
+                and await page.locator(".ai-turn").count() == 0,
+                await page.input_value(".ai-input"),
+            )
+            await page.fill(".ai-input", "")
+            await page.keyboard.type("and [[Rev")
+            check(
+                "typing [[ lists notes",
+                await until(page, "document.querySelectorAll('.ai-mentions .ai-mention').length >= 1")
+                and "Review" in await page.inner_text(".ai-mention-key"),
+            )
+            await page.keyboard.press("ArrowDown")
+            await page.keyboard.press("ArrowUp")
+            await page.keyboard.press("Tab")
+            check(
+                "Tab inserts [[note]]",
+                await page.input_value(".ai-input") == "and [[Review]]",
+                await page.input_value(".ai-input"),
+            )
+            await page.fill(".ai-input", "")
+            await page.click("[data-mention]")
+            check(
+                "the @ button inserts [@ and opens the list, the caret staying in the text",
+                await page.input_value(".ai-input") == "[@"
+                and await until(page, "!document.querySelector('.ai-mentions')?.hidden")
+                and await page.evaluate("document.activeElement === document.querySelector('.ai-input')"),
+            )
+            await page.locator(".ai-mention", has_text=key).click()
+            check(
+                "clicking an item inserts it",
+                await page.input_value(".ai-input") == f"[@{key}]" and await page.locator(".ai-mentions").is_hidden(),
+            )
+            await page.fill(".ai-input", "zzz [@nothing-like-this")
+            check(
+                "an unknown query says so",
+                await until(page, "document.querySelector('.ai-mention-empty')?.textContent === 'No matching paper'"),
+            )
+            await page.fill(".ai-input", "")
+            await page.click(".ai-input")
 
             # ---- the working state shows at once (the server is made slow to answer on purpose)
             async def slow(route):
@@ -534,6 +651,106 @@ async def main():
                 await page.locator(".ai-panel").count() == 1 and await page.locator(".ai-history").is_hidden(),
             )
 
+            # ---- a sent question draws its citations and note links like an answer does
+            PROVIDERS.append(SECOND)  # the companion reports it with its next poll
+            await page.click("[data-new]")
+            await page.fill(".ai-input", f"FOLLOW about [@{key}, p. 2] and [[Review]] <b>raw</b>")
+            await page.keyboard.press("Enter")
+            check(
+                "a cited key in the sent question is a citation chip, a [[note]] a link",
+                await until(
+                    page,
+                    "document.querySelectorAll('.ai-q a.cite').length === 1 && !!document.querySelector('.ai-q a.wikilink')",
+                )
+                and "Doe" in await page.inner_text(".ai-q a.cite")
+                and "Review" in await page.inner_text(".ai-q a.wikilink"),
+            )
+            await until(
+                page,
+                "document.querySelector('.ai-turn:last-child .ai-answer')?.textContent.includes('Follow-up answer')",
+                12000,
+            )
+            check(
+                "raw HTML in the question stays text; the companion got the question as typed",
+                await page.locator(".ai-q b").count() == 0
+                and f"[@{key}, p. 2] and [[Review]] <b>raw</b>" in comp.jobs[-1]["prompt"],
+            )
+            await shot(page, "2f-question-with-cites")
+            await page.click(".ai-q a.wikilink")
+            await page.wait_for_timeout(600)
+            check(
+                "clicking the note link opens that note",
+                await page.locator(".note-head").is_visible() and "Review" in await page.inner_text(".note-head"),
+            )
+
+            # ---- Send never wraps, however long a label is: the pickers shrink instead
+            await page.click("[data-new]")
+            await page.click("[data-model]")
+            await page.locator(".menu .menu-item", has_text="context window").click()
+            geo = await one_line(page)
+            check(
+                "popup: a very long model label truncates; Send stays on the first line, at the right",
+                geo["sameRow"] and geo["inside"] and geo["rowH"] < 40 and geo["clipped"] and geo["noScroll"],
+                geo,
+            )
+            check(
+                "the full label is in the tooltip and the aria-label",
+                "context window" in await page.locator("[data-model]").get_attribute("title")
+                and "context window" in await page.locator("[data-model]").get_attribute("aria-label"),
+            )
+            await shot(page, "2e-long-label")
+
+            # ---- two agents: the agent picker appears, its choice reaches the companion, a conversation locks it
+            for _ in range(24):
+                if await page.locator("[data-agent]").is_visible():
+                    break
+                await page.wait_for_timeout(500)
+                await page.click("[data-new]")
+            check("a second agent makes the agent picker appear", await page.locator("[data-agent]").is_visible())
+            await page.click("[data-agent]")
+            names = [t.replace("✓", "").strip() for t in await page.locator(".menu .menu-item").all_inner_texts()]
+            check("the agent menu lists both agents", names == ["Claude", "Codex"], names)
+            await page.locator(".menu .menu-item", has_text="Codex").click()
+            check(
+                "choosing an agent shows its own models and drops the other's",
+                await page.locator("[data-agent] .ai-pick-val").inner_text() == "Codex"
+                and await page.locator("[data-model] .ai-pick-val").inner_text() == "Default",
+            )
+            await page.click("[data-model]")
+            await page.locator(".menu .menu-item", has_text="GPT-Y").click()
+            await page.click("[data-effort]")
+            await page.locator(".menu .menu-item", has_text="Minimal").click()
+            await page.fill(".ai-input", "FOLLOW with the other agent")
+            await page.keyboard.press("Enter")
+            await until(
+                page,
+                "document.querySelector('.ai-turn:last-child .ai-answer')?.textContent.includes('Follow-up answer')",
+                12000,
+            )
+            last = comp.jobs[-1]
+            check(
+                "agent, model and effort reach the companion",
+                (last.get("provider"), last.get("model"), last.get("effort")) == ("codex", "gpt-y", "minimal"),
+                (last.get("provider"), last.get("model"), last.get("effort")),
+            )
+            check(
+                "inside the conversation the agent cannot change, and the tooltip says why",
+                await page.locator("[data-agent]").get_attribute("aria-disabled") == "true"
+                and "cannot change" in await page.locator("[data-agent]").get_attribute("title"),
+            )
+            await page.click("[data-agent]", force=True)  # aria-disabled: Playwright would wait
+            check("and its menu stays shut", await page.locator(".menu").count() == 0)
+            await shot(page, "2g-locked-agent")
+            await page.click("[data-new]")
+            check(
+                "a new conversation remembers the last choice",
+                await page.locator("[data-agent] .ai-pick-val").inner_text() == "Codex"
+                and await page.locator("[data-model] .ai-pick-val").inner_text() == "GPT-Y",
+            )
+            await page.click("[data-agent]")
+            await page.locator(".menu .menu-item", has_text="Claude").click()
+            await page.click("[data-new]")
+
             # ---- the sidebar: it takes the place of the details panel
             await page.click("[data-place]")
             await page.wait_for_timeout(300)
@@ -554,11 +771,31 @@ async def main():
                 and geo["right"] <= 1280,
                 geo,
             )
+            await page.click("[data-model]")
+            await page.locator(".menu .menu-item", has_text="context window").click()
+            geo = await one_line(page)
+            check(
+                "docked: Send still on the first line with a very long label",
+                geo["sameRow"] and geo["inside"] and geo["rowH"] < 40 and geo["clipped"],
+                geo,
+            )
+            await page.fill(".ai-input", "compare [@")
+            await until(page, "!document.querySelector('.ai-mentions')?.hidden")
+            check(
+                "docked: the list opens above the box, inside the panel",
+                await page.evaluate(
+                    """() => { const l = document.querySelector('.ai-mentions').getBoundingClientRect(), p = document.querySelector('.ai-panel').getBoundingClientRect(),
+                      i = document.querySelector('.ai-input').getBoundingClientRect();
+                      return l.bottom <= i.top && l.left >= p.left - 1 && l.right <= p.right + 1 && l.top >= p.top; }"""
+                ),
+            )
             await shot(page, "6-dock")
             await page.emulate_media(color_scheme="dark")
             await page.wait_for_timeout(400)
             await shot(page, "6-dock-dark")
             await page.emulate_media(color_scheme="light")
+            await page.keyboard.press("Escape")
+            await page.fill(".ai-input", "")
             await page.reload()
             await page.wait_for_selector(".cm-content", timeout=15000)
             await page.wait_for_selector('[data-act="ask-ai"]:not([hidden])')
@@ -644,6 +881,49 @@ async def main():
             await v.click(".ai-answer a.cite")
             await v.wait_for_timeout(500)
             check("a citation of this PDF scrolls it (no new page)", len(ctx.pages) == 2)
+            # citing from the viewer: the library data is fetched on first use, with plain requests
+            await v.click(".ai-input")
+            await v.keyboard.type("compare [@")
+            check(
+                "the viewer lists library items after [@",
+                await until(v, "document.querySelectorAll('.ai-mentions .ai-mention').length === 1")
+                and key in await v.inner_text(".ai-mention-key"),
+            )
+            check(
+                "in the app's menu look: the list is styled in the viewer too",
+                await v.evaluate("getComputedStyle(document.querySelector('.ai-mentions')).boxShadow !== 'none'"),
+            )
+            await shot(v, "4b-viewer-mentions")
+            await v.keyboard.press("Enter")
+            await v.keyboard.type(" with [[Rev")
+            check(
+                "and notes after [[",
+                await until(v, "document.querySelectorAll('.ai-mentions .ai-mention').length >= 1")
+                and "Review" in await v.inner_text(".ai-mention-key"),
+            )
+            await v.keyboard.press("Enter")
+            check("both are in the text", await v.input_value(".ai-input") == f"compare [@{key}] with [[Review]]")
+            await v.keyboard.press("Enter")
+            check(
+                "the viewer shows them as a chip and a link in the sent question",
+                await until(
+                    v, "!!document.querySelector('.ai-q a.cite') && !!document.querySelector('.ai-q a.wikilink')"
+                ),
+            )
+            await until(v, "!document.querySelector('.ai-turn.streaming')", 12000)
+            check(
+                "the companion got the question as typed",
+                f"compare [@{key}] with [[Review]]" in comp.jobs[-1]["prompt"],
+            )
+            async with ctx.expect_page() as opened:
+                await v.click(".ai-q a.wikilink")
+            note_win = await opened.value
+            check(
+                "a [[note]] link opens the note in the app (a new window here)",
+                "note=Review.md" in note_win.url,
+                note_win.url,
+            )
+            await note_win.close()
             await v.keyboard.press("Escape")
             check("Escape closes the viewer's panel", await v.locator(".ai-panel").count() == 0)
 
@@ -710,8 +990,24 @@ async def main():
                     "docked inside the tab's frame, as a column",
                     await frame.evaluate("!!document.querySelector('#main-content > .ai-panel')"),
                 )
+                await frame.click(".ai-input")
+                await tabbed.keyboard.type("see [[Rev")
+                check(
+                    "in an app tab's frame the notes are listed too",
+                    await until(frame, "document.querySelectorAll('.ai-mentions .ai-mention').length >= 1"),
+                )
+                await tabbed.keyboard.press("Tab")
+                await tabbed.keyboard.press("Enter")
+                await until(frame, "!!document.querySelector('.ai-q a.wikilink')", 8000)
+                await until(frame, "!document.querySelector('.ai-turn.streaming')", 12000)
                 await shot(tabbed, "7-viewer-in-tab")
-                await frame.click("[data-place]")
+                await frame.click(".ai-q a.wikilink")
+                check(
+                    "its [[note]] link opens the note in the app around it",
+                    await until(tabbed, "window.zcTabs.list().find(t => t.active)?.kind !== 'pdf'", 6000)
+                    and await tabbed.locator(".note-head").is_visible(),
+                    await tabbed.evaluate("window.zcTabs.list().map(t => t.kind + ':' + t.active)"),
+                )
 
             # ---- the phone layout keeps working
             m = await b.new_context(viewport={"width": 390, "height": 760}, has_touch=True, is_mobile=True)
@@ -742,6 +1038,29 @@ async def main():
                 and sheet["toggle"] == "none",
                 sheet,
             )
+            await nw.click("[data-model]")
+            await nw.locator(".menu .menu-item", has_text="context window").click()
+            geo = await one_line(nw)
+            check(
+                "phone width: Send stays on the first line at the right with a very long label",
+                geo["sameRow"] and geo["inside"] and geo["rowH"] < 50 and geo["clipped"] and geo["noScroll"],
+                geo,
+            )
+            check(
+                "the touch targets are at least 36px",
+                await nw.evaluate(
+                    "[...document.querySelectorAll('.ai-controls button:not([hidden])')].every(b => b.getBoundingClientRect().height >= 36 && b.getBoundingClientRect().width >= 34)"
+                ),
+            )
+            await nw.click(".ai-input")
+            await nw.keyboard.type("[@")
+            await until(nw, "!document.querySelector('.ai-mentions')?.hidden")
+            await shot(nw, "8-phone-mentions")
+            await nw.fill(".ai-input", "")
+            await nw.click("[data-effort]")
+            await nw.wait_for_timeout(300)
+            await shot(nw, "8-phone-effort-menu")
+            await nw.keyboard.press("Escape")
             await shot(nw, "8-phone-sheet")
             check("no page errors", not errors, errors[:5])
             comp.quit = True

@@ -1,7 +1,8 @@
 // The conversation as shown: each question with its answer, the phase while it is being made, the
 // tools used, a usage line and a copy button.
 //
-// The answer is untrusted model output. It goes through the notes' renderer (markdown-it with raw
+// The answer is untrusted model output (the question is the user's own text, but is treated the
+// same, since a pasted one can carry anything). It goes through the notes' renderer (markdown-it with raw
 // HTML off, KaTeX), so [@key, p. N] citations and math work, but only after it has been built in an
 // inert <template> (images there are not fetched) and filtered: an image whose resolved address is
 // not the app's own /api/notes/ is replaced by its alt text (a remote image would leak the
@@ -102,9 +103,9 @@ export class Thread {
         <button type="button" class="ai-icon ai-copy" data-copy title="Copy the answer" aria-label="Copy the answer" hidden>${icon('copy', 'icon-sm')}</button></div>
         <div class="ai-tools" hidden></div><div class="ai-answer prose"></div>
         <div class="ai-status" role="status"></div><div class="ai-usage-line"></div></div>`;
-    box.querySelector('.ai-q')!.textContent = question;
     const t: Turn = { question, text: '', tools: [], phase, state, error: '', computer: '', box };
     this.turns.set(box, t);
+    this.drawQuestion(t);
     this.el.append(box);
     this.draw(t);
     this.toEnd();
@@ -119,26 +120,37 @@ export class Thread {
     this.timer = setTimeout(() => { this.timer = undefined; this.draw(t); this.toEnd(); }, THROTTLE_MS);
   }
 
-  paintAll(): void { for (const t of this.turns.values()) this.draw(t); }
+  paintAll(): void { for (const t of this.turns.values()) { this.drawQuestion(t); this.draw(t); } }
+
+  /** The question as the user wrote it, with its [@key] citations and [[note]] links drawn as in an answer. */
+  private drawQuestion(t: Turn): void {
+    const q = t.box.querySelector<HTMLElement>('.ai-q')!;
+    if (this.renderer) this.fill(q, this.renderer.renderInline(t.question));
+    else q.textContent = t.question;
+  }
+
+  /** Put rendered Markdown into ``into``: built in an inert template and filtered before it is inserted, an image there is not fetched. */
+  private fill(into: HTMLElement, html: string): void {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    for (const img of tpl.content.querySelectorAll('img')) {
+      let local = false;
+      try {
+        const u = new URL(img.getAttribute('src') || '', location.href);   // ../ segments resolved
+        local = u.origin === location.origin && u.pathname.startsWith('/api/notes/');
+      } catch { /* not an address */ }
+      if (!local) img.replaceWith(document.createTextNode(img.getAttribute('alt') || ''));
+    }
+    for (const a of tpl.content.querySelectorAll<HTMLAnchorElement>('a[href]')) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+    into.replaceChildren(tpl.content);
+  }
 
   draw(t: Turn): void {
     clearTimeout(this.timer);
     this.timer = undefined;
     const body = t.box.querySelector<HTMLElement>('.ai-answer')!;
     if (this.renderer) {
-      // built in an inert template and filtered before it is inserted: an image there is not fetched
-      const tpl = document.createElement('template');
-      tpl.innerHTML = this.renderer.render(t.text);
-      for (const img of tpl.content.querySelectorAll('img')) {
-        let local = false;
-        try {
-          const u = new URL(img.getAttribute('src') || '', location.href);   // ../ segments resolved
-          local = u.origin === location.origin && u.pathname.startsWith('/api/notes/');
-        } catch { /* not an address */ }
-        if (!local) img.replaceWith(document.createTextNode(img.getAttribute('alt') || ''));
-      }
-      for (const a of tpl.content.querySelectorAll<HTMLAnchorElement>('a[href]')) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
-      body.replaceChildren(tpl.content);
+      this.fill(body, this.renderer.render(t.text));
     } else body.textContent = t.text;
     body.classList.toggle('plain', !this.renderer);
     const running = t.state === 'queued' || t.state === 'running';
