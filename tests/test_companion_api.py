@@ -80,9 +80,9 @@ def test_companion_endpoints_need_a_companion_token_even_from_this_computer(mac,
 
 
 def test_other_scopes_and_cookies_do_not_open_companion_endpoints(mac, token):
-    for scope in ("mcp", "connector"):
-        other = make_token(mac, scope, name=scope)
-        assert remote(mac, "GET", "/api/companion/hello", other).status_code == 401
+    other = make_token(mac, "mcp", name="mcp")
+    assert remote(mac, "GET", "/api/companion/hello", other).status_code == 401
+    assert mac.post("/api/mcp/tokens", json={"name": "b", "scope": "connector"}).status_code == 400  # no longer made
     assert remote(mac, "GET", "/api/companion/hello", token).status_code == 200
     # a paired device's cookie is no substitute
     code = mac.post("/api/devices/pairing").get_json()["links"][0]["url"].split("#code=", 1)[1]
@@ -102,12 +102,12 @@ def test_browsers_and_foreign_hosts_are_refused(mac, token):
     assert remote(mac, "GET", "/api/companion/hello", token, Host="evil.example").status_code == 403
 
 
-def test_mcp_takes_mcp_and_companion_tokens_but_connector_does_not_take_companion(mac, token):
-    assert remote(mac, "POST", "/mcp", token, json=INIT).status_code == 200
+def test_mcp_takes_mcp_tokens_and_the_connector_takes_companion_tokens(mac, token):
+    # The companion's own token never reaches its AI tool, which gets a token per question instead.
+    assert remote(mac, "POST", "/mcp", token, json=INIT).status_code == 401
     assert remote(mac, "POST", "/mcp", make_token(mac, "mcp", "m"), json=INIT).status_code == 200
-    assert remote(mac, "POST", "/mcp", make_token(mac, "connector", "c"), json=INIT).status_code == 401
-    assert remote(mac, "GET", "/api/connector/ping", token).status_code == 401
-    assert remote(mac, "GET", "/api/connector/ping", make_token(mac, "connector", "c2")).status_code == 200
+    assert remote(mac, "GET", "/api/connector/ping", token).status_code == 200
+    assert remote(mac, "GET", "/api/connector/ping", make_token(mac, "mcp", "m2")).status_code == 401
     # elsewhere the token is just a stranger's header
     r = remote(mac, "GET", "/api/items", token)
     assert r.status_code == 401 and r.get_json()["paired"] is False
@@ -205,11 +205,15 @@ def test_extension_zip_leaves_out_links_and_hidden_files(tmp_path):
     assert bundle.extension(root)[0] != build
 
 
-def test_script_download_is_the_script(client, svc):
+def test_script_download_is_the_runnable_package(client, svc):
     token = svc.tokens.create("c", scope="companion")[1]
     r = client.get("/api/companion/script", headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 200 and b"Synapse Companion" in r.data
-    assert bundle.short_hash(r.data) == bundle.script()[0]
+    assert r.status_code == 200 and r.mimetype == "application/zip"
+    assert bundle.short_hash(r.data) == bundle.script()[0] == bundle.script()[0]  # stable
+    with zipfile.ZipFile(io.BytesIO(r.data)) as z:
+        names = z.namelist()
+    assert {"__main__.py", "synapse_companion/cli.py", "synapse_companion/static/app.js"} <= set(names)
+    assert not any("__pycache__" in n or n.endswith(".pyc") for n in names)
 
 
 # ---------------------------------------------------------------------- the app side
@@ -389,7 +393,44 @@ def test_titles_are_data_not_instructions():
     assert text.index("Nice") > text.index("<context>") and text.index("Ignore the user") < text.index("</context>")
 
 
-def test_companion_tokens_cannot_use_library_changing_tools(mac, token, lan_app):
+def running_job(svc, token):
+    """A question handed to a companion: (job id, its /mcp token)."""
+    tok_id = next(t["id"] for t in svc.tokens.list() if t["scope"] == "companion")
+    svc.companions.poll("pc", "PC", [{"id": "claude", "label": "Claude Code"}], [], token=tok_id, timeout=0)
+    job = svc.companions.ask("q", "s")["job"]
+    spec = svc.companions.poll("pc", "PC", [{"id": "claude", "label": "Claude Code"}], [], token=tok_id, timeout=0)
+    assert spec["job"]["id"] == job
+    return job, spec["job"]["mcp_token"]
+
+
+def test_a_question_gets_its_own_mcp_token_for_as_long_as_it_runs(mac, token, lan_app):
+    svc = lan_app.extensions["synapse"]
+    job, job_token = running_job(svc, token)
+    assert job_token != token and len(job_token) > 30
+    assert remote(mac, "POST", "/mcp", job_token, json=INIT).status_code == 200
+    # it opens nothing else
+    assert remote(mac, "GET", "/api/companion/hello", job_token).status_code == 401
+    assert remote(mac, "GET", "/api/connector/ping", job_token).status_code == 401
+    svc.companions.post_events("pc", job, [{"type": "done"}], token=svc.tokens.list()[0]["id"])
+    assert remote(mac, "POST", "/mcp", job_token, json=INIT).status_code == 401
+
+
+def test_removing_the_companion_token_ends_its_questions_tokens(mac, token, lan_app):
+    svc = lan_app.extensions["synapse"]
+    _, job_token = running_job(svc, token)
+    assert remote(mac, "POST", "/mcp", job_token, json=INIT).status_code == 200
+    svc.tokens.revoke(svc.tokens.list()[0]["id"])
+    assert remote(mac, "POST", "/mcp", job_token, json=INIT).status_code == 401
+
+
+def test_a_cancelled_question_s_token_stops_working(mac, token, lan_app):
+    svc = lan_app.extensions["synapse"]
+    job, job_token = running_job(svc, token)
+    svc.companions.cancel(job)
+    assert remote(mac, "POST", "/mcp", job_token, json=INIT).status_code == 401
+
+
+def test_companion_ai_tools_cannot_use_library_changing_tools(mac, token, lan_app):
     from backend.mcp.tools.editing import LIBRARY_EDITS
 
     def listing(t):
@@ -398,11 +439,12 @@ def test_companion_tokens_cannot_use_library_changing_tools(mac, token, lan_app)
 
     lan_app.extensions["synapse"].settings.update({LIBRARY_EDITS: True})
     mcp_token = make_token(mac, "mcp", "m")
-    companion_tools, mcp_tools = listing(token), listing(mcp_token)
+    _, job_token = running_job(lan_app.extensions["synapse"], token)
+    companion_tools, mcp_tools = listing(job_token), listing(mcp_token)
     assert {"get_note", "write_note", "edit_note"} <= companion_tools
     assert {"add_paper", "trash_papers"} <= mcp_tools - companion_tools
     call = {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "trash_papers", "arguments": {}}}
-    assert "error" in remote(mac, "POST", "/mcp", token, json=call).get_json()  # unknown tool
+    assert "error" in remote(mac, "POST", "/mcp", job_token, json=call).get_json()  # unknown tool
     assert "result" in remote(mac, "POST", "/mcp", mcp_token, json=call).get_json()  # a tool error, but offered
 
 
@@ -463,8 +505,8 @@ def test_oversized_bodies_are_refused_early(client, svc):
 
 def test_the_script_can_be_downloaded_by_the_app(client, svc, mac):
     r = client.get("/api/ai/companion-script")
-    assert r.status_code == 200 and b"Synapse Companion" in r.data
-    assert r.headers["Content-Disposition"] == 'attachment; filename="synapse_companion.py"'
+    assert r.status_code == 200 and r.data == bundle.script()[1]
+    assert r.headers["Content-Disposition"] == 'attachment; filename="synapse_companion.pyz"'
     assert r.headers["Cache-Control"] == "no-store"
     # normal device auth: an unpaired device gets nothing, a companion token does not help
     token = make_token(mac, "companion")

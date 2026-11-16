@@ -3,7 +3,7 @@
 // 2. check the local library is running and load its folders/tags
 // 3. let the user adjust title / folder / tags, then save
 import { extractCitation, fetchPdfInPage } from './extract.js';
-import { DEFAULT_SERVER, loadConnection, libraryFetch } from './connection.js';
+import { companionHello, libraryFetch } from './connection.js';
 import { reloadIfUpdated } from './selfUpdate.js';
 
 void reloadIfUpdated().catch(() => {});   // a newer packaged build was dropped into this folder
@@ -42,8 +42,7 @@ const get = (id, type) => { const e = find(id, type); if (!e) throw new Error(`#
 const MAX_PDF_BYTES = 60 * 1024 * 1024;
 const view = get('view', HTMLElement);
 const conn = get('conn', HTMLElement);
-let server = DEFAULT_SERVER;
-let token = '';
+let server = '';
 /** @type {Citation} */
 let page;
 /** @type {Library} */
@@ -77,7 +76,7 @@ get('findPdfs', HTMLElement).onclick = async () => {
  * @returns {Promise<{ ok: boolean; status: number; data: any }>}
  */
 async function api(path, opts = {}) {
-  const res = await libraryFetch(server, token, path, opts);
+  const res = await libraryFetch(path, opts);
   let data = null;
   try { data = await res.json(); } catch { /* empty */ }
   return { ok: res.ok, status: res.status, data };
@@ -85,9 +84,9 @@ async function api(path, opts = {}) {
 
 async function init() {
   try {
-    ({ server, token } = await loadConnection());
+    ({ server } = await companionHello());
   } catch (error) {
-    return showOffline(error instanceof Error ? error.message : 'Check the extension settings.');
+    return showOffline(error instanceof Error ? error.message : undefined);
   }
   [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const forced = new URLSearchParams(location.search).get('tabId');   // used by the automated tests
@@ -99,7 +98,7 @@ async function init() {
     chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractCitation }),
     api('/api/connector/ping'),
   ]);
-  if (ping.status !== 'fulfilled' || !ping.value.ok || !['synapse', 'zotero-clone'].includes(ping.value.data?.app)) {
+  if (ping.status !== 'fulfilled' || !ping.value.ok || ping.value.data?.app !== 'synapse') {
     conn.className = 'conn off';
     return showOffline(ping.status === 'fulfilled' ? ping.value.data?.error : undefined);
   }
@@ -115,9 +114,9 @@ async function init() {
 function showOffline(error) {
   view.innerHTML = `<div class="result">
       <div class="big err">!</div><h2>Library unavailable</h2>
-      <p>Couldn't reach <code>${esc(server)}</code>.</p>
-      <p>${esc(error || 'Check the server is running, then check its address, connection permission and access token in Settings.')}</p>
-      <div class="actions"><button class="btn" id="opts">Change address…</button><button class="btn primary" id="retry">Retry</button></div></div>`;
+      <p>${server ? `Couldn't reach <code>${esc(server)}</code>.` : "Couldn't reach your library."}</p>
+      <p>${esc(error || 'Open Synapse Companion on this computer and check it is connected to your library.')}</p>
+      <div class="actions"><button class="btn" id="opts">Settings…</button><button class="btn primary" id="retry">Retry</button></div></div>`;
   get('retry', HTMLElement).onclick = () => { view.innerHTML = '<div class="center"><span class="spinner"></span> Connecting…</div>'; init(); };
   get('opts', HTMLElement).onclick = () => chrome.runtime.openOptionsPage();
 }

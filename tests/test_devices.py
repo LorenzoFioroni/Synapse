@@ -297,9 +297,9 @@ def test_paired_device_still_needs_the_apps_origin(mac, ipad):
     pair(mac, ipad)
     evil = {"Origin": "https://evil.example"}
     assert remote(ipad, "POST", "/api/items", json={"title": "x"}, headers=evil).status_code == 403
-    # A paired browser cookie cannot replace a remote extension's access token.
+    # An extension on a paired device cannot use the device's cookie on the connector.
     ext = {"Origin": "chrome-extension://abc"}
-    assert remote(ipad, "POST", "/api/connector/save", json={"title": "x"}, headers=ext).status_code == 401
+    assert remote(ipad, "POST", "/api/connector/save", json={"title": "x"}, headers=ext).status_code == 403
     # no Origin at all from another device: only a same-origin fetch
     bare = ipad.open("/api/items", method="POST", json={"title": "x"}, headers={"Host": LAN_HOST}, environ_base=REMOTE)
     assert bare.status_code == 403

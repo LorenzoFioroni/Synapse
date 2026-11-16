@@ -365,15 +365,16 @@ Claude Code (`claude mcp add --transport http … --header "Authorization: Beare
 (`export SYNAPSE_TOKEN=…` and `codex mcp add synapse --url … --bearer-token-env-var SYNAPSE_TOKEN`,
 since Codex reads the token from an environment variable), and any other app (the URL and the
 header to enter). `last_used` and `last_addr` are updated at most once a minute. Removing a token
-locks its app out at the next request. MCP tokens cannot authenticate browser connector calls. **New Browser Token…** creates
-a separate `connector`-scope token that cannot access `/mcp`. **New Companion Token…** creates a
-`companion`-scope token (`syn_companion_…`) for [the companion](companion.md): it opens
-`/api/companion/…` and `/mcp` (the companion hands it to the AI tool it runs), and nothing else. On
-`/mcp` it is *restricted*: with `Server.restricted` (set per request by `HttpTransport.handle`),
-`build_server` leaves out the tools that change the library whatever Settings → AI Access allows
-other apps; note and task tools are unchanged.
-All token types work until revoked. `AccessTokens.check` takes one scope or several; `/mcp`
-asks for `("mcp", "companion")`.
+locks its app out at the next request. MCP tokens cannot authenticate browser connector calls.
+**New Companion Token…** creates a `companion`-scope token (`syn_companion_…`) for
+[the companion](companion.md): it opens `/api/companion/…` and `/api/connector/…` (which the
+companion forwards for the browser extension), and not `/mcp`. The AI tool the companion runs gets
+a token of its own for each question instead (`Companions.job_caller`), valid while that question
+runs. On `/mcp` such a token is *restricted*: with `Server.restricted` (set per request by
+`HttpTransport.handle`), `build_server` leaves out the tools that change the library whatever
+Settings → AI Access allows other apps; note and task tools are unchanged. Browser tokens
+(`connector` scope) are no longer made or accepted; old ones are listed so they can be removed.
+Stored tokens work until revoked. `AccessTokens.check` takes one scope or several.
 The scopes share token listing and revocation, with their purpose shown in Settings. See [browser extension](browser-extension.md).
 
 | Endpoint | Who | What |

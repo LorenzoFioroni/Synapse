@@ -295,28 +295,25 @@ async def main():
             r = http.post(remote_url, json=init, headers={"Authorization": f"Bearer {token}"})
             check("removing the token locks the app out", ok and r.status_code == 401, r.status_code)
 
-            # -- browser tokens use a separate, revocable scope ---------------------------------------
-            await mac.click("[data-connector-new]")
-            await fill_prompt(mac, "Browser extension")
-            await mac.wait_for_selector("[data-ai-fresh] pre")
-            browser_token = (await mac.text_content("[data-ai-fresh] pre")).strip()
+            # -- the companion's token: what the browser extension reaches the library with ----------
+            await mac.click("[data-companion-new]")
+            await fill_prompt(mac, "Laptop")
+            await mac.wait_for_selector("[data-ai-token-text]")
+            companion_token = (await mac.text_content("[data-ai-token-text]")).strip()
             explanation = await mac.inner_text("[data-ai-fresh]")
             check(
-                "browser setup shows a dedicated browser token",
-                browser_token.startswith("syn_connector_")
-                and "until you remove" in explanation
-                and "saving and filing" in explanation,
+                "companion setup shows its token, the download and the address",
+                companion_token.startswith("syn_companion_")
+                and "synapse_companion.pyz" in explanation
+                and not await mac.query_selector("[data-connector-new]"),
             )
             entries = http.get(f"{LOCAL}/api/mcp/tokens").json()["tokens"]
+            check("Settings lists the companion scope", len(entries) == 1 and entries[0]["scope"] == "companion")
+            companion_headers = {"Authorization": f"Bearer {companion_token}"}
+            ping = http.get(f"https://{ip}:{PORT}/api/connector/ping", headers=companion_headers)
+            denied = http.post(remote_url, json=init, headers=companion_headers)
             check(
-                "Settings lists browser scope",
-                len(entries) == 1 and entries[0]["scope"] == "connector",
-            )
-            browser_headers = {"Authorization": f"Bearer {browser_token}", "Origin": "chrome-extension://test"}
-            ping = http.get(f"https://{ip}:{PORT}/api/connector/ping", headers=browser_headers)
-            denied = http.post(remote_url, json=init, headers={"Authorization": f"Bearer {browser_token}"})
-            check(
-                "the browser token reaches the connector but cannot use MCP",
+                "the companion token reaches the connector but not MCP",
                 ping.status_code == 200 and denied.status_code == 401,
             )
             await mac.click("[data-ai-done]")
@@ -324,8 +321,8 @@ async def main():
             await mac.wait_for_selector("text=Remove the token")
             await mac.click(".dialog button:has-text('Remove')")
             ok = await wait_for(lambda: mac.evaluate("() => !document.querySelector('[data-ai-token]')"))
-            denied = http.get(f"https://{ip}:{PORT}/api/connector/ping", headers=browser_headers)
-            check("removing the browser token revokes connector access", ok and denied.status_code == 401)
+            denied = http.get(f"https://{ip}:{PORT}/api/connector/ping", headers=companion_headers)
+            check("removing the companion token revokes connector access", ok and denied.status_code == 401)
 
             # -- removing the passkey ------------------------------------------------------------------
             await mac.click('.settings-nav [data-nav="devices"]')

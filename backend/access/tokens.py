@@ -1,5 +1,6 @@
-"""Scoped access tokens for AI apps (``/mcp``), browser saves (``/api/connector/``) and the
-companion (``/api/companion/``, and ``/mcp`` for the AI tool it runs).
+"""Scoped access tokens for AI apps (``/mcp``) and the companion (``/api/companion/``, and
+``/api/connector/`` which it forwards for the browser extension). Browser tokens (scope
+``connector``) are no longer made or accepted; existing ones are listed so they can be removed.
 
 Claude Code on another computer cannot pair like a browser, so it sends a token with every
 request instead: ``Authorization: Bearer syn_…``. Tokens are made on the computer running Synapse
@@ -20,7 +21,7 @@ from .authdb import AuthTable, hash_secret, now_iso
 PREFIX = "syn_"  # tells a Synapse token apart in a config file
 NAME_MAX = 60
 TOUCH_EVERY = 60  # seconds between "last used" updates
-SCOPES = {"mcp", "connector", "companion"}
+SCOPES = {"mcp", "companion"}  # what can be made; old rows may still say "connector"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS access_tokens (
@@ -83,7 +84,7 @@ class AccessTokens(AuthTable):
         if not name:
             raise TokenError("Give the token a name, such as the computer or app that will use it.")
         if scope not in SCOPES:
-            raise TokenError("Choose an AI app, browser extension or companion token.")
+            raise TokenError("Choose an AI app or companion token.")
         token = PREFIX + (f"{scope}_" if scope != "mcp" else "") + secrets.token_urlsafe(32)
         tok_id = secrets.token_hex(8)
         with self._lock:

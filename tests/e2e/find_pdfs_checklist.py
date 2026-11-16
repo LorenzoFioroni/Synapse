@@ -42,7 +42,6 @@ APP = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(APP))
 from tests.conftest import make_pdf  # noqa: E402
 from tests.e2e._guard import guard  # noqa: E402
-from tests.e2e.extension_checklist import extension_id  # noqa: E402
 
 PORT, SITE = 8851, 8852
 BASE = f"http://127.0.0.1:{PORT}"
@@ -51,6 +50,7 @@ EXT = APP / "browser_extension"
 TEST_EXT = Path(tempfile.mkdtemp(prefix="zc-findpdfs-extension-")).resolve()
 DATA = tempfile.mkdtemp(prefix="zc-findpdfs-e2e-")
 PROFILE = tempfile.mkdtemp(prefix="zc-findpdfs-profile-")
+COMPANION_HOME = tempfile.mkdtemp(prefix="zc-findpdfs-companion-")
 TMP = Path(tempfile.mkdtemp(prefix="zc-findpdfs-pdfs-"))
 results = []
 hits = {"suppl": 0}
@@ -178,15 +178,33 @@ class Publisher(http.server.BaseHTTPRequestHandler):
             self.send(b"not found", "text/plain", 404)
 
 
+def setup_companion() -> str:
+    """Connect a companion profile to the test server and register it as this Chromium profile's
+    native messaging host. Answers the extension id, fixed by the manifest's key."""
+    os.environ["SYNAPSE_COMPANION_HOME"] = COMPANION_HOME
+    from synapse_companion import extension
+    from synapse_companion.service import Service
+
+    token = requests.post(BASE + "/api/mcp/tokens", json={"name": "E2E", "scope": "companion"}).json()["token"]
+    Service("default").connect(BASE, token, "E2E computer")
+    # Headless Chrome cannot display the optional host-permission prompt. Pregrant the library
+    # page bridge and the publisher hosts in this disposable copy (same key, same id);
+    # production retains its opt-in permissions.
+    shutil.copytree(EXT, TEST_EXT, dirs_exist_ok=True)
+    manifest = json.loads((TEST_EXT / "manifest.json").read_text())
+    manifest["host_permissions"] = ["http://127.0.0.1/*", "https://*/*"]
+    (TEST_EXT / "manifest.json").write_text(json.dumps(manifest))
+    ext_id = extension.extension_id(TEST_EXT)
+    launcher = extension.host_launcher("default")
+    launcher.write_text(extension._launcher_text("default"), encoding="utf-8")
+    launcher.chmod(0o700)
+    extension.write_host_manifest(Path(PROFILE) / "NativeMessagingHosts", ext_id, launcher)
+    return ext_id
+
+
 async def main():
     guard(PORT)
     guard(SITE)
-    # Headless Chrome cannot display the optional host-permission prompt. Pregrant the
-    # publisher hosts in this disposable copy; production retains its opt-in permission.
-    shutil.copytree(EXT, TEST_EXT, dirs_exist_ok=True)
-    manifest = json.loads((TEST_EXT / "manifest.json").read_text())
-    manifest["host_permissions"].append("https://*/*")
-    (TEST_EXT / "manifest.json").write_text(json.dumps(manifest))
     srv = subprocess.Popen(
         [sys.executable, "server.py", "--port", str(PORT), "--no-browser", "--data-dir", DATA],
         cwd=APP,
@@ -202,6 +220,7 @@ async def main():
                 break
             except Exception:
                 time.sleep(0.2)
+        ext_id = setup_companion()
         ids = {}
         for key, title in PAPERS.items():
             item = requests.post(BASE + "/api/items", json={"title": title, "doi": f"10.5555/{key}"}).json()
@@ -217,32 +236,12 @@ async def main():
                 args=[f"--disable-extensions-except={TEST_EXT}", f"--load-extension={TEST_EXT}"],
             )
             errors = []
-            ext = f"chrome-extension://{extension_id(TEST_EXT)}"
+            ext = f"chrome-extension://{ext_id}"
             await ctx.route(
                 "https://doi.org/**", lambda route: route.fulfill(content_type="text/html", body="Publisher")
             )
-            await ctx.route(
-                f"{BASE}/api/connector/find-pdf",
-                lambda route: route.fulfill(content_type="application/json", body='{"status":"searching"}'),
-            )
             setup = await ctx.new_page()
-            await setup.goto(f"{ext}/manifest.json")
-            await setup.evaluate(f"chrome.storage.sync.set({{server: '{BASE}'}})")
-
-            # a library from before Find Missing PDFs answers its route with Flask's 404
-            old = await ctx.new_page()
-            old.on("pageerror", lambda e: errors.append(str(e)))
-            await old.route(
-                f"{BASE}/api/connector/missing-pdfs*",
-                lambda route: route.fulfill(
-                    status=404, content_type="application/json", body='{"error": "The requested URL was not found"}'
-                ),
-            )
-            await old.goto(f"{ext}/find_pdfs.html")
-            await old.wait_for_selector(".result", timeout=10000)
-            told = await old.inner_text(".result")
-            check("an older library is told apart", "Update Synapse first" in told, told.splitlines()[:1])
-            await old.close()
+            await setup.goto(f"{ext}/options.html")
 
             # the links pageState derives from APS and science.org article pages
             site_page = await ctx.new_page()
@@ -371,6 +370,15 @@ async def main():
                 }""",
                     chosen,
                 )
+            token = (Path(COMPANION_HOME) / "default.json").read_text()
+            token = json.loads(token).get("token", "")
+            seen = await library.evaluate(
+                "JSON.stringify([document.documentElement.outerHTML, {...localStorage}, document.cookie])"
+            )
+            check(
+                "the library page sees no token or extension id",
+                token.startswith("syn_") and token not in seen and ext_id not in seen,
+            )
             requested = await opened.value
             await requested.wait_for_selector(".rows li")
             scoped = await requested.locator(".rows li").evaluate_all("els => els.map(e => e.dataset.id)")
@@ -452,10 +460,9 @@ async def main():
                 raise AssertionError(f"Browser receiver availability did not become {available}")
 
             await setup.goto(f"{ext}/options.html")
-            await setup.wait_for_selector("#save:enabled")
-            await setup.check("#pdf-receiver")
-            await setup.click("#save")
             await setup.wait_for_function("() => document.querySelector('#status').textContent.includes('Connected')")
+            await setup.wait_for_function("() => !document.querySelector('#pdf-receiver').disabled")
+            await setup.check("#pdf-receiver")
             await wait_receiver(True)
             phone_browser = await p.chromium.launch()
             phone = await phone_browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
@@ -501,7 +508,6 @@ async def main():
             )
             await phone_batch.close()
             await setup.uncheck("#pdf-receiver")
-            await setup.click("#save")
             await wait_receiver(False)
             before = len(ctx.pages)
             await phone.evaluate("async id => (await import('/js/actions.js')).findPdf(id)", other)
@@ -511,48 +517,26 @@ async def main():
                 server_searches,
             )
             await setup.check("#pdf-receiver")
-            await setup.click("#save")
             await wait_receiver(True)
             check("reconnecting a browser does not replay an offline phone request", len(ctx.pages) == before)
             await setup.uncheck("#pdf-receiver")
-            await setup.click("#save")
             await phone_browser.close()
             await library.close()
 
-            # A failed server fallback must stay visible and retryable, rather than being counted
-            # as a completed background search. All queue responses are faked; no source contacts
-            # a real publisher during this test.
+            # The extension's library requests travel through the native host, so the server's
+            # queue cannot be faked from the browser: the fallback runs against the real
+            # (offline, throw-away) server, which accepts the request and tries its sources.
             retry = await ctx.new_page()
             retry.on("pageerror", lambda e: errors.append(str(e)))
-            await retry.route(
-                f"{BASE}/api/connector/find-pdf",
-                lambda route: route.fulfill(
-                    status=503, content_type="application/json", body='{"error":"Temporarily unavailable"}'
-                ),
-            )
             await retry.goto(f"{ext}/find_pdfs.html?resolver={PUB}/resolve/&pause=0&fallback=1&ids={chosen}")
             await retry.wait_for_selector("#start")
-            await retry.click("#start")
-            await retry.wait_for_function(
-                "() => document.querySelector('.run-progress')?.textContent.includes('Search paused')", timeout=120000
-            )
-            check(
-                "failed fallback pauses with its error and a retry",
-                "Temporarily unavailable" in await retry.inner_text(".why")
-                and await retry.locator("#start").is_enabled(),
-            )
-            await retry.unroute(f"{BASE}/api/connector/find-pdf")
-            await retry.route(
-                f"{BASE}/api/connector/find-pdf",
-                lambda route: route.fulfill(content_type="application/json", body='{"status":"searching"}'),
-            )
             await retry.click("#start")
             await retry.wait_for_function(
                 "() => document.querySelector('.why')?.textContent.includes('Other enabled PDF sources are now being tried')",
                 timeout=120000,
             )
             check(
-                "retry can queue other sources after the publisher attempt",
+                "the fallback queues other sources after the publisher attempt",
                 "now being tried" in await retry.inner_text(".why"),
             )
             await retry.close()
@@ -574,7 +558,7 @@ async def main():
         site.shutdown()
         srv.terminate()
         srv.wait(timeout=10)
-        for d in (DATA, PROFILE, TMP, TEST_EXT):
+        for d in (DATA, PROFILE, TMP, TEST_EXT, COMPANION_HOME):
             shutil.rmtree(d, ignore_errors=True)
     print(f"\n{sum(results)}/{len(results)} passed")
     sys.exit(0 if all(results) else 1)

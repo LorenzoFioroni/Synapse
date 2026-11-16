@@ -109,11 +109,11 @@ def test_pdf_tab_uses_doi_inside_the_pdf(client, monkeypatch, tmp_path):
     assert r["item"]["title"] == "Found by DOI" and r["pdf"] == "attached"
 
 
-def test_cors_only_for_extension_origins(client):
-    r = client.get("/api/connector/ping", headers={"Origin": "chrome-extension://abc"})
-    assert r.headers["Access-Control-Allow-Origin"] == "chrome-extension://abc"
-    r = client.get("/api/connector/ping", headers={"Origin": "https://evil.example"})
-    assert "Access-Control-Allow-Origin" not in r.headers
+def test_no_cors_for_anyone(client):
+    # The extension goes through the companion; no browser page may read the connector's answers.
+    for origin in ("chrome-extension://abc", "https://evil.example"):
+        r = client.get("/api/connector/ping", headers={"Origin": origin})
+        assert "Access-Control-Allow-Origin" not in r.headers
 
 
 def test_file_existing_item_into_another_folder(client):

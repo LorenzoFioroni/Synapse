@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Synapse Companion</title>
+  <link rel="icon" href="icon.svg">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="top">
+    <img src="icon.svg" alt="" width="28" height="28">
+    <div class="top-text"><h1>Synapse Companion</h1><div class="sub" id="summary">Starting…</div></div>
+  </header>
+  <main id="main" aria-live="polite">
+    <section class="card" id="card-connection" aria-labelledby="h-connection">
+      <h2 id="h-connection">Library</h2>
+      <div id="connection"></div>
+      <button class="btn" type="button" id="change" hidden>Change…</button>
+      <form id="connect" class="form" autocomplete="off">
+        <label for="server">Server address</label>
+        <input id="server" name="server" type="url" placeholder="https://synapse.example.com" spellcheck="false" required>
+        <label for="token">Companion token</label>
+        <input id="token" name="token" type="password" placeholder="syn_companion_…" spellcheck="false">
+        <div class="hint">In Synapse: Settings → AI Access → New Companion Token. It stays on this computer, readable by your user only.</div>
+        <label for="name">This computer’s name in Synapse</label>
+        <input id="name" name="name" type="text" maxlength="60" spellcheck="false">
+        <div class="row"><button class="btn primary" type="submit">Connect</button>
+          <button class="btn" type="button" id="cancel-change" hidden>Cancel</button>
+          <button class="btn" type="button" id="disconnect" hidden>Disconnect…</button></div>
+      </form>
+    </section>
+    <section class="card" id="card-ai" aria-labelledby="h-ai" hidden>
+      <h2 id="h-ai">Ask AI</h2>
+      <div class="hint">The AI tools Synapse may use on this computer, and what Synapse may choose in them.</div>
+      <div id="providers"></div>
+      <label class="inline" for="max-running">Questions at once</label>
+      <select id="max-running"></select>
+      <div id="running" class="hint"></div>
+    </section>
+    <section class="card" id="card-extension" aria-labelledby="h-extension" hidden>
+      <h2 id="h-extension">Browser extension</h2>
+      <div id="extension"></div>
+    </section>
+    <section class="card" id="card-app" aria-labelledby="h-app">
+      <h2 id="h-app">This program</h2>
+      <label class="check"><input type="checkbox" id="autostart"> Start Synapse Companion when I log in</label>
+      <div class="hint" id="autostart-where"></div>
+      <div id="program" class="hint"></div>
+      <div class="row"><button class="btn" type="button" id="update" hidden>Update and restart</button>
+        <button class="btn" type="button" id="quit">Quit companion</button></div>
+      <details><summary>Activity</summary><pre id="log" class="log"></pre></details>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

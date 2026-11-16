@@ -23,7 +23,7 @@ def mcp():
             request.get_data(),
             request.headers.get("MCP-Protocol-Version"),
             caller=token.get("id"),
-            restricted=token.get("scope") == "companion",
+            restricted=token.get("scope") == "job",
         )
     )
     if reply is None:

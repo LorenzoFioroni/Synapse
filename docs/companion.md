@@ -1,56 +1,90 @@
 # Companion
 
 The companion is a small program on your own computer that connects a Synapse server, often a
-remote one behind a tunnel, to services only your computer has. Two jobs so far:
+remote one behind a tunnel, to what only your computer has. It runs in the background, starts when
+you log in, and has a window for its settings and state. Two jobs:
 
 1. **Ask AI from inside Synapse.** A question in a note or about a selection in a PDF goes to the
-   companion, which runs your own AI command-line tool (Claude Code; Codex if you allow it)
+   companion, which runs your own AI command-line tool (Claude Code; Codex if you turn it on)
    restricted to Synapse's tools. The answer streams back into the app. The server holds no API
    key and never runs the tool.
-2. **Browser extension install and updates.** The companion downloads the extension from the
-   server into a folder for the browser's "Load unpacked" and keeps it current.
+2. **The browser extension's way to the library.** The extension talks only to the companion
+   (Chrome native messaging), which passes its requests to the server with the companion's token.
+   The browser holds no token and never reaches the server itself. The companion also installs
+   the extension's folder and keeps it current.
 
 For the extension itself see [browser extension](browser-extension.md); for the app side of Ask AI
 see [frontend](frontend.md).
 
 | Piece | Where |
 |---|---|
-| The program (one file, Python standard library only) | `synapse_companion.py` |
-| The in-memory rendezvous (`Companions`), one per `Services` | `backend/companion/hub.py` |
+| The program: package `synapse_companion/`, Python standard library only, served as one runnable `synapse_companion.pyz` | `synapse_companion/` |
+| Command line; files, profile and settings; requests to the server | `cli.py`; `common.py`; `remote.py` |
+| The AI tools and their output | `providers.py` |
+| The poll loop and one thread per question | `runner.py` |
+| Background service: connection, settings, extension, updates, the window's state | `service.py` |
+| The window (127.0.0.1 page and its API) | `ui.py`, `static/` |
+| Extension folder and native messaging registration; the native host | `extension.py`; `native.py` |
+| Start at login | `autostart.py` |
+| The in-memory rendezvous (`Companions`), one per `Services`; per-question tokens | `backend/companion/hub.py` |
 | The question the AI tool receives | `backend/companion/prompt.py` |
-| The downloads: extension zip and script, with build hashes | `backend/companion/bundle.py` |
+| The downloads: extension zip and `.pyz`, with build hashes | `backend/companion/bundle.py` |
 | Endpoints (thin) | `backend/api/companion.py` |
-| The token rule | `backend/access/guard.py`, `backend/access/tokens.py` |
-| Tests | `tests/test_companion_hub.py`, `tests/test_companion_api.py`, `tests/test_companion_cli.py` |
+| The token rules | `backend/access/guard.py`, `backend/access/tokens.py` |
+| Tests | `tests/test_companion_hub.py`, `tests/test_companion_api.py`, `tests/test_companion_cli.py`, `tests/test_companion_app.py`; browser: `tests/e2e/extension_checklist.py` |
 
 ## Setting up
 
 On the computer running Synapse, **Settings → AI Access → New Companion Token…** makes a token
-(`syn_companion_…`, shown once). On your own computer, with Claude Code installed and signed in:
+(`syn_companion_…`, shown once) and offers **Download synapse_companion.pyz** (`GET
+/api/ai/companion-script`, normal device auth). On your own computer, with Python 3.10+ and Claude
+Code installed and signed in:
 
 ```bash
-python synapse_companion.py connect https://synapse.example.com   # asks for the token
-python synapse_companion.py run
+python3 synapse_companion.pyz
 ```
 
-`connect` checks the server, then stores `{server, token, client, name}` in a profile under the
-user config directory (`~/.config/synapse-companion/`, `~/Library/Application Support/…`,
-`%APPDATA%\…`; `SYNAPSE_COMPANION_HOME` overrides it), file mode 0600. A server on another computer
-must be `https://`; plain `http://` is accepted for loopback addresses only. `--profile NAME`
-keeps connections to several servers apart; `--name` is how the computer shows in Synapse.
-Prefer the prompt or `SYNAPSE_COMPANION_TOKEN` to `--token`, which shows in the process list.
+The companion starts in the background and opens its window, an app window of Chrome, Chromium,
+Brave or Edge when one is installed (else the default browser). There you enter the server's
+address and the token, then:
 
-The script can be downloaded without a checkout: Settings → AI Access has a Download button
-(`GET /api/ai/companion-script`, normal device auth, an attachment named `synapse_companion.py`), and
-`GET /api/companion/script` with the token serves the same file to the companion's own `update`.
+- **Ask AI**: which tools Synapse may use, and which of their models and efforts it may choose;
+  how many questions at once (1 or 2). Codex is off until you turn it on (see below).
+- **Browser extension → Install** downloads the extension folder, registers the companion with
+  the browsers, and shows the one-time **Load unpacked** steps. Its state says whether a browser
+  knows the companion, when the extension last said hello and whether it runs the current files.
+- **Start Synapse Companion when I log in.**
 
-| Command | |
-|---|---|
-| `connect URL [--token T] [--name N]` | Store the profile. |
-| `run [--allow codex]` | Poll for questions, run them (at most two at once, enforced here whatever the server hands out), update the extension folder at start and hourly if one was installed (see the review rule below), say when a newer script exists. Ctrl+C or SIGTERM stops the running AI tools at once and ends their questions with an error. |
-| `extension [--dir D] [--yes]` | Download or refresh the extension folder (default beside the profile), show which security keys an update changes and ask before applying it (`--yes` for scripts), and print the Load-unpacked steps once. |
-| `status` | The connection, script and extension freshness, which AI tools were found. |
-| `update` | Replace the script with the server's. Only on this explicit command. |
+Running the program again (or the applications-menu entry on Linux) opens the window of the
+companion already running. `python3 synapse_companion.pyz run` runs it in the foreground instead
+(what starting at login does); `connect URL` and `status` work without a window.
+
+**Files.** Everything lives in the user config directory (`~/.config/synapse-companion/`,
+`~/Library/Application Support/…`, `%APPDATA%\…`; `SYNAPSE_COMPANION_HOME` overrides it):
+`<profile>.json` with `{server, token, client, name, extension, settings}` (mode 0600), the
+window's `<profile>.window.json` (port and key, 0600), a log `<profile>.log` (cut at 1 MB), the
+extension folder `<profile>-extension/`, the native host launcher `native-host` and the AI tool's
+empty working folder `work-<profile>/`. A server on another computer must be `https://`; plain
+`http://` is accepted for loopback addresses only. `--profile NAME` keeps connections to several
+servers apart (one at a time serves the browser extension: the last one installed).
+
+**Starting at login**, per user, no administrator rights: an XDG autostart entry
+(`~/.config/autostart/synapse-companion.desktop`) and an applications-menu entry on Linux, a
+LaunchAgent (`~/Library/LaunchAgents/org.synapse.companion.plist`) on macOS, a `Run` value under
+`HKEY_CURRENT_USER` started with `pythonw` on Windows. Each runs `run --profile NAME` with the
+Python and the program path in use when it was turned on, so move the `.pyz` before, not after.
+
+**What the companion token is worth.** It opens no `/mcp`, but whoever holds it can save to the
+library through the connector and can poll as a companion, receiving questions (and their
+per-question `/mcp` tokens) meant for your computer. Keep it as private as an MCP token; remove it
+in Settings when a computer is gone, which also ends its running questions' tokens.
+
+**Updates.** The server's hello gives the `.pyz` build (the SHA-256 of the file it serves, built
+reproducibly from `synapse_companion/`); the window offers **Update and restart** when it differs
+from the program's own file. Only on that click, and never for a repository checkout. Like the
+extension's code, the program comes from the server you connected to: an update runs whatever that
+server (or anything that can answer for its HTTPS address) serves, so connect only to a server you
+control.
 
 ## How a question travels
 
@@ -86,6 +120,9 @@ independent instances share nothing. What must survive a restart, the conversati
 - A companion ID (`client`) is bound to the token that first used it: a poll or event post from another
   token is refused (409), and one token may have at most 4 companions (of 16).
 - Request bodies on `/api/companion/*` and `/api/ai/*` are limited to 512 KB (413 beyond).
+- Each hand-out carries a fresh `mcp_token` for that question's AI tool (only its SHA-256 is kept).
+  `/mcp` accepts it while the job is `running`, restricted like below, attributed to the
+  companion's token; it stops working when the job ends in any way.
 - Posting events touches neither the library nor the change feed.
 
 **Events** from the companion: `{type:"started"}` (its AI tool is running, sent once at spawn),
@@ -99,7 +136,9 @@ in per provider (`GET /api/ai/status` shows them; empty means no selector). `ask
 and `effort` and answers 400 for a value the chosen companion's provider did not advertise; absent means
 the tool's default. The ids match `[A-Za-z0-9][A-Za-z0-9._\-\[\]]{0,63}` (never a flag-like start). The
 companion looks the value up in its own built-in list again and ignores anything else, so no
-server-chosen string reaches a command line unchecked.
+server-chosen string reaches a command line unchecked. The window's settings narrow what it
+advertises and accepts: a tool turned off is not offered, and only the models and efforts left
+ticked are (all ticked is stored as "all", so ones a later version adds are included).
 
 | Provider | Models | Efforts | Checked |
 |---|---|---|---|
@@ -158,63 +197,97 @@ The prompt goes to stdin and the working directory is an empty private one (`wor
 the profile, stable so sessions can resume). `--tools ""` removes the built-in tools (shell, files,
 web), `--strict-mcp-config` ignores every other MCP server, `--setting-sources ""` ignores user and
 project settings (hooks, memory) and `--disable-slash-commands` disables skills and commands. The
-Synapse server is given in a temp config file with the token in a header, and the server's system text
+Synapse server is given in a temp config file with the question's own `mcp_token` in a header (never the
+companion's token, which also opens the connector and the companion endpoints), and the server's system text
 is in a second temp file, so **no server-supplied string and no token is in argv** (on Windows a
 `claude.cmd` is run through cmd.exe, which quotes argument lists unsafely); the session id is a UUID
 derived from the server's URL and the conversation id. Both files are 0600 and deleted when the tool
 ends. As a second guard the companion reads the `init` event's tool list and aborts the job (killing
 the process) if any tool is not `mcp__synapse__…` or the list is empty (the server was unreachable).
 
-**What the tool can change.** The companion's token is *restricted* on `/mcp`: the server never lists
-or runs the tools that change the library (`add_paper`, `trash_papers` …; see [MCP](mcp.md)) for a
-companion token, whatever Settings → AI Access allows other apps (`Server.restricted`, read where
-`build_server` offers those tools). Notes and tasks stay changeable, as
-the system text allows only when the user asks; every change is attributed and can be undone in the
-app. This is decided on the server, not in the companion.
+**What the tool can change.** The question's token is *restricted* on `/mcp`: the server never lists
+or runs the tools that change the library (`add_paper`, `trash_papers` …; see [MCP](mcp.md)) for it,
+whatever Settings → AI Access allows other apps (`Server.restricted`, read where `build_server`
+offers those tools), and it opens nothing but `/mcp`. Notes and tasks stay changeable, as the system
+text allows only when the user asks; every change is attributed and can be undone in the app. This
+is decided on the server, not in the companion.
 
-**Codex** (`codex exec --json`) is **off unless you run `run --allow codex`**, and `run` then prints a
+**Codex** (`codex exec --json`) is **off until you turn it on in the window**, which then shows a
 warning. Codex always has a shell tool. Here it runs in a read-only sandbox, but it can still read
 files on your computer, so **text inside a paper can instruct it to read local files and write their
 content into a note on the server**; and the MCP servers in your `~/.codex/config.toml` stay enabled
 (and its own instructions apply). Claude Code, run as above, has neither problem. The Synapse server is
-passed with `-c mcp_servers.synapse.url=…` and `bearer_token_env_var`, the token travelling in the
+passed with `-c mcp_servers.synapse.url=…` and `bearer_token_env_var`, the question's token travelling in the
 child's environment (nothing the server sent is in Codex's argv either). Codex has no system-prompt
 option, so the instructions are put in front of the question. Follow-ups resume the thread the companion
 remembers in memory (a restarted companion starts a fresh thread).
 
 Provider commands are argument lists, never shell strings. The companion starts at most two AI tools
-at once itself (a repeated job id is ignored and an excess job is answered with an error without
+at once itself (one if the window says so) (a repeated job id is ignored and an excess job is answered with an error without
 spawning anything). A cancelled job's process group is terminated (killed after 3 s); SIGTERM and
 Ctrl+C do the same for every running job at once. Text from the server is stripped of control
 characters before it is printed.
 
 ## Tokens and the guard
 
-`/api/companion/…` accepts only `Authorization: Bearer` with a **companion**-scope token, from this
-computer too; a request with any `Origin` is refused (403), device cookies do not count, and the
-Host check applies. `/mcp` accepts `mcp` or `companion` tokens (the companion gives its AI tool the
-same token); `/api/connector/…` still takes connector tokens only. Tokens are made and removed
-through `/api/mcp/tokens` with `scope: "companion"`; see [MCP](mcp.md#over-http-mcp) and the guard
-section of [sync and devices](sync-and-devices.md#ai-apps-mcp). The companion never follows a redirect
-with its token.
+`/api/companion/…` and `/api/connector/…` with a token accept only `Authorization: Bearer` with a
+**companion**-scope token, from this computer too; a request with any `Origin` is refused (403),
+device cookies do not count, and the Host check applies. `/mcp` accepts `mcp` tokens and the
+per-question tokens above, never the companion token itself. Browser tokens (scope `connector`)
+are no longer made or accepted; old ones are listed in Settings to be removed. Tokens are made and
+removed through `/api/mcp/tokens`; see [MCP](mcp.md#over-http-mcp) and the guard section of
+[sync and devices](sync-and-devices.md#ai-apps-mcp). The companion never follows a redirect with
+its token.
+
+## The browser extension through the companion
+
+```
+extension ──connectNative("org.synapse.companion")──► native host (synapse_companion native-host)
+          ◄── length-prefixed JSON over stdin/stdout ──  └── HTTPS, companion token ──► /api/connector/…
+```
+
+Chrome starts the native host for the extension: a launcher script in the companion's folder
+(`native-host`, or `native-host.bat` on Windows) that runs this program with `native-host --profile
+NAME`. It is a separate short-lived process; it reads the profile, so it works whether or not the
+background companion is running. **Install** in the window registers it per user: a manifest
+`org.synapse.companion.json` in the `NativeMessagingHosts` folder of each Chromium browser that is
+installed (Chrome, Chromium, Brave, Edge, Vivaldi; on Windows, registry keys under
+`HKEY_CURRENT_USER\Software\…\NativeMessagingHosts` naming one manifest), whose
+`allowed_origins` is the extension's id only. The id is fixed by the public `key` in the
+extension's manifest (`extension.extension_id`), so it does not depend on the folder; any unpacked
+extension carrying the same key gets the same id, so load only extensions you trust in Developer
+mode. Snap-packaged Chromium cannot start programs outside its sandbox.
+
+Messages (`native.py`): `{id, type:"hello", version, build}` → `{id, type:"hello", server, name}`,
+and records when the extension last said hello and which build it runs (`<profile>-extension-seen.json`,
+shown in the window). `{id, type:"request", method, path, json? | form?, timeout?}` → one or more
+`{id, type:"response", status, body, more}`: the server's own answer, whatever its status, cut into
+parts of at most 128 K characters (Chrome limits a message to the extension to 1 MB). `form` entries
+are `[name, text]` or `[name, {data: base64, filename, type}]` and become multipart form data.
+Only `GET` and `POST` on `/api/connector/…` paths (letters, digits, `/`, `_`, `-` and a plain query)
+are passed on; anything else, and every failure, is `{id, type:"error", message}`. Requests may be
+up to 64 MiB, Chrome's own limit (a PDF in base64), and wait at most 60 s.
 
 ## Downloads and the extension folder
 
 `GET /api/companion/hello` → `{app, version, extension: {build}, script: {build}}`. A build is a
-short SHA-256: of the script's bytes, and of the extension's files (names and contents). `GET
-/api/companion/extension` is a deterministic zip of `browser_extension/` (regular files only; hidden
-files and links left out) plus a generated `build.json` `{"build": …}`; the extension compares it
-with the build it loaded with to reload itself ([browser extension](browser-extension.md)). A
-repository checkout has no `build.json`.
+short SHA-256: of the `.pyz`'s bytes, and of the extension's files (names and contents). `GET
+/api/companion/script` and `GET /api/companion/extension` are deterministic zips (fixed dates and
+modes; regular files only, hidden files, links and `__pycache__` left out): the `.pyz` holds
+`synapse_companion/` and a `__main__.py` that runs it; the extension zip holds `browser_extension/`
+plus a generated `build.json` `{"build": …}`, which the extension compares with the build it loaded
+with to reload itself ([browser extension](browser-extension.md)). A repository checkout has no
+`build.json`.
 
 **The extension's code comes from the server.** Whoever controls the server (or a companion token and
 its host) controls what the installed extension does in your browser. The companion therefore guards
 the manifest: an update that changes any of `permissions`, `optional_permissions`, `host_permissions`,
 `optional_host_permissions`, `content_scripts`, `externally_connectable`, `web_accessible_resources`,
-`background` or `content_security_policy` is **not** applied by `run` (hourly or at start): it logs one
-line saying to run `extension`, which lists the changed keys and asks (`--yes` skips the question).
-This does not review the extension's JavaScript or HTML, which can change freely with a hash change
-and run with the permissions already granted; install from a server you control.
+`background` or `content_security_policy` is **not** applied by the hourly check: the window shows
+the changed keys and **Apply the update**. This does not review the extension's JavaScript or HTML,
+which can change freely with a hash change and run with the permissions already granted; install
+from a server you control. Automatic updates can be turned off in the profile's settings
+(`extension_updates`).
 
 The companion unpacks into a new temporary folder beside the target (refusing absolute or `..` paths,
 backslashes, drive letters, links and other non-regular entries, oversized archives and corrupt zips,
@@ -226,9 +299,28 @@ did not create (including a `<dir>.new` or `<dir>.old` of your own) are never to
 folder is up to date is decided by hashing its files as the server does, so a locally edited,
 added or removed file is repaired by the next sync.
 
+## The window
+
+`ui.py` serves `static/` and a small JSON API on `127.0.0.1` at a free port, only while the
+companion runs. Its key is in `<profile>.window.json` (0600, in a 0700 folder). Opening the window
+asks the running companion for a one-time ticket (valid 60 s), proving it knows the key with an
+HMAC over a fresh nonce and checking the answer's HMAC in turn, so a stale file never hands the key
+to another program that now has the port. The browser is started on a private redirect file
+(`<profile>.open.html`, 0600) rather than on `/?ticket=…`, because other users of the computer can
+read command lines. The page exchanges the ticket for the key, keeps the key in that tab's session
+storage and removes the ticket from the address. Every request must name `127.0.0.1:<port>` as its Host (no DNS
+rebinding); every change must carry the key in `X-Companion-Key`, be JSON and come from the page's
+own origin (or none). Pages have a strict Content Security Policy and nothing is cached. The state
+it shows: the connection (`connecting`, `connected`, `unreachable`, `refused`), the tools found and
+the settings, questions running, the extension (installed, registered browsers, last hello, review
+waiting), start at login, an available update and the recent log.
+
 ## Limits
 
 - Needs Python 3.10+ and a signed-in `claude` (or `codex`) on the same computer.
+- The browser extension works only through a connected companion on the same computer.
+- Starting at login and the browsers' native messaging registration are written for Linux, macOS
+  and Windows; only Linux is exercised by the tests.
 - An unreachable server, a restart or a vanished companion end open answers with an error; nothing
   is retried or kept.
 - Provider output formats can change between releases: the Claude Code and Codex readers ignore

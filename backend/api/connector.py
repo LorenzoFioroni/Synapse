@@ -1,6 +1,6 @@
-"""Endpoints for the browser extension ("Save to Library" button). What saving does is in
-``backend/connector.py``; this module reads the requests and shapes the answers, which the
-extension relies on (see docs/browser-extension.md)."""
+"""Endpoints for the browser extension ("Save to Library" button), which reaches them through the
+companion (docs/companion.md). What saving does is in ``backend/connector.py``; this module reads
+the requests and shapes the answers, which the extension relies on (see docs/browser-extension.md)."""
 
 from __future__ import annotations
 
@@ -16,18 +16,6 @@ from . import error, failure, svc
 bp = Blueprint("connector", __name__, url_prefix="/api/connector")
 
 VERSION = "1.0"
-
-
-@bp.after_request
-def allow_extension_origins(resp):
-    """The extension normally reaches 127.0.0.1/localhost through its host permissions;
-    CORS for extension origins also lets it talk to a library running elsewhere."""
-    origin = request.headers.get("Origin", "")
-    if origin.startswith(("chrome-extension://", "moz-extension://", "safari-web-extension://")):
-        resp.headers["Access-Control-Allow-Origin"] = origin
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    return resp
 
 
 @bp.get("/ping")

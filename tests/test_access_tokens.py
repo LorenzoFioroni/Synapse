@@ -1,4 +1,4 @@
-"""Scoped tokens preserve old AI credentials and limit browser credentials."""
+"""Scoped tokens: AI apps and the companion, each only where it belongs."""
 
 import sqlite3
 
@@ -29,31 +29,32 @@ def test_legacy_tokens_migrate_without_gaining_connector_access(tmp_path):
         tokens.close()
 
 
-def test_browser_tokens_keep_working_until_revoked(tmp_path):
+def test_tokens_keep_working_until_revoked(tmp_path):
     now = [1000.0]
     tokens = AccessTokens(tmp_path / "auth.db", clock=lambda: now[0])
     try:
-        entry, secret = tokens.create("Browser", scope="connector")
+        entry, secret = tokens.create("Laptop", scope="companion")
         assert tokens.check(secret) is None
-        assert tokens.check(secret, scope="connector")["id"] == entry["id"]
+        assert tokens.check(secret, scope="companion")["id"] == entry["id"]
         now[0] += 5 * 365 * 24 * 60 * 60
-        assert tokens.check(secret, scope="connector") is not None
+        assert tokens.check(secret, scope="companion") is not None
         assert tokens.revoke(entry["id"])
-        assert tokens.check(secret, scope="connector") is None
+        assert tokens.check(secret, scope="companion") is None
         assert tokens.list() == []
-        with pytest.raises(TokenError):
-            tokens.create("Escalation", scope="all")
+        for scope in ("all", "connector"):  # browser tokens are no longer made
+            with pytest.raises(TokenError):
+                tokens.create("Escalation", scope=scope)
     finally:
         tokens.close()
 
 
 @pytest.mark.parametrize("addr", ["127.0.0.1", "192.0.2.10"])
-def test_connector_and_mcp_tokens_are_not_interchangeable(client, svc, addr):
-    _, browser = svc.tokens.create("Browser", scope="connector")
+def test_companion_and_mcp_tokens_are_not_interchangeable(client, svc, addr):
+    _, companion = svc.tokens.create("Laptop", scope="companion")
     _, ai = svc.tokens.create("AI")
     remote = {"REMOTE_ADDR": addr}
     assert (
-        client.post("/mcp", headers={"Authorization": f"Bearer {browser}"}, json={}, environ_base=remote).status_code
+        client.post("/mcp", headers={"Authorization": f"Bearer {companion}"}, json={}, environ_base=remote).status_code
         == 401
     )
     assert (
@@ -62,41 +63,23 @@ def test_connector_and_mcp_tokens_are_not_interchangeable(client, svc, addr):
     )
     if addr == "127.0.0.1":
         return
-    browser_headers = {"Authorization": f"Bearer {browser}", "Origin": "chrome-extension://abc"}
+    headers = {"Authorization": f"Bearer {companion}"}
     for path in ["/api/settings", "/api/notes/overview", "/api/mcp/tokens", "/api/devices"]:
-        assert client.get(path, headers=browser_headers, environ_base=remote).status_code == 401
+        assert client.get(path, headers=headers, environ_base=remote).status_code == 401
     for path in ["/api/items/trash", "/api/notes", "/api/mcp/tokens"]:
-        assert client.post(path, headers=browser_headers, json={}, environ_base=remote).status_code == 403
+        assert client.post(path, headers=headers, json={}, environ_base=remote).status_code == 403
 
 
-def test_browser_token_creation_and_revocation_through_api(client, svc):
-    response = client.post("/api/mcp/tokens", json={"name": "Browser", "scope": "connector"})
-    assert response.status_code == 201
-    data = response.get_json()
-    assert data["entry"]["scope"] == "connector"
-    assert "token_hash" not in data["entry"]
-    headers = {"Authorization": f"Bearer {data['token']}", "Origin": "chrome-extension://abc"}
-    assert (
-        client.get("/api/connector/ping", headers=headers, environ_base={"REMOTE_ADDR": "192.0.2.10"}).status_code
-        == 200
-    )
-    assert client.delete(f"/api/mcp/tokens/{data['entry']['id']}").status_code == 200
-    for method, path in [
-        ("GET", "/api/connector/ping"),
-        ("POST", "/api/connector/save"),
-        ("POST", "/api/connector/file"),
-    ]:
-        denied = client.open(path, method=method, headers=headers, environ_base={"REMOTE_ADDR": "192.0.2.10"})
-        assert denied.status_code == 401
-        assert denied.headers["Access-Control-Allow-Origin"] == headers["Origin"]
+def test_browser_tokens_can_no_longer_be_made_through_the_api(client):
+    assert client.post("/api/mcp/tokens", json={"name": "Browser", "scope": "connector"}).status_code == 400
     assert client.post("/api/mcp/tokens", json={"name": "Bad", "scope": "all"}).status_code == 400
 
 
-def test_remote_browser_token_issuance_still_requires_admin_confirmation(client):
+def test_remote_token_issuance_still_requires_admin_confirmation(client):
     remote = {"REMOTE_ADDR": "192.0.2.10"}
     response = client.post(
         "/api/mcp/tokens",
-        json={"name": "Browser", "scope": "connector"},
+        json={"name": "Laptop", "scope": "companion"},
         environ_base=remote,
         headers={"Origin": "http://localhost"},
     )

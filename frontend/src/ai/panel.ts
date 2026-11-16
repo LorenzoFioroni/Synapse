@@ -36,7 +36,7 @@ export interface AskHost {
   watch?(fn: () => void): () => void;
 }
 
-const START_COMMAND = 'python synapse_companion.py run';
+const START_COMMAND = 'python3 synapse_companion.pyz';
 
 let el: HTMLElement | null = null;
 let current: { add(a: Attached): void; focus(): void } | null = null;
@@ -160,9 +160,9 @@ function mount(host: AskHost): void {
   function showHelp(message?: string): void {
     help.hidden = false;
     help.innerHTML = `<div class="ai-help-title">${esc(message || 'No companion is connected.')}</div>
-      <p>The companion runs on a computer where your AI app is installed. Start it there with</p>
+      <p>The companion runs on a computer where your AI app is installed, and starts with it once set up. Open Synapse Companion there, or run</p>
       <pre class="ai-code">${esc(START_COMMAND)}</pre>
-      <p>The first time, make a companion token in Settings → AI Access and follow its commands.</p>
+      <p>The first time, make a companion token in Settings → AI Access and follow its steps.</p>
       <button type="button" class="ai-btn" data-recheck>Check again</button>`;
   }
   async function check(): Promise<void> {

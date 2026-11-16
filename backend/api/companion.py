@@ -92,7 +92,7 @@ def script():
     build, data = bundle.script()
     if not data:
         return error("This server has no companion script to download.", 404)
-    return _no_store(Response(data, mimetype="text/x-python", headers={"X-Build": build}))
+    return _no_store(Response(data, mimetype="application/zip", headers={"X-Build": build}))
 
 
 # ---------------------------------------------------------------------- the app
@@ -100,15 +100,15 @@ def script():
 
 @bp.get("/api/ai/companion-script")
 def download_script():
-    """The companion program, for Settings' Download button (device auth, no token in a command)."""
+    """The companion program (``synapse_companion.pyz``), for Settings' Download button (device auth)."""
     _, data = bundle.script()
     if not data:
         return error("This server has no companion script to download.", 404)
     return _no_store(
         Response(
             data,
-            mimetype="text/x-python",
-            headers={"Content-Disposition": 'attachment; filename="synapse_companion.py"'},
+            mimetype="application/zip",
+            headers={"Content-Disposition": 'attachment; filename="synapse_companion.pyz"'},
         )
     )
 

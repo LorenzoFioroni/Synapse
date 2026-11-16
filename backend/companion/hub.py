@@ -10,8 +10,10 @@ The hub depends on nothing else in Synapse.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
+import secrets
 import threading
 import time
 import uuid
@@ -109,6 +111,7 @@ class _Job:
     finished: float = 0.0
     stop: bool = False  # the companion must stop it (cancelled, or ended here)
     stop_sent: bool = False
+    mcp_key: str = ""  # SHA-256 of the job's /mcp token, which works only while the job runs
 
 
 def _choices(value: Any, what: str) -> list:
@@ -145,6 +148,10 @@ def _clean_providers(providers) -> list[dict]:
             }
         )
     return out
+
+
+def _key(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def _number(value: Any, limit: float) -> float | None:
@@ -244,9 +251,14 @@ class Companions:
     def _handout(self, job: _Job) -> dict:
         job.state = "running"
         job.activity = self._clock()
+        # The AI tool gets this token, never the companion's own: it opens /mcp only, restricted,
+        # and only until the job ends.
+        mcp_token = secrets.token_urlsafe(32)
+        job.mcp_key = _key(mcp_token)
         self._condition.notify_all()
         return {
             "id": job.id,
+            "mcp_token": mcp_token,
             "provider": job.provider,
             "prompt": job.prompt,
             "system": job.system,
@@ -311,6 +323,20 @@ class Companions:
                     break
             self._condition.notify_all()
             return job.stop
+
+    def job_caller(self, token: str | None) -> str | None:
+        """For a running job's /mcp token: the access token id of the companion running it (who the
+        MCP server attributes changes to), else None."""
+        if not token:
+            return None
+        key = _key(token)
+        with self._condition:
+            self._sweep()
+            for job in self._jobs.values():
+                if job.state == "running" and job.mcp_key and secrets.compare_digest(job.mcp_key, key):
+                    comp = self._companions.get(job.companion)
+                    return comp.token if comp else None
+        return None
 
     # ------------------------------------------------------------------ app side
     def status(self) -> list[dict]:

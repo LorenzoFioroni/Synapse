@@ -1,11 +1,10 @@
-import { loadConnection, libraryFetch } from './connection.js';
+import { companionHello, libraryFetch } from './connection.js';
 import { libraryPdfRequest } from './bridge.js';
 import { refreshPdfReceiver } from './receiver.js';
 import { recordBuild, reloadIfUpdated } from './selfUpdate.js';
 
 async function syncBridge() {
-  const { server } = await loadConnection();
-  const url = new URL(server);
+  const url = new URL((await companionHello()).server);
   const matches = [`${url.protocol}//${url.hostname}/*`];
   await chrome.scripting.unregisterContentScripts({ ids: ['synapse-library'] }).catch(() => {});
   if (await chrome.permissions.contains({ origins: matches })) {
@@ -18,15 +17,19 @@ async function syncBridge() {
 let syncing = Promise.resolve();
 const refreshBridge = () => { syncing = syncing.then(syncBridge).catch(() => {}); };
 chrome.runtime.onInstalled.addListener(refreshBridge);
-chrome.runtime.onInstalled.addListener(() => { void recordBuild().catch(() => {}); });
+chrome.runtime.onInstalled.addListener(() => {
+  void recordBuild().catch(() => {});
+  // Earlier versions kept a token and a server address here; the companion holds them now.
+  void chrome.storage.local.remove('connection');
+  void chrome.storage.sync.remove('server');
+});
 chrome.runtime.onStartup.addListener(refreshBridge);
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'sync' && changes.server) refreshBridge();
-  if ((area === 'sync' && changes.server) || (area === 'local' && (changes.connection || changes.pdfReceiver))) refreshPdfReceiver();
+  if (area === 'local' && changes.pdfReceiver) refreshPdfReceiver();
 });
 chrome.permissions.onAdded.addListener(() => { refreshBridge(); refreshPdfReceiver(); });
 chrome.permissions.onRemoved.addListener(() => { refreshBridge(); refreshPdfReceiver(); });
-refreshBridge();
+refreshBridge();   // also tells the companion that the extension is running
 refreshPdfReceiver();
 // a moment later, so a load's onInstalled has recorded the build it started from first
 setTimeout(() => { void reloadIfUpdated().catch(() => {}); }, 2000);
@@ -34,12 +37,12 @@ setTimeout(() => { void reloadIfUpdated().catch(() => {}); }, 2000);
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (message?.type !== 'find-publisher-pdfs') return;
   void (async () => {
-    const { server, token } = await loadConnection();
+    const { server } = await companionHello();
     const ids = libraryPdfRequest(message, sender, server);
     if (!ids) { reply({ accepted: false }); return; }
-    // An installed extension may have an expired/revoked credential or an older server. Only
-    // take over the app's fallback after checking that this exact library can accept scoped work.
-    const ping = await libraryFetch(server, token, '/api/connector/ping', { signal: AbortSignal.timeout(3000) });
+    // An older library may not support scoped work. Only take over the app's fallback after
+    // checking that this exact library can accept it.
+    const ping = await libraryFetch('/api/connector/ping', { signal: AbortSignal.timeout(3000) });
     const data = await ping.json();
     if (!ping.ok || data.app !== 'synapse' || !data.capabilities?.publisher_pdfs) { reply({ accepted: false }); return; }
     const query = new URLSearchParams({ ids: ids.join(','), auto: '1', fallback: '1', library: server });

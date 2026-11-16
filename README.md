@@ -10,8 +10,8 @@ TypeScript frontend. Everything runs on your machine.
   or save articles with the browser extension.
   **Find Available PDF** gets the publisher's version when your network has access (a
   university's network or VPN) and an open-access copy otherwise.
-  The extension supports localhost or a remote HTTPS server with a dedicated browser token;
-  see [extension setup](browser_extension/README.md#remote-server). Its Find Missing PDFs fetches
+  The extension reaches your library, local or remote, through the Companion on the same
+  computer, so the browser holds no token; see [extension setup](browser_extension/README.md). Its Find Missing PDFs fetches
   publishers' PDFs through your browser, with your institution's access. Searches resume across
   batches, so failed papers do not block older items. **Find Available PDF** and new-item PDF
   lookups try publisher DOI items through the requesting browser's extension, or a connected
@@ -320,15 +320,20 @@ must trust the certificate, for Claude Code: `NODE_EXTRA_CA_CERTS="$(mkcert -CAR
 
 **Ask AI from Synapse (the Companion).** For a Synapse server you reach remotely, a small program on
 your own computer can answer questions asked inside Synapse (the round button in the lower right
-corner; add the note, PDF page or selected words you are looking at with one click) with your own Claude Code, restricted to Synapse's tools; nothing but the answer streams back and
-the server needs no API key. It can also install and update the browser extension for you. In
-**Settings → AI Access → New Companion Token…** make a token, then on your computer:
+corner; add the note, PDF page or selected words you are looking at with one click) with your own
+Claude Code, restricted to Synapse's tools; nothing but the answer streams back and the server needs
+no API key. It is also how the browser extension reaches your library: it installs the extension,
+keeps it current and passes its saves to Synapse. In
+**Settings → AI Access → New Companion Token…** make a token and download `synapse_companion.pyz`,
+then on your computer run it once:
 
 ```bash
-python synapse_companion.py connect https://synapse.example.com
-python synapse_companion.py run                 # leave it running; Codex only with: run --allow codex
-python synapse_companion.py extension           # optional: the browser extension folder
+python3 synapse_companion.pyz
 ```
+
+Its window asks for the server's address and the token, lets you choose which AI tools, models and
+efforts Synapse may use (Codex is off until you turn it on), installs the browser extension, and
+can start the Companion whenever you log in. Run the file again to reopen the window.
 
 Previous conversations are kept on the server and can be continued later, and you can pick the AI
 agent, model and effort for each question from small buttons beside the text box. Type `[@` or `[[` (or press the @ button)
@@ -400,7 +405,7 @@ For how the code fits together and where new code goes, see
 ./
 ├── server.py              starts the web app
 ├── mcp_server.py          MCP server for AI apps: Claude, Codex … (stdio)
-├── synapse_companion.py   the companion: runs your AI tool for Ask AI, keeps the extension current (one file)
+├── synapse_companion/     the companion (served as synapse_companion.pyz): Ask AI with your AI tool, the extension's way to the library
 ├── backend/               Flask + SQLite backend (packages described in docs/architecture.md)
 ├── frontend/              the web app: index.html, viewer.html, src/ (TypeScript; built to js/), css/, vendor/ (third-party libraries)
 ├── browser_extension/     Chrome extension (Manifest V3) – load unpacked
@@ -475,7 +480,7 @@ python tests/e2e/adding_checklist.py     # bulk Retrieve Metadata (parallel, gro
 python tests/e2e/claude_edits_checklist.py  # Claude's note edits: appear live, ⌘Z / bar Undo / Show changes, the note's history
 python tests/e2e/notes_history_checklist.py # notes history: versions grouped, diffs, restore, outside changes, milestones
 python tests/e2e/equations_checklist.py  # equation numbers, \eqref, macros, clicks into formulas, panels and width
-python tests/e2e/extension_checklist.py  # the browser button: options, reading an article page, saving it
+python tests/e2e/extension_checklist.py  # the browser button through the companion: reading an article page, saving it
 python tests/e2e/find_pdfs_checklist.py  # the extension's Find Missing PDFs against a fake publisher
 ```
 

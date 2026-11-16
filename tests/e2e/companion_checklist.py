@@ -240,11 +240,8 @@ async def main():
             token = (await made[-1].json())["token"]
             check("a companion token is made", token.startswith("syn_companion_"), token[:16])
             check(
-                "the commands connect and run; no token inside any command",
-                f"connect {BASE}" in cmds
-                and "synapse_companion.py run" in cmds
-                and token not in cmds
-                and "--token" not in cmds,
+                "the command starts the companion; the token is for its window, in no command",
+                "synapse_companion.pyz" in cmds and token not in cmds and "--token" not in cmds,
                 cmds,
             )
             dl = page.locator("[data-ai-download]")
@@ -252,10 +249,10 @@ async def main():
             async with page.expect_download() as got:
                 await dl.click()
             name = (await got.value).suggested_filename
-            check("the download is named synapse_companion.py", name == "synapse_companion.py", name)
+            check("the download is named synapse_companion.pyz", name == "synapse_companion.pyz", name)
             check(
                 "the token row says what the token is for",
-                "Companion · local AI and extension updates" in await page.inner_text("[data-ai-list]"),
+                "Companion · local AI and browser extension" in await page.inner_text("[data-ai-list]"),
             )
             await shot(page, "1-settings")
             await page.keyboard.press("Escape")
@@ -295,7 +292,7 @@ async def main():
             await page.wait_for_selector(".ai-panel .ai-help:not([hidden])", timeout=8000)
             helptext = await page.inner_text(".ai-help")
             check(
-                "no companion: the panel says how to start one", "python synapse_companion.py run" in helptext, helptext
+                "no companion: the panel says how to start one", "synapse_companion.pyz" in helptext, helptext
             )
             check("the button hides while the panel is open", await page.locator(".ai-fab").is_hidden())
             check(

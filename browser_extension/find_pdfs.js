@@ -6,7 +6,7 @@
 // One paper at a time with a pause between them: publishers block institutions that download
 // in bulk.
 import { fetchPdfInPage, pageState } from './extract.js';
-import { loadConnection, libraryFetch } from './connection.js';
+import { companionHello, libraryFetch } from './connection.js';
 
 /** @typedef {import('./extract.js').PageState} PageState */
 /** @typedef {{ id: string; title: string; doi: string; year?: number | null; cursor?: string }} Missing */
@@ -56,7 +56,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const view = get('view', HTMLElement);
 const conn = get('conn', HTMLElement);
 let server = '';
-let token = '';
 /** @type {{ id: number; name: string; parent_id: number | null }[]} */
 let folders = [];
 /** @type {Missing[]} */
@@ -87,7 +86,7 @@ async function saveProgress(cursor) {
  * @returns {Promise<{ ok: boolean; status: number; data: any }>}
  */
 async function api(path, opts = {}) {
-  const res = await libraryFetch(server, token, path, opts);
+  const res = await libraryFetch(path, opts);
   let data = null;
   try { data = await res.json(); } catch { /* empty */ }
   return { ok: res.ok, status: res.status, data };
@@ -95,7 +94,7 @@ async function api(path, opts = {}) {
 
 async function init() {
   try {
-    ({ server, token } = await loadConnection());
+    ({ server } = await companionHello());
     if (params.has('library') && params.get('library') !== server) {
       throw new Error('The library connection changed. Start the PDF request again from the intended library.');
     }
@@ -106,7 +105,7 @@ async function init() {
   } catch (e) {
     conn.className = 'conn off';
     view.innerHTML = `<div class="result"><div class="big err">!</div><h2>Library unavailable</h2>
-      <p>${esc(e instanceof Error ? e.message : e)}</p><p>Check the extension’s settings, then reopen this window.</p></div>`;
+      <p>${esc(e instanceof Error ? e.message : e)}</p><p>Open Synapse Companion and check it is connected to your library, then reopen this window.</p></div>`;
     return;
   }
   conn.className = 'conn ok';
