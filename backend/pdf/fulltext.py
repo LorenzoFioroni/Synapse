@@ -4,6 +4,9 @@ The index lives in its own SQLite file (``data/fulltext.db``) so the library
 database stays small; it can be deleted at any time and rebuilt from the PDFs.
 SQLite FTS5 is used when available (fast, accent-insensitive, ranked
 snippets); otherwise a plain table with LIKE matching is used as a fallback.
+
+A PDF's reference list is kept apart from its own text (``refs`` beside ``text``, split by
+``refsection``), so a search can tell a paper about a subject from one that only cites it.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from ..library.db import utcnow
+from . import refsection
 from .text import clean_text, extract_text
 
 log = logging.getLogger(__name__)
@@ -73,14 +77,43 @@ class FulltextIndex:
                 log.warning("SQLite FTS5 not available; full-text search falls back to LIKE")
                 self.fts = False
                 c.execute("""CREATE TABLE IF NOT EXISTS content_plain (
-                    attachment_id INTEGER PRIMARY KEY, paper_id TEXT, text TEXT)""")
+                    attachment_id INTEGER PRIMARY KEY, paper_id TEXT, text TEXT, refs TEXT)""")
+            self._add_refs_column(c)
             self._check_content_table(c)
 
     @staticmethod
     def _create_fts(c: sqlite3.Connection) -> None:
         c.execute("""CREATE VIRTUAL TABLE IF NOT EXISTS content USING fts5(
-            text, attachment_id UNINDEXED, paper_id UNINDEXED,
+            text, attachment_id UNINDEXED, paper_id UNINDEXED, refs,
             tokenize = "unicode61 remove_diacritics 2")""")
+
+    def _add_refs_column(self, c: sqlite3.Connection) -> None:
+        """An index made before reference lists were kept apart: start over, as it can always be rebuilt
+        from the PDFs (an FTS5 table cannot gain a column)."""
+        try:
+            c.execute(f"SELECT refs FROM {self._table} LIMIT 0")
+            return
+        except sqlite3.OperationalError:
+            pass
+        log.warning("The full-text index does not keep reference lists apart; the PDFs will be indexed again")
+        c.execute(f"DROP TABLE {self._table}")
+        if self.fts:
+            self._create_fts(c)
+        else:
+            c.execute("""CREATE TABLE content_plain (
+                attachment_id INTEGER PRIMARY KEY, paper_id TEXT, text TEXT, refs TEXT)""")
+        c.execute("DELETE FROM documents")
+        # The app indexes again at its next start, also when automatic indexing is off: the index is empty.
+        c.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('reindex', '1')")
+
+    def pending_reindex(self) -> bool:
+        """The index was emptied by an upgrade and not filled again yet."""
+        with self._session() as c:
+            return c.execute("SELECT 1 FROM meta WHERE key = 'reindex'").fetchone() is not None
+
+    def reindexed(self) -> None:
+        with self._write_lock, self._session() as c:
+            c.execute("DELETE FROM meta WHERE key = 'reindex'")
 
     def _check_content_table(self, c: sqlite3.Connection) -> None:
         """Start over if ``documents`` describes text kept in the other table.
@@ -127,11 +160,13 @@ class FulltextIndex:
     def index_file(self, att_id: int, paper_id: str, path: Path) -> int:
         text, pages = extract_text(path)
         text = clean_text(text)
+        body, refs = refsection.split(text)
         st = path.stat()
         with self._write_lock, self._session() as c:
             c.execute(f"DELETE FROM {self._table} WHERE attachment_id = ?", (att_id,))
             c.execute(
-                f"INSERT INTO {self._table} (text, attachment_id, paper_id) VALUES (?, ?, ?)", (text, att_id, paper_id)
+                f"INSERT INTO {self._table} (text, refs, attachment_id, paper_id) VALUES (?, ?, ?, ?)",
+                (body, refs, att_id, paper_id),
             )
             c.execute(
                 "INSERT OR REPLACE INTO documents VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -158,40 +193,53 @@ class FulltextIndex:
 
     # ------------------------------------------------------------------ reads
     def match(self, term: str, limit: int = 2000) -> dict[str, str]:
-        """Map paper_id -> HTML snippet (with <mark>) for documents containing ``term``."""
+        """Map paper_id -> HTML snippet (with <mark>) for documents containing ``term``, in their own
+        text or in their reference list (the paper's own text gives the snippet when both have it)."""
+        body, refs = self.match_parts(term, limit)
+        return {**refs, **body}
+
+    def match_parts(self, term: str, limit: int = 2000) -> tuple[dict[str, str], dict[str, str]]:
+        """(body, refs): paper_id -> snippet for documents with ``term`` in their own text, and for
+        those with it in their reference list. A paper only in ``refs`` cites the subject."""
         term = term.strip()
         if not term:
-            return {}
-        out: dict[str, str] = {}
+            return {}, {}
+        found: list[dict[str, str]] = []
         with self._session() as c:
-            if self.fts:
-                q = (
-                    _fts_quote(term) + "*"
-                )  # the last word is a prefix, also in a phrase ("time crystal" finds "time crystals")
-                try:
-                    rows = c.execute(
-                        "SELECT paper_id, snippet(content, 0, ?, ?, '…', 14) AS snip FROM content "
-                        "WHERE content MATCH ? ORDER BY rank LIMIT ?",
-                        (MARK_OPEN, MARK_CLOSE, q, limit),
-                    ).fetchall()
-                except sqlite3.OperationalError as e:
-                    log.info("FTS query failed for %r: %s", term, e)
-                    rows = []
-                for r in rows:
-                    out.setdefault(r["paper_id"], self._to_html(r["snip"]))
-            else:
-                for r in c.execute(
-                    "SELECT paper_id, text FROM content_plain WHERE text LIKE ? ESCAPE '\\' LIMIT ?",
-                    (f"%{_like_escape(term)}%", limit),
-                ):
-                    t = r["text"]
-                    i = t.lower().find(term.lower())
-                    s = max(0, i - 60)
-                    snip = (
-                        t[s:i] + MARK_OPEN + t[i : i + len(term)] + MARK_CLOSE + t[i + len(term) : i + len(term) + 60]
-                    )
-                    out.setdefault(r["paper_id"], self._to_html(("…" if s else "") + snip + "…"))
-        return out
+            for index, column in enumerate(("text", "refs")):
+                out: dict[str, str] = {}
+                if self.fts:
+                    # The last word is a prefix, also in a phrase ("time crystal" finds "time crystals").
+                    q = f"{column} : {_fts_quote(term)}*"
+                    try:
+                        rows = c.execute(
+                            "SELECT paper_id, snippet(content, ?, ?, ?, '…', 14) AS snip FROM content "
+                            "WHERE content MATCH ? ORDER BY rank LIMIT ?",
+                            (0 if index == 0 else 3, MARK_OPEN, MARK_CLOSE, q, limit),
+                        ).fetchall()
+                    except sqlite3.OperationalError as e:
+                        log.info("FTS query failed for %r: %s", term, e)
+                        rows = []
+                    for r in rows:
+                        out.setdefault(r["paper_id"], self._to_html(r["snip"]))
+                else:
+                    for r in c.execute(
+                        f"SELECT paper_id, {column} AS t FROM content_plain WHERE {column} LIKE ? ESCAPE '\\' LIMIT ?",
+                        (f"%{_like_escape(term)}%", limit),
+                    ):
+                        t = r["t"]
+                        i = t.lower().find(term.lower())
+                        s = max(0, i - 60)
+                        snip = (
+                            t[s:i]
+                            + MARK_OPEN
+                            + t[i : i + len(term)]
+                            + MARK_CLOSE
+                            + t[i + len(term) : i + len(term) + 60]
+                        )
+                        out.setdefault(r["paper_id"], self._to_html(("…" if s else "") + snip + "…"))
+                found.append(out)
+        return found[0], found[1]
 
     @staticmethod
     def _to_html(snip: str) -> str:
@@ -273,4 +321,5 @@ class Indexer:
                 log.warning("Indexing %s failed: %s", path, e)
                 self.status["errors"] += 1
             self.status["done"] += 1
+        self.index.reindexed()
         self.status.update(running=False, current="", last_run=utcnow())

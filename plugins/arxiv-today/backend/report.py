@@ -8,6 +8,8 @@ import json
 from collections import defaultdict
 from statistics import median
 
+FEW = 5  # added or dismissed papers below which the comparison is not evidence
+
 
 def _ranks(rows: list[dict], column: str) -> dict[str, int]:
     """Rank within each day (1 = top) by ``column``."""
@@ -65,6 +67,12 @@ def compare(rows: list[dict], in_library: set[str], top: int = 10) -> dict:
         "days": len({r["day"] for r in rows}),
         "papers": len(rows),
         "tiers": dict(tiers),
+        # Medians over a handful of papers say nothing about the weights.
+        **(
+            {"too_few_to_judge": f"only {len(added)} added and {len(dismissed)} dismissed on these days"}
+            if len(added) < FEW or len(dismissed) < FEW
+            else {}
+        ),
         "added": side(added),
         "dismissed": side(dismissed),
         "rose_most": [entry(r) for r in moved[:top]],

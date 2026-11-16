@@ -106,22 +106,58 @@ def find_identifier(text: str) -> dict:
 
 _ABSTRACT_START = re.compile(r"(?im)^[ \t]*abstract\b[ \t]*[.:—–\-]*[ \t]*")
 _ABSTRACT_END = re.compile(
-    r"(?im)^[ \t]*(?:key\s*words?|index terms|pacs|keywords?|(?:1\.?|i\.?)[ \t]+introduction|introduction)\b"
+    r"(?im)^[ \t]*(?:key\s*words?|index terms|pacs|keywords?|doi\s*:|subject areas|"
+    r"(?:1\.?|i\.?)[ \t]+introduction|introduction)\b"
 )
+# Physics journals and arXiv print no "Abstract": it follows the line "(Received 20 April 2000)" or
+# "(Dated: July 1, 2026)" under the authors. Some PDFs give the brackets as "~" and "!".
+_DATE_LINE = re.compile(r"(?im)^[ \t]*[(~]?[ \t]*(?:received|dated)\b[^\n]*$")
 ABSTRACT_MAX = 2500
 ABSTRACT_MIN = 150
+DATE_LINE_WITHIN = 4000  # the date line is under the authors, near the top of the first page
+
+
+def _first_paragraph(text: str) -> str:
+    """The lines of ``text`` up to where a paragraph set in a narrower column starts: an abstract runs across
+    the page, the body of a letter below it in two columns, so its lines are clearly shorter. Without such a
+    change, all of ``text``."""
+    lines = text.split("\n")
+    for i in range(3, len(lines) - 4):
+        if not lines[i - 1].rstrip().endswith((".", ")", "]")):
+            continue
+        before = sorted(len(l) for l in lines[:i] if len(l) > 20)
+        after = [len(l) for l in lines[i : i + 4]]
+        if before and max(after) < 0.72 * before[len(before) // 2]:
+            return "\n".join(lines[:i])
+    return text
 
 
 def abstract_from_text(text: str) -> str | None:
-    """The abstract printed on a paper's first page: the text after a line starting "Abstract" up to
-    "Keywords", "PACS" or the introduction. None when there is no such line or too little follows it.
-    Approximate: papers that print their abstract without the word are not recognised."""
+    """The abstract printed on a paper's first page: the text after a line starting "Abstract", or else
+    after the "(Received …)" / "(Dated: …)" line under the authors, up to "Keywords", "PACS" or the
+    introduction (for a letter with no such heading, up to where the two-column text starts). None when
+    neither line is there or too little follows it. Approximate."""
     m = _ABSTRACT_START.search(text)
-    if not m:
-        return None
-    rest = text[m.end() :]
-    end = _ABSTRACT_END.search(rest)
-    body = rest[: end.start()] if end else rest
+    if m:
+        rest = text[m.end() :]
+        end = _ABSTRACT_END.search(rest)
+        body = rest[: end.start()] if end else rest
+    else:
+        m = _DATE_LINE.search(text[:DATE_LINE_WITHIN])
+        if not m:
+            return None
+        rest = text[m.end() :].lstrip("\n")
+        if not re.search(r"[)!]", m.group(0)):  # the dates run over two or three lines
+            close = re.search(r"[)!][ \t]*\n", rest[:400])
+            rest = rest[close.end() :] if close else rest
+        if re.match(r"\W*(?:accepted|revised|published|cite this)\b", rest, re.I):
+            return None  # a journal's box of dates, not the line under the authors
+        end = _ABSTRACT_END.search(rest)
+        body = (
+            rest[: end.start()]
+            if end and end.start() <= ABSTRACT_MAX + 200
+            else _first_paragraph(rest[: ABSTRACT_MAX + 200])
+        )
     body = " ".join(re.sub(r"-\n(?=[a-z])", "", body[: ABSTRACT_MAX + 200]).split())
     if len(body) < ABSTRACT_MIN:
         return None

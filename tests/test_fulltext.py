@@ -118,3 +118,45 @@ def test_math_font_glyphs_are_turned_back_into_symbols():
     garbled = "The dynamics along ε¼0 is given by ðt ÞÞ and ðaÞ, ðbÞ, ðcÞ, so ðx þ yÞ."
     assert clean_text(garbled) == "The dynamics along ε=0 is given by (t )) and (a), (b), (c), so (x + y)."
     assert clean_text("Quarter ¼ and one ð alone") == "Quarter 1⁄4 and one ð alone"  # no pairs: left as it is
+
+
+REFS = "".join(f"[{i}] A. Zhang, Time crystals in chains, J. Phys. {i}, 1 ({2000 + i}).\n" for i in range(1, 9))
+
+
+@pytest.mark.parametrize("fts", [True, False])
+def test_reference_lists_are_kept_apart(tmp_path, texts, monkeypatch, fts):
+    if not fts:
+        no_fts5(monkeypatch)
+    repo = Repo(tmp_path)
+    repo.add(1, "about.pdf")
+    repo.add(2, "cites.pdf")
+    texts["about.pdf"] = "We observe time crystals in a driven chain.\n" + REFS.replace("Time crystals", "Spin waves")
+    texts["cites.pdf"] = "Transport in spin chains is diffusive.\n" + REFS
+    index = FulltextIndex(tmp_path / "ft.db")
+    Indexer(repo, index).sync(background=False)
+    body, refs = index.match_parts("time crystals")
+    assert body.keys() == {"p1"} and refs.keys() == {"p2"}  # p2 only cites the subject
+    assert "<mark>" in refs["p2"] and index.match("time crystals").keys() == {"p1", "p2"}
+    assert index.match_parts("zhang")[0] == {}  # an author of cited works only
+
+
+def test_an_index_without_reference_lists_is_made_again(tmp_path, texts):
+    with sqlite3.connect(tmp_path / "ft.db") as c:  # as older versions made it
+        c.execute(
+            "CREATE VIRTUAL TABLE content USING fts5(text, attachment_id UNINDEXED, paper_id UNINDEXED, "
+            'tokenize = "unicode61 remove_diacritics 2")'
+        )
+        c.execute(
+            "CREATE TABLE documents (attachment_id INTEGER PRIMARY KEY, paper_id TEXT, file TEXT, mtime REAL, "
+            "size INTEGER, pages INTEGER, chars INTEGER, indexed_at TEXT)"
+        )
+        c.execute("INSERT INTO content VALUES ('old text', 1, 'p1')")
+        c.execute("INSERT INTO documents VALUES (1, 'p1', 'a.pdf', 0, 0, 1, 8, 'then')")
+    index = FulltextIndex(tmp_path / "ft.db")
+    assert index.indexed_ids() == set() and index.pending_reindex()  # the app indexes again at its next start
+    assert FulltextIndex(tmp_path / "ft.db").pending_reindex()  # also when another process upgraded the index
+    repo = Repo(tmp_path)
+    repo.add(1, "a.pdf")
+    texts["a.pdf"] = "Lindblad master equation"
+    Indexer(repo, index).sync(background=False)
+    assert not index.pending_reindex() and index.match("lindblad").keys() == {"p1"}

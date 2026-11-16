@@ -435,7 +435,13 @@ def test_backup_settings_need_confirmation_from_another_device(mac, ipad, tmp_pa
     add_passkey(mac, auth)
     assert sign_in(ipad, auth).status_code == 201
     elsewhere = str(tmp_path / "elsewhere")
-    for change in ({"backup_dir": elsewhere}, {"backup_keep": 1}, {"backup_interval": "off"}):
+    # ... and "AI apps may change the library" would let every access token edit and trash items.
+    for change in (
+        {"backup_dir": elsewhere},
+        {"backup_keep": 1},
+        {"backup_interval": "off"},
+        {"ai_library_edits": True},
+    ):
         r = secure(ipad, "PUT", "/api/settings", remote=True, json=change)
         assert r.status_code == 403 and r.get_json().get("confirm") is True, change
     assert not (tmp_path / "elsewhere").exists()

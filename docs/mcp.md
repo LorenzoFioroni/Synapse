@@ -5,7 +5,9 @@ the library through the Model Context Protocol. Nothing in it is particular to o
 the protocol, and what an app changes is recorded with that app's name
 ([Which AI app](#which-ai-app)). The app starts the script itself and talks to it over stdin and stdout.
 It reads the same `data/` folder as the web app, which does not need to be running. It can read
-items, PDFs, notes and reference lists, and it can write notes under strict rules.
+items, PDFs, annotations, notes and reference lists, and it can write notes under strict rules. When the
+user allows it in Settings → AI Access, it can also change the library (see
+[Changing the library](#changing-the-library)).
 
 The same tools are also served by the web app at `/mcp`, over HTTP, for an AI app on another
 computer (see [Over HTTP](#over-http-mcp)). That needs the web app running and an access token.
@@ -27,6 +29,7 @@ and `backend/mcp/`.
 | `backend/mcp/prompts.py` | `PROMPTS`: the ready-made requests of the AI app's prompt picker. |
 | `backend/mcp/instructions.py` | `INSTRUCTIONS` (how to use the tools) and `WRITING_RULES` (the note syntax). |
 | `backend/mcp/tools/` | The tools themselves, one mixin per family, combined in `LibraryTools`. |
+| `backend/pdf/refsection.py` | `reference_spans()`: where a PDF's reference list starts and ends, so a hit inside it can be told from a hit in the paper (see [full-text search](fulltext-search.md#reference-lists)). |
 | `backend/mcp/notecheck.py` | `NoteChecker`: checks a note before it is saved. |
 
 The package sits in the `mcp` layer: it may use `library`, `notes`, `pdf` and `references`, and
@@ -94,24 +97,26 @@ example, returns a JSON summary followed by the note's Markdown.
 
 `build_server(services)` in `backend/mcp/server.py` creates one `LibraryTools` and registers its
 methods. Each `Tool` has a name, a title, a description (what the model reads to decide when to
-use it), an input schema and `read_only`. `read_only` sets the `readOnlyHint` and
-`idempotentHint` annotations; `destructiveHint` and `openWorldHint` are always false.
+use it), an input schema, `read_only` and `open_world`. `read_only` sets the `readOnlyHint` and
+`idempotentHint` annotations and `open_world` the `openWorldHint` (a tool that looks something up
+online); `destructiveHint` is always false.
 
 | Tool | Mixin | What it does | Writes |
 |---|---|---|---|
-| `search_library` | `library.py` | Searches items (metadata, PDF full text, what notes say) and notes, with the search box's filters. `offset` and `next_offset` page through results, `sort` orders by relevance, date added or year, `abstracts` adds the start of each abstract, `compact` gives one line per item (key, year, first author, title, and the date added when sorting by it) for listing a folder, `sort:added` written in the query is taken as the argument, and `warnings` names a filter that was searched as plain text (with the filter it probably meant: `venue:` → `journal:`), an `OR` that is not an operator, and a filter value that cannot match (a folder or tag that does not exist, with the close names; `type:foo`, `year:abc`). `has:note` and `is:review` (a guess) are filters too; `"quoted phrases"` stay together in notes and PDFs. Notes count as evidence about an item (and give its snippet) only with `scope` all, not with `scope="items"`; a title match ranks first, also across a hyphen ("time crystal" finds "Time-Crystalline"). An `author:` filter shows the matching author even when the long author list is cut. A query with several parts and no result gets a warning with the number of items each part matches alone, which names the part that rules everything out. | no |
+| `search_library` | `library.py` | Searches items (metadata, PDF full text, what notes say) and notes, with the search box's filters. `offset` and `next_offset` page through results, `sort` orders by relevance, date added or year, `abstracts` adds the start of each abstract, `compact` gives one line per item (key, year, first author, title, and the date added when sorting by it) for listing a folder, `sort:added` written in the query is taken as the argument, and `warnings` names a filter that was searched as plain text (with the filter it probably meant: `venue:` → `journal:`), an `OR` that is not an operator, and a filter value that cannot match (a folder or tag that does not exist, with the close names; `type:foo`, `year:abc`). `has:note` and `is:review` (a guess) are filters too; `"quoted phrases"` stay together in notes and PDFs. `a OR b` between two terms finds either: `search.alternatives()` gives one query per combination (at most 8; a filter applies to each) and the results are joined. An item that has the words only in the reference list of its PDF (it cites the subject) is marked `only_in_references` and comes after the others, with their number in `items_only_in_references`; then come title matches, then authors and abstract. A single word that finds more than a page of items and is an author of only some of them gets a warning naming `author:`. Notes written by an AI app come after the user's own and are marked `written_by_ai`. Notes count as evidence about an item (and give its snippet) only with `scope` all, not with `scope="items"`; a title match ranks first, also across a hyphen ("time crystal" finds "Time-Crystalline"). An `author:` filter shows the matching author even when the long author list is cut. A query with several parts and no result gets a warning with the number of items each part matches alone, which names the part that rules everything out. | no |
 | `list_collections` | `library.py` | Folders with counts, item types, tags, smart folders, notes folders and overall counts; `include_notes` returns instead the notes' inventory: every note with title, type, author, size in bytes and last update, and the notes folders. | no |
-| `get_note` | `notes.py` | A note's text and outline, the papers it cites (`lines` and `pages` where each is cited, not the surrounding text, which is in the returned text; each with title, year and PDF flag, the rest is in `get_paper`; `cited_papers` is empty rather than missing, and `cited_papers_scope` says whether it covers the whole note or only the part asked for), its links (one entry per target, with every line that links to it), backlinks and images (a gallery's caption on its first panel only), and the user's math macros. `section` returns only the text, citations, links and images under one heading, and `lines="120-300"` those of a range of lines (for a part that is not one section, or a section too big for one call). A note over 30,000 characters is not returned whole: the result is its outline with each section's size and lines (and `too_long`; its `cited_papers` and images cover the whole note) until `section`, `lines` or `full=true` is given. A title or file name that fits two notes is an error listing their paths, never a guess. | no |
+| `get_note` | `notes.py` | A note's text and outline, the papers it cites (`lines` and `pages` where each is cited, not the surrounding text, which is in the returned text; each with title, year and PDF flag, the rest is in `get_paper`; `cited_papers` is empty rather than missing, and `cited_papers_scope` says whether it covers the whole note or only the part asked for), its links (one entry per target, with every line that links to it), backlinks and images (a gallery's caption on its first panel only), and the user's math macros. `section` returns only the text, citations, links and images under one heading, and `lines="120-300"` those of a range of lines (for a part that is not one section, or a section too big for one call); such a read leaves the outline out. A note over 30,000 characters is not returned whole: the result is its outline with each section's size and lines, `too_long`, the keys it cites (keys only) and `images_total`, until `section`, `lines` or `full=true` is given. A title or file name that fits two notes is an error listing their paths, never a guess. | no |
 | `view_image` | `images.py` | Images stored with the notes: one by path, or all of a note's (at most 6 per call); an image in a gallery comes with its panel label and the gallery's caption (given once). `offset` (with `note`) continues after the first 6; the result says `next_offset`. | no |
-| `get_paper` | `papers.py` | Metadata, abstract (when none is stored, the one printed on the PDF's first page after an "Abstract" line, as `abstract_from_pdf`, marked approximate; else `no_abstract`), PDFs with page counts, the paper note, the notes citing it (one entry per note with its `lines`, the first 10, then `cited_in_notes_total`), a summary of its reference list. `papers=[…]` (up to 20) gives instead a short summary per item with the whole abstract, to compare several in one call. The paper is named by citation key, item id, DOI or arXiv id (every tool that takes a paper accepts all four); an unknown key gets "Did you mean …?". | no |
+| `get_paper` | `papers.py` | Metadata, abstract (when none is stored, the one printed on the PDF's first page after an "Abstract" line, as `abstract_from_pdf`, marked approximate; else `no_abstract`), PDFs with page counts, the paper note, the notes citing it (one entry per note with its `lines`, the user's own before an AI app's, which are marked `written_by_ai`; the first 10, then `cited_in_notes_total`), a summary of its reference list. The printed abstract is also found after the "(Received …)" or "(Dated: …)" line under the authors, where physics journals and arXiv put it. `papers=[…]` (up to 20) gives instead a short summary per item with the whole abstract, to compare several in one call. The paper is named by citation key, item id, DOI or arXiv id (every tool that takes a paper accepts all four); an unknown key gets "Did you mean …?". | no |
 | `get_paper_outline` | `papers.py` | A PDF's sections with the PDF page each starts on, and its figure and table captions with pages (`backend/pdf/outline.py`). The sections come from the PDF's bookmarks, else from its printed table of contents, whose printed page numbers are matched to PDF pages by locating the headings (a `warning` says when that fails and the printed numbers are given). A PDF with fewer than six entries (a letter, whose section headings are run into the paragraphs) is completed with headings recognised in the page text ("Introduction.—", "II. MODEL", "3 Results"), and `outline_from` says so. The page-text headings stop at a "References" line, and a reference's initial ("N. Gedik, …") is not a heading. A PDF with none gets a hint to use `search_in_paper`. A caption is a line that starts with "Figure N" / "Fig. N" / "Table N", also when the title touches the number ("Figure 14Luttinger"); "Fig.19(a)" at a line start is a reference. Its text is the first line and the lines that continue it, up to 220 characters. | no |
-| `search_in_paper` | `papers.py` | The pages of a PDF that contain some words, best first, with snippets and the section the page is in (from the bookmarks). Pages with every word, then pages with the words within 300 characters of each other (`together`), rank above pages that only have them far apart. | no |
-| `read_paper` | `papers.py` | The text of some PDF pages, marked by page (at most 10 pages or 80,000 characters); it says when the pages asked for run past the end. | no |
+| `search_in_paper` | `papers.py` | The pages of a PDF that contain some words, best first, with snippets and the section the page is in (from the same outline as `get_paper_outline`; "Abstract" and "References" bookmarks never name a page). Pages with every word, then pages with the words within 300 characters of each other (`together`), rank above pages that only have them far apart. Hits inside the reference list do not count; a page that has the words only there comes last, marked `in_reference_list`, and `pages_in_reference_list` says how many there are. | no |
+| `read_paper` | `papers.py` | The text of some PDF pages, marked by page (at most 10 pages or 50,000 characters, which is about what an AI app accepts from one tool call); it says which pages it read, which limit stopped it, and when the pages asked for run past the end. | no |
 | `view_page` | `papers.py` | An image of one page with a 0–1 grid, and proposed regions for figures, tables and equations; a caption whose drawing was not recognised (a vector figure) says so in `no_region`. A displayed equation's region stops before the sentence that follows it ("Here … is the"). | no |
-| `snapshot` | `papers.py` | Cuts a figure, table, equation or rectangle into a PNG in `notes/attachments/` and returns the Markdown for it. | yes |
-| `get_references` | `citations.py` | What a paper cites (library items marked) and/or the library items citing it. | no |
-| `get_citation_graph` | `citations.py` | The neighbourhood of some papers (1 or 2 steps), or a library-wide overview of the most cited works. `limit` caps the node list (nearest first) as well as the ranked lists; shared foundations are still counted over the whole neighbourhood. Who-cites-whom edges are listed only with `include_edges`; `edges_total` always gives their number. The library-wide overview groups one work listed under several ids, gives `cited_by_count` and at most 10 citing keys, drops entries without a usable title, merges a title with its subtitled form ("Exploring the Quantum" / "… Atoms, Cavities, and Photons"), and marks a work whose title a library item has too (`same_title_in_library`: another edition, or a reference list matched to the wrong work). A work with no DOI or arXiv id on any record, or with six or more records sharing its title, is a likely wrong match: it comes after the identified works with a `check` text, and `also_listed_as` shows two records and `also_listed_as_count` the rest. | no |
-| `write_note` | `notes.py` | Saves a new note under `notes/ai/`. Line numbers in its error messages count the text that was sent, not the saved note with its front matter. A `warnings` entry says when another note has the same title, as `get_note` and `edit_note` then refuse the title and ask for the path. | yes |
+| `snapshot` | `papers.py` | Cuts a figure, table, equation or rectangle into a PNG in `notes/attachments/` and returns the Markdown for it, with the caption printed in the PDF (`caption_in_pdf`). A rectangle given with `figure` or `equation` is named after it. An equation that is not found is an error listing the equation numbers that were recognised. | yes |
+| `get_references` | `citations.py` | What a paper cites (library items marked) and/or the library items citing it. `compact` gives one line per work. Entries with no author, year or identifier (footnotes, text the source took for a reference) are counted in `not_listed`, not listed. | no |
+| `get_citation_graph` | `citations.py` | The neighbourhood of some papers (1 or 2 steps), or a library-wide overview of the most cited works. `limit` caps the node list (nearest first) as well as the ranked lists; shared foundations are still counted over the whole neighbourhood. Who-cites-whom edges are listed only with `include_edges`; `edges_total` always gives their number. The library-wide overview groups one work listed under several ids, gives `cited_by_count` and at most 10 citing keys, drops entries without a usable title, merges a title with its subtitled form ("Exploring the Quantum" / "… Atoms, Cavities, and Photons"), and lists a work whose title a library item has too under `in_library_under_another_record` instead of as missing (another edition, or a reference list matched to the wrong work). `compact` gives one line per work in both modes; in a neighbourhood `cited_by_several` counts within the neighbourhood and marks `same_title_in_library`. A work with no DOI or arXiv id on any record, or with six or more records sharing its title, is a likely wrong match: it comes after the identified works with a `check` text, and `also_listed_as` shows two records and `also_listed_as_count` the rest. | no |
+| `get_annotations` | `editing.py` | What the user marked on a paper's PDF: highlights and underlines with their words, comments, text boxes and drawings, each with its page. | no |
+| `write_note` | `notes.py` | Saves a new note under `notes/ai/`, or in a notes folder the user already has when `folder` names one. Line numbers in its error messages count the text that was sent, not the saved note with its front matter. A `warnings` entry says when another note has the same title, as `get_note` and `edit_note` then refuse the title and ask for the path. | yes |
 | `edit_note` | `notes.py` | Changes an existing note: exact replacements, an append, or the whole text. | yes |
 | `undo_note_edit` | `notes.py` | Takes the last AI edit back out of a note, keeping the user's later edits (refused when they touch the same lines). | yes |
 | `list_tasks` | `tasks.py` | The user's tasks, open ones by default, filtered with the Tasks page's search syntax (`backend/tasks/query.py`); `count` includes sub-tasks (`sub_tasks_among_them`). | no |
@@ -154,6 +159,33 @@ Plugins' per-item fields reach the model too: `get_paper` lists their known valu
 Task changes made through the tools are recorded with `by: "ai"` and the app's name in
 `task_history` (see below), so the app shows whose they are and can undo them; `get_note` lists the tasks a note shows, and `NoteChecker` refuses a
 note that shows a task id that does not exist (see [tasks](tasks.md)).
+
+## Changing the library
+
+Seven more tools change the library. They are offered only while **Settings → AI Access → AI apps may
+change the library** is on (`ai_library_edits`, off by default): `build_server` puts them in
+`Server.extra`, which `tools/list` and `tools/call` ask every time, so the switch takes effect without
+restarting the server. While it is off they are not listed and calling one is the "unknown tool"
+error. The setting is one of `ADMIN_KEYS`: it is changed on the computer running Synapse, or from a
+device after a passkey confirmation, because it widens what every access token may do. The stdio
+server reads `settings.json` when it starts, so there the AI app is restarted after flipping it.
+
+| Tool | What it does | Network |
+|---|---|---|
+| `add_paper` | Adds an item by `identifier` (DOI, arXiv id or ISBN, looked up like Add by Identifier: `Services.add_by_identifier`) or by hand with `fields`; fields given with an identifier fill what the lookup left empty. The work the library already has is returned instead of added. `folder` must exist. | yes |
+| `update_paper` | Sets fields of an item (`FIELDS_FOR_AI`: every editable field but the citation key, whose change rewrites notes and stays with the user). Returns each changed field before and after. | no |
+| `organize_papers` | Adds and removes tags and folder memberships of up to 200 items. Folders are named by path (or by name when only one folder has it); an unknown one is an error with the close names unless `create_folders` is set. | no |
+| `trash_papers` | Moves items to the Trash, or back with `restore`. | no |
+| `fetch_references` | Fetches and stores an item's reference list (`Services.fetch_references_now`). | yes |
+| `find_pdf` | Looks for an open-access PDF of an item that has none and attaches it (`Services.find_pdf`). | yes |
+| `add_highlight` | Highlights a passage on a PDF page, with an optional comment. `pdf/regions.py:quote_rects` finds the words on the page (letters and digits only, so line breaks and hyphenation do not matter) and gives one rectangle per line. | no |
+
+What they cannot do: delete anything for good (items go to the Trash, which only the user empties),
+change a citation key, remove or change an annotation, or fetch a URL the model gives (lookups go to
+the metadata, reference and PDF sources the app already uses, by identifier). An item's fields have no
+history, so `update_paper` returns the values before the change: that is the way back. The three
+network tools have `openWorldHint: true`. Errors of a lookup reach the model as the lookup's own
+sentence; anything else only by its type, since its text can hold request URLs with API keys.
 
 ## Resources and prompts
 
@@ -208,14 +240,19 @@ client works too.
 
 ## The rules it enforces
 
-The library itself is read-only to the MCP server: no tool changes items, PDFs, annotations or
-reference lists, and none uses the network. `get_references` only reads `citations.db`; when a
-list was never fetched, it tells the model to fetch it in the app (see [references](references.md)).
+Unless the user turns on [Changing the library](#changing-the-library), the library itself is
+read-only to the MCP server: no tool changes items, PDFs, annotations or reference lists, and none
+uses the network. `get_references` only reads `citations.db`; when a list was never fetched, it
+tells the model to fetch it in the app (see [references](references.md)).
 
 What it can write, and how:
 
-- **New notes only under `notes/ai/`.** `write_note` builds the path from `AI_FOLDER` (`ai`), an
-  optional sub-folder (each part slugified, `.` and `..` dropped) and the slugified title. It never
+- **New notes under `notes/ai/`, or in a folder the user has.** `write_note` builds the path from
+  `AI_FOLDER` (`ai`), an optional sub-folder (each part slugified, `.` and `..` dropped) and the
+  slugified title. When `folder` is the path of an existing notes folder (`Vault.folders()`, compared
+  without case; never the images folder or a hidden one), the note is saved there instead, for a user
+  who asks for a note "in the project folder". A folder that does not exist is made inside `ai/`, so
+  an AI app never adds folders beside the user's own. It never
   overwrites: it picks a free name (`Title 2.md` …) and saves with no base hash, which fails if
   the file exists. The front matter gets an `id`, the title, `type: note`, `author: ai` and
   `created`.
@@ -246,7 +283,7 @@ What it can write, and how:
   warnings. For `edit_note`, only problems the change adds block it: the checker runs on the old
   and the new text, and errors already present are subtracted.
 
-The limits are constants in `common.py`: `MAX_PAGES_PER_READ` (10), `MAX_CHARS_PER_READ` (80,000),
+The limits are constants in `common.py`: `MAX_PAGES_PER_READ` (10), `MAX_CHARS_PER_READ` (50,000),
 `MAX_NOTE_CHARS` (100,000, and an edit may grow a note to four times that), `MAX_PAPER_NOTE_CHARS`
 (20,000) and `MAX_IMAGES_PER_VIEW` (6).
 
@@ -338,7 +375,7 @@ example Claude Code with `NODE_EXTRA_CA_CERTS`). See [sync and devices](sync-and
 ## Adding a tool
 
 1. **Write the method** on the mixin of its family in `backend/mcp/tools/` (`library.py`,
-   `notes.py`, `images.py`, `papers.py`, `citations.py`). A new family gets a new module with a
+   `notes.py`, `images.py`, `papers.py`, `citations.py`, `editing.py`). A new family gets a new module with a
    mixin class that subclasses `ToolsBase` (so the type checker knows its helpers), added to the
    bases of `LibraryTools` in `backend/mcp/tools/__init__.py`. Keep it
    a thin layer over the backend: use the components on `self.s` and the `ToolsBase` helpers
@@ -351,7 +388,9 @@ example Claude Code with `NODE_EXTRA_CA_CERTS`). See [sync and devices](sync-and
    description, schema, method)`. The schema is a flat object of `string`, `integer`, `boolean`,
    `array` or `object` properties, with `enum`, `minimum`, `maximum` and `required` where they
    apply; `check_args` enforces those. Reuse `paper_arg` and `att_arg`. Pass `read_only=False` if
-   the tool writes anything. The position in `build_server` is its position in `tools/list`.
+   the tool writes anything and `open_world=True` if it uses the network. The position in
+   `build_server` is its position in `tools/list`. A tool that changes items, attachments or
+   annotations goes in `_edit_tools()` instead, so that it follows the `ai_library_edits` setting.
 4. **Follow the writing rules** if it writes: new notes only under `AI_FOLDER`, existing notes
    only through `NotesService.edit` with the hash that was read, and every note through
    `NoteChecker`.
@@ -374,7 +413,11 @@ notes, a stored reference list, and a server from `build_server`. Most tests cal
 - `serve_stdio` with in-memory streams, checking that stray prints stay off stdout;
 - the whole script: `mcp_server.py --data …` run as a subprocess with an `initialize`,
   `tools/list` and `tools/call` exchange, plus `--config` and a missing library;
-- notes edited on disk being seen by the next tool call.
+- notes edited on disk being seen by the next tool call;
+- the tools that change the library: absent until the setting is on, then each one, with the lookups
+  replaced by fakes (no test uses the network).
+
+`tests/test_refsection.py` covers finding reference lists, on made-up text.
 
 `tests/test_mcp_http.py` covers `/mcp`: the tools from another computer with a token, 401 without
 one (also from this computer and with a device cookie), foreign origins and hosts, bad bodies and

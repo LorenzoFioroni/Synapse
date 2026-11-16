@@ -16,7 +16,7 @@ change feed), [frontend.md](frontend.md) and [testing.md](testing.md).
 |---|---|
 | `*.md`, `<folder>/*.md` | The notes. Folders are ordinary folders. |
 | `papers/<key>.md` | Paper notes: the default place for the note about one library item. |
-| `ai/` | Notes Claude created through the MCP server's `write_note` (`AI_FOLDER` in `backend/mcp/tools/common.py`). |
+| `ai/` | Notes an AI app created through the MCP server's `write_note` (`AI_FOLDER` in `backend/mcp/tools/common.py`), unless it was asked to save one in a folder the user already has. |
 | `attachments/` | Images shown by notes. Reserved: no notes or user folders go here. |
 | `.trash/<timestamp>/` | Deleted notes and folders, at their old relative path. |
 | `.trash-attachments/<timestamp>/` | Images no note uses any more. `.since` records when automatic emptying started. |

@@ -14,9 +14,9 @@ SEARCH_MODES = {
 }
 
 # Changed only on the computer running Synapse, or after a passkey confirmation (api.admin): with
-# them a stolen device cookie could send a full copy of the library to another folder, or prune the
-# backups down to one right before deleting things.
-ADMIN_KEYS = ("backup_dir", "backup_interval", "backup_keep", "backup_destination")
+# them a stolen device cookie could send a full copy of the library to another folder, prune the
+# backups down to one right before deleting things, or let every AI access token change the library.
+ADMIN_KEYS = ("backup_dir", "backup_interval", "backup_keep", "backup_destination", "ai_library_edits")
 
 DEFAULTS: dict = {
     # Citation keys
@@ -40,6 +40,9 @@ DEFAULTS: dict = {
     "import_tags": "ask",  # keywords in imported files become tags: never | always | ask
     # Folders
     "show_subfolder_items": True,  # a folder also lists the items of its subfolders
+    # AI access: AI apps (MCP) may also change the library (add, edit, tag, file and trash items, fetch
+    # reference lists and PDFs, highlight). Off: they read the library and write notes and tasks only.
+    "ai_library_edits": False,
     # Online lookups
     "contact_email": "",
     "references_auto": True,  # Retrieve Metadata on existing items also fetches their reference lists

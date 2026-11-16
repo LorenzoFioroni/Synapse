@@ -93,7 +93,7 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
     # Plugins that are on start now (none with --safe-mode); see backend/plugins/.
     services.plugins.start("app")
 
-    if start_indexer and services.settings.get("fulltext_auto_index"):
+    if start_indexer and (services.settings.get("fulltext_auto_index") or services.fulltext.pending_reindex()):
         services.indexer.sync()
     if start_indexer:
         services.attachments.start()

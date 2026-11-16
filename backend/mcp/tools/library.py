@@ -61,6 +61,7 @@ class LibraryToolsMixin(ToolsBase):
             warnings.append(f'sort:{query_sort} in the query was taken as the sort argument (sort="{query_sort}").')
         if warnings:
             out["warnings"] = warnings
+        alts = search_mod.alternatives(query)  # "a OR b": one search per alternative, the results joined
         if scope in ("all", "items"):
             items = self.s.papers.list()
             mode = "fulltext" if fulltext else "all"
@@ -68,15 +69,38 @@ class LibraryToolsMixin(ToolsBase):
             ctx["noted_ids"] = matcher.item_ids()  # for has:note
             if scope != "all":  # a note is evidence about an item only when notes are searched too
                 matcher = None
-            found, hits = search_mod.search(items, query, mode, self.s.fulltext, ctx, notes=matcher)
-            parsed = search_mod.parse_query(query, ctx["field_filters"])
+            found: list[dict] = []
+            hits: dict[str, dict] = {}
+            cited: dict[str, bool] = {}  # item -> every alternative found it only in a reference list
+            for q in alts:
+                some, their_hits = search_mod.search(items, q, mode, self.s.fulltext, ctx, notes=matcher)
+                for p in some:
+                    hit = their_hits.get(p["id"])
+                    only_cited = bool(hit and hit.get("references_only"))
+                    if p["id"] not in cited:
+                        found.append(p)
+                        cited[p["id"]] = only_cited
+                    elif cited[p["id"]] and not only_cited:
+                        cited[p["id"]] = False
+                        hits.pop(p["id"], None)
+                    if hit and p["id"] not in hits and only_cited == cited[p["id"]]:
+                        hits[p["id"]] = hit
+            parsed = [part for q in alts for part in search_mod.parse_query(q, ctx["field_filters"])]
             flat = lambda t: search_mod.normalize(t).replace("-", " ")  # "time-crystalline" has "time crystal"
-            terms = [flat(t) for t, neg, f in parsed if not f and not neg]
+            terms = list(dict.fromkeys(flat(t) for t, neg, f in parsed if not f and not neg))
             wanted_authors = [t for t, neg, f in parsed if f == "author" and not neg]
 
             def rank(p):
+                # A paper that only cites the subject comes last; then the title, then the other things the
+                # paper says about itself (authors, abstract), before words found deep in the PDF.
                 title = flat(p.get("title"))
-                return (-sum(t in title for t in terms), -(int(p.get("year") or 0)))
+                about = flat(f"{p.get('authors') or ''} {p.get('abstract') or ''}")
+                return (
+                    cited[p["id"]],
+                    -sum(t in title for t in terms),
+                    -sum(t in about for t in terms),
+                    -(int(p.get("year") or 0)),
+                )
 
             found.sort(key=rank)
             if sort == "year":
@@ -84,15 +108,25 @@ class LibraryToolsMixin(ToolsBase):
             elif sort == "added":
                 found.sort(key=lambda p: p.get("date_added") or "", reverse=True)
             out["items_total"] = len(found)
-            if not found:
+            if n_cited := sum(cited.values()):
+                out["items_only_in_references"] = (
+                    f"{n_cited} of them have the words only in their reference list (they cite the subject; "
+                    "marked only_in_references" + (", listed last)" if sort == "relevance" else ")")
+                )
+            if not found and len(alts) == 1:
                 if why := self._zero_breakdown(query, items, mode, ctx, matcher):
                     out.setdefault("warnings", []).append(why)
+            if hint := self._author_hint(parsed, found, limit):
+                out.setdefault("warnings", []).append(hint)
             if offset + limit < len(found):
                 out["next_offset"] = offset + limit
             page = found[offset : offset + limit]
             if compact:  # one short line per item: for listing a folder or a long result
                 show_added = sort == "added" or "added:" in query
-                out["items"] = [self._one_line(p, show_added) for p in page]
+                out["items"] = [
+                    self._one_line(p, show_added) + (" [only in its references]" if cited[p["id"]] else "")
+                    for p in page
+                ]
             else:
                 out["items"] = [
                     drop_empty(
@@ -101,16 +135,23 @@ class LibraryToolsMixin(ToolsBase):
                             "added": (p.get("date_added") or "")[:10] if sort == "added" or "added:" in query else None,
                             "abstract": self._abstract(p) if abstracts else None,
                             "match": snippet_text(hits[p["id"]]["fulltext"]) if p["id"] in hits else None,
+                            "only_in_references": True if cited[p["id"]] else None,
                         }
                     )
                     for p in page
                 ]
         if scope in ("all", "notes"):
-            words = " ".join(  # a phrase keeps its quotes: the notes' index matches it as a phrase
-                f'"{t}"' if " " in t else t for t, neg, f in search_mod.parse_query(query) if not f and not neg
-            )
-            rows = self.s.notes.search(words, limit=offset + limit)[offset:] if words else []
             info = {n["path"]: n for n in self.s.notes.list()}
+            rows: dict[str, dict] = {}
+            for q in alts:
+                words = " ".join(  # a phrase keeps its quotes: the notes' index matches it as a phrase
+                    f'"{t}"' if " " in t else t for t, neg, f in search_mod.parse_query(q) if not f and not neg
+                )
+                for r in self.s.notes.search(words, limit=offset + limit) if words else []:
+                    rows.setdefault(r["path"], r)
+            by_ai = lambda r: info.get(r["path"], {}).get("author") == "ai"
+            # The user's own notes first: what an AI app wrote earlier is not the user's word on the subject.
+            ordered = sorted(rows.values(), key=by_ai)[offset : offset + limit]
             out["notes"] = [
                 drop_empty(
                     {
@@ -118,13 +159,29 @@ class LibraryToolsMixin(ToolsBase):
                         "title": r["title"],
                         "link": self._note_link(r["path"], r["title"]),
                         "type": info.get(r["path"], {}).get("type"),
+                        "written_by_ai": True if by_ai(r) else None,
                         "paper": info.get(r["path"], {}).get("paper"),
                         "match": snippet_text(r["snippet"]),
                     }
                 )
-                for r in rows
+                for r in ordered
             ]
         return out
+
+    @staticmethod
+    def _author_hint(parsed: list[tuple], found: list[dict], limit: int) -> str | None:
+        """A single word that is also an author's name ("Zhang") and finds more than a page of items: say
+        how many are by that author, as most of the others only mention the name."""
+        plain = [t for t, neg, f in parsed if not f and not neg]
+        if len(parsed) != 1 or len(plain) != 1 or " " in plain[0] or len(found) <= limit:
+            return None
+        name = search_mod.normalize(plain[0])
+        by = sum(name in search_mod.normalize(p.get("authors")) for p in found)
+        if not by or by == len(found):
+            return None
+        return (
+            f"{by} of the {len(found)} items have '{plain[0]}' among their authors: author:{plain[0]} lists only those."
+        )
 
     @staticmethod
     def _sort_in_query(query: str) -> tuple[str, str | None]:
@@ -153,15 +210,6 @@ class LibraryToolsMixin(ToolsBase):
         )
 
     @staticmethod
-    def _one_line(p: dict, added: bool = False) -> str:
-        first = re.split(r";|\band\b", str(p.get("authors") or ""))[0].strip()
-        more = " et al." if re.search(r";|\band\b", str(p.get("authors") or "")) else ""
-        who = f"{first.split(',')[0] if ',' in first else first.split()[-1] if first else ''}{more}"
-        key = p.get("citation_key") or f"item:{p['id']}"
-        when = f" [added {(p.get('date_added') or '')[:10]}]" if added and p.get("date_added") else ""
-        return f"{key} ({p.get('year') or 'n.d.'}) {who}: {p.get('title') or ''}{when}".replace("  ", " ")
-
-    @staticmethod
     def _abstract(p: dict) -> str | None:
         text = " ".join(str(p.get("abstract") or "").split())
         return text if len(text) <= ABSTRACT_CHARS else text[:ABSTRACT_CHARS].rstrip() + "…"
@@ -178,8 +226,13 @@ class LibraryToolsMixin(ToolsBase):
                 + (f"Did you mean {', '.join(guess)}? " if guess else "")
                 + f"Filters: {FILTERS}{''.join(', ' + k for k in extra)}."
             )
-        if re.search(r"(?:^|\s)(?:OR|AND)(?:\s|$)", query):
-            out.append("OR and AND are not operators: every term must match. Run one search per alternative.")
+        if re.search(r"(?:^|\s)AND(?:\s|$)", query):
+            out.append("AND is not an operator (it was searched as a word): every term must match anyway.")
+        if re.search(r"(?:^|\s)OR(?:\s|$)", query) and len(search_mod.alternatives(query)) == 1:
+            out.append(
+                "This OR could not be used (it needs a term on each side, and at most "
+                f"{search_mod.MAX_ALTERNATIVES} combinations): it was searched as a word."
+            )
         return out + search_mod.filter_problems(query, ctx)
 
     def _note_row(self, n: dict) -> dict:
@@ -245,5 +298,5 @@ class LibraryToolsMixin(ToolsBase):
             "note_folders": [{"path": k, "notes": v} for k, v in sorted(note_folders.items())],
             "search_syntax": 'folder:"A/B" (whole names) tag:x year:2018-2022 (also 2020- or >2015) added:2026-10 (also '
             ">2026-10-15, 14d) author:name has:pdf has:note is:review (a guess) type:book; -term excludes; "
-            '"quoted phrase"; terms are ANDed (no OR)',
+            '"quoted phrase"; terms are ANDed; a OR b between two terms means either',
         }

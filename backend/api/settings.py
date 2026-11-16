@@ -10,7 +10,7 @@ from . import admin, body, failure, svc
 
 bp = Blueprint("settings", __name__, url_prefix="/api/settings")
 
-BACKUP_REFUSED = "Backup settings can only be changed on the computer running Synapse."
+ADMIN_REFUSED = "Backup and AI access settings can only be changed on the computer running Synapse."
 
 SAMPLE = {
     "authors": "Cui, Jian; Cirac, J. Ignacio; Bañuls, Mari Carmen",
@@ -32,7 +32,7 @@ def get_settings():
 def put_settings():
     changes, settings = body(), svc().settings
     if any(k in changes and changes[k] != settings.get(k) for k in ADMIN_KEYS):
-        if (refused := admin.refusal(BACKUP_REFUSED)) is not None:
+        if (refused := admin.refusal(ADMIN_REFUSED)) is not None:
             return refused
     try:
         return jsonify(settings=settings.update(changes))
@@ -43,7 +43,7 @@ def put_settings():
 @bp.post("/reset")
 def reset_settings():
     if any(svc().settings.get(k) != DEFAULTS[k] for k in ADMIN_KEYS):
-        if (refused := admin.refusal(BACKUP_REFUSED)) is not None:
+        if (refused := admin.refusal(ADMIN_REFUSED)) is not None:
             return refused
     return jsonify(settings=svc().settings.reset())
 

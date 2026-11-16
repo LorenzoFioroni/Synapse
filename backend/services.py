@@ -257,6 +257,52 @@ class Services:
         item = self.papers.create({**meta, "folder_id": folder_id, "tags": list(tags or [])})
         return item, False
 
+    def add_by_identifier(
+        self,
+        identifier: str,
+        *,
+        folder_id: int | None = None,
+        tags=(),
+        allow_duplicate: bool = False,
+        fetch_references=None,
+    ) -> dict:
+        """Add by Identifier: look a DOI, arXiv id or ISBN up online and add the item. Returns
+        ``{"status": "added", "item"}``, ``{"status": "duplicate", "item_id", "metadata"}`` (nothing
+        added) or ``{"status": "failed", "message"}`` (the lookup's own sentence)."""
+        from .online.http import LookupFailed
+        from .online.metadata import known_authors
+        from .online.metadata import lookup as lookup_meta
+
+        try:
+            meta = lookup_meta(
+                sources=self.plugins.lookup_metadata,
+                identifier=identifier,
+                known=known_authors(self.papers.list()),
+                email=self.settings.get("contact_email"),
+            )
+        except LookupFailed as e:
+            return {"status": "failed", "message": e.args[0] if e.args and isinstance(e.args[0], str) else ""}
+        dup = self.papers.find_duplicate(meta)
+        if dup and not allow_duplicate:
+            return {"status": "duplicate", "item_id": dup, "metadata": meta}
+        item = self.papers.create({**meta, "folder_id": folder_id, "tags": list(tags or [])})
+        self.citations.maybe_enqueue(item, fetch_references)
+        return {"status": "added", "item": item}
+
+    def fetch_references_now(self, item_id: str) -> dict:
+        """Fetch an item's reference list now. ``{"status": "ok", "view"}`` or ``{"status": "failed",
+        "message"}``: a lookup's own sentence, or only the kind of error (its text can hold request URLs
+        with API keys)."""
+        from .online.http import LookupFailed
+
+        try:
+            return {"status": "ok", "view": self.citations.fetch_now(item_id)}
+        except LookupFailed as e:
+            return {"status": "failed", "message": e.args[0] if e.args and isinstance(e.args[0], str) else ""}
+        except Exception as e:
+            logging.getLogger(__name__).exception("Fetching the references of %s failed", item_id)
+            return {"status": "failed", "message": f"Could not fetch references ({type(e).__name__})."}
+
     def attachments_changed(self) -> None:
         """Call after adding/removing files so the full-text index catches up."""
         if self.settings.get("fulltext_auto_index"):

@@ -153,6 +153,7 @@ export interface Settings {
   citekey_auto: boolean;
   default_search_mode: SearchMode;
   fulltext_auto_index: boolean;
+  ai_library_edits: boolean;
   theme: 'system' | 'light' | 'dark';
   density: 'comfortable' | 'compact';
   font_size: number;

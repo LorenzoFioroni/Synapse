@@ -364,11 +364,10 @@ def _column(prose: dict[int, list[tuple]], lefts: list[float], num: dict) -> tup
     return (spans[0][0] if spans else l), r
 
 
-def _frac(page, box) -> list[float]:
+def _frac(page, box, pad: float = 3) -> list[float]:
     W, H = page.get_size()
     cl, cb, _, _ = page.get_cropbox()
     l, b, r, t = box
-    pad = 3
     x0, x1 = max(0.0, (l - pad - cl) / W), min(1.0, (r + pad - cl) / W)
     y0, y1 = max(0.0, (cb + H - t - pad) / H), min(1.0, (cb + H - b + pad) / H)
     return [round(x0, 4), round(y0, 4), round(x1 - x0, 4), round(y1 - y0, 4)]
@@ -451,6 +450,47 @@ def equation_regions(path: Path | str, page_no: int) -> list[dict]:
     doc = open_pdf(path)
     try:
         return _page_equations(doc[page_no - 1])
+    finally:
+        doc.close()
+
+
+def _letters(ch: str) -> str:
+    """The letters and digits of a character, without case and accents ("ﬁ" → "fi", "é" → "e", "-" → "")."""
+    s = unicodedata.normalize("NFKD", ch)
+    return "".join(c for c in s if c.isalnum()).casefold()
+
+
+def quote_rects(path: Path | str, page_no: int, quote: str) -> list[list[float]] | None:
+    """Where some words are on a page: one ``[x, y, w, h]`` per line of text they cover (the shape of a
+    highlight), or None when the page does not have them. Only letters and digits are compared, so line
+    breaks, hyphenation, ligatures and spacing do not matter."""
+    want = "".join(_letters(ch) for ch in str(quote or ""))
+    if not want:
+        return None
+    doc = open_pdf(path)
+    try:
+        page = doc[page_no - 1]
+        if page.get_rotation() % 360:
+            return None
+        chars = _chars(page)
+        folded: list[str] = []
+        owner: list[int] = []  # the character each compared letter comes from
+        for i, c in enumerate(chars):
+            for letter in _letters(c[0]):
+                folded.append(letter)
+                owner.append(i)
+        at = "".join(folded).find(want)
+        if at < 0:
+            return None
+        lines: list[list[tuple]] = []
+        for c in chars[owner[at] : owner[at + len(want) - 1] + 1]:
+            if lines:
+                _, b, _, t = _box(lines[-1])
+                if b - 0.3 * (t - b) <= (c[2] + c[4]) / 2 <= t + 0.3 * (t - b) and c[1] >= lines[-1][-1][1] - 2:
+                    lines[-1].append(c)
+                    continue
+            lines.append([c])
+        return [_frac(page, _box(line), pad=1) for line in lines]
     finally:
         doc.close()
 

@@ -5,10 +5,24 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from .common import ToolsBase, drop_empty, short_authors
+from .common import ToolsBase, drop_empty, first_author, short_authors
 
 CITERS_LISTED = 10  # citing keys named per work; the count is always given
 MANY_RECORDS = 6  # records with one title: a work has a few ids (preprint, journal, book); dozens is a mismatch
+CITERS_COMPACT = 5
+
+
+def _outside_line(title, authors, year, doi, arxiv) -> str:
+    """A work that is not in the library on one line, with the id to look it up by."""
+    ident = f"doi:{doi}" if doi else f"arXiv:{arxiv}" if arxiv else "no DOI or arXiv id"
+    who = first_author(authors)
+    head = f"{who} ({year or 'n.d.'})" if who else f"({year})" if year else ""
+    return f"{head}{': ' if head else ''}{' '.join(str(title or '?').split())} [{ident}]"
+
+
+def _unread(r: dict) -> bool:
+    """A reference with no author, year or identifier: a footnote, or text the source took for a reference."""
+    return not (r.get("authors") or r.get("year") or r.get("doi") or r.get("arxiv_id"))
 
 
 def _title_key(title: str | None) -> str:
@@ -38,7 +52,14 @@ class CitationToolsMixin(ToolsBase):
             for other in [o for o in groups if o != k and o.startswith(k + " ")]:
                 groups[k] += groups.pop(other)
 
-    def get_references(self, paper: str, direction: str = "cites", in_library_only: bool = False, limit: int = 200):
+    def get_references(
+        self,
+        paper: str,
+        direction: str = "cites",
+        in_library_only: bool = False,
+        limit: int = 200,
+        compact: bool = False,
+    ):
         items = self._items()
         p = self._paper(paper, items)
         view = self.s.citations.item_view(p["id"])
@@ -54,12 +75,29 @@ class CitationToolsMixin(ToolsBase):
                 )
             elif f.get("error") and not view["references"]:
                 out["references_note"] = f"Fetching the reference list failed: {f['error']}"
-            refs = []
+            refs: list = []
+            unread = 0
             for r in view["references"]:
                 lib = items.get(r.get("library_id")) if r.get("library_id") else None
                 if lib:
-                    refs.append({"in_library": True, **self._brief(lib)})
-                elif not in_library_only:
+                    refs.append(
+                        f"in library: {self._one_line(lib)}" if compact else {"in_library": True, **self._brief(lib)}
+                    )
+                elif in_library_only:
+                    continue
+                elif _unread(r):
+                    unread += 1
+                elif compact:
+                    refs.append(
+                        _outside_line(
+                            r.get("title") or r.get("raw"),
+                            r.get("authors"),
+                            r.get("year"),
+                            r.get("doi"),
+                            r.get("arxiv_id"),
+                        )
+                    )
+                else:
                     refs.append(
                         drop_empty(
                             {
@@ -80,15 +118,31 @@ class CitationToolsMixin(ToolsBase):
             out["references"] = refs[:limit]
             if len(refs) > limit:
                 out["references_cut"] = f"showing {limit} of {len(refs)}"
+            if unread:
+                out["not_listed"] = (
+                    f"{unread} entries with no author, year, DOI or arXiv id (footnotes, or text the source "
+                    "took for a reference)"
+                )
+            if not compact and len(out["references"]) > 60:
+                out["hint"] = "compact=true gives one line per reference."
         if direction in ("cited_by", "both"):
-            out["cited_by_in_library"] = [self._brief(items[c["id"]]) for c in view["cited_by"] if c["id"] in items]
+            out["cited_by_in_library"] = [
+                self._one_line(items[c["id"]]) if compact else self._brief(items[c["id"]])
+                for c in view["cited_by"]
+                if c["id"] in items
+            ]
             out["cited_by_note"] = (
                 "Only items of the library are known to cite it (works outside the library are not tracked)."
             )
         return out
 
     def get_citation_graph(
-        self, papers: list | None = None, depth: int = 1, limit: int = 40, include_edges: bool = False
+        self,
+        papers: list | None = None,
+        depth: int = 1,
+        limit: int = 40,
+        include_edges: bool = False,
+        compact: bool = False,
     ):
         g = self.s.citations.graph()
         items = {p["id"]: p for p in self.s.papers.list()}
@@ -113,16 +167,23 @@ class CitationToolsMixin(ToolsBase):
                 }
             )
 
+        def line(nid: str) -> str:
+            n = nodes[nid]
+            if n["in_library"] and n["item_id"] in items:
+                return self._one_line(items[n["item_id"]])
+            return _outside_line(n.get("title"), n.get("authors"), n.get("year"), n.get("doi"), n.get("arxiv_id"))
+
+        in_lib = {
+            k: self._label(items[n["item_id"]])
+            for n in nodes.values()
+            if n["in_library"] and n["item_id"] in items and (k := _title_key(n.get("title")))
+        }
+
         citers: dict[str, list[str]] = {}
         for e in g["edges"]:
             citers.setdefault(e["target"], []).append(e["source"])
 
         if not papers:
-            in_lib = {
-                k: self._label(items[n["item_id"]])
-                for n in nodes.values()
-                if n["in_library"] and n["item_id"] in items and (k := _title_key(n.get("title")))
-            }
             # The same work often appears under several ids (editions, a book and its review): group them.
             groups: dict[str, list[dict]] = {}
             for n in nodes.values():
@@ -139,35 +200,57 @@ class CitationToolsMixin(ToolsBase):
             # looks like: they come after the works that are identified, and say so.
             weak = lambda ns: len(ns) >= MANY_RECORDS or not any(n.get("doi") or n.get("arxiv_id") for n in ns)
             rows.sort(key=lambda r: (weak(r[2]), -r[0]))
+            # A "missing" work whose title a library item has is that item under another record (an edition, or
+            # a reference the source matched to the wrong work): it is listed apart, not as missing.
+            missing = [r for r in rows if not r[4]]
+            mine = [r for r in rows if r[4]]
             cited_lib = sorted(
                 (n for n in nodes.values() if n["in_library"] and n["cited_by_library"]),
                 key=lambda n: -n["cited_by_library"],
             )
-            return {
-                "stats": g["stats"],
-                "most_cited_not_in_library": [
+            check = (
+                "matched from reference text only (no DOI or arXiv id, or very many records share this title): "
+                "may be a wrong match"
+            )
+            if compact:
+                not_in_library: list = [
+                    f"{count}x {line(best['id'])}{' (check: may be a wrong match)' if weak(ns) else ''} "
+                    f"— cited by {', '.join(cs[:CITERS_COMPACT])}{', …' if len(cs) > CITERS_COMPACT else ''}"
+                    for count, best, ns, cs, _ in missing[:limit]
+                ]
+                in_library: list = [f"{n['cited_by_library']}x {line(n['id'])}" for n in cited_lib[:limit]]
+            else:
+                not_in_library = [
                     drop_empty(
                         {
                             **describe(best["id"]),
                             "cited_by_count": count,
                             "cited_by": cs[:CITERS_LISTED],
-                            "same_title_in_library": mine,  # another edition, or the reference list matched the wrong work
-                            "check": "matched from reference text only (no DOI or arXiv id, or very many records "
-                            "share this title): may be a wrong match"
-                            if weak(ns)
-                            else None,
+                            "check": check if weak(ns) else None,
                             "also_listed_as": [describe(n["id"]) for n in ns if n is not best][:2] or None,
                             "also_listed_as_count": len(ns) - 1 if len(ns) > 3 else None,
                         }
                     )
-                    for count, best, ns, cs, mine in rows[:limit]
-                ],
-                "most_cited_in_library": [
+                    for count, best, ns, cs, _ in missing[:limit]
+                ]
+                in_library = [
                     {**describe(n["id"]), "cited_by_library": n["cited_by_library"]} for n in cited_lib[:limit]
-                ],
-                "note": "Only items whose reference lists were fetched contribute edges. Reference lists are "
-                "matched automatically: check a surprising entry (same_title_in_library) with get_references.",
-            }
+                ]
+            return drop_empty(
+                {
+                    "stats": g["stats"],
+                    "most_cited_not_in_library": not_in_library,
+                    "in_library_under_another_record": [
+                        f"{count}x {' '.join(str(best.get('title') or '').split())} = {key} (same title: another "
+                        "edition, or a reference matched to the wrong work)"
+                        for count, best, _, _, key in mine[:limit]
+                    ],
+                    "most_cited_in_library": in_library,
+                    "note": "Only items whose reference lists were fetched contribute edges. Reference lists are "
+                    "matched automatically: check a surprising entry with get_references."
+                    + ("" if compact else " compact=true gives one line per work."),
+                }
+            )
 
         all_items = self._items()
         seeds = []
@@ -212,20 +295,32 @@ class CitationToolsMixin(ToolsBase):
             {
                 "seeds": [label(s) for s in seeds],
                 "depth": depth,
-                "nodes": [{**describe(n), "node": label(n), "distance": dist[n]} for n in keep],
+                "nodes": [f"{dist[n]}: {line(n)}" for n in keep]
+                if compact
+                else [{**describe(n), "distance": dist[n]} for n in keep],
+                "nodes_meaning": "distance from the seeds: the work" if compact else None,
                 "edges": [f"{label(a)} -> {label(b)}" for a, b in shown][:1000] if include_edges else None,
                 "edges_meaning": "a -> b: a cites b" if include_edges else None,
                 "edges_total": len(edges),
                 "cited_by_several": [
-                    {
-                        "node": label(n),
-                        "title": nodes[n].get("title"),
-                        "in_library": nodes[n]["in_library"],
-                        "cited_by_count": len(cs),
-                        "cited_by": sorted(label(c) for c in cs)[:10],
-                    }
+                    f"{len(cs)}x {line(n)}" + ("" if nodes[n]["in_library"] else " (not in the library)")
+                    if compact
+                    else drop_empty(
+                        {
+                            "node": label(n),
+                            "title": nodes[n].get("title"),
+                            "in_library": nodes[n]["in_library"],
+                            "same_title_in_library": None
+                            if nodes[n]["in_library"]
+                            else in_lib.get(_title_key(nodes[n].get("title"))),
+                            "cited_by_count": len(cs),
+                            "cited_by": sorted(label(c) for c in cs)[:10],
+                        }
+                    )
                     for n, cs in shared[:limit]
                 ],
+                "cited_by_several_meaning": "works cited by two or more papers of this neighbourhood; the count "
+                "is within the neighbourhood, not the whole library",
                 "truncated": (
                     f"showing {len(keep)} of {len(dist)} nodes (nearest first; raise limit for more)"
                     if len(dist) > limit

@@ -44,14 +44,22 @@ structure), then read_paper those pages. Avoid reading whole papers page by page
 - Images in notes (![](attachments/…)) are files of the app's notes folder, not of your computer: \
 see them with view_image (one path, or every image of a note).
 - get_references / get_citation_graph follow the citation graph, also to works not in the library \
-(they come with DOI/arXiv ids you can look up elsewhere).
+(they come with DOI/arXiv ids you can look up elsewhere); compact=true keeps long lists short.
+- A search also finds papers that merely cite the subject: those are marked only_in_references (search_library) \
+or in_reference_list (search_in_paper) and listed last. Prefer the unmarked results.
+- get_annotations shows what the user highlighted or commented on a paper's PDF.
 - Cite sources in the user's syntax: [@key] or [@key, p. N] with N the PDF page number the tools report.
-- write_note saves a new note (only in the ai/ folder); use it when the user asks to save an answer.
+- write_note saves a new note (in the ai/ folder, or in a notes folder the user names); use it when the user \
+asks to save an answer.
 - edit_note changes an existing note (after get_note), when the user asks for it; the user can see and undo \
 every change in the app.
 - The user's tasks (to-dos) are records shown in notes as {{task:ID}} lines: list_tasks searches them, get_task \
 shows one with its details and sub-tasks, create_task / update_task / delete_task change them when the user asks \
 (the task tools are absent when the user turns the Tasks plugin off).
+- The library itself can be changed only if the user allowed it in the app (Settings → AI Access): then \
+add_paper, update_paper, organize_papers (tags and folders), trash_papers, fetch_references, find_pdf and \
+add_highlight are among the tools. Use them when the user asks for the change; without them, say that the \
+setting is off.
 
 """
     + WRITING_RULES

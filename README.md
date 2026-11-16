@@ -269,7 +269,10 @@ the relevant pages of their PDFs and their references. It reads the same `data/`
 (which does not need to be running); from another computer, see below. When you ask it to save an
 answer it adds a new note in `notes/ai/`; when you ask it to change a note, the edit is checked
 against the version on disk and recorded, so the app can show it and undo it. Figures it cuts out of
-a PDF go to `notes/attachments/`. It never changes the library's items.
+a PDF go to `notes/attachments/`. It does not change the library's items unless you turn on
+**Settings → AI Access → AI apps may change the library**: then it can also add papers (by DOI, arXiv
+id or ISBN), correct their details, tag and file them, move them to the Trash, fetch reference lists
+and open-access PDFs, and highlight passages. Nothing is deleted for good either way.
 
 Set it up once, from the repository root with the virtual environment active:
 
@@ -318,23 +321,35 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 
 | Tool | What it gives |
 | --- | --- |
-| `search_library` | items and notes matching a query (same syntax as the search box: `folder:`, `tag:`, `year:`, `added:`…), with snippets; pages with `offset`, `compact` lists many items in one line each |
+| `search_library` | items and notes matching a query (same syntax as the search box: `folder:`, `tag:`, `year:`, `added:`…), with snippets; pages with `offset`, `compact` lists many items in one line each; `a OR b` finds either; a paper that has the words only in its reference list is marked and listed last |
 | `list_collections` | folders, tags, smart folders and notes folders with counts |
 | `get_note` | a note's text, the papers it cites (with lines and pages), its links and backlinks, the images it shows; a long note is read by `section` or `lines` |
 | `view_image` | the images of a note (pasted pictures, snapshots — with the page and region they came from), or one by its path; large ones are scaled down when Pillow is installed |
 | `get_paper` | metadata, abstract, PDFs and page counts, your paper note, notes citing it, reference-list summary; `papers=[…]` compares several with whole abstracts |
 | `get_paper_outline` | a PDF's sections with their PDF pages (bookmarks or printed contents page) and its figure and table captions |
-| `search_in_paper` | the pages of a PDF containing some words (best when they are close together), with snippets and sections |
+| `search_in_paper` | the pages of a PDF containing some words (best when they are close together), with snippets and sections; pages that have them only in the reference list come last |
 | `read_paper` | the text of some PDF pages (up to 10 per call), marked by page |
 | `view_page` | an image of a page with a 0–1 grid; figures, tables and numbered equations with proposed regions |
 | `snapshot` | cuts a figure, table or equation — named by its number (`figure="Figure 2"`, `equation="3"`, page found by itself) or as a region — into `notes/attachments/` like the viewer's camera button, and returns the Markdown for it |
-| `get_references` | what a paper cites (library items marked, others with DOI/arXiv) and which library items cite it |
-| `get_citation_graph` | the neighbourhood of some papers, or a library-wide overview of the most cited works you do not have |
-| `write_note` | saves a new note in `notes/ai/` (`author: ai`), never overwriting anything — after checking it |
+| `get_references` | what a paper cites (library items marked, others with DOI/arXiv) and which library items cite it; `compact` for one line each |
+| `get_citation_graph` | the neighbourhood of some papers, or a library-wide overview of the most cited works you do not have; `compact` for one line each |
+| `get_annotations` | what you highlighted, underlined or commented on a paper's PDF, with pages |
+| `write_note` | saves a new note in `notes/ai/`, or in a notes folder you name (`author: ai`), never overwriting anything — after checking it |
 | `edit_note` | changes an existing note (replace passages, append, or new text) — checked the same way; a version of its own in the note's history |
 | `undo_note_edit` | takes the last AI edit back out of a note, keeping what you changed since (unless you changed the same lines) |
 | `list_tasks`, `get_task` | your tasks (open ones unless asked), filtered like the Tasks page; one task with its details, sub-tasks and the notes that show it |
 | `create_task`, `update_task`, `delete_task` | make, change (title, details, open/done, due date, parent) or delete tasks, and put a new task's line in a note — marked as the AI app's (with its name), undoable in the app |
+
+With **AI apps may change the library** turned on (Settings → AI Access; off by default):
+
+| Tool | What it does |
+| --- | --- |
+| `add_paper` | adds an item by DOI, arXiv id or ISBN (looked up online), or by hand; never a second copy of a work you have |
+| `update_paper` | corrects an item's fields (not its citation key), reporting each value before and after |
+| `organize_papers` | adds and removes tags and folders on one or many items |
+| `trash_papers` | moves items to the Trash, or restores them; only you empty the Trash |
+| `fetch_references`, `find_pdf` | fetch an item's reference list; look for an open-access PDF and attach it |
+| `add_highlight` | highlights a passage on a PDF page, with an optional comment |
 
 The server also offers your notes, papers and folder overview as MCP *resources* (`synapse://note/…`,
 `synapse://paper/<key>`, `synapse://collections`) that an AI app can attach by reference, and four

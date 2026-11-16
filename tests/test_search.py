@@ -24,8 +24,11 @@ PAPERS = [
 
 
 class FakeFT:
-    def match(self, term):
-        return {"2": f"…<mark>{term}</mark>…"} if term.lower() == "lindblad" else {}
+    """Item 2's PDF has "lindblad" in its own text, and "zhang" only in its reference list."""
+
+    def match_parts(self, term):
+        hit = {"2": f"…<mark>{term}</mark>…"}
+        return (hit if term.lower() == "lindblad" else {}), (hit if term.lower() == "zhang" else {})
 
 
 def ids(r):
@@ -268,3 +271,29 @@ def test_captions_start_at_the_number_even_when_the_title_touches_it():
         assert CAPTION.match(line).group(2) == label, line
     for line in ("Fig.19(a). These observations", "Fig. 27a). Therefore", "Fig.11(Koziol et al., 2021)"):
         assert not CAPTION.match(line), line  # a reference in running text, not a caption
+
+
+def test_a_word_only_in_the_reference_list_is_marked():
+    found, hits = search(PAPERS, "zhang", "fulltext", FakeFT())
+    assert [p["id"] for p in found] == ["2"] and hits["2"]["references_only"] is True
+    found, hits = search(PAPERS, "lindblad", "fulltext", FakeFT())
+    assert "references_only" not in hits["2"]  # in the paper's own text
+
+    class Notes:  # the user's notes say "zhang" about item 2: that is not a mere citation
+        def item_ids(self):
+            return {"2"}
+
+        def match(self, term):
+            return {"2": "…from a note…"} if term == "zhang" else {}
+
+    found, hits = search(PAPERS, "zhang", "fulltext", FakeFT(), notes=Notes())
+    assert "references_only" not in hits["2"] and hits["2"]["fulltext"] == "…from a note…"
+
+
+def test_or_gives_the_alternatives():
+    from backend.library.search import alternatives
+
+    assert alternatives("magic OR nonstabilizerness year:2024-") == ["magic year:2024-", "nonstabilizerness year:2024-"]
+    assert alternatives('a OR "b c" OR d') == ["a", '"b c"', "d"]
+    assert alternatives("a b") == ["a b"] and alternatives("OR a") == ["OR a"]
+    assert alternatives(" OR ".join("abcdefghij")) == [" OR ".join("abcdefghij")]  # too many: left alone

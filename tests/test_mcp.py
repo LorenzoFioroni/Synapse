@@ -211,6 +211,7 @@ def test_initialize_and_list(lib):
         "snapshot",
         "get_references",
         "get_citation_graph",
+        "get_annotations",
         "write_note",
         "edit_note",
         "undo_note_edit",
@@ -637,7 +638,7 @@ def test_get_citation_graph(lib):
     assert missing[0]["doi"] == "10.9999/ext" and sorted(missing[0]["cited_by"]) == ["doe2019", "smith2021"]
     assert r["most_cited_in_library"][0]["key"] == "doe2019"
     r = call_json(server, "get_citation_graph", papers=["smith2021"], include_edges=True)
-    nodes = {n["node"]: n for n in r["nodes"]}
+    nodes = {n.get("key") or n["id"]: n for n in r["nodes"]}
     assert nodes["smith2021"]["distance"] == 0 and nodes["doe2019"]["distance"] == 1
     assert "smith2021 -> doe2019" in r["edges"] and "doe2019 -> doi:10.9999/ext" in r["edges"]
     assert r["cited_by_several"][0]["node"] == "doi:10.9999/ext" and r["cited_by_several"][0]["cited_by_count"] == 2
@@ -649,7 +650,7 @@ def test_get_citation_graph_is_bounded(lib):
     r = call_json(lib["server"], "get_citation_graph", papers=["smith2021"])
     assert "edges" not in r and r["edges_total"] == 3  # the list is opt-in; the count is not
     r = call_json(lib["server"], "get_citation_graph", papers=["smith2021"], limit=2, include_edges=True)
-    assert [n["node"] for n in r["nodes"]] == ["smith2021", "doe2019"]  # nearest first, seeds always
+    assert [n["key"] for n in r["nodes"]] == ["smith2021", "doe2019"]  # nearest first, seeds always
     assert r["edges"] == ["smith2021 -> doe2019"] and "showing 2 of 3 nodes" in r["truncated"]
     # shared foundations come from the whole neighbourhood, not from the listed nodes
     assert r["cited_by_several"][0]["node"] == "doi:10.9999/ext"
@@ -665,7 +666,7 @@ def test_get_note_section(lib, svc):
     err, texts = call(server, "get_note", note="long", section="## Method")
     assert not err, texts
     summary = json.loads(texts[0])
-    assert summary["section"] == "## Method" and summary["outline"][1] == "## Method"
+    assert summary["section"] == "## Method" and "outline" not in summary  # the first read gave the outline
     assert [c["key"] for c in summary["cited_papers"]] == ["smith2021"]
     assert "Uses [@smith2021, p. 2]" in texts[1] and "### Detail" in texts[1]  # sub-sections belong to it
     assert "Intro" not in texts[1] and "Results" not in texts[1]
@@ -681,8 +682,10 @@ def test_get_note_section(lib, svc):
 
 def test_search_library_paging_and_dates(lib):
     server = lib["server"]
-    r = call_json(server, "search_library", query="has:abstract OR author:doe", scope="items")
-    assert "OR and AND are not operators" in r["warnings"][0]
+    r = call_json(server, "search_library", query="quantum AND noise", scope="items")
+    assert "AND is not an operator" in r["warnings"][0]
+    r = call_json(server, "search_library", query="OR quantum", scope="items")
+    assert "This OR could not be used" in r["warnings"][0]
     r = call_json(server, "search_library", query="sort:added", scope="items")
     assert r["items_total"] == 4 and "taken as the sort argument" in r["warnings"][0]  # sort is an argument
     r = call_json(server, "search_library", query="venue:nature", scope="items")
@@ -1279,7 +1282,7 @@ def test_stdio_server_end_to_end(lib, svc):
     assert p.returncode == 0, p.stderr
     replies = [json.loads(l) for l in p.stdout.splitlines()]
     assert [r["id"] for r in replies] == [1, 2, 3]
-    assert len(replies[1]["result"]["tools"]) == 20
+    assert len(replies[1]["result"]["tools"]) == 21
     assert "tensor networks" in replies[2]["result"]["content"][0]["text"]
 
 
@@ -1432,8 +1435,8 @@ def test_a_long_note_is_read_by_section(lib, svc):
     r = json.loads(texts[0])
     assert "too many to read at once" in r["too_long"]
     assert re.fullmatch(r"## Part A \(lines \d+-\d+, \d+ characters\)", r["outline"][1])
-    assert all("citations" not in k and k["lines"] for k in r["cited_papers"])  # where, not the text around it
-    assert "the whole note" in r["cited_papers_scope"] and "whole note" in r["too_long"]
+    assert sorted(r["cited_papers"]) == ["doe2019", "smith2021"]  # the outline names the keys only
+    assert "the whole note" in r["cited_papers_scope"] and "keys only" in r["cited_papers_scope"]
     err, texts = call(server, "get_note", note="big", section="Part A")
     assert not err and "Line 59" in texts[1] and "Part B" not in texts[1]
     assert json.loads(texts[0])["cited_papers"][0]["lines"]
@@ -1498,10 +1501,10 @@ def test_citation_overview_groups_one_work_and_flags_one_you_have(svc):
     svc.citations.store.save(b["id"], "openalex", [{**book, "doi": "10.2/y"}], doi="10.1/b")  # same book, another id
     svc.citations.store.save(c["id"], "openalex", [{"title": "I and J"}, {**book, "doi": "10.2/x"}], doi="10.1/c")
     r = call_json(build_server(svc), "get_citation_graph")
-    missing = r["most_cited_not_in_library"]
-    assert len(missing) == 1 and missing[0]["title"] == book["title"]  # the two ids are one entry; "I and J" is dropped
-    assert missing[0]["cited_by_count"] == 3 and missing[0]["same_title_in_library"] == "breuer2007theory"
-    assert missing[0]["also_listed_as"][0]["doi"] in ("10.2/x", "10.2/y")
+    # The two ids are one entry, "I and J" is dropped, and a work whose title a library item has is not "missing".
+    assert "most_cited_not_in_library" not in r
+    (mine,) = r["in_library_under_another_record"]
+    assert mine.startswith("3x Theory of open quantum systems = breuer2007theory")
 
 
 def test_citation_overview_merges_subtitles_and_puts_doubtful_matches_last(svc):
@@ -1739,3 +1742,331 @@ def test_view_page_says_why_a_caption_has_no_region(lib, svc):
     )
     info = json.loads(reply["result"]["content"][1]["text"])
     assert info["figures"][0]["label"] == "Figure 1" and "pass rect" in info["figures"][0]["no_region"]
+
+
+# ======================================================================== reference lists, OR, compact lists
+def _citing_paper(svc, key="cites2022", word="Lindblad dynamics revisited"):
+    """An item whose PDF mentions ``word`` only in its reference list."""
+    refs = "".join(_text(72, 700 - 14 * i, f"[{i}] B. Zhang, {word}, J. Phys. {i}, 1 (200{i}).") for i in range(1, 9))
+    body = _text(72, 720, "Transport in spin chains is found to be diffusive.")
+    make_stream_pdf(svc.config.pdf_dir / f"{key}.pdf", [body, _text(72, 720, "We conclude.") + refs])
+    item = _attach_pdf(svc, key, svc.config.pdf_dir / f"{key}.pdf")
+    svc.indexer.sync(background=False)
+    return item
+
+
+def test_search_marks_and_ranks_last_what_only_cites_the_subject(lib, svc):
+    server = lib["server"]
+    _citing_paper(svc)
+    r = call_json(server, "search_library", query="lindblad", scope="items")
+    assert [i["key"] for i in r["items"]] == ["smith2021", "cites2022"]  # the newer paper only cites it: last
+    assert r["items"][1]["only_in_references"] is True and "only_in_references" not in r["items"][0]
+    assert r["items_only_in_references"].startswith("1 of them")
+    r = call_json(server, "search_library", query="lindblad", scope="items", compact=True)
+    assert r["items"][1].endswith("[only in its references]") and "references" not in r["items"][0]
+    r = call_json(server, "search_library", query="transport", scope="items")
+    assert "items_only_in_references" not in r
+    r = call_json(server, "search_in_paper", paper="cites2022", query="lindblad")
+    assert r["results"][0]["in_reference_list"] is True and r["pages_in_reference_list"].startswith("1 of them")
+    r = call_json(server, "search_in_paper", paper="cites2022", query="conclude")
+    assert "in_reference_list" not in r["results"][0] and "pages_in_reference_list" not in r
+
+
+def test_search_in_paper_puts_reference_list_pages_last(svc):
+    refs = "".join(
+        _text(72, 700 - 14 * i, f"[{i}] B. Zhang, Magic of magic, J. Phys. {i}, 1 (200{i}).") for i in range(1, 9)
+    )
+    make_stream_pdf(
+        svc.config.pdf_dir / "both.pdf",
+        [_text(72, 720, "Title"), _text(72, 720, "Magic is a resource.") + refs, _text(72, 720, "We quantify magic.")],
+    )
+    _attach_pdf(svc, "both2023", svc.config.pdf_dir / "both.pdf")
+    r = call_json(build_server(svc), "search_in_paper", paper="both2023", query="magic")
+    # Page 2 has the word in its own text and, more often, in the list: only its own count; no page is list-only.
+    assert sorted(x["page"] for x in r["results"]) == [2, 3] and "pages_in_reference_list" not in r
+    assert all("in_reference_list" not in x and x["occurrences"] == 1 for x in r["results"])
+
+
+def test_search_or_finds_either(lib, svc):
+    server = lib["server"]
+    r = call_json(server, "search_library", query="lindblad OR unrelated", scope="items")
+    assert {i["key"] for i in r["items"]} == {"smith2021", "lee2020"} and "warnings" not in r
+    r = call_json(server, "search_library", query="lindblad OR unrelated type:book", scope="items")
+    assert [i["key"] for i in r["items"]] == ["lee2020"]  # a filter applies to every alternative
+    r = call_json(server, "search_library", query="type:review", scope="items")
+    assert "is:review" in r["warnings"][0]
+
+
+def test_search_says_when_a_word_is_mostly_not_the_author(lib, svc):
+    svc.papers.create({"title": "On the theorem of Doe", "authors": "Roe, Al", "year": 2001, "citation_key": "roe2001"})
+    r = call_json(lib["server"], "search_library", query="doe", scope="items", limit=2)
+    assert any("author:doe lists only those" in w and "2 of the 3" in w for w in r["warnings"])
+
+
+def test_search_lists_the_users_notes_before_an_ai_apps(lib):
+    server = lib["server"]
+    saved = call_json(server, "write_note", title="Aardvark", text="The dynamics again, by an AI app.")["saved"]
+    r = call_json(server, "search_library", query="dynamics", scope="notes")
+    paths = [n["path"] for n in r["notes"]]
+    assert paths[-1] == saved and r["notes"][-1]["written_by_ai"] is True and "projects/crispr.md" in paths[:-1]
+    assert all("written_by_ai" not in n for n in r["notes"][:-1])
+
+
+def test_compact_references_and_graph(lib, svc):
+    server = lib["server"]
+    svc.citations.store.save(
+        lib["smith"]["id"],
+        "openalex",
+        [
+            {"doi": "10.1000/doe", "title": "Earlier results", "year": 2019},
+            {"doi": "10.9999/ext", "title": "External foundation", "authors": "Old, Al; New, Bo", "year": 2010},
+            {"title": "( ii ) In the second region the field is large"},  # text the source took for a reference
+        ],
+        doi="10.1000/smith",
+    )
+    r = call_json(server, "get_references", paper="smith2021", compact=True)
+    assert r["references"] == [
+        "in library: doe2019 (2019) Doe: Earlier results",
+        "Old et al. (2010): External foundation [doi:10.9999/ext]",
+    ]
+    assert r["references_total"] == 3 and r["not_listed"].startswith("1 entries")
+    assert len(call_json(server, "get_references", paper="smith2021")["references"]) == 2
+    r = call_json(server, "get_citation_graph", papers=["smith2021"], compact=True)
+    assert r["nodes"][0] == "0: smith2021 (2021) Smith et al.: Open quantum dynamics"
+    (shared,) = r["cited_by_several"]  # either reference list may give the work's details
+    assert shared.startswith("2x ") and shared.endswith("External foundation [doi:10.9999/ext] (not in the library)")
+    r = call_json(server, "get_citation_graph", compact=True)
+    missing = r["most_cited_not_in_library"][0]
+    assert (
+        missing.startswith("2x ") and "External foundation [doi:10.9999/ext] — cited by doe2019, smith2021" in missing
+    )
+    assert r["most_cited_in_library"][0].startswith("1x doe2019 (2019) Doe: Earlier results")
+
+
+def test_read_paper_says_which_limit_stopped_it(lib, monkeypatch):
+    from backend.mcp.tools import papers as paper_tools
+
+    err, texts = call(lib["server"], "read_paper", paper="smith2021", pages="1-12")
+    assert "Read pages 1-10. Not included (at most 10 pages per call): pages 11-12" in texts[0]
+    monkeypatch.setattr(paper_tools, "MAX_CHARS_PER_READ", 80)
+    err, texts = call(lib["server"], "read_paper", paper="smith2021", pages="1-12")
+    assert "Read pages 1." in texts[0] and "these pages are long" in texts[0] and "pages 2-12" in texts[0]
+
+
+@pytest.mark.skipif(not pdfrender.available(), reason="pypdfium2 not installed")
+def test_snapshot_names_a_region_given_by_hand_and_returns_the_caption(lib):
+    server = lib["server"]
+
+    def snap(**args):
+        reply = server.handle(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "snapshot", "arguments": args}}
+        )
+        assert not reply["result"]["isError"], reply
+        return json.loads(reply["result"]["content"][1]["text"])
+
+    info = snap(paper="fig2024", figure="Figure 2")
+    assert info["caption_in_pdf"].startswith("Figure 2: Phase diagram")
+    info = snap(paper="fig2024", page=2, rect=[0.2, 0.2, 0.5, 0.3], figure="Fig. 2")
+    assert info["label"] == "Figure 2" and "*Figure 2: [@fig2024, p. 2]*" in info["markdown"]
+    info = snap(paper="fig2024", page=2, rect=[0.2, 0.2, 0.5, 0.3])
+    assert "label" not in info and "*Figure: [@fig2024, p. 2]*" in info["markdown"]
+    err, texts = call(server, "snapshot", paper="fig2024", figure="Figure 2", equation="3")
+    assert err and "Give either" in texts[0]
+
+
+def test_write_note_into_a_folder_the_user_has(lib, svc):
+    server = lib["server"]
+    r = call_json(server, "write_note", title="In the project", text="Kept with the project.", folder="Projects")
+    assert r["saved"] == "projects/In the project.md" and svc.notes.note(r["saved"])["author"] == "ai"
+    r = call_json(server, "write_note", title="New place", text="A folder nobody has.", folder="Plans/2027")
+    assert r["saved"].startswith("ai/Plans/2027/")  # never a new folder beside the user's own
+    r = call_json(server, "write_note", title="Sub", text="Inside ai.", folder="ai/drafts")
+    assert r["saved"] == "ai/drafts/Sub.md"
+    r = call_json(server, "write_note", title="Pictures", text="Not among the images.", folder="attachments")
+    assert r["saved"].startswith("ai/")
+
+
+# ======================================================================== changing the library
+EDIT_TOOLS = [
+    "add_paper",
+    "update_paper",
+    "organize_papers",
+    "trash_papers",
+    "fetch_references",
+    "find_pdf",
+    "add_highlight",
+]
+
+
+def _tools(server):
+    return {t["name"]: t for t in server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})["result"]["tools"]}
+
+
+@pytest.fixture
+def editing(lib, svc):
+    svc.settings.update({"ai_library_edits": True})
+    return lib["server"]
+
+
+def test_the_library_is_changed_only_when_the_setting_allows_it(lib, svc):
+    server = lib["server"]
+    assert not set(EDIT_TOOLS) & set(_tools(server)) and "get_annotations" in _tools(server)
+    reply = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "trash_papers", "arguments": {"papers": ["doe2019"]}},
+        }
+    )
+    assert reply["error"]["code"] == -32602 and svc.papers.get(lib["doe"]["id"])["deleted_at"] is None
+    svc.settings.update({"ai_library_edits": True})  # no restart: asked at every list and call
+    tools = _tools(server)
+    assert set(EDIT_TOOLS) <= set(tools)
+    for name in EDIT_TOOLS:
+        notes = tools[name]["annotations"]
+        assert notes["readOnlyHint"] is False and notes["destructiveHint"] is False
+        assert notes["openWorldHint"] is (name in ("add_paper", "fetch_references", "find_pdf")), name
+    svc.settings.update({"ai_library_edits": False})
+    assert not set(EDIT_TOOLS) & set(_tools(server))
+
+
+def test_add_paper(editing, svc, monkeypatch):
+    from backend.online import metadata
+    from backend.online.http import LookupFailed
+
+    r = call_json(
+        editing,
+        "add_paper",
+        fields={"title": "A new result", "authors": "Roe, Al", "year": "2025"},
+        folder="physics/transport",
+        tags=["to read"],
+    )
+    assert r["added"]["title"] == "A new result" and r["tags"] == ["to read"]
+    item = next(p for p in svc.papers.list() if p["title"] == "A new result")
+    assert item["folder_ids"] and item["citation_key"] == r["added"]["key"]
+    again = call_json(editing, "add_paper", fields={"title": "A new result", "authors": "Roe, Al", "year": "2025"})
+    assert again["already_in_library"]["key"] == r["added"]["key"]
+    err, texts = call(editing, "add_paper", fields={"title": "x", "colour": "red"})
+    assert err and "Unknown fields: colour" in texts[0]
+    err, texts = call(editing, "add_paper", fields={"title": "x"}, folder="Nowhere")
+    assert err and "No folder 'Nowhere'" in texts[0]
+
+    def lookup(**kwargs):
+        if kwargs["identifier"] != "10.1234/found":
+            raise LookupFailed("No record was found for this DOI.")
+        return {"title": "Looked up", "authors": "Poe, Ed", "year": "2024", "doi": "10.1234/found"}
+
+    monkeypatch.setattr(metadata, "lookup", lookup)
+    r = call_json(editing, "add_paper", identifier="10.1234/found", fields={"abstract": "Given by hand."})
+    assert r["added"]["doi"] == "10.1234/found"
+    assert next(p for p in svc.papers.list() if p["title"] == "Looked up")["abstract"] == "Given by hand."
+    assert "already_in_library" in call_json(editing, "add_paper", identifier="10.1234/found")
+    err, texts = call(editing, "add_paper", identifier="10.1234/missing")
+    assert err and "No record was found for this DOI." in texts[0] and "Nothing was added" in texts[0]
+
+
+def test_update_paper(editing, svc, lib):
+    r = call_json(editing, "update_paper", paper="doe2019", fields={"year": "2018", "abstract": "Now it has one."})
+    assert (
+        r["changed"]["Year"] == {"before": 2019, "after": 2018}
+        and r["changed"]["Abstract"]["after"] == "Now it has one."
+    )
+    assert svc.papers.get(lib["doe"]["id"])["citation_key"] == "doe2019"  # an existing key never changes on its own
+    assert "Nothing changed" in call_json(editing, "update_paper", paper="doe2019", fields={"year": "2018"})["note"]
+    err, texts = call(editing, "update_paper", paper="doe2019", fields={"citation_key": "doe2018"})
+    assert err and "changed in the app" in texts[0]
+    err, texts = call(editing, "update_paper", paper="doe2019", fields={"titel": "x"})
+    assert err and "did you mean title?" in texts[0]
+
+
+def test_organize_papers(editing, svc, lib):
+    r = call_json(
+        editing, "organize_papers", papers=["doe2019", "lee2020"], add_tags=["review later"], add_folders=["Physics"]
+    )
+    assert r["papers"] == ["doe2019", "lee2020"] and "folders_created" not in r
+    lee = svc.papers.get(lib["lee"]["id"])
+    assert lee["tags"] == ["review later"] and len(lee["folder_ids"]) == 1
+    err, texts = call(editing, "organize_papers", papers=["lee2020"], add_folders=["Physics/Transprt"])
+    assert err and "Did you mean Physics/Transport" in texts[0]
+    r = call_json(
+        editing,
+        "organize_papers",
+        papers=["lee2020"],
+        add_folders=["Physics/Books/Old"],
+        remove_folders=["physics"],
+        remove_tags=["review later"],
+        create_folders=True,
+    )
+    assert r["folders_created"] == ["Physics/Books/Old"]
+    lee = svc.papers.get(lib["lee"]["id"])
+    paths = svc.folders.paths()
+    assert [paths[f] for f in lee["folder_ids"]] == [["Physics", "Books", "Old"]] and lee["tags"] == []
+    err, texts = call(editing, "organize_papers", papers=["nobody1999"], add_tags=["x"])
+    assert err and "No item" in texts[0]
+
+
+def test_trash_papers(editing, svc, lib):
+    r = call_json(editing, "trash_papers", papers=["lee2020"])
+    assert r["moved_to_trash"] == ["lee2020"] and svc.papers.get(lib["lee"]["id"])["deleted_at"]
+    err, texts = call(editing, "trash_papers", papers=["lee2020"])
+    assert err and "in the Trash" in texts[0]
+    err, texts = call(editing, "update_paper", paper="lee2020", fields={"year": "1999"})
+    assert err and "restore first" in texts[0]
+    assert call_json(editing, "trash_papers", papers=["lee2020"], restore=True) == {"restored": ["lee2020"]}
+    assert svc.papers.get(lib["lee"]["id"])["deleted_at"] is None
+    err, texts = call(editing, "trash_papers", papers=["lee2020"], restore=True)
+    assert err and "not in the Trash" in texts[0]
+
+
+def test_fetch_references_and_find_pdf(editing, svc, lib, monkeypatch):
+    svc.citations.reference_sources = lambda query: (
+        "testsource",
+        [{"doi": "10.1000/smith", "title": "Open quantum dynamics"}],
+    )
+    r = call_json(editing, "fetch_references", paper="doe2019")
+    assert r == {"paper": "doe2019", "references": 1, "in_library": 1, "source": "testsource", "next": r["next"]}
+    err, texts = call(editing, "fetch_references", paper="lee2020")
+    assert err and "no DOI or arXiv ID" in texts[0]
+
+    def broken(query):
+        raise OSError("https://api.example.org/?key=SECRET")
+
+    svc.citations.reference_sources = broken
+    err, texts = call(editing, "fetch_references", paper="doe2019")
+    assert err and "OSError" in texts[0] and "SECRET" not in texts[0]
+    assert "already has a PDF" in call_json(editing, "find_pdf", paper="smith2021")["note"]
+    monkeypatch.setattr(svc, "find_pdf", lambda item_id: {"status": "not_found", "message": "No open copy."})
+    assert call_json(editing, "find_pdf", paper="doe2019") == {
+        "paper": "doe2019",
+        "found": False,
+        "why": "No open copy.",
+    }
+
+
+@pytest.mark.skipif(not pdfrender.available(), reason="pypdfium2 not installed")
+def test_highlights(editing, svc, lib):
+    assert "No highlights" in call_json(editing, "get_annotations", paper="smith2021")["note"]
+    r = call_json(
+        editing, "add_highlight", paper="smith2021", page=2, quote="the Lindblad  master equation", comment="Key step"
+    )
+    assert r["highlighted"]["page"] == 2 and r["highlighted"]["lines"] == 1
+    att = svc.papers.get(lib["smith"]["id"])["attachments"][0]["id"]
+    (ann,) = svc.annotations.for_attachment(att)
+    x, y, w, h = ann["rects"][0]
+    assert ann["type"] == "highlight" and ann["comment"] == "Key step" and 0.1 < x < 0.5 and w > 0.2 and h < 0.05
+    r = call_json(editing, "get_annotations", paper="smith2021")
+    assert r["annotations"] == [
+        {
+            "id": ann["id"],
+            "page": 2,
+            "type": "highlight",
+            "text": "the Lindblad master equation",
+            "comment": "Key step",
+            "color": "#ffff00",
+        }
+    ]
+    err, texts = call(editing, "add_highlight", paper="smith2021", page=3, quote="the Lindblad master equation")
+    assert err and "not on page 3" in texts[0]
+    err, texts = call(editing, "add_highlight", paper="smith2021", page=2, quote="Lindblad master", color="yellow")
+    assert err and "#ffcc00" in texts[0]
