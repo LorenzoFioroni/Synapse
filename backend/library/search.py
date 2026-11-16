@@ -91,6 +91,33 @@ def parse_query(q: str, extra_keys=()) -> list[tuple]:
     return out
 
 
+MAX_ALTERNATIVES = 8
+
+
+def alternatives(q: str) -> list[str]:
+    """``a OR b`` between two terms means either: the queries to run, one per combination
+    ("magic OR nonstabilizerness year:2024-" → "magic year:2024-", "nonstabilizerness year:2024-").
+    A query without OR is returned alone; so is one with more than ``MAX_ALTERNATIVES`` combinations."""
+    groups: list[list[str]] = []
+    join = False
+    for m in _TOKEN.finditer(q or ""):
+        raw = m.group(0)
+        if raw == "OR":
+            join = bool(groups)
+            continue
+        if join:
+            groups[-1].append(raw)
+        else:
+            groups.append([raw])
+        join = False
+    out = [""]
+    for g in groups:
+        out = [f"{head} {raw}".strip() for head in out for raw in g]
+        if len(out) > MAX_ALTERNATIVES:
+            return [q]
+    return out if len(out) > 1 else [q]
+
+
 def unknown_filters(q: str, extra_keys=()) -> list[str]:
     """Prefixes of ``q`` that look like filters but are searched as plain text (``sort:added``)."""
     known = FILTER_KEYS | {k.lower() for k in extra_keys}
@@ -114,7 +141,7 @@ _REVIEW_TITLE = re.compile(
     r"\b(review|tutorial|lecture notes|introduction to|primer|overview|colloquium|a guide to|survey)\b", re.I
 )
 _REVIEW_ABSTRACT = re.compile(
-    r"\b(?:we|this|present|the following) (?:\w+ ){0,2}(?:review|tutorial|overview|lecture notes|survey)\b|"
+    r"\b(?:we|this|present|the following) (?:\w+ ){0,2}(?:reviews?|tutorial|overview|lecture notes|surveys?)\b|"
     r"\bpedagogical\b",
     re.I,
 )
@@ -165,7 +192,9 @@ def filter_problems(q: str, ctx: dict) -> list[str]:
             and v not in _type_names(tuple(types.items()))
             and not any(normalize(n).startswith(v) or v in normalize(n) for n in types.values())
         ):
-            bad = "types: " + ", ".join(sorted(types.values()))
+            bad = ("for review articles use is:review; " if v in ("review", "reviews", "tutorial") else "") + (
+                "types: " + ", ".join(sorted(types.values()))
+            )
         elif f == "folder" and v not in ("none", "unfiled") and folders:
             if not any(normalize(n) == v or normalize(n).startswith(v + "/") for n in folders):
                 hint = _closest(value, folders)
@@ -309,6 +338,8 @@ def search(
     papers: list[dict], query: str, mode: str = "basic", fulltext=None, ctx: dict | None = None, notes=None
 ) -> tuple[list[dict], dict]:
     """Filter ``papers``. Returns (matches, hits) where hits[paper_id] = {"fulltext": snippet}.
+    A hit also has ``"references_only": True`` when one of the terms is found only in the reference
+    list of the item's PDFs: the item cites the subject rather than being about it.
 
     ``ctx`` gives filters what they need: ``folder_paths`` {folder_id: [names]},
     ``type_labels`` {item_type: label}, and ``field_filters`` {name: fn(item, spec) -> bool}.
@@ -330,13 +361,21 @@ def search(
         return papers, {}
 
     ft_matches: dict[str, dict[str, str]] = {}
+    cited_only: dict[str, set[str]] = {}  # term -> items with it in a reference list and nowhere else
     if mode == "fulltext" and fulltext is not None:
         for term, _neg in terms:
-            ft_matches[term] = fulltext.match(term)
+            body, refs = fulltext.match_parts(term)
+            ft_matches[term] = {**refs, **body}
+            cited_only[term] = set(refs) - set(body)
     if mode in ("all", "fulltext") and notes is not None:
         for term, _neg in terms:
             # PDF text first; a note match only adds items (and a snippet) the PDFs did not give
-            ft_matches[term] = {**notes.match(term), **ft_matches.get(term, {})}
+            noted = notes.match(term)
+            ft_matches[term] = {**noted, **ft_matches.get(term, {})}
+            # ... but a note about the item outweighs a reference list for where the snippet comes from
+            for pid in cited_only.get(term, set()) & set(noted):
+                ft_matches[term][pid] = noted[pid]
+            cited_only[term] = cited_only.get(term, set()) - set(noted)
 
     hay = {p["id"]: _haystack(p, mode) for p in papers}
     results, hits = [], {}
@@ -344,6 +383,7 @@ def search(
         h = hay[p["id"]]
         ok = True
         snippet = None
+        cited = False
         for term, neg in terms:
             in_meta = normalize(term) in h
             in_text = p["id"] in ft_matches.get(term, {})
@@ -358,6 +398,8 @@ def search(
                 break
             if in_text and not in_meta and snippet is None:
                 snippet = ft_matches[term][p["id"]]
+            if not in_meta and p["id"] in cited_only.get(term, ()):
+                cited = True
         if ok:
             results.append(p)
             if snippet is None and mode in ("all", "fulltext"):
@@ -367,5 +409,8 @@ def search(
                         snippet = ft_matches[term][p["id"]]
                         break
             if snippet:
-                hits[p["id"]] = {"fulltext": snippet}
+                hit: dict = {"fulltext": snippet}
+                if cited:
+                    hit["references_only"] = True
+                hits[p["id"]] = hit
     return results, hits

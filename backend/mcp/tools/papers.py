@@ -9,6 +9,7 @@ from ...library.fields import FIELDS, ITEM_TYPE_LABELS
 from ...library.identifiers import identifiers
 from ...library.repository import NotFound
 from ...pdf import outline as pdfoutline
+from ...pdf import refsection
 from ...pdf import regions as pdfregions
 from ...pdf import render as pdfrender
 from ...pdf.text import abstract_from_text, clean_text, extract_text
@@ -26,6 +27,7 @@ from .common import (
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f]")  # pdfium marks a line-end hyphen with U+0002
 NEAR_CHARS = 300  # the words of a search "together": all of them within this many characters
+_NOT_A_SECTION = re.compile(r"\W*(?:abstract|references|bibliography|acknowledge?ments?|contents)\b", re.I)
 
 
 def _together(hits: dict[str, list[int]], matched: list[str]) -> list[int]:
@@ -134,6 +136,7 @@ class PaperToolsMixin(ToolsBase):
                             "path": c["path"],
                             "title": c.get("source_title"),
                             "link": self._note_link(c["path"], c.get("source_title")),
+                            "written_by_ai": True if c.get("author") == "ai" else None,
                             "locator": c.get("locator"),
                             "context": c.get("context"),
                         }
@@ -142,7 +145,8 @@ class PaperToolsMixin(ToolsBase):
                 lines = entry.setdefault("lines", [])
                 if c["line"] not in lines:  # a line citing it twice shows once
                     lines.append(c["line"])
-            cited_in = list(per_note.values())
+            # The user's own notes first: an AI app's earlier notes are not what the user thinks of the paper.
+            cited_in = sorted(per_note.values(), key=lambda e: bool(e.get("written_by_ai")))
             out["cited_in_notes"] = cited_in[: self.MAX_CITING_NOTES]
             if len(cited_in) > self.MAX_CITING_NOTES:
                 out["cited_in_notes_total"] = len(cited_in)
@@ -172,19 +176,27 @@ class PaperToolsMixin(ToolsBase):
             note_text = note_text[:MAX_PAPER_NOTE_CHARS] + "\n\n[… cut; read the rest with get_note]"
         return Parts([drop_empty(out), f"The user's paper note ({out['paper_note']}):\n\n{note_text}"])
 
-    def get_paper_outline(self, paper: str, attachment: int | None = None, captions: bool = True):
-        p = self._paper(paper)
-        att = self._pdf_for(p, attachment)
-        path = self.s.papers.attachment_path(att)
-        pages = self._pages(att)
-        entries, source, matched = pdfoutline.bookmarks(path), "the PDF's bookmarks", True
+    def _outline_entries(self, att: dict, pages: list[str]) -> tuple[list[dict], str, bool, bool]:
+        """(entries, where they come from, page numbers matched to PDF pages, completed from the page text)."""
+        entries, source, matched = (
+            pdfoutline.bookmarks(self.s.papers.attachment_path(att)),
+            "the PDF's bookmarks",
+            True,
+        )
         if not entries:
             entries, matched = pdfoutline.contents_page_outline(pages)
             source = "the printed table of contents"
-        out: dict = {"paper": self._label(p), "title": p.get("title"), "pages_total": len(pages)}
         completed = False
         if len(entries) < pdfoutline.SPARSE:  # a letter: its bookmarks miss the run-in section headings
             entries, completed = pdfoutline.with_text_headings(entries, pages)
+        return entries, source, matched, completed
+
+    def get_paper_outline(self, paper: str, attachment: int | None = None, captions: bool = True):
+        p = self._paper(paper)
+        att = self._pdf_for(p, attachment)
+        pages = self._pages(att)
+        entries, source, matched, completed = self._outline_entries(att, pages)
+        out: dict = {"paper": self._label(p), "title": p.get("title"), "pages_total": len(pages)}
         if entries:
             out["outline_from"] = source + (
                 " plus headings recognised in the page text (approximate)" if completed else ""
@@ -217,21 +229,40 @@ class PaperToolsMixin(ToolsBase):
         if not terms:
             raise ToolError("Give some words to search for.")
         phrase = search_mod.normalize(query.replace('"', "")) if len(terms) > 1 else None
+        ref_spans = refsection.page_spans(pages)
         scored = []
         for n, text in enumerate(pages, 1):
             folded, idx = fold_text(text)
-            hits = {t: [m.start() for m in re.finditer(re.escape(t), folded)] for t in terms}
-            matched = [t for t in terms if hits[t]]
-            if not matched:
+            spans = ref_spans[n - 1]
+            # A hit inside the reference list says the paper cites the words, not that this page is about them.
+            cited = lambda pos: any(a <= idx[min(pos, len(idx) - 1)] < b for a, b in spans)
+            own = lambda found: [pos for pos in found if not cited(pos)] if spans else found
+            everywhere = {t: [m.start() for m in re.finditer(re.escape(t), folded)] for t in terms}
+            if not any(everywhere.values()):
                 continue
+            in_refs = not any(own(v) for v in everywhere.values())
+            hits = everywhere if in_refs else {t: own(v) for t, v in everywhere.items()}
+            matched = [t for t in terms if hits[t]]
             phrase_hits = [m.start() for m in re.finditer(re.escape(phrase), folded)] if phrase else []
+            phrase_hits = phrase_hits if in_refs else own(phrase_hits)
             total = sum(len(v) for v in hits.values())
             near = _together(hits, matched) if len(matched) > 1 else []
             scored.append(
-                ((len(matched), len(phrase_hits), len(near), total), n, matched, phrase_hits, near, hits, text, idx)
+                (
+                    (not in_refs, len(matched), len(phrase_hits), len(near), total),
+                    n,
+                    matched,
+                    phrase_hits,
+                    near,
+                    hits,
+                    text,
+                    idx,
+                )
             )
         scored.sort(key=lambda s: (s[0], -s[1]), reverse=True)
-        sections = pdfoutline.bookmarks(self.s.papers.attachment_path(att)) if scored else []
+        sections, _, located, _ = self._outline_entries(att, pages) if scored else ([], "", False, False)
+        # A PDF whose only bookmarks are "Abstract" and "References" would have every page named after one of them.
+        sections = [e for e in sections if not _NOT_A_SECTION.match(e["title"])] if located else []
         results = []
         for score, n, matched, phrase_hits, near, hits, text, idx in scored[:max_results]:
             starts = phrase_hits[:1] + near[:1] + [hits[t][0] for t in matched]
@@ -248,27 +279,36 @@ class PaperToolsMixin(ToolsBase):
                 )
                 if len(snippets) == 3:
                     break
-            where = next((e["title"] for e in reversed(sections) if e["page"] <= n), None)
+            in_refs = not score[0]
+            where = None if in_refs else next((e["title"] for e in reversed(sections) if e["page"] <= n), None)
             results.append(
                 drop_empty(
                     {
                         "page": n,
                         "section": where,
+                        "in_reference_list": True if in_refs else None,
                         "matched": matched,
                         "together": "all the words within a few lines of each other" if near else None,
-                        "occurrences": score[3],
+                        "occurrences": score[4],
                         "snippets": snippets,
                     }
                 )
             )
-        out = {
-            "paper": self._label(p),
-            "title": p.get("title"),
-            "attachment": att["id"],
-            "pages_total": len(pages),
-            "pages_matching": len(scored),
-            "results": results,
-        }
+        cited_pages = sum(not s[0][0] for s in scored)
+        out = drop_empty(
+            {
+                "paper": self._label(p),
+                "title": p.get("title"),
+                "attachment": att["id"],
+                "pages_total": len(pages),
+                "pages_matching": len(scored),
+                "pages_in_reference_list": f"{cited_pages} of them have the words only in the reference list "
+                "(works the paper cites): they come last, marked in_reference_list"
+                if cited_pages
+                else None,
+            }
+        )
+        out["results"] = results
         if not results:
             out["hint"] = "No page contains these words. Try other words or synonyms."
         return out
@@ -283,13 +323,21 @@ class PaperToolsMixin(ToolsBase):
         beyond = [int(x) for x in re.findall(r"\d+", pages) if int(x) > len(texts)]
         given: list[int] = []
         chars = 0
+        why = ""
         parts = [
             f"{self._label(p)} — {p.get('title') or ''} (PDF, {len(texts)} pages). "
             f"Cite as [@{p.get('citation_key') or '?'}, p. N] with N the page number below."
         ]
         for n in want:
             t = texts[n - 1].strip()
-            if len(given) >= MAX_PAGES_PER_READ or (given and chars + len(t) > MAX_CHARS_PER_READ):
+            if len(given) >= MAX_PAGES_PER_READ:
+                why = f"at most {MAX_PAGES_PER_READ} pages per call"
+                break
+            if given and chars + len(t) > MAX_CHARS_PER_READ:
+                why = (
+                    f"these pages are long: {chars} characters so far, and page {n} would pass the "
+                    f"{MAX_CHARS_PER_READ} a call returns"
+                )
                 break
             parts.append(f"=== Page {n} ===\n{t or '[no text on this page]'}")
             given.append(n)
@@ -299,8 +347,8 @@ class PaperToolsMixin(ToolsBase):
         rest = [n for n in want if n not in given]
         if rest:
             parts.append(
-                f"[Not included (at most {MAX_PAGES_PER_READ} pages / {MAX_CHARS_PER_READ} characters "
-                f"per call): pages {page_ranges(rest)}. Ask for them in another call if needed.]"
+                f"[Read pages {page_ranges(given)}. Not included ({why}): pages {page_ranges(rest)}. "
+                "Ask for them in another call if needed.]"
             )
         return "\n\n".join(parts)
 
@@ -390,15 +438,24 @@ class PaperToolsMixin(ToolsBase):
         except Exception:
             texts = []
         likely = [i for i, t in enumerate(texts, 1) if mention.search(t)]
+        numbers: list[str] = []  # the equations that were recognised, to name in the error
         for pg in likely + [i for i in range(1, min(n, 300) + 1) if i not in likely]:
-            hit = find(pg)
+            if kind == "equation":
+                regions = pdfregions.equation_regions(path, pg)
+                numbers += [f"({r['number']}) p. {pg}" for r in regions]
+                hit = next((r for r in regions if fold(r["number"]) == want), None)
+            else:
+                hit = find(pg)
             if hit:
                 return pg, hit
-        found = [] if kind == "equation" else [f"{c['label']} (p. {c['page']})" for c in pdfoutline.captions(texts)]
+        found = (
+            numbers if kind == "equation" else [f"{c['label']} (p. {c['page']})" for c in pdfoutline.captions(texts)]
+        )
+        what = "equations recognised" if kind == "equation" else "captions found"
         raise ToolError(
             f"{name} was not found in the PDF. Equations are found by a number in parentheses at "
             f"the end of their line; figures and tables by their caption"
-            + (f" (captions found: {', '.join(found[:20])}{'…' if len(found) > 20 else ''})" if found else "")
+            + (f" ({what}: {', '.join(found[:30])}{'…' if len(found) > 30 else ''})" if found else "")
             + ". Use view_page on the page and pass rect=[x, y, w, h]."
         )
 
@@ -413,10 +470,10 @@ class PaperToolsMixin(ToolsBase):
     ):
         if not pdfrender.available():
             raise ToolError(pdfrender.MISSING)
-        if sum(x is not None for x in (figure, equation, rect)) != 1:
+        if (figure is not None and equation is not None) or (figure, equation, rect) == (None, None, None):
             raise ToolError(
                 'Give either figure (e.g. "Figure 2", "Table 1"), equation (e.g. "3" for (3)) '
-                "or page and rect=[x, y, w, h]."
+                "or page and rect=[x, y, w, h] (with rect, figure or equation only names the cut)."
             )
         p = self._paper(paper)
         key = p.get("citation_key")
@@ -424,26 +481,33 @@ class PaperToolsMixin(ToolsBase):
             raise ToolError(f"'{self._label(p)}' has no citation key, so a snapshot could not be cited.")
         att = self._pdf_for(p, attachment)
         path = self.s.papers.attachment_path(att)
-        label = None
+        label = caption_text = None
+        parsed = None
+        if equation is not None:
+            parsed = pdfregions.parse_label(
+                equation if re.match(r"\s*(eq|\()", str(equation), re.I) else f"({str(equation).strip()})"
+            )
+        elif figure is not None:
+            parsed = pdfregions.parse_label(figure)
+        if (figure is not None or equation is not None) and not parsed:
+            raise ToolError(
+                f"Could not read '{equation if equation is not None else figure}': write e.g. "
+                f'figure="Figure 2", figure="Table 1" or equation="3".'
+            )
+        if rect is not None and parsed:  # the caller's own region of a named figure, table or equation
+            kind, number = parsed
+            label = (
+                f"Equation ({number})" if kind == "equation" else f"{'Table' if kind == 'table' else 'Figure'} {number}"
+            )
         if rect is None:
-            if equation is not None:
-                parsed = pdfregions.parse_label(
-                    equation if re.match(r"\s*(eq|\()", str(equation), re.I) else f"({str(equation).strip()})"
-                )
-            else:
-                parsed = pdfregions.parse_label(figure or "")
-            if not parsed:
-                raise ToolError(
-                    f"Could not read '{equation if equation is not None else figure}': write e.g. "
-                    f'figure="Figure 2", figure="Table 1" or equation="3".'
-                )
+            assert parsed is not None
             page, hit = self._find_region(att, path, parsed[0], parsed[1], page)
             if not hit.get("rect"):
                 raise ToolError(
                     f"{hit['label']} was found on page {page} but not its region. "
                     f"Use view_page and pass rect=[x, y, w, h]."
                 )
-            rect, label = hit["rect"], hit["label"]
+            rect, label, caption_text = hit["rect"], hit["label"], hit.get("caption")
         else:
             if page is None:
                 raise ToolError("rect needs the page it is on.")
@@ -469,6 +533,7 @@ class PaperToolsMixin(ToolsBase):
                     {
                         "saved": saved["path"],
                         "label": label,
+                        "caption_in_pdf": caption_text,
                         "size": f"{pw}x{ph}",
                         "region": {"page": page, "rect": [round(v, 4) for v in (x, y, w, h)]},
                         "markdown": markdown,

@@ -14,11 +14,14 @@ from __future__ import annotations
 
 from .citations import CitationToolsMixin
 from .common import ToolsBase
+from .editing import EditToolsMixin
 from .images import ImageToolsMixin
 from .library import LibraryToolsMixin
 from .notes import NoteToolsMixin
 from .papers import PaperToolsMixin
 
 
-class LibraryTools(LibraryToolsMixin, NoteToolsMixin, ImageToolsMixin, PaperToolsMixin, CitationToolsMixin, ToolsBase):
+class LibraryTools(
+    LibraryToolsMixin, NoteToolsMixin, ImageToolsMixin, PaperToolsMixin, CitationToolsMixin, EditToolsMixin, ToolsBase
+):
     """All the tools, as methods; ``build_server`` exposes them over MCP."""

@@ -261,7 +261,7 @@ in `update()` (for example `backup_dir` must be an absolute folder that can be w
 the `annotation_color_…` and `annotation_fill_…` keys must be colours like `#ffcc00`, stored in
 lower case).
 
-The backup settings (`ADMIN_KEYS`: `backup_dir`, `backup_interval`, `backup_keep`, `backup_destination`) can be changed
+The backup settings and `ai_library_edits`, which lets AI apps change the library (`ADMIN_KEYS`: `backup_dir`, `backup_interval`, `backup_keep`, `backup_destination`, `ai_library_edits`) can be changed
 only on the computer running Synapse, or from another device after a passkey confirmation
 (`api/settings.py`, see [Remote access](remote-access.md)); sending them unchanged needs none.
 Resetting preferences needs the same confirmation when it would change these values.
@@ -482,7 +482,8 @@ restore accepts optional `source: "remote"`. `/remote` reads/saves the masked co
 
 For the derived files: bump `SCHEMA_VERSION` in `backend/notes/index.py` when the notes index
 changes. `fulltext.db` has no version, so a change to its layout needs one added (or the index
-cleared) so old files are rebuilt. For `settings.json`, add the key to `DEFAULTS` (and `CHOICES`
+cleared) so old files are rebuilt: `FulltextIndex._add_refs_column` is the example, which drops an
+index without the `refs` column and marks it to be filled again at the next start. For `settings.json`, add the key to `DEFAULTS` (and `CHOICES`
 if it has fixed values), and put renames in `_migrate()`.
 
 ### Concurrent plugin storage

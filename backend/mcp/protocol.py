@@ -49,6 +49,7 @@ class Tool:
     input_schema: dict
     fn: Callable[..., Any]
     read_only: bool = True
+    open_world: bool = False  # it reaches services outside the library (a lookup online)
 
     def describe(self) -> dict:
         return {
@@ -61,7 +62,7 @@ class Tool:
                 "readOnlyHint": self.read_only,
                 "destructiveHint": False,
                 "idempotentHint": self.read_only,
-                "openWorldHint": False,
+                "openWorldHint": self.open_world,
             },
         }
 

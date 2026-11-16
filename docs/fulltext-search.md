@@ -38,9 +38,9 @@ and rebuilt from the PDFs.
 | Table | Holds |
 |---|---|
 | `documents` | One row per indexed attachment: `attachment_id` (primary key), `paper_id`, `file`, `mtime`, `size`, `pages`, `chars`, `indexed_at`. |
-| `content` | An FTS5 table with `text`, and `attachment_id` and `paper_id` as unindexed columns. Tokenizer `unicode61 remove_diacritics 2`, so matching ignores case and accents. |
-| `content_plain` | The fallback when SQLite has no FTS5: `attachment_id`, `paper_id`, `text`. |
-| `meta` | `content`: which of the two tables the `documents` rows belong to. |
+| `content` | An FTS5 table with `text` (the paper's own text) and `refs` (its reference lists), and `attachment_id` and `paper_id` as unindexed columns. Tokenizer `unicode61 remove_diacritics 2`, so matching ignores case and accents. |
+| `content_plain` | The fallback when SQLite has no FTS5: `attachment_id`, `paper_id`, `text`, `refs`. |
+| `meta` | `content`: which of the two tables the `documents` rows belong to. `reindex`: set while the index is empty after an upgrade of its layout. |
 
 `_init` tries to create `content`. If SQLite raises because FTS5 is missing, it logs a warning,
 sets `fts = False` and uses `content_plain` instead. `_table` names whichever is in use, so the
@@ -52,6 +52,40 @@ This is decided at every start, so it can change (another Python or SQLite build
 differ it empties `documents` and both text tables, so the next indexer run indexes every PDF
 again instead of counting them as indexed while the table in use has none of their text. An
 index from before `meta` existed is checked by looking for `documents` rows with no text row.
+
+An index made before `refs` existed is dropped and made again by `_add_refs_column` (an FTS5 table
+cannot gain a column, and the index is derived). That sets `meta.reindex`, and `create_app` then
+indexes at the next start even when `fulltext_auto_index` is off, since the index would otherwise
+stay empty; `Indexer._run` clears the mark. The MCP server never indexes, so when it is the first
+to open an old index, full-text search finds nothing until the app has started once.
+
+### Reference lists
+
+A PDF's text includes its bibliography, so a search for "time crystal" or for a common surname finds
+every paper that *cites* such a work. `backend/pdf/refsection.py` finds the reference list(s) of a
+text, start and end, and `index_file` stores them in `refs`, apart from the rest. Text after a list
+(appendices, supplementary material, acknowledgments) stays in `text`; a supplement's own list is a
+second span. `reference_spans(text)` uses two signs:
+
+- a run of entries at line starts, most of which hold a year: numbered ones counting up from 1
+  (`[1]`, `1.`, or a bare `1` for a superscript; `[ 1 ]` as some PDFs space it; starting at 2 or 3
+  when the first entries were lost), or lines that begin with an author ("Smith, J. A., 1972, …");
+- a "References" / "Bibliography" heading past the first third of the text, followed by years, for the
+  other lists that are not numbered.
+
+A list ends at the heading of an appendix, a supplement or the end matter (`_AFTER`), at a figure or
+table caption, or, for the last entry, at the first line that closes a sentence (capped at one and a
+half times the longest entry before it). The thresholds are constants at the top of the module.
+When in doubt text counts as the paper's own: a missed list leaves the search as it was, while body
+text taken for a list would hide real hits. On a few hundred physics PDFs it found a
+list in about 97 % of them, the rest being scans, book chapters and papers with footnote references.
+
+`FulltextIndex.match_parts(term)` returns the documents with the term in their own text and those
+with it in a reference list; `match()` is the two joined (the paper's own text gives the snippet).
+`search()` adds `"references_only": True` to the hit of an item when one of the terms is found only
+in a reference list: not in its metadata, its own text, or the user's notes about it. The item list
+of the app does not use the mark yet; the MCP tools list such items last (see [MCP](mcp.md)).
+`page_spans(pages)` gives the same ranges page by page, for `search_in_paper`.
 
 ### Writing
 
@@ -92,13 +126,13 @@ What starts a run:
 
 | When | Where | Needs `fulltext_auto_index` |
 |---|---|---|
-| The web app starts | `create_app` | yes |
+| The web app starts | `create_app` | yes (not after an upgrade emptied the index: `pending_reindex`) |
 | A file is attached (upload, dropped PDF, browser extension, PDF found online) | `Services.attachments_changed` | yes |
 | A backup is restored | `Backups._after_restore` | yes |
 | `POST /api/fulltext/sync` (also sent when Settings → "Index PDFs automatically" is turned on) | `backend/api/items.py` | no |
 | `POST /api/fulltext/rebuild` (Settings → Rebuild Index) | `backend/api/items.py` | no |
 
-The MCP server never starts the indexer. It reads `fulltext.db` for search and for page counts.
+The MCP server does not keep the index up to date (its `find_pdf` tool, when allowed, indexes the file it attached, like any other attachment). It reads `fulltext.db` for search and for page counts.
 
 ## The library search
 
@@ -123,7 +157,9 @@ field is searchable without touching the search code.
 
 ### Query syntax
 
-`parse_query()` splits the query into terms. Every term must match (AND).
+`parse_query()` splits the query into terms. Every term must match (AND). The search box has no OR;
+for the MCP tool `search_library`, `alternatives()` turns `a OR b` between two terms into one query
+per combination (at most `MAX_ALTERNATIVES`), whose results the tool joins.
 
 | Syntax | Meaning |
 |---|---|
@@ -245,7 +281,8 @@ with the notes matcher too (`notes_matcher` in `backend/api/items.py`, shared wi
 | How terms combine, or which snippet is shown | `search()` in `backend/library/search.py` |
 | The modes or their labels | `MODES` in `backend/library/search.py` and `SEARCH_MODES` in `backend/settings.py` |
 | PDF text extraction or cleaning | `backend/pdf/text.py`; then rebuild the index to see the effect on old files |
-| The full-text query, ranking, snippet length or fallback | `FulltextIndex.match` in `backend/pdf/fulltext.py` |
+| The full-text query, ranking, snippet length or fallback | `FulltextIndex.match_parts` in `backend/pdf/fulltext.py` |
+| What counts as a reference list | `backend/pdf/refsection.py` (then rebuild the index); `tests/test_refsection.py` |
 | The layout of `fulltext.db` | `FulltextIndex._init`; old files need clearing (see [storage](storage.md#changing-the-schema)) |
 | When indexing runs | `Indexer` in `backend/pdf/fulltext.py` and `Services.attachments_changed` |
 | Matching through notes | `NoteTextMatcher` in `backend/notes/service.py`, `NotesIndex.texts_by_key` |

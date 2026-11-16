@@ -19,7 +19,7 @@ from ..protocol import ToolError
 
 AI_FOLDER = "ai"
 MAX_PAGES_PER_READ = 10
-MAX_CHARS_PER_READ = 80_000
+MAX_CHARS_PER_READ = 50_000  # AI apps cut a tool result at about 25,000 tokens
 MAX_NOTE_CHARS = 100_000
 NOTE_READ_CHARS = 30_000  # a longer note is read by section (get_note shows its outline and sizes instead)
 MAX_PAPER_NOTE_CHARS = 20_000
@@ -40,6 +40,15 @@ def short_authors(authors: str | None, keep: int = 4, include: list[str] | None 
     hidden = [a for a in parts[keep:] if any(n.casefold() in a.casefold() for n in include or [] if n.strip())]
     more = f"{len(parts)} authors" + (f", incl. {'; '.join(hidden)}" if hidden else "")
     return "; ".join(parts[:keep]) + f"; … ({more})"
+
+
+def first_author(authors: str | None) -> str:
+    """ "Zhang et al." from an author list ("Zhang, Wei; Li, Na" or "Wei Zhang and Na Li")."""
+    parts = [a.strip() for a in re.split(r";|\band\b", str(authors or "")) if a.strip()]
+    if not parts:
+        return ""
+    first = parts[0]
+    return (first.split(",")[0] if "," in first else first.split()[-1]) + (" et al." if len(parts) > 1 else "")
 
 
 _DOI_REF = re.compile(r"^(?:doi:\s*|https?://(?:dx\.)?doi\.org/)?10\.\d{4,9}/\S+$", re.I)
@@ -212,6 +221,17 @@ class ToolsBase:
 
     def _label(self, p: dict) -> str:
         return p.get("citation_key") or f"item:{p['id']}"
+
+    @staticmethod
+    def _one_line(p: dict, added: bool = False) -> str:
+        """An item on one line (key, year, first author, title): for long lists."""
+        key = p.get("citation_key") or f"item:{p['id']}"
+        when = f" [added {(p.get('date_added') or '')[:10]}]" if added and p.get("date_added") else ""
+        return (
+            f"{key} ({p.get('year') or 'n.d.'}) {first_author(p.get('authors'))}: {p.get('title') or ''}{when}".replace(
+                "  ", " "
+            )
+        )
 
     # ------------------------------------------------------------------ PDF pages
     def _pages(self, att: dict) -> list[str]:

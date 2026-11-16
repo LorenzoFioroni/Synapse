@@ -8,6 +8,7 @@ from .protocol import Server, Tool, ToolError
 from .resources import TEMPLATES, Resources
 from .tools import LibraryTools
 from .tools.common import MAX_IMAGES_PER_VIEW, MAX_PAGES_PER_READ
+from .tools.editing import FIELDS_FOR_AI, LIBRARY_EDITS
 
 
 def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> Server:
@@ -15,18 +16,17 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
     where only plugins the user allowed for other computers take part)."""
     t = LibraryTools(services)
     server = Server(name="synapse", version=version, instructions=INSTRUCTIONS, before_call=t.refresh)
-    server.extra = lambda: _plugin_tools(services, remote)
     resources = Resources(t)
     server.resource_list, server.resource_read, server.resource_templates = resources.listed, resources.read, TEMPLATES
     server.prompts = {p.name: p for p in PROMPTS}
-    paper_arg = {
-        "type": "string",
-        "description": 'Citation key of the item (e.g. "smith2021"; "[@smith2021]" also works), its item id, '
-        "or its DOI or arXiv id.",
-    }
-    att_arg = {
-        "type": "integer",
-        "description": "Attachment id when the item has several PDFs (see get_paper). Default: the first PDF.",
+    paper_arg = PAPER_ARG
+    att_arg = ATT_ARG
+    edits = _edit_tools(t)
+    # Asked at every tools/list and tools/call: the tools that change the library come and go with their
+    # setting, and a plugin's tools with the plugin, without restarting the server.
+    server.extra = lambda: {
+        **(edits if services.settings.get(LIBRARY_EDITS) else {}),
+        **_plugin_tools(services, remote),
     }
 
     server.add(
@@ -40,10 +40,13 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             'journal:"physical review" doi: key: type:book has:pdf has:abstract has:note (a note mentions it) '
             "is:review (a guess from journal, title and abstract; type:review is not a type), the fields plugins "
             "add (e.g. citations:>100, citations:none), "
-            '"quoted phrases"; -term excludes; there is no OR. Returns items with citation '
-            "keys and a matching snippet, and notes with paths; a filter that is unknown or cannot match (a folder "
-            "that does not exist, type:foo, year:abc, venue:) is reported under warnings, with suggestions. A result "
-            "whose hits are only in reference lists ranks like any other: add author: or a phrase to narrow it. "
+            '"quoted phrases"; -term excludes; a OR b between two terms finds either (magic OR nonstabilizerness '
+            "year:2024-). Returns items with citation "
+            "keys and a matching snippet, and notes with paths (the user's own before those an AI app wrote); a "
+            "filter that is unknown or cannot match (a folder "
+            "that does not exist, type:foo, year:abc, venue:) is reported under warnings, with suggestions. An item "
+            "that has the words only in its reference list (it cites the subject) is marked only_in_references and "
+            "listed last. "
             "Use list_collections to see folder, tag and type names, and compact to list many items cheaply.",
             {
                 "type": "object",
@@ -222,9 +225,10 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "search_in_paper",
             "Search inside a paper's PDF",
             "Find the pages of a paper's PDF that contain some words (case and accents ignored), best pages first, "
-            "with snippets and the section (from the PDF's bookmarks). A page with all the words close together "
-            "ranks above one that has them far apart. Use it to locate the relevant pages, then read them with "
-            "read_paper.",
+            "with snippets and the section. A page with all the words close together "
+            "ranks above one that has them far apart; a page that has them only in the reference list (works the "
+            "paper cites) comes last, marked in_reference_list. Use it to locate the relevant pages, then read "
+            "them with read_paper.",
             {
                 "type": "object",
                 "properties": {
@@ -292,7 +296,9 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             'there and flashes the region. Prefer naming it: figure="Figure 2" / "Table 1" (found by its caption) '
             'or equation="3" for the equation numbered (3) (its lines and number, never cut in the middle); the '
             "page is found if you leave it out. Otherwise give page and rect=[x, y, w, h] (fractions of the page from "
-            "the top left, read off view_page's grid). Returns a preview to check the crop.",
+            "the top left, read off view_page's grid); adding figure or equation to a rect only names the cut "
+            '("Figure 2" in its caption line). Returns a preview to check the crop, and the caption printed in '
+            "the PDF.",
             {
                 "type": "object",
                 "properties": {
@@ -349,6 +355,11 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                         "maximum": 1000,
                         "description": "Maximum references listed (default 200).",
                     },
+                    "compact": {
+                        "type": "boolean",
+                        "description": "One line per work (key or DOI/arXiv id, year, first author, title): for a "
+                        "long list (default false).",
+                    },
                 },
                 "required": ["paper"],
             },
@@ -386,6 +397,10 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                         "type": "boolean",
                         "description": "Also list who cites whom among the listed nodes (long; default false).",
                     },
+                    "compact": {
+                        "type": "boolean",
+                        "description": "One line per work instead of its fields (default false).",
+                    },
                 },
             },
             t.get_citation_graph,
@@ -393,9 +408,21 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
     )
     server.add(
         Tool(
+            "get_annotations",
+            "Read a paper's highlights and comments",
+            "What the user marked on a paper's PDF in the app: highlights and underlines with their words, "
+            "comments, text boxes and drawings, each with its page. Use it to see what the user found important "
+            "in a paper.",
+            {"type": "object", "properties": {"paper": paper_arg, "attachment": att_arg}, "required": ["paper"]},
+            t.get_annotations,
+        )
+    )
+    server.add(
+        Tool(
             "write_note",
             "Save a new note",
-            'Save a new Markdown note in the notes folder "ai/" (marked author: ai). Never overwrites: a free file '
+            'Save a new Markdown note (marked author: ai), in the notes folder "ai/" unless folder names another. '
+            "Never overwrites: a free file "
             "name is chosen. The note is checked first and NOT saved if a link, citation, page, quote or image would "
             "be broken, or if formulas are written in Unicode instead of LaTeX: fix what the error lists and call again. "
             "Use only when the user asks to save something.\n\n" + WRITING_RULES,
@@ -407,7 +434,12 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                         "type": "string",
                         "description": 'Markdown body. A "# Title" heading is added if there is none.',
                     },
-                    "folder": {"type": "string", "description": 'Optional subfolder inside ai/ (e.g. "crispr").'},
+                    "folder": {
+                        "type": "string",
+                        "description": 'Where to save it: a notes folder by its path (e.g. "Projects/Transport", see '
+                        'list_collections), when the user names one. Default: "ai". A folder that does not exist is '
+                        "made inside ai/.",
+                    },
                     "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional tags."},
                 },
                 "required": ["title", "text"],
@@ -479,6 +511,172 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
         )
     )
     return server
+
+
+PAPER_ARG = {
+    "type": "string",
+    "description": 'Citation key of the item (e.g. "smith2021"; "[@smith2021]" also works), its item id, '
+    "or its DOI or arXiv id.",
+}
+ATT_ARG = {
+    "type": "integer",
+    "description": "Attachment id when the item has several PDFs (see get_paper). Default: the first PDF.",
+}
+PAPERS_ARG = {
+    "type": "array",
+    "items": {"type": "string"},
+    "description": "The items: citation keys, ids, DOIs or arXiv ids.",
+}
+
+
+def _edit_tools(t: LibraryTools) -> dict[str, Tool]:
+    """The tools that change the library, offered while Settings → AI Access allows it."""
+    strings = lambda what: {"type": "array", "items": {"type": "string"}, "description": what}
+    tools = [
+        Tool(
+            "add_paper",
+            "Add a paper to the library",
+            "Add an item to the library: by identifier (a DOI, arXiv id or ISBN, whose metadata is looked up "
+            "online), or by hand with fields. Nothing is added when the library already has the work (it is "
+            "returned instead). Use when the user asks to add a paper, e.g. one that get_references or "
+            "get_citation_graph showed missing.",
+            {
+                "type": "object",
+                "properties": {
+                    "identifier": {
+                        "type": "string",
+                        "description": 'A DOI, arXiv id or ISBN, e.g. "10.1103/PhysRevLett.1.1".',
+                    },
+                    "fields": {
+                        "type": "object",
+                        "description": "Metadata given by hand (needs a title), or to fill what the lookup leaves "
+                        f"empty: {', '.join(FIELDS_FOR_AI)}.",
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": 'An existing folder to put it in, by path ("Physics/Transport").',
+                    },
+                    "tags": strings("Tags to give it."),
+                    "fetch_references": {
+                        "type": "boolean",
+                        "description": "Also fetch its reference list (default: as the user's settings say).",
+                    },
+                },
+            },
+            t.add_paper,
+            read_only=False,
+            open_world=True,
+        ),
+        Tool(
+            "update_paper",
+            "Correct a paper's details",
+            "Change fields of a library item (title, authors, year, abstract, journal, DOI …). Returns each "
+            "changed field's value before and after; the app keeps no history of fields, so that is the way "
+            "back. Use when the user asks to fix or complete an item. Tags and folders: organize_papers.",
+            {
+                "type": "object",
+                "properties": {
+                    "paper": PAPER_ARG,
+                    "fields": {
+                        "type": "object",
+                        "description": f"The fields to set (an empty string clears one): {', '.join(FIELDS_FOR_AI)}. "
+                        'Authors are written "Last, First; Last, First".',
+                    },
+                },
+                "required": ["paper", "fields"],
+            },
+            t.update_paper,
+            read_only=False,
+        ),
+        Tool(
+            "organize_papers",
+            "Tag papers and put them in folders",
+            "Add or remove tags and folder memberships of one or several items at once. An item can be in several "
+            "folders; taking it out of one never deletes it. Folders are named by path (see list_collections).",
+            {
+                "type": "object",
+                "properties": {
+                    "papers": PAPERS_ARG,
+                    "add_tags": strings("Tags to add (made if new)."),
+                    "remove_tags": strings("Tags to take off these items."),
+                    "add_folders": strings('Folders to put the items in, by path ("Physics/Transport").'),
+                    "remove_folders": strings("Folders to take the items out of."),
+                    "create_folders": {
+                        "type": "boolean",
+                        "description": "Make a folder of add_folders that does not exist (default false: an unknown "
+                        "folder is an error, with the close names).",
+                    },
+                },
+                "required": ["papers"],
+            },
+            t.organize_papers,
+            read_only=False,
+        ),
+        Tool(
+            "trash_papers",
+            "Move papers to the Trash",
+            "Move items to the library's Trash, or bring them back with restore. Nothing is deleted for good: only "
+            "the user empties the Trash. Use only when the user asks to remove items.",
+            {
+                "type": "object",
+                "properties": {
+                    "papers": PAPERS_ARG,
+                    "restore": {
+                        "type": "boolean",
+                        "description": "Bring these items back from the Trash (default false).",
+                    },
+                },
+                "required": ["papers"],
+            },
+            t.trash_papers,
+            read_only=False,
+        ),
+        Tool(
+            "fetch_references",
+            "Fetch a paper's reference list",
+            "Fetch the list of works an item cites from the online sources (it needs a DOI or arXiv id) and store "
+            "it, replacing the stored one. Use when get_references says the list was never fetched.",
+            {"type": "object", "properties": {"paper": PAPER_ARG}, "required": ["paper"]},
+            t.fetch_references,
+            read_only=False,
+            open_world=True,
+        ),
+        Tool(
+            "find_pdf",
+            "Find a PDF for a paper",
+            "Look online for an open-access PDF of an item that has none, and attach it when one is found and it "
+            "is that paper.",
+            {"type": "object", "properties": {"paper": PAPER_ARG}, "required": ["paper"]},
+            t.find_pdf,
+            read_only=False,
+            open_world=True,
+        ),
+        Tool(
+            "add_highlight",
+            "Highlight a passage in a paper",
+            "Highlight some words on a page of a paper's PDF, as the user does in the app, optionally with a "
+            "comment. The words must be on that page: copy one passage from read_paper. Use when the user asks to "
+            "mark passages; get_annotations lists what is marked.",
+            {
+                "type": "object",
+                "properties": {
+                    "paper": PAPER_ARG,
+                    "page": {"type": "integer", "minimum": 1, "description": "PDF page number (from 1)."},
+                    "quote": {"type": "string", "description": "The exact words to highlight, from one page."},
+                    "comment": {"type": "string", "description": "A comment to attach (optional)."},
+                    "color": {
+                        "type": "string",
+                        "description": "Colour as #rrggbb (default: the user's highlight colour).",
+                    },
+                    "attachment": ATT_ARG,
+                },
+                "required": ["paper", "page", "quote"],
+            },
+            t.add_highlight,
+            read_only=False,
+        ),
+    ]
+    return {tool.name: tool for tool in tools}
 
 
 def _plugin_tools(services, remote: bool) -> dict[str, Tool]:

@@ -116,18 +116,28 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                 "created": info.get("created"),
                 "modified": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime)),
                 "about_paper": self._brief(paper) if paper else info.get("paper"),
-                "outline": self._outline(info.get("headings") or [], got["text"] if too_long else None),
+                # A part's read does not repeat the outline: the first read gave it.
+                "outline": None
+                if ranged
+                else self._outline(info.get("headings") or [], got["text"] if too_long else None),
                 "section": section or (f"lines {first}-{last or 'end'}" if lines else None),
                 "links_to_notes": notes_out,
                 "linked_from": backlinks,
-                "images": [i for i in self._note_images(got["text"], caption_once=True) if inside(i["line"])] or None,
+                "images": None
+                if too_long
+                else [i for i in self._note_images(got["text"], caption_once=True) if inside(i["line"])] or None,
+                "images_total": len(self._note_images(got["text"])) or None if too_long else None,
                 "tasks": self._note_tasks(links["outgoing"]) or None,
                 "math_macros": self._math_macros() or None,
             }
         )
-        summary["cited_papers"] = cited  # kept when empty: a missing key reads as "not computed"
+        # Kept when empty: a missing key reads as "not computed". A long note's outline names the keys only.
+        summary["cited_papers"] = [c["key"] for c in cited] if too_long else cited
         summary["cited_papers_scope"] = f"{'only that part' if ranged else 'the whole note'}: " + (
-            f"{len(cited)} library papers or keys" if cited else "it cites no papers"
+            f"{len(cited)} library papers or keys"
+            + (" (keys only; reading a section gives the lines and pages)" if too_long else "")
+            if cited
+            else "it cites no papers"
         )
         if summary.get("images"):
             summary["images_hint"] = "view_image(note=…) shows these images (paths are inside the notes folder)."
@@ -136,8 +146,8 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
             summary["too_long"] = (
                 f"The note has {len(text)} characters, too many to read at once: its text is not included. "
                 "Read the part you need with section='<heading>' (the outline shows each section's size) or "
-                "lines='120-300', or give full=true for all of it. cited_papers and images below cover the "
-                "whole note."
+                "lines='120-300', or give full=true for all of it. cited_papers covers the whole note; a "
+                "section's read lists its images."
             )
             return summary
         if ranged:
@@ -229,12 +239,24 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
         """The user's own math commands (Settings → Math macros), which every note may use."""
         return str(self.s.settings.get("notes_math_macros") or "").strip()
 
+    def _note_folder(self, folder: str) -> str:
+        """Where write_note saves: a notes folder the user has, named by its path, or else a folder inside
+        ``ai/`` (made if needed). A name that fits no folder never makes one beside the user's own."""
+        parts = [x.strip() for x in re.split(r"[/\\]+", folder or "") if x.strip() and x.strip() not in (".", "..")]
+        if not parts:
+            return AI_FOLDER
+        want = "/".join(parts).casefold()
+        existing = next((f for f in self.s.vault.folders() if f.casefold() == want), None)
+        if existing:
+            return existing
+        if parts[0].casefold() == AI_FOLDER:
+            parts = parts[1:]
+        sub = "/".join(slugify(x) for x in parts)
+        return f"{AI_FOLDER}/{sub}" if sub else AI_FOLDER
+
     def write_note(self, title: str, text: str, folder: str = "", tags: list | None = None):
         title = " ".join(str(title).split())
-        sub = "/".join(
-            slugify(x) for x in re.split(r"[/\\]+", folder or "") if x.strip() and x.strip() not in (".", "..")
-        )
-        base = f"{AI_FOLDER}/{sub}" if sub else AI_FOLDER
+        base = self._note_folder(folder)
         name = slugify(title, fallback="AI note")
         path = f"{base}/{name}.md"
         n = 2
