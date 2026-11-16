@@ -18,6 +18,7 @@ in [`architecture.md`](architecture.md).
 | `options.html`, `options.js` | the options page | The library address, server permission, access token and opt-in live PDF receiver. |
 | `connection.js` | popup and options | Validates addresses, loads server-bound credentials and sends authenticated requests. |
 | `background.js`, `bridge.js`, `library.js` | worker and isolated library content script | Registers the bridge for the configured library and validates scoped item-ID requests from the app. No credentials cross the page bridge. |
+| `selfUpdate.js` | worker and popup | Reloads the extension when its folder was replaced by a newer packaged build (see [below](#updating-itself)). |
 | `receiver.js` | worker | Opt-in immediate requests from other devices; waits only while connected, checks expiry and opens the finder. |
 | `tsconfig.json` | | Type-checking only (see [Type-checking](#type-checking)). |
 
@@ -151,6 +152,26 @@ Editing the address clears the token field. One server is active at a time.
 omit cookies and reject redirects so credentials cannot follow a redirected server address.
 The popup displays authentication errors with a link to its settings. Localhost still works
 without a token, including older local servers.
+
+## Updating itself
+
+Under the companion the extension's code comes from the Synapse server: the companion downloads it
+and replaces the files in the folder, so a server that is compromised could change what the
+extension does. The companion therefore refuses an automatic update whose `manifest.json`
+permissions differ from the installed ones; that change needs an explicit `extension` run by the
+user, who is told what changed. Details: [companion](companion.md).
+
+[The companion](companion.md) can keep a copy of the extension in a folder that Chrome loaded with
+**Load unpacked**: `GET /api/companion/extension` is a zip of this folder plus a generated
+`build.json` (`{"build": "<hash>"}`). Chrome keeps running the old code until the extension is
+reloaded, so `selfUpdate.js` does it. `chrome.runtime.onInstalled` (which fires on every load and
+reload) records the `build` of the `build.json` present at that time in `chrome.storage.local`
+(`loadedBuild`). The worker, two seconds after it starts (so `onInstalled` has run first), and the
+popup, when it opens, read `build.json` again; if it names another build, `chrome.runtime.reload()`
+is called. A build is asked for once (`reloadedForBuild`), so a reload that fails cannot loop. A
+repository checkout has no `build.json`: nothing is recorded and the extension never reloads. No
+new permission is needed (`storage` and the extension's own files). Tests:
+`tests/js/extension-selfupdate.test.mjs`.
 
 ## find_pdfs.js: missing PDFs through the browser
 

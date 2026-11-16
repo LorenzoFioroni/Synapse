@@ -17,7 +17,14 @@ def mcp():
     # The guard has checked the access token already.
     token = g.get("access_token") or {}
     status, reply = (
-        svc().mcp_http().handle(request.get_data(), request.headers.get("MCP-Protocol-Version"), caller=token.get("id"))
+        svc()
+        .mcp_http()
+        .handle(
+            request.get_data(),
+            request.headers.get("MCP-Protocol-Version"),
+            caller=token.get("id"),
+            restricted=token.get("scope") == "companion",
+        )
     )
     if reply is None:
         return Response(status=status)

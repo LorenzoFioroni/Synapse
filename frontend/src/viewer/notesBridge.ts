@@ -8,6 +8,8 @@
 import type { TextItem } from 'pdfjs-dist/types/src/display/api.js';
 import type { Item } from '../types.js';
 import { type PdfRegion, writeRegion } from '../views/notes/citeTarget.js';
+import { appTabs } from './inTab.js';
+import { aiConfigured, refreshAiStatus } from '../ai/status.js';
 import { type Rect, findQuote, parseRect, quoteBoxes } from './locate.js';
 import type { PageWrapper } from './viewer.js';
 
@@ -159,10 +161,11 @@ function onSelectionEnd() {
   const p = document.createElement('div');
   pill = p;
   p.className = 'zc-pill';
-  p.innerHTML = it.citation_key
+  p.innerHTML = (it.citation_key
     ? '<button data-q>❝ Quote to note</button>'
-    : '<button disabled title="Give the item a citation key first">No citation key</button>';
-  p.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - 160))}px`;
+    : '<button disabled title="Give the item a citation key first">No citation key</button>')
+    + (aiConfigured() ? '<button data-ask title="Ask your AI about the selected words">✦ Ask AI</button>' : '');
+  p.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - 260))}px`;
   p.style.top = `${rect.bottom + 8 > innerHeight - 40 ? rect.top - 40 : rect.bottom + 8}px`;
   p.addEventListener('pointerdown', (e) => e.preventDefault());   // keep the selection
   p.querySelector('[data-q]')?.addEventListener('click', () => {
@@ -171,8 +174,30 @@ function onSelectionEnd() {
     hidePill();
     deliver(md, at);
   });
+  p.querySelector('[data-ask]')?.addEventListener('click', async () => {
+    const quote = cleanQuote(text);
+    hidePill();
+    const { openAskAi } = await import('../ai/panel.js');
+    const att = Number(params.get('att'));
+    openAskAi({ kind: 'paper', item: it.id, ...(att ? { attachment: att } : {}), page, quote }, viewerHost);
+  });
   document.body.appendChild(p);
 }
+
+/** Opening a cited PDF from the panel: this PDF scrolls to the page; another one opens in a viewer tab. */
+const viewerHost = {
+  openPdf(cited: { id: string; title: string }, pdf: { id: number; url: string }, page: number | null) {
+    if (item && cited.id === item.id && (!params.get('att') || Number(params.get('att')) === pdf.id)) { gotoSpot({ page: page || 1 }); return; }
+    const file = /^https?:/.test(pdf.url) ? `/api/attachments/${pdf.id}/remote` : `/pdfs/${encodeURIComponent(pdf.url)}`;   // as api.ts fileUrl()
+    const q = new URLSearchParams({ file, paper_id: cited.id, title: cited.title || 'PDF', att: String(pdf.id) });
+    if (page) q.set('page', String(page));
+    const url = `/viewer.html?${q}`;
+    // in an app tab, the PDF opens as another app tab, as from a note
+    const tabs = appTabs();
+    if (tabs) tabs.open({ key: file, url, title: cited.title || 'PDF', spot: { page }, newTab: false });
+    else window.open(url, '_blank', 'noopener');
+  },
+};
 
 /* ---------------------------------------------------------------- snapshots */
 let snapping = false;
@@ -369,6 +394,7 @@ async function init() {
     b.addEventListener('click', () => setSnap(!snapping));
     tools.prepend(b);
   }
+  refreshAiStatus(60_000);   // "Ask AI" in the selection toolbar only when it is set up
   document.getElementById('pdf-container')?.addEventListener('mouseup', () => { if (lastPointer === 'mouse') setTimeout(onSelectionEnd, 0); });
   // On a touch screen text is selected with a long press and the handles: offer the quote once the
   // selection has settled.

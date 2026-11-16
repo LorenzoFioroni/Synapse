@@ -30,6 +30,11 @@ The MCP endpoint (``/mcp``) is for AI apps, not browsers: it takes neither cooki
 rules above. Every request to it, from this computer too, needs an access token
 (``Authorization: Bearer …``, see ``tokens.py``), and a browser's request with a foreign Origin is
 refused.
+
+The companion endpoints (``/api/companion/``) are for a program on the user's own computer, not
+browsers: every request needs a companion-scoped token, from this computer too, and any ``Origin``
+is refused. The companion hands the same token to the AI tool it runs, so ``/mcp`` accepts
+companion tokens as well.
 """
 
 from __future__ import annotations
@@ -72,6 +77,7 @@ PAIRING_PATHS = {
     "/manifest.webmanifest",
 }
 MCP_PATH = "/mcp"  # AI apps, with an access token instead of a device cookie
+COMPANION_PREFIX = "/api/companion/"  # the companion program, with a companion token
 
 
 def allowed_origin(origin: str, host: str, extensions: bool = True) -> bool:
@@ -182,6 +188,10 @@ def install(
             if not host_allowed(request.host, hosts, lan_mode):
                 return jsonify(error=f"Requests for host '{request.host}' are not accepted."), 403
             return _ai_app()
+        if request.path.startswith(COMPANION_PREFIX):
+            if not host_allowed(request.host, hosts, lan_mode):
+                return jsonify(error=f"Requests for host '{request.host}' are not accepted."), 403
+            return _companion()
         origin = request.headers.get("Origin")
         extension = origin is not None and origin.startswith(EXTENSION_SCHEMES)
         if request.path.startswith(CONNECTOR_PREFIX) and (
@@ -234,7 +244,9 @@ def install(
         if origin is not None and not allowed_origin(origin, request.host, extensions=False):
             return jsonify(error="The MCP endpoint does not answer other websites."), 403
         tokens = current_app.extensions["synapse"].tokens
-        entry = tokens.check(bearer(request.headers.get("Authorization")), client_addr(request.environ))
+        entry = tokens.check(
+            bearer(request.headers.get("Authorization")), client_addr(request.environ), scope=("mcp", "companion")
+        )
         if entry is None:
             resp = jsonify(
                 error="This needs an access token. Make one in Settings → AI Access on the computer running "
@@ -242,6 +254,24 @@ def install(
             )
             resp.status_code = 401
             resp.headers["WWW-Authenticate"] = 'Bearer realm="Synapse"'
+            return resp
+        g.access_token = entry
+        return None
+
+    def _companion():
+        if request.headers.get("Origin") is not None:
+            return jsonify(error="The companion endpoints do not answer browsers."), 403
+        tokens = current_app.extensions["synapse"].tokens
+        entry = tokens.check(
+            bearer(request.headers.get("Authorization")), client_addr(request.environ), scope="companion"
+        )
+        if entry is None:
+            resp = jsonify(
+                error="This needs a companion token. Make one in Settings → AI Access on the computer running "
+                "Synapse (New Companion Token)."
+            )
+            resp.status_code = 401
+            resp.headers["WWW-Authenticate"] = 'Bearer realm="Synapse companion"'
             return resp
         g.access_token = entry
         return None

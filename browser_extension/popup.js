@@ -4,6 +4,9 @@
 // 3. let the user adjust title / folder / tags, then save
 import { extractCitation, fetchPdfInPage } from './extract.js';
 import { DEFAULT_SERVER, loadConnection, libraryFetch } from './connection.js';
+import { reloadIfUpdated } from './selfUpdate.js';
+
+void reloadIfUpdated().catch(() => {});   // a newer packaged build was dropped into this folder
 
 /** @typedef {import('./extract.js').Citation} Citation */
 /**

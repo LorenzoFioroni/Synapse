@@ -34,6 +34,9 @@ class Services:
         from .online.browser_pdfs import BrowserPdfs
 
         self.browser_pdfs = BrowserPdfs()
+        from .companion import Companions
+
+        self.companions = Companions()  # questions for the user's own computer (docs/companion.md)
         from .changes import ChangeFeed
 
         self.changes = ChangeFeed(

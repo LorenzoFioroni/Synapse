@@ -31,7 +31,8 @@ TypeScript frontend. Everything runs on your machine.
   notes as a multifile project.
 - 🕸️ **See the bigger picture** — explore a graph of your notes, papers and citation links.
 - ✅ **Turn ideas into action** — track tasks, due dates and subtasks right alongside your notes.
-- 🤖 **Bring your AI tools** — connect Claude, Codex and other AI apps through MCP;
+- 🤖 **Bring your AI tools** — connect Claude, Codex and other AI apps through MCP, or ask your own
+  Claude Code a question from a note or a PDF selection with the Companion (no API key on the server);
   optionally complete notes with a local Ollama model.
 - 🔄 **Move references freely** — import and export BibTeX, RIS, EndNote and CSL JSON,
   with customisable citation keys. Keys are unique across the library and Trash (ignoring case)
@@ -317,6 +318,20 @@ app out at once. The tools are the same. Over plain HTTP the token crosses the n
 like everything else in `--lan`; with `--cert` the address starts with `https://` (and the AI app
 must trust the certificate, for Claude Code: `NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem"`).
 
+**Ask AI from Synapse (the Companion).** For a Synapse server you reach remotely, a small program on
+your own computer can answer questions asked inside Synapse (a note, or words selected in a PDF)
+with your own Claude Code, restricted to Synapse's tools; nothing but the answer streams back and
+the server needs no API key. It can also install and update the browser extension for you. In
+**Settings → AI Access → New Companion Token…** make a token, then on your computer:
+
+```bash
+python synapse_companion.py connect https://synapse.example.com
+python synapse_companion.py run                 # leave it running; Codex only with: run --allow codex
+python synapse_companion.py extension           # optional: the browser extension folder
+```
+
+See [the companion guide](docs/companion.md) for how it works and why Codex is opt-in.
+
 Add `--data DIR` if your library is not in `./data`. Tools:
 
 | Tool | What it gives |
@@ -383,6 +398,7 @@ For how the code fits together and where new code goes, see
 ./
 ├── server.py              starts the web app
 ├── mcp_server.py          MCP server for AI apps: Claude, Codex … (stdio)
+├── synapse_companion.py   the companion: runs your AI tool for Ask AI, keeps the extension current (one file)
 ├── backend/               Flask + SQLite backend (packages described in docs/architecture.md)
 ├── frontend/              the web app: index.html, viewer.html, src/ (TypeScript; built to js/), css/, vendor/ (third-party libraries)
 ├── browser_extension/     Chrome extension (Manifest V3) – load unpacked

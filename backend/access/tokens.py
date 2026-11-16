@@ -1,4 +1,5 @@
-"""Scoped access tokens for AI apps (``/mcp``) and browser saves (``/api/connector/``).
+"""Scoped access tokens for AI apps (``/mcp``), browser saves (``/api/connector/``) and the
+companion (``/api/companion/``, and ``/mcp`` for the AI tool it runs).
 
 Claude Code on another computer cannot pair like a browser, so it sends a token with every
 request instead: ``Authorization: Bearer syn_…``. Tokens are made on the computer running Synapse
@@ -19,7 +20,7 @@ from .authdb import AuthTable, hash_secret, now_iso
 PREFIX = "syn_"  # tells a Synapse token apart in a config file
 NAME_MAX = 60
 TOUCH_EVERY = 60  # seconds between "last used" updates
-SCOPES = {"mcp", "connector"}
+SCOPES = {"mcp", "connector", "companion"}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS access_tokens (
@@ -82,8 +83,8 @@ class AccessTokens(AuthTable):
         if not name:
             raise TokenError("Give the token a name, such as the computer or app that will use it.")
         if scope not in SCOPES:
-            raise TokenError("Choose an AI app or browser extension token.")
-        token = PREFIX + ("connector_" if scope == "connector" else "") + secrets.token_urlsafe(32)
+            raise TokenError("Choose an AI app, browser extension or companion token.")
+        token = PREFIX + (f"{scope}_" if scope != "mcp" else "") + secrets.token_urlsafe(32)
         tok_id = secrets.token_hex(8)
         with self._lock:
             db = self._conn()
@@ -95,7 +96,7 @@ class AccessTokens(AuthTable):
             row = db.execute("SELECT * FROM access_tokens WHERE id = ?", (tok_id,)).fetchone()
         return public(dict(row)), token
 
-    def check(self, token: str | None, addr: str | None = None, *, scope: str = "mcp") -> dict | None:
+    def check(self, token: str | None, addr: str | None = None, *, scope: str | tuple[str, ...] = "mcp") -> dict | None:
         """The entry of this token (noting that it was used), or None."""
         if not token:
             return None
@@ -103,7 +104,7 @@ class AccessTokens(AuthTable):
             db = self._conn()
             row = db.execute("SELECT * FROM access_tokens WHERE token_hash = ?", (hash_secret(token),)).fetchone()
             now = self.clock()
-            if row is None or row["scope"] != scope:
+            if row is None or row["scope"] not in ((scope,) if isinstance(scope, str) else scope):
                 return None
             if now - self._touched.get(row["id"], 0) >= TOUCH_EVERY:
                 self._touched[row["id"]] = now

@@ -17,6 +17,8 @@ import { loadAiEdits, onAiAction, paintAiBar, remoteArrived } from './aiBar.js';
 import { markMilestone, openNoteHistory, openVaultHistory } from './historyView.js';
 import { ghostSource, noteHooks, onNoteHookChange } from './hooks.js';
 import { openAttachments } from './attachmentsDialog.js';
+import { onAiStatus, refreshAiStatus } from '../../ai/status.js';
+import { askAboutNote, paintAskButton } from './aiAsk.js';
 import { attachCiteCards, openCitation, pdfsOf, showCard } from './citeCard.js';
 import { conflictDialog } from './conflict.js';
 import { createEditor, loadMD, type NoteEditor } from './editor.js';
@@ -77,6 +79,7 @@ export function initNotes(): void {
           <button data-mode="read" title="Read (${modLabel}E)">Read</button>
         </div>
         <button class="btn btn-sm note-history" data-act="history" title="Every version of this note">${icon('restore', 'icon-sm')}<span class="lbl">History</span></button>
+        <button class="icon-btn" data-act="ask-ai" hidden title="Ask AI about this note or the selected text" aria-label="Ask AI">${icon('sparkle')}</button>
         <button class="icon-btn" data-act="export" title="Export as PDF, HTML or Markdown">${icon('export')}</button>
       </div>
       <div class="note-ai-bar" role="status" hidden></div>
@@ -104,6 +107,8 @@ export function initNotes(): void {
   window.zcNotes = { text: () => ws.session?.text ?? null, path: () => ws.session?.path ?? null,
     cursor: () => ws.editor?.view.state.selection.main.head ?? null, focused: () => !!ws.editor?.view.hasFocus };
   listenForQuotes();
+  onAiStatus(paintAskButton);
+  refreshAiStatus(60_000);
   initReadView();
   refitOnResize(root.querySelector<HTMLElement>('.note-read')!);
   renderDefaults.equations = equationMode;
@@ -699,6 +704,7 @@ function onClick(e: MouseEvent): void {
   if (act === 'graph') { openNotesGraph(session ? `note:${session.path}` : null); return; }
   if (act === 'rename' && session) { renameNote(session.path); return; }
   if (act === 'export' && session) { exportMenu(session.path, actEl!); return; }
+  if (act === 'ask-ai' && session) { askAboutNote(); return; }
   if (act === 'show-conflict' && session?.conflict) { conflictDialog(session.conflict); return; }
   if (act === 'history' && session) { openNoteHistory(); return; }
   if (act?.startsWith('ai-')) { onAiAction(act, t.closest<HTMLElement>('[data-ai-id]')?.dataset.aiId); return; }

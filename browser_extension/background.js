@@ -1,6 +1,7 @@
 import { loadConnection, libraryFetch } from './connection.js';
 import { libraryPdfRequest } from './bridge.js';
 import { refreshPdfReceiver } from './receiver.js';
+import { recordBuild, reloadIfUpdated } from './selfUpdate.js';
 
 async function syncBridge() {
   const { server } = await loadConnection();
@@ -17,6 +18,7 @@ async function syncBridge() {
 let syncing = Promise.resolve();
 const refreshBridge = () => { syncing = syncing.then(syncBridge).catch(() => {}); };
 chrome.runtime.onInstalled.addListener(refreshBridge);
+chrome.runtime.onInstalled.addListener(() => { void recordBuild().catch(() => {}); });
 chrome.runtime.onStartup.addListener(refreshBridge);
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'sync' && changes.server) refreshBridge();
@@ -26,6 +28,8 @@ chrome.permissions.onAdded.addListener(() => { refreshBridge(); refreshPdfReceiv
 chrome.permissions.onRemoved.addListener(() => { refreshBridge(); refreshPdfReceiver(); });
 refreshBridge();
 refreshPdfReceiver();
+// a moment later, so a load's onInstalled has recorded the build it started from first
+setTimeout(() => { void reloadIfUpdated().catch(() => {}); }, 2000);
 
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (message?.type !== 'find-publisher-pdfs') return;

@@ -87,7 +87,7 @@ export function initTabs(h: TabsHost): void {
   set = TabSet.restore(session.get());
   try { localStorage.removeItem(SAVE_KEY); } catch { /* the tabs of all windows were once kept here */ }
   setPdfTabOpener({ enabled: () => state.settings.pdf_open_in !== 'browser', open });
-  window.zcTabs = { shortcut: tabShortcut, touched: () => closeMenu(), list, win: WIN };
+  window.zcTabs = { shortcut: tabShortcut, open, touched: () => closeMenu(), list, win: WIN };
 
   bar.addEventListener('click', (e) => {
     const t = e.target as Element;

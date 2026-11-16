@@ -2,6 +2,7 @@
 // offers to show or undo the latest one, and putting an earlier version back. The history itself
 // is read and shown by aiEdits.ts.
 import { api } from '../../api.js';
+import { refreshAiStatus } from '../../ai/status.js';
 import { toast, toastError } from '../../ui/toast.js';
 import type { NoteHistory } from '../../types.js';
 import { aiName, modLabel } from '../../util.js';
@@ -14,6 +15,7 @@ import { ws } from './workspace.js';
 export async function loadAiEdits(): Promise<NoteHistory | null> {
   const path = ws.session?.path;
   if (!path) return null;
+  refreshAiStatus(60_000);   // Ask AI's entry points follow it (a companion token may have been made since)
   const hist = await editsOf(path);
   if (ws.session?.path !== path) return null;
   ws.aiHist = hist;

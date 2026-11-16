@@ -225,6 +225,15 @@ they need `Authorization: Bearer <access token>` instead, from this computer too
 that has an `Origin` must name the server itself. The token's entry is stored as `g.access_token`.
 See [MCP](mcp.md#over-http-mcp).
 
+### The companion (`/api/companion/`)
+
+Like `/mcp`, these endpoints pass the Host check and skip the device and Origin rules, but they
+need a `companion`-scope token (`Authorization: Bearer`) from this computer too, and a request with
+**any** `Origin` header answers 403: the companion is a program, not a browser or an extension.
+Missing or wrong-scope tokens answer 401 with `WWW-Authenticate: Bearer`; device cookies do not
+count, and a companion token is refused on `/api/connector/` and everywhere else. See
+[companion](companion.md).
+
 ### The browser extension
 
 The extension's popup calls the server from its own `chrome-extension://` origin, from this

@@ -366,14 +366,21 @@ Claude Code (`claude mcp add --transport http … --header "Authorization: Beare
 since Codex reads the token from an environment variable), and any other app (the URL and the
 header to enter). `last_used` and `last_addr` are updated at most once a minute. Removing a token
 locks its app out at the next request. MCP tokens cannot authenticate browser connector calls. **New Browser Token…** creates
-a separate `connector`-scope token that cannot access `/mcp`. Both token types work until revoked.
+a separate `connector`-scope token that cannot access `/mcp`. **New Companion Token…** creates a
+`companion`-scope token (`syn_companion_…`) for [the companion](companion.md): it opens
+`/api/companion/…` and `/mcp` (the companion hands it to the AI tool it runs), and nothing else. On
+`/mcp` it is *restricted*: with `Server.restricted` (set per request by `HttpTransport.handle`),
+`build_server` leaves out the tools that change the library whatever Settings → AI Access allows
+other apps; note and task tools are unchanged.
+All token types work until revoked. `AccessTokens.check` takes one scope or several; `/mcp`
+asks for `("mcp", "companion")`.
 The scopes share token listing and revocation, with their purpose shown in Settings. See [browser extension](browser-extension.md).
 
 | Endpoint | Who | What |
 |---|---|---|
 | `POST /mcp` | a valid token | One JSON-RPC message or batch. |
 | `GET /api/mcp/tokens` | this computer or a signed-in device | `this_computer`, `can_confirm`, `confirmed`, `lan`, `endpoints` (the `/mcp` URLs: the `--public-url` one first, then one per address under `--lan`), `tokens`. |
-| `POST /api/mcp/tokens` | this computer, or a device after a passkey confirmation (else 403, with `confirm: true` when it can confirm) | `{name, scope?}` → 201 `{token, entry, tokens}`; `scope` defaults to `"mcp"` or can be `"connector"`. Entries include `scope`; both scopes remain valid until revoked. The token is not kept. |
+| `POST /api/mcp/tokens` | this computer, or a device after a passkey confirmation (else 403, with `confirm: true` when it can confirm) | `{name, scope?}` → 201 `{token, entry, tokens}`; `scope` defaults to `"mcp"` or can be `"connector"` or `"companion"`. Entries include `scope`; both scopes remain valid until revoked. The token is not kept. |
 | `DELETE /api/mcp/tokens/<id>` | the same | Removes the token. |
 
 Over plain HTTP the token crosses the network in the clear, like a device cookie: use `--lan` on a

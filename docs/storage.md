@@ -220,7 +220,7 @@ waits for a later start.
 passkeys gains the `passkeys` and `access_tokens` tables. `AccessTokens._conn` additively migrates
 `access_tokens` under a serialized SQLite transaction, adding `scope TEXT NOT NULL DEFAULT 'mcp'`.
 Existing token hashes, names and IDs are preserved; legacy tokens stay MCP-only. New connector
-tokens use `scope='connector'`; scope is checked before accepting a request. Both scopes remain
+tokens use `scope='connector'` and companion tokens `scope='companion'` (no schema change: the column is free text); scope is checked before accepting a request. Both scopes remain
 valid until revoked. No database is rewritten. `notes_index.db` stores `SCHEMA_VERSION` in its `meta` table; when
 the stored number differs, `NotesIndex._init_schema` drops every table and the next sync fills
 them again. That is fine because the index is derived data.

@@ -108,7 +108,7 @@ When a library is updated, change its version in the `tools/*/package.json` and 
 | Page | Loads | Notes |
 |---|---|---|
 | `index.html` | the CSS files, `vendor/md/katex/katex.min.css`, then `js/main.js` as a module | The blocking local `js/themeHint.js` applies the cached theme (`zc.themeHint` in `localStorage`) before first paint. |
-| `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, then the modules `js/viewer/pdfjs.js` (loads pdf.js, an ES module), `viewer.js`, `notesBridge.js`, `links.js`, `annotations.js` | The PDF viewer, one tab per PDF: a frame in one of the app's tabs (`tabs/tabs.ts`), or a browser tab of its own (Settings → PDF Viewer). Its own styles and toolbar markup are inline. |
+| `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, then the modules `js/viewer/pdfjs.js` (loads pdf.js, an ES module), `viewer.js`, `notesBridge.js`, `links.js`, `annotations.js`; also `css/ai.css` and KaTeX's CSS for the Ask AI panel | The PDF viewer, one tab per PDF: a frame in one of the app's tabs (`tabs/tabs.ts`), or a browser tab of its own (Settings → PDF Viewer). Its own styles and toolbar markup are inline. |
 | `pair.html` | `js/access/pair.js` | Pairing from the QR link. The standalone module is built from `src/access/pair.ts`; its exact path is public before pairing. Styles stay inline. |
 | `signin.html` | `js/access/signin.js` | Sent by the guard with status 401 instead of a protected page: pairing help and passkey sign-in. Its standalone module, built from `src/access/signin.ts`, is public before sign-in; it imports no protected modules. |
 
@@ -372,7 +372,9 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `settings/backups.ts`, `settings/devices.ts` | Settings → Backups and Settings → Devices (pairing). |
 | `settings/updates.ts`, `updates.ts` | Settings → Updates (the version, newer commits, Check for Updates, Update Now and waiting for the restart) and the bell's "update available" ([updates](updates.md)). |
 | `settings/passkeys.ts` | Settings → Devices → Passkeys: adding one with `navigator.credentials.create`, removing one. |
-| `settings/aiAccess.ts` | Settings → AI Access: access tokens for `/mcp`, shown once with what to run for Claude Code or Codex, or the URL and header for another app. |
+| `settings/aiAccess.ts` | Settings → AI Access: access tokens for `/mcp`, shown once with what to run for Claude Code or Codex, or the URL and header for another app; browser tokens; and companion tokens, shown once with a download button (`/api/ai/companion-script`) and the two commands (`connect`, which asks for the token, and `run`), so the token is in no command line, for the computer that has the AI app. |
+| `ai/client.ts`, `ai/status.ts` | Ask AI's calls (`/api/ai/status`, `ask`, the long-polled job, `cancel`) with plain `fetch` (the viewer shares this code and not `api.ts`), and the cached "is a companion token set up" that decides whether the entry points show. |
+| `ai/panel.ts`, `ai/appHost.ts`, `css/ai.css` | The Ask AI panel, see [Ask AI](#ask-ai). |
 | `settings/plugins.ts` | Settings → Plugins: the list of plugins found (filter chips; a row opens the plugin's page; its switch turns it on, after a confirmation listing its access, or off) and the Plugins badge ("N on"). Each plugin that can be read has a section (`#set-plugin-<id>`) shown beside the list: its name, switch, what it may do and any problem, then, while it is on, its settings drawn from the manifest (less those its frontend draws, `shows`), tools for other computers, what it offers, Restart and the log. `pluginsChanged()` redraws them when the change feed names `plugins`. See [plugins](plugins.md). |
 
 **`views/notes/`: the notes workspace.** [Notes](notes.md) covers it in depth. In short:
@@ -502,6 +504,42 @@ state and call each other without import cycles. Three patterns are used:
   `selectedId`, `redoStack`) that only it reassigns; importers always see the current value. Code
   outside the module must not assign to them; it calls a function of the module instead.
 
+## Ask AI
+
+[The companion](companion.md) lets a model on the user's own computer answer questions with
+Synapse's tools. The browser side is one component, `ai/panel.ts`: a drawer on the right (full
+width on a phone) with the context chip (removable until the first answer), the thread, a question
+box (Enter sends, Shift+Enter is a new line, Escape closes and returns focus), Stop, and a New
+Conversation button. Follow-ups pass the conversation id; the context is sent with the first
+question only. With no companion connected the panel shows how to start one
+(`python synapse_companion.py run`) and a Check again button, also when `ask` answers 409.
+
+**Where it lives.** The panel opens in the document that asked: the app for a note, the viewer
+page for a PDF. The viewer runs in a frame of an app tab and as a page of its own, so hosting it
+in the viewer serves both with one code path; a host object (`AskHost`) supplies the one thing that
+differs, opening a cited PDF (`ai/appHost.ts` goes through `api.openAttachment` and the app's tabs;
+`viewer/notesBridge.ts` scrolls the open PDF, or opens another one as an app tab through `window.zcTabs.open` when it runs in a tab, else in a browser tab). `css/ai.css`
+is loaded by both pages and styles its own buttons from the tokens, because the viewer has no
+`components.css`.
+
+**Entry points** appear only when `GET /api/ai/status` says `configured` (`ai/status.ts`, cached
+60 s, refreshed when a note opens and after a companion token is made or removed): a button in the
+note's header and the palette command "Ask AI About This Note…" (`views/notes/aiAsk.ts`; the
+selected words of the editor, or of the read view, become `context.selection`), and "Ask AI" in the
+viewer's text-selection toolbar (`viewer/notesBridge.ts`; the quote, cleaned by `cleanQuote`, the
+page and the attachment become the context). Phone entry points are not built yet.
+
+**The answer is untrusted.** Deltas are appended to the turn's text and drawn at most every 120 ms.
+Drawing uses `createRenderer` of the notes (markdown-it with `html: false`, so tags are escaped
+text; KaTeX with `trust: false`), which gives `[@key, p. N]` citations and math. The HTML is built in an inert `<template>` (images there are not fetched), and images
+whose resolved address (`new URL`, so `../` is applied) is not the app's own `/api/notes/` are replaced by their alt text (a remote image
+would send the conversation to another host), links get `rel="noopener noreferrer"` and
+`target="_blank"` (markdown-it already refuses `javascript:` addresses), and Mermaid blocks stay
+source text. Until markdown-it has loaded the text is set with `textContent`. Nothing is ever
+assigned as raw HTML. A citation click uses the panel's own copy of the cite index
+(`/api/notes/cite_index`). `tests/e2e/companion_checklist.py` covers all of this, including a
+hostile answer.
+
 ## Styling
 
 `frontend/css/` is plain CSS, loaded by `index.html` in this order:
@@ -513,6 +551,7 @@ state and call each other without import cycles. Three patterns are used:
 | `components.css` | Buttons, inputs, menus, dialogs, toasts, empty states, chips. |
 | `layout.css` | The shell: the tab bar, toolbar, sidebar, panes, resizers, status bar, narrow screens. |
 | `items.css`, `itempane.css` | The items table; the item pane and the metadata review. |
+| `ai.css` | The Ask AI panel; also linked by `viewer.html`. |
 | `settings.css`, `notes.css`, `tasks.css`, `graph.css` | Settings, the notes workspace, tasks (the Tasks page, the task form and popups, task lines in notes), the graph. |
 | `export.css` | Not loaded by the app: the page and print rules of an exported note, added after `tokens.css`, `notes.css` and `tasks.css` (`views/notes/exportNote.ts`). |
 
