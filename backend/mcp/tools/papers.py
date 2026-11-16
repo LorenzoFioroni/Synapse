@@ -11,6 +11,7 @@ from ...library.repository import NotFound
 from ...pdf import outline as pdfoutline
 from ...pdf import regions as pdfregions
 from ...pdf import render as pdfrender
+from ...pdf.text import abstract_from_text, clean_text, extract_text
 from ..protocol import Image, Parts, ToolError
 from .common import (
     MAX_CHARS_PER_READ,
@@ -24,12 +25,22 @@ from .common import (
 )
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f]")  # pdfium marks a line-end hyphen with U+0002
+NEAR_CHARS = 300  # the words of a search "together": all of them within this many characters
+
+
+def _together(hits: dict[str, list[int]], matched: list[str]) -> list[int]:
+    """Positions of the rarest word where every other matched word is also within NEAR_CHARS."""
+    rare = min(matched, key=lambda t: len(hits[t]))
+    return [
+        pos for pos in hits[rare] if all(any(abs(q - pos) <= NEAR_CHARS for q in hits[t]) for t in matched if t != rare)
+    ]
 
 
 class PaperToolsMixin(ToolsBase):
     """get_paper, get_paper_outline, search_in_paper, read_paper, view_page, snapshot."""
 
     MAX_PAPERS_AT_ONCE = 20
+    MAX_CITING_NOTES = 10  # a much-cited paper: the rest is a count
 
     def _paper_summary(self, p: dict) -> dict:
         """What get_paper gives for each item asked for in a batch: metadata and the whole abstract."""
@@ -37,10 +48,25 @@ class PaperToolsMixin(ToolsBase):
             {
                 **self._brief(p),
                 "abstract": " ".join(str(p.get("abstract") or "").split()) or None,
-                "no_abstract": None if p.get("abstract") else "none stored; read_paper page 1 has the PDF's own",
+                **({} if p.get("abstract") else self._pdf_abstract(p)),
                 "tags": p.get("tags"),
             }
         )
+
+    def _pdf_abstract(self, p: dict) -> dict:
+        """For an item with no stored abstract: the one printed on its PDF's first page when it can be
+        recognised (marked approximate), else a pointer to read_paper."""
+        found = None
+        for att in self._pdfs(p)[:1]:
+            path = self.s.papers.attachment_path(att)
+            if path:
+                found = abstract_from_text(clean_text(extract_text(path, max_pages=1)[0]))
+        if found:
+            return {
+                "abstract": found,
+                "abstract_from_pdf": "none stored: this is the abstract printed on page 1 of the PDF (approximate)",
+            }
+        return {"no_abstract": "none stored" + ("; read_paper page 1 has the PDF's own" if self._pdfs(p) else "")}
 
     def get_paper(self, paper: str = "", papers: list | None = None):
         items = self._items()
@@ -84,7 +110,7 @@ class PaperToolsMixin(ToolsBase):
             }
         )
         if not p.get("abstract"):
-            out["no_abstract"] = "none stored; read_paper page 1 has the PDF's own"
+            out.update(self._pdf_abstract(p))
         note_text = None
         if key:
             pnotes = self.s.notes.paper_notes(key)
@@ -97,25 +123,29 @@ class PaperToolsMixin(ToolsBase):
                 except Exception:
                     note_text = None
             mine = {n["path"] for n in pnotes}
-            seen: set = set()
-            cited_in = []
+            per_note: dict[str, dict] = {}  # one entry per note: every line citing the paper, one context
             for c in self.s.notes.citing(key):
-                if c["path"] in mine or (c["path"], c["line"]) in seen:  # a line citing it twice shows once
+                if c["path"] in mine:
                     continue
-                seen.add((c["path"], c["line"]))
-                cited_in.append(
+                entry = per_note.setdefault(
+                    c["path"],
                     drop_empty(
                         {
                             "path": c["path"],
                             "title": c.get("source_title"),
                             "link": self._note_link(c["path"], c.get("source_title")),
-                            "line": c["line"],
                             "locator": c.get("locator"),
                             "context": c.get("context"),
                         }
-                    )
+                    ),
                 )
-            out["cited_in_notes"] = cited_in
+                lines = entry.setdefault("lines", [])
+                if c["line"] not in lines:  # a line citing it twice shows once
+                    lines.append(c["line"])
+            cited_in = list(per_note.values())
+            out["cited_in_notes"] = cited_in[: self.MAX_CITING_NOTES]
+            if len(cited_in) > self.MAX_CITING_NOTES:
+                out["cited_in_notes_total"] = len(cited_in)
         plugin_fields = self.s.plugins.fields.labelled(p)  # values plugins attach (citation counts …)
         if plugin_fields:
             out["plugin_fields"] = plugin_fields
@@ -196,11 +226,15 @@ class PaperToolsMixin(ToolsBase):
                 continue
             phrase_hits = [m.start() for m in re.finditer(re.escape(phrase), folded)] if phrase else []
             total = sum(len(v) for v in hits.values())
-            scored.append(((len(matched), len(phrase_hits), total), n, matched, phrase_hits, hits, text, idx))
+            near = _together(hits, matched) if len(matched) > 1 else []
+            scored.append(
+                ((len(matched), len(phrase_hits), len(near), total), n, matched, phrase_hits, near, hits, text, idx)
+            )
         scored.sort(key=lambda s: (s[0], -s[1]), reverse=True)
+        sections = pdfoutline.bookmarks(self.s.papers.attachment_path(att)) if scored else []
         results = []
-        for score, n, matched, phrase_hits, hits, text, idx in scored[:max_results]:
-            starts = phrase_hits[:1] + [hits[t][0] for t in matched]
+        for score, n, matched, phrase_hits, near, hits, text, idx in scored[:max_results]:
+            starts = phrase_hits[:1] + near[:1] + [hits[t][0] for t in matched]
             snippets: list[str] = []
             used: list[int] = []
             for st in starts:
@@ -214,7 +248,19 @@ class PaperToolsMixin(ToolsBase):
                 )
                 if len(snippets) == 3:
                     break
-            results.append({"page": n, "matched": matched, "occurrences": score[2], "snippets": snippets})
+            where = next((e["title"] for e in reversed(sections) if e["page"] <= n), None)
+            results.append(
+                drop_empty(
+                    {
+                        "page": n,
+                        "section": where,
+                        "matched": matched,
+                        "together": "all the words within a few lines of each other" if near else None,
+                        "occurrences": score[3],
+                        "snippets": snippets,
+                    }
+                )
+            )
         out = {
             "paper": self._label(p),
             "title": p.get("title"),
@@ -290,6 +336,10 @@ class PaperToolsMixin(ToolsBase):
                         "label": f["label"],
                         "caption": f["caption"],
                         "rect": f.get("rect"),
+                        "no_region": None
+                        if f.get("rect")
+                        else "caption found, but no drawing above/below it was recognised (a vector or text "
+                        "figure, or a rotated page): read the region off the grid and pass rect",
                     }
                 )
                 for f in figures

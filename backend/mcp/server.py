@@ -112,10 +112,11 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "get_note",
             "Read a note",
             'Read a Markdown note by path ("projects/crispr.md") or title. Returns its text, the papers it cites '
-            "(resolved to library items, with the line and page locator of each citation), its links to other notes "
+            "(resolved to library items, with the lines and pages where each is cited), its links to other notes "
             "and the notes linking to it. In notes, [@key] cites a paper and [[Title]] links a note. A long note "
-            "is read one section at a time: above ~30,000 characters get_note returns only the outline (with each "
-            "section's size) and section returns the text (and citations, links, images) under one heading.",
+            "is read one part at a time: above ~30,000 characters get_note returns only the outline (with each "
+            "section's size, and cited_papers for the whole note); section or lines returns the text (and "
+            "citations, links, images) of one part.",
             {
                 "type": "object",
                 "properties": {
@@ -124,6 +125,11 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
                         "type": "string",
                         "description": 'A heading of the note, e.g. "## Threshold" (the # marks are optional). '
                         "Default: the whole note.",
+                    },
+                    "lines": {
+                        "type": "string",
+                        "description": 'A range of line numbers, e.g. "120-300" (also "120-"): for a part that is not '
+                        "one section, or a section too big for one call. Overrides the outline of a long note.",
                     },
                     "full": {
                         "type": "boolean",
@@ -169,8 +175,8 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
         Tool(
             "get_paper",
             "Get a paper's details",
-            "Metadata and abstract of a library item, its PDFs (with page counts), the user's paper note about it, "
-            "the lines of other notes that cite it, a summary of its stored reference list, and values plugins "
+            "Metadata and abstract of a library item (when none is stored, the one printed on its PDF's first page, marked approximate), its PDFs (with page counts), the user's paper note about it, "
+            "the notes that cite it (one entry per note with its lines; the first 10), a summary of its stored reference list, and values plugins "
             "attach to it (plugin_fields, e.g. a citation count). To compare several items give papers=[…] "
             "(up to 20): each comes back with its whole abstract and nothing else.",
             {
@@ -216,7 +222,9 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "search_in_paper",
             "Search inside a paper's PDF",
             "Find the pages of a paper's PDF that contain some words (case and accents ignored), best pages first, "
-            "with snippets. Use it to locate the relevant pages, then read them with read_paper.",
+            "with snippets and the section (from the PDF's bookmarks). A page with all the words close together "
+            "ranks above one that has them far apart. Use it to locate the relevant pages, then read them with "
+            "read_paper.",
             {
                 "type": "object",
                 "properties": {

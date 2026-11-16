@@ -102,3 +102,29 @@ def find_identifier(text: str) -> dict:
     if m:
         return {"arxiv": m.group(1)}
     return {}
+
+
+_ABSTRACT_START = re.compile(r"(?im)^[ \t]*abstract\b[ \t]*[.:—–\-]*[ \t]*")
+_ABSTRACT_END = re.compile(
+    r"(?im)^[ \t]*(?:key\s*words?|index terms|pacs|keywords?|(?:1\.?|i\.?)[ \t]+introduction|introduction)\b"
+)
+ABSTRACT_MAX = 2500
+ABSTRACT_MIN = 150
+
+
+def abstract_from_text(text: str) -> str | None:
+    """The abstract printed on a paper's first page: the text after a line starting "Abstract" up to
+    "Keywords", "PACS" or the introduction. None when there is no such line or too little follows it.
+    Approximate: papers that print their abstract without the word are not recognised."""
+    m = _ABSTRACT_START.search(text)
+    if not m:
+        return None
+    rest = text[m.end() :]
+    end = _ABSTRACT_END.search(rest)
+    body = rest[: end.start()] if end else rest
+    body = " ".join(re.sub(r"-\n(?=[a-z])", "", body[: ABSTRACT_MAX + 200]).split())
+    if len(body) < ABSTRACT_MIN:
+        return None
+    if len(body) > ABSTRACT_MAX:
+        body = body[:ABSTRACT_MAX].rsplit(" ", 1)[0] + "…"
+    return body

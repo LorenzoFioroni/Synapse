@@ -84,11 +84,15 @@ class LibraryToolsMixin(ToolsBase):
             elif sort == "added":
                 found.sort(key=lambda p: p.get("date_added") or "", reverse=True)
             out["items_total"] = len(found)
+            if not found:
+                if why := self._zero_breakdown(query, items, mode, ctx, matcher):
+                    out.setdefault("warnings", []).append(why)
             if offset + limit < len(found):
                 out["next_offset"] = offset + limit
             page = found[offset : offset + limit]
             if compact:  # one short line per item: for listing a folder or a long result
-                out["items"] = [self._one_line(p) for p in page]
+                show_added = sort == "added" or "added:" in query
+                out["items"] = [self._one_line(p, show_added) for p in page]
             else:
                 out["items"] = [
                     drop_empty(
@@ -132,13 +136,30 @@ class LibraryToolsMixin(ToolsBase):
             else (query, None)
         )
 
+    def _zero_breakdown(self, query: str, items: list, mode: str, ctx: dict, matcher) -> str | None:
+        """For a query with no result and several parts: how many items each part matches on its own, which
+        shows the part that rules everything out."""
+        parts = []
+        for term, neg, f in search_mod.parse_query(query, ctx["field_filters"]):
+            value = f'"{term}"' if " " in term else term
+            parts.append(f"{'-' if neg else ''}{f + ':' if f else ''}{value}")
+        if len(parts) < 2 or len(parts) > 8:
+            return None
+        counts = [
+            (part, len(search_mod.search(items, part, mode, self.s.fulltext, ctx, notes=matcher)[0])) for part in parts
+        ]
+        return "No item matches all of the parts of the query. Each alone matches: " + ", ".join(
+            f"{part} → {n}" for part, n in counts
+        )
+
     @staticmethod
-    def _one_line(p: dict) -> str:
+    def _one_line(p: dict, added: bool = False) -> str:
         first = re.split(r";|\band\b", str(p.get("authors") or ""))[0].strip()
         more = " et al." if re.search(r";|\band\b", str(p.get("authors") or "")) else ""
         who = f"{first.split(',')[0] if ',' in first else first.split()[-1] if first else ''}{more}"
         key = p.get("citation_key") or f"item:{p['id']}"
-        return f"{key} ({p.get('year') or 'n.d.'}) {who}: {p.get('title') or ''}".replace("  ", " ")
+        when = f" [added {(p.get('date_added') or '')[:10]}]" if added and p.get("date_added") else ""
+        return f"{key} ({p.get('year') or 'n.d.'}) {who}: {p.get('title') or ''}{when}".replace("  ", " ")
 
     @staticmethod
     def _abstract(p: dict) -> str | None:

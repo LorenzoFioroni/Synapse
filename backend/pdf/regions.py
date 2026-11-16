@@ -271,6 +271,22 @@ def _mathiness(band) -> float:
     return math / max(1, math + letters)
 
 
+_PROSE_WORDS = {"where", "here", "the", "is", "are", "and", "with", "for", "which", "that", "of", "in", "we", "denotes"}
+
+
+def _sentence(band, col_l: float, em: float) -> bool:
+    """A band that starts at the column's left edge and holds ordinary words ("Here ⟨O⟩ is the …"): the
+    line of prose that follows a display, though its expectation values and Greek letters look like math."""
+    if min(c[1] for c in band) - col_l >= 1.0 * em:
+        return False  # indented: displayed math
+    text, prev = [], None
+    for c in sorted(band, key=lambda c: c[1]):  # the characters carry no spaces: a gap makes one
+        text.append(" " if c[6] or (prev is not None and c[1] - prev[3] > 0.15 * em) else "")
+        text.append("" if c[6] else c[0])
+        prev = c
+    return sum(w.lower() in _PROSE_WORDS for w in re.findall(r"[A-Za-z]+", "".join(text))) >= 2
+
+
 def _equation_numbers(chars: list[tuple]) -> list[dict]:
     """Equation numbers: "(N)" set apart at the end of a line, with nothing after it in its column.
     "see Eq. (3)." in running text has only a word space before it, or more text after it."""
@@ -397,6 +413,8 @@ def _page_equations(page) -> list[dict]:
             if i in numbered:
                 return False
             bl, _, br, _ = boxes[i]
+            if _sentence(bands[i], col_l, em):
+                return False
             return (bl - col_l >= 1.5 * em and col_r - br >= 1.5 * em) or _mathiness(bands[i]) >= 0.35
 
         spans: list[list] = []
