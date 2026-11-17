@@ -17,6 +17,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 import webbrowser
@@ -70,6 +71,7 @@ class TrayProcess:
         self.port, self.key = port, key
         self.status = "off"  # off · missing · starting · shown · no-tray · failed
         self.proc: subprocess.Popen | None = None
+        self.restarts: list[float] = []
 
     def start(self) -> None:
         if not _desktop():
@@ -109,6 +111,15 @@ class TrayProcess:
         else:
             self.status = "failed"
             log(f"The tray icon stopped (status {code}). " + " ".join(line.strip() for line in last)[:300])
+            # Nobody asked the companion to quit, so the icon should still be there: start it again
+            # (a few times only, in case it cannot run at all).
+            now = time.monotonic()
+            self.restarts = [t for t in self.restarts if now - t < 300]
+            if len(self.restarts) < 3:
+                self.restarts.append(now)
+                time.sleep(2)
+                if proc is self.proc:
+                    self.start()
 
     def stop(self) -> None:
         proc, self.proc, self.status = self.proc, None, "off"
@@ -140,6 +151,25 @@ class _Companion:
         return value if isinstance(value, dict) else {}
 
 
+def _render(name: str, scale: float):
+    """static/<name> as an icon at the sizes the system asks for, drawn ``scale`` of the full size."""
+    from PySide6.QtCore import QByteArray, QRectF
+    from PySide6.QtGui import QIcon, QImage, QPainter, QPixmap
+    from PySide6.QtSvg import QSvgRenderer
+
+    renderer = QSvgRenderer(QByteArray((resources.files(__package__) / "static" / name).read_bytes()))
+    icon = QIcon()
+    for size in (16, 22, 32, 44, 64, 128, 256, 512):
+        image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(0)
+        painter = QPainter(image)
+        margin = size * (1 - scale) / 2
+        renderer.render(painter, QRectF(margin, margin, size * scale, size * scale))
+        painter.end()
+        icon.addPixmap(QPixmap.fromImage(image))
+    return icon
+
+
 def main() -> int:
     """``synapse_companion tray``, started by the companion with ``{port, key}`` on stdin."""
     try:
@@ -148,7 +178,6 @@ def main() -> int:
     except (ValueError, KeyError, TypeError):
         return 2
     from PySide6.QtCore import QTimer
-    from PySide6.QtGui import QIcon, QPixmap
     from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
     app = QApplication([sys.argv[0], "--name", "synapse-companion"])
@@ -156,9 +185,14 @@ def main() -> int:
         return NO_TRAY
     app.setQuitOnLastWindowClosed(False)  # Qt has no windows of its own here
     app.setApplicationDisplayName("Synapse Companion")
-    pixmap = QPixmap()
-    pixmap.loadFromData((resources.files(__package__) / "static" / "icon.svg").read_bytes(), "SVG")
-    icon = QSystemTrayIcon(QIcon(pixmap))
+    # The Dock icon on macOS (else the generic Python one); icons there have a margin around them.
+    app.setWindowIcon(_render("icon.svg", 0.8 if sys.platform == "darwin" else 1.0))
+    if sys.platform == "darwin":
+        glyph = _render("tray.svg", 0.8)
+        glyph.setIsMask(True)  # a menu bar glyph: macOS draws it in the menu bar's own colour
+        icon = QSystemTrayIcon(glyph)
+    else:
+        icon = QSystemTrayIcon(_render("icon.svg", 1.0))
     state: dict = {}
     failures = [0]
 
@@ -190,8 +224,9 @@ def main() -> int:
             state.clear()
             state.update(companion.call("/api/state"))
             failures[0] = 0
-        except (urllib.error.URLError, OSError, ValueError):
+        except (urllib.error.URLError, OSError, ValueError) as e:
             failures[0] += 1
+            print(f"state failed ({failures[0]}): {e!r}", file=sys.stderr, flush=True)
             if failures[0] >= 3:  # the companion quit or restarted (a new one starts its own icon)
                 app.quit()
             return
@@ -206,6 +241,7 @@ def main() -> int:
     refresh()
     icon.show()
     ask("/api/tray", {"shown": True})
-    app.exec()
+    code = app.exec()
+    print(f'exec returned {code}', file=sys.stderr, flush=True)
     icon.hide()
     return 0
