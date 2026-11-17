@@ -23,7 +23,7 @@ from werkzeug.serving import make_server
 from backend import connector
 from backend.companion import bundle
 from backend.online.http import LookupFailed
-from synapse_companion import autostart, common, extension, native, providers, remote, runner, service, ui
+from synapse_companion import autostart, cli, common, extension, native, providers, remote, runner, service, tray, ui
 from synapse_companion.service import Service
 from tests.conftest import make_pdf
 
@@ -710,7 +710,9 @@ def test_the_state_has_what_the_window_shows(api, live, token):
         "update",
         "log",
         "extension",
+        "tray",
     }
+    assert state["tray"]["status"] == "off" and "PySide6" in state["tray"]["install"]
     assert state["profile"] == "default" and state["max_running"] == 2 and state["running"] == []
     assert set(state["connection"]) == {"state", "message"} and isinstance(state["log"], list)
     claude = next(p for p in state["providers"] if p["id"] == "claude")
@@ -779,6 +781,101 @@ def test_the_window_opens_through_a_private_file(tmp_path, monkeypatch):
     redirect = ui.home() / "default.open.html"
     assert launched[0][1] == f"--app={redirect.as_uri()}" and "SECRET" in redirect.read_text()
     assert redirect.stat().st_mode & 0o077 == 0 and ui.home().stat().st_mode & 0o077 == 0
+
+
+# ---------------------------------------------------------------------- the tray icon
+
+
+def test_the_tray_line_sums_up_the_state():
+    assert tray.summary({"connection": {"state": "none"}, "server": "", "running": []}) == "Not connected"
+    line = tray.summary(
+        {"connection": {"state": "connected"}, "server": "https://synapse.example.com", "running": [{}, {}]}
+    )
+    assert line == "Connected · synapse.example.com · answering 2"
+
+
+def test_no_tray_without_a_desktop_or_pyside(monkeypatch):
+    proc = tray.TrayProcess(1, "k")
+    proc.start()  # SYNAPSE_COMPANION_NO_WINDOW: tests and headless use
+    assert proc.status == "off" and proc.proc is None
+    monkeypatch.delenv("SYNAPSE_COMPANION_NO_WINDOW")
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.setattr(tray.importlib.util, "find_spec", lambda name: None)
+    proc.start()
+    assert proc.status == "missing" and proc.proc is None
+    assert any("PySide6-Essentials" in line for line in common.recent_log())
+
+
+def test_the_install_hint_fits_the_python(monkeypatch):
+    monkeypatch.setattr(tray.sys, "prefix", "/venv")
+    monkeypatch.setattr(tray.sys, "base_prefix", "/usr")
+    assert tray.install_hint().endswith(" -m pip install PySide6-Essentials")  # --user fails in a venv
+    monkeypatch.setattr(tray.sys, "base_prefix", "/venv")
+    assert tray.install_hint().endswith(" -m pip install --user PySide6-Essentials")
+
+
+def _fake_icon(monkeypatch, tmp_path, code: str) -> Path:
+    """The icon's process replaced by ``code``, which gets what the real one would on stdin."""
+    monkeypatch.delenv("SYNAPSE_COMPANION_NO_WINDOW")
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.setattr(tray.importlib.util, "find_spec", lambda name: object())
+    out = tmp_path / "icon-stdin.json"
+    script = f"import sys, os; open({str(out)!r}, 'w').write(sys.stdin.read()); {code}"
+    monkeypatch.setattr(tray, "command", lambda *args, **kw: [sys.executable, "-c", script, *args])
+    return out
+
+
+def _wait(predicate) -> None:
+    for _ in range(100):
+        if predicate():
+            return
+        time.sleep(0.05)
+    raise AssertionError("timed out")
+
+
+def test_the_icon_gets_the_key_on_stdin_never_in_its_command_line(monkeypatch, tmp_path):
+    out = _fake_icon(monkeypatch, tmp_path, f"sys.exit({tray.NO_TRAY})")
+    proc = tray.TrayProcess(4321, "the-window-key")
+    proc.start()
+    assert "the-window-key" not in json.dumps(proc.proc.args)
+    _wait(lambda: proc.status != "starting")
+    assert json.loads(out.read_text()) == {"port": 4321, "key": "the-window-key"}
+    assert proc.status == "no-tray" and any("no system tray" in line for line in common.recent_log())
+
+
+def test_a_crashing_icon_leaves_the_companion_running(monkeypatch, tmp_path):
+    _fake_icon(monkeypatch, tmp_path, "sys.stderr.write('Could not load the Qt platform plugin\\n'); os.abort()")
+    proc = tray.TrayProcess(1, "k")
+    proc.start()
+    _wait(lambda: proc.status != "starting")
+    assert proc.status == "failed"
+    assert any("tray icon stopped" in line and "Qt platform plugin" in line for line in common.recent_log())
+
+
+def test_stopping_the_companion_ends_its_icon(monkeypatch, tmp_path):
+    _fake_icon(monkeypatch, tmp_path, "import time; time.sleep(30)")
+    common._recent.clear()
+    proc = tray.TrayProcess(1, "k")
+    proc.start()
+    child = proc.proc
+    proc.stop()
+    assert child.wait(5) != 0 and proc.status == "off"
+    time.sleep(0.2)
+    assert not any("tray icon stopped" in line for line in common.recent_log())  # not a failure
+
+
+def test_the_icon_reports_itself_and_opens_the_window(api):
+    key = session(api)
+    assert api.call("POST", "/api/tray", {"shown": True}, key="wrong")[0] == 403
+    assert api.call("POST", "/api/tray", {"shown": True}, key=key)[0] == 200
+    assert api.call("GET", "/api/state", key=key)[1]["tray"]["status"] == "shown"
+    assert api.call("POST", "/api/open", {}, key=key)[0] == 200
+    assert common.recent_log()[-1].endswith(f"Window: {api.window.origin}/")
+
+
+def test_the_icon_process_needs_its_window_key(monkeypatch):
+    monkeypatch.setattr(sys, "stdin", io.StringIO("not json"))
+    assert cli.main(["tray"]) == 2
 
 
 def test_an_unknown_extension_action_is_refused(api):

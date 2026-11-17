@@ -17,7 +17,7 @@ import signal
 import subprocess
 import sys
 
-from . import native
+from . import native, tray
 from .common import ENV_TOKEN, Fail, check_profile_name, command, load_profile, log, log_to, make_home
 from .service import Service
 from .ui import Window, open_window, running_ticket
@@ -50,6 +50,7 @@ def cmd_run(a) -> None:
     window = Window(service)
     window.start()
     service.start()
+    window.tray.start()
     log(f"Synapse Companion started. Window: {window.origin} (open it with: python {command()[1]})")
     if a.open or not load_profile(a.profile):
         window.open()
@@ -58,11 +59,9 @@ def cmd_run(a) -> None:
         service.quit()
 
     signal.signal(signal.SIGTERM, terminate)
-    try:
-        while not service.stopped.wait(1):
-            pass
-    except KeyboardInterrupt:
-        service.quit()
+    signal.signal(signal.SIGINT, terminate)
+    while not service.stopped.wait(1):
+        pass
     window.stop()
     if service.restart:
         os.execv(sys.executable, command("run", "--profile", a.profile))
@@ -121,6 +120,8 @@ def main(argv: list[str] | None = None) -> int:
         # Started by the browser: `native-host --profile NAME <extension origin> [--parent-window=…]`
         profile = argv[2] if argv[1:2] == ["--profile"] and len(argv) > 2 else "default"
         return native.main(check_profile_name(profile))
+    if argv[:1] == ["tray"]:  # started by the companion, with its window key on stdin
+        return tray.main()
     args = parser().parse_args(argv)
     if args.command is None:
         args = parser().parse_args(["open", *argv])

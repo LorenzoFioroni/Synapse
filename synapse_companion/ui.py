@@ -33,6 +33,7 @@ from pathlib import Path
 
 from .common import Fail, home, log, read_json, write_private
 from .service import Service
+from .tray import TrayProcess
 
 MAX_BODY = 64 * 1024
 TICKET_SECONDS = 60
@@ -66,6 +67,7 @@ class Window:
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self))
         self.httpd.daemon_threads = True
         self.port = self.httpd.server_address[1]
+        self.tray = TrayProcess(self.port, self.key)
 
     @property
     def origin(self) -> str:
@@ -78,6 +80,7 @@ class Window:
         threading.Thread(target=self.httpd.serve_forever, daemon=True, name="window").start()
 
     def stop(self) -> None:
+        self.tray.stop()
         self.httpd.shutdown()
         path = window_file(self.service.profile_name)
         if read_json(path).get("key") == self.key:
@@ -143,7 +146,7 @@ def _handler(window: Window):
             if path == "/api/state":
                 if not self._key_ok():
                     return self._json(403, {"error": "Wrong key."})
-                return self._json(200, service.state())
+                return self._json(200, {**service.state(), "tray": window.tray.describe()})
             return self._json(404, {"error": "Not found."})
 
         def do_POST(self):
@@ -206,6 +209,10 @@ def _handler(window: Window):
                 service.set_autostart(data.get("on") is True)
             elif path == "/api/update":
                 threading.Thread(target=self._later, args=(service.update_program,), daemon=True).start()
+            elif path == "/api/open":  # from the tray icon
+                window.open()
+            elif path == "/api/tray":
+                window.tray.status = "shown"
             elif path == "/api/quit":
                 threading.Thread(target=self._later, args=(service.quit,), daemon=True).start()
             else:

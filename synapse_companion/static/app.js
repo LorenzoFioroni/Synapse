@@ -139,6 +139,13 @@ function renderExtension(s) {
       <button class="btn" data-ext="copy">Copy folder path</button><button class="btn" data-ext="repair">Repair</button></div>`;
 }
 
+const TRAY = {
+  shown: () => 'The icon in the system tray opens this window.',
+  missing: (t) => `For an icon in the system tray, install PySide6, then quit and start the companion again: <span class="mono">${esc(t.install)}</span>`,
+  'no-tray': () => 'This desktop shows no tray icons (on GNOME, the AppIndicator extension adds them).',
+  failed: () => 'The tray icon could not start; see Activity.',
+};
+
 function render(s) {
   state = s;
   renderConnection(s);
@@ -151,6 +158,7 @@ function render(s) {
   }
   $('autostart').checked = s.autostart;
   $('autostart-where').textContent = s.autostart ? `Entry: ${s.autostart_where}` : '';
+  $('tray').innerHTML = TRAY[s.tray.status]?.(s.tray) ?? '';
   $('program').innerHTML = `Program: <span class="mono">${esc(s.program)}</span>${s.update ? ' · a newer version is on your server' : ''}`;
   $('update').hidden = !s.update;
   const log = $('log');

@@ -18,14 +18,14 @@ see [frontend](frontend.md).
 
 | Piece | Where |
 |---|---|
-| The program: package `synapse_companion/`, Python standard library only, served as one runnable `synapse_companion.pyz` | `synapse_companion/` |
+| The program: package `synapse_companion/`, Python standard library only (the tray icon optionally uses PySide6), served as one runnable `synapse_companion.pyz` | `synapse_companion/` |
 | Command line; files, profile and settings; requests to the server | `cli.py`; `common.py`; `remote.py` |
 | The AI tools and their output | `providers.py` |
 | The poll loop and one thread per question | `runner.py` |
 | Background service: connection, settings, extension, updates, the window's state | `service.py` |
 | The window (127.0.0.1 page and its API) | `ui.py`, `static/` |
 | Extension folder and native messaging registration; the native host | `extension.py`; `native.py` |
-| Start at login | `autostart.py` |
+| Start at login; the tray icon | `autostart.py`; `tray.py` |
 | The in-memory rendezvous (`Companions`), one per `Services`; per-question tokens | `backend/companion/hub.py` |
 | The question the AI tool receives | `backend/companion/prompt.py` |
 | The downloads: extension zip and `.pyz`, with build hashes | `backend/companion/bundle.py` |
@@ -54,6 +54,13 @@ address and the token, then:
   the browsers, and shows the one-time **Load unpacked** steps. Its state says whether a browser
   knows the companion, when the extension last said hello and whether it runs the current files.
 - **Start Synapse Companion when I log in.**
+
+**The tray icon** (the menu bar on macOS) shows the connection and how many questions are being
+answered, and offers **Open Synapse Companion**, **Open Synapse in the Browser** and **Quit**; a
+click opens the window. It needs PySide6 in the Python that runs the companion, the one optional
+package outside the standard library: `python3 -m pip install --user PySide6-Essentials` (without
+`--user` in a virtual environment; the window shows the exact command), then quit and start the
+companion again. GNOME shows tray icons only with the AppIndicator extension (Ubuntu has it on).
 
 Running the program again (or the applications-menu entry on Linux) opens the window of the
 companion already running. `python3 synapse_companion.pyz run` runs it in the foreground instead
@@ -313,14 +320,23 @@ rebinding); every change must carry the key in `X-Companion-Key`, be JSON and co
 own origin (or none). Pages have a strict Content Security Policy and nothing is cached. The state
 it shows: the connection (`connecting`, `connected`, `unreachable`, `refused`), the tools found and
 the settings, questions running, the extension (installed, registered browsers, last hello, review
-waiting), start at login, an available update and the recent log.
+waiting), start at login, the tray icon, an available update and the recent log.
+
+**The tray icon** is a child process (`synapse_companion tray`), because Qt ends the whole process
+when it cannot reach the display, and the companion must survive that. The companion starts it when
+there is a desktop and PySide6 can be imported, and writes `{port, key}` to its standard input
+(never its command line). The icon reads `/api/state` every 2 s like the window, and sends
+`/api/open` (the companion opens the window), `/api/quit` and `/api/tray` (it is shown). It quits
+after three failed requests (the companion is gone or restarting; a new one starts its own icon), and
+the companion ends it when it stops. Exit status 4 means the desktop has no tray; any other failure
+is logged with Qt's last words. The window says which, or the command that installs PySide6.
 
 ## Limits
 
 - Needs Python 3.10+ and a signed-in `claude` (or `codex`) on the same computer.
 - The browser extension works only through a connected companion on the same computer.
-- Starting at login and the browsers' native messaging registration are written for Linux, macOS
-  and Windows; only Linux is exercised by the tests.
+- Starting at login, the tray icon and the browsers' native messaging registration are written for
+  Linux, macOS and Windows; only Linux is exercised by the tests (the icon on a virtual X display).
 - An unreachable server, a restart or a vanished companion end open answers with an error; nothing
   is retried or kept.
 - Provider output formats can change between releases: the Claude Code and Codex readers ignore

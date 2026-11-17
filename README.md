@@ -333,7 +333,8 @@ python3 synapse_companion.pyz
 
 Its window asks for the server's address and the token, lets you choose which AI tools, models and
 efforts Synapse may use (Codex is off until you turn it on), installs the browser extension, and
-can start the Companion whenever you log in. Run the file again to reopen the window.
+can start the Companion whenever you log in. Run the file again to reopen the window; with PySide6
+installed (`python3 -m pip install --user PySide6-Essentials`) it also has a tray icon.
 
 Previous conversations are kept on the server and can be continued later, and you can pick the AI
 agent, model and effort for each question from small buttons beside the text box. Type `[@` or `[[` (or press the @ button)
