@@ -291,9 +291,7 @@ async def main():
             await page.click(".ai-fab")
             await page.wait_for_selector(".ai-panel .ai-help:not([hidden])", timeout=8000)
             helptext = await page.inner_text(".ai-help")
-            check(
-                "no companion: the panel says how to start one", "synapse_companion.pyz" in helptext, helptext
-            )
+            check("no companion: the panel says how to start one", "synapse_companion.pyz" in helptext, helptext)
             check("the button hides while the panel is open", await page.locator(".ai-fab").is_hidden())
             check(
                 "the panel is in the main document, and the button added no context",
