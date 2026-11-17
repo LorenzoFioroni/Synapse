@@ -109,3 +109,18 @@ def test_attachment_qualifier_names_the_pdf():
     cites = parser._parse_cite_group("@smith2021, p. 4, att:12")
     assert cites[0]["key"] == "smith2021" and cites[0]["page"] == 4
     assert parser.attachment_of(cites[0]["locator"]) == 12
+
+
+def test_headings_and_citations_parse_in_linear_time():
+    # Long runs of blanks or @s once made the heading and citation patterns backtrack
+    # quadratically (seconds for one line); each must now take milliseconds.
+    import time
+
+    for text in ("# a" + "\t" * 20000 + "!", "[" + "@" * 20000, "[" + "a@" * 20000):
+        start = time.perf_counter()
+        parser.parse(text)
+        assert time.perf_counter() - start < 0.5, repr(text[:10])
+    heads = parser.parse("# Title ##  \n## C# #\n# ##\n#   \n### a # b #\t\n").headings
+    assert [(h.level, h.text) for h in heads] == [(1, "Title"), (2, "C#"), (1, "#"), (1, ""), (3, "a # b")]
+    cites = parser.parse("See [@a; @b, p. 2] and [no cite] and [x @c].").citations
+    assert [(c.target, c.page, c.prefix) for c in cites] == [("a", None, ""), ("b", 2, ""), ("c", None, "x")]
