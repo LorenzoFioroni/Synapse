@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from functools import wraps
 
-from flask import Blueprint, jsonify, request, send_from_directory
+from flask import Blueprint, jsonify, request, send_file, send_from_directory
 
 from ..changes import CLIENT_HEADER
 from ..notes.history import GitError
 from ..notes.vault import ATTACHMENTS, Conflict, NoteExists, NoteMoved, VaultError
+from ..pdf.files import HEADER_WINDOW, file_is_pdf, looks_like_pdf
 from . import body, error, failure, message_of, svc
 
 bp = Blueprint("notes", __name__, url_prefix="/api")
@@ -288,6 +289,50 @@ def upload_image():
     if not f:
         return error("No file uploaded")
     return jsonify(svc().note_service.add_image(f.filename or "", f.read())), 201
+
+
+@bp.post("/notes/pdf")
+@guarded
+def upload_pdf():
+    """A PDF (multipart ``file``, optional ``folder``) added to a notes folder."""
+    f = request.files.get("file")
+    if not f:
+        return error("No file uploaded")
+    head = f.stream.read(HEADER_WINDOW)
+    f.stream.seek(0)
+    if not looks_like_pdf(head):
+        return error(f"“{f.filename or 'The file'}” is not a PDF. Only PDF files can be added to the notes.", 415)
+    return jsonify(svc().note_service.add_pdf(f.filename or "", f.stream, request.form.get("folder") or "")), 201
+
+
+@bp.get("/note-pdfs/<int:pdf_id>")
+@guarded
+def note_pdf(pdf_id):
+    found = svc().note_pdfs.file_of(pdf_id)
+    if not found:
+        return error("This PDF is not in the notes any more.", 404)
+    return jsonify(found[0])
+
+
+@bp.get("/note-pdfs/<int:pdf_id>/file")
+@guarded
+def note_pdf_file(pdf_id):
+    found = svc().note_pdfs.file_of(pdf_id)
+    if not found:
+        return error("This PDF is not in the notes any more.", 404)
+    p = found[1]
+    ok = file_is_pdf(p)  # served from the app's origin: what is not a PDF must never run in a browser
+    resp = send_file(
+        p,
+        mimetype="application/pdf" if ok else "application/octet-stream",
+        as_attachment=not ok,
+        download_name=p.name,
+        conditional=True,
+        max_age=0,
+    )
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Cache-Control"] = "private, no-cache"  # the file can be replaced under the same number
+    return resp
 
 
 @bp.get("/notes/attachments")

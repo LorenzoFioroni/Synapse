@@ -17,6 +17,7 @@ change feed), [frontend.md](frontend.md) and [testing.md](testing.md).
 | `*.md`, `<folder>/*.md` | The notes. Folders are ordinary folders. |
 | `papers/<key>.md` | Paper notes: the default place for the note about one library item. |
 | `ai/` | Notes an AI app created through the MCP server's `write_note` (`AI_FOLDER` in `backend/mcp/tools/common.py`), unless it was asked to save one in a folder the user already has. |
+| `*.pdf`, `<folder>/*.pdf` | PDFs kept beside the notes (see [PDFs in the notes folders](#pdfs-in-the-notes-folders)). Only PDFs: no other file type is listed or served. |
 | `attachments/` | Images shown by notes. Reserved: no notes or user folders go here. |
 | `.trash/<timestamp>/` | Deleted notes and folders, at their old relative path. |
 | `.trash-attachments/<timestamp>/` | Images no note uses any more. `.since` records when automatic emptying started. |
@@ -74,6 +75,38 @@ Deleting never removes a file: `Vault.trash` and `Vault.trash_batch` move notes 
 `Attachments.purge` deletes entries of both trashes older than the `notes_trash_retention`
 setting (`never`, `1d`, `1w`, `2w`, `1m`, `6m`; default `1m`). Age counts from the deletion but
 never from before `.since`, so updating the app does not empty a trash that filled up over years.
+
+### PDFs in the notes folders
+
+A PDF is a file of its own in a notes folder (`data/notes/<folder>/x.pdf`), shown in the tree beside
+the notes and opened in the PDF viewer. The file is the PDF; `NotePdfs` (`backend/notes/pdfs.py`)
+keeps a registry in `library.db` (`note_pdfs`: id, path, sha256, size, mtime, `state` =
+`present`, `trashed` or `missing`) that gives each file a number which outlives its path. The viewer
+and everything attached to the PDF (highlights) use that number, so a rename or move keeps them.
+
+- **Added** by dropping files on the tree or a folder, or **Add PDF…** on a folder
+  (`POST /api/notes/pdf`, multipart `file` and `folder`). The content must start like a PDF
+  (`looks_like_pdf`), the name is cleaned (`slugify`) and always ends in `.pdf`, a taken name gets
+  ` 2`, ` 3`…, and nothing is overwritten. The file is streamed to disk and refused over 90 MB
+  (`MAX_PDF_BYTES`, below the 100 MB a Cloudflare Tunnel accepts).
+- **Paths** go through `Vault.clean_rel(suffix=".pdf")` like notes: no `..`, absolute or hidden
+  segments, never in `attachments/`, symbolic links are neither listed nor served.
+- **Served** by `GET /api/note-pdfs/<id>/file` (ranges work) with `nosniff` and
+  `Cache-Control: private, no-cache`; a file that no longer starts like a PDF is sent as a download
+  of type `application/octet-stream`.
+- **Moving, renaming and deleting** use the notes endpoints with a path ending in `.pdf`. A move
+  updates the row (`NotePdfs.moved`), deleting sends the file to `.trash/<timestamp>/` with its
+  folder and the row becomes `trashed`, restoring brings the row back. PDFs are never written to the
+  notes history, and no links to them are rewritten yet.
+- **Outside changes** are found by `NotePdfs.sync()` (at start, with the notes index and on a
+  rescan). A file at a known path whose size or time changed is a replacement and keeps its row. A
+  new file that is byte-for-byte a vanished one takes that row over (an external rename keeps the
+  highlights). A row whose file is gone becomes `missing`.
+- **Lifetime.** A row, and the highlights hanging on it, is deleted when its file is deleted for
+  good: `Attachments.purge` deletes the trash entry after the retention (it tells `NotePdfs` through
+  `on_purged`), and `sync` also forgets trashed rows whose file left `.trash/` by other means. A
+  `missing` row is deleted once it has been missing for longer than `notes_trash_retention`
+  (`never` keeps it); until then a file that comes back (same path or same content) gets it back.
 
 ## Backend
 
@@ -284,15 +317,15 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 
 | Method | Path | What it does |
 |---|---|---|
-| GET | `/api/notes` | Listing: every note's index entry, the folders, `folder_colors` (only folders that exist), counts. |
+| GET | `/api/notes` | Listing: every note's index entry, `pdfs` (id, path, name, size), the folders, `folder_colors` (only folders that exist), counts. |
 | GET | `/api/notes/note?path=` | Text, hash and index entry of one note. With `&unless=<hash>`, a note that still has that hash answers `{path, hash, unchanged: true}` only. |
 | POST | `/api/notes/note` | Create (`title`, `folder` or `path`, `item_id`, `text`). |
 | PUT | `/api/notes/note` | Save `text` over `hash`; with `create: true`, write a note that must not exist. |
-| POST | `/api/notes/move` | Rename or move a note (`path`, `to`, optional `hash`); rewrites the links it would break and returns `updated_links` and `broken_links`. |
+| POST | `/api/notes/move` | Rename or move a note or PDF (`path`, `to`, optional `hash`); rewrites the links it would break and returns `updated_links` and `broken_links`. |
 | POST | `/api/notes/folder` | Create a folder. |
 | POST | `/api/notes/folder/move` | Rename or move a folder; rewrites the links it would break and returns the moved notes, `updated_links` and `broken_links`. Its colour and its subfolders' go with it. |
 | PUT | `/api/notes/folder/color` | `{path, color}`: give a folder a colour (`#rrggbb`), or none (`null` or `""`); answers `folder_colors`. |
-| POST | `/api/notes/trash` | Trash one note (`path`) or several notes and folders together (`paths`, `folders`). |
+| POST | `/api/notes/trash` | Trash one note or PDF (`path`) or several notes, PDFs and folders together (`paths`, `folders`). |
 | GET | `/api/notes/trash` | Trashed notes with `trashed_at` and `deletes_at`, and the retention. |
 | POST | `/api/notes/restore` | Restore one note (`trash_id`, `path`) or a whole batch (`trash_id` only). |
 | GET | `/api/notes/history?path=&limit=` | A note's versions, newest first, without their text. The other history endpoints (versions, the whole log, differences, checkpoints, milestones) are in [notes history](notes-history.md#http-api). |
@@ -304,6 +337,9 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | GET | `/api/notes/cite_index` | Every item with a key, for autocomplete and citation cards. |
 | GET | `/api/items/<id>/notes` | An item's paper notes and citing notes. |
 | POST | `/api/notes/append` | Append Markdown to an item's paper note (used by the PDF viewer). |
+| POST | `/api/notes/pdf` | Add a PDF (multipart `file`, `folder`); answers its registry entry. 415 when it is not a PDF, 413 over the size cap. |
+| GET | `/api/note-pdfs/<id>` | A PDF's registry entry (404 when it is trashed, missing or gone). |
+| GET | `/api/note-pdfs/<id>/file` | The PDF itself. |
 | POST | `/api/notes/attachments` | Upload an image (multipart `file`); returns its path and Markdown. |
 | GET | `/api/notes/attachments` | Every image with the notes using it, plus the attachment trash. |
 | POST | `/api/notes/attachments/restore` | Restore a trashed image. |

@@ -154,7 +154,7 @@ and open `http://127.0.0.1:8000/` on your laptop; that counts as the computer ru
 - **Cloudflare sees the traffic.** It ends the HTTPS connection and passes the requests on, as any
   such tunnel does. Your sign-in still guards the library.
 - **Large uploads.** Cloudflare's free plan limits a request to 100 MB, so a bigger PDF can't be
-  dropped in through the tunnel.
+  dropped in through the tunnel. PDFs added to the notes folders are refused over 90 MB for this reason.
 - **Cloudflare Access** (an email code in front of the site) is optional. If you add it, bypass it
   for `/mcp` (AI apps can't do its login) and for `/manifest.webmanifest` and `/assets/` (the
   Home Screen icon is fetched without cookies).

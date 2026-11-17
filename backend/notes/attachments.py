@@ -81,6 +81,9 @@ class Attachments:
         # each hourly maintenance (emptying the tasks trash). Set by Services.
         self.extra_texts: Callable[[], list[tuple[str, str]]] | None = None
         self.on_maintain: Callable[[], object] | None = None
+        # told which trashed notes (``.trash/<timestamp>/``) were deleted for good, so what hangs on
+        # the PDFs among them (their registry rows and highlights) goes too. Set by Services.
+        self.on_purged: Callable[[str], object] | None = None
 
     @property
     def dir(self) -> Path:
@@ -273,10 +276,14 @@ class Attachments:
                     if not stamp_dir.is_dir() or now - self._deleted_at(stamp_dir) < secs:
                         continue
                     n = sum(
-                        1 for f in stamp_dir.rglob("*") if f.is_file() and (key == "attachments" or f.suffix == ".md")
+                        1
+                        for f in stamp_dir.rglob("*")
+                        if f.is_file() and (key == "attachments" or f.suffix.lower() in (".md", ".pdf"))
                     )
                     shutil.rmtree(stamp_dir, ignore_errors=True)
                     counts[key] += n
+                    if key == "notes" and self.on_purged and not stamp_dir.exists():
+                        self.on_purged(f"{TRASH}/{stamp_dir.name}/")
         if counts["attachments"] or counts["notes"]:
             log.info("Emptied the notes trash: %(notes)d notes and %(attachments)d attachments deleted", counts)
         return counts

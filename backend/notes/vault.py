@@ -21,6 +21,7 @@ from pathlib import Path
 TRASH = ".trash"
 ATTACHMENTS = "attachments"
 NOTE_SUFFIX = ".md"
+PDF_SUFFIX = ".pdf"
 MOVES_KEPT = 5000  # moved notes remembered for windows still showing an old path
 _BAD_CHARS = re.compile(r'[\x00-\x1f<>:"\\|?*]')
 
@@ -45,6 +46,10 @@ class NoteMoved(NoteMissing):
         super().__init__(path)
         self.path = path
         self.to = to
+
+
+class TooLarge(VaultError):
+    status = 413
 
 
 class NoteExists(VaultError):
@@ -153,6 +158,21 @@ class Vault:
                     continue
                 yield p.relative_to(self.root).as_posix(), p.stat()
 
+    def iter_files(self, suffix: str = PDF_SUFFIX):
+        """Like ``iter_notes`` for the files of another type kept beside the notes (PDFs)."""
+        for dirpath, dirnames, filenames in os.walk(self.root):
+            here = Path(dirpath)
+            dirnames[:] = sorted(
+                d for d in dirnames if not d.startswith(".") and not (here == self.root and d == ATTACHMENTS)
+            )
+            for f in sorted(filenames):
+                if f.startswith(".") or not f.lower().endswith(suffix):
+                    continue
+                p = here / f
+                if p.is_symlink():
+                    continue
+                yield p.relative_to(self.root).as_posix(), p.stat()
+
     def folders(self) -> list[str]:
         out = []
         for dirpath, dirnames, _ in os.walk(self.root):
@@ -210,8 +230,38 @@ class Vault:
             self._atomic_write(p, data)
             return self.rel(p)
 
-    def move(self, src: str, dst: str, *, expected_hash: str | None = None) -> str:
-        src, dst = self.clean_rel(src), self._note_path(dst)
+    def write_stream(self, rel: str, stream, *, max_bytes: int, suffix: str = PDF_SUFFIX) -> tuple[str, str, int]:
+        """Copy an upload to a new file beside the notes without holding it in memory (never
+        overwrites: a taken name gets `` 2``, `` 3`` …). Returns ``(path, sha256, size)``; a file
+        over ``max_bytes`` is refused and nothing is left behind."""
+        rel = self._note_path(rel, suffix=suffix)
+        p = self.root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(f".{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        digest, size = hashlib.sha256(), 0
+        try:
+            with open(tmp, "wb") as fh:
+                while chunk := stream.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise TooLarge(f"The file is larger than {max_bytes // (1024 * 1024)} MB.")
+                    digest.update(chunk)
+                    fh.write(chunk)
+                fh.flush()
+                os.fsync(fh.fileno())
+            with self._lock:
+                base, n = p.with_suffix(""), 1
+                while p.exists():
+                    n += 1
+                    p = Path(f"{base} {n}{suffix}")
+                os.replace(tmp, p)
+        finally:
+            if tmp.exists():
+                tmp.unlink()
+        return self.rel(p), digest.hexdigest(), size
+
+    def move(self, src: str, dst: str, *, expected_hash: str | None = None, suffix: str = NOTE_SUFFIX) -> str:
+        src, dst = self.clean_rel(src, suffix=suffix), self._note_path(dst, suffix=suffix)
         with self._lock:
             ps, pd = self.root / src, self.root / dst
             if not ps.is_file():
@@ -252,12 +302,19 @@ class Vault:
         """The images folder (compared without case: macOS disks ignore it)."""
         return rel.split("/")[0].lower() == ATTACHMENTS
 
-    def _note_path(self, rel: str) -> str:
-        """A path a note may be written to: never in the images folder, which is not indexed."""
-        rel = self.clean_rel(rel)
+    def _note_path(self, rel: str, suffix: str = NOTE_SUFFIX) -> str:
+        """A path a note (or PDF) may be written to: never in the images folder, which is not indexed."""
+        rel = self.clean_rel(rel, suffix=suffix)
         if self._reserved(rel):
             raise InvalidPath("The attachments folder is reserved for images")
         return rel
+
+    def _file_rel(self, rel: str) -> str:
+        """A note's or a PDF's path."""
+        r = self.clean_rel(rel, suffix=None)
+        if not r.lower().endswith((NOTE_SUFFIX, PDF_SUFFIX)):
+            raise InvalidPath(f"Notes must end in {NOTE_SUFFIX}, PDFs in {PDF_SUFFIX}")
+        return r
 
     def make_folder(self, rel: str) -> str:
         rel = self.clean_rel(rel, suffix=None)
@@ -287,6 +344,18 @@ class Vault:
                     out.append(p.relative_to(self.root).as_posix())
         return sorted(out)
 
+    def pdfs_in(self, folder: str) -> list[str]:
+        """Every PDF inside a folder (recursively), as vault-relative paths."""
+        base = self.root / self._folder(folder)
+        out = []
+        for dirpath, dirnames, filenames in os.walk(base):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            for f in filenames:
+                p = Path(dirpath) / f
+                if not f.startswith(".") and f.lower().endswith(PDF_SUFFIX) and not p.is_symlink():
+                    out.append(p.relative_to(self.root).as_posix())
+        return sorted(out)
+
     def move_folder(self, src: str, dst: str) -> list[tuple[str, str]]:
         """Rename or move a folder with everything in it. Returns [(old note path, new note path)]."""
         src = self._folder(src)
@@ -309,9 +378,9 @@ class Vault:
         return moved
 
     # ------------------------------------------------------------------ trash
-    def trash(self, rel: str) -> str:
+    def trash(self, rel: str, *, suffix: str = NOTE_SUFFIX) -> str:
         """Move a note to ``.trash/<timestamp>/<rel>``; returns the trash id (that folder name)."""
-        rel = self.clean_rel(rel)
+        rel = self.clean_rel(rel, suffix=suffix)
         with self._lock:
             p = self.root / rel
             if not p.is_file():
@@ -323,19 +392,19 @@ class Vault:
         return stamp
 
     def trash_batch(self, notes: list[str], folders: list[str]) -> tuple[str, list[str]]:
-        """Move several notes and folders into one ``.trash/<timestamp>/`` (one undo restores
-        them all). Returns the trash id and the note paths that went with them."""
+        """Move several notes (and PDFs) and folders into one ``.trash/<timestamp>/`` (one undo
+        restores them all). Returns the trash id and the note and PDF paths that went with them."""
         under = lambda rel, f: rel.lower().startswith(f.lower() + "/")  # noqa: E731  (case-insensitive disks)
         folders = sorted({self._folder(f) for f in folders})
         folders = [f for f in folders if not any(under(f, o) for o in folders if o != f)]  # parents cover children
-        notes = sorted({n for n in (self.clean_rel(x) for x in notes) if not any(under(n, f) for f in folders)})
+        notes = sorted({n for n in (self._file_rel(x) for x in notes) if not any(under(n, f) for f in folders)})
         if not notes and not folders:
             raise InvalidPath("Nothing to delete")
         with self._lock:
             for n in notes:
                 if not (self.root / n).is_file():
                     raise NoteMissing(n)
-            contents = {f: self.notes_in(f) for f in folders}
+            contents = {f: sorted(self.notes_in(f) + self.pdfs_in(f)) for f in folders}
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
             moved: list[str] = []
             for rel in folders + notes:
@@ -353,7 +422,7 @@ class Vault:
 
     def restore_batch(self, trash_id: str) -> tuple[list[str], list[str]]:
         """Put back everything deleted together. Files whose place is taken again are left in
-        the trash. Returns (restored note paths, skipped paths)."""
+        the trash. Returns (restored note and PDF paths, skipped paths)."""
         if not re.fullmatch(r"[0-9\-]+", trash_id or ""):
             raise InvalidPath("Bad trash id")
         base = self.root / TRASH / trash_id
@@ -382,7 +451,7 @@ class Vault:
                     except OSError:
                         skipped.append(rel)
                         continue
-                    if f.lower().endswith(NOTE_SUFFIX) and not (self.root / rel).is_symlink():
+                    if f.lower().endswith((NOTE_SUFFIX, PDF_SUFFIX)) and not (self.root / rel).is_symlink():
                         restored.append(rel)
             for dirpath, _, _ in sorted(os.walk(base), key=lambda t: -len(t[0])):  # tidy up emptied folders
                 try:
@@ -398,12 +467,13 @@ class Vault:
             for stamp_dir in sorted(base.iterdir(), reverse=True):
                 if not stamp_dir.is_dir():
                     continue
-                for f in stamp_dir.rglob("*.md"):
-                    out.append({"trash_id": stamp_dir.name, "path": f.relative_to(stamp_dir).as_posix()})
+                for f in sorted(stamp_dir.rglob("*")):
+                    if f.suffix.lower() in (NOTE_SUFFIX, PDF_SUFFIX) and f.is_file():
+                        out.append({"trash_id": stamp_dir.name, "path": f.relative_to(stamp_dir).as_posix()})
         return out
 
     def restore(self, trash_id: str, rel: str) -> str:
-        rel = self.clean_rel(rel)
+        rel = self._file_rel(rel)
         if not re.fullmatch(r"[0-9\-]+", trash_id or ""):
             raise InvalidPath("Bad trash id")
         with self._lock:

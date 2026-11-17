@@ -15,7 +15,7 @@ Code: `backend/notes/history/` (recording and reading), `frontend/src/views/note
 | Git directory | `data/notes-history.git` (`Config.notes_history_dir`) |
 | Work tree | `data/notes/`, passed on every call (`GIT_WORK_TREE`); the notes folder never gets a `.git` |
 | Tracked | `*.md` only (`EXCLUDE` in `git.py`, written to `info/exclude`) |
-| Not tracked | `attachments/` (images pile up; an old version may show an image that is gone), `.trash/`, the old `.history/`, `.folders.json`, every dot file, every other file |
+| Not tracked | PDFs in the notes folders (never passed to the history; a backup does contain them), `attachments/` (images pile up; an old version may show an image that is gone), `.trash/`, the old `.history/`, `.folders.json`, every dot file, every other file |
 | Branch | `main`, linear: one history for the whole vault, like an Overleaf project |
 | Milestones | annotated tags `refs/tags/m-YYYYmmdd-HHMMSS`, the user's name for it as the tag message |
 | Pending edits | `synapse-pending.json` in the Git directory |

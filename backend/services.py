@@ -62,14 +62,26 @@ class Services:
         self.vault.ensure()
         self.notes = NotesIndex(config.notes_index_path, self.vault)
         # key renames back up the notes into the backup folder from Settings, like Backups does
+        from .notes.pdfs import NotePdfs
+
+        self.note_pdfs = NotePdfs(self.db, self.vault)  # the PDFs beside the notes
         self.note_service = NotesService(
-            self.vault, self.notes, self.papers, self._backup_dir, history_dir=config.notes_history_dir
+            self.vault,
+            self.notes,
+            self.papers,
+            self._backup_dir,
+            history_dir=config.notes_history_dir,
+            pdfs=self.note_pdfs,
         )
         self.note_service.history.on_tick = self.sync_external_notes
         self.note_service.history.on_commit = lambda: self.changes.record({"history"})
         # Attachments no note uses go to their own trash; both trashes are emptied after a while.
         self.attachments = Attachments(self.vault, self.notes, self.settings)
         self.note_service.on_change = self.attachments.poke
+        self.attachments.on_purged = self.note_pdfs.forget_under
+        from .notes.attachments import RETENTION
+
+        self.note_pdfs.retention = lambda: RETENTION.get(self.settings.get("notes_trash_retention"))
         # Tasks: records in library.db that notes show as {{task:id}} lines.
         from .tasks import TaskService, TaskStore
 
@@ -135,10 +147,18 @@ class Services:
             self.notes.sync()
         except Exception:  # notes must never stop the library from starting
             logging.getLogger(__name__).exception("Notes index sync failed")
+        try:
+            self.note_pdfs.sync()
+        except Exception:
+            logging.getLogger(__name__).exception("Notes PDF sync failed")
 
     def sync_external_notes(self) -> None:
         """Refresh disposable indexes and every window after files change outside the app."""
         result = self.notes.sync()
+        try:
+            result = {**result, **{f"pdf_{k}": v for k, v in self.note_pdfs.sync().items()}}
+        except Exception:
+            logging.getLogger(__name__).exception("Notes PDF sync failed")
         if any(result.values()):
             self.changes.record({"notes"})
             self.attachments.poke()

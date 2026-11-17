@@ -46,7 +46,7 @@ page, and a page that cannot know what it missed simply refreshes everything.
 |---|---|
 | `library` | A write to `library.db` commits (items, folders, tags, attachments, smart folders). |
 | `annotations` | A write to `library.db` commits during a request to `/api/annotations…` or `/api/attachments/<id>/annotations` (`kind_of`). |
-| `notes` | A notes endpoint (`backend/api/notes.py`) answers a POST, PUT, PATCH or DELETE with a status below 400 (not the history's own endpoints, except restoring a milestone). |
+| `notes` | A notes endpoint (`backend/api/notes.py`) answers a POST, PUT, PATCH or DELETE with a status below 400 (`kind_of` also maps a `library.db` write during a `/api/notes…` request, the registry of the notes' PDFs, to it) (not the history's own endpoints, except restoring a milestone). |
 | `history` | The web app recorded a change in the [notes history](notes-history.md) (`NoteHistory.on_commit`). |
 | `tasks` | A write to `library.db` commits during a request to `/api/tasks…` (`kind_of`), or a tool that can write runs over `/mcp`. A page reloads its tasks on `tasks` and on `notes` (a note's task lines may have changed). |
 | `plugins` | A plugin was turned on or off, restarted or set up, or turned off after failing (`PluginHost.changed`). |
