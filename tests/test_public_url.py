@@ -255,12 +255,16 @@ def test_factory_refuses_public_url_with_lan(tmp_path):
     assert not cfg.data_dir.exists()
 
 
-def test_browser_extension_through_tunnel(app):
+def test_companion_forwards_the_extension_through_tunnel(app):
     c = app.test_client()
     svc = app.extensions["synapse"]
-    entry, token = svc.tokens.create("Browser extension", scope="connector")
-    headers = {"Origin": "chrome-extension://abc", "Authorization": f"Bearer {token}"}
-    assert tunnel(c, "GET", "/api/connector/ping", headers={"Origin": headers["Origin"]}).status_code == 401
+    entry, token = svc.tokens.create("Laptop", scope="companion")
+    headers = {"Authorization": f"Bearer {token}", "Origin": None}  # the companion is no browser
+    assert tunnel(c, "GET", "/api/connector/ping", headers={"Origin": None}).status_code == 401
+    assert (
+        tunnel(c, "GET", "/api/connector/ping", headers={**headers, "Origin": "chrome-extension://abc"}).status_code
+        == 403
+    )
     assert tunnel(c, "GET", "/api/connector/ping", headers=headers).status_code == 200
     saved = tunnel(c, "POST", "/api/connector/save", headers=headers, json={"title": "From remote browser"})
     assert saved.status_code == 201

@@ -75,21 +75,11 @@ This works the same over the LAN with `--cert`: any device signed in over HTTPS 
 
 ## Browser extension
 
-The Save to Library extension can connect directly to the public HTTPS address. Update both
-server and extension, then enter the address and a browser token from **Settings → AI Access → New Browser Token…** in the
-extension’s Options, save, and allow Chrome’s server permission. This uses bearer authentication
-instead of browser pairing cookies. Browser tokens cannot access MCP and remain valid until revoked.
-The extension saves the token locally, restricted to trusted extension pages, so setup survives
-browser restarts and extension updates. Localhost remains available without a token. See
-[browser extension setup](../browser_extension/README.md#remote-server).
-
-For PDF retrieval from your phone through a computer's browser, enable **Handle PDF retrieval
-from my other devices** in that computer's extension options and save. Keep its browser connected
-to this library and on the campus network or VPN. The phone needs only its normal Synapse sign-in;
-the computer supplies publisher access. The browser must already be listening and accept within
-five seconds. Otherwise Synapse uses its server sources; there is no job waiting for a later
-reconnect. Interactive CAPTCHAs can still require attention on the computer. Both the server and
-extension must be updated; this uses the existing HTTPS connection and opens no extra ports.
+The Save to Library extension reaches a remote server through [the companion](companion.md) on
+the same computer: connect the companion with a companion token from **Settings → AI Access**,
+then **Browser extension → Install** in its window. The companion forwards only the extension's
+connector requests, with its own token over HTTPS; the browser holds no token and no device cookie
+is used. See [browser extension setup](../browser_extension/README.md).
 
 ## Pairing the first device: `--pairing-link`
 

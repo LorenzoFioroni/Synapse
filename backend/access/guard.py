@@ -15,13 +15,10 @@ The server has no accounts. Three checks decide whether a request goes ahead:
   with the sign-in page (``frontend/signin.html``) and the API with 401.
 * **Origin** — a request that changes something (POST, PUT, PATCH, DELETE) must come from the
   app's own pages. On this computer clients that send no Origin at all (curl, scripts, the test
-  client) are also allowed, and so are browser extensions, but only on the connector endpoints
-  (``/api/connector/…``, the "Save to library" button): any installed extension sends an
-  extension origin, and it must not be able to edit or delete the library. From another device
-  only the app's own pages are allowed (``Origin``, or ``Sec-Fetch-Site: same-origin``).
-
-Remote connector calls from extensions or clients without an Origin may instead use a dedicated
-connector-scoped bearer token. Only connector endpoints accept this exception; website origins are refused.
+  client) are also allowed. Browser extensions never are: the "Save to Library" extension reaches
+  the server only through the companion (see below), so no installed extension can change the
+  library. From another device only the app's own pages are allowed (``Origin``, or
+  ``Sec-Fetch-Site: same-origin``).
 
 Reading (GET) needs no Origin check: the browser does not let other origins read the answers,
 and the Host check stops rebinding.
@@ -29,7 +26,15 @@ and the Host check stops rebinding.
 The MCP endpoint (``/mcp``) is for AI apps, not browsers: it takes neither cookies nor the Origin
 rules above. Every request to it, from this computer too, needs an access token
 (``Authorization: Bearer …``, see ``tokens.py``), and a browser's request with a foreign Origin is
-refused.
+refused. The AI tool a companion runs gets no stored token but a token for its one question
+(``Companions.job_caller``), which works on ``/mcp`` only, never offers the tools that change the
+library, and stops working when the question ends.
+
+The companion endpoints (``/api/companion/``) and the connector endpoints (``/api/connector/``,
+which the companion forwards for the browser extension) are for the companion program on the
+user's own computer, not browsers: a request with a token needs a companion-scoped one, and any
+``Origin`` is refused. On the connector endpoints, requests from this computer without a token
+and without an Origin (scripts, the tests) follow the usual rules.
 """
 
 from __future__ import annotations
@@ -45,8 +50,7 @@ from .proxy import client_addr, is_proxied, public_host
 from .tokens import bearer
 
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
-EXTENSION_SCHEMES = ("chrome-extension://", "moz-extension://", "safari-web-extension://")
-CONNECTOR_PREFIX = "/api/connector/"  # the only endpoints extension origins may change things through
+CONNECTOR_PREFIX = "/api/connector/"  # the extension's endpoints, forwarded by the companion
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
 # What an unpaired device may open: the pairing page and the calls it and the sign-in page make,
@@ -72,13 +76,10 @@ PAIRING_PATHS = {
     "/manifest.webmanifest",
 }
 MCP_PATH = "/mcp"  # AI apps, with an access token instead of a device cookie
+COMPANION_PREFIX = "/api/companion/"  # the companion program, with a companion token
 
 
-def allowed_origin(origin: str, host: str, extensions: bool = True) -> bool:
-    """``extensions``: whether an extension origin may make this request (this computer, connector
-    endpoint)."""
-    if origin.startswith(EXTENSION_SCHEMES):
-        return extensions
+def allowed_origin(origin: str, host: str) -> bool:
     return origin.lower() in {f"http://{host.lower()}", f"https://{host.lower()}"}
 
 
@@ -103,7 +104,6 @@ def refusal(
     *,
     local: bool = True,
     lan_mode: bool = False,
-    path: str = "/",
 ) -> str | None:
     """Why this request is refused (Host and Origin checks), or ``None`` when it may go ahead.
     The device check is separate (``install``)."""
@@ -112,7 +112,7 @@ def refusal(
     if method not in UNSAFE:
         return None
     if origin is not None:
-        if allowed_origin(origin, host, extensions=local and path.startswith(CONNECTOR_PREFIX)):
+        if allowed_origin(origin, host):
             return None
         return "Changes can only be made from the app itself."
     if local:
@@ -182,30 +182,14 @@ def install(
             if not host_allowed(request.host, hosts, lan_mode):
                 return jsonify(error=f"Requests for host '{request.host}' are not accepted."), 403
             return _ai_app()
-        origin = request.headers.get("Origin")
-        extension = origin is not None and origin.startswith(EXTENSION_SCHEMES)
-        if request.path.startswith(CONNECTOR_PREFIX) and (
-            request.headers.get("Authorization") or (extension and not local)
-        ):
+        if request.path.startswith(COMPANION_PREFIX):
             if not host_allowed(request.host, hosts, lan_mode):
                 return jsonify(error=f"Requests for host '{request.host}' are not accepted."), 403
-            if origin is not None and not extension:
-                return jsonify(error="The connector does not accept token requests from websites."), 403
-            # A preflight carries no token and exposes no library data.
-            if request.method == "OPTIONS" and extension:
-                return None
-            entry = current_app.extensions["synapse"].tokens.check(
-                bearer(request.headers.get("Authorization")), addr, scope="connector"
-            )
-            if entry is None:
-                resp = jsonify(
-                    error="Set a valid browser token in the extension settings (Settings → AI Access → New Browser Token in Synapse)."
-                )
-                resp.status_code = 401
-                resp.headers["WWW-Authenticate"] = 'Bearer realm="Synapse connector"'
-                return resp
-            g.access_token = entry
-            return None
+            return _companion()
+        if request.path.startswith(CONNECTOR_PREFIX) and request.headers.get("Authorization"):
+            if not host_allowed(request.host, hosts, lan_mode):
+                return jsonify(error=f"Requests for host '{request.host}' are not accepted."), 403
+            return _companion()
         why = refusal(
             request.host,
             request.method,
@@ -214,7 +198,6 @@ def install(
             hosts,
             local=local,
             lan_mode=lan_mode,
-            path=request.path,
         )
         if why:
             return jsonify(error=why), 403
@@ -231,10 +214,15 @@ def install(
 
     def _ai_app():
         origin = request.headers.get("Origin")
-        if origin is not None and not allowed_origin(origin, request.host, extensions=False):
+        if origin is not None and not allowed_origin(origin, request.host):
             return jsonify(error="The MCP endpoint does not answer other websites."), 403
-        tokens = current_app.extensions["synapse"].tokens
-        entry = tokens.check(bearer(request.headers.get("Authorization")), client_addr(request.environ))
+        services = current_app.extensions["synapse"]
+        token = bearer(request.headers.get("Authorization"))
+        entry = services.tokens.check(token, client_addr(request.environ), scope="mcp")
+        caller = services.companions.job_caller(token) if entry is None else None
+        if caller and any(t["id"] == caller for t in services.tokens.list()):
+            # a companion's AI tool, for one question, while the companion's own token still exists
+            entry = {"id": caller, "scope": "job"}
         if entry is None:
             resp = jsonify(
                 error="This needs an access token. Make one in Settings → AI Access on the computer running "
@@ -242,6 +230,24 @@ def install(
             )
             resp.status_code = 401
             resp.headers["WWW-Authenticate"] = 'Bearer realm="Synapse"'
+            return resp
+        g.access_token = entry
+        return None
+
+    def _companion():
+        if request.headers.get("Origin") is not None:
+            return jsonify(error="These endpoints answer the companion program, not browsers."), 403
+        tokens = current_app.extensions["synapse"].tokens
+        entry = tokens.check(
+            bearer(request.headers.get("Authorization")), client_addr(request.environ), scope="companion"
+        )
+        if entry is None:
+            resp = jsonify(
+                error="This needs a companion token. Make one in Settings → AI Access on the computer running "
+                "Synapse (New Companion Token)."
+            )
+            resp.status_code = 401
+            resp.headers["WWW-Authenticate"] = 'Bearer realm="Synapse companion"'
             return resp
         g.access_token = entry
         return None

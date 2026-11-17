@@ -1,6 +1,7 @@
-"""Browser checklist for the "Save to Library" extension: loaded unpacked into Chromium, its
-options page connects to the library, and its popup reads an article page's citation tags and
-saves the paper with a tag.
+"""Browser checklist for the "Save to Library" extension: loaded unpacked into Chromium, it reaches
+the library through Synapse Companion (native messaging, with the companion's token), its options
+page shows the connection, and its popup reads an article page's citation tags and saves the paper
+with a tag. The companion runs from this checkout with its own throw-away home folder.
 
     python tests/e2e/extension_checklist.py
 
@@ -10,7 +11,8 @@ its new headless mode (channel="chromium"), not the headless shell.
 """
 
 import asyncio
-import hashlib
+import json
+import os
 import shutil
 import subprocess
 import sys
@@ -27,9 +29,10 @@ from tests.e2e._guard import guard  # noqa: E402
 
 PORT, SITE = 8789, 8790
 BASE = f"http://127.0.0.1:{PORT}"
-EXT = APP / "browser_extension"
+EXT = Path(tempfile.mkdtemp(prefix="zc-extension-copy-"))
 DATA = tempfile.mkdtemp(prefix="zc-extension-e2e-")
 PROFILE = tempfile.mkdtemp(prefix="zc-extension-profile-")
+COMPANION_HOME = tempfile.mkdtemp(prefix="zc-extension-companion-")
 results = []
 
 
@@ -38,9 +41,34 @@ def check(name, cond, extra=""):
     print(("PASS " if cond else "FAIL ") + name, extra)
 
 
-def extension_id(path: Path) -> str:
-    """Chrome's id for an unpacked extension: the SHA-256 of its folder's path, as letters a-p."""
-    return "".join(chr(ord("a") + int(c, 16)) for c in hashlib.sha256(str(path).encode()).hexdigest()[:32])
+def setup_companion() -> str:
+    """Connect a companion profile to the test server and register it as this Chromium profile's
+    native messaging host (Chromium on Linux reads <user data dir>/NativeMessagingHosts). Answers
+    the extension id, fixed by the manifest's key."""
+    os.environ["SYNAPSE_COMPANION_HOME"] = COMPANION_HOME
+    from synapse_companion import extension
+    from synapse_companion.service import Service
+
+    token = requests.post(BASE + "/api/mcp/tokens", json={"name": "E2E", "scope": "companion"}).json()["token"]
+    Service("default").connect(BASE, token, "E2E computer")
+    # A copy granted 127.0.0.1 up front (headless Chromium cannot answer a permission prompt): the
+    # popup reads the test article without a click on the toolbar button. Same key, same id.
+    shutil.copytree(APP / "browser_extension", EXT, dirs_exist_ok=True)
+    manifest = json.loads((EXT / "manifest.json").read_text())
+    manifest["host_permissions"] = ["http://127.0.0.1/*"]
+    (EXT / "manifest.json").write_text(json.dumps(manifest))
+    ext_id = extension.extension_id(EXT)
+    launcher = extension.host_launcher("default")
+    launcher.write_text(extension._launcher_text("default"), encoding="utf-8")
+    launcher.chmod(0o700)
+    extension.write_host_manifest(Path(PROFILE) / "NativeMessagingHosts", ext_id, launcher)
+    return ext_id
+
+
+def extension_seen():
+    from synapse_companion.extension import last_seen
+
+    return last_seen("default")
 
 
 async def main():
@@ -65,6 +93,7 @@ async def main():
                 break
             except Exception:
                 time.sleep(0.2)
+        ext_id = setup_companion()
         async with async_playwright() as p:
             ctx = await p.chromium.launch_persistent_context(
                 PROFILE,
@@ -73,10 +102,10 @@ async def main():
                 args=[f"--disable-extensions-except={EXT}", f"--load-extension={EXT}"],
             )
             errors = []
-            ext = f"chrome-extension://{extension_id(EXT)}"
+            ext = f"chrome-extension://{ext_id}"
             probe = await ctx.new_page()
             r = await probe.goto(f"{ext}/manifest.json")
-            check("the extension is loaded", r is not None and r.ok)
+            check("the extension is loaded with its fixed id", r is not None and r.ok)
 
             article = await ctx.new_page()
             await article.goto(f"http://127.0.0.1:{SITE}/article.html")
@@ -84,16 +113,15 @@ async def main():
             options = await ctx.new_page()
             options.on("pageerror", lambda e: errors.append(str(e)))
             await options.goto(f"{ext}/options.html")
-            await options.fill("#server", f"127.0.0.1:{PORT}")
-            await options.click("#save")
             await options.wait_for_function(
-                "() => (document.querySelector('#status').textContent.includes('✓'))", timeout=10000
+                "() => !document.querySelector('#status').textContent.startsWith('Checking')", timeout=10000
             )
             status = await options.inner_text("#status")
-            check("the options page saves the address and connects", "Connected" in status, status)
-
-            configured = await options.evaluate("chrome.storage.sync.get('server')")
-            assert configured["server"] == BASE, "Refuse to open a popup against any non-test library"
+            check("the options page shows the companion's connection", f"Connected to {BASE}" in status, status)
+            check("and the computer's name", "E2E computer" in status, status)
+            check("the options page has no address or token field", not await options.query_selector("#server, #token"))
+            seen = extension_seen()
+            check("the companion recorded that the extension said hello", seen is not None, seen)
 
             # the popup acts on the active tab; ?tabId= points it at the article instead
             tab_id = await options.evaluate(
@@ -113,7 +141,7 @@ async def main():
             await popup.click("#save")
             await popup.wait_for_selector(".result", timeout=15000)
             result = await popup.inner_text(".result")
-            check("Save to Library saves", "Saved" in result, result.splitlines()[:2])
+            check("Save to Library saves through the companion", "Saved" in result, result.splitlines()[:2])
 
             items = requests.get(BASE + "/api/items").json()["items"]
             saved = [i for i in items if i.get("doi") == "10.1234/test.5678"]
@@ -124,92 +152,21 @@ async def main():
                 and saved[0].get("tags") == ["from-extension"],
                 saved[:1],
             )
-            # Exercise remote setup without depending on an external server or a native
-            # permission prompt. Backend tests cover real bearer validation behind a proxy.
-            await options.evaluate("""() => {
-                window.requestedOrigins = [];
-                chrome.permissions.request = async ({origins}) => {
-                    window.requestedOrigins.push(...origins);
-                    return true;
-                };
-                window.remoteRequests = [];
-                window.fetch = async (url, opts) => {
-                    window.remoteRequests.push({url, token: opts.headers.get('Authorization'),
-                        credentials: opts.credentials, redirect: opts.redirect});
-                    return new Response(JSON.stringify({app: 'synapse', counts: {library: 3}}));
-                };
-            }""")
-            await options.fill("#server", "https://synapse.example")
-            await options.click("#save")
-            check("remote setup requires a token", "Paste a browser token" in await options.inner_text("#status"))
-            await options.fill("#token", "syn_general_ai_token")
-            await options.click("#save")
-            check(
-                "general AI tokens are refused before contacting a server",
-                "Paste a browser token" in await options.inner_text("#status")
-                and await options.evaluate("window.remoteRequests.length") == 0,
+            tokens = requests.get(BASE + "/api/mcp/tokens").json()["tokens"]
+            check("the save used the companion's token", tokens[0]["last_used"] is not None, tokens)
+            stored = await options.evaluate(
+                "Promise.all([chrome.storage.local.get(null), chrome.storage.sync.get(null)])"
             )
-            await options.fill("#token", "syn_connector_test")
-            await options.click("#save")
-            await options.wait_for_function("() => document.querySelector('#status').textContent.includes('✓')")
-            remote = await options.evaluate("window.remoteRequests[0]")
-            check(
-                "remote setup requests the selected server permission",
-                await options.evaluate("window.requestedOrigins") == ["https://synapse.example/*"],
-            )
-            check(
-                "remote ping uses bearer authentication without cookies or redirects",
-                remote
-                == {
-                    "url": "https://synapse.example/api/connector/ping",
-                    "token": "Bearer syn_connector_test",
-                    "credentials": "omit",
-                    "redirect": "error",
-                },
-            )
-            stored = await options.evaluate("chrome.storage.local.get('connection')")
-            check(
-                "the browser token is stored with its server locally",
-                stored["connection"]
-                == {"server": "https://synapse.example", "token": "syn_connector_test", "scope": "connector"},
-            )
-            isolated = await options.evaluate(
-                """async (tabId) => {
-                const [result] = await chrome.scripting.executeScript({target: {tabId}, func: async () => {
-                    try { await chrome.storage.local.get('connection'); return false; }
-                    catch { return true; }
-                }});
-                return result.result;
-            }""",
-                tab_id,
-            )
-            check("content scripts cannot read the stored token", isolated)
-            synced = await options.evaluate("chrome.storage.sync.get(null)")
-            check("the token is not synced", "syn_connector_test" not in str(synced))
-            await options.fill("#server", BASE)
-            check("changing servers clears the token field", await options.input_value("#token") == "")
-            # Restart Chrome with the same profile and verify one-time setup survives a browser restart.
-            await ctx.close()
-            ctx = await p.chromium.launch_persistent_context(
-                PROFILE,
-                headless=True,
-                channel="chromium",
-                args=[f"--disable-extensions-except={EXT}", f"--load-extension={EXT}"],
-            )
-            options = await ctx.new_page()
-            options.on("pageerror", lambda e: errors.append(str(e)))
-            await options.goto(f"{ext}/options.html")
-            await options.wait_for_selector("#server:enabled")
-            check(
-                "browser restart keeps both the address and the browser token",
-                await options.input_value("#server") == "https://synapse.example"
-                and await options.input_value("#token") == "syn_connector_test",
-            )
-            await options.fill("#server", BASE)
-            await options.click("#save")
-            await options.wait_for_function("() => document.querySelector('#status').textContent.includes('✓')")
-            stored = await options.evaluate("chrome.storage.local.get('connection')")
-            check("switching back to localhost removes the saved token", stored["connection"]["token"] == "")
+            check("the browser stores no token", "syn_" not in str(stored), stored)
+
+            # Without the companion's connection the popup says what to do, and saves nothing.
+            (Path(COMPANION_HOME) / "default.json").rename(Path(COMPANION_HOME) / "default.json.off")
+            popup2 = await ctx.new_page()
+            await popup2.goto(f"{ext}/popup.html?tabId={tab_id}")
+            await popup2.wait_for_selector(".result", timeout=10000)
+            offline = await popup2.inner_text(".result")
+            check("without a connected companion the popup says to open it", "Companion" in offline, offline[:200])
+            (Path(COMPANION_HOME) / "default.json.off").rename(Path(COMPANION_HOME) / "default.json")
             check("no JavaScript errors", errors == [], errors[:3])
             await ctx.close()
     finally:
@@ -218,6 +175,8 @@ async def main():
         srv.wait(timeout=10)
         shutil.rmtree(DATA, ignore_errors=True)
         shutil.rmtree(PROFILE, ignore_errors=True)
+        shutil.rmtree(COMPANION_HOME, ignore_errors=True)
+        shutil.rmtree(EXT, ignore_errors=True)
     passed = sum(results)
     print(f"\n{passed}/{len(results)} passed")
     sys.exit(0 if passed == len(results) else 1)

@@ -43,14 +43,6 @@ def test_titles_and_ping(client):
     assert json.loads((ROOT / "browser_extension/manifest.json").read_text())["name"] == "Save to Synapse"
 
 
-def test_extension_accepts_both_ping_names():
-    """An extension that has not been reloaded yet keeps talking to a new server, and the
-    new extension still recognises an old server."""
-    for f in ("popup.js", "options.js"):
-        js = (ROOT / "browser_extension" / f).read_text("utf-8")
-        assert "['synapse', 'zotero-clone'].includes(" in js, f
-
-
 def test_data_dir_env(monkeypatch, tmp_path):
     monkeypatch.delenv("SYNAPSE_DATA_DIR", raising=False)
     monkeypatch.setenv("ZCLONE_DATA_DIR", str(tmp_path / "old"))

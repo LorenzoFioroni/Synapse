@@ -34,6 +34,11 @@ class Services:
         from .online.browser_pdfs import BrowserPdfs
 
         self.browser_pdfs = BrowserPdfs()
+        from .companion import Companions, Conversations
+
+        self.companions = Companions()  # questions for the user's own computer (docs/companion.md)
+        self.ai_conversations = Conversations(config.ai_db_path)  # what Ask AI keeps (ai.db)
+        self.companions.on_finish = self.ai_conversations.record_answer
         from .changes import ChangeFeed
 
         self.changes = ChangeFeed(

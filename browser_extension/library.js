@@ -1,5 +1,5 @@
-// Isolated content script: the credential store is restricted to trusted extension contexts.
-// The worker independently checks the sender's exact configured origin (including its port).
+// Isolated content script on the library's origin. It carries no credentials; the worker
+// independently checks the sender's exact origin (including its port) against the companion's.
 const markReady = () => document.documentElement?.setAttribute('data-synapse-extension', 'pdfs');
 markReady();
 if (!document.documentElement) document.addEventListener('DOMContentLoaded', markReady, { once: true });

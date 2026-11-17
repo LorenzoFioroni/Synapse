@@ -53,6 +53,31 @@ async def wait_status(page, want, t=6000):
     return await status(page)
 
 
+async def explain(page, what):
+    """Before a failed wait propagates: what the page showed, for a failure that only CI sees."""
+    try:
+        print(f"-- while waiting for {what}:")
+        print(
+            "   toasts:",
+            await page.evaluate("() => [...document.querySelectorAll('.toast')].map((t) => t.textContent.trim())"),
+        )
+        print("   open note:", await page.evaluate("() => window.zcNotes.path()"))
+        print(
+            "   tree cursor:",
+            await page.evaluate("() => document.querySelector('.nt-row.cursor')?.dataset.path || null"),
+        )
+        print("   dialog:", await page.evaluate("() => document.querySelector('.dialog')?.textContent.trim() || null"))
+        print("   focus:", await page.evaluate("() => document.activeElement?.className || null"))
+        print(
+            "   files:",
+            sorted(os.path.relpath(os.path.join(r, f), D) for r, _, fs in os.walk(D) for f in fs if f.endswith(".md")),
+        )
+        if os.environ.get("SHOTS"):
+            await page.screenshot(path=os.path.join(os.environ["SHOTS"], "notes-failure.png"))
+    except Exception as e:  # the original failure matters more
+        print("   (could not describe the page:", e, ")")
+
+
 async def type_end(page, text):
     await page.click(".cm-content")
     await page.keyboard.press("ControlOrMeta+End")
@@ -221,7 +246,11 @@ async def main():
         await A.keyboard.press("F2")
         await A.fill(".dialog input", "Final idea")
         await A.keyboard.press("Enter")
-        await A.locator('.toast:has-text("Updated 1 link in 1 note.")').wait_for()
+        try:
+            await A.locator('.toast:has-text("Updated 1 link in 1 note.")').wait_for()
+        except Exception:
+            await explain(A, "the links toast after renaming Projects/Renamed idea.md")
+            raise
         check(
             "renaming rewrites the path link in another note",
             "[[Projects/Final idea#Section A|the idea]]" in disk("Linker.md"),

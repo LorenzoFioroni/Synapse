@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "Save to Synapse",
   "short_name": "Save to Library",
-  "version": "1.5.0",
+  "version": "2.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAipF9XyeO9tY5CElFKo3+z/IxLoJH8N9/g2PKpLgsLNE5+MEYrfHcsaj2kMAAtkgSsEVYeH3DSf6GbKxJ7PmjzMq2Y1ssVKqis4Q0FoBf7vVz7/LSFFYVWgcNgpAqEHxU+4Ms9gO/PQgs2ILZGF8PsunnwHvi6wz9kpD4ogaSv9/L5R3kr40WlAa2QuPn+6vppHGM+OcQivttiXvVJDBPw5achK2bzIgdOSak8rwfdTioPgEeJcP9QcIcNZpz+zitle01wkGwKFvD/q2ENVYMPG7Ubxv+FfVkcSWCEKr2xvy1MiSdKF/kyJb1DeHhsx+qRR2Yft1ET7hxxz/ukrzb/wIDAQAB",
   "minimum_chrome_version": "102",
   "description": "Save the paper you're reading (DOI, arXiv, journal pages, PDFs) to your Synapse library.",
   "action": {
@@ -11,10 +12,9 @@
     "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png" }
   },
   "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "nativeMessaging"],
   "background": { "service_worker": "background.js", "type": "module" },
-  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*", "http://[::1]/*"],
-  "optional_host_permissions": ["https://*/*"],
+  "optional_host_permissions": ["https://*/*", "http://127.0.0.1/*", "http://localhost/*", "http://[::1]/*"],
   "options_ui": { "page": "options.html", "open_in_tab": false },
   "commands": {
     "_execute_action": {

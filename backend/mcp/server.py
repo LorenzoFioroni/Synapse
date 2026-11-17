@@ -24,9 +24,10 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
     att_arg = ATT_ARG
     edits = _edit_tools(t)
     # Asked at every tools/list and tools/call: the tools that change the library come and go with their
-    # setting, and a plugin's tools with the plugin, without restarting the server.
+    # setting, and a plugin's tools with the plugin, without restarting the server. A restricted caller
+    # (the companion's AI tool, which answers with every tool approved) never gets the library ones.
     server.extra = lambda: {
-        **(edits if services.settings.get(LIBRARY_EDITS) else {}),
+        **(edits if services.settings.get(LIBRARY_EDITS) and not server.restricted else {}),
         **_plugin_tools(services, remote),
     }
 

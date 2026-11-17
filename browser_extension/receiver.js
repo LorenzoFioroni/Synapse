@@ -1,6 +1,6 @@
 // Optional live receiver for requests from the library's other devices. An active long poll
 // advertises availability; expired requests are never stored or replayed after reconnecting.
-import { loadConnection, libraryFetch } from './connection.js';
+import { companionHello, libraryFetch } from './connection.js';
 import { libraryPdfRequest } from './bridge.js';
 
 /** @type {AbortController | null} */
@@ -16,12 +16,11 @@ export function refreshPdfReceiver() {
 /** @param {AbortController} controller */
 async function receive(controller) {
   const client = crypto.randomUUID();
-  /** @type {{server: string, token: string} | null} */
-  let registered = null;
+  let registered = false;
   try {
     while (!controller.signal.aborted) {
       try {
-        const { server, token } = await loadConnection();
+        const { server } = await companionHello();
         const { pdfReceiver } = /** @type {{pdfReceiver?: {server: string, enabled: boolean}}} */ (await chrome.storage.local.get('pdfReceiver'));
         if (controller.signal.aborted || !pdfReceiver?.enabled || pdfReceiver.server !== server) return;
         if (!await chrome.permissions.contains({ origins: ['https://*/*'] })) return;
@@ -34,7 +33,7 @@ async function receive(controller) {
           if (controller.signal.aborted) request.abort();
           const timer = setTimeout(abort, timeout);
           try {
-            const response = await libraryFetch(server, token, path, {
+            const response = await libraryFetch(path, {
               method: body ? 'POST' : 'GET', signal: request.signal,
               ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
             });
@@ -48,7 +47,7 @@ async function receive(controller) {
 
         const ping = await api('/api/connector/ping', undefined, 3000);
         if (!ping.capabilities?.live_pdf_requests) return;
-        registered = { server, token };
+        registered = true;
         const { job } = await api(`/api/connector/browser-pdfs?client=${encodeURIComponent(client)}`);
         if (!job || controller.signal.aborted) continue;
         const ids = libraryPdfRequest({ type: 'find-publisher-pdfs', ids: job.ids }, { url: server, frameId: 0 }, server);
@@ -91,7 +90,7 @@ async function receive(controller) {
   } finally {
     // Release the old instance promptly when settings change, rather than leaving a ghost
     // listener until its long poll times out. A crash still expires naturally at the server.
-    if (registered) await libraryFetch(registered.server, registered.token, '/api/connector/browser-pdfs/leave', {
+    if (registered) await libraryFetch('/api/connector/browser-pdfs/leave', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client }),
       signal: AbortSignal.timeout(3000),
     }).catch(() => {});

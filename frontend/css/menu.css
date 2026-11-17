@@ -1,0 +1,26 @@
+/* The app's menus (ui/menu.ts). A file of its own because the PDF viewer, which has no
+   components.css, opens them too (the Ask AI panel's pickers). */
+/* --------------------------------------------------------------- menus */
+.menu {
+  position: fixed; z-index: 3000; min-width: 200px; max-width: 320px; padding: 5px;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-md); animation: pop .12s var(--ease);
+}
+.menu-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; padding: 6px 9px; border: none; border-radius: 5px;
+  background: none; color: var(--text); text-align: left; font: inherit; font-size: var(--fs);
+}
+.menu-item .icon { color: var(--text-2); }
+.menu-item:hover, .menu-item.focused { background: var(--accent); color: var(--accent-text); }
+.menu-item:hover .icon, .menu-item.focused .icon { color: inherit; }
+.menu-item.danger { color: var(--danger); }
+.menu-item.danger:hover { background: var(--danger); color: #fff; }
+.menu-item:disabled { opacity: .45; pointer-events: none; }
+.menu-item .shortcut { margin-left: auto; font-size: var(--fs-xs); opacity: .7; }
+.menu-item .check { width: 14px; text-align: center; }
+.menu-swatch { width: 12px; height: 12px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1px rgb(0 0 0 / .15); }
+.menu-swatch.none { box-shadow: inset 0 0 0 1.5px var(--border-strong); }
+.menu-sep { height: 1px; background: var(--border); margin: 5px 4px; }
+.menu-label { padding: 6px 9px 3px; font-size: var(--fs-xs); color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+
+@keyframes pop { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }

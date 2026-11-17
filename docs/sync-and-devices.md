@@ -225,6 +225,15 @@ they need `Authorization: Bearer <access token>` instead, from this computer too
 that has an `Origin` must name the server itself. The token's entry is stored as `g.access_token`.
 See [MCP](mcp.md#over-http-mcp).
 
+### The companion (`/api/companion/`)
+
+Like `/mcp`, these endpoints pass the Host check and skip the device and Origin rules, but they
+need a `companion`-scope token (`Authorization: Bearer`) from this computer too, and a request with
+**any** `Origin` header answers 403: the companion is a program, not a browser or an extension.
+Missing or wrong-scope tokens answer 401 with `WWW-Authenticate: Bearer`; device cookies do not
+count, and a companion token is refused on `/api/connector/` and everywhere else. See
+[companion](companion.md).
+
 ### The browser extension
 
 The extension's popup calls the server from its own `chrome-extension://` origin, from this
@@ -431,8 +440,9 @@ What is protected:
   newest code works, once, for at most 5 minutes, and Cancel voids it. A passkey sign-in needs a
   signature from a private key that never leaves the user's authenticator, over a fresh challenge.
 - **AI apps** reach only `/mcp`, and only with an access token made on the computer running
-  Synapse (or on a device after a passkey confirmation). An MCP token gives only the MCP tools. Dedicated browser tokens give only connector access.
-  Both types remain valid until revoked. Other API routes still require a signed-in device.
+  Synapse (or on a device after a passkey confirmation). An MCP token gives only the MCP tools. A companion token gives only the companion and
+  connector endpoints (the browser extension reaches the library through the companion); its AI
+  tool gets a restricted `/mcp` token per question. Stored tokens remain valid until revoked. Other API routes still require a signed-in device.
 - **Stored secrets** are hashes. A copy of `auth.db` does not give anyone a working token.
 - **Pages from another device** must also pass the Origin check, so a paired device's browser
   cannot be used for CSRF either.

@@ -2,7 +2,9 @@
 
 The "Save to Library" button is a Chrome extension in `browser_extension/`. It reads the citation
 data of the page you are on and posts it to the library's connector API
-(`backend/api/connector.py`, which hands it to `backend/connector.py`). This page describes how both halves work and what must stay
+(`backend/api/connector.py`, which hands it to `backend/connector.py`) **through
+[Synapse Companion](companion.md)**: the extension never talks to the server itself and holds no
+address or token. This page describes how both halves work and what must stay
 compatible. To install the extension, see
 [`browser_extension/README.md`](../browser_extension/README.md). Where it fits in the whole app is
 in [`architecture.md`](architecture.md).
@@ -11,13 +13,14 @@ in [`architecture.md`](architecture.md).
 
 | File | Runs in | What it does |
 |---|---|---|
-| `manifest.json` | | Manifest V3: the popup, the icons, the options page and the shortcut. |
+| `manifest.json` | | Manifest V3: the popup, the icons, the options page, the shortcut and the fixed extension ID (`key`). |
 | `extract.js` | the web page | `extractCitation` (reads the metadata), `fetchPdfInPage` (fetches the PDF) and `pageState` (where a Find Missing PDFs tab has got to). |
 | `popup.html`, `popup.js`, `popup.css` | the popup | Talks to the library, shows the form, saves. |
 | `find_pdfs.html`, `find_pdfs.js` | a window of its own | Find Missing PDFs: the publisher's PDF of items that have none, fetched in this browser (see [below](#find_pdfsjs-missing-pdfs-through-the-browser)). |
-| `options.html`, `options.js` | the options page | The library address, server permission, access token and opt-in live PDF receiver. |
-| `connection.js` | popup and options | Validates addresses, loads server-bound credentials and sends authenticated requests. |
-| `background.js`, `bridge.js`, `library.js` | worker and isolated library content script | Registers the bridge for the configured library and validates scoped item-ID requests from the app. No credentials cross the page bridge. |
+| `options.html`, `options.js` | the options page | The companion's status, and two opt-ins: the library-page bridge and the live PDF receiver. |
+| `connection.js` | every page and the worker | The native-messaging client: `companionHello()` and `libraryFetch()`. |
+| `background.js`, `bridge.js`, `library.js` | worker and isolated library content script | Says hello to the companion when the worker starts, registers the bridge for the companion's library and validates scoped item-ID requests from the app. No credentials exist in the browser. |
+| `selfUpdate.js` | worker and popup | Reloads the extension when its folder was replaced by a newer packaged build (see [below](#updating-itself)). |
 | `receiver.js` | worker | Opt-in immediate requests from other devices; waits only while connected, checks expiry and opens the finder. |
 | `tsconfig.json` | | Type-checking only (see [Type-checking](#type-checking)). |
 
@@ -30,18 +33,44 @@ so **Load unpacked** works straight from the repository.
 |---|---|
 | `activeTab` | Access to the current tab, only after the user clicks the button or presses the shortcut. |
 | `scripting` | Runs `extract.js` functions in that tab. |
-| `storage` | The library address (`chrome.storage.sync`), server-bound token and last folder (`chrome.storage.local`). |
-| `host_permissions`: `http://127.0.0.1/*`, `http://localhost/*`, `http://[::1]/*` | Lets the popup call the library on this computer. |
+| `storage` | The last folder, the opt-in receiver choice and the self-update build (`chrome.storage.local`). |
+| `nativeMessaging` | Talks to Synapse Companion (host `org.synapse.companion`). |
+| `optional_host_permissions`: `https://*/*`, `http://127.0.0.1/*`, `http://localhost/*`, `http://[::1]/*` | Asked for only when the user opts in: the library's origin (for the page bridge; the library may be local or remote) or all HTTPS sites (Find Missing PDFs, receiver). |
 
-Remote HTTPS servers use `optional_host_permissions: https://*/*`. Options requests only the
-chosen server’s origin when the user clicks Save. Find Missing PDFs requests all of
-`https://*/*` when the user clicks **Find PDFs**, the first time: it reads pages of whatever
-publisher a DOI leads to. It can be withdrawn in `chrome://extensions` (the next run asks again). Tokens never enter Chrome Sync. Local extension
-storage is restricted to `TRUSTED_CONTEXTS` before credentials are read or written, preventing content scripts from accessing it.
+There are no `host_permissions`. Options requests the library's origin when the user ticks **Let the
+library page ask this browser to find PDFs**, and `https://*/*` for **Handle PDF retrieval from my
+other devices** and when the user clicks **Find PDFs** the first time: it reads pages of whatever
+publisher a DOI leads to. They can be withdrawn in `chrome://extensions` (the next run asks again).
+
+### Connection through the companion
+
+`connection.js` keeps one long-lived `chrome.runtime.connectNative('org.synapse.companion')` port
+per extension context, opened on first use and reopened after it closes; pending requests are
+rejected when it closes, with Chrome's message or a hint to open Synapse Companion. Messages carry
+a unique `id`:
+
+- `hello` (`version`, `build`) is answered with `{server, name}`: the library's origin and this
+  computer's name. `companionHello()` returns it; the popup, finder, options page and worker take
+  "the library" from it. The worker sends one when it starts, so the companion can show when the
+  extension was last seen.
+- `request` (`method`, `path` under `/api/connector/`, `json` or `form`, `timeout` in seconds) is
+  answered with one or more `response` messages (`status`, `body` chunk, `more`); the chunks are joined
+  into a real `Response`, so callers use `res.ok`, `res.status` and `res.json()` as with `fetch`. Form
+  parts are strings or `{data: <base64>, filename, type}`. An aborted `signal` rejects with an
+  `AbortError` and the late reply is ignored.
+- `error` (`message`) rejects with that message.
+
+The host holds the server address and the token and forwards only `/api/connector/` paths. This is
+why no token is stored in the browser, and why Chrome's host permissions are not needed to reach the
+server. The extension has a fixed ID (`bfbakjklmpogndkpkbgcaoepnlanibjd`) from the public `key` in
+`manifest.json`, which the companion lists in the host's `allowed_origins`. **Any unpacked
+extension carrying the same `key` gets the same ID**, so load only extensions you trust in
+developer mode. On install or update the worker removes the old `connection` (local) and `server`
+(sync) storage. Tests: `tests/js/extension-connection.test.mjs`.
 
 The shortcut is the `_execute_action` command, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> by
 default. Apart from fetching the PDF inside the page (below) and the pages Find Missing PDFs
-opens, the extension talks only to the library.
+opens, the extension talks only to the companion.
 
 ## extract.js: reading the page
 
@@ -110,8 +139,8 @@ the server tries to download it itself.
 
 ## popup.js: the flow
 
-1. Read the library address from `chrome.storage.sync` (`server`, default
-   `http://127.0.0.1:8000`) and find the active tab. The automated test passes `?tabId=` instead.
+1. Ask the companion for the library (`companionHello()`; if it fails, show the offline view that
+   says to open Synapse Companion) and find the active tab. The automated test passes `?tabId=` instead.
    Only `http`, `https` and `file` pages can be saved.
 2. In parallel: run `extractCitation` in the tab, and `GET /api/connector/ping`. If the ping fails
    or `app` is not one of `['synapse', 'zotero-clone']`, show "Library not running". If the
@@ -137,20 +166,30 @@ the server tries to download it itself.
    with `allow_duplicate: true` and the earlier answers). **Open in Library** opens
    `<server>/#item=<id>`, reusing a library tab if one is open.
 
-`options.js` validates and stores the address and checks it with a ping. A missing scheme means
-HTTP for loopback names and HTTPS otherwise. Remote servers require HTTPS and a browser token
-from Settings → AI Access → New Browser Token. Save requests optional host permission for that origin. The token
-is stored with its server in persistent local extension storage; it is loaded only for a matching
-address and an explicit `scope: "connector"` marker. It survives browser restarts and extension
-updates. Stored credentials from earlier builds without this marker are removed; users must
-create a dedicated browser token instead of reusing their old AI token. The marker is only a
-client migration aid; the server validates the actual stored token scope.
-Editing the address clears the token field. One server is active at a time.
+`options.js` shows the companion's status (connected to `<server>` as `<name>`, or the error and how to
+fix it) and the two opt-ins. Permission requests are made synchronously in the click handler, before
+any `await`, so Chrome sees the user gesture. The receiver choice is stored as
+`pdfReceiver: {server, enabled}`, bound to the server the companion reports.
 
-`connection.js` adds `Authorization: Bearer …` to every connector call when configured. Fetches
-omit cookies and reject redirects so credentials cannot follow a redirected server address.
-The popup displays authentication errors with a link to its settings. Localhost still works
-without a token, including older local servers.
+## Updating itself
+
+Under the companion the extension's code comes from the Synapse server: the companion downloads it
+and replaces the files in the folder, so a server that is compromised could change what the
+extension does. The companion therefore refuses an automatic update whose `manifest.json`
+permissions differ from the installed ones; that change needs an explicit `extension` run by the
+user, who is told what changed. Details: [companion](companion.md).
+
+[The companion](companion.md) can keep a copy of the extension in a folder that Chrome loaded with
+**Load unpacked**: `GET /api/companion/extension` is a zip of this folder plus a generated
+`build.json` (`{"build": "<hash>"}`). Chrome keeps running the old code until the extension is
+reloaded, so `selfUpdate.js` does it. `chrome.runtime.onInstalled` (which fires on every load and
+reload) records the `build` of the `build.json` present at that time in `chrome.storage.local`
+(`loadedBuild`). The worker, two seconds after it starts (so `onInstalled` has run first), and the
+popup, when it opens, read `build.json` again; if it names another build, `chrome.runtime.reload()`
+is called. A build is asked for once (`reloadedForBuild`), so a reload that fails cannot loop. A
+repository checkout has no `build.json`: nothing is recorded and the extension never reloads. No
+new permission is needed (`storage` and the extension's own files). Tests:
+`tests/js/extension-selfupdate.test.mjs`.
 
 ## find_pdfs.js: missing PDFs through the browser
 
@@ -221,13 +260,13 @@ in `afterAdd.ts` use the same actions when PDF lookup was selected by the user o
 Adding Items policy. Publisher DOI items are sent to the browser; arXiv DOI and title-only items
 use the server's configured sources. Batch actions still skip entries with attachments. The
 isolated content script relays only item IDs and an acknowledgement ID. The worker requires the
-browser-supplied sender to be the configured library's exact origin (scheme, host and port) and
-top frame, bounds/validates the IDs, and verifies the connector connection and
+browser-supplied sender to be the companion's library's exact origin (scheme, host and port) and
+top frame, bounds/validates the IDs, and verifies the connection to the library and
 `capabilities.publisher_pdfs` before accepting. It constructs the finder URL itself; pages cannot
 supply URLs, credentials or another library. The content script is registered dynamically only
-for the configured host's existing permission, and updated when the server or permissions change.
+for the library host's existing permission, and updated when permissions change.
 Because Chrome host match patterns do not distinguish ports, the worker's exact-origin check is
-required. Credentials remain in trusted extension storage, and never enter the library page.
+required. No credentials exist in the browser, so none enter the library page.
 
 The finder lists just those IDs and starts automatically only if publisher permission was granted
 previously; otherwise the user clicks Find PDFs. After a failed publisher attempt,
@@ -239,11 +278,10 @@ Without an accepting browser it keeps its existing server searches. Non-publishe
 
 ### Live requests from another device
 
-Extension options have an opt-in **Handle PDF retrieval from my other devices**. Saving grants
-publisher host access and stores the choice locally, bound to the configured server. With that
+Extension options have an opt-in **Handle PDF retrieval from my other devices**. Ticking it grants
+publisher host access and stores the choice locally, bound to the library the companion reports. With that
 option and permissions, `receiver.js` long-polls the connector for up to 20 seconds at a time.
-The worker reloads its trusted connection/settings between polls; changing the server, token,
-option or permissions aborts the old receiver. The poll duration stays below Chrome's
+The worker asks the companion for the library between polls; changing the option or permissions aborts the old receiver. The poll duration stays below Chrome's
 [30-second fetch-response limit](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle).
 No new port, service, push provider or runtime dependency is needed.
 
@@ -405,42 +443,30 @@ Answers `{status, item}`, `status` being `attached`, `has-pdf`, `wrong-paper`, `
 unattached for manual review.
 No `id` gives 400, an unknown one 404. It never replaces or adds to a PDF the item has.
 
-### CORS and the guard
+### The guard
 
-The blueprint's `after_request` hook adds `Access-Control-Allow-Origin` (and allowed headers and
-methods) for `chrome-extension://` and `moz-extension://` origins only. No other origin gets CORS
-headers, so websites cannot read the ping's folders and tags.
-
-The guard accepts extension origins without a token on this computer only, and only under
-`/api/connector/` (`CONNECTOR_PREFIX` in `backend/access/guard.py`). Remote connector calls
-from extension origins (or clients without an Origin) require a valid `connector`-scope bearer token,
-validated by the guard before bypassing device-cookie checks. Host validation still applies,
-and website origins cannot use connector bearer authentication. OPTIONS preflights from
-extensions expose no data and need no token; CORS allows the Authorization header, including
-on authentication failures. Browser tokens have no automatic expiry, are individually revocable,
-and are rejected by `/mcp`; AI tokens are rejected by the connector. `/api/mcp/tokens` accepts optional `scope: "connector"` for issuance and otherwise
-keeps its existing MCP default. Both scopes use its existing admin confirmation and revocation
-checks. See [storage](storage.md#the-other-databases) for the additive schema migration. Anywhere else
-an extension origin gets 403, so another installed extension cannot edit or delete the library.
-A new endpoint the extension must call therefore belongs in this blueprint. See
+The extension never calls the server: the companion forwards its requests with a companion-scoped
+bearer token (see [companion](companion.md#the-browser-extension-through-the-companion)). The
+connector sends no CORS headers, and the guard refuses every extension origin, on the connector
+too, so no installed extension can change the library or read its answers. A request with a token
+on `/api/connector/` needs a companion token and no `Origin`; Host validation still applies.
+Requests from this computer without a token and without an Origin (scripts, tests) follow the
+general rules. A new endpoint the extension must call belongs in this blueprint, under
+`/api/connector/`, the only prefix the native host forwards. See
 [The guard](sync-and-devices.md#the-guard).
 
 ## Compatibility
 
-`CLAUDE.md` lists the HTTP API used by the browser extension as a contract. People reload an
-unpacked extension when they think of it, not when they update the app. So:
+People reload an unpacked extension when they think of it, not when they update the app (the
+companion's updates make it reload itself). So:
 
 - Keep the request and response fields above working. Add new fields as optional, and give them
   defaults that keep the old behaviour (as `attach_pdf` defaults to `true`, and a missing `lookup`
   looks up unless the user set metadata lookup to "never").
 - Keep the 409 shape: the popup reads `duplicate_of`, `title` and `folder_ids`.
-- The popup must cope with an older library. It treats a missing `on_add` as "never ask".
-- Find Missing PDFs must too: a 404 from `/missing-pdfs` (a library from before it) shows
-  "Update Synapse first" instead of the server's error.
-- Both sides accept both names of the app. The server answers `app: "synapse"`, and `popup.js`
-  and `options.js` accept `['synapse', 'zotero-clone'].includes(…)`, the older name.
-  `test_extension_accepts_both_ping_names` in `tests/test_branding.py` checks that exact text, and
-  `test_titles_and_ping` checks the server's answer.
+- The popup treats a missing `on_add` as "never ask".
+- Keep the native messaging messages (`hello`, `request`, `response` parts) compatible between
+  the extension and the companion, which may be updated at different times.
 
 ## Type-checking
 
@@ -457,26 +483,29 @@ this side: keep them in step with `connector.py`.
 - `tests/test_connector.py`: the ping, saving from page metadata without the network, online
   metadata winning, an uploaded PDF, a DOI read from a PDF, duplicates and `allow_duplicate`,
   `/file`, the `on_add` settings, the background PDF search, the page's PDF link fetched only from
-  public addresses, and CORS for extension origins only; `/missing-pdfs` (folders, arXiv DOIs and
+  public addresses, and no CORS for anyone; `/missing-pdfs` (folders, arXiv DOIs and
   items with a PDF left out, the limit) and `/attach-pdf` (a login page, the wrong paper, never a
   second PDF).
 - `tests/js/extract.test.mjs`: `extractCitation` with a faked page (malformed `%`-escapes in a PDF
-  URL, an escaped DOI).
-- `tests/test_guard.py`: `test_browser_extension_can_save`, and `test_extensions_only_reach_the_connector`
-  (an extension origin is refused outside `/api/connector/`).
-- `tests/test_branding.py`: the ping names (above).
-- `tests/e2e/extension_checklist.py`, run by hand: checks remote setup with mocked network/permission
-  responses (persistent server-bound token storage across browser restarts, content-script isolation, no token sync, switching back to localhost), and loads the extension into Chromium, saves the
-  address in the options page, opens `tests/e2e/fixtures/article.html`, checks that the popup reads
-  its title and DOI, and saves it with a tag. It needs `pip install playwright` and full Chromium.
+  URL, an escaped DOI). `tests/js/extension-connection.test.mjs`: the native messaging client.
+- `tests/test_guard.py`: extension origins change nothing, the connector included; companion tokens
+  reach the connector, other tokens do not.
+- `tests/test_companion_app.py`: the companion's native host (forwarded paths, refusals, parts).
+- `tests/e2e/extension_checklist.py`, run by hand: connects a throw-away companion to a test server,
+  registers it as the native host of a Chromium profile, loads the extension, checks that the
+  options page shows the connection and the companion records its hello, opens
+  `tests/e2e/fixtures/article.html`, checks that the popup reads its title and DOI and saves it with
+  a tag through the companion, that the browser stores no token, and that the popup explains a
+  missing companion. It needs `pip install playwright` and full Chromium.
 - `tests/e2e/find_pdfs_checklist.py`, run by hand: Find Missing PDFs against a fake publisher on
-  127.0.0.1: a browser check that sets a cookie and reloads, a PDF behind a redirect by script, a
-  reader page whose download link gives the PDF, a link known only by its "Download PDF" label
-  (not the supplementary PDF next to it), a login page, a PDF of another paper and a page without
-  a PDF link; successful attachments, retries and closed tabs. It also checks the links
-  `pageState` derives on APS and science.org pages (served by the test), manual single/batch
-  handoffs, server fallbacks, opt-in options, and a separate phone browser using a live desktop
-  receiver. Disabling and reconnecting the receiver must never replay an offline request.
+  127.0.0.1 through the companion: a browser check that sets a cookie and reloads, a PDF behind a
+  redirect by script, a reader page whose download link gives the PDF, a link known only by its
+  "Download PDF" label (not the supplementary PDF next to it), a login page, a PDF of another paper
+  and a page without a PDF link; successful attachments, retries and closed tabs. It also checks
+  the links `pageState` derives on APS and science.org pages (served by the test), manual
+  single/batch handoffs, server fallbacks, opt-in options, and a separate phone browser using a
+  live desktop receiver. Disabling and reconnecting the receiver must never replay an offline
+  request.
 - `tests/test_browser_pdfs.py`: unavailable receivers, acknowledgement ownership, expiry,
   instance isolation, busy receivers, input validation, and app/connector origin boundaries.
 

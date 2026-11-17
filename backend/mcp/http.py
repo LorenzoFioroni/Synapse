@@ -29,9 +29,12 @@ class HttpTransport:
         # answers every app, and apps name themselves only when they connect.
         self._clients: dict[str, str | None] = {}
 
-    def handle(self, body: bytes, protocol_version: str | None = None, caller: str | None = None) -> tuple[int, Any]:
+    def handle(
+        self, body: bytes, protocol_version: str | None = None, caller: str | None = None, restricted: bool = False
+    ) -> tuple[int, Any]:
         """One POST: returns (HTTP status, JSON reply or None for an empty 202). ``caller``: who sent
-        it (the access token's id), to remember which AI app it is."""
+        it (the access token's id), to remember which AI app it is. ``restricted``: the token may not
+        change the library (a companion token)"""
         if protocol_version and protocol_version not in PROTOCOL_VERSIONS:
             return 400, error_reply(None, INVALID_REQUEST, f"Unsupported MCP protocol version: {protocol_version}")
         try:
@@ -45,6 +48,7 @@ class HttpTransport:
                 self._server = self._build()
             key = caller or ""
             self._server.client = self._clients.get(key)
+            self._server.restricted = restricted  # requests are serialized, so this is this request's
             reply = self._server.handle(message)
             if _initializes(message):
                 self._clients[key] = self._server.client

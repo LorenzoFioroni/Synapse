@@ -1,6 +1,7 @@
-// Settings → AI Access: separate tokens for MCP clients and browser saves, with shared
+// Settings → AI Access: separate tokens for MCP clients and the companion, with shared
 // administrative confirmation and revocation. See backend/access/tokens.py.
 import { api } from '../../api.js';
+import { refreshAiStatus } from '../../ai/status.js';
 import { asAdmin } from './confirm.js';
 import { icon } from '../../icons.js';
 import { confirmDialog, promptDialog } from '../../ui/dialog.js';
@@ -11,7 +12,7 @@ import { relTime } from './devices.js';
 
 let overview: AccessTokensOverview | null = null;
 /** A token just made: shown until Settings closes, because the server does not keep it. */
-let fresh: { token: string; name: string; index: number; app: App; scope: 'mcp' | 'connector' } | null = null;
+let fresh: { token: string; name: string; index: number; app: App; scope: 'mcp' | 'companion' } | null = null;
 
 type App = 'claude' | 'codex' | 'other';
 const APPS: [App, string][] = [['claude', 'Claude Code'], ['codex', 'Codex'], ['other', 'Other app']];
@@ -32,19 +33,31 @@ const HINTS: Record<App, string> = {
   other: 'In the other app, add a Streamable HTTP MCP server with:',
 };
 
+/** What to run on the computer that has the AI app, once the program is downloaded. The token is
+ *  pasted into the companion's window, so it is in no command line (shell history, process list). */
+const COMPANION_COMMAND = 'python3 synapse_companion.pyz';
+
 function renderFresh(box: HTMLElement): void {
   if (!fresh || !overview) { box.innerHTML = ''; return; }
-  if (fresh.scope === 'connector') {
-    box.innerHTML = `<div class="s-title">Browser token for ${escapeHtml(fresh.name)}</div>
-      <div class="s-desc">Allows saving and filing items only, until you remove it here.
-      Copy it now and paste it into the browser extension’s Options for one-time setup.</div>
-      <pre class="mono ai-command">${escapeHtml(fresh.token)}</pre>
-      <button class="btn btn-sm" data-ai-copy-token>${icon('copy')} Copy Token</button>
-      <button class="btn btn-sm" data-ai-done>Done</button>`;
-    return;
-  }
   const eps = overview.endpoints;
   const ep = eps[fresh.index] || eps[0];
+  if (fresh.scope === 'companion') {
+    const server = ep ? ep.url.replace(/\/mcp\/?$/, '') : 'https://synapse.example.com';
+    box.innerHTML = `<div class="s-title">Companion token for ${escapeHtml(fresh.name)}</div>
+      <div class="s-desc">Copy the token now: Synapse keeps only a fingerprint and cannot show it again. On the computer that has your AI app
+      (it needs Python 3), download the companion and start it once with the command below. In the window that opens, enter this
+      server’s address and the token. The companion then starts with the computer: “Ask AI” appears in notes and in the PDF viewer,
+      and it installs the browser extension and passes its saves to Synapse.</div>
+      <a class="btn btn-sm" href="/api/ai/companion-script" download="synapse_companion.pyz" data-ai-download>${icon('download')} Download synapse_companion.pyz</a>
+      <pre class="mono ai-command" data-ai-command>${escapeHtml(COMPANION_COMMAND)}</pre>
+      <div class="s-desc">Address: <span class="mono" data-ai-server>${escapeHtml(server)}</span></div>
+      <pre class="mono ai-command" data-ai-token-text>${escapeHtml(fresh.token)}</pre>
+      ${eps.length > 1 ? `<div class="pair-addrs">Address: ${eps.map((l, i) => `<button class="token${i === fresh!.index ? ' active' : ''}" data-ai-addr="${i}">${escapeHtml(l.label)}</button>`).join(' ')}</div>` : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" data-ai-copy-server>${icon('copy')} Copy Address</button>
+        <button class="btn btn-sm" data-ai-copy-token>${icon('copy')} Copy Token</button>
+        <button class="btn btn-sm" data-ai-done>Done</button></div>`;
+    return;
+  }
   const choices = eps.length > 1 ? `<div class="pair-addrs">Address: ${eps.map((l, i) =>
     `<button class="token${i === fresh!.index ? ' active' : ''}" data-ai-addr="${i}">${escapeHtml(l.label)}</button>`).join(' ')}</div>` : '';
   box.innerHTML = `<div class="s-title">Token for ${escapeHtml(fresh.name)}</div>
@@ -76,11 +89,11 @@ export async function refreshAiAccess(view: HTMLElement): Promise<void> {
     + (st.this_computer ? '' : st.can_confirm ? ' You confirm with your passkey before making or removing a token.'
       : ' Tokens are made on the computer running Synapse, or on a device signed in with a passkey.');
   const admin = st.this_computer || st.can_confirm;
-  control.innerHTML = admin ? `<button class="btn" data-ai-new>${icon('plus')} New Token…</button> <button class="btn" data-connector-new>${icon('plus')} New Browser Token…</button>` : '';
+  control.innerHTML = admin ? `<button class="btn" data-ai-new>${icon('plus')} New Token…</button> <button class="btn" data-companion-new>${icon('plus')} New Companion Token…</button>` : '';
   renderFresh(view.querySelector<HTMLElement>('[data-ai-fresh]')!);
   list.innerHTML = st.tokens.length ? st.tokens.map((t) => `<div class="backup-row" data-ai-token="${escapeHtml(t.id)}">
       <div class="b-main"><div class="b-when">${escapeHtml(t.name)}</div>
-        <div class="b-what">${t.scope === 'connector' ? 'Browser extension · save and file only' : 'AI app · MCP access'}</div>
+        <div class="b-what">${t.scope === 'connector' ? 'Browser token · no longer used, the extension goes through the companion' : t.scope === 'companion' ? 'Companion · local AI and browser extension' : 'AI app · MCP access'}</div>
         <div class="b-what">Made ${escapeHtml(formatDate(t.created, true))} · last used ${escapeHtml(relTime(t.last_used))}${t.last_addr ? ` from ${escapeHtml(t.last_addr)}` : ''}</div></div>
       ${admin ? '<button class="btn btn-sm" data-ai-remove>Remove…</button>' : ''}</div>`).join('')
     : '<div class="s-desc">No tokens yet.</div>';
@@ -98,15 +111,19 @@ async function copy(text: string, what: string): Promise<void> {
 export function bindAiAccess(view: HTMLElement): void {
   view.querySelector('[data-ai-control]')!.addEventListener('click', async (e) => {
     const target = e.target as Element;
-    if (!target.closest('[data-ai-new], [data-connector-new]')) return;
-    const browser = !!target.closest('[data-connector-new]');
-    const name = await promptDialog('Name', { title: browser ? 'New browser token' : 'New access token', placeholder: browser ? 'Browser extension' : 'Work laptop — Codex', confirm: 'Make Token',
-      hint: browser ? 'Allows saving and filing items only. Works until you remove it here; no periodic replacement needed.' : 'Which computer or app will use it, so you know which one to remove later.' });
+    if (!target.closest('[data-ai-new], [data-companion-new]')) return;
+    const scope = target.closest('[data-companion-new]') ? 'companion' : 'mcp';
+    const name = await promptDialog('Name', {
+      title: { companion: 'New companion token', mcp: 'New access token' }[scope],
+      placeholder: { companion: 'Work laptop', mcp: 'Work laptop — Codex' }[scope], confirm: 'Make Token',
+      hint: { companion: 'Lets the companion on that computer answer questions with your AI app, and save papers and PDFs from the browser extension there. The AI reads the library and can write notes and tasks, but cannot change library items.',
+        mcp: 'Which computer or app will use it, so you know which one to remove later.' }[scope] });
     if (!name || !name.trim()) return;
     try {
-      const res = await asAdmin(() => api.newAccessToken(name.trim(), browser ? 'connector' : 'mcp'));
+      const res = await asAdmin(() => api.newAccessToken(name.trim(), scope));
       if (!res) return;
-      fresh = { scope: res.entry.scope || 'mcp', token: res.token, name: res.entry.name, index: 0, app: /codex/i.test(res.entry.name) ? 'codex' : 'claude' };
+      if (scope === 'companion') refreshAiStatus();   // Ask AI appears in notes and the viewer
+      fresh = { scope, token: res.token, name: res.entry.name, index: 0, app: /codex/i.test(res.entry.name) ? 'codex' : 'claude' };
     } catch (err) { toastError(err); return; }
     refreshAiAccess(view);
   });
@@ -114,7 +131,8 @@ export function bindAiAccess(view: HTMLElement): void {
     const target = e.target as Element;
     if (!fresh || !overview) return;
     const ep = overview.endpoints[fresh.index] || overview.endpoints[0];
-    if (target.closest('[data-ai-copy-cmd]')) copy(command(fresh.app, ep ? ep.url : '', fresh.token), fresh.app === 'other' ? 'Address and header' : 'Command');
+    if (target.closest('[data-ai-copy-server]')) copy(ep ? ep.url.replace(/\/mcp\/?$/, '') : '', 'Address');
+    else if (target.closest('[data-ai-copy-cmd]')) copy(command(fresh.app, ep ? ep.url : '', fresh.token), fresh.app === 'other' ? 'Address and header' : 'Command');
     else if (target.closest('[data-ai-app]')) {
       fresh.app = target.closest<HTMLElement>('[data-ai-app]')!.dataset.aiApp as App;
       renderFresh(view.querySelector<HTMLElement>('[data-ai-fresh]')!);
@@ -134,7 +152,7 @@ export function bindAiAccess(view: HTMLElement): void {
     const ok = await confirmDialog(`Remove the token “${tok.name}”?`, {
       title: 'Remove token', confirm: 'Remove', danger: true, detail: 'The app using it loses access to the library at once.' });
     if (!ok) return;
-    try { await asAdmin(() => api.removeAccessToken(tok.id)); } catch (err) { toastError(err); }
+    try { await asAdmin(() => api.removeAccessToken(tok.id)); refreshAiStatus(); } catch (err) { toastError(err); }
     refreshAiAccess(view);
   });
 }

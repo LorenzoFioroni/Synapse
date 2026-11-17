@@ -10,8 +10,8 @@ TypeScript frontend. Everything runs on your machine.
   or save articles with the browser extension.
   **Find Available PDF** gets the publisher's version when your network has access (a
   university's network or VPN) and an open-access copy otherwise.
-  The extension supports localhost or a remote HTTPS server with a dedicated browser token;
-  see [extension setup](browser_extension/README.md#remote-server). Its Find Missing PDFs fetches
+  The extension reaches your library, local or remote, through the Companion on the same
+  computer, so the browser holds no token; see [extension setup](browser_extension/README.md). Its Find Missing PDFs fetches
   publishers' PDFs through your browser, with your institution's access. Searches resume across
   batches, so failed papers do not block older items. **Find Available PDF** and new-item PDF
   lookups try publisher DOI items through the requesting browser's extension, or a connected
@@ -31,7 +31,8 @@ TypeScript frontend. Everything runs on your machine.
   notes as a multifile project.
 - 🕸️ **See the bigger picture** — explore a graph of your notes, papers and citation links.
 - ✅ **Turn ideas into action** — track tasks, due dates and subtasks right alongside your notes.
-- 🤖 **Bring your AI tools** — connect Claude, Codex and other AI apps through MCP;
+- 🤖 **Bring your AI tools** — connect Claude, Codex and other AI apps through MCP, or ask your own
+  Claude Code a question from a note or a PDF selection with the Companion (no API key on the server);
   optionally complete notes with a local Ollama model.
 - 🔄 **Move references freely** — import and export BibTeX, RIS, EndNote and CSL JSON,
   with customisable citation keys. Keys are unique across the library and Trash (ignoring case)
@@ -317,6 +318,28 @@ app out at once. The tools are the same. Over plain HTTP the token crosses the n
 like everything else in `--lan`; with `--cert` the address starts with `https://` (and the AI app
 must trust the certificate, for Claude Code: `NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem"`).
 
+**Ask AI from Synapse (the Companion).** For a Synapse server you reach remotely, a small program on
+your own computer can answer questions asked inside Synapse (the round button in the lower right
+corner; add the note, PDF page or selected words you are looking at with one click) with your own
+Claude Code, restricted to Synapse's tools; nothing but the answer streams back and the server needs
+no API key. It is also how the browser extension reaches your library: it installs the extension,
+keeps it current and passes its saves to Synapse. In
+**Settings → AI Access → New Companion Token…** make a token and download `synapse_companion.pyz`,
+then on your computer run it once:
+
+```bash
+python3 synapse_companion.pyz
+```
+
+Its window asks for the server's address and the token, lets you choose which AI tools, models and
+efforts Synapse may use (Codex is off until you turn it on), installs the browser extension, and
+can start the Companion whenever you log in. Run the file again to reopen the window; with PySide6
+installed (`python3 -m pip install --user PySide6-Essentials`) it also has a tray icon.
+
+Previous conversations are kept on the server and can be continued later, and you can pick the AI
+agent, model and effort for each question from small buttons beside the text box. Type `[@` or `[[` (or press the @ button)
+to cite a paper or a note in a question; the AI is told what they are. See [the companion guide](docs/companion.md) for how it works and why Codex is opt-in.
+
 Add `--data DIR` if your library is not in `./data`. Tools:
 
 | Tool | What it gives |
@@ -383,6 +406,7 @@ For how the code fits together and where new code goes, see
 ./
 ├── server.py              starts the web app
 ├── mcp_server.py          MCP server for AI apps: Claude, Codex … (stdio)
+├── synapse_companion/     the companion (served as synapse_companion.pyz): Ask AI with your AI tool, the extension's way to the library
 ├── backend/               Flask + SQLite backend (packages described in docs/architecture.md)
 ├── frontend/              the web app: index.html, viewer.html, src/ (TypeScript; built to js/), css/, vendor/ (third-party libraries)
 ├── browser_extension/     Chrome extension (Manifest V3) – load unpacked
@@ -457,7 +481,7 @@ python tests/e2e/adding_checklist.py     # bulk Retrieve Metadata (parallel, gro
 python tests/e2e/claude_edits_checklist.py  # Claude's note edits: appear live, ⌘Z / bar Undo / Show changes, the note's history
 python tests/e2e/notes_history_checklist.py # notes history: versions grouped, diffs, restore, outside changes, milestones
 python tests/e2e/equations_checklist.py  # equation numbers, \eqref, macros, clicks into formulas, panels and width
-python tests/e2e/extension_checklist.py  # the browser button: options, reading an article page, saving it
+python tests/e2e/extension_checklist.py  # the browser button through the companion: reading an article page, saving it
 python tests/e2e/find_pdfs_checklist.py  # the extension's Find Missing PDFs against a fake publisher
 ```
 

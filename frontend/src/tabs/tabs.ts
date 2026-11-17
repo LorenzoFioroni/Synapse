@@ -15,6 +15,7 @@
 // them back, a new window starts with only the first tab, and a window opened after the app was
 // closed starts afresh with the library. A tab moves to another window by dragging it there (or to
 // a new window by dropping it outside every window), or with Move to New Window.
+import { hereChanged } from '../ai/appHost.js';
 import { type InAppPdf, setPdfTabOpener } from '../api.js';
 import { icon } from '../icons.js';
 import { emit, state } from '../store.js';
@@ -87,7 +88,7 @@ export function initTabs(h: TabsHost): void {
   set = TabSet.restore(session.get());
   try { localStorage.removeItem(SAVE_KEY); } catch { /* the tabs of all windows were once kept here */ }
   setPdfTabOpener({ enabled: () => state.settings.pdf_open_in !== 'browser', open });
-  window.zcTabs = { shortcut: tabShortcut, touched: () => closeMenu(), list, win: WIN };
+  window.zcTabs = { shortcut: tabShortcut, open, touched: () => closeMenu(), list, win: WIN };
 
   bar.addEventListener('click', (e) => {
     const t = e.target as Element;
@@ -158,6 +159,8 @@ export function homeUnderneath(): void {
 }
 
 export const pdfTabActive = (): boolean => set.get(set.active)?.kind === 'pdf';
+/** The viewer of the PDF tab on screen, or null (Ask AI asks it what it shows). */
+export const activePdfWindow = (): Window | null => (pdfTabActive() ? frames.get(set.active)?.contentWindow || null : null);
 
 /** Open the viewer at `url` (a `/viewer.html?…` address) in a tab: a PDF moved from another window. */
 export function openViewerTab(url: string): void {
@@ -262,6 +265,7 @@ function display(id: string): void {
   document.title = tab ? `${tab.title} — Synapse` : homeTitle;
   paintWindowColor();
   closeMenu();
+  hereChanged();
 }
 
 /** The title bar: the colour of the shown note's folder, else neutral. */

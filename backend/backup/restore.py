@@ -51,6 +51,8 @@ class Restore:
                     bundle = root / "notes-history.bundle"
                     history.after_restore(bundle if bundle.is_file() else None, name, rebuild=lost)
                     self._restore_plugins(root)
+                    if (root / "ai.db").is_file():  # through the backup API: the open connection stays valid
+                        self._sqlite_copy(root / "ai.db", self.s.config.ai_db_path)
             finally:
                 if plugins and plugins.role:
                     try:
@@ -81,6 +83,7 @@ class Restore:
                             "plugins.json",
                             "plugin-data",
                             "fields.db",
+                            "ai.db",
                             "notes-history.bundle",
                         )
                     ):

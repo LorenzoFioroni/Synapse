@@ -116,27 +116,10 @@ def test_another_local_port_is_another_site(client):
     assert r.status_code == 403
 
 
-def test_browser_extension_can_save(client, monkeypatch):
-    from backend import connector
-    from backend.online.http import LookupFailed
-
-    def offline(**k):  # the DOI would be looked up online
-        raise LookupFailed("offline")
-
-    monkeypatch.setattr(connector, "lookup", offline)
-    r = client.post(
-        "/api/connector/save",
-        headers={"Origin": "chrome-extension://abcdef"},
-        json={"title": "Saved from the button", "doi": "10.1/x"},
-    )
-    assert r.status_code == 201, r.get_json()
-    assert client.get("/api/connector/ping", headers={"Origin": "moz-extension://xyz"}).status_code == 200
-
-
 @pytest.mark.parametrize("origin", ["chrome-extension://other", "moz-extension://other", "safari-web-extension://x"])
-def test_extensions_only_reach_the_connector(client, svc, origin):
-    """Any installed extension sends an extension origin: it may save through the connector, but not
-    edit or delete the library."""
+def test_browser_extensions_change_nothing(client, svc, origin):
+    """The Synapse extension reaches the server only through the companion: an extension origin is
+    refused everywhere, the connector included, so no installed extension can change the library."""
     item = client.post("/api/items", json={"title": "Keep me"}).get_json()
     ext = {"Origin": origin}
     for method, path, kw in [
@@ -146,20 +129,15 @@ def test_extensions_only_reach_the_connector(client, svc, origin):
         ("POST", "/api/trash/empty", {}),
         ("POST", "/api/settings/reset", {}),
         ("POST", "/api/devices/pairing", {}),
-        ("POST", "/api/connectorx", {}),
+        ("POST", "/api/connector/save", {"json": {"title": "Injected"}}),
+        ("POST", "/api/connector/file", {"json": {"id": item["id"], "tags": ["x"]}}),
     ]:
         r = client.open(path, method=method, headers=ext, **kw)
         assert r.status_code == 403, (method, path)
     assert svc.papers.get(item["id"])["title"] == "Keep me"
     assert svc.papers.trashed_ids() == []
-    r = client.post(
-        "/api/connector/save",
-        headers=ext,
-        json={"title": "Saved from the button", "options": {"fetch_metadata": False}},
-    )
-    assert r.status_code in (200, 201), r.get_json()
-    r = client.post("/api/connector/file", headers=ext, json={"id": item["id"], "tags": ["from-extension"]})
-    assert r.status_code == 200, r.get_json()
+    assert svc.papers.counts()["library"] == 1
+    assert "Access-Control-Allow-Origin" not in client.get("/api/connector/ping", headers=ext).headers
 
 
 def test_allowed_hosts(tmp_path):
@@ -201,15 +179,12 @@ def test_unpaired_devices_can_fetch_only_standalone_auth_scripts(client, built_f
         assert client.get(path, environ_base=remote).status_code == 401
 
 
-@pytest.mark.parametrize("origin", [None, "chrome-extension://abc", "moz-extension://abc"])
-def test_remote_connector_token(client, svc, origin):
-    entry, token = svc.tokens.create("Browser extension", scope="connector")
+def test_remote_companion_token_reaches_the_connector(client, svc):
+    """What the companion forwards for the extension, from another computer."""
+    entry, token = svc.tokens.create("Laptop", scope="companion")
     headers = {"Authorization": f"Bearer {token}"}
-    if origin:
-        headers["Origin"] = origin
     remote = {"REMOTE_ADDR": "192.0.2.10"}
-    ping = client.get("/api/connector/ping", headers=headers, environ_base=remote)
-    assert ping.status_code == 200
+    assert client.get("/api/connector/ping", headers=headers, environ_base=remote).status_code == 200
     saved = client.post(
         "/api/connector/save", headers=headers, environ_base=remote, json={"title": "Remote paper", "lookup": False}
     )
@@ -224,37 +199,40 @@ def test_remote_connector_token(client, svc, origin):
     assert client.get("/api/settings", headers=headers, environ_base=remote).status_code == 401
     assert client.post("/api/trash/empty", headers=headers, environ_base=remote).status_code == 403
     svc.tokens.revoke(entry["id"])
-    denied = client.get("/api/connector/ping", headers=headers, environ_base=remote)
-    assert denied.status_code == 401
-    if origin:
-        assert denied.headers["Access-Control-Allow-Origin"] == origin
+    assert client.get("/api/connector/ping", headers=headers, environ_base=remote).status_code == 401
+
+
+@pytest.mark.parametrize("scope", ["mcp", "connector"])
+def test_other_tokens_do_not_reach_the_connector(client, svc, scope):
+    # Browser tokens made before the extension went through the companion stop working too.
+    if scope == "connector":
+        from backend.access.authdb import hash_secret
+
+        token = "syn_connector_old"
+        db = svc.tokens._conn()
+        db.execute(
+            "INSERT INTO access_tokens (id, name, token_hash, created, scope) VALUES ('old', 'Old', ?, '', 'connector')",
+            (hash_secret(token),),
+        )
+        db.commit()
+    else:
+        token = svc.tokens.create("AI app", scope=scope)[1]
+    headers = {"Authorization": f"Bearer {token}"}
+    for remote in ({}, {"REMOTE_ADDR": "192.0.2.10"}):
+        assert client.get("/api/connector/ping", headers=headers, environ_base=remote).status_code == 401
 
 
 @pytest.mark.parametrize("token", [None, "syn_invalid"])
-def test_remote_extension_requires_token(client, token):
-    headers = {"Origin": "chrome-extension://abc"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+def test_remote_connector_needs_a_companion_token(client, token):
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
     for method, path in [("GET", "/api/connector/ping"), ("POST", "/api/connector/save")]:
         response = client.open(path, method=method, headers=headers, environ_base={"REMOTE_ADDR": "192.0.2.10"})
-        assert response.status_code == 401
+        assert response.status_code in (401, 403)  # a change without a token is refused before pairing
 
 
-def test_connector_token_does_not_bypass_host_or_website_checks(client, svc):
-    _, token = svc.tokens.create("Browser extension", scope="connector")
-    for extra in [{"Host": "evil.example"}, {"Origin": "https://evil.example"}]:
+def test_companion_token_does_not_bypass_host_or_website_checks(client, svc):
+    _, token = svc.tokens.create("Laptop", scope="companion")
+    for extra in [{"Host": "evil.example"}, {"Origin": "https://evil.example"}, {"Origin": "chrome-extension://abc"}]:
         headers = {"Authorization": f"Bearer {token}", **extra}
         assert client.get("/api/connector/ping", headers=headers).status_code == 403
         assert client.post("/api/connector/save", headers=headers, json={"title": "Injected"}).status_code == 403
-
-
-def test_remote_connector_preflight(client):
-    headers = {
-        "Origin": "chrome-extension://abc",
-        "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "authorization,content-type",
-    }
-    response = client.options("/api/connector/save", headers=headers, environ_base={"REMOTE_ADDR": "192.0.2.10"})
-    assert response.status_code == 200
-    assert "Authorization" in response.headers["Access-Control-Allow-Headers"]
-    assert response.headers["Access-Control-Allow-Origin"] == headers["Origin"]

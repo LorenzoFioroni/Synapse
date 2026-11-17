@@ -108,7 +108,7 @@ When a library is updated, change its version in the `tools/*/package.json` and 
 | Page | Loads | Notes |
 |---|---|---|
 | `index.html` | the CSS files, `vendor/md/katex/katex.min.css`, then `js/main.js` as a module | The blocking local `js/themeHint.js` applies the cached theme (`zc.themeHint` in `localStorage`) before first paint. |
-| `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, then the modules `js/viewer/pdfjs.js` (loads pdf.js, an ES module), `viewer.js`, `notesBridge.js`, `links.js`, `annotations.js` | The PDF viewer, one tab per PDF: a frame in one of the app's tabs (`tabs/tabs.ts`), or a browser tab of its own (Settings → PDF Viewer). Its own styles and toolbar markup are inline. |
+| `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, then the modules `js/viewer/pdfjs.js` (loads pdf.js, an ES module), `viewer.js`, `notesBridge.js`, `links.js`, `annotations.js`; also `css/menu.css`, `css/ai.css` and KaTeX's CSS for the Ask AI panel | The PDF viewer, one tab per PDF: a frame in one of the app's tabs (`tabs/tabs.ts`), or a browser tab of its own (Settings → PDF Viewer). Its own styles and toolbar markup are inline. |
 | `pair.html` | `js/access/pair.js` | Pairing from the QR link. The standalone module is built from `src/access/pair.ts`; its exact path is public before pairing. Styles stay inline. |
 | `signin.html` | `js/access/signin.js` | Sent by the guard with status 401 instead of a protected page: pairing help and passkey sign-in. Its standalone module, built from `src/access/signin.ts`, is public before sign-in; it imports no protected modules. |
 
@@ -372,7 +372,9 @@ them. It waits while a field, a dialog or the editor is in use. See
 | `settings/backups.ts`, `settings/devices.ts` | Settings → Backups and Settings → Devices (pairing). |
 | `settings/updates.ts`, `updates.ts` | Settings → Updates (the version, newer commits, Check for Updates, Update Now and waiting for the restart) and the bell's "update available" ([updates](updates.md)). |
 | `settings/passkeys.ts` | Settings → Devices → Passkeys: adding one with `navigator.credentials.create`, removing one. |
-| `settings/aiAccess.ts` | Settings → AI Access: access tokens for `/mcp`, shown once with what to run for Claude Code or Codex, or the URL and header for another app. |
+| `settings/aiAccess.ts` | Settings → AI Access: access tokens for `/mcp`, shown once with what to run for Claude Code or Codex, or the URL and header for another app; and companion tokens, shown once with the server address, a download button for `synapse_companion.pyz` (`/api/ai/companion-script`) and the command that starts it; the token is entered in the companion's window, so it is in no command line. Old browser tokens are listed for removal; new ones are no longer made. |
+| `ai/client.ts`, `ai/status.ts` | Ask AI's calls (`/api/ai/status`, `ask`, the long-polled job, `cancel`) with plain `fetch` (the viewer shares this code and not `api.ts`), and the cached "is a companion token set up" that decides whether the entry points show. |
+| `ai/*.ts`, `css/ai.css` | The Ask AI panel (placement, history, composer, messages), see [Ask AI](#ask-ai). |
 | `settings/plugins.ts` | Settings → Plugins: the list of plugins found (filter chips; a row opens the plugin's page; its switch turns it on, after a confirmation listing its access, or off) and the Plugins badge ("N on"). Each plugin that can be read has a section (`#set-plugin-<id>`) shown beside the list: its name, switch, what it may do and any problem, then, while it is on, its settings drawn from the manifest (less those its frontend draws, `shows`), tools for other computers, what it offers, Restart and the log. `pluginsChanged()` redraws them when the change feed names `plugins`. See [plugins](plugins.md). |
 
 **`views/notes/`: the notes workspace.** [Notes](notes.md) covers it in depth. In short:
@@ -502,6 +504,107 @@ state and call each other without import cycles. Three patterns are used:
   `selectedId`, `redoStack`) that only it reassigns; importers always see the current value. Code
   outside the module must not assign to them; it calls a function of the module instead.
 
+## Ask AI
+
+[The companion](companion.md) lets a model on the user's own computer answer questions with
+Synapse's tools. The browser side is `frontend/src/ai/`, split by responsibility:
+
+| Module | Role |
+|---|---|
+| `client.ts`, `status.ts` | The calls (`/api/ai/status`, `ask`, the long-polled job, `cancel`, the conversations) with plain `fetch` (the viewer shares this code and not `api.ts`); the cached "is a companion token set up" that decides whether the entry points show. |
+| `panel.ts` | The orchestrator: header, the conversation or the history, asking, following a job, stopping, opening an earlier conversation (a running one is re-attached), the 409 help. |
+| `messages.ts` | The thread: question bubble, answer, tool chips, the phase text ("Sending…", "Waiting for <computer>…", "Thinking…"), usage line, copy button, the empty state; how untrusted text is drawn (below). |
+| `composer.ts` | The text box, the context chips (added ones removable, offered ones dashed), the "@" button, the agent / model / effort pickers (icon buttons that open the app's menu; only what the companions advertise, "Default" first, the last choice remembered), Send / Stop as icon buttons. |
+| `mentions.ts` | Citing in a question: `MentionData` (the library items and the notes, fetched on first use) and the keyboard-driven list over the text box. |
+| `history.ts` | Earlier conversations: search, continue, inline rename, delete with an in-row confirmation, "not connected" and "answering…" marks. |
+| `placement.ts`, `appHost.ts`, `launcher.ts` | Popup or docked, and the page's dock; `appHost.ts` is the app's host (one panel per window, its dock column, what is on screen, `window.zcAskAi`); `launcher.ts` the floating button. |
+| `context.ts`, `prefs.ts` | Context as chips (`Attached`: the context, its label and icon), the suggestions per context; guarded `localStorage`. |
+
+**Two placements, one element.** The panel starts as a small card in the lower right corner (a full
+width bottom sheet on a narrow screen) and a header button moves it into the page's own column;
+the same element is re-parented, so a conversation in progress is untouched. The choice is
+remembered per device (`zc.ai.placement`). Where docking has no room (a window narrower than 1101
+px in the app, 760 px in the viewer, the phone) the panel stays a popup and the button is hidden. A
+host supplies its `Dock` (`placement.ts`):
+
+- **The app** (`appHost.ts`): one panel for the whole window, in the main document, so it stays
+  open across the library, notes, Tasks, pages and PDF tabs. Docked, it is a full-height column on
+  the right (`body > .ai-panel[data-placement=dock]`, `--ai-dock-w`, 360 px): `body.ai-docked`
+  gets that much right padding and `#tab-views` that much right offset, so every view and PDF tab
+  makes room for it (no overlay). The notes' details panel is untouched.
+- **The viewer in a browser tab of its own** (`viewer/notesBridge.ts`): the panel is a flex child of
+  `#main-content` next to `#pdf-container`. A viewer in an app tab has no panel of its own: it adds
+  to the app's through `window.parent.zcAskAi`.
+
+`css/ai.css` is loaded by both pages and styles its own controls from the tokens, because the viewer
+has no `components.css`.
+
+**Entry points** appear only when `GET /api/ai/status` says `configured` (`ai/status.ts`, cached
+60 s, refreshed when the button mounts and after a companion token is made or removed): the floating
+round button in the lower right corner (`launcher.ts`, `.ai-fab`; hidden while the panel is open),
+the palette commands "Ask AI" and "Ask AI About This Note or the Selection" (`views/notes/aiAsk.ts`),
+and "Ask AI" in the PDF's text-selection toolbar (`viewer/notesBridge.ts`; adds the quote, cleaned by
+`cleanQuote`, with its page and attachment). The viewer in a browser tab of its own has its own
+floating button. Phone entry points are not built yet.
+
+**Context.** A question goes with a list of contexts (at most 8, `MAX_ATTACHED`): notes, papers and
+passages, shown as chips above the text box and removable there. They go with the next question,
+the first or a follow-up, and then show above that question in the thread (stored with it, so an
+earlier conversation shows them too); adding one never starts a new conversation. After the added
+chips come dashed *offered* chips for what is on screen, which add it with one click without taking
+the focus or the selection from where it is: in a note the note and the words selected (editor or
+read view, `noteHere`); in a PDF tab the paper at the page in view and the words selected
+(`window.zcViewerHere` of the tab's frame, `activePdfWindow`); in the library up to three selected
+papers. The host asks its sources in that order (`addHereSource` in `main.ts`) and the panel asks
+again when `zc-ai-here` fires (a tab shown, a note, workspace or library selection change, a PDF
+page or selection change, which the viewer sends to the app window), on `selectionchange` and when
+the pointer enters the panel.
+
+**The question box.** One row of controls that never wraps: the "@" button, the pickers, and Send
+(an arrow icon; Stop is a square icon in its place) at the right with a fixed width. A picker is a
+compact button: the agent shows an icon and the provider's name, the model an icon and its label,
+the effort a small level glyph (bars lit up to the level; dim for "Default"). Each opens `openMenu`
+(`ui/menu.ts`) under it with the allowed values, "Default" first, the current one checked and
+focused so the arrows work at once; Escape closes the menu and not the panel. When the labels are
+long the pickers shrink and truncate (the model's first, the agent's name last); the tooltip and
+`aria-label` carry the full value. The agent picker shows when more than one agent is connected and
+is `aria-disabled` inside a conversation (the tooltip says why: the provider of a conversation
+cannot change). `css/menu.css` (split from `components.css`) is linked by `viewer.html` too, so the
+same menus work there.
+
+**Citing papers and notes.** Typing `[@` lists library items and `[[` lists notes, ranked, labelled
+and inserted as in the note editor (`completionContext`, `searchItems`, `noteChoices`,
+`searchNotes` of `views/notes/library.ts`; a bare `@` is not offered, it is an address or a
+handle). The text box is a plain textarea, so `mentions.ts` draws a small list over the box (arrows
+move, Enter or Tab inserts `[@key]` / `[[note]]` and does not send, Escape closes only the list,
+mouse and touch pick a row; `role="listbox"` with `aria-activedescendant`). The "@" button inserts
+`[@` at the caret and opens it. The data is the editor's: `GET /api/notes/cite_index` (loaded when
+the panel opens, it also draws citations in answers) and `GET /api/notes` (loaded when a `[[` list,
+a `[[link]]` in a message or a click on one first needs it), through plain `fetch`, so the PDF viewer,
+standalone or in an app tab, has the same lists without the app's stores. The question goes to
+`POST /api/ai/ask` as typed; the server resolves the mentions for the model.
+
+**Working state.** The question and "Sending…" appear the moment Send is pressed; the phase then
+follows the job (`queued` → "Waiting for <computer>…", `started` / `running` → "Thinking…", tool
+chips, streamed text). A conversation's total usage is behind the header's chart button.
+
+**The answer is untrusted.** Deltas are appended to the turn's text and drawn at most every 120 ms.
+Drawing uses `createRenderer` of the notes (markdown-it with `html: false`, so tags are escaped
+text; KaTeX with `trust: false`), which gives `[@key, p. N]` citations, `[[note]]` links and math. The sent question goes through the
+same path (`renderInline`, then the same filter), so `[@key, p. 2]` is a citation chip and
+`[[note]]` a link there too. A `[[link]]` opens the note through the host (`openNote`: the app sets
+`#note=<path>`, which `main.ts` reads; the viewer sets it on the page around an app tab, or opens a
+new window when it is standalone). The HTML is built
+in an inert `<template>` (images there are not fetched), and images whose resolved address
+(`new URL`, so `../` is applied) is not the app's own `/api/notes/` are replaced by their alt text
+(a remote image would send the conversation to another host); links get `rel="noopener noreferrer"`
+and `target="_blank"` (markdown-it already refuses `javascript:` addresses); Mermaid blocks stay
+source text. Until markdown-it has loaded the text is set with `textContent`. Strings from the
+companion or server (computer names, labels, model ids, titles, tool names) are only set as text.
+A citation click uses the panel's own copy of the cite index (`/api/notes/cite_index`).
+`tests/e2e/companion_checklist.py` covers all of this, including a hostile answer and the network
+requests it would cause.
+
 ## Styling
 
 `frontend/css/` is plain CSS, loaded by `index.html` in this order:
@@ -510,9 +613,11 @@ state and call each other without import cycles. Three patterns are used:
 |---|---|
 | `tokens.css` | The design tokens as CSS variables: colours, spacing, radii, shadows, fonts and sizes. |
 | `base.css` | Reset and base elements. |
-| `components.css` | Buttons, inputs, menus, dialogs, toasts, empty states, chips. |
+| `components.css` | Buttons, inputs, dialogs, toasts, empty states, chips. |
+| `menu.css` | The menus (`ui/menu.ts`); also linked by `viewer.html`. |
 | `layout.css` | The shell: the tab bar, toolbar, sidebar, panes, resizers, status bar, narrow screens. |
 | `items.css`, `itempane.css` | The items table; the item pane and the metadata review. |
+| `ai.css` | The Ask AI panel; also linked by `viewer.html`. |
 | `settings.css`, `notes.css`, `tasks.css`, `graph.css` | Settings, the notes workspace, tasks (the Tasks page, the task form and popups, task lines in notes), the graph. |
 | `export.css` | Not loaded by the app: the page and print rules of an exported note, added after `tokens.css`, `notes.css` and `tasks.css` (`views/notes/exportNote.ts`). |
 

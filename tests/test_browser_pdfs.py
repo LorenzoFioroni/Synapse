@@ -184,8 +184,8 @@ def test_handoff_endpoints_preserve_origin_and_scope_boundaries(client):
     assert invalid.get_json() == {"error": "Invalid browser client ID."}
 
 
-def test_remote_connector_tokens_can_receive_but_cannot_dispatch(client, svc):
-    _, token = svc.tokens.create("Desktop browser", scope="connector")
+def test_remote_companion_tokens_can_receive_but_cannot_dispatch(client, svc):
+    _, token = svc.tokens.create("Desktop", scope="companion")
     remote = {"REMOTE_ADDR": "198.51.100.8"}
     headers = {"Authorization": f"Bearer {token}"}
     assert client.post(

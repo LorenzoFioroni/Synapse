@@ -25,6 +25,7 @@ ALLOWED = {
     "references": BASE | {"library", "formats", "online"},
     "mcp": BASE | {"library", "notes", "pdf", "references", "tasks"},
     "backup": BASE,
+    "companion": BASE | {"library", "notes"},
     "access": BASE,
     "plugins": BASE | {"library", "formats", "online", "references", "notes", "tasks"},
     "desktop": set(),

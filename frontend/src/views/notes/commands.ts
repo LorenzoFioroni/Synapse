@@ -10,6 +10,8 @@ import { toast, toastError } from '../../ui/toast.js';
 import { pickFiles } from '../itemlist/menus.js';
 import { markMilestone, openNoteHistory, openVaultHistory } from './historyView.js';
 import { pdfsOf } from './citeCard.js';
+import { aiConfigured } from '../../ai/status.js';
+import { askAboutNote } from './aiAsk.js';
 import { loadCM } from './editor.js';
 import { exportNote } from './exportNote.js';
 import { copyLinks, deleteSelection, pickFolder, renameNote } from './fileOps.js';
@@ -52,6 +54,7 @@ export function registerNoteCommands(host: NoteCommandsHost): void {
   add('source', 'Source Mode', () => setNoteMode('source'), () => open() && ws.mode !== 'source');
   add('read', 'Read Mode', () => setNoteMode('read'), () => open() && ws.mode !== 'read');
   add('graph', 'Show This Note in the Graph', () => openNotesGraph(`note:${ws.session!.path}`), () => open() && !!noteHooks.graph);
+  add('ask-ai', 'Ask AI About This Note or the Selection', () => askAboutNote(), () => open() && aiConfigured());
   add('history', 'History of This Note…', () => openNoteHistory());
   add('notes-history', 'Notes History…', () => openVaultHistory(), () => host.shown());
   add('milestone', 'Mark Notes Milestone…', () => markMilestone(), () => host.shown());

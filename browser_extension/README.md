@@ -4,45 +4,35 @@ A toolbar button that saves the page you are reading to your local or remote Syn
 library: journal article pages, arXiv, bioRxiv, publisher landing pages, PDFs
 opened in the browser, or any web page.
 
+## How it connects
+
+The extension never talks to the Synapse server and stores no address or token. Every library
+request goes through **Synapse Companion**, a small program on your computer, over Chrome native
+messaging ([docs/companion.md](../docs/companion.md)). The companion holds the connection to your
+local or remote library, so no credential lives in the browser. It registers itself with Chrome,
+Chromium, Brave, Edge and Vivaldi.
+
 ## Install (once)
 
-1. Start the library: `python server.py` (in the repository folder).
+1. Install Synapse Companion and connect it to your library (see the companion docs). It downloads
+   this extension into a folder and registers the native host.
 2. Open `chrome://extensions`, switch on **Developer mode** (top right).
-3. Click **Load unpacked** and choose this `browser_extension` folder.
+3. Click **Load unpacked** and choose the extension folder the companion prepared (or this
+   `browser_extension` folder in a checkout).
 4. Optional: pin the button (puzzle icon → pin), and check the shortcut at
    `chrome://extensions/shortcuts` (default <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>).
 
-If you run the library on another port (`--port 5050`), set the address in the
-extension's options (right-click the button → Options).
+The extension has a fixed ID (`bfbakjklmpogndkpkbgcaoepnlanibjd`, from the `key` in
+`manifest.json`), which the companion allows. Any unpacked extension with the same `key` gets the
+same ID, so only load extensions you trust in developer mode.
 
-## Remote server
+Right-click the button → **Options** shows whether the companion is connected (and to which
+library). If not, open Synapse Companion and connect it to your library. Upgrading from 1.x
+removes the old saved address and token; revoke the old browser token in Synapse’s
+**Settings → AI Access** if it is no longer needed.
 
-Reload the extension in `chrome://extensions` after updating it. Right-click the button →
-**Options**, enter the server’s HTTPS address (for example `https://synapse.example.com`),
-and paste a browser token from Synapse’s **Settings → AI Access → New Browser Token…**. Name the
-token “Browser extension”. Click **Save** and allow Chrome to connect to that server;
-**Connected** confirms the setup. The server must also be updated to support connector tokens.
-
-The token is saved in this browser’s local extension storage, accessible only to trusted
-extension pages, never page-injected scripts or Chrome Sync. It survives browser restarts and
-extension updates, so setup is needed only once. The address is synced, so each browser needs
-its own token and server permission. Changing the address clears the token field.
-
-Browser tokens allow only the connector: saving, filing, and Find Missing PDFs (listing the items
-without a PDF and attaching a verified PDF to one); they cannot use MCP or other library APIs.
-They have no automatic expiration. Revoke the extension’s token with **Remove…** in AI Access
-if you stop using this browser or suspect it has been compromised. AI tokens do not work for
-the browser button. Browser sign-in cookies are not used by the extension. Remote connections
-require HTTPS; localhost may use HTTP.
-
-Persistent extension storage is not an OS credential vault: someone who compromises this
-browser profile may steal its token. Connector-only scope limits the access that token grants.
-
-Updating from an earlier build removes its persisted extension token. Create a dedicated browser
-token and revoke any general AI token you previously used for the button if it is no longer needed.
-
-To switch back to a local server, enter `http://127.0.0.1:8000` (or its configured port),
-leave the token empty, and save. One server is active at a time.
+Optional permissions are asked for only when you tick them in Options: the library's address, for
+the page bridge below, and all HTTPS sites, for the PDF finder.
 
 ## What it does
 
@@ -86,7 +76,8 @@ because of such checks. The browser must be on the subscribing network (the serv
 
 ### Starting from Synapse
 
-Reload this extension after updating it, then reload your Synapse page. **Find Available PDF**
+Tick **Let the library page ask this browser to find PDFs** in Options and reload your Synapse
+page. **Find Available PDF**
 (single or batch) and PDF lookup while adding/importing up to 200 items ask the extension to try publisher
 PDFs for those DOI items first. The finder opens with just those items. Its first run asks you to
 click **Find PDFs** to grant publisher access; subsequent app requests start automatically if that
@@ -94,18 +85,18 @@ access is still granted. Keep its window open and use **Next batch** for more th
 If the publisher attempt fails, other enabled PDF sources are queued in Synapse. Items without a
 publisher DOI and larger imports use Synapse's normal PDF sources.
 
-Both Synapse and the extension must be updated. The extension must be configured for this exact
-library address (scheme, host and port), with a working browser token for a remote server. If it
-cannot connect or the server is older, the app keeps using its normal PDF sources. No browser token
-is shared with the Synapse page or publisher. The extension registers its small library-page bridge
-only on the configured host; it independently rejects requests from another origin or a subframe.
+Both Synapse and the extension must be updated. The extension answers only requests from the
+library the companion is connected to (scheme, host and port). If the companion is not running or the
+server is older, the app keeps using its normal PDF sources. The Synapse page and publishers never
+see any credential. The bridge is registered only on the library's host and rejects requests from
+another origin or a subframe.
 
 ### Retrieval from your phone or another device
 
 On the computer with campus/VPN access, open this extension's **Options**, enable
-**Handle PDF retrieval from my other devices**, and **Save**. Grant publisher access when asked.
-Keep that browser running and connected to the configured library. Synapse and the extension
-must both support live PDF requests (extension 1.5 or newer).
+**Handle PDF retrieval from my other devices**. Grant publisher access when asked.
+Keep that browser and Synapse Companion running. Synapse and the extension must both support live
+PDF requests.
 
 **Find Available PDF** on your phone then starts the finder on that computer using its browser
 session and institutional access. The phone itself does not need the VPN. Interactive CAPTCHAs
@@ -114,8 +105,7 @@ or expired publisher sign-ins may still need attention on the computer.
 This is an immediate handoff: the computer must already be listening, and has five seconds to
 accept. With no available receiver, or if acceptance fails, the app uses its server sources.
 There is no offline queue and nothing is fetched later merely because a browser reconnects.
-Uncheck the option and save to stop receiving. The choice stays in this browser, bound to its
-configured library; it is not synced to other computers. Normal same-browser retrieval works
+Uncheck the option to stop receiving. The choice stays in this browser, bound to its library; it is not synced to other computers. Normal same-browser retrieval works
 without enabling this option.
 
 Permissions: `activeTab` + `scripting` to read the current page only when you

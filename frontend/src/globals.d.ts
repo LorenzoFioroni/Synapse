@@ -1,6 +1,7 @@
 // Hooks the pages put on `window` for other tabs, other modules and the browser tests.
 import type ForceGraph from 'force-graph';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import type { Attached } from './ai/context.js';
 import type { PageWrapper } from './viewer/viewer.js';
 
 /** What the PDF viewer (viewer.ts) offers its add-ons. */
@@ -17,6 +18,8 @@ export interface ZcViewer {
 export interface ZcTabs {
   /** Handles a tab key (next tab, close tab…); true when it did. */
   shortcut(e: KeyboardEvent): boolean;
+  /** Open a PDF in an app tab (a citation clicked in a viewer tab). */
+  open(pdf: { key: string; url: string; title: string; spot: { page?: number | null }; newTab: boolean }): void;
   /** The pointer went down inside a tab's viewer. */
   touched(): void;
   /** This window, among those a tab can be dragged between (for the browser tests). */
@@ -69,6 +72,10 @@ declare global {
     zcPhone?: { tab(): string; select(tab: 'library' | 'notes' | 'pin' | 'plugins'): void };
     /** The app's tabs (tabs/tabs.ts). */
     zcTabs?: ZcTabs;
+    /** Ask AI in the app (ai/appHost.ts): open the window's panel, adding context; a viewer tab calls it. */
+    zcAskAi?: (add?: Attached) => void;
+    /** What this viewer shows, as context Ask AI can add: the paper at its page, the words selected (notesBridge.ts). */
+    zcViewerHere?: () => Attached[];
     /** The open PDF's annotations (viewer/annotations.ts), read-only, for the browser tests. */
     zcAnnotations?: { ready: Promise<void>; list(): unknown[]; attachment(): number | null; refresh(): Promise<void> };
   }

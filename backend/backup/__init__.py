@@ -8,6 +8,7 @@ One archive per backup, ``library-YYYYMMDD-HHMMSS.tar.gz``, holding:
 * ``notes-history.bundle`` — the whole history of the notes' text (``git bundle``), when Git is
   installed;
 * ``fields.db`` — the values plugins attach to papers (copied like ``library.db``);
+* ``ai.db`` — the conversations of Ask AI (copied the same way);
 * ``plugins.json`` and ``plugin-data/`` — which plugins are on, their settings and what they store
   (their SQLite databases copied consistently, like ``library.db``; their log files left out);
 * ``manifest.json`` — when, why, and how many items and notes it holds.
@@ -232,6 +233,10 @@ class Backups(Restore):
                         fields_copy = Path(tmp) / "fields.db"
                         self._sqlite_copy(cfg.fields_db_path, fields_copy)
                         tar.add(fields_copy, arcname="fields.db")
+                    if cfg.ai_db_path.is_file():
+                        ai_copy = Path(tmp) / "ai.db"
+                        self._sqlite_copy(cfg.ai_db_path, ai_copy)
+                        tar.add(ai_copy, arcname="ai.db")
                     for p, arc in self._plugin_files(Path(tmp)):
                         tar.add(p, arcname=arc, recursive=False)
                 part.replace(dest_dir / name)  # a half-written archive never looks like a backup
