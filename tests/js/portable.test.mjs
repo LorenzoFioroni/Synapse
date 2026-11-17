@@ -89,7 +89,7 @@ test('exports carry a byline with the export date under the title', () => {
 
 test('the author comes from the note\'s front matter', () => {
   const fm = (lines) => `---\n${lines}\n---\n# T\n`;
-  assert.equal(noteAuthor(fm('author: Lorenzo Fioroni'), 'Default'), 'Lorenzo Fioroni');
+  assert.equal(noteAuthor(fm('author: Jane Doe'), 'Default'), 'Jane Doe');
   assert.equal(noteAuthor(fm('author: "Ada Lovelace"'), 'Default'), 'Ada Lovelace');
   assert.equal(noteAuthor(fm('author: ai\nagent: Claude'), 'Default'), 'Claude');   // the app, not the setting
   assert.equal(noteAuthor(fm('author: ai'), 'Default'), '');

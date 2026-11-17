@@ -316,8 +316,8 @@ def test_paired_device_still_needs_the_apps_origin(mac, ipad):
 def test_lan_mode_hosts(mac, ipad, monkeypatch):
     from backend.access import lan
 
-    monkeypatch.setattr(lan, "local_hostname", lambda: "lorenzos-mac.local")
-    for host in ("10.0.0.7:8000", "lorenzos-mac.local:8000", "[fe80::1]:8000"):
+    monkeypatch.setattr(lan, "local_hostname", lambda: "my-mac.local")
+    for host in ("10.0.0.7:8000", "my-mac.local:8000", "[fe80::1]:8000"):
         r = ipad.get("/api/settings", headers={"Host": host}, environ_base=REMOTE)
         assert r.status_code == 401, host  # past the Host check; only the pairing is missing
         assert mac.get("/api/settings", headers={"Host": host}).status_code == 200, host
