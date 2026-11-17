@@ -125,10 +125,6 @@ def unknown_filters(q: str, extra_keys=()) -> list[str]:
     return sorted({f"{f}:" for _, f, _ in _tokens(q) if f and f.lower() not in known})
 
 
-def has_filters(q: str) -> bool:
-    return any(f for _, _, f in parse_query(q))
-
-
 _YEAR_SPECS = (r"\d{4}", r"\d{4}-\d{4}", r"\d{4}-", r"-\d{4}", r"(?:>=|<=|>|<)\d{4}")
 _DATE = r"\d{4}(?:-\d{2}(?:-\d{2})?)?"
 _ADDED_SPECS = (rf"{_DATE}", rf"{_DATE}\.\.{_DATE}", rf"(?:>=|<=|>|<){_DATE}", r"\d{1,4}[dw]")

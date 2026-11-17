@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import threading
-from collections import OrderedDict
 from functools import wraps
 
 from flask import Blueprint, jsonify, request, send_file, send_from_directory
@@ -13,10 +11,14 @@ from ..notes import service as notes_service
 from ..notes.history import GitError
 from ..notes.vault import ATTACHMENTS, Conflict, NoteExists, NoteMoved, VaultError
 from ..pdf.files import HEADER_WINDOW, file_is_pdf, looks_like_pdf
-from ..pdf.text import extract_pages
+from ..pdf.text import PageTextCache
 from . import body, error, failure, message_of, svc
 
 bp = Blueprint("notes", __name__, url_prefix="/api")
+
+MULTIPART_MARGIN = 64 * 1024  # the form's own fields and boundaries, on top of the file
+EXCERPT = 400
+_PAGES = PageTextCache(8)  # the text of the PDFs hovered lately
 
 
 @bp.after_request
@@ -313,7 +315,8 @@ def upload_pdf():
     head = f.stream.read(HEADER_WINDOW)
     f.stream.seek(0)
     if not looks_like_pdf(head):
-        return error(f"“{f.filename or 'The file'}” is not a PDF. Only PDF files can be added to the notes.", 415)
+        what = f"“{f.filename}”" if f.filename else "The file"
+        return error(f"{what} is not a PDF. Only PDF files can be added to the notes.", 415)
     return jsonify(svc().note_service.add_pdf(f.filename or "", f.stream, request.form.get("folder") or "")), 201
 
 
@@ -326,12 +329,6 @@ def note_pdf(pdf_id):
     return jsonify(found[0])
 
 
-MULTIPART_MARGIN = 64 * 1024  # the form's own fields and boundaries, on top of the file
-_PAGES: OrderedDict[tuple, list[str]] = OrderedDict()  # the text of the PDFs hovered lately: (id, mtime, size) -> pages
-_PAGES_LOCK = threading.Lock()
-EXCERPT = 400
-
-
 @bp.get("/note-pdfs/<int:pdf_id>/page/<int:page>")
 @guarded
 def note_pdf_page(pdf_id, page):
@@ -339,19 +336,7 @@ def note_pdf_page(pdf_id, page):
     found = svc().note_pdfs.file_of(pdf_id)
     if not found or not file_is_pdf(found[1]):
         return error("This PDF is not in the notes any more.", 404)
-    st = found[1].stat()
-    key = (pdf_id, st.st_mtime, st.st_size)
-    with _PAGES_LOCK:
-        pages = _PAGES.get(key)
-    if pages is None:
-        try:
-            pages = extract_pages(found[1])
-        except Exception:  # an unreadable PDF: the card shows no text
-            pages = []
-        with _PAGES_LOCK:
-            _PAGES[key] = pages
-            while len(_PAGES) > 8:
-                _PAGES.popitem(last=False)
+    pages = _PAGES.pages(pdf_id, found[1])  # an unreadable PDF has none: the card shows no text
     text = " ".join(pages[page - 1].split()) if 1 <= page <= len(pages) else ""
     return jsonify(page=page, pages=len(pages), excerpt=text[:EXCERPT] + ("…" if len(text) > EXCERPT else ""))
 

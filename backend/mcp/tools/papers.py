@@ -20,6 +20,7 @@ from .common import (
     MAX_PAGES_PER_READ,
     MAX_PAPER_NOTE_CHARS,
     ToolsBase,
+    check_page,
     drop_empty,
     fold_text,
     page_for_reading,
@@ -351,8 +352,7 @@ class PaperToolsMixin(ToolsBase):
         src = self._source(paper, attachment)
         path = src.path
         n = self._page_count(src) or pdfrender.page_count(path)
-        if not 1 <= page <= n:
-            raise ToolError(f"Page {page} does not exist: the PDF has {n} pages.")
+        check_page(page, n)
         try:
             figures = pdfregions.figure_regions(path, page)
         except Exception:
@@ -414,8 +414,7 @@ class PaperToolsMixin(ToolsBase):
             mention = re.compile(r"(?:fig(?:ure)?|tab(?:le)?)\.?\s*" + re.escape(number) + r"\b", re.I)
         n = self._page_count(att) or pdfrender.page_count(path)
         if page is not None:
-            if not 1 <= page <= n:
-                raise ToolError(f"Page {page} does not exist: the PDF has {n} pages.")
+            check_page(page, n)
             hit = find(page)
             if hit:
                 return page, hit
@@ -504,8 +503,7 @@ class PaperToolsMixin(ToolsBase):
             if page is None:
                 raise ToolError("rect needs the page it is on.")
             n = self._page_count(att) or pdfrender.page_count(path)
-            if not 1 <= page <= n:
-                raise ToolError(f"Page {page} does not exist: the PDF has {n} pages.")
+            check_page(page, n)
         if len(rect) != 4 or not all(isinstance(v, (int, float)) for v in rect):
             raise ToolError("rect must be four numbers [x, y, w, h], fractions of the page from the top left.")
         x, y, w, h = (float(v) for v in rect)

@@ -58,7 +58,7 @@ def test_upload_never_overwrites_and_slugifies(client):
 
 def test_upload_must_be_a_pdf(client, svc):
     r = upload(client, "page.pdf", data=b"<html><script>alert(1)</script></html>")
-    assert r.status_code == 415 and "not a PDF" in r.json["error"]
+    assert r.status_code == 415 and r.json["error"].startswith("“page.pdf” is not a PDF.")
     assert not list(svc.vault.root.glob("*.pdf")) and listed(client) == {}
     assert client.post("/api/notes/pdf").status_code == 400
 
@@ -484,7 +484,7 @@ def test_notes_search_finds_the_text_of_notes_pdfs_but_the_library_search_does_n
     assert "<mark>" in hit[0]["snippet"] and hit[0]["id"] == listed(client)["scalar.pdf"]
     # the library's full-text search never returns it, nor does it count among the attachments
     assert svc.fulltext.match("superdiffusion") == {} and svc.fulltext.stats()["documents"] == 0
-    assert svc.fulltext.note_stats()["documents"] == 1
+    assert svc.fulltext.note_pages(listed(client)["scalar.pdf"]) == 1  # indexed on its own
     # an uploaded PDF is indexed on its own (automatic indexing), a replaced one again, a deleted one is dropped
     p = add(client, "paper.pdf")
     svc.indexer.wait()

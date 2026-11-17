@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify
 
 from ..online.http import LookupFailed
 from ..online.metadata import compute_changes, lookup_for_item
-from . import GENERIC_FAILURE, body, error, failure, svc
+from . import body, error, failure, svc
 
 bp = Blueprint("metadata", __name__, url_prefix="/api")
 
@@ -37,7 +37,7 @@ def create_from_identifier():
         fetch_references=data.get("fetch_references"),
     )
     if res["status"] == "failed":
-        return error(res["message"] or GENERIC_FAILURE, 404)
+        return error(res["message"], 404)
     if res["status"] == "duplicate":
         return jsonify(duplicate_of=res["item_id"], metadata=res["metadata"]), 409
     return jsonify(res["item"]), 201

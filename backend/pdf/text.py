@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import unicodedata
+from collections import OrderedDict
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -70,6 +72,39 @@ def extract_pages(path: Path | str) -> list[str]:
     except Exception as e:
         log.warning("pypdf failed on %s: %s", path, e)
         return []
+
+
+class PageTextCache:
+    """The page texts of the PDFs read lately (least recently used dropped first). An entry is keyed by
+    what names the PDF and its file's time and size, so a replaced file is read again."""
+
+    def __init__(self, size: int):
+        self.size = size
+        self._data: OrderedDict[tuple, list[str]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _key(key: str | int, path: Path) -> tuple:
+        st = path.stat()
+        return (key, st.st_mtime, st.st_size)
+
+    def peek(self, key: str | int, path: Path) -> list[str] | None:
+        """The cached pages, or None (does not read the file)."""
+        with self._lock:
+            return self._data.get(self._key(key, path))
+
+    def pages(self, key: str | int, path: Path) -> list[str]:
+        full = self._key(key, path)
+        with self._lock:
+            if full in self._data:
+                self._data.move_to_end(full)
+                return self._data[full]
+        pages = extract_pages(path)
+        with self._lock:
+            self._data[full] = pages
+            while len(self._data) > self.size:
+                self._data.popitem(last=False)
+        return pages
 
 
 _MATH_FONT = str.maketrans({"ð": "(", "Þ": ")", "¼": "=", "þ": "+", "Ð": "−"})

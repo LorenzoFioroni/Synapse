@@ -31,6 +31,7 @@ import re
 from dataclasses import asdict, dataclass, field
 
 from . import frontmatter
+from .vault import is_pdf_path
 
 CONTEXT_CHARS = 240
 
@@ -43,9 +44,6 @@ _CITE_PART = re.compile(
     re.S,
 )
 _PAGE = re.compile(r"^(?:p|pp|page|pages|pg)\.?\s*([0-9]+)", re.I)
-# A citation can name which PDF of the item it means: [@key, p. 4, att:12] (12 = attachment id).
-# Without it, the citation means the item's first PDF.
-_ATT = re.compile(r"(?:^|[\s,])att:([0-9]+)(?=$|[\s,])", re.I)
 # Any indentation: fences inside list items are common. (Indented code blocks are not
 # supported, by the parser and the renderer alike.)
 _FENCE = re.compile(r"^([ \t]*)(`{3,}|~{3,})(.*)$")
@@ -58,11 +56,6 @@ _TASK_BLOCK_ID = re.compile(r"^\s*(?:[-*+]\s+)?([a-z0-9]{4,32})\s*$")
 _HEADING = re.compile(r"^ {0,3}(#{1,6})\*?[ \t]+(.+)$")
 _WIKI = re.compile(r"(!?)\[\[([^\[\]\n]+?)\]\]")
 _PDF_PAGE = re.compile(r"^(?:p|page)\s*=\s*(\d{1,5})$", re.I)  # [[file.pdf#p=4]]
-
-
-def is_pdf_target(target: str) -> bool:
-    """A [[link]] to a PDF in the notes folders names it with its extension: [[folder/file.pdf#p=4]]."""
-    return target.lower().endswith(".pdf")
 
 
 # Any bracket; _parse_cite_group() keeps those with an @ in each part (an @ in the pattern
@@ -316,12 +309,6 @@ def _context(lines: list[str], idx: int, col: int) -> str:
     return ("…" if a > 0 else "") + s + ("…" if a + CONTEXT_CHARS < len(line) else "")
 
 
-def attachment_of(locator: str | None) -> int | None:
-    """The attachment id a citation names with ``att:<id>`` in its locator, or None."""
-    m = _ATT.search(locator or "")
-    return int(m.group(1)) if m else None
-
-
 def _reference_definition(masked: str, start: int, end: int) -> bool:
     """``[label]:`` at the start of a line (at most three spaces in) defines a Markdown link
     reference. Anywhere else a colon after the brackets is punctuation: "as in [@key]:"."""
@@ -444,7 +431,7 @@ def parse(text: str, *, fallback_title: str = "") -> ParsedNote:
         target, heading, alias = _split_wiki(body[m.start(2) : m.end(2)])
         if not target and not heading:
             continue
-        if is_pdf_target(target):  # an embed of a PDF is shown as a link: no kind of its own yet
+        if is_pdf_path(target):  # an embed of a PDF is shown as a link: no kind of its own yet
             pm = _PDF_PAGE.match(heading)
             heading = "" if pm else heading
             found.append(
@@ -602,7 +589,7 @@ def link_spans(text: str) -> list[dict]:
         if not target:
             continue
         start = base + m.start(2) + (len(raw) - len(raw.lstrip()))
-        kind = "pdf" if is_pdf_target(target) else "embed" if m.group(1) else "note"
+        kind = "pdf" if is_pdf_path(target) else "embed" if m.group(1) else "note"
         out.append({"kind": kind, "target": target, "start": start, "end": start + len(target)})
     out.sort(key=lambda s: s["start"])
     return out

@@ -28,6 +28,21 @@ class LookupFailed(Exception):
     """A lookup failed; the message is shown to the user as is."""
 
 
+GENERIC_FAILURE = "The request failed; the details are in Synapse's log."
+
+
+def message_of(e: BaseException) -> str:
+    """What one of Synapse's own errors says to the user: the one message it was raised with.
+
+    Synapse's error types are raised with a single sentence written for the user. Anything else, such
+    as an OSError's number and file name or an error raised without a message, is not shown: the
+    answer can go to another device or an AI app, and the log has the details."""
+    args = e.args
+    if len(args) == 1 and isinstance(args[0], str) and args[0].strip():
+        return args[0]
+    return GENERIC_FAILURE
+
+
 def api_headers(email: str) -> dict:
     """Headers for scholarly APIs (Crossref, OpenAlex …): they ask clients to name themselves and
     give a contact address, and answer such "polite" requests faster."""

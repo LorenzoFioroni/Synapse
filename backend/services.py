@@ -302,7 +302,7 @@ class Services:
         """Add by Identifier: look a DOI, arXiv id or ISBN up online and add the item. Returns
         ``{"status": "added", "item"}``, ``{"status": "duplicate", "item_id", "metadata"}`` (nothing
         added) or ``{"status": "failed", "message"}`` (the lookup's own sentence)."""
-        from .online.http import LookupFailed
+        from .online.http import LookupFailed, message_of
         from .online.metadata import known_authors
         from .online.metadata import lookup as lookup_meta
 
@@ -314,7 +314,7 @@ class Services:
                 email=self.settings.get("contact_email"),
             )
         except LookupFailed as e:
-            return {"status": "failed", "message": e.args[0] if e.args and isinstance(e.args[0], str) else ""}
+            return {"status": "failed", "message": message_of(e)}
         dup = self.papers.find_duplicate(meta)
         if dup and not allow_duplicate:
             return {"status": "duplicate", "item_id": dup, "metadata": meta}
@@ -326,12 +326,12 @@ class Services:
         """Fetch an item's reference list now. ``{"status": "ok", "view"}`` or ``{"status": "failed",
         "message"}``: a lookup's own sentence, or only the kind of error (its text can hold request URLs
         with API keys)."""
-        from .online.http import LookupFailed
+        from .online.http import LookupFailed, message_of
 
         try:
             return {"status": "ok", "view": self.citations.fetch_now(item_id)}
         except LookupFailed as e:
-            return {"status": "failed", "message": e.args[0] if e.args and isinstance(e.args[0], str) else ""}
+            return {"status": "failed", "message": message_of(e)}
         except Exception as e:
             logging.getLogger(__name__).exception("Fetching the references of %s failed", item_id)
             return {"status": "failed", "message": f"Could not fetch references ({type(e).__name__})."}

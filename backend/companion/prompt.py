@@ -10,7 +10,7 @@ import re
 from ..library.fields import first_author
 from ..library.repository import NotFound
 from ..notes.parser import parse
-from ..notes.vault import VaultError
+from ..notes.vault import VaultError, is_pdf_path
 
 MAX_PROMPT = 20_000
 MAX_QUOTE = 8_000
@@ -126,7 +126,8 @@ def _paper(context: dict, papers) -> list[str]:
         found = next((a for a in item.get("attachments", []) if str(a.get("id")) == str(attachment)), None)
         if found is None:
             raise UnknownContext("No such attachment.")
-        if len([a for a in item["attachments"] if a.get("type") == "pdf"]) > 1:
+        pdfs = [a for a in item["attachments"] if (path := papers.attachment_path(a)) and is_pdf_path(path.name)]
+        if len(pdfs) > 1:
             where.append(f"PDF attachment id: {found['id']} (cite it as [@key, p. N, att:{found['id']}])")
     out = ["The user added a paper of the library to the question:\n" + _data("context", "\n".join(where))]
     if quote:
@@ -143,7 +144,7 @@ def _notepdf(context: dict, notes) -> list[str]:
         rel = notes.vault.clean_rel(path, suffix=".pdf")
     except VaultError as e:
         raise UnknownContext("No such PDF.") from e
-    row = notes.pdfs.by_path(rel) if getattr(notes, "pdfs", None) else None
+    row = notes.pdfs.by_path(rel) if notes.pdfs else None
     if row is None:
         raise UnknownContext("No such PDF.")
     where = [f"PDF in the notes folders: {_line(rel)}"]
@@ -204,8 +205,8 @@ def _mentions(question: str, notes, papers) -> list[str]:
         if not paths:
             out.append(f"pdf [[{_line(target)}]]: not found in the notes folders")
             continue
-        row = notes.pdfs.by_path(paths[0]) if getattr(notes, "pdfs", None) else None
-        count = notes.pdf_pages(row["id"]) if row and getattr(notes, "pdf_pages", None) else None
+        row = notes.pdfs.by_path(paths[0]) if notes.pdfs else None
+        count = notes.pdf_pages(row["id"]) if row and notes.pdf_pages else None
         out.append(
             f"pdf [[{_line(target)}{'#p=' + str(pages[0]) if pages else ''}]]: {_line(paths[0])}"
             + (f", {count} pages" if count else "")

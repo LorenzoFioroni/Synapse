@@ -284,6 +284,15 @@ def test_stdio_loop_keeps_stdout_clean():
     assert len(replies) == 2
 
 
+def test_check_page_names_the_pages_the_pdf_has():
+    from backend.mcp.tools.common import ToolError, check_page
+
+    check_page(3, 3)
+    for page, n, said in ((4, 3, "has 3 pages"), (2, 1, "has 1 page.")):
+        with pytest.raises(ToolError, match=said):
+            check_page(page, n)
+
+
 def test_parse_pages():
     assert parse_pages("3", 10) == [3]
     assert parse_pages("2-4, 7", 10) == [2, 3, 4, 7]
@@ -565,6 +574,19 @@ def test_get_paper_by_doi_or_arxiv_id_and_near_misses(lib, svc):
     assert err and "Did you mean smith2021?" in texts[0] and "search_library" in texts[0]
     err, texts = call(server, "get_paper", paper="10.9999/unknown")
     assert err and "Did you mean" not in texts[0]
+
+
+def test_an_arxiv_doi_finds_an_item_that_stores_only_the_arxiv_id(lib, svc):
+    svc.papers.create({"title": "Preprint", "citation_key": "idonly2024", "archive_id": "arXiv:2402.05678"})
+    server = lib["server"]
+    for ref in ("10.48550/arXiv.2402.05678", "doi:10.48550/arxiv.2402.05678v2"):
+        assert call_json(server, "get_paper", paper=ref)["key"] == "idonly2024", ref
+
+
+def test_a_notes_pdf_path_is_not_taken_for_a_library_item(lib):
+    err, texts = call(lib["server"], "get_paper", paper="refs/paper.pdf")
+    assert err and "PDF in the notes folders" in texts[0] and "read_paper" in texts[0]
+    assert "No item with citation key" not in texts[0]
 
 
 def test_search_shows_the_matched_author_among_many(lib, svc):
@@ -1967,7 +1989,10 @@ def test_add_paper(editing, svc, monkeypatch):
     assert next(p for p in svc.papers.list() if p["title"] == "Looked up")["abstract"] == "Given by hand."
     assert "already_in_library" in call_json(editing, "add_paper", identifier="10.1234/found")
     err, texts = call(editing, "add_paper", identifier="10.1234/missing")
-    assert err and "No record was found for this DOI." in texts[0] and "Nothing was added" in texts[0]
+    assert err and "No record was found for this DOI. Nothing was added" in texts[0]
+    monkeypatch.setattr(metadata, "lookup", lambda **kw: (_ for _ in ()).throw(LookupFailed()))
+    err, texts = call(editing, "add_paper", identifier="10.1234/silent")
+    assert err and ": The request failed; the details are in Synapse's log. Nothing was added" in texts[0]
 
 
 def test_update_paper(editing, svc, lib):

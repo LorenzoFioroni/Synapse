@@ -23,6 +23,7 @@ import re
 import unicodedata
 
 from ..notes import frontmatter, parser
+from ..notes.vault import is_pdf_path
 
 CITES = re.compile(r"\[[^\[\]]*@[^\[\]]*\]|\[\[[^\[\]\n]*\.pdf[^\[\]\n]*\]\]", re.I)  # as citeTarget.ts
 QUOTE_LINE = re.compile(r"^\s{0,3}>")
@@ -145,7 +146,7 @@ class NoteChecker:
                 heading = rest[1:].split("|", 1)[0].strip()
             alias = rest.split("|", 1)[1].strip() if "|" in rest else ""
             line = text[: base + m.start()].count("\n") + 1
-            if parser.is_pdf_target(target):  # [[folder/file.pdf#p=4]]: a PDF of the notes folders, and a page of it
+            if is_pdf_path(target):  # [[folder/file.pdf#p=4]]: a PDF of the notes folders, and a page of it
                 self._check_pdf_link(target, heading, line, errors)
                 continue
             if not target:  # [[#Heading]] in this note

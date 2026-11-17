@@ -24,7 +24,7 @@ from .history.reading import MILESTONE_PREFIX
 from .index import NotesIndex
 from .rekey import Rekeyer
 from .relink import Relink, Relinker
-from .vault import ATTACHMENTS, PDF_SUFFIX, TRASH, Conflict, InvalidPath, NoteExists, Vault, slugify
+from .vault import ATTACHMENTS, PDF_SUFFIX, TRASH, Conflict, InvalidPath, NoteExists, Vault, is_pdf_path, slugify
 
 log = logging.getLogger(__name__)
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -36,10 +36,6 @@ IMAGE_TYPES = {  # extension -> magic-byte check. No SVG: it can carry scripts.
 }
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
 MAX_PDF_BYTES = 90 * 1024 * 1024  # below the 100 MB a Cloudflare Tunnel accepts in one request
-
-
-def is_pdf_path(rel: str) -> bool:
-    return rel.lower().endswith(PDF_SUFFIX)
 
 
 def ulid() -> str:
@@ -503,7 +499,7 @@ class NotesService:
             updated, unfixed = self.relinker.apply(plan)
         except Exception:
             log.exception("Could not update the links to the moved notes")
-            updated, unfixed = [], [{"path": p, "target": "", "line": 0} for p in plan.sources]
+            updated, unfixed = [], [{"path": plan.moves.get(p, p), "target": "", "line": 0} for p in plan.sources]
         if updated:
             rec.paths = [*(rec.paths or []), *(u["path"] for u in updated)]
             n = sum(u["count"] for u in updated)

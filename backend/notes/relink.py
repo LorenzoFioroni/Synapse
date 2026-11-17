@@ -28,14 +28,14 @@ from dataclasses import dataclass, field
 
 from . import parser
 from .index import norm_target
-from .vault import PDF_SUFFIX, Conflict
+from .vault import Conflict, is_pdf_path
 
 log = logging.getLogger(__name__)
 ATTEMPTS = 3
 
 
 def _kind(target: str) -> str:
-    return "pdf" if target.lower().endswith(PDF_SUFFIX) else "note"
+    return "pdf" if is_pdf_path(target) else "note"
 
 
 @dataclass
@@ -66,7 +66,7 @@ class Relinker:
         out = Relink(dict(moves))
         holders: set[str] = set()
         for old in moves:
-            if old.lower().endswith(PDF_SUFFIX):
+            if is_pdf_path(old):
                 holders |= {b["path"] for b in self.index.pdf_backlinks(old)}
                 continue
             holders.add(old)  # a note may link to itself
@@ -162,7 +162,7 @@ class Relinker:
         """The link target that reaches ``new`` in the form ``target`` had when it reached ``old``:
         the full path stays a full path, a name or a partial path keeps its number of folders as
         far as that resolves to ``new``, and gains folders when it would not."""
-        if new.lower().endswith(PDF_SUFFIX):  # the extension is part of a PDF link's name
+        if is_pdf_path(new):  # the extension is part of a PDF link's name
             segments = new.split("/")
             count = (
                 len(segments)

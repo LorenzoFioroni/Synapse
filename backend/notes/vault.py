@@ -26,6 +26,11 @@ MOVES_KEPT = 5000  # moved notes remembered for windows still showing an old pat
 _BAD_CHARS = re.compile(r'[\x00-\x1f<>:"\\|?*]')
 
 
+def is_pdf_path(rel: str) -> bool:
+    """Whether a path or [[link]] target names a PDF (by its extension): the one test for it."""
+    return rel.lower().endswith(PDF_SUFFIX)
+
+
 class VaultError(Exception):
     status = 400
 
@@ -145,21 +150,11 @@ class Vault:
 
     def iter_notes(self):
         """Yield ``(rel, stat)`` for every note, skipping hidden folders and attachments."""
-        for dirpath, dirnames, filenames in os.walk(self.root):
-            here = Path(dirpath)
-            dirnames[:] = sorted(
-                d for d in dirnames if not d.startswith(".") and not (here == self.root and d == ATTACHMENTS)
-            )
-            for f in sorted(filenames):
-                if f.startswith(".") or not f.lower().endswith(NOTE_SUFFIX):
-                    continue
-                p = here / f
-                if p.is_symlink():
-                    continue
-                yield p.relative_to(self.root).as_posix(), p.stat()
+        return self.iter_files(NOTE_SUFFIX)
 
     def iter_files(self, suffix: str = PDF_SUFFIX):
-        """Like ``iter_notes`` for the files of another type kept beside the notes (PDFs)."""
+        """Yield ``(rel, stat)`` for every file of a type kept in the vault (default: PDFs), skipping
+        hidden folders, symlinks and the attachments folder."""
         for dirpath, dirnames, filenames in os.walk(self.root):
             here = Path(dirpath)
             dirnames[:] = sorted(
@@ -336,25 +331,20 @@ class Vault:
 
     def notes_in(self, folder: str) -> list[str]:
         """Every note inside a folder (recursively), as vault-relative paths."""
-        base = self.root / self._folder(folder)
-        out = []
-        for dirpath, dirnames, filenames in os.walk(base):
-            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-            for f in filenames:
-                p = Path(dirpath) / f
-                if not f.startswith(".") and f.lower().endswith(NOTE_SUFFIX) and not p.is_symlink():  # as iter_notes
-                    out.append(p.relative_to(self.root).as_posix())
-        return sorted(out)
+        return self._files_in(folder, NOTE_SUFFIX)
 
     def pdfs_in(self, folder: str) -> list[str]:
         """Every PDF inside a folder (recursively), as vault-relative paths."""
+        return self._files_in(folder, PDF_SUFFIX)
+
+    def _files_in(self, folder: str, suffix: str) -> list[str]:
         base = self.root / self._folder(folder)
         out = []
         for dirpath, dirnames, filenames in os.walk(base):
             dirnames[:] = [d for d in dirnames if not d.startswith(".")]
             for f in filenames:
                 p = Path(dirpath) / f
-                if not f.startswith(".") and f.lower().endswith(PDF_SUFFIX) and not p.is_symlink():
+                if not f.startswith(".") and f.lower().endswith(suffix) and not p.is_symlink():  # as iter_files
                     out.append(p.relative_to(self.root).as_posix())
         return sorted(out)
 
@@ -380,9 +370,9 @@ class Vault:
         return moved
 
     # ------------------------------------------------------------------ trash
-    def trash(self, rel: str, *, suffix: str = NOTE_SUFFIX) -> str:
+    def trash(self, rel: str) -> str:
         """Move a note to ``.trash/<timestamp>/<rel>``; returns the trash id (that folder name)."""
-        rel = self.clean_rel(rel, suffix=suffix)
+        rel = self.clean_rel(rel)
         with self._lock:
             p = self.root / rel
             if not p.is_file():

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from flask import Flask, current_app, jsonify, request
 
+from ..online.http import GENERIC_FAILURE, message_of  # noqa: F401  (re-exported for the blueprints)
 from ..services import Services
 
 
@@ -17,21 +18,6 @@ def body() -> dict:
 
 def error(message: str, status: int = 400):
     return jsonify(error=message), status
-
-
-GENERIC_FAILURE = "The request failed; the details are in Synapse's log."
-
-
-def message_of(e: BaseException) -> str:
-    """What one of Synapse's own errors says to the user: the one message it was raised with.
-
-    Synapse's error types are raised with a single sentence written for the user. Anything else, such
-    as an OSError's number and file name or an error raised without a message, is not shown: the
-    answer can go to another device or an AI app, and the log has the details."""
-    args = e.args
-    if len(args) == 1 and isinstance(args[0], str) and args[0].strip():
-        return args[0]
-    return GENERIC_FAILURE
 
 
 def failure(e: BaseException, status: int = 400):

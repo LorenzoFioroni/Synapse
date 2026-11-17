@@ -46,7 +46,7 @@ def test_view_page_of_a_notes_pdf(lib, pdf):
     err, texts = call(lib["server"], "view_page", paper="refs/paper.pdf", page=2)
     assert not err and texts[0] == "<image>" and '"paper": "refs/paper.pdf"' in texts[1]
     err, texts = call(lib["server"], "view_page", paper="refs/paper.pdf", page=99)
-    assert err and "does not exist" in texts[0]
+    assert err and f"Page 99 does not exist: the PDF has {len(PAGES)} pages." in texts[0]
 
 
 @pytest.mark.skipif(not pdfrender.available(), reason="pypdfium2 not installed")
