@@ -192,7 +192,7 @@ headless mode; the default headless shell cannot load them.
 
 **Browser CI.** `.github/workflows/browser-checks.yml` runs at 02:23 UTC nightly, by manual
 workflow dispatch (both engines or one), and for PRs that change browser infrastructure.
-Chromium discovers every checklist. WebKit runs `notes`, `portable_touch` and `passkey_ui`.
+Chromium discovers every checklist. WebKit runs `notes`, `notes_pdfs`, `portable_touch` and `passkey_ui`.
 The portable touch checklist uses real taps on iPad/iPhone profiles, PDF display, note editing
 and Settings. `passkey_ui` uses explicit credential/service stubs for feature detection,
 cancellation and service errors; it does not claim a native OS passkey ceremony. Full raw

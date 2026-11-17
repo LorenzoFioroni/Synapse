@@ -144,9 +144,10 @@ class NotePdfs:
             (r for r in lost if r["sha256"] == sha),
             key=lambda r: PurePosixPath(r["path"]).name != PurePosixPath(rel).name,
         )
-        old = (here or same or [None])[0]
-        if old is None:
+        candidates = here or same
+        if not candidates:
             return None
+        old = candidates[0]
         lost.remove(old)
         c.execute(
             "UPDATE note_pdfs SET path = ?, sha256 = ?, state = 'present', size = ?, mtime = ? WHERE id = ?",

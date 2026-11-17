@@ -87,7 +87,7 @@ and everything attached to the PDF (highlights) use that number, so a rename or 
 - **Added** by dropping files on the tree or a folder, or **Add PDF…** on a folder
   (`POST /api/notes/pdf`, multipart `file` and `folder`). The content must start like a PDF
   (`looks_like_pdf`), the name is cleaned (`slugify`) and always ends in `.pdf`, a taken name gets
-  ` 2`, ` 3`…, and nothing is overwritten. The file is streamed to disk and refused over 90 MB
+  ` 2`, ` 3`…, and nothing is overwritten. The upload is refused from its `Content-Length` before the body is read when it is over the cap (plus 64 KiB of form), invisible format characters (such as U+202E) are removed from the name, and the file is streamed to disk and refused over 90 MB
   (`MAX_PDF_BYTES`, below the 100 MB a Cloudflare Tunnel accepts).
 - **Paths** go through `Vault.clean_rel(suffix=".pdf")` like notes: no `..`, absolute or hidden
   segments, never in `attachments/`, symbolic links are neither listed nor served.
@@ -126,6 +126,7 @@ and everything attached to the PDF (highlights) use that number, so a rename or 
   followed), else they are copied. Tabs of renamed PDFs take the new name (`retitlePdfs`).
 - **Highlights.** The viewer annotates a notes PDF like an attachment: `viewer/annotations/model.ts` keeps `ownerBase` (`/api/attachments/<id>` or, with `?npdf=<id>`, `/api/note-pdfs/<id>`) and uses it for loading and saving. Records are in `note_pdf_annotations` (`pdf_id`, same columns as `annotations`); `AnnotationStore` reads and writes both tables, and a deleted registry row removes its highlights.
 - **Text search.** The text of a notes PDF is indexed in `fulltext.db` (own tables; see [full-text search](fulltext-search.md#the-pdfs-of-the-notes-folders)) and found by `GET /api/notes/search` (entries with `kind: "pdf"`); the library search never returns it.
+- **Coming back.** A PDF added by an upload or found by `sync` takes over the row of a `missing` PDF at the same path (a replacement, whatever its content), else one with the same content, so highlights return with the file.
 - **Outside changes** are found by `NotePdfs.sync()` (at start, with the notes index and on a
   rescan). A file at a known path whose size or time changed is a replacement and keeps its row. A
   new file that is byte-for-byte a vanished one takes that row over (an external rename keeps the

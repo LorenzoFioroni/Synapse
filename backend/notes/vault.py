@@ -163,7 +163,9 @@ class Vault:
         for dirpath, dirnames, filenames in os.walk(self.root):
             here = Path(dirpath)
             dirnames[:] = sorted(
-                d for d in dirnames if not d.startswith(".") and not (here == self.root and d == ATTACHMENTS)
+                d
+                for d in dirnames
+                if not d.startswith(".") and not (here == self.root and d.lower() == ATTACHMENTS)  # as _reserved
             )
             for f in sorted(filenames):
                 if f.startswith(".") or not f.lower().endswith(suffix):

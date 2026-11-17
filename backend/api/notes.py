@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import threading
 from collections import OrderedDict
 from functools import wraps
 
 from flask import Blueprint, jsonify, request, send_file, send_from_directory
 
 from ..changes import CLIENT_HEADER
+from ..notes import service as notes_service
 from ..notes.history import GitError
 from ..notes.vault import ATTACHMENTS, Conflict, NoteExists, NoteMoved, VaultError
 from ..pdf.files import HEADER_WINDOW, file_is_pdf, looks_like_pdf
@@ -298,6 +300,13 @@ def upload_image():
 @guarded
 def upload_pdf():
     """A PDF (multipart ``file``, optional ``folder``) added to a notes folder."""
+    # refused from the header, before the body is read into temporary files
+    size = request.content_length
+    cap = notes_service.MAX_PDF_BYTES
+    if size is None and request.mimetype == "multipart/form-data":  # a body of unknown size: not read
+        return error("The upload must say how large it is.", 411)
+    if size is not None and size > cap + MULTIPART_MARGIN:
+        return error(f"The PDF is larger than {cap // (1024 * 1024)} MB.", 413)
     f = request.files.get("file")
     if not f:
         return error("No file uploaded")
@@ -317,7 +326,9 @@ def note_pdf(pdf_id):
     return jsonify(found[0])
 
 
+MULTIPART_MARGIN = 64 * 1024  # the form's own fields and boundaries, on top of the file
 _PAGES: OrderedDict[tuple, list[str]] = OrderedDict()  # the text of the PDFs hovered lately: (id, mtime, size) -> pages
+_PAGES_LOCK = threading.Lock()
 EXCERPT = 400
 
 
@@ -330,14 +341,17 @@ def note_pdf_page(pdf_id, page):
         return error("This PDF is not in the notes any more.", 404)
     st = found[1].stat()
     key = (pdf_id, st.st_mtime, st.st_size)
-    if key not in _PAGES:
+    with _PAGES_LOCK:
+        pages = _PAGES.get(key)
+    if pages is None:
         try:
-            _PAGES[key] = extract_pages(found[1])
+            pages = extract_pages(found[1])
         except Exception:  # an unreadable PDF: the card shows no text
-            _PAGES[key] = []
-        while len(_PAGES) > 8:
-            _PAGES.popitem(last=False)
-    pages = _PAGES[key]
+            pages = []
+        with _PAGES_LOCK:
+            _PAGES[key] = pages
+            while len(_PAGES) > 8:
+                _PAGES.popitem(last=False)
     text = " ".join(pages[page - 1].split()) if 1 <= page <= len(pages) else ""
     return jsonify(page=page, pages=len(pages), excerpt=text[:EXCERPT] + ("…" if len(text) > EXCERPT else ""))
 

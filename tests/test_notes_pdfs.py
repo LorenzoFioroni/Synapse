@@ -532,3 +532,41 @@ def test_a_taken_pdf_name_says_pdf(client):
     add(client, "b.pdf")
     r = client.post("/api/notes/move", json={"path": "a.pdf", "to": "b.pdf"})
     assert r.status_code == 409 and r.json["error"] == "A PDF already exists at b.pdf"
+
+
+def test_an_oversized_upload_is_refused_from_its_header(client, svc, monkeypatch):
+    from backend.api import notes as notes_api
+    from backend.notes import service
+
+    monkeypatch.setattr(service, "MAX_PDF_BYTES", 1000)
+    monkeypatch.setattr(notes_api, "MULTIPART_MARGIN", 100)
+    r = client.post(
+        "/api/notes/pdf",
+        data=b"x" * 5000,
+        content_type="multipart/form-data; boundary=zz",
+    )
+    assert r.status_code == 413 and "larger than" in r.json["error"]
+    assert not list(svc.vault.root.rglob("*.pdf"))
+
+
+def test_an_upload_without_a_length_is_refused(client):
+    r = client.post(
+        "/api/notes/pdf",
+        data=b"--zz--",
+        content_type="multipart/form-data; boundary=zz",
+        headers={"Transfer-Encoding": "chunked", "Content-Length": ""},
+    )
+    assert r.status_code in (411, 400)
+
+
+def test_names_lose_invisible_format_characters(client):
+    p = add(client, "evil‮gnp.pdf")
+    assert "‮" not in p["path"] and p["path"].endswith(".pdf")
+
+
+def test_the_attachments_folder_is_skipped_in_any_case(client, svc):
+    for rel in ("Attachments/x.pdf", "ATTACHMENTS/y.pdf"):
+        f = svc.vault.root / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(PDF.read_bytes())
+    assert [r for r, _ in svc.vault.iter_files()] == []

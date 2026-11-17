@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import time
+import unicodedata
 from collections.abc import Callable
 from contextlib import nullcontext
 from datetime import datetime
@@ -693,7 +694,10 @@ class NotesService:
         if not self.pdfs:
             raise InvalidPath("PDFs are not kept here")
         folder = self.vault.clean_rel(folder, suffix=None) if (folder or "").strip("/ ") else ""
-        stem = slugify(os.path.splitext(os.path.basename((filename or "").replace("\\", "/")))[0], "Document")
+        raw = os.path.splitext(os.path.basename((filename or "").replace("\\", "/")))[0]
+        # no invisible direction or format characters in a file name (U+202E would flip how ``x.pdf`` reads)
+        raw = "".join(ch for ch in raw if unicodedata.category(ch) != "Cf")
+        stem = slugify(raw, "Document")
         rel, sha, _ = self.vault.write_stream(
             f"{folder}/{stem}{PDF_SUFFIX}" if folder else f"{stem}{PDF_SUFFIX}", stream, max_bytes=MAX_PDF_BYTES
         )
