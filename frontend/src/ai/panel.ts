@@ -7,6 +7,8 @@
 // handling of untrusted text is described in messages.ts. See docs/companion.md and docs/frontend.md.
 import type { CiteEntry, CitePdf } from '../types.js';
 import { icon } from '../icons.js';
+import { citeTargetInDom, viewerTarget } from '../views/notes/citeTarget.js';
+import { pdfPage } from '../views/notes/mdscan.js';
 import { createRenderer } from '../views/notes/render.js';
 import {
   AiError, type AiStatus, type AskContext, type Conversation, type JobEvent, type JobState, type Usage,
@@ -26,6 +28,8 @@ export interface AskHost {
   openPdf(item: { id: string; title: string }, pdf: CitePdf, page: number | null): void;
   /** Show an item that has no PDF (optional). */
   showItem?(id: string): void;
+  /** Open a PDF of the notes folders a [[folder/file.pdf#p=4]] link names, at a page (and on quoted words). Optional. */
+  openNotePdf?(pdf: { id: number; path: string }, page: number | null, quote?: string): void;
   /** Open a note a [[link]] names (optional; without it such links do nothing). */
   openNote?(path: string): void;
   /** The page's column for the docked panel (without it the panel is always a popup). */
@@ -368,6 +372,13 @@ function mount(host: AskHost): void {
     const a = (e.target as Element).closest<HTMLAnchorElement>('a');
     if (!a) return;
     e.preventDefault();
+    if (a.classList.contains('wikilink') && a.classList.contains('pdf')) {   // [[file.pdf#p=4]] in an answer
+      const pdf = data.findPdf(a.dataset.path || a.dataset.note || '');
+      if (!pdf || !host.openNotePdf) return;
+      const page = pdfPage(a.dataset.heading || '');
+      void viewerTarget(a.closest('blockquote') ? citeTargetInDom(a) : null).catch(() => ({} as { q?: string })).then((at) => host.openNotePdf!(pdf, page, at.q));
+      return;
+    }
     if (a.classList.contains('wikilink')) {
       const path = a.dataset.path || data.resolveNote(a.dataset.note || '');
       if (path) host.openNote?.(path);

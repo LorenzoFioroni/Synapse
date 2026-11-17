@@ -189,6 +189,19 @@ library is read only when the question names a paper. The system text asks for t
 note Markdown with `[@key, p. N]` citations, brevity and changes to notes only when asked.
 Selections are limited to 8,000 characters, the question to 20,000; an unknown note or item is a 404.
 
+**PDFs in the notes folders** ([notes](notes.md#pdfs-in-the-notes-folders)) can be cited too. A
+context `{kind: "notepdf", path, page?, quote?}` is the PDF the viewer shows (its page, the words
+selected); the path is never used as sent: it goes through `Vault.clean_rel(suffix=".pdf")` and must
+be a PDF of the registry (`NotePdfs.by_path`), else 404. The prompt names its path as the `paper` for
+`read_paper`, `search_in_paper`, `view_page` and `get_paper_outline`, and asks for answers to cite it as
+`[[folder/file.pdf#p=N]]` (quotes as `> words [[folder/file.pdf#p=N]]`). A `[[file.pdf#p=3]]` in the
+question is a mention line `pdf [[file.pdf#p=3]]: folder/file.pdf, N pages` (the count once indexed) or
+"not found in the notes folders". In the panel, `[[` completes PDF names (labelled PDF; `MentionData`
+keeps the `pdfs` of `GET /api/notes`), such links in the question and in answers are PDF links, and a
+click opens the viewer at the page, flashing the words of a quote it ends (`AskHost.openNotePdf`: the app's
+tabs, or the PDF viewer's own panel host, which scrolls the PDF it shows and opens others as tabs). A viewer
+showing a notes PDF offers it, at the page in view and with the selected words, as chips like a library paper.
+
 ## The AI tools, and why they are restricted
 
 **Claude Code** (`claude`), verified against 2.1.x:

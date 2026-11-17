@@ -3,7 +3,7 @@ Not part of the pytest run.
 
     python tests/e2e/notes_pdfs_checklist.py
 
-Starts its own server on port 8860 with a throw-away data folder; your library is not touched.
+Starts its own server on port 8862 with a throw-away data folder; your library is not touched.
 """
 
 import asyncio
@@ -21,7 +21,7 @@ from playwright.async_api import async_playwright
 BROWSER = os.environ.get("SYNAPSE_E2E_BROWSER", "chromium")
 APP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PDF = Path(APP) / "tests" / "e2e" / "fixtures" / "twocolumn.pdf"
-PORT = 8860
+PORT = 8862
 BASE = f"http://127.0.0.1:{PORT}/"
 DATA = tempfile.mkdtemp(prefix="zc-notes-pdfs-e2e-")
 D = Path(DATA) / "notes"

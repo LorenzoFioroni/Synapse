@@ -2,7 +2,7 @@
 // the palette or a selection, and kept open across the library, notes and PDF tabs. A PDF tab's
 // viewer (a frame) adds to this panel through ``window.zcAskAi`` and tells what it shows through
 // ``window.zcViewerHere``. Opening a cited PDF goes through the app's own tabs (api.ts).
-import { openAttachment } from '../api.js';
+import { openAttachment, openNotePdf } from '../api.js';
 import type { Attached } from './context.js';
 import { mountLauncher } from './launcher.js';
 import type { Dock } from './placement.js';
@@ -26,6 +26,7 @@ const host: AskHost = {
   dock: appDock,
   openPdf: (item, pdf, page) => openAttachment(item, pdf, page),
   showItem: (id) => { location.hash = `item=${id}`; },
+  openNotePdf: (pdf, page, quote) => openNotePdf(pdf, page, quote ? { q: quote } : {}),
   openNote: (path) => { location.hash = `note=${encodeURIComponent(path)}`; },   // main.ts openFromHash
   here() {
     for (const s of sources) {

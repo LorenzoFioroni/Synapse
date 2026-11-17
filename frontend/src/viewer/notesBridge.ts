@@ -204,7 +204,7 @@ function onSelectionEnd() {
   p.innerHTML = (notePdfPath || it?.citation_key
     ? '<button data-q>❝ Quote to note</button>'
     : '<button disabled title="Give the item a citation key first">No citation key</button>')
-    + (it && aiConfigured() ? '<button data-ask title="Ask your AI about the selected words">✦ Ask AI</button>' : '');
+    + ((it || notePdfPath) && aiConfigured() ? '<button data-ask title="Ask your AI about the selected words">✦ Ask AI</button>' : '');
   p.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - 260))}px`;
   p.style.top = `${rect.bottom + 8 > innerHeight - 40 ? rect.top - 40 : rect.bottom + 8}px`;
   p.addEventListener('pointerdown', (e) => e.preventDefault());   // keep the selection
@@ -221,7 +221,7 @@ function onSelectionEnd() {
   p.querySelector('[data-ask]')?.addEventListener('click', () => {
     const quote = cleanQuote(text);
     hidePill();
-    void askAi(paperChip(it!, page, quote));
+    void askAi(notePdfPath ? describe({ kind: 'notepdf', path: notePdfPath, page, quote }) : paperChip(it!, page, quote));
   });
   document.body.appendChild(p);
 }
@@ -249,6 +249,13 @@ function pdfSelection(): { text: string; page: number } | null {
 
 /** What this PDF offers Ask AI: the paper at the page in view, and the words selected. */
 function aiHere(): Attached[] {
+  if (notePdfPath) {   // a PDF of the notes folders: the page in view, and the words selected
+    const chip = (page: number, quote?: string) => describe({ kind: 'notepdf', path: notePdfPath!, page, ...(quote ? { quote } : {}) });
+    const out = [chip(currentPage())];
+    const sel = pdfSelection();
+    if (sel) out.push(chip(sel.page, sel.text));
+    return out;
+  }
   if (!item) return [];
   const out = [paperChip(item, currentPage())];
   const sel = pdfSelection();
@@ -300,6 +307,18 @@ const viewerHost: AskHost = {
     // in an app tab, the PDF opens as another app tab, as from a note
     const tabs = appTabs();
     if (tabs) tabs.open({ key: file, url, title: cited.title || 'PDF', spot: { page }, newTab: false });
+    else window.open(url, '_blank', 'noopener');
+  },
+  // a link in an answer to a PDF of the notes folders: this PDF scrolls (and flashes the words), another opens as a tab
+  openNotePdf(pdf: { id: number; path: string }, page: number | null, quote?: string) {
+    if (notePdfId === pdf.id) { gotoSpot({ page: page || 1, ...(quote ? { q: quote } : {}) }); return; }
+    const file = `/api/note-pdfs/${pdf.id}/file`;   // as api.ts notePdfAtt()
+    const q = new URLSearchParams({ file, title: pdf.path.split('/').pop()!.replace(/\.pdf$/i, ''), npdf: String(pdf.id) });
+    if (page) q.set('page', String(page));
+    if (quote) q.set('q', quote);
+    const url = `/viewer.html?${q}`;
+    const tabs = appTabs();
+    if (tabs) tabs.open({ key: file, url, title: pdf.path.split('/').pop()!.replace(/\.pdf$/i, ''), spot: { page, q: quote }, newTab: false });
     else window.open(url, '_blank', 'noopener');
   },
   // a note opens in the app: in the page around an app tab (main.ts reads the address), else in a new window
@@ -487,9 +506,18 @@ export async function spotlight(wrapper: PageWrapper, container: HTMLElement, ta
 jumpToRequestedPage();
 
 /* --------------------------------------------------------------------- setup */
+/** Ask AI: what this PDF shows is offered to the panel; on its own the viewer has the floating button. */
+function mountAi(): void {
+  window.zcViewerHere = aiHere;
+  watchHere();
+  if (!appTabs()) void import('../ai/launcher.js').then((m) => m.mountLauncher(() => void askAi()));
+}
+
 async function init() {
   if (notePdfId) {
     await loadNotePdfPath();
+    mountAi();
+    refreshAiStatus(60_000);
     wireSelection();
     window.zcViewerBridge = { ready: true, item, spotlight };
     return;
@@ -501,10 +529,7 @@ async function init() {
     item = await r.json();
   } catch { return; }
   const tools = document.getElementById('tools-section');
-  // Ask AI: what this PDF shows is offered to the panel; on its own the viewer has the floating button
-  window.zcViewerHere = aiHere;
-  watchHere();
-  if (!appTabs()) void import('../ai/launcher.js').then((m) => m.mountLauncher(() => void askAi()));
+  mountAi();
   if (tools && item?.citation_key) {
     const b = document.createElement('button');
     b.id = 'zc-snap-btn';

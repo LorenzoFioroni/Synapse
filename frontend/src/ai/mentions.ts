@@ -4,13 +4,14 @@
 // editor's autocomplete draws on: GET /api/notes/cite_index and GET /api/notes. Plain fetch, loaded on
 // first use, so the PDF viewer (which has neither the app's modules nor its stores) works the same.
 // Strings from the library are only ever set as text.
-import type { CiteEntry, NoteInfo, NotesListing } from '../types.js';
-import { completionContext, noteChoices, searchItems, searchNotes, shortAuthors } from '../views/notes/library.js';
+import type { CiteEntry, NoteInfo, NotePdf, NotesListing } from '../types.js';
+import { completionContext, noteChoices, pdfChoices, searchItems, searchNotes, shortAuthors } from '../views/notes/library.js';
 
 /** The library data a question can cite; each part is fetched once, when first asked for. */
 export class MentionData {
   private cites: CiteEntry[] | null = null;
   private noteList: NoteInfo[] | null = null;
+  private pdfList: NotePdf[] = [];   // the PDFs of the notes folders, from the same listing
   private jobs: { cite?: Promise<void>; note?: Promise<void> } = {};
   /** Called when a part has arrived (the thread draws its citations and links again). */
   onLoad: () => void = () => {};
@@ -18,13 +19,14 @@ export class MentionData {
   items = (): CiteEntry[] => this.cites || [];
   itemsLoaded = (): boolean => !!this.cites;
   notes = (): NoteInfo[] => this.noteList || [];
+  pdfs = (): NotePdf[] => this.pdfList;
   notesLoaded = (): boolean => !!this.noteList;
 
   load(kind: 'cite' | 'note'): Promise<void> {
     const get = async (url: string) => { const r = await fetch(url); if (!r.ok) throw new Error(String(r.status)); return r.json(); };
     this.jobs[kind] ??= (kind === 'cite'
       ? get('/api/notes/cite_index').then((d: { items: CiteEntry[] }) => { this.cites = d.items; })
-      : get('/api/notes').then((d: NotesListing) => { this.noteList = d.notes; })
+      : get('/api/notes').then((d: NotesListing) => { this.noteList = d.notes; this.pdfList = d.pdfs || []; })
     ).then(() => this.onLoad(), () => { this.jobs[kind] = undefined; });   // a failure may be retried by the next use
     return this.jobs[kind]!;
   }
@@ -32,12 +34,21 @@ export class MentionData {
   /** The path a [[target]] names (the backend resolves by file name, or a path without ".md"); undefined until the notes are known. */
   resolveNote = (target: string): string | null | undefined => {
     if (!this.noteList) { void this.load('note'); return undefined; }
+    if (/\.pdf$/i.test(target.trim())) return this.findPdf(target)?.path ?? null;   // [[folder/file.pdf]]
     const t = target.trim().toLowerCase().replace(/\.md$/i, '');
     if (!t) return null;
     const stem = (p: string) => p.replace(/\.md$/i, '').toLowerCase();
     const hits = this.noteList.filter((n) => stem(n.path) === t || stem(n.path).split('/').pop() === t);
     hits.sort((a, b) => a.path.split('/').length - b.path.split('/').length || a.path.localeCompare(b.path));
     return hits[0]?.path ?? null;
+  };
+
+  /** The PDF of the notes folders a link target or path names: its path, else a folder path ending it, else its file name. */
+  findPdf = (target: string): NotePdf | undefined => {
+    const t = target.trim().replace(/\\/g, '/').toLowerCase();
+    const hits = this.pdfList.filter((p) => p.path.toLowerCase() === t || p.path.toLowerCase().endsWith(`/${t}`));
+    hits.sort((a, b) => a.path.split('/').length - b.path.split('/').length || a.path.localeCompare(b.path));
+    return hits[0];
   };
 }
 
@@ -75,7 +86,7 @@ export function attachMentions(input: HTMLTextAreaElement, anchor: HTMLElement, 
   const list = document.createElement('div');
   list.className = 'ai-mentions';
   list.setAttribute('role', 'listbox');
-  list.setAttribute('aria-label', 'Papers and notes');
+  list.setAttribute('aria-label', 'Papers, notes and PDFs');
   list.id = `ai-mentions-${Math.random().toString(36).slice(2, 8)}`;
   list.hidden = true;
   anchor.append(list);
@@ -97,9 +108,13 @@ export function attachMentions(input: HTMLTextAreaElement, anchor: HTMLElement, 
 
   function search(t: Trigger): Row[] {
     if (t.kind === 'note') {
-      return searchNotes(noteChoices(data.notes()), t.query).map((n) => ({
+      const notes = searchNotes(noteChoices(data.notes()), t.query).map((n) => ({
         label: n.insert, detail: n.title !== n.stem ? n.title : n.folder, title: '', insert: n.insert, kind: 'note' as const,
       }));
+      const pdfs = searchNotes(pdfChoices(data.pdfs()), t.query).map((n) => ({
+        label: n.insert, detail: n.folder ? `PDF · ${n.folder}` : 'PDF', title: '', insert: n.insert, kind: 'note' as const,
+      }));
+      return [...notes, ...pdfs].slice(0, 30);
     }
     return searchItems(data.items(), t.query).map((it) => ({
       label: it.key, detail: [shortAuthors(it.authors), it.year].filter(Boolean).join(' '), title: it.title || '', insert: it.key, kind: 'cite' as const,
@@ -125,7 +140,7 @@ export function attachMentions(input: HTMLTextAreaElement, anchor: HTMLElement, 
       const empty = document.createElement('div');
       empty.className = 'ai-mention-empty';
       const loading = trigger.kind === 'note' ? !data.notesLoaded() : !data.itemsLoaded();
-      empty.textContent = loading ? 'Loading…' : trigger.kind === 'note' ? 'No matching note' : 'No matching paper';
+      empty.textContent = loading ? 'Loading…' : trigger.kind === 'note' ? 'No matching note or PDF' : 'No matching paper';
       list.append(empty);
       input.removeAttribute('aria-activedescendant');
     }
