@@ -28,7 +28,10 @@ export interface Composer {
   /** The connected agents; ``locked`` is the provider of the open conversation (then it cannot change). */
   setAgents(companions: AiCompanion[], locked: string | null): void;
   choice(): Choice;
-  setText(text: string): void;
+  setText(text: string, caret?: number): void;
+  /** The text being typed, and where the caret is (kept across closing the panel and reloads, panel.ts). */
+  text(): string;
+  caret(): number;
   placeholder(text: string): void;
   /** Close the list of papers and notes if it is open; true if it was. */
   closeMentions(): boolean;
@@ -48,6 +51,8 @@ function levels(on: number, of: number): string {
 export function createComposer(h: {
   onSend(text: string): void; onStop(): void; mentions: MentionData;
   onDrop(index: number): void; onAdd(index: number): void;
+  /** The text changed (typing, or a completion inserted). */
+  onInput?(): void;
 }): Composer {
   const el = document.createElement('form');
   el.className = 'ai-composer';
@@ -159,6 +164,7 @@ export function createComposer(h: {
   modelBtn.addEventListener('click', () => pick(modelBtn, items((current()?.provider.models || []).map((m) => [m.id, m.label || m.id]), model, (v) => { model = v; })));
   effortBtn.addEventListener('click', () => pick(effortBtn, items((current()?.provider.efforts || []).map((e) => [e, cap(e)]), effort, (v) => { effort = v; })));
 
+  input.addEventListener('input', () => h.onInput?.());
   const submit = () => { const t = input.value.trim(); if (t) { input.value = ''; mentions.close(); h.onSend(t); } };
   el.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
   stop.addEventListener('click', () => h.onStop());
@@ -216,7 +222,9 @@ export function createComposer(h: {
       const a = current();
       return { companion: a?.companion, provider: a?.provider.id, model: model || undefined, effort: effort || undefined };
     },
-    setText: (t) => { input.value = t; },
+    setText: (t, caret) => { input.value = t; if (caret !== undefined) input.setSelectionRange(caret, caret); },
+    text: () => input.value,
+    caret: () => input.selectionStart ?? input.value.length,
     placeholder: (t) => { input.placeholder = t; },
     closeMentions: () => mentions.close(),
   };

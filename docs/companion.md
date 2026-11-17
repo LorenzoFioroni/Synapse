@@ -175,6 +175,14 @@ companion on the same computer resumes the same session. When the tool cannot re
 gone: Claude answers "No conversation found"; a restarted Codex has lost its thread), the job ends with an
 `error` event, "This conversation's history is no longer on that computer. Start a new one."
 
+## The panel's layout
+
+The floating Ask AI button can be dragged to any corner of the window (or moved with the arrow keys
+while it has the focus); the popup opens from that corner and can be resized by its inner corner, the
+docked column is resized by its inner edge, and closing the panel only hides it: the draft, the chips
+and the conversation stay, also across a reload on the same device. Details in
+[frontend](frontend.md#ask-ai); nothing of this is stored on the server.
+
 ## What the AI tool receives
 
 `prompt.build` (not the API handler) writes the question: the user's words, then what they added to it

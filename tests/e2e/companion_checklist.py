@@ -1183,7 +1183,221 @@ async def main():
 
             # ---- Escape closes the panel and gives the focus back
             await page.keyboard.press("Escape")
-            check("Escape closes the panel", await page.locator(".ai-panel").count() == 0)
+            check("Escape closes the panel (it is hidden, not torn down)", await page.locator(".ai-panel").is_hidden())
+
+            # ---- closing only hides the panel: the draft, caret, conversation and scroll stay; a reload keeps the draft
+            await page.click(".ai-fab")
+            await page.wait_for_selector(".ai-panel:not([hidden]) .ai-input")
+            turns_before = await page.locator(".ai-panel .ai-turn").count()
+            await page.fill(".ai-input", "a draft to keep")
+            await page.evaluate("document.querySelector('.ai-input').setSelectionRange(3, 3)")
+            await page.keyboard.press("Escape")
+            await page.wait_for_selector(".ai-fab:not([hidden])")
+            await page.click(".ai-fab")
+            await page.wait_for_selector(".ai-panel:not([hidden]) .ai-input")
+            check(
+                "closing and reopening keeps the text, the caret and the conversation",
+                await page.input_value(".ai-input") == "a draft to keep"
+                and await page.evaluate("document.querySelector('.ai-input').selectionStart") == 3
+                and await page.locator(".ai-panel .ai-turn").count() == turns_before
+                and await page.locator("body > .ai-panel").count() == 1,
+                turns_before,
+            )
+            await page.wait_for_timeout(500)
+            await page.reload()
+            await page.wait_for_selector(".cm-content", timeout=15000)
+            await page.wait_for_selector(".ai-fab:not([hidden])")
+            await page.click(".ai-fab")
+            await page.wait_for_selector(".ai-panel:not([hidden]) .ai-input")
+            check(
+                "a reload keeps the draft and its caret on this device",
+                await page.input_value(".ai-input") == "a draft to keep"
+                and await page.evaluate("document.querySelector('.ai-input').selectionStart") == 3,
+                await page.input_value(".ai-input"),
+            )
+            check(
+                "…and shows the same conversation again",
+                await until(page, f"document.querySelectorAll('.ai-panel .ai-turn').length === {turns_before}"),
+            )
+            await page.fill(".ai-input", "")
+            await page.keyboard.press("Escape")
+            await page.wait_for_selector(".ai-fab:not([hidden])")
+
+            # ---- the button can be dragged; it settles into the nearest corner, and a click still opens
+            corner = lambda: page.locator(".ai-fab").get_attribute("data-corner")  # noqa: E731
+            box = await page.locator(".ai-fab").bounding_box()
+            cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+            check("it starts in the lower right", await corner() == "br")
+            await page.mouse.move(cx, cy)
+            await page.mouse.down()
+            await page.mouse.move(cx - 3, cy - 3)
+            await page.mouse.up()
+            check(
+                "a press that hardly moves is a click: it opens the panel",
+                await until(page, "!!document.querySelector('.ai-panel:not([hidden])')") and await corner() == "br",
+            )
+            await page.keyboard.press("Escape")
+            await page.wait_for_selector(".ai-fab:not([hidden])")
+            await page.mouse.move(cx, cy)
+            await page.mouse.down()
+            await page.mouse.move(cx - 300, cy - 200, steps=6)
+            during = await page.evaluate("document.querySelector('.ai-fab').classList.contains('dragging')")
+            await page.mouse.move(120, 140, steps=6)
+            await page.mouse.up()
+            await page.wait_for_timeout(500)
+            check(
+                "dragging it to the upper left snaps it there, and does not open the panel",
+                during
+                and await corner() == "tl"
+                and await page.locator(".ai-panel:not([hidden])").count() == 0
+                and await page.evaluate(
+                    "(() => { const r = document.querySelector('.ai-fab').getBoundingClientRect(); return r.left < 40 && r.top < 120; })()"
+                ),
+                await corner(),
+            )
+            check(
+                "the corner is remembered on this device",
+                await page.evaluate("localStorage.getItem('zc.ai.fab')") == '"tl"',
+            )
+            await page.reload()
+            await page.wait_for_selector(".ai-fab:not([hidden])")
+            check("…also after a reload", await corner() == "tl")
+            await page.focus(".ai-fab")
+            await page.keyboard.press("ArrowRight")
+            check("the arrow keys move it: right", await corner() == "tr")
+            await page.keyboard.press("ArrowDown")
+            check("the arrow keys move it: down", await corner() == "br")
+            await page.keyboard.press("ArrowLeft")
+            await page.keyboard.press("ArrowUp")
+            check("…and left, up", await corner() == "tl")
+
+            # ---- the popup opens from that corner and is resized by dragging its inner corner
+            await page.click(".ai-fab")
+            await page.wait_for_selector(".ai-panel:not([hidden]) .ai-input")
+            await page.wait_for_timeout(450)  # the opening animation
+            geo = await page.evaluate(
+                """() => { const r = document.querySelector('.ai-panel').getBoundingClientRect();
+                  return { l: r.left, t: r.top, w: r.width, h: r.height, c: document.querySelector('.ai-panel').dataset.corner }; }"""
+            )
+            check(
+                "the popup opens from the button's corner and grows toward the middle",
+                geo["c"] == "tl" and geo["l"] < 40 and geo["t"] < 120 and geo["w"] > 300,
+                geo,
+            )
+            g = await page.locator(".ai-grip").bounding_box()
+            gx, gy = g["x"] + g["width"] / 2, g["y"] + g["height"] / 2
+            check(
+                "a grip shows at the inner corner (lower right)",
+                gx > geo["l"] + geo["w"] - 30 and gy > geo["t"] + geo["h"] - 30,
+            )
+            await page.mouse.move(gx, gy)
+            await page.mouse.down()
+            await page.mouse.move(gx + 80, gy + 60, steps=5)
+            await page.mouse.up()
+            bigger = await page.evaluate(
+                "(() => { const r = document.querySelector('.ai-panel').getBoundingClientRect(); return [r.width, r.height]; })()"
+            )
+            check(
+                "dragging the grip resizes it, anchored at its corner",
+                abs(bigger[0] - (geo["w"] + 80)) < 3 and abs(bigger[1] - (geo["h"] + 60)) < 3,
+                [bigger, geo],
+            )
+            await page.mouse.move(gx + 80, gy + 60)
+            await page.mouse.down()
+            await page.mouse.move(0, 0, steps=4)
+            await page.mouse.up()
+            tiny = await page.evaluate(
+                "(() => { const r = document.querySelector('.ai-panel').getBoundingClientRect(); return [r.width, r.height]; })()"
+            )
+            check("it keeps a minimum size", 295 <= tiny[0] <= 305 and 315 <= tiny[1] <= 325, tiny)
+            g = await page.locator(".ai-grip").bounding_box()
+            await page.mouse.move(g["x"] + g["width"] / 2, g["y"] + g["height"] / 2)
+            await page.mouse.down()
+            await page.mouse.move(1270, 790, steps=4)
+            await page.mouse.up()
+            huge = await page.evaluate(
+                "(() => { const r = document.querySelector('.ai-panel').getBoundingClientRect(); return [r.width, r.height, innerWidth, innerHeight]; })()"
+            )
+            check("…and stays inside the window", huge[0] <= huge[2] - 20 and huge[1] <= huge[3] - 20, huge)
+            await page.click("[data-close]")
+            await page.wait_for_selector(".ai-fab:not([hidden])")
+            await page.click(".ai-fab")
+            await page.wait_for_timeout(450)
+            size_now = await page.evaluate(
+                "(() => { const r = document.querySelector('.ai-panel').getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })()"
+            )
+            await page.reload()
+            await page.wait_for_selector(".ai-fab:not([hidden])")
+            await page.click(".ai-fab")
+            await page.wait_for_selector(".ai-panel:not([hidden]) .ai-input")
+            await page.wait_for_timeout(450)
+            check(
+                "the size is remembered, also after a reload",
+                await page.evaluate(
+                    "(() => { const r = document.querySelector('.ai-panel').getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })()"
+                )
+                == size_now,
+                size_now,
+            )
+            await page.click("[data-close]")
+
+            # ---- docked, its inner edge is dragged to change the width; a double-click resets it
+            await page.click(".ai-fab")
+            await page.click("[data-place]")
+            await page.wait_for_selector(".ai-panel[data-placement='dock']")
+            w0 = (await page.locator(".ai-panel").bounding_box())["width"]
+            e = await page.locator(".ai-edge").bounding_box()
+            ex, ey = e["x"] + e["width"] / 2, e["y"] + e["height"] / 2
+            await page.mouse.move(ex, ey)
+            await page.mouse.down()
+            await page.mouse.move(ex - 100, ey, steps=5)
+            await page.mouse.up()
+            w1 = (await page.locator(".ai-panel").bounding_box())["width"]
+            pad = await page.evaluate("parseFloat(getComputedStyle(document.body).paddingRight)")
+            check(
+                "dragging the edge widens the column; the page makes room for it",
+                abs(w1 - (w0 + 100)) < 3 and abs(pad - w1) < 3,
+                [w0, w1, pad],
+            )
+            e = await page.locator(".ai-edge").bounding_box()
+            await page.mouse.move(e["x"] + 4, e["y"] + 100)
+            await page.mouse.down()
+            await page.mouse.move(2000, 300, steps=4)
+            await page.mouse.up()
+            w2 = (await page.locator(".ai-panel").bounding_box())["width"]
+            e = await page.locator(".ai-edge").bounding_box()
+            await page.mouse.move(e["x"] + 4, e["y"] + 100)
+            await page.mouse.down()
+            await page.mouse.move(e["x"] + 4 - 3000, 300, steps=4)
+            await page.mouse.up()
+            w3 = (await page.locator(".ai-panel").bounding_box())["width"]
+            check("the width has a minimum and a maximum", abs(w2 - 280) < 3 and 400 < w3 <= 640, [w2, w3])
+            await page.reload()
+            await page.wait_for_selector(".ai-fab:not([hidden])")
+            await page.click(".ai-fab")
+            await page.wait_for_selector(".ai-panel[data-placement='dock']")
+            check(
+                "the width is remembered, also after a reload",
+                abs((await page.locator(".ai-panel").bounding_box())["width"] - w3) < 3,
+            )
+            await page.locator(".ai-edge").dblclick()
+            check(
+                "a double-click on the edge resets it",
+                abs((await page.locator(".ai-panel").bounding_box())["width"] - 360) < 3,
+            )
+            await page.focus(".ai-edge")
+            await page.keyboard.press("ArrowLeft")
+            check(
+                "the arrow keys change the width from the keyboard",
+                abs((await page.locator(".ai-panel").bounding_box())["width"] - 376) < 3,
+            )
+            await page.click("[data-place]")  # back to a popup, and everything back to how it was
+            await page.click("[data-close]")
+            await page.evaluate(
+                "['zc.ai.fab', 'zc.ai.popupSize', 'zc.ai.dockWidth', 'zc.ai.session'].forEach((k) => localStorage.removeItem(k))"
+            )
+            await page.reload()
+            await page.wait_for_selector(".ai-fab:not([hidden])")
 
             # ---- the PDF viewer in a browser tab of its own: its own button and panel; select words, Ask AI
             v = await ctx.new_page()
@@ -1288,7 +1502,7 @@ async def main():
             )
             await note_win.close()
             await v.keyboard.press("Escape")
-            check("Escape closes the viewer's panel", await v.locator(".ai-panel").count() == 0)
+            check("Escape closes the viewer's panel", await v.locator(".ai-panel").is_hidden())
 
             # ---- the viewer without a selection: its own floating button, then docked as a column
             await v.evaluate("getSelection().removeAllRanges()")
