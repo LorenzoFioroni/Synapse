@@ -221,7 +221,7 @@ function onSelectionEnd() {
   p.querySelector('[data-ask]')?.addEventListener('click', () => {
     const quote = cleanQuote(text);
     hidePill();
-    void askAi(paperChip(it, page, quote));
+    void askAi(paperChip(it!, page, quote));
   });
   document.body.appendChild(p);
 }
