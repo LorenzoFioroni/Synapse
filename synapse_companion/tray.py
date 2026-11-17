@@ -170,23 +170,52 @@ def _render(name: str, scale: float):
     return icon
 
 
-def _dock(visible: bool) -> None:
-    """macOS: the Dock shows this process only while a window is open (the menu bar icon stays)."""
-    if sys.platform != "darwin":
-        return
-    import ctypes
-    import ctypes.util
+def _png(name: str, size: int, scale: float) -> bytes:
+    """static/<name> as a PNG of ``size`` pixels, drawn ``scale`` of the full size."""
+    from PySide6.QtCore import QBuffer, QByteArray, QIODevice
 
-    try:
+    pixmap = _render(name, scale).pixmap(size, size)
+    data = QByteArray()
+    buffer = QBuffer(data)
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    pixmap.save(buffer, "PNG")
+    buffer.close()
+    return bytes(data.data())
+
+
+class _Dock:
+    """macOS: the Dock shows this process only while a window is open (the menu bar icon stays).
+
+    The Dock icon is set on NSApplication directly: Qt's setWindowIcon draws it at the Dock tile's
+    size, which is 0 while the process has no Dock entry, so the Dock showed Python's own icon
+    (the rocket) until it happened to be set again once the entry existed."""
+
+    def __init__(self, png: bytes):
+        import ctypes
+        import ctypes.util
+
         objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc") or "libobjc.dylib")
         objc.objc_getClass.restype = objc.sel_registerName.restype = ctypes.c_void_p
         objc.objc_getClass.argtypes = objc.sel_registerName.argtypes = [ctypes.c_char_p]
-        send = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(("objc_msgSend", objc))
-        policy = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long)(("objc_msgSend", objc))
-        ns_app = send(objc.objc_getClass(b"NSApplication"), objc.sel_registerName(b"sharedApplication"))
-        policy(ns_app, objc.sel_registerName(b"setActivationPolicy:"), 0 if visible else 1)  # regular · accessory
-    except (OSError, AttributeError, TypeError):
-        pass
+        p, msg = ctypes.c_void_p, ("objc_msgSend", objc)
+        self._sel = objc.sel_registerName
+        self._send = ctypes.CFUNCTYPE(p, p, p)(msg)
+        self._send_obj = ctypes.CFUNCTYPE(p, p, p, p)(msg)
+        self._send_bytes = ctypes.CFUNCTYPE(p, p, p, ctypes.c_char_p, ctypes.c_ulong)(msg)
+        self._policy = ctypes.CFUNCTYPE(ctypes.c_bool, p, p, ctypes.c_long)(msg)
+        self._app = self._send(objc.objc_getClass(b"NSApplication"), self._sel(b"sharedApplication"))
+        data = self._send_bytes(objc.objc_getClass(b"NSData"), self._sel(b"dataWithBytes:length:"), png, len(png))
+        image = self._send(objc.objc_getClass(b"NSImage"), self._sel(b"alloc"))
+        self._image = self._send_obj(image, self._sel(b"initWithData:"), data)  # kept for the process's life
+
+    def set_icon(self) -> None:
+        if self._image:
+            self._send_obj(self._app, self._sel(b"setApplicationIconImage:"), self._image)
+
+    def show(self, visible: bool) -> None:
+        self.set_icon()  # before the Dock entry is made, so it does not start with the rocket
+        self._policy(self._app, self._sel(b"setActivationPolicy:"), 0 if visible else 1)  # regular · accessory
+        self.set_icon()
 
 
 def main() -> int:
@@ -204,10 +233,15 @@ def main() -> int:
         return NO_TRAY
     app.setQuitOnLastWindowClosed(False)  # Qt has no windows of its own here
     app.setApplicationDisplayName("Synapse Companion")
-    _dock(False)
-    # The Dock icon on macOS (else the generic Python one); icons there have a margin around them.
-    dock_icon = _render("icon.svg", 0.8 if sys.platform == "darwin" else 1.0)
-    app.setWindowIcon(dock_icon)
+    dock: _Dock | None = None
+    if sys.platform == "darwin":
+        try:  # Dock icons have a margin around them
+            dock = _Dock(_png("icon.svg", 512, 0.8))
+            dock.show(False)
+        except (OSError, AttributeError, TypeError):
+            dock = None
+    else:
+        app.setWindowIcon(_render("icon.svg", 1.0))
     if sys.platform == "darwin":
         glyph = _render("tray.svg", 0.8)
         glyph.setIsMask(True)  # a menu bar glyph: macOS draws it in the menu bar's own colour
@@ -240,7 +274,7 @@ def main() -> int:
 
     icon.activated.connect(clicked)
 
-    docked = [None]
+    docked: list[bool | None] = [None]
 
     def refresh() -> None:
         try:
@@ -253,11 +287,12 @@ def main() -> int:
             if failures[0] >= 3:  # the companion quit or restarted (a new one starts its own icon)
                 app.quit()
             return
-        if docked[0] != bool(state.get("window_open")):
-            docked[0] = bool(state.get("window_open"))
-            _dock(docked[0])
-            if docked[0]:
-                app.setWindowIcon(dock_icon)  # macOS drops the icon when the Dock entry is made again
+        window_open = bool(state.get("window_open"))
+        if dock and docked[0] != window_open:
+            docked[0] = window_open
+            dock.show(window_open)
+            if window_open:  # the Dock makes its entry asynchronously and may reset the icon meanwhile
+                QTimer.singleShot(250, dock.set_icon)
         text = summary(state)
         status.setText(text)
         library.setEnabled(bool(state.get("server")))
@@ -270,6 +305,6 @@ def main() -> int:
     icon.show()
     ask("/api/tray", {"shown": True})
     code = app.exec()
-    print(f'exec returned {code}', file=sys.stderr, flush=True)
+    print(f"exec returned {code}", file=sys.stderr, flush=True)
     icon.hide()
     return 0

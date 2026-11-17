@@ -16,3 +16,17 @@ condition = "AND"
 paths = ['''^frontend/vendor/mermaid/mermaid\.min\.js$''']
 regexTarget = "match"
 regexes = ['''(?:p\.keyCount,v=p\.atlasCount|m\.keyCount,v=m\.atlasCount)''']
+
+[[allowlists]]
+description = "The extension's public key pins its id for native messaging; it is public by design"
+condition = "AND"
+paths = ['''^browser_extension/manifest\.json$''']
+regexTarget = "match"
+regexes = ['''^key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA''']
+
+[[allowlists]]
+description = "Companion test fixture: base64 of not-a-real-key"
+condition = "AND"
+paths = ['''^tests/test_companion_(app|cli)\.py$''']
+regexTarget = "match"
+regexes = ['''bm90LWEtcmVhbC1rZXk=''']

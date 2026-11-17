@@ -711,6 +711,7 @@ def test_the_state_has_what_the_window_shows(api, live, token):
         "log",
         "extension",
         "tray",
+        "window_open",
     }
     assert state["tray"]["status"] == "off" and "PySide6" in state["tray"]["install"]
     assert state["profile"] == "default" and state["max_running"] == 2 and state["running"] == []

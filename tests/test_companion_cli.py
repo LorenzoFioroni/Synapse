@@ -155,7 +155,7 @@ def running(live, token, tools):
 
 
 def ask(client, svc, prompt="Question?", **extra):
-    for _ in range(100):
+    for _ in range(500):  # a companion started as a subprocess can take seconds on a slow runner
         if svc.companions.status():
             break
         time.sleep(0.02)
@@ -412,7 +412,7 @@ def test_missing_tool_is_an_error_for_the_question(client, svc, running, tools, 
 
 def test_codex_is_offered_only_when_turned_on(client, svc, running, tools):
     running()
-    for _ in range(100):
+    for _ in range(500):  # a companion started as a subprocess can take seconds on a slow runner
         if svc.companions.status():
             break
         time.sleep(0.02)
@@ -718,7 +718,7 @@ def test_sigterm_stops_the_ai_tool_at_once(client, svc, live, token, tools, tmp_
 
 def test_the_companion_advertises_its_models_and_efforts(client, svc, running, tools):
     running(CODEX_ON)
-    for _ in range(100):
+    for _ in range(500):  # a companion started as a subprocess can take seconds on a slow runner
         if svc.companions.status():
             break
         time.sleep(0.02)
