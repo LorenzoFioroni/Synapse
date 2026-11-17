@@ -122,6 +122,7 @@ async function movePdf(path: string, to: string, { quiet = false } = {}): Promis
     if (tree.sel.delete(pKey(path))) tree.sel.add(pKey(res.path));
     if (tree.cursor === pKey(path)) tree.anchor = tree.cursor = pKey(res.path);
     if (!quiet) await refreshTree();
+    reportLinks(res);   // notes that linked to it were updated
   } catch (e) { toastError(e); }
 }
 

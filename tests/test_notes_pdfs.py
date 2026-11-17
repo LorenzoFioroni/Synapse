@@ -525,3 +525,10 @@ def test_page_excerpt_for_the_link_card(client, svc):
     assert "excerpt of page one" in r.json["excerpt"]
     assert client.get(f"/api/note-pdfs/{pid}/page/9").json["excerpt"] == ""
     assert client.get("/api/note-pdfs/999/page/1").status_code == 404
+
+
+def test_a_taken_pdf_name_says_pdf(client):
+    add(client, "a.pdf")
+    add(client, "b.pdf")
+    r = client.post("/api/notes/move", json={"path": "a.pdf", "to": "b.pdf"})
+    assert r.status_code == 409 and r.json["error"] == "A PDF already exists at b.pdf"

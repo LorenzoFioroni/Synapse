@@ -36,7 +36,8 @@ def guarded(fn):
         except Conflict as e:
             return jsonify(error=f"{e.path} was changed elsewhere", conflict=True, current_hash=e.current_hash), 409
         except NoteExists as e:
-            return jsonify(error=f"A note already exists at {e.path}", exists=True, path=e.path), 409
+            what = "A PDF" if e.path.lower().endswith(".pdf") else "A note"
+            return jsonify(error=f"{what} already exists at {e.path}", exists=True, path=e.path), 409
         except NoteMoved as e:
             return jsonify(error=f"{e.path} was moved to {e.to}", moved_to=e.to), 404
         except VaultError as e:
