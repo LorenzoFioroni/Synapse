@@ -464,7 +464,9 @@ async def main():
             await page.fill(".ai-input", "x [[zzqq")
             check(
                 "an unknown [[ query says no note or PDF",
-                await until(page, "document.querySelector('.ai-mention-empty')?.textContent === 'No matching note or PDF'"),
+                await until(
+                    page, "document.querySelector('.ai-mention-empty')?.textContent === 'No matching note or PDF'"
+                ),
             )
             await page.fill(".ai-input", "")
             await page.click("[data-mention]")
@@ -846,7 +848,9 @@ async def main():
             await page.click(".ai-answer a.wikilink.pdf")
             await page.wait_for_selector(".tab-frame.active", timeout=10000)
             await page.wait_for_timeout(800)
-            where = await (await (await page.query_selector(".tab-frame.active")).content_frame()).evaluate("location.href")
+            where = await (await (await page.query_selector(".tab-frame.active")).content_frame()).evaluate(
+                "location.href"
+            )
             check(
                 "clicking it opens the PDF at that page with the quoted words",
                 "npdf=" in where and "page=2" in where and "q=Highlighted" in where,
