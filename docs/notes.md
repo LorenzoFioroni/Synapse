@@ -107,6 +107,7 @@ and everything attached to the PDF (highlights) use that number, so a rename or 
   `.pdf` extension is kept), *Move to folder…*, dragging onto a folder and Delete / *Move to Trash*
   (with Undo) work as for notes, and one selection may mix notes, PDFs and folders. On a phone,
   folders list their PDFs and a tap opens the reader.
+- **Highlights.** The viewer annotates a notes PDF like an attachment: `viewer/annotations/model.ts` keeps `ownerBase` (`/api/attachments/<id>` or, with `?npdf=<id>`, `/api/note-pdfs/<id>`) and uses it for loading and saving. Records are in `note_pdf_annotations` (`pdf_id`, same columns as `annotations`); `AnnotationStore` reads and writes both tables, and a deleted registry row removes its highlights.
 - **Outside changes** are found by `NotePdfs.sync()` (at start, with the notes index and on a
   rescan). A file at a known path whose size or time changed is a replacement and keeps its row. A
   new file that is byte-for-byte a vanished one takes that row over (an external rename keeps the
@@ -349,6 +350,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | POST | `/api/notes/pdf` | Add a PDF (multipart `file`, `folder`); answers its registry entry. 415 when it is not a PDF, 413 over the size cap. |
 | GET | `/api/note-pdfs/<id>` | A PDF's registry entry (404 when it is trashed, missing or gone). |
 | GET | `/api/note-pdfs/<id>/file` | The PDF itself. |
+| GET, POST | `/api/note-pdfs/<id>/annotations` | A PDF's highlights and other annotations; same records as for an attachment (see [storage](storage.md)). `PATCH`/`DELETE /api/annotations/<id>` work for both. |
 | POST | `/api/notes/attachments` | Upload an image (multipart `file`); returns its path and Markdown. |
 | GET | `/api/notes/attachments` | Every image with the notes using it, plus the attachment trash. |
 | POST | `/api/notes/attachments/restore` | Restore a trashed image. |

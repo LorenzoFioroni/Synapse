@@ -154,6 +154,7 @@ Details worth knowing:
   (`delete_permanently`, `FolderRepository.delete`, `TagRepository.delete`), and `migrate()`
   deletes orphans on every start.
 - **`note_pdfs`** (`backend/notes/pdfs.py`, added by `CREATE TABLE IF NOT EXISTS` through `Database.add_schema`) numbers the PDFs in `notes/`: `path` is unique among `present` rows (a partial index), `state` is `present`, `trashed` (path under `.trash/<timestamp>/`) or `missing`. It is the one table of `library.db` about files that live in `notes/`; a backup contains both, so they stay consistent. See [notes](notes.md#pdfs-in-the-notes-folders).
+- **`note_pdf_annotations.pdf_id`** cascades from `note_pdfs` (same columns as `annotations`, created with `CREATE TABLE IF NOT EXISTS` in `library/annotations.py`; `annotations` itself is unchanged). Deleting a PDF's row, as the notes trash does when it deletes the file for good, deletes its highlights.
 - **`annotations.attachment_id`** cascades from `attachments`, so deleting an attachment row
   deletes its annotations. `rects` and `path` are JSON text. `fill` (a box's fill colour) was
   added later; `annotations.upgrade`, run by `migrate()`, adds the column to older files.

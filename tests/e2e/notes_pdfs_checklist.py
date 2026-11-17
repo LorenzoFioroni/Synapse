@@ -78,21 +78,30 @@ async def main():
         check("a new folder is in the tree", await A.locator('.nt-row.folder[data-folder="Reading"]').count() == 1)
 
         # 1. dropping a PDF on a folder adds it there
-        await A.evaluate(DROP, ['.nt-row.folder[data-folder="Reading"]', [["My Paper.pdf", "application/pdf", pdf_b64]]])
+        await A.evaluate(
+            DROP, ['.nt-row.folder[data-folder="Reading"]', [["My Paper.pdf", "application/pdf", pdf_b64]]]
+        )
         await A.wait_for_selector('.nt-row.pdf[data-path="Reading/My Paper.pdf"]')
-        check("a dropped PDF is stored in the folder", (D / "Reading" / "My Paper.pdf").read_bytes() == PDF.read_bytes())
+        check(
+            "a dropped PDF is stored in the folder", (D / "Reading" / "My Paper.pdf").read_bytes() == PDF.read_bytes()
+        )
 
         # 2. dropping something that is not a PDF is refused
-        await A.evaluate(DROP, ['.notes-tree', [["notes.txt", "text/plain", base64.b64encode(b"hello").decode()]]])
+        await A.evaluate(DROP, [".notes-tree", [["notes.txt", "text/plain", base64.b64encode(b"hello").decode()]]])
         await A.wait_for_selector('.toast:has-text("Only PDF")')
         check(
             "a dropped text file is refused",
             "Only PDF" in (await A.inner_text("body")) and not list(D.glob("*.txt")) and not list(D.glob("*/*.txt")),
         )
         # a file named .pdf with other content is refused by the server
-        await A.evaluate(DROP, ['.notes-tree', [["fake.pdf", "application/pdf", base64.b64encode(b"<html></html>").decode()]]])
+        await A.evaluate(
+            DROP, [".notes-tree", [["fake.pdf", "application/pdf", base64.b64encode(b"<html></html>").decode()]]]
+        )
         await A.wait_for_timeout(800)
-        check("a fake PDF is refused", not (D / "fake.pdf").exists() and await A.locator('.nt-row.pdf[data-path="fake.pdf"]').count() == 0)
+        check(
+            "a fake PDF is refused",
+            not (D / "fake.pdf").exists() and await A.locator('.nt-row.pdf[data-path="fake.pdf"]').count() == 0,
+        )
 
         # 3. "Add PDF…" on a folder's menu
         await A.click('.nt-row.folder[data-folder="Reading"]', button="right")
@@ -106,10 +115,30 @@ async def main():
         await A.click('.nt-row.pdf[data-path="Reading/My Paper.pdf"]')
         await A.wait_for_selector(".tab-frame.active")
         src = await A.get_attribute(".tab-frame.active", "src")
-        check("clicking a PDF opens it in the viewer by its number", src and "npdf=1" in src and "note-pdfs" in src, src)
+        check(
+            "clicking a PDF opens it in the viewer by its number", src and "npdf=1" in src and "note-pdfs" in src, src
+        )
         frame = A.frame_locator(".tab-frame.active")
         await frame.locator(".page-wrapper").first.wait_for(timeout=15000)
         check("the viewer shows its pages", await frame.locator(".page-wrapper").count() >= 1)
+        # annotations made in the viewer belong to this PDF and come back after a reload of the tab
+        await frame.locator(".page-wrapper .textLayer span").first.wait_for(timeout=15000)
+        made = await (await (await A.query_selector(".tab-frame.active")).content_frame()).evaluate(
+            """async () => {
+              const m = await import('/js/viewer/annotations/model.js');
+              const a = await m.create({ type: 'highlight', page: 1, rects: [[0.1, 0.1, 0.3, 0.02]], text: 'x', color: '#ffff00' });
+              return a.id;
+            }"""
+        )
+        listed = (await (await A.request.get(BASE + "api/note-pdfs/1/annotations")).json())["annotations"]
+        check("a highlight made in the viewer is saved on the notes PDF", [a["id"] for a in listed] == [made])
+        await A.reload()
+        await A.wait_for_timeout(1500)
+        await A.wait_for_selector(".tab-frame.active")
+        again = await (await A.query_selector(".tab-frame.active")).content_frame()
+        await again.wait_for_function("() => window.zcAnnotations && window.zcAnnotations.ready")
+        await again.evaluate("() => window.zcAnnotations.ready")
+        check("the highlight is drawn again after a reload", await again.locator(".anno-layer [data-id]").count() >= 1)
         await A.click(".tab.home")
         await A.wait_for_timeout(300)
         if not await A.is_visible("#notes-view"):
@@ -122,14 +151,19 @@ async def main():
         await A.fill(".dialog input", "Renamed")
         await A.keyboard.press("Enter")
         await A.wait_for_selector('.nt-row.pdf[data-path="Reading/Renamed.pdf"]')
-        check("Rename… renames the PDF on disk", (D / "Reading" / "Renamed.pdf").is_file() and not (D / "Reading" / "My Paper.pdf").exists())
+        check(
+            "Rename… renames the PDF on disk",
+            (D / "Reading" / "Renamed.pdf").is_file() and not (D / "Reading" / "My Paper.pdf").exists(),
+        )
 
         # 6. drag it to another folder
         await A.request.post(BASE + "api/notes/folder", data={"path": "Archive"})
         await A.click('[data-act="tree-menu"]')
         await A.click('.menu :text("Rescan notes folder")')
         await A.wait_for_selector('.nt-row.folder[data-folder="Archive"]')
-        await A.locator('.nt-row.pdf[data-path="Reading/Renamed.pdf"]').drag_to(A.locator('.nt-row.folder[data-folder="Archive"]'))
+        await A.locator('.nt-row.pdf[data-path="Reading/Renamed.pdf"]').drag_to(
+            A.locator('.nt-row.folder[data-folder="Archive"]')
+        )
         await A.wait_for_selector('.nt-row.pdf[data-path="Archive/Renamed.pdf"]')
         check("dragging a PDF onto a folder moves it", (D / "Archive" / "Renamed.pdf").is_file())
 
@@ -139,7 +173,10 @@ async def main():
         if await A.locator(".dialog").count():
             await A.click('.dialog button:has-text("Move to Trash")')
         await A.wait_for_selector('.nt-row.pdf[data-path="Archive/Renamed.pdf"]', state="detached")
-        check("Move to Trash takes the PDF out of the tree and into the trash", not (D / "Archive" / "Renamed.pdf").exists() and any(D.glob(".trash/*/Archive/Renamed.pdf")))
+        check(
+            "Move to Trash takes the PDF out of the tree and into the trash",
+            not (D / "Archive" / "Renamed.pdf").exists() and any(D.glob(".trash/*/Archive/Renamed.pdf")),
+        )
         await A.click('.toast button:has-text("Undo")')
         await A.wait_for_selector('.nt-row.pdf[data-path="Archive/Renamed.pdf"]')
         check("Undo restores it", (D / "Archive" / "Renamed.pdf").is_file())

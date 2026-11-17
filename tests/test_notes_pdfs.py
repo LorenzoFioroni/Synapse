@@ -259,3 +259,106 @@ def test_missing_rows_are_kept_when_the_trash_is_never_emptied(client, svc):
     svc.note_pdfs.sync()
     _backdate(svc, p["id"], 3000)
     assert svc.note_pdfs.sync()["forgotten"] == 0 and svc.note_pdfs.get(p["id"])
+
+
+# ------------------------------------------------------------------ highlights
+def _highlight(client, pdf_id):
+    return client.post(
+        f"/api/note-pdfs/{pdf_id}/annotations", json={"type": "highlight", "page": 1, "rects": [[0.1, 0.1, 0.2, 0.02]]}
+    )
+
+
+def test_reappearing_file_within_the_retention_gets_its_highlights_back(client, svc):
+    svc.settings.update({"notes_trash_retention": "1w"})
+    p = add(client)
+    ann = _highlight(client, p["id"]).json["annotation"]
+    (svc.vault.root / "paper.pdf").rename(svc.vault.root / "elsewhere.tmp")
+    svc.note_pdfs.sync()
+    (svc.vault.root / "elsewhere.tmp").rename(svc.vault.root / "other.pdf")
+    svc.note_pdfs.sync()
+    assert listed(client) == {"other.pdf": p["id"]}
+    assert [a["id"] for a in client.get(f"/api/note-pdfs/{p['id']}/annotations").json["annotations"]] == [ann["id"]]
+
+
+def test_purge_deletes_the_highlights_too(client, svc):
+    svc.settings.update({"notes_trash_retention": "1d"})
+    p = add(client)
+    ann = _highlight(client, p["id"]).json["annotation"]
+    client.post("/api/notes/trash", json={"path": "paper.pdf"})
+    svc.attachments.purge(now=10**11)
+    assert svc.annotations.get(ann["id"]) is None
+
+
+HIGHLIGHT = {
+    "type": "highlight",
+    "page": 1,
+    "rects": [[0.1, 0.2, 0.3, 0.015]],
+    "text": "some words",
+    "color": "#ffff00",
+}
+
+
+def test_annotation_records_on_a_notes_pdf(client, svc):
+    p = add(client)
+    r = client.post(f"/api/note-pdfs/{p['id']}/annotations", json=HIGHLIGHT)
+    assert r.status_code == 201
+    ann = r.json["annotation"]
+    assert ann["pdf_id"] == p["id"] and ann["rects"] == HIGHLIGHT["rects"] and "attachment_id" not in ann
+    assert [a["id"] for a in client.get(f"/api/note-pdfs/{p['id']}/annotations").json["annotations"]] == [ann["id"]]
+    # the record API finds it in either table
+    r = client.patch(f"/api/annotations/{ann['id']}", json={"comment": "key", "type": "box"})
+    assert (
+        r.status_code == 200
+        and r.json["annotation"]["comment"] == "key"
+        and r.json["annotation"]["type"] == "highlight"
+    )
+    assert client.delete(f"/api/annotations/{ann['id']}").status_code == 200
+    assert client.delete(f"/api/annotations/{ann['id']}").status_code == 404
+    assert client.get(f"/api/note-pdfs/{p['id']}/annotations").json["annotations"] == []
+
+
+def test_annotations_survive_rename_and_are_separate_from_attachments(client, svc):
+    p = add(client, "a.pdf")
+    item = client.post("/api/items", json={"title": "Paper"}).json
+    att = client.post(
+        f"/api/items/{item['id']}/attachments",
+        data={"file": (io.BytesIO(PDF.read_bytes()), "p.pdf")},
+        content_type="multipart/form-data",
+    ).json["attachments"][0]
+    mine = client.post(f"/api/note-pdfs/{p['id']}/annotations", json=HIGHLIGHT).json["annotation"]
+    theirs = client.post(f"/api/attachments/{att['id']}/annotations", json=HIGHLIGHT).json["annotation"]
+    client.post("/api/notes/move", json={"path": "a.pdf", "to": "x/b.pdf"})
+    assert [a["id"] for a in client.get(f"/api/note-pdfs/{p['id']}/annotations").json["annotations"]] == [mine["id"]]
+    assert [a["id"] for a in client.get(f"/api/attachments/{att['id']}/annotations").json["annotations"]] == [
+        theirs["id"]
+    ]
+    # an annotation id is unique across both tables
+    r = client.post(f"/api/note-pdfs/{p['id']}/annotations", json={**HIGHLIGHT, "id": theirs["id"]})
+    assert r.status_code == 400
+
+
+def test_notes_pdf_annotation_errors(client):
+    assert client.post("/api/note-pdfs/999/annotations", json=HIGHLIGHT).status_code == 404
+    assert client.get("/api/note-pdfs/999/annotations").status_code == 404
+    p = add(client)
+    assert client.post(f"/api/note-pdfs/{p['id']}/annotations", json={"type": "nope", "page": 1}).status_code == 400
+    client.post("/api/notes/trash", json={"path": "paper.pdf"})  # a deleted PDF can be read but not marked
+    assert client.post(f"/api/note-pdfs/{p['id']}/annotations", json=HIGHLIGHT).status_code == 404
+    assert client.get(f"/api/note-pdfs/{p['id']}/annotations").status_code == 200
+
+
+def test_annotations_cascade_with_the_row(client, svc):
+    p = add(client)
+    ann = client.post(f"/api/note-pdfs/{p['id']}/annotations", json=HIGHLIGHT).json["annotation"]
+    svc.note_pdfs.forget_under("paper.pdf")
+    assert svc.annotations.get(ann["id"]) is None
+
+
+def test_change_kind_of_note_pdf_annotations():
+    from backend.changes import kind_of
+
+    assert kind_of("/api/note-pdfs/3/annotations") == "annotations"
+    assert kind_of("/api/annotations/abc") == "annotations"
+    assert kind_of("/api/attachments/3/annotations") == "annotations"
+    assert kind_of("/api/notes/pdf") == "notes"
+    assert kind_of("/api/items/x") == "library"

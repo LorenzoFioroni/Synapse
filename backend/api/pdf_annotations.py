@@ -26,6 +26,24 @@ def create(att_id):
     return jsonify(annotation=ann), 201
 
 
+@bp.get("/note-pdfs/<int:pdf_id>/annotations")
+def list_for_note_pdf(pdf_id):
+    if not svc().note_pdfs.get(pdf_id):
+        return error("This PDF is not in the notes any more.", 404)
+    return jsonify(annotations=svc().annotations.for_note_pdf(pdf_id))
+
+
+@bp.post("/note-pdfs/<int:pdf_id>/annotations")
+def create_on_note_pdf(pdf_id):
+    if not svc().note_pdfs.file_of(pdf_id):  # only a PDF that is there can be marked
+        return error("This PDF is not in the notes any more.", 404)
+    try:
+        ann = svc().annotations.create_on_note_pdf(pdf_id, body())
+    except AnnotationError as e:
+        return failure(e)
+    return jsonify(annotation=ann), 201
+
+
 @bp.patch("/annotations/<ann_id>")
 def update(ann_id):
     try:

@@ -21,7 +21,7 @@
 // loading, and picking up changes made elsewhere).
 import { setupLayer } from './annotations/input.js';
 import {
-  type Annotation, api, attId, byId, clone, draw, el, layers, modeClass, notify, pageSize, redoStack, resolveAttachment,
+  type Annotation, api, attId, byId, ownerBase, clone, draw, el, layers, modeClass, notify, pageSize, redoStack, resolveAttachment,
   textLayers, undo, undoStack,
 } from './annotations/model.js';
 
@@ -43,9 +43,10 @@ function addLayer(wrapper: HTMLElement): void {
 }
 
 async function load(): Promise<void> {
-  if (!(await resolveAttachment())) return;
+  await resolveAttachment();
+  if (!ownerBase) return;
   try {
-    const res = await api('GET', `/api/attachments/${attId}/annotations`);
+    const res = await api('GET', `${ownerBase}/annotations`);
     byId.clear();
     for (const a of res.annotations) byId.set(a.id, a);
   } catch (e) { notify(`Annotations could not be loaded: ${(e as Error).message}`); }
@@ -59,9 +60,9 @@ function clearDrawn(): void {
 
 /** Back in this tab: pick up what another tab changed on the same PDF. */
 async function refresh(): Promise<void> {
-  if (!attId || (document.activeElement as HTMLElement | null)?.isContentEditable) return;
+  if (!ownerBase || (document.activeElement as HTMLElement | null)?.isContentEditable) return;
   try {
-    const res = await api('GET', `/api/attachments/${attId}/annotations`);
+    const res = await api('GET', `${ownerBase}/annotations`);
     const sig = (list: Annotation[]) => list.map((a) => `${a.id}:${a.modified}`).sort().join('|');
     if (sig(res.annotations) === sig([...byId.values()])) return;
     byId.clear();
@@ -75,7 +76,7 @@ window.addEventListener('focus', refresh);
 /* Annotations made on another device (or in another tab) appear without a reload. */
 let feed: { seq?: number; epoch?: string } = {};
 async function pollChanges(): Promise<void> {
-  if (document.hidden || !attId) return;
+  if (document.hidden || !ownerBase) return;
   try {
     const q = new URLSearchParams(feed.seq === undefined ? {} : { since: String(feed.seq), epoch: feed.epoch ?? '' });
     const res = await api('GET', `/api/changes?${q}`);
