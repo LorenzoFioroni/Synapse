@@ -79,6 +79,10 @@ class Services:
         self.attachments = Attachments(self.vault, self.notes, self.settings)
         self.note_service.on_change = self.attachments.poke
         self.attachments.on_purged = self.note_pdfs.forget_under
+        # PDFs in the notes folders: their text is searched with the notes (own tables in fulltext.db)
+        self.indexer.note_pdfs = lambda: [(p["id"], self.vault.root / p["path"]) for p in self.note_pdfs.listing()]
+        self.note_service.pdf_search = self._search_note_pdfs
+        self.note_service.on_pdfs_changed = self.note_pdfs_changed
         from .notes.attachments import RETENTION
 
         self.note_pdfs.retention = lambda: RETENTION.get(self.settings.get("notes_trash_retention"))
@@ -156,7 +160,10 @@ class Services:
         """Refresh disposable indexes and every window after files change outside the app."""
         result = self.notes.sync()
         try:
-            result = {**result, **{f"pdf_{k}": v for k, v in self.note_pdfs.sync().items()}}
+            pdf_result = self.note_pdfs.sync()
+            result = {**result, **{f"pdf_{k}": v for k, v in pdf_result.items()}}
+            if pdf_result["added"] or pdf_result["changed"] or pdf_result["adopted"]:
+                self.note_pdfs_changed()
         except Exception:
             logging.getLogger(__name__).exception("Notes PDF sync failed")
         if any(result.values()):
@@ -327,6 +334,19 @@ class Services:
         except Exception as e:
             logging.getLogger(__name__).exception("Fetching the references of %s failed", item_id)
             return {"status": "failed", "message": f"Could not fetch references ({type(e).__name__})."}
+
+    def note_pdfs_changed(self) -> None:
+        """A PDF was added to or came back to the notes folders: its text is indexed."""
+        self.attachments_changed()
+
+    def _search_note_pdfs(self, query: str) -> list[dict]:
+        hits = self.fulltext.match_notes(query)
+        rows = {p["id"]: p for p in self.note_pdfs.listing()}
+        return [
+            {"path": rows[i]["path"], "title": rows[i]["name"], "snippet": snip, "kind": "pdf", "id": i}
+            for i, snip in hits.items()
+            if i in rows
+        ]
 
     def attachments_changed(self) -> None:
         """Call after adding/removing files so the full-text index catches up."""

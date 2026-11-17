@@ -22,7 +22,7 @@ const NOTE_MIME = 'application/x-zc-note';
 function onClick(e: MouseEvent): void {
   const t = e.target as Element;
   const hit = t.closest<HTMLElement>('.nt-hit');
-  if (hit) { hooks.openNote(hit.dataset.path!); return; }
+  if (hit) { if (hit.classList.contains('pdf')) openNotePdf({ id: Number(hit.dataset.id), path: hit.dataset.path! }); else hooks.openNote(hit.dataset.path!); return; }
   const row = t.closest<HTMLElement>('.nt-row');
   if (!row) return;
   // Clicking in the tree keeps the keyboard there (arrows, Delete, F2) until you click the note.
@@ -45,7 +45,7 @@ function openPdfRow(row: HTMLElement, newTab = false): void {
  *  tab). Renaming is F2 or the menu. */
 function onDblClick(e: MouseEvent): void {
   if (e.shiftKey || modKey(e)) return;
-  const note = (e.target as Element).closest<HTMLElement>('.nt-row.note, .nt-hit');
+  const note = (e.target as Element).closest<HTMLElement>('.nt-row.note, .nt-hit:not(.pdf)');
   if (note) hooks.openNote(note.dataset.path!, { keep: true });
   const pdf = (e.target as Element).closest<HTMLElement>('.nt-row.pdf');
   if (pdf) openPdfRow(pdf, true);

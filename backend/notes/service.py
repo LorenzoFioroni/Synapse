@@ -121,6 +121,8 @@ class NotesService:
         self.index = index
         self.papers = papers
         self.pdfs = pdfs  # the PDFs beside the notes (NotePdfs), when the app keeps them
+        self.pdf_search: Callable[[str], list[dict]] | None = None  # their text (Services): the notes search shows it
+        self.on_pdfs_changed: Callable[[], None] | None = None  # PDFs came or came back: their text is indexed
         default = vault.root.parent / "backups"  # data/backups
         self.rekeyer = Rekeyer(vault, index, backups_dir or default, fallback_dir=default)
         self.relinker = Relinker(vault, index, self.rekeyer.backup)  # links of moved notes
@@ -277,7 +279,13 @@ class NotesService:
         }
 
     def search(self, q: str) -> list[dict]:
-        return self.index.search(q)
+        found = self.index.search(q)
+        if self.pdf_search:
+            try:
+                found += self.pdf_search(q)
+            except Exception:  # the notes alone are an answer
+                log.exception("Searching the text of the PDFs failed")
+        return found
 
     # ------------------------------------------------------------------ writes
     def create(
@@ -617,6 +625,7 @@ class NotesService:
                 self.pdfs.moved(f"{TRASH}/{trash_id}/{p}", p)
         if pdfs:
             self.index.sync_files()
+            self._pdfs_came()
         self._reindex(restored)
         self._changed()
         return {"paths": restored, "pdfs": pdfs, "skipped": skipped}
@@ -657,6 +666,7 @@ class NotesService:
             if self.pdfs:
                 self.pdfs.moved(f"{TRASH}/{trash_id}/{path}", path)
             self.index.sync_files()
+            self._pdfs_came()
             return {"path": path}
         with self.history.change(
             kind="restore", subject=f"Restored {Path(path).stem} from the trash", device=current_device()
@@ -689,7 +699,12 @@ class NotesService:
         )
         info = self.pdfs.register(rel, sha)
         self.index.sync_files()
+        self._pdfs_came()
         return info
+
+    def _pdfs_came(self) -> None:
+        if self.on_pdfs_changed:
+            self.on_pdfs_changed()
 
     def append_to_paper_note(self, item_id: str, markdown: str) -> dict:
         """Append a block (a quote, a figure) to the item's paper note, creating the note if needed."""

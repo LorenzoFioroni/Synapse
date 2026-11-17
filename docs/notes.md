@@ -125,6 +125,7 @@ and everything attached to the PDF (highlights) use that number, so a rename or 
   open note as `> words [[path.pdf#p=N]]` (the path is asked again at that moment, so a rename is
   followed), else they are copied. Tabs of renamed PDFs take the new name (`retitlePdfs`).
 - **Highlights.** The viewer annotates a notes PDF like an attachment: `viewer/annotations/model.ts` keeps `ownerBase` (`/api/attachments/<id>` or, with `?npdf=<id>`, `/api/note-pdfs/<id>`) and uses it for loading and saving. Records are in `note_pdf_annotations` (`pdf_id`, same columns as `annotations`); `AnnotationStore` reads and writes both tables, and a deleted registry row removes its highlights.
+- **Text search.** The text of a notes PDF is indexed in `fulltext.db` (own tables; see [full-text search](fulltext-search.md#the-pdfs-of-the-notes-folders)) and found by `GET /api/notes/search` (entries with `kind: "pdf"`); the library search never returns it.
 - **Outside changes** are found by `NotePdfs.sync()` (at start, with the notes index and on a
   rescan). A file at a known path whose size or time changed is a replacement and keeps its row. A
   new file that is byte-for-byte a vanished one takes that row over (an external rename keeps the

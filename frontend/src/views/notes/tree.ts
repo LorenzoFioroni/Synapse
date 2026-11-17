@@ -166,11 +166,11 @@ async function paintHits(): Promise<void> {
   let res;
   try { res = (await api.searchNotes(q)).results; } catch { return; }
   if (q !== tree.filter) return;
-  const nameHits = new Set([...el.querySelectorAll<HTMLElement>('.nt-row.note')].map((r) => r.dataset.path));
+  const nameHits = new Set([...el.querySelectorAll<HTMLElement>('.nt-row.note, .nt-row.pdf')].map((r) => r.dataset.path));
   const rows = res.filter((r) => !nameHits.has(r.path));
   if (!rows.length) return;
   el.querySelector('.notes-hits')?.remove();
   el.insertAdjacentHTML('beforeend', `<div class="notes-hits"><div class="ns-title">Text matches</div>${rows.map((r) => `
-    <button class="nt-hit" data-path="${escapeHtml(r.path)}"><div class="nm">${escapeHtml(r.title || stemOf(r.path))}</div>
+    <button class="nt-hit${r.kind === 'pdf' ? ' pdf' : ''}" data-path="${escapeHtml(r.path)}"${r.kind === 'pdf' ? ` data-id="${r.id}"` : ''}><div class="nm">${r.kind === 'pdf' ? `${icon('pdf', 'icon-sm')} ` : ''}${escapeHtml(r.title || stemOf(r.path))}</div>
       <div class="snip">${r.snippet}</div></button>`).join('')}</div>`);
 }

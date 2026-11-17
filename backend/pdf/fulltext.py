@@ -5,6 +5,10 @@ database stays small; it can be deleted at any time and rebuilt from the PDFs.
 SQLite FTS5 is used when available (fast, accent-insensitive, ranked
 snippets); otherwise a plain table with LIKE matching is used as a fallback.
 
+The PDFs kept in the notes folders have their own tables (``note_documents``, ``note_content``,
+keyed by the number the notes registry gives each PDF), so a library search never returns them and
+a notes search never returns attachments.
+
 A PDF's reference list is kept apart from its own text (``refs`` beside ``text``, split by
 ``refsection``), so a search can tell a paper about a subject from one that only cites it.
 """
@@ -15,6 +19,7 @@ import html
 import logging
 import sqlite3
 import threading
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -71,6 +76,10 @@ class FulltextIndex:
                 indexed_at TEXT
             )""")
             c.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+            c.execute("""CREATE TABLE IF NOT EXISTS note_documents (
+                pdf_id INTEGER PRIMARY KEY, file TEXT, mtime REAL, size INTEGER, pages INTEGER, chars INTEGER,
+                indexed_at TEXT
+            )""")
             try:
                 self._create_fts(c)
             except sqlite3.OperationalError:
@@ -78,6 +87,11 @@ class FulltextIndex:
                 self.fts = False
                 c.execute("""CREATE TABLE IF NOT EXISTS content_plain (
                     attachment_id INTEGER PRIMARY KEY, paper_id TEXT, text TEXT, refs TEXT)""")
+            if self.fts:
+                c.execute("""CREATE VIRTUAL TABLE IF NOT EXISTS note_content USING fts5(
+                    text, pdf_id UNINDEXED, tokenize = "unicode61 remove_diacritics 2")""")
+            else:
+                c.execute("CREATE TABLE IF NOT EXISTS note_content_plain (pdf_id INTEGER PRIMARY KEY, text TEXT)")
             self._add_refs_column(c)
             self._check_content_table(c)
 
@@ -139,7 +153,8 @@ class FulltextIndex:
                 "without" if self.fts else "with",
             )
             c.execute("DELETE FROM documents")
-            for table in ("content", "content_plain"):
+            c.execute("DELETE FROM note_documents")
+            for table in ("content", "content_plain", "note_content", "note_content_plain"):
                 try:
                     c.execute(f"DELETE FROM {table}")
                 except sqlite3.OperationalError:  # not there, or FTS5 is what is missing
@@ -184,10 +199,79 @@ class FulltextIndex:
         with self._session() as c:
             return {r[0] for r in c.execute("SELECT attachment_id FROM documents")}
 
+    # -- the PDFs in the notes folders
+    @property
+    def _note_table(self) -> str:
+        return "note_content" if self.fts else "note_content_plain"
+
+    def needs_indexing_note(self, pdf_id: int, path: Path) -> bool:
+        st = path.stat()
+        with self._session() as c:
+            row = c.execute("SELECT mtime, size FROM note_documents WHERE pdf_id = ?", (pdf_id,)).fetchone()
+        return not row or row["mtime"] != st.st_mtime or row["size"] != st.st_size
+
+    def index_note_file(self, pdf_id: int, path: Path) -> int:
+        text, pages = extract_text(path)
+        text = clean_text(text)
+        st = path.stat()
+        with self._write_lock, self._session() as c:
+            c.execute(f"DELETE FROM {self._note_table} WHERE pdf_id = ?", (pdf_id,))
+            c.execute(f"INSERT INTO {self._note_table} (text, pdf_id) VALUES (?, ?)", (text, pdf_id))
+            c.execute(
+                "INSERT OR REPLACE INTO note_documents VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (pdf_id, path.name, st.st_mtime, st.st_size, pages, len(text), utcnow()),
+            )
+        return len(text)
+
+    def remove_notes(self, pdf_ids) -> None:
+        with self._write_lock, self._session() as c:
+            for i in pdf_ids:
+                c.execute(f"DELETE FROM {self._note_table} WHERE pdf_id = ?", (i,))
+                c.execute("DELETE FROM note_documents WHERE pdf_id = ?", (i,))
+
+    def note_indexed_ids(self) -> set[int]:
+        with self._session() as c:
+            return {r[0] for r in c.execute("SELECT pdf_id FROM note_documents")}
+
+    def match_notes(self, term: str, limit: int = 200) -> dict[int, str]:
+        """pdf_id -> HTML snippet (with <mark>) for the notes PDFs containing ``term`` (best first)."""
+        term = term.strip()
+        out: dict[int, str] = {}
+        if not term:
+            return out
+        with self._session() as c:
+            if self.fts:
+                try:
+                    rows = c.execute(
+                        "SELECT pdf_id, snippet(note_content, 0, ?, ?, '…', 14) AS snip FROM note_content "
+                        "WHERE note_content MATCH ? ORDER BY rank LIMIT ?",
+                        (MARK_OPEN, MARK_CLOSE, f"{_fts_quote(term)}*", limit),
+                    ).fetchall()
+                except sqlite3.OperationalError as e:
+                    log.info("FTS query failed for %r: %s", term, e)
+                    rows = []
+                for r in rows:
+                    out[r["pdf_id"]] = self._to_html(r["snip"])
+            else:
+                for r in c.execute(
+                    "SELECT pdf_id, text FROM note_content_plain WHERE text LIKE ? ESCAPE '\\' LIMIT ?",
+                    (f"%{_like_escape(term)}%", limit),
+                ):
+                    t = r["text"]
+                    i = t.lower().find(term.lower())
+                    s = max(0, i - 60)
+                    snip = (
+                        t[s:i] + MARK_OPEN + t[i : i + len(term)] + MARK_CLOSE + t[i + len(term) : i + len(term) + 60]
+                    )
+                    out[r["pdf_id"]] = self._to_html(("…" if s else "") + snip + "…")
+        return out
+
     def clear(self) -> None:
         with self._write_lock, self._session() as c:
             c.execute(f"DELETE FROM {self._table}")
             c.execute("DELETE FROM documents")
+            c.execute(f"DELETE FROM {self._note_table}")
+            c.execute("DELETE FROM note_documents")
         with self._session() as c:
             c.execute("VACUUM")
 
@@ -254,6 +338,11 @@ class FulltextIndex:
         size = Path(self.path).stat().st_size if Path(self.path).exists() else 0
         return {"documents": row[0], "chars": row[1], "pages": row[2], "bytes": size, "fts5": self.fts}
 
+    def note_stats(self) -> dict:
+        with self._session() as c:
+            row = c.execute("SELECT COUNT(*), COALESCE(SUM(pages), 0) FROM note_documents").fetchone()
+        return {"documents": row[0], "pages": row[1]}
+
 
 class Indexer:
     """Keeps the full-text index in sync with the attachments, in a background thread."""
@@ -261,6 +350,9 @@ class Indexer:
     def __init__(self, repo, index: FulltextIndex):
         self.repo = repo
         self.index = index
+        # The PDFs in the notes folders, [(registry id, file)]: set by Services (this package does not know
+        # about notes). They are indexed in tables of their own.
+        self.note_pdfs: Callable[[], list[tuple[int, Path]]] | None = None
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._again = False
@@ -301,6 +393,25 @@ class Indexer:
                     return
                 self._again = False
 
+    def _run_notes(self) -> None:
+        if not self.note_pdfs:
+            return
+        try:
+            pdfs = self.note_pdfs()
+            stale = self.index.note_indexed_ids() - {i for i, _ in pdfs}
+            if stale:
+                self.index.remove_notes(stale)
+            for pdf_id, path in pdfs:
+                if path.is_file() and self.index.needs_indexing_note(pdf_id, path):
+                    self.status["current"] = path.name
+                    try:
+                        self.index.index_note_file(pdf_id, path)
+                    except Exception as e:
+                        log.warning("Indexing %s failed: %s", path, e)
+                        self.status["errors"] += 1
+        except Exception:
+            log.exception("Indexing the notes' PDFs failed")
+
     def _run(self) -> None:
         atts = self.repo.all_attachments()
         valid = {a["id"] for a in atts}
@@ -321,5 +432,6 @@ class Indexer:
                 log.warning("Indexing %s failed: %s", path, e)
                 self.status["errors"] += 1
             self.status["done"] += 1
+        self._run_notes()
         self.index.reindexed()
         self.status.update(running=False, current="", last_run=utcnow())

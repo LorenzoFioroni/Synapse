@@ -204,7 +204,7 @@ export const api = {
   itemNotes: (id: string) => request<ItemNotes>('GET', `/api/items/${id}/notes`),
   restoreNote: (trashId: string, path: string) => request('POST', '/api/notes/restore', { trash_id: trashId, path }),
   noteLinks: (path: string) => request<NoteLinks>('GET', `/api/notes/links?${qs({ path })}`),
-  searchNotes: (q: string) => request<{ results: { path: string; title: string | null; snippet: string }[] }>('GET', `/api/notes/search?${qs({ q })}`),
+  searchNotes: (q: string) => request<{ results: { path: string; title: string | null; snippet: string; kind?: 'pdf'; id?: number }[] }>('GET', `/api/notes/search?${qs({ q })}`),
   // tasks (records in library.db; a note shows one with a {{task:id}} line)
   tasks: () => request<TasksOverview>('GET', '/api/tasks'),
   getTask: (id: string) => request<{ task: Task & { refs: TaskRef[]; subtasks: Task[] } }>('GET', `/api/tasks/${id}`),

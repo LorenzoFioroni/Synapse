@@ -436,3 +436,46 @@ def test_index_files_follow_the_folder(client, svc):
     (svc.vault.root / "x" / "a.pdf").rename(svc.vault.root / "b.pdf")
     svc.notes.sync()
     assert svc.notes.resolve_pdf("a.pdf") == [] and svc.notes.resolve_pdf("B.PDF") == ["b.pdf"]
+
+
+# ------------------------------------------------------------------ text search
+def test_notes_search_finds_the_text_of_notes_pdfs_but_the_library_search_does_not(client, svc):
+    from tests.conftest import make_pdf
+
+    make_pdf(svc.vault.root / "scalar.pdf", "quasiparticle superdiffusion everywhere")
+    svc.note_pdfs.sync()
+    svc.indexer.sync(background=False)
+    r = client.get("/api/notes/search", query_string={"q": "superdiffusion"}).json["results"]
+    hit = [x for x in r if x.get("kind") == "pdf"]
+    assert len(hit) == 1 and hit[0]["path"] == "scalar.pdf" and hit[0]["title"] == "scalar.pdf"
+    assert "<mark>" in hit[0]["snippet"] and hit[0]["id"] == listed(client)["scalar.pdf"]
+    # the library's full-text search never returns it, nor does it count among the attachments
+    assert svc.fulltext.match("superdiffusion") == {} and svc.fulltext.stats()["documents"] == 0
+    assert svc.fulltext.note_stats()["documents"] == 1
+    # an uploaded PDF is indexed on its own (automatic indexing), a replaced one again, a deleted one is dropped
+    p = add(client, "paper.pdf")
+    svc.indexer.wait()
+    make_pdf(svc.vault.root / "paper.pdf", "exotic hydrodynamics")
+    svc.note_pdfs.sync()
+    svc.indexer.sync(background=False)
+    found = lambda q: [x["path"] for x in client.get("/api/notes/search", query_string={"q": q}).json["results"]]  # noqa: E731
+    assert "paper.pdf" in found("hydrodynamics")
+    client.post("/api/notes/trash", json={"path": "paper.pdf"})
+    assert "paper.pdf" not in found("hydrodynamics")  # not listed any more, even before the index catches up
+    svc.indexer.sync(background=False)
+    assert p["id"] not in svc.fulltext.note_indexed_ids()
+
+
+def test_library_search_by_text_never_lists_a_notes_pdf(client, svc):
+    from tests.conftest import make_pdf
+
+    make_pdf(svc.vault.root / "n.pdf", "needleword inside a notes pdf")
+    item = client.post("/api/items", json={"title": "Item"}).json
+    pdf = make_pdf(svc.config.pdf_dir / "lib.pdf", "needleword inside a library pdf")
+    svc.papers.add_attachment(item["id"], "lib.pdf", pdf.name, "pdf")
+    svc.note_pdfs.sync()
+    svc.indexer.sync(background=False)
+    assert set(svc.fulltext.match("needleword")) == {item["id"]}  # paper ids only
+    assert [r["path"] for r in svc.note_service.search("needleword") if r.get("kind") == "pdf"] == ["n.pdf"]
+    ids = [x["id"] for x in client.get("/api/items", query_string={"q": "needleword"}).json.get("items", [])]
+    assert ids in ([], [item["id"]])

@@ -87,7 +87,7 @@ export function notesScreen(): Screen {
         try {
           const res = await api.searchNotes(q);
           if (input.value.trim() !== q) return;
-          box.innerHTML = res.results.length ? `<div class="ph-group">${res.results.map((r) => `<button class="ph-note-row" data-note="${esc(r.path)}">
+          box.innerHTML = res.results.length ? `<div class="ph-group">${res.results.map((r) => `<button class="ph-note-row" ${r.kind === 'pdf' ? `data-pdf="${r.id}" data-pdf-path="${esc(r.path)}"` : `data-note="${esc(r.path)}"`}>
             <span class="ph-row-title">${esc(r.title || stemOf(r.path))}</span><span class="ph-row-snippet">${esc(plain(r.snippet))}</span>
             <span class="ph-row-meta">${dot(r.path)}${esc(parentOf(r.path) || 'Notes')}</span></button>`).join('')}</div>`
             : `<div class="ph-empty"><h3>Nothing found</h3></div>`;
@@ -98,6 +98,8 @@ export function notesScreen(): Screen {
         const t = e.target as Element;
         const n = t.closest<HTMLElement>('[data-note]');
         if (n) { push(noteScreen(n.dataset.note!)); return; }
+        const pdf = t.closest<HTMLElement>('[data-pdf]');
+        if (pdf?.dataset.pdfPath) { void pushPdf(pdf.dataset.pdfPath, '', null); return; }
         const f = t.closest<HTMLElement>('[data-folder]');
         if (f) { push(folderScreen(f.dataset.folder!)); return; }
         const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;
