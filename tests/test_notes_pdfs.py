@@ -362,3 +362,77 @@ def test_change_kind_of_note_pdf_annotations():
     assert kind_of("/api/attachments/3/annotations") == "annotations"
     assert kind_of("/api/notes/pdf") == "notes"
     assert kind_of("/api/items/x") == "library"
+
+
+# ------------------------------------------------------------------ links from notes
+def note(client, title, text, folder=""):
+    n = client.post("/api/notes/note", json={"title": title, "folder": folder, "text": text}).json
+    return n["path"]
+
+
+def test_parser_finds_pdf_links():
+    from backend.notes import parser
+
+    p = parser.parse(
+        "See [[Papers/a b.pdf#p=4]], [[a.pdf#page=7|the proof]], [[a.pdf]], ![[a.pdf#p=2]] and `[[code.pdf]]`.\n"
+        "```\n[[fenced.pdf]]\n```\nA note [[Other#Heading]] and [[notpdf]].\n"
+    )
+    pdfs = [(l.target, l.page, l.alias) for l in p.links if l.kind == "pdf"]
+    assert pdfs == [("Papers/a b.pdf", 4, ""), ("a.pdf", 7, "the proof"), ("a.pdf", None, ""), ("a.pdf", 2, "")]
+    assert [(l.kind, l.target, l.heading) for l in p.links if l.kind != "pdf"] == [
+        ("note", "Other", "Heading"),
+        ("note", "notpdf", ""),
+    ]
+    spans = [s for s in parser.link_spans("x [[f/a.pdf#p=3|t]] y") if s["kind"] == "pdf"]
+    assert [(s["target"]) for s in spans] == ["f/a.pdf"]
+
+
+def test_pdf_links_resolve_backlink_and_graph(client, svc):
+    add(client, "paper.pdf", "refs")
+    n = note(client, "Reader", "Read [[paper.pdf#p=3]] and [[refs/paper.pdf]] and [[missing.pdf]].")
+    out = client.get("/api/notes/links", query_string={"path": n}).json
+    pdfs = [l for l in out["outgoing"] if l["kind"] == "pdf"]
+    assert [(l["resolved"], l["page"]) for l in pdfs] == [("refs/paper.pdf", 3), ("refs/paper.pdf", None), (None, None)]
+    assert [u["target"] for u in out["unresolved"]] == ["missing.pdf"]
+    back = client.get("/api/notes/links", query_string={"path": "refs/paper.pdf"}).json["backlinks"]
+    assert {(b["path"], b["page"]) for b in back} == {(n, 3), (n, None)}
+    assert {"source": n, "kind": "pdf", "target": "refs/paper.pdf"} in svc.notes.link_graph()
+    assert client.post("/api/notes/trash", json={"path": "refs/paper.pdf"}).status_code == 200
+    out = client.get("/api/notes/links", query_string={"path": n}).json
+    assert [l["resolved"] for l in out["outgoing"] if l["kind"] == "pdf"] == [None, None, None]
+
+
+def test_renaming_or_moving_a_pdf_rewrites_links(client, svc):
+    add(client, "paper.pdf", "refs")
+    n = note(client, "Reader", "By name [[paper.pdf#p=3|see]], by path [[refs/paper.pdf#p=1]].")
+    r = client.post("/api/notes/move", json={"path": "refs/paper.pdf", "to": "refs/Renamed.pdf"})
+    assert r.status_code == 200 and r.json["updated_links"] == [{"path": n, "count": 2}] and not r.json["broken_links"]
+    text = client.get("/api/notes/note", query_string={"path": n}).json["text"]
+    assert "[[Renamed.pdf#p=3|see]]" in text and "[[refs/Renamed.pdf#p=1]]" in text
+    # a move to another folder keeps a link by name, and rewrites one by path
+    r = client.post("/api/notes/move", json={"path": "refs/Renamed.pdf", "to": "other/Renamed.pdf"})
+    assert r.json["updated_links"] == [{"path": n, "count": 1}]
+    text = client.get("/api/notes/note", query_string={"path": n}).json["text"]
+    assert "[[Renamed.pdf#p=3|see]]" in text and "[[other/Renamed.pdf#p=1]]" in text
+    # the change is in the notes history under the note, not as a PDF
+    assert not [
+        e
+        for e in client.get("/api/notes/history", query_string={"path": n}).json["entries"]
+        if "pdf" in str(e.get("path", ""))
+    ]
+
+
+def test_moving_a_folder_rewrites_links_to_its_pdfs(client):
+    add(client, "p.pdf", "f/sub")
+    n = note(client, "Reader", "[[f/sub/p.pdf#p=2]]")
+    r = client.post("/api/notes/folder/move", json={"path": "f", "to": "g"})
+    assert r.status_code == 200 and r.json["updated_links"] == [{"path": n, "count": 1}]
+    assert "[[g/sub/p.pdf#p=2]]" in client.get("/api/notes/note", query_string={"path": n}).json["text"]
+
+
+def test_index_files_follow_the_folder(client, svc):
+    add(client, "a.pdf", "x")
+    assert svc.notes.resolve_pdf("a.pdf") == ["x/a.pdf"]
+    (svc.vault.root / "x" / "a.pdf").rename(svc.vault.root / "b.pdf")
+    svc.notes.sync()
+    assert svc.notes.resolve_pdf("a.pdf") == [] and svc.notes.resolve_pdf("B.PDF") == ["b.pdf"]

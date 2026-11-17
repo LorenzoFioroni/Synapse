@@ -13,7 +13,7 @@ export const normTarget = (t: string) => t.trim().replace(/\\/g, '/').toLowerCas
 export function linkDataOf(res: Pick<NoteLinks, 'outgoing'>): LinkData {
   const notes: LinkData['notes'] = new Map(), cites: LinkData['cites'] = new Map();
   for (const l of res.outgoing) {
-    if (l.kind === 'note' || l.kind === 'embed') notes.set(normTarget(l.target), l.resolved || null);
+    if (l.kind === 'note' || l.kind === 'embed' || l.kind === 'pdf') notes.set(normTarget(l.target), l.resolved || null);
     if (l.kind === 'cite' && l.item) cites.set(l.target, l.item);
   }
   return { notes, cites };

@@ -7,7 +7,7 @@ import { emit } from '../../store.js';
 import { toastError } from '../../ui/toast.js';
 import type { NoteInfo, NotePdf } from '../../types.js';
 import { escapeHtml, storage, store } from '../../util.js';
-import { folderColor, nameOf, notesOpen, parentOf, stemOf, within, ws } from './workspace.js';
+import { folderColor, nameOf, noteTabs, notesOpen, parentOf, stemOf, within, ws } from './workspace.js';
 
 /** A folder icon's colour: its own (full), or the one it has from a folder above (lighter). */
 function colorStyle(path: string): string {
@@ -40,6 +40,10 @@ export async function refreshTree(): Promise<void> {
     ws.overview = await api.notes();
   } catch (e) { if (notesOpen()) toastError(e); return; }
   emit('notes-count', ws.overview.notes.length);
+  noteTabs.retitlePdfs?.((key) => {   // a PDF's tab is keyed by its file's address, which holds its number
+    const id = /^\/api\/note-pdfs\/(\d+)\/file$/.exec(key)?.[1];
+    return id ? (ws.overview.pdfs || []).find((p) => String(p.id) === id)?.name.replace(/\.pdf$/i, '') ?? null : null;
+  });
   if (notesOpen()) paintTree();
 }
 

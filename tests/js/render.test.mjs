@@ -6,7 +6,7 @@ import { citeLabel, createRenderer, imageSrc } from '../../frontend/js/views/not
 
 const r = createRenderer(lib, {
   citeInfo: (k) => (k === 'smith2021' ? { authors: 'Smith, Anna; Doe, J; Roe, K', year: 2021, title: 'Quantum' } : null),
-  resolveNote: (t) => (t.toLowerCase() === 'other' ? 'dir/Other.md' : null),
+  resolveNote: (t) => (t.toLowerCase() === 'other' ? 'dir/Other.md' : t === 'a.pdf' ? 'refs/a.pdf' : null),
 });
 const html = (s) => r.render(s);
 
@@ -103,4 +103,11 @@ test('task lines: drawn by renderDefaults.taskHtml, never in code or math', asyn
     assert.ok(!code.includes('task-ref'));
     assert.ok(!html('{{task:ab}}').includes('task-ref'));   // ids have 4 to 32 characters
   } finally { renderDefaults.taskHtml = before; }
+});
+
+test('a link to a PDF shows its page and is never an embed', () => {
+  const out = html('See [[a.pdf#p=3]], ![[a.pdf]] and [[gone.pdf]].');
+  assert.match(out, /class="wikilink pdf"[^>]*data-note="a.pdf"[^>]*data-heading="p=3"[^>]*data-path="refs\/a.pdf"[^>]*>a.pdf · p. 3</);
+  assert.match(out, /class="wikilink pdf unresolved"[^>]*>gone.pdf</);
+  assert.ok(!out.includes('note-embed'));
 });

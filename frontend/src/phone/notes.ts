@@ -11,7 +11,9 @@ import { openMenu } from '../ui/menu.js';
 import { toast, toastError } from '../ui/toast.js';
 import { copyText, debounce, escapeHtml as esc, storage, store } from '../util.js';
 import { pickFiles } from '../views/itemlist/menus.js';
-import { citeTargetInDom, viewerTarget } from '../views/notes/citeTarget.js';
+import { type CiteTarget, citeTargetInDom, viewerTarget } from '../views/notes/citeTarget.js';
+import { isPdfTarget, pdfPage } from '../views/notes/mdscan.js';
+import { findPdf } from '../views/notes/pdfLinks.js';
 import { type CM, createEditor, loadCM, loadMD, type NoteEditor } from '../views/notes/editor.js';
 import { toggleFormat } from '../views/notes/formatting.js';
 import { noteHooks, ghostSource } from '../views/notes/hooks.js';
@@ -261,13 +263,18 @@ export function noteScreen(path: string, { line = null, edit = false }: { line?:
           combineImages: (images) => (noteHooks.figures && images.length > 1 ? noteHooks.figures.gallery(images, {}) : images.join('\n')),
         }, {
           renderer: () => ws.renderer, resolveNote, citeInfo,
-          openNote: (target) => { const p = resolveNote(target); if (p) push(noteScreen(p)); },
+          openNote: (target, heading, spot) => {
+            const p = resolveNote(target);
+            if (p && isPdfTarget(target)) void pushPdf(p, heading || '', spot ?? null);
+            else if (p) push(noteScreen(p));
+          },
           openCite: (key, page) => citeSheet(key, page, null),
           mermaid: renderMermaid, equations: equationMode, macros: noteMacros,
           task: () => taskHooks.preview,
         }, 'live', {
           items: () => ws.library.list,
           notes: () => ws.overview.notes,
+          pdfs: () => ws.overview.pdfs || [],
           tasks: () => taskHooks.choices?.() ?? null,
           newTask: (title) => taskHooks.create?.(title) ?? Promise.resolve(null),
           taskHtml: (id) => taskHooks.titleHtml?.(id) ?? '',
@@ -355,6 +362,14 @@ export function noteScreen(path: string, { line = null, edit = false }: { line?:
   };
 }
 
+/** A PDF of the notes folders, in the reader, at the page of a [[file.pdf#p=4]] link (and the quoted words before it). */
+async function pushPdf(path: string, heading: string, spot: CiteTarget | null): Promise<void> {
+  const pdf = findPdf(path);
+  if (!pdf) { toast(`“${path}” is not in the notes folders.`); return; }
+  const at = await viewerTarget(spot).catch(() => ({} as { q?: string }));
+  push(readerScreen({ id: '', title: pdf.name.replace(/\.pdf$/i, ''), authors: '', year: undefined }, notePdfAtt(pdf), pdfPage(heading), { q: at.q }));
+}
+
 /** A tap in a note being read: citations, links to notes, equation references, checkboxes. */
 function onReadClick(e: MouseEvent, editor: () => Promise<NoteEditor>, render: () => void): void {
   const t = e.target as Element;
@@ -363,8 +378,10 @@ function onReadClick(e: MouseEvent, editor: () => Promise<NoteEditor>, render: (
   const wl = t.closest<HTMLElement>('.wikilink');
   if (wl) {
     e.preventDefault();
-    const p = resolveNote(wl.dataset.note || '');
-    if (p) push(noteScreen(p)); else toast(`There is no note “${wl.dataset.note}” yet.`);
+    const target = wl.dataset.note || '';
+    const p = resolveNote(target);
+    if (p && isPdfTarget(target)) { void pushPdf(p, wl.dataset.heading || '', citeTargetInDom(wl)); return; }
+    if (p) push(noteScreen(p)); else toast(`There is no ${isPdfTarget(target) ? 'PDF' : 'note'} “${target}” yet.`);
     return;
   }
   const ref = t.closest<HTMLElement>('.eqref[data-label]');

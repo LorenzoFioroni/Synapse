@@ -234,6 +234,13 @@ class NotesService:
         return {"path": path, "text": text, "hash": h, "info": info}
 
     def links(self, path: str) -> dict:
+        if is_pdf_path(path or ""):  # a PDF: the notes that link to it
+            return {
+                "outgoing": [],
+                "cited": [],
+                "unresolved": [],
+                "backlinks": self.index.pdf_backlinks(self.vault.clean_rel(path, suffix=PDF_SUFFIX)),
+            }
         path = self.vault.clean_rel(path)
         out = self.index.outgoing(path)
         keys = self._library_keys()
@@ -251,7 +258,8 @@ class NotesService:
             "unresolved": [
                 l
                 for l in out
-                if (l["kind"] in ("note", "embed") and not l["resolved"]) or (l["kind"] == "cite" and not l["item"])
+                if (l["kind"] in ("note", "embed", "pdf") and not l["resolved"])
+                or (l["kind"] == "cite" and not l["item"])
             ],
             "backlinks": self.index.backlinks(path),
         }
@@ -497,10 +505,30 @@ class NotesService:
         only notes are."""
         src = self.vault.clean_rel(path, suffix=PDF_SUFFIX)
         dst = self.vault.clean_rel(to, suffix=PDF_SUFFIX)
-        self.vault.move(src, dst, suffix=PDF_SUFFIX)
-        if self.pdfs and src != dst:
-            self.pdfs.moved(src, dst)
-        return {"path": dst, "updated_links": [], "broken_links": []}
+        plan = self._link_plan({src: dst}) if src != dst else Relink({})
+        # the history records the notes whose links were rewritten, never the PDF
+        change = (
+            self.history.change(
+                kind="rename",
+                subject=f"Renamed the PDF {Path(src).name} to {Path(dst).name}",
+                device=current_device(),
+                paths=list(plan.sources),
+            )
+            if plan
+            else nullcontext()
+        )
+        with change as rec:
+            self.vault.move(src, dst, suffix=PDF_SUFFIX)
+            if self.pdfs and src != dst:
+                self.pdfs.moved(src, dst)
+            self.index.sync_files()
+            fixed: dict = {"updated_links": [], "broken_links": []}
+            if rec is not None:
+                rec.paths = []
+                fixed = self._fix_links(plan, rec)
+        if fixed["updated_links"]:
+            self._changed()
+        return {"path": dst, **fixed}
 
     def move(self, path: str, to: str, base_hash: str | None = None) -> dict:
         if is_pdf_path(path or ""):
@@ -559,6 +587,8 @@ class NotesService:
         for p in pdfs:
             if self.pdfs:
                 self.pdfs.moved(p, f"{TRASH}/{tid}/{p}")
+        if pdfs:
+            self.index.sync_files()
         self._changed()
         return {"trash_id": tid, "paths": moved, "pdfs": pdfs}
 
@@ -585,6 +615,8 @@ class NotesService:
         for p in pdfs:
             if self.pdfs:
                 self.pdfs.moved(f"{TRASH}/{trash_id}/{p}", p)
+        if pdfs:
+            self.index.sync_files()
         self._reindex(restored)
         self._changed()
         return {"paths": restored, "pdfs": pdfs, "skipped": skipped}
@@ -593,7 +625,8 @@ class NotesService:
         src = self.vault.clean_rel(path, suffix=None)
         dst = self.vault.clean_rel(to, suffix=None)
         inside = self.vault.notes_in(src)
-        plan = self._link_plan({n: dst + n[len(src) :] for n in inside}) if dst != src else Relink({})
+        files = self.vault.pdfs_in(src)
+        plan = self._link_plan({n: dst + n[len(src) :] for n in [*inside, *files]}) if dst != src else Relink({})
         with self.history.change(
             kind="rename",
             subject=f"Moved the folder {src} to {to}",
@@ -607,6 +640,7 @@ class NotesService:
             self.folder_colors.moved(src, dst)
             for old, _ in moved:
                 self.index.remove(old)
+            self.index.sync_files()
             self._reindex(new for _, new in moved)
             rec.paths = [p for pair in moved for p in pair]
             fixed = self._fix_links(plan, rec)
@@ -622,6 +656,7 @@ class NotesService:
             path = self.vault.restore(trash_id, path)
             if self.pdfs:
                 self.pdfs.moved(f"{TRASH}/{trash_id}/{path}", path)
+            self.index.sync_files()
             return {"path": path}
         with self.history.change(
             kind="restore", subject=f"Restored {Path(path).stem} from the trash", device=current_device()
@@ -652,7 +687,9 @@ class NotesService:
         rel, sha, _ = self.vault.write_stream(
             f"{folder}/{stem}{PDF_SUFFIX}" if folder else f"{stem}{PDF_SUFFIX}", stream, max_bytes=MAX_PDF_BYTES
         )
-        return self.pdfs.register(rel, sha)
+        info = self.pdfs.register(rel, sha)
+        self.index.sync_files()
+        return info
 
     def append_to_paper_note(self, item_id: str, markdown: str) -> dict:
         """Append a block (a quote, a figure) to the item's paper note, creating the note if needed."""

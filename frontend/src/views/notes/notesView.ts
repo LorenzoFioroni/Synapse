@@ -368,7 +368,7 @@ async function newEditor(view: NoteView, mode: 'live' | 'source'): Promise<NoteE
     renderer: () => ws.renderer,
     resolveNote,
     citeInfo,
-    openNote: (target, heading) => followLink(target, heading),
+    openNote: (target, heading, spot) => followLink(target, heading, spot),
     openCite: (key, page, target, opts) => { if (!openCitation(key, page, target, opts)) toast(`@${key} is not in your library.`); },
     mermaid: renderMermaid,
     equations: equationMode,
@@ -377,6 +377,7 @@ async function newEditor(view: NoteView, mode: 'live' | 'source'): Promise<NoteE
   }, mode, {
     items: () => ws.library.list,
     notes: () => ws.overview.notes,
+    pdfs: () => ws.overview.pdfs || [],
     tasks: () => taskHooks.choices?.() ?? null,
     newTask: (title) => taskHooks.create?.(title) ?? Promise.resolve(null),
     taskHtml: (id) => taskHooks.titleHtml?.(id) ?? '',

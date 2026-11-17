@@ -1,5 +1,8 @@
 """Keeping [[links]] working when notes are moved or renamed.
 
+A link to a PDF (``[[folder/file.pdf#p=3]]``) is handled the same way, with the extension always
+kept.
+
 A link by name (``[[Target]]``) survives a move to another folder, but a link by path
 (``[[proj/Target]]``), a link to a note that was renamed, and a link that now resolves to a
 different note with the same name do not. ``Relinker`` rewrites exactly those, in the notes that
@@ -25,10 +28,14 @@ from dataclasses import dataclass, field
 
 from . import parser
 from .index import norm_target
-from .vault import Conflict
+from .vault import PDF_SUFFIX, Conflict
 
 log = logging.getLogger(__name__)
 ATTEMPTS = 3
+
+
+def _kind(target: str) -> str:
+    return "pdf" if target.lower().endswith(PDF_SUFFIX) else "note"
 
 
 @dataclass
@@ -59,6 +66,9 @@ class Relinker:
         out = Relink(dict(moves))
         holders: set[str] = set()
         for old in moves:
+            if old.lower().endswith(PDF_SUFFIX):
+                holders |= {b["path"] for b in self.index.pdf_backlinks(old)}
+                continue
             holders.add(old)  # a note may link to itself
             holders |= {b["path"] for b in self.index.backlinks(old)}
         for path in sorted(holders):
@@ -68,9 +78,9 @@ class Relinker:
                 continue  # gone or unreadable: nothing to rewrite
             found: dict[str, str] = {}
             for s in parser.link_spans(text):
-                if s["kind"] not in ("note", "embed"):
+                if s["kind"] not in ("note", "embed", "pdf"):
                     continue
-                hit = next(iter(self.index.resolve(s["target"], from_path=path)), None)
+                hit = self._now(s["target"], path, s["kind"])
                 if hit in moves:
                     found[norm_target(s["target"])] = hit
             if found:
@@ -105,9 +115,11 @@ class Relinker:
 
     def _needs_fix(self, old_path: str, targets: dict[str, str], moves: dict[str, str]) -> bool:
         path = moves.get(old_path, old_path)
-        return any(self._now(t, path) != moves[old] for t, old in targets.items())
+        return any(self._now(t, path, _kind(t)) != moves[old] for t, old in targets.items())
 
-    def _now(self, target: str, path: str) -> str | None:
+    def _now(self, target: str, path: str, kind: str = "note") -> str | None:
+        if kind == "pdf":
+            return next(iter(self.index.resolve_pdf(target)), None)
         return next(iter(self.index.resolve(target, from_path=path)), None)
 
     def _rewrite(self, path: str, targets: dict[str, str], moves: dict[str, str]) -> int | None:
@@ -119,8 +131,8 @@ class Relinker:
                 return None
             edits = []
             for s in parser.link_spans(text):
-                old = targets.get(norm_target(s["target"])) if s["kind"] in ("note", "embed") else None
-                if old is None or self._now(s["target"], path) == moves[old]:
+                old = targets.get(norm_target(s["target"])) if s["kind"] in ("note", "embed", "pdf") else None
+                if old is None or self._now(s["target"], path, s["kind"]) == moves[old]:
                     continue
                 edits.append((s["start"], s["end"], self.target_for(s["target"], old, moves[old])))
             if not edits:
@@ -141,8 +153,8 @@ class Relinker:
             return []
         out = []
         for s in parser.link_spans(text):
-            old = targets.get(norm_target(s["target"])) if s["kind"] in ("note", "embed") else None
-            if old is not None and self._now(s["target"], path) != moves[old]:
+            old = targets.get(norm_target(s["target"])) if s["kind"] in ("note", "embed", "pdf") else None
+            if old is not None and self._now(s["target"], path, s["kind"]) != moves[old]:
                 out.append({"path": path, "target": s["target"], "line": text.count("\n", 0, s["start"]) + 1})
         return out
 
@@ -150,6 +162,18 @@ class Relinker:
         """The link target that reaches ``new`` in the form ``target`` had when it reached ``old``:
         the full path stays a full path, a name or a partial path keeps its number of folders as
         far as that resolves to ``new``, and gains folders when it would not."""
+        if new.lower().endswith(PDF_SUFFIX):  # the extension is part of a PDF link's name
+            segments = new.split("/")
+            count = (
+                len(segments)
+                if "/" in target and target.strip().lower() == old.lower()
+                else min(target.strip().count("/") + 1, len(segments))
+            )
+            for n in range(count, len(segments) + 1):
+                candidate = "/".join(segments[-n:])
+                if self._now(candidate, "", "pdf") == new:
+                    return candidate
+            return "/".join(segments)
         segments = new[:-3].split("/") if new.lower().endswith(".md") else new.split("/")
         t = norm_target(target)
         if "/" in t and t == norm_target(old):

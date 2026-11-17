@@ -9,7 +9,8 @@ import { openCitation, showCard } from './citeCard.js';
 import { type CiteTarget, citeTargetInDom, citeTargetInText } from './citeTarget.js';
 import { labelId } from './equations.js';
 import { fitEquations, fitSoon } from './mathFit.js';
-import { splitFrontmatter } from './mdscan.js';
+import { isPdfTarget, splitFrontmatter } from './mdscan.js';
+import { openPdfLink } from './pdfLinks.js';
 import { createRenderer, slugHeading } from './render.js';
 import { highlightCodeBlocks, renderEmbeds, renderMermaidBlocks } from './richRender.js';
 import { refreshTree } from './tree.js';
@@ -83,9 +84,13 @@ function patchBlocks(root: HTMLElement, html: string, fresh: boolean): HTMLEleme
 }
 
 /** Go to a [[target]] (and heading); offer to create the note when there is none. */
-export async function followLink(target: string, heading: string): Promise<void> {
+export async function followLink(target: string, heading: string, spot: CiteTarget | null = null): Promise<void> {
   const { session } = ws;
   const path = target ? resolveNote(target) : session?.path;
+  if (path && isPdfTarget(target)) {
+    if (!(await openPdfLink(path, heading, { spot }))) toast(`“${target}” is not in the notes folders.`);
+    return;
+  }
   if (path) {
     if (path !== session?.path) await hooks.openNote(path);
     if (heading) gotoHeading(heading);
@@ -165,7 +170,7 @@ function onReadClick(e: MouseEvent): void {
   const t = e.target as Element;
   const a = t.closest('a');
   const wl = t.closest<HTMLElement>('.wikilink');
-  if (wl) { e.preventDefault(); followLink(wl.dataset.note || '', wl.dataset.heading || ''); return; }
+  if (wl) { e.preventDefault(); followLink(wl.dataset.note || '', wl.dataset.heading || '', wl.classList.contains('pdf') ? citeTargetInDom(wl) : null); return; }
   const et = t.closest('.note-embed .embed-title');
   if (et) { const em = et.closest<HTMLElement>('.note-embed')!; followLink(em.dataset.note || '', em.dataset.heading || ''); return; }
   const ref = t.closest<HTMLElement>('.eqref[data-label]');

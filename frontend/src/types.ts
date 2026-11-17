@@ -301,7 +301,7 @@ export interface NoteDetails extends NoteInfo {
 /** A link in a note, as the notes index stores it (backend/notes/index.py, table links). */
 export interface NoteLink {
   path: string;            // the note containing the link
-  kind: 'note' | 'embed' | 'cite' | 'image';
+  kind: 'note' | 'embed' | 'cite' | 'image' | 'pdf';
   target: string;
   heading: string | null;
   alias: string | null;

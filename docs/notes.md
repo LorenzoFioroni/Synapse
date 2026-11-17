@@ -97,7 +97,7 @@ and everything attached to the PDF (highlights) use that number, so a rename or 
 - **Moving, renaming and deleting** use the notes endpoints with a path ending in `.pdf`. A move
   updates the row (`NotePdfs.moved`), deleting sends the file to `.trash/<timestamp>/` with its
   folder and the row becomes `trashed`, restoring brings the row back. PDFs are never written to the
-  notes history, and no links to them are rewritten yet.
+  notes history; only the notes whose links to them were rewritten are recorded.
 - **In the tree** (`views/notes/tree.ts`, row key `p:<path>`, `fileOps.ts`, `treeInput.ts`): a PDF
   row has the PDF icon in `--pdf` colour. Click or Enter opens it in the viewer (a double-click, or
   the menu's *Open in New Tab*, a tab of its own; `openNotePdf` in `api.ts` builds
@@ -107,6 +107,23 @@ and everything attached to the PDF (highlights) use that number, so a rename or 
   `.pdf` extension is kept), *Move to folder…*, dragging onto a folder and Delete / *Move to Trash*
   (with Undo) work as for notes, and one selection may mix notes, PDFs and folders. On a phone,
   folders list their PDFs and a tap opens the reader.
+- **Links from notes.** `[[folder/file.pdf#p=4]]` (also `#page=4`, an alias after `|`, a plain
+  `[[file.pdf]]`) links to a PDF; the extension is required, and `![[file.pdf]]` is shown as a link
+  too. `parser.parse` gives such a link `kind="pdf"` with `page`; `link_spans` reports its target so
+  it can be rewritten. `NotesIndex` keeps a disposable `files` table (path, lower-case name; schema
+  version 5, refreshed by `sync_files()` after every PDF change and by `sync()`); `resolve_pdf`
+  resolves a name or a folder path ending the file's (shortest path first), `outgoing` gives
+  `resolved`, `pdf_backlinks` the notes linking to a PDF (`GET /api/notes/links?path=x.pdf`) and
+  `link_graph` a `pdf` edge. Renaming or moving a PDF, or a folder holding PDFs, rewrites the links
+  by path and the ones that would stop resolving, exactly as for notes (`Relinker`, with the
+  extension kept in the target). In the editor, read mode and the phone a PDF link shows its file
+  name and `· p. N` (class `wikilink pdf`) and a click opens the viewer at the page; a link ending a
+  block quote (`> words [[file.pdf#p=7]]`) also flashes the quoted words (`citeTargetInText`
+  and `quoteText` drop the link like a citation). `[[` completes PDF names. An unresolved PDF link
+  is listed in the side panel but is not offered as a note to create.
+- **Quote to note** in the viewer of a notes PDF has no paper note: the selected words go into the
+  open note as `> words [[path.pdf#p=N]]` (the path is asked again at that moment, so a rename is
+  followed), else they are copied. Tabs of renamed PDFs take the new name (`retitlePdfs`).
 - **Highlights.** The viewer annotates a notes PDF like an attachment: `viewer/annotations/model.ts` keeps `ownerBase` (`/api/attachments/<id>` or, with `?npdf=<id>`, `/api/note-pdfs/<id>`) and uses it for loading and saving. Records are in `note_pdf_annotations` (`pdf_id`, same columns as `annotations`); `AnnotationStore` reads and writes both tables, and a deleted registry row removes its highlights.
 - **Outside changes** are found by `NotePdfs.sync()` (at start, with the notes index and on a
   rescan). A file at a known path whose size or time changed is a replacement and keeps its row. A

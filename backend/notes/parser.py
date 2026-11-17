@@ -55,6 +55,14 @@ _TASKS = re.compile(r"^tasks(?:\s|$)", re.I)
 _TASK_BLOCK_ID = re.compile(r"^\s*(?:[-*+]\s+)?([a-z0-9]{4,32})\s*$")
 _HEADING = re.compile(r"^ {0,3}(#{1,6})\*?[ \t]+(.+?)[ \t]*(?:#+[ \t]*)?$")
 _WIKI = re.compile(r"(!?)\[\[([^\[\]\n]+?)\]\]")
+_PDF_PAGE = re.compile(r"^(?:p|page)\s*=\s*(\d{1,5})$", re.I)  # [[file.pdf#p=4]]
+
+
+def is_pdf_target(target: str) -> bool:
+    """A [[link]] to a PDF in the notes folders names it with its extension: [[folder/file.pdf#p=4]]."""
+    return target.lower().endswith(".pdf")
+
+
 _BRACKET = re.compile(r"(?<![!\[\]\\])\[([^\[\]\n]*@[^\[\]\n]*)\](?![(\[\]])")
 _IMAGE = re.compile(r"!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 # A task shown in the note. The id is the task's id in library.db (backend/tasks/store.py).
@@ -64,7 +72,7 @@ _TAG = re.compile(r"(?<![\w/&#\]\)(\[])#([A-Za-z][\w\-/]*)")
 
 @dataclass
 class Link:
-    kind: str  # "note" | "embed" | "cite" | "image" | "task"
+    kind: str  # "note" | "embed" | "cite" | "image" | "task" | "pdf"
     target: str  # note name, citekey, image path or task id
     line: int  # 1-based line in the whole file
     context: str  # the surrounding line (trimmed), for "cited in …" panels
@@ -422,6 +430,24 @@ def parse(text: str, *, fallback_title: str = "") -> ParsedNote:
         target, heading, alias = _split_wiki(body[m.start(2) : m.end(2)])
         if not target and not heading:
             continue
+        if is_pdf_target(target):  # an embed of a PDF is shown as a link: no kind of its own yet
+            pm = _PDF_PAGE.match(heading)
+            heading = "" if pm else heading
+            found.append(
+                (
+                    m.start(),
+                    Link(
+                        kind="pdf",
+                        target=target,
+                        page=int(pm.group(1)) if pm else None,
+                        heading=heading,
+                        alias=alias,
+                        line=idx + 1 + offset,
+                        context=_context(lines, idx, col),
+                    ),
+                )
+            )
+            continue
         found.append(
             (
                 m.start(),
@@ -527,7 +553,7 @@ def parse(text: str, *, fallback_title: str = "") -> ParsedNote:
 def link_spans(text: str) -> list[dict]:
     """Exact positions of citation keys and [[link]] targets in ``text`` (as stored, CRLF kept).
 
-    Each entry: {"kind": "cite"|"note"|"embed", "target": str, "start": int, "end": int} where
+    Each entry: {"kind": "cite"|"note"|"embed"|"pdf", "target": str, "start": int, "end": int} where
     text[start:end] == target. Used to rewrite keys and links without touching anything else
     (code, math, comments and front-matter are skipped exactly as in parse()).
     """
@@ -562,9 +588,8 @@ def link_spans(text: str) -> list[dict]:
         if not target:
             continue
         start = base + m.start(2) + (len(raw) - len(raw.lstrip()))
-        out.append(
-            {"kind": "embed" if m.group(1) else "note", "target": target, "start": start, "end": start + len(target)}
-        )
+        kind = "pdf" if is_pdf_target(target) else "embed" if m.group(1) else "note"
+        out.append({"kind": kind, "target": target, "start": start, "end": start + len(target)})
     out.sort(key=lambda s: s["start"])
     return out
 

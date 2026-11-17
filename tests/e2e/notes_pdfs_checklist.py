@@ -156,6 +156,11 @@ async def main():
             (D / "Reading" / "Renamed.pdf").is_file() and not (D / "Reading" / "My Paper.pdf").exists(),
         )
 
+        check(
+            "the open viewer tab takes the new name",
+            "Renamed" in " ".join(await A.locator("#tabbar .tab .tab-title").all_text_contents()),
+        )
+
         # 6. drag it to another folder
         await A.request.post(BASE + "api/notes/folder", data={"path": "Archive"})
         await A.click('[data-act="tree-menu"]')
@@ -181,7 +186,66 @@ async def main():
         await A.wait_for_selector('.nt-row.pdf[data-path="Archive/Renamed.pdf"]')
         check("Undo restores it", (D / "Archive" / "Renamed.pdf").is_file())
 
-        # 8. a reload keeps them
+        # 8. links from a note: rendered with the page, opening the viewer there (and at the quoted words)
+        text = "# Reader\n\n> Highlighted words from the paper [[Renamed.pdf#p=2]]\n\nAlso [[Archive/Renamed.pdf#p=1|first page]] and [[nothere.pdf]].\n"
+        await A.request.post(BASE + "api/notes/note", data={"title": "Reader", "text": text})
+        await A.click('[data-act="tree-menu"]')
+        await A.click('.menu :text("Rescan notes folder")')
+        await A.wait_for_selector('.nt-row.note[data-path="Reader.md"]')
+        await A.click('.nt-row.note[data-path="Reader.md"]')
+        await A.wait_for_selector(".cm-content")
+        await A.wait_for_timeout(500)
+        check(
+            "an unresolved PDF link is not offered as a note to create",
+            await A.locator("[data-create-note]").count() == 0 and "no such PDF" in await A.inner_text(".notes-side"),
+        )
+        await A.click('.note-modes [data-mode="read"]')
+        await A.wait_for_selector(".note-read a.wikilink.pdf")
+        links = await A.locator(".note-read a.wikilink.pdf").all_text_contents()
+        check(
+            "a note shows its PDF links with their pages",
+            "Renamed.pdf · p. 2" in links and "first page" in links,
+            links,
+        )
+        check("a link to a missing PDF is marked", await A.locator(".note-read a.wikilink.pdf.unresolved").count() == 1)
+        await A.locator(".note-read a.wikilink.pdf", has_text="p. 2").click()
+        await A.wait_for_selector(".tab-frame.active")
+        await A.wait_for_timeout(800)
+        # the tab for this PDF is reused: the viewer is pointed at the spot (its own address follows)
+        src = await (await (await A.query_selector(".tab-frame.active")).content_frame()).evaluate("location.href")
+        check(
+            "clicking it opens the viewer at that page, on the quoted words",
+            "page=2" in src and "q=Highlighted" in src,
+            src,
+        )
+        # Quote to note: selected words go into the open note with a link to the page
+        vf = await (await A.query_selector(".tab-frame.active")).content_frame()
+        await vf.wait_for_function(
+            "() => window.zcViewerBridge && document.querySelectorAll('.textLayer span').length > 5"
+        )
+        await vf.evaluate(
+            """() => {
+              const span = document.querySelector('.page-wrapper[data-page-number="1"] .textLayer span');
+              const r = document.createRange(); r.selectNodeContents(span);
+              const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+              document.getElementById('pdf-container').dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            }"""
+        )
+        await vf.wait_for_selector(".zc-pill [data-q]")
+        await vf.evaluate("() => document.querySelector('.zc-pill [data-q]').click()")
+        await vf.wait_for_selector(".zc-toast")
+        check("Quote to note adds to the open note", "Added to" in await vf.inner_text(".zc-toast"))
+        await A.click(".tab.home")
+        await A.wait_for_timeout(300)
+        if not await A.is_visible("#notes-view"):
+            await A.click('[data-act="open-notes"]')
+        await A.wait_for_timeout(500)
+        body = await A.evaluate("document.querySelector('.cm-content, .note-read')?.innerText || ''")
+        check(
+            "…with a link to the PDF's page", "Renamed.pdf#p=1]]" in body or "Renamed.pdf · p. 1" in body, body[-200:]
+        )
+
+        # 9. a reload keeps them
         await A.reload()
         await A.wait_for_timeout(1500)
         check("PDFs are listed after a reload", await A.locator(".nt-row.pdf").count() == 2)

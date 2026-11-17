@@ -21,7 +21,7 @@
 import type { EditorState, Range as CMRange, Text } from '@codemirror/state';
 import type { Decoration as DecorationT, DecorationSet, EditorView as EditorViewT, ViewUpdate } from '@codemirror/view';
 import type { CM } from './editor.js';
-import { GALLERY_INFO, type Scan, type Span, attachmentOf, scan, splitFrontmatter } from './mdscan.js';
+import { GALLERY_INFO, type Scan, type Span, attachmentOf, isPdfTarget, pdfLabel, scan, splitFrontmatter } from './mdscan.js';
 import { type CiteTarget, citeTargetInText } from './citeTarget.js';
 import { type CiteInfo, type Renderer, citeLabel, imageSrc } from './render.js';
 import { type TextRef, numberEquations, resolveRefs, textRefs } from './equations.js';
@@ -45,7 +45,7 @@ export interface PreviewDeps {
   /** The path a [[target]] goes to: a path, null (no such note) or undefined (not known yet). */
   resolveNote(target: string): string | null | undefined;
   citeInfo(key: string): CiteInfo | null | undefined;
-  openNote(target: string, heading: string): void;
+  openNote(target: string, heading: string, spot?: CiteTarget | null): void;
   openCite?(key: string, page: number | null, target: CiteTarget | null, opts: { newTab?: boolean; att?: number | null }): void;
   /** Render a Mermaid diagram into the element. */
   mermaid(el: HTMLElement, code: string): void;
@@ -445,9 +445,10 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
         continue;
       }
       const path = deps.resolveNote(l.target);
-      const cls = `${l.kind === 'embed' ? 'embed' : 'wikilink'}${path === null && l.target ? ' unresolved' : ''}`;
+      const pdf = isPdfTarget(l.target);   // a PDF is only ever linked, even as ![[x.pdf]]
+      const cls = `${l.kind === 'embed' && !pdf ? 'embed' : 'wikilink'}${pdf ? ' pdf' : ''}${path === null && l.target ? ' unresolved' : ''}`;
       if (touches(l.from, l.to)) { add(l.from, l.to, Decoration.mark({ class: `cm-lp-linksrc ${cls}` })); continue; }
-      const label = (l.kind === 'embed' ? '↪ ' : '') + (l.alias || (l.target ? l.target + (l.heading ? ` › ${l.heading}` : '') : `› ${l.heading}`));
+      const label = (l.kind === 'embed' && !pdf ? '↪ ' : '') + (l.alias || (pdf ? pdfLabel(l.target, l.heading) : l.target ? l.target + (l.heading ? ` › ${l.heading}` : '') : `› ${l.heading}`));
       replace(l.from, l.to, Decoration.replace({ widget: W.chip(`n:${l.from}:${label}:${cls}`, cls, label, { note: l.target, heading: l.heading, path }) }));
     }
     flushCites();
@@ -630,7 +631,9 @@ export function livePreview(cm: CM, deps: PreviewDeps) {
       const c = target.closest?.<HTMLElement>('.cm-lp-chip.wikilink, .cm-lp-chip.embed');
       if (c && e.button === 0) {
         e.preventDefault();
-        deps.openNote(c.dataset.note || '', c.dataset.heading || '');
+        let spot: CiteTarget | null = null;   // a PDF link ending a quote opens the PDF at the quoted words
+        if (c.classList.contains('pdf')) { try { spot = citeTargetInText(view.state.doc.toString(), view.posAtDOM(c)); } catch { /* not in the document */ } }
+        deps.openNote(c.dataset.note || '', c.dataset.heading || '', spot);
         return true;
       }
       const cite = target.closest?.<HTMLElement>('.cm-lp-chip.cite, .cm-lp-citesrc');

@@ -10,6 +10,7 @@ import type { Macros } from './macros.js';
 import type { Lookup, RefKind } from './crossref.js';
 import { refHtml } from './render.js';
 import { fitSoon } from './mathFit.js';
+import { citeTargetInDom } from './citeTarget.js';
 import type { PreviewDeps } from './livePreview.js';
 import type { TaskPreview } from './workspace.js';
 
@@ -74,7 +75,7 @@ export function previewWidgets(cm: CM, deps: PreviewDeps) {
       el.addEventListener('click', (event) => {
         const target = event.target as Element;
         const wiki = target.closest<HTMLElement>('a.wikilink');
-        if (wiki) { event.preventDefault(); deps.openNote(wiki.dataset.note || '', wiki.dataset.heading || ''); return; }
+        if (wiki) { event.preventDefault(); deps.openNote(wiki.dataset.note || '', wiki.dataset.heading || '', wiki.classList.contains('pdf') ? citeTargetInDom(wiki) : null); return; }
         const cite = target.closest<HTMLElement>('a.cite');
         if (cite) {
           event.preventDefault();
