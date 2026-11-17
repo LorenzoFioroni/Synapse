@@ -82,6 +82,7 @@ class Services:
         # PDFs in the notes folders: their text is searched with the notes (own tables in fulltext.db)
         self.indexer.note_pdfs = lambda: [(p["id"], self.vault.root / p["path"]) for p in self.note_pdfs.listing()]
         self.note_service.pdf_search = self._search_note_pdfs
+        self.note_service.pdf_pages = self.fulltext.note_pages
         self.note_service.on_pdfs_changed = self.note_pdfs_changed
         from .notes.attachments import RETENTION
 

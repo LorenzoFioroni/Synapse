@@ -123,6 +123,9 @@ class NotesService:
         self.papers = papers
         self.pdfs = pdfs  # the PDFs beside the notes (NotePdfs), when the app keeps them
         self.pdf_search: Callable[[str], list[dict]] | None = None  # their text (Services): the notes search shows it
+        self.pdf_pages: Callable[[int], int | None] | None = (
+            None  # a PDF's page count by registry id, if known (Services)
+        )
         self.on_pdfs_changed: Callable[[], None] | None = None  # PDFs came or came back: their text is indexed
         default = vault.root.parent / "backups"  # data/backups
         self.rekeyer = Rekeyer(vault, index, backups_dir or default, fallback_dir=default)

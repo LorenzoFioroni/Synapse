@@ -338,6 +338,12 @@ class FulltextIndex:
         size = Path(self.path).stat().st_size if Path(self.path).exists() else 0
         return {"documents": row[0], "chars": row[1], "pages": row[2], "bytes": size, "fts5": self.fts}
 
+    def note_pages(self, pdf_id: int) -> int | None:
+        """The page count of an indexed PDF of the notes folders, or None while it is not indexed."""
+        with self._session() as c:
+            row = c.execute("SELECT pages FROM note_documents WHERE pdf_id = ?", (pdf_id,)).fetchone()
+        return row[0] if row and row[0] else None
+
     def note_stats(self) -> dict:
         with self._session() as c:
             row = c.execute("SELECT COUNT(*), COALESCE(SUM(pages), 0) FROM note_documents").fetchone()
