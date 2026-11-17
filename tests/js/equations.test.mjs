@@ -157,3 +157,27 @@ test('equations: fitting remeasures non-scaling padding and retains the scroll f
   assert.equal(fitEquations(small.display), false);
   assert.equal(small.scale(), 1);
 });
+
+test('equations: an unnumbered formula is scaled only when it overflows, several at once', () => {
+  // without a number, .katex-html is a full-width block: scrollWidth is at least the box's width
+  function plain(formula, room) {
+    let scale = '';
+    const html = {
+      clientWidth: room,
+      get scrollWidth() { return Math.max(room, Math.round(formula * Number(scale || 1))); },
+      querySelector: () => null,
+    };
+    const display = {
+      style: { getPropertyValue: () => scale, removeProperty: () => { scale = ''; }, setProperty: (_, v) => { scale = v; } },
+      closest: () => ({ clientWidth: room }),
+      querySelector: () => html,
+      matches: () => true,
+    };
+    return { display, scale: () => Number(scale || 1) };
+  }
+  const fits = plain(300, 646), wide = plain(800, 646);
+  assert.equal(fitEquations([fits.display, wide.display]), true);
+  assert.equal(fits.scale(), 1, 'a formula that fits keeps its size');
+  assert.ok(wide.scale() < 1 && wide.scale() >= 0.75);
+  assert.equal(fitEquations([fits.display, wide.display]), false, 'repeated fitting is stable');
+});

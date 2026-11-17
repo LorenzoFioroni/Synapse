@@ -119,7 +119,7 @@ Chromium's native app-window launcher on macOS.
 | `citeTarget.test.mjs` | `views/notes/citeTarget.js` and `viewer/locate.js`: where a citation points in a PDF, finding a quote |
 | `diff.test.mjs` | `views/notes/diff.js` |
 | `embed.test.mjs` | `views/notes/embed.js` and `linkData.js`: what an embedded note shows, with its own link data |
-| `equations.test.mjs` | `equations.js`, `mathClick.js`, `mathFit.js` (padding-aware fitting and minimum-scale scrolling), `macros.js` and math in `render.js` |
+| `equations.test.mjs` | `equations.js`, `mathClick.js`, `mathFit.js` (padding-aware fitting, minimum-scale scrolling, unnumbered formulas that fit, batches), `macros.js` and math in `render.js` |
 | `figures.test.mjs` | `plugins/extended-markdown/frontend/figures/figures.js`: which images are figures, numbering, labels; figures in `render.js` and the Markdown export |
 | `crossref.test.mjs` | `views/notes/crossref.js`: `\ref`, `\eqref`, `\cref`, `\Cref`: kinds, plurals, ranges, unknown names |
 | `gallery.test.mjs` | `plugins/extended-markdown/frontend/figures/gallery.js`: reading gallery blocks, the figure caption, Markdown export; galleries in `render.js`, with the `figures` hook set and without it |
