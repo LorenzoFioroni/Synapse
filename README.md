@@ -158,8 +158,8 @@ certificate your devices trust. [mkcert](https://github.com/FiloSottile/mkcert) 
 
 ```bash
 mkcert -install                                   # once: a local certificate authority on this computer
-mkcert Lorenzos-MacBook.local                     # your computer's .local name (Synapse prints it)
-python server.py --lan --cert Lorenzos-MacBook.local.pem --key Lorenzos-MacBook.local-key.pem
+mkcert My-MacBook.local                           # your computer's .local name (Synapse prints it)
+python server.py --lan --cert My-MacBook.local.pem --key My-MacBook.local-key.pem
 ```
 
 With `--lan` and HTTPS, Synapse opens its browser tab or `--window` at that computer's `.local`
@@ -172,7 +172,7 @@ Then install mkcert's authority on each device: `mkcert -CAROOT` shows the folde
 Device Management, and turn it on in Settings → General → About → Certificate Trust Settings. On
 Android: Settings → Security → Encryption & credentials → Install a certificate → CA certificate.
 
-Open `https://Lorenzos-MacBook.local:8000/` (on the computer too), go to **Settings → Devices →
+Open `https://My-MacBook.local:8000/` (on the computer too), go to **Settings → Devices →
 Add a Passkey…** and save it. A device just paired can add one too, for a few minutes after it pairs
 (afterwards, add one after confirming with an existing passkey, or pair the device again). Passkeys
 work only at the address they were made on. Remove
@@ -302,7 +302,7 @@ On the computer running Synapse, open
 run what it shows on the other computer. For Claude Code:
 
 ```bash
-claude mcp add --scope user --transport http synapse http://Lorenzos-MacBook.local:8000/mcp \
+claude mcp add --scope user --transport http synapse http://My-MacBook.local:8000/mcp \
   --header "Authorization: Bearer syn_…"
 ```
 
@@ -310,7 +310,7 @@ For Codex, keep the token in an environment variable (put the `export` line in y
 
 ```bash
 export SYNAPSE_TOKEN=syn_…
-codex mcp add synapse --url http://Lorenzos-MacBook.local:8000/mcp --bearer-token-env-var SYNAPSE_TOKEN
+codex mcp add synapse --url http://My-MacBook.local:8000/mcp --bearer-token-env-var SYNAPSE_TOKEN
 ```
 
 The token is shown once; Settings lists when each token was last used, and **Remove…** locks its

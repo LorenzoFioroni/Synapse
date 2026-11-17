@@ -345,9 +345,9 @@ def test_no_shortcut_on_other_systems(tmp_path):
 def test_https_lan_opens_the_certificate_friendly_local_name(monkeypatch):
     from backend.access import lan
 
-    monkeypatch.setattr(lan, "local_hostname", lambda: "Lorenzos-MacBook.local")
-    assert app_url("0.0.0.0", 8000, tls=True) == "https://Lorenzos-MacBook.local:8000/"
-    assert app_url("::", 8443, tls=True) == "https://Lorenzos-MacBook.local:8443/"
+    monkeypatch.setattr(lan, "local_hostname", lambda: "My-MacBook.local")
+    assert app_url("0.0.0.0", 8000, tls=True) == "https://My-MacBook.local:8000/"
+    assert app_url("::", 8443, tls=True) == "https://My-MacBook.local:8443/"
     assert app_url("0.0.0.0", 8000, tls=False) == "http://127.0.0.1:8000/"
     assert app_url("::1", 8000, tls=True) == "https://[::1]:8000/"
 

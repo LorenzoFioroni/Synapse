@@ -91,7 +91,7 @@ def _local_hostname() -> str | None:
 
 
 def local_hostname() -> str | None:
-    """The Bonjour name other devices on the network can use (``Lorenzos-MacBook.local``)."""
+    """The Bonjour name other devices on the network can use (``My-MacBook.local``)."""
     return _cached("hostname", _local_hostname)
 
 

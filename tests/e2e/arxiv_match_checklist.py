@@ -120,7 +120,7 @@ async def main():
             api("/api/items", "POST", json={"title": title, "authors": authors, "doi": doi})
         api(f"/api/plugin-host/{PID}/enable", "POST")
         seed()
-        api(f"/api/plugin-host/{PID}/settings", "PUT", json={"author_names": ["Lorenzo Fioroni"]})  # rescores
+        api(f"/api/plugin-host/{PID}/settings", "PUT", json={"author_names": ["Jane Doe"]})  # rescores
         end = time.time() + 20
         while time.time() < end and any(r["score"] is None for r in feed("SELECT score FROM papers")):
             time.sleep(0.2)

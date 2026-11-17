@@ -186,12 +186,10 @@ async def main():
             desc = await mac.text_content("[data-passkeys-desc]")
             check("Settings → Devices offers to add a passkey for this name", f"https://{NAME}" in desc, desc[-60:])
             await mac.click("[data-passkey-add]")
-            await fill_prompt(mac, "Lorenzo's passkey")
+            await fill_prompt(mac, "Jane's passkey")
             ok = await wait_for(lambda: mac.evaluate("() => !!document.querySelector('[data-passkey]')"))
             row = await mac.text_content("[data-passkey]") if ok else ""
-            check(
-                "the passkey is added and listed", ok and "Lorenzo's passkey" in row and NAME in row, row.strip()[:80]
-            )
+            check("the passkey is added and listed", ok and "Jane's passkey" in row and NAME in row, row.strip()[:80])
             await mac.eval_on_selector("#set-devices", "e => e.scrollIntoView({ block: 'start' })")
             await shot(mac, "02-passkey-listed")
             creds = (await mac_cdp.send("WebAuthn.getCredentials", {"authenticatorId": mac_auth}))["credentials"]

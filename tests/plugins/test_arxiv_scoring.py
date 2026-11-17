@@ -34,7 +34,7 @@ LIBRARY = [
     item("review", "Noisy intermediate scale quantum computing review", doi="10.1/nisq"),
     item("lindblad", "On the generators of quantum dynamical semigroups", doi="10.1/lindblad"),
     item("niche", "Variational matrix product operators for dissipative steady states", doi="10.1/vmpo"),
-    item("mine", "Steady states of driven dissipative cavities", doi="10.1/mine", authors="Fioroni, Lorenzo"),
+    item("mine", "Steady states of driven dissipative cavities", doi="10.1/mine", authors="Doe, Jane"),
     item("wang", "Spin liquids on the kagome lattice", doi="10.1/kagome", authors="Wang, Yi"),
 ]
 # 1000 announced papers: the textbook, the review and Lindblad are cited by hundreds, the niche paper by 2
@@ -93,7 +93,7 @@ def test_notes_on_a_paper_raise_its_citations():
 
 
 def test_citing_your_own_paper_is_read():
-    (res,) = run([paper("p")], {"p": ["mine"]}, library=lib(author_names=["Lorenzo Fioroni"]))
+    (res,) = run([paper("p")], {"p": ["mine"]}, library=lib(author_names=["Jane Doe"]))
     assert res["tier"] == "read"
     assert res["reasons"][0] == {"kind": "cites_own", "text": "Cites 1 paper you authored", "items": ["mine"]}
 
