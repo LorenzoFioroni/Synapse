@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  clampDock, clampPopup, cornerAfterKey, innerCorner, maxDock, nearestCorner, resizedDock, resizedPopup,
+  clampDock, clampPopup, cornerAfterKey, maxDock, nearestCorner, resizedDock, resizedPopup,
 } from '../../frontend/js/ai/layout.js';
 
 const view = { w: 1000, h: 700 };
@@ -22,13 +22,6 @@ test('arrow keys move the button one step along an axis and stay at the edge', (
   assert.equal(cornerAfterKey('tl', 'ArrowLeft'), 'tl');
   assert.equal(cornerAfterKey('tl', 'ArrowDown'), 'bl');
   assert.equal(cornerAfterKey('bl', 'a'), 'bl');
-});
-
-test('the popup is gripped at the corner that faces the middle', () => {
-  assert.equal(innerCorner('br'), 'tl');
-  assert.equal(innerCorner('tl'), 'br');
-  assert.equal(innerCorner('bl'), 'tr');
-  assert.equal(innerCorner('tr'), 'bl');
 });
 
 test('popup sizes are clamped to the minimum and the window', () => {

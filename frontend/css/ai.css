@@ -1,6 +1,6 @@
 /* The "Ask AI" panel (src/ai/). Also loaded by viewer.html, which has no components.css, so the
-   panel styles its own controls from the design tokens. Two placements: a floating popup in the
-   lower right corner, and docked (a column on the right). The floating button opens it. */
+   panel styles its own controls from the design tokens. Two placements: a floating popup that
+   opens from the corner the floating button is in, and docked (a column on the right). The button opens it. */
 .ai-panel, .ai-panel * { box-sizing: border-box; }
 .ai-panel {
   display: flex; flex-direction: column; min-height: 0; background: var(--bg-elev); color: var(--text);
@@ -14,6 +14,7 @@
   --ai-gap: 16px; --ai-from: 12px;
   position: fixed; z-index: 2500; left: auto; right: auto; top: auto; bottom: auto;
   width: min(var(--ai-pop-w, 390px), calc(100vw - 24px)); height: min(var(--ai-pop-h, 580px), calc(100vh - var(--toolbar-h, 44px) - var(--statusbar-h, 0px) - 40px));
+  height: min(var(--ai-pop-h, 580px), calc(100dvh - var(--toolbar-h, 44px) - var(--statusbar-h, 0px) - 40px));
   border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-lg); overflow: hidden;
 }
 .ai-panel.opening[data-placement="popup"] { animation: ai-in .18s var(--ease); }   /* only while it opens: resizing must not replay it */
@@ -240,7 +241,7 @@ body.ai-docked:has(.ai-panel.resizing) { cursor: ew-resize; user-select: none; }
 .ai-panel .icon { width: 16px; height: 16px; flex: none; }
 .ai-panel .icon-sm { width: 12px; height: 12px; }
 
-/* the floating button that opens the panel, in the lower right corner over every view */
+/* the floating button that opens the panel, over every view, in any of the four corners (the lower right to start with); hidden only on the phone */
 .ai-fab {
   --ai-gap: 18px;
   position: fixed; z-index: 1050; width: 44px; height: 44px; padding: 0; touch-action: none; user-select: none; -webkit-user-select: none;
@@ -271,6 +272,6 @@ body.ai-docked:has(.ai-panel.resizing) { cursor: ew-resize; user-select: none; }
 }
 /* a phone: the popup is a sheet from the bottom, never a docked column */
 @media (max-width: 700px) {
-  .ai-panel[data-placement="popup"][data-corner] { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: min(88vh, 680px); border-radius: 16px 16px 0 0; border-width: 1px 0 0; --ai-from: 12px; }
+  .ai-panel[data-placement="popup"][data-corner] { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: min(88vh, 680px); height: min(88dvh, 680px); border-radius: 16px 16px 0 0; border-width: 1px 0 0; --ai-from: 12px; }
   .ai-grip { display: none; }   /* the sheet is as wide as the screen and as tall as it needs to be */
 }

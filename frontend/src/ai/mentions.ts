@@ -13,6 +13,7 @@ export class MentionData {
   private noteList: NoteInfo[] | null = null;
   private pdfList: NotePdf[] = [];   // the PDFs of the notes folders, from the same listing
   private jobs: { cite?: Promise<void>; note?: Promise<void> } = {};
+  private failed = { cite: false, note: false };
   /** Called when a part has arrived (the thread draws its citations and links again). */
   onLoad: () => void = () => {};
 
@@ -21,13 +22,15 @@ export class MentionData {
   notes = (): NoteInfo[] => this.noteList || [];
   pdfs = (): NotePdf[] => this.pdfList;
   notesLoaded = (): boolean => !!this.noteList;
+  /** The last attempt to fetch this part failed (the next use tries again). */
+  loadFailed = (kind: 'cite' | 'note'): boolean => this.failed[kind];
 
   load(kind: 'cite' | 'note'): Promise<void> {
     const get = async (url: string) => { const r = await fetch(url); if (!r.ok) throw new Error(String(r.status)); return r.json(); };
     this.jobs[kind] ??= (kind === 'cite'
       ? get('/api/notes/cite_index').then((d: { items: CiteEntry[] }) => { this.cites = d.items; })
       : get('/api/notes').then((d: NotesListing) => { this.noteList = d.notes; this.pdfList = d.pdfs || []; })
-    ).then(() => this.onLoad(), () => { this.jobs[kind] = undefined; });   // a failure may be retried by the next use
+    ).then(() => { this.failed[kind] = false; this.onLoad(); }, () => { this.failed[kind] = true; this.jobs[kind] = undefined; });   // a failure may be retried by the next use
     return this.jobs[kind]!;
   }
 
@@ -140,7 +143,8 @@ export function attachMentions(input: HTMLTextAreaElement, anchor: HTMLElement, 
       const empty = document.createElement('div');
       empty.className = 'ai-mention-empty';
       const loading = trigger.kind === 'note' ? !data.notesLoaded() : !data.itemsLoaded();
-      empty.textContent = loading ? 'Loading…' : trigger.kind === 'note' ? 'No matching note or PDF' : 'No matching paper';
+      const failed = loading && data.loadFailed(trigger.kind);
+      empty.textContent = failed ? `Could not load ${trigger.kind === 'note' ? 'notes' : 'papers'}` : loading ? 'Loading…' : trigger.kind === 'note' ? 'No matching note or PDF' : 'No matching paper';
       list.append(empty);
       input.removeAttribute('aria-activedescendant');
     }
@@ -194,7 +198,7 @@ export function attachMentions(input: HTMLTextAreaElement, anchor: HTMLElement, 
     draw();
     if (t.kind === 'note' ? !data.notesLoaded() : !data.itemsLoaded()) {
       const kind = t.kind;
-      void data.load(kind).then(() => { if (trigger?.kind === kind) draw(); });
+      void data.load(kind).then(() => { if (trigger?.kind === kind) draw(); });   // draws "Could not load" after a failure
     }
   }
 

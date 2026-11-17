@@ -76,9 +76,11 @@ export function notesScreen(): Screen {
         if (input.value.trim()) return;
         const notes = [...ws.overview.notes].sort((a, b) => b.mtime - a.mtime).slice(0, 12);
         const top = ws.overview.folders.filter((f) => !f.includes('/') && !f.startsWith('.')).sort((a, b) => a.localeCompare(b));
-        box.innerHTML = notes.length || top.length ? `
+        const pdfs = (ws.overview.pdfs || []).filter((p) => parentOf(p.path) === '');   // the folders list has no row for the top level
+        box.innerHTML = notes.length || top.length || pdfs.length ? `
           ${notes.length ? `<h2 class="ph-section-label">Recent</h2><div class="ph-group">${notes.map(noteRow).join('')}</div>` : ''}
-          ${top.length ? `<h2 class="ph-section-label">Folders</h2><div class="ph-group">${top.map(folderRow).join('')}</div>` : ''}`
+          ${top.length ? `<h2 class="ph-section-label">Folders</h2><div class="ph-group">${top.map(folderRow).join('')}</div>` : ''}
+          ${pdfs.length ? `<h2 class="ph-section-label">PDFs</h2><div class="ph-group">${pdfs.map(pdfRow).join('')}</div>` : ''}`
           : `<div class="ph-empty">${icon('edit')}<h3>No notes yet</h3><p>Write one with the pencil above, or the + below.</p></div>`;
       };
       const search = debounce(async () => {
@@ -127,7 +129,7 @@ function noteRow(n: NoteInfo): string {
 }
 
 function pdfRow(p: NotePdf): string {
-  return `<button class="ph-note-row" data-pdf="${p.id}"><span class="ph-row-title-line"><span class="ph-row-title">${esc(p.name)}</span></span>
+  return `<button class="ph-note-row" data-pdf="${p.id}" data-pdf-path="${esc(p.path)}"><span class="ph-row-title-line"><span class="ph-row-title">${esc(p.name)}</span></span>
     <span class="ph-row-meta">${icon('pdf', 'icon-sm')} PDF</span></button>`;
 }
 
@@ -160,9 +162,8 @@ function folderScreen(folder: string): Screen {
         if (n) { push(noteScreen(n.dataset.note!)); return; }
         const f = t.closest<HTMLElement>('[data-folder]');
         if (f) { push(folderScreen(f.dataset.folder!)); return; }
-        const pdf = t.closest<HTMLElement>('[data-pdf]');
-        const found = pdf && (ws.overview.pdfs || []).find((p) => String(p.id) === pdf.dataset.pdf);
-        if (found) { push(readerScreen({ id: '', title: found.name.replace(/\.pdf$/i, ''), authors: '', year: undefined }, notePdfAtt(found))); return; }
+        const pdf = t.closest<HTMLElement>('[data-pdf-path]');
+        if (pdf) { void pushPdf(pdf.dataset.pdfPath!, '', null); return; }
         if (t.closest('[data-act="new"]')) void newNote(folder);
       });
       on('notes-count', paint);

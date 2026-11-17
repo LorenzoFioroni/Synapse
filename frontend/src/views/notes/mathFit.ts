@@ -1,6 +1,6 @@
 // Display equations wider than the note: shrink them a little (down to MIN_SCALE) before
 // falling back to a horizontal scroll bar.
-export const MIN_SCALE = 0.75;
+const MIN_SCALE = 0.75;
 
 interface Fit { root: HTMLElement; d: HTMLElement; box: HTMLElement; width: () => number; old: string; room: number; scale: string }
 

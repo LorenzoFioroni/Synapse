@@ -42,11 +42,6 @@ export function cornerAfterKey(from: Corner, key: string): Corner {
   return from;
 }
 
-/** The corner of the popup that faces the middle of the window: where its resize grip is (the opposite of the anchor). */
-export function innerCorner(anchor: Corner): Corner {
-  return `${anchor[0] === 't' ? 'b' : 't'}${anchor[1] === 'l' ? 'r' : 'l'}` as Corner;
-}
-
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi));
 
 /** ``size`` kept between the minimum and the room the window leaves (the minimum wins in a tiny window). */

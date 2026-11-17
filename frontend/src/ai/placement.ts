@@ -1,4 +1,4 @@
-// Where the panel sits: a small floating popup in the lower right corner, or docked in a column of
+// Where the panel sits: a small floating popup opening from the launcher button's corner, or docked in a column of
 // the page (in the app a column on the right of the window, beside every view and PDF tab; in the
 // PDF viewer of its own a column the PDF makes room for). Docking moves the same element, so a conversation in progress is untouched. The choice is
 // remembered per device; where docking has no room (a narrow window, the phone) it is a popup.
