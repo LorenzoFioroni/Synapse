@@ -170,6 +170,25 @@ def _render(name: str, scale: float):
     return icon
 
 
+def _dock(visible: bool) -> None:
+    """macOS: the Dock shows this process only while a window is open (the menu bar icon stays)."""
+    if sys.platform != "darwin":
+        return
+    import ctypes
+    import ctypes.util
+
+    try:
+        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc") or "libobjc.dylib")
+        objc.objc_getClass.restype = objc.sel_registerName.restype = ctypes.c_void_p
+        objc.objc_getClass.argtypes = objc.sel_registerName.argtypes = [ctypes.c_char_p]
+        send = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(("objc_msgSend", objc))
+        policy = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long)(("objc_msgSend", objc))
+        ns_app = send(objc.objc_getClass(b"NSApplication"), objc.sel_registerName(b"sharedApplication"))
+        policy(ns_app, objc.sel_registerName(b"setActivationPolicy:"), 0 if visible else 1)  # regular · accessory
+    except (OSError, AttributeError, TypeError):
+        pass
+
+
 def main() -> int:
     """``synapse_companion tray``, started by the companion with ``{port, key}`` on stdin."""
     try:
@@ -185,6 +204,7 @@ def main() -> int:
         return NO_TRAY
     app.setQuitOnLastWindowClosed(False)  # Qt has no windows of its own here
     app.setApplicationDisplayName("Synapse Companion")
+    _dock(False)
     # The Dock icon on macOS (else the generic Python one); icons there have a margin around them.
     app.setWindowIcon(_render("icon.svg", 0.8 if sys.platform == "darwin" else 1.0))
     if sys.platform == "darwin":
@@ -219,6 +239,8 @@ def main() -> int:
 
     icon.activated.connect(clicked)
 
+    docked = [None]
+
     def refresh() -> None:
         try:
             state.clear()
@@ -230,6 +252,9 @@ def main() -> int:
             if failures[0] >= 3:  # the companion quit or restarted (a new one starts its own icon)
                 app.quit()
             return
+        if docked[0] != bool(state.get("window_open")):
+            docked[0] = bool(state.get("window_open"))
+            _dock(docked[0])
         text = summary(state)
         status.setText(text)
         library.setEnabled(bool(state.get("server")))

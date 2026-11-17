@@ -169,7 +169,7 @@ function render(s) {
 
 async function refresh() {
   try {
-    render(await call('/api/state'));
+    render(await call('/api/state?window=1'));
   } catch (e) {
     if (/key|ticket|403/i.test(e.message)) gone('This window has expired. Open Synapse Companion again.');
     else gone('Synapse Companion is not running. Start it again from your applications, or run it once.');

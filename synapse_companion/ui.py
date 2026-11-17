@@ -37,6 +37,7 @@ from .tray import TrayProcess
 
 MAX_BODY = 64 * 1024
 TICKET_SECONDS = 60
+WINDOW_SECONDS = 8  # a window that has not asked for the state this long is closed
 STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
@@ -64,6 +65,7 @@ class Window:
         self.key = secrets.token_urlsafe(32)
         self.tickets: dict[str, float] = {}
         self.lock = threading.Lock()
+        self.window_seen = float("-inf")  # when a window page last asked for the state
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self))
         self.httpd.daemon_threads = True
         self.port = self.httpd.server_address[1]
@@ -146,7 +148,10 @@ def _handler(window: Window):
             if path == "/api/state":
                 if not self._key_ok():
                     return self._json(403, {"error": "Wrong key."})
-                return self._json(200, {**service.state(), "tray": window.tray.describe()})
+                if self.path.endswith("?window=1"):  # the page polls every 2 s while a window is open
+                    window.window_seen = time.monotonic()
+                shown = time.monotonic() - window.window_seen < WINDOW_SECONDS
+                return self._json(200, {**service.state(), "tray": window.tray.describe(), "window_open": shown})
             return self._json(404, {"error": "Not found."})
 
         def do_POST(self):
