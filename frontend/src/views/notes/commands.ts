@@ -67,7 +67,7 @@ export function registerNoteCommands(host: NoteCommandsHost): void {
 
   // ---- the note itself
   add('rename', 'Rename This Note…', () => renameNote(ws.session!.path), editable);
-  add('move', 'Move This Note to a Folder…', () => pickFolder(centre(), { notes: [ws.session!.path], folders: [] }), editable);
+  add('move', 'Move This Note to a Folder…', () => pickFolder(centre(), { notes: [ws.session!.path], pdfs: [], folders: [] }), editable);
   add('copy-link', 'Copy Link to This Note', () => copyLinks([ws.session!.path]));
   add('delete', 'Delete This Note…', () => { selectOnly(nKey(ws.session!.path)); return deleteSelection(); }, editable);
   add('export-pdf', 'Export This Note as PDF', () => exportNote(ws.session!.path, 'pdf'));

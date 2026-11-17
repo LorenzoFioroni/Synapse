@@ -55,7 +55,7 @@ The menu button on each tab's first screen shows the unread count for **Notifica
 |---|---|
 | `phone/library.ts` | The Library tab: search, folders and smart folders as chips, sorting, a **Folders & tags** sheet (also Unfiled, Duplicates, Trash and tag filters); a paper's page (Read, Paper note, Copy key, Share; abstract; the notes that cite it; folders and tags; references; all details, each tapped to edit; **From plugins**: plugin fields as rows and plugin item sections as cards to fold); its ⋯ sheet. |
 | `phone/reader.ts` | A PDF: the app's viewer (`viewer.html`) over the whole screen under a thin bar. |
-| `phone/notes.ts` | The Notes tab: recent notes, folders, search; a note opened for **reading** (no front matter, citations as chips, wide equations shrunk or scrolled sideways); **Edit** turns it into the editor with a bar above the keyboard (cite, link, math, image, formatting, and the buttons plugins add); a tapped citation opens a sheet (the PDF at the cited page, the paper note, the paper). |
+| `phone/notes.ts` | The Notes tab: recent notes, folders, search; the PDFs of a notes folder (a tap opens the reader); a note opened for **reading** (no front matter, citations as chips, wide equations shrunk or scrolled sideways); **Edit** turns it into the editor with a bar above the keyboard (cite, link, math, image, formatting, and the buttons plugins add); a tapped citation opens a sheet (the PDF at the cited page, the paper note, the paper). |
 | `phone/plugins.ts` | The Plugins tab; a plugin's list of papers; a plugin's page. |
 | `phone/model.ts` | The decisions without a DOM (unit-tested in `tests/js/phone.test.mjs`). |
 

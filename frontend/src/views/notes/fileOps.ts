@@ -12,12 +12,12 @@ import { RETENTION_LABELS } from './attachmentsDialog.js';
 import { moveMessage } from './linkReport.js';
 import type { NoteSession } from './noteSession.js';
 import {
-  fKey, nKey, refreshTree, saveCollapsed, selectOnly, selected, tree, treeEl, visibleKeys,
+  fKey, nKey, pKey, refreshTree, saveCollapsed, selectOnly, selected, tree, treeEl, visibleKeys,
 } from './tree.js';
 import { hooks, movedElsewhere, nameOf, notesDeleted, notesRenamed, parentOf, stemOf, within, ws } from './workspace.js';
 
-/** Notes and folders to act on together. */
-export interface Selection { notes: string[]; folders: string[] }
+/** Notes, PDFs and folders to act on together. */
+export interface Selection { notes: string[]; pdfs: string[]; folders: string[] }
 
 /** The folder a new note goes in: the folder under the keyboard, else the open note's. */
 export function folderOfSelection(): string {
@@ -115,6 +115,51 @@ export async function renameNote(path: string): Promise<void> {
   return moveNote(path, `${folder ? `${folder}/` : ''}${clean}.md`);
 }
 
+async function movePdf(path: string, to: string, { quiet = false } = {}): Promise<void> {
+  if (!to || to === path) return;
+  try {
+    const res = await api.moveNote(path, to);   // the PDF keeps its number, so open viewers and highlights stay with it
+    if (tree.sel.delete(pKey(path))) tree.sel.add(pKey(res.path));
+    if (tree.cursor === pKey(path)) tree.anchor = tree.cursor = pKey(res.path);
+    if (!quiet) await refreshTree();
+  } catch (e) { toastError(e); }
+}
+
+export async function renamePdf(path: string): Promise<void> {
+  const name = nameOf(path).replace(/\.pdf$/i, '');
+  const back = keepTreeFocus();
+  const nu = await promptDialog('Name', { title: 'Rename PDF', value: name, confirm: 'Rename' });
+  back();
+  if (!nu || nu.trim() === name) return;
+  const folder = parentOf(path);
+  return movePdf(path, `${folder ? `${folder}/` : ''}${nu.trim().replace(/\.pdf$/i, '').replace(/\//g, '-')}.pdf`);
+}
+
+/** Add PDFs to a notes folder ('' = top level): dropped files or the file picker. Other files are
+ *  refused here (the server checks the content as well). */
+export async function addPdfs(files: File[], folder = ''): Promise<void> {
+  const pdfs = files.filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
+  if (pdfs.length < files.length) toast(files.length === 1 ? 'Only PDF files can be added to the notes.' : `${plural(files.length - pdfs.length, 'file')} skipped: only PDF files can be added to the notes.`);
+  const added: string[] = [];
+  for (const f of pdfs) {
+    try { added.push((await api.uploadNotePdf(f, folder)).path); } catch (e) { toastError(e); }
+  }
+  if (!added.length) return;
+  if (folder) { tree.collapsed.delete(folder); saveCollapsed(); }
+  tree.sel = new Set(added.map(pKey));
+  tree.anchor = tree.cursor = pKey(added[added.length - 1]);
+  await refreshTree();
+  toast(added.length === 1 ? `Added “${nameOf(added[0])}”.` : `Added ${plural(added.length, 'PDF')}.`);
+}
+
+/** Choose PDFs on this device and add them to ``folder``. */
+export function pickPdfs(folder = folderOfSelection()): void {
+  const input = h('<input type="file" accept="application/pdf,.pdf" multiple hidden>') as HTMLInputElement;
+  input.addEventListener('change', () => { void addPdfs([...(input.files || [])], folder); input.remove(); });
+  document.body.append(input);
+  input.click();
+}
+
 /** Rename or move a folder with everything in it (the open note follows). */
 async function moveFolder(path: string, to: string, { quiet = false } = {}): Promise<void> {
   if (!to || to === path) return;
@@ -149,7 +194,7 @@ export async function renameFolder(path: string): Promise<void> {
 }
 
 /** Move notes and folders into ``dest`` ('' = top level); things already there are skipped. */
-export async function moveItems({ notes, folders }: Selection, dest: string): Promise<void> {
+export async function moveItems({ notes, pdfs, folders }: Selection, dest: string): Promise<void> {
   const into = (p: string) => `${dest ? `${dest}/` : ''}${nameOf(p)}`;
   for (const f of folders) {
     if (f === dest || within(dest, f) || parentOf(f) === dest) continue;
@@ -157,6 +202,9 @@ export async function moveItems({ notes, folders }: Selection, dest: string): Pr
   }
   for (const n of notes) {
     if (parentOf(n) !== dest) await moveNote(n, into(n), { quiet: true });
+  }
+  for (const p of pdfs) {
+    if (parentOf(p) !== dest) await movePdf(p, into(p), { quiet: true });
   }
   if (dest) { tree.collapsed.delete(dest); saveCollapsed(); }
   await refreshTree();
@@ -175,12 +223,14 @@ export function pickFolder(at: { x: number; y: number }, items: Selection): void
 }
 
 /** "folder “x” and 3 notes": for menus and confirmations. */
-export function describe({ notes, folders }: Selection): string {
+export function describe({ notes, pdfs, folders }: Selection): string {
   const parts = [];
   if (folders.length === 1) parts.push(`folder “${nameOf(folders[0])}”`);
   else if (folders.length) parts.push(`${folders.length} folders`);
   if (notes.length === 1) parts.push(`“${stemOf(notes[0])}”`);
   else if (notes.length) parts.push(plural(notes.length, 'note'));
+  if (pdfs.length === 1) parts.push(`“${nameOf(pdfs[0])}”`);
+  else if (pdfs.length) parts.push(plural(pdfs.length, 'PDF'));
   return parts.join(' and ');
 }
 
@@ -193,15 +243,18 @@ export function copyLinks(notes: string[]): void {
 /** Move the selected notes and folders to the notes trash (one Undo brings them all back). */
 export async function deleteSelection(): Promise<void> {
   const items = selected();
-  const { notes, folders } = items;
-  if (!notes.length && !folders.length) return;
-  const inFolders = ws.overview.notes.filter((n) => folders.some((f) => within(n.path, f))).length;
+  const { notes, pdfs, folders } = items;
+  if (!notes.length && !pdfs.length && !folders.length) return;
+  const inside = (n: { path: string }) => folders.some((f) => within(n.path, f));
+  const noteCount = ws.overview.notes.filter(inside).length;
+  const pdfCount = (ws.overview.pdfs || []).filter(inside).length;
+  const inFolders = noteCount + pdfCount;
   const what = describe(items);
   if ((state.settings.confirm_trash || inFolders) && !(await confirmDialog(
-    `Move ${what}${inFolders ? ` (with ${plural(inFolders, 'note')} inside)` : ''} to the notes trash?`,
+    `Move ${what}${inFolders ? ` (with ${plural(inFolders, pdfCount ? 'file' : 'note')} inside)` : ''} to the notes trash?`,
     { title: 'Delete', confirm: 'Move to Trash', danger: true, detail: 'You can undo this, or restore them later from “Deleted notes…”.' }))) return;
   // the row to land on afterwards: the next one that stays
-  const gone = (k: string) => (k[0] === 'n' && notes.includes(k.slice(2))) || folders.some((f) => k.slice(2) === f || within(k.slice(2), f));
+  const gone = (k: string) => (k[0] === 'n' && notes.includes(k.slice(2))) || (k[0] === 'p' && pdfs.includes(k.slice(2))) || folders.some((f) => k.slice(2) === f || within(k.slice(2), f));
   const keys = visibleKeys();
   const last = Math.max(...keys.map((k, i) => (gone(k) ? i : -1)));
   const next = keys.slice(last + 1).find((k) => !gone(k)) || keys.slice(0, last).reverse().find((k) => !gone(k)) || null;
@@ -209,7 +262,7 @@ export async function deleteSelection(): Promise<void> {
     const open = ws.session?.path;
     const closing = !!open && (notes.includes(open) || folders.some((f) => within(open, f)));
     if (closing) { await ws.session!.save(); await hooks.closeCurrent(); }
-    const res = await api.trashNotes(notes, folders);
+    const res = await api.trashNotes([...notes, ...pdfs], folders);
     notesDeleted((p) => notes.includes(p) || folders.some((f) => within(p, f)));
     selectOnly(next);
     await refreshTree();
@@ -219,7 +272,7 @@ export async function deleteSelection(): Promise<void> {
       action: { label: 'Undo', run: async () => {
         try {
           const r = await api.restoreNoteBatch(res.trash_id);
-          tree.sel = new Set([...r.paths.filter((x) => !folders.some((f) => within(x, f))).map(nKey), ...folders.map(fKey)]);
+          tree.sel = new Set([...r.paths.filter((x) => !folders.some((f) => within(x, f))).map(nKey), ...r.pdfs.filter((x) => !folders.some((f) => within(x, f))).map(pKey), ...folders.map(fKey)]);
           tree.anchor = tree.cursor = [...tree.sel][0] || null;
           await refreshTree();
           if (open && closing && r.paths.includes(open)) hooks.openNote(open);

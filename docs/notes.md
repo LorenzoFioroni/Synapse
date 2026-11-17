@@ -98,6 +98,15 @@ and everything attached to the PDF (highlights) use that number, so a rename or 
   updates the row (`NotePdfs.moved`), deleting sends the file to `.trash/<timestamp>/` with its
   folder and the row becomes `trashed`, restoring brings the row back. PDFs are never written to the
   notes history, and no links to them are rewritten yet.
+- **In the tree** (`views/notes/tree.ts`, row key `p:<path>`, `fileOps.ts`, `treeInput.ts`): a PDF
+  row has the PDF icon in `--pdf` colour. Click or Enter opens it in the viewer (a double-click, or
+  the menu's *Open in New Tab*, a tab of its own; `openNotePdf` in `api.ts` builds
+  `viewer.html?file=/api/note-pdfs/<id>/file&npdf=<id>`, so a rename does not break an open
+  viewer). Files dropped on the tree or a folder, **Add PDF…** in a folder's menu and in the list's
+  *More* menu add PDFs (`addPdfs`, non-PDF files are refused with a message). F2 / *Rename…* (the
+  `.pdf` extension is kept), *Move to folder…*, dragging onto a folder and Delete / *Move to Trash*
+  (with Undo) work as for notes, and one selection may mix notes, PDFs and folders. On a phone,
+  folders list their PDFs and a tap opens the reader.
 - **Outside changes** are found by `NotePdfs.sync()` (at start, with the notes index and on a
   rescan). A file at a known path whose size or time changed is a replacement and keeps its row. A
   new file that is byte-for-byte a vanished one takes that row over (an external rename keeps the

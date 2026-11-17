@@ -344,8 +344,17 @@ export interface ItemNotes {
 /** GET /api/notes/keys: per citation key, its paper note (path) and how many notes cite it. */
 export type NoteKeys = Record<string, { paper: string | null; citing: number }>;
 
+/** A PDF kept in a notes folder (GET /api/notes `pdfs`; backend/notes/pdfs.py). Its `id` outlives renames. */
+export interface NotePdf {
+  id: number;
+  path: string;
+  name: string;
+  size: number;
+}
+
 export interface NotesListing {
   notes: NoteInfo[];
+  pdfs?: NotePdf[];
   folders: string[];
   /** Notes folders given a colour (backend/notes/folder_colors.py): folder path → #rrggbb. */
   folder_colors?: Record<string, string>;

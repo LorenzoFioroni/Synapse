@@ -21,7 +21,7 @@ import { attachCiteCards, openCitation, pdfsOf, showCard } from './citeCard.js';
 import { conflictDialog } from './conflict.js';
 import { createEditor, loadMD, type NoteEditor } from './editor.js';
 import { exportMenu } from './exportNote.js';
-import { folderOfSelection, followMove, newFolder, newNote, renameNote, rescan, showTrash } from './fileOps.js';
+import { folderOfSelection, followMove, newFolder, newNote, pickPdfs, renameNote, rescan, showTrash } from './fileOps.js';
 import { linkDataOf } from './linkData.js';
 import { refitOnResize } from './mathFit.js';
 import { NoteSession } from './noteSession.js';
@@ -706,6 +706,7 @@ function onClick(e: MouseEvent): void {
   if (act === 'paper-pdf' && info?.paper) { openPaperPdf(actEl!); return; }
   if (act === 'tree-menu') {
     openMenu([
+      { label: 'Add PDF…', icon: 'pdf', run: () => pickPdfs() },
       { label: 'Rescan notes folder', icon: 'refresh', run: rescan },
       { label: 'Deleted notes…', icon: 'trash', run: showTrash },
       { label: 'Notes history…', icon: 'restore', run: openVaultHistory },

@@ -1,11 +1,11 @@
 // The Notes tab on a phone: recent notes and folders, search; a note opens for reading (citations
 // as chips, a tap on one shows what it cites) and Edit turns it into the editor, with a bar of
 // Markdown helpers above the keyboard (plugins add their own buttons there).
-import { api, type ApiError } from '../api.js';
+import { api, type ApiError, notePdfAtt } from '../api.js';
 import { editorButtons } from '../extend.js';
 import { icon } from '../icons.js';
 import { off, on, state } from '../store.js';
-import type { CiteEntry, NoteInfo } from '../types.js';
+import type { CiteEntry, NoteInfo, NotePdf } from '../types.js';
 import { confirmDialog, promptDialog } from '../ui/dialog.js';
 import { openMenu } from '../ui/menu.js';
 import { toast, toastError } from '../ui/toast.js';
@@ -122,8 +122,13 @@ function noteRow(n: NoteInfo): string {
     <span class="ph-row-meta">${dot(n.path)}${esc(parentOf(n.path) || 'Notes')}${n.type === 'paper' ? ' · paper note' : ''}</span></button>`;
 }
 
+function pdfRow(p: NotePdf): string {
+  return `<button class="ph-note-row" data-pdf="${p.id}"><span class="ph-row-title-line"><span class="ph-row-title">${esc(p.name)}</span></span>
+    <span class="ph-row-meta">${icon('pdf', 'icon-sm')} PDF</span></button>`;
+}
+
 function folderRow(f: string): string {
-  const n = ws.overview.notes.filter((x) => x.path.startsWith(`${f}/`)).length;
+  const n = [...ws.overview.notes, ...(ws.overview.pdfs || [])].filter((x) => x.path.startsWith(`${f}/`)).length;
   const c = folderColor(f);
   return `<button class="ph-folder-row" data-folder="${esc(f)}"><span class="ph-folder-icon"${c ? ` style="color:${esc(c)}"` : ''}>${icon('folder')}</span>
     <span class="grow">${esc(f.split('/').pop()!)}</span><span class="ph-count">${n}</span>${chevron()}</button>`;
@@ -138,10 +143,11 @@ function folderScreen(folder: string): Screen {
       const paint = () => {
         const subs = ws.overview.folders.filter((f) => parentOf(f) === folder).sort((a, b) => a.localeCompare(b));
         const notes = ws.overview.notes.filter((n) => parentOf(n.path) === folder).sort((a, b) => titleOf(a).localeCompare(titleOf(b)));
+        const pdfs = (ws.overview.pdfs || []).filter((p) => parentOf(p.path) === folder);
         el.innerHTML = `${navBar(ctx.backLabel, name, navButton('edit', 'New note here', 'data-act="new"'))}<div class="ph-scroll">
           ${subs.length ? `<div class="ph-group">${subs.map(folderRow).join('')}</div>` : ''}
-          ${notes.length ? `<div class="ph-group">${notes.map(noteRow).join('')}</div>` : ''}
-          ${!subs.length && !notes.length ? '<div class="ph-empty"><p>This folder is empty.</p></div>' : ''}</div>`;
+          ${notes.length || pdfs.length ? `<div class="ph-group">${notes.map(noteRow).join('')}${pdfs.map(pdfRow).join('')}</div>` : ''}
+          ${!subs.length && !notes.length && !pdfs.length ? '<div class="ph-empty"><p>This folder is empty.</p></div>' : ''}</div>`;
       };
       paint();
       el.addEventListener('click', (e) => {
@@ -150,6 +156,9 @@ function folderScreen(folder: string): Screen {
         if (n) { push(noteScreen(n.dataset.note!)); return; }
         const f = t.closest<HTMLElement>('[data-folder]');
         if (f) { push(folderScreen(f.dataset.folder!)); return; }
+        const pdf = t.closest<HTMLElement>('[data-pdf]');
+        const found = pdf && (ws.overview.pdfs || []).find((p) => String(p.id) === pdf.dataset.pdf);
+        if (found) { push(readerScreen({ id: '', title: found.name.replace(/\.pdf$/i, ''), authors: '', year: undefined }, notePdfAtt(found))); return; }
         if (t.closest('[data-act="new"]')) void newNote(folder);
       });
       on('notes-count', paint);

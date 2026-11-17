@@ -13,7 +13,7 @@ export function readerScreen(item: Pick<Item, 'id' | 'title' | 'authors' | 'year
   const name = [familyNames(item.authors), item.year ? String(item.year) : ''].filter(Boolean).join(' ') || item.title || 'PDF';
   return {
     title: name,
-    key: `pdf:${att.id}`,
+    key: `pdf:${att.id || att.url}`,   // a PDF of the notes folders has no attachment number
     mount(el, ctx) {
       el.classList.add('ph-reader');
       el.innerHTML = `${navBar(ctx.backLabel, name, `<a class="ph-nav-btn" href="${esc(viewerUrl(item, att, page, at))}" target="_blank" rel="noopener" aria-label="Open in a browser tab" title="Open in a browser tab">${icon('newWindow')}</a>`)}
