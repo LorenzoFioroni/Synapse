@@ -24,7 +24,7 @@ import { NoteSession, type SaveStatus } from '../views/notes/noteSession.js';
 import { createRenderer, imageSrc } from '../views/notes/render.js';
 import { highlightCodeBlocks, renderEmbeds, renderMermaid, renderMermaidBlocks } from '../views/notes/richRender.js';
 import { labelId } from '../views/notes/equations.js';
-import { fitEquations, fitSoon } from '../views/notes/mathFit.js';
+import { fitAfterFonts, fitEquations } from '../views/notes/mathFit.js';
 import { citeInfo, equationMode, folderColor, itemInfo, noteMacros, parentOf, resolveNote, stemOf, taskHooks, ws } from '../views/notes/workspace.js';
 import { familyNames, shortWhen } from './model.js';
 import { readerScreen } from './reader.js';
@@ -248,7 +248,7 @@ export function noteScreen(path: string, { line = null, edit = false }: { line?:
           <article class="prose ph-prose">${r.render(text.slice(fm.bodyStart))}</article>`;
         const art = scroll.querySelector<HTMLElement>('article')!;
         // wide equations shrink to fit (down to ¾), the rest scrolls sideways
-        if (art.querySelector('.katex-display')) { fitEquations(art); fitSoon(art); }
+        if (art.querySelector('.katex-display')) { fitEquations(art); fitAfterFonts(art); }
         void highlightCodeBlocks(art);
         void renderMermaidBlocks(art);
         void renderEmbeds(art, { citeInfo, resolveNote, equations: equationMode, macros: noteMacros }, new Set([path]));

@@ -53,7 +53,9 @@ _FENCE = re.compile(r"^([ \t]*)(`{3,}|~{3,})(.*)$")
 _GALLERY = re.compile(r"^gallery(?![^\s|])", re.I)
 _TASKS = re.compile(r"^tasks(?:\s|$)", re.I)
 _TASK_BLOCK_ID = re.compile(r"^\s*(?:[-*+]\s+)?([a-z0-9]{4,32})\s*$")
-_HEADING = re.compile(r"^ {0,3}(#{1,6})\*?[ \t]+(.+?)[ \t]*(?:#+[ \t]*)?$")
+# Closing #s and trailing blanks are taken off by _heading(): a lazy group followed by optional
+# blanks in the pattern backtracked quadratically on a long run of tabs or spaces.
+_HEADING = re.compile(r"^ {0,3}(#{1,6})\*?[ \t]+(.+)$")
 _WIKI = re.compile(r"(!?)\[\[([^\[\]\n]+?)\]\]")
 _PDF_PAGE = re.compile(r"^(?:p|page)\s*=\s*(\d{1,5})$", re.I)  # [[file.pdf#p=4]]
 
@@ -63,7 +65,9 @@ def is_pdf_target(target: str) -> bool:
     return target.lower().endswith(".pdf")
 
 
-_BRACKET = re.compile(r"(?<![!\[\]\\])\[([^\[\]\n]*@[^\[\]\n]*)\](?![(\[\]])")
+# Any bracket; _parse_cite_group() keeps those with an @ in each part (an @ in the pattern
+# backtracked quadratically on an unclosed bracket full of @s).
+_BRACKET = re.compile(r"(?<![!\[\]\\])\[([^\[\]\n]*)\](?![(\[\]])")
 _IMAGE = re.compile(r"!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 # A task shown in the note. The id is the task's id in library.db (backend/tasks/store.py).
 _TASK = re.compile(r"\{\{task:([a-z0-9]{4,32})\}\}")
@@ -366,6 +370,16 @@ def _fm_list(v) -> list[str]:
     return [s.strip() for s in str(v).split(",") if s.strip()]
 
 
+def _heading(line: str) -> tuple[int, str] | None:
+    """A Markdown heading's level and text, without its closing #s and trailing blanks."""
+    m = _HEADING.match(line)
+    if not m:
+        return None
+    text = m.group(2).rstrip(" \t")
+    core = text.rstrip("#").rstrip(" \t")
+    return len(m.group(1)), core or text[:1]
+
+
 def _heading_text(text: str) -> str:
     """A heading without section labels outside its inline code and math."""
     out: list[str] = []
@@ -527,12 +541,12 @@ def parse(text: str, *, fallback_title: str = "") -> ParsedNote:
     headings = []
     tags: list[str] = []
     for idx, ml in enumerate(mlines):
-        hm = _HEADING.match(ml)
+        hm = _heading(ml)
         if hm:
             # Text comes from the original line (inline code/math inside headings is kept).
-            raw = _HEADING.match(lines[idx])
-            heading = _heading_text((raw or hm).group(2)).strip()
-            headings.append(Heading(level=len(hm.group(1)), text=heading, line=idx + 1 + offset))
+            raw = _heading(lines[idx])
+            heading = _heading_text((raw or hm)[1]).strip()
+            headings.append(Heading(level=hm[0], text=heading, line=idx + 1 + offset))
         for tm in _TAG.finditer(ml):
             t = tm.group(1).rstrip("/-")
             if t and not t.isdigit() and t not in tags:

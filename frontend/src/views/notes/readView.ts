@@ -8,7 +8,7 @@ import { escapeHtml } from '../../util.js';
 import { openCitation, showCard } from './citeCard.js';
 import { type CiteTarget, citeTargetInDom, citeTargetInText } from './citeTarget.js';
 import { labelId } from './equations.js';
-import { fitEquations, fitSoon } from './mathFit.js';
+import { fitAfterFonts, fitEquations } from './mathFit.js';
 import { isPdfTarget, splitFrontmatter } from './mdscan.js';
 import { openPdfLink } from './pdfLinks.js';
 import { createRenderer, slugHeading } from './render.js';
@@ -41,7 +41,8 @@ export function renderRead({ fresh = false } = {}): void {
   const page = art.parentElement!;
   const scroll = page.scrollTop;
   const added = patchBlocks(art, props + r.render(text.slice(fm.bodyStart)), fresh);
-  for (const el of added) if (el.querySelector('.katex-display')) { fitEquations(el); fitSoon(el); }
+  const math = added.filter((el) => el.querySelector('.katex-display'));
+  if (math.length) { fitEquations(math); for (const el of math) fitAfterFonts(el); }
   page.scrollTop = scroll;
   highlightCodeBlocks(art);
   renderMermaidBlocks(art);
