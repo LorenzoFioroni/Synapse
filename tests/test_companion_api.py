@@ -791,6 +791,7 @@ def test_pdfs_named_in_the_question_are_listed(client, svc):
     make_pdf(svc.vault.root / "refs" / "one.pdf", "A page")
     svc.note_pdfs.sync()
     svc.notes.sync_files()
+    svc.indexer.wait()
     svc.indexer.sync(background=False)  # once indexed, the page count is known
     text, _ = prompt.build("See [[refs/one.pdf#p=1]]", None, notes=svc.note_service, papers=svc.papers)
     assert "pdf [[refs/one.pdf#p=1]]: refs/one.pdf, 1 pages" in text
