@@ -3,7 +3,7 @@
     pip install playwright && playwright install chromium     # once
     python tests/e2e/notes_checklist.py
 
-Starts its own server on port 8765 with a throw-away data folder; your library is not touched.
+Starts its own server on port 8765 (SYNAPSE_E2E_PORT overrides it) with a throw-away data folder; your library is not touched.
 """
 
 import asyncio
@@ -21,7 +21,7 @@ BROWSER = os.environ.get("SYNAPSE_E2E_BROWSER", "chromium")
 
 APP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-PORT = 8765
+PORT = int(os.environ.get("SYNAPSE_E2E_PORT", "8765"))
 BASE = f"http://127.0.0.1:{PORT}/"
 DATA = tempfile.mkdtemp(prefix="zc-notes-e2e-")
 D = os.path.join(DATA, "notes")
@@ -298,7 +298,14 @@ async def main():
         C = await ctx.new_page()
         watch(C, "C")
         await C.goto(BASE + "#note=Projects/Renamed%20idea.md")  # a new window starts on the library
-        await C.wait_for_timeout(1500)
+        # the editor mounts after the note loads; wait for the restored text instead of guessing a delay
+        try:
+            await C.wait_for_function(
+                "() => (document.querySelector('.cm-content')?.innerText || '').includes('typed while the server was down')",
+                timeout=10000,
+            )
+        except Exception:
+            await explain(C, "the restored draft in the editor")
         c_text = await C.evaluate("document.querySelector('.cm-content')?.innerText || ''")
         await wait_status(C, "Saved", 6000)
         check(
