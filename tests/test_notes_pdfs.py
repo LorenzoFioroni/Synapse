@@ -479,3 +479,16 @@ def test_library_search_by_text_never_lists_a_notes_pdf(client, svc):
     assert [r["path"] for r in svc.note_service.search("needleword") if r.get("kind") == "pdf"] == ["n.pdf"]
     ids = [x["id"] for x in client.get("/api/items", query_string={"q": "needleword"}).json.get("items", [])]
     assert ids in ([], [item["id"]])
+
+
+def test_page_excerpt_for_the_link_card(client, svc):
+    from tests.conftest import make_pdf
+
+    make_pdf(svc.vault.root / "doc.pdf", "The excerpt of page one")
+    svc.note_pdfs.sync()
+    pid = listed(client)["doc.pdf"]
+    r = client.get(f"/api/note-pdfs/{pid}/page/1")
+    assert r.status_code == 200 and r.json["page"] == 1 and r.json["pages"] == 1
+    assert "excerpt of page one" in r.json["excerpt"]
+    assert client.get(f"/api/note-pdfs/{pid}/page/9").json["excerpt"] == ""
+    assert client.get("/api/note-pdfs/999/page/1").status_code == 404

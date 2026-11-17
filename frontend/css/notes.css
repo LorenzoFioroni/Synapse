@@ -371,6 +371,7 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
   border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 4px; font-size: var(--fs-sm);
 }
 .cite-card[hidden] { display: none; }
+.pdf-card .cc-excerpt { margin-top: 6px; font-size: 12px; line-height: 1.4; color: var(--text-2); max-height: 7.5em; overflow: hidden; }
 .cc-item { padding: 10px 12px; border-radius: 7px; }
 .cc-item + .cc-item { border-top: 1px solid var(--border); border-radius: 0; }
 .cc-key { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }

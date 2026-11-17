@@ -208,6 +208,11 @@ async def main():
             links,
         )
         check("a link to a missing PDF is marked", await A.locator(".note-read a.wikilink.pdf.unresolved").count() == 1)
+        await A.locator(".note-read a.wikilink.pdf", has_text="p. 2").hover()
+        await A.wait_for_selector(".pdf-card:not([hidden]) .cc-sub")
+        card = await A.inner_text(".pdf-card")
+        check("hovering a PDF link shows its name and page", "Renamed.pdf" in card and "Page 2" in card, card)
+        await A.mouse.move(5, 5)
         await A.locator(".note-read a.wikilink.pdf", has_text="p. 2").click()
         await A.wait_for_selector(".tab-frame.active")
         await A.wait_for_timeout(800)

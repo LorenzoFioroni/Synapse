@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from functools import wraps
 
 from flask import Blueprint, jsonify, request, send_file, send_from_directory
@@ -10,6 +11,7 @@ from ..changes import CLIENT_HEADER
 from ..notes.history import GitError
 from ..notes.vault import ATTACHMENTS, Conflict, NoteExists, NoteMoved, VaultError
 from ..pdf.files import HEADER_WINDOW, file_is_pdf, looks_like_pdf
+from ..pdf.text import extract_pages
 from . import body, error, failure, message_of, svc
 
 bp = Blueprint("notes", __name__, url_prefix="/api")
@@ -312,6 +314,31 @@ def note_pdf(pdf_id):
     if not found:
         return error("This PDF is not in the notes any more.", 404)
     return jsonify(found[0])
+
+
+_PAGES: OrderedDict[tuple, list[str]] = OrderedDict()  # the text of the PDFs hovered lately: (id, mtime, size) -> pages
+EXCERPT = 400
+
+
+@bp.get("/note-pdfs/<int:pdf_id>/page/<int:page>")
+@guarded
+def note_pdf_page(pdf_id, page):
+    """The start of one page's text (for the card a link to the page shows)."""
+    found = svc().note_pdfs.file_of(pdf_id)
+    if not found or not file_is_pdf(found[1]):
+        return error("This PDF is not in the notes any more.", 404)
+    st = found[1].stat()
+    key = (pdf_id, st.st_mtime, st.st_size)
+    if key not in _PAGES:
+        try:
+            _PAGES[key] = extract_pages(found[1])
+        except Exception:  # an unreadable PDF: the card shows no text
+            _PAGES[key] = []
+        while len(_PAGES) > 8:
+            _PAGES.popitem(last=False)
+    pages = _PAGES[key]
+    text = " ".join(pages[page - 1].split()) if 1 <= page <= len(pages) else ""
+    return jsonify(page=page, pages=len(pages), excerpt=text[:EXCERPT] + ("…" if len(text) > EXCERPT else ""))
 
 
 @bp.get("/note-pdfs/<int:pdf_id>/file")

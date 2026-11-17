@@ -119,7 +119,7 @@ and everything attached to the PDF (highlights) use that number, so a rename or 
   extension kept in the target). In the editor, read mode and the phone a PDF link shows its file
   name and `· p. N` (class `wikilink pdf`) and a click opens the viewer at the page; a link ending a
   block quote (`> words [[file.pdf#p=7]]`) also flashes the quoted words (`citeTargetInText`
-  and `quoteText` drop the link like a citation). `[[` completes PDF names. An unresolved PDF link
+  and `quoteText` drop the link like a citation). `[[` completes PDF names. Hovering a PDF link shows a card (`pdfCard.ts`, styled as the citation card): the PDF's name and path, the page and the start of that page's text (`GET /api/note-pdfs/<id>/page/<n>`), and an Open button. An unresolved PDF link
   is listed in the side panel but is not offered as a note to create.
 - **Quote to note** in the viewer of a notes PDF has no paper note: the selected words go into the
   open note as `> words [[path.pdf#p=N]]` (the path is asked again at that moment, so a rename is
@@ -368,6 +368,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | POST | `/api/notes/pdf` | Add a PDF (multipart `file`, `folder`); answers its registry entry. 415 when it is not a PDF, 413 over the size cap. |
 | GET | `/api/note-pdfs/<id>` | A PDF's registry entry (404 when it is trashed, missing or gone). |
 | GET | `/api/note-pdfs/<id>/file` | The PDF itself. |
+| GET | `/api/note-pdfs/<id>/page/<n>` | `{page, pages, excerpt}`: the start of one page's text, for the link card. |
 | GET, POST | `/api/note-pdfs/<id>/annotations` | A PDF's highlights and other annotations; same records as for an attachment (see [storage](storage.md)). `PATCH`/`DELETE /api/annotations/<id>` work for both. |
 | POST | `/api/notes/attachments` | Upload an image (multipart `file`); returns its path and Markdown. |
 | GET | `/api/notes/attachments` | Every image with the notes using it, plus the attachment trash. |

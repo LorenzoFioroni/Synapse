@@ -27,6 +27,7 @@ import { refitOnResize } from './mathFit.js';
 import { NoteSession } from './noteSession.js';
 import { initPanels, listHidden, panelButton, peek, toggleList } from './panels.js';
 import { openPdfLink } from './pdfLinks.js';
+import { attachPdfCards } from './pdfCard.js';
 import { followLink, citeTargetOf, gotoLine, initReadView, readTopLine, renderRead, scheduleRead, scrollReadTo } from './readView.js';
 import { createRenderer, renderDefaults } from './render.js';
 import { renderMermaid } from './richRender.js';
@@ -111,6 +112,7 @@ export function initNotes(): void {
   renderDefaults.macros = noteMacros;
   applyLayout();
   initPanels(root);
+  attachPdfCards(root);
   attachCiteCards(root, { itemInfo, openNote: (p) => openNote(p), refreshLibrary: async () => { await loadLibrary(); await refreshTree(); }, targetOf: citeTargetOf });
   let libTimer: ReturnType<typeof setTimeout> | undefined;
   on('items', () => { if (notesOpen()) { clearTimeout(libTimer); libTimer = setTimeout(loadLibrary, 500); } });
