@@ -8,6 +8,8 @@ export type Placement = 'popup' | 'dock';
 
 /** The page's own column for the panel. */
 export interface Dock {
+  /** Which side of the window the column is on (default: the right); the width is dragged from its inner edge. */
+  side?: 'left' | 'right';
   /** Is there room for a column now? */
   available(): boolean;
   mount(el: HTMLElement): void;

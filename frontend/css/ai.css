@@ -7,14 +7,23 @@
   font: var(--fs) / 1.45 var(--font);
 }
 .ai-panel[hidden], .ai-panel [hidden] { display: none !important; }
+/* the popup opens from the corner the floating button is in (data-corner, set by panel.ts) and grows toward
+   the middle of the window; --ai-pop-w/-h are its size, which the user can change (the grip) and which is
+   clamped to the window by panel.ts */
 .ai-panel[data-placement="popup"] {
-  position: fixed; z-index: 2500; right: 16px; bottom: calc(var(--statusbar-h, 0px) + 16px);
-  width: min(390px, calc(100vw - 24px)); height: min(580px, calc(100vh - var(--toolbar-h, 44px) - var(--statusbar-h, 0px) - 40px));
+  --ai-gap: 16px; --ai-from: 12px;
+  position: fixed; z-index: 2500; left: auto; right: auto; top: auto; bottom: auto;
+  width: min(var(--ai-pop-w, 390px), calc(100vw - 24px)); height: min(var(--ai-pop-h, 580px), calc(100vh - var(--toolbar-h, 44px) - var(--statusbar-h, 0px) - 40px));
   border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-lg); overflow: hidden;
-  animation: ai-in .18s var(--ease);
 }
+.ai-panel.opening[data-placement="popup"] { animation: ai-in .18s var(--ease); }   /* only while it opens: resizing must not replay it */
+.ai-panel[data-placement="popup"][data-corner$="l"] { left: calc(var(--ai-gap) + env(safe-area-inset-left, 0px)); }
+.ai-panel[data-placement="popup"]:not([data-corner$="l"]) { right: calc(var(--ai-gap) + env(safe-area-inset-right, 0px)); }
+.ai-panel[data-placement="popup"][data-corner^="t"] { top: calc(var(--toolbar-h, 44px) + var(--ai-gap)); --ai-from: -12px; }
+.ai-panel[data-placement="popup"]:not([data-corner^="t"]) { bottom: calc(var(--statusbar-h, 0px) + var(--ai-gap) + env(safe-area-inset-bottom, 0px)); }
+.ai-panel.resizing { user-select: none; }
 .ai-panel[data-placement="dock"] { flex: 1 1 auto; width: 100%; height: 100%; background: var(--bg-app); }
-@keyframes ai-in { from { transform: translateY(12px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes ai-in { from { transform: translateY(var(--ai-from, 12px)) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* the app: a column on the right of the window; the page and the PDF tabs make room for it */
 :root { --ai-dock-w: 360px; }
@@ -22,7 +31,31 @@ body.ai-docked { padding-right: var(--ai-dock-w); }
 body.ai-docked #tab-views { right: var(--ai-dock-w); }
 body > .ai-panel[data-placement="dock"] { position: fixed; z-index: 1100; top: 0; right: 0; bottom: 0; width: var(--ai-dock-w); border-left: 1px solid var(--border); }
 /* the viewer in a browser tab of its own: a column the PDF area makes room for */
-#main-content.ai-docked > .ai-panel[data-placement="dock"] { flex: none; width: 360px; border-left: 1px solid var(--border); }
+#main-content.ai-docked > .ai-panel[data-placement="dock"] { flex: none; width: var(--ai-dock-w); border-left: 1px solid var(--border); }
+.ai-panel[data-placement="dock"] { position: relative; }
+body > .ai-panel[data-placement="dock"] { position: fixed; }
+
+/* resizing: the popup is gripped at the corner that faces the middle of the window, the docked column at its inner edge */
+.ai-grip, .ai-edge { position: absolute; z-index: 5; touch-action: none; }
+.ai-grip { width: 20px; height: 20px; opacity: .55; transition: opacity .12s; }
+.ai-grip:hover, .ai-panel.resizing .ai-grip { opacity: 1; }
+.ai-grip::before {
+  content: ""; position: absolute; inset: 3px; border-color: var(--text-3); border-style: solid; border-width: 0;
+  background: linear-gradient(135deg, transparent 0 45%, var(--text-3) 45% 52%, transparent 52% 67%, var(--text-3) 67% 74%, transparent 74%);
+}
+.ai-panel[data-corner="br"] .ai-grip { top: 0; left: 0; cursor: nwse-resize; }
+.ai-panel[data-corner="bl"] .ai-grip { top: 0; right: 0; cursor: nesw-resize; transform: scaleX(-1); }
+.ai-panel[data-corner="tr"] .ai-grip { bottom: 0; left: 0; cursor: nesw-resize; transform: scaleY(-1); }
+.ai-panel[data-corner="tl"] .ai-grip { bottom: 0; right: 0; cursor: nwse-resize; transform: scale(-1); }
+.ai-panel[data-placement="dock"] .ai-grip { display: none; }
+.ai-edge { top: 0; bottom: 0; width: 9px; cursor: ew-resize; background: transparent; outline: none; }
+.ai-edge[data-side="right"] { left: -4px; }
+.ai-edge[data-side="left"] { right: -4px; }
+.ai-edge::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: transparent; transition: background .12s; }
+.ai-edge:hover::after, .ai-edge:focus-visible::after, .ai-panel.resizing .ai-edge::after { background: var(--accent); }
+.ai-panel.resizing[data-placement="dock"] { user-select: none; }
+body.ai-docked:has(.ai-panel.resizing) { cursor: ew-resize; user-select: none; }
+.ai-sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 .ai-head { display: flex; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 10px; flex: none; border-bottom: 1px solid var(--border); }
 .ai-title {
@@ -209,17 +242,24 @@ body > .ai-panel[data-placement="dock"] { position: fixed; z-index: 1100; top: 0
 
 /* the floating button that opens the panel, in the lower right corner over every view */
 .ai-fab {
-  position: fixed; z-index: 1050; right: 18px; bottom: calc(var(--statusbar-h, 0px) + 18px); width: 44px; height: 44px; padding: 0;
+  --ai-gap: 18px;
+  position: fixed; z-index: 1050; width: 44px; height: 44px; padding: 0; touch-action: none; user-select: none; -webkit-user-select: none;
   display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 50%;
   background: var(--accent); color: var(--accent-text); box-shadow: var(--shadow-lg); cursor: pointer;
   transition: transform .12s var(--ease), background .12s;
 }
+/* where it rests: one of the four corners, with the window's safe areas on a phone */
+.ai-fab[data-corner$="l"] { left: calc(var(--ai-gap) + env(safe-area-inset-left, 0px)); }
+.ai-fab:not([data-corner$="l"]) { right: calc(var(--ai-gap) + env(safe-area-inset-right, 0px)); }
+.ai-fab[data-corner^="t"] { top: calc(var(--toolbar-h, 44px) + var(--ai-gap)); }
+.ai-fab:not([data-corner^="t"]) { bottom: calc(var(--statusbar-h, 0px) + var(--ai-gap) + env(safe-area-inset-bottom, 0px)); }
+.ai-fab.dragging { cursor: grabbing; transform: scale(1.08); box-shadow: var(--shadow-lg), 0 0 0 4px var(--accent-soft); }
 .ai-fab:hover { background: var(--accent-hover); transform: scale(1.06); }
 .ai-fab:focus-visible { outline: none; box-shadow: var(--focus-ring), var(--shadow-lg); }
 .ai-fab .icon { width: 20px; height: 20px; }
 .ai-fab[hidden], body.phone .ai-fab { display: none; }
 
-@media (prefers-reduced-motion: reduce) { .ai-panel[data-placement="popup"], .ai-turn.streaming .ai-status::before { animation: none; } .ai-fab { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .ai-panel[data-placement="popup"], .ai-turn.streaming .ai-status::before { animation: none; } .ai-fab, .ai-edge::after, .ai-grip { transition: none; } }
 @media (pointer: coarse) {
   .ai-icon { width: 36px; height: 36px; }
   .ai-chip.offered { min-height: 34px; }
@@ -231,5 +271,6 @@ body > .ai-panel[data-placement="dock"] { position: fixed; z-index: 1100; top: 0
 }
 /* a phone: the popup is a sheet from the bottom, never a docked column */
 @media (max-width: 700px) {
-  .ai-panel[data-placement="popup"] { left: 0; right: 0; bottom: 0; width: auto; height: min(88vh, 680px); border-radius: 16px 16px 0 0; border-width: 1px 0 0; }
+  .ai-panel[data-placement="popup"][data-corner] { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: min(88vh, 680px); border-radius: 16px 16px 0 0; border-width: 1px 0 0; --ai-from: 12px; }
+  .ai-grip { display: none; }   /* the sheet is as wide as the screen and as tall as it needs to be */
 }

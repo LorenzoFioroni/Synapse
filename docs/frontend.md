@@ -512,12 +512,13 @@ Synapse's tools. The browser side is `frontend/src/ai/`, split by responsibility
 | Module | Role |
 |---|---|
 | `client.ts`, `status.ts` | The calls (`/api/ai/status`, `ask`, the long-polled job, `cancel`, the conversations) with plain `fetch` (the viewer shares this code and not `api.ts`); the cached "is a companion token set up" that decides whether the entry points show. |
-| `panel.ts` | The orchestrator: header, the conversation or the history, asking, following a job, stopping, opening an earlier conversation (a running one is re-attached), the 409 help. |
+| `panel.ts` | The orchestrator: header, the conversation or the history, asking, following a job, stopping, opening an earlier conversation (a running one is re-attached), the 409 help; closing hides it (below), and its resize grip and docked edge. |
+| `layout.ts` | The arithmetic and the per-device memory of the layout, without the DOM (`tests/js/askLayout.test.mjs`): nearest corner, arrow-key moves, popup size clamping and resizing, dock width limits. |
 | `messages.ts` | The thread: question bubble, answer, tool chips, the phase text ("Sending…", "Waiting for <computer>…", "Thinking…"), usage line, copy button, the empty state; how untrusted text is drawn (below). |
 | `composer.ts` | The text box, the context chips (added ones removable, offered ones dashed), the "@" button, the agent / model / effort pickers (icon buttons that open the app's menu; only what the companions advertise, "Default" first, the last choice remembered), Send / Stop as icon buttons. |
 | `mentions.ts` | Citing in a question: `MentionData` (the library items and the notes, fetched on first use) and the keyboard-driven list over the text box. |
 | `history.ts` | Earlier conversations: search, continue, inline rename, delete with an in-row confirmation, "not connected" and "answering…" marks. |
-| `placement.ts`, `appHost.ts`, `launcher.ts` | Popup or docked, and the page's dock; `appHost.ts` is the app's host (one panel per window, its dock column, what is on screen, `window.zcAskAi`); `launcher.ts` the floating button. |
+| `placement.ts`, `appHost.ts`, `launcher.ts` | Popup or docked, and the page's dock; `appHost.ts` is the app's host (one panel per window, its dock column, what is on screen, `window.zcAskAi`); `launcher.ts` the floating button, which can be moved. |
 | `context.ts`, `prefs.ts` | Context as chips (`Attached`: the context, its label and icon), the suggestions per context; guarded `localStorage`. |
 
 **Two placements, one element.** The panel starts as a small card in the lower right corner (a full
@@ -538,6 +539,31 @@ host supplies its `Dock` (`placement.ts`):
 
 `css/ai.css` is loaded by both pages and styles its own controls from the tokens, because the viewer
 has no `components.css`.
+
+**Layout the user can change** (each remembered per device in `localStorage`, guarded, `layout.ts`):
+
+- **Closing hides.** The close button and Esc hide the panel (`hide()` in `panel.ts`); nothing is
+  torn down, so the text being typed and its caret, the chips, the conversation, the scroll position
+  (kept by hand, a hidden element forgets it) and an answer on its way are all still there when the
+  button is pressed again, and the answer keeps streaming. The draft, caret, chips and the open
+  conversation are also kept across a reload (`zc.ai.session`, written a moment after each change
+  and on `pagehide`); the first open after a load puts them back and re-opens that conversation
+  from the server if it still exists. A new conversation is always an explicit act.
+- **The button moves** (`launcher.ts`). Pointer events cover mouse, pen and touch; a press that
+  moves less than 6 px is still a click. On release it slides (`prefers-reduced-motion`: jumps) into
+  the nearest of the four corners (`nearestCorner`), whose place comes from CSS (`.ai-fab[data-corner]`:
+  an 18 px gap, the toolbar and status bar, the phone's safe-area insets), so it stays there when the window
+  is resized. The arrow keys move it between corners while it has the focus (announced in a
+  live region). The corner is `zc.ai.fab`.
+- **The popup opens from that corner** (`data-corner` on the panel, `css/ai.css`) and grows toward the
+  middle; a grip at the corner that faces the middle resizes it (touch too), with a minimum of 300 × 320
+  and the window as the maximum, remembered as `zc.ai.popupSize` and re-clamped when the window
+  changes. On a narrow screen the popup is a bottom sheet and has no grip.
+- **The docked column's width** is dragged from its inner edge (`.ai-edge`, a focusable separator:
+  the arrow keys change it by 16 px, 48 with Shift; a double-click resets it to 360 px), between
+  280 px and the smaller of 640 px and 60 % of the window, as `--ai-dock-w` on the document (which
+  `body.ai-docked`, `#tab-views` and the viewer's `#main-content` already use); `zc.ai.dockWidth`.
+  A `Dock` may say `side: 'left'` and the edge follows.
 
 **Entry points** appear only when `GET /api/ai/status` says `configured` (`ai/status.ts`, cached
 60 s, refreshed when the button mounts and after a companion token is made or removed): the floating

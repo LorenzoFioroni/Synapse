@@ -4,7 +4,10 @@
 // its own document with a ``host`` that knows how to open a PDF there, where its docked column is
 // (placement.ts) and what is on screen to offer as context (context.ts). Context is added to the
 // next question, not to the conversation: adding never starts a new one. The answer's
-// handling of untrusted text is described in messages.ts. See docs/companion.md and docs/frontend.md.
+// handling of untrusted text is described in messages.ts. Closing hides the panel and keeps everything
+// (the text being typed, the chips, the conversation, its scroll position, an answer on its way); the
+// draft and the open conversation are also kept on this device across a reload (``session``). Its
+// size, corner and width: layout.ts. See docs/companion.md and docs/frontend.md.
 import type { CiteEntry, CitePdf } from '../types.js';
 import { icon } from '../icons.js';
 import { createRenderer } from '../views/notes/render.js';
@@ -18,6 +21,11 @@ import { createHistory } from './history.js';
 import { MentionData } from './mentions.js';
 import { Thread, type Turn, usageText } from './messages.js';
 import { type Dock, place, remember } from './placement.js';
+import {
+  CORNER_EVENT, type Corner, DEFAULT_DOCK, type Size, clampDock, clampPopup, resizedDock, resizedPopup,
+  saveDock, savePopup, savedCorner, savedDock, savedPopup,
+} from './layout.js';
+import { load, save } from './prefs.js';
 import { PANEL_EVENT, refreshAiStatus } from './status.js';
 
 /** What differs between the app and the viewer. */
@@ -39,22 +47,27 @@ export interface AskHost {
 const START_COMMAND = 'python3 synapse_companion.pyz';
 
 let el: HTMLElement | null = null;
-let current: { add(a: Attached): void; focus(): void } | null = null;
+let current: { add(a: Attached): void; focus(): void; show(): void } | null = null;
 
 /** Open the panel (or bring the open one forward), with ``add`` added to the next question. */
 export function openAskAi(host: AskHost, add?: Attached): void {
   if (!el) mount(host);
+  else if (el.hidden) current?.show();
   if (add) current?.add(add);
   current?.focus();
 }
 
-export const askAiOpen = (): boolean => !!el;
+export const askAiOpen = (): boolean => !!el && !el.hidden;
 export function closeAskAi(): void { el?.dispatchEvent(new Event('ai-close')); }
+
+/** What is kept on this device across a reload: the draft (text, caret, chips) and the conversation shown. */
+interface Session { text: string; caret: number; context: AskContext[]; conversation?: string }
+const SESSION = 'zc.ai.session';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 function mount(host: AskHost): void {
-  const prevFocus = document.activeElement as HTMLElement | null;
+  let prevFocus = document.activeElement as HTMLElement | null;
   const root = document.createElement('aside');
   root.className = 'ai-panel';
   root.setAttribute('role', 'dialog');
@@ -84,19 +97,24 @@ function mount(host: AskHost): void {
   let turns: Turn[] = [];
   let abort: AbortController | null = null;
   let job: string | null = null;
-  let closed = false;
+  let shown = true;                       // false while the panel is hidden (it is kept, not torn down)
   let cites = new Map<string, CiteEntry>();
   const providerLabels = () => new Map((status?.companions || []).flatMap((c) => c.providers).map((p) => [p.id, p.label]));
 
   const thread = new Thread();
   const data = new MentionData();   // what a question can cite; fetched on first use, the library part now for the citations in answers
-  data.onLoad = () => { cites = new Map(data.items().map((i) => [i.key, i])); thread.paintAll(); };
+  data.onLoad = () => {
+    cites = new Map(data.items().map((i) => [i.key, i]));
+    thread.paintAll();
+    if (attached.length) { attached = chipsOf(attached.map((a) => a.ctx)); paintContext(); }   // a restored paper chip gets its key
+  };
   const composer = createComposer({
     mentions: data,
     onSend: (t) => void submit(t),
     onStop: () => void stopNow(),
     onDrop: (i) => { attached.splice(i, 1); paintContext(); composer.focus(); },
     onAdd: (i) => { if (offered[i]) add(offered[i]); },
+    onInput: () => saveSoon(),
   });
   const history = createHistory({
     onOpen: (c) => void openConversation(c),
@@ -126,6 +144,7 @@ function mount(host: AskHost): void {
     offered = attached.length >= MAX_ATTACHED ? [] : (host.here?.() || []).filter((a) => !have.has(contextKey(a.ctx)));
     composer.setContext(attached, offered);
     paintEmpty();
+    saveSoon();
   }
   function add(a: Attached): void {
     if (attached.length >= MAX_ATTACHED || attached.some((x) => contextKey(x.ctx) === contextKey(a.ctx))) return;
@@ -167,7 +186,7 @@ function mount(host: AskHost): void {
   }
   async function check(): Promise<void> {
     status = await refreshAiStatus();
-    if (closed) return;
+    if (!shown) return;
     composer.setAgents(status?.companions || [], locked);
     if (!status) showHelp('Cannot reach the AI service.');
     else if (!status.companions.length) showHelp();
@@ -175,9 +194,29 @@ function mount(host: AskHost): void {
   }
 
   // ---- placement
+  const view = () => ({ w: innerWidth, h: innerHeight });
+  /** The popup's size and anchor corner (css/ai.css reads --ai-pop-w/-h and data-corner); clamped to the window. */
+  function applyPopupBox(): void {
+    root.dataset.corner = savedCorner();
+    const s = clampPopup(savedPopup(), view());
+    root.style.setProperty('--ai-pop-w', `${s.w}px`);
+    root.style.setProperty('--ai-pop-h', `${s.h}px`);
+  }
+  /** The docked column's width, for the page that makes room for it (--ai-dock-w on the document). */
+  function applyDockWidth(w = savedDock()): number {
+    const c = clampDock(w, view());
+    document.documentElement.style.setProperty('--ai-dock-w', `${c}px`);
+    return c;
+  }
   function applyPlacement(): void {
+    if (!shown) return;
     const where = place(root, host.dock);
     const docked = where === 'dock';
+    if (docked) { host.dock!.mount(root); applyDockWidth(); }
+    edge.hidden = !docked;
+    grip.hidden = docked;
+    edge.dataset.side = host.dock?.side || 'right';
+    applyPopupBox();
     placeBtn.hidden = !host.dock?.available() && !docked;
     placeBtn.innerHTML = icon(docked ? 'newWindow' : 'sidebar');
     const label = docked ? 'Move to a floating window' : 'Move to the sidebar';
@@ -185,6 +224,66 @@ function mount(host: AskHost): void {
     placeBtn.setAttribute('aria-label', label);
   }
   window.addEventListener('resize', applyPlacement);
+  window.addEventListener(CORNER_EVENT, applyPopupBox);   // the button was moved: the popup opens from its corner
+
+  // ---- resizing: the popup by its inner corner, the docked column by its inner edge
+  const grip = document.createElement('div');
+  grip.className = 'ai-grip';
+  grip.setAttribute('aria-hidden', 'true');
+  grip.title = 'Drag to resize';
+  const edge = document.createElement('div');
+  edge.className = 'ai-edge';
+  edge.setAttribute('role', 'separator');
+  edge.setAttribute('aria-orientation', 'vertical');
+  edge.setAttribute('aria-label', 'Panel width: drag, or use the arrow keys; double-click to reset');
+  edge.tabIndex = 0;
+  edge.title = 'Drag to change the width (double-click to reset)';
+  root.append(grip, edge);
+  /** Run ``onMove(dx, dy)`` while the pointer that pressed ``handle`` moves (mouse, pen or touch); ``onEnd`` when it ends. */
+  function drag(handle: HTMLElement, onStart: () => void, onMove: (dx: number, dy: number) => void, onEnd: () => void): void {
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button > 0) return;
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      const x = e.clientX, y = e.clientY;
+      onStart();
+      const move = (ev: PointerEvent) => { if (ev.pointerId === e.pointerId) onMove(ev.clientX - x, ev.clientY - y); };
+      const up = (ev: PointerEvent) => {
+        if (ev.pointerId !== e.pointerId) return;
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', up);
+        handle.removeEventListener('pointercancel', up);
+        root.classList.remove('resizing');
+        onEnd();
+      };
+      root.classList.add('resizing');
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
+    });
+  }
+  let startSize: Size = savedPopup(), liveSize: Size = savedPopup();
+  drag(grip, () => {
+    const r = root.getBoundingClientRect();
+    startSize = liveSize = { w: r.width, h: r.height };
+  }, (dx, dy) => {
+    liveSize = resizedPopup(startSize, root.dataset.corner as Corner, dx, dy, view());
+    root.style.setProperty('--ai-pop-w', `${liveSize.w}px`);
+    root.style.setProperty('--ai-pop-h', `${liveSize.h}px`);
+  }, () => savePopup(liveSize));
+  let startDock = DEFAULT_DOCK, liveDock = DEFAULT_DOCK;
+  drag(edge, () => { startDock = liveDock = Math.round(root.getBoundingClientRect().width); }, (dx) => {
+    liveDock = applyDockWidth(resizedDock(startDock, host.dock?.side || 'right', dx, view()));
+  }, () => saveDock(liveDock));
+  edge.addEventListener('dblclick', () => { saveDock(DEFAULT_DOCK); applyDockWidth(DEFAULT_DOCK); });
+  edge.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 48 : 16, side = host.dock?.side || 'right';
+    const grow = (e.key === 'ArrowLeft') === (side === 'right');
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const w = applyDockWidth(Math.round(root.getBoundingClientRect().width) + (grow ? step : -step));
+    saveDock(w);
+  });
 
   // ---- views
   function showHistory(on: boolean): void {
@@ -222,7 +321,7 @@ function mount(host: AskHost): void {
     abort = null;
     syncBusy();
     paintTotal();
-    if (!closed && !showingHistory()) composer.focus();
+    if (shown && !showingHistory()) composer.focus();
   }
 
   async function submit(prompt: string): Promise<void> {
@@ -231,6 +330,7 @@ function mount(host: AskHost): void {
     help.hidden = true;
     const sent = attached;
     attached = [];
+    composer.setText('');
     paintContext();
     const t = thread.addTurn(prompt, 'sending', 'queued', sent);
     turns.push(t);
@@ -297,11 +397,12 @@ function mount(host: AskHost): void {
     paintTotal();
     showHistory(false);
     void check();
+    saveSoon();
   }
 
-  async function openConversation(c: Conversation): Promise<void> {
+  async function openConversation(c: Conversation, preloaded?: Awaited<ReturnType<typeof getConversation>>): Promise<void> {
     let full;
-    try { full = await getConversation(c.id); } catch (e) { showHelp((e as Error).message); showHistory(false); return; }
+    try { full = preloaded || await getConversation(c.id); } catch (e) { showHelp((e as Error).message); showHistory(false); return; }
     detach();
     conversation = c.id;
     locked = c.provider;
@@ -338,22 +439,59 @@ function mount(host: AskHost): void {
     thread.toEnd();
     if (!c.available) showHelp(`This conversation is on ${c.companion?.name || 'another computer'}, which is not connected.`);
     else help.hidden = true;
+    saveSoon();
   }
 
-  function close(): void {
-    if (closed) return;
-    closed = true;
-    abort?.abort();
-    if (job) cancelJob(job).catch(() => {});   // nobody is reading it any more: free the companion
+  // ---- keeping the session: the draft and the conversation shown survive a reload on this device
+  let saved = '';
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  function saveState(): void {
+    clearTimeout(saveTimer);
+    const s: Session = { text: composer.text(), caret: composer.caret(), context: attached.map((a) => a.ctx), ...(conversation ? { conversation } : {}) };
+    const json = JSON.stringify(s);
+    if (json === saved) return;
+    saved = json;
+    save(SESSION, s);
+  }
+  function saveSoon(): void { clearTimeout(saveTimer); saveTimer = setTimeout(saveState, 300); }
+  window.addEventListener('pagehide', saveState);
+  /** Put back what the last page left (the first time the panel opens after a load). */
+  function restoreState(): void {
+    const s = load<Partial<Session> | null>(SESSION, null);
+    if (!s || typeof s !== 'object') return;
+    const ctx = Array.isArray(s.context) ? s.context.filter((c) => c && typeof c === 'object' && ['note', 'paper', 'notepdf'].includes(c.kind)).slice(0, MAX_ATTACHED) : [];
+    attached = chipsOf(ctx);
+    if (typeof s.text === 'string') composer.setText(s.text.slice(0, 20000), typeof s.caret === 'number' ? s.caret : undefined);
+    saved = JSON.stringify(s);
+    if (typeof s.conversation === 'string') {
+      const id = s.conversation;
+      getConversation(id).then((full) => { if (!conversation && !turns.length) void openConversation(full, full); }, () => { /* gone: a new conversation */ });
+    }
+  }
+
+  /** Hide the panel; everything in it stays as it is, and an answer on its way goes on. */
+  let scrolled = 0;   // a hidden element forgets its scroll position
+  function hide(): void {
+    if (!shown) return;
+    saveState();
+    scrolled = thread.el.scrollTop;
+    shown = false;
     if (root.dataset.placement === 'dock') host.dock?.unmount(root);
-    root.remove();
-    document.removeEventListener('keydown', onKey, true);
-    window.removeEventListener('resize', applyPlacement);
-    unwatch?.();
-    el = null;
-    current = null;
+    root.hidden = true;
     window.dispatchEvent(new CustomEvent(PANEL_EVENT, { detail: false }));
     if (prevFocus?.isConnected) prevFocus.focus();
+  }
+  function show(): void {
+    if (shown) return;
+    shown = true;
+    prevFocus = document.activeElement as HTMLElement | null;
+    root.hidden = false;
+    root.classList.add('opening');
+    applyPlacement();
+    window.dispatchEvent(new CustomEvent(PANEL_EVENT, { detail: true }));
+    paintContext();
+    void check();
+    thread.el.scrollTop = scrolled;
   }
   const onKey = (e: KeyboardEvent) => {
     if (e.key !== 'Escape' || !root.contains(document.activeElement)) return;
@@ -361,7 +499,7 @@ function mount(host: AskHost): void {
     if (composer.closeMentions()) { e.preventDefault(); e.stopPropagation(); return; }
     e.preventDefault();
     e.stopPropagation();
-    if (showingHistory()) showHistory(false); else close();
+    if (showingHistory()) showHistory(false); else hide();
   };
 
   thread.el.addEventListener('click', (e) => {
@@ -385,8 +523,9 @@ function mount(host: AskHost): void {
     if (/^https?:\/\//i.test(a.href)) window.open(a.href, '_blank', 'noopener,noreferrer');
   });
   help.addEventListener('click', (e) => { if ((e.target as Element).closest('[data-recheck]')) void check(); });
-  q('[data-close]').addEventListener('click', close);
-  root.addEventListener('ai-close', close);
+  q('[data-close]').addEventListener('click', hide);
+  root.addEventListener('ai-close', hide);
+  root.addEventListener('animationend', () => root.classList.remove('opening'));
   q('[data-new]').addEventListener('click', () => reset());
   q('[data-history]').addEventListener('click', () => showHistory(!showingHistory()));
   placeBtn.addEventListener('click', () => { remember(root.dataset.placement === 'dock' ? 'popup' : 'dock'); applyPlacement(); composer.focus(); });
@@ -422,14 +561,16 @@ function mount(host: AskHost): void {
   document.addEventListener('keydown', onKey, true);
 
   // what is on screen changes while the panel is open; also seen when the pointer comes to the panel
-  const unwatch = host.watch?.(paintContext);
+  host.watch?.(paintContext);
   root.addEventListener('pointerenter', paintContext);
 
+  root.classList.add('opening');
   document.body.appendChild(root);
   el = root;
-  current = { add, focus: () => composer.focus() };
+  current = { add, focus: () => composer.focus(), show };
   window.dispatchEvent(new CustomEvent(PANEL_EVENT, { detail: true }));
   setTitle('');
+  restoreState();
   applyPlacement();
   paintContext();
   void check();
