@@ -72,12 +72,12 @@ function palette() {
   const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
   return {
     note: v('--graph-node', '#8a93a3'), paper: v('--accent', '#2f6fed'), work: v('--text-3', '#8a93a3'),
-    current: v('--graph-current', '#8e5cd9'), link: v('--graph-link', '#cfd4dc'), linkHi: v('--accent', '#2f6fed'),
+    current: v('--graph-current', '#8e5cd9'), pdf: v('--pdf', '#d64545'), link: v('--graph-link', '#cfd4dc'), linkHi: v('--accent', '#2f6fed'),
     text: v('--text', '#1c2330'), text2: v('--text-2', '#5b6576'), bg: v('--bg', '#fff'), match: v('--warning', '#b7791f'),
   };
 }
 
-const kindName: Record<string, string> = { paper: 'Paper', work: 'Cited work (not in your library)', note: 'Note' };
+const kindName: Record<string, string> = { paper: 'Paper', work: 'Cited work (not in your library)', note: 'Note', pdf: 'PDF in your notes' };
 
 export async function createGraph(
   host: HTMLElement,
@@ -194,7 +194,7 @@ export async function createGraph(
       ctx.fillStyle = colors.bg; ctx.fill();
       ctx.lineWidth = 1 / scale; ctx.strokeStyle = colors.work; ctx.stroke();
     } else {
-      ctx.fillStyle = n.id === current ? colors.current : n.kind === 'paper' ? colors.paper : colors.note;
+      ctx.fillStyle = n.id === current ? colors.current : n.kind === 'paper' ? colors.paper : n.kind === 'pdf' ? colors.pdf : colors.note;
       ctx.fill();
     }
     if (n.id === current || n.id === marked || (matches && matches.has(n.id))) {

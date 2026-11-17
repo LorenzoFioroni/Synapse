@@ -183,6 +183,8 @@ export interface NotesVisualizationContext {
   main: HTMLElement;
   currentPath(): string | null;
   openNote(path: string): void;
+  /** Open a PDF kept in the notes folders (by its path) in the viewer. */
+  openPdf?(path: string): void;
   open(focus: string | null): void;
   setOpen(open: boolean): void;
   closed(): void;

@@ -114,7 +114,7 @@ and everything attached to the PDF (highlights) use that number, so a rename or 
   version 5, refreshed by `sync_files()` after every PDF change and by `sync()`); `resolve_pdf`
   resolves a name or a folder path ending the file's (shortest path first), `outgoing` gives
   `resolved`, `pdf_backlinks` the notes linking to a PDF (`GET /api/notes/links?path=x.pdf`) and
-  `link_graph` a `pdf` edge. Renaming or moving a PDF, or a folder holding PDFs, rewrites the links
+  `link_graph` a `pdf` edge (the Graph plugin draws the linked PDFs as nodes). Renaming or moving a PDF, or a folder holding PDFs, rewrites the links
   by path and the ones that would stop resolving, exactly as for notes (`Relinker`, with the
   extension kept in the target). In the editor, read mode and the phone a PDF link shows its file
   name and `· p. N` (class `wikilink pdf`) and a click opens the viewer at the page; a link ending a

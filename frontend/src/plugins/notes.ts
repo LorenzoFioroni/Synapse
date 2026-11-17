@@ -65,6 +65,7 @@ export function notesContext(owner: string, stopped: () => boolean, keep: (off: 
             main: ctx.root.querySelector<HTMLElement>('.notes-main')!,
             currentPath: ctx.currentPath,
             openNote: path => { live(); ctx.openNote(path); },
+            openPdf: path => { live(); ctx.openPdf?.(path); },
             open: focus => { void open(spec.id, focus).catch(report); },
             setOpen: on => { if (stopped()) return; ctx.root.classList.toggle('graph-on', on); navigation.changed(); },
             closed: () => ctx.onGlobalClosed?.(),

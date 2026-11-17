@@ -13,6 +13,10 @@ class NotesReader:
         """Notes with paths, front-matter metadata and timestamps; no document writes."""
         return self._s.notes.list()
 
+    def pdfs(self) -> builtins.list[dict]:
+        """The PDFs kept in the notes folders: ``{id, path, name, size}`` (paths, not content)."""
+        return self._s.note_pdfs.listing()
+
     def resolve(self, ref: str) -> str:
         """Resolve a note path, wiki link or title without editing it."""
         import re
@@ -42,5 +46,5 @@ class NotesReader:
         )
 
     def links(self) -> builtins.list[dict]:
-        """Resolved links: source path, target (path or citation key), and kind (note/cite)."""
+        """Resolved links: source path, target (path or citation key), and kind (note/cite/pdf)."""
         return self._s.notes.link_graph()

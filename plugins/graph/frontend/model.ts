@@ -1,7 +1,7 @@
 // What the Graph view shows, from the plugin data route and the options (no DOM; tests/js/graph.test.mjs).
 import type { EdgeKind, GraphData, GraphEdge, GraphNode } from './types.js';
 
-export const EDGE_KINDS: EdgeKind[] = ['cites', 'cite', 'link', 'about'];
+export const EDGE_KINDS: EdgeKind[] = ['cites', 'cite', 'link', 'about', 'pdf'];
 
 export interface GraphOptions {
   papers: boolean;
@@ -20,6 +20,7 @@ export interface GraphView { nodes: GraphNode[]; edges: GraphEdge[]; degree: Map
 export interface Relations {
   cites: GraphNode[]; citedBy: GraphNode[]; notes: GraphNode[]; citedInNotes: GraphNode[];
   linksTo: GraphNode[]; linkedFrom: GraphNode[]; about: GraphNode[];
+  pdfs: GraphNode[]; pdfLinkedFrom: GraphNode[];   // PDFs of the notes folders a note links to; notes linking to a PDF
 }
 
 export const DEFAULT_OPTIONS: GraphOptions = {
@@ -27,7 +28,7 @@ export const DEFAULT_OPTIONS: GraphOptions = {
   works: true,           // cited works that are not in the library…
   minCited: 2,           // …cited by at least this many shown papers
   notes: true,
-  edges: { cites: true, cite: true, link: true, about: true },
+  edges: { cites: true, cite: true, link: true, about: true, pdf: true },
   folders: null,         // Set of folder ids (a folder and its subfolders) or null = whole library
   hideIsolated: true,
   focus: null,           // node id: show only its neighbourhood…
@@ -67,6 +68,8 @@ export function buildView(data: GraphData, opts: Partial<GraphOptions> = DEFAULT
       touching.forEach((id) => shown.add(id));
       for (const e of data.edges) if (e.kind === 'link' && touching.has(e.target)) shown.add(e.source);   // one step only
     }
+    // PDFs belong with the notes that link to them
+    for (const e of data.edges) if (e.kind === 'pdf' && shown.has(e.source)) shown.add(e.target);
   }
   if (focused) shown.add(o.focus!);
 
@@ -115,18 +118,20 @@ export function matchNodes(nodes: GraphNode[], query: string): GraphNode[] {
 /** Everything a node is connected to in the whole graph, grouped for the details panel. */
 export function relations(data: GraphData, id: string): Relations {
   const byId = new Map(data.nodes.map((n) => [n.id, n]));
-  const out: Relations = { cites: [], citedBy: [], notes: [], citedInNotes: [], linksTo: [], linkedFrom: [], about: [] };
+  const out: Relations = { cites: [], citedBy: [], notes: [], citedInNotes: [], linksTo: [], linkedFrom: [], about: [], pdfs: [], pdfLinkedFrom: [] };
   const push = (list: GraphNode[], nid: string) => { const n = byId.get(nid); if (n && !list.includes(n)) list.push(n); };
   for (const e of data.edges) {
     if (e.source === id) {
       if (e.kind === 'cites' || e.kind === 'cite') push(out.cites, e.target);
       else if (e.kind === 'link') push(out.linksTo, e.target);
       else if (e.kind === 'about') push(out.about, e.target);
+      else if (e.kind === 'pdf') push(out.pdfs, e.target);
     } else if (e.target === id) {
       if (e.kind === 'cites') push(out.citedBy, e.source);
       else if (e.kind === 'cite') push(out.citedInNotes, e.source);
       else if (e.kind === 'link') push(out.linkedFrom, e.source);
       else if (e.kind === 'about') push(out.notes, e.source);
+      else if (e.kind === 'pdf') push(out.pdfLinkedFrom, e.source);
     }
   }
   return out;
@@ -134,7 +139,7 @@ export function relations(data: GraphData, id: string): Relations {
 
 /** Short label: "Author Year" for papers and works, the title for notes. */
 export function label(node: GraphNode): string {
-  if (node.kind === 'note') return node.title || node.path || '';
+  if (node.kind === 'note' || node.kind === 'pdf') return node.title || node.path || '';
   const first = String(node.authors || '').split(/;| and /)[0].split(',')[0].trim();
   const who = first || (node.title || '').split(/\s+/).slice(0, 3).join(' ');
   return `${who}${node.year ? ` ${node.year}` : ''}`;

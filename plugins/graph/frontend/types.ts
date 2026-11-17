@@ -1,6 +1,6 @@
 export interface GraphNode {
   id: string;
-  kind: 'paper' | 'work' | 'note';
+  kind: 'paper' | 'work' | 'note' | 'pdf';
   title: string;
   authors?: string;
   year?: number | string | null;
@@ -15,10 +15,11 @@ export interface GraphNode {
   path?: string;           // notes
   note_type?: string | null;
   paper?: string | null;
+  pdf_id?: number;         // PDFs in the notes folders
 }
 
-/** cites: paper → paper/work (reference lists); cite: note → paper; link: note → note; about: paper note → paper. */
-export type EdgeKind = 'cites' | 'cite' | 'link' | 'about';
+/** cites: paper → paper/work (reference lists); cite: note → paper; link: note → note; about: paper note → paper; pdf: note → a PDF in the notes folders. */
+export type EdgeKind = 'cites' | 'cite' | 'link' | 'about' | 'pdf';
 
 export interface GraphEdge { source: string; target: string; kind: EdgeKind }
 

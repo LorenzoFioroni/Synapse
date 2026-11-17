@@ -157,7 +157,7 @@ async function paintLocal() {
   const focus = `note:${path}`;
   const view = buildView(d, {
     papers: localOpts.papers, works: false, notes: true, hideIsolated: false, focus, depth: localOpts.depth,
-    edges: { cites: false, cite: localOpts.papers, about: localOpts.papers, link: true },
+    edges: { cites: false, cite: localOpts.papers, about: localOpts.papers, link: true, pdf: true },
   });
   if (!local || local.host !== localHost) {
     local?.destroy();
@@ -293,7 +293,7 @@ async function paintGlobal({ refit = false } = {}): Promise<void> {
   const view = buildView(d, {
     papers: globalOpts.papers, notes: true, works: globalOpts.papers && globalOpts.citations && globalOpts.works, minCited: 2,
     hideIsolated: !globalOpts.orphans,
-    edges: { cites: globalOpts.citations, cite: true, about: true, link: true },
+    edges: { cites: globalOpts.citations, cite: true, about: true, link: true, pdf: true },
     focus: levels ? globalFocus : null, depth: globalOpts.depth,
   });
   // Without "Citations between papers", only papers a note cites belong in a notes graph.
@@ -338,6 +338,7 @@ function onNodeClick(n: GNode, e: MouseEvent | undefined, host: HTMLElement): vo
   closeCard();
   if (e?.shiftKey && host === globalEl?.querySelector('.ng-canvas')) { centreOn(n.id); return; }
   if (n.kind === 'note') { closeGlobal({ push: false }); ctx.openNote(n.path!); return; }
+  if (n.kind === 'pdf') { ctx.openPdf?.(n.path!); return; }
   showCard(n, e, host);
 }
 
