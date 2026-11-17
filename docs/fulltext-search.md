@@ -40,6 +40,8 @@ and rebuilt from the PDFs.
 | `documents` | One row per indexed attachment: `attachment_id` (primary key), `paper_id`, `file`, `mtime`, `size`, `pages`, `chars`, `indexed_at`. |
 | `content` | An FTS5 table with `text` (the paper's own text) and `refs` (its reference lists), and `attachment_id` and `paper_id` as unindexed columns. Tokenizer `unicode61 remove_diacritics 2`, so matching ignores case and accents. |
 | `content_plain` | The fallback when SQLite has no FTS5: `attachment_id`, `paper_id`, `text`, `refs`. |
+| `note_documents` | One row per indexed PDF of the notes folders (see [notes](notes.md#pdfs-in-the-notes-folders)): `pdf_id` (the notes registry's number), `file`, `mtime`, `size`, `pages`, `chars`, `indexed_at`. |
+| `note_content`, `note_content_plain` | Their text (FTS5 with the same tokenizer, or the fallback): `text` and `pdf_id`. No reference lists are split off. These tables are separate on purpose: `match()` and the library search read only `content`, so a PDF of the notes folders is never a library result, and the notes search reads only these. |
 | `meta` | `content`: which of the two tables the `documents` rows belong to. `reindex`: set while the index is empty after an upgrade of its layout. |
 
 `_init` tries to create `content`. If SQLite raises because FTS5 is missing, it logs a warning,
@@ -102,6 +104,15 @@ of the app does not use the mark yet; the MCP tools list such items last (see [M
 
 Writes take `_write_lock`, because the indexer thread and request threads can both write.
 
+### The PDFs of the notes folders
+
+`Indexer.note_pdfs` (set by `Services`, because `backend/pdf/` does not import `backend/notes/`) lists
+`(registry id, file)` for the PDFs that are present. Each run indexes the ones that are new or whose size or time
+changed (`index_note_file`) and drops rows of ids that are no longer listed (`remove_notes`), so a deleted,
+replaced or renamed-by-hash PDF is kept in step. `NotesService.search` appends
+`{path, title, snippet, kind: "pdf", id}` entries (`FulltextIndex.match_notes`, only for PDFs still listed)
+to the notes' own matches; the notes tree shows them under "Text matches" with the PDF icon.
+
 ### The background indexer
 
 `Indexer` keeps the index in step with the attachments in a background thread named
@@ -128,6 +139,7 @@ What starts a run:
 |---|---|---|
 | The web app starts | `create_app` | yes (not after an upgrade emptied the index: `pending_reindex`) |
 | A file is attached (upload, dropped PDF, browser extension, PDF found online) | `Services.attachments_changed` | yes |
+| A PDF is added to the notes folders, restored from the notes trash or appears outside the app (`Services.note_pdfs_changed`) | `NotesService.add_pdf`, `restore*`, `Services.sync_external_notes` | yes |
 | A backup is restored | `Backups._after_restore` | yes |
 | `POST /api/fulltext/sync` (also sent when Settings → "Index PDFs automatically" is turned on) | `backend/api/items.py` | no |
 | `POST /api/fulltext/rebuild` (Settings → Rebuild Index) | `backend/api/items.py` | no |

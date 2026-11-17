@@ -4,12 +4,14 @@ Nodes (``kind``):
   paper   an item in the library            id "item:<item id>"
   work    a cited work not in the library   id "doi:…", "arxiv:…", "openalex:…" or "ref:…"
   note    a Markdown note                   id "note:<path>"
+  pdf     a PDF in the notes folders        id "pdf:<path>" (only those a note links to)
 
 Edges (``kind``), source → target:
   cites   paper → paper | work   (from the fetched reference lists, backend/references/service.py)
   cite    note → paper           ([@key] in the note)
   link    note → note            ([[link]] or ![[embed]])
   about   note → paper           (the paper note of an item: ``paper: key`` in its front matter)
+  pdf     note → pdf             ([[folder/file.pdf#p=4]] in the note)
 
 Everything is derived from data that already exists; nothing is stored.
 """
@@ -75,15 +77,25 @@ def build_graph(s) -> dict:
             edges.append({"source": nid, "target": f"item:{key_to_item[note['paper']]}", "kind": "about"})
 
     about = {(e["source"], e["target"]) for e in edges if e["kind"] == "about"}
+    pdfs = {p["path"]: p for p in s.notes.pdfs()}
+    linked_pdfs: set[str] = set()
     for l in s.notes.links():
         src = f"note:{l['source']}"
-        if l["kind"] == "note":
+        if l["kind"] == "pdf":
+            if l["target"] in pdfs:
+                linked_pdfs.add(l["target"])
+                edges.append({"source": src, "target": f"pdf:{l['target']}", "kind": "pdf"})
+        elif l["kind"] == "note":
             edges.append({"source": src, "target": f"note:{l['target']}", "kind": "link"})
         elif l["target"] in key_to_item:
             tgt = f"item:{key_to_item[l['target']]}"
             if (src, tgt) not in about:  # a paper note citing its own paper adds nothing
                 edges.append({"source": src, "target": tgt, "kind": "cite"})
 
+    for path in sorted(linked_pdfs):
+        nodes.append(
+            {"id": f"pdf:{path}", "kind": "pdf", "path": path, "pdf_id": pdfs[path]["id"], "title": pdfs[path]["name"]}
+        )
     kinds: dict[str, int] = {}
     for n in nodes:
         kinds[n["kind"]] = kinds.get(n["kind"], 0) + 1
@@ -99,6 +111,7 @@ def build_graph(s) -> dict:
             "papers": kinds.get("paper", 0),
             "works": kinds.get("work", 0),
             "notes": kinds.get("note", 0),
+            "pdfs": kinds.get("pdf", 0),
             "edges": ekinds,
             "items_with_references": cg["stats"]["items_with_references"],
         },

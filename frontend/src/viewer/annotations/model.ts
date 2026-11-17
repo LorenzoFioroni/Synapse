@@ -37,6 +37,8 @@ export const byId = new Map<string, Annotation>();
 export const layers = new Map<number, SVGSVGElement>();         // page number → svg layer
 export const textLayers = new Map<number, HTMLElement>();        // page number → HTML layer of the text boxes
 export let attId: number | null = params.get('att') ? Number(params.get('att')) : null;
+/** Where this PDF's annotations live: its attachment, or (``?npdf=``) a PDF kept in a notes folder. Null: none can be made. */
+export let ownerBase: string | null = params.get('npdf') ? `/api/note-pdfs/${Number(params.get('npdf'))}` : attId ? `/api/attachments/${attId}` : null;
 export const undoStack: Step[] = [];
 export let redoStack: Step[] = [];
 export let selectedId: string | null = null;
@@ -89,13 +91,14 @@ export async function api(method: string, path: string, body?: unknown): Promise
 
 /** The attachment this PDF belongs to: from ?att=, or found by the file URL among the item's PDFs. */
 export async function resolveAttachment(): Promise<number | null> {
-  if (attId || !paperId || !file) return attId;
+  if (attId || ownerBase || !paperId || !file) return attId;
   try {
     const item = await api('GET', `/api/items/${paperId}`);
     const hit = ((item.attachments || []) as Attachment[]).find((a) => file === `/pdfs/${encodeURIComponent(a.url)}` || file === `/pdfs/${a.url}`
       || file === `/api/attachments/${a.id}/remote`);
     attId = hit ? hit.id : null;
   } catch { attId = null; }
+  ownerBase = attId ? `/api/attachments/${attId}` : null;
   return attId;
 }
 
@@ -266,7 +269,7 @@ export async function create(draft: Omit<Annotation, 'id'> & { id?: string }, { 
   draw(rec);
   if (record) { undoStack.push({ op: 'create', rec: clone(rec) }); redoStack = []; }
   try {
-    const res = await api('POST', `/api/attachments/${attId}/annotations`, rec);
+    const res = await api('POST', `${ownerBase}/annotations`, rec);
     byId.set(rec.id, res.annotation);
   } catch (e) {
     byId.delete(rec.id);

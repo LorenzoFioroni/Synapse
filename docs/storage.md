@@ -14,7 +14,7 @@ repository. It is git-ignored.
 
 ```
 data/
-├── library.db          items, attachments, folders, tags, smart folders, PDF annotations, tasks
+├── library.db          items, attachments, folders, tags, smart folders, PDF annotations, tasks, the notes' PDFs
 ├── fulltext.db         text extracted from the PDFs (derived)
 ├── pdfs/               the attached files
 ├── notes/              Markdown notes, the source of truth for notes
@@ -54,7 +54,7 @@ Each file has one owner. Other code goes through that owner, with the few except
 |---|---|---|---|
 | `library.db` | `Database` in `backend/library/db.py`, used by `PaperRepository`, `AnnotationStore`, the repositories in `library/organize.py` and `TaskStore` (`backend/tasks/store.py`) | `Database.migrate`, plus `SCHEMA` in `backend/library/annotations.py` and in `backend/tasks/store.py` | source of truth |
 | `pdfs/` | `PaperRepository` (`attachment_path`, `_remove_file`) and the upload code in `backend/api/attachments.py` | none | source of truth |
-| `notes/` | `Vault` in `backend/notes/vault.py` | none (see [notes](notes.md)) | source of truth |
+| `notes/` | `Vault` in `backend/notes/vault.py` | none (see [notes](notes.md)) | source of truth (notes and the PDFs beside them; the PDFs' numbers are in `library.db`, table `note_pdfs`) |
 | `settings.json` | `SettingsStore` in `backend/settings.py` | `DEFAULTS`, `_migrate` | source of truth |
 | `auth.db` | `Devices`, `Passkeys` and `AccessTokens` in `backend/access/` (`devices.py`, `passkeys.py`, `tokens.py`), one table each, on `AuthTable` (`authdb.py`) | `SCHEMA` in each | source of truth, not in backups |
 | `fulltext.db` | `FulltextIndex` in `backend/pdf/fulltext.py` | `FulltextIndex._init` | derived from `pdfs/` |
@@ -153,6 +153,8 @@ Details worth knowing:
 - **`paper_tags` and `paper_folders` have no foreign keys.** The code removes their rows itself
   (`delete_permanently`, `FolderRepository.delete`, `TagRepository.delete`), and `migrate()`
   deletes orphans on every start.
+- **`note_pdfs`** (`backend/notes/pdfs.py`, added by `CREATE TABLE IF NOT EXISTS` through `Database.add_schema`) numbers the PDFs in `notes/`: `path` is unique among `present` rows (a partial index), `state` is `present`, `trashed` (path under `.trash/<timestamp>/`) or `missing`. It is the one table of `library.db` about files that live in `notes/`; a backup contains both, so they stay consistent. See [notes](notes.md#pdfs-in-the-notes-folders).
+- **`note_pdf_annotations.pdf_id`** cascades from `note_pdfs` (same columns as `annotations`, created with `CREATE TABLE IF NOT EXISTS` in `library/annotations.py`; `annotations` itself is unchanged). Deleting a PDF's row, as the notes trash does when it deletes the file for good, deletes its highlights.
 - **`annotations.attachment_id`** cascades from `attachments`, so deleting an attachment row
   deletes its annotations. `rects` and `path` are JSON text. `fill` (a box's fill colour) was
   added later; `annotations.upgrade`, run by `migrate()`, adds the column to older files.

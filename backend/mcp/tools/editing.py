@@ -265,6 +265,30 @@ class EditToolsMixin(ToolsBase):
 
     # ------------------------------------------------------------------ annotations
     def get_annotations(self, paper: str, attachment: int | None = None):
+        if str(paper or "").strip().lower().split("#")[0].rstrip("]").endswith(".pdf"):  # a PDF in the notes folders
+            src = self._source(paper, attachment)
+            rows = [
+                drop_empty(
+                    {
+                        "id": a["id"],
+                        "page": a["page"],
+                        "type": a["type"],
+                        "text": " ".join(str(a.get("text") or "").split()) or None,
+                        "comment": a.get("comment"),
+                        "color": a.get("color"),
+                    }
+                )
+                for a in self.s.annotations.for_note_pdf(src.note_pdf_id)
+            ]
+            return drop_empty(
+                {
+                    "paper": src.label,
+                    "annotations_total": len(rows),
+                    "annotations": rows,
+                    "note": None if rows else "No highlights, comments or drawings on this PDF.",
+                    "cite": f"Cite a highlighted passage as {src.cite_page()} with its page.",
+                }
+            )
         p = self._paper(paper)
         pdfs = [self._pdf_for(p, attachment)] if attachment is not None else self._pdfs(p)
         several = len(pdfs) > 1
@@ -301,10 +325,13 @@ class EditToolsMixin(ToolsBase):
     ):
         if not pdfrender.available():
             raise ToolError(pdfrender.MISSING)
-        p = self._several([paper])[0]
-        att = self._pdf_for(p, attachment)
-        path = self.s.papers.attachment_path(att)
-        n = self._page_count(att) or pdfrender.page_count(path)
+        if str(paper or "").strip().lower().split("#")[0].rstrip("]").endswith(".pdf"):
+            src = self._source(paper, attachment)
+        else:
+            p = self._several([paper])[0]
+            src = self._src(self._pdf_for(p, attachment), p)
+        path = src.path
+        n = self._page_count(src) or pdfrender.page_count(path)
         if not 1 <= page <= n:
             raise ToolError(f"Page {page} does not exist: the PDF has {n} pages.")
         quote = " ".join(str(quote or "").split())
@@ -313,26 +340,28 @@ class EditToolsMixin(ToolsBase):
         rects = pdfregions.quote_rects(path, page, quote)
         if not rects:
             raise ToolError(
-                f"These words are not on page {page} of '{self._label(p)}'. Copy one passage exactly from "
+                f"These words are not on page {page} of '{src.label}'. Copy one passage exactly from "
                 "read_paper (no '…', nothing left out), from a single page."
             )
+        data = {
+            "type": "highlight",
+            "page": page,
+            "rects": rects,
+            "text": quote,
+            "color": color or self.s.settings.get("annotation_color_highlight"),  # the user's own colour
+            "comment": str(comment or ""),
+        }
         try:
-            ann = self.s.annotations.create(
-                att["id"],
-                {
-                    "type": "highlight",
-                    "page": page,
-                    "rects": rects,
-                    "text": quote,
-                    "color": color or self.s.settings.get("annotation_color_highlight"),  # the user's own colour
-                    "comment": str(comment or ""),
-                },
+            ann = (
+                self.s.annotations.create_on_note_pdf(src.note_pdf_id, data)
+                if src.note_pdf_id
+                else self.s.annotations.create(src.attachment_id, data)
             )
         except AnnotationError as e:
             raise ToolError(str(e)) from e
         return drop_empty(
             {
-                "highlighted": {"id": ann["id"], "paper": self._label(p), "page": page, "lines": len(rects)},
+                "highlighted": {"id": ann["id"], "paper": src.label, "page": page, "lines": len(rects)},
                 "comment": comment or None,
                 "note": "The user sees it on the PDF in the app and can remove it there.",
             }

@@ -1,17 +1,19 @@
 // The Notes tab on a phone: recent notes and folders, search; a note opens for reading (citations
 // as chips, a tap on one shows what it cites) and Edit turns it into the editor, with a bar of
 // Markdown helpers above the keyboard (plugins add their own buttons there).
-import { api, type ApiError } from '../api.js';
+import { api, type ApiError, notePdfAtt } from '../api.js';
 import { editorButtons } from '../extend.js';
 import { icon } from '../icons.js';
 import { off, on, state } from '../store.js';
-import type { CiteEntry, NoteInfo } from '../types.js';
+import type { CiteEntry, NoteInfo, NotePdf } from '../types.js';
 import { confirmDialog, promptDialog } from '../ui/dialog.js';
 import { openMenu } from '../ui/menu.js';
 import { toast, toastError } from '../ui/toast.js';
 import { copyText, debounce, escapeHtml as esc, storage, store } from '../util.js';
 import { pickFiles } from '../views/itemlist/menus.js';
-import { citeTargetInDom, viewerTarget } from '../views/notes/citeTarget.js';
+import { type CiteTarget, citeTargetInDom, viewerTarget } from '../views/notes/citeTarget.js';
+import { isPdfTarget, pdfPage } from '../views/notes/mdscan.js';
+import { findPdf } from '../views/notes/pdfLinks.js';
 import { type CM, createEditor, loadCM, loadMD, type NoteEditor } from '../views/notes/editor.js';
 import { toggleFormat } from '../views/notes/formatting.js';
 import { noteHooks, ghostSource } from '../views/notes/hooks.js';
@@ -85,7 +87,7 @@ export function notesScreen(): Screen {
         try {
           const res = await api.searchNotes(q);
           if (input.value.trim() !== q) return;
-          box.innerHTML = res.results.length ? `<div class="ph-group">${res.results.map((r) => `<button class="ph-note-row" data-note="${esc(r.path)}">
+          box.innerHTML = res.results.length ? `<div class="ph-group">${res.results.map((r) => `<button class="ph-note-row" ${r.kind === 'pdf' ? `data-pdf="${r.id}" data-pdf-path="${esc(r.path)}"` : `data-note="${esc(r.path)}"`}>
             <span class="ph-row-title">${esc(r.title || stemOf(r.path))}</span><span class="ph-row-snippet">${esc(plain(r.snippet))}</span>
             <span class="ph-row-meta">${dot(r.path)}${esc(parentOf(r.path) || 'Notes')}</span></button>`).join('')}</div>`
             : `<div class="ph-empty"><h3>Nothing found</h3></div>`;
@@ -96,6 +98,8 @@ export function notesScreen(): Screen {
         const t = e.target as Element;
         const n = t.closest<HTMLElement>('[data-note]');
         if (n) { push(noteScreen(n.dataset.note!)); return; }
+        const pdf = t.closest<HTMLElement>('[data-pdf]');
+        if (pdf?.dataset.pdfPath) { void pushPdf(pdf.dataset.pdfPath, '', null); return; }
         const f = t.closest<HTMLElement>('[data-folder]');
         if (f) { push(folderScreen(f.dataset.folder!)); return; }
         const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;
@@ -122,8 +126,13 @@ function noteRow(n: NoteInfo): string {
     <span class="ph-row-meta">${dot(n.path)}${esc(parentOf(n.path) || 'Notes')}${n.type === 'paper' ? ' · paper note' : ''}</span></button>`;
 }
 
+function pdfRow(p: NotePdf): string {
+  return `<button class="ph-note-row" data-pdf="${p.id}"><span class="ph-row-title-line"><span class="ph-row-title">${esc(p.name)}</span></span>
+    <span class="ph-row-meta">${icon('pdf', 'icon-sm')} PDF</span></button>`;
+}
+
 function folderRow(f: string): string {
-  const n = ws.overview.notes.filter((x) => x.path.startsWith(`${f}/`)).length;
+  const n = [...ws.overview.notes, ...(ws.overview.pdfs || [])].filter((x) => x.path.startsWith(`${f}/`)).length;
   const c = folderColor(f);
   return `<button class="ph-folder-row" data-folder="${esc(f)}"><span class="ph-folder-icon"${c ? ` style="color:${esc(c)}"` : ''}>${icon('folder')}</span>
     <span class="grow">${esc(f.split('/').pop()!)}</span><span class="ph-count">${n}</span>${chevron()}</button>`;
@@ -138,10 +147,11 @@ function folderScreen(folder: string): Screen {
       const paint = () => {
         const subs = ws.overview.folders.filter((f) => parentOf(f) === folder).sort((a, b) => a.localeCompare(b));
         const notes = ws.overview.notes.filter((n) => parentOf(n.path) === folder).sort((a, b) => titleOf(a).localeCompare(titleOf(b)));
+        const pdfs = (ws.overview.pdfs || []).filter((p) => parentOf(p.path) === folder);
         el.innerHTML = `${navBar(ctx.backLabel, name, navButton('edit', 'New note here', 'data-act="new"'))}<div class="ph-scroll">
           ${subs.length ? `<div class="ph-group">${subs.map(folderRow).join('')}</div>` : ''}
-          ${notes.length ? `<div class="ph-group">${notes.map(noteRow).join('')}</div>` : ''}
-          ${!subs.length && !notes.length ? '<div class="ph-empty"><p>This folder is empty.</p></div>' : ''}</div>`;
+          ${notes.length || pdfs.length ? `<div class="ph-group">${notes.map(noteRow).join('')}${pdfs.map(pdfRow).join('')}</div>` : ''}
+          ${!subs.length && !notes.length && !pdfs.length ? '<div class="ph-empty"><p>This folder is empty.</p></div>' : ''}</div>`;
       };
       paint();
       el.addEventListener('click', (e) => {
@@ -150,6 +160,9 @@ function folderScreen(folder: string): Screen {
         if (n) { push(noteScreen(n.dataset.note!)); return; }
         const f = t.closest<HTMLElement>('[data-folder]');
         if (f) { push(folderScreen(f.dataset.folder!)); return; }
+        const pdf = t.closest<HTMLElement>('[data-pdf]');
+        const found = pdf && (ws.overview.pdfs || []).find((p) => String(p.id) === pdf.dataset.pdf);
+        if (found) { push(readerScreen({ id: '', title: found.name.replace(/\.pdf$/i, ''), authors: '', year: undefined }, notePdfAtt(found))); return; }
         if (t.closest('[data-act="new"]')) void newNote(folder);
       });
       on('notes-count', paint);
@@ -252,13 +265,18 @@ export function noteScreen(path: string, { line = null, edit = false }: { line?:
           combineImages: (images) => (noteHooks.figures && images.length > 1 ? noteHooks.figures.gallery(images, {}) : images.join('\n')),
         }, {
           renderer: () => ws.renderer, resolveNote, citeInfo,
-          openNote: (target) => { const p = resolveNote(target); if (p) push(noteScreen(p)); },
+          openNote: (target, heading, spot) => {
+            const p = resolveNote(target);
+            if (p && isPdfTarget(target)) void pushPdf(p, heading || '', spot ?? null);
+            else if (p) push(noteScreen(p));
+          },
           openCite: (key, page) => citeSheet(key, page, null),
           mermaid: renderMermaid, equations: equationMode, macros: noteMacros,
           task: () => taskHooks.preview,
         }, 'live', {
           items: () => ws.library.list,
           notes: () => ws.overview.notes,
+          pdfs: () => ws.overview.pdfs || [],
           tasks: () => taskHooks.choices?.() ?? null,
           newTask: (title) => taskHooks.create?.(title) ?? Promise.resolve(null),
           taskHtml: (id) => taskHooks.titleHtml?.(id) ?? '',
@@ -346,6 +364,14 @@ export function noteScreen(path: string, { line = null, edit = false }: { line?:
   };
 }
 
+/** A PDF of the notes folders, in the reader, at the page of a [[file.pdf#p=4]] link (and the quoted words before it). */
+async function pushPdf(path: string, heading: string, spot: CiteTarget | null): Promise<void> {
+  const pdf = findPdf(path);
+  if (!pdf) { toast(`“${path}” is not in the notes folders.`); return; }
+  const at = await viewerTarget(spot).catch(() => ({} as { q?: string }));
+  push(readerScreen({ id: '', title: pdf.name.replace(/\.pdf$/i, ''), authors: '', year: undefined }, notePdfAtt(pdf), pdfPage(heading), { q: at.q }));
+}
+
 /** A tap in a note being read: citations, links to notes, equation references, checkboxes. */
 function onReadClick(e: MouseEvent, editor: () => Promise<NoteEditor>, render: () => void): void {
   const t = e.target as Element;
@@ -354,8 +380,10 @@ function onReadClick(e: MouseEvent, editor: () => Promise<NoteEditor>, render: (
   const wl = t.closest<HTMLElement>('.wikilink');
   if (wl) {
     e.preventDefault();
-    const p = resolveNote(wl.dataset.note || '');
-    if (p) push(noteScreen(p)); else toast(`There is no note “${wl.dataset.note}” yet.`);
+    const target = wl.dataset.note || '';
+    const p = resolveNote(target);
+    if (p && isPdfTarget(target)) { void pushPdf(p, wl.dataset.heading || '', citeTargetInDom(wl)); return; }
+    if (p) push(noteScreen(p)); else toast(`There is no ${isPdfTarget(target) ? 'PDF' : 'note'} “${target}” yet.`);
     return;
   }
   const ref = t.closest<HTMLElement>('.eqref[data-label]');

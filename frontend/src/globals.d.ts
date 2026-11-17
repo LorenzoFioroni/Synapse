@@ -19,7 +19,7 @@ export interface ZcTabs {
   /** Handles a tab key (next tab, close tab…); true when it did. */
   shortcut(e: KeyboardEvent): boolean;
   /** Open a PDF in an app tab (a citation clicked in a viewer tab). */
-  open(pdf: { key: string; url: string; title: string; spot: { page?: number | null }; newTab: boolean }): void;
+  open(pdf: { key: string; url: string; title: string; spot: { page?: number | null; q?: string }; newTab: boolean }): void;
   /** The pointer went down inside a tab's viewer. */
   touched(): void;
   /** This window, among those a tab can be dragged between (for the browser tests). */

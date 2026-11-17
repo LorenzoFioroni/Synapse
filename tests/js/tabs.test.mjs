@@ -360,3 +360,13 @@ test('a note opened kept from an empty Notes tab fills it (no empty tab left beh
   s.openNote('New.md', { keep: true });
   assert.deepEqual(notes(s), ['New']);
 });
+
+test('a renamed PDF of the notes folders retitles its tab, and only that one', () => {
+  const s = new TabSet();
+  s.add({ key: '/api/note-pdfs/7/file', url: '/viewer.html?file=%2Fapi%2Fnote-pdfs%2F7%2Ffile&npdf=7&title=Old', title: 'Old' });
+  s.add(pdf('other'));
+  const names = { '/api/note-pdfs/7/file': 'New name' };
+  assert.equal(s.retitlePdfs((k) => names[k] ?? null), true);
+  assert.deepEqual(titles(s), ['New name', 'other']);
+  assert.equal(s.retitlePdfs((k) => names[k] ?? null), false);   // nothing left to change
+});

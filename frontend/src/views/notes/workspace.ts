@@ -75,6 +75,8 @@ export const noteTabs = {
   modeChanged: null as ((mode: Mode) => void) | null,
   renamed: null as ((rename: (path: string) => string) => void) | null,
   deleted: null as ((gone: (path: string) => boolean) => void) | null,
+  /** PDFs of the notes folders may have been renamed: their tabs take their names. */
+  retitlePdfs: null as ((titleOf: (key: string) => string | null) => void) | null,
 };
 
 /** Notes were moved or renamed (``rename``: old path → new path): their tabs and parked states follow. */

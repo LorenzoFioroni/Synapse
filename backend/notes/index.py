@@ -23,7 +23,7 @@ from .vault import NoteMissing, Vault, content_hash
 log = logging.getLogger(__name__)
 
 # Also bumped when parser.py changes what it finds, so every note is read again.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -46,6 +46,12 @@ CREATE TABLE IF NOT EXISTS links (
 );
 CREATE INDEX IF NOT EXISTS idx_links_path ON links(path);
 CREATE INDEX IF NOT EXISTS idx_links_target ON links(kind, target_norm);
+CREATE TABLE IF NOT EXISTS files (
+    path TEXT PRIMARY KEY,        -- a PDF beside the notes (no text kept: [[file.pdf]] links resolve against this)
+    name TEXT NOT NULL,           -- lower-case file name with its extension
+    size INTEGER, mtime REAL
+);
+CREATE INDEX IF NOT EXISTS idx_files_name ON files(name);
 CREATE TABLE IF NOT EXISTS tags (path TEXT NOT NULL, tag TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_tags_path ON tags(path);
 CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
@@ -54,7 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_headings_path ON headings(path);
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(path UNINDEXED, title, body, tokenize='unicode61 remove_diacritics 2');
 """
 
-TABLES = ("notes", "links", "tags", "headings", "notes_fts")
+TABLES = ("notes", "links", "tags", "headings", "notes_fts", "files")
 
 
 def stem_of(path: str) -> str:
@@ -126,6 +132,8 @@ class NotesIndex:
     # ------------------------------------------------------------------ writing
     def _delete_rows(self, c, path: str) -> None:
         for t in TABLES:
+            if t == "files":
+                continue
             c.execute(f"DELETE FROM {t} WHERE path = ?", (path,))
 
     def _insert(self, c, path: str, text: str, h: str, mtime: float | None, size: int | None) -> None:
@@ -230,7 +238,18 @@ class NotesIndex:
             for rel in set(known) - seen:
                 self.remove(rel)
                 removed += 1
+            self.sync_files()
         return {"added": added, "changed": changed, "removed": removed}
+
+    def sync_files(self) -> None:
+        """List the PDFs beside the notes again (a walk and a stat each: cheap)."""
+        rows = [(rel, PurePosixPath(rel).name.lower(), st.st_size, st.st_mtime) for rel, st in self.vault.iter_files()]
+        with self._lock, self._session() as c:
+            if sorted(tuple(r) for r in c.execute("SELECT path, name, size, mtime FROM files")) == sorted(rows):
+                return
+            c.execute("DELETE FROM files")
+            c.executemany("INSERT INTO files (path, name, size, mtime) VALUES (?,?,?,?)", rows)
+            self.revision += 1
 
     def rebuild(self) -> dict:
         with self._lock:
@@ -285,12 +304,48 @@ class NotesIndex:
         # Prefer the shortest path, then alphabetical: deterministic and predictable.
         return sorted(paths, key=lambda p: (p.count("/"), len(p), p))
 
+    def resolve_pdf(self, target: str) -> builtins.list[str]:
+        """Paths a [[file.pdf]] link may refer to (best first): the file name alone, or a folder
+        path ending the file's (as for notes)."""
+        t = target.strip().replace("\\", "/").lower()
+        if not t:
+            return []
+        with self._session() as c:
+            if "/" in t:
+                rows = c.execute(
+                    "SELECT path FROM files WHERE lower(path) = ? OR lower(path) LIKE ? ESCAPE '\\'",
+                    (t, "%/" + _like_escape(t)),
+                ).fetchall()
+            else:
+                rows = c.execute("SELECT path FROM files WHERE name = ?", (t,)).fetchall()
+        return sorted((r["path"] for r in rows), key=lambda p: (p.count("/"), len(p), p))
+
+    def pdf_backlinks(self, path: str) -> builtins.list[dict]:
+        """Links from notes to the PDF at ``path``."""
+        norm = path.lower()
+        candidates = {"/".join(norm.split("/")[i:]) for i in range(len(norm.split("/")))}
+        with self._session() as c:
+            q = ",".join("?" * len(candidates))
+            rows = [
+                dict(r)
+                for r in c.execute(
+                    f"SELECT l.*, n.title AS source_title FROM links l JOIN notes n ON n.path = l.path "
+                    f"WHERE l.kind = 'pdf' AND l.target_norm IN ({q}) ORDER BY l.path, l.line",
+                    tuple(candidates),
+                )
+            ]
+        return [r for r in rows if next(iter(self.resolve_pdf(r["target"])), None) == path]
+
     def outgoing(self, path: str) -> builtins.list[dict]:
         with self._session() as c:
             rows = [dict(r) for r in c.execute("SELECT * FROM links WHERE path = ? ORDER BY line, rowid", (path,))]
         for r in rows:
             r["suppress_author"] = bool(r["suppress_author"])
-            if r["kind"] in ("note", "embed"):
+            if r["kind"] == "pdf":
+                matches = self.resolve_pdf(r["target"])
+                r["resolved"] = matches[0] if matches else None
+                r["ambiguous"] = len(matches) > 1
+            elif r["kind"] in ("note", "embed"):
                 matches = self.resolve(r["target"], from_path=path)
                 r["resolved"] = matches[0] if matches else None
                 r["ambiguous"] = len(matches) > 1
@@ -391,16 +446,17 @@ class NotesIndex:
 
     def link_graph(self) -> builtins.list[dict]:
         """Every link between notes and every citation, in one pass (for the graph view):
-        [{"source": path, "kind": "note" | "cite", "target": resolved path or citation key}].
+        [{"source": path, "kind": "note" | "cite" | "pdf", "target": resolved path or citation key}].
         [[links]] resolve exactly like ``resolve``; unresolved ones are left out."""
         with self._session() as c:
             paths = [r["path"] for r in c.execute("SELECT path FROM notes")]
             rows = [
                 dict(r)
                 for r in c.execute(
-                    "SELECT DISTINCT path, kind, target FROM links WHERE kind IN ('note','embed','cite')"
+                    "SELECT DISTINCT path, kind, target FROM links WHERE kind IN ('note','embed','cite','pdf')"
                 )
             ]
+            pdfs = [r["path"] for r in c.execute("SELECT path FROM files")]
         by_stem: dict[str, list[str]] = {}
         for p in paths:
             by_stem.setdefault(stem_of(p), []).append(p)
@@ -409,6 +465,13 @@ class NotesIndex:
         for r in rows:
             if r["kind"] == "cite":
                 edge = (r["path"], "cite", r["target"])
+            elif r["kind"] == "pdf":
+                t = r["target"].strip().lower()
+                hits = [p for p in pdfs if p.lower() == t or p.lower().endswith("/" + t)]
+                target = best(hits)
+                if not target:
+                    continue
+                edge = (r["path"], "pdf", target)
             else:
                 t = norm_target(r["target"])
                 if not t:

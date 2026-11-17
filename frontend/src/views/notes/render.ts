@@ -18,7 +18,7 @@ import type { RendererRule as MdRenderRule, StateBlock, StateCore, StateInline, 
 export type MdLib = typeof import('../../../vendor/md/md.js');
 import { type RefKind, type Lookup, lookupIn, refNames, refParts } from './crossref.js';
 import { labelId, layoutTag, numberEquations, resolveRefs } from './equations.js';
-import { type Cite, GALLERY_INFO, attachmentOf, parseCites, referenceDefinition, splitWiki } from './mdscan.js';
+import { type Cite, GALLERY_INFO, attachmentOf, isPdfTarget, parseCites, pdfLabel, referenceDefinition, splitWiki } from './mdscan.js';
 import { hooksVersion, noteHooks } from './hooks.js';
 import { type Definition, HAS_DEFINITIONS, type Macro, type Macros, baseMacros, macroSource, parseDefinitions, withDefinitions } from './macros.js';
 import { takeSectionLabels } from './sections.js';
@@ -171,7 +171,7 @@ function wikiRule(state: StateInline, silent: boolean): boolean {
   const w = splitWiki(inner);
   if (!w.target && !w.heading) return false;
   if (!silent) {
-    const t = state.push(embed ? 'note_embed' : 'note_link', '', 0);
+    const t = state.push(embed && !isPdfTarget(w.target) ? 'note_embed' : 'note_link', '', 0);   // a PDF is only ever linked
     t.meta = w;
     t.content = inner;
   }
@@ -469,8 +469,9 @@ export function createRenderer(lib: MdLib, o: RendererOptions = {}): Renderer {
     R.note_link = (t, i) => {
       const w = t[i].meta;
       const path = o.resolveNote ? o.resolveNote(w.target) : undefined;   // undefined = unknown, null = does not exist
-      const label = w.alias || (w.target ? w.target + (w.heading ? ` › ${w.heading}` : '') : w.heading);
-      return `<a class="wikilink${path === null && w.target ? ' unresolved' : ''}" data-note="${esc(w.target)}" data-heading="${esc(w.heading)}"${path ? ` data-path="${esc(path)}"` : ''} href="#">${esc(label)}</a>`;
+      const pdf = isPdfTarget(w.target);
+      const label = w.alias || (pdf ? pdfLabel(w.target, w.heading) : w.target ? w.target + (w.heading ? ` › ${w.heading}` : '') : w.heading);
+      return `<a class="wikilink${pdf ? ' pdf' : ''}${path === null && w.target ? ' unresolved' : ''}" data-note="${esc(w.target)}" data-heading="${esc(w.heading)}"${path ? ` data-path="${esc(path)}"` : ''} href="#">${esc(label)}</a>`;
     };
     R.note_embed = (t, i) => {
       const w = t[i].meta;

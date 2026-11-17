@@ -292,6 +292,13 @@ export function splitWiki(inner: string): { target: string; heading: string; ali
   return { target: strip(target), heading: strip(heading), alias: strip(alias) };
 }
 
+/** A [[link]] to a PDF in the notes folders names it with its extension: [[folder/file.pdf#p=4]]. */
+export const isPdfTarget = (target: string): boolean => /\.pdf$/i.test(target.trim());
+/** The page a PDF link names: `p=4` or `page=4` after the #, else null. */
+export const pdfPage = (heading: string): number | null => { const m = /^(?:p|page)\s*=\s*(\d{1,5})$/i.exec(heading.trim()); return m ? Number(m[1]) : null; };
+/** What a PDF link shows when it has no alias: the file name and the page. */
+export const pdfLabel = (target: string, heading: string): string => { const p = pdfPage(heading); return `${target}${p ? ` · p. ${p}` : heading ? ` › ${heading}` : ''}`; };
+
 /** The attachment id a citation names with att:<id> in its locator, or null. */
 export const attachmentOf = (locator: string | null | undefined): number | null => { const m = ATT.exec(locator || ''); return m ? Number(m[1]) : null; };
 

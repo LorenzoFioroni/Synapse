@@ -139,7 +139,7 @@ def test_library_db_is_untouched(app, svc, client):
     before = tables()
     create(client, title="x", text="[@a]")
     assert tables() == before
-    assert not any("note" in t for t in before)
+    assert not any("note" in t for t in before if not t.startswith("note_pdf"))  # notes are files; PDFs have a registry
 
 
 def test_save_with_create_flag(client):

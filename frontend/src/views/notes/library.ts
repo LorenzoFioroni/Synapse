@@ -57,6 +57,16 @@ export function noteChoices(notes: Pick<NoteInfo, 'path' | 'title'>[]): NoteChoi
   });
 }
 
+/** Names to offer for [[ among the PDFs: the file name with its extension (the folder too when two share a name). */
+export function pdfChoices(pdfs: { path: string; name: string }[]): NoteChoice[] {
+  const count = new Map<string, number>();
+  for (const p of pdfs) count.set(p.name.toLowerCase(), (count.get(p.name.toLowerCase()) || 0) + 1);
+  return pdfs.map((p) => ({
+    insert: count.get(p.name.toLowerCase())! > 1 ? p.path : p.name,
+    stem: p.name.replace(/\.pdf$/i, ''), path: p.path, title: 'PDF', folder: p.path.includes('/') ? p.path.slice(0, p.path.lastIndexOf('/')) : '',
+  }));
+}
+
 export function searchNotes(choices: NoteChoice[], query: string, limit = 30): NoteChoice[] {
   const q = fold(query).trim();
   const out: [number, number, number, string, NoteChoice][] = [];

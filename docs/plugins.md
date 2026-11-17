@@ -150,7 +150,8 @@ installed plugins under **Plugins**.
   Notes, with the existing sidebar entry, note/item menus, history and Cmd/Ctrl+Shift+G. It uses
   public citation and note reads, the Notes visualization API and the host-vendored offline
   force-graph library. Its data route remains `/api/plugins/graph/data`; graph data is derived
-  from saved notes and references, with no migration. The host retains the bundled Graph toggle's
+  from saved notes and references, with no migration. PDFs in the notes folders that a note links to
+  are nodes (kind `pdf`, id `pdf:<path>`, edge kind `pdf`); clicking one opens it in the viewer. The host retains the bundled Graph toggle's
   reserved shortcut only; installed replacements receive ordinary shortcut rules. Saved Graph
   preferences and enabled choices survive. Safe mode stops the plugin, preserving all inputs.
 
@@ -1031,7 +1032,7 @@ An edit already submitted may complete. No library schema or stored plugin data 
 (`nodes`, `edges`, `stats`) plus `fetched`: library item IDs whose reference lists have been fetched,
 including empty lists. Trash is excluded. It makes no network requests.
 
-`plugin.notes.list()` and `plugin.notes.links()` require `permissions: {"notes": ["read"]}`.
+`plugin.notes.list()`, `plugin.notes.pdfs()` (the PDFs kept in the notes folders: `id`, `path`, `name`, `size`) and `plugin.notes.links()` (kinds `note`, `cite` and `pdf`) require `permissions: {"notes": ["read"]}`.
 The listing contains paths, front-matter metadata and timestamps. Links are resolved as in Notes:
 `{source: path, kind: "note" | "cite", target: path | citation_key}`. Embedded-note links are
 included; unresolved note targets are omitted. These operations do not grant note writes.
@@ -1047,7 +1048,7 @@ header and note menu.
 A spec has `id`, `title`, optional `icon`, `attach(context)`, `section(): HTMLElement`,
 `showNote(pathOrNull)`, `changed()`, `open(focusOrNull): Promise<void>`,
 `close({notify?})`, `isOpen(): boolean` and `destroy()`. The context provides `main` (the main-view
-host), `currentPath()`, `openNote(path)`, `open(focus)`, `setOpen(boolean)` (host layout/sidebar
+host), `currentPath()`, `openNote(path)`, `openPdf?(path)` (a PDF of the notes folders, in the viewer), `open(focus)`, `setOpen(boolean)` (host layout/sidebar
 state), and `closed()` (history after a user close). Plugins own their section/main DOM, canvases,
 observers and timers, and dispose them in `destroy`. The host unregisters navigation, restores
 the editor and calls destroy on unload. `visualizations.open(id, focus?)` and `toggle(id)` leave

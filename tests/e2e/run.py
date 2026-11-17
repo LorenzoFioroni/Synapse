@@ -73,7 +73,7 @@ def main() -> int:
     if unknown:
         print(f"Unknown checklist(s): {', '.join(unknown)}. Known: {', '.join(known)}", file=sys.stderr)
         return 2
-    webkit = ["notes", "portable_touch", "passkey_ui"]
+    webkit = ["notes", "notes_pdfs", "portable_touch", "passkey_ui"]
     chosen = args.names or (webkit if args.browser == "webkit" else list(known))
     if args.browser == "webkit" and any(name not in webkit for name in chosen):
         print(

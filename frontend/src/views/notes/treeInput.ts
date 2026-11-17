@@ -1,14 +1,14 @@
 // Mouse and keyboard in the notes tree: clicks select and open (Shift and Cmd/Ctrl extend the
 // selection), arrows move, Enter opens, F2 renames, Delete trashes; the context menu; and
 // dragging notes and folders onto folders (or as [[links]] into the editor).
-import { api } from '../../api.js';
+import { api, openNotePdf } from '../../api.js';
 import { PALETTE, colorName } from '../../ui/colors.js';
 import { openMenu, type MenuEntry } from '../../ui/menu.js';
 import { toastError } from '../../ui/toast.js';
 import { modKey } from '../../util.js';
 import { openNewWindow } from '../../windows.js';
 import {
-  copyLinks, deleteSelection, describe, moveItems, newFolder, newNote, pickFolder, renameFolder, renameNote, type Selection,
+  addPdfs, copyLinks, deleteSelection, describe, moveItems, newFolder, newNote, pickFolder, pickPdfs, renameFolder, renameNote, renamePdf, type Selection,
 } from './fileOps.js';
 import { exportMenu } from './exportNote.js';
 import {
@@ -22,7 +22,7 @@ const NOTE_MIME = 'application/x-zc-note';
 function onClick(e: MouseEvent): void {
   const t = e.target as Element;
   const hit = t.closest<HTMLElement>('.nt-hit');
-  if (hit) { hooks.openNote(hit.dataset.path!); return; }
+  if (hit) { if (hit.classList.contains('pdf')) openNotePdf({ id: Number(hit.dataset.id), path: hit.dataset.path! }); else hooks.openNote(hit.dataset.path!); return; }
   const row = t.closest<HTMLElement>('.nt-row');
   if (!row) return;
   // Clicking in the tree keeps the keyboard there (arrows, Delete, F2) until you click the note.
@@ -33,15 +33,22 @@ function onClick(e: MouseEvent): void {
   selectOnly(key);
   if (row.classList.contains('folder')) { toggleFolder(row.dataset.folder!); return; }
   paintSelection();
-  hooks.openNote(row.dataset.path!);
+  if (row.classList.contains('pdf')) openPdfRow(row); else hooks.openNote(row.dataset.path!);
+}
+
+/** A PDF of the tree, in the viewer (``newTab``: a tab of its own). */
+function openPdfRow(row: HTMLElement, newTab = false): void {
+  openNotePdf({ id: Number(row.dataset.id), path: row.dataset.path! }, null, {}, { newTab });
 }
 
 /** A double-click keeps the note's tab, as in VS Code (the first click opened it in the preview
  *  tab). Renaming is F2 or the menu. */
 function onDblClick(e: MouseEvent): void {
   if (e.shiftKey || modKey(e)) return;
-  const note = (e.target as Element).closest<HTMLElement>('.nt-row.note, .nt-hit');
+  const note = (e.target as Element).closest<HTMLElement>('.nt-row.note, .nt-hit:not(.pdf)');
   if (note) hooks.openNote(note.dataset.path!, { keep: true });
+  const pdf = (e.target as Element).closest<HTMLElement>('.nt-row.pdf');
+  if (pdf) openPdfRow(pdf, true);
 }
 
 /** Keys in the file tree: arrows move (Shift extends), Enter opens, F2 renames, Delete trashes. */
@@ -53,6 +60,7 @@ function onKey(e: KeyboardEvent): void {
   const { cursor } = tree;
   const i = cursor ? keys.indexOf(cursor) : -1;
   const isFolder = !!cursor?.startsWith('f:');
+  const isPdf = !!cursor?.startsWith('p:');
   const path = cursor?.slice(2) || '';
   const go = (j: number) => {
     const k = keys[Math.max(0, Math.min(keys.length - 1, j))];
@@ -79,10 +87,11 @@ function onKey(e: KeyboardEvent): void {
     case 'Enter':
       if (!cursor || mod) { handled = false; break; }
       if (isFolder) toggleFolder(path);
+      else if (isPdf) openPdfRow(treeEl().querySelector<HTMLElement>('.nt-row.cursor')!);
       else hooks.openNote(path).then(() => (ws.mode === 'read' ? ws.root.querySelector<HTMLElement>('.note-read')!.focus() : ws.editor?.focus()));
       break;
     case 'F2':
-      if (cursor) (isFolder ? renameFolder : renameNote)(path);
+      if (cursor) (isFolder ? renameFolder : isPdf ? renamePdf : renameNote)(path);
       break;
     case 'Delete': case 'Backspace':
       deleteSelection();
@@ -102,14 +111,27 @@ function onContextMenu(e: MouseEvent): void {
   e.preventDefault();
   const at = { x: e.clientX, y: e.clientY };
   if (row && !tree.sel.has(keyOf(row))) { selectOnly(keyOf(row)); paintSelection(); }
-  const items: Selection = row ? selected() : { notes: [], folders: [] };
-  const { notes, folders } = items;
+  const items: Selection = row ? selected() : { notes: [], pdfs: [], folders: [] };
+  const { notes, pdfs, folders } = items;
   const trash = { label: 'Move to Trash', icon: 'trash', danger: true, shortcut: '⌫', run: deleteSelection };
-  if (row && notes.length + folders.length > 1) {
+  if (row && notes.length + pdfs.length + folders.length > 1) {
     openMenu([
       { section: describe(items) },
       { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
       notes.length > 0 && { label: notes.length > 1 ? 'Copy links' : 'Copy link', icon: 'link', run: () => copyLinks(notes) },
+      'sep',
+      trash,
+    ], at);
+    return;
+  }
+  if (row && pdfs.length === 1 && !notes.length && !folders.length) {
+    const p = pdfs[0];
+    const el = treeEl().querySelector<HTMLElement>(`.nt-row.pdf[data-path="${CSS.escape(p)}"]`)!;
+    openMenu([
+      { label: 'Open', icon: 'open', run: () => openPdfRow(el), shortcut: '↵' },
+      { label: 'Open in New Tab', icon: 'pdf', run: () => openPdfRow(el, true) },
+      { label: 'Rename…', icon: 'edit', run: () => renamePdf(p), shortcut: 'F2' },
+      { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
       'sep',
       trash,
     ], at);
@@ -150,6 +172,7 @@ function onContextMenu(e: MouseEvent): void {
   openMenu([
     { label: 'New note here', icon: 'plus', run: () => newNote(fp) },
     { label: 'New folder here', icon: 'folderPlus', run: () => newFolder(fp) },
+    { label: 'Add PDF…', icon: 'pdf', run: () => pickPdfs(fp) },
     ...folderEntries,
   ], at);
 }
@@ -161,14 +184,15 @@ function bindDnD(el: HTMLElement): void {
     const key = keyOf(row);
     // drag the whole selection when the row is part of it, otherwise just this row
     const items = tree.sel.has(key) ? selected()
-      : (key[0] === 'f' ? { notes: [], folders: [key.slice(2)] } : { notes: [key.slice(2)], folders: [] });
+      : { notes: key[0] === 'n' ? [key.slice(2)] : [], pdfs: key[0] === 'p' ? [key.slice(2)] : [], folders: key[0] === 'f' ? [key.slice(2)] : [] };
     e.dataTransfer.setData(NOTE_MIME, JSON.stringify(items));
     if (items.notes.length) e.dataTransfer.setData('text/plain', items.notes.map((p) => `[[${stemOf(p)}]]`).join('\n'));  // dropping into the editor links them
     e.dataTransfer.effectAllowed = 'copyMove';
   });
   const target = (e: Event) => (e.target as Element).closest<HTMLElement>('[data-drop-folder]');
+  const hasFiles = (e: DragEvent) => [...(e.dataTransfer?.types || [])].includes('Files');
   el.addEventListener('dragover', (e) => {
-    if (![...(e.dataTransfer?.types || [])].includes(NOTE_MIME)) return;
+    if (!hasFiles(e) && ![...(e.dataTransfer?.types || [])].includes(NOTE_MIME)) return;
     const t = target(e);
     if (!t) return;
     e.preventDefault();
@@ -181,12 +205,17 @@ function bindDnD(el: HTMLElement): void {
   });
   el.addEventListener('drop', (e) => {
     el.querySelectorAll('.drop-target').forEach((x) => x.classList.remove('drop-target'));
+    const t = target(e);
+    if (hasFiles(e) && t) {   // files from the computer: PDFs go into the folder under the pointer
+      e.preventDefault();
+      void addPdfs([...(e.dataTransfer?.files || [])], t.dataset.dropFolder!);
+      return;
+    }
     let items: Partial<Selection> | null;
     try { items = JSON.parse(e.dataTransfer?.getData(NOTE_MIME) || 'null'); } catch { items = null; }
-    const t = target(e);
     if (!items || !t) return;
     e.preventDefault();
-    moveItems({ notes: items.notes || [], folders: items.folders || [] }, t.dataset.dropFolder!);
+    moveItems({ notes: items.notes || [], pdfs: items.pdfs || [], folders: items.folders || [] }, t.dataset.dropFolder!);
   });
 }
 

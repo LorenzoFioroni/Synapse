@@ -126,6 +126,9 @@ host's firewall (ufw); if you ever publish one, bind it to `127.0.0.1`.
 | `updates` (`internal`) | Synapse, the updater | Update Now; nothing else can reach the updater, which has the Docker socket |
 | `updater-web` | the updater | `git ls-remote` for the branch's newest commit |
 
+Cloudflare limits a request through the tunnel to 100 MB (free plan), so a PDF added to a notes
+folder is refused over 90 MB (`MAX_PDF_BYTES`).
+
 ## Two libraries on one server
 
 Each Synapse instance needs its own service, data folder, public hostname (`--public-url`) and

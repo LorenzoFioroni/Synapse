@@ -107,6 +107,15 @@ class Companion(threading.Thread):
                     self.saw_cancel.set()
                     return
             self.post(job, {"type": "done"})
+        elif "PDFLINK" in said:
+            self.post(
+                job,
+                {
+                    "type": "text",
+                    "text": "As the paper says:\n\n> Highlighted words from the paper [[refs/Matrix paper.pdf#p=2]]\n",
+                },
+                {"type": "done"},
+            )
         elif "STREAM" in said:
             self.post(job, {"type": "started"})
             time.sleep(0.8)
@@ -186,6 +195,12 @@ async def main():
             att = requests.post(
                 f"{BASE}/api/items/{item['id']}/attachments", files={"file": ("paper.pdf", fh, "application/pdf")}
             ).json()["attachments"][0]
+        with open(PDF, "rb") as fh:  # a PDF kept in a notes folder, to cite
+            requests.post(
+                f"{BASE}/api/notes/pdf",
+                data={"folder": "refs"},
+                files={"file": ("Matrix paper.pdf", fh, "application/pdf")},
+            )
         requests.put(
             f"{BASE}/api/notes/note",
             json={
@@ -431,6 +446,27 @@ async def main():
                 "Tab inserts [[note]]",
                 await page.input_value(".ai-input") == "and [[Review]]",
                 await page.input_value(".ai-input"),
+            )
+            await page.fill(".ai-input", "")
+            await page.keyboard.type("and [[Matr")
+            check(
+                "typing [[ lists the PDFs of the notes folders, labelled as PDFs",
+                await until(page, "document.querySelectorAll('.ai-mentions .ai-mention').length >= 1")
+                and "Matrix paper.pdf" in await page.inner_text(".ai-mention-key")
+                and "PDF" in await page.inner_text(".ai-mention-detail"),
+            )
+            await page.keyboard.press("Tab")
+            check(
+                "Tab inserts [[file.pdf]]",
+                await page.input_value(".ai-input") == "and [[Matrix paper.pdf]]",
+                await page.input_value(".ai-input"),
+            )
+            await page.fill(".ai-input", "x [[zzqq")
+            check(
+                "an unknown [[ query says no note or PDF",
+                await until(
+                    page, "document.querySelector('.ai-mention-empty')?.textContent === 'No matching note or PDF'"
+                ),
             )
             await page.fill(".ai-input", "")
             await page.click("[data-mention]")
@@ -799,6 +835,32 @@ async def main():
                 "clicking the note link opens that note",
                 await page.locator(".note-head").is_visible() and "Review" in await page.inner_text(".note-head"),
             )
+
+            # ---- a PDF of the notes folders cited in an answer opens in the viewer at the page, on the quoted words
+            await page.click("[data-new]")
+            await page.fill(".ai-input", "PDFLINK please")
+            await page.keyboard.press("Enter")
+            check(
+                "a [[file.pdf#p=2]] link in an answer is a PDF link",
+                await until(page, "!!document.querySelector('.ai-answer a.wikilink.pdf')", 12000)
+                and "p. 2" in await page.inner_text(".ai-answer a.wikilink.pdf"),
+            )
+            await page.click(".ai-answer a.wikilink.pdf")
+            await page.wait_for_selector(".tab-frame.active", timeout=10000)
+            await page.wait_for_timeout(800)
+            where = await (await (await page.query_selector(".tab-frame.active")).content_frame()).evaluate(
+                "location.href"
+            )
+            check(
+                "clicking it opens the PDF at that page with the quoted words",
+                "npdf=" in where and "page=2" in where and "q=Highlighted" in where,
+                where,
+            )
+            await page.locator(".tab.active .tab-close").click()  # tabs come back after a reload: close this one
+            await page.wait_for_timeout(400)
+            if await page.locator(".note-head").count() == 0 or not await page.locator(".note-head").is_visible():
+                await page.click(".tab.home")
+                await page.wait_for_timeout(300)
 
             # ---- Send never wraps, however long a label is: the pickers shrink instead
             await page.click("[data-new]")

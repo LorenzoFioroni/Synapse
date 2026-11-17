@@ -23,6 +23,8 @@ interface Spot { page?: number | string | null; q?: string | null; rect?: string
 
 const params = new URLSearchParams(location.search);
 const paperId = params.get('paper_id');
+const notePdfId = Number(params.get('npdf')) || null;   // a PDF kept in a notes folder: no item, no paper note
+let notePdfPath: string | null = null;
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('zc-notes') : null;
 let item: Item | null = null;
 
@@ -109,6 +111,41 @@ async function appendToPaperNote(markdown: string): Promise<{ path: string; crea
 let menu: HTMLElement | null = null;
 function closeMenu() { menu?.remove(); menu = null; }
 
+/** A PDF of the notes folders has no paper note: the quote goes into a note that is open, else it is copied. */
+async function deliverToOpenNote(markdown: string, at: { x: number; y: number }): Promise<void> {
+  const open = await askOpenNotes();
+  const copy = async () => {
+    closeMenu();
+    try { await navigator.clipboard.writeText(markdown); toast('No note is open: the quote is copied, paste it into a note.'); } catch { toast('No note is open, and the quote could not be copied.'); }
+  };
+  const go = async (dest: OpenNote) => {
+    closeMenu();
+    if (await sendToTab(dest.tab, markdown)) toast(`Added to “${dest.title}”`); else await copy();
+  };
+  if (open.length <= 1) { if (open[0]) await go(open[0]); else await copy(); return; }
+  menu = document.createElement('div');
+  menu.className = 'zc-pill zc-menu';
+  menu.innerHTML = `<div class="zc-head">Add to</div>${open.map((o, i) => `<button data-i="${i}">“${esc(o.title)}” (open note)</button>`).join('')}
+    <button data-copy>Copy the quote</button>`;
+  menu.style.left = `${Math.min(at.x, innerWidth - 260)}px`;
+  menu.style.top = `${Math.min(at.y, innerHeight - 160)}px`;
+  menu.addEventListener('pointerdown', (e) => e.preventDefault());
+  menu.addEventListener('click', (e) => {
+    const t = e.target as Element;
+    if (t.closest('[data-copy]')) { void copy(); return; }
+    const b = t.closest<HTMLElement>('[data-i]');
+    if (b) void go(open[Number(b.dataset.i)]);
+  });
+  document.body.appendChild(menu);
+}
+
+async function loadNotePdfPath(): Promise<void> {
+  try {
+    const r = await fetch(`/api/note-pdfs/${notePdfId}`);
+    if (r.ok) notePdfPath = (await r.json()).path;
+  } catch { /* keep the path known */ }
+}
+
 /** Ask where the block should go (open notes, or the paper note) and send it there. */
 async function deliver(markdown: string, at: { x: number; y: number }): Promise<void> {
   const open = await askOpenNotes();
@@ -154,7 +191,7 @@ function onSelectionEnd() {
   hidePill();
   const sel = window.getSelection();
   const text = sel && !sel.isCollapsed ? sel.toString() : '';
-  if (!sel || !text.trim() || !item) return;
+  if (!sel || !text.trim() || !(item || notePdfPath)) return;
   const it = item;
   const node = (sel.anchorNode?.nodeType === 1 ? sel.anchorNode : sel.anchorNode?.parentElement) as Element | null | undefined;
   const wrapper = node?.closest?.<HTMLElement>('.page-wrapper');
@@ -164,23 +201,27 @@ function onSelectionEnd() {
   const p = document.createElement('div');
   pill = p;
   p.className = 'zc-pill';
-  p.innerHTML = (it.citation_key
+  p.innerHTML = (notePdfPath || it?.citation_key
     ? '<button data-q>❝ Quote to note</button>'
     : '<button disabled title="Give the item a citation key first">No citation key</button>')
-    + (aiConfigured() ? '<button data-ask title="Ask your AI about the selected words">✦ Ask AI</button>' : '');
+    + ((it || notePdfPath) && aiConfigured() ? '<button data-ask title="Ask your AI about the selected words">✦ Ask AI</button>' : '');
   p.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - 260))}px`;
   p.style.top = `${rect.bottom + 8 > innerHeight - 40 ? rect.top - 40 : rect.bottom + 8}px`;
   p.addEventListener('pointerdown', (e) => e.preventDefault());   // keep the selection
   p.querySelector('[data-q]')?.addEventListener('click', () => {
-    const md = `> ${cleanQuote(text)} [@${it.citation_key}, p. ${page}${attQualifier()}]`;
     const at = { x: parseFloat(p.style.left), y: parseFloat(p.style.top) };
     hidePill();
-    deliver(md, at);
+    if (notePdfPath) {
+      // asked again: the PDF may have been renamed since this tab opened
+      void loadNotePdfPath().then(() => deliverToOpenNote(`> ${cleanQuote(text)} [[${notePdfPath}#p=${page}]]`, at));
+      return;
+    }
+    deliver(`> ${cleanQuote(text)} [@${it!.citation_key}, p. ${page}${attQualifier()}]`, at);
   });
   p.querySelector('[data-ask]')?.addEventListener('click', () => {
     const quote = cleanQuote(text);
     hidePill();
-    void askAi(paperChip(it, page, quote));
+    void askAi(notePdfPath ? describe({ kind: 'notepdf', path: notePdfPath, page, quote }) : paperChip(it!, page, quote));
   });
   document.body.appendChild(p);
 }
@@ -208,6 +249,13 @@ function pdfSelection(): { text: string; page: number } | null {
 
 /** What this PDF offers Ask AI: the paper at the page in view, and the words selected. */
 function aiHere(): Attached[] {
+  if (notePdfPath) {   // a PDF of the notes folders: the page in view, and the words selected
+    const chip = (page: number, quote?: string) => describe({ kind: 'notepdf', path: notePdfPath!, page, ...(quote ? { quote } : {}) });
+    const out = [chip(currentPage())];
+    const sel = pdfSelection();
+    if (sel) out.push(chip(sel.page, sel.text));
+    return out;
+  }
   if (!item) return [];
   const out = [paperChip(item, currentPage())];
   const sel = pdfSelection();
@@ -259,6 +307,18 @@ const viewerHost: AskHost = {
     // in an app tab, the PDF opens as another app tab, as from a note
     const tabs = appTabs();
     if (tabs) tabs.open({ key: file, url, title: cited.title || 'PDF', spot: { page }, newTab: false });
+    else window.open(url, '_blank', 'noopener');
+  },
+  // a link in an answer to a PDF of the notes folders: this PDF scrolls (and flashes the words), another opens as a tab
+  openNotePdf(pdf: { id: number; path: string }, page: number | null, quote?: string) {
+    if (notePdfId === pdf.id) { gotoSpot({ page: page || 1, ...(quote ? { q: quote } : {}) }); return; }
+    const file = `/api/note-pdfs/${pdf.id}/file`;   // as api.ts notePdfAtt()
+    const q = new URLSearchParams({ file, title: pdf.path.split('/').pop()!.replace(/\.pdf$/i, ''), npdf: String(pdf.id) });
+    if (page) q.set('page', String(page));
+    if (quote) q.set('q', quote);
+    const url = `/viewer.html?${q}`;
+    const tabs = appTabs();
+    if (tabs) tabs.open({ key: file, url, title: pdf.path.split('/').pop()!.replace(/\.pdf$/i, ''), spot: { page, q: quote }, newTab: false });
     else window.open(url, '_blank', 'noopener');
   },
   // a note opens in the app: in the page around an app tab (main.ts reads the address), else in a new window
@@ -446,7 +506,22 @@ export async function spotlight(wrapper: PageWrapper, container: HTMLElement, ta
 jumpToRequestedPage();
 
 /* --------------------------------------------------------------------- setup */
+/** Ask AI: what this PDF shows is offered to the panel; on its own the viewer has the floating button. */
+function mountAi(): void {
+  window.zcViewerHere = aiHere;
+  watchHere();
+  if (!appTabs()) void import('../ai/launcher.js').then((m) => m.mountLauncher(() => void askAi()));
+}
+
 async function init() {
+  if (notePdfId) {
+    await loadNotePdfPath();
+    mountAi();
+    refreshAiStatus(60_000);
+    wireSelection();
+    window.zcViewerBridge = { ready: true, item, spotlight };
+    return;
+  }
   if (!paperId) return;
   try {
     const r = await fetch(`/api/items/${encodeURIComponent(paperId)}`);
@@ -454,10 +529,7 @@ async function init() {
     item = await r.json();
   } catch { return; }
   const tools = document.getElementById('tools-section');
-  // Ask AI: what this PDF shows is offered to the panel; on its own the viewer has the floating button
-  window.zcViewerHere = aiHere;
-  watchHere();
-  if (!appTabs()) void import('../ai/launcher.js').then((m) => m.mountLauncher(() => void askAi()));
+  mountAi();
   if (tools && item?.citation_key) {
     const b = document.createElement('button');
     b.id = 'zc-snap-btn';
@@ -468,6 +540,12 @@ async function init() {
     tools.prepend(b);
   }
   refreshAiStatus(60_000);   // "Ask AI" in the selection toolbar only when it is set up
+  wireSelection();
+  window.zcViewerBridge = { ready: true, item, spotlight };   // for tests
+}
+
+/** Offer "Quote to note" when text on a page is selected. */
+function wireSelection(): void {
   document.getElementById('pdf-container')?.addEventListener('mouseup', () => { if (lastPointer === 'mouse') setTimeout(onSelectionEnd, 0); });
   // On a touch screen text is selected with a long press and the handles: offer the quote once the
   // selection has settled.
@@ -482,7 +560,6 @@ async function init() {
     if (menu && !menu.contains(e.target as Node)) closeMenu();
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setSnap(false); hidePill(); closeMenu(); } });
-  window.zcViewerBridge = { ready: true, item, spotlight };   // for tests
 }
 
 init();

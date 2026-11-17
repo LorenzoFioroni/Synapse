@@ -301,7 +301,7 @@ export interface NoteDetails extends NoteInfo {
 /** A link in a note, as the notes index stores it (backend/notes/index.py, table links). */
 export interface NoteLink {
   path: string;            // the note containing the link
-  kind: 'note' | 'embed' | 'cite' | 'image';
+  kind: 'note' | 'embed' | 'cite' | 'image' | 'pdf';
   target: string;
   heading: string | null;
   alias: string | null;
@@ -344,8 +344,17 @@ export interface ItemNotes {
 /** GET /api/notes/keys: per citation key, its paper note (path) and how many notes cite it. */
 export type NoteKeys = Record<string, { paper: string | null; citing: number }>;
 
+/** A PDF kept in a notes folder (GET /api/notes `pdfs`; backend/notes/pdfs.py). Its `id` outlives renames. */
+export interface NotePdf {
+  id: number;
+  path: string;
+  name: string;
+  size: number;
+}
+
 export interface NotesListing {
   notes: NoteInfo[];
+  pdfs?: NotePdf[];
   folders: string[];
   /** Notes folders given a colour (backend/notes/folder_colors.py): folder path → #rrggbb. */
   folder_colors?: Record<string, string>;

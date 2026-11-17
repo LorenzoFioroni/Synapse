@@ -59,7 +59,7 @@ Two objects tie the backend together:
 | Package / module | Responsibility | Storage |
 |---|---|---|
 | `library/` | Items, attachments, folders, tags, smart folders, PDF annotations, citation keys and search. `fields.py` is the single source of truth for item fields and types, and `identifiers.py` for DOIs and arXiv ids (cleaning, normalising, matching). `agent.py` holds which AI app is making the current change (set by the MCP server, read by notes and tasks). | `library.db` (schema and migrations in `library/db.py`) |
-| `notes/` | Markdown notes. The files are the source of truth; the index is disposable. `history/` keeps every version of their text in Git (see [notes history](notes-history.md)). | `notes/`, `notes_index.db`, `notes-history.git/` |
+| `notes/` | Markdown notes and the PDFs beside them. The files are the source of truth; the index is disposable; the PDFs' numbers (`note_pdfs`) are in `library.db`. `history/` keeps every version of their text in Git (see [notes history](notes-history.md)). | `notes/`, `notes_index.db`, `notes-history.git/` |
 | `tasks/` | Task records, history and the integrity of `{{task:id}}` note links. The optional Tasks contributed plugin owns their UI, HTTP handlers and MCP tools (see [tasks](tasks.md)). | `library.db` (`tasks`, `task_history`) |
 | `formats/` | Import parsers and shared codecs for BibTeX, RIS, EndNote and CSL-JSON. The Export Formats plugin registers their library-export writers; `exporting.py` prepares records for writers and core clipboard copying. | none |
 | `api/` | One Flask blueprint per area. Endpoints only parse requests and shape responses. | none |

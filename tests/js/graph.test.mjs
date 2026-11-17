@@ -70,3 +70,17 @@ test('search, relations and labels', () => {
   assert.equal(label(P('x', { authors: 'Cui, Jian; Cirac, J. I.', year: 2015 })), 'Cui 2015');
   assert.equal(label(N('ideas/Plan.md', { title: 'Plan' })), 'Plan');
 });
+
+test('PDFs of the notes folders appear with the notes that link to them', () => {
+  const pdfData = {
+    nodes: [N('Review.md'), { id: 'pdf:refs/a.pdf', kind: 'pdf', path: 'refs/a.pdf', title: 'a.pdf', pdf_id: 3 }, P('x')],
+    edges: [E('note:Review.md', 'pdf:refs/a.pdf', 'pdf')],
+  };
+  assert.deepEqual(ids(buildView(pdfData)), ['note:Review.md', 'pdf:refs/a.pdf']);
+  assert.deepEqual(ids(buildView(pdfData, { notes: false })), []);
+  assert.ok(!ids(buildView(pdfData, { edges: { pdf: false } })).includes('pdf:refs/a.pdf'));
+  const r = relations(pdfData, 'pdf:refs/a.pdf');
+  assert.deepEqual(r.pdfLinkedFrom.map((n) => n.id), ['note:Review.md']);
+  assert.deepEqual(relations(pdfData, 'note:Review.md').pdfs.map((n) => n.id), ['pdf:refs/a.pdf']);
+  assert.equal(label(pdfData.nodes[1]), 'a.pdf');
+});

@@ -192,7 +192,7 @@ headless mode; the default headless shell cannot load them.
 
 **Browser CI.** `.github/workflows/browser-checks.yml` runs at 02:23 UTC nightly, by manual
 workflow dispatch (both engines or one), and for PRs that change browser infrastructure.
-Chromium discovers every checklist. WebKit runs `notes`, `portable_touch` and `passkey_ui`.
+Chromium discovers every checklist. WebKit runs `notes`, `notes_pdfs`, `portable_touch` and `passkey_ui`.
 The portable touch checklist uses real taps on iPad/iPhone profiles, PDF display, note editing
 and Settings. `passkey_ui` uses explicit credential/service stubs for feature detection,
 cancellation and service errors; it does not claim a native OS passkey ceremony. Full raw
@@ -255,6 +255,7 @@ CDP-specific gesture/authenticator scenarios stay on Chromium.
 | `portable_touch` | 8809 | Portable iPad/iPhone touch taps, PDF viewport, note editing/save and Settings search in Chromium/WebKit |
 | `passkey_ui` | 8810 | Passkey feature detection, cancellation and service errors with explicit credential/service stubs in Chromium/WebKit |
 | `notes` | 8765 | The notes editor |
+| `notes_pdfs` | 8862 | PDFs in the notes folders: dropping files on a folder, a refused text file and fake PDF, Add PDF… in a folder's menu, opening one in the viewer by its number, a highlight made in the viewer saved on the PDF and drawn again after a reload, renaming, dragging to a folder, Move to Trash with Undo, listed after a reload |
 | `note_commands` | 8809 | The command palette while a note is open: images, figures and galleries (several images chosen or pasted at once, with and without Extended Markdown), citations, links, tasks, tables, modes, the note's own commands, none in the library |
 | `notes_history` | 8811 | The notes history: a note's versions (the user's close together as one row, an AI change from another process apart), what a version changed and how it differs from now, putting one back (recorded as a restore), leaving a note records its edits, a change made outside Synapse, the history of all notes, marking a milestone, what changed since and restoring it, Settings → Backups, a phone-width screen |
 | `metadata_check` | 8810 | Metadata Check: Run Now from Settings and the palette, the interval setting, ignoring a suggestion from the item menu (with Undo) and stopping from the menu and from Settings, a different suggestion showing through an old ignore, the selected row following a changed plugin value, reviewing and rejecting stored suggestions, ignoring papers, and applying changes without saving an ignored paper |

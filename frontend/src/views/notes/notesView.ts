@@ -21,11 +21,13 @@ import { attachCiteCards, openCitation, pdfsOf, showCard } from './citeCard.js';
 import { conflictDialog } from './conflict.js';
 import { createEditor, loadMD, type NoteEditor } from './editor.js';
 import { exportMenu } from './exportNote.js';
-import { folderOfSelection, followMove, newFolder, newNote, renameNote, rescan, showTrash } from './fileOps.js';
+import { folderOfSelection, followMove, newFolder, newNote, pickPdfs, renameNote, rescan, showTrash } from './fileOps.js';
 import { linkDataOf } from './linkData.js';
 import { refitOnResize } from './mathFit.js';
 import { NoteSession } from './noteSession.js';
 import { initPanels, listHidden, panelButton, peek, toggleList } from './panels.js';
+import { openPdfLink } from './pdfLinks.js';
+import { attachPdfCards } from './pdfCard.js';
 import { followLink, citeTargetOf, gotoLine, initReadView, readTopLine, renderRead, scheduleRead, scrollReadTo } from './readView.js';
 import { createRenderer, renderDefaults } from './render.js';
 import { renderMermaid } from './richRender.js';
@@ -110,6 +112,7 @@ export function initNotes(): void {
   renderDefaults.macros = noteMacros;
   applyLayout();
   initPanels(root);
+  attachPdfCards(root);
   attachCiteCards(root, { itemInfo, openNote: (p) => openNote(p), refreshLibrary: async () => { await loadLibrary(); await refreshTree(); }, targetOf: citeTargetOf });
   let libTimer: ReturnType<typeof setTimeout> | undefined;
   on('items', () => { if (notesOpen()) { clearTimeout(libTimer); libTimer = setTimeout(loadLibrary, 500); } });
@@ -199,6 +202,7 @@ function attachGraph(): void {
   g.attach({
     root: ws.root,
     openNote: (p) => openNote(p),
+    openPdf: (p) => { void openPdfLink(p); },
     currentPath: () => ws.session?.path || null,
     openGraph: (focus) => openNotesGraph(focus),
     onGlobalClosed: () => navPush({ ws: 'notes', path: ws.session?.path || null }),
@@ -368,7 +372,7 @@ async function newEditor(view: NoteView, mode: 'live' | 'source'): Promise<NoteE
     renderer: () => ws.renderer,
     resolveNote,
     citeInfo,
-    openNote: (target, heading) => followLink(target, heading),
+    openNote: (target, heading, spot) => followLink(target, heading, spot),
     openCite: (key, page, target, opts) => { if (!openCitation(key, page, target, opts)) toast(`@${key} is not in your library.`); },
     mermaid: renderMermaid,
     equations: equationMode,
@@ -377,6 +381,7 @@ async function newEditor(view: NoteView, mode: 'live' | 'source'): Promise<NoteE
   }, mode, {
     items: () => ws.library.list,
     notes: () => ws.overview.notes,
+    pdfs: () => ws.overview.pdfs || [],
     tasks: () => taskHooks.choices?.() ?? null,
     newTask: (title) => taskHooks.create?.(title) ?? Promise.resolve(null),
     taskHtml: (id) => taskHooks.titleHtml?.(id) ?? '',
@@ -706,6 +711,7 @@ function onClick(e: MouseEvent): void {
   if (act === 'paper-pdf' && info?.paper) { openPaperPdf(actEl!); return; }
   if (act === 'tree-menu') {
     openMenu([
+      { label: 'Add PDF…', icon: 'pdf', run: () => pickPdfs() },
       { label: 'Rescan notes folder', icon: 'refresh', run: rescan },
       { label: 'Deleted notes…', icon: 'trash', run: showTrash },
       { label: 'Notes history…', icon: 'restore', run: openVaultHistory },

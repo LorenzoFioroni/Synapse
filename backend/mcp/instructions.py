@@ -18,6 +18,10 @@ of the note (it applies to the whole note).
 "> exact words from the page [@key, p. N]", the words copied from read_paper (prose, not formulas). \
 Clicking the citation opens the PDF there and highlights them. A citation inside a block quote or callout \
 always means such a quote.
+- PDFs kept in the user's notes folders (not in the library) are linked by path with the extension: \
+[[refs/paper.pdf#p=7]] (the page after #p=; an alias after | is fine). Name such a PDF by its path in \
+read_paper, search_in_paper, view_page, get_paper_outline, get_annotations and add_highlight (paper="refs/paper.pdf"). \
+A block quote ending with such a link, "> exact words [[refs/paper.pdf#p=7]]", is a quote like one ending with a citation.
 - Figures, tables and equations: use snapshot (figure="Figure 2", equation="3", or a rect read off view_page) and \
 paste the Markdown it returns: the image line, then on the next line *Figure 2: … [@key, p. N]* (you may write a \
 caption before the citation). Clicking it flashes that region.
@@ -49,7 +53,7 @@ see them with view_image (one path, or every image of a note; list_only lists th
 (they come with DOI/arXiv ids you can look up elsewhere); long lists come one line per work.
 - A search also finds papers that merely cite the subject: those are marked only_in_references (search_library) \
 or in_reference_list (search_in_paper) and listed last. Prefer the unmarked results.
-- get_annotations shows what the user highlighted or commented on a paper's PDF.
+- get_annotations shows what the user highlighted or commented on a paper's PDF (also one kept in a notes folder).
 - Cite sources in the user's syntax: [@key] or [@key, p. N] with N the PDF page number the tools report.
 - write_note saves a new note (in the ai/ folder, or in a notes folder the user names); use it when the user \
 asks to save an answer.

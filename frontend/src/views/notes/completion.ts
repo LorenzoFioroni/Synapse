@@ -6,8 +6,8 @@ import type { Completion, CompletionContext, CompletionResult } from '@codemirro
 import type { EditorState } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
 import type { SyntaxNode } from '@lezer/common';
-import type { CiteEntry, NoteInfo } from '../../types.js';
-import { completionContext, noteChoices, searchItems, searchNotes, shortAuthors } from './library.js';
+import type { CiteEntry, NoteInfo, NotePdf } from '../../types.js';
+import { completionContext, noteChoices, pdfChoices, searchItems, searchNotes, shortAuthors } from './library.js';
 import { GALLERY_INFO } from './mdscan.js';
 
 type CM = typeof import('../../../vendor/cm6/cm6.js');
@@ -23,6 +23,8 @@ export interface TaskChoice { id: string; title: string; detail: string; info: s
 export interface CompletionData {
   items(): CiteEntry[];
   notes(): NoteInfo[];
+  /** The PDFs in the notes folders: [[ offers their names. */
+  pdfs?(): NotePdf[];
   tasks?(): TaskChoice[] | null;
   newTask?(title: string): Promise<string | null>;
   /** A task's title as HTML (math, citations rendered), shown in place of the plain label. */
@@ -118,7 +120,7 @@ export function completions(cm: CM, data: CompletionData) {
       return {
         from,
         filter: false,
-        options: searchNotes(noteChoices(data.notes()), c.query).map((n): Completion => ({
+        options: [...searchNotes(noteChoices(data.notes()), c.query), ...searchNotes(pdfChoices(data.pdfs?.() || []), c.query)].slice(0, 30).map((n): Completion => ({
           label: n.insert,
           detail: n.title !== n.stem ? n.title : n.folder,
           type: 'note',

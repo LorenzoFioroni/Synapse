@@ -8,6 +8,8 @@ import type { Scan } from './mdscan.js';
 export interface NotesGraphContext {
   root: HTMLElement;
   openNote(path: string): void;
+  /** Open a PDF of the notes folders (a node of the graph) in the viewer. */
+  openPdf?(path: string): void;
   currentPath(): string | null;
   openGraph(focus: string | null): void;   // the full graph, with a history entry
   onGlobalClosed?(): void;

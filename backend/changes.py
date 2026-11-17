@@ -121,6 +121,10 @@ def kind_of(path: str) -> str:
     """Which part of the app a library-database write through this API path changes."""
     if path.startswith(("/api/tasks", "/api/plugins/tasks/")):
         return "tasks"
-    if path.startswith("/api/annotations") or ("/annotations" in path and path.startswith("/api/attachments/")):
+    if path.startswith("/api/annotations") or (
+        "/annotations" in path and path.startswith(("/api/attachments/", "/api/note-pdfs/"))
+    ):
         return "annotations"
+    if path.startswith("/api/notes"):  # e.g. the registry of the PDFs among the notes
+        return "notes"
     return "library"

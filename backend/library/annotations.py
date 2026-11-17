@@ -21,6 +21,10 @@ a box also has ``fill``, the colour it is filled with (none when null), and a bo
 for no border. ``text`` is the highlighted or underlined words, the words inside a box, or the
 content of a text box; ``comment`` is free text.
 
+PDFs kept in the notes folders (``notes/pdfs.py``) have the same records in ``note_pdf_annotations``,
+tied to the PDF's number (``pdf_id``) instead of an attachment; deleting the PDF's registry row
+deletes them. The record API (``/api/annotations/<id>``) finds an annotation in either table.
+
 Older versions stored the raw SVG markup of each page in one blob per item
 (``papers.annotations``). ``annotations_legacy.migrate_legacy`` converts those blobs once, after a backup,
 and leaves the old column untouched.
@@ -61,6 +65,22 @@ CREATE TABLE IF NOT EXISTS annotations (
     modified TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_annotations_attachment ON annotations(attachment_id);
+CREATE TABLE IF NOT EXISTS note_pdf_annotations (
+    id TEXT PRIMARY KEY,
+    pdf_id INTEGER NOT NULL REFERENCES note_pdfs(id) ON DELETE CASCADE,
+    page INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    rects TEXT,
+    path TEXT,
+    text TEXT,
+    color TEXT,
+    fill TEXT,
+    size REAL,
+    comment TEXT,
+    created TEXT,
+    modified TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_note_pdf_annotations_pdf ON note_pdf_annotations(pdf_id);
 CREATE TABLE IF NOT EXISTS annotation_migration (
     paper_id TEXT PRIMARY KEY,
     attachment_id INTEGER,
@@ -169,6 +189,11 @@ def _row(r) -> dict:
 
 
 # ============================================================================ store
+# (table, column of the owner): an attachment of an item, or a PDF in the notes folders
+LIBRARY = ("annotations", "attachment_id")
+NOTES = ("note_pdf_annotations", "pdf_id")
+
+
 class AnnotationStore:
     def __init__(self, db):
         self.db = db
@@ -194,12 +219,26 @@ class AnnotationStore:
             ).fetchall()
         return [_row(r) for r in rows]
 
+    def for_note_pdf(self, pdf_id: int) -> list[dict]:
+        with self.db.session() as c:
+            rows = c.execute(
+                "SELECT * FROM note_pdf_annotations WHERE pdf_id = ? ORDER BY page, created, id", (pdf_id,)
+            ).fetchall()
+        return [_row(r) for r in rows]
+
     def get(self, ann_id: str) -> dict | None:
         with self.db.session() as c:
-            r = c.execute("SELECT * FROM annotations WHERE id = ?", (ann_id,)).fetchone()
-        return _row(r) if r else None
+            for table, _ in (LIBRARY, NOTES):
+                r = c.execute(f"SELECT * FROM {table} WHERE id = ?", (ann_id,)).fetchone()
+                if r:
+                    return _row(r)
+        return None
 
-    def create(self, attachment_id: int, data: dict, conn=None) -> dict:
+    def create_on_note_pdf(self, pdf_id: int, data: dict) -> dict:
+        return self.create(pdf_id, data, owner=NOTES)
+
+    def create(self, attachment_id: int, data: dict, conn=None, owner: tuple[str, str] = LIBRARY) -> dict:
+        table, column = owner
         fields = clean(data)
         ann_id = str(data.get("id") or uuid.uuid4().hex)
         if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", ann_id):
@@ -207,7 +246,7 @@ class AnnotationStore:
         now = utcnow()
         row = {
             "id": ann_id,
-            "attachment_id": attachment_id,
+            column: attachment_id,
             "created": data.get("created") or now,
             "modified": now,
             **{k: fields.get(k) for k in FIELDS},
@@ -215,12 +254,12 @@ class AnnotationStore:
         row["rects"] = json.dumps(row["rects"]) if row["rects"] is not None else None
         row["path"] = json.dumps(row["path"]) if row["path"] is not None else None
         cols = ", ".join(row)
-        sql = f"INSERT INTO annotations ({cols}) VALUES ({', '.join('?' for _ in row)})"
+        sql = f"INSERT INTO {table} ({cols}) VALUES ({', '.join('?' for _ in row)})"
         if conn is not None:
             conn.execute(sql, tuple(row.values()))
             return {**row, "rects": fields.get("rects"), "path": fields.get("path")}
         with self.db.session() as c:
-            if c.execute("SELECT 1 FROM annotations WHERE id = ?", (ann_id,)).fetchone():
+            if any(c.execute(f"SELECT 1 FROM {t} WHERE id = ?", (ann_id,)).fetchone() for t, _ in (LIBRARY, NOTES)):
                 raise AnnotationError("An annotation with this id already exists.")
             c.execute(sql, tuple(row.values()))
         return self._get_existing(ann_id)
@@ -240,16 +279,19 @@ class AnnotationStore:
         sets = {k: (json.dumps(v) if k in ("rects", "path") and v is not None else v) for k, v in fields.items()}
         sets["modified"] = utcnow()
         with self.db.session() as c:
-            cur = c.execute(
-                f"UPDATE annotations SET {', '.join(f'{k} = ?' for k in sets)} WHERE id = ?", (*sets.values(), ann_id)
-            )
-            if not cur.rowcount:
+            for table, _ in (LIBRARY, NOTES):
+                cur = c.execute(
+                    f"UPDATE {table} SET {', '.join(f'{k} = ?' for k in sets)} WHERE id = ?", (*sets.values(), ann_id)
+                )
+                if cur.rowcount:
+                    break
+            else:
                 raise KeyError(ann_id)
         return self._get_existing(ann_id)
 
     def delete(self, ann_id: str) -> bool:
         with self.db.session() as c:
-            return bool(c.execute("DELETE FROM annotations WHERE id = ?", (ann_id,)).rowcount)
+            return any(c.execute(f"DELETE FROM {t} WHERE id = ?", (ann_id,)).rowcount for t, _ in (LIBRARY, NOTES))
 
     # ------------------------------------------------------------------ migration
     def pending_legacy(self) -> list[str]:

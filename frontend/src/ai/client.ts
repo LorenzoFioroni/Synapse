@@ -8,10 +8,11 @@ export interface AiProvider { id: string; label: string; models?: { id: string; 
 export interface AiCompanion { id: string; name: string; providers: AiProvider[]; busy: number }
 export interface AiStatus { configured: boolean; companions: AiCompanion[] }
 
-/** What a question is about: a note (and words selected in it) or a paper (its PDF page, words selected there). */
+/** What a question is about: a note (and words selected in it), a paper (its PDF page, words selected there) or a PDF of the notes folders. */
 export type AskContext =
   | { kind: 'note'; path: string; selection?: string }
-  | { kind: 'paper'; item: string; attachment?: number; page?: number; quote?: string };
+  | { kind: 'paper'; item: string; attachment?: number; page?: number; quote?: string }
+  | { kind: 'notepdf'; path: string; page?: number; quote?: string };   // a PDF kept in a notes folder
 
 export interface AskOptions { context?: AskContext[]; conversation?: string; provider?: string; companion?: string; model?: string; effort?: string }
 export interface AskReply { job: string; conversation: string; provider: string; companion: { id: string; name: string } }

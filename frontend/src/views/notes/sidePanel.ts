@@ -68,9 +68,9 @@ export function paintSide(): void {
       <span class="ns-main">${escapeHtml(b.source_title || stemOf(b.path))}</span>
       <span class="ns-sub">${escapeHtml(b.context)}</span></button>`).join('')}</div>` : '<div class="side-empty">No other note links here yet.</div>';
   const unresolvedHtml = unresolved.length ? `<div class="ns-list">${unresolved.map((u) => `
-    <button class="ns-row warn" ${u.kind === 'cite' ? `data-cite-keys="${escapeHtml(u.target)}"` : `data-create-note="${escapeHtml(u.target)}"`} data-goto-line="${u.line}">
+    <button class="ns-row warn" ${u.kind === 'cite' ? `data-cite-keys="${escapeHtml(u.target)}"` : u.kind === 'pdf' ? '' : `data-create-note="${escapeHtml(u.target)}"`} data-goto-line="${u.line}">
       <span class="ns-main">${u.kind === 'cite' ? `@${escapeHtml(u.target)}` : `[[${escapeHtml(u.target)}]]`}</span>
-      <span class="ns-sub">${u.kind === 'cite' ? 'not in your library' : 'no such note — click to create'}</span></button>`).join('')}</div>` : '';
+      <span class="ns-sub">${u.kind === 'cite' ? 'not in your library' : u.kind === 'pdf' ? 'no such PDF in your notes folders' : 'no such note — click to create'}</span></button>`).join('')}</div>` : '';
   side.innerHTML = `
     <div class="ns-section ns-tasks" hidden></div>
     <div class="ns-section"><div class="ns-title">Cited papers ${cited.length ? `<span class="count">${cited.length}</span>` : ''}</div>${citedHtml}</div>

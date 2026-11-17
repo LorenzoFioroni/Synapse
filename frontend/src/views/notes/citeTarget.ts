@@ -10,7 +10,8 @@
 // No DOM access in the text and PNG helpers, so they are unit-tested with Node.
 
 const QUOTE_MAX = 400;
-const CITES = /\[[^\[\]]*@[^\[\]]*\]/g;
+// a citation, or a link to a PDF page ([[file.pdf#p=3]]) that ends a quote the same way
+const CITES = /\[[^\[\]]*@[^\[\]]*\]|\[\[[^\[\]\n]*\.pdf[^\[\]\n]*\]\]/gi;
 const IMAGE = /!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/;
 
 /** What a citation points at: quoted words, or an image (by its path in the note, or its URL). */
@@ -50,7 +51,7 @@ export function citeTargetInText(text: string, pos: number): CiteTarget | null {
       .map((l) => l.replace(/^\s{0,3}(?:>\s?)+/, ''))
       .filter((l) => !/^\[![a-z]+\]/i.test(l));     // a callout's title line
     const quote = quoteText(body.join(' '));
-    return quote ? { quote } : null;
+    return quote ? { quote } : null;   // words end with [@key, p. 7] or [[file.pdf#p=7]]: quoteText drops both
   }
   // an image on this line before the citation, or on the line just above (same paragraph)
   const before = line.slice(0, pos - from);
@@ -68,7 +69,7 @@ export function citeTargetInDom(el: Element): CiteTarget | null {
   const bq = el.closest?.('blockquote');
   if (bq) {
     const copy = bq.cloneNode(true) as Element;
-    copy.querySelectorAll('.cite, .callout-title, .callout-title-inner').forEach((c) => c.remove());
+    copy.querySelectorAll('.cite, .wikilink.pdf, .callout-title, .callout-title-inner').forEach((c) => c.remove());
     const quote = quoteText(copy.textContent || '');
     return quote ? { quote } : null;
   }

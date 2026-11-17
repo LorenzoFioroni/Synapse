@@ -14,6 +14,7 @@ from pathlib import PurePosixPath
 from ...library.fields import ITEM_TYPE_LABELS, first_author
 from ...library.identifiers import identifiers, norm_arxiv, norm_doi
 from ...notes.vault import InvalidPath
+from ...pdf.source import PdfSource
 from ...pdf.text import extract_pages
 from ..protocol import ToolError
 
@@ -156,6 +157,7 @@ class ToolsBase:
         if time.monotonic() - self._last_sync > 2:
             try:
                 self.s.notes.sync()
+                self.s.note_pdfs.sync()
             finally:
                 self._last_sync = time.monotonic()
 
@@ -266,12 +268,68 @@ class ToolsBase:
         )
 
     # ------------------------------------------------------------------ PDF pages
-    def _pages(self, att: dict) -> list[str]:
-        path = self.s.papers.attachment_path(att)
+    def _src(self, pdf: dict | PdfSource, p: dict | None = None) -> PdfSource:
+        """An attachment of a library item (with the item) as a PdfSource; a PdfSource as it is."""
+        if isinstance(pdf, PdfSource):
+            return pdf
+        path = self.s.papers.attachment_path(pdf)
         if not path:
             raise ToolError("The PDF file is missing from the library folder.")
+        key = (p or {}).get("citation_key") or "?"
+        return PdfSource(
+            f"att:{pdf['id']}",
+            path,
+            self._label(p) if p else str(pdf["id"]),
+            (p or {}).get("title") or "",
+            f"[@{key}, p. {{page}}]",
+            attachment_id=pdf["id"],
+        )
+
+    def _source(self, paper: str, attachment: int | None = None) -> PdfSource:
+        """The PDF a tool call names: an item's (``paper`` a citation key, id, DOI …; ``attachment``
+        picks one of several), or a PDF in the notes folders (``paper`` its path or file name,
+        ``folder/file.pdf``, ``[[file.pdf#p=4]]``)."""
+        ref = re.sub(r"^!?\[\[|\]\]$", "", str(paper or "").strip()).split("|")[0].split("#")[0].strip()
+        if ref.lower().endswith(".pdf"):
+            if attachment is not None:
+                raise ToolError("attachment is for the PDFs of a library item; a PDF in the notes folders has none.")
+            return self._notes_source(ref)
+        p = self._paper(paper)
+        return self._src(self._pdf_for(p, attachment), p)
+
+    def _notes_source(self, ref: str) -> PdfSource:
+        try:
+            rel = self.s.vault.clean_rel(ref, suffix=".pdf")
+        except InvalidPath:
+            rel = ref
+        row = self.s.note_pdfs.by_path(rel)
+        if not row:
+            found = [x for x in self.s.notes.resolve_pdf(ref) if self.s.note_pdfs.by_path(x)]
+            if len(found) > 1:  # never pick one: a highlight would land on the wrong PDF
+                raise ToolError(f"'{ref}' names {len(found)} PDFs; give the path of one: " + "; ".join(found[:8]))
+            row = self.s.note_pdfs.by_path(found[0]) if found else None
+        if not row:
+            raise ToolError(
+                f"No PDF '{ref}' in the notes folders. Use its path, e.g. 'refs/paper.pdf' "
+                "(get_note lists the PDFs a note links to)."
+            )
+        got = self.s.note_pdfs.file_of(row["id"])
+        if not got:
+            raise ToolError(f"The PDF '{row['path']}' is not in the notes folders any more.")
+        return PdfSource(
+            f"npdf:{row['id']}",
+            got[1],
+            row["path"],
+            row["name"],
+            f"[[{row['path']}#p={{page}}]]",
+            note_pdf_id=row["id"],
+        )
+
+    def _pages(self, pdf: dict | PdfSource) -> list[str]:
+        src = self._src(pdf)
+        path = src.path
         st = path.stat()
-        key = (att["id"], st.st_mtime, st.st_size)
+        key = (src.key, st.st_mtime, st.st_size)
         if key in self._page_cache:
             self._page_cache.move_to_end(key)
             return self._page_cache[key]
@@ -281,19 +339,24 @@ class ToolsBase:
             self._page_cache.popitem(last=False)
         return pages
 
-    def _page_count(self, att: dict) -> int | None:
-        path = self.s.papers.attachment_path(att)
-        if not path:
+    def _page_count(self, pdf: dict | PdfSource) -> int | None:
+        try:
+            src = self._src(pdf)
+        except ToolError:
             return None
+        path = src.path
         st = path.stat()
-        key = (att["id"], st.st_mtime, st.st_size)
+        key = (src.key, st.st_mtime, st.st_size)
         if key in self._page_cache:
             return len(self._page_cache[key])
         try:  # the full-text index already knows it
+            table, column, ident = (
+                ("note_documents", "pdf_id", src.note_pdf_id)
+                if src.note_pdf_id
+                else ("documents", "attachment_id", src.attachment_id)
+            )
             with sqlite3.connect(self.s.fulltext.path, timeout=5) as c:
-                row = c.execute(
-                    "SELECT pages, mtime, size FROM documents WHERE attachment_id = ?", (att["id"],)
-                ).fetchone()
+                row = c.execute(f"SELECT pages, mtime, size FROM {table} WHERE {column} = ?", (ident,)).fetchone()
             if row and row[1] == st.st_mtime and row[2] == st.st_size and row[0]:
                 return row[0]
         except sqlite3.Error:

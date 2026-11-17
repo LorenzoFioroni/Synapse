@@ -66,3 +66,26 @@ def test_link_graph_resolves_like_resolve(svc, client):
     got = {(l["target"]) for l in svc.notes.link_graph() if l["source"] == path}
     want = {svc.notes.resolve(t, from_path=path)[0] for t in ("alpha", "er/Alpha")}
     assert got == want == {"Alpha.md", "deep/er/Alpha.md"}  # the link to itself is dropped
+
+
+def test_graph_has_nodes_for_pdfs_that_notes_link_to(client, svc):
+    import io
+    from pathlib import Path
+
+    pdf = (Path(__file__).parent / "e2e" / "fixtures" / "twocolumn.pdf").read_bytes()
+    for name in ("linked.pdf", "unlinked.pdf"):
+        r = client.post(
+            "/api/notes/pdf",
+            data={"file": (io.BytesIO(pdf), name), "folder": "refs"},
+            content_type="multipart/form-data",
+        )
+        assert r.status_code == 201
+    client.post("/api/notes/note", json={"title": "Reader", "text": "See [[linked.pdf#p=2]] and [[gone.pdf]].\n"})
+    g = client.get("/api/plugins/graph/data").json
+    nodes = {n["id"]: n for n in g["nodes"]}
+    assert nodes["pdf:refs/linked.pdf"]["kind"] == "pdf" and nodes["pdf:refs/linked.pdf"]["title"] == "linked.pdf"
+    assert "pdf:refs/unlinked.pdf" not in nodes and not any(
+        "gone.pdf" in i for i in nodes
+    )  # only linked, existing PDFs
+    assert {"source": "note:Reader.md", "target": "pdf:refs/linked.pdf", "kind": "pdf"} in g["edges"]
+    assert g["stats"]["pdfs"] == 1 and g["stats"]["edges"]["pdf"] == 1

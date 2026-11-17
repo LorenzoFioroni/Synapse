@@ -15,7 +15,7 @@ import { type NavEntry, initNav, navPush, navReplace, navSnapshot, navUpdate } f
 import { initChanges } from './changes.js';
 import { startPresence } from './presence.js';
 import {
-  activePdfWindow, closeNoteTabs, homeUnderneath, initTabs, pdfTabActive, repaintColors, noteEdited, noteModeChanged, notesDeleted as tabsNotesDeleted, notesRenamed as tabsNotesRenamed, openNoteTab, openViewerTab,
+  activePdfWindow, closeNoteTabs, homeUnderneath, initTabs, pdfTabActive, repaintColors, noteEdited, noteModeChanged, notesDeleted as tabsNotesDeleted, notesRenamed as tabsNotesRenamed, retitlePdfTabs, openNoteTab, openViewerTab,
   setHomeLabel, showHome, tabShortcut,
 } from './tabs/tabs.js';
 import { type Mode, folderColor, noteTabs } from './views/notes/workspace.js';
@@ -90,7 +90,7 @@ async function boot() {
   // Notes open in tabs: the first tab shows the library or Tasks, a note tab its note.
   initTabs({ home: goHome, note: (path, mode) => showNote(path, mode as Mode | undefined), noteClosed: closeNoteTab, flushNote, noteColor: folderColor });
   on('notes-count', repaintColors);   // the notes listing came again: folder colours may have changed
-  Object.assign(noteTabs, { open: openNoteTab, edited: noteEdited, modeChanged: noteModeChanged, renamed: tabsNotesRenamed, deleted: tabsNotesDeleted });
+  Object.assign(noteTabs, { open: openNoteTab, edited: noteEdited, modeChanged: noteModeChanged, renamed: tabsNotesRenamed, deleted: tabsNotesDeleted, retitlePdfs: retitlePdfTabs });
   on('settings', () => { if (state.settings.notes_enabled === false) closeNoteTabs(); });
   startPresence();
   initAskAi();

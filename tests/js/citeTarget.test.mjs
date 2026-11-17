@@ -92,3 +92,16 @@ test('a quote is shown as one box, or one per column', () => {
   const cols = [{ x: 50, y: 700, w: 250, h: 10 }, { x: 320, y: 80, w: 250, h: 10 }, { x: 320, y: 94, w: 100, h: 10 }];
   assert.deepEqual(quoteBoxes(cols), [{ x: 50, y: 700, w: 250, h: 10 }, { x: 320, y: 80, w: 250, h: 24 }]);
 });
+
+test('a quote ending with a link to a PDF page points at the quoted words', async () => {
+  const text = '> Transport is superdiffusive\n> at infinite temperature [[refs/paper.pdf#p=7]]\n';
+  assert.deepEqual(citeTargetInText(text, text.indexOf('[[refs') + 3), { quote: 'Transport is superdiffusive at infinite temperature' });
+  assert.equal(quoteText('words [[a.pdf#page=2|see]] here'), 'words here');
+  assert.equal(quoteText('a [[Other note]] link stays'), 'a [[Other note]] link stays');
+  const { isPdfTarget, pdfPage, pdfLabel } = await import('../../frontend/js/views/notes/mdscan.js');
+  assert.ok(isPdfTarget('refs/Paper.PDF') && !isPdfTarget('notes'));
+  assert.equal(pdfPage('p=7'), 7);
+  assert.equal(pdfPage('page = 12'), 12);
+  assert.equal(pdfPage('Heading'), null);
+  assert.equal(pdfLabel('a.pdf', 'p=3'), 'a.pdf · p. 3');
+});

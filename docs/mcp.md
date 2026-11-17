@@ -30,6 +30,7 @@ and `backend/mcp/`.
 | `backend/mcp/instructions.py` | `INSTRUCTIONS` (how to use the tools) and `WRITING_RULES` (the note syntax). |
 | `backend/mcp/tools/` | The tools themselves, one mixin per family, combined in `LibraryTools`. |
 | `backend/pdf/refsection.py` | `reference_spans()`: where a PDF's reference list starts and ends, so a hit inside it can be told from a hit in the paper (see [full-text search](fulltext-search.md#reference-lists)). |
+| `backend/pdf/source.py` | `PdfSource`: a PDF a tool can read, either an attachment of an item or a PDF in the notes folders (path, label, title, how a page is cited, which kind it is). |
 | `backend/mcp/notecheck.py` | `NoteChecker`: checks a note before it is saved. |
 
 The package sits in the `mcp` layer: it may use `library`, `notes`, `pdf` and `references`, and
@@ -116,7 +117,7 @@ online); `destructiveHint` is always false.
 | `snapshot` | `papers.py` | Cuts a figure, table, equation or rectangle into a PNG in `notes/attachments/` and returns the Markdown for it, with the caption printed in the PDF (`caption_in_pdf`). A rectangle given with `figure` or `equation` is named after it. An equation that is not found is an error listing the equation numbers that were recognised. The caption is the whole one, up to 1,500 characters: its first line and the lines right under it in the same column, up to the gap that ends the paragraph (`_whole_caption` in `backend/pdf/regions.py`). A line that starts with a reference ("Fig. 11 (Smith et al., 2021). It is…") is not a caption. | yes |
 | `get_references` | `citations.py` | What a paper cites (library items marked) and/or the library items citing it. `compact` gives one line per work. Entries with no author, year or identifier (footnotes, text the source took for a reference) are counted in `not_listed`, not listed. When `compact` is not given, a list of more than 40 works comes one line per work and the result says so under `compact`; `compact=false` gives the fields. A list is also cut where it would pass `MAX_LISTED_CHARS` (35,000 characters, whatever `compact` says): `references_cut`, given before the list, says which ones are shown and the `offset` that continues. | no |
 | `get_citation_graph` | `citations.py` | The neighbourhood of some papers (1 or 2 steps), or a library-wide overview of the most cited works. `limit` caps the node list (nearest first) as well as the ranked lists; shared foundations are still counted over the whole neighbourhood. Who-cites-whom edges are listed only with `include_edges`; `edges_total` always gives their number. The library-wide overview groups one work listed under several ids, gives `cited_by_count` and at most 10 citing keys, drops entries without a usable title, merges a title with its subtitled form ("Exploring the Quantum" / "… Atoms, Cavities, and Photons"), and lists a work whose title a library item has too under `in_library_under_another_record` instead of as missing (another edition, or a reference list matched to the wrong work). `compact` gives one line per work in both modes; in a neighbourhood `cited_by_several` counts within the neighbourhood and marks `same_title_in_library`. A work with no DOI or arXiv id on any record, with six or more records sharing its title, or whose records name different first authors (none of them has four fifths of the citations), is a likely wrong match: it comes after the identified works with a `check` text; `also_listed_as` shows two records and `also_listed_as_count` the rest, or, when the first authors differ, `records` lists the four most cited records with their counts. A title of three words or fewer ("Quantum Optics") carries a `check` too but keeps its place: sources match a book of that name to another work. An arXiv id assigned ten or more years after the work's year is not shown (it belongs to another paper). A wrong record that all citing papers agree on, under a longer title, cannot be seen from the stored data. As for `get_references`, more than 40 listed works (both ranked lists, or the nodes and the shared works) come one line per work unless `compact=false`. | no |
-| `get_annotations` | `editing.py` | What the user marked on a paper's PDF: highlights and underlines with their words, comments, text boxes and drawings, each with its page. | no |
+| `get_annotations` | `editing.py` | What the user marked on a paper's PDF (or on a PDF kept in a notes folder, named by its path): highlights and underlines with their words, comments, text boxes and drawings, each with its page. | no |
 | `write_note` | `notes.py` | Saves a new note under `notes/ai/`, or in a notes folder the user already has when `folder` names one. Line numbers in its error messages count the text that was sent, not the saved note with its front matter. A `warnings` entry says when another note has the same title, as `get_note` and `edit_note` then refuse the title and ask for the path. | yes |
 | `edit_note` | `notes.py` | Changes an existing note: exact replacements, an append, or the whole text. | yes |
 | `undo_note_edit` | `notes.py` | Takes the last AI edit back out of a note, keeping the user's later edits (refused when they touch the same lines). | yes |
@@ -179,7 +180,7 @@ server reads `settings.json` when it starts, so there the AI app is restarted af
 | `trash_papers` | Moves items to the Trash, or back with `restore`. | no |
 | `fetch_references` | Fetches and stores an item's reference list (`Services.fetch_references_now`). | yes |
 | `find_pdf` | Looks for an open-access PDF of an item that has none and attaches it (`Services.find_pdf`). | yes |
-| `add_highlight` | Highlights a passage on a PDF page, with an optional comment. `pdf/regions.py:quote_rects` finds the words on the page (letters and digits only, so line breaks and hyphenation do not matter) and gives one rectangle per line. | no |
+| `add_highlight` | Highlights a passage on a PDF page (also on a PDF of the notes folders, named by its path; it is one of the library-changing tools, so the same setting allows it), with an optional comment. `pdf/regions.py:quote_rects` finds the words on the page (letters and digits only, so line breaks and hyphenation do not matter) and gives one rectangle per line. | no |
 
 What they cannot do: delete anything for good (items go to the Trash, which only the user empties),
 change a citation key, remove or change an annotation, or fetch a URL the model gives (lookups go to
@@ -283,6 +284,17 @@ What it can write, and how:
   errors and nothing is saved; things that work but look wrong (citing a trashed item) are
   warnings. For `edit_note`, only problems the change adds block it: the checker runs on the old
   and the new text, and errors already present are subtracted.
+
+- **PDFs of the notes folders.** `paper` of `read_paper`, `search_in_paper`, `view_page`,
+  `get_paper_outline`, `get_annotations` and `add_highlight` may name a PDF kept in a notes folder
+  (see [notes](notes.md#pdfs-in-the-notes-folders)) by its path, file name or `[[folder/file.pdf#p=N]]`
+  link: `ToolsBase._source` (a `paper` ending in `.pdf`) resolves it through the notes registry and the
+  index's `files` table, and everything else goes through a `PdfSource`, whose key (`att:12` or
+  `npdf:7`) keys the page cache. Answers use the path as the label, and pages are cited as
+  `[[folder/file.pdf#p=N]]`; `attachment` is refused for such a PDF. Highlights are stored in
+  `note_pdf_annotations`. `get_note` lists the PDFs a note links to (`linked_pdfs`: link, resolved path, lines, pages,
+  `broken`), and `NoteChecker` requires a `[[file.pdf#p=N]]` to name an existing PDF and page (a heading is an error) and checks a
+  block quote ending with such a link like one ending with a citation. `snapshot` and the library tools are unchanged.
 
 The limits are constants in `common.py`: `MAX_PAGES_PER_READ` (10), `MAX_CHARS_PER_READ` (40,000),
 `MAX_CHARS_PER_PAGE` (25,000), `MAX_LISTED_CHARS` (35,000, a list of references),

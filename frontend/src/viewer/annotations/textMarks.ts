@@ -2,7 +2,7 @@
 // whole words, one rect per line. Also the words inside a box. See annotations.ts for the
 // overview.
 import { mergeLines, wordEnd, wordStart } from './lines.js';
-import { type Annotation, attId, color, create, el, layers, pageSize, scale, size, tool } from './model.js';
+import { type Annotation, ownerBase, color, create, el, layers, pageSize, scale, size, tool } from './model.js';
 import { lastPointer } from './pointer.js';
 import { prefs } from './prefs.js';
 
@@ -59,7 +59,7 @@ function markedRange(sel: Selection | null, exact = false): Range | null {
 function markSelection(t: string, exact = false): boolean {
   if (!isMarkTool(t)) return false;   // the tool changed meanwhile
   const sel = window.getSelection();
-  const range = attId ? markedRange(sel, exact) : null;
+  const range = ownerBase ? markedRange(sel, exact) : null;
   const got = range && rangeRects(range);
   if (!got || !sel) return false;
   const text = range.toString().replace(/-\n(?=\w)/g, '').replace(/\s+/g, ' ').trim();

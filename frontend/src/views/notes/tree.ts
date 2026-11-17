@@ -1,13 +1,13 @@
 // The notes list on the left: folders and notes as a tree, which folders are folded, the filter
 // (names, then notes whose text matches) and the selection, as row keys: 'n:<path>' for notes,
-// 'f:<path>' for folders.
+// 'f:<path>' for folders, 'p:<path>' for PDFs.
 import { api } from '../../api.js';
 import { icon } from '../../icons.js';
 import { emit } from '../../store.js';
 import { toastError } from '../../ui/toast.js';
-import type { NoteInfo } from '../../types.js';
+import type { NoteInfo, NotePdf } from '../../types.js';
 import { escapeHtml, storage, store } from '../../util.js';
-import { folderColor, nameOf, notesOpen, parentOf, stemOf, within, ws } from './workspace.js';
+import { folderColor, nameOf, noteTabs, notesOpen, parentOf, stemOf, within, ws } from './workspace.js';
 
 /** A folder icon's colour: its own (full), or the one it has from a folder above (lighter). */
 function colorStyle(path: string): string {
@@ -16,7 +16,7 @@ function colorStyle(path: string): string {
   return c ? ` style="color:${escapeHtml(c)}${own ? '' : ';opacity:.55'}"` : '';
 }
 
-interface FolderNode { path: string; name: string; folders: FolderNode[]; notes: NoteInfo[] }
+interface FolderNode { path: string; name: string; folders: FolderNode[]; notes: NoteInfo[]; pdfs: NotePdf[] }
 
 export const tree = {
   sel: new Set<string>(),
@@ -29,7 +29,8 @@ let hitTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const nKey = (p: string) => `n:${p}`;
 export const fKey = (p: string) => `f:${p}`;
-export const keyOf = (row: HTMLElement) => (row.classList.contains('folder') ? fKey(row.dataset.folder!) : nKey(row.dataset.path!));
+export const pKey = (p: string) => `p:${p}`;
+export const keyOf = (row: HTMLElement) => (row.classList.contains('folder') ? fKey(row.dataset.folder!) : (row.classList.contains('pdf') ? pKey : nKey)(row.dataset.path!));
 export const treeEl = () => ws.root.querySelector<HTMLElement>('.notes-tree')!;
 export const visibleKeys = () => [...treeEl().querySelectorAll<HTMLElement>('.nt-row')].map(keyOf);
 
@@ -39,6 +40,10 @@ export async function refreshTree(): Promise<void> {
     ws.overview = await api.notes();
   } catch (e) { if (notesOpen()) toastError(e); return; }
   emit('notes-count', ws.overview.notes.length);
+  noteTabs.retitlePdfs?.((key) => {   // a PDF's tab is keyed by its file's address, which holds its number
+    const id = /^\/api\/note-pdfs\/(\d+)\/file$/.exec(key)?.[1];
+    return id ? (ws.overview.pdfs || []).find((p) => String(p.id) === id)?.name.replace(/\.pdf$/i, '') ?? null : null;
+  });
   if (notesOpen()) paintTree();
 }
 
@@ -54,11 +59,11 @@ export function selectRange(key: string): void {
   tree.sel = new Set(keys.slice(Math.min(a, b), Math.max(a, b) + 1));
   tree.cursor = key;
 }
-/** The selected notes and folders (a note inside a selected folder goes with the folder). */
-export function selected(): { notes: string[]; folders: string[] } {
+/** The selected notes, PDFs and folders (a note or PDF inside a selected folder goes with the folder). */
+export function selected(): { notes: string[]; pdfs: string[]; folders: string[] } {
   const folders = [...tree.sel].filter((k) => k[0] === 'f').map((k) => k.slice(2));
-  const notes = [...tree.sel].filter((k) => k[0] === 'n').map((k) => k.slice(2)).filter((p) => !folders.some((f) => within(p, f)));
-  return { notes, folders: folders.filter((f) => !folders.some((o) => within(f, o))) };
+  const pick = (c: string) => [...tree.sel].filter((k) => k[0] === c).map((k) => k.slice(2)).filter((p) => !folders.some((f) => within(p, f)));
+  return { notes: pick('n'), pdfs: pick('p'), folders: folders.filter((f) => !folders.some((o) => within(f, o))) };
 }
 
 export function saveCollapsed(): void { store('zc.notes.collapsed', [...tree.collapsed]); }
@@ -70,21 +75,23 @@ export function toggleFolder(path: string, open = tree.collapsed.has(path)): voi
 }
 
 function buildTree(): FolderNode {
-  const folders = new Map<string, FolderNode>([['', { path: '', name: '', folders: [], notes: [] }]]);
+  const folders = new Map<string, FolderNode>([['', { path: '', name: '', folders: [], notes: [], pdfs: [] }]]);
   const ensure = (path: string): FolderNode => {
     const known = folders.get(path);
     if (known) return known;
-    const node: FolderNode = { path, name: nameOf(path), folders: [], notes: [] };
+    const node: FolderNode = { path, name: nameOf(path), folders: [], notes: [], pdfs: [] };
     folders.set(path, node);
     ensure(parentOf(path)).folders.push(node);
     return node;
   };
   ws.overview.folders.forEach(ensure);
   for (const n of ws.overview.notes) ensure(parentOf(n.path)).notes.push(n);
+  for (const p of ws.overview.pdfs || []) ensure(parentOf(p.path)).pdfs.push(p);
   const cmp = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true });
   for (const f of folders.values()) {
     f.folders.sort((a, b) => cmp(a.name, b.name));
     f.notes.sort((a, b) => cmp(stemOf(a.path), stemOf(b.path)));
+    f.pdfs.sort((a, b) => cmp(a.name, b.name));
   }
   return folders.get('')!;
 }
@@ -108,6 +115,13 @@ export function paintTree(): void {
       rows[before] = `<div class="nt-row folder${cls(k)}" role="treeitem" aria-expanded="${!!open}" aria-selected="${sel.has(k)}" data-folder="${escapeHtml(f.path)}" data-drop-folder="${escapeHtml(f.path)}" draggable="true" style="--d:${depth}">
           <span class="twisty ${open ? 'open' : ''}">${icon('chevron', 'icon-sm')}</span><span class="nt-folder-icon"${colorStyle(f.path)}>${icon('folder')}</span><span class="nm">${escapeHtml(f.name)}</span></div>`;
     }
+    for (const p of node.pdfs) {
+      if (filter && !p.name.toLowerCase().includes(filter)) continue;
+      const k = pKey(p.path);
+      rows.push(`<div class="nt-row pdf${cls(k)}" role="treeitem" aria-selected="${sel.has(k)}" data-path="${escapeHtml(p.path)}" data-id="${p.id}" draggable="true"
+          title="${escapeHtml(p.path)}" style="--d:${depth}">
+          <span class="twisty none"></span>${icon('pdf')}<span class="nm">${escapeHtml(p.name)}</span></div>`);
+    }
     for (const n of node.notes) {
       if (!matches(n)) continue;
       const k = nKey(n.path);
@@ -117,7 +131,7 @@ export function paintTree(): void {
     }
   };
   walk(buildTree(), 0);
-  el.innerHTML = rows.join('') || (filter ? '' : '<div class="side-empty">No notes yet. Create one with <b>+</b>.</div>');
+  el.innerHTML = rows.join('') || (filter ? '' : '<div class="side-empty">No notes yet. Create one with <b>+</b>, or drop PDFs here.</div>');
   // Only what can be seen stays selected, so Delete never takes hidden notes with it.
   const shown = new Set(visibleKeys());
   tree.sel = new Set([...tree.sel].filter((k) => shown.has(k)));
@@ -152,11 +166,11 @@ async function paintHits(): Promise<void> {
   let res;
   try { res = (await api.searchNotes(q)).results; } catch { return; }
   if (q !== tree.filter) return;
-  const nameHits = new Set([...el.querySelectorAll<HTMLElement>('.nt-row.note')].map((r) => r.dataset.path));
+  const nameHits = new Set([...el.querySelectorAll<HTMLElement>('.nt-row.note, .nt-row.pdf')].map((r) => r.dataset.path));
   const rows = res.filter((r) => !nameHits.has(r.path));
   if (!rows.length) return;
   el.querySelector('.notes-hits')?.remove();
   el.insertAdjacentHTML('beforeend', `<div class="notes-hits"><div class="ns-title">Text matches</div>${rows.map((r) => `
-    <button class="nt-hit" data-path="${escapeHtml(r.path)}"><div class="nm">${escapeHtml(r.title || stemOf(r.path))}</div>
+    <button class="nt-hit${r.kind === 'pdf' ? ' pdf' : ''}" data-path="${escapeHtml(r.path)}"${r.kind === 'pdf' ? ` data-id="${r.id}"` : ''}><div class="nm">${r.kind === 'pdf' ? `${icon('pdf', 'icon-sm')} ` : ''}${escapeHtml(r.title || stemOf(r.path))}</div>
       <div class="snip">${r.snippet}</div></button>`).join('')}</div>`);
 }

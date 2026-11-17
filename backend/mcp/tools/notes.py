@@ -100,6 +100,18 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
             if l["line"] not in grouped[key]["lines"]:
                 grouped[key]["lines"].append(l["line"])
         notes_out = list(grouped.values())
+        pdfs_out: dict[str, dict] = {}  # PDFs of the notes folders this note links to: where and which pages
+        for l in links["outgoing"]:
+            if l["kind"] != "pdf":
+                continue
+            e = pdfs_out.setdefault(
+                l["target"], {"pdf": l.get("resolved"), "link": l["target"], "lines": [], "pages": []}
+            )
+            e["lines"] = sorted({*e["lines"], l["line"]})
+            if l.get("page"):
+                e["pages"] = sorted({*e["pages"], l["page"]})
+            if not l.get("resolved"):
+                e["broken"] = True
         backlinks = [
             drop_empty(
                 {
@@ -132,6 +144,7 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
                 else self._outline(info.get("headings") or [], got["text"] if too_long else None),
                 "section": section or (f"lines {first}-{last or 'end'}" if lines else None),
                 "links_to_notes": notes_out,
+                "linked_pdfs": [drop_empty(e) for e in pdfs_out.values()] or None,
                 "linked_from": backlinks,
                 "images": None
                 if too_long

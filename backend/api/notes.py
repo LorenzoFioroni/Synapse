@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import threading
+from collections import OrderedDict
 from functools import wraps
 
-from flask import Blueprint, jsonify, request, send_from_directory
+from flask import Blueprint, jsonify, request, send_file, send_from_directory
 
 from ..changes import CLIENT_HEADER
+from ..notes import service as notes_service
 from ..notes.history import GitError
 from ..notes.vault import ATTACHMENTS, Conflict, NoteExists, NoteMoved, VaultError
+from ..pdf.files import HEADER_WINDOW, file_is_pdf, looks_like_pdf
+from ..pdf.text import extract_pages
 from . import body, error, failure, message_of, svc
 
 bp = Blueprint("notes", __name__, url_prefix="/api")
@@ -33,7 +38,8 @@ def guarded(fn):
         except Conflict as e:
             return jsonify(error=f"{e.path} was changed elsewhere", conflict=True, current_hash=e.current_hash), 409
         except NoteExists as e:
-            return jsonify(error=f"A note already exists at {e.path}", exists=True, path=e.path), 409
+            what = "A PDF" if e.path.lower().endswith(".pdf") else "A note"
+            return jsonify(error=f"{what} already exists at {e.path}", exists=True, path=e.path), 409
         except NoteMoved as e:
             return jsonify(error=f"{e.path} was moved to {e.to}", moved_to=e.to), 404
         except VaultError as e:
@@ -288,6 +294,87 @@ def upload_image():
     if not f:
         return error("No file uploaded")
     return jsonify(svc().note_service.add_image(f.filename or "", f.read())), 201
+
+
+@bp.post("/notes/pdf")
+@guarded
+def upload_pdf():
+    """A PDF (multipart ``file``, optional ``folder``) added to a notes folder."""
+    # refused from the header, before the body is read into temporary files
+    size = request.content_length
+    cap = notes_service.MAX_PDF_BYTES
+    if size is None and request.mimetype == "multipart/form-data":  # a body of unknown size: not read
+        return error("The upload must say how large it is.", 411)
+    if size is not None and size > cap + MULTIPART_MARGIN:
+        return error(f"The PDF is larger than {cap // (1024 * 1024)} MB.", 413)
+    f = request.files.get("file")
+    if not f:
+        return error("No file uploaded")
+    head = f.stream.read(HEADER_WINDOW)
+    f.stream.seek(0)
+    if not looks_like_pdf(head):
+        return error(f"“{f.filename or 'The file'}” is not a PDF. Only PDF files can be added to the notes.", 415)
+    return jsonify(svc().note_service.add_pdf(f.filename or "", f.stream, request.form.get("folder") or "")), 201
+
+
+@bp.get("/note-pdfs/<int:pdf_id>")
+@guarded
+def note_pdf(pdf_id):
+    found = svc().note_pdfs.file_of(pdf_id)
+    if not found:
+        return error("This PDF is not in the notes any more.", 404)
+    return jsonify(found[0])
+
+
+MULTIPART_MARGIN = 64 * 1024  # the form's own fields and boundaries, on top of the file
+_PAGES: OrderedDict[tuple, list[str]] = OrderedDict()  # the text of the PDFs hovered lately: (id, mtime, size) -> pages
+_PAGES_LOCK = threading.Lock()
+EXCERPT = 400
+
+
+@bp.get("/note-pdfs/<int:pdf_id>/page/<int:page>")
+@guarded
+def note_pdf_page(pdf_id, page):
+    """The start of one page's text (for the card a link to the page shows)."""
+    found = svc().note_pdfs.file_of(pdf_id)
+    if not found or not file_is_pdf(found[1]):
+        return error("This PDF is not in the notes any more.", 404)
+    st = found[1].stat()
+    key = (pdf_id, st.st_mtime, st.st_size)
+    with _PAGES_LOCK:
+        pages = _PAGES.get(key)
+    if pages is None:
+        try:
+            pages = extract_pages(found[1])
+        except Exception:  # an unreadable PDF: the card shows no text
+            pages = []
+        with _PAGES_LOCK:
+            _PAGES[key] = pages
+            while len(_PAGES) > 8:
+                _PAGES.popitem(last=False)
+    text = " ".join(pages[page - 1].split()) if 1 <= page <= len(pages) else ""
+    return jsonify(page=page, pages=len(pages), excerpt=text[:EXCERPT] + ("…" if len(text) > EXCERPT else ""))
+
+
+@bp.get("/note-pdfs/<int:pdf_id>/file")
+@guarded
+def note_pdf_file(pdf_id):
+    found = svc().note_pdfs.file_of(pdf_id)
+    if not found:
+        return error("This PDF is not in the notes any more.", 404)
+    p = found[1]
+    ok = file_is_pdf(p)  # served from the app's origin: what is not a PDF must never run in a browser
+    resp = send_file(
+        p,
+        mimetype="application/pdf" if ok else "application/octet-stream",
+        as_attachment=not ok,
+        download_name=p.name,
+        conditional=True,
+        max_age=0,
+    )
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Cache-Control"] = "private, no-cache"  # the file can be replaced under the same number
+    return resp
 
 
 @bp.get("/notes/attachments")

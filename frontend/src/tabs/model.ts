@@ -196,6 +196,17 @@ export class TabSet {
     }
   }
 
+  /** PDFs of the notes folders were renamed: their tabs take the new names (`titleOf` gives a PDF
+   *  tab's title from its key, or null to leave it). True when a title changed. */
+  retitlePdfs(titleOf: (key: string) => string | null): boolean {
+    let changed = false;
+    for (const t of [...this.tabs, ...this.closed]) {
+      const title = t.kind === 'pdf' ? titleOf(t.key) : null;
+      if (title && title !== t.title) { t.title = title; changed = true; }
+    }
+    return changed;
+  }
+
   /** Notes were deleted: their tabs close, except the active one, which becomes Notes with nothing
    *  open (the notes workspace stays on screen). Returns the ids of the tabs closed. */
   notesGone(gone: (path: string) => boolean): string[] {

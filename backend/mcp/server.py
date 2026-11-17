@@ -249,7 +249,7 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             {
                 "type": "object",
                 "properties": {
-                    "paper": paper_arg,
+                    "paper": PDF_PAPER_ARG,
                     "attachment": att_arg,
                     "captions": {
                         "type": "boolean",
@@ -273,7 +273,7 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             {
                 "type": "object",
                 "properties": {
-                    "paper": paper_arg,
+                    "paper": PDF_PAPER_ARG,
                     "query": {"type": "string", "description": 'Words to look for; "quoted phrases" stay together.'},
                     "max_results": {
                         "type": "integer",
@@ -297,7 +297,7 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             {
                 "type": "object",
                 "properties": {
-                    "paper": paper_arg,
+                    "paper": PDF_PAPER_ARG,
                     "pages": {
                         "type": "string",
                         "description": 'Pages to read: "3", "2-5", "1,4,7-9" or "10-" (to the end). Default "1-2".',
@@ -319,7 +319,7 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             {
                 "type": "object",
                 "properties": {
-                    "paper": paper_arg,
+                    "paper": PDF_PAPER_ARG,
                     "page": {"type": "integer", "minimum": 1, "description": "PDF page number (from 1)."},
                     "attachment": att_arg,
                 },
@@ -462,7 +462,7 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
             "What the user marked on a paper's PDF in the app: highlights and underlines with their words, "
             "comments, text boxes and drawings, each with its page. Use it to see what the user found important "
             "in a paper.",
-            {"type": "object", "properties": {"paper": paper_arg, "attachment": att_arg}, "required": ["paper"]},
+            {"type": "object", "properties": {"paper": PDF_PAPER_ARG, "attachment": att_arg}, "required": ["paper"]},
             t.get_annotations,
         )
     )
@@ -566,6 +566,12 @@ PAPER_ARG = {
     "type": "string",
     "description": 'Citation key of the item (e.g. "smith2021"; "[@smith2021]" also works), its item id, '
     "or its DOI or arXiv id.",
+}
+PDF_PAPER_ARG = {
+    "type": "string",
+    "description": PAPER_ARG["description"]
+    + ' A PDF kept in the notes folders is named by its path or file name instead ("refs/paper.pdf"; the PDFs a '
+    "note links to are listed by get_note as linked_pdfs); cite its pages as [[refs/paper.pdf#p=N]].",
 }
 ATT_ARG = {
     "type": "integer",
@@ -709,7 +715,7 @@ def _edit_tools(t: LibraryTools) -> dict[str, Tool]:
             {
                 "type": "object",
                 "properties": {
-                    "paper": PAPER_ARG,
+                    "paper": PDF_PAPER_ARG,
                     "page": {"type": "integer", "minimum": 1, "description": "PDF page number (from 1)."},
                     "quote": {"type": "string", "description": "The exact words to highlight, from one page."},
                     "comment": {"type": "string", "description": "A comment to attach (optional)."},

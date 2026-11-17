@@ -232,6 +232,16 @@ export function notesRenamed(rename: (path: string) => string): void {
   saveSoon();
 }
 
+/** PDFs of the notes folders were renamed: their tabs (and the window's title) show the new names. */
+export function retitlePdfTabs(titleOf: (key: string) => string | null): void {
+  if (!set.retitlePdfs(titleOf)) return;
+  for (const t of set.tabs) { const f = frames.get(t.id); if (f) f.title = t.title; }
+  paint();
+  const tab = set.get(onScreen);
+  if (tab?.kind === 'pdf') document.title = `${tab.title} — Synapse`;
+  saveSoon();
+}
+
 /** Notes were deleted: their tabs close (the one shown becomes Notes with nothing open). */
 export function notesDeleted(gone: (path: string) => boolean): void {
   set.notesGone(gone);

@@ -2,7 +2,7 @@
 // message on failure, so callers can show it in a toast. Response types are in types.ts.
 import type {
   AccessToken, AccessTokensOverview, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, HistoryDiff, HistoryLog, HistoryStatus, HistoryVersion, ImportEntry, ImportPreview, Item, RenamedKey,
-  ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, Milestone, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NoteSaved, NotesListing, Pairing,
+  ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, Milestone, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NotePdf, NoteSaved, NotesListing, Pairing,
   ItemFieldValue, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginSource, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview, UpdaterState, UpdateStatus, RemoteBackupSetup, RemoteBackupConfiguration, Backup,
 } from './types.js';
@@ -185,10 +185,10 @@ export const api = {
   recreateNote: (path: string, text: string) => request<NoteSaved>('PUT', '/api/notes/note', { path, text, create: true }),
   moveNote: (path: string, to: string, hash?: string | null) => request<NoteMoved>('POST', '/api/notes/move', { path, to, hash }),
   newNoteFolder: (path: string) => request<{ path: string }>('POST', '/api/notes/folder', { path }),
-  trashNotes: (paths: string[], folders: string[] = []) => request<{ trash_id: string; paths: string[] }>('POST', '/api/notes/trash', { paths, folders }),
+  trashNotes: (paths: string[], folders: string[] = []) => request<{ trash_id: string; paths: string[]; pdfs: string[] }>('POST', '/api/notes/trash', { paths, folders }),
   moveNoteFolder: (path: string, to: string) => request<NoteMoved>('POST', '/api/notes/folder/move', { path, to }),
   setNoteFolderColor: (path: string, color: string | null) => request<{ folder_colors: Record<string, string> }>('PUT', '/api/notes/folder/color', { path, color }),
-  restoreNoteBatch: (trashId: string) => request<{ paths: string[]; skipped: string[] }>('POST', '/api/notes/restore', { trash_id: trashId }),
+  restoreNoteBatch: (trashId: string) => request<{ paths: string[]; pdfs: string[]; skipped: string[] }>('POST', '/api/notes/restore', { trash_id: trashId }),
   noteKeys: () => request<{ keys: NoteKeys }>('GET', '/api/notes/keys'),
   // reference lists (citation graph)
   itemReferences: (id: string) => request<ItemReferences>('GET', `/api/items/${id}/references`),
@@ -204,7 +204,7 @@ export const api = {
   itemNotes: (id: string) => request<ItemNotes>('GET', `/api/items/${id}/notes`),
   restoreNote: (trashId: string, path: string) => request('POST', '/api/notes/restore', { trash_id: trashId, path }),
   noteLinks: (path: string) => request<NoteLinks>('GET', `/api/notes/links?${qs({ path })}`),
-  searchNotes: (q: string) => request<{ results: { path: string; title: string | null; snippet: string }[] }>('GET', `/api/notes/search?${qs({ q })}`),
+  searchNotes: (q: string) => request<{ results: { path: string; title: string | null; snippet: string; kind?: 'pdf'; id?: number }[] }>('GET', `/api/notes/search?${qs({ q })}`),
   // tasks (records in library.db; a note shows one with a {{task:id}} line)
   tasks: () => request<TasksOverview>('GET', '/api/tasks'),
   getTask: (id: string) => request<{ task: Task & { refs: TaskRef[]; subtasks: Task[] } }>('GET', `/api/tasks/${id}`),
@@ -220,17 +220,25 @@ export const api = {
   taskHistory: (id: string) => request<{ history: TaskHistoryEntry[] }>('GET', `/api/tasks/${id}/history`),
   undoTaskChange: (historyId: number) => request<{ task: Task }>('POST', '/api/tasks/undo', { history_id: historyId }),
   rescanNotes: () => request<{ added: number; changed: number; removed: number }>('POST', '/api/notes/rescan'),
+  uploadNotePdf: (file: File, folder: string) => { const fd = new FormData(); fd.append('file', file); fd.append('folder', folder); return request<NotePdf>('POST', '/api/notes/pdf', fd); },
   uploadNoteImage: (file: File) => { const fd = new FormData(); fd.append('file', file); return request<{ path: string; markdown: string }>('POST', '/api/notes/attachments', fd); },
 };
 
+/** The "attachment" of a PDF kept in a notes folder: its file is served by number (it survives renames). */
+export const notePdfAtt = (pdf: Pick<NotePdf, 'id'>): Pick<Attachment, 'id' | 'url'> => ({ id: 0, url: `/api/note-pdfs/${pdf.id}/file` });
+const isNotePdf = (att: Pick<Attachment, 'url'>) => att.url.startsWith('/api/note-pdfs/');
+
 export function fileUrl(att: Pick<Attachment, 'id' | 'url'>): string {
+  if (isNotePdf(att)) return att.url;
   return /^https?:/.test(att.url) ? `/api/attachments/${att.id}/remote` : `/pdfs/${encodeURIComponent(att.url)}`;
 }
 
 /** The viewer's URL for a PDF, optionally at a page and at a spot on it: `at` is {q} (words to
  *  find on the page) or {rect: "x,y,w,h"} (a region, as fractions of the page) — see citeTarget.ts. */
 export function viewerUrl(item: Pick<Item, 'id' | 'title'>, att: Pick<Attachment, 'id' | 'url'>, page?: number | null, at: ViewerSpot = {}): string {
-  const p = new URLSearchParams({ file: fileUrl(att), paper_id: item.id, title: item.title || 'PDF' });
+  const p = new URLSearchParams({ file: fileUrl(att), title: item.title || 'PDF' });
+  if (isNotePdf(att)) p.set('npdf', /\/api\/note-pdfs\/(\d+)\//.exec(att.url)![1]);   // annotations belong to this PDF
+  else p.set('paper_id', item.id);
   if (att.id) p.set('att', String(att.id));   // annotations belong to this attachment
   if (page) p.set('page', String(page));
   if (at.q) p.set('q', at.q);
@@ -331,4 +339,9 @@ export function openAttachment(item: Pick<Item, 'id' | 'title'>, att: Pick<Attac
   if (w) return reuseTab(w, page, at);
   const win = window.open(viewerUrl(item, att, page, at), newTab ? '_blank' : tabName(att));
   if (win) pdfTabs.set(fileUrl(att), win);
+}
+
+/** Open a PDF kept in a notes folder in the viewer (an app tab, or a browser tab: see Settings → PDF Viewer). */
+export function openNotePdf(pdf: Pick<NotePdf, 'id' | 'path'>, page?: number | null, at: ViewerSpot = {}, opts: { newTab?: boolean } = {}): void {
+  openAttachment({ id: '', title: pdf.path.split('/').pop()!.replace(/\.pdf$/i, '') }, notePdfAtt(pdf), page, at, opts);
 }
