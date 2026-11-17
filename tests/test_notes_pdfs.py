@@ -202,13 +202,46 @@ def test_external_new_file_and_removal(client, svc):
     assert listed(client)["back.pdf"] == p["id"]
 
 
-def test_a_new_pdf_may_take_the_place_of_a_missing_one(client, svc):
+def test_an_uploaded_pdf_takes_over_the_row_of_a_vanished_one(client, svc):
     p = add(client, "a.pdf")
     (svc.vault.root / "a.pdf").unlink()
     svc.note_pdfs.sync()
-    q = add(client, "a.pdf")  # the name is free again
-    assert q["path"] == "a.pdf" and q["id"] != p["id"]
-    assert svc.note_pdfs.get(p["id"])["state"] == "missing"
+    q = add(client, "a.pdf")  # the same content at the same path: the same PDF, highlights included
+    assert q["path"] == "a.pdf" and q["id"] == p["id"] and svc.note_pdfs.get(p["id"])["state"] == "present"
+
+
+def test_an_uploaded_pdf_with_the_same_content_elsewhere_takes_over_too(client, svc):
+    p = add(client, "a.pdf", "x")
+    (svc.vault.root / "x" / "a.pdf").unlink()
+    svc.note_pdfs.sync()
+    q = add(client, "other name.pdf", "y")
+    assert q["id"] == p["id"] and q["path"] == "y/other name.pdf"
+
+
+def test_a_different_pdf_at_the_path_of_a_vanished_one_is_a_replacement(client, svc):
+    from tests.conftest import make_pdf
+
+    p = add(client, "a.pdf")
+    (svc.vault.root / "a.pdf").unlink()
+    svc.note_pdfs.sync()
+    make_pdf(svc.vault.root / "a.pdf", "something else entirely")
+    assert svc.note_pdfs.sync()["adopted"] == 1
+    row = svc.note_pdfs.get(p["id"])
+    assert row["state"] == "present" and row["path"] == "a.pdf" and row["sha256"] != p["sha256"]
+    assert list(listed(client).values()) == [p["id"]]
+
+
+def test_a_different_upload_at_the_path_of_a_vanished_one_is_a_replacement(client, svc):
+    from tests.conftest import make_pdf
+
+    p = add(client, "a.pdf")
+    (svc.vault.root / "a.pdf").unlink()
+    svc.note_pdfs.sync()
+    other = make_pdf(svc.vault.root.parent / "other.pdf", "another document").read_bytes()
+    q = client.post(
+        "/api/notes/pdf", data={"file": (io.BytesIO(other), "a.pdf"), "folder": ""}, content_type="multipart/form-data"
+    ).json
+    assert q["id"] == p["id"] and q["path"] == "a.pdf"
 
 
 def test_registry_is_additive_and_survives_a_second_start(app, client):

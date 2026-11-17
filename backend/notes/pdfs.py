@@ -124,11 +124,35 @@ class NotePdfs:
                 )
                 pdf_id = row["id"]
             else:
-                pdf_id = c.execute(
-                    "INSERT INTO note_pdfs (path, sha256, size, mtime, state, since) VALUES (?,?,?,?, 'present', ?)",
-                    (rel, sha, st.st_size, st.st_mtime, _now()),
-                ).lastrowid
+                lost = [dict(r) for r in c.execute("SELECT * FROM note_pdfs WHERE state = 'missing'")]
+                pdf_id = self._take_over(c, rel, sha, st, lost)  # a vanished PDF that came back keeps its row
+                if pdf_id is None:
+                    pdf_id = c.execute(
+                        "INSERT INTO note_pdfs (path, sha256, size, mtime, state, since) "
+                        "VALUES (?,?,?,?, 'present', ?)",
+                        (rel, sha, st.st_size, st.st_mtime, _now()),
+                    ).lastrowid
         return self.get(pdf_id) or {}
+
+    @staticmethod
+    def _take_over(c, rel: str, sha: str, st, lost: list[dict]) -> int | None:
+        """The row of a vanished PDF that the file now at ``rel`` is: the one at this path (a replacement,
+        whatever its content), else one with the same content (found again elsewhere, name first).
+        Removes it from ``lost``; None when the file is a new PDF."""
+        here = [r for r in lost if r["path"] == rel and r["state"] == "missing"]
+        same = sorted(
+            (r for r in lost if r["sha256"] == sha),
+            key=lambda r: PurePosixPath(r["path"]).name != PurePosixPath(rel).name,
+        )
+        old = (here or same or [None])[0]
+        if old is None:
+            return None
+        lost.remove(old)
+        c.execute(
+            "UPDATE note_pdfs SET path = ?, sha256 = ?, state = 'present', size = ?, mtime = ? WHERE id = ?",
+            (rel, sha, st.st_size, st.st_mtime, old["id"]),
+        )
+        return old["id"]
 
     def moved(self, src: str, dst: str) -> None:
         """A PDF (or a folder with PDFs: ``src`` and ``dst`` are then the folders) was moved by the
@@ -179,15 +203,7 @@ class NotePdfs:
                     )
                     counts["changed"] += 1
                     continue
-                same = [r for r in lost if r["sha256"] == sha]
-                same.sort(key=lambda r: PurePosixPath(r["path"]).name != PurePosixPath(rel).name)
-                if same:  # a file that disappeared, found again somewhere else
-                    old = same[0]
-                    lost.remove(old)
-                    c.execute(
-                        "UPDATE note_pdfs SET path = ?, state = 'present', size = ?, mtime = ? WHERE id = ?",
-                        (rel, st.st_size, st.st_mtime, old["id"]),
-                    )
+                if self._take_over(c, rel, sha, st, lost) is not None:  # a vanished PDF, back (here or elsewhere)
                     counts["adopted"] += 1
                 else:
                     c.execute(
