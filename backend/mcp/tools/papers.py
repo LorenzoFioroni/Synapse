@@ -12,6 +12,7 @@ from ...pdf import outline as pdfoutline
 from ...pdf import refsection
 from ...pdf import regions as pdfregions
 from ...pdf import render as pdfrender
+from ...pdf.source import PdfSource
 from ...pdf.text import abstract_from_text, clean_text, extract_text
 from ..protocol import Image, Parts, ToolError
 from .common import (
@@ -169,10 +170,10 @@ class PaperToolsMixin(ToolsBase):
             note_text = note_text[:MAX_PAPER_NOTE_CHARS] + "\n\n[… cut; read the rest with get_note]"
         return Parts([drop_empty(out), f"The user's paper note ({out['paper_note']}):\n\n{note_text}"])
 
-    def _outline_entries(self, att: dict, pages: list[str]) -> tuple[list[dict], str, bool, bool]:
+    def _outline_entries(self, src: PdfSource, pages: list[str]) -> tuple[list[dict], str, bool, bool]:
         """(entries, where they come from, page numbers matched to PDF pages, completed from the page text)."""
         entries, source, matched = (
-            pdfoutline.bookmarks(self.s.papers.attachment_path(att)),
+            pdfoutline.bookmarks(src.path),
             "the PDF's bookmarks",
             True,
         )
@@ -185,11 +186,10 @@ class PaperToolsMixin(ToolsBase):
         return entries, source, matched, completed
 
     def get_paper_outline(self, paper: str, attachment: int | None = None, captions: bool = True):
-        p = self._paper(paper)
-        att = self._pdf_for(p, attachment)
-        pages = self._pages(att)
-        entries, source, matched, completed = self._outline_entries(att, pages)
-        out: dict = {"paper": self._label(p), "title": p.get("title"), "pages_total": len(pages)}
+        src = self._source(paper, attachment)
+        pages = self._pages(src)
+        entries, source, matched, completed = self._outline_entries(src, pages)
+        out: dict = {"paper": src.label, "title": src.title, "pages_total": len(pages)}
         if entries:
             out["outline_from"] = source + (
                 " plus headings recognised in the page text (approximate)" if completed else ""
@@ -212,11 +212,10 @@ class PaperToolsMixin(ToolsBase):
         return out
 
     def search_in_paper(self, paper: str, query: str, max_results: int = 8, attachment: int | None = None):
-        p = self._paper(paper)
-        att = self._pdf_for(p, attachment)
-        pages = self._pages(att)
+        src = self._source(paper, attachment)
+        pages = self._pages(src)
         if not any(t.strip() for t in pages):
-            raise ToolError(f"No text could be extracted from the PDF of '{self._label(p)}' (a scan?).")
+            raise ToolError(f"No text could be extracted from the PDF of '{src.label}' (a scan?).")
         terms = [t for t, neg, f in search_mod.parse_query(query) if not neg]
         terms = [search_mod.normalize(t) for t in terms if search_mod.normalize(t)]
         if not terms:
@@ -253,7 +252,7 @@ class PaperToolsMixin(ToolsBase):
                 )
             )
         scored.sort(key=lambda s: (s[0], -s[1]), reverse=True)
-        sections, _, located, _ = self._outline_entries(att, pages) if scored else ([], "", False, False)
+        sections, _, located, _ = self._outline_entries(src, pages) if scored else ([], "", False, False)
         # A PDF whose only bookmarks are "Abstract" and "References" would have every page named after one of them.
         sections = [e for e in sections if not _NOT_A_SECTION.match(e["title"])] if located else []
         results = []
@@ -290,9 +289,9 @@ class PaperToolsMixin(ToolsBase):
         cited_pages = sum(not s[0][0] for s in scored)
         out = drop_empty(
             {
-                "paper": self._label(p),
-                "title": p.get("title"),
-                "attachment": att["id"],
+                "paper": src.label,
+                "title": src.title,
+                "attachment": src.attachment_id,
                 "pages_total": len(pages),
                 "pages_matching": len(scored),
                 "pages_in_reference_list": f"{cited_pages} of them have the words only in the reference list "
@@ -307,19 +306,18 @@ class PaperToolsMixin(ToolsBase):
         return out
 
     def read_paper(self, paper: str, pages: str = "1-2", attachment: int | None = None):
-        p = self._paper(paper)
-        att = self._pdf_for(p, attachment)
-        texts = self._pages(att)
+        src = self._source(paper, attachment)
+        texts = self._pages(src)
         if not texts:
-            raise ToolError(f"No text could be extracted from the PDF of '{self._label(p)}'.")
+            raise ToolError(f"No text could be extracted from the PDF of '{src.label}'.")
         want = parse_pages(pages, len(texts))
         beyond = [int(x) for x in re.findall(r"\d+", pages) if int(x) > len(texts)]
         given: list[int] = []
         chars = 0
         why = ""
         parts = [
-            f"{self._label(p)} — {p.get('title') or ''} (PDF, {len(texts)} pages). "
-            f"Cite as [@{p.get('citation_key') or '?'}, p. N] with N the page number below."
+            f"{src.label} — {src.title} (PDF, {len(texts)} pages). "
+            f"Cite as {src.cite_page()} with N the page number below."
         ]
         for n in want:
             t, changed = page_for_reading(texts[n - 1].strip())
@@ -350,10 +348,9 @@ class PaperToolsMixin(ToolsBase):
     def view_page(self, paper: str, page: int, attachment: int | None = None):
         if not pdfrender.available():
             raise ToolError(pdfrender.MISSING)
-        p = self._paper(paper)
-        att = self._pdf_for(p, attachment)
-        path = self.s.papers.attachment_path(att)
-        n = self._page_count(att) or pdfrender.page_count(path)
+        src = self._source(paper, attachment)
+        path = src.path
+        n = self._page_count(src) or pdfrender.page_count(path)
         if not 1 <= page <= n:
             raise ToolError(f"Page {page} does not exist: the PDF has {n} pages.")
         try:
@@ -367,7 +364,7 @@ class PaperToolsMixin(ToolsBase):
         boxed = [f for f in figures if f.get("rect")] + equations
         png = pdfrender.page_view(path, page, boxed)
         info = {
-            "paper": self._label(p),
+            "paper": src.label,
             "page": page,
             "pages_total": n,
             "grid": "Blue lines every 0.1 of the page width/height, labelled in the margins (0 = top/left). "

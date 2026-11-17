@@ -7,6 +7,8 @@
 * A citation inside a block quote marks a *quote* (as "Quote to note" writes it): the quoted
   words must be on the cited page, matched like the viewer does (letters and digits only),
   or the citation could not open the PDF at them.
+* ``[[folder/file.pdf#p=4]]`` must name a PDF of the notes folders and an existing page; a block quote
+  ending with such a link is checked like one ending with a citation.
 * Images must exist in the notes folder.
 
 Problems are returned as errors (nothing is saved); things that still work but look wrong
@@ -22,7 +24,7 @@ import unicodedata
 
 from ..notes import frontmatter, parser
 
-CITES = re.compile(r"\[[^\[\]]*@[^\[\]]*\]")
+CITES = re.compile(r"\[[^\[\]]*@[^\[\]]*\]|\[\[[^\[\]\n]*\.pdf[^\[\]\n]*\]\]", re.I)  # as citeTarget.ts
 QUOTE_LINE = re.compile(r"^\s{0,3}>")
 HEAD = 40  # as frontend/src/viewer/locate.ts
 LETTERS = {"æ": "ae", "œ": "oe", "ß": "ss", "ø": "o", "ł": "l", "đ": "d", "ı": "i"}
@@ -143,6 +145,9 @@ class NoteChecker:
                 heading = rest[1:].split("|", 1)[0].strip()
             alias = rest.split("|", 1)[1].strip() if "|" in rest else ""
             line = text[: base + m.start()].count("\n") + 1
+            if parser.is_pdf_target(target):  # [[folder/file.pdf#p=4]]: a PDF of the notes folders, and a page of it
+                self._check_pdf_link(target, heading, line, errors)
+                continue
             if not target:  # [[#Heading]] in this note
                 if heading and slug_heading(heading) not in {slug_heading(h) for h in own_headings}:
                     errors.append(f"line {line}: [[#{heading}]]: this note has no such heading.")
@@ -173,6 +178,32 @@ class NoteChecker:
                         f"Its headings: {', '.join(hs) or 'none'}."
                     )
         return parser.replace_spans(text, edits) if edits else text
+
+    def _check_pdf_link(self, target: str, heading: str, line: int, errors: list[str]) -> None:
+        found = self.s.notes.resolve_pdf(target)
+        if not found:
+            names = difflib.get_close_matches(
+                target.casefold(), [r["path"].casefold() for r in self.s.note_pdfs.listing()], n=3, cutoff=0.5
+            )
+            hint = [r["path"] for r in self.s.note_pdfs.listing() if r["path"].casefold() in names]
+            errors.append(
+                f"line {line}: [[{target}]] is not a PDF in the notes folders."
+                + (f" Did you mean {', '.join('[[' + h + ']]' for h in hint)}?" if hint else "")
+            )
+            return
+        if not heading:
+            return
+        m = parser._PDF_PAGE.match(heading)
+        if not m:
+            errors.append(f"line {line}: [[{target}#{heading}]]: a PDF link names a page as #p=4, not a heading.")
+            return
+        page = int(m.group(1))
+        try:
+            n = len(self.t._pages(self.t._notes_source(found[0])))
+        except Exception:
+            return
+        if page > n:
+            errors.append(f"line {line}: [[{target}#p={page}]]: the PDF has only {n} pages.")
 
     def _similar_notes(self, target: str) -> str:
         cands = {}
@@ -227,7 +258,7 @@ class NoteChecker:
             block = [re.sub(r"^\s{0,3}(?:>\s?)+", "", l) for l in lines[a : n + 1]]
             block = [l for l in block if not re.match(r"^\[![a-z]+\]", l, re.I)]
             n += 1
-            cites = [c for c in parser.parse("\n".join(block)).links if c.kind == "cite"]
+            cites = [c for c in parser.parse("\n".join(block)).links if c.kind in ("cite", "pdf")]
             if not cites:
                 continue
             quote = quote_text(" ".join(block))
@@ -235,36 +266,50 @@ class NoteChecker:
             if not quote:
                 continue
             for c in cites:
-                p = keys.get(c.target)
-                if not p or not self.t._pdfs(p):
-                    continue  # unknown key: reported already; no PDF: nothing to check against
-                where = f"line {line}: the block quote citing [@{c.target}{', ' + c.locator if c.locator else ''}]"
+                if c.kind == "pdf":  # [[folder/file.pdf#p=4]]
+                    found = self.s.notes.resolve_pdf(c.target)
+                    if not found:
+                        continue  # reported already
+                    name = f"[[{c.target}{'#p=' + str(c.page) if c.page else ''}]]"
+                    try:
+                        pages = self.t._pages(self.t._notes_source(found[0]))
+                    except Exception:
+                        continue
+                    cite_page, where = c.page, f"line {line}: the block quote ending with {name}"
+                else:
+                    p = keys.get(c.target)
+                    if not p or not self.t._pdfs(p):
+                        continue  # unknown key: reported already; no PDF: nothing to check against
+                    where = f"line {line}: the block quote citing [@{c.target}{', ' + c.locator if c.locator else ''}]"
+                    pages, cite_page = None, c.page
+                name_of = f"[[{c.target}#p=N]]" if c.kind == "pdf" else f"[@{c.target}, p. N]"
                 why = (
                     " (A citation inside a block quote or callout marks a quote: the app looks for the quoted "
                     "words on that page. Quote the PDF's words exactly, or put the citation outside the quote.)"
                 )
-                if not c.page:
-                    errors.append(f"{where} needs a page: [@{c.target}, p. N].{why}")
+                if not cite_page:
+                    errors.append(f"{where} needs a page: {name_of}.{why}")
                     continue
-                try:
-                    pages = self.t._pages(self.t._pdfs(p)[0])
-                except Exception:
+                if pages is None:
+                    try:
+                        pages = self.t._pages(self.t._pdfs(p)[0])
+                    except Exception:
+                        continue
+                if cite_page > len(pages):
                     continue
-                if c.page > len(pages):
-                    continue
-                if found_on(pages[c.page - 1], quote):
-                    if diff := changed_words(pages[c.page - 1], quote):  # the start or end matches, the rest drifted
+                if found_on(pages[cite_page - 1], quote):
+                    if diff := changed_words(pages[cite_page - 1], quote):  # the start or end matches, the rest drifted
                         errors.append(
-                            f"{where}: the quote does not match page {c.page} word for word; check "
+                            f"{where}: the quote does not match page {cite_page} word for word; check "
                             f"{', '.join(repr(w) for w in diff)} against the PDF's text (read_paper).{why}"
                         )
                     continue
                 elsewhere = [i for i, t in enumerate(pages, 1) if found_on(t, quote)]
                 if elsewhere:
-                    errors.append(f"{where}: these words are on page {elsewhere[0]}, not {c.page}.")
+                    errors.append(f"{where}: these words are on page {elsewhere[0]}, not {cite_page}.")
                 else:
                     errors.append(
-                        f"{where}: the quoted words were not found on page {c.page} of its PDF."
+                        f"{where}: the quoted words were not found on page {cite_page} of its PDF."
                         f" Copy them from read_paper (prose only; formulas in a PDF's text rarely match).{why}"
                     )
 
