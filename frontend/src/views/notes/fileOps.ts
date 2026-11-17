@@ -58,11 +58,12 @@ function reportLinks(res: NoteMoved): void {
 
 async function moveNote(path: string, to: string, { quiet = false } = {}): Promise<void> {
   if (!to || to === path) return;
+  const session = ws.session;
+  const isOpen = session?.path === path;
   try {
-    const session = ws.session;
-    const isOpen = session?.path === path;
     if (session && isOpen) { await session.save(); if (session.dirty) throw new Error('Save the note before moving it.'); }
     await hooks.saveAll();   // notes in other tabs
+    if (isOpen) session!.moving = true;   // a poll must not follow this move while we make it
     const res = await api.moveNote(path, to, isOpen ? session!.saved.hash : undefined);
     notesRenamed((p) => (p === path ? res.path : p));
     if (isOpen) await reopenAs(res.path);
@@ -70,7 +71,7 @@ async function moveNote(path: string, to: string, { quiet = false } = {}): Promi
     if (tree.cursor === nKey(path)) tree.anchor = tree.cursor = nKey(res.path);
     if (!quiet) await refreshTree();
     reportLinks(res);
-  } catch (e) { toastError(e); }
+  } catch (e) { toastError(e); } finally { if (session) session.moving = false; }
 }
 
 /** After a dialog, give the keyboard back to the file list if that is where it was. */
@@ -164,12 +165,13 @@ export function pickPdfs(folder = folderOfSelection()): void {
 /** Rename or move a folder with everything in it (the open note follows). */
 async function moveFolder(path: string, to: string, { quiet = false } = {}): Promise<void> {
   if (!to || to === path) return;
+  const session = ws.session;
+  const open = session?.path;
+  const inside = !!open && within(open, path);
   try {
-    const session = ws.session;
-    const open = session?.path;
-    const inside = !!open && within(open, path);
     if (session && inside) { await session.save(); if (session.dirty) throw new Error('Save the open note before moving its folder.'); }
     await hooks.saveAll();   // notes in other tabs
+    if (inside) session!.moving = true;   // a poll must not follow this move while we make it
     const res = await api.moveNoteFolder(path, to);
     const moved = (p: string) => (p === path || within(p, path) ? res.path + p.slice(path.length) : p);
     notesRenamed(moved);
@@ -181,7 +183,7 @@ async function moveFolder(path: string, to: string, { quiet = false } = {}): Pro
     tree.anchor = tree.cursor = keep.cursor ? `${keep.cursor[0]}:${moved(keep.cursor.slice(2))}` : null;
     if (!quiet) await refreshTree();
     reportLinks(res);
-  } catch (e) { toastError(e); }
+  } catch (e) { toastError(e); } finally { if (session) session.moving = false; }
 }
 
 export async function renameFolder(path: string): Promise<void> {

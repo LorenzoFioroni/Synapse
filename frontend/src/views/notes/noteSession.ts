@@ -72,6 +72,8 @@ export class NoteSession {
   conflict: Conflict | null;
   private remoteCheck: Promise<void> | null = null;
   private moved = false;
+  /** This window is moving the note itself: a poll that sees the old path vanish must not also follow it. */
+  moving = false;
 
   constructor(o: NoteSessionOptions) {
     this.path = o.path;
@@ -263,7 +265,7 @@ export class NoteSession {
   }
 
   private async _checkRemote(): Promise<void> {
-    if (this.disposed || this.moved || this.conflict || this.inFlight) return;
+    if (this.disposed || this.moved || this.moving || this.conflict || this.inFlight) return;
     let r: { text: string; hash: string };
     try {
       // Asked every few seconds: send the hash we have so an unchanged note costs a few bytes.
@@ -272,13 +274,13 @@ export class NoteSession {
       if (c.text === undefined && c.hash === known) return;
       r = c.text === undefined ? await this.api.get(this.path) : { text: c.text, hash: c.hash };
     } catch (e) {
-      if ((e as { status?: number } | null)?.status === 404 && !this.disposed && !this.conflict && !this.inFlight) {
+      if ((e as { status?: number } | null)?.status === 404 && !this.disposed && !this.moving && !this.conflict && !this.inFlight) {
         if (await this._followMove(e)) return;
         await this._enterConflict();
       }
       return;
     }
-    if (this.disposed || this.conflict || this.inFlight || r.hash === this.saved.hash) return;
+    if (this.disposed || this.moving || this.conflict || this.inFlight || r.hash === this.saved.hash) return;
     if (this.dirty) { await this._enterConflict(); return; }
     this.saved = { text: r.text, hash: r.hash };
     this.text = r.text;
