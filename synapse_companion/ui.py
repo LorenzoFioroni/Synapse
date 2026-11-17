@@ -37,7 +37,7 @@ from .tray import TrayProcess
 
 MAX_BODY = 64 * 1024
 TICKET_SECONDS = 60
-WINDOW_SECONDS = 8  # a window that has not asked for the state this long is closed
+WINDOW_SECONDS = 6  # a window that has not asked for the state this long is closed
 STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
@@ -216,6 +216,8 @@ def _handler(window: Window):
                 threading.Thread(target=self._later, args=(service.update_program,), daemon=True).start()
             elif path == "/api/open":  # from the tray icon
                 window.open()
+            elif path == "/api/window":  # the page is closing (or was reloaded: its next poll says open again)
+                window.window_seen = float("-inf")
             elif path == "/api/tray":
                 window.tray.status = "shown"
             elif path == "/api/quit":

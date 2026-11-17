@@ -206,7 +206,8 @@ def main() -> int:
     app.setApplicationDisplayName("Synapse Companion")
     _dock(False)
     # The Dock icon on macOS (else the generic Python one); icons there have a margin around them.
-    app.setWindowIcon(_render("icon.svg", 0.8 if sys.platform == "darwin" else 1.0))
+    dock_icon = _render("icon.svg", 0.8 if sys.platform == "darwin" else 1.0)
+    app.setWindowIcon(dock_icon)
     if sys.platform == "darwin":
         glyph = _render("tray.svg", 0.8)
         glyph.setIsMask(True)  # a menu bar glyph: macOS draws it in the menu bar's own colour
@@ -255,6 +256,8 @@ def main() -> int:
         if docked[0] != bool(state.get("window_open")):
             docked[0] = bool(state.get("window_open"))
             _dock(docked[0])
+            if docked[0]:
+                app.setWindowIcon(dock_icon)  # macOS drops the icon when the Dock entry is made again
         text = summary(state)
         status.setText(text)
         library.setEnabled(bool(state.get("server")))
@@ -262,7 +265,7 @@ def main() -> int:
 
     timer = QTimer()
     timer.timeout.connect(refresh)
-    timer.start(2000)
+    timer.start(1000)
     refresh()
     icon.show()
     ask("/api/tray", {"shown": True})

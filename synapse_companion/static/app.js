@@ -236,4 +236,9 @@ async function start() {
   timer = setInterval(refresh, 2000);
 }
 
+// Closing the window tells the companion at once (it takes the Dock icon away).
+window.addEventListener('pagehide', () => {
+  fetch('/api/window', { method: 'POST', keepalive: true, headers: { 'X-Companion-Key': key, 'Content-Type': 'application/json' }, body: '{"open":false}' }).catch(() => {});
+});
+
 start();
