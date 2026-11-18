@@ -7,7 +7,9 @@ goes through ``NotesService``, which answers ``NoteLocked`` unless the request c
 that unlocked this note. Who can read the files on the server can still read the note.
 
 Unlocking gives one page of the app (its ``X-Synapse-Client`` id, on one device) access to one
-note for ``timeout`` seconds, postponed each time that page reads or saves the note. The grants
+note for ``timeout`` seconds, postponed only by use: a save, or the page reporting that you clicked,
+typed, scrolled or touched the note (``touch``). Reading does not postpone it, so a tab left open
+and forgotten locks on time; the app reads the note on screen every few seconds. The grants
 live in memory: a restart, closing the note's tab or reloading the page locks the note again. The
 MCP server runs in its own process and never holds a grant, so AI apps never read a locked note.
 """
@@ -103,8 +105,9 @@ class UnlockGrants:
             self._until[(viewer[0], viewer[1], path)] = now + span
         return span
 
-    def allows(self, path: str) -> bool:
-        """Whether this request's page has ``path`` unlocked; reading or saving postpones the expiry."""
+    def allows(self, path: str, *, extend: bool = False) -> bool:
+        """Whether this request's page has ``path`` unlocked. ``extend``: the note is being used
+        (saved, clicked, scrolled …): it stays open ``timeout`` from now."""
         viewer = _viewer.get()
         if viewer is None:
             return False
@@ -114,7 +117,8 @@ class UnlockGrants:
             if self._until.get(key, 0) <= now:
                 self._until.pop(key, None)
                 return False
-            self._until[key] = now + self.timeout()
+            if extend:
+                self._until[key] = now + self.timeout()
             return True
 
     def remaining(self, path: str) -> float | None:

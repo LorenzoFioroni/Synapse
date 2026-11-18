@@ -53,12 +53,19 @@ def test_an_unlocked_note_locks_again_after_the_timeout_unless_used(client, note
     notes.note_service.grants.clock = lambda: now[0]
     notes.settings.update({"notes_lock_minutes": 1})
     unlock(client)
+    now[0] += 50  # a click, a scroll …: open for a whole minute from now
+    r = client.post("/api/notes/unlock/touch", json={"paths": ["secret.md"]}, headers=A)
+    assert r.get_json()["unlocked_for"] == {"secret.md": 60}
     now[0] += 50
-    assert client.get("/api/notes/note?path=secret.md&unless=x", headers=A).status_code < 300  # read: postponed
+    h = client.get("/api/notes/note?path=secret.md", headers=A).get_json()["hash"]
+    r = client.put("/api/notes/note", json={"path": "secret.md", "text": SECRET + "more\n", "hash": h}, headers=A)
+    assert r.status_code < 300  # a save: open for a whole minute from now
     now[0] += 50
-    assert client.get("/api/notes/note?path=secret.md", headers=A).status_code < 300
-    now[0] += 61
+    assert client.get("/api/notes/note?path=secret.md&unless=x", headers=A).status_code < 300
+    now[0] += 11  # reading (the tab checking for changes) did not postpone it: a forgotten tab locks
     assert client.get("/api/notes/note?path=secret.md", headers=A).status_code == 423
+    r = client.post("/api/notes/unlock/touch", json={"paths": ["secret.md"]}, headers=A)
+    assert r.get_json()["unlocked_for"] == {"secret.md": None}
 
 
 def test_nothing_of_a_locked_note_shows_elsewhere(client, notes):

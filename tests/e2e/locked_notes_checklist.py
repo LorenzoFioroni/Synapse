@@ -134,6 +134,11 @@ async def main():
             await page.wait_for_selector(".cm-content")
             await page.wait_for_timeout(400)
             check("the right password opens it", await secret_shown(page))
+            async with page.expect_request("**/api/notes/unlock/touch", timeout=5000) as touched:
+                await page.click(".cm-content")
+            check(
+                "clicking in it keeps it open (reported as use)", "secret.md" in ((await touched.value).post_data or "")
+            )
 
             # 4. an embed in another note shows only that it is locked (another page has no grant)
             other = await b.new_page(viewport={"width": 1200, "height": 800})

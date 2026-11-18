@@ -137,6 +137,27 @@ export async function setLocked(path: string, title: string, locked: boolean): P
   } catch (e) { toastError(e); return false; }
 }
 
+const ACTIVE = ['pointerdown', 'keydown', 'wheel', 'touchstart', 'scroll'] as const;
+const TOUCH_EVERY = 15000;   // ms: at most one report per note in this time
+
+/**
+ * Report use of an unlocked note shown in ``el`` (clicks, keys, wheel, scrolling, touches) so it
+ * stays open while you work in it; a tab only left open locks after Settings' time. ``path()`` is
+ * the locked note shown now (null: none); ``answer`` gets the seconds it now stays open (null:
+ * already locked). Returns a function that stops listening.
+ */
+export function reportActivity(el: HTMLElement, path: () => string | null, answer: (path: string, left: number | null) => void): () => void {
+  const last = new Map<string, number>();
+  const on = () => {
+    const p = path();
+    if (!p || document.hidden || Date.now() - (last.get(p) || 0) < TOUCH_EVERY) return;
+    last.set(p, Date.now());
+    api.touchNotes([p]).then((r) => answer(p, r.unlocked_for[p] ?? null)).catch(() => null);
+  };
+  for (const t of ACTIVE) el.addEventListener(t, on, { capture: true, passive: true });
+  return () => { for (const t of ACTIVE) el.removeEventListener(t, on, { capture: true }); };
+}
+
 /** The page goes away: lock again what it unlocked (the server's timeout does it otherwise). */
 export function relockOnUnload(paths: string[]): void {
   if (!paths.length) return;

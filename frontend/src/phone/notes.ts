@@ -18,7 +18,7 @@ import { type CM, createEditor, loadCM, loadMD, type NoteEditor } from '../views
 import { toggleFormat } from '../views/notes/formatting.js';
 import { noteHooks, ghostSource } from '../views/notes/hooks.js';
 import { linkDataOf } from '../views/notes/linkData.js';
-import { isLockedError, renderLockScreen } from '../views/notes/lockScreen.js';
+import { isLockedError, renderLockScreen, reportActivity } from '../views/notes/lockScreen.js';
 import { moveMessage } from '../views/notes/linkReport.js';
 import { splitFrontmatter } from '../views/notes/mdscan.js';
 import { NoteSession, type SaveStatus } from '../views/notes/noteSession.js';
@@ -222,9 +222,12 @@ export function noteScreen(path: string, { line = null, edit = false }: { line?:
       const locked = !!res.locked;
       const noteDrafts = locked ? { get: () => null, set: () => {}, remove: drafts.remove } : drafts;
       if (locked) drafts.remove(`zc.noteDraft:${path}`);
+      // tapping, scrolling and typing keep it open; a screen only left open locks after Settings' time
+      const lockedAgain = () => { clearInterval(lockTimer); toast('The note locked again.'); back(); };
+      const stopReporting = locked ? reportActivity(el, () => path, (_p, left) => { if (left === null) lockedAgain(); }) : () => {};
       const lockTimer = locked ? setInterval(() => {
         if (document.hidden) return;
-        api.checkNote(path, session.saved.hash || '').catch((e) => { if (isLockedError(e)) { clearInterval(lockTimer); toast('The note locked again.'); back(); } });
+        api.checkNote(path, session.saved.hash || '').catch((e) => { if (isLockedError(e)) lockedAgain(); });
       }, 15000) : undefined;
       const start = NoteSession.open(path, res, noteDrafts);
       let linkData = ws.linkData;
@@ -373,6 +376,7 @@ export function noteScreen(path: string, { line = null, edit = false }: { line?:
       return () => {
         off('notes-count', remote);
         clearInterval(lockTimer);
+        stopReporting();
         void session.save().finally(() => { session.dispose(); if (locked) api.relockNotes([path]).catch(() => null); });
         editor?.destroy();
         window.visualViewport?.removeEventListener('resize', keyboard);
