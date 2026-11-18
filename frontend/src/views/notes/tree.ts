@@ -127,7 +127,7 @@ export function paintTree(): void {
       const k = nKey(n.path);
       rows.push(`<div class="nt-row note${n.path === active ? ' active' : ''}${n.type === 'paper' ? ' paper' : ''}${cls(k)}" role="treeitem" aria-selected="${sel.has(k)}" data-path="${escapeHtml(n.path)}" draggable="true"
           title="${escapeHtml(n.title && n.title !== stemOf(n.path) ? `${n.title}\n${n.path}` : n.path)}" style="--d:${depth}">
-          <span class="twisty none"></span>${icon(n.type === 'paper' ? 'book' : 'doc')}<span class="nm">${escapeHtml(stemOf(n.path))}</span></div>`);
+          <span class="twisty none"></span>${icon(n.type === 'paper' ? 'book' : 'doc')}<span class="nm">${escapeHtml(stemOf(n.path))}</span>${n.locked ? `<span class="nt-lock" title="Locked">${icon('lock', 'icon-sm')}</span>` : ''}</div>`);
     }
   };
   walk(buildTree(), 0);

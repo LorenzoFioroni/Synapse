@@ -303,6 +303,8 @@ class Server:
         except ToolError as e:
             return {"content": [{"type": "text", "text": str(e)}], "isError": True}
         except Exception as e:
+            if getattr(e, "readable", False):  # e.g. a locked note (notes/locks.py)
+                return {"content": [{"type": "text", "text": str(e)}], "isError": True}
             log.error("Tool %s failed:\n%s", name, traceback.format_exc())
             text = f"The tool failed unexpectedly ({type(e).__name__}); details are in Synapse's log."
             return {"content": [{"type": "text", "text": text}], "isError": True}

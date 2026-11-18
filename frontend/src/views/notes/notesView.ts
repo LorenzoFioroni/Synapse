@@ -6,7 +6,7 @@
 // the session to the UI. The other parts: workspace.ts (shared state), tree.ts and treeInput.ts
 // (the notes list), fileOps.ts (new, rename, move, trash), readView.ts (read mode and links),
 // sidePanel.ts (status, breadcrumbs, details), aiBar.ts (Claude's edits) and conflict.ts.
-import { api, openAttachment } from '../../api.js';
+import { api, CLIENT_ID, openAttachment } from '../../api.js';
 import { icon } from '../../icons.js';
 import { navPush } from '../../nav.js';
 import { emit, on, state } from '../../store.js';
@@ -23,8 +23,9 @@ import { createEditor, loadMD, type NoteEditor } from './editor.js';
 import { exportMenu } from './exportNote.js';
 import { folderOfSelection, followMove, newFolder, newNote, pickPdfs, renameNote, rescan, showTrash } from './fileOps.js';
 import { linkDataOf } from './linkData.js';
+import { isLockedError, relockOnUnload, renderLockScreen } from './lockScreen.js';
 import { refitOnResize } from './mathFit.js';
-import { NoteSession } from './noteSession.js';
+import { NoteSession, type DraftStore } from './noteSession.js';
 import { initPanels, listHidden, panelButton, peek, toggleList } from './panels.js';
 import { openPdfLink } from './pdfLinks.js';
 import { attachPdfCards } from './pdfCard.js';
@@ -54,6 +55,8 @@ const drafts = {
   set: (k: string, v: unknown) => store(k, v),
   remove: (k: string) => { try { localStorage.removeItem(k); } catch { /* storage unavailable */ } },
 };
+// A locked note's text never goes into local storage (a draft left behind by earlier edits is removed).
+const noDrafts: DraftStore = { get: () => null, set: () => {}, remove: (k) => drafts.remove(k) };
 
 /* ================================================================== setup */
 export function initNotes(): void {
@@ -85,6 +88,7 @@ export function initNotes(): void {
       <div class="note-body">
         <div class="note-editor"></div>
         <div class="note-read" tabindex="0" hidden><article class="prose"></article></div>
+        <div class="note-lock-host" hidden></div>
         <div class="note-empty empty-state">${icon('doc')}<h3>No note open</h3>
           <p>Pick a note on the left, or create one with <b>+</b> (${modLabel}N).</p></div>
       </div>
@@ -92,7 +96,7 @@ export function initNotes(): void {
     <aside class="notes-side" aria-label="Note details"><div class="ns-details"></div></aside>
   </div>`);
   ws.root = root;
-  Object.assign(hooks, { openNote, doOpen, closeCurrent, setMode, openNotesGraph, saveAll, renameViews, dropViews });
+  Object.assign(hooks, { openNote, doOpen, closeCurrent, setMode, openNotesGraph, saveAll, renameViews, dropViews, lockChanged });
   document.getElementById('app')!.appendChild(root);
   attachGraph();
   onNoteHookChange((key) => {
@@ -120,9 +124,11 @@ export function initNotes(): void {
 
   window.addEventListener('focus', () => { if (notesOpen()) { ws.session?.checkRemote(); refreshTree(); } });
   // Claude (the MCP server) saves from another process: look for such changes while the note is visible
+  // (a locked note on screen is read by it too, which keeps it unlocked while it is looked at)
   setInterval(() => { if (notesOpen() && !document.hidden && ws.session?.status === 'saved') ws.session.checkRemote(); }, 5000);
+  setInterval(expireLocked, 5000);
   document.addEventListener('visibilitychange', () => { if (document.hidden) saveAll(); });
-  window.addEventListener('pagehide', flushOnUnload);
+  window.addEventListener('pagehide', () => { flushOnUnload(); relockOnUnload([...ws.views.values()].filter((v) => v.locked).map((v) => v.path)); });
   // Diagrams are drawn for one theme: redraw them when light/dark changes.
   new MutationObserver(() => { staleOthers(); if (!notesOpen() || !ws.session) return; ws.editor?.refresh(); if (ws.mode === 'read') renderRead({ fresh: true }); })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
@@ -172,7 +178,7 @@ function flushOnUnload(): void {
     if (!session.dirty || session.status === 'conflict') continue;
     try {
       fetch('/api/notes/note', {
-        method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json' },
+        method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json', 'X-Synapse-Client': CLIENT_ID },
         body: JSON.stringify({ path: session.path, text: session.text, hash: session.saved.hash }),
       });
     } catch { /* the draft is still there */ }
@@ -279,11 +285,13 @@ async function movedTo(path: string): Promise<string | null> {
 /** A note tab closed (tabs/tabs.ts): save its note and close its view. */
 export async function closeNoteTab(path: string): Promise<void> {
   await opening;
+  if (lockShown === path) { lockShown = null; paintEmpty(); }
   const view = ws.views.get(path);
   if (!view) return;
   await checkpointAfterSave(view);
   if (ws.view === view) await closeCurrent();
   else dropView(view);
+  if (view.locked) api.relockNotes([path]).catch(() => null);   // closing its tab locks it again
 }
 
 /** The note was left (switched away from or closed): once saved, its edits become a version in
@@ -395,6 +403,8 @@ async function newEditor(view: NoteView, mode: 'live' | 'source'): Promise<NoteE
  *  was put away), and its session. Not shown yet. */
 async function createView(path: string, mode: Mode): Promise<NoteView> {
   const res = await api.getNote(path);
+  const store = res.locked ? noDrafts : drafts;
+  if (res.locked) noDrafts.remove(`zc.noteDraft:${path}`);
   await ensureLib();
   const el = document.createElement('div');
   el.className = 'note-editor-view';   // in the page only while shown
@@ -404,17 +414,18 @@ async function createView(path: string, mode: Mode): Promise<NoteView> {
     info: res.info, linkData: { notes: new Map(), cites: new Map() }, linkResp: null, aiHist: null,
     mode, editMode, editorMode: editMode, top: 1, read: null, stale: false, conflict: null, used: ++viewTick,
   };
+  lockState(view, res);
   view.editor = await newEditor(view, editMode);
-  const start = NoteSession.open(path, res, drafts);
-  const parked = ws.parked.get(path);
+  const start = NoteSession.open(path, res, store);
+  const parked = res.locked ? undefined : ws.parked.get(path);
   ws.parked.delete(path);
   const resumed = !!parked && view.editor.resume(parked.state, start.text);
   if (!resumed) view.editor.load(start.text);
   if (resumed) view.top = parked!.top;
   view.session = new NoteSession({
-    path, text: start.text, serverText: res.text, hash: res.hash, drafts,
+    path, text: start.text, serverText: res.text, hash: res.hash, drafts: store,
     delay: state.settings.notes_autosave_ms || 1500,
-    api: { save: api.saveNote, get: api.getNote, check: api.checkNote, create: api.recreateNote },
+    api: lockAware(view, { save: api.saveNote, get: api.getNote, check: api.checkNote, create: api.recreateNote }),
     onStatus: (st) => { if (ws.view === view) paintStatus(st); },
     onConflict: (c) => { if (ws.view === view) conflictDialog(c); else view.conflict = c; },
     onRemoteText: (t) => {
@@ -432,6 +443,73 @@ async function createView(path: string, mode: Mode): Promise<NoteView> {
   if (start.conflict) view.pendingStart = 'conflict';
   else if (start.restored) view.pendingStart = 'restored';
   return view;
+}
+
+/* ---------------------------------------------------------- locked notes */
+// A locked note (lockScreen.ts) is open for this page while the server says so: every answer about
+// it says for how long, an answer 423 says it locked again. Its view then goes (kept only while it
+// has unsaved text, which is saved once it is unlocked again) and its tab shows the lock.
+let lockShown: string | null = null;   // the note whose lock is on screen
+
+function lockState(view: NoteView, r: unknown): void {
+  const st = r as { hash?: string; locked?: boolean; unlocked_for?: number | null } | null;
+  if (!st || typeof st !== 'object' || !('hash' in st)) return;   // an answer about the note: no ``locked``, not locked
+  view.locked = st.locked ? { until: Date.now() + (st.unlocked_for ?? 0) * 1000 } : undefined;
+}
+
+/** The session's requests, noting what they say about the lock. */
+function lockAware<T extends object>(view: NoteView, fns: T): T {
+  const out: Record<string, unknown> = {};
+  for (const [k, fn] of Object.entries(fns) as [string, (...a: unknown[]) => Promise<unknown>][]) {
+    out[k] = async (...a: unknown[]) => {
+      try { const r = await fn(...a); lockState(view, r); return r; } catch (e) {
+        if (isLockedError(e)) setTimeout(() => lockedOut(view));
+        throw e;
+      }
+    };
+  }
+  return out as T;
+}
+
+/** Locked notes whose time ran out lock here too (the server already refuses them). */
+function expireLocked(): void {
+  for (const v of [...ws.views.values()]) if (v.locked && v.locked.until < Date.now()) lockedOut(v);
+}
+
+function lockedOut(view: NoteView): void {
+  if (ws.views.get(view.path) !== view || !view.locked) return;
+  view.locked.until = 0;
+  const shown = ws.view === view;
+  if (shown) hideView(view);
+  if (!view.session.dirty) dropView(view);
+  if (shown) showLocked(view.path);
+}
+
+/** The lock in ``path``'s tab; unlocking opens the note there. */
+function showLocked(path: string): void {
+  if (ws.view) hideView(ws.view);
+  Object.assign(ws, { session: null, editor: null, info: null, aiHist: null });
+  paintEmpty();
+  lockShown = path;
+  const n = ws.overview.notes.find((x) => x.path === path);
+  const host = ws.root.querySelector<HTMLElement>('.note-lock-host')!;
+  ws.root.classList.add('showing-lock');
+  host.hidden = false;
+  renderLockScreen(host, path, n?.title || stemOf(path), () => { if (lockShown === path) openInPlace(path); });
+  if (!tree.sel.has(nKey(path))) selectOnly(nKey(path));
+  paintTree();
+}
+
+/** A note was locked or its lock removed here: its view starts again, as a locked note or not. */
+async function lockChanged(path: string): Promise<void> {
+  const view = ws.views.get(path);
+  if (!view) return;
+  await view.session.save();
+  const shown = ws.view === view;
+  if (shown) hideView(view);
+  ws.parked.delete(path);
+  dropView(view);
+  if (shown) await openInPlace(path);
 }
 
 /** The shown view goes behind: what it shows is kept with it. */
@@ -467,6 +545,7 @@ function showView(view: NoteView, mode?: Mode): void {
   ws.mode = view.mode;
   ws.editMode = view.editMode;
   ws.root.querySelector('.note-editor')!.appendChild(view.el);
+  hideLock();
   if (view.stale) { view.stale = false; view.editor.refresh(); }
   store('zc.notes.active', view.path);
   if (notesOpen()) navPush({ ws: 'notes', path: view.path });
@@ -521,7 +600,7 @@ function evictViews(): void {
   while (ws.views.size > LIVE_VIEWS && hidden.length) {
     const v = hidden.shift()!;
     ws.parked.delete(v.path);
-    ws.parked.set(v.path, { state: v.editor.park(), top: v.top });
+    if (!v.locked) ws.parked.set(v.path, { state: v.editor.park(), top: v.top });   // a locked note's undo history is not kept
     while (ws.parked.size > PARKED_MAX) ws.parked.delete(ws.parked.keys().next().value!);
     dropView(v);
   }
@@ -623,8 +702,16 @@ async function doOpen(path: string, mode: Mode | undefined, request = ++openRequ
   if (request !== openRequest) return;
   if (cur) hideView(cur);
   let view = ws.views.get(path);
-  const fresh = !view;
-  if (!view) view = await createView(path, mode || defaultMode());
+  let fresh = false;
+  try {
+    // a locked note kept with unsaved text: open only once the server says it is unlocked
+    if (view?.locked && !view.locked.until) lockState(view, await api.checkNote(path, view.session.saved.hash || ''));
+    if (!view) { view = await createView(path, mode || defaultMode()); fresh = true; }
+  } catch (e) {
+    if (!isLockedError(e)) throw e;
+    if (request === openRequest) showLocked(path);
+    return;
+  }
   if (request !== openRequest) return;   // a later tab click wins, even if this fetch finished last
   view.session.checkRemote();   // changed elsewhere while its tab was in the background?
   showView(view, mode);
@@ -639,7 +726,16 @@ async function doOpen(path: string, mode: Mode | undefined, request = ++openRequ
   evictViews();
 }
 
+function hideLock(): void {
+  lockShown = null;
+  ws.root.classList.remove('showing-lock');
+  const host = ws.root.querySelector<HTMLElement>('.note-lock-host')!;
+  host.hidden = true;
+  host.replaceChildren();
+}
+
 function paintEmpty(): void {
+  hideLock();
   emit('note-status');
   const root = ws.root;
   root.classList.remove('has-note', 'reading');

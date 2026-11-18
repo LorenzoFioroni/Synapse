@@ -11,6 +11,7 @@ import {
   addPdfs, copyLinks, deleteSelection, describe, moveItems, newFolder, newNote, pickFolder, pickPdfs, renameFolder, renameNote, renamePdf, type Selection,
 } from './fileOps.js';
 import { exportMenu } from './exportNote.js';
+import { setLocked } from './lockScreen.js';
 import {
   fKey, keyOf, nKey, paintSelection, refreshTree, selectOnly, selectRange, selected, toggleFolder, toggleSelected, tree, treeEl, visibleKeys,
 } from './tree.js';
@@ -106,6 +107,17 @@ function onKey(e: KeyboardEvent): void {
   if (handled) { e.preventDefault(); e.stopPropagation(); }
 }
 
+/** Lock a note, or remove its lock (lockScreen.ts). */
+function lockEntry(path: string): MenuEntry {
+  const n = ws.overview.notes.find((x) => x.path === path);
+  const title = n?.title || stemOf(path);
+  const locked = !!n?.locked;
+  return {
+    label: locked ? 'Remove Lock…' : 'Lock', icon: locked ? 'unlock' : 'lock',
+    run: async () => { if (await setLocked(path, title, !locked)) { await refreshTree(); await hooks.lockChanged(path); } },
+  };
+}
+
 function onContextMenu(e: MouseEvent): void {
   const row = (e.target as Element).closest<HTMLElement>('.nt-row');
   e.preventDefault();
@@ -148,6 +160,7 @@ function onContextMenu(e: MouseEvent): void {
       { label: 'Copy link', icon: 'link', run: () => copyLinks([p]) },
       noteHooks.graph && { label: `Show in ${noteHooks.graph.title || 'Graph'}`, icon: 'link', run: () => hooks.openNotesGraph(`note:${p}`) },
       { label: 'Export…', icon: 'export', run: () => exportMenu(p, at) },
+      lockEntry(p),
       'sep',
       trash,
     ], at);

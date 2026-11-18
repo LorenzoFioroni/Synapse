@@ -179,6 +179,11 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
           ${segmentedRow('notes_width', 'Note width', 'Full uses the whole note pane.', [['readable', 'Readable'], ['full', 'Full']])}
           ${selectRow('notes_trash_retention', 'Empty the notes trash', 'Deleted notes, and images no note uses, are deleted for good after this long.',
     [['never', 'Never'], ['1d', 'After 1 day'], ['1w', 'After 1 week'], ['2w', 'After 2 weeks'], ['1m', 'After 1 month'], ['6m', 'After 6 months']])}
+          <div class="setting"><div class="s-text"><div class="s-title">Password for locked notes</div>
+            <div class="s-desc">Right-click a note and choose Lock. A locked note opens with this password or a passkey, for the tab that unlocked it; AI apps never read it. The file itself stays plain Markdown on the server.</div></div>
+            <div class="s-control"><button class="btn" data-note-password>Set Password…</button></div></div>
+          ${selectRow('notes_lock_minutes', 'Lock again after', 'An unlocked note stays open while you look at it or edit it, and locks again this long after, or when its tab closes.',
+    [[1, '1 minute'], [5, '5 minutes'], [10, '10 minutes'], [15, '15 minutes'], [30, '30 minutes'], [60, '1 hour'], [240, '4 hours']])}
           ${textRow('notes_export_author', 'Default author of exported notes', 'Exports print the note’s author (from its front matter, or the AI app that wrote it) and the export date under the title. This name is used for notes whose author is just “human”. Empty: no author line.', 'Your name')}
         </div>
         ${sub('Equations')}

@@ -471,6 +471,7 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
         edits = flat
         for _ in range(3):  # the user may be saving this note right now: re-read and apply again
             old, h = self.s.vault.read(path)
+            self.s.note_service.require_open(path, old)
             new = old
             if text is not None:
                 body = text if text.endswith("\n") else text + "\n"
@@ -541,6 +542,7 @@ class NoteToolsMixin(ImageToolsMixin):  # uses _note_images
         path = self._note_path(note)
         ns = self.s.note_service
         cur, h = self.s.vault.read(path)
+        ns.require_open(path, cur)
         if not ns.history.enabled:
             return self._undo_legacy(path, cur, h)
         e = next((x for x in ns.history_of(path, limit=300)["entries"] if x.get("by") == "ai"), None)

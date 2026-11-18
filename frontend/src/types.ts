@@ -180,6 +180,7 @@ export interface Settings {
   notes_math_physics: boolean;
   notes_math_macros: string;
   notes_export_author: string;
+  notes_lock_minutes: number;
   annotation_color_highlight: string;
   annotation_color_underline: string;
   annotation_color_text: string;
@@ -215,6 +216,8 @@ export interface NoteInfo {
   updated: string | null;
   mtime: number;
   tags: string[];
+  /** ``locked: true`` in its front matter: it opens only after the password or a passkey (backend/notes/locks.py). */
+  locked?: boolean;
 }
 
 /** Who made a recorded change, and what kind of change it was (backend/notes/history/). */
@@ -277,7 +280,8 @@ export interface HistoryLog extends HistoryStatus { entries: HistoryCommit[]; mi
 /** GET /api/notes/history/diff: the notes that differ between two states, with both texts. */
 export interface HistoryDiff {
   from: string; to: string; cut: boolean;
-  files: { status: string; path: string; from?: string; before?: string | null; after?: string | null }[];
+  /** ``locked``: a locked note this page has not unlocked; its texts are left out. */
+  files: { status: string; path: string; from?: string; before?: string | null; after?: string | null; locked?: boolean }[];
 }
 
 /** GET /api/notes/attachments: images in the notes folder, and the attachment trash. */
@@ -288,10 +292,16 @@ export interface NoteAttachments {
 }
 
 /** GET /api/notes/note: a note's text, its hash (for hash-checked saves) and its index entry. */
-export interface NoteFile { path: string; text: string; hash: string; info: NoteDetails | null }
+export interface NoteFile extends NoteLockState { path: string; text: string; hash: string; info: NoteDetails | null }
 
 /** PUT /api/notes/note: the saved note's new hash and index entry. */
-export interface NoteSaved { path: string; hash: string; info: NoteDetails | null }
+export interface NoteSaved extends NoteLockState { path: string; hash: string; info: NoteDetails | null }
+
+/** Whether a note is locked and, once this page unlocked it, the seconds before it locks again. */
+export interface NoteLockState { locked?: boolean; unlocked_for?: number | null }
+
+/** GET /api/notes/locks: whether locked notes can be used here. */
+export interface NoteLocks { password_set: boolean; passkeys: boolean; minutes: number; this_computer: boolean; can_confirm: boolean; confirmed: boolean }
 
 /** A note's index entry with its tags and headings (GET /api/notes/note: ``info``). */
 export interface NoteDetails extends NoteInfo {

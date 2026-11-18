@@ -243,6 +243,10 @@ client works too.
 
 ## The rules it enforces
 
+A [locked note](notes.md#locked-notes) is never read or changed by an AI app: the note tools
+answer that it is locked (`NoteLocked` is a readable error, passed on by `protocol.py`),
+`get_paper` leaves its paper note out, and searches, backlinks and citation lists never list it.
+
 Unless the user turns on [Changing the library](#changing-the-library), the library itself is
 read-only to the MCP server: no tool changes items, PDFs, annotations or reference lists, and none
 uses the network. `get_references` only reads `citations.db`; when a list was never fetched, it

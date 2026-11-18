@@ -4,6 +4,11 @@ The index is derived data only: deleting the file and calling ``rebuild()`` rest
 exact same state. Each note is re-parsed only when its content hash changes.
 
 Notes are identified by their path relative to the vault (``papers/smith2021.md``).
+
+A locked note (``locked: true``, see locks.py) is indexed without its text in the search table,
+and what it links to is left out of every answer about other notes (backlinks, citations, the
+graph, tags, the library search) unless the caller asks with ``include_locked``: renaming a key or
+moving a note still rewrites its links, but no listing shows them.
 """
 
 from __future__ import annotations
@@ -18,12 +23,13 @@ from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 from . import parser
+from .locks import is_locked_meta
 from .vault import NoteMissing, Vault, content_hash
 
 log = logging.getLogger(__name__)
 
 # Also bumped when parser.py changes what it finds, so every note is read again.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -32,7 +38,8 @@ CREATE TABLE IF NOT EXISTS notes (
     stem TEXT NOT NULL,           -- lower-case file name without .md (for [[link]] lookup)
     id TEXT, title TEXT, type TEXT, paper TEXT, author TEXT,
     created TEXT, updated TEXT,
-    hash TEXT NOT NULL, mtime REAL, size INTEGER
+    hash TEXT NOT NULL, mtime REAL, size INTEGER,
+    locked INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_notes_stem ON notes(stem);
 CREATE INDEX IF NOT EXISTS idx_notes_paper ON notes(paper);
@@ -140,9 +147,10 @@ class NotesIndex:
         p = parser.parse(text, fallback_title=PurePosixPath(path).stem)
         m = p.meta
         paper = str(m.get("paper") or "").strip() or None
+        locked = is_locked_meta(m)
         c.execute(
-            "INSERT INTO notes (path, stem, id, title, type, paper, author, created, updated, hash, mtime, size) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO notes (path, stem, id, title, type, paper, author, created, updated, hash, mtime, size, locked) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 path,
                 stem_of(path),
@@ -156,6 +164,7 @@ class NotesIndex:
                 h,
                 mtime,
                 size,
+                int(locked),
             ),
         )
         c.executemany(
@@ -185,7 +194,8 @@ class NotesIndex:
             "INSERT INTO headings (path, level, text, line) VALUES (?,?,?,?)",
             [(path, h_.level, h_.text, h_.line) for h_ in p.headings],
         )
-        c.execute("INSERT INTO notes_fts (path, title, body) VALUES (?,?,?)", (path, p.title, p.body))
+        if not locked:  # a locked note is never found by its words
+            c.execute("INSERT INTO notes_fts (path, title, body) VALUES (?,?,?)", (path, p.title, p.body))
 
     def update(self, path: str) -> bool:
         """(Re)index one note from disk; removes it if the file is gone. Returns True if changed."""
@@ -265,6 +275,7 @@ class NotesIndex:
             if not row:
                 return None
             d = dict(row)
+            d["locked"] = bool(d["locked"])
             d["tags"] = [r["tag"] for r in c.execute("SELECT tag FROM tags WHERE path = ? ORDER BY rowid", (path,))]
             d["headings"] = [
                 dict(r)
@@ -277,15 +288,23 @@ class NotesIndex:
             rows = [
                 dict(r)
                 for r in c.execute(
-                    "SELECT path, id, title, type, paper, author, created, updated, mtime FROM notes ORDER BY path"
+                    "SELECT path, id, title, type, paper, author, created, updated, mtime, locked FROM notes ORDER BY path"
                 )
             ]
             tags: dict[str, list[str]] = {}
-            for r in c.execute("SELECT path, tag FROM tags ORDER BY rowid"):
+            for r in c.execute(
+                "SELECT t.path, t.tag FROM tags t JOIN notes n ON n.path = t.path WHERE n.locked = 0 ORDER BY t.rowid"
+            ):
                 tags.setdefault(r["path"], []).append(r["tag"])
         for r in rows:
             r["tags"] = tags.get(r["path"], [])
+            r["locked"] = bool(r["locked"])
         return rows
+
+    def is_locked(self, path: str) -> bool:
+        with self._session() as c:
+            row = c.execute("SELECT locked FROM notes WHERE path = ?", (path,)).fetchone()
+        return bool(row and row["locked"])
 
     def resolve(self, target: str, *, from_path: str = "") -> builtins.list[str]:
         """Paths a [[target]] may refer to (best first). Empty target = the note itself."""
@@ -320,7 +339,7 @@ class NotesIndex:
                 rows = c.execute("SELECT path FROM files WHERE name = ?", (t,)).fetchall()
         return sorted((r["path"] for r in rows), key=lambda p: (p.count("/"), len(p), p))
 
-    def pdf_backlinks(self, path: str) -> builtins.list[dict]:
+    def pdf_backlinks(self, path: str, *, include_locked: bool = False) -> builtins.list[dict]:
         """Links from notes to the PDF at ``path``."""
         norm = path.lower()
         candidates = {"/".join(norm.split("/")[i:]) for i in range(len(norm.split("/")))}
@@ -330,8 +349,8 @@ class NotesIndex:
                 dict(r)
                 for r in c.execute(
                     f"SELECT l.*, n.title AS source_title FROM links l JOIN notes n ON n.path = l.path "
-                    f"WHERE l.kind = 'pdf' AND l.target_norm IN ({q}) ORDER BY l.path, l.line",
-                    tuple(candidates),
+                    f"WHERE l.kind = 'pdf' AND l.target_norm IN ({q}) AND (? OR n.locked = 0) ORDER BY l.path, l.line",
+                    (*candidates, include_locked),
                 )
             ]
         return [r for r in rows if next(iter(self.resolve_pdf(r["target"])), None) == path]
@@ -351,7 +370,7 @@ class NotesIndex:
                 r["ambiguous"] = len(matches) > 1
         return rows
 
-    def backlinks(self, path: str) -> builtins.list[dict]:
+    def backlinks(self, path: str, *, include_locked: bool = False) -> builtins.list[dict]:
         """Links from other notes to ``path`` (by stem or by folder/stem)."""
         stem = stem_of(path)
         noext = norm_target(path)
@@ -367,14 +386,14 @@ class NotesIndex:
                 for r in c.execute(
                     f"SELECT l.*, n.title AS source_title FROM links l JOIN notes n ON n.path = l.path "
                     f"WHERE l.kind IN ('note','embed') AND l.target_norm IN ({q}) AND l.path != ? "
-                    f"ORDER BY l.path, l.line",
-                    (*candidates, path),
+                    f"AND (? OR n.locked = 0) ORDER BY l.path, l.line",
+                    (*candidates, path, include_locked),
                 )
             ]
         # Keep only links that actually resolve here (a same-named note elsewhere may win).
         return [r for r in rows if next(iter(self.resolve(r["target"], from_path=r["path"])), None) == path]
 
-    def citing(self, key: str) -> builtins.list[dict]:
+    def citing(self, key: str, *, include_locked: bool = False) -> builtins.list[dict]:
         """Every citation of ``key`` with its note and context."""
         with self._session() as c:
             return [
@@ -382,8 +401,8 @@ class NotesIndex:
                 for r in c.execute(
                     "SELECT l.path, l.line, l.context, l.locator, l.page, n.title AS source_title, n.type, n.author "
                     "FROM links l JOIN notes n ON n.path = l.path WHERE l.kind = 'cite' AND l.target = ? "
-                    "ORDER BY n.path, l.line",
-                    (key,),
+                    "AND (? OR n.locked = 0) ORDER BY n.path, l.line",
+                    (key, include_locked),
                 )
             ]
 
@@ -408,7 +427,7 @@ class NotesIndex:
                 out.setdefault(r["paper"], []).append((r["title"] or "", r["body"] or ""))
             for r in c.execute(
                 "SELECT l.target, n.title, l.context FROM links l JOIN notes n ON n.path = l.path "
-                "WHERE l.kind = 'cite' AND (n.paper IS NULL OR n.paper != l.target)"
+                "WHERE l.kind = 'cite' AND n.locked = 0 AND (n.paper IS NULL OR n.paper != l.target)"
             ):
                 out.setdefault(r["target"], []).append((r["title"] or "", r["context"] or ""))
         return out
@@ -428,7 +447,7 @@ class NotesIndex:
         with self._session() as c:
             for r in c.execute(
                 "SELECT l.target AS key, COUNT(DISTINCT l.path) AS n FROM links l "
-                "JOIN notes n ON n.path = l.path WHERE l.kind = 'cite' "
+                "JOIN notes n ON n.path = l.path WHERE l.kind = 'cite' AND n.locked = 0 "
                 "AND (n.paper IS NULL OR n.paper != l.target) GROUP BY l.target"
             ):
                 out.setdefault(r["key"], {"paper": None, "citing": 0})["citing"] = r["n"]
@@ -441,7 +460,10 @@ class NotesIndex:
                     "SELECT DISTINCT target FROM links WHERE kind = 'cite' AND path = ? ORDER BY target", (path,)
                 )
             else:
-                rows = c.execute("SELECT DISTINCT target FROM links WHERE kind = 'cite' ORDER BY target")
+                rows = c.execute(
+                    "SELECT DISTINCT l.target FROM links l JOIN notes n ON n.path = l.path "
+                    "WHERE l.kind = 'cite' AND n.locked = 0 ORDER BY l.target"
+                )
             return [r["target"] for r in rows]
 
     def link_graph(self) -> builtins.list[dict]:
@@ -453,7 +475,8 @@ class NotesIndex:
             rows = [
                 dict(r)
                 for r in c.execute(
-                    "SELECT DISTINCT path, kind, target FROM links WHERE kind IN ('note','embed','cite','pdf')"
+                    "SELECT DISTINCT l.path, l.kind, l.target FROM links l JOIN notes n ON n.path = l.path "
+                    "WHERE l.kind IN ('note','embed','cite','pdf') AND n.locked = 0"
                 )
             ]
             pdfs = [r["path"] for r in c.execute("SELECT path FROM files")]
@@ -494,9 +517,9 @@ class NotesIndex:
             rows = [
                 dict(r)
                 for r in c.execute(
-                    "SELECT l.target AS task, l.path, l.line, n.title AS note_title, "
-                    "(SELECT h.text FROM headings h WHERE h.path = l.path AND h.line <= l.line "
-                    " ORDER BY h.line DESC LIMIT 1) AS heading "
+                    "SELECT l.target AS task, l.path, l.line, n.title AS note_title, n.locked, "
+                    "CASE WHEN n.locked THEN NULL ELSE (SELECT h.text FROM headings h WHERE h.path = l.path "
+                    " AND h.line <= l.line ORDER BY h.line DESC LIMIT 1) END AS heading "
                     "FROM links l JOIN notes n ON n.path = l.path WHERE l.kind = 'task' ORDER BY l.path, l.line"
                 )
             ]

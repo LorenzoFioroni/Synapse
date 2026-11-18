@@ -140,6 +140,12 @@ see the [README](../README.md); for code ownership, see the [architecture map](a
   `data/pdfs` yourself). Keep the last 7–90; choose another folder (e.g. one synced by iCloud
   Drive or Dropbox). **Restore** backs up the current state first, then puts the library,
   settings and notes back and rebuilds the indexes.
+- **Locked notes**: right-click a note → **Lock**, and it opens only with the password from
+  **Settings → Notes** or a passkey, for the tab that unlocked it. It locks again after a set time
+  unused (looking at it or editing keeps it open) or when its tab closes. Search, backlinks, the
+  graph, embeds, history and AI apps never show its text; the file stays plain Markdown on the
+  server, so this protects against other devices and AI apps, not against access to the server.
+  See [locked notes](notes.md#locked-notes).
 - **Notes history**: every version of your notes' text is kept, with who made it — you (and on
   which device), an AI app (with its name and summary) or another program — like Overleaf's
   history. **History** in a note's head (or **Versions…** in its details, or **History of This

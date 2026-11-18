@@ -37,6 +37,8 @@ export interface NoteView {
   conflict: Conflict | null;
   pendingStart?: 'conflict' | 'restored';
   used: number;
+  /** A locked note (lockScreen.ts): never parked or kept as a draft; ``until`` is when it locks again (ms). */
+  locked?: { until: number };
 }
 
 export const ws = {
@@ -114,6 +116,8 @@ export const hooks = {
   renameViews: (_rename: (path: string) => string): void => {},
   /** Notes were deleted: their hidden views close. */
   dropViews: (_gone: (path: string) => boolean): void => {},
+  /** A note was locked or its lock removed: its open view starts again. */
+  lockChanged: (_path: string): Promise<void> => Promise.resolve(),
 };
 
 /** How a task line ({{task:id}}) looks and behaves in the live preview (livePreview.ts). */

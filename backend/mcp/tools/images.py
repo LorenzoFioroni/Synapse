@@ -164,6 +164,7 @@ class ImageToolsMixin(ToolsBase):
         if note:
             npath = self._note_path(note)
             text = self.s.vault.read(npath)[0]
+            self.s.note_service.require_open(npath, text)
             images = self._note_images(text, caption_once=list_only)
             if list_only:
                 if not images:
