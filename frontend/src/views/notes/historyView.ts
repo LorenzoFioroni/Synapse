@@ -264,7 +264,8 @@ export async function openVaultHistory(): Promise<void> {
       };
       const filesHtml = (d: HistoryDiff) => d.files.length ? d.files.map((f) => {
         const label = ({ A: 'New', D: 'Deleted', R: 'Renamed', M: 'Changed' } as Record<string, string>)[f.status] || 'Changed';
-        const text = f.before === undefined && f.after === undefined ? '<p class="muted">Too large to show here.</p>'
+        const text = f.locked ? '<p class="muted">A locked note: open it to see what changed.</p>'
+          : f.before === undefined && f.after === undefined ? '<p class="muted">Too large to show here.</p>'
           : (f.before ?? '') === (f.after ?? '') ? `<p class="muted">${f.status === 'R' ? 'Only renamed.' : 'The text did not change.'}</p>`
             : diffHtml(f.before ?? '', f.after ?? '');
         return `<div class="hist-file"><div class="hist-file-head"><span class="badge">${label}</span>

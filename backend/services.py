@@ -73,6 +73,7 @@ class Services:
             history_dir=config.notes_history_dir,
             pdfs=self.note_pdfs,
         )
+        self.note_service.grants.timeout = lambda: 60 * int(self.settings.get("notes_lock_minutes") or 10)
         self.note_service.history.on_tick = self.sync_external_notes
         self.note_service.history.on_commit = lambda: self.changes.record({"history"})
         # Attachments no note uses go to their own trash; both trashes are emptied after a while.
@@ -104,6 +105,9 @@ class Services:
         self.passkeys = Passkeys(config.auth_db_path, self.devices)  # sign a device in without pairing
         self.tokens = AccessTokens(config.auth_db_path)  # AI apps on other computers (/mcp)
         self.confirmations = Confirmations()  # devices that just confirmed with a passkey (admin actions)
+        from .access.note_password import NotePassword
+
+        self.note_password = NotePassword(config.auth_db_path)  # unlocks locked notes (Settings → Notes)
         self._mcp_http: HttpTransport | None = None
         from .backup import Backups
         from .backup.remote import RemoteStorage

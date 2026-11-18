@@ -65,6 +65,9 @@ DEFAULTS: dict = {
     "notes_math_physics": True,  # the physics package's commands (\vb, \dv, \qty…) in formulas
     "notes_math_macros": "",  # \newcommand definitions used by every note
     "notes_export_author": "",  # the author of exported notes whose front matter names none (empty: no author)
+    # A locked note (backend/notes/locks.py) locks again after this many minutes without being looked
+    # at or edited; the password itself is kept in auth.db, never here
+    "notes_lock_minutes": 10,
     # PDF viewer: where PDFs open. "tabs": the app's own tabs, beside the Synapse tab (also in the
     # app window, python server.py --window); "browser": a browser tab (or window) of their own.
     "pdf_open_in": "tabs",
@@ -193,6 +196,8 @@ class SettingsStore:
                     raise SettingsError("Font size must be between 11 and 18")
                 if k == "notes_autosave_ms" and not 300 <= v <= 60000:
                     raise SettingsError("Autosave delay must be between 0.3 and 60 seconds")
+                if k == "notes_lock_minutes" and not 1 <= v <= 1440:
+                    raise SettingsError("Locked notes lock again after 1 to 1440 minutes")
                 if k == "backup_keep" and not 1 <= v <= 365:
                     raise SettingsError("Keep between 1 and 365 backups")
             else:

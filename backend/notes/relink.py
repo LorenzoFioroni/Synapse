@@ -67,10 +67,10 @@ class Relinker:
         holders: set[str] = set()
         for old in moves:
             if is_pdf_path(old):
-                holders |= {b["path"] for b in self.index.pdf_backlinks(old)}
+                holders |= {b["path"] for b in self.index.pdf_backlinks(old, include_locked=True)}
                 continue
             holders.add(old)  # a note may link to itself
-            holders |= {b["path"] for b in self.index.backlinks(old)}
+            holders |= {b["path"] for b in self.index.backlinks(old, include_locked=True)}
         for path in sorted(holders):
             try:
                 text, _ = self.vault.read(path)

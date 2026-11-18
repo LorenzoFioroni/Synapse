@@ -1,6 +1,7 @@
 // DOM helpers for rendered notes: Mermaid diagrams, code highlighting, embedded notes.
 import { api } from '../../api.js';
 import type { Mermaid } from '../../globals.js';
+import { icon } from '../../icons.js';
 import { escapeHtml } from '../../util.js';
 import { highlightStyle, loadCM, loadMD } from './editor.js';
 import { embedHtml } from './embed.js';
@@ -109,7 +110,8 @@ export async function renderEmbeds(root: HTMLElement, opts: RendererOptions = {}
       await renderEmbeds(body, opts, next, depth + 1, theme);
       drawing.push(highlightCodeBlocks(body), renderMermaidBlocks(body, theme));
     } catch (e) {
-      body.innerHTML = `<p class="muted">${escapeHtml((e as Error).message)}</p>`;
+      body.innerHTML = (e as { status?: number }).status === 423 ? `<p class="muted embed-locked">${icon('lock', 'icon-sm')} A locked note</p>`
+        : `<p class="muted">${escapeHtml((e as Error).message)}</p>`;
     }
   }
   await Promise.all(drawing);

@@ -32,7 +32,7 @@ data/
 ├── backups/            library-*.tar.gz and notes-*.tar.gz
 ├── backup-remote/      rclone credentials, destination and upload receipts (not in archives)
 ├── settings.json       preferences
-├── auth.db             paired devices (hashed tokens), passkeys (public keys), access tokens (hashed)
+├── auth.db             paired devices (hashed tokens), passkeys (public keys), access tokens (hashed), the locked-notes password (scrypt hash)
 ├── plugins/            plugins the user installed, one folder each (code; see plugins.md)
 ├── plugin-data/        what each plugin stores, in <id>/ (and, not in backups: its log .plugin.log,
 │                       its Python packages .python/, its built frontend .build/, .jobs.sqlite, .schedules.json)
@@ -56,7 +56,7 @@ Each file has one owner. Other code goes through that owner, with the few except
 | `pdfs/` | `PaperRepository` (`attachment_path`, `_remove_file`) and the upload code in `backend/api/attachments.py` | none | source of truth |
 | `notes/` | `Vault` in `backend/notes/vault.py` | none (see [notes](notes.md)) | source of truth (notes and the PDFs beside them; the PDFs' numbers are in `library.db`, table `note_pdfs`) |
 | `settings.json` | `SettingsStore` in `backend/settings.py` | `DEFAULTS`, `_migrate` | source of truth |
-| `auth.db` | `Devices`, `Passkeys` and `AccessTokens` in `backend/access/` (`devices.py`, `passkeys.py`, `tokens.py`), one table each, on `AuthTable` (`authdb.py`) | `SCHEMA` in each | source of truth, not in backups |
+| `auth.db` | `Devices`, `Passkeys`, `AccessTokens` and `NotePassword` in `backend/access/` (`devices.py`, `passkeys.py`, `tokens.py`, `note_password.py`), one table each, on `AuthTable` (`authdb.py`) | `SCHEMA` in each | source of truth, not in backups |
 | `fulltext.db` | `FulltextIndex` in `backend/pdf/fulltext.py` | `FulltextIndex._init` | derived from `pdfs/` |
 | `notes_index.db` | `NotesIndex` in `backend/notes/index.py` | `SCHEMA`, `SCHEMA_VERSION` | derived from `notes/` |
 | `citations.db` | `CitationStore` in `backend/references/store.py` | `SCHEMA` there | cache of online data |
@@ -83,7 +83,7 @@ notices the other's writes.
 |---|---|
 | `library.db`, `notes/`, `settings.json` | Restore a backup. |
 | `pdfs/` | Not in backups. The user must back it up separately. |
-| `auth.db` | Paired devices must pair again, passkeys be added again and AI apps get new tokens. Left out of backups on purpose, so a restore never brings back a device, passkey or token that was removed. |
+| `auth.db` | Paired devices must pair again, passkeys be added again, AI apps get new tokens and the locked-notes password be set again (locked notes stay locked). Left out of backups on purpose, so a restore never brings back a device, passkey or token that was removed. |
 | `fulltext.db` | Rebuilt from the PDFs: by the indexer at startup when `fulltext_auto_index` is on, or with Settings → Rebuild Index. See [full-text search](fulltext-search.md). |
 | `notes_index.db` | Rebuilt at startup: `Services.__init__` calls `NotesIndex.sync()`, which indexes every note it does not know. |
 | `citations.db` | The reference lists are fetched again. See [references](references.md). |

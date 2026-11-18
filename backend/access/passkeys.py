@@ -161,8 +161,8 @@ class Passkeys(AuthTable):
     def login_options(self, rp_id: str, origin: str, purpose: str = "login") -> dict:
         """What ``navigator.credentials.get`` needs. No list of passkeys: the browser offers the
         ones it has for this site, and an unpaired device learns nothing about them. ``purpose`` is
-        ``login`` (signing a device in) or ``confirm`` (a signed-in device proving it again before an
-        administrative action, see confirm.py)."""
+        ``login`` (signing a device in), ``confirm`` (a signed-in device proving it again before an
+        administrative action, see confirm.py) or ``unlock`` (opening a locked note, notes/locks.py)."""
         return {
             "challenge": self._challenge(purpose, rp_id, origin),
             "rpId": rp_id,
@@ -206,6 +206,10 @@ class Passkeys(AuthTable):
     def confirm(self, rp_id: str, origin: str, response: dict, addr: str) -> dict:
         """Check a confirmation (see ``login_options``). Returns the passkey used."""
         return public(self._verify("confirm", rp_id, origin, response, addr))
+
+    def unlock(self, rp_id: str, origin: str, response: dict, addr: str) -> dict:
+        """Check a passkey answer given to open a locked note. Returns the passkey used."""
+        return public(self._verify("unlock", rp_id, origin, response, addr))
 
     def count(self, rp_id: str) -> int:
         """How many passkeys work at this site."""

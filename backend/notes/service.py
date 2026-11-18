@@ -17,14 +17,26 @@ from datetime import datetime
 from pathlib import Path
 
 from ..library.agent import current_agent, current_device
-from . import frontmatter
+from . import frontmatter, locks
 from .folder_colors import FolderColorError, FolderColors
 from .history import NoteHistory
 from .history.reading import MILESTONE_PREFIX
 from .index import NotesIndex
+from .locks import NoteLocked, UnlockGrants, is_locked_text
 from .rekey import Rekeyer
 from .relink import Relink, Relinker
-from .vault import ATTACHMENTS, PDF_SUFFIX, TRASH, Conflict, InvalidPath, NoteExists, Vault, is_pdf_path, slugify
+from .vault import (
+    ATTACHMENTS,
+    PDF_SUFFIX,
+    TRASH,
+    Conflict,
+    InvalidPath,
+    NoteExists,
+    Vault,
+    VaultError,
+    is_pdf_path,
+    slugify,
+)
 
 log = logging.getLogger(__name__)
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -36,6 +48,7 @@ IMAGE_TYPES = {  # extension -> magic-byte check. No SVG: it can carry scripts.
 }
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
 MAX_PDF_BYTES = 90 * 1024 * 1024  # below the 100 MB a Cloudflare Tunnel accepts in one request
+LOCK_TIMEOUT = 10 * 60  # seconds an unlocked note stays open unused (Services reads it from Settings)
 
 
 def ulid() -> str:
@@ -134,6 +147,7 @@ class NotesService:
             vault.root, history_dir or vault.root.parent / "notes-history.git", valid_path=self._valid_path
         )
         self.folder_colors = FolderColors(vault.root)  # colours given to notes folders
+        self.grants = UnlockGrants(lambda: LOCK_TIMEOUT)  # which pages unlocked which locked notes (locks.py)
 
     # ------------------------------------------------------------------ citation keys
     def text_matcher(self) -> NoteTextMatcher:
@@ -146,7 +160,12 @@ class NotesService:
         return self._matcher
 
     def rename_plan(self, old: str, new: str) -> dict:
-        return self.rekeyer.plan(old, new)
+        plan = self.rekeyer.plan(old, new)
+        for n in plan["notes"]:  # the lines of a locked note are not shown, only that it changes
+            if self.index.is_locked(n["path"]) and not self.grants.allows(n["path"]):
+                n["locked"] = True
+                n["changes"] = [{"line": c["line"], "before": "", "after": ""} for c in n["changes"]]
+        return plan
 
     def _valid_path(self, rel: str) -> bool:
         try:
@@ -200,6 +219,66 @@ class NotesService:
             n += 1
         return f"{base} {n}.md"
 
+    # ------------------------------------------------------------------ locks
+    def _closed(self, path: str, text: str | None = None) -> bool:
+        """Whether the note at ``path`` is locked and this request has not unlocked it. ``text``:
+        the note as just read (the index may not have seen an edit made outside the app)."""
+        locked = is_locked_text(text) if text is not None else self.index.is_locked(path)
+        return locked and not self.grants.allows(path)
+
+    def require_open(self, path: str, text: str | None = None) -> None:
+        """Raise NoteLocked unless this request may read the note at ``path``."""
+        if self._closed(path, text):
+            raise NoteLocked(path)
+
+    def unlock(self, path: str) -> dict:
+        """Open a locked note for the page asking (the API has checked the password or passkey)."""
+        path = self.vault.clean_rel(path)
+        text, _ = self.vault.read(path)
+        if not is_locked_text(text):
+            return {"path": path, "locked": False}
+        return {"path": path, "locked": True, "unlocked_for": self.grants.grant(path)}
+
+    def relock(self, paths: list[str] | None) -> dict:
+        """Lock again the notes this page unlocked (``paths``, or all of them)."""
+        self.grants.revoke([self.vault.clean_rel(p) for p in paths] if paths is not None else None)
+        return {"ok": True}
+
+    def set_locked(self, path: str, locked: bool) -> dict:
+        """Lock a note (``locked: true`` in its front matter) or remove its lock. Removing it, like
+        reading it, needs the note unlocked by this page first. The page that locks a note keeps it
+        unlocked, so its open tab stays open until the note is left."""
+        path = self.vault.clean_rel(path)
+        for _ in range(3):  # someone may be saving the note right now: re-read and retry
+            text, h = self.vault.read(path)
+            if is_locked_text(text) == locked:
+                break
+            if not locked:
+                self.require_open(path, text)
+            new = frontmatter.set_fields(text, {locks.FIELD: True if locked else None})
+            try:
+                with self.history.saving([path], device=current_device()):
+                    h = self.vault.write(path, new, expected_hash=h)
+                break
+            except Conflict:
+                continue
+        else:
+            raise Conflict(path, self.vault.current_hash(path))
+        self.index.update(path)
+        if locked:
+            if locks.has_viewer():
+                self.grants.grant(path)
+        else:
+            self.grants.forget(path)
+        self._saved(path, h, "app")
+        return {"path": path, "hash": h, "locked": locked, "info": self.index.note(path)}
+
+    def _lock_state(self, path: str, text: str) -> dict:
+        """For answers about a note: nothing for an ordinary note."""
+        if not is_locked_text(text):
+            return {}
+        return {"locked": True, "unlocked_for": self.grants.remaining(path)}
+
     # ------------------------------------------------------------------ reads
     def overview(self) -> dict:
         folders = self.vault.folders()
@@ -227,13 +306,15 @@ class NotesService:
         whether their note changed elsewhere, and long notes would otherwise be sent each time."""
         path = self.vault.clean_rel(path)
         text, h = self.vault.read(path)
+        self.require_open(path, text)
+        lock = self._lock_state(path, text)
         if unless and unless == h:
-            return {"path": path, "hash": h, "unchanged": True}
+            return {"path": path, "hash": h, "unchanged": True, **lock}
         info = self.index.note(path)
         if info is None or info["hash"] != h:  # edited outside the app since the last sync
             self.index.update(path)
             info = self.index.note(path)
-        return {"path": path, "text": text, "hash": h, "info": info}
+        return {"path": path, "text": text, "hash": h, "info": info, **lock}
 
     def links(self, path: str) -> dict:
         if is_pdf_path(path or ""):  # a PDF: the notes that link to it
@@ -244,6 +325,7 @@ class NotesService:
                 "backlinks": self.index.pdf_backlinks(self.vault.clean_rel(path, suffix=PDF_SUFFIX)),
             }
         path = self.vault.clean_rel(path)
+        self.require_open(path)
         out = self.index.outgoing(path)
         keys = self._library_keys()
         cited: dict[str, dict] = {}
@@ -338,6 +420,8 @@ class NotesService:
         """Save over the version with ``base_hash``; ``None`` creates (fails if the file exists).
         ``by="ai"``: a note an AI app wrote, recorded in the history as its own change."""
         path = self.vault.clean_rel(path)
+        if base_hash is not None or self.vault.exists(path):
+            self.require_open(path, self._current_text(path))
         if by == "ai":
             agent = current_agent()
             with self.history.change(
@@ -348,9 +432,17 @@ class NotesService:
             with self.history.saving([path], device=current_device()):
                 h = self.vault.write(path, text, expected_hash=base_hash)
         self.index.update(path)
+        if is_locked_text(text) and by != "ai" and locks.has_viewer() and not self.grants.remaining(path):
+            self.grants.grant(path)  # locked by typing ``locked: true``: the tab that did it stays open
         self._changed()
         self._saved(path, h, by)
-        return {"path": path, "hash": h, "info": self.index.note(path)}
+        return {"path": path, "hash": h, "info": self.index.note(path), **self._lock_state(path, text)}
+
+    def _current_text(self, path: str) -> str | None:
+        try:
+            return self.vault.read(path)[0]
+        except VaultError:
+            return None
 
     def edit(self, path: str, text: str, base_hash: str, *, by: str = "ai", summary: str = "") -> dict:
         """Save a change made for someone else than the editor (an AI app), keeping the version it
@@ -366,6 +458,7 @@ class NotesService:
             subject=summary or (f"Edited by {agent}" if agent else "Edited"),
         ) as rec:
             before, h = self.vault.read(path)
+            self.require_open(path, before)
             if h != base_hash:
                 raise Conflict(path, h)
             h2 = self.vault.write(path, text, expected_hash=base_hash)
@@ -388,6 +481,7 @@ class NotesService:
         with the hashes of the text before and after each change; ``current`` marks the version
         the note on disk still is. Without Git: the AI changes kept the old way."""
         path = self.vault.clean_rel(path)
+        self.require_open(path, self._current_text(path))
         h = self.vault.current_hash(path)
         limit = max(1, min(limit, 1000))
         if self.history.enabled:
@@ -404,6 +498,8 @@ class NotesService:
             e = self.history.legacy.get(entry_id)
             if not e:
                 raise KeyError(entry_id)
+            if e.get("path") and self._version_closed(e["path"], e.get("before"), e.get("after")):
+                raise NoteLocked(e["path"])
             return e
         if not re.fullmatch(r"[0-9a-f]{7,64}", entry_id or "") or not path:
             raise KeyError(entry_id)
@@ -412,7 +508,17 @@ class NotesService:
         v = self.history.version(entry_id, path, from_path)
         if v["after"] is None and v["before"] is None:
             raise KeyError(entry_id)
+        if self._version_closed(path, v["before"], v["after"]):
+            raise NoteLocked(path)
         return v
+
+    def _version_closed(self, path: str, *texts: str | None) -> bool:
+        """Whether an old version of ``path`` must not be shown: the note is locked now, or it is
+        gone and the version itself was locked. A note whose lock was removed shows its past."""
+        current = self._current_text(path)
+        if current is not None:
+            return self._closed(path, current)
+        return any(is_locked_text(t) for t in texts) and not self.grants.allows(path)
 
     def history_log(self, limit: int = 100, skip: int = 0) -> dict:
         """Every recorded change to the notes, newest first, with the notes each touched."""
@@ -430,7 +536,14 @@ class NotesService:
             raise ValueError(self.history.reason or "The notes history is off.")
         if b == "now":
             self.history.checkpoint()
-        return self.history.diff(a, b)
+        d = self.history.diff(a, b)
+        for f in d["files"]:  # a locked note shows that it changed, never what it says
+            paths = {f["path"], f.get("from") or f["path"]}
+            if any(self._version_closed(p, f.get("before"), f.get("after")) for p in paths):
+                f["locked"] = True
+                f.pop("before", None)
+                f.pop("after", None)
+        return d
 
     def checkpoint(self, path: str | None = None, restored_from: str | None = None) -> dict:
         """Commit now what is waiting (the app calls it when a note is closed, and after putting
@@ -472,6 +585,8 @@ class NotesService:
                 if f["status"] in ("M", "A", "R"):
                     text = self.history.text_at(mid, f["path"])
                     if text is not None and self._valid_path(f["path"]):
+                        if is_locked_text(self._current_text(f["path"])) and not is_locked_text(text):
+                            text = frontmatter.set_fields(text, {locks.FIELD: True})  # a lock is never undone so
                         self.vault._atomic_write(self.vault.root / f["path"], text.encode("utf-8"))
                         back.append(f["path"])
                 elif f["status"] == "D":
@@ -552,6 +667,7 @@ class NotesService:
             paths=[src, dst, *plan.sources],  # notes with links to fix: what waits for them is saved first
         ) as rec:
             self.vault.move(src, dst, expected_hash=base_hash)
+            self.grants.moved({src: dst})
             self.index.remove(src)
             self.index.update(dst)
             rec.paths = [src, dst]
@@ -643,6 +759,7 @@ class NotesService:
             paths=[*inside, *plan.sources],
         ) as rec:
             moved = self.vault.move_folder(src, to)
+            self.grants.moved(dict(moved))
             if self.pdfs and dst != src:
                 self.pdfs.moved(src, dst)
             self.history.legacy.moved(moved)

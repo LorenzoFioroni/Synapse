@@ -18,6 +18,7 @@ import { type CM, createEditor, loadCM, loadMD, type NoteEditor } from '../views
 import { toggleFormat } from '../views/notes/formatting.js';
 import { noteHooks, ghostSource } from '../views/notes/hooks.js';
 import { linkDataOf } from '../views/notes/linkData.js';
+import { isLockedError, renderLockScreen } from '../views/notes/lockScreen.js';
 import { moveMessage } from '../views/notes/linkReport.js';
 import { splitFrontmatter } from '../views/notes/mdscan.js';
 import { NoteSession, type SaveStatus } from '../views/notes/noteSession.js';
@@ -202,20 +203,36 @@ export function noteScreen(path: string, { line = null, edit = false }: { line?:
       const keybar = el.querySelector<HTMLElement>('.ph-keybar')!;
       const editBtn = el.querySelector<HTMLButtonElement>('[data-act="edit"]')!;
       let res;
+      const load = () => Promise.all([api.getNote(path), ensureNoteLib(), ensureIndexes()]);
       try {
-        [res] = await Promise.all([api.getNote(path), ensureNoteLib(), ensureIndexes()]);
+        try { [res] = await load(); } catch (e) {
+          if (!isLockedError(e)) throw e;
+          editBtn.hidden = true;   // a locked note (lockScreen.ts): its lock first
+          await new Promise<void>((unlocked) => renderLockScreen(scroll, path, ws.overview.notes.find((n) => n.path === path)?.title || stemOf(path), unlocked));
+          editBtn.hidden = false;
+          [res] = await load();
+        }
       } catch (e) {
         scroll.innerHTML = `<div class="ph-empty">${icon('alert')}<h3>Note not found</h3><p>${esc((e as ApiError).message)}</p></div>`;
         editBtn.hidden = true;
         return;
       }
-      const start = NoteSession.open(path, res, drafts);
+      // a locked note's text is never kept in local storage; looking at it keeps it unlocked, and
+      // once it locked again (unused for Settings' time) the screen goes
+      const locked = !!res.locked;
+      const noteDrafts = locked ? { get: () => null, set: () => {}, remove: drafts.remove } : drafts;
+      if (locked) drafts.remove(`zc.noteDraft:${path}`);
+      const lockTimer = locked ? setInterval(() => {
+        if (document.hidden) return;
+        api.checkNote(path, session.saved.hash || '').catch((e) => { if (isLockedError(e)) { clearInterval(lockTimer); toast('The note locked again.'); back(); } });
+      }, 15000) : undefined;
+      const start = NoteSession.open(path, res, noteDrafts);
       let linkData = ws.linkData;
       let editor: NoteEditor | null = null;
       let editing = false;
       const saveLabel = el.querySelector<HTMLElement>('.ph-save')!;
       const session = new NoteSession({
-        path, text: start.text, serverText: res.text, hash: res.hash, drafts,
+        path, text: start.text, serverText: res.text, hash: res.hash, drafts: noteDrafts,
         delay: state.settings.notes_autosave_ms || 1500,
         api: { save: api.saveNote, get: api.getNote, check: api.checkNote, create: api.recreateNote },
         onStatus: (st) => { saveLabel.textContent = editing || st !== 'saved' ? STATUS[st] : ''; saveLabel.dataset.status = st; },
@@ -355,7 +372,8 @@ export function noteScreen(path: string, { line = null, edit = false }: { line?:
       on('notes-count', remote);
       return () => {
         off('notes-count', remote);
-        void session.save().finally(() => session.dispose());
+        clearInterval(lockTimer);
+        void session.save().finally(() => { session.dispose(); if (locked) api.relockNotes([path]).catch(() => null); });
         editor?.destroy();
         window.visualViewport?.removeEventListener('resize', keyboard);
         window.visualViewport?.removeEventListener('scroll', keyboard);

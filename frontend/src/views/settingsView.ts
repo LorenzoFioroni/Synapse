@@ -24,6 +24,7 @@ import { mountPluginSections } from './settings/pluginSections.js';
 import { mountSettingsSearch, type SettingsSearch } from './settings/search.js';
 import { TOKENS, flashSaved, settingsHtml } from './settings/page.js';
 import { paintNavValues } from './settings/navValues.js';
+import { lockStatus, setPasswordDialog } from './notes/lockScreen.js';
 
 let view: HTMLElement | null = null;
 let settingsSearch: SettingsSearch | null = null;
@@ -239,7 +240,9 @@ function bind(view: HTMLElement): void {
     if (b) void resetPage(b.closest<HTMLElement>('.settings-section')!);
     const open = (e.target as Element).closest<HTMLElement>('[data-open-section]');
     if (open) setNav(open.dataset.openSection!);
+    if ((e.target as Element).closest('[data-note-password]')) void setPasswordDialog().then(() => paintNotePassword(view));
   });
+  paintNotePassword(view);
 
   view.addEventListener('change', async (e) => {
     const el = e.target as HTMLInputElement | HTMLSelectElement;
@@ -371,4 +374,10 @@ function paintDesktopNotifications(page: HTMLElement): void {
   button.disabled = status.disabled;
   button.classList.toggle('btn-primary', status.enabled);
   page.querySelector<HTMLElement>('[data-desktop-notifications-desc]')!.textContent = status.description;
+}
+
+/** Settings → Notes: “Set Password…” or “Change Password…” for locked notes. */
+function paintNotePassword(view: HTMLElement): void {
+  const b = view.querySelector<HTMLButtonElement>('[data-note-password]');
+  if (b) lockStatus(true).then((st) => { b.textContent = st.password_set ? 'Change Password…' : 'Set Password…'; }).catch(() => null);
 }
