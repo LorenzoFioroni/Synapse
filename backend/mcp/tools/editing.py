@@ -20,6 +20,8 @@ from ..protocol import ToolError
 from .common import ToolsBase, check_page, drop_empty, sentence
 
 LIBRARY_EDITS = "ai_library_edits"  # the setting that offers the tools changing the library
+# The ones a companion's AI tool may get, when its companion allows it too (docs/companion.md)
+COMPANION_EDITS = frozenset({"add_paper", "find_pdf", "organize_papers", "add_highlight", "trash_papers"})
 MAX_PAPERS_PER_CHANGE = 200
 # A changed key is rewritten in every note that cites it: left to the user, in the app.
 FIELDS_FOR_AI = [k for k in EDITABLE_KEYS if k != "citation_key"]

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from . import autostart
 from .common import (
+    DEFAULT_SITES,
     MAX_RUNNING,
     Fail,
     home,
@@ -60,6 +61,8 @@ class Service:
         self.companion: Companion | None = None
         self.hello: dict = {}
         self.review: list[str] | None = None  # extension update waiting for the user's approval
+        self.checked = 0.0  # when the server last answered a check (time.time())
+        self._checking = threading.Lock()  # the hourly check and one from the window never overlap
         self.wake = threading.Event()
         self.stopped = threading.Event()
         self.restart = False
@@ -111,15 +114,28 @@ class Service:
                 log(f"update check skipped: {e}")
             self.wake.wait(SYNC_EVERY)
 
-    def check(self) -> None:
+    def check(self, *, manual: bool = False) -> str:
+        """Compare the program and the extension with the server's; apply an extension update when
+        allowed. ``manual`` (the window's Check for Updates): say what was found, and why not."""
+        with self._checking:
+            return self._check(manual)
+
+    def _check(self, manual: bool) -> str:
         profile = load_profile(self.profile_name)
         if not profile:
-            return
+            if manual:
+                raise Fail("Connect to your library first.")
+            return ""
         server = Server(profile["server"], profile["token"])
         try:
             self.hello = server.hello()
-        except (ApiError, NetworkError):
-            return
+        except (ApiError, NetworkError) as e:
+            if manual:
+                raise Fail(f"Cannot check for updates: {e}") from None
+            return ""
+        self.checked = time.time()
+        if manual:
+            log("Checked for updates.")
         folder = self.extension_dir(profile)
         if profile.get("extension") and profile["settings"]["extension_updates"]:
             try:
@@ -130,6 +146,15 @@ class Service:
                 if self.review != e.keys:
                     log(f"An extension update changes {', '.join(e.keys)}: approve it in the window.")
                 self.review = e.keys
+        found = (["a new version of the companion"] if self._program_outdated() else []) + (
+            ["an extension update to approve"] if self.review else []
+        )
+        if found:
+            return f"Found {' and '.join(found)}."
+        return "Everything is up to date." + ("" if is_packaged() else " (A repository checkout is updated with git.)")
+
+    def _program_outdated(self) -> bool:
+        return bool(is_packaged() and self.hello.get("script") and self.hello["script"] != own_build())
 
     # ------------------------------------------------------------------ actions
     def connect(self, address: str, token: str, name: str) -> None:
@@ -293,13 +318,15 @@ class Service:
                 "message": companion.state_message if companion else "",
             },
             "settings": settings,
+            "default_sites": DEFAULT_SITES,
             "max_running": MAX_RUNNING,
             "providers": providers,
             "running": companion.running() if companion else [],
             "autostart": autostart.enabled(self.profile_name),
             "autostart_where": autostart.describe(self.profile_name),
             "program": str(program_path()),
-            "update": bool(is_packaged() and self.hello.get("script") and self.hello["script"] != own_build()),
+            "update": self._program_outdated(),
+            "checked": max(0, int(time.time() - self.checked)) if self.checked else None,
             "log": recent_log()[-60:],
         }
         state["extension"] = self._extension_state(profile)

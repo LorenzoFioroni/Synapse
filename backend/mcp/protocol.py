@@ -160,8 +160,9 @@ class Server:
     extra: Callable[[], dict[str, Tool]] | None = None
     # The AI app connected (from initialize's clientInfo): notes and tasks record it with each change
     client: str | None = None
-    # Set per request by the transport: a caller that never gets the tools changing the library
-    restricted: bool = False
+    # Set per request by the transport: the tools changing the library this caller may get, when the
+    # setting offers them (None: every one; a companion's AI tool gets a few or none)
+    edits: frozenset[str] | None = None
     prompts: dict[str, Prompt] = field(default_factory=dict)
     # Resources: the listed ones, the URI templates for the rest, and the reader (raises ResourceNotFound)
     resource_list: Callable[[], list[dict]] | None = None

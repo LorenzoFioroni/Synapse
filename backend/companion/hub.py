@@ -43,6 +43,8 @@ MAX_NAME = 60
 MAX_PROVIDERS = 8
 MAX_CHOICES = 16  # models, or efforts, one provider may offer
 MAX_NUMBER = 10**9
+MAX_CHANGES = 200  # library changes recorded per job
+CHANGE = re.compile(r"[a-z_]{1,40}")
 
 CLIENT = re.compile(r"[A-Za-z0-9_-]{1,128}")
 PROVIDER = re.compile(r"[a-z0-9_-]{1,32}")
@@ -90,6 +92,7 @@ class _Companion:
     last_seen: float = 0.0
     polling: int = 0  # open long-polls
     token: str = ""  # the access token it connected with; its client id is bound to it
+    library: bool = False  # its questions' AI tools may change the library (if the server's setting allows it)
 
 
 @dataclass
@@ -112,6 +115,7 @@ class _Job:
     stop: bool = False  # the companion must stop it (cancelled, or ended here)
     stop_sent: bool = False
     mcp_key: str = ""  # SHA-256 of the job's /mcp token, which works only while the job runs
+    library: bool = False  # as its companion allowed when it took the job
 
 
 def _choices(value: Any, what: str) -> list:
@@ -191,9 +195,11 @@ class Companions:
         running: Any,
         *,
         token: str = "",
+        library: Any = False,
         timeout: float | None = None,
     ) -> dict:
-        """Wait for a question for this companion. Answers ``{"job": …|None, "cancelled": [ids]}``."""
+        """Wait for a question for this companion. Answers ``{"job": …|None, "cancelled": [ids]}``.
+        ``library``: the companion lets its AI tools change the library."""
         if not isinstance(client, str) or not CLIENT.fullmatch(client):
             raise InvalidCompanion("Invalid companion ID.")
         providers = _clean_providers(providers)
@@ -211,7 +217,7 @@ class Companions:
                 comp = self._companions[client] = _Companion(client, token=token)
             elif comp.token != token:
                 raise WrongCompanion("This companion ID belongs to another token.")
-            comp.name, comp.providers = name, providers
+            comp.name, comp.providers, comp.library = name, providers, library is True
             comp.last_seen = self._clock()
             comp.polling += 1
             self._condition.notify_all()
@@ -255,6 +261,8 @@ class Companions:
         # and only until the job ends.
         mcp_token = secrets.token_urlsafe(32)
         job.mcp_key = _key(mcp_token)
+        comp = self._companions.get(job.companion)
+        job.library = bool(comp and comp.library)
         self._condition.notify_all()
         return {
             "id": job.id,
@@ -324,9 +332,10 @@ class Companions:
             self._condition.notify_all()
             return job.stop
 
-    def job_caller(self, token: str | None) -> str | None:
-        """For a running job's /mcp token: the access token id of the companion running it (who the
-        MCP server attributes changes to), else None."""
+    def job_access(self, token: str | None) -> dict | None:
+        """For a running job's /mcp token: ``{caller, job, library}``, the access token id of the
+        companion running it (who the MCP server attributes changes to), the job and whether its AI
+        tool may change the library; else None."""
         if not token:
             return None
         key = _key(token)
@@ -335,8 +344,22 @@ class Companions:
             for job in self._jobs.values():
                 if job.state == "running" and job.mcp_key and secrets.compare_digest(job.mcp_key, key):
                     comp = self._companions.get(job.companion)
-                    return comp.token if comp else None
+                    return {"caller": comp.token, "job": job.id, "library": job.library} if comp else None
         return None
+
+    def add_changes(self, job_id: str, tools: list[str]) -> None:
+        """Library changes the job's AI tool made (the tools that ran), shown with its answer. Only the
+        server records them: a ``change`` event from the companion is dropped."""
+        with self._condition:
+            job = self._jobs.get(job_id)
+            if job is None or job.state in FINISHED:
+                return
+            known = sum(e["type"] == "change" for e in job.events)
+            for name in tools[: max(0, MAX_CHANGES - known)]:
+                if isinstance(name, str) and CHANGE.fullmatch(name):
+                    job.events.append({"type": "change", "tool": name})
+            job.activity = self._clock()
+            self._condition.notify_all()
 
     # ------------------------------------------------------------------ app side
     def status(self) -> list[dict]:
@@ -492,6 +515,7 @@ class Companions:
             "state": job.state,
             "text": "".join(e["text"] for e in job.events if e["type"] == "text"),
             "tools": [e["name"] for e in job.events if e["type"] == "tool"],
+            "changes": [e["tool"] for e in job.events if e["type"] == "change"],
             "usage": {k: v for k, v in usage.items() if k != "type"} if usage else None,
             "error": error,
         }

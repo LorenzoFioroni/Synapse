@@ -306,6 +306,7 @@ function mount(host: AskHost): void {
       for (const e of events) {
         if (e.type === 'text') { t.text += e.text; t.phase = 'writing'; }
         else if (e.type === 'tool') { t.tools.push(e.name); t.phase = 'thinking'; }
+        else if (e.type === 'change') t.changes.push(e.tool);
         else if (e.type === 'started') { if (t.phase !== 'writing') t.phase = 'thinking'; }
         else if (e.type === 'usage') t.usage = { input_tokens: e.input_tokens, output_tokens: e.output_tokens, cost_usd: e.cost_usd, duration_ms: e.duration_ms };
         else if (e.type === 'error') t.error = e.message;
@@ -425,7 +426,7 @@ function mount(host: AskHost): void {
       const a = msgs[i + 1]?.role === 'assistant' ? msgs[++i] : null;
       const q = msgs[i - (a ? 1 : 0)];
       const t = thread.addTurn(q.text, 'writing', (a?.state as JobState) || 'done', chipsOf(q.context));
-      if (a) { t.text = a.text; t.tools = a.tools || []; t.usage = a.usage; t.error = a.error || ''; if (a.state === 'error' && !t.error) t.error = 'The AI could not answer.'; }
+      if (a) { t.text = a.text; t.tools = a.tools || []; t.changes = a.changes || []; t.usage = a.usage; t.error = a.error || ''; if (a.state === 'error' && !t.error) t.error = 'The AI could not answer.'; }
       turns.push(t);
       thread.draw(t);
     }

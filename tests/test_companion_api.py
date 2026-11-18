@@ -397,12 +397,14 @@ def test_titles_are_data_not_instructions():
     assert text.index("Nice") > text.index("<context>") and text.index("Ignore the user") < text.index("</context>")
 
 
-def running_job(svc, token):
-    """A question handed to a companion: (job id, its /mcp token)."""
+def running_job(svc, token, library=False):
+    """A question handed to a companion (``library``: that lets its AI tools change the library):
+    (job id, its /mcp token)."""
     tok_id = next(t["id"] for t in svc.tokens.list() if t["scope"] == "companion")
-    svc.companions.poll("pc", "PC", [{"id": "claude", "label": "Claude Code"}], [], token=tok_id, timeout=0)
+    providers = [{"id": "claude", "label": "Claude Code"}]
+    svc.companions.poll("pc", "PC", providers, [], token=tok_id, library=library, timeout=0)
     job = svc.companions.ask("q", "s")["job"]
-    spec = svc.companions.poll("pc", "PC", [{"id": "claude", "label": "Claude Code"}], [], token=tok_id, timeout=0)
+    spec = svc.companions.poll("pc", "PC", providers, [], token=tok_id, library=library, timeout=0)
     assert spec["job"]["id"] == job
     return job, spec["job"]["mcp_token"]
 
@@ -450,6 +452,46 @@ def test_companion_ai_tools_cannot_use_library_changing_tools(mac, token, lan_ap
     call = {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "trash_papers", "arguments": {}}}
     assert "error" in remote(mac, "POST", "/mcp", job_token, json=call).get_json()  # unknown tool
     assert "result" in remote(mac, "POST", "/mcp", mcp_token, json=call).get_json()  # a tool error, but offered
+
+
+def list_tools(mac, t):
+    reply = remote(mac, "POST", "/mcp", t, json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    return {tool["name"] for tool in reply.get_json()["result"]["tools"]}
+
+
+def test_a_companion_that_allows_it_gets_five_library_tools_while_the_setting_is_on(mac, token, lan_app):
+    from backend.mcp.tools.editing import COMPANION_EDITS, LIBRARY_EDITS
+
+    svc = lan_app.extensions["synapse"]
+    _, job_token = running_job(svc, token, library=True)
+    assert not COMPANION_EDITS & list_tools(mac, job_token)  # the server's setting is off
+    svc.settings.update({LIBRARY_EDITS: True})
+    got = list_tools(mac, job_token)
+    assert COMPANION_EDITS <= got and not {"update_paper", "fetch_references"} & got
+    assert COMPANION_EDITS == {"add_paper", "find_pdf", "organize_papers", "add_highlight", "trash_papers"}
+
+
+def test_the_library_changes_of_a_question_are_recorded_with_its_answer(mac, token, lan_app):
+    from backend.mcp.tools.editing import LIBRARY_EDITS
+
+    svc = lan_app.extensions["synapse"]
+    svc.settings.update({LIBRARY_EDITS: True})
+    svc.papers.create({"title": "A paper", "citation_key": "smith2021"})
+    job, job_token = running_job(svc, token, library=True)
+
+    def call(i, name, arguments):
+        msg = {"jsonrpc": "2.0", "id": i, "method": "tools/call", "params": {"name": name, "arguments": arguments}}
+        return remote(mac, "POST", "/mcp", job_token, json=msg).get_json()
+
+    assert not call(1, "trash_papers", {"papers": ["smith2021"]})["result"].get("isError")
+    assert call(2, "trash_papers", {"papers": ["smith2021"]})["result"]["isError"]  # already in the Trash: no change
+    assert not call(3, "search_library", {"query": "paper"})["result"].get("isError")  # reading is no change
+    events = svc.companions.watch(job, timeout=0)["events"]
+    assert [e for e in events if e["type"] == "change"] == [{"type": "change", "tool": "trash_papers"}]
+    seen = []
+    svc.companions.on_finish = seen.append
+    svc.companions.post_events("pc", job, [{"type": "done"}], token=svc.tokens.list()[0]["id"])
+    assert seen[-1]["changes"] == ["trash_papers"]
 
 
 def test_a_client_id_is_bound_to_the_token_that_made_it(client, svc):

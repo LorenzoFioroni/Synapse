@@ -168,7 +168,8 @@ Seven more tools change the library. They are offered only while **Settings → 
 change the library** is on (`ai_library_edits`, off by default): `build_server` puts them in
 `Server.extra`, which `tools/list` and `tools/call` ask every time, so the switch takes effect without
 restarting the server. While it is off they are not listed and calling one is the "unknown tool"
-error. The setting is one of `ADMIN_KEYS`: it is changed on the computer running Synapse, or from a
+error. A [companion](companion.md)'s AI tool gets five of them, and only when its companion allows it
+too (see [Over HTTP](#over-http-mcp)). The setting is one of `ADMIN_KEYS`: it is changed on the computer running Synapse, or from a
 device after a passkey confirmation, because it widens what every access token may do. The stdio
 server reads `settings.json` when it starts, so there the AI app is restarted after flipping it.
 
@@ -381,10 +382,13 @@ locks its app out at the next request. MCP tokens cannot authenticate browser co
 **New Companion Token…** creates a `companion`-scope token (`syn_companion_…`) for
 [the companion](companion.md): it opens `/api/companion/…` and `/api/connector/…` (which the
 companion forwards for the browser extension), and not `/mcp`. The AI tool the companion runs gets
-a token of its own for each question instead (`Companions.job_caller`), valid while that question
-runs. On `/mcp` such a token is *restricted*: with `Server.restricted` (set per request by
-`HttpTransport.handle`), `build_server` leaves out the tools that change the library whatever
-Settings → AI Access allows other apps; note and task tools are unchanged. Browser tokens
+a token of its own for each question instead (`Companions.job_access`), valid while that question
+runs. On `/mcp` such a token is *restricted*: with `Server.edits` (set per request by
+`HttpTransport.handle`), `build_server` offers it the tools that change the library only when
+Settings → AI Access allows them **and** the companion's window allows them for its questions, and
+then only `COMPANION_EDITS` (`add_paper`, `find_pdf`, `organize_papers`, `add_highlight`,
+`trash_papers`); note and task tools are unchanged. Each of those calls that succeeds becomes a
+`change` event of the question (`Companions.add_changes`), shown with the answer. Browser tokens
 (`connector` scope) are no longer made or accepted; old ones are listed so they can be removed.
 Stored tokens work until revoked. `AccessTokens.check` takes one scope or several.
 The scopes share token listing and revocation, with their purpose shown in Settings. See [browser extension](browser-extension.md).

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from .common import MAX_RUNNING, Fail, clean, home, log, normal_settings
-from .providers import NO_HISTORY, Abort, Stream, build_providers
+from .providers import NO_HISTORY, Abort, Stream, build_providers, hook_settings, web_note
 from .remote import ApiError, NetworkError, Server
 
 POLL_TIMEOUT = 35  # the server answers a poll within 20 s
@@ -181,8 +181,16 @@ class Job(threading.Thread):
             raise Abort(NO_HISTORY)
         setting = c.settings["providers"].get(provider.id)
         model, effort = provider.choice(spec, "model", setting), provider.choice(spec, "effort", setting)
+        web = provider.web(c.settings["access"])  # this computer's settings, never the server's
+        spec["system"] += web_note(web)
         config = _private_file("mcp-", ".json", json.dumps(mcp_config(c.server.base + "/mcp", token)), c.work_root)
         system_file = _private_file("system-", ".txt", spec["system"], c.work_root)
+        files = [config, system_file]
+        settings_file = None
+        if web["fetch"]:
+            sites = _private_file("sites-", ".json", json.dumps(web["fetch"]), c.work_root)
+            settings_file = _private_file("settings-", ".json", hook_settings(sites), c.work_root)
+            files += [sites, settings_file]
         # Another server (or profile) must not resume this conversation's session, nor the reverse.
         session = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{c.server.base}|{spec['conversation']}"))
         try:
@@ -196,15 +204,17 @@ class Job(threading.Thread):
                     session=session,
                     model=model,
                     effort=effort,
+                    web=web,
+                    settings_file=settings_file,
                 ),
                 provider.env(token),
                 provider.stdin(spec),
-                provider.stream(spec, sink.push),
+                provider.stream(spec, sink.push, web),
                 sink,
             )
         finally:
-            config.unlink(missing_ok=True)
-            system_file.unlink(missing_ok=True)
+            for f in files:
+                f.unlink(missing_ok=True)
             c.secrets.discard(token)
         log(f"question {self.id[:8]} answered")
 
@@ -348,6 +358,8 @@ class Companion:
             "name": self.name,
             "providers": [p.advert(self.settings["providers"].get(p.id)) for p in self.providers.values()],
             "running": running,
+            # The questions' AI tools may change the library, if the server's own setting allows it too.
+            "library": self.settings["access"]["library"],
         }
 
     def _accept(self, spec: dict) -> None:

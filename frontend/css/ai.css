@@ -98,6 +98,9 @@ body.ai-docked:has(.ai-panel.resizing) { cursor: ew-resize; user-select: none; }
 .ai-tools { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 6px; }
 .ai-tool { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 99px; background: var(--bg-active); color: var(--text-2); font-size: var(--fs-xs); }
 .ai-tool::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--text-3); }
+.ai-changes { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0 2px; padding: 6px 10px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text-2); font-size: var(--fs-sm); }
+.ai-changes[hidden] { display: none; }
+.ai-changes .icon { flex: none; margin-top: 2px; color: var(--accent); }
 .ai-answer { overflow-wrap: anywhere; user-select: text; font-size: var(--fs-lg); line-height: 1.55; }
 .ai-answer:empty { display: none; }
 .ai-answer.prose, .ai-panel .prose { max-width: none; padding: 0; margin: 0; }
