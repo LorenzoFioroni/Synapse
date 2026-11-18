@@ -417,6 +417,7 @@ def test_finished_jobs_are_reported_with_what_arrived(companions):
         job,
         [
             {"type": "tool", "name": "get_note"},
+            {"type": "change", "tool": "trash_papers"},  # only the server records changes
             {"type": "text", "text": "Hello"},
             {"type": "usage", "input_tokens": 3, "output_tokens": 4},
             {"type": "done"},
@@ -428,6 +429,7 @@ def test_finished_jobs_are_reported_with_what_arrived(companions):
         "state": "done",
         "text": "Hello",
         "tools": ["get_note"],
+        "changes": [],
         "usage": {"input_tokens": 3, "output_tokens": 4},
         "error": None,
     }

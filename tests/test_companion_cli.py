@@ -27,16 +27,27 @@ CODEX_ON = {"providers": {"codex": {"enabled": True}}}
 
 # A stand-in for `claude`: records how it was started and plays a scripted stream-json answer.
 FAKE_CLAUDE = r"""#!{python}
-import json, os, sys, time
+import json, os, subprocess, sys, time
 log = json.load(open(os.environ["FAKE_LOG"])) if os.path.exists(os.environ["FAKE_LOG"]) else []
 config = sys.argv[sys.argv.index("--mcp-config") + 1]
 system = sys.argv[sys.argv.index("--append-system-prompt-file") + 1]
 mode = os.environ.get("FAKE_MODE", "ok")
+hooks = {{}}
+if "--settings" in sys.argv:  # run its WebFetch hook as Claude Code would, with a few addresses
+    settings = json.load(open(sys.argv[sys.argv.index("--settings") + 1]))
+    (entry,) = settings["hooks"]["PreToolUse"]
+    command = entry["hooks"][0]["command"]
+    for url in ("https://journals.aps.org/prl/x", "https://docs.python.org/3/", "https://evil.com\\@aps.org/"):
+        event = {{"hook_event_name": "PreToolUse", "tool_name": "WebFetch", "tool_input": {{"url": url, "prompt": "p"}}}}
+        run = subprocess.run(command, shell=True, input=json.dumps(event), capture_output=True, text=True)
+        hooks[url] = [run.returncode, run.stderr]
+    hooks["matcher"] = entry["matcher"]
 log.append({{
     "argv": sys.argv[1:], "stdin": sys.stdin.read(), "cwd": os.getcwd(), "pid": os.getpid(),
     "config": open(config).read(), "config_mode": oct(os.stat(config).st_mode & 0o777), "config_path": config,
     "env_token": [k for k, v in os.environ.items() if "syn_companion_" in v],
     "system_path": system, "system_text": open(system).read(), "system_mode": oct(os.stat(system).st_mode & 0o777),
+    "hooks": hooks,
 }})
 json.dump(log, open(os.environ["FAKE_LOG"], "w"))
 def out(o):
@@ -44,6 +55,8 @@ def out(o):
 tools = ["mcp__synapse__get_note", "mcp__synapse__search_library"]
 if mode == "badtools":
     tools.append("Bash")
+if mode in ("web", "badweb"):
+    tools += ["WebSearch", "WebFetch"]
 if mode == "gone":
     out({{"type": "result", "subtype": "error_during_execution", "is_error": True, "errors": ["No conversation found with session ID: x"]}})
     sys.exit(1)
@@ -53,6 +66,8 @@ if mode == "badtools":
     out({{"type": "stream_event", "event": {{"type": "content_block_delta", "delta": {{"type": "text_delta", "text": "LEAK"}}}}}})
     time.sleep(30)
 out({{"type": "stream_event", "event": {{"type": "content_block_start", "content_block": {{"type": "tool_use", "name": "mcp__synapse__get_note"}}}}}})
+if mode == "web":
+    out({{"type": "stream_event", "event": {{"type": "content_block_start", "content_block": {{"type": "tool_use", "name": "WebFetch"}}}}}})
 for word in ("Hel", "lo"):
     out({{"type": "stream_event", "event": {{"type": "content_block_delta", "delta": {{"type": "text_delta", "text": word}}}}}})
 if mode == "hang":
@@ -300,7 +315,7 @@ def test_question_runs_claude_restricted_to_synapse_and_streams_the_answer(clien
     assert call["config_mode"] == "0o600"
     assert json.loads(call["config"])["mcpServers"]["synapse"]["url"].endswith("/mcp")
     assert not Path(call["config_path"]).exists()
-    assert svc.companions.job_caller(mcp) is None  # the token died with the question
+    assert svc.companions.job_access(mcp) is None  # the token died with the question
     # run from an empty private directory
     assert Path(call["cwd"]).name == "work-default" and not any(Path(call["cwd"]).iterdir())
 
@@ -314,14 +329,14 @@ def test_the_question_token_is_valid_while_it_runs_and_redacted(client, svc, run
             break
         time.sleep(0.05)
     mcp = mcp_token_of(calls(tools)[0])
-    assert svc.companions.job_caller(mcp) is not None
+    assert svc.companions.job_access(mcp) is not None
     assert mcp in r.companion.secrets and mcp not in r.companion.redact(f"token {mcp} leaked")
     client.post(f"/api/ai/jobs/{job}/cancel")
     for _ in range(100):
-        if svc.companions.job_caller(mcp) is None:
+        if svc.companions.job_access(mcp) is None:
             break
         time.sleep(0.05)
-    assert svc.companions.job_caller(mcp) is None
+    assert svc.companions.job_access(mcp) is None
 
 
 def test_a_question_without_its_own_token_is_refused(client, svc, running, tools, monkeypatch):
@@ -429,12 +444,121 @@ def test_codex_runs_read_only_with_the_question_token_in_the_environment(client,
     assert collect(client, second["job"])[0] == "done"
     one, two = calls(tools)
     argv = one["argv"]
-    assert argv[:2] == ["exec", "--json"] and 'sandbox_mode="read-only"' in argv and argv[-1] == "-"
+    assert argv[:2] == ["exec", "--json"] and argv[-1] == "-"
+    # its own settings and rules off, a profile that reads only system files and the empty folder
+    assert "--ignore-user-config" in argv and "--ignore-rules" in argv and "sandbox_mode" not in " ".join(argv)
+    assert 'default_permissions="synapse"' in argv
+    assert 'permissions.synapse.filesystem={":minimal"="read", ":workspace_roots"={"."="read"}}' in argv
+    assert 'web_search="disabled"' in argv and "features.shell_tool=false" in argv and "features.apps=false" in argv
     assert one["env_token"] and one["env_token"] != token and one["env_companion"] == []
     assert token not in " ".join(argv) and one["env_token"] not in " ".join(argv)
     assert "Synapse" in one["stdin"] and "Hi" in one["stdin"]
     assert two["argv"][:3] == ["exec", "resume", "--json"] and "thread-1" in two["argv"]
+    assert "--ignore-user-config" in two["argv"] and 'default_permissions="synapse"' in two["argv"]
     assert two["env_token"] != one["env_token"]  # each question has its own
+
+
+def test_codex_searches_the_index_when_allowed_and_never_opens_pages(client, svc, running, tools):
+    running({**CODEX_ON, "access": {"web_search": True, "web_fetch": True, "sites": ["arxiv.org"]}})
+    assert collect(client, ask(client, svc, "Hi", provider="codex")["job"])[0] == "done"
+    (call,) = calls(tools)
+    assert 'web_search="cached"' in call["argv"] and "arxiv.org" not in " ".join(call["argv"])
+    assert "search the web" in call["stdin"] and "open pages" not in call["stdin"]
+
+
+WEB = {"access": {"web_search": True, "web_fetch": True, "sites": ["aps.org", "arxiv.org"]}}
+
+
+def test_claude_gets_the_web_tools_allowed_and_a_hook_that_keeps_to_the_sites(client, svc, running, tools, monkeypatch):
+    monkeypatch.setenv("FAKE_MODE", "web")
+    running(WEB)
+    state, events = collect(client, ask(client, svc, "Recent work?")["job"])
+    assert state == "done" and {"type": "tool", "name": "web_fetch"} in events
+    (call,) = calls(tools)
+    argv = call["argv"]
+    assert argv[argv.index("--tools") + 1] == "WebSearch,WebFetch"
+    rules = argv[argv.index("--allowedTools") + 1 : argv.index("--setting-sources")]
+    assert rules == [
+        "mcp__synapse",
+        "WebSearch",
+        "WebFetch(domain:aps.org)",
+        "WebFetch(domain:*.aps.org)",
+        "WebFetch(domain:arxiv.org)",
+        "WebFetch(domain:*.arxiv.org)",
+    ]
+    # the hook lets the sites (and subdomains) through and blocks the rest, preapproved ones too
+    hooks = call["hooks"]
+    assert hooks["matcher"] == "WebFetch" and hooks["https://journals.aps.org/prl/x"][0] == 0
+    assert (
+        hooks["https://docs.python.org/3/"][0] == 2 and "not one of the sites" in hooks["https://docs.python.org/3/"][1]
+    )
+    assert hooks["https://evil.com\\@aps.org/"][0] == 2
+    assert "aps.org, arxiv.org" in call["system_text"] and "search the web" in call["system_text"]
+    settings_file = Path(argv[argv.index("--settings") + 1])
+    assert not settings_file.exists() and not list(settings_file.parent.glob("sites-*"))  # removed with the question
+
+
+def test_claude_web_search_alone_has_no_fetch_and_no_hook(client, svc, running, tools):
+    running({"access": {"web_search": True}})
+    assert collect(client, ask(client, svc)["job"])[0] == "done"
+    (call,) = calls(tools)
+    argv = call["argv"]
+    assert argv[argv.index("--tools") + 1] == "WebSearch" and "--settings" not in argv
+    assert argv[argv.index("--allowedTools") + 1 : argv.index("--setting-sources")] == ["mcp__synapse", "WebSearch"]
+
+
+def test_claude_offering_web_tools_that_are_not_allowed_is_stopped(client, svc, running, tools, monkeypatch):
+    monkeypatch.setenv("FAKE_MODE", "badweb")
+    running({"access": {"web_search": True}})  # WebFetch was not allowed
+    state, events = collect(client, ask(client, svc)["job"])
+    assert state == "error" and "other than Synapse" in events[-1]["message"]
+
+
+@pytest.mark.parametrize(
+    "url, ok",
+    [
+        ("https://arxiv.org/abs/1706.03762", True),
+        ("http://export.arxiv.org/api/query", True),
+        ("https://ARXIV.org./abs/1", True),
+        ("https://arxiv.org:443/abs/1", True),
+        ("https://arxiv.org.evil.com/", False),
+        ("https://evilarxiv.org/", False),
+        ("https://user@arxiv.org/", False),
+        ("https://evil.com\\@arxiv.org/", False),
+        ("https://evil.com\\.arxiv.org/", False),
+        ("https://arxiv%2Eorg/", False),
+        ("file:///etc/passwd", False),
+        ("ftp://arxiv.org/", False),
+        ("https://127.0.0.1/", False),
+        ("https://arxiv.org /", False),
+        ("https://arxiv.org:99999/", False),
+        (None, False),
+    ],
+)
+def test_the_fetch_check_lets_only_the_sites_through(tmp_path, url, ok):
+    sites = tmp_path / "sites.json"
+    sites.write_text(json.dumps(["arxiv.org"]))
+    event = json.dumps({"tool_name": "WebFetch", "tool_input": {"url": url}})
+    assert providers.fetch_check(str(sites), io.StringIO(event)) == (0 if ok else 2)
+
+
+def test_the_fetch_check_blocks_when_it_cannot_check(tmp_path):
+    event = json.dumps({"tool_input": {"url": "https://arxiv.org/"}})
+    assert providers.fetch_check(str(tmp_path / "missing.json"), io.StringIO(event)) == 2
+    sites = tmp_path / "sites.json"
+    sites.write_text(json.dumps(["arxiv.org"]))
+    assert providers.fetch_check(str(sites), io.StringIO("not json")) == 2
+
+
+def test_the_hook_command_runs_this_program(tmp_path, monkeypatch):
+    sites = tmp_path / "with space" / "sites.json"
+    sites.parent.mkdir()
+    sites.write_text(json.dumps(["arxiv.org"]))
+    command = json.loads(providers.hook_settings(sites))["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    monkeypatch.chdir(tmp_path)
+    for url, code in (("https://arxiv.org/abs/1", 0), ("https://example.com/", 2)):
+        event = json.dumps({"tool_input": {"url": url}})
+        assert subprocess.run(command, shell=True, input=event, capture_output=True, text=True).returncode == code
 
 
 # ---------------------------------------------------------------------- extension folder

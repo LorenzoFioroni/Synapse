@@ -117,17 +117,83 @@ def read_json(path: Path) -> dict:
 
 # ---------------------------------------------------------------------- the profile
 
-# The AI tools the companion knows. Claude Code runs without its own tools; Codex keeps a shell
-# tool that can read files on this computer, so it is off until the user turns it on.
+# Sites the AI tools may open when "Open pages of these sites" is on: arXiv, DOI links and the major
+# physics publishers (a DOI redirects to its publisher). Each also covers its subdomains.
+DEFAULT_SITES = [
+    "arxiv.org",
+    "doi.org",
+    "aps.org",
+    "iop.org",
+    "aip.org",
+    "nature.com",
+    "springer.com",
+    "sciencedirect.com",
+    "elsevier.com",
+    "wiley.com",
+    "science.org",
+    "pnas.org",
+    "cambridge.org",
+    "oup.com",
+    "optica.org",
+    "worldscientific.com",
+    "epj.org",
+    "edpsciences.org",
+    "aanda.org",
+    "jps.jp",
+    "scipost.org",
+    "quantum-journal.org",
+    "royalsocietypublishing.org",
+    "annualreviews.org",
+    "tandfonline.com",
+    "acs.org",
+    "rsc.org",
+    "ieee.org",
+    "mdpi.com",
+    "frontiersin.org",
+]
+MAX_SITES = 100
+SITE = re.compile(r"(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]")
+
+# The AI tools the companion knows. Claude Code runs without its own tools; Codex runs with its shell
+# off in a sandbox, but the companion cannot check what else it has, so it is off until the user turns
+# it on. ``access``: what the user allows beyond Synapse's own tools (all off by default).
 DEFAULT_SETTINGS: dict = {
     "providers": {
         "claude": {"enabled": True, "models": None, "efforts": None},  # None: every one the tool offers
         "codex": {"enabled": False, "models": None, "efforts": None},
     },
+    "access": {"web_search": False, "web_fetch": False, "sites": DEFAULT_SITES, "library": False},
     "max_running": 2,
     "extension_updates": True,  # apply updates that do not change the extension's permissions
 }
 MAX_RUNNING = 2  # never more AI tools at once, whatever the settings or the server say
+
+
+def clean_site(text: object) -> str | None:
+    """A site as the user typed it ("https://www.nature.com/nphys", "*.aps.org") as a host name, or
+    None when it is not one (an address, a single label, a port, other characters)."""
+    host = str(text).strip().lower()
+    host = re.sub(r"^[a-z]+://", "", host).split("/", 1)[0].removeprefix("*.").rstrip(".")
+    return host if SITE.fullmatch(host) else None
+
+
+def site_allowed(host: str, sites: list[str]) -> bool:
+    """Whether ``host`` is one of ``sites`` or a subdomain of one."""
+    host = host.lower().rstrip(".")
+    return any(host == s or host.endswith("." + s) for s in sites)
+
+
+def _access(value: object) -> dict:
+    out = copy.deepcopy(DEFAULT_SETTINGS["access"])
+    if not isinstance(value, dict):
+        return out
+    for key in ("web_search", "web_fetch", "library"):
+        if isinstance(value.get(key), bool):
+            out[key] = value[key]
+    if isinstance(value.get("sites"), list):
+        sites = [s for s in map(clean_site, value["sites"]) if s]
+        out["sites"] = list(dict.fromkeys(sites))[:MAX_SITES]
+    return out
 
 
 def normal_settings(value: object) -> dict:
@@ -147,6 +213,7 @@ def normal_settings(value: object) -> dict:
             choice = given.get(key)
             if choice is None or (isinstance(choice, list) and all(isinstance(x, str) for x in choice)):
                 default[key] = None if choice is None else list(dict.fromkeys(choice))[:32]
+    out["access"] = _access(value.get("access"))
     running = value.get("max_running")
     if isinstance(running, int) and not isinstance(running, bool) and 1 <= running <= MAX_RUNNING:
         out["max_running"] = running

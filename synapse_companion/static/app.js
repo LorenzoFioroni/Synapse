@@ -7,7 +7,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 let key = '';
 try { key = sessionStorage.getItem('companionKey') || ''; } catch { /* storage off: the ticket below still works once */ }
 let state = null;
-let rendered = { settings: '', extension: '', connection: '' };
+let rendered = { settings: '', access: '', extension: '', connection: '' };
 let changing = false;  // the connection form is open on a connected companion
 
 async function call(path, body) {
@@ -83,7 +83,7 @@ function renderProviders(s) {
   $('providers').innerHTML = s.providers.map((p) => `<div class="provider" data-provider="${esc(p.id)}">
       <label class="check"><input type="checkbox" data-enabled ${p.enabled ? 'checked' : ''}> <h3>${esc(p.label)}</h3>
         <span class="hint">${p.found ? '' : `· <span class="mono">${esc(p.id)}</span> not found on this computer`}</span></label>
-      ${p.id === 'codex' && p.enabled ? '<div class="warn-text">Codex keeps a shell tool: text inside a paper could make it read files on this computer and write them into a note. The MCP servers in your ~/.codex/config.toml stay on too.</div>' : ''}
+      ${p.id === 'codex' && p.enabled ? '<div class="warn-text">Codex runs with its shell off, without your ~/.codex/config.toml and in a sandbox that reads only system files, but the companion cannot check which tools it has, as it does for Claude Code.</div>' : ''}
       ${p.models.length ? `<div class="chips"><span class="what">Models</span>${p.models.map((m) =>
         `<label><input type="checkbox" data-model="${esc(m.id)}" ${m.on ? 'checked' : ''} ${p.enabled ? '' : 'disabled'}> ${esc(m.label)}</label>`).join('')}</div>` : ''}
       ${p.efforts.length ? `<div class="chips"><span class="what">Effort</span>${p.efforts.map((e) =>
@@ -91,6 +91,31 @@ function renderProviders(s) {
     </div>`).join('');
   const select = $('max-running');
   select.innerHTML = Array.from({ length: s.max_running }, (_, i) => `<option value="${i + 1}" ${s.settings.max_running === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('');
+}
+
+/** What the AI tools may do beyond Synapse's tools. Not redrawn while the list of sites is being edited. */
+function renderAccess(s) {
+  const a = s.settings.access;
+  const sig = JSON.stringify(a);
+  if (sig === rendered.access || document.activeElement?.id === 'sites') return;
+  rendered.access = sig;
+  const check = (key, label) => `<label class="check"><input type="checkbox" data-access="${key}" ${a[key] ? 'checked' : ''}> ${label}</label>`;
+  $('access').innerHTML = `<h3>Beyond Synapse’s tools</h3>
+    <div class="hint">Off unless you turn it on, for every question asked from your library.</div>
+    ${check('web_search', 'Search the web')}
+    <div class="hint indent">Claude Code: its web search. Codex: OpenAI’s search index, without live pages.</div>
+    ${check('web_fetch', 'Open pages of these sites')}
+    <div class="hint indent">Claude Code only. A site includes its subdomains, one per line.</div>
+    <textarea id="sites" class="indent" rows="6" spellcheck="false" aria-label="Sites the AI tools may open" ${a.web_fetch ? '' : 'disabled'}>${esc(a.sites.join('\n'))}</textarea>
+    <div class="row indent"><button class="btn" type="button" id="default-sites" ${a.web_fetch ? '' : 'disabled'}>Use the default list</button></div>
+    ${a.web_search || a.web_fetch ? '<div class="warn-text">Text in a paper or on a page can steer the AI: it could put what it read into a search or an address of these sites.</div>' : ''}
+    ${check('library', 'Change the library')}
+    <div class="hint indent">Add papers, find their PDFs, tag and file them, highlight and move them to the Trash. Synapse must allow it too: Settings → AI Access → AI apps may change the library. Each change is listed under the answer.</div>`;
+  $('default-sites').addEventListener('click', () => {
+    $('sites').value = s.default_sites.join('\n');
+    act(null, '/api/settings', { settings: readSettings() }, 'Saved');
+    rendered.access = '';
+  });
 }
 
 /** The settings as the controls show them. A model or effort list with everything ticked is
@@ -110,6 +135,11 @@ function readSettings() {
     };
   }
   settings.max_running = Number($('max-running').value);
+  const on = (key) => document.querySelector(`[data-access="${key}"]`).checked;
+  settings.access = {
+    web_search: on('web_search'), web_fetch: on('web_fetch'), library: on('library'),
+    sites: $('sites').value.split(/[\s,]+/).filter(Boolean),
+  };
   return settings;
 }
 
@@ -153,13 +183,16 @@ function render(s) {
   $('card-extension').hidden = !s.connected;
   if (s.connected) {
     renderProviders(s);
+    renderAccess(s);
     renderExtension(s);
     $('running').textContent = s.running.length ? `Answering ${s.running.length} question${s.running.length > 1 ? 's' : ''} now.` : '';
   }
   $('autostart').checked = s.autostart;
   $('autostart-where').textContent = s.autostart ? `Entry: ${s.autostart_where}` : '';
   $('tray').innerHTML = TRAY[s.tray.status]?.(s.tray) ?? '';
-  $('program').innerHTML = `Program: <span class="mono">${esc(s.program)}</span>${s.update ? ' · a newer version is on your server' : ''}`;
+  $('program').innerHTML = `Program: <span class="mono">${esc(s.program)}</span>${s.update ? ' · a newer version is on your server' : ''}`
+    + (s.checked != null ? ` · checked for updates ${ago(s.checked)}` : '');
+  $('check').hidden = !s.connected;
   $('update').hidden = !s.update;
   const log = $('log');
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
@@ -202,7 +235,7 @@ function bind() {
       act(ev.currentTarget, '/api/disconnect', {}, 'Disconnected');
     }
   });
-  $('card-ai').addEventListener('change', () => { act(null, '/api/settings', { settings: readSettings() }, 'Saved'); rendered.settings = ''; });
+  $('card-ai').addEventListener('change', () => { act(null, '/api/settings', { settings: readSettings() }, 'Saved'); rendered.settings = ''; rendered.access = ''; });
   $('extension').addEventListener('click', (ev) => {
     const button = ev.target.closest('[data-ext]');
     if (!button) return;
@@ -214,6 +247,18 @@ function bind() {
     act(button, '/api/extension', { action: what }, what === 'apply' ? 'Updated' : 'Done');
   });
   $('autostart').addEventListener('change', (ev) => act(null, '/api/autostart', { on: ev.target.checked }));
+  $('check').addEventListener('click', async (ev) => {
+    const button = ev.currentTarget;
+    button.disabled = true;
+    try {
+      toast((await call('/api/check', {})).message);
+      await refresh();
+    } catch (e) {
+      toast(e.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
   $('update').addEventListener('click', (ev) => act(ev.currentTarget, '/api/update', {}, 'Updating…'));
   $('quit').addEventListener('click', async () => {
     if (!confirm('Quit Synapse Companion? Ask AI and the browser extension stop working until it starts again.')) return;

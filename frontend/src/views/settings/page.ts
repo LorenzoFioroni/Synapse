@@ -333,7 +333,7 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
             <div class="s-control" data-ai-control></div></div>
             <div data-ai-fresh></div>
             <div class="backup-list" data-ai-list></div></div>
-          ${switchRow('ai_library_edits', 'AI apps may change the library', 'Add, edit, tag, file and trash items, fetch reference lists and PDFs, and highlight. Off: they read the library and write only notes and tasks. Nothing is deleted for good either way.')}
+          ${switchRow('ai_library_edits', 'AI apps may change the library', 'Add, edit, tag, file and trash items, fetch reference lists and PDFs, and highlight. Off: they read the library and write only notes and tasks. Nothing is deleted for good either way. Ask AI’s questions get some of these tools only if the companion’s window allows it too.')}
         </div>
         <p class="sec-lead">What an AI app changes in notes and tasks is shown with its name.</p></section>
 

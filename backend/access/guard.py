@@ -27,8 +27,8 @@ The MCP endpoint (``/mcp``) is for AI apps, not browsers: it takes neither cooki
 rules above. Every request to it, from this computer too, needs an access token
 (``Authorization: Bearer …``, see ``tokens.py``), and a browser's request with a foreign Origin is
 refused. The AI tool a companion runs gets no stored token but a token for its one question
-(``Companions.job_caller``), which works on ``/mcp`` only, never offers the tools that change the
-library, and stops working when the question ends.
+(``Companions.job_access``), which works on ``/mcp`` only, offers the tools that change the library
+only as far as both the setting and the companion allow, and stops working when the question ends.
 
 The companion endpoints (``/api/companion/``) and the connector endpoints (``/api/connector/``,
 which the companion forwards for the browser extension) are for the companion program on the
@@ -219,10 +219,10 @@ def install(
         services = current_app.extensions["synapse"]
         token = bearer(request.headers.get("Authorization"))
         entry = services.tokens.check(token, client_addr(request.environ), scope="mcp")
-        caller = services.companions.job_caller(token) if entry is None else None
-        if caller and any(t["id"] == caller for t in services.tokens.list()):
+        job = services.companions.job_access(token) if entry is None else None
+        if job and any(t["id"] == job["caller"] for t in services.tokens.list()):
             # a companion's AI tool, for one question, while the companion's own token still exists
-            entry = {"id": caller, "scope": "job"}
+            entry = {"id": job["caller"], "scope": "job", "job": job["job"], "library": job["library"]}
         if entry is None:
             resp = jsonify(
                 error="This needs an access token. Make one in Settings → AI Access on the computer running "

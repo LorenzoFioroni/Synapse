@@ -334,8 +334,13 @@ python3 synapse_companion.pyz
 
 Its window asks for the server's address and the token, lets you choose which AI tools, models and
 efforts Synapse may use (Codex is off until you turn it on), installs the browser extension, and
-can start the Companion whenever you log in. Run the file again to reopen the window; with PySide6
-installed (`python3 -m pip install --user PySide6-Essentials`) it also has a tray icon.
+can start the Companion whenever you log in. Under **Beyond Synapse’s tools** you can also let the
+AI search the web, open pages of sites you list (arXiv, DOI links and the major physics publishers
+to begin with; Claude Code only), and change the library (add papers, find PDFs, tag and file,
+highlight, trash), the last only while Synapse's own **AI apps may change the library** is on too.
+All three are off until you turn them on; library changes are listed under the answer. It looks
+for a newer version on your server every hour (or now, with **Check for updates**) and offers
+**Update and restart**. Run the file again to reopen the window; with PySide6 installed (`python3 -m pip install --user PySide6-Essentials`) it also has a tray icon.
 
 Previous conversations are kept on the server and can be continued later, and you can pick the AI
 agent, model and effort for each question from small buttons beside the text box. Type `[@` or `[[` (or press the @ button)

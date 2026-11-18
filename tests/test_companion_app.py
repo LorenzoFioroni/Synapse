@@ -106,11 +106,51 @@ def test_settings_keep_what_is_valid_and_drop_the_rest():
     )
     assert got["providers"]["claude"] == {"enabled": True, "models": None, "efforts": None}
     assert got["providers"]["codex"] == {"enabled": True, "models": ["a", "b"], "efforts": []}
-    assert set(got) == {"providers", "max_running", "extension_updates"} and set(got["providers"]) == {
+    assert set(got) == {"providers", "access", "max_running", "extension_updates"} and set(got["providers"]) == {
         "claude",
         "codex",
     }
     assert got["max_running"] == 1 and got["extension_updates"] is False
+    assert got["access"] == {"web_search": False, "web_fetch": False, "sites": common.DEFAULT_SITES, "library": False}
+
+
+def test_access_settings_keep_only_host_names():
+    got = common.normal_settings(
+        {
+            "access": {
+                "web_search": True,
+                "web_fetch": "yes",  # wrong type: the default
+                "library": True,
+                "sites": [
+                    "https://www.Nature.com/nphys/",
+                    "*.aps.org",
+                    "aps.org",
+                    "arxiv.org.",
+                    "localhost",
+                    "192.168.1.10",
+                    "evil.com:8080",
+                    "a b.org",
+                    "*",
+                    "org",
+                    "xn--bcher-kva.de",
+                    7,
+                ],
+            }
+        }
+    )
+    assert got["access"] == {
+        "web_search": True,
+        "web_fetch": False,
+        "library": True,
+        "sites": ["www.nature.com", "aps.org", "arxiv.org", "xn--bcher-kva.de"],
+    }
+    assert (
+        len(common.normal_settings({"access": {"sites": [f"s{i}.org" for i in range(500)]}})["access"]["sites"]) == 100
+    )
+    assert common.site_allowed("journals.aps.org", ["aps.org"]) and common.site_allowed("APS.org.", ["aps.org"])
+    assert not common.site_allowed("evilaps.org", ["aps.org"]) and not common.site_allowed(
+        "aps.org.evil.com", ["aps.org"]
+    )
 
 
 @pytest.mark.parametrize("value", [0, 3, -1, True, 1.5, "2", None])
@@ -673,6 +713,7 @@ def test_settings_make_a_round_trip_through_the_window(api, live, token):
             "claude": {"enabled": True, "models": ["opus"], "efforts": None},
             "codex": {"enabled": True, "models": None, "efforts": ["low", "bogus"]},
         },
+        "access": {"web_search": False, "web_fetch": False, "sites": common.DEFAULT_SITES, "library": False},
         "max_running": 1,
         "extension_updates": False,
     }
@@ -701,6 +742,7 @@ def test_the_state_has_what_the_window_shows(api, live, token):
         "name",
         "connection",
         "settings",
+        "default_sites",
         "max_running",
         "providers",
         "running",
@@ -708,6 +750,7 @@ def test_the_state_has_what_the_window_shows(api, live, token):
         "autostart_where",
         "program",
         "update",
+        "checked",
         "log",
         "extension",
         "tray",
@@ -981,6 +1024,31 @@ def test_the_state_says_when_the_program_is_out_of_date(live, token, pyz, monkey
     assert service_.hello["script"] == build and service_.state()["update"] is False
     service_.hello = {"script": "0" * 16}
     assert service_.state()["update"] is True and service_.state()["program"] == str(path)
+
+
+def test_checking_for_updates_from_the_window_says_what_it_found(api, live, token, pyz, monkeypatch):
+    build, path = pyz
+    monkeypatch.setattr(common, "program_path", lambda: path)
+    monkeypatch.setattr(service, "program_path", lambda: path)
+    key = session(api)
+    connect(live, token)
+    assert api.call("GET", "/api/state", key=key)[1]["checked"] is None
+    status, reply, _ = api.call("POST", "/api/check", {}, key=key)
+    assert status == 200 and reply["message"] == "Everything is up to date."
+    state = api.call("GET", "/api/state", key=key)[1]
+    assert state["checked"] is not None and state["checked"] < 5 and state["update"] is False
+    path.write_bytes(path.read_bytes() + b"older")  # the server now has another build
+    assert api.call("POST", "/api/check", {}, key=key)[1]["message"] == "Found a new version of the companion."
+    assert api.call("GET", "/api/state", key=key)[1]["update"] is True
+
+
+def test_checking_for_updates_says_why_it_could_not(live, token):
+    service_ = connect(live, token)
+    profile = common.load_profile("default")
+    common.save_profile("default", {**profile, "server": "http://127.0.0.1:9"})  # nothing listens there
+    with pytest.raises(common.Fail, match="Cannot check for updates"):
+        service_.check(manual=True)
+    assert service_.check() == "" and service_.checked == 0.0  # the hourly one stays quiet
 
 
 def test_update_is_refused_outside_a_packaged_program(live, token):

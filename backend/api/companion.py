@@ -56,7 +56,12 @@ def poll():
     data = body()
     try:
         reply = svc().companions.poll(
-            data.get("client"), data.get("name"), data.get("providers", []), data.get("running", []), token=_token_id()
+            data.get("client"),
+            data.get("name"),
+            data.get("providers", []),
+            data.get("running", []),
+            token=_token_id(),
+            library=data.get("library", False),
         )
     except WrongCompanion as e:
         return failure(e, 409)

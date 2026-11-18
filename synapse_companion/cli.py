@@ -19,6 +19,7 @@ import sys
 
 from . import native, tray
 from .common import ENV_TOKEN, Fail, check_profile_name, command, load_profile, log, log_to, make_home
+from .providers import fetch_check
 from .service import Service
 from .ui import Window, open_window, running_ticket
 
@@ -122,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
         return native.main(check_profile_name(profile))
     if argv[:1] == ["tray"]:  # started by the companion, with its window key on stdin
         return tray.main()
+    if argv[:1] == ["fetch-check"]:  # Claude Code's hook before each WebFetch, with the call on stdin
+        return fetch_check(argv[1] if len(argv) > 1 else "", sys.stdin)
     args = parser().parse_args(argv)
     if args.command is None:
         args = parser().parse_args(["open", *argv])

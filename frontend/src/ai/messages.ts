@@ -8,7 +8,8 @@
 // not the app's own /api/notes/ is replaced by its alt text (a remote image would leak the
 // conversation in its URL), links open in a new tab with no opener, and nothing is ever assigned
 // as raw HTML to the page. Until the renderer has loaded the text is set with textContent.
-// Strings from the server (the computer's name, tool names) are set as text.
+// Strings from the server (the computer's name, tool names) are set as text. The library changes the
+// AI made are recorded by the server (not the companion) and shown under the answer, as notes show theirs.
 import { icon } from '../icons.js';
 import type { Renderer } from '../views/notes/render.js';
 import type { JobState, Usage } from './client.js';
@@ -20,6 +21,7 @@ export interface Turn {
   question: string;
   text: string;
   tools: string[];
+  changes: string[];   // the library-changing tools that ran, one per call
   phase: Phase;
   state: JobState;
   error: string;
@@ -41,6 +43,25 @@ export function usageText(u: Usage | undefined): string {
 }
 
 const toolName = (n: string) => n.replace(/^mcp__synapse__/, '').replace(/_/g, ' ');
+
+const CHANGES: Record<string, [string, string]> = {   // one call, several calls
+  add_paper: ['added a paper', 'added # papers'],
+  find_pdf: ['attached a PDF', 'attached # PDFs'],
+  organize_papers: ['changed tags or folders', 'changed tags or folders # times'],
+  add_highlight: ['added a highlight', 'added # highlights'],
+  trash_papers: ['moved papers to the Trash or back', 'moved papers to the Trash or back # times'],
+};
+/** "Changed the library: added 2 papers, attached a PDF." for the tools that ran, or ''. */
+export function changesText(changes: string[]): string {
+  const counts = new Map<string, number>();
+  for (const c of changes) counts.set(c, (counts.get(c) || 0) + 1);
+  const parts = [...counts].map(([tool, n]) => {
+    const [one, many] = CHANGES[tool] || [toolName(tool), `${toolName(tool)} ×#`];
+    return n === 1 ? one : many.replace('#', String(n));
+  });
+  if (!parts.length) return '';
+  return `Changed the library: ${parts.join(', ')}.${counts.has('trash_papers') ? ' Trashed papers can be restored from the Trash.' : ''}`;
+}
 
 function statusText(t: Turn): string {
   if (t.error) return t.error;
@@ -104,8 +125,9 @@ export class Thread {
       <div class="ai-a"><div class="ai-a-head"><span class="ai-a-who">${icon('sparkle', 'icon-sm')} AI</span>
         <button type="button" class="ai-icon ai-copy" data-copy title="Copy the answer" aria-label="Copy the answer" hidden>${icon('copy', 'icon-sm')}</button></div>
         <div class="ai-tools" hidden></div><div class="ai-answer prose"></div>
+        <div class="ai-changes" hidden>${icon('library', 'icon-sm')}<span></span></div>
         <div class="ai-status" role="status"></div><div class="ai-usage-line"></div></div>`;
-    const t: Turn = { question, text: '', tools: [], phase, state, error: '', computer: '', box };
+    const t: Turn = { question, text: '', tools: [], changes: [], phase, state, error: '', computer: '', box };
     const ctx = box.querySelector<HTMLElement>('.ai-q-context')!;
     ctx.append(...context.map((a) => contextChip(a, 'span')));
     ctx.hidden = !context.length;
@@ -173,6 +195,9 @@ export class Thread {
         return s;
       }));
     }
+    const changes = t.box.querySelector<HTMLElement>('.ai-changes')!;
+    changes.hidden = !t.changes.length;
+    changes.querySelector('span')!.textContent = changesText(t.changes);
     t.box.querySelector<HTMLElement>('.ai-usage-line')!.textContent = usageText(t.usage);
     t.box.querySelector<HTMLElement>('[data-copy]')!.hidden = running || !t.text;
   }

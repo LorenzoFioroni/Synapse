@@ -166,11 +166,34 @@ def test_each_question_keeps_its_own_contexts(conversations):
     assert conv["context"] is None  # the latest question's
 
 
-def test_an_older_database_gains_the_question_context_column(tmp_path):
+def test_an_older_database_gains_the_question_context_and_changes_columns(tmp_path):
+    old = ",\n    context TEXT,\n    changes TEXT\n);\nCREATE INDEX"
+    assert old in store_module.SCHEMA
     db = sqlite3.connect(tmp_path / "ai.db")
-    db.executescript(store_module.SCHEMA.replace(",\n    context TEXT\n);\nCREATE INDEX", "\n);\nCREATE INDEX", 1))
+    db.executescript(store_module.SCHEMA.replace(old, "\n);\nCREATE INDEX", 1))
     db.close()
     c = Conversations(tmp_path / "ai.db")
     ask(c, context={"kind": "note", "path": "a.md"})
-    assert c.get("c1")["messages"][0]["context"] == [{"kind": "note", "path": "a.md"}]
+    c.record_answer({**SUMMARY, "changes": ["add_paper"]})
+    messages = c.get("c1")["messages"]
+    assert messages[0]["context"] == [{"kind": "note", "path": "a.md"}] and messages[1]["changes"] == ["add_paper"]
     c.close()
+
+
+SUMMARY = {
+    "job": "j1",
+    "conversation": "c1",
+    "state": "done",
+    "text": "Added.",
+    "tools": ["add_paper"],
+    "usage": None,
+    "error": None,
+}
+
+
+def test_an_answer_keeps_the_library_changes_it_made(conversations):
+    ask(conversations)
+    conversations.record_answer({**SUMMARY, "changes": ["add_paper", "trash_papers"]})
+    answer(conversations, job="j2")  # one without changes
+    messages = conversations.get("c1")["messages"]
+    assert messages[1]["changes"] == ["add_paper", "trash_papers"] and "changes" not in messages[2]

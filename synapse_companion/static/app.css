@@ -40,6 +40,13 @@ input[type=url], input[type=text], input[type=password], select {
   background: var(--bg-input); color: var(--text); font: inherit;
 }
 select { width: auto; }
+textarea { display: block; width: calc(100% - 24px); padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--bg-input); color: var(--text); font: 12px/1.5 var(--font-mono); resize: vertical; }
+textarea:disabled { opacity: .55; }
+textarea:focus-visible { outline: none; box-shadow: var(--focus-ring); border-color: var(--accent); }
+.access { border-top: 1px solid var(--border); padding: 10px 0 4px; margin-top: 6px; }
+.access .indent, .access .hint.indent { margin-left: 24px; }
+.access .row.indent { margin-top: 6px; }
 input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: none; box-shadow: var(--focus-ring); border-color: var(--accent); }
 input[type=checkbox] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .hint { color: var(--text-2); font-size: 12px; margin-top: 4px; }

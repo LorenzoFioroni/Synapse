@@ -34,6 +34,7 @@
       <h2 id="h-ai">Ask AI</h2>
       <div class="hint">The AI tools Synapse may use on this computer, and what Synapse may choose in them.</div>
       <div id="providers"></div>
+      <div id="access" class="access"></div>
       <label class="inline" for="max-running">Questions at once</label>
       <select id="max-running"></select>
       <div id="running" class="hint"></div>
@@ -48,7 +49,8 @@
       <div class="hint" id="autostart-where"></div>
       <div class="hint" id="tray"></div>
       <div id="program" class="hint"></div>
-      <div class="row"><button class="btn" type="button" id="update" hidden>Update and restart</button>
+      <div class="row"><button class="btn" type="button" id="check">Check for updates</button>
+        <button class="btn primary" type="button" id="update" hidden>Update and restart</button>
         <button class="btn" type="button" id="quit">Quit companion</button></div>
       <details><summary>Activity</summary><pre id="log" class="log"></pre></details>
     </section>

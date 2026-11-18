@@ -18,7 +18,7 @@ export interface AskOptions { context?: AskContext[]; conversation?: string; pro
 export interface AskReply { job: string; conversation: string; provider: string; companion: { id: string; name: string } }
 export type JobState = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
 export interface Usage { input_tokens?: number; output_tokens?: number; cost_usd?: number; duration_ms?: number }
-export type JobEvent = { type: 'text'; text: string } | { type: 'tool'; name: string } | { type: 'started' } | ({ type: 'usage' } & Usage)
+export type JobEvent = { type: 'text'; text: string } | { type: 'tool'; name: string } | { type: 'change'; tool: string } | { type: 'started' } | ({ type: 'usage' } & Usage)
   | { type: 'done' } | { type: 'error'; message: string };
 
 /** A stored conversation (GET /api/ai/conversations). */
@@ -26,7 +26,7 @@ export interface Conversation {
   id: string; title: string; created: string; updated: string; provider: string; model?: string | null; effort?: string | null;
   companion: { id: string; name: string }; context?: AskContext | AskContext[] | null; available: boolean; running: string | null;
 }
-export interface StoredMessage { role: 'user' | 'assistant'; text: string; context?: AskContext[]; tools?: string[]; usage?: Usage; state?: string; error?: string; created?: string }
+export interface StoredMessage { role: 'user' | 'assistant'; text: string; context?: AskContext[]; tools?: string[]; changes?: string[]; usage?: Usage; state?: string; error?: string; created?: string }
 
 export class AiError extends Error {
   status: number;

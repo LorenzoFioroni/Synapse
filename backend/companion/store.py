@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS messages (
     state TEXT,
     error TEXT,
     created TEXT NOT NULL,
-    context TEXT
+    context TEXT,
+    changes TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_ai_messages ON messages(conversation, id);
 CREATE INDEX IF NOT EXISTS idx_ai_conversations ON conversations(updated);
@@ -94,10 +95,12 @@ class Conversations:
             self._db.row_factory = sqlite3.Row
             self._db.execute("PRAGMA foreign_keys = ON")
             self._db.executescript(SCHEMA)
-            # databases made before a question kept its own context
-            if "context" not in {r["name"] for r in self._db.execute("PRAGMA table_info(messages)")}:
-                self._db.execute("ALTER TABLE messages ADD COLUMN context TEXT")
-                self._db.commit()
+            # databases made before a question kept its own context, or an answer its library changes
+            columns = {r["name"] for r in self._db.execute("PRAGMA table_info(messages)")}
+            for column in ("context", "changes"):
+                if column not in columns:
+                    self._db.execute(f"ALTER TABLE messages ADD COLUMN {column} TEXT")
+            self._db.commit()
         return self._db
 
     def close(self) -> None:
@@ -164,8 +167,8 @@ class Conversations:
             if db.execute("SELECT 1 FROM conversations WHERE id = ?", (summary["conversation"],)).fetchone() is None:
                 return
             db.execute(
-                "INSERT INTO messages (conversation, role, job, text, tools, usage, state, error, created)"
-                " VALUES (?, 'assistant', ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO messages (conversation, role, job, text, tools, usage, state, error, created, changes)"
+                " VALUES (?, 'assistant', ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     summary["conversation"],
                     summary["job"],
@@ -175,6 +178,7 @@ class Conversations:
                     summary["state"],
                     summary["error"],
                     now,
+                    json.dumps(summary["changes"]) if summary.get("changes") else None,
                 ),
             )
             db.execute("UPDATE conversations SET updated = ? WHERE id = ?", (now, summary["conversation"]))
@@ -259,6 +263,7 @@ class Conversations:
                 **({"state": m["state"]} if m["state"] else {}),
                 **({"error": m["error"]} if m["error"] else {}),
                 **({"context": json.loads(m["context"])} if m["context"] else {}),
+                **({"changes": json.loads(m["changes"])} if m["changes"] else {}),
                 "created": m["created"],
             }
             for m in messages

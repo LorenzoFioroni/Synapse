@@ -6,6 +6,7 @@ from __future__ import annotations
 from flask import Blueprint, Response, g, jsonify, request
 
 from ..access.tokens import TokenError
+from ..mcp.tools.editing import COMPANION_EDITS
 from . import admin, body, error, failure, svc
 from .devices import addresses
 
@@ -14,8 +15,10 @@ bp = Blueprint("mcp", __name__)
 
 @bp.post("/mcp")
 def mcp():
-    # The guard has checked the access token already.
+    # The guard has checked the access token already. A question's token gets the library-changing
+    # tools its companion allows, and each change it makes is shown with the answer.
     token = g.get("access_token") or {}
+    job = token.get("job") if token.get("scope") == "job" else None
     status, reply = (
         svc()
         .mcp_http()
@@ -23,7 +26,8 @@ def mcp():
             request.get_data(),
             request.headers.get("MCP-Protocol-Version"),
             caller=token.get("id"),
-            restricted=token.get("scope") == "job",
+            edits=None if token.get("scope") != "job" else COMPANION_EDITS if token.get("library") else frozenset(),
+            changed=(lambda names: svc().companions.add_changes(job, names)) if job else None,
         )
     )
     if reply is None:

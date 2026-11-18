@@ -89,7 +89,8 @@ class Companion(threading.Thread):
     def run(self):
         while not self.quit:
             try:
-                r = self.call("poll", {"name": "E2E laptop", "providers": list(PROVIDERS), "running": []})
+                body = {"name": "E2E laptop", "providers": list(PROVIDERS), "running": [], "library": True}
+                r = self.call("poll", body)
             except requests.RequestException:
                 time.sleep(0.3)
                 continue
@@ -107,6 +108,18 @@ class Companion(threading.Thread):
                     self.saw_cancel.set()
                     return
             self.post(job, {"type": "done"})
+        elif "CHANGE" in said:  # the AI tool adds a paper through /mcp with the question's own token
+            call = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "add_paper", "arguments": {"fields": {"title": "Added by the AI"}}},
+            }
+            h = {"Authorization": f"Bearer {job['mcp_token']}"}
+            requests.post(f"{BASE}/mcp", json=call, headers=h, timeout=20)
+            self.post(
+                job, {"type": "tool", "name": "add_paper"}, {"type": "text", "text": "Added it."}, {"type": "done"}
+            )
         elif "PDFLINK" in said:
             self.post(
                 job,
@@ -861,6 +874,34 @@ async def main():
             if await page.locator(".note-head").count() == 0 or not await page.locator(".note-head").is_visible():
                 await page.click(".tab.home")
                 await page.wait_for_timeout(300)
+
+            # ---- a library change the AI made is listed under its answer, also when the conversation comes back
+            requests.put(f"{BASE}/api/settings", json={"ai_library_edits": True})
+            await page.click("[data-new]")
+            await page.fill(".ai-input", "CHANGE add the paper")
+            await page.keyboard.press("Enter")
+            check(
+                "a library change is listed under the answer",
+                await until(
+                    page,
+                    "document.querySelector('.ai-turn:last-child .ai-changes:not([hidden])')?.textContent.includes('added a paper')",
+                    12000,
+                ),
+            )
+            await shot(page, "2g-library-change")
+            await page.click("[data-history]")
+            await page.locator(".ai-conv", has_text="CHANGE add").click()
+            check(
+                "it is still listed when the conversation is opened again",
+                await until(page, "!!document.querySelector('.ai-changes:not([hidden])')", 8000),
+            )
+            requests.put(f"{BASE}/api/settings", json={"ai_library_edits": False})
+            added = [
+                i["id"] for i in requests.get(f"{BASE}/api/items").json()["items"] if i["title"] == "Added by the AI"
+            ]
+            requests.post(f"{BASE}/api/items/trash", json={"ids": added})  # the later checks expect one paper
+            requests.post(f"{BASE}/api/trash/empty", json={})
+            await page.wait_for_timeout(5000)  # the page's change feed picks it up
 
             # ---- Send never wraps, however long a label is: the pickers shrink instead
             await page.click("[data-new]")

@@ -49,7 +49,9 @@ Brave or Edge when one is installed (else the default browser). There you enter 
 address and the token, then:
 
 - **Ask AI**: which tools Synapse may use, and which of their models and efforts it may choose;
-  how many questions at once (1 or 2). Codex is off until you turn it on (see below).
+  how many questions at once (1 or 2). Codex is off until you turn it on (see below). **Beyond
+  Synapse's tools**, all off until turned on: search the web, open pages of a list of sites, change
+  the library (see [what the user may allow](#what-the-user-may-allow)).
 - **Browser extension → Install** downloads the extension folder, registers the companion with
   the browsers, and shows the one-time **Load unpacked** steps. Its state says whether a browser
   knows the companion, when the extension last said hello and whether it runs the current files.
@@ -88,7 +90,10 @@ in Settings when a computer is gone, which also ends its running questions' toke
 
 **Updates.** The server's hello gives the `.pyz` build (the SHA-256 of the file it serves, built
 reproducibly from `synapse_companion/`); the window offers **Update and restart** when it differs
-from the program's own file. Only on that click, and never for a repository checkout. Like the
+from the program's own file. Only on that click, and never for a repository checkout. The companion
+asks at start and every hour (`Service.check`, which also keeps the extension current); **Check for
+updates** in the window asks now and says what it found, or why the server could not be asked, and
+the window shows when the last check was answered. The two never run at once. Like the
 extension's code, the program comes from the server you connected to: an update runs whatever that
 server (or anything that can answer for its HTTPS address) serves, so connect only to a server you
 control.
@@ -136,7 +141,9 @@ independent instances share nothing. What must survive a restart, the conversati
 `{type:"text", text}` (a delta), `{type:"tool", name}` (a tool call began), `{type:"usage",
 input_tokens, output_tokens, cost_usd?, duration_ms?}` (once, before `done`; numbers only, bounded, anything
 else dropped), `{type:"done"}`, `{type:"error", message}`. Claude's `input_tokens` counts everything sent
-to the model, including what came from its cache; Codex reports no cost.
+to the model, including what came from its cache; Codex reports no cost. The server adds
+`{type:"change", tool}` itself for each library change the question's AI tool made (one the companion
+posts is dropped; see [What the user may allow](#what-the-user-may-allow)).
 
 **Models and efforts.** A companion's providers carry `models: [{id, label}]` and `efforts: [id]`, built
 in per provider (`GET /api/ai/status` shows them; empty means no selector). `ask` takes optional `model`
@@ -212,7 +219,7 @@ showing a notes PDF offers it, at the page in view and with the selected words, 
 
 ## The AI tools, and why they are restricted
 
-**Claude Code** (`claude`), verified against 2.1.x:
+**Claude Code** (`claude`), verified against 2.1.327:
 
 ```
 claude --print --output-format stream-json --verbose --include-partial-messages
@@ -220,6 +227,9 @@ claude --print --output-format stream-json --verbose --include-partial-messages
        --setting-sources "" --disable-slash-commands --append-system-prompt-file <0600 temp file>
        [--model ALIAS] [--effort LEVEL] (--session-id ID | --resume ID)
 ```
+
+(with web access allowed, `--tools`, `--allowedTools` and `--settings` change as
+[below](#what-the-user-may-allow)).
 
 The prompt goes to stdin and the working directory is an empty private one (`work-<profile>/` beside
 the profile, stable so sessions can resume). `--tools ""` removes the built-in tools (shell, files,
@@ -231,24 +241,90 @@ is in a second temp file, so **no server-supplied string and no token is in argv
 `claude.cmd` is run through cmd.exe, which quotes argument lists unsafely); the session id is a UUID
 derived from the server's URL and the conversation id. Both files are 0600 and deleted when the tool
 ends. As a second guard the companion reads the `init` event's tool list and aborts the job (killing
-the process) if any tool is not `mcp__synapse__…` or the list is empty (the server was unreachable).
+the process) if any tool is not `mcp__synapse__…` or one of the web tools the user allowed, or the
+list is empty (the server was unreachable).
 
-**What the tool can change.** The question's token is *restricted* on `/mcp`: the server never lists
-or runs the tools that change the library (`add_paper`, `trash_papers` …; see [MCP](mcp.md)) for it,
-whatever Settings → AI Access allows other apps (`Server.restricted`, read where `build_server`
-offers those tools), and it opens nothing but `/mcp`. Notes and tasks stay changeable, as the system
-text allows only when the user asks; every change is attributed and can be undone in the app. This
-is decided on the server, not in the companion.
+**What the tool can change.** The question's token is *restricted* on `/mcp`: it opens nothing but
+`/mcp`, and the server lists and runs the tools that change the library (see [MCP](mcp.md)) for it
+only when Settings → AI Access allows them **and** the companion said so in its poll (`library`,
+from the window's "Change the library"), and then only `COMPANION_EDITS`: `add_paper`, `find_pdf`,
+`organize_papers`, `add_highlight`, `trash_papers` (`Server.edits`, read where `build_server` offers
+those tools; never `update_paper` or `fetch_references`). This is decided on the server, from the
+companion's word and the server's own setting: neither alone is enough. Notes and tasks stay
+changeable, as the system text allows only when the user asks; every change is attributed and can be
+undone in the app.
 
-**Codex** (`codex exec --json`) is **off until you turn it on in the window**, which then shows a
-warning. Codex always has a shell tool. Here it runs in a read-only sandbox, but it can still read
-files on your computer, so **text inside a paper can instruct it to read local files and write their
-content into a note on the server**; and the MCP servers in your `~/.codex/config.toml` stay enabled
-(and its own instructions apply). Claude Code, run as above, has neither problem. The Synapse server is
-passed with `-c mcp_servers.synapse.url=…` and `bearer_token_env_var`, the question's token travelling in the
+**Codex** (`codex exec --json`), verified against 0.145, is **off until you turn it on in the
+window**, which then shows a warning: the companion cannot see which tools Codex has, as it does for
+Claude Code. It runs with:
+
+```
+codex exec [resume THREAD] --json --skip-git-repo-check --ignore-user-config --ignore-rules
+      -c default_permissions="synapse"
+      -c 'permissions.synapse.filesystem={":minimal"="read", ":workspace_roots"={"."="read"}}'
+      -c web_search="disabled"   (or "cached" with web search allowed)
+      -c features.shell_tool=false … apps, plugins, hooks, memories, browser_use, computer_use
+      -c mcp_servers.synapse.url=… -c mcp_servers.synapse.bearer_token_env_var=… -
+```
+
+`--ignore-user-config` leaves out `~/.codex/config.toml` (its MCP servers, hooks and profiles; your
+sign-in stays) and with it your default model. The **permission profile** is what keeps Codex from
+your files: its sandbox lets commands and file tools such as `view_image` read only the system's own
+files (`:minimal`) and the empty working folder, write nothing and reach no network. An empty working
+folder alone would not do it: `--add-dir` and the workspace only decide where Codex may *write*,
+while the older `read-only` sandbox reads the whole disk. On Linux the sandbox needs bubblewrap with
+user namespaces; where the system forbids them (Ubuntu 24.04's AppArmor default, for one) every
+command and file read fails rather than running unsandboxed. The shell itself is also turned off.
+Setting these with `-c` keeps an older Codex that lacks a feature working (`--disable` refuses an
+unknown one). Its global `AGENTS.md`, if any, still applies. The Synapse server is passed with
+`-c mcp_servers.synapse.url=…` and `bearer_token_env_var`, the question's token travelling in the
 child's environment (nothing the server sent is in Codex's argv either). Codex has no system-prompt
 option, so the instructions are put in front of the question. Follow-ups resume the thread the companion
 remembers in memory (a restarted companion starts a fresh thread).
+
+## What the user may allow
+
+The window's **Beyond Synapse's tools** settings are the companion's own (`settings.access`, in the
+profile): the server cannot turn them on, and they apply to every question asked from the library.
+
+| Setting | Claude Code | Codex |
+|---|---|---|
+| **Search the web** | `WebSearch` (titles and addresses, no pages) | `web_search="cached"`: OpenAI's index, no live pages |
+| **Open pages of these sites** | `WebFetch`, kept to the sites (below) | not offered: Codex has no way to keep to a list |
+| **Change the library** | the five tools above, while Synapse allows them too | the same |
+
+The sites are host names, one per line; each covers its subdomains (`aps.org` also allows
+`journals.aps.org`). `clean_site` keeps a typed address's host and drops anything else (addresses
+with a port, IP addresses, single labels), at most 100. The default list (`DEFAULT_SITES`) is
+arXiv, `doi.org` and major physics publishers: APS, IOP, AIP, Springer Nature, Elsevier, Wiley,
+AAAS, PNAS, Cambridge, Oxford, Optica, World Scientific, EPJ/EDP, A&A, JPS, SciPost, Quantum, the
+Royal Society, Annual Reviews, Taylor & Francis, ACS, RSC, IEEE, MDPI and Frontiers. No published
+list of publisher domains was found to reuse; a DOI redirects to its publisher, which WebFetch
+opens only if it is listed.
+
+**Keeping WebFetch to the sites.** Claude Code gets `--tools WebSearch,WebFetch` (only those
+allowed) and `--allowedTools mcp__synapse WebSearch WebFetch(domain:S) WebFetch(domain:*.S) …`. The
+allow rules alone are not enough: Claude Code fetches a built-in set of preapproved documentation
+sites without any rule, which an injected instruction could use to carry data out. So the companion
+also passes `--settings <0600 temp file>` with a `PreToolUse` hook on `WebFetch` that runs this
+program, `python synapse_companion.pyz fetch-check <0600 sites file>` (`providers.fetch_check`). It
+reads the call on stdin and blocks it (exit code 2, the reason for the model) unless the address is
+`http(s)` with a listed host; it refuses rather than parses anything a browser could read
+differently (a backslash, user info, a percent-encoded host, whitespace, a bad port), and refuses
+when it cannot check. `--setting-sources ""` does not drop `--settings`; both files are deleted with
+the question. Cross-host redirects come back to the model as a new fetch, which is checked again.
+
+**The system text** gets one more line naming what is allowed (`providers.web_note`), with the
+reminder that a page is data and that the user's notes are never put into an address or a search.
+**What remains**: text in a paper or on a page can still steer the AI, which could put what it read
+into a search or into an address of a listed site; the window says so when web access is on.
+
+**Library changes are shown with the answer.** `/mcp` reports each successful call of one of those
+tools by a question's token (`HttpTransport.handle`'s `changed`, from the reply: an error result is
+no change) to `Companions.add_changes`, which adds a `{type:"change", tool}` event to the job; a
+`change` event the companion posts itself is dropped. The answer's summary keeps them (`changes`, in
+`ai.db`'s `messages.changes`), and the panel shows them under the answer ("Changed the library: added
+2 papers, attached a PDF."), with a reminder that trashed papers can be restored.
 
 Provider commands are argument lists, never shell strings. The companion starts at most two AI tools
 at once itself (one if the window says so) (a repeated job id is ignored and an excess job is answered with an error without
@@ -341,7 +417,8 @@ rebinding); every change must carry the key in `X-Companion-Key`, be JSON and co
 own origin (or none). Pages have a strict Content Security Policy and nothing is cached. The state
 it shows: the connection (`connecting`, `connected`, `unreachable`, `refused`), the tools found and
 the settings, questions running, the extension (installed, registered browsers, last hello, review
-waiting), start at login, the tray icon, an available update and the recent log.
+waiting), start at login, the tray icon, an available update, when updates were last checked and the
+recent log.
 
 **The tray icon** is a child process (`synapse_companion tray`), because Qt ends the whole process
 when it cannot reach the display, and the companion must survive that. The companion starts it when

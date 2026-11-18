@@ -212,6 +212,8 @@ def _handler(window: Window):
                 service.install_extension(approve=action == "apply")
             elif path == "/api/autostart":
                 service.set_autostart(data.get("on") is True)
+            elif path == "/api/check":
+                return {"message": service.check(manual=True)}
             elif path == "/api/update":
                 threading.Thread(target=self._later, args=(service.update_program,), daemon=True).start()
             elif path == "/api/open":  # from the tray icon

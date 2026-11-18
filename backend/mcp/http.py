@@ -30,11 +30,17 @@ class HttpTransport:
         self._clients: dict[str, str | None] = {}
 
     def handle(
-        self, body: bytes, protocol_version: str | None = None, caller: str | None = None, restricted: bool = False
+        self,
+        body: bytes,
+        protocol_version: str | None = None,
+        caller: str | None = None,
+        edits: frozenset[str] | None = None,
+        changed: Callable[[list[str]], None] | None = None,
     ) -> tuple[int, Any]:
         """One POST: returns (HTTP status, JSON reply or None for an empty 202). ``caller``: who sent
-        it (the access token's id), to remember which AI app it is. ``restricted``: the token may not
-        change the library (a companion token)"""
+        it (the access token's id), to remember which AI app it is. ``edits``: the tools changing the
+        library the token may get (None: all; a companion's question token gets a few or none).
+        ``changed`` is called with the names of those that ran without error."""
         if protocol_version and protocol_version not in PROTOCOL_VERSIONS:
             return 400, error_reply(None, INVALID_REQUEST, f"Unsupported MCP protocol version: {protocol_version}")
         try:
@@ -48,13 +54,16 @@ class HttpTransport:
                 self._server = self._build()
             key = caller or ""
             self._server.client = self._clients.get(key)
-            self._server.restricted = restricted  # requests are serialized, so this is this request's
+            self._server.edits = edits  # requests are serialized, so this is this request's
             reply = self._server.handle(message)
             if _initializes(message):
                 self._clients[key] = self._server.client
             writes = self._writes(self._server, message)
         if writes and self._wrote:
             self._wrote()
+        if changed and edits:
+            if names := _succeeded(message, reply, edits):
+                changed(names)
         if reply is None:
             return 202, None  # notifications and responses only
         return 200, reply
@@ -69,6 +78,24 @@ class HttpTransport:
                 if tool is not None and not tool.read_only:
                     return True
         return False
+
+
+def _succeeded(message: Any, reply: Any, names: frozenset[str]) -> list[str]:
+    """The calls of tools in ``names`` that this reply answers with a result, not an error."""
+    messages = message if isinstance(message, list) else [message]
+    replies = reply if isinstance(reply, list) else [reply]
+    answered = {
+        r.get("id"): r
+        for r in replies
+        if isinstance(r, dict) and isinstance(r.get("result"), dict) and not r["result"].get("isError")
+    }
+    out = []
+    for m in messages:
+        if isinstance(m, dict) and m.get("method") == "tools/call" and isinstance(m.get("params"), dict):
+            name = m["params"].get("name")
+            if name in names and m.get("id") is not None and m.get("id") in answered:
+                out.append(name)
+    return out
 
 
 def _initializes(message: Any) -> bool:
