@@ -239,6 +239,17 @@ def unlock_note():
     return jsonify(svc().note_service.unlock(path))
 
 
+@bp.post("/notes/unlock/touch")
+@guarded
+def touch_unlocked():
+    """``{paths}``: this page's user is using these unlocked notes (clicks, keys, scrolling): they
+    stay open for the whole timeout from now. Reading a note does not do that."""
+    paths = body().get("paths")
+    if not isinstance(paths, list) or len(paths) > 50:
+        return error("paths must be a list of at most 50 notes")
+    return jsonify(svc().note_service.touch([str(p) for p in paths]))
+
+
 @bp.post("/notes/relock")
 @guarded
 def relock_notes():

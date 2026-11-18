@@ -142,7 +142,7 @@ see the [README](../README.md); for code ownership, see the [architecture map](a
   settings and notes back and rebuilds the indexes.
 - **Locked notes**: right-click a note → **Lock**, and it opens only with the password from
   **Settings → Notes** or a passkey, for the tab that unlocked it. It locks again after a set time
-  unused (looking at it or editing keeps it open) or when its tab closes. Search, backlinks, the
+  unused (clicking, scrolling or typing in it keeps it open; a tab merely left open does not) or when its tab closes. Search, backlinks, the
   graph, embeds, history and AI apps never show its text; the file stays plain Markdown on the
   server, so this protects against other devices and AI apps, not against access to the server.
   See [locked notes](notes.md#locked-notes).

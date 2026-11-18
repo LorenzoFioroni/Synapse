@@ -23,7 +23,7 @@ import { createEditor, loadMD, type NoteEditor } from './editor.js';
 import { exportMenu } from './exportNote.js';
 import { folderOfSelection, followMove, newFolder, newNote, pickPdfs, renameNote, rescan, showTrash } from './fileOps.js';
 import { linkDataOf } from './linkData.js';
-import { isLockedError, relockOnUnload, renderLockScreen } from './lockScreen.js';
+import { isLockedError, relockOnUnload, renderLockScreen, reportActivity } from './lockScreen.js';
 import { refitOnResize } from './mathFit.js';
 import { NoteSession, type DraftStore } from './noteSession.js';
 import { initPanels, listHidden, panelButton, peek, toggleList } from './panels.js';
@@ -124,9 +124,13 @@ export function initNotes(): void {
 
   window.addEventListener('focus', () => { if (notesOpen()) { ws.session?.checkRemote(); refreshTree(); } });
   // Claude (the MCP server) saves from another process: look for such changes while the note is visible
-  // (a locked note on screen is read by it too, which keeps it unlocked while it is looked at)
   setInterval(() => { if (notesOpen() && !document.hidden && ws.session?.status === 'saved') ws.session.checkRemote(); }, 5000);
+  // a locked note stays open while it is used (reading it, as above, does not count: a forgotten tab locks)
   setInterval(expireLocked, 5000);
+  reportActivity(root.querySelector<HTMLElement>('.notes-main')!, () => (ws.view?.locked?.until ? ws.view.path : null), (path, left) => {
+    const v = ws.views.get(path);
+    if (v?.locked) { if (left === null) lockedOut(v); else v.locked.until = Date.now() + left * 1000; }
+  });
   document.addEventListener('visibilitychange', () => { if (document.hidden) saveAll(); });
   window.addEventListener('pagehide', () => { flushOnUnload(); relockOnUnload([...ws.views.values()].filter((v) => v.locked).map((v) => v.path)); });
   // Diagrams are drawn for one theme: redraw them when light/dark changes.

@@ -220,16 +220,26 @@ class NotesService:
         return f"{base} {n}.md"
 
     # ------------------------------------------------------------------ locks
-    def _closed(self, path: str, text: str | None = None) -> bool:
+    def _closed(self, path: str, text: str | None = None, *, extend: bool = False) -> bool:
         """Whether the note at ``path`` is locked and this request has not unlocked it. ``text``:
-        the note as just read (the index may not have seen an edit made outside the app)."""
+        the note as just read (the index may not have seen an edit made outside the app).
+        ``extend``: a change by the user, which keeps the note open longer (reading does not)."""
         locked = is_locked_text(text) if text is not None else self.index.is_locked(path)
-        return locked and not self.grants.allows(path)
+        return locked and not self.grants.allows(path, extend=extend)
 
-    def require_open(self, path: str, text: str | None = None) -> None:
+    def require_open(self, path: str, text: str | None = None, *, extend: bool = False) -> None:
         """Raise NoteLocked unless this request may read the note at ``path``."""
-        if self._closed(path, text):
+        if self._closed(path, text, extend=extend):
             raise NoteLocked(path)
+
+    def touch(self, paths: list[str]) -> dict:
+        """The page reports that the notes were used (clicked, typed in, scrolled, touched): they
+        stay open ``timeout`` from now. Answers how long each one still is, null when locked."""
+        out = {}
+        for p in paths:
+            path = self.vault.clean_rel(p)
+            out[path] = self.grants.remaining(path) if self.grants.allows(path, extend=True) else None
+        return {"unlocked_for": out}
 
     def unlock(self, path: str) -> dict:
         """Open a locked note for the page asking (the API has checked the password or passkey)."""
@@ -421,7 +431,7 @@ class NotesService:
         ``by="ai"``: a note an AI app wrote, recorded in the history as its own change."""
         path = self.vault.clean_rel(path)
         if base_hash is not None or self.vault.exists(path):
-            self.require_open(path, self._current_text(path))
+            self.require_open(path, self._current_text(path), extend=True)
         if by == "ai":
             agent = current_agent()
             with self.history.change(
@@ -458,7 +468,7 @@ class NotesService:
             subject=summary or (f"Edited by {agent}" if agent else "Edited"),
         ) as rec:
             before, h = self.vault.read(path)
-            self.require_open(path, before)
+            self.require_open(path, before, extend=True)
             if h != base_hash:
                 raise Conflict(path, h)
             h2 = self.vault.write(path, text, expected_hash=base_hash)

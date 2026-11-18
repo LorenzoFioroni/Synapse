@@ -177,6 +177,8 @@ export const api = {
     request<{ path: string } & NoteLockState>('POST', '/api/notes/unlock', { path, ...secret }),
   unlockOptions: () => request<Record<string, any>>('POST', '/api/notes/unlock/options'),
   relockNotes: (paths?: string[]) => request('POST', '/api/notes/relock', { paths }),
+  /** The unlocked notes were used (clicked, typed in, scrolled): they stay open the whole timeout from now. */
+  touchNotes: (paths: string[]) => request<{ unlocked_for: Record<string, number | null> }>('POST', '/api/notes/unlock/touch', { paths }),
   createNote: (data: Record<string, unknown>) => request<Omit<NoteFile, 'info'>>('POST', '/api/notes/note', data),
   noteHistory: (path: string, limit?: number) => request<NoteHistory>('GET', `/api/notes/history?${qs({ path, limit })}`),
   noteVersion: (id: string, path?: string, from?: string) => request<HistoryVersion>('GET', `/api/notes/history/version?${qs({ id, path, from })}`),

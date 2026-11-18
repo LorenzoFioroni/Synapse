@@ -70,8 +70,10 @@ rclone `crypt` remote) if they matter.
 
 **Who sees what.** Unlocking opens a note for one page of the app (its `X-Synapse-Client` id,
 set for each request by `create_app`) on one device: other windows and devices still see the
-lock. The grant lasts `notes_lock_minutes` (Settings → Notes) and is postponed by every read or
-save from that page; a note on screen is read every 5 s, so it stays open while you look at it.
+lock. The grant lasts `notes_lock_minutes` (Settings → Notes) and is postponed only by use: a save,
+or the page reporting a click, key, wheel, scroll or touch on the note (`reportActivity` in
+`lockScreen.ts`, at most every 15 s, `POST /api/notes/unlock/touch`). Reads do not postpone it:
+the app checks the note on screen every 5 s, and a tab only left open must still lock on time.
 Closing its tab, reloading the page or restarting Synapse locks it again. Without a grant:
 
 - `GET /api/notes/note`, `/links`, saves, history versions and lock removal answer 423
@@ -391,6 +393,7 @@ in the change feed (not unlocking or locking again). `guarded` turns `NoteLocked
 | PUT | `/api/notes/locks/password` | `{password, current?}`: set or change the password (without the current one: an administrative action). |
 | POST | `/api/notes/lock` | `{path, locked}`: lock a note (needs a password set) or remove its lock (needs it unlocked). |
 | POST | `/api/notes/unlock` | `{path, password}` or `{path, credential}` (after `POST /api/notes/unlock/options`): open it for this page. 403 wrong password, 429 too many. |
+| POST | `/api/notes/unlock/touch` | `{paths}`: the notes were used (clicked, scrolled, typed in): open the whole timeout from now. Answers `unlocked_for` per note (null: locked). |
 | POST | `/api/notes/relock` | `{paths?}`: lock again what this page unlocked (its tab closed; none given: all). |
 | PUT | `/api/notes/note` | Save `text` over `hash`; with `create: true`, write a note that must not exist. |
 | POST | `/api/notes/move` | Rename or move a note or PDF (`path`, `to`, optional `hash`); rewrites the links it would break and returns `updated_links` and `broken_links`. |
