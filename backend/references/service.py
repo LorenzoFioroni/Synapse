@@ -18,9 +18,12 @@ import threading
 import time
 from collections.abc import Callable
 
-from ..library.identifiers import identifiers, title_key
+from ..library.identifiers import identifiers, norm_arxiv, norm_doi, title_key
+from ..online.http import LookupFailed
 from .sources import fetch
-from .store import CitationStore
+from .store import REF_FIELDS, CitationStore
+
+MAX_CITING = 1000  # citing works one lookup asks for
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +35,16 @@ def _year(v) -> int | None:
         return None
 
 
+def _citing_record(w: dict) -> dict:
+    """A citing work as a reference record, whatever shape a source sent."""
+    out: dict = {k: (" ".join(str(w[k]).split())[:500] or None) if w.get(k) else None for k in REF_FIELDS}
+    out["doi"], out["arxiv_id"] = norm_doi(out["doi"]), norm_arxiv(out["arxiv_id"])
+    out["year"] = _year(w.get("year"))
+    count = w.get("cited_by_count")
+    out["cited_by_count"] = count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else None
+    return out
+
+
 class Citations:
     """Fetching (now, or queued in the background) and reading the citation graph."""
 
@@ -41,6 +54,7 @@ class Citations:
         self.settings = settings
         self.reference_sources: Callable | None = None
         self.reference_source_title: Callable[[str], str] | None = None
+        self.citing_sources: Callable[[dict], dict] | None = None
         self._queue: queue.Queue[str] = queue.Queue()
         self._pending: set[str] = set()
         self._lock = threading.Lock()
@@ -179,6 +193,39 @@ class Citations:
             if not y or not py or abs(y - py) <= 1:
                 return pid
         return None
+
+    def citing_works(
+        self, doi: str | None, arxiv_id: str | None, *, limit: int, sort: str = "cited", since_year: int | None = None
+    ) -> dict:
+        """The works citing one work, asked of the citation sources online (nothing is stored):
+        ``{"source", "total", "note", "works"}``, each work a reference record with ``cited_by_count`` and
+        ``library_id`` when it is a library item."""
+        if not doi and not arxiv_id:
+            raise LookupFailed("This work has no DOI or arXiv ID to look up the works citing it.")
+        if self.citing_sources is None:
+            raise LookupFailed("No citation sources are on: turn on Reference Sources in Settings → Plugins.")
+        limit = max(1, min(int(limit), MAX_CITING))
+        query = {
+            "doi": doi,
+            "arxiv": arxiv_id,
+            "limit": limit,
+            "sort": sort if sort in ("cited", "recent") else "cited",
+            "since_year": since_year,
+            "email": self.settings.get("contact_email") or "",
+        }
+        found = self.citing_sources(query)
+        works = [_citing_record(w) for w in found["works"]]
+        works = [w for w in works if w["title"] or w["doi"] or w["arxiv_id"]]
+        if since_year:
+            works = [w for w in works if not w["year"] or w["year"] >= since_year]
+        for w, lib in zip(works, self.match_refs(works)):
+            w["library_id"] = lib
+        return {
+            "source": found["source"],
+            "total": found["total"],
+            "note": found.get("note"),
+            "works": works[:limit],
+        }
 
     def match_refs(self, refs: list[dict]) -> list[str | None]:
         """The library item each reference is (or None), as the References section matches them."""

@@ -51,6 +51,8 @@ structure), then read_paper those pages. Avoid reading whole papers page by page
 see them with view_image (one path, or every image of a note; list_only lists them first).
 - get_references / get_citation_graph follow the citation graph, also to works not in the library \
 (they come with DOI/arXiv ids you can look up elsewhere); long lists come one line per work.
+- get_citing_works finds the works citing a paper online, also those not in the library: use it for \
+forward-citation searches (who built on a paper, its newest follow-ups).
 - A search also finds papers that merely cite the subject: those are marked only_in_references (search_library) \
 or in_reference_list (search_in_paper) and listed last. Prefer the unmarked results.
 - get_annotations shows what the user highlighted or commented on a paper's PDF (also one kept in a notes folder).

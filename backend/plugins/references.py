@@ -91,3 +91,50 @@ def source_title(name: str, sources: list[tuple[str, ReferenceSource]]) -> str:
             if name == f"{base}.{key}":
                 return title
     return name
+
+
+@dataclass
+class CitingSource:
+    id: str
+    title: str
+    fn: Callable[[dict], dict | None]
+    order: int
+
+
+MAX_CITING = 1000  # works one lookup returns, whatever a source sends
+
+
+def resolve_citing(sources: list[tuple[str, CitingSource]], run: Callable, query: dict) -> dict:
+    """The works citing the queried one, from the first source that knows it:
+    ``{"source", "works", "total"}``. No source knowing it gives no works; every source failing raises."""
+    if not sources:
+        raise LookupFailed("No citation sources are on: turn on Reference Sources in Settings → Plugins.")
+    errors = []
+    empty = None  # a source that knows the work but no citing one: kept unless a later one has some
+    for pid, source in sorted(sources, key=lambda x: (x[1].order, x[0], x[1].id)):
+        try:
+            result = run(pid, f"Citation source {source.id}", source.fn, dict(query))
+            if result is None:
+                continue
+            works = result.get("works") if isinstance(result, dict) else None
+            if not isinstance(works, list) or not all(isinstance(w, dict) for w in works):
+                raise PluginError("A citation source must return an object with a works list (of objects), or None")
+            total = result.get("total")
+            if total is not None and (not isinstance(total, int) or isinstance(total, bool) or total < 0):
+                raise PluginError("A citation source's total must be a count")
+            name = result.get("source")
+            name = name.strip()[:80] if isinstance(name, str) and name.strip() else source.title
+            note = result.get("note")
+            note = note.strip()[:300] if isinstance(note, str) and note.strip() else None
+            found = {"source": name, "works": works[:MAX_CITING], "total": total, "note": note}
+            if works:
+                return found
+            empty = empty or found
+        except Exception as e:
+            reason = str(e) if isinstance(e, PluginError) else type(e).__name__  # faults are logged
+            errors.append(f"{pid}.{source.id}: {reason}")
+    if empty:
+        return empty
+    if errors:
+        raise FetchFailed("Could not get the citing works (" + "; ".join(errors) + ").")
+    return {"source": None, "works": [], "total": None, "note": None}

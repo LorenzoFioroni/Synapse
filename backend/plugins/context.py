@@ -149,6 +149,7 @@ class Plugin:
         self.pdf_sources: dict[str, PdfSource] = {}
         self.metadata_sources: dict = {}
         self.reference_sources: dict = {}
+        self.citing_sources: dict = {}
         self.export_formats: dict = {}
         self._sources_changed = sources_changed or (lambda: None)
         # a core plugin's tools keep the names they had when they were part of Synapse
@@ -324,6 +325,22 @@ class Plugin:
             if id in self.reference_sources:
                 raise PluginError(f"Reference source {id!r} is registered twice")
             self.reference_sources[id] = ReferenceSource(id, str(title)[:80], fn, int(order), names)
+            return fn
+
+        return register
+
+    def citing_source(self, id: str, *, title: str, order: int = 100):  # noqa: A002
+        """API 1.15: register fn({doi, arxiv, limit, sort, since_year, email}) -> {works: [...], total?, source?}
+        or None: the works citing one work, for the get_citing_works tool."""
+        from .references import CitingSource
+
+        if not TOOL_NAME_RE.fullmatch(id or ""):
+            raise PluginError("Citation source id: lowercase letters, digits and _")
+
+        def register(fn):
+            if id in self.citing_sources:
+                raise PluginError(f"Citation source {id!r} is registered twice")
+            self.citing_sources[id] = CitingSource(id, str(title)[:80], fn, int(order))
             return fn
 
         return register

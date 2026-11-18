@@ -16,6 +16,7 @@ from backend.plugins.http import PluginHttp
 from tests.fake_metadata import Response, install_transport
 
 P = importlib.import_module("plugins.reference-sources.server.providers")
+CITING = importlib.import_module("plugins.reference-sources.server.citing")
 HTML = '<section class="ltx_bibliography"><li class="ltx_bibitem">A. Author. “A cited reference fixture” (2021).</li></section>'
 S2 = {"data": [{"citedPaper": {"title": "Cited fixture", "externalIds": {"DOI": "10.1234/cited"}}}]}
 
@@ -249,3 +250,80 @@ def test_retry_header_names_are_case_insensitive(header):
         assert delays == [3.0] and http.http.calls == 2
     finally:
         http.close()
+
+
+def oa_work(n, cited, year=2024):
+    return {
+        "id": f"https://openalex.org/W{n}",
+        "title": f"Citing {n}",
+        "publication_year": year,
+        "cited_by_count": cited,
+    }
+
+
+def s2_work(n, cited, date):
+    return {
+        "citingPaper": {
+            "title": f"S2 citing {n}",
+            "year": int(date[:4]),
+            "publicationDate": date,
+            "citationCount": cited,
+            "externalIds": {"ArXiv": f"2401.0000{n}"},
+        }
+    }
+
+
+def test_citing_works_ask_openalex_for_journal_papers_and_s2_for_preprints(svc, monkeypatch):
+    calls = []
+
+    def get(url, params=None, **kwargs):
+        calls.append((url, params))
+        if "openalex" in url:
+            if "/works/doi:" in url:
+                return Response({"id": "https://openalex.org/W9"})
+            return Response({"meta": {"count": 7}, "results": [oa_work(1, 30), oa_work(2, 5)]})
+        if url.endswith("/citations"):
+            return Response(
+                {"data": [s2_work(1, 3, "2024-01-02"), s2_work(2, 50, "2023-05-01"), s2_work(3, 1, "2025-03-04")]}
+            )
+        return Response({}, status=404)
+
+    install_transport(monkeypatch, get)
+    found = svc.plugins.find_citing({"doi": "10.1234/parent", "limit": 2, "sort": "cited", "since_year": 2020})
+    assert (
+        found["source"] == "OpenAlex"
+        and found["total"] == 7
+        and [w["title"] for w in found["works"]] == ["Citing 1", "Citing 2"]
+    )
+    assert found["works"][0]["cited_by_count"] == 30
+    url, params = calls[1]
+    assert params["filter"] == "cites:W9,publication_year:>2019" and params["sort"] == "cited_by_count:desc"
+    assert params["per-page"] == "2"
+    calls.clear()
+    found = svc.plugins.find_citing({"arxiv": "2101.00001", "limit": 2, "sort": "recent", "since_year": 2024})
+    assert found["source"] == "Semantic Scholar" and calls[0][0].endswith("/paper/arXiv:2101.00001/citations")
+    assert [w["title"] for w in found["works"]] == ["S2 citing 3", "S2 citing 1"] and found["total"] == 3
+    assert svc.plugins.info("reference-sources")["citing_sources"] == [
+        {"id": "scholarly", "title": "OpenAlex and Semantic Scholar"}
+    ]
+
+
+def test_citing_works_fall_back_when_a_service_fails_or_knows_none(svc, monkeypatch):
+    def get(url, params=None, **kwargs):
+        if "semanticscholar" in url:
+            return Response({}, status=429)
+        if "/works/doi:" in url:
+            return Response({"id": "https://openalex.org/W9"})
+        return Response({"meta": {"count": 1}, "results": [oa_work(1, 0)]})
+
+    install_transport(monkeypatch, get)
+    monkeypatch.setattr(CITING.Client, "wait", lambda self, seconds: None)
+    found = svc.plugins.find_citing({"arxiv": "2101.00001", "limit": 5})
+    assert found["source"] == "OpenAlex" and found["works"][0]["title"] == "Citing 1"
+
+    install_transport(monkeypatch, lambda url, **kw: Response({}, status=500 if "openalex" in url else 429))
+    with pytest.raises(Exception, match="Could not get the citing works") as e:
+        svc.plugins.find_citing({"doi": "10.1234/parent", "limit": 5})
+    assert "429" in str(e.value)
+    install_transport(monkeypatch, lambda url, **kw: Response({}, status=404))
+    assert svc.plugins.find_citing({"doi": "10.1234/parent", "limit": 5})["works"] == []

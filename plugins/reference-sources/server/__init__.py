@@ -2,6 +2,7 @@
 
 from backend.plugins import Plugin
 
+from .citing import citing
 from .client import Client
 from .providers import fetch
 
@@ -23,3 +24,7 @@ def activate(plugin: Plugin) -> None:
     def references(query: dict) -> dict:
         source, refs = fetch(query["item"], http=http, fresh=query["fresh"])
         return {"source": source, "references": refs}
+
+    @plugin.citing_source("scholarly", title="OpenAlex and Semantic Scholar")
+    def citing_works(query: dict) -> dict | None:
+        return citing(query, http=http)
