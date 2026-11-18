@@ -5,17 +5,15 @@ from __future__ import annotations
 import difflib
 import html
 import re
-import sqlite3
 import time
 import unicodedata
-from collections import OrderedDict
 from pathlib import PurePosixPath
 
 from ...library.fields import ITEM_TYPE_LABELS, first_author
-from ...library.identifiers import identifiers, norm_arxiv, norm_doi
-from ...notes.vault import InvalidPath
+from ...library.identifiers import ARXIV_DOI, ARXIV_ID, identifiers, norm_arxiv, norm_doi
+from ...notes.vault import InvalidPath, is_pdf_path
 from ...pdf.source import PdfSource
-from ...pdf.text import extract_pages
+from ...pdf.text import PageTextCache
 from ..protocol import ToolError
 
 AI_FOLDER = "ai"
@@ -27,6 +25,7 @@ MAX_NOTE_CHARS = 100_000
 NOTE_READ_CHARS = 30_000  # a longer note is read by section (get_note shows its outline and sizes instead)
 MAX_PAPER_NOTE_CHARS = 20_000
 MAX_IMAGES_PER_VIEW = 6
+PAGE_CACHE_SIZE = 16  # PDFs whose page texts are kept
 NEAR_CHARS = 300  # the words of a search "together": all of them within this many characters
 
 
@@ -71,7 +70,7 @@ def short_authors(authors: str | None, keep: int = 4, include: list[str] | None 
 
 _DOI_REF = re.compile(r"^(?:doi:\s*|https?://(?:dx\.)?doi\.org/)?10\.\d{4,9}/\S+$", re.I)
 _ARXIV_REF = re.compile(
-    r"^(?:arxiv:\s*|https?://arxiv\.org/(?:abs|pdf)/)?(?:\d{4}\.\d{4,5}|[a-z\-]{1,32}(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?(?:\.pdf)?$",
+    r"^(?:arxiv:\s*|https?://arxiv\.org/(?:abs|pdf)/)?" + ARXIV_ID.pattern + r"(?:\.pdf)?$",
     re.I,
 )
 
@@ -108,6 +107,18 @@ def together(hits: dict[str, list[int]], matched: list[str]) -> list[int]:
     ]
 
 
+def sentence(text: str) -> str:
+    """A message as a sentence that ends in a full stop, to be followed by another."""
+    text = (text or "").strip()
+    return text if text.endswith((".", "!", "?")) else text + "."
+
+
+def check_page(page: int, n: int) -> None:
+    """Refuse a page number outside a PDF of ``n`` pages."""
+    if not 1 <= page <= n:
+        raise ToolError(f"Page {page} does not exist: the PDF has {n} page{'s' * (n != 1)}.")
+
+
 def parse_pages(spec: str, n: int) -> list[int]:
     """ "3", "2-5", "1,4,7-9", "10-" (to the end) -> sorted page numbers (1-based)."""
     pages: set[int] = set()
@@ -124,8 +135,7 @@ def parse_pages(spec: str, n: int) -> list[int]:
             b = int(m.group(2)) if m.group(2) else n
         if a < 1 or b < a:
             raise ToolError(f"Bad page range '{part}'.")
-        if a > n:
-            raise ToolError(f"Page {a} does not exist: the PDF has {n} page{'s' * (n != 1)}.")
+        check_page(a, n)
         pages.update(range(a, min(b, n) + 1))
     if not pages:
         raise ToolError("No pages given.")
@@ -143,12 +153,16 @@ def page_ranges(pages: list[int]) -> str:
     return ",".join(out)
 
 
+def _same_work(have: tuple[str | None, str | None], doi: str | None, arx: str | None) -> bool:
+    return bool(doi and have[0] == doi or arx and have[1] == arx)
+
+
 class ToolsBase:
     """State and lookups the tool families build on: items by key, PDFs and their pages, notes."""
 
     def __init__(self, services):
         self.s = services
-        self._page_cache: OrderedDict[tuple, list[str]] = OrderedDict()
+        self._page_cache = PageTextCache(PAGE_CACHE_SIZE)
         self._last_sync = 0.0
 
     # ------------------------------------------------------------------ freshness
@@ -181,12 +195,14 @@ class ToolsBase:
     def _by_identifier(self, ref: str, items: dict[str, dict]) -> dict | None:
         """The item with this DOI or arXiv id (a library item before a trashed one)."""
         if _DOI_REF.match(ref):
-            want, index = norm_doi(ref), 0
+            doi = norm_doi(ref)
+            m = ARXIV_DOI.match(doi or "")
+            arx = norm_arxiv(m.group(1)) if m else None  # an arXiv DOI also names items that store only the id
         elif _ARXIV_REF.match(ref):
-            want, index = norm_arxiv(re.sub(r"\.pdf$", "", ref, flags=re.I)), 1
+            doi, arx = None, norm_arxiv(re.sub(r"\.pdf$", "", ref, flags=re.I))
         else:
             return None
-        found = [p for p in items.values() if want and identifiers(p)[index] == want]
+        found = [p for p in items.values() if (doi or arx) and _same_work(identifiers(p), doi, arx)]
         return min(found, key=lambda p: bool(p["_trashed"])) if found else None
 
     def _paper(self, ref: str, items: dict[str, dict] | None = None) -> dict:
@@ -203,6 +219,11 @@ class ToolsBase:
         folded = {k.casefold(): p for k, p in keys.items()}
         if r.casefold() in folded:
             return folded[r.casefold()]
+        if is_pdf_path(r) and not _ARXIV_REF.match(raw):
+            raise ToolError(
+                f"'{ref}' is a PDF in the notes folders, not a library item. Only the PDF tools take it, by its "
+                "path: read_paper, search_in_paper, get_paper_outline, view_page, get_annotations and add_highlight."
+            )
         close = self._close_keys(r.casefold(), list(folded))
         hint = f" Did you mean {', '.join(folded[c]['citation_key'] for c in close)}?" if close else ""
         raise ToolError(f"No item with citation key or id '{ref}'.{hint} Use search_library to find it.")
@@ -231,7 +252,7 @@ class ToolsBase:
         out = []
         for a in p.get("attachments") or []:
             path = self.s.papers.attachment_path(a)
-            if path and path.suffix.lower() == ".pdf":
+            if path and is_pdf_path(path.name):
                 out.append(a)
         return out
 
@@ -290,7 +311,7 @@ class ToolsBase:
         picks one of several), or a PDF in the notes folders (``paper`` its path or file name,
         ``folder/file.pdf``, ``[[file.pdf#p=4]]``)."""
         ref = re.sub(r"^!?\[\[|\]\]$", "", str(paper or "").strip()).split("|")[0].split("#")[0].strip()
-        if ref.lower().endswith(".pdf"):
+        if is_pdf_path(ref):
             if attachment is not None:
                 raise ToolError("attachment is for the PDFs of a library item; a PDF in the notes folders has none.")
             return self._notes_source(ref)
@@ -327,44 +348,23 @@ class ToolsBase:
 
     def _pages(self, pdf: dict | PdfSource) -> list[str]:
         src = self._src(pdf)
-        path = src.path
-        st = path.stat()
-        key = (src.key, st.st_mtime, st.st_size)
-        if key in self._page_cache:
-            self._page_cache.move_to_end(key)
-            return self._page_cache[key]
-        pages = extract_pages(path)
-        self._page_cache[key] = pages
-        while len(self._page_cache) > 16:
-            self._page_cache.popitem(last=False)
-        return pages
+        return self._page_cache.pages(src.key, src.path)
 
     def _page_count(self, pdf: dict | PdfSource) -> int | None:
         try:
             src = self._src(pdf)
         except ToolError:
             return None
-        path = src.path
-        st = path.stat()
-        key = (src.key, st.st_mtime, st.st_size)
-        if key in self._page_cache:
-            return len(self._page_cache[key])
-        try:  # the full-text index already knows it
-            table, column, ident = (
-                ("note_documents", "pdf_id", src.note_pdf_id)
-                if src.note_pdf_id
-                else ("documents", "attachment_id", src.attachment_id)
-            )
-            with sqlite3.connect(self.s.fulltext.path, timeout=5) as c:
-                row = c.execute(f"SELECT pages, mtime, size FROM {table} WHERE {column} = ?", (ident,)).fetchone()
-            if row and row[1] == st.st_mtime and row[2] == st.st_size and row[0]:
-                return row[0]
-        except sqlite3.Error:
-            pass
+        cached = self._page_cache.peek(src.key, src.path)
+        if cached is not None:
+            return len(cached)
+        # the full-text index may already know it
+        if n := self.s.fulltext.indexed_pages(src.path, attachment_id=src.attachment_id, pdf_id=src.note_pdf_id):
+            return n
         try:
             import pypdf
 
-            return len(pypdf.PdfReader(str(path)).pages)
+            return len(pypdf.PdfReader(str(src.path)).pages)
         except Exception:
             return None
 

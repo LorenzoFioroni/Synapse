@@ -5,6 +5,7 @@ import io
 import json
 import stat
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -338,6 +339,9 @@ class FakePapers:
             "title": "A paper",
             "attachments": [{"id": 4, "type": "pdf"}, {"id": 9, "type": "pdf"}],
         }
+
+    def attachment_path(self, att):
+        return Path(f"{att['id']}.pdf")
 
 
 def test_selected_text_is_data_that_cannot_close_its_tag():

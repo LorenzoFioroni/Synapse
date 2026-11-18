@@ -198,11 +198,6 @@ class AnnotationStore:
     def __init__(self, db):
         self.db = db
 
-    def ensure_schema(self) -> None:
-        with self.db.session() as c:
-            c.executescript(SCHEMA)
-            upgrade(c)
-
     def for_attachment(self, attachment_id: int) -> list[dict]:
         with self.db.session() as c:
             rows = c.execute(

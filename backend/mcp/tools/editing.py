@@ -17,7 +17,7 @@ from ...library.search import normalize
 from ...pdf import regions as pdfregions
 from ...pdf import render as pdfrender
 from ..protocol import ToolError
-from .common import ToolsBase, drop_empty
+from .common import ToolsBase, check_page, drop_empty, sentence
 
 LIBRARY_EDITS = "ai_library_edits"  # the setting that offers the tools changing the library
 MAX_PAPERS_PER_CHANGE = 200
@@ -119,7 +119,7 @@ class EditToolsMixin(ToolsBase):
             )
             if res["status"] == "failed":
                 raise ToolError(
-                    f"'{identifier}' could not be looked up: {res['message'] or 'the lookup failed'} Nothing was added. "
+                    f"'{identifier}' could not be looked up: {sentence(res['message'])} Nothing was added. "
                     "Check the identifier, or add the item by hand with fields={title, authors, year, …}."
                 )
             if res["status"] == "duplicate":
@@ -234,7 +234,7 @@ class EditToolsMixin(ToolsBase):
         p = self._several([paper])[0]
         res = self.s.fetch_references_now(p["id"])
         if res["status"] != "ok":
-            raise ToolError(f"The reference list of '{self._label(p)}' was not fetched: {res['message']}")
+            raise ToolError(f"The reference list of '{self._label(p)}' was not fetched: {sentence(res['message'])}")
         view = res["view"]
         return drop_empty(
             {
@@ -332,8 +332,7 @@ class EditToolsMixin(ToolsBase):
             src = self._src(self._pdf_for(p, attachment), p)
         path = src.path
         n = self._page_count(src) or pdfrender.page_count(path)
-        if not 1 <= page <= n:
-            raise ToolError(f"Page {page} does not exist: the PDF has {n} pages.")
+        check_page(page, n)
         quote = " ".join(str(quote or "").split())
         if len(quote) < 8:
             raise ToolError("Give the words to highlight: a passage copied from read_paper.")

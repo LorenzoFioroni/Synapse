@@ -5,7 +5,7 @@ import { icon } from '../../icons.js';
 import { state } from '../../store.js';
 import { confirmDialog, openDialog, promptDialog } from '../../ui/dialog.js';
 import { openMenu } from '../../ui/menu.js';
-import { toast, toastError } from '../../ui/toast.js';
+import { progressToast, toast, toastError } from '../../ui/toast.js';
 import type { NoteMoved } from '../../types.js';
 import { escapeHtml, formatDate, h, plural } from '../../util.js';
 import { RETENTION_LABELS } from './attachmentsDialog.js';
@@ -132,9 +132,10 @@ export async function renamePdf(path: string): Promise<void> {
   const back = keepTreeFocus();
   const nu = await promptDialog('Name', { title: 'Rename PDF', value: name, confirm: 'Rename' });
   back();
-  if (!nu || nu.trim() === name) return;
+  const clean = nu?.trim().replace(/\.pdf$/i, '').replace(/\//g, '-').trim();
+  if (!clean || clean === name) return;
   const folder = parentOf(path);
-  return movePdf(path, `${folder ? `${folder}/` : ''}${nu.trim().replace(/\.pdf$/i, '').replace(/\//g, '-')}.pdf`);
+  return movePdf(path, `${folder ? `${folder}/` : ''}${clean}.pdf`);
 }
 
 /** Add PDFs to a notes folder ('' = top level): dropped files or the file picker. Other files are
@@ -143,9 +144,13 @@ export async function addPdfs(files: File[], folder = ''): Promise<void> {
   const pdfs = files.filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
   if (pdfs.length < files.length) toast(files.length === 1 ? 'Only PDF files can be added to the notes.' : `${plural(files.length - pdfs.length, 'file')} skipped: only PDF files can be added to the notes.`);
   const added: string[] = [];
-  for (const f of pdfs) {
-    try { added.push((await api.uploadNotePdf(f, folder)).path); } catch (e) { toastError(e); }
-  }
+  const job = pdfs.length > 1 ? progressToast('Adding PDFs…') : null;
+  try {
+    for (const f of pdfs) {
+      job?.set(`Adding “${f.name}”…`, added.length, pdfs.length);
+      try { added.push((await api.uploadNotePdf(f, folder)).path); } catch (e) { toastError(e); }
+    }
+  } finally { job?.close(); }
   if (!added.length) return;
   if (folder) { tree.collapsed.delete(folder); saveCollapsed(); }
   tree.sel = new Set(added.map(pKey));

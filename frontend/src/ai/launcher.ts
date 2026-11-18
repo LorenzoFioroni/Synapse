@@ -91,9 +91,9 @@ export function mountLauncher(open: () => void): HTMLButtonElement {
   /* ---- keyboard: the arrow keys move it between the corners */
   b.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (!e.key.startsWith('Arrow')) return;
     const now = b.dataset.corner as Corner;
     const next = cornerAfterKey(now, e.key);
-    if (!e.key.startsWith('Arrow')) return;
     e.preventDefault();
     if (next === now) return;
     setCorner(next);

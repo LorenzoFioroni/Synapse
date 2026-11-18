@@ -26,7 +26,8 @@ def _not_pdfs(files) -> str | None:
         head = f.stream.read(HEADER_WINDOW)
         f.stream.seek(0)
         if not looks_like_pdf(head):
-            return f"“{f.filename or 'The file'}” is not a PDF. Only PDF files can be attached."
+            what = f"“{f.filename}”" if f.filename else "The file"
+            return f"{what} is not a PDF. Only PDF files can be attached."
     return None
 
 

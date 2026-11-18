@@ -35,13 +35,8 @@ function hide(): void {
 }
 const scheduleHide = () => { clearTimeout(hideTimer); hideTimer = setTimeout(hide, 250); };
 
-/** The target and page a link element names (a chip in the editor, or a link in read mode). */
-function linkOf(el: HTMLElement): { target: string; heading: string } {
-  return { target: el.dataset.note || '', heading: el.dataset.heading || '' };
-}
-
 async function show(el: HTMLElement): Promise<void> {
-  const { target, heading } = linkOf(el);
+  const target = el.dataset.note || '', heading = el.dataset.heading || '';
   const path = resolveNote(target);
   const pdf = path ? findPdf(path) : undefined;
   const c = ensure();

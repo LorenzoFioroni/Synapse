@@ -521,11 +521,13 @@ Synapse's tools. The browser side is `frontend/src/ai/`, split by responsibility
 | `placement.ts`, `appHost.ts`, `launcher.ts` | Popup or docked, and the page's dock; `appHost.ts` is the app's host (one panel per window, its dock column, what is on screen, `window.zcAskAi`); `launcher.ts` the floating button, which can be moved. |
 | `context.ts`, `prefs.ts` | Context as chips (`Attached`: the context, its label and icon), the suggestions per context; guarded `localStorage`. |
 
-**Two placements, one element.** The panel starts as a small card in the lower right corner (a full
+**Two placements, one element.** The panel starts as a small card that opens from the corner the floating button is in (a full
 width bottom sheet on a narrow screen) and a header button moves it into the page's own column;
 the same element is re-parented, so a conversation in progress is untouched. The choice is
 remembered per device (`zc.ai.placement`). Where docking has no room (a window narrower than 1101
-px in the app, 760 px in the viewer, the phone) the panel stays a popup and the button is hidden. A
+px in the app, 760 px in the viewer, the phone) the panel stays a popup and the header dock button
+is hidden; the floating button is hidden only on the phone. The docked edge is a keyboard-operable
+separator (arrows, Shift for bigger steps, Home and End). A
 host supplies its `Dock` (`placement.ts`):
 
 - **The app** (`appHost.ts`): one panel for the whole window, in the main document, so it stays

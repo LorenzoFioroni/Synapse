@@ -24,7 +24,7 @@ import { MentionData } from './mentions.js';
 import { Thread, type Turn, usageText } from './messages.js';
 import { type Dock, place, remember } from './placement.js';
 import {
-  CORNER_EVENT, type Corner, DEFAULT_DOCK, type Size, clampDock, clampPopup, resizedDock, resizedPopup,
+  CORNER_EVENT, type Corner, DEFAULT_DOCK, MAX_DOCK, MIN_DOCK, type Size, clampDock, clampPopup, maxDock, resizedDock, resizedPopup,
   saveDock, savePopup, savedCorner, savedDock, savedPopup,
 } from './layout.js';
 import { load, save } from './prefs.js';
@@ -60,9 +60,6 @@ export function openAskAi(host: AskHost, add?: Attached): void {
   if (add) current?.add(add);
   current?.focus();
 }
-
-export const askAiOpen = (): boolean => !!el && !el.hidden;
-export function closeAskAi(): void { el?.dispatchEvent(new Event('ai-close')); }
 
 /** What is kept on this device across a reload: the draft (text, caret, chips) and the conversation shown. */
 interface Session { text: string; caret: number; context: AskContext[]; conversation?: string }
@@ -210,6 +207,9 @@ function mount(host: AskHost): void {
   function applyDockWidth(w = savedDock()): number {
     const c = clampDock(w, view());
     document.documentElement.style.setProperty('--ai-dock-w', `${c}px`);
+    edge.setAttribute('aria-valuenow', String(c));
+    edge.setAttribute('aria-valuemin', String(MIN_DOCK));
+    edge.setAttribute('aria-valuemax', String(maxDock(view())));
     return c;
   }
   function applyPlacement(): void {
@@ -239,7 +239,7 @@ function mount(host: AskHost): void {
   edge.className = 'ai-edge';
   edge.setAttribute('role', 'separator');
   edge.setAttribute('aria-orientation', 'vertical');
-  edge.setAttribute('aria-label', 'Panel width: drag, or use the arrow keys; double-click to reset');
+  edge.setAttribute('aria-label', 'Panel width: drag, or use the arrow keys, Home or End; double-click to reset');
   edge.tabIndex = 0;
   edge.title = 'Drag to change the width (double-click to reset)';
   root.append(grip, edge);
@@ -283,9 +283,10 @@ function mount(host: AskHost): void {
   edge.addEventListener('keydown', (e) => {
     const step = e.shiftKey ? 48 : 16, side = host.dock?.side || 'right';
     const grow = (e.key === 'ArrowLeft') === (side === 'right');
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
     e.preventDefault();
-    const w = applyDockWidth(Math.round(root.getBoundingClientRect().width) + (grow ? step : -step));
+    const now = Math.round(root.getBoundingClientRect().width);
+    const w = applyDockWidth(e.key === 'Home' ? MIN_DOCK : e.key === 'End' ? MAX_DOCK : now + (grow ? step : -step));
     saveDock(w);
   });
 
@@ -348,6 +349,8 @@ function mount(host: AskHost): void {
         context: sent.length ? sent.map((a) => limited(a.ctx)) : undefined, conversation,
         provider: conversation ? undefined : c.provider, companion: conversation ? undefined : c.companion, model: c.model, effort: c.effort,
       });
+      // reset or another conversation took the panel meanwhile: leave its state alone
+      if (ctl.signal.aborted) { cancelJob(reply.job).catch(() => {}); return; }
       if (!conversation) { conversation = reply.conversation; setTitle(prompt.replace(/\s+/g, ' ').slice(0, 60)); paintContext(); }
       locked = reply.provider;
       composer.setAgents(status?.companions || [], locked);
@@ -355,7 +358,6 @@ function mount(host: AskHost): void {
       t.computer = reply.companion.name;
       t.phase = 'queued';
       thread.draw(t);
-      if (ctl.signal.aborted) { cancelJob(reply.job).catch(() => {}); return; }
       await follow_(t, reply.job, ctl);
     } catch (e) {
       if (ctl.signal.aborted) return;
@@ -535,7 +537,6 @@ function mount(host: AskHost): void {
   });
   help.addEventListener('click', (e) => { if ((e.target as Element).closest('[data-recheck]')) void check(); });
   q('[data-close]').addEventListener('click', hide);
-  root.addEventListener('ai-close', hide);
   root.addEventListener('animationend', () => root.classList.remove('opening'));
   q('[data-new]').addEventListener('click', () => reset());
   q('[data-history]').addEventListener('click', () => showHistory(!showingHistory()));

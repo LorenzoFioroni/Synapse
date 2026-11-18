@@ -109,6 +109,18 @@ def test_a_note_that_cannot_be_written_keeps_its_links_and_is_reported(client, s
     assert "[[proj/Target]]" in text_of(client, src["path"])
 
 
+def test_a_failed_rewrite_reports_the_notes_where_they_are_now(client, svc, monkeypatch):
+    create(client, title="A", folder="proj", text="[[proj/B]]")
+    create(client, title="B", folder="proj")
+
+    def broken(plan):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(svc.note_service.relinker, "apply", broken)
+    r = client.post("/api/notes/folder/move", json={"path": "proj", "to": "projects"}).json
+    assert [b["path"] for b in r["broken_links"]] == ["projects/A.md"]
+
+
 def test_rewrites_are_one_history_entry_and_the_index_follows(client, svc):
     create(client, title="Target", folder="proj")
     src = create(client, title="Source", text="[[proj/Target]]")

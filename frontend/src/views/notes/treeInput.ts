@@ -87,7 +87,7 @@ function onKey(e: KeyboardEvent): void {
     case 'Enter':
       if (!cursor || mod) { handled = false; break; }
       if (isFolder) toggleFolder(path);
-      else if (isPdf) openPdfRow(treeEl().querySelector<HTMLElement>('.nt-row.cursor')!);
+      else if (isPdf) { const pdf = (ws.overview.pdfs || []).find((x) => x.path === path); if (pdf) openNotePdf(pdf); }
       else hooks.openNote(path).then(() => (ws.mode === 'read' ? ws.root.querySelector<HTMLElement>('.note-read')!.focus() : ws.editor?.focus()));
       break;
     case 'F2':
@@ -186,7 +186,8 @@ function bindDnD(el: HTMLElement): void {
     const items = tree.sel.has(key) ? selected()
       : { notes: key[0] === 'n' ? [key.slice(2)] : [], pdfs: key[0] === 'p' ? [key.slice(2)] : [], folders: key[0] === 'f' ? [key.slice(2)] : [] };
     e.dataTransfer.setData(NOTE_MIME, JSON.stringify(items));
-    if (items.notes.length) e.dataTransfer.setData('text/plain', items.notes.map((p) => `[[${stemOf(p)}]]`).join('\n'));  // dropping into the editor links them
+    const links = [...items.notes.map((p) => `[[${stemOf(p)}]]`), ...(items.pdfs || []).map((p) => `[[${p}]]`)];
+    if (links.length) e.dataTransfer.setData('text/plain', links.join('\n'));  // dropping into the editor links them
     e.dataTransfer.effectAllowed = 'copyMove';
   });
   const target = (e: Event) => (e.target as Element).closest<HTMLElement>('[data-drop-folder]');
@@ -208,7 +209,9 @@ function bindDnD(el: HTMLElement): void {
     const t = target(e);
     if (hasFiles(e) && t) {   // files from the computer: PDFs go into the folder under the pointer
       e.preventDefault();
-      void addPdfs([...(e.dataTransfer?.files || [])], t.dataset.dropFolder!);
+      // a note or PDF row is not a folder: its files go next to it
+      const row = (e.target as Element).closest<HTMLElement>('.nt-row.note, .nt-row.pdf');
+      void addPdfs([...(e.dataTransfer?.files || [])], row?.dataset.path ? parentOf(row.dataset.path) : t.dataset.dropFolder!);
       return;
     }
     let items: Partial<Selection> | null;

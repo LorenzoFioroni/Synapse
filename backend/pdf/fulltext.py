@@ -338,16 +338,25 @@ class FulltextIndex:
         size = Path(self.path).stat().st_size if Path(self.path).exists() else 0
         return {"documents": row[0], "chars": row[1], "pages": row[2], "bytes": size, "fts5": self.fts}
 
+    def indexed_pages(self, path: Path, *, attachment_id: int | None = None, pdf_id: int | None = None) -> int | None:
+        """The page count the index holds for an attachment or a PDF of the notes folders, or None while it is
+        not indexed or the file changed since."""
+        table, column, ident = (
+            ("note_documents", "pdf_id", pdf_id) if pdf_id else ("documents", "attachment_id", attachment_id)
+        )
+        try:
+            st = Path(path).stat()
+            with self._session() as c:
+                row = c.execute(f"SELECT pages, mtime, size FROM {table} WHERE {column} = ?", (ident,)).fetchone()
+        except (OSError, sqlite3.Error):
+            return None
+        return row["pages"] if row and row["mtime"] == st.st_mtime and row["size"] == st.st_size else None
+
     def note_pages(self, pdf_id: int) -> int | None:
         """The page count of an indexed PDF of the notes folders, or None while it is not indexed."""
         with self._session() as c:
             row = c.execute("SELECT pages FROM note_documents WHERE pdf_id = ?", (pdf_id,)).fetchone()
         return row[0] if row and row[0] else None
-
-    def note_stats(self) -> dict:
-        with self._session() as c:
-            row = c.execute("SELECT COUNT(*), COALESCE(SUM(pages), 0) FROM note_documents").fetchone()
-        return {"documents": row[0], "pages": row[1]}
 
 
 class Indexer:

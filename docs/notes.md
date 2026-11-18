@@ -346,7 +346,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 
 | Method | Path | What it does |
 |---|---|---|
-| GET | `/api/notes` | Listing: every note's index entry, `pdfs` (id, path, name, size), the folders, `folder_colors` (only folders that exist), counts. |
+| GET | `/api/notes` | Listing: every note's index entry, `pdfs` (the registry rows of the PDFs that are present: `id`, `path`, `name`, `sha256`, `size`, `mtime`, `state`, `since`), the folders, `folder_colors` (only folders that exist), counts. |
 | GET | `/api/notes/note?path=` | Text, hash and index entry of one note. With `&unless=<hash>`, a note that still has that hash answers `{path, hash, unchanged: true}` only. |
 | POST | `/api/notes/note` | Create (`title`, `folder` or `path`, `item_id`, `text`). |
 | PUT | `/api/notes/note` | Save `text` over `hash`; with `create: true`, write a note that must not exist. |
@@ -356,7 +356,7 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | PUT | `/api/notes/folder/color` | `{path, color}`: give a folder a colour (`#rrggbb`), or none (`null` or `""`); answers `folder_colors`. |
 | POST | `/api/notes/trash` | Trash one note or PDF (`path`) or several notes, PDFs and folders together (`paths`, `folders`). |
 | GET | `/api/notes/trash` | Trashed notes with `trashed_at` and `deletes_at`, and the retention. |
-| POST | `/api/notes/restore` | Restore one note (`trash_id`, `path`) or a whole batch (`trash_id` only). |
+| POST | `/api/notes/restore` | Restore one note or PDF (`trash_id`, `path`) or a whole batch (`trash_id` only). |
 | GET | `/api/notes/history?path=&limit=` | A note's versions, newest first, without their text. The other history endpoints (versions, the whole log, differences, checkpoints, milestones) are in [notes history](notes-history.md#http-api). |
 | GET | `/api/notes/history/version?id=&path=&from=` | One version: the text after it and before it. |
 | GET | `/api/notes/search?q=` | Full-text search of notes. |
