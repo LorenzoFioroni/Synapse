@@ -196,7 +196,8 @@ async def main():
                 saved == "Aaa renamed paper" and "Aaa renamed paper" in (row_text or ""),
                 f"{saved!r} / {(row_text or '')[:40]!r}",
             )
-            r = requests.post(BASE + "/api/tags", json={"name": "keep"})
+            # Tag through the page: a request from outside it is another window's change, which the
+            # page's next poll answers by reloading the list (during the steps below, at random).
             lists.clear()
             await page.evaluate(f"import('/js/actions.js').then((A) => A.addTags(['{first['id']}'], ['keep']))")
             await page.wait_for_timeout(800)
