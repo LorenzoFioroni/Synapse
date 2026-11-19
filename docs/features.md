@@ -349,8 +349,12 @@ Three plugins come with Synapse, off until you turn them on:
   A batch not yet indexed by Semantic Scholar still uses the OpenAlex fallback; papers neither
   service knows keep an unknown count and are checked again weekly.
 - **Metadata Check** compares every identifiable library record with current metadata every
-  three days (or as often as you set), flags fields to review, and identifies journal versions of
-  arXiv preprints. **Run Now** checks everything at once, with progress in the notification center.
+  three days (or as often as you set), flags fields to review, and finds the published version of an
+  arXiv preprint (named by arXiv, or found on Crossref by title, author and year) and newer arXiv
+  versions of a preprint's PDF. Both bring a notification with **Review**: a published version is
+  suggested as its journal record, so Apply turns the preprint into the published paper, and a new
+  arXiv version offers **Replace PDF** (after a confirmation naming the highlights it deletes, as they
+  mark places in the old pages) or **Keep Current**. **Run Now** checks everything at once, with progress in the notification center.
   **Review Changes** opens the metadata review dialog from stored results: apply selected fields,
   edit values, reject suggestions, or ignore a paper altogether. Rejected values stay hidden until
   they change; Settings lists rejected suggestions and ignored papers so you can restore them.

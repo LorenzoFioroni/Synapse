@@ -1,10 +1,10 @@
 {
   "id": "metadata-check",
   "name": "Metadata Check",
-  "version": "1.3.0",
-  "api": "^1.6",
+  "version": "1.4.0",
+  "api": "^1.16",
   "author": "Synapse",
-  "description": "Checks library records against current scholarly metadata every few days (three by default) and flags changed fields or a published version of an arXiv preprint. Suggestions you ignore stay hidden until something different turns up.",
+  "description": "Checks library records against current scholarly metadata every few days (three by default): changed fields, the published version of an arXiv preprint, and a newer arXiv version of its PDF, with a notification and the replacement to review. Suggestions you ignore stay hidden until something different turns up.",
   "enabled_by_default": false,
   "backend": "backend",
   "frontend": "frontend/index.ts",
@@ -13,6 +13,11 @@
     "library": [
       "read",
       "edit"
+    ],
+    "network": [
+      "export.arxiv.org",
+      "arxiv.org",
+      "api.crossref.org"
     ]
   },
   "settings": [
@@ -24,6 +29,13 @@
       "default": 3,
       "min": 1,
       "max": 365
+    },
+    {
+      "key": "arxiv_versions",
+      "type": "bool",
+      "label": "New arXiv versions",
+      "description": "Also check whether arXiv has a newer version of a preprint's PDF, and offer to replace it (its highlights are deleted with it).",
+      "default": true
     }
   ]
 }

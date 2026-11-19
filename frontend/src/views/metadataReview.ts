@@ -30,7 +30,11 @@ export interface Article {
   unchanged: { key: string; value: string }[];
   error: string | null;
   published?: string | null;
+  /** A file to put in place of the item's PDF (a newer arXiv version), offered beside the fields. */
+  replacement?: Replacement | null;
 }
+
+export interface Replacement { label: string; detail?: string }
 
 // Fields the lookup can return, in display order.
 const LOOKUP_FIELDS = [
@@ -244,6 +248,9 @@ export interface ReviewDialogOptions {
   onRejectArticle?: (article: Article) => Promise<void> | void;
   onIgnorePaper?: (article: Article) => Promise<void> | void;
   onApplied?: (savedIds: string[]) => Promise<void> | void;
+  /** Replace the PDF with `article.replacement`; resolves to whether it was replaced (the user may cancel). */
+  onReplace?: (article: Article) => Promise<boolean | void> | boolean | void;
+  onKeepCurrent?: (article: Article) => Promise<void> | void;
 }
 
 export function openReviewDialog(articles: Article[], options: ReviewDialogOptions = {}): Promise<unknown> {
@@ -383,7 +390,8 @@ function articleSection(a: Article, onChange: () => void, options: ReviewDialogO
   const pubBadge = publishedDoi ? `<span class="badge accent">Published version: ${escapeHtml(publishedDoi)}</span>` : '';
   const badge = {
     pending: '<span class="badge"><span class="spinner" style="width:10px;height:10px;border-width:1.5px"></span>&nbsp;Looking up…</span>',
-    changes: pubBadge || `<span class="badge accent">${plural(a.changes.length, 'update')}</span>`,
+    changes: pubBadge || (a.replacement && !a.changes.length ? `<span class="badge accent">${escapeHtml(a.replacement.label)}</span>`
+      : `<span class="badge accent">${plural(a.changes.length, 'update')}</span>`),
     same: a.changes.length ? '<span class="badge ok">Up to date</span> <span class="badge">new citation key available</span>' : '<span class="badge ok">Up to date</span>',
     error: '<span class="badge err">Not found</span>',
     skipped: '<span class="badge">Not looked up</span>',
@@ -411,6 +419,7 @@ function articleSection(a: Article, onChange: () => void, options: ReviewDialogO
   if (a.status === 'error') body.appendChild(h(`<div class="mr-error">${icon('alert', 'icon-sm')} ${escapeHtml(a.error || 'Lookup failed')}</div>`));
   if (a.status === 'pending') body.appendChild(h('<div class="mr-pending">Waiting for the metadata service…</div>'));
 
+  if (a.replacement && options.onReplace) body.appendChild(replacementBlock(a, onChange, options));
   if (a.changes.length) {
     const box = h('<div class="mr-changes"><div class="mr-label">Proposed changes</div></div>');
     for (const c of a.changes) box.appendChild(changeBlock(c, () => { syncHeader(); onChange(); }, options, a));
@@ -454,6 +463,32 @@ function articleSection(a: Article, onChange: () => void, options: ReviewDialogO
   });
   el.querySelector('.mr-collapse')!.addEventListener('click', () => el.classList.toggle('collapsed'));
   return el;
+}
+
+/** The offer to replace the item's PDF, with its own buttons: it is not one of the fields Apply saves. */
+function replacementBlock(a: Article, onChange: () => void, options: ReviewDialogOptions): HTMLElement {
+  const r = a.replacement!;
+  const block = h(`<div class="mr-replacement">
+      <div class="mr-label">PDF</div>
+      <div class="mr-replacement-row">
+        <div class="mr-replacement-text"><b>${escapeHtml(r.label)}</b>${r.detail ? `<div class="subtle">${escapeHtml(r.detail)}</div>` : ''}</div>
+        <button class="btn btn-sm btn-primary" data-replace>Replace PDF</button>
+        ${options.onKeepCurrent ? '<button class="btn btn-ghost btn-sm" data-keep>Keep Current</button>' : ''}
+      </div>
+    </div>`);
+  const buttons = [...block.querySelectorAll<HTMLButtonElement>('button')];
+  const run = async (fn: () => Promise<boolean | void> | boolean | void, done: string) => {
+    buttons.forEach((b) => { b.disabled = true; });
+    let ok: boolean | void = false;
+    try { ok = await fn(); } catch (error) { toastError(error); }
+    if (ok === false) { buttons.forEach((b) => { b.disabled = false; }); return; }
+    a.replacement = null;
+    block.querySelector('.mr-replacement-row')!.innerHTML = `<div class="mr-replacement-text subtle">${icon('check', 'icon-sm')} ${escapeHtml(done)}</div>`;
+    onChange();
+  };
+  block.querySelector('[data-replace]')!.addEventListener('click', () => run(() => options.onReplace!(a), 'PDF replaced'));
+  block.querySelector('[data-keep]')?.addEventListener('click', () => run(async () => { await options.onKeepCurrent!(a); return true; }, 'Keeping the current PDF'));
+  return block;
 }
 
 function changeBlock(c: Change, onToggle: () => void, options: ReviewDialogOptions = {}, a?: Article): HTMLElement {

@@ -230,6 +230,43 @@ class Services:
             self.attachments_changed()
         return result
 
+    def attachment_text(self, att_id: int, pages: int) -> str:
+        """The text of a stored PDF attachment's first ``pages`` pages ("" for a link or another file)."""
+        from .pdf.text import extract_text
+
+        att = self.papers.get_attachment(att_id)
+        path = self.papers.attachment_path(att) if att.get("type") == "pdf" else None
+        return extract_text(path, max_pages=pages)[0] if path else ""
+
+    def replace_pdf(self, att_id: int, content: bytes) -> dict:
+        """Put a new PDF file in place of a stored PDF attachment (a newer arXiv version, say). The
+        attachment keeps its id, name and place, so citations of the item or of this PDF open the
+        new file. Its highlights mark places in the old pages, so they are deleted with it.
+        Returns ``{"attachment", "removed_annotations"}``; ValueError when it cannot be done."""
+        import uuid
+
+        from .online.remote_pdf import is_pdf
+
+        att = self.papers.get_attachment(att_id)
+        if att.get("type") != "pdf" or str(att.get("url") or "").startswith(("http://", "https://")):
+            raise ValueError("Only a PDF kept in the library can be replaced.")
+        if not is_pdf(content):
+            raise ValueError("The new file is not a PDF.")
+        filename = f"{uuid.uuid4().hex}_downloaded.pdf"
+        path = Path(self.config.pdf_dir) / filename
+        path.write_bytes(content)
+        try:
+            with self.db.session() as c:
+                removed = self.annotations.delete_for_attachment(att_id, c)
+                self.papers.set_attachment_file(att_id, filename, c)
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        self.papers.remove_file(att.get("url"))
+        self.fulltext.remove([att_id])
+        self.attachments_changed()
+        return {"attachment": self.papers.get_attachment(att_id), "removed_annotations": removed}
+
     _pdf_lock = threading.Lock()  # one background search at a time (gentle on Unpaywall/arXiv)
 
     def find_pdf_later(self, item_id: str) -> None:

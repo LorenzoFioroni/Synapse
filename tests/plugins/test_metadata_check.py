@@ -388,3 +388,289 @@ def test_retired_lookup_does_not_save_findings_or_complete_run(client, svc, monk
     assert result == {key: LATER}
     assert plugin.storage.json("findings").all() == {}
     assert plugin.storage.json("state").get("last_checked") is None
+
+
+# ---------------------------------------------------------------- arXiv versions and published versions
+FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">{}</feed>"""
+ENTRY = "<entry><id>http://arxiv.org/abs/{id}v{v}</id><updated>{updated}</updated><title>T</title></entry>"
+
+
+def _arxiv_module():
+    import importlib.util
+
+    from backend.config import APP_ROOT
+
+    spec = importlib.util.spec_from_file_location("mc_arxiv", APP_ROOT / "plugins" / PID / "backend" / "arxiv.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_arxiv_helpers():
+    arxiv = _arxiv_module()
+    feed = FEED.format(
+        ENTRY.format(id="2610.00001", v=3, updated="2026-10-20T10:00:00Z")
+        + ENTRY.format(id="hep-th/9901001", v=2, updated="1999-02-01T00:00:00Z")
+        + "<entry><id>http://arxiv.org/api/errors#bad</id><title>Error</title></entry>"
+    )
+    assert arxiv.parse_feed(feed) == {
+        "2610.00001": {"latest": 3, "updated": "2026-10-20T10:00:00Z"},
+        "hep-th/9901001": {"latest": 2, "updated": "1999-02-01T00:00:00Z"},
+    }
+    page = "cites arXiv:2501.00002v9 ... arXiv:2610.00001v2 [quant-ph] 3 Oct 2026"
+    assert arxiv.stamped_version(page, "2610.00001") == 2  # not the cited paper's version
+    assert arxiv.recorded_version({"archive_id": "arXiv:2610.00001v1"}, "2610.00001") == 1
+    pdf = {"date_added": "2026-10-01T00:00:00Z"}
+    entry = {"latest": 3, "updated": "2026-10-20T10:00:00Z"}
+    assert arxiv.newer({**entry, "stamp": 2}, pdf) == {"version": 3, "have": 2, "how": "stamp"}
+    assert arxiv.newer({**entry, "stamp": 3, "recorded": 1}, pdf) is None  # the stamp wins
+    assert arxiv.newer(entry, pdf) == {"version": 3, "have": None, "how": "date"}
+    assert arxiv.newer(entry, {"date_added": "2026-11-01T00:00:00Z"}) is None  # added after v3
+    assert arxiv.newer(entry, None) is None
+
+
+class FakeResp:
+    def __init__(self, status, body, headers=None):
+        import json
+
+        self.status_code = status
+        self.reason = "OK" if status < 400 else "Error"
+        self.headers = headers or {}
+        self._body = (
+            body if isinstance(body, bytes) else (body.encode() if isinstance(body, str) else json.dumps(body).encode())
+        )
+        self.encoding = "utf-8"
+
+    def iter_content(self, n):
+        yield self._body
+
+    def close(self):
+        pass
+
+
+@pytest.fixture
+def arxiv_web(monkeypatch, svc, tmp_path):
+    """arXiv's API and PDFs, and Crossref's search, as far as the plugin asks them."""
+    from urllib.parse import parse_qs, urlsplit
+
+    from backend.plugins import http as H
+    from tests.conftest import make_pdf
+
+    web = {"latest": 3, "updated": "2999-01-01T00:00:00Z", "crossref": [], "calls": []}
+
+    def request(method, url, **kw):
+        parts = urlsplit(url)
+        q = {k: v[0] for k, v in parse_qs(parts.query).items()}
+        web["calls"].append((parts.hostname, parts.path, q))
+        if parts.hostname == "export.arxiv.org":
+            ids = q["id_list"].split(",")
+            return FakeResp(
+                200, FEED.format("".join(ENTRY.format(id=i, v=web["latest"], updated=web["updated"]) for i in ids))
+            )
+        if parts.hostname == "arxiv.org" and parts.path.startswith("/pdf/"):
+            version = parts.path.rsplit("v", 1)[1]
+            pdf = make_pdf(tmp_path / f"v{version}.pdf", f"arXiv:2610.00001v{version} [quant-ph]")
+            return FakeResp(200, pdf.read_bytes(), {"Content-Type": "application/pdf"})
+        if parts.hostname == "api.crossref.org":
+            return FakeResp(200, {"message": {"items": web["crossref"]}})
+        raise AssertionError(url)
+
+    monkeypatch.setattr(H.requests, "request", request)
+    monkeypatch.setattr(H, "DEFAULT_GAP", 0)
+    svc.plugins.private_network = True  # no name lookups for the fake hosts
+    return web
+
+
+def _preprint_with_pdf(client, tmp_path, stamp="arXiv:2610.00001v1 [quant-ph]", **fields):
+    from tests.conftest import make_pdf
+
+    item = client.post(
+        "/api/items",
+        json={
+            "title": "A preprint",
+            "authors": "Doe, Jane",
+            "year": 2026,
+            "item_type": "preprint",
+            "archive_id": "arXiv:2610.00001",
+            **fields,
+        },
+    ).get_json()
+    pdf = make_pdf(tmp_path / "mine.pdf", stamp)
+    att = client.post(
+        f"/api/items/{item['id']}/attachments",
+        data={"file": (open(pdf, "rb"), "mine.pdf")},
+        content_type="multipart/form-data",
+    ).get_json()["attachments"][0]
+    return item, att
+
+
+def _same_preprint(monkeypatch, svc):
+    monkeypatch.setattr(
+        svc.plugins,
+        "lookup_metadata",
+        lambda q: {
+            "title": "A preprint",
+            "authors": "Doe, Jane",
+            "year": "2026",
+            "item_type": "preprint",
+            "archive_id": f"arXiv:{q['value']}",
+        },
+    )
+
+
+def test_a_newer_arxiv_version_is_announced_once_and_replaces_the_pdf(client, svc, monkeypatch, tmp_path, arxiv_web):
+    item, att = _preprint_with_pdf(client, tmp_path)
+    assert (
+        client.post(
+            f"/api/attachments/{att['id']}/annotations",
+            json={"type": "highlight", "page": 1, "text": "mine", "rects": [[0.1, 0.1, 0.2, 0.05]]},
+        ).status_code
+        == 201
+    )
+    _same_preprint(monkeypatch, svc)
+    client.post(f"/api/plugin-host/{PID}/enable")
+    assert wait(lambda: value(client, item) == "New arXiv version: v3")
+
+    [a] = client.get(f"/api/plugins/{PID}/review").get_json()["articles"]
+    assert a["version"]["version"] == 3 and a["version"]["have"] == 1 and a["version"]["how"] == "stamp"
+    assert a["version"]["highlights"] == 1 and a["version"]["url"] == "https://arxiv.org/abs/2610.00001v3"
+    news = client.post(f"/api/plugins/{PID}/news").get_json()["news"]
+    assert [(n["id"], n["version"]) for n in news] == [(item["id"], 3)]
+    assert client.post(f"/api/plugins/{PID}/news").get_json()["news"] == []  # told once
+
+    r = client.post(f"/api/plugins/{PID}/replace", json={"ids": [item["id"]]}).get_json()
+    assert r == {"version": 3, "removed_annotations": 1}
+    [now] = client.get(f"/api/items/{item['id']}").get_json()["attachments"]
+    assert now["id"] == att["id"] and now["url"] != att["url"]  # the same attachment, a new file
+    assert b"v3" in client.get(f"/pdfs/{now['url']}").data
+    assert client.get(f"/pdfs/{att['url']}").status_code == 404  # the old file is gone
+    assert client.get(f"/api/attachments/{att['id']}/annotations").get_json()["annotations"] == []
+    assert value(client, item) == "Up to date"
+    assert client.get(f"/api/plugins/{PID}/review").get_json()["articles"] == []
+
+    arxiv_web["latest"] = 4  # a later version is a new suggestion, and a new notice
+    client.post(f"/api/plugins/{PID}/run")
+    assert wait(lambda: value(client, item) == "New arXiv version: v4")
+    assert [n["version"] for n in client.post(f"/api/plugins/{PID}/news").get_json()["news"]] == [4]
+
+
+def test_keeping_the_current_pdf_hides_that_version_only(client, svc, monkeypatch, tmp_path, arxiv_web):
+    item, att = _preprint_with_pdf(client, tmp_path)
+    _same_preprint(monkeypatch, svc)
+    client.post(f"/api/plugin-host/{PID}/enable")
+    assert wait(lambda: value(client, item) == "New arXiv version: v3")
+    client.post(f"/api/plugins/{PID}/keep-current", json={"ids": [item["id"]]})
+    assert value(client, item) == "Up to date · ignored arXiv v3"
+    assert client.get(f"/api/plugins/{PID}/review").get_json()["articles"] == []
+    assert client.get(f"/api/plugins/{PID}/ignored").get_json()["ignored"][0]["what"] == ["arXiv v3"]
+    assert client.post(f"/api/plugins/{PID}/replace", json={"ids": [item["id"]]}).status_code >= 400
+    assert client.get(f"/api/items/{item['id']}").get_json()["attachments"][0]["url"] == att["url"]
+
+    arxiv_web["latest"] = 4
+    client.post(f"/api/plugins/{PID}/run")
+    assert wait(lambda: value(client, item) == "New arXiv version: v4")
+
+    client.put(f"/api/plugin-host/{PID}/settings", json={"arxiv_versions": False})
+    assert wait(lambda: value(client, item) == "Up to date")
+
+
+def test_up_to_date_pdfs_and_published_papers_are_not_offered_versions(client, svc, monkeypatch, tmp_path, arxiv_web):
+    current, _ = _preprint_with_pdf(client, tmp_path, stamp="arXiv:2610.00001v3 [quant-ph]")
+    _same_preprint(monkeypatch, svc)
+    client.post(f"/api/plugin-host/{PID}/enable")
+    assert wait(lambda: value(client, current) == "Up to date")
+    asked = [c for c in arxiv_web["calls"] if c[0] == "export.arxiv.org"]
+    assert len(asked) == 1  # the batch in one request
+
+    no_stamp, _ = _preprint_with_pdf(client, tmp_path, stamp="no stamp here", archive_id="arXiv:2610.00009")
+    arxiv_web["updated"] = "2000-01-01T00:00:00Z"  # v3 was posted before the PDF was added
+    client.post(f"/api/plugins/{PID}/run")
+    svc.plugins.drain(PID)
+    assert wait(lambda: value(client, no_stamp) == "Up to date")
+
+
+def test_a_published_version_found_by_title_suggests_the_journal_record(client, svc, monkeypatch, tmp_path, arxiv_web):
+    item = client.post(
+        "/api/items",
+        json={
+            "title": "A preprint about qubits",
+            "authors": "Doe, Jane",
+            "year": 2025,
+            "item_type": "preprint",
+            "archive_id": "arXiv:2510.00001",
+            "journal": "arXiv",
+        },
+    ).get_json()
+    arxiv_web["crossref"] = [
+        {
+            "DOI": "10.1000/other",
+            "type": "journal-article",
+            "title": ["A preprint about qubits"],
+            "author": [{"family": "Someone"}],
+            "issued": {"date-parts": [[2026]]},
+        },
+        {
+            "DOI": "10.1000/PRL.1",
+            "type": "journal-article",
+            "title": ["A Preprint About Qubits"],
+            "author": [{"family": "Doe"}],
+            "issued": {"date-parts": [[2026]]},
+        },
+    ]
+
+    def lookup(q):
+        if q["kind"] == "doi":
+            assert q["value"].lower() == "10.1000/prl.1"
+            return {
+                "title": "A preprint about qubits",
+                "authors": "Doe, Jane",
+                "year": "2026",
+                "item_type": "journalArticle",
+                "journal": "Phys. Rev. Lett.",
+                "volume": "1",
+                "doi": "10.1000/PRL.1",
+            }
+        return {
+            "title": "A preprint about qubits",
+            "authors": "Doe, Jane",
+            "year": "2025",
+            "item_type": "preprint",
+            "archive_id": "arXiv:2510.00001",
+            "journal": "arXiv",
+        }
+
+    monkeypatch.setattr(svc.plugins, "lookup_metadata", lookup)
+    client.post(f"/api/plugin-host/{PID}/enable")
+    assert wait(lambda: value(client, item) == "Published version: 10.1000/prl.1")
+    [a] = client.get(f"/api/plugins/{PID}/review").get_json()["articles"]
+    proposed = {c["key"]: c["fetched"] for c in a["changes"]}
+    assert proposed["journal"] == "Phys. Rev. Lett." and proposed["item_type"] == "journalArticle"
+    assert "archive_id" not in proposed  # the arXiv ID stays with the published record
+    [n] = client.post(f"/api/plugins/{PID}/news").get_json()["news"]
+    assert n["published"] == "10.1000/prl.1"
+    search = next(c for c in arxiv_web["calls"] if c[0] == "api.crossref.org")
+    assert "journal-article" in search[2]["filter"]
+
+
+def test_replacing_a_pdf_needs_edit_permission_and_a_pdf(svc, tmp_path):
+    from backend.plugins import PluginError
+    from tests.conftest import make_pdf
+
+    item = svc.papers.create({"title": "Paper"})
+    name = "old.pdf"
+    make_pdf(svc.config.pdf_dir / name, "old")
+    att = svc.papers.add_attachment(item["id"], "Full Text PDF", name)
+    with pytest.raises(ValueError):
+        svc.replace_pdf(att["id"], b"<html>login</html>")
+    assert (svc.config.pdf_dir / name).exists()
+    link = svc.papers.add_attachment(item["id"], "Link", "https://example.org/paper.pdf")
+    with pytest.raises(ValueError):
+        svc.replace_pdf(link["id"], make_pdf(tmp_path / "new.pdf", "new").read_bytes())
+    from backend.plugins.services import PluginActions
+
+    class Manifest:
+        name, library = "Reader", ["read"]
+
+    with pytest.raises(PluginError, match="edit"):
+        PluginActions(svc, Manifest()).replace_pdf(att["id"], b"%PDF-1.4")

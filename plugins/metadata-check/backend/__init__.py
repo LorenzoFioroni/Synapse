@@ -1,4 +1,5 @@
-"""Periodic metadata audit, including journal versions announced by arXiv.
+"""Periodic metadata audit: changed fields, published versions of arXiv preprints (announced by
+arXiv or found by title), and newer arXiv versions of a preprint's PDF (``arxiv.py``).
 
 What a check finds for an item is kept (``findings``) apart from what the field shows, so a
 suggestion the user ignores can be hidden at once and shown again when they stop ignoring it,
@@ -9,10 +10,12 @@ check that finds a *different* title, or another published DOI, is a new suggest
 from __future__ import annotations
 
 import time
-from threading import Event
+import xml.etree.ElementTree as ET
+from threading import Event, Lock
 
 from backend.plugins import Offline, Plugin, PluginError, scholarly
 
+from . import arxiv
 from .comparison import find, ignore_entry, is_preprint, verdict
 from .progress import Progress
 
@@ -38,6 +41,10 @@ def activate(plugin: Plugin) -> None:
     findings = plugin.storage.json("findings")  # {item id: finding}
     ignored = plugin.storage.json("ignored")  # {item id: ignore entry, or {"pending": True}}
     ignored_papers = plugin.storage.json("ignored_papers")  # {item id: {"title": ..., "at": ...}}
+    # {item id: latest, updated, and the PDF's version: file, stamp, replaced, recorded}
+    versions = plugin.storage.json("versions")
+    notified = plugin.storage.json("notified")  # {item id: {"published": doi, "version": n}} already told
+    news_lock = Lock()
 
     if not state.get("exact_rejections"):
         for item_id, entry in ignored.all().items():
@@ -49,10 +56,25 @@ def activate(plugin: Plugin) -> None:
     plugin.on_unload(stopped.set)
     progress = Progress(state, lambda: None if stopped.is_set() else plugin.fields.changed())
 
+    def offered_version(item_id: str, item: dict | None = None) -> dict | None:
+        """The newer arXiv version of the item's PDF, with its abs page, or None (ignores aside)."""
+        if not plugin.settings.get("arxiv_versions", True):
+            return None
+        item = item if item is not None else plugin.library.get(item_id)
+        if not item or not arxiv.checks_versions(item):
+            return None
+        found = arxiv.newer(versions.get(item_id), arxiv.pdf_of(item))
+        if found:
+            found["url"] = f"https://arxiv.org/abs/{arxiv.bare_id(item)}v{found['version']}"
+        return found
+
     def remember_ignore(item_id: str, finding: dict) -> dict:
         item = plugin.library.get(item_id) or {}
         before = ignored.get(item_id) or {}
-        entry = ignore_entry(finding, item.get("title") or before.get("title") or "", before)
+        offered = offered_version(item_id, item)
+        entry = ignore_entry(
+            finding, item.get("title") or before.get("title") or "", before, offered["version"] if offered else None
+        )
         ignored.set(item_id, entry)
         return entry
 
@@ -69,6 +91,8 @@ def activate(plugin: Plugin) -> None:
         }
         if before.get("published"):
             entry["published"] = before["published"]
+        if before.get("version"):
+            entry["version"] = before["version"]
         finding = findings.get(item_id) or {}
         if field_name == "doi" and str((finding.get("fetched") or {}).get("doi")) == value:
             if finding.get("published"):
@@ -76,12 +100,64 @@ def activate(plugin: Plugin) -> None:
         ignored.set(item_id, entry)
         return entry
 
+    def check_versions(items: dict[str, dict]) -> None:
+        """Ask arXiv for the latest version of the batch's preprints (one request for all of them)
+        and note the version of each PDF, read from its stamp once per file."""
+        wanted: dict[str, tuple[str, dict]] = {}  # item id: (arXiv id, its PDF)
+        for item_id, item in items.items():
+            arxiv_id, pdf = arxiv.bare_id(item), arxiv.pdf_of(item)
+            if arxiv_id and pdf and item_id not in ignored_papers.all() and arxiv.checks_versions(item):
+                wanted[item_id] = (arxiv_id, pdf)
+        for item_id in items.keys() - wanted.keys():
+            versions.delete(item_id)  # published, or no PDF any more
+        if not wanted or not plugin.settings.get("arxiv_versions", True):
+            return
+        try:
+            got = arxiv.latest(plugin.http, sorted({arxiv_id for arxiv_id, _ in wanted.values()}))
+        except (PluginError, ET.ParseError) as error:  # offline, or arXiv answered oddly: next time
+            plugin.log.info("Could not ask arXiv for versions: %s", error)
+            return
+        for item_id, (arxiv_id, pdf) in wanted.items():
+            info = got.get(arxiv_id.lower())
+            if not info:
+                continue
+            entry = versions.get(item_id) or {}
+            if entry.get("file") != pdf["url"]:  # another file than the one last read
+                entry = {
+                    "file": pdf["url"],
+                    "stamp": arxiv.stamped_version(plugin.library.pdf_text(pdf["id"]), arxiv_id),
+                }
+            entry.update(info, recorded=arxiv.recorded_version(items[item_id], arxiv_id))
+            versions.set(item_id, entry)
+
+    def published_record(item_id: str, current: dict, finding: dict) -> dict:
+        """The finding with the published version's own record as the suggestion (its journal,
+        volume, pages …), so that applying it turns the preprint into the published paper. When arXiv
+        names no DOI, Crossref is searched by title. The arXiv ID stays: those records have none."""
+        doi = finding.get("published")
+        if arxiv.real_doi(current.get("doi")):
+            return finding
+        try:
+            if not doi:
+                doi = arxiv.published_by_title(plugin.http, current, plugin.services.contact_email())
+                if not doi:
+                    return finding
+            _, record = plugin.services.lookup_item({"id": item_id, "doi": doi})
+        except (PluginError, ValueError) as error:  # offline too: keep what arXiv said, ask again next time
+            plugin.log.info("Could not look up the published version of %s: %s", item_id, error)
+            return finding
+        if arxiv.real_doi(record.get("doi")) != doi:
+            return finding
+        return find(current, record, True)
+
     def audit(papers: list[dict]) -> dict:
         out: dict = {}
         if not progress.running:
             due = plugin.fields.due(FIELD)
             progress.start([p["id"] for p in due])
 
+        items = {str(p["item_id"]): plugin.library.get(str(p["item_id"])) or {} for p in papers}
+        check_versions({k: v for k, v in items.items() if v})
         for paper in papers:
             if stopped.is_set():
                 return {p["key"]: plugin.fields.LATER for p in papers}
@@ -91,7 +167,7 @@ def activate(plugin: Plugin) -> None:
                 progress.done(item_id)
                 continue
 
-            current = plugin.library.get(item_id) or {}
+            current = items[item_id]
             if not current.get("doi") and not paper.get("doi") and not paper.get("arxiv") and not current.get("title"):
                 out[paper["key"]] = "Needs a DOI or arXiv ID"
                 progress.done(item_id)
@@ -111,7 +187,10 @@ def activate(plugin: Plugin) -> None:
 
             if stopped.is_set():
                 return {p["key"]: plugin.fields.LATER for p in papers}
-            finding = find(current, found, is_preprint(current) or bool(paper.get("arxiv")))
+            preprint = is_preprint(current) or bool(paper.get("arxiv"))
+            finding = find(current, found, preprint)
+            if preprint:
+                finding = published_record(item_id, current, finding)
             has_diffs = bool(finding.get("fields") or finding.get("published"))
             if has_diffs:
                 findings.set(item_id, finding)
@@ -122,7 +201,12 @@ def activate(plugin: Plugin) -> None:
             if entry and entry.get("pending"):
                 entry = remember_ignore(item_id, finding)
 
-            v = verdict(finding, entry, is_paper_ignored=(item_id in ignored_papers.all()))
+            v = verdict(
+                finding,
+                entry,
+                is_paper_ignored=(item_id in ignored_papers.all()),
+                version=offered_version(item_id, current),
+            )
             out[paper["key"]] = v
             progress.done(item_id)
 
@@ -149,6 +233,9 @@ def activate(plugin: Plugin) -> None:
         if "interval_days" in changed:
             field.refresh = _days(changed["interval_days"]) * 86400
             plugin.fields.refresh_soon()
+        if "arxiv_versions" in changed:
+            for item_id in versions.all():
+                show(item_id)
 
     def show(item_id: str) -> None:
         if item_id in ignored_papers.all():
@@ -158,28 +245,25 @@ def activate(plugin: Plugin) -> None:
         current = plugin.library.get(item_id)
         if finding is not None and current and "fetched" in finding:
             finding = find(current, finding["fetched"], is_preprint(current))
-        if finding is not None:
-            text = verdict(finding, ignored.get(item_id))
-            value, url = text if isinstance(text, tuple) else (text, None)
-            plugin.fields.set(item_id, FIELD, value, source_url=url)
-        else:
-            plugin.fields.set(item_id, FIELD, "Up to date")
+        text = verdict(finding or {}, ignored.get(item_id), version=offered_version(item_id, current))
+        value, url = text if isinstance(text, tuple) else (text, None)
+        plugin.fields.set(item_id, FIELD, value, source_url=url or None)
 
     @plugin.on("item.deleted")
     def _forget(event: dict) -> None:
         for item_id in event.get("ids") or []:
-            findings.delete(str(item_id))
-            ignored.delete(str(item_id))
-            ignored_papers.delete(str(item_id))
+            for store in (findings, ignored, ignored_papers, versions, notified):
+                store.delete(str(item_id))
 
     def review_articles() -> list[dict]:
         out = []
-        for item_id, stored in sorted(findings.all().items()):
+        for item_id in sorted(findings.all().keys() | versions.all().keys()):
             if ignored_papers.get(item_id):
                 continue
             item = plugin.library.get(item_id)
             if not item:
                 continue
+            stored = findings.get(item_id) or {}
             fetched = stored.get("fetched") or {}
             finding = find(item, fetched, is_preprint(item))
             entry = ignored.get(item_id) or {}
@@ -193,7 +277,17 @@ def activate(plugin: Plugin) -> None:
                 and ignored_fields.get(c["key"]) != str(c["fetched"])
                 and not (c["key"] == "doi" and pub and not pub_active)
             ]
-            if changes or pub_active:
+            offered = offered_version(item_id, item)
+            if offered and offered["version"] == entry.get("version"):
+                offered = None
+            if offered:
+                pdf = arxiv.pdf_of(item)
+                offered = {
+                    **offered,
+                    "detail": arxiv.describe(offered),
+                    "highlights": plugin.library.annotation_count(pdf["id"]) if pdf else 0,
+                }
+            if changes or pub_active or offered:
                 out.append(
                     {
                         "id": item_id,
@@ -201,9 +295,27 @@ def activate(plugin: Plugin) -> None:
                         "fetched": fetched,
                         "changes": changes,
                         "published": pub if pub_active else None,
+                        "version": offered,
                     }
                 )
         return out
+
+    def news() -> list[dict]:
+        """Published and newer arXiv versions not announced yet, marked as announced: one window
+        tells the user about each (the claim is atomic), and again only when another turns up."""
+        with news_lock:
+            out = []
+            for a in review_articles():
+                told = notified.get(a["id"]) or {}
+                now = {"published": a["published"], "version": (a["version"] or {}).get("version")}
+                fresh = (now["published"] and now["published"] != told.get("published")) or (
+                    now["version"] and now["version"] != told.get("version")
+                )
+                if now["published"] or now["version"]:
+                    notified.set(a["id"], {**told, **{k: v for k, v in now.items() if v}})
+                if fresh:
+                    out.append({"id": a["id"], "title": a["current"].get("title") or "", **now})
+            return out
 
     @plugin.route("/status")
     def status():
@@ -221,6 +333,61 @@ def activate(plugin: Plugin) -> None:
             "unreviewed": unreviewed,
             "last_run": state.get("last_run"),
         }
+
+    @plugin.route("/news", methods=["POST"])
+    def news_route():
+        """Claim what to notify about: published versions and newer arXiv versions found lately."""
+        return {"news": news()}
+
+    @plugin.route("/replace", methods=["POST"])
+    def replace():
+        """Put the newer arXiv version in place of the item's PDF (the user confirmed, knowing that
+        its highlights go): downloaded from arXiv, then replaced through the app."""
+        ids = _ids()
+        item_id = ids[0] if ids else ""
+        item = plugin.library.get(item_id)
+        offered = offered_version(item_id, item) if item else None
+        if offered and offered["version"] == (ignored.get(item_id) or {}).get("version"):
+            offered = None  # the user chose to keep the current PDF
+        if not item or not offered:
+            raise PluginError("There is no newer arXiv version to replace this PDF with")
+        arxiv_id, pdf = arxiv.bare_id(item), arxiv.pdf_of(item)
+        if not arxiv_id or not pdf:
+            raise PluginError("This item has no arXiv ID or no PDF to replace")
+        r = plugin.http.get(f"https://arxiv.org/pdf/{arxiv_id}v{offered['version']}", cache=False)
+        done = plugin.actions.replace_pdf(pdf["id"], r.content)
+        entry = versions.get(item_id) or {}
+        entry.update(
+            file=done["attachment"]["url"],
+            stamp=None,
+            replaced=offered["version"],
+            latest=max(int(entry.get("latest") or 0), offered["version"]),
+        )
+        versions.set(item_id, entry)
+        show(item_id)
+        return {"version": offered["version"], "removed_annotations": done["removed_annotations"]}
+
+    @plugin.route("/keep-current", methods=["POST"])
+    def keep_current():
+        """Keep the PDF as it is: this version is not offered again, a later one is."""
+        for item_id in _ids():
+            offered = offered_version(item_id)
+            if offered:
+                before = ignored.get(item_id) or {}
+                if before.get("pending"):
+                    before = {}
+                item = plugin.library.get(item_id) or {}
+                ignored.set(
+                    item_id,
+                    {
+                        **before,
+                        "title": item.get("title") or before.get("title") or "",
+                        "version": offered["version"],
+                        "at": time.time(),
+                    },
+                )
+                show(item_id)
+        return {"ok": True}
 
     @plugin.route("/run", methods=["POST"])
     def run_now():
@@ -270,6 +437,10 @@ def activate(plugin: Plugin) -> None:
                 remember_ignore_field(item_id, field_name, str(val))
                 show(item_id)
                 done.append(item_id)
+            elif finding is None and offered_version(item_id):
+                remember_ignore(item_id, {})
+                show(item_id)
+                done.append(item_id)
             elif finding is None:
                 ignored.set(item_id, {"pending": True, "at": time.time()})
                 later.append(item_id)
@@ -312,9 +483,11 @@ def activate(plugin: Plugin) -> None:
         out = []
         for item_id, entry in ignored.all().items():
             item = plugin.library.get(item_id)
-            what = (["published version " + entry["published"]] if entry.get("published") else []) + [
-                f"{n}: {v}" for n, v in (entry.get("shown") or {}).items()
-            ]
+            what = (
+                (["published version " + entry["published"]] if entry.get("published") else [])
+                + ([f"arXiv v{entry['version']}"] if entry.get("version") else [])
+                + [f"{n}: {v}" for n, v in (entry.get("shown") or {}).items()]
+            )
             out.append(
                 {
                     "id": item_id,

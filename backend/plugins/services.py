@@ -122,6 +122,23 @@ class PluginActions:
         self._s.papers.get(item_id)
         return self._s.papers.update(item_id, changes)
 
+    def replace_pdf(self, attachment_id: int, content: bytes) -> dict:
+        """API 1.16: put ``content`` (a PDF) in place of a stored PDF attachment, keeping its id and
+        name; its highlights are deleted, as they mark places in the old pages. Ask the user first.
+        Returns ``{"attachment", "removed_annotations"}``. Needs ``"library": ["edit"]``."""
+        from ..library.repository import NotFound
+
+        if "edit" not in self._man.library:
+            raise PluginError(f'{self._man.name} needs "library": ["edit"] in its manifest to replace PDFs')
+        if not isinstance(content, bytes | bytearray):
+            raise PluginError("The new PDF must be bytes")
+        try:
+            return self._s.replace_pdf(int(attachment_id), bytes(content))
+        except NotFound:
+            raise PluginError("That attachment is no longer in the library") from None
+        except ValueError as e:
+            raise PluginError(str(e)) from e
+
     def add(self, paper: dict, *, folder_id: int | None = None, tags: list[str] | None = None) -> dict:
         """Add an outside paper (a record, or a dict with ``doi`` / ``arxiv``) to the library, as the
         "+" in the app does. Returns the library item, with ``"duplicate": True`` when the paper was

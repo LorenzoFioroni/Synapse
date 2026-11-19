@@ -5,13 +5,13 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.15**, which also accepts plugins targeting 1.0–1.14. Reference
+This page documents API **1.16**, which also accepts plugins targeting 1.0–1.15. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
 `"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`. Named reference sub-sources and the reference record
 contract require `"^1.5"`. Metadata review, progress jobs, library editing and field scheduling helpers require `"^1.6"`. Notes reads and visualizations require `"^1.7"`. The phone layout's additions (a page's
 `phone` layout, `p.capture`, `p.editor.toolbar`, `role: 'dismiss'` and a paper's `group`) require
-`"^1.11"`. Local services (`plugin.http.local_service`) require `"^1.12"`. PDF sources that return an article's page rather than its PDF require `"^1.13"`. Citation sources (`plugin.citing_source`) require `"^1.15"`.
+`"^1.11"`. Local services (`plugin.http.local_service`) require `"^1.12"`. PDF sources that return an article's page rather than its PDF require `"^1.13"`. Citation sources (`plugin.citing_source`) require `"^1.15"`. Replacing a PDF (`plugin.actions.replace_pdf`), reading its first pages (`plugin.library.pdf_text`) and a review dialog's PDF replacement require `"^1.16"`.
 What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
@@ -223,6 +223,21 @@ These are contributed plugins, off until turned on; safe mode stops them:
   another lookup. Progress counts only items due in that run, counts failed attempts separately, and
   clears interrupted runs on restart. An unreachable service keeps its previous field value for retry;
   failed attempts produce a warning rather than an all-up-to-date message.
+  For an arXiv preprint it also looks for the **published version**: the DOI arXiv's record names, or
+  else a Crossref search by title (a journal, proceedings or book record with nearly the same title,
+  the same first author, not older than the preprint). The suggestion is then the published record
+  itself (journal, volume, pages, item type …), so Apply turns the preprint into the published paper;
+  the arXiv ID stays. For a preprint with a stored PDF and no DOI of its own it asks arXiv's API for the
+  **latest version** (one request per batch, `backend/arxiv.py`; setting *New arXiv versions*). The
+  PDF's own version comes from its margin stamp (read once per file), else a replacement the plugin
+  made, a version written in the record, or dates (a PDF added before the latest version was posted
+  is older). A newer one shows as *New arXiv version: v3* and in the review dialog with **Replace
+  PDF**, which confirms first (naming the highlights that will be deleted), downloads that version
+  from arXiv and replaces the file through `plugin.actions.replace_pdf`; **Keep Current** hides that
+  version until a later one appears. Published and new versions bring one notification each (a
+  desktop alert with **Review**), claimed atomically so that one window announces them, and again
+  only for a different DOI or version. The item menu offers **Replace PDF with New arXiv Version**.
+  Versions are kept in `versions.json` and what was announced in `notified.json`.
 - **arXiv Today** (`plugins/arxiv-today`): the papers announced on arXiv in the categories you
   choose in its settings, under one **arXiv Feed** entry. Opening it shows a separate sidebar beside
   the papers for the retained announcement days (latest first, 30 days by default), without
@@ -425,7 +440,7 @@ def activate(plugin: Plugin) -> None:
 | `plugin.log` | A `logging.Logger`; its lines go to the plugin's log (Settings → Plugins → Log) and to the server's output. |
 | `plugin.settings` | `plugin.settings["keep_days"]`, `.get(key)`, `.all()`: the user's values, else the defaults. `@plugin.settings.on_change` gets `{key: new value}` of the keys that changed. |
 | `plugin.storage` | `.json(name)` a small JSON object (`get`, `set`, `update`, `delete`, `all`); `.sqlite(name, migrations)` a database (`session()` for a transaction, `query(sql, params)`); `.dir` a folder for anything else. All in `data/plugin-data/<id>/`, which is in backups. |
-| `plugin.library` | Read access (needs `"library": ["read"]`): `get(id)`, `items(ids=None)`, `search(query, limit=50, fulltext=False)` in the library's search syntax, `find(doi=…, arxiv=…)`, `folders()`, `tags()`. Plain dicts, as the JSON API answers. |
+| `plugin.library` | Read access (needs `"library": ["read"]`): `get(id)`, `items(ids=None)`, `search(query, limit=50, fulltext=False)` in the library's search syntax, `find(doi=…, arxiv=…)`, `folders()`, `tags()`. API 1.16: `pdf_text(attachment_id, pages=1)` (the text of a stored PDF's first pages, "" when unreadable; arXiv's margin stamp is on the first) and `annotation_count(attachment_id)`. Plain dicts, as the JSON API answers. |
 | `@plugin.route(rule, methods=("GET",))` | Serves the function at `/api/plugins/<id><rule>` (Werkzeug rule syntax: `/items/<item_id>`). It returns a dict or list (sent as JSON), text, `None` (`{"ok": true}`) or a Flask response; `flask.request` has the request. The route sits behind the same guard as the app's own (this computer, paired devices, the app's own pages for changes). |
 | `@plugin.mcp_tool(description, name=None, title=None, schema=None, read_only=True)` | Offers the function to Claude as `<id>__<name>` (needs `"mcp": true`). The argument schema comes from the type hints (`str`, `int`, `float`, `bool`, `list[str]`, `Literal[…]`, optional with a default) unless `schema` is given. |
 | `plugin.on(event, fn)` / `@plugin.on(event)` | Calls `fn(payload)` after the event, on the plugin's own thread. Called directly it returns a function that removes the listener. |
@@ -441,7 +456,7 @@ def activate(plugin: Plugin) -> None:
 | `@plugin.citing_source(id, title=…, order=100)` | API 1.15: the works citing one work, for the AI tool `get_citing_works`. `fn(query)` receives `doi`, `arxiv` (either may be `None`), `limit` (1–1000), `sort` (`"cited"` or `"recent"`), `since_year` (or `None`) and contact `email`. Return `{"works": [...], "total": n, "source": "Name", "note": "…"}` (only `works` is required: reference records as for reference sources, plus `cited_by_count`), or `None` when it does not know the work. Lower order first; `None` and failures fall through, an empty list is kept unless a later source has works. Synapse cleans the records, matches them to library items and stores nothing. |
 | `@plugin.export_format(id, title=…, extension=…, mimetype=…)` | API 1.1: `fn(items, options) -> str` registers a text export. Options contain `unicode`, `abstract` and citation-key `pattern`. Keys are `<plugin>.<id>` (a core plugin's would keep its bare id). Writers disappear on unload. Extensions and MIME types are validated. Imports remain independent. To write a format Synapse knows, use `backend.plugins.formats` (below). |
 | `plugin.services` | `contact_email()`, `lookup(identifier)`, `references(paper, new=False)`, `match(refs)`, `connections(papers, refs=None, folders=None, author_names=None)`: Synapse's own lookups, reference lists and scoring. |
-| `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). API 1.6: `update(id, changes)` edits metadata with `"library": ["edit"]`, using the library validation, citation-key rewrite and change events. Unknown/read-only fields and structured values are rejected before writing; tags and folder membership use separate app operations and are not accepted here. |
+| `plugin.actions` | `add(paper, folder_id=None, tags=None)`: adds a paper as the "+" does (needs `"library": ["add"]`). API 1.6: `update(id, changes)` edits metadata with `"library": ["edit"]`, using the library validation, citation-key rewrite and change events. Unknown/read-only fields and structured values are rejected before writing; tags and folder membership use separate app operations and are not accepted here. API 1.16: `replace_pdf(attachment_id, content)` puts new PDF bytes in place of a stored PDF attachment with `"library": ["edit"]`: the attachment keeps its id, name and place (citations of it open the new file), the old file and its full-text entry go, and its highlights are deleted, since they mark places in the old pages. Ask the user first. Returns `{"attachment", "removed_annotations"}`; links and non-PDF content are refused. |
 
 Raise **`PluginError("…")`** for a problem the user or Claude should read: a route answers 400 with
 it as the error, a tool returns it as an error Claude can act on, and it does not count as the
@@ -733,6 +748,8 @@ of this):
   permission their exact origins (scheme, host and port) are reached like loopback; other ports of
   that host are not. `plugin.http.local_service("ollama")` returns the address, or `None` when the
   server names no such service.
+- API 1.16: `plugin.actions.replace_pdf` and `plugin.library.pdf_text` / `annotation_count`
+  (above), and a review dialog article's `replacement` (below).
 - API 1.13: a **PDF source** may return an article's web page instead of its PDF (a DOI's
   `https://doi.org/…`, say). Synapse follows the page's `citation_pdf_url` (or a meta refresh) to
   the PDF itself, with the cookies the site sets, so the source needs no network permission for
@@ -1018,9 +1035,12 @@ Review action, optional desktop delivery); the host assigns the plugin as owner.
 close on unload, and actions cannot run after the plugin stops.
 
 `p.ui.reviewMetadata(articles, options)` opens the shared review dialog. Each article is
-`{id, current: PluginItem, changes: MetadataChange[], published?: string}`; inputs are copied.
-Options are `title`, `onRejectSuggestion({id}, change)`, `onRejectArticle({id})`,
-`onIgnorePaper({id})` and `onApplied(savedIds)`. Only selected fields are saved, after explicit
+`{id, current: PluginItem, changes: MetadataChange[], published?: string, replacement?: {label, detail?}}`;
+inputs are copied. Options are `title`, `onRejectSuggestion({id}, change)`, `onRejectArticle({id})`,
+`onIgnorePaper({id})` and `onApplied(savedIds)`. API 1.16: an article's `replacement` offers a new
+PDF with **Replace PDF** and **Keep Current** buttons of its own, outside the fields Apply saves;
+they call `onReplace({id})` (resolve to `false` when nothing was replaced, after the user
+cancelled, say) and `onKeepCurrent({id})`. Only selected fields are saved, after explicit
 Apply. Callbacks let the plugin persist exact rejections and exclusions. Apply, like
 `p.library.update(id, changes)`, uses the running plugin's `library: ["edit"]` permission through
 `PATCH /api/plugin-host/<pid>/items/<id>` and the ordinary metadata update path. A stopped plugin
