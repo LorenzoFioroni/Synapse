@@ -259,6 +259,7 @@ export function activate(p: PluginContext): void {
     title: p.name,
     mount(el) {
       let gone = false;
+      let shown = '';
       const esc = p.ui.escapeHtml;
 
       async function draw() {
@@ -293,7 +294,7 @@ export function activate(p: PluginContext): void {
             <button class="btn btn-sm" data-mc-unignore-paper>Stop Ignoring</button>
           </li>`).join('');
 
-        el.innerHTML = `
+        const html = `
           <div class="mc-run">
             <button class="btn" data-mc-run>${p.ui.icon('refresh')} Run Now</button>
             <button class="btn" data-mc-review ${pending === 0 ? 'disabled' : ''}>
@@ -308,6 +309,12 @@ export function activate(p: PluginContext): void {
 
           <h4 class="mc-head">Rejected suggestions</h4>
           ${ignoredSuggestions ? `<ul class="mc-list mc-ignored-suggestions">${ignoredSuggestions}</ul>` : '<p class="mc-dim">None. Ignore one from an item’s menu (right-click) or the command palette.</p>'}`;
+        // Field values change often during a check; rebuilding unchanged markup between a press and its
+        // release would move the click to the section itself, and Run Now would do nothing.
+        if (html !== shown) {
+          shown = html;
+          el.innerHTML = html;
+        }
       }
 
       async function onClick(ev: MouseEvent) {
