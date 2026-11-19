@@ -43,7 +43,7 @@ export function feedback(
         const articles = structuredClone(input).map((a, n) => ({
           id: a.id, n: n + 1, item: a.current as Item, status: 'changes' as const,
           changes: a.changes, unchanged: unchangedFields(a.current as Item, a.changes),
-          error: null, published: a.published,
+          error: null, published: a.published, replacement: a.replacement ?? null,
         }));
         return await openReviewDialog(articles, {
           ...options, signal: controller.signal, update,
@@ -51,6 +51,8 @@ export function feedback(
           onRejectArticle: options.onRejectArticle ? a => { live(); return options.onRejectArticle!({ id: a.id }); } : undefined,
           onIgnorePaper: options.onIgnorePaper ? a => { live(); return options.onIgnorePaper!({ id: a.id }); } : undefined,
           onApplied: options.onApplied ? ids => { live(); return options.onApplied!(ids); } : undefined,
+          onReplace: options.onReplace ? a => { live(); return options.onReplace!({ id: a.id }); } : undefined,
+          onKeepCurrent: options.onKeepCurrent ? a => { live(); return options.onKeepCurrent!({ id: a.id }); } : undefined,
         });
       } finally { dialogs.delete(controller); }
     },

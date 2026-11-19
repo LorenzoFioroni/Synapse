@@ -54,6 +54,21 @@ class LibraryReader:
                 return p
         return None
 
+    def pdf_text(self, attachment_id: int, *, pages: int = 1) -> str:
+        """API 1.16: the text of the first ``pages`` pages of a stored PDF attachment, "" when it has
+        none or cannot be read (arXiv's margin stamp, ``arXiv:2101.00001v2``, is on the first)."""
+        try:
+            return self._s.attachment_text(int(attachment_id), max(1, int(pages)))
+        except (NotFound, TypeError, ValueError):
+            return ""
+
+    def annotation_count(self, attachment_id: int) -> int:
+        """API 1.16: how many highlights and other annotations a PDF attachment has."""
+        try:
+            return len(self._s.annotations.for_attachment(int(attachment_id)))
+        except (TypeError, ValueError):
+            return 0
+
     def citation_graph(self) -> dict:
         """Stored citation graph, with ``fetched`` item ids (including empty reference lists).
 

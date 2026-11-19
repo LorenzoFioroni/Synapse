@@ -164,6 +164,9 @@ export interface MetadataChange {
 }
 export interface MetadataReviewArticle {
   id: string; current: PluginItem; changes: MetadataChange[]; published?: string | null;
+  /** API 1.16: a file offered in place of the item's PDF (a newer arXiv version), with Replace PDF
+      and Keep Current buttons of its own; needs `onReplace`. */
+  replacement?: { label: string; detail?: string } | null;
 }
 export interface MetadataReviewOptions {
   title?: string;
@@ -171,6 +174,9 @@ export interface MetadataReviewOptions {
   onRejectArticle?: (article: { id: string }) => Promise<void> | void;
   onIgnorePaper?: (article: { id: string }) => Promise<void> | void;
   onApplied?: (ids: string[]) => Promise<void> | void;
+  /** API 1.16: replace the PDF (ask the user first); resolve to false when nothing was replaced. */
+  onReplace?: (article: { id: string }) => Promise<boolean | void> | boolean | void;
+  onKeepCurrent?: (article: { id: string }) => Promise<void> | void;
 }
 export interface PluginJob {
   set(message: string, done?: number, total?: number): void;

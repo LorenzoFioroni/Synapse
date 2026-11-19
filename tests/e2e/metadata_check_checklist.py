@@ -401,6 +401,37 @@ async def main():
                     check(f"metadata diff wraps in reading order at {width}px (edited={edited})", layout)
             await shot(page, "metadata-diff-wrapping")
             await page.keyboard.press("Escape")
+            await page.wait_for_selector(".mr-dialog", state="detached")
+
+            # A newer arXiv version is offered beside the fields, with buttons of its own.
+            await page.evaluate("""async () => {
+                const { openReviewDialog } = await import('/js/views/metadataReview.js');
+                window.replaced = [];
+                void openReviewDialog([{
+                    id: 'replacement-fixture', n: 1, item: { title: 'A preprint with a new version' }, status: 'changes',
+                    changes: [], unchanged: [], error: null,
+                    replacement: { label: 'arXiv v3 available', detail: 'Your PDF is v1, by its arXiv stamp.' },
+                }], { onReplace: (a) => { window.replaced.push(a.id); return true; }, onKeepCurrent: () => {} });
+            }""")
+            await page.wait_for_selector(".mr-dialog .mr-replacement [data-replace]")
+            head = await page.text_content(".mr-dialog .mr-head")
+            check("the review names the new version", "arXiv v3 available" in head, head)
+            for width in (1400, 390):
+                await page.set_viewport_size({"width": width, "height": 900})
+                fits = await page.locator(".mr-dialog .mr-replacement").evaluate(
+                    "el => el.scrollWidth <= el.clientWidth + 1"
+                )
+                check(f"the replacement row fits at {width}px", fits)
+            await shot(page, "metadata-replacement")
+            await page.focus(".mr-dialog [data-replace]")
+            await page.keyboard.press("Enter")
+            ok = await wait_for(
+                lambda: page.evaluate(
+                    "window.replaced.length === 1 && document.querySelector('.mr-replacement').textContent.includes('PDF replaced')"
+                )
+            )
+            check("Replace PDF works from the keyboard and says it is done", ok)
+            await page.keyboard.press("Escape")
             check(
                 "review Apply uses the permission-checked plugin endpoint",
                 any(f"/api/plugin-host/{PID}/items/" in url for url in edits),

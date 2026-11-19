@@ -284,6 +284,10 @@ class AnnotationStore:
                 raise KeyError(ann_id)
         return self._get_existing(ann_id)
 
+    def delete_for_attachment(self, attachment_id: int, conn) -> int:
+        """Delete every annotation of a library attachment in the caller's transaction; how many."""
+        return conn.execute("DELETE FROM annotations WHERE attachment_id = ?", (attachment_id,)).rowcount
+
     def delete(self, ann_id: str) -> bool:
         with self.db.session() as c:
             return any(c.execute(f"DELETE FROM {t} WHERE id = ?", (ann_id,)).rowcount for t, _ in (LIBRARY, NOTES))

@@ -1,5 +1,6 @@
-// Metadata Check in the app: background checking with notifications, review dialog,
-// and settings with ignored papers and rejected suggestions.
+// Metadata Check in the app: background checking with notifications (a desktop one for published
+// and new arXiv versions), the review dialog with the PDF replacement, and settings with ignored
+// papers and rejected suggestions.
 import type { PluginContext, PluginItem, PluginJob, MetadataChange } from "../../../frontend/src/plugins/api.js";
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -34,6 +35,19 @@ interface IgnoredPaper {
   at?: number | null;
 }
 
+interface NewVersion { version: number; have: number | null; how: string; url: string; detail: string; highlights: number }
+
+interface ReviewArticle {
+  id: string;
+  current: PluginItem;
+  fetched: Partial<PluginItem>;
+  changes: MetadataChange[];
+  published?: string | null;
+  version?: NewVersion | null;
+}
+
+interface News { id: string; title: string; published?: string | null; version?: number | null }
+
 interface IgnoredResponse {
   ignored: IgnoredItem[];
   ignored_papers?: IgnoredPaper[];
@@ -47,7 +61,9 @@ export function activate(p: PluginContext): void {
     return String((f && f[fieldId]) || "");
   };
 
-  const suggests = (item: PluginItem): boolean => /^(Review:|Published version:)/.test(verdictOf(item));
+  const suggests = (item: PluginItem): boolean => /^(Review:|Published version:|New arXiv version:)/.test(verdictOf(item));
+  const offersVersion = (items: PluginItem[]): boolean =>
+    items.length === 1 && !items[0]._outside && verdictOf(items[0]).startsWith("New arXiv version:");
   const anySuggestion = (items: PluginItem[]): boolean =>
     items.length > 0 && !items.some((i) => i._outside) && items.some(suggests);
 
@@ -93,7 +109,14 @@ export function activate(p: PluginContext): void {
       } else if (activeJob) {
         const changes = st.with_changes ?? 0;
         const total = st.total || st.done || 0;
-        if (st.failed) {
+        const fresh = await claimNews();
+        if (disposed) return;
+        if (fresh.length) {
+          activeJob.finish(newsMessage(fresh), {
+            desktop: true, type: "success",
+            action: { label: "Review", run: () => { openReview(); } },
+          });
+        } else if (st.failed) {
           activeJob.finish(`Could not verify ${plural(st.failed, "paper")}; ${plural(changes, "paper")} have changes to review`, {
             type: "warning", desktop: false, 
             action: changes ? { label: "Review", run: openReview } : undefined,
@@ -122,6 +145,60 @@ export function activate(p: PluginContext): void {
     }
   }
 
+  async function claimNews(): Promise<News[]> {
+    try {
+      return (await p.backend.post<{ news: News[] }>("/news")).news || [];
+    } catch {
+      return [];
+    }
+  }
+
+  function newsMessage(news: News[]): string {
+    const published = news.filter((n) => n.published).length;
+    const versions = news.filter((n) => n.version && !n.published).length;
+    if (news.length === 1) {
+      const n = news[0];
+      const title = n.title.length > 80 ? `${n.title.slice(0, 79)}…` : n.title;
+      return n.published ? `Published version of “${title}”` : `arXiv v${n.version} of “${title}”`;
+    }
+    return [published && `${plural(published, "paper")} published`, versions && `${plural(versions, "new arXiv version")}`]
+      .filter(Boolean).join(" · ");
+  }
+
+  /** Found while no job of this window was watching (a check before the app was opened, say). */
+  async function announce(): Promise<void> {
+    const fresh = await claimNews();
+    if (!fresh.length || disposed) return;
+    p.notify(newsMessage(fresh), {
+      type: "success", desktop: true,
+      action: { label: "Review", run: () => { openReview(); } },
+    });
+  }
+
+  async function replacePdf(id: string, version: NewVersion, title: string): Promise<boolean> {
+    const n = version.highlights;
+    const ok = await p.ui.confirm(`Replace the PDF of “${title}” with arXiv v${version.version}?`, {
+      title: "Replace PDF",
+      confirm: "Replace PDF",
+      danger: n > 0,
+      detail: n > 0
+        ? `Its ${plural(n, "highlight")} and comments will be deleted: they mark places in the old version.`
+        : "The current file is removed; the item and citations of it open the new version.",
+    });
+    if (!ok || disposed) return false;
+    const job = p.jobs.start(`Downloading arXiv v${version.version}…`);
+    try {
+      const r = await p.backend.post<{ version: number; removed_annotations: number }>("/replace", { ids: [id] });
+      job.finish(`Replaced with arXiv v${r.version}${r.removed_annotations ? `; ${plural(r.removed_annotations, "highlight")} deleted` : ""}`, { type: "success" });
+      await p.library.refresh();
+      await updateStatus();
+      return true;
+    } catch (error) {
+      job.finish(String((error as Error)?.message || error), { type: "error" });
+      return false;
+    }
+  }
+
   async function runNow(): Promise<void> {
     if (!activeJob) {
       activeJob = p.jobs.start("Checking metadata…");
@@ -146,15 +223,7 @@ export function activate(p: PluginContext): void {
   }
 
   async function reviewChanges(): Promise<void> {
-    const res = await p.backend.get<{
-      articles: Array<{
-        id: string;
-        current: PluginItem;
-        fetched: Partial<PluginItem>;
-        changes: MetadataChange[];
-        published?: string | null;
-      }>;
-    }>("/review");
+    const res = await p.backend.get<{ articles: ReviewArticle[] }>("/review");
 
     if (!res.articles || !res.articles.length) {
       p.notify("No metadata changes to review", { type: "info", transient: true });
@@ -162,7 +231,11 @@ export function activate(p: PluginContext): void {
     }
 
     if (disposed) return;
-    await p.ui.reviewMetadata(res.articles, {
+    const articles = res.articles.map((a) => ({
+      ...a,
+      replacement: a.version ? { label: `arXiv v${a.version.version} available`, detail: a.version.detail } : null,
+    }));
+    await p.ui.reviewMetadata(articles, {
       title: "Review Metadata Changes",
       onRejectSuggestion: async (a, c) => {
         await p.backend.post("/ignore", { ids: [a.id], field: c.key, value: String(res.articles.find((item) => item.id === a.id)?.fetched[c.key] ?? c.fetched) });
@@ -178,6 +251,14 @@ export function activate(p: PluginContext): void {
       },
       onApplied: async (savedIds) => {
         await p.backend.post("/applied", { ids: savedIds });
+        await updateStatus();
+      },
+      onReplace: async (a) => {
+        const found = res.articles.find((item) => item.id === a.id);
+        return found?.version ? replacePdf(a.id, found.version, String(found.current.title || "this paper")) : false;
+      },
+      onKeepCurrent: async (a) => {
+        await p.backend.post("/keep-current", { ids: [a.id] });
         await updateStatus();
       },
     });
@@ -230,6 +311,18 @@ export function activate(p: PluginContext): void {
     icon: "close",
     when: anySuggestion,
     run: (items) => ignore(items),
+  });
+
+  p.itemActions.register({
+    id: "replace-pdf",
+    title: "Replace PDF with New arXiv Version",
+    icon: "refresh",
+    when: offersVersion,
+    run: async (items) => {
+      const res = await p.backend.get<{ articles: ReviewArticle[] }>("/review");
+      const found = res.articles.find((a) => a.id === items[0].id);
+      if (found?.version) await replacePdf(found.id, found.version, String(found.current.title || "this paper"));
+    },
   });
 
   p.itemActions.register({
@@ -370,6 +463,7 @@ export function activate(p: PluginContext): void {
   updateStatus().then((st) => {
     lastCompleted = st.last_run?.at || 0;
     if (st.running) pollStatus();
+    else void announce();
   }).catch(() => {});
 
   p.onUnload(() => {

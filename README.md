@@ -41,7 +41,8 @@ TypeScript frontend. Everything runs on your machine.
   import gives such entries a usable key and tells you which ones changed.
 - 🧩 **Make it yours** — extend Synapse with plugins, including an arXiv feed that ranks
   each morning's papers by how well they match your library and highlights authors you follow and
-  papers that cite you, and choose light or dark mode.
+  papers that cite you, and a metadata check that tells you when a preprint is published or gets a
+  new arXiv version and offers the replacement; and choose light or dark mode.
 - 📱 **Take research around the house** — a paired phone gets an interface of its own (tabs at
   the bottom, papers and notes to read and write, your plugins' lists one tap away); tablets use
   the full interface with touch.

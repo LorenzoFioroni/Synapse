@@ -94,7 +94,7 @@ Core retains the library, notes, task records and validation contracts when a pl
 | Citation Counts | Batched provider lookup, refresh policy and field declarations | Per-item field storage/indexing and public HTTP transport |
 | arXiv Today | Feed days, relevance scoring, news lists and notifications | Library access, outside-paper lists and shared HTTP spacing |
 | Autocompletion | Ollama requests, suggestion lifecycle and Settings UI | Permission-checked loopback HTTP; editor suggestion hooks/context |
-| Metadata Check | Comparison/rejection rules, review scheduling and progress | Permission-checked edits, review dialogs and job notifications |
+| Metadata Check | Comparison/rejection rules, published and arXiv-version detection, review scheduling, progress and news claims | Permission-checked edits and PDF replacement, review dialogs and job notifications |
 | Extended Markdown | Figure/gallery, task-block and spoiler rendering/export extensions | Markdown/attachment integrity while disabled; shared renderer SDK and preview hooks |
 | Graph | Graph model, server data builder, local/full views and navigation | Public notes/citation reads; visualization, sidebar and history bridges |
 | Tasks | Task page, note widgets, HTTP handlers and MCP tools | Records/history and note-link integrity; permission checks and fixed compatibility aliases |

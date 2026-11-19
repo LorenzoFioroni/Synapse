@@ -461,6 +461,19 @@ class PaperRepository:
             )
         return self.get_attachment(att_id)
 
+    def set_attachment_file(self, att_id: int, filename: str, conn) -> None:
+        """Point a stored attachment at another file in the PDF folder, in the caller's transaction
+        (``Services.replace_pdf``): its id, name and place among the item's attachments stay."""
+        conn.execute("UPDATE attachments SET url = ? WHERE id = ?", (filename, att_id))
+        conn.execute(
+            "UPDATE papers SET date_modified = ? WHERE id = (SELECT paper_id FROM attachments WHERE id = ?)",
+            (utcnow(), att_id),
+        )
+
+    def remove_file(self, url: str | None) -> None:
+        """Delete a stored attachment's file from the PDF folder (nothing for a link)."""
+        self._remove_file(url)
+
     def delete_attachment(self, att_id: int) -> None:
         att = self.get_attachment(att_id)
         self._remove_file(att["url"])

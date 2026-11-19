@@ -124,6 +124,9 @@
 .mr-label { font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); margin-bottom: 6px; }
 .mr-changes { display: flex; flex-direction: column; gap: 8px; }
 .mr-changes .mr-label { margin-bottom: 0; }
+.mr-replacement-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-sm); }
+.mr-replacement-text { flex: 1; min-width: 12em; display: flex; flex-direction: column; gap: 2px; }
+.mr-replacement-text.subtle { flex-direction: row; align-items: center; gap: 6px; }
 .mr-unchanged dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: var(--fs-sm); }
 .mr-unchanged dt { color: var(--text-3); text-align: right; }
 .mr-unchanged dd { margin: 0; color: var(--text); word-break: break-word; }
