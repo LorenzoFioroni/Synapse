@@ -1,4 +1,4 @@
-"""Tools for the citation graph: get_references, get_citation_graph."""
+"""Tools for the citation graph: get_references, get_citation_graph, get_citing_works."""
 
 from __future__ import annotations
 
@@ -6,7 +6,19 @@ import json
 import re
 import unicodedata
 
-from .common import MAX_LISTED_CHARS, ToolsBase, drop_empty, first_author, short_authors
+from ...library.identifiers import ARXIV_DOI, identifiers, norm_arxiv, norm_doi
+from ...references.sources import LookupFailed
+from ..protocol import ToolError
+from .common import (
+    _ARXIV_REF,
+    _DOI_REF,
+    MAX_LISTED_CHARS,
+    ToolsBase,
+    drop_empty,
+    first_author,
+    sentence,
+    short_authors,
+)
 
 CITERS_LISTED = 10  # citing keys named per work; the count is always given
 MANY_RECORDS = 6  # records with one title: a work has a few ids (preprint, journal, book); dozens is a mismatch
@@ -60,7 +72,7 @@ def _title_key(title: str | None) -> str:
 
 
 class CitationToolsMixin(ToolsBase):
-    """get_references, get_citation_graph."""
+    """get_references, get_citation_graph, get_citing_works."""
 
     @staticmethod
     def _merge_subtitled(groups: dict[str, list[dict]], citers: dict[str, list[str]], label) -> None:
@@ -181,6 +193,104 @@ class CitationToolsMixin(ToolsBase):
                 "(co-authors, venue, both ids)"
             )
         return out
+
+    def get_citing_works(
+        self,
+        paper: str,
+        limit: int = 50,
+        offset: int = 0,
+        sort: str = "cited",
+        since_year: int | None = None,
+        compact: bool | None = None,
+    ):
+        """The works citing a paper, asked online of the citation sources (OpenAlex, Semantic Scholar): unlike
+        the stored graph, it knows citing works that are not in the library."""
+        items = self._items()
+        raw = str(paper or "").strip()
+        p = self._by_identifier(raw, items)
+        if p is None and (_DOI_REF.match(raw) or _ARXIV_REF.match(raw)):  # a work outside the library
+            doi = norm_doi(raw) if _DOI_REF.match(raw) else None
+            arx = norm_arxiv(re.sub(r"\.pdf$", "", raw, flags=re.I)) if _ARXIV_REF.match(raw) else None
+            if doi and (m := ARXIV_DOI.match(doi)):
+                arx = norm_arxiv(m.group(1))
+            name = f"doi:{doi}" if doi else f"arXiv:{arx}"
+        else:
+            p = p or self._paper(raw, items)
+            doi, arx = identifiers(p)
+            name = self._label(p)
+        try:
+            found = self.s.citations.citing_works(doi, arx, limit=offset + limit, sort=sort, since_year=since_year)
+        except LookupFailed as e:
+            raise ToolError(f"The works citing '{name}' could not be looked up: {sentence(str(e))}") from e
+        except Exception as e:  # network trouble: its text can hold request URLs
+            raise ToolError(
+                f"Looking up the works citing '{name}' failed ({type(e).__name__}). Try again later."
+            ) from e
+        works = found["works"]
+        by_id = {p["id"]: p for p in items.values()}
+        listed = works[offset : offset + limit]
+        asked = compact
+        if compact is None:
+            compact = len(listed) > AUTO_COMPACT
+        rows: list = []
+        size = 0
+        for w in listed:
+            lib = by_id.get(w.get("library_id")) if w.get("library_id") else None
+            count = w.get("cited_by_count")
+            if compact:
+                times = f" [cited {count}x]" if count is not None else ""
+                row: str | dict = (
+                    f"in library: {self._one_line(lib)}{times}"
+                    if lib
+                    else _outside_line(w["title"], w["authors"], w["year"], w["doi"], w["arxiv_id"]) + times
+                )
+            elif lib:
+                row = drop_empty({"in_library": True, **self._brief(lib), "cited_by_count": count})
+            else:
+                row = drop_empty(
+                    {
+                        "in_library": False,
+                        "title": w["title"],
+                        "authors": short_authors(w["authors"]),
+                        "year": w["year"],
+                        "venue": w["venue"],
+                        "doi": w["doi"],
+                        "arxiv": w["arxiv_id"],
+                        "cited_by_count": count,
+                    }
+                )
+            size += len(row) if isinstance(row, str) else len(json.dumps(row, ensure_ascii=False))
+            if rows and size > MAX_LISTED_CHARS:  # more than an AI app accepts in one result
+                break
+            rows.append(row)
+        end = offset + len(rows)
+        more = len(works) > end or (found["total"] or 0) > end
+        return drop_empty(
+            {
+                "paper": name,
+                "title": p.get("title") if p else None,
+                "source": found["source"],
+                "citing_total": found["total"],
+                "order": "most cited first" if sort != "recent" else "newest first",
+                "since_year": since_year,
+                "shown": f"{offset + 1}-{end}" + (f"; offset={end} lists the next ones" if more else "")
+                if rows
+                else None,
+                "in_library_shown": sum(1 for w in listed[: len(rows)] if w.get("library_id")),
+                "works": rows,
+                "note": None
+                if works or offset
+                else "The source knows no work citing it (a very new paper, or one it has under another record).",
+                "source_note": found.get("note"),
+                "about": "Looked up online now, not stored. Services count differently, and a preprint and its "
+                "journal version may be counted apart."
+                + (
+                    " One line per work, as the list is long: compact=false gives the fields."
+                    if compact and asked is None
+                    else ""
+                ),
+            }
+        )
 
     def get_citation_graph(
         self,

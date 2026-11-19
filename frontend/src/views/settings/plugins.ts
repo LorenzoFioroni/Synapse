@@ -95,6 +95,7 @@ function sectionBodyHtml(p: PluginInfo, safeMode: boolean, drawnElsewhere: Set<s
       <div class="s-control p-control"><label class="switch"><input type="checkbox" data-premote ${p.remote_mcp ? 'checked' : ''}><span></span></label></div></div>` : '';
   const offers = [
     p.reference_sources?.length ? `Reference sources: ${p.reference_sources.map((s) => escapeHtml(s.title)).join(', ')}` : '',
+    p.citing_sources?.length ? `Citing works: ${p.citing_sources.map((s) => escapeHtml(s.title)).join(', ')}` : '',
     p.export_formats?.length ? `Export formats: ${p.export_formats.map((f) => escapeHtml(f.title)).join(', ')}` : '',
     p.tools?.length ? `Tools for AI apps: ${p.tools.map((t) => `<span class="mono">${escapeHtml(t)}</span>`).join(', ')}` : '',
     p.routes?.length ? `Serves ${p.routes.map((r) => `<span class="mono">/api/plugins/${escapeHtml(p.id)}${escapeHtml(r.rule)}</span>`).join(', ')}` : '',

@@ -212,6 +212,7 @@ def test_initialize_and_list(lib):
         "snapshot",
         "get_references",
         "get_citation_graph",
+        "get_citing_works",
         "get_annotations",
         "write_note",
         "edit_note",
@@ -652,6 +653,73 @@ def test_get_references(lib):
     assert [c["key"] for c in r["cited_by_in_library"]] == ["smith2021"] and "references" not in r
     r = call_json(server, "get_references", paper="lee2020", direction="both")
     assert "no DOI" in r["references_note"]
+
+
+def test_get_citing_works(lib, svc):
+    server = lib["server"]
+    asked = []
+
+    def citing(query):
+        asked.append(query)
+        return {
+            "source": "OpenAlex",
+            "total": 3,
+            "works": [
+                {"doi": "https://doi.org/10.1000/SMITH", "title": "Open quantum dynamics", "cited_by_count": 9},
+                {
+                    "doi": "10.5555/new",
+                    "title": "A  follow-up",
+                    "authors": "New, Ann",
+                    "year": "2025",
+                    "cited_by_count": 2,
+                },
+                {"title": "", "cited_by_count": True},  # nothing to name it by: dropped
+            ],
+        }
+
+    svc.citations.citing_sources = citing
+    r = call_json(server, "get_citing_works", paper="doe2019", sort="recent", limit=5)
+    assert asked[-1] == {
+        "doi": "10.1000/doe",
+        "arxiv": None,
+        "limit": 5,
+        "sort": "recent",
+        "since_year": None,
+        "email": "",
+    }
+    assert r["paper"] == "doe2019" and r["source"] == "OpenAlex" and r["citing_total"] == 3
+    assert r["order"] == "newest first" and r["shown"] == "1-2; offset=2 lists the next ones"
+    assert r["works"][0]["in_library"] and r["works"][0]["key"] == "smith2021" and r["works"][0]["cited_by_count"] == 9
+    assert r["works"][1] == {
+        "in_library": False,
+        "title": "A follow-up",
+        "authors": "New, Ann",
+        "year": 2025,
+        "doi": "10.5555/new",
+        "cited_by_count": 2,
+    }
+    assert r["in_library_shown"] == 1
+    r = call_json(server, "get_citing_works", paper="doi:10.7777/Outside", compact=True, since_year=2020)
+    assert asked[-1]["doi"] == "10.7777/outside" and asked[-1]["since_year"] == 2020
+    assert r["paper"] == "doi:10.7777/outside" and "title" not in r
+    assert r["works"] == [  # a work without a year is kept by since_year
+        "in library: smith2021 (2021) Smith et al.: Open quantum dynamics [cited 9x]",
+        "New (2025): A follow-up [doi:10.5555/new] [cited 2x]",
+    ]
+    r = call_json(server, "get_citing_works", paper="arXiv:2101.00001")
+    assert asked[-1]["arxiv"] == "2101.00001" and asked[-1]["doi"] is None
+    assert call_json(server, "get_citing_works", paper="doe2019", offset=1)["works"][0]["title"] == "A follow-up"
+    err, texts = call(server, "get_citing_works", paper="lee2020")
+    assert err and "no DOI or arXiv ID" in texts[0]
+
+    def broken(query):
+        raise OSError("https://api.example.org/?key=SECRET")
+
+    svc.citations.citing_sources = broken
+    err, texts = call(server, "get_citing_works", paper="doe2019")
+    assert err and "OSError" in texts[0] and "SECRET" not in texts[0]
+    svc.citations.citing_sources = lambda q: {"source": None, "works": [], "total": None, "note": None}
+    assert "knows no work citing it" in call_json(server, "get_citing_works", paper="doe2019")["note"]
 
 
 def test_get_citation_graph(lib):
@@ -1305,7 +1373,7 @@ def test_stdio_server_end_to_end(lib, svc):
     assert p.returncode == 0, p.stderr
     replies = [json.loads(l) for l in p.stdout.splitlines()]
     assert [r["id"] for r in replies] == [1, 2, 3]
-    assert len(replies[1]["result"]["tools"]) == 22
+    assert len(replies[1]["result"]["tools"]) == 23
     assert "tensor networks" in replies[2]["result"]["content"][0]["text"]
 
 

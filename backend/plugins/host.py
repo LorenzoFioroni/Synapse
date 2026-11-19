@@ -333,6 +333,7 @@ class PluginHost:
         act.plugin.tools.clear()
         act.plugin.metadata_sources.clear()
         act.plugin.reference_sources.clear()
+        act.plugin.citing_sources.clear()
         act.plugin.export_formats.clear()
         act.plugin.listeners.clear()
         if act.modname:
@@ -604,6 +605,14 @@ class PluginHost:
                 for source in act.plugin.reference_sources.values()
             ]
         return resolve(sources, self.run, query)
+
+    def find_citing(self, query: dict) -> dict:
+        """Ask the citation sources of running plugins for the works citing one work."""
+        from .references import resolve_citing
+
+        with self._lock:
+            sources = [(pid, s) for pid, act in self._active.items() for s in act.plugin.citing_sources.values()]
+        return resolve_citing(sources, self.run, query)
 
     def reference_source_title(self, name: str) -> str:
         from .references import source_title

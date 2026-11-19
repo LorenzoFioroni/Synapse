@@ -323,6 +323,21 @@ async def main():
                 api(f"/api/items/{second['id']}")["title"] == "Another proposed title",
             )
 
+            # A field change between pressing and releasing Run Now must not swallow the click: the
+            # section used to rebuild itself on every change, so the release landed elsewhere.
+            await page.wait_for_function(f"!!document.querySelector('{sec} [data-mc-run]')")
+            before = api(f"/api/plugins/{PID}/status")["last_checked"]
+            await page.hover(f"{sec} [data-mc-run]")
+            await page.mouse.down()
+            await asyncio.to_thread(api, f"/api/plugins/{PID}/unignore", "POST", json={"ids": [second["id"]]})
+            await page.evaluate("window.zcChanges.poll()")  # the change feed reaches the page at once
+            await page.wait_for_timeout(500)  # and the section draws again
+            await page.mouse.up()
+            ok = await wait_for(
+                lambda: asyncio.to_thread(lambda: (api(f"/api/plugins/{PID}/status")["last_checked"] or 0) > before)
+            )
+            check("Run Now still runs when values change during the click", ok)
+
             # Saving just one field keeps the unchecked suggestion in Review Changes.
             api(f"/api/items/{second['id']}", "PATCH", json={"year": 2010})
             answer("Still pending title")

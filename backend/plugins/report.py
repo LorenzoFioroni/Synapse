@@ -68,6 +68,7 @@ def describe(entry: Entry, st: dict, act: Active | None, values: dict, safe_mode
             {"id": s.id, "title": s.title, "subsources": dict(s.subsources)}
             for s in act.plugin.reference_sources.values()
         ]
+        out["citing_sources"] = [{"id": s.id, "title": s.title} for s in act.plugin.citing_sources.values()]
         out["metadata_sources"] = [
             {"id": s.id, "title": s.title, "kinds": sorted(s.kinds)} for s in act.plugin.metadata_sources.values()
         ]

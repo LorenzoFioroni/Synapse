@@ -1,10 +1,10 @@
 {
   "id": "reference-sources",
   "name": "Reference Sources",
-  "version": "1.1.0",
-  "api": "^1.5",
+  "version": "1.2.0",
+  "api": "^1.15",
   "backend": "server",
-  "description": "Reference lists from Semantic Scholar, OpenAlex, Crossref and arXiv HTML. Turning this off preserves saved references and citation links.",
+  "description": "Reference lists from Semantic Scholar, OpenAlex, Crossref and arXiv HTML, and the works citing a paper for AI apps (get_citing_works). Turning this off preserves saved references and citation links.",
   "enabled_by_default": true,
   "permissions": {
     "network": [

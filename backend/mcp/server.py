@@ -461,6 +461,56 @@ def build_server(services, version: str = "0.1.0", *, remote: bool = False) -> S
     )
     server.add(
         Tool(
+            "get_citing_works",
+            "Find the works citing a paper",
+            "The works that cite a paper, looked up online now (OpenAlex, Semantic Scholar), including those not in "
+            "the library (with DOI/arXiv ids; library items are marked). For forward-citation searches: who built "
+            "on a paper, its newest follow-ups. The paper may also be a DOI or arXiv id of a work outside the "
+            "library. Only the paper's DOI or arXiv id is sent.",
+            {
+                "type": "object",
+                "properties": {
+                    "paper": {
+                        **paper_arg,
+                        "description": paper_arg["description"] + " A DOI or arXiv id not in the library works too.",
+                    },
+                    "sort": {
+                        "type": "string",
+                        "enum": ["cited", "recent"],
+                        "description": '"cited": most cited first (default); "recent": newest first.',
+                    },
+                    "since_year": {
+                        "type": "integer",
+                        "minimum": 1000,
+                        "maximum": 9999,
+                        "description": "Only works published in this year or later.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 200,
+                        "description": "Maximum works listed (default 50).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 800,
+                        "description": "Skip this many works (use the offset the result names).",
+                    },
+                    "compact": {
+                        "type": "boolean",
+                        "description": "One line per work instead of its fields. Default: true when more than "
+                        f"{AUTO_COMPACT} works are listed, else false.",
+                    },
+                },
+                "required": ["paper"],
+            },
+            t.get_citing_works,
+            open_world=True,
+        )
+    )
+    server.add(
+        Tool(
             "get_annotations",
             "Read a paper's highlights and comments",
             "What the user marked on a paper's PDF in the app: highlights and underlines with their words, "

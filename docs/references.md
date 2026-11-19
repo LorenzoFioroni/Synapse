@@ -305,6 +305,21 @@ references and at least one failed, `fetch` raises `FetchFailed`: trying later m
 every service answered is an empty result stored, with the source `none`. `_clean_ref` normalises
 each reference (identifiers through `identifiers.py`, integer year, collapsed whitespace).
 
+### Works citing a paper
+
+The stored graph knows only the citing papers that are in the library (their own reference lists
+cite the paper). The AI tool `get_citing_works` asks online instead, at each call:
+`Citations.citing_works(doi, arxiv_id, …)` in `backend/references/service.py` hands the query to the
+running plugins' citation sources (`plugin.citing_source`, API 1.15, resolved by
+`backend/plugins/references.py:resolve_citing`), cleans the records they return, keeps works
+from `since_year` on and matches them to library items like reference lists. Nothing is stored.
+Reference Sources' source (`plugins/reference-sources/server/citing.py`) asks OpenAlex first for
+a paper with a journal DOI (`filter=cites:W…`, sorted and filtered there, with the total) and
+Semantic Scholar first for a preprint (it counts a preprint and its journal version as one);
+each is the other's fallback when it fails, does not know the work or knows no citing one.
+Semantic Scholar cannot sort, so its first 1,000 citing works are sorted locally and the result
+says so when there are more.
+
 ### Storage
 
 `backend/references/store.py` keeps the lists in their own database, `data/citations.db`, so
@@ -505,7 +520,7 @@ older server. See [the plugin contract](plugins.md#named-reference-sub-sources).
 
 ## Reference Sources as a contributed plugin
 
-The bundled plugin requires API 1.5 and declares only `api.semanticscholar.org`,
+The bundled plugin requires API 1.15 (for its citation source, below) and declares only `api.semanticscholar.org`,
 `api.openalex.org`, `api.crossref.org` and `arxiv.org`. Credentials and User-Agent come from
 `plugin.http` at every request. No provider imports internal backend modules or reads
 `plugin.synapse`. Parsing, source selection and the stored record format are preserved.

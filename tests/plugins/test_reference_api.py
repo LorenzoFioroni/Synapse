@@ -2,8 +2,16 @@
 
 import pytest
 
+from backend.online.http import LookupFailed
 from backend.plugins import PluginError, scholarly
-from backend.plugins.references import ReferenceSource, clean_subsources, resolve, source_title
+from backend.plugins.references import (
+    CitingSource,
+    ReferenceSource,
+    clean_subsources,
+    resolve,
+    resolve_citing,
+    source_title,
+)
 from backend.references.sources import FetchFailed
 
 
@@ -101,3 +109,36 @@ def test_registered_subsource_labels_reach_the_reference_view(client, svc, make_
     # Historical titles do not depend on whether a plugin is installed or running.
     svc.citations.store.save(paper["id"], "semanticscholar", [{"title": "Kept"}])
     assert client.get(f"/api/items/{paper['id']}/references").json["fetch"]["source_title"] == "Semantic Scholar"
+
+
+def citing_source(result, order=100, id="scholarly"):
+    def fn(query):
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    return CitingSource(id, "Citations", fn, order)
+
+
+def test_citing_sources_fall_through_and_validate():
+    with pytest.raises(LookupFailed, match="No citation sources"):
+        resolve_citing([], run, {})
+    found = {"works": [{"title": "A citing work"}], "total": 4, "source": " OpenAlex ", "note": "  "}
+    sources = [("b", citing_source(found, 50)), ("a", citing_source(None, 10))]
+    assert resolve_citing(sources, run, {}) == {
+        "source": "OpenAlex",
+        "works": [{"title": "A citing work"}],
+        "total": 4,
+        "note": None,
+    }
+    assert resolve_citing([("a", citing_source({"works": []}))], run, {})["source"] == "Citations"
+    later = [("a", citing_source({"works": [], "source": "First"}, 1)), ("b", citing_source(found, 2))]
+    assert resolve_citing(later, run, {})["source"] == "OpenAlex"
+    failed = [("a", citing_source({"works": [], "source": "First"}, 1)), ("b", citing_source(OSError(), 2))]
+    assert resolve_citing(failed, run, {})["source"] == "First"
+    assert resolve_citing([("a", citing_source(None))], run, {})["works"] == []
+    for bad in ({"works": "x"}, {"works": [1]}, {"works": [], "total": -1}, {"works": [], "total": True}):
+        with pytest.raises(FetchFailed, match="a.scholarly: A citation source"):
+            resolve_citing([("a", citing_source(bad))], run, {})
+    with pytest.raises(FetchFailed, match="a.scholarly: OSError"):
+        resolve_citing([("a", citing_source(OSError("https://x/?key=SECRET")))], run, {})

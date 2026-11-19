@@ -573,6 +573,7 @@ export interface PluginInfo {
   schedules?: { name: string; rule: string }[];
   jobs?: number;
   reference_sources?: { id: string; title: string; subsources?: Record<string, string> }[];
+  citing_sources?: { id: string; title: string }[];
   export_formats?: { id: string; title: string }[];
   /** Paths in the plugin's folder (from the manifest). */
   frontend?: string | null;

@@ -363,6 +363,7 @@ Add `--data DIR` if your library is not in `./data`. Tools:
 | `snapshot` | cuts a figure, table or equation — named by its number (`figure="Figure 2"`, `equation="3"`, page found by itself) or as a region — into `notes/attachments/` like the viewer's camera button, and returns the Markdown for it with the whole printed caption |
 | `get_references` | what a paper cites (library items marked, others with DOI/arXiv) and which library items cite it; one line each when the list is long (or with `compact`) |
 | `get_citation_graph` | the neighbourhood of some papers, or a library-wide overview of the most cited works you do not have; one line each when the lists are long (or with `compact`) |
+| `get_citing_works` | the works citing a paper (or any DOI or arXiv id), asked online of OpenAlex and Semantic Scholar now, so also those not in your library; most cited or newest first, optionally since a year |
 | `get_annotations` | what you highlighted, underlined or commented on a paper's PDF, with pages |
 | `write_note` | saves a new note in `notes/ai/`, or in a notes folder you name (`author: ai`), never overwriting anything — after checking it |
 | `edit_note` | changes an existing note (replace passages, append, or new text) — checked the same way; a version of its own in the note's history |
