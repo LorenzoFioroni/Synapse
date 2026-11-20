@@ -54,6 +54,7 @@ async def main():
     guard(PORT)
     with tempfile.TemporaryDirectory(prefix="synapse-find-e2e-") as data:
         lines = [[f"Document page {i}"] for i in range(1, 301)]
+        lines[0] += ["Column marker " + "x " * 45 + "edgehit"]
         lines[249] += ["Needle needle needles"]
         lines[254] += ["needle"]
         lines[298] += ["A quantum", "state evolves.", "trans-", "port"]
@@ -113,11 +114,23 @@ async def main():
                     "the distant hit starts without a canvas",
                     await page.locator('[data-page-number="250"] canvas').count() == 0,
                 )
+                viewport_before = await page.locator("#pdf-container").bounding_box()
                 await page.keyboard.press(f"{MOD}+f")
                 field = page.get_by_role("searchbox", name="Find in PDF")
                 check(
                     "Cmd/Ctrl+F opens and focuses PDF search", await field.evaluate("e => e === document.activeElement")
                 )
+                viewport_after = await page.locator("#pdf-container").bounding_box()
+                check("floating search preserves the PDF viewport", viewport_before == viewport_after)
+                await page.wait_for_function(
+                    "() => getComputedStyle(document.querySelector('.pdf-findbar')).transform === 'none'"
+                )
+                position = await page.evaluate("""() => {
+                  const panel = document.querySelector('.pdf-findbar').getBoundingClientRect();
+                  const pdf = document.getElementById('pdf-container').getBoundingClientRect();
+                  return panel.left >= pdf.left && panel.right <= pdf.right && panel.top >= pdf.top;
+                }""")
+                check("the find panel stays inside the PDF column", position)
                 await field.fill("needle")
                 await finished(page, "1 of 4")
                 await page.wait_for_selector('[data-page-number="250"] .pdf-search-hit.current')
@@ -148,12 +161,18 @@ async def main():
                 await page.get_by_label("Whole words", exact=True).check()
                 await finished(page, "1 of 2")
                 check("match-case and whole-word options affect results", True)
+                check(
+                    "selected options have a visible active state",
+                    await page.get_by_label("Whole words", exact=True).evaluate(
+                        "e => getComputedStyle(e.parentElement).backgroundColor !== getComputedStyle(document.querySelector('.pdf-findbar')).backgroundColor"
+                    ),
+                )
                 await page.click("#zoom-in")
                 await page.wait_for_function(
                     "() => document.querySelector('[data-page-number=\"250\"]').dataset.rendered === String(window.zcViewer.scale) && !!document.querySelector('[data-page-number=\"250\"] .pdf-search-hit.current')"
                 )
                 await page.evaluate("window.zcViewerGoto({page: 1})")
-                await page.wait_for_function("!document.querySelector('[data-page-number=\"250\"] .textLayer')")
+                await page.wait_for_function("() => !document.querySelector('[data-page-number=\"250\"] .textLayer')")
                 await page.evaluate("window.zcViewerGoto({page: 250})")
                 await page.wait_for_selector('[data-page-number="250"] .pdf-search-hit.current')
                 check("zoom and page unloading/revisiting preserve highlights", True)
@@ -195,7 +214,7 @@ async def main():
                 # Real app panel, outside the viewer iframe: the shell must forward Cmd/Ctrl+F.
                 app = await context.new_page()
                 await app.goto(BASE)
-                await app.wait_for_function("!!window.zcTabs && !!window.zcAskAi")
+                await app.wait_for_function("() => !!window.zcTabs && !!window.zcAskAi")
                 await app.evaluate(
                     "url => window.zcTabs.open({key: 'search-test', url, title: 'Search fixture', spot: {}, newTab: true})",
                     viewer_url(attachment).removeprefix(BASE),
@@ -216,6 +235,14 @@ async def main():
                     "AI panel text is excluded from PDF results",
                     await app.locator(".ai-input").input_value() == "needle " * 10,
                 )
+                if await app.locator(".ai-panel").get_attribute("data-placement") != "dock":
+                    await app.locator(".ai-panel [data-place]").click()
+                await frame.wait_for_function("""() => {
+                  const panel = document.querySelector('.pdf-findbar').getBoundingClientRect();
+                  const pdf = document.getElementById('pdf-container').getBoundingClientRect();
+                  return panel.left >= pdf.left && panel.right <= pdf.right;
+                }""")
+                check("floating search stays beside docked AI", True)
                 await framed_field.press("Escape")
                 await frame.locator("#pdf-find-toggle").focus()
                 await app.keyboard.press(f"{MOD}+f")
@@ -240,6 +267,48 @@ async def main():
                     geometry,
                 )
                 await shot(narrow, "pdf-search-touch")
+                await narrow.set_viewport_size({"width": 320, "height": 780})
+                compact = await narrow.evaluate("""() => {
+                  const panel = document.querySelector('.pdf-findbar').getBoundingClientRect();
+                  return [...document.querySelectorAll('.pdf-find-actions button, .pdf-find-options label')].every(e => {
+                    const r = e.getBoundingClientRect();
+                    return r.left >= panel.left && r.right <= panel.right && r.bottom <= panel.bottom;
+                  });
+                }""")
+                check("narrow columns keep every control inside the card", compact)
+                await shot(narrow, "pdf-search-compact")
+                await narrow.get_by_label("Whole words", exact=True).check()
+                await narrow.get_by_role("searchbox", name="Find in PDF").fill("Document page 1")
+                await finished(narrow, "1 of 1")
+                await narrow.wait_for_function("""() => {
+                  const hit = document.querySelector('[data-page-number="1"] .pdf-search-hit.current');
+                  if (!hit) return false;
+                  const h = hit.getBoundingClientRect(), card = document.querySelector('.pdf-findbar').getBoundingClientRect();
+                  const pdf = document.getElementById('pdf-container').getBoundingClientRect();
+                  return h.top >= pdf.top && h.bottom <= pdf.bottom &&
+                    (h.bottom <= card.top || h.top >= card.bottom || h.right <= card.left || h.left >= card.right);
+                }""")
+                check("the floating card leaves first-page matches visible", True)
+                await narrow.reload()
+                await narrow.wait_for_selector('[data-page-number="300"]')
+                for _ in range(4):
+                    await narrow.locator("#zoom-in").tap()
+                await narrow.wait_for_function("""() => {
+                  const w = document.querySelector('[data-page-number="1"]');
+                  return w.dataset.rendered === String(window.zcViewer.scale) && !!w.zcTextLayer;
+                }""")
+                await narrow.locator("#pdf-find-toggle").tap()
+                await narrow.get_by_role("searchbox", name="Find in PDF").fill("edgehit")
+                await finished(narrow, "1 of 1")
+                await narrow.wait_for_function("""() => {
+                  const hit = document.querySelector('[data-page-number="1"] .pdf-search-hit.current');
+                  if (!hit) return false;
+                  const h = hit.getBoundingClientRect(), card = document.querySelector('.pdf-findbar').getBoundingClientRect();
+                  const pdf = document.getElementById('pdf-container').getBoundingClientRect();
+                  return h.left >= pdf.left && h.right <= pdf.right && h.top >= pdf.top && h.bottom <= pdf.bottom &&
+                    (h.bottom <= card.top || h.top >= card.bottom || h.right <= card.left || h.left >= card.right);
+                }""")
+                check("horizontal centering also leaves the active match clear of the card", True)
                 await page.goto(viewer_url(empty_attachment))
                 await page.click("#pdf-find-toggle")
                 await page.get_by_role("searchbox", name="Find in PDF").fill("anything")

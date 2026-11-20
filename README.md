@@ -102,8 +102,9 @@ window to move it there, or outside every window for a new one (or right-click i
 Window**); right-click items, PDFs, folders, notes and tasks for **Open in New Window**. Settings →
 PDF Viewer → Open PDFs in → Browser Tabs keeps PDFs in browser tabs of their own.
 
-In a PDF, Cmd/Ctrl+F (or the magnifying-glass button) searches the whole document, including pages
-not currently drawn. Enter/Shift+Enter or the arrows move through highlighted matches; match case
+In a PDF, Cmd/Ctrl+F (or the magnifying-glass button) opens a compact floating search panel without
+shrinking the page. It searches the whole document, including pages not currently drawn.
+Enter/Shift+Enter or the arrows move through highlighted matches; match case
 and whole words are optional. PDF search excludes the AI panel and other UI text. It uses the PDF's
 embedded text, without OCR or an online service.
 
