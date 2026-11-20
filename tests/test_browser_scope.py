@@ -40,6 +40,11 @@ def test_note_subsystems_keep_their_direct_checklists():
         assert checklist in select([path], KNOWN)
 
 
+def test_pdf_search_is_included_with_viewer_changes():
+    for path in ("frontend/src/viewer/search.ts", "frontend/src/viewer/viewer.ts", "frontend/viewer.html"):
+        assert "pdf_search" in select([path], KNOWN)
+
+
 def test_extension_checks_do_not_request_unsupported_webkit_flows():
     rows = matrix(["browser_extension/find_pdfs.js"], KNOWN)["include"]
     assert rows == [{"browser": "chromium", "checklists": ["extension", "find_pdfs"]}]

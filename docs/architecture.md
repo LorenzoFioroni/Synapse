@@ -214,7 +214,10 @@ Tablet widths keep the richer split panes but move the collections sidebar into 
 - `ui/*` holds the generic widgets (dialogs, menus, toasts, long press).
 - `viewer/*` holds the PDF viewer (`viewer.html`): `viewer.ts` lays out, draws and zooms the pages
   and publishes `window.zcViewer`; `notesBridge.ts`, `links.ts` and `annotations.ts` add to it
-  through the `zc:pagecreated` and `zc:pagerendered` events. The annotations are split into
+  through the `zc:pagecreated` and `zc:pagerendered` events. `search.ts` owns full-document PDF
+  search, using the pure text/offset index and cancellable extraction in `searchModel.ts`;
+  `zc:textlayerrendered` lets it highlight only live text layers after rendering finishes.
+  The annotations are split into
   `annotations/model.ts` (the records, drawing them, saving each change, undo and redo),
   `annotations/input.ts` (the drawing tools and the controls of a selected annotation),
   `annotations/colorMenu.ts` (choosing a colour),

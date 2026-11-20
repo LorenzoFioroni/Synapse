@@ -319,9 +319,35 @@ async def main():
             check(
                 "a tool starts with its colour from Settings", await color_of(page) == "#00aa00", await color_of(page)
             )
+            check(
+                "the selected tool is announced and grouped with the other tools",
+                await page.locator('.annotation-tools [aria-pressed="true"]').count() == 1
+                and await page.locator('.tool-btn[data-tool="underline"]').get_attribute("aria-pressed") == "true",
+            )
+            await page.locator("#color-wrapper").focus()
+            await page.keyboard.press("Enter")
+            check(
+                "the colour button opens its chooser from the keyboard",
+                await page.locator(".zc-color-menu").is_visible()
+                and await page.locator("#color-wrapper").get_attribute("aria-expanded") == "true"
+                and await page.evaluate("!!document.activeElement.closest('.zc-color-menu')"),
+            )
+            await page.keyboard.press("Escape")
+            check(
+                "Escape closes the chooser and restores its button's focus",
+                await page.locator(".zc-color-menu").count() == 0
+                and await page.evaluate("document.activeElement.id === 'color-wrapper'")
+                and await page.locator("#color-wrapper").get_attribute("aria-expanded") == "false",
+            )
             await page.evaluate(
                 "(() => { const c = document.getElementById('tool-color'); c.value = '#123456';"
                 " c.dispatchEvent(new Event('input')); })()"
+            )
+            check(
+                "the visible colour chip follows the actual tool colour",
+                await page.locator("#color-wrapper .anno-color-preview").evaluate(
+                    "e => getComputedStyle(e).backgroundColor === 'rgb(18, 52, 86)'"
+                ),
             )
             await tool(page, "highlight")
             hl_color = await color_of(page)

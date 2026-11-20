@@ -82,7 +82,7 @@ Two files hold the types that are not in the code itself:
 - `src/globals.d.ts` types what the pages put on `window` (`zcViewer`, `zcViewerGoto`, `zcLinks`,
   `pdfjsLib`, `mermaid`, `ForceGraph`, and the read-only hooks `zcNotes`, `zcGraph`, `zcChanges`,
   `zcAnnotations` used by the browser checklists) and the custom DOM events: `zc:pagecreated` and
-  `zc:pagerendered` on `document`, and `zc:longpress` on elements.
+  `zc:pagerendered` and `zc:textlayerrendered` on `document`, and `zc:longpress` on elements.
 
 ### Typing the vendored libraries
 
@@ -108,7 +108,7 @@ When a library is updated, change its version in the `tools/*/package.json` and 
 | Page | Loads | Notes |
 |---|---|---|
 | `index.html` | the CSS files, `vendor/md/katex/katex.min.css`, then `js/main.js` as a module | The blocking local `js/themeHint.js` applies the cached theme (`zc.themeHint` in `localStorage`) before first paint. |
-| `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, then the modules `js/viewer/pdfjs.js` (loads pdf.js, an ES module), `viewer.js`, `notesBridge.js`, `links.js`, `annotations.js`; also `css/menu.css`, `css/ai.css` and KaTeX's CSS for the Ask AI panel | The PDF viewer, one tab per PDF: a frame in one of the app's tabs (`tabs/tabs.ts`), or a browser tab of its own (Settings → PDF Viewer). Its own styles and toolbar markup are inline. |
+| `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, then the modules `js/viewer/pdfjs.js` (loads pdf.js, an ES module), `viewer.js`, `notesBridge.js`, `links.js`, `annotations.js`; also `css/menu.css`, `css/ai.css`, `css/pdf-search.css`, `css/viewer-toolbar.css` and KaTeX's CSS for the Ask AI panel | The PDF viewer, one tab per PDF: a frame in one of the app's tabs (`tabs/tabs.ts`), or a browser tab of its own (Settings → PDF Viewer). Page/annotation styles and toolbar markup are inline; the toolbar's own styles live in `viewer-toolbar.css`. |
 | `pair.html` | `js/access/pair.js` | Pairing from the QR link. The standalone module is built from `src/access/pair.ts`; its exact path is public before pairing. Styles stay inline. |
 | `signin.html` | `js/access/signin.js` | Sent by the guard with status 401 instead of a protected page: pairing help and passkey sign-in. Its standalone module, built from `src/access/signin.ts`, is public before sign-in; it imports no protected modules. |
 
@@ -449,7 +449,41 @@ and for a selected annotation; `annotations/textMarks.ts` highlights and underli
 tool's colours and size. `inTab.ts` and `jumpHistory.ts` are for a viewer inside one of the app's
 tabs (see [the app window](desktop.md)).
 
+`search.ts` owns **Find in PDF**: the toolbar button, Cmd/Ctrl+F (also forwarded by the app shell
+when a PDF tab is active), Enter/Shift+Enter, Cmd/Ctrl+G/Shift+G, previous/next with wrap, Escape,
+match case and whole words. `searchModel.ts` extracts pages one at a time through pdf.js and caches
+only their searchable text/offset index. Search reaches every page without rendering extra canvases
+or searching the AI panel; changing the query or closing cancels outdated work. Results start near
+the page being read. Counts show extraction progress and partial failures; pages without embedded
+text contribute no results (there is no OCR).
+
+The find controls float inside `.pdf-workspace`, leaving the PDF viewport's size and scroll
+position unchanged on opening. The card stays in the PDF column beside thumbnails/docked AI;
+container queries compact its controls in a narrow column. Match counts, scanning progress and
+partial failures have separate places so the input and navigation do not move while indexing.
+Case/word options use native, keyboard-accessible checkboxes styled as toggle chips. Themes,
+touch targets and reduced-motion preferences use the existing design tokens and media rules.
+If a match at the start of the first page cannot scroll below the card, the card moves to the
+bottom of the PDF column to keep that match visible.
+
+Matching preserves punctuation, collapses whitespace, ignores accents and expands Unicode ligatures;
+phrases can cross text items and line breaks, and printed line-end/soft hyphens are ignored. UTF-16
+offsets map back to pdf.js's `TextLayer.textDivs`. `viewer.ts` keeps the current `zcTextLayer` on its
+page wrapper and emits `zc:textlayerrendered` only after that layer finishes and is still live.
+Pointer-transparent overlays in `css/pdf-search.css` highlight live text without altering it;
+they scale with the page, disappear on eviction/close and return on redraw. A page paints at most
+1,000 background results plus its active result, while navigation/counts retain every match.
+
 How the annotation tools behave:
+
+The toolbar groups history, drawing tools and style controls into compact sections. Tool icons
+share one stroke style and expose their selected state with `aria-pressed`. Colour and fill are
+native buttons with current-colour chips (a slash means None); their hidden colour inputs retain
+the existing value IDs. The swatch chooser takes keyboard focus and returns it on Escape/choice.
+The size field is labelled in PDF points, with native arrow-key editing. `css/viewer-toolbar.css`
+owns this presentation, including both themes, reduced motion and 40px-high tablet targets.
+On touch screens style controls reserve their space so choosing a tool does not move the row;
+on phone-width screens the tools form a separate, horizontally scrollable row.
 
 - **Colours.** Each tool starts with the colour and size it was last used with on this device
   (`localStorage`, key `zc.toolStyle`), or else with its colour from Settings → PDF Viewer

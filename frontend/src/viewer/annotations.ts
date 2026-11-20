@@ -90,21 +90,21 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) poll
 
 /** Undo / Redo buttons: the keyboard shortcuts are not there on a tablet. */
 function addUndoButtons(): void {
-  const tools = document.getElementById('tools-section');
+  const tools = document.getElementById('annotation-history');
   if (!tools || document.getElementById('anno-undo')) return;
   const mk = (id: string, title: string, d: string, fn: () => void) => {
     const b = document.createElement('button');
+    b.type = 'button';
     b.id = id; b.className = 'icon-btn'; b.title = title;
+    b.setAttribute('aria-label', title);
     b.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
     b.addEventListener('click', fn);
     return b;
   };
-  const sep = document.createElement('span');
-  sep.className = 'divider';
-  tools.prepend(
+  tools.append(
     mk('anno-undo', 'Undo (⌘Z)', '<path d="M4 6h6.5a3.5 3.5 0 010 7H7"/><path d="M6.5 3.5L4 6l2.5 2.5"/>', () => undo(undoStack, redoStack)),
     mk('anno-redo', 'Redo (⇧⌘Z)', '<path d="M12 6H5.5a3.5 3.5 0 000 7H9"/><path d="M9.5 3.5L12 6 9.5 8.5"/>', () => undo(redoStack, undoStack)),
-    sep);
+  );
 }
 addUndoButtons();
 

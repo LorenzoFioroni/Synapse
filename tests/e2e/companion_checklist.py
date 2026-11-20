@@ -129,6 +129,18 @@ class Companion(threading.Thread):
                 },
                 {"type": "done"},
             )
+        elif "SCROLL" in said:
+            paragraph = "A paragraph about quantum states and their correlations. " * 8 + "\n\n"
+            self.post(job, {"type": "text", "text": paragraph * 20 + "Scroll chunk 0\n\n"})
+            for i in range(1, 5):
+                if not self.gate.wait(20):
+                    self.post(job, {"type": "error", "message": "Scroll checklist timed out."})
+                    return
+                self.gate.clear()
+                events = [{"type": "text", "text": paragraph * 8 + f"Scroll chunk {i}\n\n"}]
+                if i == 4:
+                    events += [{"type": "usage", "input_tokens": 100, "output_tokens": 200}, {"type": "done"}]
+                self.post(job, *events)
         elif "STREAM" in said:
             self.post(job, {"type": "started"})
             time.sleep(0.8)
@@ -188,6 +200,58 @@ async def until(page, js, t=8000):
             return True
         await page.wait_for_timeout(100)
     return False
+
+
+async def scrolling(page, comp, label):
+    """Release each chunk only after observing the previous one and choosing a scroll position."""
+    if await page.locator(".ai-panel").is_hidden():
+        await page.click(".ai-fab")
+    await page.click("[data-new]")
+    comp.gate.clear()
+    await page.fill(".ai-input", "SCROLL please")
+    await page.keyboard.press("Enter")
+    thread = page.locator(".ai-thread")
+    at_end = "(() => { const e = document.querySelector('.ai-thread'); return e.scrollHeight - e.clientHeight - e.scrollTop <= 4; })()"
+    paused = 0
+    for i in range(5):
+        if i:
+            comp.gate.set()
+        assert await until(page, f"document.querySelector('.ai-answer')?.textContent.includes('Scroll chunk {i}')")
+        if i in (0, 1, 3):
+            check(f"{label}: large streamed chunks follow at the bottom ({i})", await page.evaluate(at_end))
+        else:
+            top = await thread.evaluate("e => e.scrollTop")
+            check(f"{label}: reading position survives {'completion' if i == 4 else 'a chunk'}", abs(top - paused) <= 2)
+        if i in (1, 3):
+            await thread.hover()
+            await page.mouse.wheel(0, -250)
+            assert await until(
+                page,
+                "document.querySelector('.ai-thread').scrollHeight - document.querySelector('.ai-thread').clientHeight - document.querySelector('.ai-thread').scrollTop >= 249",
+            )
+            paused = await thread.evaluate("e => e.scrollTop")
+        elif i == 2:
+            await thread.evaluate("e => { e.tabIndex = 0; e.focus(); }")
+            await page.keyboard.press("End")
+            assert await until(page, at_end)
+    assert await until(page, "!document.querySelector('.ai-turn.streaming')")
+    check(f"{label}: finishing does not scroll back down", abs(await thread.evaluate("e => e.scrollTop") - paused) <= 2)
+    for theme in ("light", "dark"):
+        await page.emulate_media(color_scheme=theme)
+        sizes = await page.evaluate("""() => {
+          const style = s => getComputedStyle(document.querySelector(s));
+          const q = style('.ai-q'), a = style('.ai-answer');
+          return { question: q.fontSize, answer: a.fontSize, line: parseFloat(a.lineHeight) / parseFloat(a.fontSize) };
+        }""")
+        check(
+            f"{label}: balanced text in {theme} theme",
+            sizes["question"] == sizes["answer"] and abs(sizes["line"] - 1.65) < 0.01,
+            sizes,
+        )
+        await shot(page, f"scroll-{label}-{theme}")
+    await page.emulate_media(color_scheme="light")
+    await page.click("[data-new]")
+    await page.click("[data-close]")
 
 
 async def main():
@@ -1589,6 +1653,10 @@ async def main():
                 await v.evaluate("document.getElementById('pdf-container').getBoundingClientRect().width") == before,
             )
             await v.keyboard.press("Escape")
+
+            # ---- streamed output follows only while the reader stays at the bottom, in both hosts
+            await scrolling(page, comp, "app")
+            await scrolling(v, comp, "viewer")
 
             # ---- the phone layout keeps working
             m = await b.new_context(viewport={"width": 390, "height": 760}, has_touch=True, is_mobile=True)

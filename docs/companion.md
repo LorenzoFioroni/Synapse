@@ -190,6 +190,13 @@ docked column is resized by its inner edge, and closing the panel only hides it:
 and the conversation stay, also across a reload on the same device. Details in
 [frontend](frontend.md#ask-ai); nothing of this is stored on the server.
 
+The conversation follows new output only while its scroll position is at the bottom (within 4 CSS
+pixels). Scrolling up pauses following, including when the answer finishes, fails or is stopped;
+returning to the bottom resumes it. Sending a question or opening a conversation starts at its end.
+Questions and answers use the configured UI font size with a 1.65 line height; turns are capped at
+65 characters of width in a wide panel. Markdown headings stay modest, including in the standalone
+PDF viewer, and citations, equations and code retain their own formatting.
+
 ## What the AI tool receives
 
 `prompt.build` (not the API handler) writes the question: the user's words, then what they added to it
