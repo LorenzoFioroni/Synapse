@@ -161,6 +161,21 @@ async def main():
                 await page.get_by_label("Whole words", exact=True).check()
                 await finished(page, "1 of 2")
                 check("match-case and whole-word options affect results", True)
+                await page.locator('.tool-btn[data-tool="underline"]').click()
+                await page.locator("#color-wrapper").focus()
+                await page.keyboard.press("Enter")
+                await page.keyboard.press("Shift+Tab")
+                check(
+                    "keyboard focus can leave the nonmodal colour chooser",
+                    await page.evaluate("!document.activeElement.closest('.zc-color-menu')"),
+                )
+                await page.keyboard.press("Escape")
+                check(
+                    "Escape dismisses the colour chooser before Find",
+                    await page.locator(".zc-color-menu").count() == 0
+                    and await page.locator(".pdf-findbar").is_visible(),
+                )
+                await page.locator('.tool-btn[data-tool="select"]').click()
                 check(
                     "selected options have a visible active state",
                     await page.get_by_label("Whole words", exact=True).evaluate(
@@ -309,6 +324,28 @@ async def main():
                     (h.bottom <= card.top || h.top >= card.bottom || h.right <= card.left || h.left >= card.right);
                 }""")
                 check("horizontal centering also leaves the active match clear of the card", True)
+                await narrow.set_viewport_size({"width": 834, "height": 1112})
+                await narrow.goto(viewer_url(attachment) + "&page=250")
+                await narrow.wait_for_selector('[data-page-number="250"] canvas')
+                await narrow.wait_for_function(
+                    "() => document.getElementById('page-num-text').textContent.includes('250 / 300')"
+                )
+                await narrow.locator('.tool-btn[data-tool="box"]').tap()
+                tablet = await narrow.evaluate("""() => {
+                  const toolbar = document.getElementById('toolbar').getBoundingClientRect();
+                  const sections = [...document.querySelectorAll('.toolbar-section')].map(e => e.getBoundingClientRect());
+                  return { oneRow: toolbar.height < 60,
+                    separate: sections.every((r, i) => !i || r.left >= sections[i-1].right - 1),
+                    contained: [...document.querySelectorAll('#toolbar button, #tool-size')].every(e => {
+                      if (getComputedStyle(e).visibility === 'hidden') return true;
+                      const r = e.getBoundingClientRect(), s = e.closest('.toolbar-section').getBoundingClientRect();
+                      return r.left >= s.left - 1 && r.right <= s.right + 1 && r.bottom <= toolbar.bottom;
+                    }) };
+                }""")
+                check(
+                    "tablet toolbar fits a long page counter without overlapping controls", all(tablet.values()), tablet
+                )
+                await shot(narrow, "pdf-toolbar-tablet")
                 await page.goto(viewer_url(empty_attachment))
                 await page.click("#pdf-find-toggle")
                 await page.get_by_role("searchbox", name="Find in PDF").fill("anything")

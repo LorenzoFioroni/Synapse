@@ -201,16 +201,15 @@ function initPdf(pdfUrl: string): void {
   let currentTool = 'select';
   const colorWrapper = document.getElementById('color-wrapper')!;
   const fillWrapper = document.getElementById('fill-wrapper')!;
-  const toolSize = document.getElementById('tool-size') as HTMLInputElement;
-  const toolbarSep = document.querySelector<HTMLElement>('.toolbar-sep')!;
+  const sizeWrapper = document.getElementById('size-wrapper')!;
+  const styleGroup = document.getElementById('annotation-style')!;
   // On touch screens the colour and size are hidden but keep their place (see the CSS)
   const KEEP_PLACE = matchMedia('(pointer: coarse)').matches;
   function showOpt(n: HTMLElement, on: boolean): void {
-    const d = n === colorWrapper || n === fillWrapper ? 'flex' : 'block';
-    if (KEEP_PLACE) { n.style.display = d; n.style.visibility = on ? 'visible' : 'hidden'; }
-    else n.style.display = on ? d : 'none';
+    if (KEEP_PLACE) { n.style.display = 'flex'; n.style.visibility = on ? 'visible' : 'hidden'; }
+    else n.style.display = on ? 'flex' : 'none';
   }
-  for (const n of [toolbarSep, colorWrapper, fillWrapper, toolSize]) showOpt(n, false);
+  for (const n of [styleGroup, colorWrapper, fillWrapper, sizeWrapper]) showOpt(n, false);
 
   const DRAWING = ['box', 'draw', 'text'];   // tools that draw on the page rather than select text
   function updateToolMode() {
@@ -234,11 +233,15 @@ function initPdf(pdfUrl: string): void {
       const tool = btn.dataset.tool!;
       // clicking the active tool again goes back to Select
       currentTool = currentTool === tool ? 'select' : tool;
-      document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', (b as HTMLElement).dataset.tool === currentTool));
-      showOpt(toolbarSep, currentTool !== 'select');
+      document.querySelectorAll<HTMLElement>('.tool-btn').forEach(b => {
+        const active = b.dataset.tool === currentTool;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-pressed', String(active));
+      });
+      showOpt(styleGroup, HAS_COLOR.includes(currentTool));
       showOpt(colorWrapper, HAS_COLOR.includes(currentTool));
       showOpt(fillWrapper, currentTool === 'box');
-      showOpt(toolSize, HAS_SIZE.includes(currentTool));
+      showOpt(sizeWrapper, HAS_SIZE.includes(currentTool));
       updateToolMode();
       document.dispatchEvent(new CustomEvent('zc:toolchange', { detail: { tool: currentTool } }));
     });

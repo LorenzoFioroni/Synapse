@@ -52,6 +52,20 @@ const sizeInput = () => byId<HTMLInputElement>('tool-size');
 const colorWell = () => byId<HTMLElement>('color-wrapper');
 const fillWell = () => byId<HTMLElement>('fill-wrapper');
 
+/** Visible colour chips reflect the value holders, including remembered styles and None. */
+function paintWells(): void {
+  for (const [well, input, label] of [
+    [colorWell(), colorInput(), tool() === 'box' ? 'Border colour' : 'Annotation colour'],
+    [fillWell(), fillInput(), 'Box fill'],
+  ] as const) {
+    if (!well || !input) continue;
+    well.style.setProperty('--anno-color', input.value);
+    const description = `${label}: ${well.hasAttribute('data-none') ? 'none' : input.value}`;
+    well.title = description;
+    well.setAttribute('aria-label', description);
+  }
+}
+
 /** Sets the toolbar's colours and size for tool t. */
 function applyTool(t: string): void {
   closeColorMenu();
@@ -62,11 +76,15 @@ function applyTool(t: string): void {
   if (c) c.value = mem.color && mem.base === defaultColor(t) ? mem.color : defaultColor(t);
   const size = mem.size ?? BUILT_IN[t].size;
   if (s && size) s.value = String(size);
+  const sizeLabel = t === 'text' ? 'Text size in points' : 'Stroke width in points';
+  s?.setAttribute('aria-label', sizeLabel);
+  byId('size-wrapper')?.setAttribute('title', sizeLabel);
   if (t === 'box') {
     if (f) f.value = mem.fill && mem.fillBase === defaultFill() ? mem.fill : defaultFill();
     colorWell()?.toggleAttribute('data-none', !!mem.noBorder && !!mem.filled);
     fillWell()?.toggleAttribute('data-none', !mem.filled);
   }
+  paintWells();
 }
 
 /** The toolbar's colour (or fill) chosen; null leaves the box's border (or fill) out. */
@@ -82,6 +100,7 @@ function pick(part: 'color' | 'fill', c: string | null): void {
     if (c) fillInput()!.value = c;
     remember(t, c ? { fill: c, fillBase: defaultFill(), filled: true } : { filled: false });
   }
+  paintWells();
 }
 
 /** The menu of a colour in the toolbar; for a box, the border or the fill may be left out (not both). */

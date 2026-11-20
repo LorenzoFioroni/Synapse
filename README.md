@@ -108,6 +108,10 @@ Enter/Shift+Enter or the arrows move through highlighted matches; match case
 and whole words are optional. PDF search excludes the AI panel and other UI text. It uses the PDF's
 embedded text, without OCR or an online service.
 
+The PDF annotation toolbar groups tools, history and style controls, with consistent line icons,
+colour chips and a compact size field. Colour choosers also work from the keyboard; tool colours
+and sizes remain remembered per device.
+
 Notes edited in another program are detected every 30 seconds while Synapse is running.
 Lists and backlinks refresh automatically; an open note reloads if clean, or offers the
 conflict dialog while preserving unsaved text. This also works without Git history. A note

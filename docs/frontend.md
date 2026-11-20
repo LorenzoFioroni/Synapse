@@ -108,7 +108,7 @@ When a library is updated, change its version in the `tools/*/package.json` and 
 | Page | Loads | Notes |
 |---|---|---|
 | `index.html` | the CSS files, `vendor/md/katex/katex.min.css`, then `js/main.js` as a module | The blocking local `js/themeHint.js` applies the cached theme (`zc.themeHint` in `localStorage`) before first paint. |
-| `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, then the modules `js/viewer/pdfjs.js` (loads pdf.js, an ES module), `viewer.js`, `notesBridge.js`, `links.js`, `annotations.js`; also `css/menu.css`, `css/ai.css`, `css/pdf-search.css` and KaTeX's CSS for the Ask AI panel | The PDF viewer, one tab per PDF: a frame in one of the app's tabs (`tabs/tabs.ts`), or a browser tab of its own (Settings → PDF Viewer). Its own styles and toolbar markup are inline. |
+| `viewer.html` | `css/tokens.css`, `vendor/pdfjs/pdf_viewer.css`, then the modules `js/viewer/pdfjs.js` (loads pdf.js, an ES module), `viewer.js`, `notesBridge.js`, `links.js`, `annotations.js`; also `css/menu.css`, `css/ai.css`, `css/pdf-search.css`, `css/viewer-toolbar.css` and KaTeX's CSS for the Ask AI panel | The PDF viewer, one tab per PDF: a frame in one of the app's tabs (`tabs/tabs.ts`), or a browser tab of its own (Settings → PDF Viewer). Page/annotation styles and toolbar markup are inline; the toolbar's own styles live in `viewer-toolbar.css`. |
 | `pair.html` | `js/access/pair.js` | Pairing from the QR link. The standalone module is built from `src/access/pair.ts`; its exact path is public before pairing. Styles stay inline. |
 | `signin.html` | `js/access/signin.js` | Sent by the guard with status 401 instead of a protected page: pairing help and passkey sign-in. Its standalone module, built from `src/access/signin.ts`, is public before sign-in; it imports no protected modules. |
 
@@ -475,6 +475,15 @@ they scale with the page, disappear on eviction/close and return on redraw. A pa
 1,000 background results plus its active result, while navigation/counts retain every match.
 
 How the annotation tools behave:
+
+The toolbar groups history, drawing tools and style controls into compact sections. Tool icons
+share one stroke style and expose their selected state with `aria-pressed`. Colour and fill are
+native buttons with current-colour chips (a slash means None); their hidden colour inputs retain
+the existing value IDs. The swatch chooser takes keyboard focus and returns it on Escape/choice.
+The size field is labelled in PDF points, with native arrow-key editing. `css/viewer-toolbar.css`
+owns this presentation, including both themes, reduced motion and 40px-high tablet targets.
+On touch screens style controls reserve their space so choosing a tool does not move the row;
+on phone-width screens the tools form a separate, horizontally scrollable row.
 
 - **Colours.** Each tool starts with the colour and size it was last used with on this device
   (`localStorage`, key `zc.toolStyle`), or else with its colour from Settings → PDF Viewer

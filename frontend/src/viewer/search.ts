@@ -213,7 +213,7 @@ export function initPdfSearch(container: HTMLElement, doc: () => PDFDocumentProx
     if (mod && key === 'f' && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); open(); }
     else if (!bar.hidden && ((mod && key === 'g') || (e.target === input && e.key === 'Enter'))) {
       e.preventDefault(); e.stopPropagation(); step(e.shiftKey ? -1 : 1);
-    } else if (!bar.hidden && e.key === 'Escape' && !(e.target as Element).closest('.ai-panel, .zc-menu, .zc-link-pop')) {
+    } else if (!bar.hidden && e.key === 'Escape' && !document.querySelector('.zc-color-menu') && !(e.target as Element).closest('.ai-panel, .zc-menu, .zc-link-pop')) {
       e.preventDefault(); e.stopPropagation(); close();
     } else if (!bar.hidden && !bar.contains(e.target as Node) &&
       !(e.target as HTMLElement).isContentEditable && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName) &&
