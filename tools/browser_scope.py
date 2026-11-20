@@ -25,7 +25,17 @@ GROUPS = [
     (("frontend/src/views/notes/commands.ts",), {"notes", "note_commands"}),
     (
         ("frontend/src/viewer/*", "frontend/viewer.html"),
-        {"annotations", "viewer_links", "pdf_tabs", "multipdf", "lazy_viewer", "zoom", "touch_app", "links"},
+        {
+            "annotations",
+            "viewer_links",
+            "pdf_tabs",
+            "pdf_search",
+            "multipdf",
+            "lazy_viewer",
+            "zoom",
+            "touch_app",
+            "links",
+        },
     ),
     (("browser_extension/*", "backend/connector.py", "backend/api/connector.py"), {"extension", "find_pdfs"}),
     (("backend/backup/*", "backend/api/backups.py"), {"backups", "remote_backups"}),

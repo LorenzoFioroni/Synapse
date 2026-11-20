@@ -1,0 +1,38 @@
+/* Full-document PDF search; overlays never change or intercept the selectable text. */
+.pdf-findbar {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 8px; flex: none;
+  padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-elev);
+  color: var(--text); font: var(--fs) / 1.45 var(--font);
+}
+.pdf-findbar[hidden] { display: none; }
+.pdf-findbar * { box-sizing: border-box; }
+.pdf-find-query { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pdf-find-query > .icon { flex: none; width: 16px; height: 16px; color: var(--text-3); }
+.pdf-find-query input {
+  min-width: 60px; width: 100%; max-width: 360px; height: 30px; padding: 4px 8px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--bg-input); color: var(--text); font: inherit;
+}
+.pdf-findbar input:focus-visible, .pdf-findbar button:focus-visible, #pdf-find-toggle:focus-visible {
+  outline: none; box-shadow: var(--focus-ring);
+}
+.pdf-find-count { min-width: 0; color: var(--text-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.pdf-find-actions { display: flex; align-items: center; gap: 2px; }
+.pdf-find-actions .icon { width: 16px; height: 16px; }
+.pdf-find-actions button:disabled { opacity: .4; cursor: default; background: transparent; }
+.pdf-find-options { display: flex; flex-wrap: wrap; gap: 6px 16px; grid-column: 1 / -1; font-size: var(--fs-sm); color: var(--text-2); }
+.pdf-find-options label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.pdf-find-options input { margin: 0; accent-color: var(--accent); }
+.pdf-search-layer { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.pdf-search-hit { position: absolute; pointer-events: none; background: color-mix(in srgb, var(--warning) 35%, transparent); border-radius: 2px; }
+.pdf-search-hit.current { background: color-mix(in srgb, var(--accent) 35%, transparent); outline: 2px solid var(--accent); }
+@media (max-width: 700px) {
+  .pdf-findbar { padding: 6px 8px; gap: 4px; }
+  .pdf-find-query { flex-wrap: wrap; gap: 4px; }
+  .pdf-find-query input { flex: 1; }
+  .pdf-find-count { flex-basis: 100%; }
+}
+@media (pointer: coarse) {
+  .pdf-find-query input { min-height: 40px; font-size: 16px; }
+  .pdf-find-options label { min-height: 36px; }
+}

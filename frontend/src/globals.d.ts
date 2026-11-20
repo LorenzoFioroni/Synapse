@@ -11,6 +11,8 @@ export interface ZcViewer {
   container: HTMLElement;
   /** Pages that have a canvas now (for the browser checklists). */
   renderedPages?(): number[];
+  /** Open the PDF's own full-document text search (also called from the app shell). */
+  find?(): void;
 }
 
 /** The app's tabs (tabs/tabs.ts), called by a viewer inside one of them (viewer/inTab.ts) and
@@ -39,6 +41,7 @@ declare global {
   interface DocumentEventMap {
     'zc:pagecreated': CustomEvent<{ wrapper: PageWrapper; page: PDFPageProxy }>;
     'zc:pagerendered': CustomEvent<{ wrapper: PageWrapper; page: PDFPageProxy; num: number }>;
+    'zc:textlayerrendered': CustomEvent<{ wrapper: PageWrapper; page: PDFPageProxy; num: number }>;
     /** An annotation tool was chosen; the annotations add-on sets its colour and size. */
     'zc:toolchange': CustomEvent<{ tool: string }>;
   }

@@ -2,11 +2,12 @@
 // zooms (buttons, Ctrl/⌘+wheel, pinch) around the spot under the pointer, shows thumbnails and
 // switches the annotation tools. The add-ons in this folder (annotations, links, notesBridge)
 // hook in through window.zcViewer and the zc:pagecreated / zc:pagerendered events.
-import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy, RenderTask, TextLayer } from 'pdfjs-dist';
 import { startPresence } from '../presence.js';
+import { initPdfSearch } from './search.js';
 
 /** A page's box in the viewer; pdf.js's page object is kept on it. */
-export type PageWrapper = HTMLDivElement & { zcPage: PDFPageProxy };
+export type PageWrapper = HTMLDivElement & { zcPage: PDFPageProxy; zcTextLayer?: TextLayer };
 
 /** Safari's pinch events (not in the DOM types). */
 interface GestureEvent extends UIEvent { scale: number; clientX: number; clientY: number }
@@ -49,6 +50,8 @@ function initPdf(pdfUrl: string): void {
 
   // For the viewer's add-on modules (annotations.ts, links.ts, notesBridge.ts)
   window.zcViewer = { get pdfDoc() { return pdfDoc; }, get scale() { return scale; }, container };
+  const search = initPdfSearch(container, () => pdfDoc);
+  window.zcViewer.find = search.open;
 
   // Observer to update current page number
   const pageObserver = new IntersectionObserver((entries) => {
@@ -472,6 +475,7 @@ function initPdf(pdfUrl: string): void {
     try { l.task?.cancel(); } catch (e) {}
     if (l.canvas) { l.canvas.width = 0; l.canvas.height = 0; l.canvas.remove(); }
     l.text?.remove();
+    delete pageWrappers[num - 1]?.zcTextLayer;
     live.delete(num);
   }
 
@@ -528,7 +532,13 @@ function initPdf(pdfUrl: string): void {
     prev?.text?.remove();
     wrapper.insertBefore(canvas, wrapper.firstChild);
     canvas.after(text);
-    new pdfjsLib.TextLayer({ textContentSource: textContent, container: text, viewport }).render().catch(() => {});
+    delete wrapper.zcTextLayer;
+    const textLayer = new pdfjsLib.TextLayer({ textContentSource: textContent, container: text, viewport });
+    textLayer.render().then(() => {
+      if (!text.isConnected || live.get(num)?.text !== text) return;
+      wrapper.zcTextLayer = textLayer;
+      document.dispatchEvent(new CustomEvent('zc:textlayerrendered', { detail: { wrapper, page, num } }));
+    }).catch(() => {});
     live.set(num, { scale: s, canvas, text, task: null, outputScale });
     wrapper.dataset.rendered = String(s);
     document.dispatchEvent(new CustomEvent('zc:pagerendered', { detail: { wrapper, page, num } }));
@@ -590,6 +600,7 @@ function initPdf(pdfUrl: string): void {
     standardFontDataUrl: base + 'standard_fonts/' }).promise.then(async function(pdfDoc_) {
     pdfDoc = pdfDoc_;
     await layoutPages();
+    search.ready();
     pump();
   }).catch(err => {
     console.error(err);

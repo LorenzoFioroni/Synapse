@@ -82,7 +82,7 @@ Two files hold the types that are not in the code itself:
 - `src/globals.d.ts` types what the pages put on `window` (`zcViewer`, `zcViewerGoto`, `zcLinks`,
   `pdfjsLib`, `mermaid`, `ForceGraph`, and the read-only hooks `zcNotes`, `zcGraph`, `zcChanges`,
   `zcAnnotations` used by the browser checklists) and the custom DOM events: `zc:pagecreated` and
-  `zc:pagerendered` on `document`, and `zc:longpress` on elements.
+  `zc:pagerendered` and `zc:textlayerrendered` on `document`, and `zc:longpress` on elements.
 
 ### Typing the vendored libraries
 
@@ -448,6 +448,22 @@ and for a selected annotation; `annotations/textMarks.ts` highlights and underli
 `annotations/pointer.ts` tells mouse, Pencil and finger apart; `annotations/prefs.ts` keeps each
 tool's colours and size. `inTab.ts` and `jumpHistory.ts` are for a viewer inside one of the app's
 tabs (see [the app window](desktop.md)).
+
+`search.ts` owns **Find in PDF**: the toolbar button, Cmd/Ctrl+F (also forwarded by the app shell
+when a PDF tab is active), Enter/Shift+Enter, Cmd/Ctrl+G/Shift+G, previous/next with wrap, Escape,
+match case and whole words. `searchModel.ts` extracts pages one at a time through pdf.js and caches
+only their searchable text/offset index. Search reaches every page without rendering extra canvases
+or searching the AI panel; changing the query or closing cancels outdated work. Results start near
+the page being read. Counts show extraction progress and partial failures; pages without embedded
+text contribute no results (there is no OCR).
+
+Matching preserves punctuation, collapses whitespace, ignores accents and expands Unicode ligatures;
+phrases can cross text items and line breaks, and printed line-end/soft hyphens are ignored. UTF-16
+offsets map back to pdf.js's `TextLayer.textDivs`. `viewer.ts` keeps the current `zcTextLayer` on its
+page wrapper and emits `zc:textlayerrendered` only after that layer finishes and is still live.
+Pointer-transparent overlays in `css/pdf-search.css` highlight live text without altering it;
+they scale with the page, disappear on eviction/close and return on redraw. A page paints at most
+1,000 background results plus its active result, while navigation/counts retain every match.
 
 How the annotation tools behave:
 

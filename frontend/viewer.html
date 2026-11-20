@@ -12,6 +12,7 @@
   <script src="/js/themeHint.js"></script>
   <link rel="stylesheet" href="vendor/pdfjs/pdf_viewer.css">
   <link rel="stylesheet" href="css/ai.css">
+  <link rel="stylesheet" href="css/pdf-search.css">
   <link rel="stylesheet" href="vendor/md/katex/katex.min.css">
       <style>
       .selected-anno {
@@ -145,6 +146,9 @@
     <div class="toolbar-section left">
       <button class="icon-btn" id="sidebar-toggle" title="Toggle Sidebar">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v12H2V2zm2 2v8h3V4H4zm4 0v8h4V4H8z"/></svg>
+      </button>
+      <button type="button" class="icon-btn" id="pdf-find-toggle" title="Find in PDF (Cmd/Ctrl+F)" aria-label="Find in PDF">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
       </button>
       <span class="divider"></span>
       <button class="icon-btn" id="zoom-out" title="Zoom Out">

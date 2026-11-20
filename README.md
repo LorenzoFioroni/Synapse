@@ -102,6 +102,11 @@ window to move it there, or outside every window for a new one (or right-click i
 Window**); right-click items, PDFs, folders, notes and tasks for **Open in New Window**. Settings →
 PDF Viewer → Open PDFs in → Browser Tabs keeps PDFs in browser tabs of their own.
 
+In a PDF, Cmd/Ctrl+F (or the magnifying-glass button) searches the whole document, including pages
+not currently drawn. Enter/Shift+Enter or the arrows move through highlighted matches; match case
+and whole words are optional. PDF search excludes the AI panel and other UI text. It uses the PDF's
+embedded text, without OCR or an online service.
+
 Notes edited in another program are detected every 30 seconds while Synapse is running.
 Lists and backlinks refresh automatically; an open note reloads if clean, or offers the
 conflict dialog while preserving unsaved text. This also works without Git history. A note

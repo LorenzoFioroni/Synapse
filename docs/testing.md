@@ -247,6 +247,7 @@ CDP-specific gesture/authenticator scenarios stay on Chromium.
 | `gallery` | 8794 | Figure numbers and `\cref` (read mode, live preview, exports); galleries: the carousel in read mode and the live preview, editing its source, autocomplete in captions, exported as one figure with panels (HTML, PDF, Markdown); galleries switched off and on in Extended Markdown's settings, then the whole plugin off and on, in the open note |
 | `graph` | 8787 | Local and global graph in Notes, Show in Graph, Cmd/Ctrl+Shift+G, Back/Forward |
 | `lazy_viewer` | 8778 | A 300-page PDF: pages drawn only near the viewport, fast jumps and zoom, annotations on far pages |
+| `pdf_search` | 8863 | Full-document text search over 300 pages without rendering them all, next/previous wrap and keyboard shortcuts, case/whole-word options, line breaks and hyphens, query replacement, zoom/revisit highlights, the app's AI panel and iframe focus, themes, touch controls and a PDF without searchable text |
 | `library` | 8768 | Citation key rename with preview, notes in search, trashed items, Quote and Snapshot to note |
 | `links` | 8767 | Note links: autocomplete, citation cards, side panels, the item pane |
 | `list_perf` | 8779 | 10,000 items: fast list, few rows in the DOM, quick selection, small changes without a full reload |
