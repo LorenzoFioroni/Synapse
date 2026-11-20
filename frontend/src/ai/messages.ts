@@ -94,7 +94,12 @@ export class Thread {
   }
 
   setRenderer(r: Renderer): void { this.renderer = r; this.paintAll(); }
-  clear(): void { this.el.replaceChildren(); this.turns.clear(); }
+  clear(): void {
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    this.el.replaceChildren();
+    this.turns.clear();
+  }
 
   /** The friendly start of an empty conversation, with things to ask. */
   showEmpty(title: string, ideas: string[], pick: (text: string) => void): void {
@@ -144,10 +149,18 @@ export class Thread {
   /** Draw soon (at most every 120 ms): streamed text arrives in small pieces. */
   schedule(t: Turn): void {
     if (this.timer) return;
-    this.timer = setTimeout(() => { this.timer = undefined; this.draw(t); this.toEnd(); }, THROTTLE_MS);
+    this.timer = setTimeout(() => { this.timer = undefined; this.draw(t); }, THROTTLE_MS);
   }
 
-  paintAll(): void { for (const t of this.turns.values()) { this.drawQuestion(t); this.draw(t); } }
+  paintAll(): void {
+    const follow = this.atEnd(), top = this.el.scrollTop;
+    for (const t of this.turns.values()) { this.drawQuestion(t); this.draw(t); }
+    if (follow) this.toEnd();
+    else this.el.scrollTop = top;
+  }
+
+  /** Read before changing the DOM: a large chunk can move the end by more than a viewport. */
+  private atEnd(): boolean { return this.el.scrollHeight - this.el.clientHeight - this.el.scrollTop <= 4; }
 
   /** The question as the user wrote it, with its [@key] citations and [[note]] links drawn as in an answer. */
   private drawQuestion(t: Turn): void {
@@ -173,6 +186,7 @@ export class Thread {
   }
 
   draw(t: Turn): void {
+    const follow = this.atEnd();
     clearTimeout(this.timer);
     this.timer = undefined;
     const body = t.box.querySelector<HTMLElement>('.ai-answer')!;
@@ -200,5 +214,6 @@ export class Thread {
     changes.querySelector('span')!.textContent = changesText(t.changes);
     t.box.querySelector<HTMLElement>('.ai-usage-line')!.textContent = usageText(t.usage);
     t.box.querySelector<HTMLElement>('[data-copy]')!.hidden = running || !t.text;
+    if (follow) this.toEnd();
   }
 }

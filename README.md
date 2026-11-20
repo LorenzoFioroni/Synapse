@@ -346,6 +346,9 @@ Previous conversations are kept on the server and can be continued later, and yo
 agent, model and effort for each question from small buttons beside the text box. Type `[@` or `[[` (or press the @ button)
 to cite a paper or a note in a question; the AI is told what they are. See [the companion guide](docs/companion.md) for how it works and why Codex is opt-in.
 
+Answers follow the stream while you are at the bottom; scroll up to read freely, then return to the
+bottom to follow again. Questions and answers share the UI text size, with relaxed line spacing.
+
 Add `--data DIR` if your library is not in `./data`. Tools:
 
 | Tool | What it gives |

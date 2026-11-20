@@ -322,7 +322,6 @@ function mount(host: AskHost): void {
     t.state = state;
     if (error) t.error = error;
     thread.draw(t);
-    thread.toEnd();
     job = null;
     abort = null;
     syncBusy();
