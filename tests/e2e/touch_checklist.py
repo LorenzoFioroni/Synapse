@@ -216,7 +216,7 @@ async def main():
                     return [Math.round(r('#toolbar').height), Math.round(r('#page-num-text').left), Math.round(r('.tool-btn[data-tool="draw"]').left)]; })()""")
                 )
             check("choosing a tool does not move the toolbar around", all(x == layout[0] for x in layout), str(layout))
-            check("… which stays one row in portrait", layout[0][0] < 60, f"{layout[0][0]}px")
+            check("… which stays within two rows in portrait", layout[0][0] < 110, f"{layout[0][0]}px")
             await tool(page, "select")
             box = await page_box(page)
             await tool(page, "draw")

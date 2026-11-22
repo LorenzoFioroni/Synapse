@@ -482,8 +482,9 @@ native buttons with current-colour chips (a slash means None); their hidden colo
 the existing value IDs. The swatch chooser takes keyboard focus and returns it on Escape/choice.
 The size field is labelled in PDF points, with native arrow-key editing. `css/viewer-toolbar.css`
 owns this presentation, including both themes, reduced motion and 40px-high tablet targets.
-On touch screens style controls reserve their space so choosing a tool does not move the row;
-on phone-width screens the tools form a separate, horizontally scrollable row.
+Style controls reserve their space on every device so choosing a tool does not move the buttons.
+Equal side columns keep page navigation centred; at widths up to 1280 px, tools use a separate,
+horizontally scrollable row. Reader buttons also scroll within their left column on phones.
 
 - **Colours.** Each tool starts with the colour and size it was last used with on this device
   (`localStorage`, key `zc.toolStyle`), or else with its colour from Settings → PDF Viewer

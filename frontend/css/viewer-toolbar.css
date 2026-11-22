@@ -1,14 +1,15 @@
 /* Reader navigation and annotation controls share the viewer's design tokens. */
 #toolbar, #toolbar * { box-sizing: border-box; }
 #toolbar {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; flex: none;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center; gap: 6px 10px; flex: none;
   padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--bg-elev);
   color: var(--text-2); z-index: 10;
 }
 .toolbar-section { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.toolbar-section.left { flex: 1 1 140px; min-width: 170px; } /* fixed reader buttons must not overlap navigation */
-.toolbar-section.center { flex: none; justify-content: center; }
-.toolbar-section.right { flex: none; justify-content: flex-end; margin-left: auto; }
+.toolbar-section.left { min-width: 0; }
+.toolbar-section.center { justify-content: center; }
+.toolbar-section.right { justify-content: flex-end; }
 .divider { width: 1px; height: 16px; flex: none; margin: 0 4px; background: var(--border); }
 .icon-btn, .tool-btn {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
@@ -48,7 +49,6 @@
 @media (pointer: coarse) {
   #toolbar { gap: 4px 6px; padding: 6px 8px; }
   #toolbar .toolbar-section { gap: 2px; }
-  #toolbar .toolbar-section.left { flex: 1 1 0; min-width: 156px; }
   #toolbar .toolbar-section.left .divider { display: none; }
   #toolbar .toolbar-group { gap: 0; padding: 1px; }
   #toolbar .icon-btn, #toolbar .tool-btn { width: 36px; height: 40px; border-radius: 8px; }
@@ -62,9 +62,14 @@
   .anno-size > span { display: none; }
   .zc-color-menu .zc-swatch { width: 30px; height: 30px; }
 }
-@media (max-width: 700px) {
+/* Equal side columns centre navigation; narrow viewers give tools their own stable row. */
+@media (max-width: 1280px) {
   #toolbar { width: 100%; max-width: 100vw; overflow: hidden; }
-  #toolbar .toolbar-section.right { flex: 1 1 100%; width: 100%; margin-left: 0; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  #toolbar .toolbar-section.right { grid-column: 1 / -1; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
   #toolbar .toolbar-section.right::-webkit-scrollbar { display: none; }
+}
+@media (max-width: 700px) {
+  #toolbar .toolbar-section.left { overflow-x: auto; scrollbar-width: none; }
+  #toolbar .toolbar-section.left::-webkit-scrollbar { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .icon-btn, .tool-btn { transition: none; } }

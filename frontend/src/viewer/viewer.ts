@@ -203,11 +203,9 @@ function initPdf(pdfUrl: string): void {
   const fillWrapper = document.getElementById('fill-wrapper')!;
   const sizeWrapper = document.getElementById('size-wrapper')!;
   const styleGroup = document.getElementById('annotation-style')!;
-  // On touch screens the colour and size are hidden but keep their place (see the CSS)
-  const KEEP_PLACE = matchMedia('(pointer: coarse)').matches;
+  // Reserve style controls on every device so selecting a tool never moves the other buttons.
   function showOpt(n: HTMLElement, on: boolean): void {
-    if (KEEP_PLACE) { n.style.display = 'flex'; n.style.visibility = on ? 'visible' : 'hidden'; }
-    else n.style.display = on ? 'flex' : 'none';
+    n.style.visibility = on ? 'visible' : 'hidden';
   }
   for (const n of [styleGroup, colorWrapper, fillWrapper, sizeWrapper]) showOpt(n, false);
 

@@ -334,8 +334,10 @@ async def main():
                 tablet = await narrow.evaluate("""() => {
                   const toolbar = document.getElementById('toolbar').getBoundingClientRect();
                   const sections = [...document.querySelectorAll('.toolbar-section')].map(e => e.getBoundingClientRect());
-                  return { oneRow: toolbar.height < 60,
-                    separate: sections.every((r, i) => !i || r.left >= sections[i-1].right - 1),
+                  return { compact: toolbar.height < 110,
+                    centred: Math.abs((sections[1].left + sections[1].right - toolbar.left - toolbar.right) / 2) < 1,
+                    separate: sections.every((r, i) => sections.slice(0, i).every(p =>
+                      r.left >= p.right - 1 || r.right <= p.left + 1 || r.top >= p.bottom - 1 || r.bottom <= p.top + 1)),
                     contained: [...document.querySelectorAll('#toolbar button, #tool-size')].every(e => {
                       if (getComputedStyle(e).visibility === 'hidden') return true;
                       const r = e.getBoundingClientRect(), s = e.closest('.toolbar-section').getBoundingClientRect();

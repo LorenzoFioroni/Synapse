@@ -22,7 +22,8 @@ TypeScript frontend. Everything runs on your machine.
 - 🔎 **Find the passage you remember** — search metadata and PDF full text, then organise
   your collection with folders, coloured tags and smart folders.
 - 🖍️ **Read, highlight, capture** — annotate PDFs with highlights, drawings and comments,
-  and send quotes or snapshots straight into your notes.
+  and send quotes or snapshots straight into your notes. Page navigation stays centred, and
+  annotation tools keep their positions when colour and size controls appear.
 - 📝 **Write notes that connect** — live Markdown preview, LaTeX maths, diagrams, images,
   paper citations and links between notes (moving or renaming a note updates the links to it);
   keep PDFs in your notes folders too: drop them on the notes list and open them in the viewer.
