@@ -111,7 +111,9 @@ embedded text, without OCR or an online service.
 
 The PDF annotation toolbar groups tools, history and style controls, with consistent line icons,
 colour chips and a compact size field. Colour choosers also work from the keyboard; tool colours
-and sizes remain remembered per device.
+and sizes remain remembered per device. With the Select tool, select text and click Highlight or
+Underline (or press H or U) to mark it without switching tools. Click an annotation with Select, or with the tool
+that made it, to recolour or delete it; highlighted words stay selectable.
 
 Notes edited in another program are detected every 30 seconds while Synapse is running.
 Lists and backlinks refresh automatically; an open note reloads if clean, or offers the

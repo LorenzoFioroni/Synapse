@@ -40,6 +40,8 @@
     .anno-layer { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 5; mix-blend-mode: multiply; }
         .anno-layer.mode-draw { pointer-events: auto; }
     .anno-layer > * { pointer-events: auto !important; }
+    /* the words under a highlight or underline stay selectable: they are hit by their rects (textMarks.ts) */
+    .anno-layer > .anno-highlight, .anno-layer > .anno-underline { pointer-events: none !important; }
 
     /* Touch screens. The page zooms itself (pinch → applyZoom), never the browser;
        fingers scroll. Before any Pencil has been used, fingers draw in the drawing tools. */
