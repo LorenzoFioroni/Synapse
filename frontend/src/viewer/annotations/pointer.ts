@@ -34,5 +34,18 @@ function stopPenScroll(e: TouchEvent): void {
   if (tool() === 'text' && e.type === 'touchstart') return;
   e.preventDefault();
 }
-document.addEventListener('touchstart', stopPenScroll, { passive: false });
-document.addEventListener('touchmove', stopPenScroll, { passive: false });
+/* A non-passive touch listener makes Safari wait for the page's script before every scroll, and
+   that script is often busy drawing pages: scrolling stutters. So listen only while a tool that
+   may cancel touches is chosen; with Select, scrolling never waits. */
+let listening = false;
+function syncPenScroll(): void {
+  const want = tool() !== 'select';
+  if (want === listening) return;
+  listening = want;
+  for (const type of ['touchstart', 'touchmove'] as const) {
+    if (want) document.addEventListener(type, stopPenScroll, { passive: false });
+    else document.removeEventListener(type, stopPenScroll);
+  }
+}
+syncPenScroll();
+document.addEventListener('zc:toolchange', syncPenScroll);
