@@ -259,7 +259,8 @@ see the [README](../README.md); for code ownership, see the [architecture map](a
   made on (an item's second PDF keeps its own), with the highlighted words; two tabs on one PDF never
   overwrite each other. Undo/redo with Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z.
   Highlights and underlines take whole words (hold Alt/⌥ while selecting for exact characters, or
-  turn it off in Settings → PDF Viewer) and stay one straight line across inline math. Each tool
+  turn it off in Settings → PDF Viewer) and stay one straight line across inline math. On an iPad,
+  drag the Apple Pencil over the text (or one finger, until a Pencil has been used). Each tool
   remembers the colour you last used with it; the colours it starts with are set in Settings → PDF
   Viewer. Select an annotation to change its colours or delete it. Links in the PDF work: citations, figure and section
   references jump inside the document, web links open in a new tab, and hovering a link shows a

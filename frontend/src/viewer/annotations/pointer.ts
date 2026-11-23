@@ -4,7 +4,7 @@ import { tool } from './model.js';
 
 /* Mouse, Apple Pencil and fingers all arrive as pointer events.
    - Once a pen has been used (remembered), fingers scroll and pinch while the pen draws, highlights
-     and erases; before that (a phone, an iPad without a Pencil) fingers draw too.
+     and erases; before that (a phone, an iPad without a Pencil) fingers draw and highlight too.
    - Safari scrolls the page under the Pencil unless its touches are cancelled; touchstart/touchmove
      of a stylus are cancelled while an annotation tool is chosen (see stopPenScroll). */
 let penSeen = false;
@@ -24,6 +24,9 @@ document.addEventListener('pointerdown', (e) => { lastPointer = e.pointerType ||
 
 function stopPenScroll(e: TouchEvent): void {
   if (tool() === 'select') return;
+  // before any Pencil, one finger on the text highlights it (textMarks.ts): no scroll, no long-press selection
+  if (!penSeen && (tool() === 'highlight' || tool() === 'underline') && e.touches.length === 1
+      && (e.target as Element).closest?.('.textLayer span')) { e.preventDefault(); return; }
   // touchType is Safari's (not in the standard DOM types)
   if (![...e.changedTouches].some((t) => (t as Touch & { touchType?: string }).touchType === 'stylus')) return;
   if (!(e.target as Element).closest?.('.page-wrapper')) return;

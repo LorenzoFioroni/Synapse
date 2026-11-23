@@ -498,6 +498,13 @@ horizontally scrollable row. Reader buttons also scroll within their left column
   `annotation_snap_words` is off or Alt is held when the mouse button or the Pencil is lifted.
   Only the text of the runs where the selection starts and ends is looked at. On a touch screen
   the preview drawn while selecting is snapped the same way.
+- **Pencil and finger.** The Pencil selects text by dragging over it; so does one finger until a
+  Pencil has been used on that device (`annotations/pointer.ts`; the text's runs then take
+  `touch-action: none`, so a drag started off the text, or with two fingers, still scrolls and
+  zooms). Once a Pencil has been seen, fingers scroll and a long press plus the Highlight button
+  marks a finger selection. The selection follows the nearest run of text (`textAt`), so a pen
+  between lines, past the end of a line or in a margin keeps the line it is on rather than
+  jumping through the text layer.
 - **One rect per line.** The text layer gives a box per run of text, and inline math, sub- and
   superscripts sit higher or lower than the words around them. `mergeLines`
   (`annotations/lines.ts`, unit-tested in `tests/js/annotationLines.test.mjs`) merges the boxes

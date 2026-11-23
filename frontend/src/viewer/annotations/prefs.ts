@@ -12,7 +12,7 @@ import { api, tool } from './model.js';
 /** What a tool starts with when nothing is remembered and Settings has no colour for it. */
 const BUILT_IN: Record<string, { color: string; size?: number; fill?: string }> = {
   highlight: { color: '#ffff00' },
-  underline: { color: '#ff0000', size: 2 },
+  underline: { color: '#ff0000', size: 1 },
   text: { color: '#000000', size: 16 },
   box: { color: '#000000', size: 2, fill: '#ffff00' },
   draw: { color: '#000000', size: 2 },

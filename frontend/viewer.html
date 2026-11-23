@@ -48,6 +48,9 @@
     /* the browser page got zoomed anyway (an older viewer, an accessibility zoom): let it be pinched back */
     .zc-page-zoomed #pdf-container { touch-action: auto; }
     body:not(.zc-pen) .anno-layer.mode-draw { touch-action: none; }
+    /* … and one finger dragged over the text highlights or underlines it (textMarks.ts); off the text it scrolls */
+    body:not(.zc-pen)[data-zc-tool="highlight"] .textLayer span,
+    body:not(.zc-pen)[data-zc-tool="underline"] .textLayer span { touch-action: none; }
     /* Text boxes are HTML over the page, not in the SVG: Safari draws HTML inside an SVG
        foreignObject in the wrong place (it ignores the SVG's scaling), so boxes were invisible
        or drifted when zooming. Sizes follow the zoom through --zc-scale. */
