@@ -2,9 +2,9 @@
 // whole words, one rect per line. Also the words inside a box. See annotations.ts for the
 // overview.
 import { mergeLines, wordEnd, wordStart } from './lines.js';
-import { type Annotation, ownerBase, color, create, el, layers, pageSize, scale, size, tool } from './model.js';
+import { type Annotation, byId, ownerBase, color, create, el, layers, ownType, pageSize, scale, select, size, tool } from './model.js';
 import { draws, lastPointer } from './pointer.js';
-import { prefs } from './prefs.js';
+import { prefs, toolStyle } from './prefs.js';
 
 const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
 const isMarkTool = (t: string): t is 'highlight' | 'underline' => t === 'highlight' || t === 'underline';
@@ -55,16 +55,17 @@ function markedRange(sel: Selection | null, exact = false): Range | null {
   return prefs.snapWords && !exact ? snapToWords(range) : range;
 }
 
-/** The selected text becomes one annotation of type t, one rect per line. Returns true when made. */
-function markSelection(t: string, exact = false): boolean {
+/** The selected text becomes one annotation of type t, one rect per line, in the toolbar's
+    colour and size unless `style` gives others. Returns true when made. */
+function markSelection(t: string, exact = false, style?: { color: string; size?: number }): boolean {
   if (!isMarkTool(t)) return false;   // the tool changed meanwhile
   const sel = window.getSelection();
   const range = ownerBase ? markedRange(sel, exact) : null;
   const got = range && rangeRects(range);
   if (!got || !sel) return false;
   const text = range.toString().replace(/-\n(?=\w)/g, '').replace(/\s+/g, ' ').trim();
-  const rec: Omit<Annotation, 'id'> = { type: t, page: Number(got.wrapper.dataset.pageNumber), rects: got.rects, text, color: color() };
-  if (t === 'underline') rec.size = size();
+  const rec: Omit<Annotation, 'id'> = { type: t, page: Number(got.wrapper.dataset.pageNumber), rects: got.rects, text, color: style?.color ?? color() };
+  if (t === 'underline') rec.size = style?.size ?? size();
   sel.removeAllRanges();
   hideMarkPill();
   hidePreview();
@@ -74,6 +75,84 @@ function markSelection(t: string, exact = false): boolean {
 
 document.addEventListener('mouseup', (e) => {
   if (isMarkTool(tool()) && lastPointer === 'mouse') markSelection(tool(), e.altKey);
+});
+
+/* With the Select tool, text selected and then Highlight or Underline clicked: the selection is
+   marked with that tool's style, and Select stays the tool. The range is kept from the press, as
+   a tap on the button may clear the selection on a touch screen. Capture phase, so the viewer's
+   own handler never switches the tool. */
+let pressedRange: Range | null = null;
+const markButton = (e: Event) => {
+  const btn = (e.target as Element).closest?.<HTMLElement>('.tool-btn');
+  const t = btn?.dataset.tool;
+  return t && isMarkTool(t) && tool() === 'select' ? t : null;
+};
+const textRange = (): Range | null => {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+  const n = sel.anchorNode;
+  return (n?.nodeType === 1 ? (n as Element) : n?.parentElement)?.closest('.textLayer') ? sel.getRangeAt(0).cloneRange() : null;
+};
+document.addEventListener('pointerdown', (e) => { pressedRange = markButton(e) ? textRange() : null; }, true);
+document.addEventListener('click', (e) => {
+  const t = markButton(e);
+  const range = t && (textRange() || pressedRange);
+  pressedRange = null;
+  if (!t || !range) return;
+  e.stopImmediatePropagation();
+  e.preventDefault();
+  const sel = window.getSelection()!;
+  sel.removeAllRanges();
+  sel.addRange(range);
+  markSelection(t, (e as MouseEvent).altKey, toolStyle(t)!);
+}, true);
+
+/* Selected text and H or U: highlighted or underlined in that tool's style, whichever tool is
+   chosen (Alt too: exact characters; e.code, as Alt changes the key on a Mac). */
+window.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.repeat) return;
+  const target = e.target as HTMLElement;
+  if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+  const k = e.altKey ? e.code : `Key${(e.key || '').toUpperCase()}`;
+  const t = k === 'KeyH' ? 'highlight' : k === 'KeyU' ? 'underline' : null;
+  if (!t || !textRange()) return;
+  e.preventDefault();
+  markSelection(t, e.altKey, toolStyle(t)!);
+});
+
+/** The highlight or underline at a screen point (the topmost), optionally only of one type. They
+    let the pointer through to the text, so they are found by their rects, not by the DOM. */
+export function markAt(x: number, y: number, type?: string): Annotation | null {
+  const wrapper = document.elementsFromPoint(x, y).map((n) => n.closest<HTMLElement>('.page-wrapper')).find(Boolean);
+  if (!wrapper) return null;
+  const page = Number(wrapper.dataset.pageNumber);
+  const wr = wrapper.getBoundingClientRect();
+  const fx = (x - wr.left) / wr.width, fy = (y - wr.top) / wr.height;
+  const pad = 2 / wr.height;   // a line under the words is hit too
+  let hit: Annotation | null = null;
+  for (const rec of byId.values()) {
+    if (rec.page !== page || !(type ? rec.type === type : isMarkTool(rec.type))) continue;
+    if (rec.rects?.some(([rx, ry, w, h]) => fx >= rx && fx <= rx + w && fy >= ry - pad && fy <= ry + h + pad)) hit = rec;
+  }
+  return hit;
+}
+
+/* A click or tap (not a drag) on a highlight or an underline selects it, with the Select tool or
+   the tool that made it; dragging over it selects its words as anywhere else. */
+let press: { x: number; y: number; id: number } | null = null;
+document.addEventListener('pointerdown', (e) => {
+  press = e.button <= 0 && (e.target as Element).closest?.('.textLayer') ? { x: e.clientX, y: e.clientY, id: e.pointerId } : null;
+});
+document.addEventListener('pointerup', (e) => {
+  const p = press;
+  press = null;
+  if (!p || p.id !== e.pointerId || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 5) return;
+  const t = tool();
+  if (t !== 'select' && !isMarkTool(t)) return;
+  const sel = window.getSelection();
+  if (sel && !sel.isCollapsed) return;   // a double click selected a word
+  const rec = markAt(e.clientX, e.clientY, t === 'select' ? undefined : ownType(t));
+  if (rec) select(rec.id);
 });
 
 /** The words of the text layer inside [x, y, w, h] (page fractions) of a page. */

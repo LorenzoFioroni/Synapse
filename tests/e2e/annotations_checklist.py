@@ -256,6 +256,36 @@ async def main():
             await page.keyboard.press(f"{mod}+z")
             check("and undo restores it", await until_count(att["id"], 5))
 
+            # ---- marked words stay selectable; each tool selects its own kind of annotation
+            hb = await page.locator(f'[data-id="{hl["id"]}"] rect').first.bounding_box()
+            mid = hb["y"] + hb["height"] / 2
+            await page.mouse.click(hb["x"] + hb["width"] - 3, mid)
+            await drag(page, (hb["x"] + 3, mid), (hb["x"] + hb["width"] - 3, mid))
+            picked = await page.evaluate("getSelection().toString()")
+            check("the words under a highlight can be selected", len(picked.strip()) > 3, repr(picked))
+            await page.mouse.click(hb["x"] + 3, mid)  # a click clears it and selects the highlight
+            await tool(page, "highlight")
+            await page.keyboard.press("Escape")
+            await page.mouse.click(hb["x"] + 3, mid)
+            pill = page.locator(".zc-sel-pill [data-del]")
+            check("the highlight tool selects a highlight it is clicked on", await pill.count() == 1)
+            await pill.click()
+            check("and its Delete removes it", await until_count(att["id"], 4))
+            await page.keyboard.press(f"{mod}+z")
+            await until_count(att["id"], 5)
+            await tool(page, "underline")
+            await page.mouse.click(hb["x"] + 3, mid)
+            check("the underline tool does not select a highlight", await pill.count() == 0)
+            await tool(page, "box")
+            bb = await page.locator(f'[data-id="{box["id"]}"] rect').bounding_box()
+            await page.mouse.click(bb["x"] + 1, bb["y"] + bb["height"] / 2)
+            check(
+                "the box tool selects a box it is clicked on, without drawing one",
+                await pill.count() == 1 and len(anns(att["id"])) == 5,
+            )
+            await page.keyboard.press("Escape")
+            await tool(page, "select")
+
             # ---- move a text box by its frame
             before = txt["rects"][0][:2]
             frame = await page.locator(f'[data-id="{txt["id"]}"] .anno-text-frame').bounding_box()
@@ -391,6 +421,32 @@ async def main():
                 repr(exact),
             )
 
+            # ---- text selected with Select, then Underline clicked: marked, and Select stays
+            await tool(page, "select")
+            pts3 = await page.evaluate(WORD_POINTS, 2)
+            await drag(page, pts3["a"], pts3["b"])
+            await page.click('.tool-btn[data-tool="underline"]')
+            ok = await until_count(tatt["id"], 3)
+            ul = next((a for a in anns(tatt["id"]) if a["type"] == "underline"), {}) if ok else {}
+            check(
+                "a tool clicked on a selection marks it in its own colour, snapped to words",
+                ul.get("color") == "#0000ff" and ul.get("text", "").startswith(pts3["words"][0]),
+                repr(ul),
+            )
+            check(
+                "and Select stays the tool",
+                await page.evaluate("document.body.dataset.zcTool") == "select"
+                and await page.locator('.tool-btn[data-tool="select"]').get_attribute("aria-pressed") == "true",
+            )
+            pts4 = await page.evaluate(WORD_POINTS, 3)
+            await drag(page, pts4["a"], pts4["b"])
+            await page.keyboard.press("h")
+            ok = await until_count(tatt["id"], 4)
+            hk = next(
+                (a for a in anns(tatt["id"]) if a["type"] == "highlight" and a["text"].startswith(pts4["words"][0])), {}
+            )
+            check("H highlights the selected text, snapped to words", ok and bool(hk), repr(hk))
+
             # ---- a box: a border, a fill or both
             def ann(ann_id):
                 return next(a for a in anns(tatt["id"]) if a["id"] == ann_id)
@@ -408,7 +464,7 @@ async def main():
             await page.click("#color-wrapper")
             await page.click(".zc-color-menu [data-none]")
             await drag(page, (tw["x"] + 60, tw["y"] + 300), (tw["x"] + 400, tw["y"] + 380))
-            ok = await until_count(tatt["id"], 3)
+            ok = await until_count(tatt["id"], 5)
             area = next((a for a in anns(tatt["id"]) if a["type"] == "box"), {})
             check(
                 "a filled box without a border, with the words inside it",

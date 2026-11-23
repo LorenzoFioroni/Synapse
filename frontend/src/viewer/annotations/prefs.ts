@@ -66,6 +66,13 @@ function paintWells(): void {
   }
 }
 
+/** The colour and size tool t would use now, whichever tool is active; null for a tool without them. */
+export function toolStyle(t: string): { color: string; size?: number } | null {
+  if (!BUILT_IN[t]) return null;
+  const mem = remembered()[t] || {};
+  return { color: mem.color && mem.base === defaultColor(t) ? mem.color : defaultColor(t), size: mem.size ?? BUILT_IN[t].size };
+}
+
 /** Sets the toolbar's colours and size for tool t. */
 function applyTool(t: string): void {
   closeColorMenu();
@@ -73,9 +80,9 @@ function applyTool(t: string): void {
   if (!BUILT_IN[t]) return;
   const mem = remembered()[t] || {};
   const c = colorInput(), s = sizeInput(), f = fillInput();
-  if (c) c.value = mem.color && mem.base === defaultColor(t) ? mem.color : defaultColor(t);
-  const size = mem.size ?? BUILT_IN[t].size;
-  if (s && size) s.value = String(size);
+  const style = toolStyle(t)!;
+  if (c) c.value = style.color;
+  if (s && style.size) s.value = String(style.size);
   const sizeLabel = t === 'text' ? 'Text size in points' : 'Stroke width in points';
   s?.setAttribute('aria-label', sizeLabel);
   byId('size-wrapper')?.setAttribute('title', sizeLabel);

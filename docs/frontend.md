@@ -445,7 +445,7 @@ picks up changes made elsewhere; `annotations/model.ts` holds the records, draws
 change and keeps undo and redo; `annotations/input.ts` is the drawing tools (boxes, ink, text
 boxes, the eraser) and the controls of a selected annotation (its colours, Delete);
 `annotations/colorMenu.ts` is choosing a colour (swatches, None, any other colour), in the toolbar
-and for a selected annotation; `annotations/textMarks.ts` highlights and underlines selected text;
+and for a selected annotation; `annotations/textMarks.ts` highlights and underlines selected text (also text selected with the Select tool, when Highlight or Underline is clicked, without changing the tool; highlights and underlines let the pointer through to the words, so a click finds them by their rects);
 `annotations/pointer.ts` tells mouse, Pencil and finger apart; `annotations/prefs.ts` keeps each
 tool's colours and size. `inTab.ts` and `jumpHistory.ts` are for a viewer inside one of the app's
 tabs (see [the app window](desktop.md)).

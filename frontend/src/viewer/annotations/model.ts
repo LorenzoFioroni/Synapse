@@ -45,6 +45,9 @@ export let selectedId: string | null = null;
 
 /* ------------------------------------------------------------------ helpers */
 export const tool = () => document.body.dataset.zcTool || 'select';
+/** The kind of annotation tool t makes: a click with it selects one of that kind. */
+export const ownType = (t: string): string | undefined =>
+  ({ highlight: 'highlight', underline: 'underline', box: 'box', draw: 'ink', text: 'text' } as Record<string, string>)[t];
 export const color = () => (document.getElementById('tool-color') as HTMLInputElement | null)?.value || '#ffff00';
 export const size = () => Math.max(1, Number((document.getElementById('tool-size') as HTMLInputElement | null)?.value) || 2);
 /** The box tool: is the border drawn, and the fill colour (null: not filled). The toolbar marks a
