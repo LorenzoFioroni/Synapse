@@ -5,10 +5,10 @@
 import { holdPointer, type SwatchRow, swatchRow } from './colorMenu.js';
 import {
   type Annotation, type TextBoxNode, border, boxRect, byId, change, color, create, draw, el, fill, hooks, measure, pageSize,
-  placeText, redoStack, remove, scale, select, selectedId, size, textBox, tool, uid, undo, undoStack,
+  ownType, placeText, redoStack, remove, scale, select, selectedId, size, textBox, tool, uid, undo, undoStack,
 } from './model.js';
 import { draws } from './pointer.js';
-import { textIn } from './textMarks.js';
+import { markAt, textIn } from './textMarks.js';
 
 /** A point on a page in PDF points, with the page's size. */
 interface Point { x: number; y: number; W: number; H: number }
@@ -36,8 +36,9 @@ function newTextBox(html: HTMLElement, page: number, p: Point): void {
     (positions are always taken from the SVG layer, which covers the page as the other one does). */
 export function setupLayer(svg: SVGSVGElement, html: HTMLElement, page: number): void {
   // box or ink being drawn (a box keeps the colours it was started with)
+  // (`hit`: an annotation of the tool's own kind it was started on, selected if it stays a click)
   let shape: { kind: 'box' | 'draw'; style?: Pick<Annotation, 'color' | 'fill' | 'size'>; g: SVGGElement; node: SVGPathElement | SVGRectElement; start: Point;
-    points: number[][]; W: number; H: number; id: number } | null = null;
+    points: number[][]; W: number; H: number; id: number; x: number; y: number; hit?: string } | null = null;
   // text box being moved
   let drag: { rec: Annotation; node: TextBoxNode; dx: number; dy: number; moved: boolean; id: number } | null = null;
   // text tool: where the pointer went down (a box is made when it comes up)
@@ -57,6 +58,7 @@ export function setupLayer(svg: SVGSVGElement, html: HTMLElement, page: number):
     const textNode = target.closest?.<TextBoxNode>('.anno-text');
     if (textNode) {
       e.stopPropagation();
+      if (t === 'text' && rec) select(rec.id);
       if (!target.isContentEditable && rec && draws(e)) {
         e.preventDefault();
         (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
@@ -83,7 +85,11 @@ export function setupLayer(svg: SVGSVGElement, html: HTMLElement, page: number):
       : el('path', { d: `M ${p.x} ${p.y}`, stroke: color(), 'stroke-width': size(), fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
     g2.appendChild(node);
     svg.appendChild(g2);
-    shape = { kind: t as 'box' | 'draw', style, g: g2, node, start: p, points: [[p.x / p.W, p.y / p.H]], W: p.W, H: p.H, id: e.pointerId };
+    // the text boxes' layer lies over the drawings: look under it
+    const hit = document.elementsFromPoint(e.clientX, e.clientY).map((n) => byId.get(n.closest<HTMLElement>('.anno-layer .anno')?.dataset.id ?? ''))
+      .find((a) => a?.type === ownType(t))?.id;
+    shape = { kind: t as 'box' | 'draw', style, g: g2, node, start: p, points: [[p.x / p.W, p.y / p.H]], W: p.W, H: p.H, id: e.pointerId,
+      x: e.clientX, y: e.clientY, hit };
   };
 
   const move = (e: PointerEvent) => {
@@ -127,6 +133,8 @@ export function setupLayer(svg: SVGSVGElement, html: HTMLElement, page: number):
     shape = null;
     s.g.remove();
     if (e.type === 'pointercancel') return;   // the browser took the gesture over (a scroll)
+    // a click, not a drawing: selects the box or drawing under it (none: deselects)
+    if (Math.hypot(e.clientX - s.x, e.clientY - s.y) < 4) { select(s.hit ?? null); return; }
     if (s.kind === 'draw') {
       if (s.points.length < 2) return;
       create({ type: 'ink', page, path: s.points.map(([x, y]) => [r6(x), r6(y)]), color: s.node.getAttribute('stroke')!, size: Number(s.node.getAttribute('stroke-width')) });
@@ -161,6 +169,8 @@ function eraseAt(e: PointerEvent): void {
     const rec = g && byId.get(g.dataset.id!);
     if (rec) { remove(rec); return; }
   }
+  const mark = markAt(e.clientX, e.clientY);   // highlights and underlines let the pointer through
+  if (mark) remove(mark);
 }
 
 /* -------- a selected annotation: its colour and a Delete button (there may be no keyboard) */

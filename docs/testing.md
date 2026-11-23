@@ -227,7 +227,7 @@ CDP-specific gesture/authenticator scenarios stay on Chromium.
 | Checklist | Port | Covers |
 |---|---|---|
 | `adding` | 8771 | Retrieve Metadata in bulk (side by side, review, background) and Settings → Adding Items, with slow fake lookups |
-| `annotations` | 8777 | Each annotation kind saved on its own, redrawn after reload and zoom; eraser, Delete, undo and redo; two PDFs and two tabs; old annotations converted; toolbar tool states, visible colour chips and keyboard colour chooser/focus return |
+| `annotations` | 8777 | Each annotation kind saved on its own, redrawn after reload and zoom; eraser, Delete, undo and redo; two PDFs and two tabs; old annotations converted; toolbar tool states, a tool applied to a Select selection, words under a highlight selectable, each tool selecting its own kind, visible colour chips and keyboard colour chooser/focus return |
 | `assist` | 8793 | Autocompletion: nothing asked without Ollama or the model, Settings lifecycle, ghost text keys and exclusions; bounded Live/Source insertions and long-note definition context through the provider bridge, with acceptance and undo (a stand-in for Ollama, `tests/fake_ollama.py`) |
 | `attachments` | 8772 | Note attachments: the attachment trash, the Attachments dialog, retention, deletion dates |
 | `backups` | 8775 | Settings → Backups: backup at start, Back Up Now, changing the folder, Restore |
