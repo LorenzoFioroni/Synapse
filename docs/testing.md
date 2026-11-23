@@ -227,7 +227,7 @@ CDP-specific gesture/authenticator scenarios stay on Chromium.
 | Checklist | Port | Covers |
 |---|---|---|
 | `adding` | 8771 | Retrieve Metadata in bulk (side by side, review, background) and Settings → Adding Items, with slow fake lookups |
-| `annotations` | 8777 | Each annotation kind saved on its own, redrawn after reload and zoom; eraser, Delete, undo and redo; two PDFs and two tabs; old annotations converted |
+| `annotations` | 8777 | Each annotation kind saved on its own, redrawn after reload and zoom; eraser, Delete, undo and redo; two PDFs and two tabs; old annotations converted; toolbar tool states, visible colour chips and keyboard colour chooser/focus return |
 | `assist` | 8793 | Autocompletion: nothing asked without Ollama or the model, Settings lifecycle, ghost text keys and exclusions; bounded Live/Source insertions and long-note definition context through the provider bridge, with acceptance and undo (a stand-in for Ollama, `tests/fake_ollama.py`) |
 | `attachments` | 8772 | Note attachments: the attachment trash, the Attachments dialog, retention, deletion dates |
 | `backups` | 8775 | Settings → Backups: backup at start, Back Up Now, changing the folder, Restore |
@@ -247,6 +247,7 @@ CDP-specific gesture/authenticator scenarios stay on Chromium.
 | `gallery` | 8794 | Figure numbers and `\cref` (read mode, live preview, exports); galleries: the carousel in read mode and the live preview, editing its source, autocomplete in captions, exported as one figure with panels (HTML, PDF, Markdown); galleries switched off and on in Extended Markdown's settings, then the whole plugin off and on, in the open note |
 | `graph` | 8787 | Local and global graph in Notes, Show in Graph, Cmd/Ctrl+Shift+G, Back/Forward |
 | `lazy_viewer` | 8778 | A 300-page PDF: pages drawn only near the viewport, fast jumps and zoom, annotations on far pages |
+| `pdf_search` | 8863 | Full-document text search over 300 pages without rendering them all, next/previous wrap and keyboard shortcuts, case/whole-word options, line breaks and hyphens, query replacement, zoom/revisit highlights, the app's AI panel and iframe focus, themes, touch controls and a PDF without searchable text |
 | `library` | 8768 | Citation key rename with preview, notes in search, trashed items, Quote and Snapshot to note |
 | `links` | 8767 | Note links: autocomplete, citation cards, side panels, the item pane |
 | `list_perf` | 8779 | 10,000 items: fast list, few rows in the DOM, quick selection, small changes without a full reload |

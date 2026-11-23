@@ -331,6 +331,10 @@ function initShortcuts() {
     const k = e.key.toLowerCase();
     if ((modKey(e) && e.shiftKey && k === 'p') || (e.key === 'F1' && !modKey(e))) { e.preventDefault(); if (settingsOpen()) closeSettings(); openPalette(); return; }
     if (pluginKey(e, typing)) { e.preventDefault(); return; }
+    if (!settingsOpen() && modKey(e) && !e.shiftKey && !e.altKey && k === 'f') {
+      const viewer = activePdfWindow()?.zcViewer;
+      if (viewer?.find) { e.preventDefault(); viewer.find(); return; }
+    }
     if (pageOpen() && !settingsOpen() && ((modKey(e) && ['n', 'i', 'e', 'f'].includes(k)) || (e.key === '/' && !typing))) closePage();   // library actions leave the page
     if (modKey(e) && e.shiftKey && k === 'l' && state.settings.notes_enabled !== false) { e.preventDefault(); switchWorkspace(); return; }
     if (tasksPage.isOpen() && !settingsOpen()) {

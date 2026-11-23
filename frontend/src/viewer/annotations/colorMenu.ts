@@ -48,7 +48,13 @@ export function holdPointer(node: HTMLElement): void {
 }
 
 let menu: HTMLDivElement | null = null;
-export function closeColorMenu(): void { menu?.remove(); menu = null; }
+export function closeColorMenu(): void {
+  const anchor = menu && document.getElementById(menu.dataset.for || '');
+  const restore = menu?.contains(document.activeElement);
+  menu?.remove(); menu = null;
+  anchor?.setAttribute('aria-expanded', 'false');
+  if (restore) anchor?.focus({ preventScroll: true });
+}
 
 /** A menu of swatch rows under `anchor` (a colour in the toolbar); closes when a colour is chosen. */
 export function openColorMenu(anchor: HTMLElement, rows: SwatchRow[]): void {
@@ -57,15 +63,26 @@ export function openColorMenu(anchor: HTMLElement, rows: SwatchRow[]): void {
   if (reopen) return;   // a second click on the same colour closes it
   menu = document.createElement('div');
   menu.className = 'zc-pill zc-color-menu';
+  menu.id = 'annotation-color-menu';
+  menu.setAttribute('role', 'dialog');
+  menu.setAttribute('aria-label', anchor.getAttribute('aria-label') || 'Annotation colour');
   menu.dataset.for = anchor.id;
+  anchor.setAttribute('aria-controls', menu.id);
+  anchor.setAttribute('aria-expanded', 'true');
   for (const r of rows) menu.appendChild(swatchRow({ ...r, onPick: (c) => { closeColorMenu(); r.onPick(c); } }));
   holdPointer(menu);
   document.body.appendChild(menu);
   const a = anchor.getBoundingClientRect(), m = menu.getBoundingClientRect();
   menu.style.left = `${Math.max(8, Math.min(a.left, innerWidth - m.width - 8))}px`;
   menu.style.top = `${a.bottom + 6}px`;
+  menu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
 }
 document.addEventListener('pointerdown', (e) => {
   if (menu && !menu.contains(e.target as Node) && !(e.target as Element).closest?.(`#${menu.dataset.for}`)) closeColorMenu();
 });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeColorMenu(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || !menu) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  closeColorMenu();
+}, true);

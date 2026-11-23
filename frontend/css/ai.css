@@ -81,10 +81,10 @@ body.ai-docked:has(.ai-panel.resizing) { cursor: ew-resize; user-select: none; }
 
 .ai-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .ai-thread, .ai-history { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.ai-thread { padding: 14px 14px 8px; display: flex; flex-direction: column; gap: 18px; }
+.ai-thread { padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 24px; line-height: 1.65; }
 
 /* a question and its answer */
-.ai-turn { display: flex; flex-direction: column; gap: 10px; }
+.ai-turn { display: flex; flex: none; flex-direction: column; gap: 10px; width: 100%; max-width: 65ch; margin-inline: auto; min-width: 0; }
 .ai-q {
   align-self: flex-end; max-width: 90%; padding: 7px 12px; border-radius: 14px 14px 4px 14px; background: var(--accent-soft);
   color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere;
@@ -101,14 +101,14 @@ body.ai-docked:has(.ai-panel.resizing) { cursor: ew-resize; user-select: none; }
 .ai-changes { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0 2px; padding: 6px 10px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text-2); font-size: var(--fs-sm); }
 .ai-changes[hidden] { display: none; }
 .ai-changes .icon { flex: none; margin-top: 2px; color: var(--accent); }
-.ai-answer { overflow-wrap: anywhere; user-select: text; font-size: var(--fs-lg); line-height: 1.55; }
+.ai-answer { overflow-wrap: anywhere; user-select: text; }
 .ai-answer:empty { display: none; }
-.ai-answer.prose, .ai-panel .prose { max-width: none; padding: 0; margin: 0; }
+.ai-answer.prose, .ai-panel .prose { max-width: none; padding: 0; margin: 0; font-size: inherit; line-height: inherit; }
 .ai-answer.plain { white-space: pre-wrap; }
 .ai-answer p, .ai-answer ul, .ai-answer ol, .ai-answer blockquote, .ai-answer pre, .ai-answer table, .ai-answer .math-block { margin: 0 0 .7em; }
 .ai-answer > :last-child { margin-bottom: 0; }
 .ai-answer ul, .ai-answer ol { padding-left: 1.4em; }
-.ai-answer h1, .ai-answer h2, .ai-answer h3, .ai-answer h4 { font-size: 1.05em; font-weight: 650; margin: 1em 0 .4em; }
+.ai-answer h1, .ai-answer h2, .ai-answer h3, .ai-answer h4, .ai-answer h5, .ai-answer h6 { font-size: 1.08em; font-weight: 650; line-height: 1.35; margin: 1.1em 0 .4em; }
 .ai-answer blockquote { margin-left: 0; padding-left: 10px; border-left: 3px solid var(--border-strong); color: var(--text-2); }
 .ai-answer pre, .ai-answer .math-block, .ai-answer .math.display { overflow-x: auto; max-width: 100%; }
 .ai-answer pre { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--bg-app); font: var(--fs-sm) var(--font-mono); }

@@ -27,6 +27,7 @@ const P: Record<string, string> = {
   pdf: '<path d="M4 1.8h5l3 3v9.4H4z"/><path d="M9 1.8v3h3"/><path d="M5.6 11.6c1.4-.8 3-3.6 3-5.2 0-1-1-1-1 0 0 1.6 2.2 4.2 3.6 4.4.8.1.8-.8 0-.8-1.6 0-4.6.8-5.6 1.6z" stroke-width="1"/>',
   chevron: '<path d="M6 4l4 4-4 4"/>',
   chevronDown: '<path d="M4 6l4 4 4-4"/>',
+  chevronUp: '<path d="M4 10l4-4 4 4"/>',
   close: '<path d="M4 4l8 8M12 4l-8 8"/>',
   check: '<path d="M3 8.5l3 3 7-7"/>',
   info: '<circle cx="8" cy="8" r="6"/><path d="M8 7v4M8 5v.01"/>',

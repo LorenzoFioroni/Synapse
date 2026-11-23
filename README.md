@@ -22,7 +22,8 @@ TypeScript frontend. Everything runs on your machine.
 - 🔎 **Find the passage you remember** — search metadata and PDF full text, then organise
   your collection with folders, coloured tags and smart folders.
 - 🖍️ **Read, highlight, capture** — annotate PDFs with highlights, drawings and comments,
-  and send quotes or snapshots straight into your notes.
+  and send quotes or snapshots straight into your notes. Page navigation stays centred, and
+  annotation tools keep their positions when colour and size controls appear.
 - 📝 **Write notes that connect** — live Markdown preview, LaTeX maths, diagrams, images,
   paper citations and links between notes (moving or renaming a note updates the links to it);
   keep PDFs in your notes folders too: drop them on the notes list and open them in the viewer.
@@ -101,6 +102,16 @@ window, or the app started again, opens on the library alone. Drag a tab onto an
 window to move it there, or outside every window for a new one (or right-click it: **Move to New
 Window**); right-click items, PDFs, folders, notes and tasks for **Open in New Window**. Settings →
 PDF Viewer → Open PDFs in → Browser Tabs keeps PDFs in browser tabs of their own.
+
+In a PDF, Cmd/Ctrl+F (or the magnifying-glass button) opens a compact floating search panel without
+shrinking the page. It searches the whole document, including pages not currently drawn.
+Enter/Shift+Enter or the arrows move through highlighted matches; match case
+and whole words are optional. PDF search excludes the AI panel and other UI text. It uses the PDF's
+embedded text, without OCR or an online service.
+
+The PDF annotation toolbar groups tools, history and style controls, with consistent line icons,
+colour chips and a compact size field. Colour choosers also work from the keyboard; tool colours
+and sizes remain remembered per device.
 
 Notes edited in another program are detected every 30 seconds while Synapse is running.
 Lists and backlinks refresh automatically; an open note reloads if clean, or offers the
@@ -345,6 +356,9 @@ for a newer version on your server every hour (or now, with **Check for updates*
 Previous conversations are kept on the server and can be continued later, and you can pick the AI
 agent, model and effort for each question from small buttons beside the text box. Type `[@` or `[[` (or press the @ button)
 to cite a paper or a note in a question; the AI is told what they are. See [the companion guide](docs/companion.md) for how it works and why Codex is opt-in.
+
+Answers follow the stream while you are at the bottom; scroll up to read freely, then return to the
+bottom to follow again. Questions and answers share the UI text size, with relaxed line spacing.
 
 Add `--data DIR` if your library is not in `./data`. Tools:
 
