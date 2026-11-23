@@ -12,3 +12,6 @@ works offline. From the package:
 pdf.min.d.mts is ours: it gives pdf.min.mjs the package's types (frontend/package.json installs
 pdfjs-dist at the same version). The viewer passes wasm/, iccs/ and standard_fonts/ to getDocument
 (frontend/src/viewer/viewer.ts).
+
+Even the legacy build iterates ReadableStreams with `for await` (getTextContent), which Safari on
+iPadOS/iOS lacks; frontend/src/viewer/pdfjs.ts adds that one polyfill. Keep it when updating.
