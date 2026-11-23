@@ -223,6 +223,34 @@ async def main():
             await inp.finger(line((box["x"] + 100, box["y"] + 120), (box["x"] + 300, box["y"] + 180)))
             ok = await wait_for(lambda: asyncio.to_thread(lambda: any(a["type"] == "ink" for a in anns(att["id"]))))
             check("without a pen, a finger draws ink", ok)
+            spans0 = await page.evaluate("""(() => [...document.querySelectorAll('.page-wrapper[data-page-number="1"] .textLayer span')]
+                .map(s => s.getBoundingClientRect()).filter(r => r.width > 120).slice(4, 6).map(r => [r.left, r.top, r.width, r.height]))()""")
+            l, t, w, h = spans0[0]
+            await tool(page, "highlight")
+            top0 = await page.evaluate("document.getElementById('pdf-container').scrollTop")
+            await inp.finger(line((l + 3, t + h / 2), (l + w - 3, t + h / 2), 12))
+            ok = await wait_for(
+                lambda: asyncio.to_thread(lambda: any(a["type"] == "highlight" for a in anns(att["id"])))
+            )
+            hl = [a for a in anns(att["id"]) if a["type"] == "highlight"]
+            top1 = await page.evaluate("document.getElementById('pdf-container').scrollTop")
+            check(
+                "… and dragging a finger over text highlights it, without scrolling",
+                ok and len(hl[0].get("text", "")) > 10 and top0 == top1,
+                f"{hl[0].get('text', '')[:40]!r} scroll {top0} → {top1}" if hl else "",
+            )
+            l, t, w, h = spans0[1]
+            await tool(page, "underline")
+            await inp.finger(line((l + 3, t + h / 2), (l + w * 0.6, t + h / 2), 8))
+            ok = await wait_for(
+                lambda: asyncio.to_thread(lambda: any(a["type"] == "underline" for a in anns(att["id"])))
+            )
+            ul = [a for a in anns(att["id"]) if a["type"] == "underline"]
+            check(
+                "… and underlines it, 1 pt thick by default",
+                ok and ul[0].get("size") == 1,
+                str(ul[0].get("size")) if ul else "",
+            )
             for a in anns(att["id"]):
                 requests.delete(f"{BASE}/api/annotations/{a['id']}")
             await ctx0.close()
@@ -338,6 +366,19 @@ async def main():
                 lambda: asyncio.to_thread(lambda: any(a["type"] == "underline" for a in anns(att["id"])))
             )
             check("… and underlines it with the underline tool", ok)
+            # the pen goes past the end of a line and a little below it: still only that line
+            l, t, w, h = spans[0]
+            before = {a["id"] for a in anns(att["id"])}
+            await tool(page, "highlight")
+            await inp.pen(line((l + w * 0.5, t + h / 2), (l + w + 60, t + h * 0.95), 10))
+            new = lambda: [a for a in anns(att["id"]) if a["type"] == "highlight" and a["id"] not in before]
+            ok = await wait_for(lambda: asyncio.to_thread(lambda: len(new()) == 1))
+            got = new()
+            check(
+                "… and a pen running past the end of the line marks only the rest of that line",
+                ok and len(got[0]["rects"]) == 1,
+                f"{len(got[0]['rects'])} lines: {got[0].get('text', '')[:40]!r}" if got else "",
+            )
             await shot(page, "02-pen-annotations")
 
             # a finger selection (long press) and the Highlight button

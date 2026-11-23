@@ -3,7 +3,7 @@
 // overview.
 import { mergeLines, wordEnd, wordStart } from './lines.js';
 import { type Annotation, byId, ownerBase, color, create, el, layers, ownType, pageSize, scale, select, size, tool } from './model.js';
-import { lastPointer } from './pointer.js';
+import { draws, lastPointer } from './pointer.js';
 import { prefs, toolStyle } from './prefs.js';
 
 const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
@@ -177,22 +177,72 @@ function caretAt(x: number, y: number): Range | null {
   r.setStart(pos.offsetNode, pos.offset);
   return r;
 }
-const inText = (r: Range | null): r is Range => !!r && !!(r.startContainer.nodeType === 1 ? (r.startContainer as Element) : r.startContainer.parentElement)?.closest?.('.textLayer');
 
-// The Pencil drags over the text: the selection follows it, and lifting the pen marks it.
-let penSel: { id: number; start: Range } | null = null;
+/** A run of text on a page and where it is on screen. */
+interface Run { node: Text; box: DOMRect }
+function runsOf(wrapper: HTMLElement): Run[] {
+  const runs: Run[] = [];
+  for (const span of wrapper.querySelectorAll<HTMLElement>('.textLayer span')) {
+    const node = span.firstChild;
+    if (span.childElementCount || !(node instanceof Text) || !node.data.trim()) continue;
+    const box = span.getBoundingClientRect();
+    if (box.width >= 1 && box.height >= 1) runs.push({ node, box });
+  }
+  return runs;
+}
+
+/** The place in the page's text nearest to a point. caretRangeFromPoint alone gives the text
+    layer itself (or nothing) between lines, between runs and in the margins, and a range ending
+    there takes in whole runs in the layer's order rather than what is under the pen: the
+    selection jumped. Here a point between runs goes to the nearest run (rows first, so a point
+    past the end of a line stays on that line), at its start or end. */
+function textAt(runs: Run[], x: number, y: number): Range | null {
+  let best: Run | null = null, bestD = Infinity;
+  for (const run of runs) {
+    const b = run.box;
+    const dy = y < b.top ? b.top - y : y > b.bottom ? y - b.bottom : 0;
+    const dx = x < b.left ? b.left - x : x > b.right ? x - b.right : 0;
+    const d = dy * 4 + dx;   // being on the run's line matters more than being near it sideways
+    if (d < bestD) { bestD = d; best = run; }
+  }
+  if (!best) return null;
+  const b = best.box;
+  const r = document.createRange();
+  if (x <= b.left) r.setStart(best.node, 0);
+  else if (x >= b.right) r.setStart(best.node, best.node.length);
+  else {
+    const hit = caretAt(x, (b.top + b.bottom) / 2);
+    r.setStart(best.node, hit?.startContainer === best.node ? hit.startOffset
+      : Math.round(best.node.length * (x - b.left) / b.width));   // proportional when the hit misses the run
+  }
+  return r;
+}
+
+/* The Pencil drags over the text: the selection follows it, and lifting the pen marks it. A
+   finger does the same before any Pencil has been used (draws(); a drag started off the text, or
+   with two fingers, still scrolls and zooms: see viewer.html). */
+let penSel: { id: number; touch: boolean; start: Range; runs: Run[] } | null = null;
 document.addEventListener('pointerdown', (e) => {
-  if (!isMarkTool(tool()) || e.pointerType !== 'pen' || !(e.target as Element).closest?.('.page-wrapper')) return;
-  const start = caretAt(e.clientX, e.clientY);
-  if (!inText(start)) return;
+  if (penSel?.touch && e.pointerType === 'touch' && e.pointerId !== penSel.id) {   // a second finger: a pinch
+    penSel = null;
+    window.getSelection()?.removeAllRanges();
+    return;
+  }
+  if (!isMarkTool(tool()) || e.button > 0 || (e.pointerType !== 'pen' && !(e.pointerType === 'touch' && draws(e)))) return;
+  const target = e.target as Element;
+  const wrapper = target.closest?.<HTMLElement>('.page-wrapper');
+  if (!wrapper || (e.pointerType === 'touch' && !target.closest('.textLayer span'))) return;
+  const runs = runsOf(wrapper);
+  const start = textAt(runs, e.clientX, e.clientY);
+  if (!start) return;
   e.preventDefault();
-  penSel = { id: e.pointerId, start };
+  penSel = { id: e.pointerId, touch: e.pointerType === 'touch', start, runs };
   window.getSelection()?.removeAllRanges();
 });
 document.addEventListener('pointermove', (e) => {
   if (!penSel || e.pointerId !== penSel.id) return;
-  const here = caretAt(e.clientX, e.clientY);
-  if (!inText(here)) return;              // between lines: keep the last good selection
+  const here = textAt(penSel.runs, e.clientX, e.clientY);
+  if (!here) return;
   const r = document.createRange();
   const forward = penSel.start.compareBoundaryPoints(Range.START_TO_START, here) <= 0;
   const [a, b] = forward ? [penSel.start, here] : [here, penSel.start];
@@ -206,6 +256,7 @@ const endPenSel = (e: PointerEvent) => {
   if (!penSel || e.pointerId !== penSel.id) return;
   penSel = null;
   if (e.type === 'pointerup') markSelection(tool(), e.altKey);
+  else { window.getSelection()?.removeAllRanges(); hidePreview(); }
 };
 document.addEventListener('pointerup', endPenSel);
 document.addEventListener('pointercancel', endPenSel);

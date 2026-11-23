@@ -262,7 +262,8 @@ see the [README](../README.md); for code ownership, see the [architecture map](a
   turn it off in Settings → PDF Viewer) and stay one straight line across inline math. With the
   Select tool, select text and click Highlight or Underline to mark it in that tool's colour while
   Select stays the tool, or press H or U
-  (with any tool). Each tool
+  (with any tool). On an iPad, drag the Apple Pencil over the text (or one finger, until a Pencil
+  has been used). Each tool
   remembers the colour you last used with it; the colours it starts with are set in Settings → PDF
   Viewer. Click an annotation with the Select tool, or with the tool that made it, to change its
   colours or delete it; the words under a highlight or underline can still be selected. Links in the PDF work: citations, figure and section
