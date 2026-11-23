@@ -438,6 +438,14 @@ async def main():
                 await page.evaluate("document.body.dataset.zcTool") == "select"
                 and await page.locator('.tool-btn[data-tool="select"]').get_attribute("aria-pressed") == "true",
             )
+            pts4 = await page.evaluate(WORD_POINTS, 3)
+            await drag(page, pts4["a"], pts4["b"])
+            await page.keyboard.press("h")
+            ok = await until_count(tatt["id"], 4)
+            hk = next(
+                (a for a in anns(tatt["id"]) if a["type"] == "highlight" and a["text"].startswith(pts4["words"][0])), {}
+            )
+            check("H highlights the selected text, snapped to words", ok and bool(hk), repr(hk))
 
             # ---- a box: a border, a fill or both
             def ann(ann_id):
@@ -456,7 +464,7 @@ async def main():
             await page.click("#color-wrapper")
             await page.click(".zc-color-menu [data-none]")
             await drag(page, (tw["x"] + 60, tw["y"] + 300), (tw["x"] + 400, tw["y"] + 380))
-            ok = await until_count(tatt["id"], 4)
+            ok = await until_count(tatt["id"], 5)
             area = next((a for a in anns(tatt["id"]) if a["type"] == "box"), {})
             check(
                 "a filled box without a border, with the words inside it",

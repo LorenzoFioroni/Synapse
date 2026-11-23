@@ -107,6 +107,19 @@ document.addEventListener('click', (e) => {
   markSelection(t, (e as MouseEvent).altKey, toolStyle(t)!);
 }, true);
 
+/* Selected text and H or U: highlighted or underlined in that tool's style, whichever tool is
+   chosen (Alt too: exact characters; e.code, as Alt changes the key on a Mac). */
+window.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.repeat) return;
+  const target = e.target as HTMLElement;
+  if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+  const k = e.altKey ? e.code : `Key${(e.key || '').toUpperCase()}`;
+  const t = k === 'KeyH' ? 'highlight' : k === 'KeyU' ? 'underline' : null;
+  if (!t || !textRange()) return;
+  e.preventDefault();
+  markSelection(t, e.altKey, toolStyle(t)!);
+});
+
 /** The highlight or underline at a screen point (the topmost), optionally only of one type. They
     let the pointer through to the text, so they are found by their rects, not by the DOM. */
 export function markAt(x: number, y: number, type?: string): Annotation | null {

@@ -408,6 +408,13 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
     [`<kbd>${modLabel}N</kbd>`, 'New note'],
     [`<kbd>${modLabel}E</kbd>`, 'Read / edit the open note'],
   ])}
+        ${sub('PDF viewer')}
+        ${shortcuts([
+    ['<kbd>H</kbd> <kbd>U</kbd>', 'Highlight / underline the selected text, with any tool (with <kbd>Alt</kbd>: exactly the characters selected)'],
+    ['<kbd>⌫</kbd>', 'Delete the selected annotation'],
+    [`<kbd>${modLabel}Z</kbd> <kbd>${modLabel}⇧Z</kbd>`, 'Undo / redo'],
+    [`<kbd>${modLabel}F</kbd>`, 'Find in the PDF'],
+  ])}
       </section>
       </div></div>
     </div>`;
