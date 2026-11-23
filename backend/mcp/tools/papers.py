@@ -117,7 +117,8 @@ class PaperToolsMixin(ToolsBase):
                 out["paper_note_link"] = self._note_link(note_path, pnotes[0].get("title"))
                 try:
                     note_text = self.s.vault.read(note_path)[0]
-                except Exception:
+                    self.s.note_service.require_open(note_path, note_text)
+                except Exception:  # unreadable, or locked: no text
                     note_text = None
             mine = {n["path"] for n in pnotes}
             per_note: dict[str, dict] = {}  # one entry per note: every line citing the paper, one context

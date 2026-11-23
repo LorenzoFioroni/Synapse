@@ -3,7 +3,7 @@
 import type {
   AccessToken, AccessTokensOverview, Attachment, BackupStatus, ChangeFeed, CiteEntry, DevicesOverview, FindPdfResult, Folder, Format, HistoryDiff, HistoryLog, HistoryStatus, HistoryVersion, ImportEntry, ImportPreview, Item, RenamedKey,
   ItemList, ItemNotes, ItemReferences, ItemsByIds, MetadataLookup, Milestone, NoteAttachments, NoteFile, NoteHistory, NoteKeys, NoteLinks, NoteMoved, NotePdf, NoteSaved, NotesListing, Pairing,
-  ItemFieldValue, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginSource, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
+  ItemFieldValue, NoteLocks, NoteLockState, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginSource, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview, UpdaterState, UpdateStatus, RemoteBackupSetup, RemoteBackupConfiguration, Backup,
 } from './types.js';
 import { openNewWindow, openPageInNewWindow } from './windows.js';
@@ -168,7 +168,17 @@ export const api = {
   getNote: (path: string) => request<NoteFile>('GET', `/api/notes/note?${qs({ path })}`),
   /** The note, or only its hash when it still has ``hash`` (cheap enough to ask every few seconds). */
   checkNote: (path: string, hash: string) =>
-    request<NoteFile | { path: string; hash: string; unchanged: true }>('GET', `/api/notes/note?${qs({ path, unless: hash })}`),
+    request<NoteFile | ({ path: string; hash: string; unchanged: true } & NoteLockState)>('GET', `/api/notes/note?${qs({ path, unless: hash })}`),
+  // locked notes (backend/notes/locks.py): unlocked for this page only
+  noteLocks: () => request<NoteLocks>('GET', '/api/notes/locks'),
+  setNoteLockPassword: (password: string, current?: string) => request<{ password_set: boolean }>('PUT', '/api/notes/locks/password', { password, current }),
+  lockNote: (path: string, locked: boolean) => request<NoteSaved & { locked: boolean }>('POST', '/api/notes/lock', { path, locked }),
+  unlockNote: (path: string, secret: { password: string } | { credential: Record<string, unknown> }) =>
+    request<{ path: string } & NoteLockState>('POST', '/api/notes/unlock', { path, ...secret }),
+  unlockOptions: () => request<Record<string, any>>('POST', '/api/notes/unlock/options'),
+  relockNotes: (paths?: string[]) => request('POST', '/api/notes/relock', { paths }),
+  /** The unlocked notes were used (clicked, typed in, scrolled): they stay open the whole timeout from now. */
+  touchNotes: (paths: string[]) => request<{ unlocked_for: Record<string, number | null> }>('POST', '/api/notes/unlock/touch', { paths }),
   createNote: (data: Record<string, unknown>) => request<Omit<NoteFile, 'info'>>('POST', '/api/notes/note', data),
   noteHistory: (path: string, limit?: number) => request<NoteHistory>('GET', `/api/notes/history?${qs({ path, limit })}`),
   noteVersion: (id: string, path?: string, from?: string) => request<HistoryVersion>('GET', `/api/notes/history/version?${qs({ id, path, from })}`),

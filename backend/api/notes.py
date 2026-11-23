@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from functools import wraps
 
-from flask import Blueprint, jsonify, request, send_file, send_from_directory
+from flask import Blueprint, g, jsonify, request, send_file, send_from_directory
 
+from ..access.note_password import PasswordError
+from ..access.passkeys import PasskeyError, relying_party
+from ..access.proxy import client_addr
 from ..changes import CLIENT_HEADER
 from ..notes import service as notes_service
 from ..notes.history import GitError
+from ..notes.locks import NoteLocked
 from ..notes.vault import ATTACHMENTS, Conflict, NoteExists, NoteMoved, VaultError
 from ..pdf.files import HEADER_WINDOW, file_is_pdf, looks_like_pdf
 from ..pdf.text import PageTextCache
-from . import body, error, failure, message_of, svc
+from . import admin, body, error, failure, message_of, svc
 
 bp = Blueprint("notes", __name__, url_prefix="/api")
 
@@ -28,6 +32,8 @@ def _record_change(resp):
         # recording the history changes no note (its commits announce themselves), except a milestone restored
         if request.path.startswith("/api/notes/history/") and not request.path.endswith("/restore"):
             return resp
+        if request.path.startswith(("/api/notes/unlock", "/api/notes/relock", "/api/notes/locks")):
+            return resp  # opening or closing a note for one page, or the password: no note changed
         svc().changes.record({"notes"}, request.headers.get(CLIENT_HEADER))
     return resp
 
@@ -42,6 +48,12 @@ def guarded(fn):
         except NoteExists as e:
             what = "A PDF" if e.path.lower().endswith(".pdf") else "A note"
             return jsonify(error=f"{what} already exists at {e.path}", exists=True, path=e.path), 409
+        except NoteLocked as e:
+            return jsonify(error=f"“{e.path}” is locked. Open it and unlock it first.", locked=True, path=e.path), 423
+        except PasswordError as e:
+            return failure(e, e.status)
+        except PasskeyError as e:
+            return failure(e, e.status)
         except NoteMoved as e:
             return jsonify(error=f"{e.path} was moved to {e.to}", moved_to=e.to), 404
         except VaultError as e:
@@ -149,6 +161,101 @@ def restore_note():
     if not d.get("path"):  # everything deleted together
         return jsonify(svc().note_service.restore_batch(d.get("trash_id") or ""))
     return jsonify(svc().note_service.restore(d.get("trash_id") or "", d.get("path") or ""))
+
+
+# ---------------------------------------------------------------- locked notes (notes/locks.py)
+def _passkey_site() -> tuple[str, str] | None:
+    try:
+        return relying_party(request.host, request.scheme)
+    except PasskeyError:
+        return None
+
+
+@bp.get("/notes/locks")
+@guarded
+def lock_status():
+    """Whether a password is set and whether this page can unlock with a passkey."""
+    site = _passkey_site()
+    return jsonify(
+        password_set=svc().note_password.is_set(),
+        passkeys=site is not None and svc().passkeys.count(site[0]) > 0,
+        minutes=svc().settings.get("notes_lock_minutes"),
+        **admin.state(),
+    )
+
+
+@bp.put("/notes/locks/password")
+@guarded
+def set_lock_password():
+    """``{password, current?}``: set the password, or change it with the current one. Setting it
+    without the current one is an administrative action (this computer, or after a passkey)."""
+    d = body()
+    pw = svc().note_password
+    device = (g.get("device") or {}).get("id") or "this-computer"
+    if not (pw.is_set() and pw.check(str(d.get("current") or ""), device)):
+        if (
+            refused := admin.refusal("Enter the current password, or change it on the computer running Synapse.")
+        ) is not None:
+            return refused
+    pw.set(str(d.get("password") or ""))
+    return jsonify(password_set=True)
+
+
+@bp.post("/notes/lock")
+@guarded
+def lock_note():
+    """``{path, locked}``: lock a note, or remove its lock (once this page unlocked it)."""
+    d = body()
+    locked = bool(d.get("locked"))
+    if locked and not svc().note_password.is_set():
+        return error("Set a password for locked notes first (Settings → Notes).", 409)
+    return jsonify(svc().note_service.set_locked(_path_arg(), locked))
+
+
+@bp.post("/notes/unlock/options")
+@guarded
+def unlock_options():
+    site = _passkey_site()
+    if not site:
+        return error("Passkeys do not work at this address.", 409)
+    return jsonify(svc().passkeys.login_options(*site, purpose="unlock"))
+
+
+@bp.post("/notes/unlock")
+@guarded
+def unlock_note():
+    """``{path, password}`` or ``{path, credential}`` (a passkey): open a locked note for this page."""
+    d = body()
+    path = _path_arg()
+    if isinstance(d.get("credential"), dict):
+        site = _passkey_site()
+        if not site:
+            return error("Passkeys do not work at this address.", 409)
+        svc().passkeys.unlock(*site, d["credential"], client_addr(request.environ))
+    else:
+        device = (g.get("device") or {}).get("id") or "this-computer"
+        if not svc().note_password.check(str(d.get("password") or ""), device):
+            return error("Wrong password.", 403)
+    return jsonify(svc().note_service.unlock(path))
+
+
+@bp.post("/notes/unlock/touch")
+@guarded
+def touch_unlocked():
+    """``{paths}``: this page's user is using these unlocked notes (clicks, keys, scrolling): they
+    stay open for the whole timeout from now. Reading a note does not do that."""
+    paths = body().get("paths")
+    if not isinstance(paths, list) or len(paths) > 50:
+        return error("paths must be a list of at most 50 notes")
+    return jsonify(svc().note_service.touch([str(p) for p in paths]))
+
+
+@bp.post("/notes/relock")
+@guarded
+def relock_notes():
+    """``{paths?}``: lock again notes this page unlocked (its tab closed); none given: all of them."""
+    paths = body().get("paths")
+    return jsonify(svc().note_service.relock([str(p) for p in paths] if isinstance(paths, list) else None))
 
 
 @bp.get("/notes/history")

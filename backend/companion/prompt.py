@@ -9,6 +9,7 @@ import re
 
 from ..library.fields import first_author
 from ..library.repository import NotFound
+from ..notes.locks import NoteLocked, no_viewer
 from ..notes.parser import parse
 from ..notes.vault import VaultError, is_pdf_path
 
@@ -54,7 +55,13 @@ def _text(value, what: str, limit: int) -> str:
 
 
 def build(prompt, context, *, notes, papers) -> tuple[str, str]:
-    """(prompt, system) for a question. ``notes`` is the NotesService, ``papers`` the PaperRepository."""
+    """(prompt, system) for a question. ``notes`` is the NotesService, ``papers`` the PaperRepository.
+    Built without the page's unlocked notes: a locked note is never sent to an AI app."""
+    with no_viewer():
+        return _build(prompt, context, notes=notes, papers=papers)
+
+
+def _build(prompt, context, *, notes, papers) -> tuple[str, str]:
     question = _text(prompt, "question", MAX_PROMPT)
     if not question:
         raise ValueError("Write a question first.")
@@ -95,6 +102,8 @@ def _note(context: dict, notes) -> list[str]:
     selection = _text(context.get("selection"), "selection", MAX_QUOTE)
     try:
         note = notes.get(path)
+    except NoteLocked as e:
+        raise ValueError("This note is locked: AI apps cannot read it.") from e
     except VaultError as e:
         raise UnknownContext("No such note.") from e
     info = note.get("info") or {}

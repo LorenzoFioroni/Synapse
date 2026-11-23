@@ -89,10 +89,10 @@ class Rekeyer:
         return moves
 
     def _affected_paths(self, old: str, moved: dict[str, str]) -> set[str]:
-        paths = {c["path"] for c in self.index.citing(old)}
+        paths = {c["path"] for c in self.index.citing(old, include_locked=True)}
         paths |= {n["path"] for n in self.index.paper_notes(old)}
         for src in moved:
-            paths |= {b["path"] for b in self.index.backlinks(src)}
+            paths |= {b["path"] for b in self.index.backlinks(src, include_locked=True)}
         return paths
 
     def _edits_for(self, path: str, text: str, old: str, new: str, moved: dict[str, str]) -> tuple[str, list[dict]]:

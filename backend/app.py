@@ -44,21 +44,28 @@ def create_app(config: Config | None = None, *, start_indexer: bool = True) -> F
 
     from flask import g
 
+    from .changes import CLIENT_HEADER
     from .library.agent import reset_device, set_device
+    from .notes.locks import reset_viewer, set_viewer
 
     @app.before_request
     def _device():  # after the guard: the notes history credits edits to the device making them
         dev = g.get("device")
         g.device_token = set_device(dev.get("name") if dev else None)
+        # the page asking, for the notes it unlocked (backend/notes/locks.py); never an AI app (/mcp)
+        who = dev["id"] if dev else ("this-computer" if g.get("this_computer") else "")
+        page = "" if request.path.startswith("/mcp") else request.headers.get(CLIENT_HEADER) or ""
+        g.viewer_token = set_viewer(who, page)
 
     @app.teardown_request
     def _device_done(_exc):
-        token = g.pop("device_token", None)
-        if token is not None:
-            try:
-                reset_device(token)
-            except ValueError:  # set in another context (should not happen); nothing to undo
-                pass
+        for key, reset in (("device_token", reset_device), ("viewer_token", reset_viewer)):
+            token = g.pop(key, None)
+            if token is not None:
+                try:
+                    reset(token)
+                except ValueError:  # set in another context (should not happen); nothing to undo
+                    pass
 
     from . import frontend
     from .api import register_blueprints

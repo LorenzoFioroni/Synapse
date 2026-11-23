@@ -45,11 +45,50 @@ unterminated header is treated as body, by the backend and the frontend alike.
 | `agent` | Which AI app wrote it (`Claude`, `Codex` …), beside `author: ai`. |
 | `created` | ISO time with offset (`now_iso()`). `updated` is indexed when present but never written. |
 | `tags` | A list or a comma-separated string. Joined with the inline `#tags`. |
+| `locked` | `true`: a [locked note](#locked-notes), opened only with the password or a passkey. |
 
 A **paper note** is any note whose `paper` field names a key. `NotesService.create(item_id=…)`
 makes one at `papers/<slugify(key)>.md` with `type: paper`, a `# title` and a `[@key]` line, and
 refuses if the key already has a paper note. Other notes can still cite the item; they count as
 "citing" notes in `key_summary`, which drives the note markers in the item list.
+
+### Locked notes
+
+Right-click a note → **Lock** writes `locked: true` into its front matter; **Remove Lock…** takes
+it out again (after unlocking). The file stays plain Markdown and the lock moves with the note.
+The lock is enforced by the server, not by encryption: whoever can read the files on the server
+(a shell, the disk, the notes history, backups) can read the note. Encrypt offsite backups (an
+rclone `crypt` remote) if they matter.
+
+| Piece | Where |
+|---|---|
+| The flag, the grants, `NoteLocked` (423) | `backend/notes/locks.py` |
+| The password (salted scrypt, wrong guesses slowed down) | `backend/access/note_password.py`, table `note_password` in `auth.db`; never in `settings.json` or backups |
+| Unlocking with a passkey | `Passkeys.unlock` (challenge purpose `unlock`) in `backend/access/passkeys.py` |
+| The checks | `NotesService.require_open`, called by every read and write of a note's text |
+| The lock screen, Lock / Remove Lock, the password dialog | `frontend/src/views/notes/lockScreen.ts` |
+
+**Who sees what.** Unlocking opens a note for one page of the app (its `X-Synapse-Client` id,
+set for each request by `create_app`) on one device: other windows and devices still see the
+lock. The grant lasts `notes_lock_minutes` (Settings → Notes) and is postponed only by use: a save,
+or the page reporting a click, key, wheel, scroll or touch on the note (`reportActivity` in
+`lockScreen.ts`, at most every 15 s, `POST /api/notes/unlock/touch`). Reads do not postpone it:
+the app checks the note on screen every 5 s, and a tab only left open must still lock on time.
+Closing its tab, reloading the page or restarting Synapse locks it again. Without a grant:
+
+- `GET /api/notes/note`, `/links`, saves, history versions and lock removal answer 423
+  (`{locked: true, path}`); the tab shows a big lock, a password field and, where passkeys work
+  (HTTPS by name, a passkey added), a passkey button.
+- The index keeps no search text for it, and leaves its links, citations, tags and task headings
+  out of every listing about other notes (`include_locked=False`, the default). Key renames and
+  moves still rewrite its links (`include_locked=True` in `rekey.py`, `relink.py`).
+- History diffs mark it `locked` without texts; restoring a milestone keeps an existing lock.
+- Its title, folder and the fact that it is locked stay visible.
+- The browser never keeps its text in local storage (no drafts, no parked undo history).
+
+AI apps never get a grant: the MCP server answers that the note is locked (also over `/mcp`,
+which gets no page id), `get_paper` leaves its paper note out, and Ask AI refuses it as context
+(`companion/prompt.py` builds without the page's grants).
 
 ### Images and the attachment trash
 
@@ -340,7 +379,8 @@ milestone methods serve the API.
 ## HTTP API (`backend/api/notes.py`)
 
 Notes are addressed by their vault path. Every successful `POST`/`PUT` records a `notes` change
-in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `current_hash`,
+in the change feed (not unlocking or locking again). `guarded` turns `NoteLocked` into 423 with
+`locked` and `path`, `Conflict` into 409 with `conflict` and `current_hash`,
 `NoteExists` into 409 with `exists` and `path`, other `VaultError`s into their status and
 `ValueError` into 400.
 
@@ -349,6 +389,12 @@ in the change feed. `guarded` turns `Conflict` into 409 with `conflict` and `cur
 | GET | `/api/notes` | Listing: every note's index entry, `pdfs` (the registry rows of the PDFs that are present: `id`, `path`, `name`, `sha256`, `size`, `mtime`, `state`, `since`), the folders, `folder_colors` (only folders that exist), counts. |
 | GET | `/api/notes/note?path=` | Text, hash and index entry of one note. With `&unless=<hash>`, a note that still has that hash answers `{path, hash, unchanged: true}` only. |
 | POST | `/api/notes/note` | Create (`title`, `folder` or `path`, `item_id`, `text`). |
+| GET | `/api/notes/locks` | Locked notes: `password_set`, `passkeys` (usable here), `minutes`. |
+| PUT | `/api/notes/locks/password` | `{password, current?}`: set or change the password (without the current one: an administrative action). |
+| POST | `/api/notes/lock` | `{path, locked}`: lock a note (needs a password set) or remove its lock (needs it unlocked). |
+| POST | `/api/notes/unlock` | `{path, password}` or `{path, credential}` (after `POST /api/notes/unlock/options`): open it for this page. 403 wrong password, 429 too many. |
+| POST | `/api/notes/unlock/touch` | `{paths}`: the notes were used (clicked, scrolled, typed in): open the whole timeout from now. Answers `unlocked_for` per note (null: locked). |
+| POST | `/api/notes/relock` | `{paths?}`: lock again what this page unlocked (its tab closed; none given: all). |
 | PUT | `/api/notes/note` | Save `text` over `hash`; with `create: true`, write a note that must not exist. |
 | POST | `/api/notes/move` | Rename or move a note or PDF (`path`, `to`, optional `hash`); rewrites the links it would break and returns `updated_links` and `broken_links`. |
 | POST | `/api/notes/folder` | Create a folder. |

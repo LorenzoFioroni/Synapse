@@ -267,7 +267,8 @@ never mix.
 
 Synapse combines a reference library, linked Markdown notes, PDF annotations and optional
 plugins. The [feature guide](docs/features.md) covers daily workflows, the command palette,
-sidebar and bundled plugins. Read the [Notes guide](docs/notes.md) for the note format,
+sidebar and bundled plugins. Notes can be [locked](docs/notes.md#locked-notes) with a password or
+a passkey. Read the [Notes guide](docs/notes.md) for the note format,
 [Plugins](docs/plugins.md) for installation and permissions, and the
 [authoring guide](docs/plugin-authoring.md) to build a plugin.
 
