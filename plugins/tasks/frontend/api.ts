@@ -3,15 +3,23 @@ import type { Task, TaskChanges, TaskRef, TaskHistoryEntry, TasksOverview } from
 import { noteIndex, citationIndex } from '../../../frontend/src/plugins/task-runtime.js';
 let plugin: PluginContext;
 export function configureApi(p: PluginContext): void { plugin = p; }
-function call<T = unknown>(method: 'GET' | 'POST' | 'PATCH', path: string, body?: unknown): Promise<T> {
+function call<T = unknown>(method: 'GET' | 'POST' | 'PATCH', path: string, body?: unknown, offline?: () => T): Promise<T> {
   if (method === 'GET') return plugin.backend.get<T>(path);
-  return method === 'PATCH' ? plugin.backend.patch<T>(path, body) : plugin.backend.post<T>(path, body);
+  const options = offline ? { offline } : undefined;
+  return method === 'PATCH' ? plugin.backend.patch<T>(path, body, options) : plugin.backend.post<T>(path, body, options);
 }
+/** Offline use (plugin API 1.16): edits and new tasks wait on the device while Synapse cannot be reached. */
+export const offline = {
+  pending: () => plugin.offline.pending(),
+  onSynced: (fn: () => void) => plugin.offline.onSynced(fn),
+};
 export const api = {
   tasks: () => call<TasksOverview>('GET', '/'),
   getTask: (id: string) => call<{ task: Task & { refs: TaskRef[]; subtasks: Task[] } }>('GET', `/${id}`),
-  createTask: (data: TaskChanges) => call<{ task: Task; ref?: { path: string; line: number } }>('POST', '/', data),
-  updateTask: (id: string, data: TaskChanges) => call<{ task: Task; changed: Task[] }>('PATCH', `/${id}`, data),
+  createTask: (data: TaskChanges & { id?: string }, offline?: () => { task: Task; ref?: { path: string; line: number } }) =>
+    call<{ task: Task; ref?: { path: string; line: number } }>('POST', '/', data, offline),
+  updateTask: (id: string, data: TaskChanges & { base?: Partial<Task> }, offline?: () => { task: Task; changed: Task[] }) =>
+    call<{ task: Task; changed: Task[] }>('PATCH', `/${id}`, data, offline),
   deleteTasks: (ids: string[]) => call<{ batch: string; ids: string[] }>('POST', '/delete', { ids }),
   restoreTasks: (batch: string) => call<{ ids: string[] }>('POST', '/restore', { batch }),
   restoreTask: (id: string) => call<{ ids: string[] }>('POST', '/restore', { id }),

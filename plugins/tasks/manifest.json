@@ -2,7 +2,7 @@
   "id": "tasks",
   "name": "Tasks",
   "version": "1.2.0",
-  "api": "^1.11",
+  "api": "^1.16",
   "author": "Synapse",
   "description": "To-dos with due dates, details and sub-tasks: the Tasks page, tasks in notes, and task tools for AI apps. Turning this off keeps all tasks and their note links.",
   "permissions": {
@@ -21,5 +21,11 @@
   },
   "backend": "server",
   "frontend": "frontend/index.ts",
+  "offline": {
+    "keep": [
+      "/"
+    ],
+    "queue": true
+  },
   "enabled_by_default": true
 }

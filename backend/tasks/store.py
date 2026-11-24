@@ -71,6 +71,14 @@ class TaskMissing(TaskError):
     """No task with this id (or it is in the trash when that matters)."""
 
 
+class TaskExists(TaskError):
+    """A task with the id asked for exists already (a task created offline sent twice)."""
+
+    def __init__(self, task_id: str):
+        super().__init__("A task with this id exists already.")
+        self.task_id = task_id
+
+
 # Columns added after the tables were first made: (table, column, type)
 ADDED_COLUMNS = (("tasks", "updated_agent", "TEXT"), ("task_history", "agent", "TEXT"))
 
@@ -285,7 +293,14 @@ class TaskStore:
         before: str | None = None,
         after: str | None = None,
         by: str = "human",
+        task_id: str | None = None,
     ) -> dict:
+        """A new task. ``task_id``: the id a device chose for a task it created offline (it may
+        already be in a note there); refused when it is not a task id or is taken."""
+        if task_id is not None and not (
+            len(task_id) == ID_LEN and task_id[0] in ID_CHARS[:23] and all(ch in ID_CHARS for ch in task_id)
+        ):
+            raise TaskError("That is not a task id.")
         title = clean_title(title)
         if not title:
             raise TaskError("A task needs a title.")
@@ -298,9 +313,14 @@ class TaskStore:
         parent_id = str(parent_id) if parent_id else None
         with self.db.session() as c:
             self._check_parent(c, None, parent_id)
-            tid = new_id()
-            while c.execute("SELECT 1 FROM tasks WHERE id = ?", (tid,)).fetchone():
+            if task_id is not None:
+                if c.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone():
+                    raise TaskExists(task_id)
+                tid = task_id
+            else:
                 tid = new_id()
+                while c.execute("SELECT 1 FROM tasks WHERE id = ?", (tid,)).fetchone():
+                    tid = new_id()
             pos = self._position(c, parent_id, before, after)
             c.execute(
                 "INSERT INTO tasks (id, parent_id, position, title, body, status, due, created_at, "
@@ -355,6 +375,26 @@ class TaskStore:
             self._log(c, before["id"], by, "update", _snapshot(before), _snapshot(after))
             self._prune_history(c)
         return after
+
+    def offline_clashes(self, task_id: str, changes: dict, base: dict) -> dict:
+        """For a change made offline: the fields that were changed here meanwhile, to something
+        else than the offline change (``base``: the values the device had). ``{field: {"mine",
+        "theirs"}}``; the other fields merge (docs/offline.md)."""
+        now = self.get(task_id)
+        if now.get("deleted_at"):
+            raise TaskMissing("This task is in the trash.")
+        out = {}
+        for k in ("title", "body", "due", "status"):
+            if k not in changes or k not in base:
+                continue
+            clean = lambda v, k=k: clean_title(v) if k == "title" else _clean(k, v)  # noqa: E731
+            try:
+                mine, was = clean(changes[k]), clean(base[k])
+            except TaskError:
+                continue
+            if now.get(k) != was and now.get(k) != mine:
+                out[k] = {"mine": mine, "theirs": now.get(k)}
+        return out
 
     def set_status(
         self, task_id: str, status: str, *, with_subtasks: bool = False, by: str = "human"

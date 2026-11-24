@@ -36,6 +36,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 from ...library.agent import THIS_COMPUTER
@@ -474,24 +475,22 @@ class NoteHistory(HistoryReader):
             for text, _ in versions:
                 h = write(text)
             return h
+        stem = Path(path).stem
+
+        def before() -> None:
+            self._ensure()
+            self._checkpoint([path])
+
+        def record(when: float) -> None:
+            self._commit([path], by="human", kind="edit", name=device, subject=f"Edited {stem} offline",
+                         device=device, when=when)  # fmt: skip
+
         with self.lock.held():
-            ok = self._safe(lambda: (self._ensure(), self._checkpoint([path])), "checkpoint before offline edits")
-            stem = Path(path).stem
+            ok = self._safe(before, "checkpoint before offline edits")
             for text, when in versions:
                 h = write(text)
                 if ok:
-                    self._safe(
-                        lambda when=when: self._commit(
-                            [path],
-                            by="human",
-                            kind="edit",
-                            name=device,
-                            subject=f"Edited {stem} offline",
-                            device=device,
-                            when=when,
-                        ),
-                        "recording an offline edit",
-                    )
+                    self._safe(partial(record, when), "recording an offline edit")
         return h
 
     def merge(self, current: str, base: str, mine: str) -> tuple[str, bool]:

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from ..changes import CLIENT_HEADER
 from ..notes.vault import VaultError as NoteError
-from ..tasks import TaskError, TaskMissing
+from ..tasks import TaskError, TaskExists, TaskMissing
 from ..tasks.query import matcher
 from ..tasks.service import token
 from .errors import PluginError
 
-__all__ = ["CLIENT_HEADER", "NoteError", "TaskError", "TaskMissing", "matcher", "token", "TaskAccess"]
+__all__ = ["CLIENT_HEADER", "NoteError", "TaskError", "TaskExists", "TaskMissing", "matcher", "token", "TaskAccess"]
 
 
 class TaskRecords:
@@ -31,6 +31,10 @@ class TaskRecords:
 
     def create(self, *args, **kwargs):
         return self._call("create", "edit", *args, **kwargs)
+
+    def offline_clashes(self, *args, **kwargs):
+        """API 1.16: the fields of a change made offline that were changed here meanwhile."""
+        return self._call("offline_clashes", "read", *args, **kwargs)
 
     def update(self, *args, **kwargs):
         return self._call("update", "edit", *args, **kwargs)

@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-API_VERSION = (1, 15)  # the plugin API this Synapse offers (major, minor)
+API_VERSION = (1, 16)  # the plugin API this Synapse offers (major, minor)
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -123,6 +123,10 @@ class Manifest:
     mcp: bool = False
     settings: list[Setting] = field(default_factory=list)
     python: list[str] = field(default_factory=list)  # packages it needs (deps.py)
+    # Offline use (API 1.16): routes (GET, relative to its backend) saved for offline use, and
+    # whether its frontend may queue writes while Synapse cannot be reached (replay.py).
+    offline_keep: list[str] = field(default_factory=list)
+    offline_queue: bool = False
     # A core plugin: part of Synapse, in its plugins/ folder (honoured only there). It starts on
     # (or as the Synapse setting ``enabled_from_setting`` was, for a feature that had a switch),
     # may use Synapse's own modules, keeps its tools' names unprefixed, and its frontend
@@ -300,6 +304,15 @@ def parse(data: object, folder: Path) -> Manifest:
         man.python = check(python, core_packages(APP_ROOT))
     except PluginError as e:
         raise ManifestError(str(e)) from e
+    offline = data.get("offline") or {}
+    if not isinstance(offline, dict) or set(offline) - {"keep", "queue"}:
+        raise ManifestError('"offline" is an object with "keep" (a list of paths) and "queue" (true or false)')
+    keep = offline.get("keep") or []
+    if not isinstance(keep, list) or not all(isinstance(k, str) and k.startswith("/") and len(k) <= 200 for k in keep):
+        raise ManifestError('"offline": "keep" is a list of its routes to save, e.g. ["/", "/trash"]')
+    if offline.get("queue", False) not in (True, False):
+        raise ManifestError('"offline": "queue" is true or false')
+    man.offline_keep, man.offline_queue = list(keep), bool(offline.get("queue"))
     raw_settings = data.get("settings") or []
     if not isinstance(raw_settings, list):
         raise ManifestError('"settings" must be a list')

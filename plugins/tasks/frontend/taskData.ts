@@ -2,7 +2,7 @@
 // the Tasks page and the notes make to them. Everyone who draws a task listens for the 'tasks'
 // event. A change is applied here first, so a click shows at once; the server's answer then
 // replaces it (and an error puts back what was there).
-import { api } from './api.js';
+import { api, offline } from './api.js';
 import { emit } from '../../../frontend/src/plugins/task-runtime.js';
 import type { Task, TaskChanges, TaskRef } from '../../../frontend/src/plugins/task-runtime.js';
 import { openDialog } from '../../../frontend/src/plugins/task-runtime.js';
@@ -32,15 +32,54 @@ export function loadTasks(force = false): Promise<void> {
   const current = generation;
   if (td.loaded && !force) return Promise.resolve();
   if (loading) return loading;
-  loading = api.tasks().then((res) => {
+  loading = Promise.all([api.tasks(), offline.pending()]).then(([res, pending]) => {
     if (!active || current !== generation) return;
     td.tasks = new Map(res.tasks.map((t) => [t.id, t]));
     td.refs = res.refs;
     td.trash = res.trash;
+    applyPending(pending);
     td.loaded = true;
     changed();
   }).finally(() => { if (current === generation) loading = null; });
   return loading;
+}
+
+/** Changes made offline that wait to go in, shown over the saved list (plugin API 1.16). */
+function applyPending(pending: Awaited<ReturnType<typeof offline.pending>>): void {
+  for (const w of pending) {
+    const body = (w.body || {}) as TaskChanges & { id?: string; base?: unknown };
+    if (w.method === 'POST' && w.path === '/' && body.id && !td.tasks.has(body.id)) td.tasks.set(body.id, offlineTask(body as TaskChanges & { id: string }));
+    const m = w.method === 'PATCH' ? /^\/([^/]+)$/.exec(w.path) : null;
+    const t = m && td.tasks.get(m[1]);
+    if (t) td.tasks.set(t.id, withFields(t, body));
+  }
+}
+
+/** ``t`` with the fields of a change applied. */
+function withFields(t: Task, changes: TaskChanges): Task {
+  const local: Task = { ...t };
+  for (const k of ['title', 'body', 'status', 'due'] as const) if (k in changes) (local as any)[k] = changes[k];
+  if ('parent_id' in changes) local.parent_id = changes.parent_id ?? null;
+  return local;
+}
+
+/** A task made on this device while Synapse could not be reached, as the server will store it. */
+function offlineTask(d: TaskChanges & { id: string }): Task {
+  const now = new Date().toISOString();
+  const siblings = allTasks().filter((t) => t.parent_id === (d.parent_id ?? null));
+  return {
+    id: d.id, parent_id: d.parent_id ?? null, position: siblings.reduce((n, t) => Math.max(n, t.position), 0) + 1,
+    title: d.title || '', body: d.body || '', status: d.status || 'open', due: d.due ?? null,
+    created_at: now, updated_at: now, done_at: d.status === 'done' ? now : null, created_by: 'human', updated_by: 'human',
+    deleted_at: null, deleted_batch: null,
+  };
+}
+
+/** A new task's id, chosen here so a task made offline keeps it (as the server makes them: backend/tasks/store.py). */
+function newTaskId(): string {
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const r = crypto.getRandomValues(new Uint32Array(8));
+  return chars[r[0] % 23] + [...r.slice(1)].map((n) => chars[n % chars.length]).join('');
 }
 
 function changed(): void {
@@ -69,15 +108,13 @@ function apply(list: Task[]): void {
 /** Change a task. Returns it as the server stored it (null when that failed; the error is shown). */
 export async function patchTask(id: string, changes: TaskChanges): Promise<Task | null> {
   const before = td.tasks.get(id);
-  if (before) {
-    const local: Task = { ...before };
-    for (const k of ['title', 'body', 'status', 'due'] as const) if (k in changes) (local as any)[k] = changes[k];
-    if ('parent_id' in changes) local.parent_id = changes.parent_id ?? null;
-    td.tasks.set(id, local);
-    changed();
-  }
+  const local = before ? withFields(before, changes) : null;
+  if (local) { td.tasks.set(id, local); changed(); }
+  // a change of fields (not a move) may wait offline; ``base`` lets the server merge it with what changed meanwhile
+  const fields = !('parent_id' in changes || 'before' in changes || 'after' in changes);
+  const base = before && fields ? Object.fromEntries((['title', 'body', 'status', 'due'] as const).filter((k) => k in changes).map((k) => [k, before[k]])) : undefined;
   try {
-    const res = await api.updateTask(id, changes);
+    const res = await api.updateTask(id, base ? { ...changes, base } : changes, local && fields ? () => ({ task: local, changed: [] }) : undefined);
     apply(res.changed);
     td.tasks.set(id, res.task);
     if ('parent_id' in changes || 'before' in changes || 'after' in changes) await loadTasks(true);   // positions of the siblings
@@ -112,7 +149,9 @@ export async function toggleTask(id: string): Promise<void> {
 
 export async function createTask(data: TaskChanges): Promise<Task | null> {
   try {
-    const res = await api.createTask(data);
+    // A task not shown in a note may be made offline: it gets its id here, and waits.
+    const own = data.note ? data : { ...data, id: newTaskId() };
+    const res = await api.createTask(own, data.note ? undefined : () => ({ task: offlineTask(own as TaskChanges & { id: string }) }));
     td.tasks.set(res.task.id, res.task);
     if (res.ref) await loadTasks(true); else changed();
     return res.task;

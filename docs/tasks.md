@@ -46,6 +46,10 @@ This page covers the records (`backend/tasks/store.py`), the lines in notes
 task tools, and the frontend (`plugins/tasks/frontend/`). Related pages: [notes](notes.md) (the
 parser and the editor), [storage](storage.md) (the tables and backups), [mcp](mcp.md).
 
+**Offline.** With Settings → Offline Use on, the Tasks page works without Synapse: ticking,
+editing and adding tasks wait on the device and go in once Synapse answers, merged field by field
+with changes made meanwhile ([offline use](offline.md#plugins)).
+
 ## Using tasks
 
 | A new task in a note | A task opened from its line | The Tasks page |

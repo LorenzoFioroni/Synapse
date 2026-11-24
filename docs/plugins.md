@@ -5,13 +5,13 @@ A plugin adds a feature to Synapse without changing Synapse's own code: a folder
 object to register what it offers. This page is both the guide for writing one and the description
 of how Synapse runs them.
 
-This page documents API **1.15**, which also accepts plugins targeting 1.0–1.14. Reference
+This page documents API **1.16**, which also accepts plugins targeting 1.0–1.15. Reference
 providers and export writers were added in 1.1, Synapse's reference writers
 (`backend.plugins.formats`) in 1.2; plugins using them should declare `"api": "^1.1"` or
 `"^1.2"`. Loopback HTTP and editor suggestions require `"^1.3"`; offline scholarly helpers require `"^1.4"`. Named reference sub-sources and the reference record
 contract require `"^1.5"`. Metadata review, progress jobs, library editing and field scheduling helpers require `"^1.6"`. Notes reads and visualizations require `"^1.7"`. The phone layout's additions (a page's
 `phone` layout, `p.capture`, `p.editor.toolbar`, `role: 'dismiss'` and a paper's `group`) require
-`"^1.11"`. Local services (`plugin.http.local_service`) require `"^1.12"`. PDF sources that return an article's page rather than its PDF require `"^1.13"`. Citation sources (`plugin.citing_source`) require `"^1.15"`.
+`"^1.11"`. Local services (`plugin.http.local_service`) require `"^1.12"`. PDF sources that return an article's page rather than its PDF require `"^1.13"`. Citation sources (`plugin.citing_source`) require `"^1.15"`. [Offline use](#offline-use-116) (`offline` in the manifest, `p.offline`, `backend.plugins.replay`) requires `"^1.16"`.
 What exists today:
 
 - **Backend** (Python): routes, tools for Claude, events from the library and notes, reading the
@@ -374,6 +374,7 @@ data/plugins/recently-added/      the folder's name is the plugin's id
 | `permissions` | `network`: the hosts `plugin.http` may reach (`"export.arxiv.org"`, or `"*.example.org"` for a domain and its subdomains). `notes`: `read` for note listings/links, `edit` for supported history-preserving note operations; `tasks`: `read` and/or `edit` for task operations; `library`: `read` (`plugin.library`), `add` (`plugin.actions.add`), `edit` (`plugin.actions.update`, `p.library.update` and review Apply). `mcp`: true to offer tools to Claude. Unknown permissions make the manifest invalid. |
 | `python` | Python packages it needs, as requirements (`["scirate>=0.0.7"]`): installed with pip when it first starts (see [Python packages](#python-packages)). |
 | `settings` | What the user can set, see below. |
+| `offline` | API 1.16, [offline use](#offline-use-116): `{"keep": ["/", "/trash"], "queue": true}`. `keep`: its routes (GET) saved on a device that uses Synapse offline; `queue`: its frontend may let writes wait there while Synapse cannot be reached. |
 | `enabled_by_default` | `true`: start on the first time Synapse sees it. Honoured only for the plugins that come with Synapse (`plugins/`); an installed plugin waits for the user. |
 
 Each setting has a `key` (lowercase, `_`), a `type`, a `label`, an optional `description` and
@@ -1163,3 +1164,38 @@ The bundled Export Formats plugin registers a LaTeX project download here. Its o
 bibliographic writers and their `/api/export` responses remain text-only; project ZIPs are
 built in the browser with no runtime dependency or extra server route. See
 [Exporting a note](notes.md#exporting-a-note) for files, options and conversion limits.
+
+### Offline use (1.16)
+
+A device with Settings → Offline Use on keeps working when Synapse cannot be reached
+([offline use](offline.md)). A plugin takes part in three steps:
+
+1. **Its data offline.** The routes in the manifest's `"offline": {"keep": […]}` are fetched and
+   saved while Synapse can be reached; offline, `p.backend.get` of the same path answers from the
+   saved copy. Its frontend files are saved with the app.
+2. **Writes that wait.** With `"queue": true`, a write passes an answer for when it waits:
+   `p.backend.patch(path, body, { offline: () => answer })` (also `post`, `put`, `delete`). When
+   Synapse cannot be reached, the write is kept on the device (IndexedDB) and resolves at once with
+   `answer`. While a plugin's writes wait, its later writes with `offline` wait behind them (and
+   ones without it first send the waiting ones), so they go in in order. A write without `offline`
+   fails as before. `await p.offline.pending()` lists the waiting writes (`{method, path, body, at}`,
+   oldest first), to show them over what the saved routes say after a reload;
+   `p.offline.now()` says whether Synapse cannot be reached now; `p.offline.onSynced(fn)` runs once
+   waiting writes went in (load what you show again).
+3. **Merging them.** Once Synapse answers, the writes are sent in order with the time they were
+   made. The route sees it with `replay.replayed_at()` (`from backend.plugins import replay`;
+   seconds since the epoch, or `None` for an ordinary request) and decides how the change merges
+   with what changed meanwhile. To ask the user, return `replay.conflict("One sentence.",
+   retry={…})` (a 409): the app shows the sentence with **Keep the version in Synapse** and **Keep
+   mine**, which sends `retry` to the same route again with `replay.forced()` true. Any other
+   refusal drops the write and tells the user; no answer leaves it (and the ones after it) for later.
+
+Write routes so a write sent twice does no harm (a device may lose the answer): Tasks lets the
+device choose a new task's id, and a second create with the same id answers with the task.
+
+**Tasks** (`plugins/tasks`) is the example: it keeps `/`, and ticks, edits (title, details, due
+date) and new tasks (not in a note) may wait. An edit sends `base`, the values it started from;
+the route merges field by field: a field changed in Synapse meanwhile to something else asks
+(`retry` holds those fields), the others go in. Moves, deleting and tasks made in a note need
+Synapse.
+

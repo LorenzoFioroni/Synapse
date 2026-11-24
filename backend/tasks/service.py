@@ -179,6 +179,7 @@ class TaskService:
             before=data.get("before"),
             after=data.get("after"),
             by=by,
+            task_id=data.get("id") or None,
         )
         out: dict = {"task": t}
         note = data.get("note")

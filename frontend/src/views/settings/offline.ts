@@ -2,6 +2,7 @@
 // (frontend/src/offline.ts, offlineSync.ts; docs/offline.md), and how much of it is saved.
 import { OFFLINE_EVENT, changesWaiting, offlineEnabled, offlineSupported, offlineNow, savedPdfCount } from '../../offline.js';
 import { NOTES_EVENT, loadNotes, localNotes, notePending } from '../../offlineNotes.js';
+import { loadQueue, queuedCount } from '../../plugins/offlineQueue.js';
 import { SYNC_EVENT, disableOffline, enableOffline, lastSynced, syncOffline, syncState } from '../../offlineSync.js';
 import { confirmDialog } from '../../ui/dialog.js';
 import { toast, toastError } from '../../ui/toast.js';
@@ -56,6 +57,7 @@ export function bindOffline(view: HTMLElement): () => void {
     if (last.failed) parts.push(`${plural(last.failed, 'file')} could not be saved: they are tried again next time`);
     if (waiting) parts.push(`${plural(waiting, 'annotation change')} waiting to be sent`);
     if (edited) parts.push(`${plural(edited, 'note')} edited offline, not yet in Synapse`);
+    if (queuedCount()) parts.push(`${plural(queuedCount(), 'plugin change')} (tasks, …) waiting to be sent`);
     if (offlineNow()) parts.push('offline now');
     const used = await storageText();
     if (used) parts.push(used);
@@ -71,7 +73,8 @@ export function bindOffline(view: HTMLElement): () => void {
         confirm: 'Turn Off', danger: !!(waiting || edited),
         detail: 'The saved copy of the app, the library, the PDFs and the notes is deleted from this browser. Synapse needs a connection again.'
           + (waiting ? ` ${plural(waiting, 'annotation change')} made offline have not been sent yet and will be lost.` : '')
-          + (edited ? ` Offline edits to ${plural(edited, 'note')} are not in Synapse yet and will be lost.` : ''),
+          + (edited ? ` Offline edits to ${plural(edited, 'note')} are not in Synapse yet and will be lost.` : '')
+          + (queuedCount() ? ` ${plural(queuedCount(), 'change')} to tasks or other plugins' data will be lost.` : ''),
       }))) { void paint(); return; }
       busy = true; void paint();
       await disableOffline();
@@ -88,8 +91,9 @@ export function bindOffline(view: HTMLElement): () => void {
   sync.addEventListener('click', () => { syncOffline(true).catch((e) => { if (offlineEnabled()) toastError(e); }); });
 
   const events = [OFFLINE_EVENT, SYNC_EVENT, NOTES_EVENT];
-  void loadNotes();
   const listener = () => { void paint(); };
+  void loadNotes();
+  void loadQueue().then(listener);
   for (const ev of events) window.addEventListener(ev, listener);
   void paint();
   return () => { for (const ev of events) window.removeEventListener(ev, listener); };

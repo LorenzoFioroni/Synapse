@@ -45,7 +45,7 @@ GROUPS = [
     ),
     (
         ("frontend/sw.js", "frontend/src/offline*.ts", "frontend/src/views/settings/offline.ts"),
-        {"offline", "offline_notes"},
+        {"offline", "offline_notes", "offline_tasks"},
     ),
     (("frontend/src/views/notes/offlineConflict.ts", "backend/notes/history/recorder.py"), {"offline_notes"}),
     (("plugins/autocompletion/*",), {"assist", "notes"}),

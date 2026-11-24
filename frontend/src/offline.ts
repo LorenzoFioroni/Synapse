@@ -171,7 +171,7 @@ export async function removeOfflineCopy(): Promise<void> {
     }
   } catch { /* nothing registered */ }
   try { await caches.delete(CACHE); } catch { /* none */ }
-  for (const db of ['synapse-offline', 'synapse-offline-notes']) {   // the annotation queue; the notes (offlineNotes.ts)
+  for (const db of ['synapse-offline', 'synapse-offline-notes', 'synapse-offline-plugins']) {   // the annotation queue; the notes (offlineNotes.ts); plugins' writes (plugins/offlineQueue.ts)
     await new Promise<void>((done) => {
       try {
         const del = indexedDB.deleteDatabase(db);

@@ -1,17 +1,18 @@
 // Tasks owns its UI; records, history and note-link integrity stay behind the public service API.
 import type { PluginContext } from '../../../frontend/src/plugins/api.js';
 import { emit, off, on } from '../../../frontend/src/plugins/task-runtime.js';
-import { configureApi } from './api.js';
+import { configureApi, offline } from './api.js';
 import { taskHooks, startEnvironment } from './environment.js';
 import { renderDefaults } from './rendering.js';
 import { initNoteTasks, taskKey, teardownNoteTasks } from './noteTasks.js';
-import { startTaskData, stopTaskData } from './taskData.js';
+import { loadTasks, startTaskData, stopTaskData } from './taskData.js';
 import { closeTasks, initTasks, openTasks, tasksChanged, tasksOpen, tasksPanelButton, tasksShortcut, teardownTasks } from './tasksView.js';
 import { dueCount, mountPhoneTasks, quickTask } from './phoneView.js';
 export function activate(p: PluginContext): void {
   configureApi(p);
   startEnvironment(p);
   startTaskData(); initTasks(); initNoteTasks();
+  offline.onSynced(() => { void loadTasks(true); });   // edits made offline went in
   p.tasks.register({
     page: { open: openTasks, close: closeTasks, isOpen: tasksOpen, panelButton: tasksPanelButton, shortcut: tasksShortcut, changed: tasksChanged },
     notes: taskHooks, render: renderDefaults,

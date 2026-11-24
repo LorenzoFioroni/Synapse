@@ -5,6 +5,7 @@
 import { api, fileUrl } from './api.js';
 import { OFFLINE_EVENT, forgetFiles, offlineEnabled, offlineNow, offlineSupported, pdfSaved, pruneFiles, refreshSaved, removeOfflineCopy, saveFiles, setOfflineFlag, startOffline } from './offline.js';
 import { type LocalNote, chosen, chosenPaths, dropNote, folderChosen, setChosen, loadNotes, localNote, localNotes, notePending, noteChosen, putNote, removeLocalNotes, unreachable } from './offlineNotes.js';
+import { flushQueue, loadQueue, queuedCount, removeQueue } from './plugins/offlineQueue.js';
 import { emit } from './store.js';
 import type { Attachment, Item } from './types.js';
 import type { MenuEntry } from './ui/menu.js';
@@ -49,13 +50,14 @@ async function saveAll(step: string, urls: string[], refresh = false): Promise<n
   return failed;
 }
 
-/** The data the app asked for while starting (settings, folders, tags…): it is saved again so it is there offline. */
+/** The data the app asked for while starting (settings, folders, tags, the plugins and their
+ *  frontends' files…): it is saved again so it is there offline. */
 function startupData(): string[] {
   return [...new Set(performance.getEntriesByType('resource')
-    .filter((e) => (e as PerformanceResourceTiming).initiatorType === 'fetch')
-    .map((e) => new URL(e.name, location.href))
-    .filter((u) => u.origin === location.origin && u.pathname.startsWith('/api/') && !u.pathname.startsWith('/api/items/'))
-    .map((u) => u.pathname + u.search))];
+    .map((e) => [new URL(e.name, location.href), (e as PerformanceResourceTiming).initiatorType] as const)
+    .filter(([u, how]) => u.origin === location.origin && (u.pathname.startsWith('/api/plugin-files/')
+      || (how === 'fetch' && u.pathname.startsWith('/api/') && !u.pathname.startsWith('/api/items/'))))
+    .map(([u]) => u.pathname + u.search))];
 }
 
 let running: Promise<void> | null = null;
@@ -79,7 +81,12 @@ async function run(all: boolean): Promise<void> {
   Object.assign(syncState, { step: 'Library', done: 0, total: 0 });
   tick();
   await pushNotes();
-  const [library, notes] = await Promise.all([api.listItems({ view: 'library' }), api.notes().catch(() => null)]);
+  await flushPlugins();
+  const [library, notes, plugins] = await Promise.all([api.listItems({ view: 'library' }), api.notes().catch(() => null), api.plugins().catch(() => null)]);
+  // the routes plugins keep for offline use (API 1.16)
+  const kept = (plugins?.plugins || []).filter((p) => p.running && p.offline?.keep.length)
+    .flatMap((p) => p.offline!.keep.map((k) => `/api/plugins/${encodeURIComponent(p.id)}${k}`));
+  await saveFiles(kept, true);
   if (notes) await keepNotes(chosenPaths(notes));
   await saveFiles(startupData(), true);
   const items = library.items.filter((it) => !it._outside);
@@ -92,6 +99,16 @@ async function run(all: boolean): Promise<void> {
   await pruneFiles(pdfs.flatMap((a) => [fileUrl(a), annotationsUrl(a)]));
   await refreshSaved();
   if (offlineEnabled()) store(DONE_KEY, { at: Date.now(), failed: syncState.failed });
+}
+
+/* ------------------------------------------------------------------ plugins */
+let pluginNames: Record<string, string> = {};
+/** Sends the plugins' writes made offline (plugins/offlineQueue.ts). */
+export async function flushPlugins(): Promise<void> {
+  await loadQueue();
+  if (!queuedCount()) return;
+  try { pluginNames = Object.fromEntries((await api.plugins()).plugins.map((p) => [p.id, p.name])); } catch { /* ids then */ }
+  await flushQueue((id) => pluginNames[id] || id);
 }
 
 /* ------------------------------------------------------------------ notes */
@@ -244,6 +261,7 @@ export async function enableOffline(): Promise<void> {
 export async function disableOffline(): Promise<void> {
   await removeOfflineCopy();
   await removeLocalNotes();
+  await removeQueue();
   await running?.catch(() => null);   // the save that was running notices and stops
   Object.assign(syncState, { running: false, step: '', done: 0, total: 0, failed: 0 });
   tick();
@@ -256,6 +274,9 @@ window.addEventListener('online', () => { if (offlineEnabled()) setTimeout(() =>
 let wasOffline = false;
 window.addEventListener(OFFLINE_EVENT, () => {
   const off = offlineNow();
-  if (wasOffline && !off && localNotes().some((n) => n.versions.length && !n.conflict)) void pushNotes();
+  if (wasOffline && !off) {
+    if (localNotes().some((n) => n.versions.length && !n.conflict)) void pushNotes();
+    if (queuedCount()) void flushPlugins();
+  }
   wasOffline = off;
 });

@@ -74,6 +74,17 @@ The note calls of `api.ts` (`getNote`, `checkNote`, `saveNote`, `createNote`, `n
 
 Turning offline use off asks first when notes have edits that are not in Synapse yet.
 
+## Plugins
+
+Plugins take part through the plugin API ([offline use in plugins](plugins.md#offline-use-116)):
+routes they keep are saved with the library, and writes they allow wait on the device
+(`frontend/src/plugins/offlineQueue.ts`, IndexedDB `synapse-offline-plugins`) and are sent in order
+when Synapse answers again, each route merging them itself. **Tasks**: ticking, editing a task's
+title, details or due date, and new tasks (from the Tasks page) work offline and survive a reload;
+back online an edit merges field by field with changes made in Synapse, and a field changed on
+both sides asks (keep Synapse's or mine). Moving, deleting and tasks made inside a note need
+Synapse.
+
 ## What it does
 
 - **Reading.** Pages, data and PDFs that succeed are kept in the Cache Storage (`synapse-offline-v1`).
@@ -92,7 +103,7 @@ Turning offline use off asks first when notes have edits that are not in Synapse
   list, so a reload while offline still shows it. The queue is sent in order when the browser comes
   back online, after any successful request, and every 30 s while items wait. An entry the server
   refuses (4xx other than 401/403) is dropped and reported.
-- **Not covered:** renaming, moving, deleting or locking notes offline, library edits, searching and other folders or
+- **Not covered:** renaming, moving, deleting or locking notes offline; moving or deleting tasks; library edits, searching and other folders or
   views than the library list the app opened with, and the iOS/Safari storage limits.
 
 ## Where it lives
@@ -108,6 +119,8 @@ Turning offline use off asks first when notes have edits that are not in Synapse
 | Kept notes, local versions, the note calls offline | `frontend/src/offlineNotes.ts` |
 | Bringing offline edits in: apply, merge, record | `NotesService.apply_offline` (`backend/notes/service.py`), `NoteHistory.offline`/`merge` (`recorder.py`), `POST /api/notes/offline` |
 | The choice on a conflict | `frontend/src/views/notes/offlineConflict.ts` |
+| Plugins' writes waiting, sent and merged | `frontend/src/plugins/offlineQueue.ts`, `host.ts` (`write`, `p.offline`), `backend/plugins/replay.py`; Tasks: `taskData.ts`, `routes.py`, `TaskStore.offline_clashes` |
 
 Checklists: `python tests/e2e/run.py offline` (port 8872), `python tests/e2e/run.py offline_notes`
-(port 8873). Tests: `tests/notes/test_offline_notes.py`.
+(port 8873), `python tests/e2e/run.py offline_tasks` (port 8874). Tests: `tests/notes/test_offline_notes.py`,
+`tests/test_offline_replay.py`.

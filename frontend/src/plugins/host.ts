@@ -22,6 +22,8 @@ import { feedback } from './feedback.js';
 import { notesContext } from './notes.js';
 import { registerMarkdown, registerFigures } from './markdownHost.js';
 import { registerTaskIntegration } from './taskHost.js';
+import { offlineEnabled, offlineNow } from '../offline.js';
+import { type WriteMethod, flushQueue, loadQueue, onSynced, pendingWrites, queueWrite } from './offlineQueue.js';
 
 interface Loaded {
   disposed: boolean;
@@ -96,6 +98,26 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
       if (!stopped) throw e;
       void syncPlugins();
       throw new DOMException('Plugin stopped', 'AbortError');
+    }
+  };
+  // A write: with ``offline`` (and "queue" in the manifest) it waits here while Synapse cannot be
+  // reached, and also while earlier ones wait, so they go in in order (offlineQueue.ts).
+  const write = async <T>(method: WriteMethod, path: string, body: unknown, options?: { signal?: AbortSignal; offline?: () => T }): Promise<T> => {
+    const queueable = !!options?.offline && !!info.offline?.queue && offlineEnabled();
+    const queue = async () => {
+      await queueWrite({ plugin: pid, method, path, body: body ?? {}, at: Date.now() });
+      return options!.offline!();
+    };
+    await loadQueue();
+    if (pendingWrites(pid).length) {
+      if (queueable) { const r = await queue(); void flushQueue((id) => (id === pid ? info.name : id)); return r; }
+      await flushQueue((id) => (id === pid ? info.name : id));
+    }
+    try {
+      return await call<T>(method, path, body ?? {}, undefined, options?.signal);
+    } catch (e) {
+      if (!queueable || ![0, 502, 503, 504].includes((e as ApiError).status)) throw e;
+      return queue();
     }
   };
   return {
@@ -224,10 +246,15 @@ function contextFor(info: PluginInfo, rec: Loaded): PluginContext {
     jobs: notices.jobs,
     backend: {
       get: (path, query) => call('GET', path, undefined, query),
-      post: (path, body, options) => call('POST', path, body ?? {}, undefined, options?.signal),
-      patch: (path, body) => call('PATCH', path, body ?? {}),
-      put: (path, body) => call('PUT', path, body ?? {}),
-      delete: (path) => call('DELETE', path),
+      post: (path, body, options) => write('POST', path, body, options),
+      patch: (path, body, options) => write('PATCH', path, body, options),
+      put: (path, body, options) => write('PUT', path, body, options),
+      delete: (path, options) => write('DELETE', path, undefined, options),
+    },
+    offline: {
+      now: () => offlineEnabled() && offlineNow(),
+      pending: async () => { await loadQueue(); return pendingWrites(pid).map(({ method, path, body, at }) => ({ method, path, body, at })); },
+      onSynced: (fn) => keep(onSynced(pid, guarded(info, 'offline sync listener', fn))),
     },
     library: {
       selected: () => copy(selectedItems()) as PluginItem[],

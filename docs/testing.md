@@ -249,6 +249,7 @@ CDP-specific gesture/authenticator scenarios stay on Chromium.
 | `lazy_viewer` | 8778 | A 300-page PDF: pages drawn only near the viewport, fast jumps and zoom, annotations on far pages |
 | `offline` | 8872 | Offline use is off by default; Settings → Offline Use saves the app and library but no PDF; Make Available Offline / Remove Offline Copy for one PDF, which opening it online does not do; offline the app opens after every window was closed, unsaved papers are marked and explain themselves, an annotation made offline reaches the server later, and turning it off deletes the saved copy |
 | `offline_notes` | 8873 | Kept notes open and save offline, a note created offline, offline versions merged into Synapse's and recorded in the note's history, an overlapping change asks and Fix by hand writes Git's conflict markers |
+| `offline_tasks` | 8874 | A plugin's offline writes through Tasks: ticking and adding a task offline, kept across a reload, then merged field by field with a change made in Synapse, and the page refreshed |
 | `pdf_search` | 8863 | Full-document text search over 300 pages without rendering them all, next/previous wrap and keyboard shortcuts, case/whole-word options, line breaks and hyphens, query replacement, zoom/revisit highlights, the app's AI panel and iframe focus, themes, touch controls and a PDF without searchable text |
 | `library` | 8768 | Citation key rename with preview, notes in search, trashed items, Quote and Snapshot to note |
 | `links` | 8767 | Note links: autocomplete, citation cards, side panels, the item pane |

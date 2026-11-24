@@ -23,8 +23,8 @@ export const CLIENT_ID = (globalThis.crypto?.randomUUID?.() || `${Date.now().toS
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /** A JSON request; resolves to the parsed answer (typed by the caller as T). */
-async function request<T = unknown>(method: Method, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const headers: Record<string, string> = { 'X-Synapse-Client': CLIENT_ID };
+async function request<T = unknown>(method: Method, url: string, body?: unknown, signal?: AbortSignal, extra?: Record<string, string>): Promise<T> {
+  const headers: Record<string, string> = { 'X-Synapse-Client': CLIENT_ID, ...extra };
   const opts: RequestInit = { method, headers, signal };
   if (body instanceof FormData) opts.body = body;
   else if (body !== undefined) {
@@ -112,9 +112,9 @@ export const api = {
     request<{ item: Item; duplicate: boolean }>('POST', '/api/outside/add', { paper, folder_id: folderId }),
   itemFields: (id: string) => request<{ fields: ItemFieldValue[] }>('GET', `/api/items/${encodeURIComponent(id)}/fields`),
   /** A plugin's own route (/api/plugins/<id><path>), for its frontend (plugins/host.ts). */
-  pluginRoute: <T = unknown>(id: string, method: Method, path: string, body?: unknown, query?: Record<string, unknown>, signal?: AbortSignal) => {
+  pluginRoute: <T = unknown>(id: string, method: Method, path: string, body?: unknown, query?: Record<string, unknown>, signal?: AbortSignal, headers?: Record<string, string>) => {
     const q = query ? qs(query) : '';
-    return request<T>(method, `/api/plugins/${encodeURIComponent(id)}${path.startsWith('/') ? path : `/${path}`}${q ? `?${q}` : ''}`, body, signal);
+    return request<T>(method, `/api/plugins/${encodeURIComponent(id)}${path.startsWith('/') ? path : `/${path}`}${q ? `?${q}` : ''}`, body, signal, headers);
   },
   enablePlugin: (id: string) => request<{ plugin: PluginInfo }>('POST', `/api/plugin-host/${encodeURIComponent(id)}/enable`),
   disablePlugin: (id: string) => request<{ plugin: PluginInfo }>('POST', `/api/plugin-host/${encodeURIComponent(id)}/disable`),

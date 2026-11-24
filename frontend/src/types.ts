@@ -578,6 +578,8 @@ export interface PluginInfo {
   values?: Record<string, unknown>;
   tools?: string[];
   routes?: { rule: string; methods: string[] }[];
+  /** API 1.16: routes saved for offline use, and whether its writes may wait offline. */
+  offline?: { keep: string[]; queue: boolean };
   events?: string[];
   /** Its scheduled work (while running) and the jobs waiting. */
   schedules?: { name: string; rule: string }[];

@@ -2,7 +2,8 @@
 
 This module is the public API for plugins' Python code: a plugin imports only from
 ``backend.plugins`` (``Plugin``, ``PluginError``, ``HttpError``, ``Offline``, ``EVENTS``,
-``API_VERSION``, the reference writers as ``formats`` and offline helpers as ``scholarly``). Everything else in ``backend`` may
+``API_VERSION``, the reference writers as ``formats``, offline helpers as ``scholarly`` and the
+helpers for changes queued offline as ``replay``). Everything else in ``backend`` may
 change between versions. See docs/plugins.md.
 
 Inside Synapse: ``host.py`` finds, starts and stops plugins, ``manifest.py`` reads their
@@ -13,7 +14,7 @@ Inside Synapse: ``host.py`` finds, starts and stops plugins, ``manifest.py`` rea
 ``formats.py`` the reference writers and ``scholarly.py`` the offline helpers plugins may use.
 """
 
-from . import formats, scholarly
+from . import formats, replay, scholarly
 from .context import EVENTS, Plugin, ToolSpec
 from .errors import PluginError
 from .host import PluginHost
@@ -26,6 +27,7 @@ __all__ = [
     "API_VERSION",
     "EVENTS",
     "formats",
+    "replay",
     "scholarly",
     "HttpError",
     "Offline",

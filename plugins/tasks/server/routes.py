@@ -6,7 +6,7 @@ from functools import wraps
 
 from flask import jsonify, request
 
-from backend.plugins import Plugin
+from backend.plugins import Plugin, replay
 from backend.plugins import tasks as task_api
 
 
@@ -59,7 +59,13 @@ def register(plugin: Plugin) -> None:
     @plugin.route("/", methods=["POST"])
     @guarded
     def create():
-        out = plugin.tasks.create(body())
+        d = body()
+        try:
+            out = plugin.tasks.create(d)
+        except task_api.TaskExists:
+            if replay.replayed_at() is None:
+                raise
+            return jsonify(task=plugin.tasks.records.get(d["id"]))  # created offline, already sent once
         if out.get("ref"):
             _notes_changed()
         return jsonify(out), 201
@@ -72,6 +78,12 @@ def register(plugin: Plugin) -> None:
         d = body()
         store = plugin.tasks.records
         changed: list[dict] = []
+        base = d.pop("base", None)
+        clashes = {}
+        if replay.replayed_at() is not None and isinstance(base, dict) and not replay.forced():
+            # changed offline: fields changed here meanwhile (to something else) ask; the rest merge
+            clashes = store.offline_clashes(task_id, d, base)
+            d = {k: v for k, v in d.items() if k not in clashes}
         if "parent_id" in d or "before" in d or "after" in d:
             changed.append(
                 store.move(task_id, parent_id=d.get("parent_id"), before=d.get("before"), after=d.get("after"))
@@ -81,6 +93,15 @@ def register(plugin: Plugin) -> None:
             changed.append(store.update(task_id, fields))
         if "status" in d:
             changed.extend(store.set_status(task_id, d["status"], with_subtasks=bool(d.get("with_subtasks"))))
+        if clashes:
+            names = {"title": "title", "body": "details", "due": "due date", "status": "done or not"}
+            title = store.get(task_id)["title"]
+            what = ", ".join(names[k] for k in clashes)
+            return replay.conflict(
+                f"“{title}” was also changed in Synapse while you were offline ({what}).",
+                retry={k: v["mine"] for k, v in clashes.items()},
+                fields=clashes,
+            )
         return jsonify(task=store.get(task_id), changed=changed)
 
     @plugin.route("/delete", methods=["POST"])

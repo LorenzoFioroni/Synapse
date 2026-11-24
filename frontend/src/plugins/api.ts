@@ -209,6 +209,13 @@ export interface NoteExportSpec {
   run(note: { path: string; title: string; text: string }): Promise<void>;
 }
 
+/** Options of a write to the plugin's backend. */
+export interface WriteOptions<T> {
+  signal?: AbortSignal;
+  /** API 1.16: the answer to use when the write waits offline (see PluginContext.offline). */
+  offline?: () => T;
+}
+
 export interface PluginContext {
   tasks: { register(integration: import('./task-runtime.js').TaskIntegration): Dispose };
   markdown: import('./markdown.js').MarkdownApi;
@@ -277,10 +284,25 @@ export interface PluginContext {
       to the parsed JSON answer and throws an Error with the server's message on failure. */
   backend: {
     get<T = unknown>(path: string, query?: Record<string, string | number | boolean | undefined>): Promise<T>;
-    post<T = unknown>(path: string, body?: unknown, options?: { signal?: AbortSignal }): Promise<T>;
-    patch<T = unknown>(path: string, body?: unknown): Promise<T>;
-    put<T = unknown>(path: string, body?: unknown): Promise<T>;
-    delete<T = unknown>(path: string): Promise<T>;
+    /** Writes. API 1.16: with ``offline`` (and ``"offline": {"queue": true}`` in the manifest), a
+        write made while Synapse cannot be reached waits on the device and resolves at once with
+        what ``offline()`` returns; see ``offline`` below and docs/plugins.md#offline-use. */
+    post<T = unknown>(path: string, body?: unknown, options?: WriteOptions<T>): Promise<T>;
+    patch<T = unknown>(path: string, body?: unknown, options?: WriteOptions<T>): Promise<T>;
+    put<T = unknown>(path: string, body?: unknown, options?: WriteOptions<T>): Promise<T>;
+    delete<T = unknown>(path: string, options?: WriteOptions<T>): Promise<T>;
+  };
+
+  /** API 1.16: offline use (Settings → Offline Use). The routes in the manifest's ``offline.keep``
+      are saved on the device; writes made with ``offline`` wait there while Synapse cannot be
+      reached and are sent, in order, once it answers (the route sees ``replay.replayed_at()``). */
+  offline: {
+    /** Offline use is on and Synapse cannot be reached now. */
+    now(): boolean;
+    /** This plugin's writes still waiting, oldest first: show them over what the saved routes say. */
+    pending(): Promise<{ method: 'POST' | 'PATCH' | 'PUT' | 'DELETE'; path: string; body: unknown; at: number }[]>;
+    /** After waiting writes went in (or were refused): load what you show again. */
+    onSynced(fn: () => void): Dispose;
   };
 
   library: {

@@ -487,11 +487,12 @@ class NotesService:
                             "base": base, "mine": clean[-1][0], "merged": self.history.merge(current, base, clean[-1][0])[0]}  # fmt: skip
                 merged.append((text2, when))
             clean, status = merged, "merged"
-        expected = [cur_hash]
+        expected: list[str | None] = [cur_hash]
 
         def write(text: str) -> str:
-            expected[0] = self.vault.write(path, text, expected_hash=expected[0])
-            return expected[0]
+            h = self.vault.write(path, text, expected_hash=expected[0])
+            expected[0] = h
+            return h
 
         h = self.history.offline(path, clean, write, device=current_device())
         self.index.update(path)

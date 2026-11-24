@@ -49,6 +49,7 @@ def describe(entry: Entry, st: dict, act: Active | None, values: dict, safe_mode
             frontend=build.BUNDLED if act and act.bundle else man.frontend,
             styles=man.styles,
             settings=[s.describe() for s in man.settings],
+            offline={"keep": list(man.offline_keep), "queue": man.offline_queue},
             values=values,
         )
     if act:
