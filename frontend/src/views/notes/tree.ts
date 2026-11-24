@@ -3,6 +3,8 @@
 // 'f:<path>' for folders, 'p:<path>' for PDFs.
 import { api } from '../../api.js';
 import { icon } from '../../icons.js';
+import { OFFLINE_EVENT, offlineEnabled, offlineNow } from '../../offline.js';
+import { NOTES_EVENT, localNote, noteChosen, notePending } from '../../offlineNotes.js';
 import { emit } from '../../store.js';
 import { toastError } from '../../ui/toast.js';
 import type { NoteInfo, NotePdf } from '../../types.js';
@@ -35,6 +37,23 @@ export const treeEl = () => ws.root.querySelector<HTMLElement>('.notes-tree')!;
 export const visibleKeys = () => [...treeEl().querySelectorAll<HTMLElement>('.nt-row')].map(keyOf);
 
 /** Load the notes listing again (and redraw the tree if Notes is open). */
+/** With offline use on: a dot for a note kept for offline use (amber while its edits wait to go in);
+ *  offline, the notes that are not kept are dimmed (they cannot be opened). */
+function offlineMark(path: string): string {
+  if (!offlineEnabled()) return '';
+  if (notePending(path)) return '<span class="nt-offline pending" title="Edited offline: goes into Synapse when it can be reached"></span>';
+  if (localNote(path) || noteChosen(path)) return '<span class="nt-offline" title="Available offline"></span>';
+  return '';
+}
+
+let repaint = 0;
+for (const ev of [OFFLINE_EVENT, NOTES_EVENT]) {
+  window.addEventListener(ev, () => {
+    if (!offlineEnabled() || repaint) return;
+    repaint = requestAnimationFrame(() => { repaint = 0; if (notesOpen()) paintTree(); });
+  });
+}
+
 export async function refreshTree(): Promise<void> {
   try {
     ws.overview = await api.notes();
@@ -125,9 +144,9 @@ export function paintTree(): void {
     for (const n of node.notes) {
       if (!matches(n)) continue;
       const k = nKey(n.path);
-      rows.push(`<div class="nt-row note${n.path === active ? ' active' : ''}${n.type === 'paper' ? ' paper' : ''}${cls(k)}" role="treeitem" aria-selected="${sel.has(k)}" data-path="${escapeHtml(n.path)}" draggable="true"
+      rows.push(`<div class="nt-row note${n.path === active ? ' active' : ''}${offlineNow() && !localNote(n.path) ? ' offline-missing' : ''}${n.type === 'paper' ? ' paper' : ''}${cls(k)}" role="treeitem" aria-selected="${sel.has(k)}" data-path="${escapeHtml(n.path)}" draggable="true"
           title="${escapeHtml(n.title && n.title !== stemOf(n.path) ? `${n.title}\n${n.path}` : n.path)}" style="--d:${depth}">
-          <span class="twisty none"></span>${icon(n.type === 'paper' ? 'book' : 'doc')}<span class="nm">${escapeHtml(stemOf(n.path))}</span>${n.locked ? `<span class="nt-lock" title="Locked">${icon('lock', 'icon-sm')}</span>` : ''}</div>`);
+          <span class="twisty none"></span>${icon(n.type === 'paper' ? 'book' : 'doc')}<span class="nm">${escapeHtml(stemOf(n.path))}</span>${n.locked ? `<span class="nt-lock" title="Locked">${icon('lock', 'icon-sm')}</span>` : ''}${offlineMark(n.path)}</div>`);
     }
   };
   walk(buildTree(), 0);

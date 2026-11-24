@@ -35,6 +35,8 @@ import { renderMermaid } from './richRender.js';
 import { paintCrumbs, paintSide, paintStatus } from './sidePanel.js';
 import { nKey, paintTree, refreshTree, saveCollapsed, selectOnly, tree, treeEl } from './tree.js';
 import { initTreeInput } from './treeInput.js';
+import { offlineConflictDialog } from './offlineConflict.js';
+import { NOTES_EVENT, localNote } from '../../offlineNotes.js';
 import {
   citeInfo, equationMode, hooks, itemInfo, type Mode, noteMacros, noteTabs, type NoteView, movedElsewhere, notesEnabled, notesOpen, notesRenamed, resolveNote, stemOf, taskHooks, ws,
 } from './workspace.js';
@@ -564,6 +566,7 @@ function showView(view: NoteView, mode?: Mode): void {
   // opened from the file list: the keyboard stays there (arrows, Delete) until you click the note
   applyMode(view, { focus: !treeEl().contains(document.activeElement) });
   if (view.conflict) { const c = view.conflict; view.conflict = null; conflictDialog(c); }
+  else if (localNote(view.path)?.conflict) void offlineConflictDialog(view.path, view.session);
 }
 
 /** Put the view's mode on screen: its read view (as it was left, when nothing changed since) or
@@ -878,3 +881,9 @@ export function notesShortcut(e: KeyboardEvent, k: string, mod: boolean): boolea
   if (mod && k === 'f' && !inEditor) { e.preventDefault(); if (listHidden()) peek(true); document.querySelector<HTMLElement>('#toolbar .notes-filter input')!.focus(); return true; }
   return false;
 }
+
+// Offline edits of the note on screen turned out to overlap changes made in Synapse: ask at once.
+window.addEventListener(NOTES_EVENT, () => {
+  const v = ws.view;
+  if (v && localNote(v.path)?.conflict) void offlineConflictDialog(v.path, v.session);
+});

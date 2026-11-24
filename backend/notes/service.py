@@ -448,6 +448,65 @@ class NotesService:
         self._saved(path, h, by)
         return {"path": path, "hash": h, "info": self.index.note(path), **self._lock_state(path, text)}
 
+    def apply_offline(self, path: str, base_hash: str | None, base_text: str | None, versions: list[dict]) -> dict:
+        """Bring in a note's edits made on a device while Synapse could not be reached (docs/offline.md).
+
+        ``base_hash``/``base_text``: the note as the device last had it (None: created offline);
+        ``versions``: ``{text, at}`` in order, ``at`` in ms since the epoch. When the note did not
+        change here meanwhile, each version is committed as it was made; otherwise each is merged
+        (three-way) with the note as it is now first. Nothing is written when a merge conflicts:
+        the answer is ``status: "conflict"`` with the texts, for the user to resolve; a note deleted
+        here meanwhile answers ``status: "deleted"``."""
+        path = self.vault.clean_rel(path)
+        if not path.endswith(".md"):
+            raise ValueError("Only notes can be edited offline.")
+        now = time.time()
+        clean: list[tuple[str, float]] = []
+        for v in versions or []:
+            if not isinstance(v, dict) or not isinstance(v.get("text"), str):
+                raise ValueError("Each offline version needs its text.")
+            at = v.get("at")
+            when = float(at) / 1000 if isinstance(at, int | float) else now
+            clean.append((v["text"], min(max(when, 0.0), now)))  # a device clock in the future is not believed
+        if not clean:
+            raise ValueError("There are no offline edits to bring in.")
+        current = self._current_text(path)
+        if current is None and base_hash is not None:
+            return {"status": "deleted", "path": path, "mine": clean[-1][0]}
+        if current is not None:
+            self.require_open(path, current, extend=True)
+        cur_hash = self.vault.current_hash(path) if current is not None else None
+        status = "applied"
+        if current is not None and cur_hash != base_hash:
+            base = base_text if base_text is not None and base_hash is not None else ""
+            merged = []
+            for text, when in clean:
+                text2, ok = self.history.merge(current, base, text)
+                if not ok:
+                    return {"status": "conflict", "path": path, "hash": cur_hash, "current": current,
+                            "base": base, "mine": clean[-1][0], "merged": self.history.merge(current, base, clean[-1][0])[0]}  # fmt: skip
+                merged.append((text2, when))
+            clean, status = merged, "merged"
+        expected = [cur_hash]
+
+        def write(text: str) -> str:
+            expected[0] = self.vault.write(path, text, expected_hash=expected[0])
+            return expected[0]
+
+        h = self.history.offline(path, clean, write, device=current_device())
+        self.index.update(path)
+        self._changed()
+        self._saved(path, h, "app")
+        final = clean[-1][0]
+        return {
+            "status": status,
+            "path": path,
+            "hash": h,
+            "text": final,
+            "info": self.index.note(path),
+            **self._lock_state(path, final),
+        }
+
     def _current_text(self, path: str) -> str | None:
         try:
             return self.vault.read(path)[0]

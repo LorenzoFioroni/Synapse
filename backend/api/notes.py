@@ -107,6 +107,21 @@ def save_note():
     return jsonify(svc().note_service.save(d.get("path") or "", d["text"], d["hash"]))
 
 
+@bp.post("/notes/offline")
+@guarded
+def apply_offline_edits():
+    """A device brings in the edits it made while Synapse could not be reached (docs/offline.md)."""
+    d = body()
+    try:
+        return jsonify(
+            svc().note_service.apply_offline(
+                d.get("path") or "", d.get("base_hash") or None, d.get("base_text"), d.get("versions") or []
+            )
+        )
+    except ValueError as e:
+        return failure(e)
+
+
 @bp.post("/notes/move")
 @guarded
 def move_note():

@@ -202,6 +202,16 @@ export class NoteSession {
     this.onConflict(this.conflict);
   }
 
+  /** Take ``saved`` as the version Synapse has and ``text`` as the editor's, from outside the
+   *  session (a choice about offline edits that conflicted, offline.md); saves when they differ. */
+  adopt(saved: { text: string; hash: string | null }, text: string): void {
+    this.conflict = null;
+    this.saved = saved;
+    this.text = text;
+    this.onRemoteText(text);
+    if (text === saved.text) this._clean(); else this._dirty();
+  }
+
   /** Enter the conflict state directly (used when a draft is older than the file). */
   async startConflict() { await this._enterConflict(); }
 

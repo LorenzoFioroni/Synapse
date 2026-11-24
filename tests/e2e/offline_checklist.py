@@ -96,7 +96,7 @@ async def main():
             timeout=60000,
         )
         title = await page.locator("[data-offline-title]").text_content()
-        check("turning it on saves no PDF", "no PDFs available offline" in title, title)
+        check("turning it on saves no PDF", "no PDFs or notes available offline" in title, title)
         pdfs = await page.evaluate(
             "caches.open('synapse-offline-v1').then((c) => c.keys())"
             ".then((k) => k.map((r) => new URL(r.url).pathname).filter((p) => p.startsWith('/pdfs/')))"

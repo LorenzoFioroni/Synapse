@@ -2,6 +2,7 @@
 // selection), arrows move, Enter opens, F2 renames, Delete trashes; the context menu; and
 // dragging notes and folders onto folders (or as [[links]] into the editor).
 import { api, openNotePdf } from '../../api.js';
+import { notesOfflineEntry } from '../../offlineSync.js';
 import { PALETTE, colorName } from '../../ui/colors.js';
 import { openMenu, type MenuEntry } from '../../ui/menu.js';
 import { toastError } from '../../ui/toast.js';
@@ -131,6 +132,7 @@ function onContextMenu(e: MouseEvent): void {
       { section: describe(items) },
       { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
       notes.length > 0 && { label: notes.length > 1 ? 'Copy links' : 'Copy link', icon: 'link', run: () => copyLinks(notes) },
+      notesOfflineEntry(notes, folders),
       'sep',
       trash,
     ], at);
@@ -161,6 +163,7 @@ function onContextMenu(e: MouseEvent): void {
       noteHooks.graph && { label: `Show in ${noteHooks.graph.title || 'Graph'}`, icon: 'link', run: () => hooks.openNotesGraph(`note:${p}`) },
       { label: 'Export…', icon: 'export', run: () => exportMenu(p, at) },
       lockEntry(p),
+      !ws.overview.notes.find((x) => x.path === p)?.locked && notesOfflineEntry([p], []),
       'sep',
       trash,
     ], at);
@@ -176,6 +179,7 @@ function onContextMenu(e: MouseEvent): void {
     'sep',
     { label: 'Rename…', icon: 'edit', run: () => renameFolder(fp), shortcut: 'F2' },
     { label: 'Move to folder…', icon: 'folder', run: () => pickFolder(at, items) },
+    notesOfflineEntry([], [fp]),
     { section: 'Colour' },
     ...PALETTE.map((c) => ({ label: colorName(c), swatch: c, checked: own === c, run: color(c) })),
     { label: 'No Colour', swatch: '', checked: !own, run: color(null) },

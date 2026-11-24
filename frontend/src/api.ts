@@ -7,6 +7,7 @@ import type {
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview, UpdaterState, UpdateStatus, RemoteBackupSetup, RemoteBackupConfiguration, Backup,
 } from './types.js';
 import { offlineNow, pdfSaved } from './offline.js';
+import { notesOffline } from './offlineNotes.js';
 import { toast } from './ui/toast.js';
 import { openNewWindow, openPageInNewWindow } from './windows.js';
 
@@ -166,11 +167,13 @@ export const api = {
   searchPreview: (q: string, mode: string) => request<{ count: number; sample: Pick<Item, 'id' | 'title' | 'year' | 'authors'>[] }>('GET', `/api/search/preview?${qs({ q, mode })}`),
 
   // notes (addressed by their path inside the notes folder)
-  notes: () => request<NotesListing>('GET', '/api/notes'),
-  getNote: (path: string) => request<NoteFile>('GET', `/api/notes/note?${qs({ path })}`),
+  // the note calls go through offlineNotes.ts: a note kept for offline use opens and saves there
+  // while Synapse cannot be reached
+  notes: () => notesOffline.listing(() => request<NotesListing>('GET', '/api/notes')),
+  getNote: (path: string) => notesOffline.get(path, () => request<NoteFile>('GET', `/api/notes/note?${qs({ path })}`)),
   /** The note, or only its hash when it still has ``hash`` (cheap enough to ask every few seconds). */
-  checkNote: (path: string, hash: string) =>
-    request<NoteFile | ({ path: string; hash: string; unchanged: true } & NoteLockState)>('GET', `/api/notes/note?${qs({ path, unless: hash })}`),
+  checkNote: (path: string, hash: string) => notesOffline.check(path, hash, () =>
+    request<NoteFile | ({ path: string; hash: string; unchanged: true } & NoteLockState)>('GET', `/api/notes/note?${qs({ path, unless: hash })}`)),
   // locked notes (backend/notes/locks.py): unlocked for this page only
   noteLocks: () => request<NoteLocks>('GET', '/api/notes/locks'),
   setNoteLockPassword: (password: string, current?: string) => request<{ password_set: boolean }>('PUT', '/api/notes/locks/password', { password, current }),
@@ -181,7 +184,7 @@ export const api = {
   relockNotes: (paths?: string[]) => request('POST', '/api/notes/relock', { paths }),
   /** The unlocked notes were used (clicked, typed in, scrolled): they stay open the whole timeout from now. */
   touchNotes: (paths: string[]) => request<{ unlocked_for: Record<string, number | null> }>('POST', '/api/notes/unlock/touch', { paths }),
-  createNote: (data: Record<string, unknown>) => request<Omit<NoteFile, 'info'>>('POST', '/api/notes/note', data),
+  createNote: (data: Record<string, unknown>) => notesOffline.create(data, () => request<Omit<NoteFile, 'info'>>('POST', '/api/notes/note', data)),
   noteHistory: (path: string, limit?: number) => request<NoteHistory>('GET', `/api/notes/history?${qs({ path, limit })}`),
   noteVersion: (id: string, path?: string, from?: string) => request<HistoryVersion>('GET', `/api/notes/history/version?${qs({ id, path, from })}`),
   historyStatus: () => request<HistoryStatus>('GET', '/api/notes/history/status'),
@@ -193,7 +196,11 @@ export const api = {
   renameMilestone: (id: string, label: string) => request<Milestone>('PUT', `/api/notes/history/milestones/${encodeURIComponent(id)}`, { label }),
   deleteMilestone: (id: string) => request('DELETE', `/api/notes/history/milestones/${encodeURIComponent(id)}`),
   restoreMilestone: (id: string) => request<{ restored: string[]; trashed: string[]; trash_id: string | null }>('POST', `/api/notes/history/milestones/${encodeURIComponent(id)}/restore`),
-  saveNote: (path: string, text: string, hash: string | null) => request<NoteSaved>('PUT', '/api/notes/note', { path, text, hash }),
+  saveNote: (path: string, text: string, hash: string | null) => notesOffline.save(path, text, hash, (h) => request<NoteSaved>('PUT', '/api/notes/note', { path, text, hash: h })),
+  /** Brings in a note's offline edits (offlineSync.ts; backend NotesService.apply_offline). */
+  applyOfflineNote: (path: string, baseHash: string | null, baseText: string | null, versions: { text: string; at: number }[]) =>
+    request<{ status: 'applied' | 'merged' | 'conflict' | 'deleted'; path: string; hash?: string; text?: string; current?: string; base?: string; mine: string; merged?: string }>(
+      'POST', '/api/notes/offline', { path, base_hash: baseHash, base_text: baseText, versions }),
   recreateNote: (path: string, text: string) => request<NoteSaved>('PUT', '/api/notes/note', { path, text, create: true }),
   moveNote: (path: string, to: string, hash?: string | null) => request<NoteMoved>('POST', '/api/notes/move', { path, to, hash }),
   newNoteFolder: (path: string) => request<{ path: string }>('POST', '/api/notes/folder', { path }),

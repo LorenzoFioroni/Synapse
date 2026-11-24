@@ -1,6 +1,7 @@
 // Settings → Offline Use: the switch that keeps the app, the library and the PDFs on this device
 // (frontend/src/offline.ts, offlineSync.ts; docs/offline.md), and how much of it is saved.
 import { OFFLINE_EVENT, changesWaiting, offlineEnabled, offlineSupported, offlineNow, savedPdfCount } from '../../offline.js';
+import { NOTES_EVENT, loadNotes, localNotes, notePending } from '../../offlineNotes.js';
 import { SYNC_EVENT, disableOffline, enableOffline, lastSynced, syncOffline, syncState } from '../../offlineSync.js';
 import { confirmDialog } from '../../ui/dialog.js';
 import { toast, toastError } from '../../ui/toast.js';
@@ -47,10 +48,14 @@ export function bindOffline(view: HTMLElement): () => void {
     const waiting = changesWaiting();
     if (!last) { title.textContent = 'Not saved yet'; detail.textContent = navigator.onLine ? 'Save Now keeps the library on this device.' : 'Go online to save the library.'; return; }
     const pdfs = savedPdfCount();
-    title.textContent = `App and library saved · ${pdfs ? `${plural(pdfs, 'PDF')} available offline` : 'no PDFs available offline yet'}`;
+    const notes = localNotes().length;
+    const kept = [pdfs && plural(pdfs, 'PDF'), notes && plural(notes, 'note')].filter(Boolean).join(' and ');
+    title.textContent = `App and library saved · ${kept ? `${kept} available offline` : 'no PDFs or notes available offline yet'}`;
+    const edited = localNotes().filter((n) => notePending(n.path)).length;
     const parts = [`Last saved ${formatDate(new Date(last.at).toISOString(), true)}`];
     if (last.failed) parts.push(`${plural(last.failed, 'file')} could not be saved: they are tried again next time`);
     if (waiting) parts.push(`${plural(waiting, 'annotation change')} waiting to be sent`);
+    if (edited) parts.push(`${plural(edited, 'note')} edited offline, not yet in Synapse`);
     if (offlineNow()) parts.push('offline now');
     const used = await storageText();
     if (used) parts.push(used);
@@ -61,10 +66,12 @@ export function bindOffline(view: HTMLElement): () => void {
     const turnOn = sw.checked;
     if (!turnOn) {
       const waiting = changesWaiting();
+      const edited = localNotes().filter((n) => notePending(n.path)).length;
       if (!(await confirmDialog('Turn off offline use on this device?', {
-        confirm: 'Turn Off', danger: !!waiting,
-        detail: 'The saved copy of the app, the library and the PDFs is deleted from this browser. Synapse needs a connection again.'
-          + (waiting ? ` ${plural(waiting, 'annotation change')} made offline have not been sent yet and will be lost.` : ''),
+        confirm: 'Turn Off', danger: !!(waiting || edited),
+        detail: 'The saved copy of the app, the library, the PDFs and the notes is deleted from this browser. Synapse needs a connection again.'
+          + (waiting ? ` ${plural(waiting, 'annotation change')} made offline have not been sent yet and will be lost.` : '')
+          + (edited ? ` Offline edits to ${plural(edited, 'note')} are not in Synapse yet and will be lost.` : ''),
       }))) { void paint(); return; }
       busy = true; void paint();
       await disableOffline();
@@ -80,7 +87,8 @@ export function bindOffline(view: HTMLElement): () => void {
   });
   sync.addEventListener('click', () => { syncOffline(true).catch((e) => { if (offlineEnabled()) toastError(e); }); });
 
-  const events = [OFFLINE_EVENT, SYNC_EVENT];
+  const events = [OFFLINE_EVENT, SYNC_EVENT, NOTES_EVENT];
+  void loadNotes();
   const listener = () => { void paint(); };
   for (const ev of events) window.addEventListener(ev, listener);
   void paint();

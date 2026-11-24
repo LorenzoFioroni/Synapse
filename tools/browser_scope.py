@@ -43,7 +43,11 @@ GROUPS = [
         ("backend/access/*", "backend/api/devices.py", "backend/api/passkeys.py"),
         {"devices", "passkeys", "passkey_ui", "csp"},
     ),
-    (("frontend/sw.js", "frontend/src/offline*.ts", "frontend/src/views/settings/offline.ts"), {"offline"}),
+    (
+        ("frontend/sw.js", "frontend/src/offline*.ts", "frontend/src/views/settings/offline.ts"),
+        {"offline", "offline_notes"},
+    ),
+    (("frontend/src/views/notes/offlineConflict.ts", "backend/notes/history/recorder.py"), {"offline_notes"}),
     (("plugins/autocompletion/*",), {"assist", "notes"}),
 ]
 

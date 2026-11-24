@@ -462,6 +462,60 @@ class NoteHistory(HistoryReader):
 
                 self._safe(commit, f"recording {kind}")
 
+    def offline(
+        self, path: str, versions: list[tuple[str, float]], write: Callable[[str], str], *, device: str | None = None
+    ) -> str:
+        """Record edits made on a device while Synapse could not be reached: each version (its text
+        and when it was made there) is written with ``write`` and committed on its own, dated then,
+        so the history reads as if the device had been online. Returns the hash of the last write."""
+        device = device or THIS_COMPUTER
+        h = ""
+        if not self.enabled:
+            for text, _ in versions:
+                h = write(text)
+            return h
+        with self.lock.held():
+            ok = self._safe(lambda: (self._ensure(), self._checkpoint([path])), "checkpoint before offline edits")
+            stem = Path(path).stem
+            for text, when in versions:
+                h = write(text)
+                if ok:
+                    self._safe(
+                        lambda when=when: self._commit(
+                            [path],
+                            by="human",
+                            kind="edit",
+                            name=device,
+                            subject=f"Edited {stem} offline",
+                            device=device,
+                            when=when,
+                        ),
+                        "recording an offline edit",
+                    )
+        return h
+
+    def merge(self, current: str, base: str, mine: str) -> tuple[str, bool]:
+        """Three-way merge (``git merge-file``) of ``mine`` into ``current``, both changed from
+        ``base``. Returns the text and whether it merged cleanly; when not, the text has Git's
+        conflict markers. Without Git nothing merges unless one side is unchanged."""
+        if current == base or current == mine:
+            return mine, True
+        if mine == base:
+            return current, True
+        if not self.enabled:
+            return current, False
+        import tempfile
+
+        with tempfile.TemporaryDirectory(dir=str(self.git_dir) if self.git_dir.is_dir() else None) as tmp:
+            files = []
+            for name, text in (("current", current), ("base", base), ("mine", mine)):
+                f = Path(tmp) / name
+                f.write_bytes(text.encode("utf-8"))
+                files.append(str(f))
+            labels = ["-L", "Saved in Synapse", "-L", "Before going offline", "-L", "Your offline edit"]
+            res = self._r().run("merge-file", "-p", *labels, *files, ok=tuple(range(0, 128)))
+        return res.stdout.decode("utf-8", "replace"), res.returncode == 0
+
     def checkpoint(self, paths: list[str] | None = None, *, restored: str | None = None) -> list[str]:
         """Commit now what is waiting (for ``paths``; None: every note). ``restored`` names the
         commit an earlier version was put back from."""

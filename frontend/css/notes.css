@@ -596,3 +596,8 @@ body[data-workspace="notes"] #toolbar .icon-btn[aria-pressed="true"] { color: va
   .hist { grid-template-columns: 1fr; grid-template-rows: minmax(140px, 32vh) 1fr; }
   .hist-list { border-right: 0; border-bottom: 1px solid var(--border); padding-right: 2px; padding-bottom: 8px; }
 }
+
+/* Offline use (docs/offline.md): notes kept on this device, edits waiting, and notes not kept while offline. */
+.nt-offline { flex: none; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: var(--success); }
+.nt-offline.pending { background: var(--warning, #d4880f); }
+.nt-row.note.offline-missing .nm, .nt-row.note.offline-missing .icon { opacity: .45; }

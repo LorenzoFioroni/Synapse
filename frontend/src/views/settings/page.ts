@@ -331,7 +331,7 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
             <div class="backup-list" data-passkey-list></div></div>
         </div></section>
 
-      <section class="settings-section" id="set-offline">${head('offline', 'Offline Use', 'Keep the app, your library and the PDFs you choose on this device, so they open without a connection. This is a choice for each browser, and it is off until you turn it on.')}
+      <section class="settings-section" id="set-offline">${head('offline', 'Offline Use', 'Keep the app, your library and the PDFs and notes you choose on this device, so they open without a connection. This is a choice for each browser, and it is off until you turn it on.')}
         <div class="card">
           <div class="setting"><div class="s-text"><div class="s-title">Use Synapse offline on this device</div>
             <div class="s-desc" data-offline-desc></div></div>
@@ -342,12 +342,16 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
               <div class="s-control"><button class="btn" data-offline-sync>${icon('refresh')} Save Now</button></div></div>
             <div class="progress" data-offline-progress hidden><div></div></div>
           </div>
-          <div class="setting stack"><div class="s-text"><div class="s-title">Choosing PDFs</div>
-            <div class="s-desc">Right-click a paper or a PDF (on the phone: a PDF’s ⋯ menu) and choose <b>Make Available Offline</b>; select several papers to save them all.
-              <b>Remove Offline Copy</b> deletes the saved copy again. A small green dot on the PDF mark shows the ones that are saved.</div></div></div>
+          <div class="setting stack"><div class="s-text"><div class="s-title">Choosing PDFs and notes</div>
+            <div class="s-desc">Right-click a paper or a PDF (on the phone: a PDF’s ⋯ menu), or a note or folder in the notes list, and choose <b>Make Available Offline</b>;
+              select several to keep them all. <b>Remove Offline Copy</b> deletes the copy again. A small green dot shows what is kept. Locked notes are never kept.</div></div></div>
+          <div class="setting stack"><div class="s-text"><div class="s-title">Notes edited offline</div>
+            <div class="s-desc">Kept notes open and save offline, and new notes can be created; renaming, moving and deleting need a connection.
+              Each offline save is a version (an amber dot marks a note with versions waiting). When Synapse answers again they go into the note’s history as edits by this device, at the time you made them,
+              merged with what changed meanwhile. When both changed the same lines you choose: Synapse’s version, yours, or fix it by hand between Git’s conflict markers.</div></div></div>
           <div class="setting stack"><div class="s-text"><div class="s-title">While offline</div>
             <div class="s-desc">Papers whose PDF is saved open as usual; the others are dimmed in the list, and say so when you open them.
-              Highlights and notes you add to a PDF are kept and sent once Synapse answers again. Searching, other folders, notes and library edits need a connection.</div></div></div>
+              Highlights and notes you add to a PDF are kept and sent once Synapse answers again. Searching, other folders and library edits need a connection.</div></div></div>
         </div></section>
 
       <section class="settings-section" id="set-ai">${head('ai', 'AI Access', `Let AI apps on another computer (Claude Code, Codex, any MCP app) use the library over the network.

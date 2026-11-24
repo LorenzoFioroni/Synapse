@@ -171,13 +171,15 @@ export async function removeOfflineCopy(): Promise<void> {
     }
   } catch { /* nothing registered */ }
   try { await caches.delete(CACHE); } catch { /* none */ }
-  await new Promise<void>((done) => {
-    try {
-      const del = indexedDB.deleteDatabase('synapse-offline');
-      del.onsuccess = del.onerror = del.onblocked = () => done();
-    } catch { done(); }
-  });
-  try { for (const k of ['zc.offline.shell', 'zc.offline.synced']) localStorage.removeItem(k); sessionStorage.removeItem('zc.offline.seeded'); } catch { /* private mode */ }
+  for (const db of ['synapse-offline', 'synapse-offline-notes']) {   // the annotation queue; the notes (offlineNotes.ts)
+    await new Promise<void>((done) => {
+      try {
+        const del = indexedDB.deleteDatabase(db);
+        del.onsuccess = del.onerror = del.onblocked = () => done();
+      } catch { done(); }
+    });
+  }
+  try { for (const k of ['zc.offline.shell', 'zc.offline.synced', 'zc.offline.notes']) localStorage.removeItem(k); sessionStorage.removeItem('zc.offline.seeded'); } catch { /* private mode */ }
   refresh();
   changed();
 }

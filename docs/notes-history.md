@@ -67,6 +67,7 @@ guard's `g.device`), like the AI app's name comes from `acting_as`.
 | A version put back from the history | Your edit, recorded as `restore` with `Synapse-Restored`. |
 | A milestone restored | One commit for every note it changed (newer notes go to the notes trash). |
 | A backup restored | One commit "Restored the backup …": the history is not rolled back, so nothing recorded after the backup is lost. |
+| Edits made on a device while Synapse could not be reached ([offline use](offline.md#notes)) | One commit per offline version, by that device, dated when it was made ("Edited … offline", kind `edit`); merged first (`git merge-file`) with what changed meanwhile; nothing on a conflict until the user chooses. |
 | A note changed by another program | Any difference that is not pending is committed as `outside` before anything else touches the note: before a save of it, before an AI change, in `due()`, at startup and on Rescan. |
 
 `change()` wraps an operation that is its own commit: it takes the lock, commits what was waiting

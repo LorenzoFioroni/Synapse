@@ -3,7 +3,9 @@
 // it quietly when it starts, so a new version and new papers are saved too. PDFs are saved only one
 // by one, when the user makes them available offline (offlineMenuEntry). See docs/offline.md.
 import { api, fileUrl } from './api.js';
-import { OFFLINE_EVENT, forgetFiles, offlineEnabled, offlineSupported, pdfSaved, pruneFiles, refreshSaved, removeOfflineCopy, saveFiles, setOfflineFlag, startOffline } from './offline.js';
+import { OFFLINE_EVENT, forgetFiles, offlineEnabled, offlineNow, offlineSupported, pdfSaved, pruneFiles, refreshSaved, removeOfflineCopy, saveFiles, setOfflineFlag, startOffline } from './offline.js';
+import { type LocalNote, chosen, chosenPaths, dropNote, folderChosen, setChosen, loadNotes, localNote, localNotes, notePending, noteChosen, putNote, removeLocalNotes, unreachable } from './offlineNotes.js';
+import { emit } from './store.js';
 import type { Attachment, Item } from './types.js';
 import type { MenuEntry } from './ui/menu.js';
 import { toast } from './ui/toast.js';
@@ -76,7 +78,9 @@ async function run(all: boolean): Promise<void> {
   // 2. the library, and what the app needs to show it
   Object.assign(syncState, { step: 'Library', done: 0, total: 0 });
   tick();
+  await pushNotes();
   const [library, notes] = await Promise.all([api.listItems({ view: 'library' }), api.notes().catch(() => null)]);
+  if (notes) await keepNotes(chosenPaths(notes));
   await saveFiles(startupData(), true);
   const items = library.items.filter((it) => !it._outside);
   await saveAll('Library', items.map((it) => `/api/items/${it.id}`));
@@ -88,6 +92,106 @@ async function run(all: boolean): Promise<void> {
   await pruneFiles(pdfs.flatMap((a) => [fileUrl(a), annotationsUrl(a)]));
   await refreshSaved();
   if (offlineEnabled()) store(DONE_KEY, { at: Date.now(), failed: syncState.failed });
+}
+
+/* ------------------------------------------------------------------ notes */
+let pushing: Promise<void> | null = null;
+
+/** Sends the notes' offline edits to Synapse; a conflict waits for the user (resolveNote). */
+export function pushNotes(): Promise<void> {
+  pushing ||= doPush().finally(() => { pushing = null; });
+  return pushing;
+}
+
+async function doPush(): Promise<void> {
+  await loadNotes();
+  let conflicts = 0;
+  for (const n of localNotes()) {
+    if (!n.versions.length || n.conflict) continue;
+    const sent = n.versions.length;
+    let r;
+    try { r = await api.applyOfflineNote(n.path, n.baseHash, n.baseText, n.versions); } catch (e) {
+      if (unreachable(e)) return;   // still away: try again later
+      toast(`Your offline edits to “${n.path}” could not be brought in: ${(e as Error).message}`, { type: 'error', timeout: 8000 });
+      continue;
+    }
+    const now = localNote(n.path) || n;   // saves may have come in meanwhile
+    if (r.status === 'conflict' || r.status === 'deleted') {
+      conflicts++;
+      await putNote({ ...now, conflict: { status: r.status, hash: r.hash, current: r.current, base: r.base, mine: r.mine, merged: r.merged } });
+      continue;
+    }
+    const rest = now.versions.slice(sent);
+    const last = n.versions[sent - 1].text;
+    await putNote({
+      ...now, versions: rest, conflict: null, file: { ...(now.file || {}), info: (r as { info?: NoteLocalInfo }).info ?? now.file?.info ?? null },
+      // edits made while these went in are merged next time against what was sent (or taken as they are when it went in unchanged)
+      baseHash: rest.length && r.status === 'merged' ? `merged:${r.hash}` : r.hash!,
+      baseText: rest.length ? last : r.text!,
+      text: rest.length ? now.text : r.text!,
+      synced: now.localHash ? { local: now.localHash, hash: r.hash! } : undefined,
+    });
+  }
+  if (conflicts) {
+    toast(conflicts === 1 ? 'A note edited offline was also changed in Synapse: open it to choose.' : `${conflicts} notes edited offline were also changed in Synapse: open them to choose.`,
+      { type: 'error', timeout: 10000, action: { label: 'Open', run: () => { const c = localNotes().find((x) => x.conflict); if (c) emit('open-note', { path: c.path }); } } });
+  }
+}
+type NoteLocalInfo = NonNullable<LocalNote['file']>['info'];
+
+/** Keeps the chosen notes' latest text here (api.getNote remembers it); forgets the ones no longer chosen. */
+async function keepNotes(paths: string[]): Promise<void> {
+  await loadNotes();
+  Object.assign(syncState, { step: 'Notes', done: 0, total: paths.length });
+  tick();
+  for (let i = 0; i < paths.length; i++) {
+    if (!offlineEnabled()) return;
+    if (!notePending(paths[i])) { try { await api.getNote(paths[i]); } catch { /* locked or gone: not kept */ } }
+    syncState.done = i + 1;
+    if (i % 8 === 7) tick();
+  }
+  const keep = new Set(paths);
+  for (const n of localNotes()) if (!keep.has(n.path) && !notePending(n.path) && !noteChosen(n.path)) await dropNote(n.path);
+}
+
+/** The user's choice for a note whose offline edits conflicted (or which was deleted meanwhile).
+ *  ``text`` is what goes into the editor: the merge with conflict markers, the offline version or
+ *  Synapse's; afterwards the note saves as usual, based on Synapse's version. */
+export async function resolveNote(path: string, choice: 'merge' | 'mine' | 'theirs'): Promise<{ text: string; hash: string | null; deleted: boolean }> {
+  const n = localNote(path);
+  const c = n?.conflict;
+  if (!n || !c) throw new Error('There is nothing to resolve for this note any more.');
+  const deleted = c.status === 'deleted';
+  const theirs = c.current ?? '';
+  const text = deleted ? c.mine : choice === 'merge' ? (c.merged ?? c.mine) : choice === 'mine' ? c.mine : theirs;
+  const hash = deleted ? null : c.hash ?? null;
+  if (deleted && choice === 'theirs') await dropNote(path);
+  else await putNote({ ...n, conflict: null, versions: [], baseHash: hash, baseText: deleted ? null : theirs, text: deleted ? text : theirs, localHash: undefined, synced: undefined });
+  return { text, hash, deleted };
+}
+
+/** The notes list's menu entry that keeps these notes and folders for offline use, or stops; none while offline use is off. */
+export function notesOfflineEntry(notes: string[], folders: string[]): MenuEntry | null {
+  if (!offlineEnabled() || (!notes.length && !folders.length)) return null;
+  const all = notes.every(noteChosen) && folders.every(folderChosen);
+  if (!all) {
+    return { label: 'Make Available Offline', icon: 'download', run: async () => {
+      setChosen(notes, folders, true);
+      let paths = notes;
+      if (folders.length) { try { paths = [...notes, ...chosenPaths(await api.notes()).filter((p) => folders.some((f) => p.startsWith(`${f}/`)))]; } catch { /* saved at the next save */ } }
+      await keepNotes([...new Set([...paths, ...localNotes().map((n) => n.path)])]);
+      toast(`${paths.length === 1 ? 'The note is' : `${plural(paths.length, 'note')} are`} available offline`, { type: 'success' });
+    } };
+  }
+  return { label: 'Remove Offline Copy', icon: 'download', run: async () => {
+    setChosen(notes, folders, false);
+    const still = notes.filter(noteChosen);
+    for (const n of localNotes()) {
+      if (noteChosen(n.path) || notePending(n.path)) continue;
+      if (notes.includes(n.path) || folders.some((f) => n.path.startsWith(`${f}/`))) await dropNote(n.path);
+    }
+    toast(still.length ? `Still kept through its folder (${chosen().folders.find((f) => still[0].startsWith(`${f}/`))})` : 'No longer available offline');
+  } };
 }
 
 /* ------------------------------------------------------------------ PDFs, one by one */
@@ -139,6 +243,7 @@ export async function enableOffline(): Promise<void> {
 
 export async function disableOffline(): Promise<void> {
   await removeOfflineCopy();
+  await removeLocalNotes();
   await running?.catch(() => null);   // the save that was running notices and stops
   Object.assign(syncState, { running: false, step: '', done: 0, total: 0, failed: 0 });
   tick();
@@ -147,3 +252,10 @@ export async function disableOffline(): Promise<void> {
 // Quietly, a little after the app has started: new papers, and a new version of the app, get saved too.
 if (offlineEnabled()) setTimeout(() => { syncOffline().catch(() => null); }, 8000);
 window.addEventListener('online', () => { if (offlineEnabled()) setTimeout(() => { syncOffline().catch(() => null); }, 3000); });
+// Synapse answers again (the browser may have been online all along): bring the notes' edits in at once.
+let wasOffline = false;
+window.addEventListener(OFFLINE_EVENT, () => {
+  const off = offlineNow();
+  if (wasOffline && !off && localNotes().some((n) => n.versions.length && !n.conflict)) void pushNotes();
+  wasOffline = off;
+});

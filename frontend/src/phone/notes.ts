@@ -29,6 +29,8 @@ import { fitAfterFonts, fitEquations } from '../views/notes/mathFit.js';
 import { citeInfo, equationMode, folderColor, itemInfo, noteMacros, parentOf, resolveNote, stemOf, taskHooks, ws } from '../views/notes/workspace.js';
 import { familyNames, shortWhen } from './model.js';
 import { readerScreen } from './reader.js';
+import { localNote } from '../offlineNotes.js';
+import { offlineConflictDialog } from '../views/notes/offlineConflict.js';
 import { type Screen, back, push, selectTab } from './shell.js';
 import { chevron, navBar, navButton, openSheet, rootHeader, roundButton, settingsButton } from './ui.js';
 
@@ -250,6 +252,7 @@ export function noteScreen(path: string, { line = null, edit = false }: { line?:
         onMoved: () => false,
       });
       /** This note's parts in the workspace the shared notes code reads (citations, links, tasks). */
+      if (localNote(path)?.conflict) setTimeout(() => offlineConflictDialog(path, session));   // offline edits that overlap Synapse's
       const activate = () => {
         ws.linkData = linkData;
         ws.session = session;
