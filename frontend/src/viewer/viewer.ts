@@ -2,6 +2,7 @@
 // zooms (buttons, Ctrl/⌘+wheel, pinch) around the spot under the pointer, shows thumbnails and
 // switches the annotation tools. The add-ons in this folder (annotations, links, notesBridge)
 // hook in through window.zcViewer and the zc:pagecreated / zc:pagerendered events.
+import '../offline.js';
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask, TextLayer } from 'pdfjs-dist';
 import { startPresence } from '../presence.js';
 import { initPdfSearch } from './search.js';
@@ -602,7 +603,8 @@ function initPdf(pdfUrl: string): void {
   // The image decoders (JPEG 2000, JBIG2, colour profiles) and the standard fonts are served from
   // vendor/, so PDFs render the same offline.
   const base = new URL('vendor/pdfjs/', document.baseURI).href;
-  pdfjsLib.getDocument({ url: pdfUrl, wasmUrl: base + 'wasm/', iccUrl: base + 'iccs/',
+  // Whole-file requests (no ranges), so the service worker can keep the PDF for offline reading.
+  pdfjsLib.getDocument({ url: pdfUrl, disableRange: true, disableStream: true, wasmUrl: base + 'wasm/', iccUrl: base + 'iccs/',
     standardFontDataUrl: base + 'standard_fonts/' }).promise.then(async function(pdfDoc_) {
     pdfDoc = pdfDoc_;
     await layoutPages();

@@ -1,5 +1,6 @@
 // Entry point: loads schema + settings, builds the views, wires the toolbar,
 // search, status bar and global keyboard shortcuts.
+import './offline.js';
 import * as A from './actions.js';
 import { api } from './api.js';
 import { icon } from './icons.js';
