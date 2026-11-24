@@ -52,8 +52,9 @@ def check(name, cond, extra=""):
 
 async def main():
     paper_id, att_id = Path(DATA, "ids.txt").read_text().split()
-    viewer = "/viewer.html?" + urlencode({"file": "/pdfs/paper.pdf", "title": "Offline paper",
-                                          "paper_id": paper_id, "att": att_id})
+    viewer = "/viewer.html?" + urlencode(
+        {"file": "/pdfs/paper.pdf", "title": "Offline paper", "paper_id": paper_id, "att": att_id}
+    )
     profile = tempfile.mkdtemp(prefix="zc-offline-profile-")
     async with async_playwright() as p:
         ctx = await p.chromium.launch_persistent_context(profile, headless=True)
@@ -65,7 +66,7 @@ async def main():
         await page.goto(BASE + "/")
         await page.wait_for_selector("text=Offline paper", timeout=20000)
         await page.evaluate("navigator.serviceWorker.ready")
-        await page.wait_for_timeout(5500)   # the page asks the worker to save what loaded before it took over
+        await page.wait_for_timeout(5500)  # the page asks the worker to save what loaded before it took over
         v = await ctx.new_page()
         await v.goto(BASE + viewer)
         await v.wait_for_selector(".page-wrapper canvas", timeout=20000)
@@ -79,8 +80,8 @@ async def main():
         page = await ctx.new_page()
         page.on("pageerror", lambda e: errors.append(str(e)))
         bad = []
-        page.on("response", lambda r: bad.append(f"{r.status} {r.url[len(BASE):]}") if r.status >= 400 else None)
-        page.on("requestfailed", lambda r: bad.append(f"failed {r.url[len(BASE):]}"))
+        page.on("response", lambda r: bad.append(f"{r.status} {r.url[len(BASE) :]}") if r.status >= 400 else None)
+        page.on("requestfailed", lambda r: bad.append(f"failed {r.url[len(BASE) :]}"))
         await page.goto(BASE + "/")
         ok = True
         try:
@@ -88,7 +89,11 @@ async def main():
         except Exception:
             ok = False
         check("app opens offline after all windows were closed", ok, "; ".join(bad[:12]))
-        pill = await page.locator(".zc-offline-pill").text_content() if await page.locator(".zc-offline-pill").count() else ""
+        pill = (
+            await page.locator(".zc-offline-pill").text_content()
+            if await page.locator(".zc-offline-pill").count()
+            else ""
+        )
         check("offline pill shown", "Offline" in (pill or ""), pill)
 
         # Offline: the PDF opens, also with another query (another page number).
@@ -117,8 +122,11 @@ async def main():
             anns = requests.get(f"{BASE}/api/attachments/{att_id}/annotations", timeout=5).json()["annotations"]
             if any(a["id"] == "offline-test-1" for a in anns):
                 break
-        check("queued annotation reaches the server once online", any(a["id"] == "offline-test-1" for a in anns),
-              str([a["id"] for a in anns]))
+        check(
+            "queued annotation reaches the server once online",
+            any(a["id"] == "offline-test-1" for a in anns),
+            str([a["id"] for a in anns]),
+        )
         check("no page errors", not errors, "; ".join(errors[:3]))
         await ctx.close()
     shutil.rmtree(profile, ignore_errors=True)
