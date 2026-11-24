@@ -4,8 +4,8 @@
 // by one, when the user makes them available offline (offlineMenuEntry). See docs/offline.md.
 import { api, fileUrl } from './api.js';
 import { OFFLINE_EVENT, forgetFiles, offlineEnabled, offlineNow, offlineSupported, pdfSaved, pruneFiles, refreshSaved, removeOfflineCopy, saveFiles, setOfflineFlag, startOffline } from './offline.js';
-import { type LocalNote, chosen, chosenPaths, dropNote, folderChosen, setChosen, loadNotes, localNote, localNotes, notePending, noteChosen, putNote, removeLocalNotes, unreachable } from './offlineNotes.js';
-import { flushQueue, loadQueue, queuedCount, removeQueue } from './plugins/offlineQueue.js';
+import { PLACES_EVENT, type LocalNote, chosen, chosenPaths, dropNote, folderChosen, setChosen, loadNotes, localNote, localNotes, notePending, noteChosen, putNote, rekeyNote, removeLocalNotes, serverPath, setNotesPusher, unreachable } from './offlineNotes.js';
+import { flushQueue, loadQueue, queuedCount, removeQueue, setBeforeFlush } from './plugins/offlineQueue.js';
 import { emit } from './store.js';
 import type { Attachment, Item } from './types.js';
 import type { MenuEntry } from './ui/menu.js';
@@ -122,9 +122,14 @@ export function pushNotes(): Promise<void> {
 
 async function doPush(): Promise<void> {
   await loadNotes();
+  // first what changes the notes' places, so the edits go to where the notes are now
+  const places = localNotes().some((n) => n.trashed || n.movedFrom);
+  const done = (await pushDeletions()) && (await pushMoves());
+  if (places) window.dispatchEvent(new Event(PLACES_EVENT));
+  if (!done) return;
   let conflicts = 0;
   for (const n of localNotes()) {
-    if (!n.versions.length || n.conflict) continue;
+    if (!n.versions.length || n.conflict || n.trashed || n.movedFrom) continue;
     const sent = n.versions.length;
     let r;
     try { r = await api.applyOfflineNote(n.path, n.baseHash, n.baseText, n.versions); } catch (e) {
@@ -155,6 +160,69 @@ async function doPush(): Promise<void> {
   }
 }
 type NoteLocalInfo = NonNullable<LocalNote['file']>['info'];
+
+const status = (e: unknown) => (e as { status?: number } | null)?.status;
+const stem = (p: string) => p.replace(/^.*\//, '').replace(/\.md$/i, '');
+
+/** Notes deleted offline go to the notes trash, unless they were changed in Synapse meanwhile.
+ *  False while Synapse still cannot be reached. */
+async function pushDeletions(): Promise<boolean> {
+  for (const n of localNotes().filter((x) => x.trashed)) {
+    if (n.baseHash === null) { await dropNote(n.path); continue; }   // created and deleted offline
+    const at = serverPath(n);
+    try {
+      if (!(await api.offlineNoteOps.unchanged(at, n.baseHash.replace(/^merged:/, '')))) {
+        await putNote({ ...n, trashed: undefined, trashId: undefined });
+        toast(`“${stem(n.path)}” was changed in Synapse while you were offline, so it was not deleted.`, { timeout: 9000 });
+        continue;
+      }
+      await api.offlineNoteOps.trash(at);
+    } catch (e) {
+      if (unreachable(e)) return false;
+      if (status(e) !== 404) { toast(`“${stem(n.path)}” could not be deleted: ${(e as Error).message}`, { type: 'error', timeout: 8000 }); continue; }
+    }
+    await dropNote(n.path);
+    setChosen([n.path], [], false);
+  }
+  return true;
+}
+
+/** Notes renamed or moved offline are renamed or moved in Synapse (which updates links to them).
+ *  Tried until none goes in any more, so a chain of renames (b to c, then a to b) finds its order.
+ *  False while Synapse still cannot be reached. */
+async function pushMoves(): Promise<boolean> {
+  const failed = new Map<string, unknown>();
+  for (let progress = true; progress;) {
+    progress = false;
+    for (const n of localNotes().filter((x) => x.movedFrom && !x.trashed).sort((a, b) => (a.movedAt || 0) - (b.movedAt || 0))) {
+      const from = n.movedFrom!;
+      try {
+        const r = await api.offlineNoteOps.move(from, n.path);
+        const now = localNotes().find((x) => x.movedFrom === from);   // renamed again meanwhile: that goes next time
+        if (now) await putNote({ ...now, movedFrom: now.path === r.path ? undefined : r.path });
+        failed.delete(from);
+        progress = true;
+      } catch (e) {
+        if (unreachable(e)) return false;
+        failed.set(from, e);
+      }
+    }
+  }
+  for (const [from, e] of failed) {
+    const n = localNotes().find((x) => x.movedFrom === from);
+    if (!n) continue;
+    if (status(e) === 404) {
+      // deleted in Synapse meanwhile: edits made offline ask (apply_offline says "deleted"); nothing else is lost
+      if (n.versions.length) await putNote({ ...n, movedFrom: undefined });
+      else { await dropNote(n.path); toast(`“${stem(n.path)}” was deleted in Synapse while you were offline.`, { timeout: 9000 }); }
+      continue;
+    }
+    toast(`“${stem(from)}” could not be renamed to “${stem(n.path)}”: ${(e as Error).message} It keeps its name.`, { type: 'error', timeout: 10000 });
+    if (localNote(from)) await putNote({ ...n, movedFrom: undefined });
+    else { await rekeyNote(n.path, { ...n, path: from, movedFrom: undefined }); setChosen([n.path], [], false); setChosen([from], [], true); }
+  }
+  return true;
+}
 
 /** Keeps the chosen notes' latest text here (api.getNote remembers it); forgets the ones no longer chosen. */
 async function keepNotes(paths: string[]): Promise<void> {
@@ -254,6 +322,8 @@ export async function enableOffline(): Promise<void> {
   try {
     await startOffline();
   } catch (e) { setOfflineFlag(false); throw e; }
+  // without this, Safari deletes a site's data after a week without a visit, and other browsers when space runs low
+  try { await navigator.storage?.persist?.(); } catch { /* not offered: the copy may still be evicted */ }
   window.dispatchEvent(new Event(OFFLINE_EVENT));
   await syncOffline(true).catch((e) => { if (offlineEnabled()) throw e; });   // turned off meanwhile: not an error
 }
@@ -267,6 +337,10 @@ export async function disableOffline(): Promise<void> {
   tick();
 }
 
+// A rename or deletion while Synapse answers, behind an earlier one that still waits: send them now.
+setNotesPusher(() => { setTimeout(() => { void pushNotes(); }, 0); });
+setBeforeFlush(() => pushNotes());
+
 // Quietly, a little after the app has started: new papers, and a new version of the app, get saved too.
 if (offlineEnabled()) setTimeout(() => { syncOffline().catch(() => null); }, 8000);
 window.addEventListener('online', () => { if (offlineEnabled()) setTimeout(() => { syncOffline().catch(() => null); }, 3000); });
@@ -275,8 +349,8 @@ let wasOffline = false;
 window.addEventListener(OFFLINE_EVENT, () => {
   const off = offlineNow();
   if (wasOffline && !off) {
-    if (localNotes().some((n) => n.versions.length && !n.conflict)) void pushNotes();
-    if (queuedCount()) void flushPlugins();
+    // the notes first: a task made offline may be shown in a note made offline
+    void pushNotes().then(() => (queuedCount() ? flushPlugins() : undefined)).catch(() => null);
   }
   wasOffline = off;
 });

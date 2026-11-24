@@ -5,7 +5,7 @@
 // Tasks section of the note's side panel. The notes code reaches it only through taskHooks
 // (notes/workspace.ts).
 import type { EditorView } from '@codemirror/view';
-import { api } from './api.js';
+import { api, offline } from './api.js';
 import { icon } from '../../../frontend/src/plugins/task-runtime.js';
 import { emit, off, on } from '../../../frontend/src/plugins/task-runtime.js';
 import { state } from './environment.js';
@@ -13,7 +13,7 @@ import { toast, toastError } from '../../../frontend/src/plugins/task-runtime.js
 import { promptDialog } from '../../../frontend/src/plugins/task-runtime.js';
 import { escapeHtml, modLabel, plural } from '../../../frontend/src/plugins/task-runtime.js';
 import { scan } from '../../../frontend/src/plugins/task-runtime.js';
-import type { PortableTask } from '../../../frontend/src/plugins/task-runtime.js';
+import type { PortableTask, Task } from '../../../frontend/src/plugins/task-runtime.js';
 import type { TaskChoice } from '../../../frontend/src/plugins/task-runtime.js';
 import { renderDefaults } from './rendering.js';
 import { taskHooks, ws } from './environment.js';
@@ -497,7 +497,8 @@ export function taskKey(view: EditorView): boolean {
 async function convertRange(view: EditorView, from: number, to: number): Promise<void> {
   const text = view.state.sliceDoc(from, to);
   try {
-    const res = await api.convertToTasks(text);
+    // offline (plugin API 1.16): the same conversion here, its tasks waiting to go in
+    const res = await api.convertToTasks(text).catch((e) => (offline.now() && [0, 502, 503, 504].includes((e as { status?: number }).status ?? 0) ? convertHere(text) : Promise.reject(e)));
     if (view.state.sliceDoc(from, to) !== text) {
       toast('The note changed meanwhile: the tasks were made but not put in. They are under “Not in a note” in Tasks.');
       await loadTasks(true);
@@ -510,6 +511,63 @@ async function convertRange(view: EditorView, from: number, to: number): Promise
     await loadTasks(true);
     toast(`Made ${plural(res.tasks.length, 'task')} from the checkboxes.`, { type: 'success' });
   } catch (e) { toastError(e); }
+}
+
+interface CheckItem { indent: number; col: number; title: string; done: boolean; body: string[]; kids: CheckItem[] }
+const CHECKBOX = /^([ \t]*)([-*+]|\d+[.)])[ \t]+\[([ xX])\](?:[ \t]+(.*))?$/;
+const width = (s: string) => s.replace(/\t/g, '    ').length;
+
+/** Checkbox items to tasks without Synapse, as the server's TaskService.convert does: nested items
+ *  become sub-tasks, lines indented under an item its details; each top-level item's line becomes
+ *  its {{task:…}} line. The tasks are made offline (they wait to go in). */
+async function convertHere(src: string): Promise<{ text: string; tasks: Task[] }> {
+  const out: (string | CheckItem)[] = [];
+  const stack: CheckItem[] = [];
+  let blanks = 0;
+  const closeTo = (indent: number) => {
+    while (stack.length && stack[stack.length - 1].indent >= indent) {
+      const it = stack.pop()!;
+      while (it.body.length && !it.body[it.body.length - 1].trim()) it.body.pop();
+    }
+  };
+  const pad = () => { for (; blanks > 0; blanks--) out.push(''); };
+  for (const raw of src.replace(/\r\n/g, '\n').split('\n')) {
+    if (stack.length && !raw.trim()) { blanks++; continue; }
+    const cb = CHECKBOX.exec(raw);
+    if (cb && cb[4]?.trim()) {
+      const indent = width(cb[1]);
+      closeTo(indent);
+      const parent = stack[stack.length - 1];
+      const item: CheckItem = { indent, col: width(raw.slice(0, raw.indexOf('[', cb[1].length + cb[2].length))), title: cb[4].trim(), done: cb[3] !== ' ', body: [], kids: [] };
+      if (parent) { parent.kids.push(item); blanks = 0; } else { pad(); out.push(item); }
+      stack.push(item);
+      continue;
+    }
+    const top = stack[stack.length - 1];
+    if (top && width(raw) - width(raw.trimStart()) > top.indent) {
+      for (; blanks > 0; blanks--) top.body.push('');
+      let cut = 0;
+      while (cut < raw.length && cut < top.col && (raw[cut] === ' ' || raw[cut] === '\t')) cut++;
+      top.body.push(raw.slice(cut));
+      continue;
+    }
+    closeTo(-1);
+    pad();
+    out.push(raw);
+  }
+  closeTo(-1);
+  pad();
+  const made: Task[] = [];
+  const make = async (it: CheckItem, parent: string | null): Promise<string> => {
+    const t = await createTask({ title: it.title, status: it.done ? 'done' : 'open', body: it.body.join('\n'), parent_id: parent });
+    if (!t) throw new Error('The tasks could not be made.');
+    made.push(t);
+    for (const k of it.kids) await make(k, t.id);
+    return t.id;
+  };
+  const lines: string[] = [];
+  for (const x of out) lines.push(typeof x === 'string' ? x : `{{task:${await make(x, null)}}}`);
+  return { text: lines.join('\n'), tasks: made };
 }
 
 /* ------------------------------------------------------------- the side panel */

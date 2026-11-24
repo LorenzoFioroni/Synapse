@@ -274,6 +274,10 @@ body.phone .grow { flex: 1; min-width: 0; }
 .ph-row-title-line { display: flex; align-items: baseline; gap: 8px; }
 .ph-row-title-line .ph-row-title { flex: 1; min-width: 0; -webkit-line-clamp: 1; }
 .ph-when { flex: none; font-size: 13px; color: var(--text-2); }
+/* offline use (docs/offline.md): a note kept on this device, amber while its changes wait; the others dimmed offline */
+.ph-offline-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--success); align-self: center; }
+.ph-offline-dot.pending { background: var(--warning, #d4880f); }
+.ph-note-row.offline-missing .ph-row-title, .ph-note-row.offline-missing .ph-row-meta { opacity: .5; }
 .ph-dot { flex: none; display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 3px; }
 .ph-folder-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 0 12px 0 16px; border: none; border-bottom: 1px solid var(--ph-sep); background: none; color: var(--text); font-size: 16px; text-align: left; }
 .ph-folder-icon { display: flex; color: var(--text-2); }

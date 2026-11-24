@@ -46,9 +46,11 @@ This page covers the records (`backend/tasks/store.py`), the lines in notes
 task tools, and the frontend (`plugins/tasks/frontend/`). Related pages: [notes](notes.md) (the
 parser and the editor), [storage](storage.md) (the tables and backups), [mcp](mcp.md).
 
-**Offline.** With Settings → Offline Use on, the Tasks page works without Synapse: ticking,
-editing and adding tasks wait on the device and go in once Synapse answers, merged field by field
-with changes made meanwhile ([offline use](offline.md#plugins)).
+**Offline.** With Settings → Offline Use on, tasks work without Synapse: ticking, editing, adding,
+moving and deleting them (with Undo), putting them into notes, and making them inside a kept note
+(including checkbox lines) wait on the device and go in once Synapse answers, merged field by field
+with changes made meanwhile ([offline use](offline.md#plugins)). The device names a new task's id
+and a deletion's trash batch, so neither is made twice and an Undo made offline still applies.
 
 ## Using tasks
 

@@ -14,7 +14,7 @@ import { citeInfo, equationMode, noteMacros, taskHooks, ws } from './environment
 import { dueLabel, dueState, isoDate, monthGrid, monthName, parseDue, parseQuick, todayIso } from './dates.js';
 import { openNoteAt, pickNote } from './notePicker.js';
 import {
-  childrenOf, createTask, deleteTasks, loadTasks, patchTask, restoreTask, td, toggleTask,
+  addToNote, childrenOf, createTask, deleteTasks, loadTasks, patchTask, removeFromNote, restoreTask, td, toggleTask,
 } from './taskData.js';
 import { boxHtml, chipsHtml, ensureRenderer, resolveAnywhere, taskRenderer, titleHtml } from './taskRender.js';
 
@@ -269,14 +269,14 @@ export function mountTaskForm(root: HTMLElement, opts: TaskFormOptions): TaskFor
     else if (d.tfStatus) { if (d.tfStatus !== t.status) toggleTask(id); }
     else if (d.tfNote) { opts.onClose?.(); openNoteAt(d.tfNote, Number(d.tfLine) || null); }
     else if (d.tfUnref) {
-      try { await api.removeTaskFromNote(id, d.tfUnref); await loadTasks(true); } catch (err) { toastError(err); }
+      try { await removeFromNote(id, d.tfUnref); } catch (err) { toastError(err); }
     } else if (d.tfMode) {
       root.querySelectorAll<HTMLElement>('[data-tf-mode]').forEach((b) => b.classList.toggle('active', b === a));
       editor?.setMode(d.tfMode as 'live' | 'source');
     } else if (d.tf === 'add-ref') {
       const path = await pickNote();
       if (!path) return;
-      try { await api.addTaskToNote(id, path); await loadTasks(true); toast('Added to the note.', { type: 'success' }); } catch (err) { toastError(err); }
+      try { await addToNote(id, path); toast('Added to the note.', { type: 'success' }); } catch (err) { toastError(err); }
     } else if (d.tf === 'ai-undo') undoAi();
     else if (d.tf === 'in-tasks') { opts.onClose?.(); opts.onOpenInTasks?.(id); }
     else if (d.tf === 'open-note') {

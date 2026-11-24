@@ -15,7 +15,7 @@ import { ws } from './environment.js';
 import { dueLabel, parseQuick } from './dates.js';
 import { pickNote } from './notePicker.js';
 import { GROUPS, SORTS, VIEWS, type GroupId, type SortId, type ViewId, viewCounts } from './taskQuery.js';
-import { createTask, loadTasks, restoreTask, td } from './taskData.js';
+import { addToNote, createTask, loadTasks, restoreTask, td } from './taskData.js';
 import { type TaskForm, mountTaskForm } from './taskForm.js';
 import { type TaskList, createTaskList } from './taskList.js';
 import { ensureRenderer } from './taskRender.js';
@@ -111,7 +111,7 @@ export function initTasks(): void {
     n?.classList.remove('drop-target');
     if (!n?.dataset.tvNote || !id) return;
     e.preventDefault();
-    try { await api.addTaskToNote(id, n.dataset.tvNote); await loadTasks(true); } catch (err) { toastError(err); }
+    try { await addToNote(id, n.dataset.tvNote); } catch (err) { toastError(err); }
   });
 
   listen('tasks', () => { if (tasksOpen()) { list.paint(); paintViews(); paintDetail(); } paintCount(); });

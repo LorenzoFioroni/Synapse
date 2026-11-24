@@ -66,9 +66,14 @@ export function onSynced(plugin: string, fn: () => void): () => void {
 
 const unreachable = (e: unknown) => [0, 502, 503, 504].includes((e as ApiError | null)?.status ?? 0);
 
+/** What must go in before the plugins' writes: the notes' offline changes (offlineSync.ts sets it),
+ *  since a task made offline may be shown in a note made offline. */
+let before: () => Promise<void> = () => Promise.resolve();
+export function setBeforeFlush(fn: () => Promise<void>): void { before = fn; }
+
 let flushing: Promise<void> | null = null;
 export function flushQueue(names: (id: string) => string = (id) => id): Promise<void> {
-  flushing ||= doFlush(names).finally(() => { flushing = null; });
+  flushing ||= before().catch(() => null).then(() => doFlush(names)).finally(() => { flushing = null; });
   return flushing;
 }
 

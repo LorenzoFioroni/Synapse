@@ -1,6 +1,5 @@
 // The list of the Tasks page: rows as a tree (taskQuery.ts decides which), selection, the
 // keyboard, the row menu, renaming in place, drag and drop, and Undo of the page's own changes.
-import { api } from './api.js';
 import { icon } from '../../../frontend/src/plugins/task-runtime.js';
 import type { Task, TaskChanges } from '../../../frontend/src/plugins/task-runtime.js';
 import { openMenu } from '../../../frontend/src/plugins/task-runtime.js';
@@ -10,7 +9,7 @@ import { openNewWindow } from '../../../frontend/src/plugins/task-runtime.js';
 import { parseDue, parseQuick } from './dates.js';
 import { openNoteAt, pickNote } from './notePicker.js';
 import { type Row, type TaskRow, buildRows } from './taskQuery.js';
-import { createTask, deleteTasks, loadTasks, patchTask, restoreBatch, td, toggleTask } from './taskData.js';
+import { addToNote, createTask, deleteTasks, loadTasks, patchTask, restoreBatch, td, toggleTask, trashTasks } from './taskData.js';
 import { boxHtml, chipsHtml, titleHtml } from './taskRender.js';
 import { type ListState } from './tasksState.js';
 
@@ -140,7 +139,7 @@ export function createTaskList(host: ListHost) {
     const list = taskRows().map((r) => r.task.id);
     const next = list.slice(list.indexOf(cur || '') + 1).find((x) => !ids.includes(x)) || list.slice(0, list.indexOf(cur || '')).reverse().find((x) => !ids.includes(x));
     try {
-      const res = await api.deleteTasks(top);
+      const res = await trashTasks(top);
       await loadTasks(true);
       state.sel = new Set(next ? [next] : []);
       state.cursor = next || null;
@@ -260,8 +259,7 @@ export function createTaskList(host: ListHost) {
     const path = await pickNote(ids.length > 1 ? `Show ${ids.length} tasks in a note` : 'Show the task in a note');
     if (!path) return;
     try {
-      for (const id of ids) await api.addTaskToNote(id, path);
-      await loadTasks(true);
+      for (const id of ids) await addToNote(id, path);
       toast(`Added to the note.`, { type: 'success', action: { label: 'Open', run: () => openNoteAt(path) } });
     } catch (e) { toastError(e); }
   }

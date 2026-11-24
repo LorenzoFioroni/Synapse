@@ -27,6 +27,13 @@ def register(plugin: Plugin) -> None:
         """A {{task:…}} line was written into or taken out of a note."""
         plugin.tasks.notes_changed(request.headers.get(task_api.CLIENT_HEADER))
 
+    def _alive(task_id) -> bool:
+        """The task exists and is not in the trash."""
+        try:
+            return not plugin.tasks.records.get(str(task_id)).get("deleted_at")
+        except task_api.TaskMissing:
+            return False
+
     def guarded(fn):
         @wraps(fn)
         def wrapper(*a, **kw):
@@ -84,6 +91,9 @@ def register(plugin: Plugin) -> None:
             # changed offline: fields changed here meanwhile (to something else) ask; the rest merge
             clashes = store.offline_clashes(task_id, d, base)
             d = {k: v for k, v in d.items() if k not in clashes}
+        if replay.replayed_at() is not None and d.get("parent_id") and not _alive(d["parent_id"]):
+            # moved offline under a task deleted meanwhile: it stays where it is
+            d = {k: v for k, v in d.items() if k not in ("parent_id", "before", "after")}
         if "parent_id" in d or "before" in d or "after" in d:
             changed.append(
                 store.move(task_id, parent_id=d.get("parent_id"), before=d.get("before"), after=d.get("after"))
@@ -109,9 +119,14 @@ def register(plugin: Plugin) -> None:
     def delete():
         d = body()
         ids = [str(i) for i in (d.get("ids") or ([d["id"]] if d.get("id") else []))]
+        batch = d.get("batch") if isinstance(d.get("batch"), str) else None
+        if replay.replayed_at() is not None:
+            ids = [i for i in ids if _alive(i)]  # deleted offline, and meanwhile here: done already
+            if not ids:
+                return jsonify(batch=batch, ids=[])
         if not ids:
             return error("No tasks given.")
-        return jsonify(plugin.tasks.records.delete(ids))
+        return jsonify(plugin.tasks.records.delete(ids, batch=batch))
 
     @plugin.route("/restore", methods=["POST"])
     @guarded

@@ -7,7 +7,7 @@ import type {
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview, UpdaterState, UpdateStatus, RemoteBackupSetup, RemoteBackupConfiguration, Backup,
 } from './types.js';
 import { offlineNow, pdfSaved } from './offline.js';
-import { notesOffline } from './offlineNotes.js';
+import { folderChange, notesOffline } from './offlineNotes.js';
 import { toast } from './ui/toast.js';
 import { openNewWindow, openPageInNewWindow } from './windows.js';
 
@@ -202,12 +202,22 @@ export const api = {
     request<{ status: 'applied' | 'merged' | 'conflict' | 'deleted'; path: string; hash?: string; text?: string; current?: string; base?: string; mine: string; merged?: string }>(
       'POST', '/api/notes/offline', { path, base_hash: baseHash, base_text: baseText, versions }),
   recreateNote: (path: string, text: string) => request<NoteSaved>('PUT', '/api/notes/note', { path, text, create: true }),
-  moveNote: (path: string, to: string, hash?: string | null) => request<NoteMoved>('POST', '/api/notes/move', { path, to, hash }),
-  newNoteFolder: (path: string) => request<{ path: string }>('POST', '/api/notes/folder', { path }),
-  trashNotes: (paths: string[], folders: string[] = []) => request<{ trash_id: string; paths: string[]; pdfs: string[] }>('POST', '/api/notes/trash', { paths, folders }),
-  moveNoteFolder: (path: string, to: string) => request<NoteMoved>('POST', '/api/notes/folder/move', { path, to }),
+  // renaming, moving and deleting a note kept for offline use also work offline (offlineNotes.ts)
+  moveNote: (path: string, to: string, hash?: string | null) => notesOffline.move(path, to, () =>
+    request<NoteMoved>('POST', '/api/notes/move', { path, to, hash: hash?.startsWith('local:') ? undefined : hash })),
+  newNoteFolder: (path: string) => folderChange(() => request<{ path: string }>('POST', '/api/notes/folder', { path })),
+  trashNotes: (paths: string[], folders: string[] = []) => notesOffline.trash(paths, folders, () =>
+    request<{ trash_id: string; paths: string[]; pdfs: string[] }>('POST', '/api/notes/trash', { paths, folders })),
+  moveNoteFolder: (path: string, to: string) => folderChange(() => request<NoteMoved>('POST', '/api/notes/folder/move', { path, to })),
+  /** What offlineSync.ts sends for a note renamed or deleted offline, past offlineNotes.ts. */
+  offlineNoteOps: {
+    move: (path: string, to: string) => request<NoteMoved>('POST', '/api/notes/move', { path, to }),
+    trash: (path: string) => request<{ trash_id: string }>('POST', '/api/notes/trash', { paths: [path], folders: [] }),
+    /** Whether Synapse still has the note as ``hash`` (false: changed meanwhile). */
+    unchanged: (path: string, hash: string) => request<{ unchanged?: boolean }>('GET', `/api/notes/note?${qs({ path, unless: hash })}`).then((r) => !!r.unchanged),
+  },
   setNoteFolderColor: (path: string, color: string | null) => request<{ folder_colors: Record<string, string> }>('PUT', '/api/notes/folder/color', { path, color }),
-  restoreNoteBatch: (trashId: string) => request<{ paths: string[]; pdfs: string[]; skipped: string[] }>('POST', '/api/notes/restore', { trash_id: trashId }),
+  restoreNoteBatch: (trashId: string) => notesOffline.restore(trashId, () => request<{ paths: string[]; pdfs: string[]; skipped: string[] }>('POST', '/api/notes/restore', { trash_id: trashId })),
   noteKeys: () => request<{ keys: NoteKeys }>('GET', '/api/notes/keys'),
   // reference lists (citation graph)
   itemReferences: (id: string) => request<ItemReferences>('GET', `/api/items/${id}/references`),

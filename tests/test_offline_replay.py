@@ -82,3 +82,41 @@ def test_without_the_header_base_is_ignored(client):
     client.patch(f"{T}/{t['id']}", json={"title": "Elsewhere"})
     r = client.patch(f"{T}/{t['id']}", json={"title": "Mine", "base": {"title": "Pack"}})
     assert r.status_code == 200 and r.json["task"]["title"] == "Mine"
+
+
+def test_a_deletion_made_offline_keeps_its_batch_so_its_undo_works(client):
+    parent = make(client)
+    child = make(client, title="Socks", parent_id=parent["id"])
+    batch = "20261124120000-a1b2c3"
+    r = client.post(f"{T}/delete", json={"ids": [parent["id"]], "batch": batch}, headers=OFFLINE)
+    assert r.status_code == 200 and r.json["batch"] == batch and set(r.json["ids"]) == {parent["id"], child["id"]}
+    assert client.post(f"{T}/restore", json={"batch": batch}, headers=OFFLINE).json["ids"]
+    assert not client.get(f"{T}/{child['id']}").json["task"]["deleted_at"]
+    assert client.post(f"{T}/delete", json={"ids": [parent["id"]], "batch": "../x"}).status_code == 400
+
+
+def test_a_deletion_replayed_for_tasks_already_gone_is_done(client):
+    t = make(client)
+    client.post(f"{T}/delete", json={"ids": [t["id"]]})  # here, meanwhile
+    r = client.post(
+        f"{T}/delete", json={"ids": [t["id"], "zzzzzzzz"], "batch": "20261124120000-000000"}, headers=OFFLINE
+    )
+    assert r.status_code == 200 and r.json["ids"] == []
+    assert client.post(f"{T}/delete", json={"ids": ["zzzzzzzz"]}).status_code == 404  # not offline: an error
+
+
+def test_a_move_made_offline_under_a_task_deleted_meanwhile_leaves_it_in_place(client):
+    a, b = make(client, title="A"), make(client, title="B")
+    client.post(f"{T}/delete", json={"ids": [b["id"]]})
+    r = client.patch(f"{T}/{a['id']}", json={"parent_id": b["id"]}, headers=OFFLINE)
+    assert r.status_code == 200 and r.json["task"]["parent_id"] is None
+    c = make(client, title="C")
+    moved = client.patch(f"{T}/{a['id']}", json={"parent_id": c["id"], "before": "gone1234"}, headers=OFFLINE)
+    assert moved.status_code == 200 and moved.json["task"]["parent_id"] == c["id"]
+
+
+def test_a_task_made_offline_for_a_note_goes_into_it(client, app):
+    app.extensions["synapse"].note_service.save("trip.md", "# Trip\n", None)
+    r = client.post(T, json={"id": "kntabcde", "title": "Tickets", "note": "trip.md"}, headers=OFFLINE)
+    assert r.status_code == 201 and r.json["ref"]["path"] == "trip.md"
+    assert "{{task:kntabcde}}" in client.get("/api/notes/note", query_string={"path": "trip.md"}).json["text"]

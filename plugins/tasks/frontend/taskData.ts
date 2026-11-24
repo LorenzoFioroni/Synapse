@@ -44,15 +44,84 @@ export function loadTasks(force = false): Promise<void> {
   return loading;
 }
 
-/** Changes made offline that wait to go in, shown over the saved list (plugin API 1.16). */
+/** Changes made offline that wait to go in, shown over the saved list (plugin API 1.16): new tasks,
+ *  edits and moves, deletions (and their Undo), tasks put into notes or taken out. */
 function applyPending(pending: Awaited<ReturnType<typeof offline.pending>>): void {
+  const binned = new Map<string, Task[]>();   // a deletion made offline → its tasks, for its Undo
   for (const w of pending) {
-    const body = (w.body || {}) as TaskChanges & { id?: string; base?: unknown };
-    if (w.method === 'POST' && w.path === '/' && body.id && !td.tasks.has(body.id)) td.tasks.set(body.id, offlineTask(body as TaskChanges & { id: string }));
+    const body = (w.body || {}) as TaskChanges & { id?: string; base?: unknown; ids?: string[]; batch?: string; path?: string };
+    if (w.method === 'POST' && w.path === '/' && body.id) {
+      if (!td.tasks.has(body.id)) td.tasks.set(body.id, offlineTask(body as TaskChanges & { id: string }));
+      if (body.note) addRef(body.id, body.note);
+      continue;
+    }
+    if (w.method === 'POST' && w.path === '/delete' && body.batch) {
+      const gone = subtrees(body.ids || []);
+      binned.set(body.batch, gone);
+      for (const t of gone) td.tasks.delete(t.id);
+      td.trash += gone.length;
+      continue;
+    }
+    if (w.method === 'POST' && w.path === '/restore') {
+      // a batch, or one task with its sub-tasks of the same batch (deleted offline: shown again)
+      const id = (body as { id?: string }).id;
+      const batch = body.batch || [...binned].find(([, ts]) => ts.some((t) => t.id === id))?.[0];
+      const ts = (batch && binned.get(batch)) || [];
+      const back = body.batch ? ts : ts.filter((t) => t.id === id);
+      for (let i = 0; !body.batch && i < back.length; i++) back.push(...ts.filter((t) => t.parent_id === back[i].id));
+      for (const t of back) td.tasks.set(t.id, t);
+      td.trash = Math.max(0, td.trash - back.length);
+      continue;
+    }
+    const note = w.method === 'POST' ? /^\/([^/]+)\/notes(\/remove)?$/.exec(w.path) : null;
+    if (note && body.path) {
+      if (note[2]) td.refs[note[1]] = (td.refs[note[1]] || []).filter((r) => r.path !== body.path);
+      else addRef(note[1], body.path);
+      continue;
+    }
     const m = w.method === 'PATCH' ? /^\/([^/]+)$/.exec(w.path) : null;
     const t = m && td.tasks.get(m[1]);
-    if (t) td.tasks.set(t.id, withFields(t, body));
+    if (t) td.tasks.set(t.id, moved(withFields(t, body), body));
   }
+}
+
+/** Shown in a note (offline: at its end, as the server puts it). */
+function addRef(id: string, path: string): void {
+  const refs = td.refs[id] || [];
+  if (!refs.some((r) => r.path === path)) td.refs[id] = [...refs, { path, title: path.replace(/^.*\//, '').replace(/\.md$/, ''), line: 1e6, heading: null }];
+}
+
+/** The tasks and all their sub-tasks (each once), as the server deletes them. */
+function subtrees(ids: string[]): Task[] {
+  const out = new Map<string, Task>();
+  const add = (id: string) => {
+    const t = td.tasks.get(id);
+    if (!t || out.has(id)) return;
+    out.set(id, t);
+    for (const k of allTasks()) if (k.parent_id === id) add(k.id);
+  };
+  ids.forEach(add);
+  return [...out.values()];
+}
+
+/** ``t`` moved as ``changes`` say (under ``parent_id``, before or after a sibling), as the server places it. */
+function moved(t: Task, c: TaskChanges & { before?: string | null; after?: string | null }): Task {
+  if (!('parent_id' in c || 'before' in c || 'after' in c)) return t;
+  const parent = c.parent_id ?? null;
+  const sibs = allTasks().filter((x) => x.parent_id === parent && x.id !== t.id).sort((a, b) => a.position - b.position);
+  const anchor = c.before || c.after;
+  const i = anchor ? sibs.findIndex((x) => x.id === anchor) : -1;
+  let position: number;
+  if (i < 0) position = (sibs.length ? sibs[sibs.length - 1].position : 0) + 1;
+  else if (c.after) position = (sibs[i].position + (i + 1 < sibs.length ? sibs[i + 1].position : sibs[i].position + 2)) / 2;
+  else position = ((i > 0 ? sibs[i - 1].position : sibs[i].position - 2) + sibs[i].position) / 2;
+  return { ...t, parent_id: parent, position };
+}
+
+/** Whether ``parent`` is ``id`` or one of its sub-tasks (a task cannot go there). */
+function under(parent: string | null | undefined, id: string): boolean {
+  for (let p = parent ? td.tasks.get(parent) : undefined; p; p = p.parent_id ? td.tasks.get(p.parent_id) : undefined) if (p.id === id) return true;
+  return false;
 }
 
 /** ``t`` with the fields of a change applied. */
@@ -76,7 +145,7 @@ function offlineTask(d: TaskChanges & { id: string }): Task {
 }
 
 /** A new task's id, chosen here so a task made offline keeps it (as the server makes them: backend/tasks/store.py). */
-function newTaskId(): string {
+export function newTaskId(): string {
   const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
   const r = crypto.getRandomValues(new Uint32Array(8));
   return chars[r[0] % 23] + [...r.slice(1)].map((n) => chars[n % chars.length]).join('');
@@ -108,13 +177,14 @@ function apply(list: Task[]): void {
 /** Change a task. Returns it as the server stored it (null when that failed; the error is shown). */
 export async function patchTask(id: string, changes: TaskChanges): Promise<Task | null> {
   const before = td.tasks.get(id);
-  const local = before ? withFields(before, changes) : null;
-  if (local) { td.tasks.set(id, local); changed(); }
-  // a change of fields (not a move) may wait offline; ``base`` lets the server merge it with what changed meanwhile
   const fields = !('parent_id' in changes || 'before' in changes || 'after' in changes);
+  if (!fields && under(changes.parent_id, id)) { toast('A task cannot be moved under itself or one of its sub-tasks.', { type: 'error' }); return null; }
+  const local = before ? moved(withFields(before, changes), changes) : null;
+  if (local) { td.tasks.set(id, local); changed(); }
+  // it may wait offline; ``base`` lets the server merge a change of fields with what changed meanwhile
   const base = before && fields ? Object.fromEntries((['title', 'body', 'status', 'due'] as const).filter((k) => k in changes).map((k) => [k, before[k]])) : undefined;
   try {
-    const res = await api.updateTask(id, base ? { ...changes, base } : changes, local && fields ? () => ({ task: local, changed: [] }) : undefined);
+    const res = await api.updateTask(id, base ? { ...changes, base } : changes, local ? () => ({ task: local, changed: [] }) : undefined);
     apply(res.changed);
     td.tasks.set(id, res.task);
     if ('parent_id' in changes || 'before' in changes || 'after' in changes) await loadTasks(true);   // positions of the siblings
@@ -149,9 +219,12 @@ export async function toggleTask(id: string): Promise<void> {
 
 export async function createTask(data: TaskChanges): Promise<Task | null> {
   try {
-    // A task not shown in a note may be made offline: it gets its id here, and waits.
-    const own = data.note ? data : { ...data, id: newTaskId() };
-    const res = await api.createTask(own, data.note ? undefined : () => ({ task: offlineTask(own as TaskChanges & { id: string }) }));
+    // A new task may be made offline: it gets its id here, and waits (one for a note goes into it then).
+    const own = { ...data, id: newTaskId() };
+    const res = await api.createTask(own, () => {
+      if (own.note) addRef(own.id, own.note);
+      return { task: offlineTask(own), ...(own.note ? { ref: { path: own.note, line: 1e6 } } : {}) };
+    });
     td.tasks.set(res.task.id, res.task);
     if (res.ref) await loadTasks(true); else changed();
     return res.task;
@@ -164,9 +237,8 @@ export async function deleteTasks(ids: string[], o: { message?: string; onUndo?:
   if (!ids.length) return;
   const name = ids.length === 1 ? td.tasks.get(ids[0])?.title : null;
   try {
-    const res = await api.deleteTasks(ids);
+    const res = await trashTasks(ids);
     for (const id of res.ids) td.tasks.delete(id);
-    td.trash += res.ids.length;
     changed();
     const first = name ? `“${plainTitle(name)}”` : plural(ids.length, 'task');
     const extra = res.ids.length - ids.length;
@@ -176,11 +248,29 @@ export async function deleteTasks(ids: string[], o: { message?: string; onUndo?:
   } catch (e) { toastError(e); }
 }
 
+/** Tasks (with their sub-tasks) to the trash, as one batch: named here, so its Undo also works offline. */
+export async function trashTasks(ids: string[]): Promise<{ batch: string; ids: string[] }> {
+  const batch = `${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}-${[...crypto.getRandomValues(new Uint8Array(3))].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+  const res = await api.deleteTasks(ids, batch, () => ({ batch, ids: subtrees(ids).map((t) => t.id) }));
+  td.trash += res.ids.length;
+  return res;
+}
+
 export async function restoreBatch(batch: string): Promise<void> {
-  try { await api.restoreTasks(batch); await loadTasks(true); } catch (e) { toastError(e); }
+  try { await api.restoreTasks(batch, () => ({ ids: [] })); await loadTasks(true); } catch (e) { toastError(e); }
+}
+
+/** Show a task in a note, or stop showing it there (offline: done in the note when Synapse answers). */
+export async function addToNote(id: string, path: string): Promise<void> {
+  await api.addTaskToNote(id, path, null, () => { addRef(id, path); return { ref: { path, line: 1e6 } }; });
+  await loadTasks(true);
+}
+export async function removeFromNote(id: string, path: string): Promise<void> {
+  await api.removeTaskFromNote(id, path, () => ({ path, removed: 1 }));
+  await loadTasks(true);
 }
 export async function restoreTask(id: string): Promise<void> {
-  try { await api.restoreTask(id); await loadTasks(true); } catch (e) { toastError(e); }
+  try { await api.restoreTask(id, () => ({ ids: [id] })); await loadTasks(true); } catch (e) { toastError(e); }
 }
 
 /** A title without its Markdown, for messages and dialogs. */

@@ -51,10 +51,16 @@ The note calls of `api.ts` (`getNote`, `checkNote`, `saveNote`, `createNote`, `n
 - **Offline**, a kept note opens from IndexedDB and each save becomes a *local version* (its text
   and the time it was made; saves less than 2 minutes apart are one version). The save answers with
   a local hash (`local:…`), and the note keeps saving locally until its versions are in Synapse. An
-  amber dot marks it. **New notes** can be created offline (the listing shows them); renaming,
-  moving, deleting and locking need Synapse.
+  amber dot marks it. **New notes** can be created offline (the listing shows them), and kept notes
+  can be **renamed, moved to another folder and deleted** (Undo works too): the change is kept on the
+  note's record (`movedFrom`, `trashed`) and the listing shows it at once. Folders (new, renamed,
+  moved, deleted), PDFs and locking need Synapse, and say so.
 - **Back online** (the browser's `online` event, or Synapse answering again), `pushNotes`
-  (`offlineSync.ts`) sends each note's versions with the text and hash it started from to
+  (`offlineSync.ts`) first makes the deletions (a note changed in Synapse meanwhile is *not*
+  deleted, and says so), then the renames and moves (tried again until none goes in any more, so a
+  chain such as b→c then a→b finds its order; Synapse updates the links to them as usual; a rename
+  Synapse refuses, e.g. because the name was taken meanwhile, is undone here and said), then sends
+  each note's versions with the text and hash it started from to
   `POST /api/notes/offline` (`NotesService.apply_offline`):
   - the note did not change in Synapse: each version is written and committed on its own, by this
     device, dated when it was made, with the subject "Edited … offline"
@@ -80,10 +86,14 @@ Plugins take part through the plugin API ([offline use in plugins](plugins.md#of
 routes they keep are saved with the library, and writes they allow wait on the device
 (`frontend/src/plugins/offlineQueue.ts`, IndexedDB `synapse-offline-plugins`) and are sent in order
 when Synapse answers again, each route merging them itself. **Tasks**: ticking, editing a task's
-title, details or due date, and new tasks (from the Tasks page) work offline and survive a reload;
-back online an edit merges field by field with changes made in Synapse, and a field changed on
-both sides asks (keep Synapse's or mine). Moving, deleting and tasks made inside a note need
-Synapse.
+title, details or due date, new tasks, moving tasks (dragging, indenting), deleting them (with
+Undo: the trash batch is named on the device), putting a task into a note or taking it out, and
+tasks made inside a note (the task popup, `{{` completion, a block's Add, checkbox lines turned
+into tasks: converted on the device as the server would) work offline and survive a reload. Back
+online the notes go in first, then the tasks, so a task shown in a note made offline finds it. An
+edit merges field by field with changes made in Synapse, and a field changed on both sides asks
+(keep Synapse's or mine); a move under a task deleted meanwhile leaves the task where it was, and
+deleting tasks already deleted in Synapse is done. Restoring from the Tasks trash needs Synapse.
 
 ## What it does
 
@@ -103,8 +113,20 @@ Synapse.
   list, so a reload while offline still shows it. The queue is sent in order when the browser comes
   back online, after any successful request, and every 30 s while items wait. An entry the server
   refuses (4xx other than 401/403) is dropped and reported.
-- **Not covered:** renaming, moving, deleting or locking notes offline; moving or deleting tasks; library edits, searching and other folders or
-  views than the library list the app opened with, and the iOS/Safari storage limits.
+- **Not covered:** changing folders of notes or locking notes offline; library edits, searching
+  (the phone's note search falls back to titles) and other folders or views than the library list
+  the app opened with.
+
+## Phones and tablets
+
+Everything above works on an Android phone (Chrome) and on an iPad (Safari), and is checked on both
+(`tests/e2e/offline_mobile_checklist.py`: Chromium with a phone's screen, WebKit with an iPad's).
+On the phone layout, notes and folders are kept with a long press on their row or the ⋯ menu of a
+note or folder, and kept notes carry the same dots; on an iPad (the desktop layout) a long press
+opens the same menus a right-click does (`ui/longpress.ts`). Turning offline use on asks the browser
+to keep the saved copy (`navigator.storage.persist()`): without it Safari deletes a site's data
+after about a week without a visit, and other browsers when space runs low. On an iPad, adding
+Synapse to the Home Screen also keeps it. Safari needs https for all of this (the switch says so).
 
 ## Where it lives
 
@@ -116,7 +138,8 @@ Synapse.
 | The settings section | `frontend/src/views/settings/offline.ts` |
 | The menu entries and the marks in the list and on the phone | `views/itemlist/menus.ts`, `views/itemlist/rows.ts`, `phone/library.ts`, `phone/reader.ts` |
 | The list of the app's files | `backend/frontend.py` (`shell_files`) |
-| Kept notes, local versions, the note calls offline | `frontend/src/offlineNotes.ts` |
+| Kept notes, local versions, the note calls offline (renames, moves, deletions too) | `frontend/src/offlineNotes.ts` |
+| Notes on the phone: long press, ⋯ menus, dots | `frontend/src/phone/notes.ts` |
 | Bringing offline edits in: apply, merge, record | `NotesService.apply_offline` (`backend/notes/service.py`), `NoteHistory.offline`/`merge` (`recorder.py`), `POST /api/notes/offline` |
 | The choice on a conflict | `frontend/src/views/notes/offlineConflict.ts` |
 | Plugins' writes waiting, sent and merged | `frontend/src/plugins/offlineQueue.ts`, `host.ts` (`write`, `p.offline`), `backend/plugins/replay.py`; Tasks: `taskData.ts`, `routes.py`, `TaskStore.offline_clashes` |

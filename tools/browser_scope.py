@@ -45,8 +45,10 @@ GROUPS = [
     ),
     (
         ("frontend/sw.js", "frontend/src/offline*.ts", "frontend/src/views/settings/offline.ts"),
-        {"offline", "offline_notes", "offline_tasks"},
+        {"offline", "offline_notes", "offline_tasks", "offline_places", "offline_mobile"},
     ),
+    (("plugins/tasks/frontend/taskData.ts", "plugins/tasks/server/routes.py"), {"offline_tasks", "offline_places"}),
+    (("frontend/src/phone/notes.ts",), {"offline_mobile"}),
     (("frontend/src/views/notes/offlineConflict.ts", "backend/notes/history/recorder.py"), {"offline_notes"}),
     (("plugins/autocompletion/*",), {"assist", "notes"}),
 ]

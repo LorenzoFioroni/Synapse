@@ -23,6 +23,7 @@ from ..library.db import Database, utcnow
 STATUSES = ("open", "done")
 ID_CHARS = "abcdefghjkmnpqrstuvwxyz23456789"  # no 0/o, 1/l/i: ids are read and typed by people
 ID_LEN = 8
+_BATCH = re.compile(r"\d{14}-[0-9a-f]{6}")  # a trash batch: when (UTC) and a random part
 MAX_TITLE = 500
 MAX_BODY = 200_000
 HISTORY_KEPT = 5000
@@ -444,9 +445,12 @@ class TaskStore:
             self._log(c, prev["id"], by, "move", _snapshot(prev), _snapshot(now))
         return now
 
-    def delete(self, ids, *, by: str = "human") -> dict:
-        """Move tasks and their sub-tasks to the trash, as one batch (one Undo restores it all)."""
-        batch = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S") + "-" + secrets.token_hex(3)
+    def delete(self, ids, *, by: str = "human", batch: str | None = None) -> dict:
+        """Move tasks and their sub-tasks to the trash, as one batch (one Undo restores it all).
+        ``batch``: the batch's name a device chose, so a deletion made offline can be undone there."""
+        if batch is not None and not _BATCH.fullmatch(str(batch)):
+            raise TaskError("That is not a trash batch.")
+        batch = batch or datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S") + "-" + secrets.token_hex(3)
         now = utcnow()
         moved: builtins.list[str] = []
         with self.db.session() as c:

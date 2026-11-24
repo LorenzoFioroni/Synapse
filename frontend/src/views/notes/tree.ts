@@ -4,7 +4,7 @@
 import { api } from '../../api.js';
 import { icon } from '../../icons.js';
 import { OFFLINE_EVENT, offlineEnabled, offlineNow } from '../../offline.js';
-import { NOTES_EVENT, localNote, noteChosen, notePending } from '../../offlineNotes.js';
+import { NOTES_EVENT, PLACES_EVENT, localNote, noteChosen, notePending } from '../../offlineNotes.js';
 import { emit } from '../../store.js';
 import { toastError } from '../../ui/toast.js';
 import type { NoteInfo, NotePdf } from '../../types.js';
@@ -45,6 +45,8 @@ function offlineMark(path: string): string {
   if (localNote(path) || noteChosen(path)) return '<span class="nt-offline" title="Available offline"></span>';
   return '';
 }
+
+window.addEventListener(PLACES_EVENT, () => { void refreshTree(); });
 
 let repaint = 0;
 for (const ev of [OFFLINE_EVENT, NOTES_EVENT]) {

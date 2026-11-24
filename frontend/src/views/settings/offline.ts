@@ -56,7 +56,7 @@ export function bindOffline(view: HTMLElement): () => void {
     const parts = [`Last saved ${formatDate(new Date(last.at).toISOString(), true)}`];
     if (last.failed) parts.push(`${plural(last.failed, 'file')} could not be saved: they are tried again next time`);
     if (waiting) parts.push(`${plural(waiting, 'annotation change')} waiting to be sent`);
-    if (edited) parts.push(`${plural(edited, 'note')} edited offline, not yet in Synapse`);
+    if (edited) parts.push(`${plural(edited, 'note')} changed offline, not yet in Synapse`);
     if (queuedCount()) parts.push(`${plural(queuedCount(), 'plugin change')} (tasks, …) waiting to be sent`);
     if (offlineNow()) parts.push('offline now');
     const used = await storageText();
@@ -73,7 +73,7 @@ export function bindOffline(view: HTMLElement): () => void {
         confirm: 'Turn Off', danger: !!(waiting || edited),
         detail: 'The saved copy of the app, the library, the PDFs and the notes is deleted from this browser. Synapse needs a connection again.'
           + (waiting ? ` ${plural(waiting, 'annotation change')} made offline have not been sent yet and will be lost.` : '')
-          + (edited ? ` Offline edits to ${plural(edited, 'note')} are not in Synapse yet and will be lost.` : '')
+          + (edited ? ` Offline changes to ${plural(edited, 'note')} (edits, renames, deletions) are not in Synapse yet and will be lost.` : '')
           + (queuedCount() ? ` ${plural(queuedCount(), 'change')} to tasks or other plugins' data will be lost.` : ''),
       }))) { void paint(); return; }
       busy = true; void paint();

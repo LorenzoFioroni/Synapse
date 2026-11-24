@@ -8,14 +8,20 @@
 // The note calls of api.ts go through ``notesOffline`` here, so the editor (NoteSession) and the
 // phone need no changes: a local save answers with a local hash ("local:…"), and once the edits
 // are in, the session's regular check sees the note's real hash and takes its text.
+//
+// A kept note can also be renamed, moved to another folder or deleted offline: the change is kept
+// on its record (``movedFrom``, ``trashed``) and the listing shows it; offlineSync.ts makes it in
+// Synapse first, before the note's edits go in. Folders and PDFs still need Synapse.
 import { offlineEnabled, offlineNow } from './offline.js';
-import type { NoteFile, NotesListing } from './types.js';
+import type { NoteFile, NoteMoved, NotesListing } from './types.js';
 
 const DB = 'synapse-offline-notes';
 const STORE = 'notes';
 const CHOSEN_KEY = 'zc.offline.notes';   // {notes: [...paths], folders: [...paths]}
 const COALESCE_MS = 2 * 60_000;          // saves this close together are one local version (like the history's IDLE)
 export const NOTES_EVENT = 'zc:offline-notes';
+/** Synapse made the renames and deletions done offline (or refused some): lists of notes are read again. */
+export const PLACES_EVENT = 'zc:offline-notes-places';
 
 export interface LocalVersion { text: string; at: number }
 
@@ -44,6 +50,12 @@ export interface LocalNote {
   /** The hash the last local save answered with, and the server's hash it became (see ``sentHash``). */
   localHash?: string;
   synced?: { local: string; hash: string };
+  /** Renamed or moved offline: where Synapse has the note (its path is where it is going). */
+  movedFrom?: string;
+  movedAt?: number;
+  /** Deleted offline (when), and the Undo that brings it back (``restore``). */
+  trashed?: number;
+  trashId?: string;
 }
 
 let mem = new Map<string, LocalNote>();
@@ -93,8 +105,27 @@ export async function dropNote(path: string): Promise<void> {
 
 export const localNote = (path: string): LocalNote | undefined => mem.get(path);
 export const localNotes = (): LocalNote[] => [...mem.values()];
-/** Edits or a conflict waiting to go to Synapse. */
-export const notePending = (path: string): boolean => !!(mem.get(path)?.versions.length || mem.get(path)?.conflict);
+/** Edits, a rename or move, a deletion or a conflict waiting to go to Synapse. */
+export function notePending(path: string): boolean {
+  const n = mem.get(path);
+  return !!(n && (n.versions.length || n.conflict || n.movedFrom || n.trashed));
+}
+/** A change Synapse must make before anything else about the note: it was created, renamed or deleted here. */
+const structural = (n: LocalNote) => n.baseHash === null || !!n.movedFrom || !!n.trashed;
+/** Where Synapse has the note now. */
+export const serverPath = (n: LocalNote): string => n.movedFrom ?? n.path;
+
+/** Puts ``n`` (whose path may have changed from ``from``) in one step. */
+export async function rekeyNote(from: string, n: LocalNote): Promise<void> {
+  mem.delete(from);
+  mem.set(n.path, n);
+  await tx('readwrite', (s) => { if (from !== n.path) s.delete(from); return s.put(n); });
+  changed();
+}
+
+/** Asks offlineSync.ts to send what waits (set there; this module does not import it). */
+let pushSoon = (): void => {};
+export function setNotesPusher(fn: () => void): void { pushSoon = fn; }
 
 /** Deletes every kept note (offline use turned off). */
 export async function removeLocalNotes(): Promise<void> {
@@ -131,6 +162,14 @@ const inFolder = (path: string, folder: string) => path.startsWith(folder.replac
 export function noteChosen(path: string): boolean {
   const c = chosen();
   return c.notes.includes(path) || c.folders.some((f) => inFolder(path, f)) || mem.get(path)?.baseHash === null;
+}
+
+/** A kept note was renamed or moved: it stays kept under its new path. */
+function chosenMoved(from: string, to: string): void {
+  const c = chosen();
+  c.notes = c.notes.filter((p) => p !== from);
+  if (!c.folders.some((f) => inFolder(to, f))) c.notes.push(to);
+  saveChosen(c);
 }
 
 export function folderChosen(folder: string): boolean {
@@ -185,6 +224,7 @@ export const notesOffline = {
   async get(path: string, net: Net<NoteFile>): Promise<NoteFile> {
     await loadNotes();
     const n = mem.get(path);
+    if (n?.trashed) throw deletedHere(path);
     if (n && notePending(path)) return asFile(n);
     try {
       const r = await net();
@@ -201,6 +241,7 @@ export const notesOffline = {
   async check<T>(path: string, hash: string, net: Net<T>): Promise<T | { path: string; hash: string; unchanged: true }> {
     await loadNotes();
     const n = mem.get(path);
+    if (n?.trashed) throw deletedHere(path);
     if (n && notePending(path)) return { path, hash: n.localHash || hash, unchanged: true };
     try { return await net(); } catch (e) {
       if (n && offlineEnabled() && unreachable(e)) return { path, hash, unchanged: true };
@@ -212,6 +253,7 @@ export const notesOffline = {
   async save<T extends { hash: string }>(path: string, text: string, hash: string | null, net: (hash: string | null) => Promise<T>): Promise<T | { path: string; hash: string; info: null }> {
     await loadNotes();
     const n = mem.get(path);
+    if (n?.trashed) throw deletedHere(path);
     if (n && !notePending(path) && hash && n.synced?.local === hash) hash = n.synced.hash;   // the local version that went in
     if (n && notePending(path)) return saveLocally(n, text);
     try {
@@ -228,11 +270,66 @@ export const notesOffline = {
   async listing(net: Net<NotesListing>): Promise<NotesListing> {
     await loadNotes();
     const r = await net();
-    const known = new Set(r.notes.map((x) => x.path));
-    const extra = localNotes().filter((n) => n.baseHash === null && !known.has(n.path));
-    if (!extra.length) return r;
-    const now = Date.now() / 1000;
-    return { ...r, notes: [...r.notes, ...extra.map((n) => ({ path: n.path, id: null, title: titleOf(n.text), type: null, paper: null, author: 'human', created: null, updated: null, mtime: now, tags: [] }))] };
+    known = new Set([...r.notes.map((x) => x.path), ...(r.pdfs || []).map((x) => x.path)]);
+    const byPath = new Map(r.notes.map((x) => [x.path, x]));
+    // what changed here and is not in Synapse yet: notes created, renamed or moved, deleted
+    const gone = new Set(localNotes().filter((n) => n.baseHash !== null && (n.trashed || n.movedFrom)).map(serverPath));
+    const extra: NotesListing['notes'] = [];
+    for (const n of localNotes()) {
+      if (n.trashed || (n.baseHash !== null && !n.movedFrom) || (byPath.has(n.path) && !gone.has(n.path))) continue;
+      const was = byPath.get(serverPath(n));
+      const last = n.versions[n.versions.length - 1];
+      extra.push(was ? { ...was, path: n.path, title: titleOf(n.text) ?? was.title } : {
+        path: n.path, id: null, title: titleOf(n.text), type: null, paper: null, author: 'human', created: null, updated: null, mtime: (last?.at ?? Date.now()) / 1000, tags: [],
+      });
+    }
+    if (!extra.length && !gone.size) return r;
+    const shown = new Set(extra.map((x) => x.path));
+    return { ...r, notes: [...r.notes.filter((x) => !gone.has(x.path) && !shown.has(x.path)), ...extra] };
+  },
+
+  /** Rename or move a note: in Synapse, or here when it cannot be reached (only a note kept here),
+   *  and here while an earlier change of the note waits, so they go in in order. */
+  async move(path: string, to: string, net: Net<NoteMoved>): Promise<NoteMoved> {
+    await loadNotes();
+    const n = mem.get(path);
+    if (n && structural(n)) return moveLocally(n, to);
+    try {
+      const r = await net();
+      if (n) { await rekeyNote(path, { ...n, path: r.path }); chosenMoved(path, r.path); }   // edits waiting go in under the new name
+      return r;
+    } catch (e) {
+      if (!offlineEnabled() || !unreachable(e)) throw e;
+      if (!n) throw needsSynapse(/\.pdf$/i.test(path) ? 'A PDF can be renamed or moved only while Synapse can be reached.' : NOT_KEPT);
+      return moveLocally(n, to);
+    }
+  },
+
+  /** Move notes to the notes trash: in Synapse, or here (notes kept here only, no folders or PDFs). */
+  async trash<T extends { trash_id: string; paths: string[]; pdfs: string[] }>(paths: string[], folders: string[], net: Net<T>): Promise<T | { trash_id: string; paths: string[]; pdfs: string[] }> {
+    await loadNotes();
+    const local = paths.map((p) => mem.get(p));
+    const allKept = !folders.length && local.every((n) => n && !n.trashed);
+    if (allKept && local.some((n) => n && structural(n))) return trashLocally(local as LocalNote[]);
+    try {
+      const r = await net();
+      for (const n of local) if (n) await dropNote(n.path);   // deleted in Synapse: nothing of it waits any more
+      return r;
+    } catch (e) {
+      if (!offlineEnabled() || !unreachable(e)) throw e;
+      if (folders.length) throw needsSynapse('Folders can be deleted only while Synapse can be reached.');
+      if (!allKept) throw needsSynapse(paths.some((p) => /\.pdf$/i.test(p)) ? 'PDFs can be deleted only while Synapse can be reached.' : NOT_KEPT);
+      return trashLocally(local as LocalNote[]);
+    }
+  },
+
+  /** Undo of a deletion: made here (it brings the notes back), or in Synapse. */
+  async restore<T>(trashId: string, net: Net<T>): Promise<T | { paths: string[]; pdfs: string[]; skipped: string[] }> {
+    if (!trashId.startsWith(LOCAL_TRASH)) return net();
+    await loadNotes();
+    const back = localNotes().filter((x) => x.trashId === trashId);
+    for (const n of back) await putNote({ ...n, trashed: undefined, trashId: undefined });
+    return { paths: back.map((n) => n.path), pdfs: [], skipped: [] };
   },
 
   /** POST a new note: in Synapse, or here while it cannot be reached. */
@@ -243,13 +340,55 @@ export const notesOffline = {
       const title = (data.title || 'Untitled').trim();
       const folder = (data.folder || '').replace(/^\/+|\/+$/g, '');
       let path = data.path || `${folder ? `${folder}/` : ''}${slug(title)}.md`;
-      for (let i = 2; mem.has(path); i++) path = path.replace(/(?: \d+)?\.md$/, ` ${i}.md`);
+      for (let i = 2; mem.has(path) || known.has(path); i++) path = path.replace(/(?: \d+)?\.md$/, ` ${i}.md`);
       const n: LocalNote = { path, baseHash: null, baseText: null, text: `# ${title}\n\n`, versions: [], file: null, conflict: null };
       await saveLocally(n, n.text);
       return asFile(mem.get(path)!);
     }
   },
 };
+
+const NOT_KEPT = 'This note is not available offline. Choose Make Available Offline in the notes list while Synapse can be reached.';
+const LOCAL_TRASH = 'local-trash:';
+/** The notes and PDFs Synapse had at the last listing (a name already taken). */
+let known = new Set<string>();
+
+function needsSynapse(message: string): Error { return Object.assign(new Error(message), { status: 0 }); }
+function deletedHere(path: string): Error { return Object.assign(new Error(`“${path}” was deleted on this device.`), { status: 404 }); }
+
+/** ``a/b.md``: no leading slash, ``.md`` once. */
+const cleanPath = (p: string) => p.replace(/^\/+/, '').replace(/(?:\.md)?$/i, '.md');
+
+async function moveLocally(n: LocalNote, to: string): Promise<NoteMoved> {
+  to = cleanPath(to);
+  const done = { path: to, updated_links: [], broken_links: [] };
+  if (to === n.path) return done;
+  // a note deleted here keeps its place until Synapse deletes it (Undo brings it back there)
+  const taken = mem.has(to)
+    || (known.has(to) && !localNotes().some((x) => x.movedFrom === to || (x.trashed && serverPath(x) === to)));
+  if (taken) throw Object.assign(new Error(`There is already a note “${to}”.`), { status: 409 });
+  const from = n.baseHash === null ? undefined : serverPath(n);
+  const moved: LocalNote = { ...n, path: to, movedFrom: from === to ? undefined : from, movedAt: Date.now() };
+  await rekeyNote(n.path, moved);
+  chosenMoved(n.path, to);
+  if (!offlineNow()) pushSoon();
+  return done;
+}
+
+async function trashLocally(notes: LocalNote[]): Promise<{ trash_id: string; paths: string[]; pdfs: string[] }> {
+  const trashId = `${LOCAL_TRASH}${Date.now().toString(36)}`;
+  for (const n of notes) await putNote({ ...n, trashed: Date.now(), trashId });
+  if (!offlineNow()) pushSoon();
+  return { trash_id: trashId, paths: notes.map((n) => n.path), pdfs: [] };
+}
+
+/** A change of folders, which needs Synapse: said plainly when it cannot be reached. */
+export async function folderChange<T>(net: Net<T>): Promise<T> {
+  try { return await net(); } catch (e) {
+    if (offlineEnabled() && unreachable(e)) throw needsSynapse('Folders can be changed only while Synapse can be reached.');
+    throw e;
+  }
+}
 
 async function saveLocally(n: LocalNote, text: string): Promise<{ path: string; hash: string; info: null }> {
   const now = Date.now();

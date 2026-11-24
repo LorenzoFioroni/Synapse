@@ -29,7 +29,9 @@ import { fitAfterFonts, fitEquations } from '../views/notes/mathFit.js';
 import { citeInfo, equationMode, folderColor, itemInfo, noteMacros, parentOf, resolveNote, stemOf, taskHooks, ws } from '../views/notes/workspace.js';
 import { familyNames, shortWhen } from './model.js';
 import { readerScreen } from './reader.js';
-import { localNote } from '../offlineNotes.js';
+import { OFFLINE_EVENT, offlineEnabled, offlineNow } from '../offline.js';
+import { NOTES_EVENT, PLACES_EVENT, localNote, noteChosen, notePending } from '../offlineNotes.js';
+import { notesOfflineEntry } from '../offlineSync.js';
 import { offlineConflictDialog } from '../views/notes/offlineConflict.js';
 import { type Screen, back, push, selectTab } from './shell.js';
 import { chevron, navBar, navButton, openSheet, rootHeader, roundButton, settingsButton } from './ui.js';
@@ -90,7 +92,10 @@ export function notesScreen(): Screen {
         const q = input.value.trim();
         if (!q) { paint(); return; }
         try {
-          const res = await api.searchNotes(q);
+          const res = await api.searchNotes(q).catch((e) => {
+            if (!offlineEnabled() || !offlineNow()) throw e;
+            return { results: titleMatches(q) };   // offline: the notes whose title or name matches
+          });
           if (input.value.trim() !== q) return;
           box.innerHTML = res.results.length ? `<div class="ph-group">${res.results.map((r) => `<button class="ph-note-row" ${r.kind === 'pdf' ? `data-pdf="${r.id}" data-pdf-path="${esc(r.path)}"` : `data-note="${esc(r.path)}"`}>
             <span class="ph-row-title">${esc(r.title || stemOf(r.path))}</span><span class="ph-row-snippet">${esc(plain(r.snippet))}</span>
@@ -111,11 +116,13 @@ export function notesScreen(): Screen {
         if (act === 'new') void newNote();
         if (act === 'settings') void import('./main.js').then((m) => m.settingsMenu());
       });
+      el.addEventListener('contextmenu', rowMenu);
       const refresh = () => paint();
       on('notes-count', refresh);
       paint();
       void ensureIndexes({ fresh: true }).then(paint);
-      return () => off('notes-count', refresh);
+      const stop = onOfflineChange(paint);
+      return () => { off('notes-count', refresh); stop(); };
     },
   };
 }
@@ -125,9 +132,52 @@ function plain(html: string): string {
   return new DOMParser().parseFromString(html, 'text/html').body.textContent || '';
 }
 
+/** Offline, the notes whose title or file name has every word of ``q`` (the search needs Synapse). */
+function titleMatches(q: string): { path: string; title: string; snippet: string; kind?: 'pdf'; id?: number }[] {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  return ws.overview.notes.filter((n) => words.every((w) => `${titleOf(n)} ${n.path}`.toLowerCase().includes(w)))
+    .slice(0, 50).map((n) => ({ path: n.path, title: titleOf(n), snippet: localNote(n.path) || noteChosen(n.path) ? '' : 'Not available offline' }));
+}
+
+/** With offline use on: a dot for a note kept on this device (amber while its changes wait to go
+ *  in); offline, the notes that are not kept are dimmed. */
+function offlineDot(path: string): string {
+  if (!offlineEnabled()) return '';
+  if (notePending(path)) return '<span class="ph-offline-dot pending" title="Changed offline: goes into Synapse when it can be reached"></span>';
+  return localNote(path) || noteChosen(path) ? '<span class="ph-offline-dot" title="Available offline"></span>' : '';
+}
+const missingOffline = (path: string) => offlineEnabled() && offlineNow() && !localNote(path) && !noteChosen(path);
+
+/** Repaints when going offline or back, or when notes kept here change; returns the function that stops it. */
+function onOfflineChange(paint: () => void): () => void {
+  let frame = 0;
+  const later = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; paint(); }); };
+  const places = () => { void ensureIndexes({ fresh: true }).then(paint); };
+  window.addEventListener(OFFLINE_EVENT, later);
+  window.addEventListener(NOTES_EVENT, later);
+  window.addEventListener(PLACES_EVENT, places);
+  return () => { window.removeEventListener(OFFLINE_EVENT, later); window.removeEventListener(NOTES_EVENT, later); window.removeEventListener(PLACES_EVENT, places); };
+}
+
+/** A long press on a note or folder: keep it on this device for offline use, or stop. */
+function rowMenu(e: MouseEvent): void {
+  const t = e.target as Element;
+  const note = t.closest<HTMLElement>('[data-note]')?.dataset.note;
+  const folder = t.closest<HTMLElement>('[data-folder]')?.dataset.folder;
+  if (!note && !folder) return;
+  e.preventDefault();
+  const entry = note
+    ? (ws.overview.notes.find((n) => n.path === note)?.locked ? null : notesOfflineEntry([note], []))
+    : notesOfflineEntry([], [folder!]);
+  openMenu([
+    note ? { label: 'Open', icon: 'open', run: () => push(noteScreen(note)) } : { label: 'Open', icon: 'folder', run: () => push(folderScreen(folder!)) },
+    entry,
+  ], { x: e.clientX, y: e.clientY });
+}
+
 function noteRow(n: NoteInfo): string {
-  return `<button class="ph-note-row" data-note="${esc(n.path)}">
-    <span class="ph-row-title-line"><span class="ph-row-title">${esc(titleOf(n))}</span><span class="ph-when">${esc(shortWhen(n.mtime))}</span></span>
+  return `<button class="ph-note-row${missingOffline(n.path) ? ' offline-missing' : ''}" data-note="${esc(n.path)}">
+    <span class="ph-row-title-line"><span class="ph-row-title">${esc(titleOf(n))}</span>${offlineDot(n.path)}<span class="ph-when">${esc(shortWhen(n.mtime))}</span></span>
     <span class="ph-row-meta">${dot(n.path)}${esc(parentOf(n.path) || 'Notes')}${n.type === 'paper' ? ' · paper note' : ''}</span></button>`;
 }
 
@@ -153,7 +203,7 @@ function folderScreen(folder: string): Screen {
         const subs = ws.overview.folders.filter((f) => parentOf(f) === folder).sort((a, b) => a.localeCompare(b));
         const notes = ws.overview.notes.filter((n) => parentOf(n.path) === folder).sort((a, b) => titleOf(a).localeCompare(titleOf(b)));
         const pdfs = (ws.overview.pdfs || []).filter((p) => parentOf(p.path) === folder);
-        el.innerHTML = `${navBar(ctx.backLabel, name, navButton('edit', 'New note here', 'data-act="new"'))}<div class="ph-scroll">
+        el.innerHTML = `${navBar(ctx.backLabel, name, `${offlineEnabled() ? navButton('more', 'More', 'data-act="more"') : ''}${navButton('edit', 'New note here', 'data-act="new"')}`)}<div class="ph-scroll">
           ${subs.length ? `<div class="ph-group">${subs.map(folderRow).join('')}</div>` : ''}
           ${notes.length || pdfs.length ? `<div class="ph-group">${notes.map(noteRow).join('')}${pdfs.map(pdfRow).join('')}</div>` : ''}
           ${!subs.length && !notes.length && !pdfs.length ? '<div class="ph-empty"><p>This folder is empty.</p></div>' : ''}</div>`;
@@ -168,9 +218,15 @@ function folderScreen(folder: string): Screen {
         const pdf = t.closest<HTMLElement>('[data-pdf-path]');
         if (pdf) { void pushPdf(pdf.dataset.pdfPath!, '', null); return; }
         if (t.closest('[data-act="new"]')) void newNote(folder);
+        if (t.closest('[data-act="more"]')) {
+          const entry = notesOfflineEntry([], [folder]);
+          if (entry) openMenu([entry], { x: 0, y: innerHeight }); else toast('Turn on offline use in Settings to keep this folder on this device.');
+        }
       });
+      el.addEventListener('contextmenu', rowMenu);
       on('notes-count', paint);
-      return () => off('notes-count', paint);
+      const stop = onOfflineChange(paint);
+      return () => { off('notes-count', paint); stop(); };
     },
   };
 }
@@ -530,6 +586,7 @@ function noteMenu(path: string, session: NoteSession): void {
       } catch (e) { toastError(e); }
     } },
     { label: 'Copy Link', icon: 'link', run: async () => { if (await copyText(`[[${stemOf(path)}]]`)) toast('Link copied', { type: 'success', timeout: 2000 }); } },
+    !ws.overview.notes.find((n) => n.path === path)?.locked && notesOfflineEntry([path], []),
     'sep',
     { label: 'Delete Note', icon: 'trash', danger: true, run: async () => {
       await session.save();

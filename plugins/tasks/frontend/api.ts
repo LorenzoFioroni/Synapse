@@ -10,6 +10,7 @@ function call<T = unknown>(method: 'GET' | 'POST' | 'PATCH', path: string, body?
 }
 /** Offline use (plugin API 1.16): edits and new tasks wait on the device while Synapse cannot be reached. */
 export const offline = {
+  now: () => plugin.offline.now(),
   pending: () => plugin.offline.pending(),
   onSynced: (fn: () => void) => plugin.offline.onSynced(fn),
 };
@@ -20,12 +21,15 @@ export const api = {
     call<{ task: Task; ref?: { path: string; line: number } }>('POST', '/', data, offline),
   updateTask: (id: string, data: TaskChanges & { base?: Partial<Task> }, offline?: () => { task: Task; changed: Task[] }) =>
     call<{ task: Task; changed: Task[] }>('PATCH', `/${id}`, data, offline),
-  deleteTasks: (ids: string[]) => call<{ batch: string; ids: string[] }>('POST', '/delete', { ids }),
-  restoreTasks: (batch: string) => call<{ ids: string[] }>('POST', '/restore', { batch }),
-  restoreTask: (id: string) => call<{ ids: string[] }>('POST', '/restore', { id }),
+  deleteTasks: (ids: string[], batch?: string, offline?: () => { batch: string; ids: string[] }) =>
+    call<{ batch: string; ids: string[] }>('POST', '/delete', batch ? { ids, batch } : { ids }, offline),
+  restoreTasks: (batch: string, offline?: () => { ids: string[] }) => call<{ ids: string[] }>('POST', '/restore', { batch }, offline),
+  restoreTask: (id: string, offline?: () => { ids: string[] }) => call<{ ids: string[] }>('POST', '/restore', { id }, offline),
   taskTrash: () => call<{ tasks: Task[] }>('GET', '/trash'),
-  addTaskToNote: (id: string, path: string, afterLine: number | null = null) => call<{ ref: { path: string; line: number } }>('POST', `/${id}/notes`, { path, after_line: afterLine }),
-  removeTaskFromNote: (id: string, path: string) => call<{ path: string; removed: number }>('POST', `/${id}/notes/remove`, { path }),
+  addTaskToNote: (id: string, path: string, afterLine: number | null = null, offline?: () => { ref: { path: string; line: number } }) =>
+    call<{ ref: { path: string; line: number } }>('POST', `/${id}/notes`, { path, after_line: afterLine }, offline),
+  removeTaskFromNote: (id: string, path: string, offline?: () => { path: string; removed: number }) =>
+    call<{ path: string; removed: number }>('POST', `/${id}/notes/remove`, { path }, offline),
   convertToTasks: (text: string) => call<{ text: string; tasks: Task[] }>('POST', '/convert', { text }),
   taskHistory: (id: string) => call<{ history: TaskHistoryEntry[] }>('GET', `/${id}/history`),
   undoTaskChange: (historyId: number) => call<{ task: Task }>('POST', '/undo', { history_id: historyId }),
