@@ -11,6 +11,7 @@ declare global {
 
 const inFrame = window.top !== window;   // the viewer runs in an iframe: the main page shows the pill
 let waiting = 0;
+let keepAsked = false;   // progress is shown only for saving the user asked for
 let pill: HTMLElement | null = null;
 
 function show(text: string | null): void {
@@ -46,10 +47,10 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
       refresh();
       if (m.sent && !inFrame) console.info(`[offline] sent ${m.sent} queued change(s)`);
       if (m.dropped && !inFrame) show(`${m.dropped} queued change(s) were refused by the server`);
-    } else if (m?.type === 'keep-progress' && !inFrame && !m.quiet) {
+    } else if (m?.type === 'keep-progress' && !inFrame && keepAsked) {
       show(m.done + m.failed < m.total ? `Saving for offline: ${m.done}/${m.total}`
         : `Saved for offline: ${m.done}${m.failed ? ` (${m.failed} failed)` : ''}`);
-      if (m.done + m.failed >= m.total) setTimeout(refresh, 4000);
+      if (m.done + m.failed >= m.total) { keepAsked = false; setTimeout(refresh, 4000); }
     }
   });
   navigator.serviceWorker.ready.then((reg) => {
@@ -68,7 +69,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
   });
   window.addEventListener('online', () => { refresh(); post('flush'); });
   window.addEventListener('offline', refresh);
-  window.synapseOffline = { keep: (urls) => post({ keep: urls }), flush: () => post('flush') };
+  window.synapseOffline = { keep: (urls) => { keepAsked = true; post({ keep: urls }); }, flush: () => post('flush') };
   refresh();
 }
 

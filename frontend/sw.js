@@ -8,7 +8,7 @@
 // answers again (in order).
 'use strict';
 
-const CACHE = 'synapse-offline-v1';
+const CACHE = 'synapse-offline-v1';   // keep the name: renaming it would drop what was saved
 const TIMEOUT_MS = 6000;
 const DB = 'synapse-offline';
 const STORE = 'outbox';
@@ -90,22 +90,27 @@ function offlineAnswer(req) {
     { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-Synapse-Offline': '1' } });
 }
 
-/** Saves a list of URLs (PDFs, pages) for offline use; reports progress to the pages. */
+/** Saves a list of URLs (PDFs, pages) for offline use, four at a time, each given at most 30 s;
+ *  reports progress to the pages unless asked to be quiet (the automatic saving after a visit). */
 async function keep(urls, quiet = false) {
-  let done = 0, failed = 0;
-  for (const u of urls) {
+  let done = 0, failed = 0, next = 0;
+  const one = async (u) => {
     const path = new URL(u, self.location.origin).pathname;
-    if (NEVER.some((r) => r.test(path))) { done++; continue; }
-    try {
-      const req = new Request(u, { credentials: 'same-origin' });
-      if (await saved(req)) { done++; continue; }
-      const res = await fetch(req);
-      if (!res.ok) throw new Error(String(res.status));
-      await save(req, res);
-      done++;
-    } catch { failed++; }
-    if (!quiet) await post({ type: 'keep-progress', done, failed, total: urls.length });
-  }
+    if (NEVER.some((r) => r.test(path))) return;
+    const req = new Request(u, { credentials: 'same-origin' });
+    if (await saved(req)) return;
+    const res = await Promise.race([fetch(req), timeout(30000)]);
+    if (!res.ok) throw new Error(String(res.status));
+    await save(req, res);
+  };
+  const worker = async () => {
+    while (next < urls.length) {
+      const u = urls[next++];
+      try { await one(u); done++; } catch { failed++; }
+      if (!quiet) await post({ type: 'keep-progress', done, failed, total: urls.length });
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
 }
 
 // ------------------------------------------------------------------------- the outbox
