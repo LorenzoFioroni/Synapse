@@ -24,7 +24,7 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('message', (e) => {
   if (e.data === 'flush') e.waitUntil(flush());
   if (e.data === 'status') e.waitUntil(broadcast());
-  if (e.data && e.data.keep) e.waitUntil(keep(e.data.keep));
+  if (e.data && e.data.keep) e.waitUntil(keep(e.data.keep, !!e.data.quiet));
 });
 
 self.addEventListener('fetch', (e) => {
@@ -91,9 +91,11 @@ function offlineAnswer(req) {
 }
 
 /** Saves a list of URLs (PDFs, pages) for offline use; reports progress to the pages. */
-async function keep(urls) {
+async function keep(urls, quiet = false) {
   let done = 0, failed = 0;
   for (const u of urls) {
+    const path = new URL(u, self.location.origin).pathname;
+    if (NEVER.some((r) => r.test(path))) { done++; continue; }
     try {
       const req = new Request(u, { credentials: 'same-origin' });
       if (await saved(req)) { done++; continue; }
@@ -102,7 +104,7 @@ async function keep(urls) {
       await save(req, res);
       done++;
     } catch { failed++; }
-    await post({ type: 'keep-progress', done, failed, total: urls.length });
+    if (!quiet) await post({ type: 'keep-progress', done, failed, total: urls.length });
   }
 }
 

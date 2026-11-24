@@ -3,7 +3,7 @@
 // offline or while changes wait. See docs/offline.md.
 
 type OutboxMsg = { type: 'outbox'; waiting: number; sent?: number; dropped?: number };
-type KeepMsg = { type: 'keep-progress'; done: number; failed: number; total: number };
+type KeepMsg = { type: 'keep-progress'; done: number; failed: number; total: number; quiet?: boolean };
 
 declare global {
   interface Window { synapseOffline?: { keep(urls: string[]): void; flush(): void } }
@@ -46,13 +46,26 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
       refresh();
       if (m.sent && !inFrame) console.info(`[offline] sent ${m.sent} queued change(s)`);
       if (m.dropped && !inFrame) show(`${m.dropped} queued change(s) were refused by the server`);
-    } else if (m?.type === 'keep-progress' && !inFrame) {
+    } else if (m?.type === 'keep-progress' && !inFrame && !m.quiet) {
       show(m.done + m.failed < m.total ? `Saving for offline: ${m.done}/${m.total}`
         : `Saved for offline: ${m.done}${m.failed ? ` (${m.failed} failed)` : ''}`);
       if (m.done + m.failed >= m.total) setTimeout(refresh, 4000);
     }
   });
-  navigator.serviceWorker.ready.then(() => post('status'));
+  navigator.serviceWorker.ready.then((reg) => {
+    post('status');
+    // What this page loaded before the worker took over (the first visit, or a hard reload) is
+    // not in its cache: hand it the list, so the app also opens offline after every window closed.
+    if (navigator.serviceWorker.controller && sessionStorage.getItem('zc.offline.seeded')) return;
+    const send = () => {
+      const urls = [location.pathname + location.search,
+        ...performance.getEntriesByType('resource').map((e) => e.name).filter((u) => u.startsWith(location.origin))];
+      (navigator.serviceWorker.controller || reg.active)?.postMessage({ keep: [...new Set(urls)], quiet: true });
+    };
+    send();
+    // Again once the page has finished starting: the library list may still have been on its way.
+    setTimeout(() => { send(); try { sessionStorage.setItem('zc.offline.seeded', '1'); } catch { /* private mode */ } }, 4000);
+  });
   window.addEventListener('online', () => { refresh(); post('flush'); });
   window.addEventListener('offline', refresh);
   window.synapseOffline = { keep: (urls) => post({ keep: urls }), flush: () => post('flush') };
