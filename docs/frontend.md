@@ -504,7 +504,9 @@ horizontally scrollable row. Reader buttons also scroll within their left column
   zooms). Once a Pencil has been seen, fingers scroll and a long press plus the Highlight button
   marks a finger selection. The selection follows the nearest run of text (`textAt`), so a pen
   between lines, past the end of a line or in a margin keeps the line it is on rather than
-  jumping through the text layer.
+  jumping through the text layer. The touch listeners that cancel Safari's scrolling under the
+  Pencil are non-passive, so they are attached only while a tool other than Select is chosen:
+  otherwise Safari would wait for the busy page script before every scroll.
 - **One rect per line.** The text layer gives a box per run of text, and inline math, sub- and
   superscripts sit higher or lower than the words around them. `mergeLines`
   (`annotations/lines.ts`, unit-tested in `tests/js/annotationLines.test.mjs`) merges the boxes

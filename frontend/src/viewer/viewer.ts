@@ -257,7 +257,7 @@ function initPdf(pdfUrl: string): void {
   /* Pinch to zoom on a touch screen: the pages are zoomed (and drawn sharp again),
    never the browser page, and the spot between the fingers stays where it is (applyZoom).
    Safari reports a pinch as gesture events; other touch browsers through two pointers. */
-  let pinch: { start: number; x: number; y: number; target: number } | null = null;   // start scale, container coordinates of the first centre, target scale
+  let pinch: { start: number; x: number; y: number; target: number; left: number; top: number } | null = null;   // start scale, container coordinates of the first centre, target scale, scroll offsets at the start
   // The browser page itself is zoomed (it should not be, but iPadOS can still do it, e.g. on
   // focusing a small text field in an older version): pinching must be able to undo it.
   const pageZoomed = () => (window.visualViewport?.scale || 1) > 1.01;
@@ -265,7 +265,8 @@ function initPdf(pdfUrl: string): void {
   function pinchAt(clientX: number, clientY: number, start: number): void {
     const r = container.getBoundingClientRect();
     zoomGesture = null;
-    pinch = { start, x: clientX - r.left - container.clientLeft, y: clientY - r.top - container.clientTop, target: start };
+    pinch = { start, x: clientX - r.left - container.clientLeft, y: clientY - r.top - container.clientTop, target: start,
+              left: container.scrollLeft, top: container.scrollTop };
   }
   /* While the fingers move, the pages are only scaled on screen (a transform around the pinch
    centre: nothing is laid out or drawn again); the zoom itself is applied once, when the pinch
@@ -279,9 +280,13 @@ function initPdf(pdfUrl: string): void {
   }
   function pinchEnd() {
     if (!pinch) return;
-    const { target, x, y } = pinch;
+    const { target, x, y, left, top } = pinch;
     pinch = null;
     container.style.transform = '';
+    // The fingers also pan the container while they pinch, and through the shrinking transform a
+    // pan scrolls 1/scale times as far: zooming out landed pages away. Zoom from where it began.
+    container.scrollLeft = left;
+    container.scrollTop = top;
     applyZoom(target, x, y);
   }
   if ('ongesturechange' in window) {
