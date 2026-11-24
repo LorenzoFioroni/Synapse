@@ -3,6 +3,7 @@
 import * as A from '../../actions.js';
 import { itemActions } from '../../extend.js';
 import { type ApiError, api, openAttachment, openPdfInNewWindow } from '../../api.js';
+import { offlineMenuEntry, pdfsOf } from '../../offlineSync.js';
 import { openNewWindow } from '../../windows.js';
 import { currentFolderId, emit, folderById, selectedItems, state } from '../../store.js';
 import { promptDialog } from '../../ui/dialog.js';
@@ -77,6 +78,7 @@ export function itemMenu(at: At): void {
     { label: one ? 'Find Available PDF' : `Find PDFs for ${items.length} Items`, icon: 'find', run: () => (one ? A.findPdf(one.id) : A.findPdfs(ids)) },
     { label: one ? 'Fetch References' : `Fetch References for ${items.length} Items`, icon: 'link', run: () => fetchReferencesBulk(ids) },
     one && { label: 'Add PDF Attachment…', icon: 'paperclip', run: () => pickFiles((files) => A.uploadAttachments(one.id, files)) },
+    offlineMenuEntry(pdfsOf(items)),
     'sep',
     { label: one ? 'Add to Folder…' : `Add ${items.length} Items to Folder…`, icon: 'folderPlus', run: () => addSelectionToFolder(ids) },
     !!folder && { label: 'Move to Another Folder…', icon: 'folder', run: () => moveSelectionToFolder(ids) },
@@ -129,6 +131,7 @@ export function attachmentMenu(it: Item | undefined, attId: string | undefined, 
     { label: 'Open in New Window', icon: 'newWindow', run: () => openPdfInNewWindow(it, att) },
     { label: 'Rename…', icon: 'edit', run: () => renameAttachment(att) },
     { label: 'Download', icon: 'download', run: () => { const a = document.createElement('a'); a.href = `/pdfs/${encodeURIComponent(att.url)}`; a.download = att.name || 'file.pdf'; a.click(); } },
+    offlineMenuEntry([att]),
     'sep',
     { label: 'Delete Attachment', icon: 'trash', danger: true, run: () => deleteAttachment(att) },
   ], at);

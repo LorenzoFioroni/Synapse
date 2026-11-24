@@ -1,9 +1,13 @@
 // Saving the library for offline use (the main page only; offline.ts is shared with the viewer).
-// Turning offline use on saves the app's files, the library and every PDF in the browser; the app
-// then repeats it quietly when it starts, so new papers are saved too. See docs/offline.md.
+// Turning offline use on saves the app's files and the library in the browser; the app then repeats
+// it quietly when it starts, so a new version and new papers are saved too. PDFs are saved only one
+// by one, when the user makes them available offline (offlineMenuEntry). See docs/offline.md.
 import { api, fileUrl } from './api.js';
-import { OFFLINE_EVENT, offlineEnabled, offlineSupported, pdfSaved, pruneFiles, refreshSaved, removeOfflineCopy, saveFiles, setOfflineFlag, startOffline } from './offline.js';
-import { storage, store } from './util.js';
+import { OFFLINE_EVENT, forgetFiles, offlineEnabled, offlineSupported, pdfSaved, pruneFiles, refreshSaved, removeOfflineCopy, saveFiles, setOfflineFlag, startOffline } from './offline.js';
+import type { Attachment, Item } from './types.js';
+import type { MenuEntry } from './ui/menu.js';
+import { toast } from './ui/toast.js';
+import { plural, storage, store } from './util.js';
 
 export const SYNC_EVENT = 'zc:offline-sync';
 const VERSION_KEY = 'zc.offline.shell';   // the app version that was saved
@@ -12,7 +16,7 @@ const CHUNK = 8;                          // files per request to the worker: it
 
 export interface SyncState {
   running: boolean;
-  /** What is being saved now: "App files", "Library" or "PDFs". */
+  /** What is being saved now: "App files" or "Library". */
   step: string;
   done: number;
   total: number;
@@ -21,8 +25,8 @@ export interface SyncState {
 
 export const syncState: SyncState = { running: false, step: '', done: 0, total: 0, failed: 0 };
 
-/** The result of the last complete save, kept across reloads: when, the PDFs of the library, how many are saved, how many failed. */
-export interface SyncResult { at: number; pdfs: number; saved: number; failed: number }
+/** The result of the last complete save, kept across reloads: when, and how many files failed. */
+export interface SyncResult { at: number; failed: number }
 export const lastSynced = (): SyncResult | null => storage<SyncResult | null>(DONE_KEY, null);
 
 const tick = () => window.dispatchEvent(new Event(SYNC_EVENT));
@@ -76,17 +80,50 @@ async function run(all: boolean): Promise<void> {
   await saveFiles(startupData(), true);
   const items = library.items.filter((it) => !it._outside);
   await saveAll('Library', items.map((it) => `/api/items/${it.id}`));
-  // 3. the PDFs, with their annotations
-  const pdfs: { url: string; notes: string }[] = [];
-  for (const it of items) {
-    for (const a of it.attachments || []) if (a.type === 'pdf') pdfs.push({ url: fileUrl(a), notes: `/api/attachments/${a.id}/annotations` });
-  }
-  for (const p of notes?.pdfs || []) pdfs.push({ url: `/api/note-pdfs/${p.id}/file`, notes: `/api/note-pdfs/${p.id}/annotations` });
-  const files = pdfs.flatMap((p) => [p.url, p.notes]);
-  await saveAll('PDFs', files);
-  await pruneFiles(files);
+  // 3. the PDFs made available offline: their annotations again (they may have changed elsewhere);
+  //    the saved PDFs that left the library are forgotten
   await refreshSaved();
-  if (offlineEnabled()) store(DONE_KEY, { at: Date.now(), pdfs: pdfs.length, saved: pdfs.filter((p) => pdfSaved(p.url)).length, failed: syncState.failed });
+  const pdfs = [...pdfsOf(items), ...(notes?.pdfs || []).map((p) => ({ id: 0, url: `/api/note-pdfs/${p.id}/file`, type: 'pdf' }))];
+  await saveFiles(pdfs.filter((a) => pdfSaved(fileUrl(a))).map(annotationsUrl), true);
+  await pruneFiles(pdfs.flatMap((a) => [fileUrl(a), annotationsUrl(a)]));
+  await refreshSaved();
+  if (offlineEnabled()) store(DONE_KEY, { at: Date.now(), failed: syncState.failed });
+}
+
+/* ------------------------------------------------------------------ PDFs, one by one */
+type Pdf = Pick<Attachment, 'id' | 'url' | 'type'>;
+export const pdfsOf = (items: Item[]): Pdf[] => items.flatMap((it) => (it.attachments || []).filter((a) => a.type === 'pdf'));
+/** The list of a PDF's annotations (the viewer reads it), saved with the PDF. */
+const annotationsUrl = (a: Pdf): string => (a.url.startsWith('/api/note-pdfs/') ? a.url.replace(/\/file$/, '/annotations') : `/api/attachments/${a.id}/annotations`);
+
+/** Saves the PDFs (and their annotations) for offline use, or deletes their saved copies. */
+export async function setPdfsOffline(pdfs: Pdf[], on: boolean): Promise<void> {
+  const what = pdfs.length === 1 ? 'PDF' : plural(pdfs.length, 'PDF');
+  if (!on) {
+    await forgetFiles(pdfs.flatMap((a) => [fileUrl(a), annotationsUrl(a)]));
+    await refreshSaved();
+    toast(`${what === 'PDF' ? 'The PDF' : what} will no longer be available offline`);
+    return;
+  }
+  toast(`Saving ${what === 'PDF' ? 'the PDF' : what} for offline use…`, { timeout: 2500 });
+  for (let i = 0; i < pdfs.length; i += CHUNK / 2) {
+    await saveFiles(pdfs.slice(i, i + CHUNK / 2).flatMap((a) => [fileUrl(a), annotationsUrl(a)]), true);
+  }
+  await refreshSaved();
+  const missing = pdfs.filter((a) => !pdfSaved(fileUrl(a))).length;
+  if (missing) toast(`${plural(missing, 'PDF')} could not be saved for offline use. Try again when Synapse can be reached.`, { type: 'error' });
+  else toast(`${what === 'PDF' ? 'The PDF is' : `${what} are`} available offline`, { type: 'success' });
+}
+
+/** The menu entry that makes these PDFs available offline, or removes them; none while offline use is off. */
+export function offlineMenuEntry(pdfs: Pdf[]): MenuEntry | null {
+  pdfs = pdfs.filter((a) => a.type === 'pdf');
+  if (!offlineEnabled() || !pdfs.length) return null;
+  const all = pdfs.every((a) => pdfSaved(fileUrl(a)));
+  const n = pdfs.length > 1 ? ` (${pdfs.length} PDFs)` : '';
+  return all
+    ? { label: `Remove Offline Copy${n}`, icon: 'download', run: () => { void setPdfsOffline(pdfs, false); } }
+    : { label: `Make Available Offline${n}`, icon: 'download', run: () => { void setPdfsOffline(pdfs, true); } };
 }
 
 /** Turns offline use on: registers the worker and saves everything. Rejects when this browser cannot do it. */

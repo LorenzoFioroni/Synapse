@@ -2,10 +2,11 @@
 // (what to do with it, its abstract, the notes that cite it, its folders and tags, what plugins
 // add) and its details and references.
 import * as A from '../actions.js';
-import { api, attachmentOpensOffline, type ApiError } from '../api.js';
+import { api, attachmentOpensOffline, fileUrl, type ApiError } from '../api.js';
 import { itemActions, itemSections } from '../extend.js';
 import { icon } from '../icons.js';
-import { OFFLINE_EVENT, offlineNow } from '../offline.js';
+import { OFFLINE_EVENT, offlineEnabled, pdfSaved } from '../offline.js';
+import { offlineMenuEntry } from '../offlineSync.js';
 import { emit, fieldText, folderById, folderTree, itemTypeLabel, off, on, sortedItems, state, saveSort } from '../store.js';
 import type { Attachment, Item, ItemFieldValue, ItemNotes } from '../types.js';
 import { promptDialog, confirmDialog } from '../ui/dialog.js';
@@ -49,11 +50,13 @@ const missingOffline = (it: Item) => {
 // Going offline (or coming back) redraws the lists, so the papers that are not saved show as such.
 let marked = false;
 window.addEventListener(OFFLINE_EVENT, () => {
-  if (marked || offlineNow()) { marked = offlineNow(); if (document.body.classList.contains('phone')) emit('items'); }
+  if (marked || offlineEnabled()) { marked = offlineEnabled(); if (document.body.classList.contains('phone')) emit('items'); }
 });
 
+const savedOffline = (it: Item) => offlineEnabled() && (it.attachments || []).some((a) => a.type === 'pdf' && pdfSaved(fileUrl(a)));
+
 const marksOf = (it: Item) => [
-  it.attachments?.length ? `<span class="ph-mark pdf${missingOffline(it) ? ' offline-missing' : ''}" title="${missingOffline(it) ? 'Not saved for offline use' : 'Has a PDF'}">${icon('pdf')}</span>` : '',
+  it.attachments?.length ? `<span class="ph-mark pdf${missingOffline(it) ? ' offline-missing' : savedOffline(it) ? ' offline-saved' : ''}" title="${missingOffline(it) ? 'Not saved for offline use' : savedOffline(it) ? 'Has a PDF, available offline' : 'Has a PDF'}">${icon('pdf')}</span>` : '',
   state.noteKeys[String(it.citation_key)] ? `<span class="ph-mark" title="In your notes">${icon('edit')}</span>` : '',
 ].join('');
 
@@ -393,6 +396,7 @@ async function onItemClick(e: MouseEvent, it: Item, el: HTMLElement): Promise<vo
     const a = it.attachments?.find((x) => String(x.id) === attMenu.dataset.attMenu);
     if (a && !it.deleted_at) openMenu([
       { label: 'Rename…', icon: 'edit', run: () => renameAttachment(a) },
+      offlineMenuEntry([a]),
       'sep',
       { label: 'Delete Attachment', icon: 'trash', danger: true, run: () => deleteAttachment(a) },
     ], attMenu);

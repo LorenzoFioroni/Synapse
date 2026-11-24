@@ -4,7 +4,7 @@
 // height that is estimated and then measured. A folded group is an entry with its heading alone.
 import { fileUrl } from '../../api.js';
 import { icon, typeIcon } from '../../icons.js';
-import { OFFLINE_EVENT, offlineNow, pdfSaved } from '../../offline.js';
+import { OFFLINE_EVENT, offlineEnabled, offlineNow, pdfSaved } from '../../offline.js';
 import { FIELD_COL, byId, fieldText, groupRuns, itemFolderPaths, itemTypeLabel, on, sortedItems, state, tagColor, viewSort } from '../../store.js';
 import type { Attachment, Item } from '../../types.js';
 import { escapeHtml, formatDate, hitBadge, plural, shortAuthors, storage, store } from '../../util.js';
@@ -50,7 +50,7 @@ export function initRows(els: { pane: HTMLElement; scroller: HTMLElement; head: 
   on('selection', paintSelection);
   on('item-updated', (id) => updateRow(id as string));
   // reachability or the saved files changed: draw the marks (or take them away again)
-  window.addEventListener(OFFLINE_EVENT, () => { if (marked || offlineNow()) { marked = offlineNow(); renderBody(); } });
+  window.addEventListener(OFFLINE_EVENT, () => { if (marked || offlineEnabled()) { marked = offlineEnabled(); renderBody(); } });
 }
 
 /* ------------------------------------------------------------------ offline */
@@ -59,6 +59,9 @@ function missingOffline(it: Item): boolean {
   const pdfs = (it.attachments || []).filter((a) => a.type === 'pdf');
   return offlineNow() && pdfs.length > 0 && !pdfs.some((a) => pdfSaved(fileUrl(a)));
 }
+
+/** With offline use on: one of the item's PDFs was made available offline. */
+const savedOffline = (it: Item) => offlineEnabled() && (it.attachments || []).some((a) => a.type === 'pdf' && pdfSaved(fileUrl(a)));
 
 const notSaved = (a: Attachment) => offlineNow() && a.type === 'pdf' && !pdfSaved(fileUrl(a));
 let marked = false;   // the rows were drawn with the offline marks
@@ -70,7 +73,9 @@ function cellHtml(colId: string, it: Item): string {
       const n = (it.attachments || []).length;
       if (!n) return '';
       const off = missingOffline(it);
-      return `<span class="pdf-dot${off ? ' offline-missing' : ''}" data-act="open" title="${off ? 'Not saved for offline use' : `Open PDF${n > 1 ? ` (${n} attachments)` : ''}`}">${icon('pdf', 'icon-sm')}</span>`;
+      const kept = !off && savedOffline(it);
+      const title = off ? 'Not saved for offline use' : `Open PDF${n > 1 ? ` (${n} attachments)` : ''}${kept ? ' · available offline' : ''}`;
+      return `<span class="pdf-dot${off ? ' offline-missing' : ''}${kept ? ' offline-saved' : ''}" data-act="open" title="${title}">${icon('pdf', 'icon-sm')}</span>`;
     }
     case 'notes': {
       const n = state.noteKeys[it.citation_key || ''];

@@ -35,6 +35,10 @@ export const pdfSaved = (url: string): boolean => saved.has(url);
 
 export const changesWaiting = (): number => waiting;
 
+const PDF_PATH = /^\/pdfs\/|^\/api\/attachments\/\d+\/remote$|^\/api\/note-pdfs\/\d+\/file$/;   // as PDF in sw.js
+/** How many PDFs are saved for offline use. */
+export const savedPdfCount = (): number => [...saved].filter((u) => PDF_PATH.test(u)).length;
+
 const changed = () => window.dispatchEvent(new Event(OFFLINE_EVENT));
 
 /** Reads which files the worker has saved. */
@@ -68,14 +72,16 @@ function refresh(): void {
 }
 
 function post(msg: unknown): void {
-  navigator.serviceWorker?.controller?.postMessage(msg);
+  void tellWorker(msg);
 }
 
 /** Sends the worker a message even before it controls this page (right after registering). */
 export async function tellWorker(msg: unknown): Promise<void> {
   if (!offlineEnabled()) return;   // `ready` never settles once the worker is gone
+  // The registration's worker, not the page's controller: after turning offline use off and on
+  // again, the page is still controlled by the old worker, which no longer saves anything.
   const reg = await navigator.serviceWorker.ready;
-  (navigator.serviceWorker.controller || reg.active)?.postMessage(msg);
+  (reg.active || navigator.serviceWorker.controller)?.postMessage(msg);
 }
 
 /** Asks the worker to save ``urls`` (it fetches them itself) and resolves with how many it could. */
@@ -89,6 +95,16 @@ export function saveFiles(urls: string[], refreshAll = false): Promise<{ done: n
 }
 
 export const pruneFiles = (allowed: string[]): Promise<void> => tellWorker({ prune: allowed });
+
+/** Asks the worker to delete the saved copies of ``urls``. */
+export function forgetFiles(urls: string[]): Promise<void> {
+  if (!urls.length || !offlineEnabled()) return Promise.resolve();
+  const id = nextId++;
+  return new Promise((resolve) => {
+    asked.set(id, () => resolve());
+    tellWorker({ forget: urls, id });
+  });
+}
 
 function checkServer(): void {
   // /sw.js is never answered from the saved copies, so this asks the server itself.
@@ -130,6 +146,7 @@ export async function startOffline(): Promise<void> {
   }
   await navigator.serviceWorker.register('/sw.js', { scope: '/' });
   await navigator.serviceWorker.ready;
+  post('on');
   post('status');
   await refreshSaved();
   refresh();

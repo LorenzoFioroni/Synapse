@@ -92,12 +92,32 @@ async def main():
         check("switch is off", not await page.locator("[data-offline-switch]").is_checked())
         await page.click("#set-offline .switch")
         await page.wait_for_function(
-            "() => /PDFs? saved/.test(document.querySelector('[data-offline-title]')?.textContent || '')", timeout=60000
+            "() => /App and library saved/.test(document.querySelector('[data-offline-title]')?.textContent || '')",
+            timeout=60000,
         )
         title = await page.locator("[data-offline-title]").text_content()
-        check("every PDF saved", title.startswith("2 of 2 PDFs"), title)
-        # One saved PDF disappears (as if it were added after the last save).
-        await page.evaluate("caches.open('synapse-offline-v1').then((c) => c.delete('/pdfs/second.pdf'))")
+        check("turning it on saves no PDF", "no PDFs available offline" in title, title)
+        pdfs = await page.evaluate(
+            "caches.open('synapse-offline-v1').then((c) => c.keys())"
+            ".then((k) => k.map((r) => new URL(r.url).pathname).filter((p) => p.startsWith('/pdfs/')))"
+        )
+        check("no PDF in the saved copy", pdfs == [], str(pdfs))
+
+        # Choose one paper's PDF: Make Available Offline.
+        await page.keyboard.press("Escape")
+        await page.click('.row:has-text("Offline paper")', button="right")
+        await page.click(".menu >> text=Make Available Offline")
+        await page.wait_for_selector('.row:has-text("Offline paper") .pdf-dot.offline-saved', timeout=20000)
+        check("the chosen PDF is marked available offline", True)
+        check(
+            "the other one is not",
+            await page.locator('.row:has-text("Second paper") .pdf-dot.offline-saved').count() == 0,
+        )
+        # Opening a PDF online does not save it.
+        await page.goto(BASE + "/viewer.html?file=/pdfs/second.pdf&title=Second")
+        await page.wait_for_selector(".page-wrapper canvas", timeout=20000)
+        saved = await page.evaluate("caches.open('synapse-offline-v1').then((c) => c.match('/pdfs/second.pdf'))")
+        check("opening a PDF online does not save it", saved is None)
         for pg in list(ctx.pages):
             await pg.close()
 
@@ -190,9 +210,23 @@ async def main():
         # And it can be turned on again.
         await page.click("#set-offline .switch")
         await page.wait_for_function(
-            "() => /PDFs? saved/.test(document.querySelector('[data-offline-title]')?.textContent || '')", timeout=60000
+            "() => /App and library saved/.test(document.querySelector('[data-offline-title]')?.textContent || '')",
+            timeout=60000,
         )
-        check("turning it on again saves everything again", True)
+        check("turning it on again works", True)
+
+        # Remove Offline Copy takes a chosen PDF out again.
+        await page.keyboard.press("Escape")
+        await page.click('.row:has-text("Offline paper")', button="right")
+        await page.click(".menu >> text=Make Available Offline")
+        await page.wait_for_selector('.row:has-text("Offline paper") .pdf-dot.offline-saved', timeout=20000)
+        await page.click('.row:has-text("Offline paper")', button="right")
+        await page.click(".menu >> text=Remove Offline Copy")
+        await page.wait_for_selector(
+            '.row:has-text("Offline paper") .pdf-dot.offline-saved', state="detached", timeout=10000
+        )
+        gone = await page.evaluate("caches.open('synapse-offline-v1').then((c) => c.match('/pdfs/paper.pdf'))")
+        check("Remove Offline Copy deletes the saved PDF", gone is None)
         check("no page errors", not errors, "; ".join(errors[:3]))
         await ctx.close()
     shutil.rmtree(profile, ignore_errors=True)

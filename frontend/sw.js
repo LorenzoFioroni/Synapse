@@ -3,7 +3,8 @@
 //
 // Reading: every GET the app makes is saved in the Cache Storage when it succeeds. Pages,
 // scripts and data are fetched from the network first (with a timeout) and fall back to the
-// saved copy; PDFs come from the saved copy first, since a file does not change.
+// saved copy. PDFs are saved only when the user makes them available offline (``keep``), and
+// then come from the saved copy first, since a file does not change.
 // Annotations: a create/change/delete that cannot reach the server is queued in IndexedDB,
 // answered with 202 at once, applied to the saved annotation list, and sent once the server
 // answers again (in order).
@@ -27,10 +28,12 @@ let off = false;   // turned off in Settings: this worker only waits for its pag
 
 self.addEventListener('message', (e) => {
   if (e.data === 'off') off = true;
+  if (e.data === 'on') off = false;   // turned on again soon enough that the browser revived this same worker
   if (e.data === 'flush') e.waitUntil(flush());
   if (e.data === 'status') e.waitUntil(broadcast().then(() => post({ type: 'reach', up: reachable })));
   if (e.data && e.data.keep) e.waitUntil(keep(e.data));
   if (e.data && e.data.prune) e.waitUntil(prune(e.data.prune));
+  if (e.data && e.data.forget) e.waitUntil(forget(e.data.forget, e.data.id));
 });
 
 self.addEventListener('fetch', (e) => {
@@ -90,7 +93,7 @@ async function networkFirst(req) {
 async function cacheFirst(req) {
   const hit = await saved(req);
   if (hit) return hit;
-  try { return await save(req, await fetch(req)); } catch { reach(false); return offlineAnswer(req); }
+  try { return await fetch(req); } catch { reach(false); return offlineAnswer(req); }   // not saved: the user chooses which PDFs
 }
 
 function offlineAnswer(req) {
@@ -126,6 +129,13 @@ async function keep({ keep: urls, id, refresh }) {
   };
   await Promise.all([worker(), worker(), worker(), worker()]);
   await post({ type: 'keep-done', id, done, failed });
+}
+
+/** Forgets the saved copies of ``urls`` (PDFs the user no longer wants offline). */
+async function forget(urls, id) {
+  const c = await caches.open(CACHE);
+  for (const u of urls) await c.delete(new Request(u, { credentials: 'same-origin' }));
+  await post({ type: 'keep-done', id, done: urls.length, failed: 0 });
 }
 
 /** Forgets saved PDFs and annotation lists that are not in ``allowed`` (the library no longer has them). */

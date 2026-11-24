@@ -1,6 +1,6 @@
 // Settings → Offline Use: the switch that keeps the app, the library and the PDFs on this device
 // (frontend/src/offline.ts, offlineSync.ts; docs/offline.md), and how much of it is saved.
-import { OFFLINE_EVENT, changesWaiting, offlineEnabled, offlineSupported, offlineNow } from '../../offline.js';
+import { OFFLINE_EVENT, changesWaiting, offlineEnabled, offlineSupported, offlineNow, savedPdfCount } from '../../offline.js';
 import { SYNC_EVENT, disableOffline, enableOffline, lastSynced, syncOffline, syncState } from '../../offlineSync.js';
 import { confirmDialog } from '../../ui/dialog.js';
 import { toast, toastError } from '../../ui/toast.js';
@@ -30,7 +30,7 @@ export function bindOffline(view: HTMLElement): () => void {
     sw.checked = on;
     sw.disabled = busy || !offlineSupported();
     desc.textContent = offlineSupported()
-      ? 'Saves the app, your library and every PDF in this browser, and keeps them up to date. The files stay on this device and use its disk space.'
+      ? 'Saves the app and your library in this browser and keeps them up to date. PDFs are not downloaded: you choose each one.'
       : 'This browser cannot keep Synapse offline here: it needs https (or Synapse open as localhost).';
     status.hidden = !on;
     if (!on) return;
@@ -46,7 +46,8 @@ export function bindOffline(view: HTMLElement): () => void {
     const last = lastSynced();
     const waiting = changesWaiting();
     if (!last) { title.textContent = 'Not saved yet'; detail.textContent = navigator.onLine ? 'Save Now keeps the library on this device.' : 'Go online to save the library.'; return; }
-    title.textContent = last.pdfs ? `${last.saved} of ${plural(last.pdfs, 'PDF')} saved` : 'App and library saved';
+    const pdfs = savedPdfCount();
+    title.textContent = `App and library saved · ${pdfs ? `${plural(pdfs, 'PDF')} available offline` : 'no PDFs available offline yet'}`;
     const parts = [`Last saved ${formatDate(new Date(last.at).toISOString(), true)}`];
     if (last.failed) parts.push(`${plural(last.failed, 'file')} could not be saved: they are tried again next time`);
     if (waiting) parts.push(`${plural(waiting, 'annotation change')} waiting to be sent`);
@@ -73,7 +74,7 @@ export function bindOffline(view: HTMLElement): () => void {
     busy = true; void paint();
     try {
       await enableOffline();
-      toast('Saved for offline use', { type: 'success' });
+      toast('Offline use is on. Right-click a paper → Make Available Offline to keep its PDF.', { type: 'success', timeout: 6000 });
     } catch (e) { toastError(e); }
     busy = false; void paint();
   });

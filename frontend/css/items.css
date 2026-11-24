@@ -99,3 +99,9 @@
 .pdf-dot.offline-missing::after, .ph-mark.offline-missing::after {
   content: ""; position: absolute; left: 15%; right: 15%; top: 50%; border-top: 1.5px solid currentColor; transform: rotate(-45deg);
 }
+/* …and those made available offline (shown while offline use is on). */
+.pdf-dot.offline-saved, .ph-mark.offline-saved { position: relative; }
+.pdf-dot.offline-saved::after, .ph-mark.offline-saved::after {
+  content: ""; position: absolute; right: 0; bottom: 0; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--success); box-shadow: 0 0 0 1.5px var(--bg);
+}

@@ -2,7 +2,7 @@
 
 Synapse can keep working when the server cannot be reached: an iPad without a connection, a laptop
 away from the computer that runs Synapse. Nothing is saved on a device unless its user turns this
-on, so the default is the plain app.
+on, so the default is the plain app, and PDFs are never downloaded in bulk: each one is chosen.
 
 ## Turning it on
 
@@ -13,13 +13,21 @@ browser). Turning it on:
 1. registers the service worker (`frontend/sw.js`, started by `frontend/src/offline.ts`);
 2. saves the app: every page, script, style, font and image, listed by the server at
    `GET /api/offline/shell` (`backend/frontend.py`, with a `version` that changes when any of them does);
-3. saves the library: the list, each item's details and what the app asks for when it starts;
-4. saves every PDF of the library and of the notes folders, with the list of its annotations.
+3. saves the library: the list, each item's details and what the app asks for when it starts.
 
-Progress and the result show in the page (`views/settings/offline.ts`, `offlineSync.ts`). The save is
-repeated quietly a few seconds after the app starts and whenever the browser comes back online, so
-new papers and a new version of Synapse are saved too (files that are already saved are not fetched
-again; PDFs that left the library are removed). **Save Now** repeats it by hand.
+No PDF is saved by this. Progress and the result show in the page (`views/settings/offline.ts`,
+`offlineSync.ts`). The save is repeated quietly a few seconds after the app starts and whenever the
+browser comes back online, so new papers and a new version of Synapse are saved too (files already
+saved are not fetched again). It also fetches again the annotation lists of the PDFs made available
+offline, and forgets saved PDFs that left the library. **Save Now** repeats it by hand.
+
+## Choosing PDFs
+
+While offline use is on, the item list's menu (one paper, or several selected) and a PDF's own menu
+(its row in the list; its ⋯ menu on the phone) have **Make Available Offline**, which saves the PDF
+and its annotation list, or **Remove Offline Copy** once all of them are saved, which deletes the
+copies (`setPdfsOffline`, `offlineMenuEntry` in `offlineSync.ts`). A PDF opened online is not saved
+by that. A small green dot on a paper's PDF mark shows that it is available offline.
 Turning the switch off cleans up after itself: it stops a save in progress, unregisters the worker
 (which stops saving at once, even for pages still open), deletes the saved files, the queue of waiting
 annotation changes (after asking, when some are waiting) and what the browser remembered about the
@@ -31,8 +39,8 @@ Saved files count against the browser's storage quota for Synapse's address; the
 ## What it does
 
 - **Reading.** Pages, data and PDFs that succeed are kept in the Cache Storage (`synapse-offline-v1`).
-  Pages and data come from the network first (6 s timeout) and fall back to the saved copy; PDFs come
-  from the saved copy first. The viewer fetches whole files (`disableRange`) so they can be saved.
+  Pages and data come from the network first (6 s timeout) and fall back to the saved copy; a chosen
+  PDF comes from the saved copy first, and other PDFs straight from the network, unsaved. The viewer fetches whole files (`disableRange`) so they can be saved.
   Never kept: streams (`/api/changes`, `/api/presence`), secrets (passkeys, devices, backups, updates,
   AI tokens) and the text of notes (`/api/notes/note`, history, links, locks), so a locked note
   cannot outlive its lock in a cache.
@@ -55,9 +63,9 @@ Saved files count against the browser's storage quota for Synapse's address; the
 |---|---|
 | Worker: caching, the queue, saving lists of files in small batches, pruning | `frontend/sw.js` |
 | Registering, removing, reachability, the pill, which PDFs are saved | `frontend/src/offline.ts` |
-| What to save, progress, the automatic repeat | `frontend/src/offlineSync.ts` |
+| What to save, progress, the automatic repeat, choosing PDFs | `frontend/src/offlineSync.ts` |
 | The settings section | `frontend/src/views/settings/offline.ts` |
-| The marks in the list and on the phone | `views/itemlist/rows.ts`, `phone/library.ts`, `phone/reader.ts` |
+| The menu entries and the marks in the list and on the phone | `views/itemlist/menus.ts`, `views/itemlist/rows.ts`, `phone/library.ts`, `phone/reader.ts` |
 | The list of the app's files | `backend/frontend.py` (`shell_files`) |
 
 Checklist: `python tests/e2e/run.py offline` (port 8872).

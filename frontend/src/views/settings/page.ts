@@ -331,7 +331,7 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
             <div class="backup-list" data-passkey-list></div></div>
         </div></section>
 
-      <section class="settings-section" id="set-offline">${head('offline', 'Offline Use', 'Keep the app, your library and your PDFs on this device, so they open without a connection. This is a choice for each browser, and it is off until you turn it on.')}
+      <section class="settings-section" id="set-offline">${head('offline', 'Offline Use', 'Keep the app, your library and the PDFs you choose on this device, so they open without a connection. This is a choice for each browser, and it is off until you turn it on.')}
         <div class="card">
           <div class="setting"><div class="s-text"><div class="s-title">Use Synapse offline on this device</div>
             <div class="s-desc" data-offline-desc></div></div>
@@ -342,6 +342,9 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
               <div class="s-control"><button class="btn" data-offline-sync>${icon('refresh')} Save Now</button></div></div>
             <div class="progress" data-offline-progress hidden><div></div></div>
           </div>
+          <div class="setting stack"><div class="s-text"><div class="s-title">Choosing PDFs</div>
+            <div class="s-desc">Right-click a paper or a PDF (on the phone: a PDF’s ⋯ menu) and choose <b>Make Available Offline</b>; select several papers to save them all.
+              <b>Remove Offline Copy</b> deletes the saved copy again. A small green dot on the PDF mark shows the ones that are saved.</div></div></div>
           <div class="setting stack"><div class="s-text"><div class="s-title">While offline</div>
             <div class="s-desc">Papers whose PDF is saved open as usual; the others are dimmed in the list, and say so when you open them.
               Highlights and notes you add to a PDF are kept and sent once Synapse answers again. Searching, other folders, notes and library edits need a connection.</div></div></div>
